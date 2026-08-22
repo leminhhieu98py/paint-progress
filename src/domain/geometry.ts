@@ -259,6 +259,10 @@ export function divergesBeyondThreshold(
  *
  * `decks.total_area_m2` is `not null default 0` and `createDeck` never sets it,
  * so this is the state every deck starts in, not an exotic one.
+ *
+ * Only `cells.length` is read; the element type matches areaDivergence and
+ * divergesBeyondThreshold on purpose, so the three can be called on the same
+ * value at the same call site without a cast.
  */
 export function hasUndeclaredArea(
   totalAreaM2: number,
