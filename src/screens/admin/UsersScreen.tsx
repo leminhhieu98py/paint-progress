@@ -1,4 +1,4 @@
-import { Alert, Button, Form, Input, Modal, Select, Space, Switch, Table, Typography } from 'antd'
+import { Alert, Button, Form, Input, Modal, Popconfirm, Select, Space, Switch, Table, Typography } from 'antd'
 import { useCallback, useEffect, useState } from 'react'
 import {
   createGsUser,
@@ -49,9 +49,15 @@ export function UsersScreen() {
       .from('projects')
       .select('id, name')
       .order('name')
-      .then(({ data }) =>
-        setProjects((data ?? []).map((p) => ({ value: p.id, label: p.name }))),
-      )
+      .then(({ data, error: projectsError }) => {
+        if (projectsError) {
+          // Every other failure in this screen surfaces through setError; an
+          // empty Select with no explanation is the worst of both worlds.
+          setError(projectsError.message)
+          return
+        }
+        setProjects((data ?? []).map((p) => ({ value: p.id, label: p.name })))
+      })
   }, [refresh])
 
   const run = async (fn: () => Promise<void>) => {
@@ -95,9 +101,26 @@ export function UsersScreen() {
             key: 'password',
             render: (_, user) =>
               revealed[user.id] ? (
-                <Typography.Text copyable code>
-                  {revealed[user.id]}
-                </Typography.Text>
+                <Space>
+                  <Typography.Text copyable code>
+                    {revealed[user.id]}
+                  </Typography.Text>
+                  <Button
+                    size="small"
+                    onClick={() =>
+                      setRevealed((prev) => {
+                        // A revealed password otherwise stays on screen for
+                        // the rest of the mount — this closes that window
+                        // back down after the deliberate look.
+                        const next = { ...prev }
+                        delete next[user.id]
+                        return next
+                      })
+                    }
+                  >
+                    Ẩn
+                  </Button>
+                </Space>
               ) : (
                 <Button
                   size="small"
@@ -120,18 +143,26 @@ export function UsersScreen() {
                 <Button size="small" onClick={() => setPwTarget(user)}>
                   Đổi mật khẩu
                 </Button>
-                <Switch
-                  checked={user.active}
-                  checkedChildren="Bật"
-                  unCheckedChildren="Tắt"
+                <Popconfirm
+                  title="Vô hiệu hoá tài khoản này?"
+                  description="Không thể hoàn tác trong phiên bản này."
+                  okText="Vô hiệu hoá"
+                  cancelText="Huỷ"
                   disabled={!user.active}
-                  onChange={() =>
+                  onConfirm={() =>
                     void run(async () => {
                       await deactivateGsUser(user.id)
                       await refresh()
                     })
                   }
-                />
+                >
+                  <Switch
+                    checked={user.active}
+                    checkedChildren="Bật"
+                    unCheckedChildren="Tắt"
+                    disabled={!user.active}
+                  />
+                </Popconfirm>
               </Space>
             ),
           },

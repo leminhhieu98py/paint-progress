@@ -23,8 +23,12 @@ vi.mock('../../lib/supabase', () => ({
 beforeEach(() => {
   listGsUsers.mockReset()
   revealPassword.mockReset()
+  // Two rows so a reveal-the-wrong-row bug in the per-row `revealed[user.id]`
+  // keying would actually show up in a test, instead of being masked by a
+  // fixture with only one row to get right.
   listGsUsers.mockResolvedValue([
     { id: 'u1', username: 'gs1', fullName: 'GS Một', active: true, projectId: 'p1', projectName: 'BB1' },
+    { id: 'u2', username: 'gs2', fullName: 'GS Hai', active: true, projectId: 'p2', projectName: 'BB2' },
   ])
 })
 
@@ -44,15 +48,35 @@ describe('UsersScreen', () => {
     expect(revealPassword).not.toHaveBeenCalled()
   })
 
-  it('reveals a password only when the action is clicked', async () => {
+  it('reveals a password only for the row that was clicked', async () => {
+    revealPassword.mockImplementation((id: string) => Promise.resolve(id === 'u1' ? 's3cret' : 'other-secret'))
+    render(<UsersScreen />)
+    await screen.findByText('gs1')
+
+    const revealButtons = screen.getAllByRole('button', { name: 'Xem mật khẩu' })
+    await userEvent.click(revealButtons[0])
+
+    await waitFor(() => expect(screen.getByText('s3cret')).toBeInTheDocument())
+    expect(revealPassword).toHaveBeenCalledWith('u1')
+    expect(revealPassword).not.toHaveBeenCalledWith('u2')
+    expect(screen.queryByText('other-secret')).toBeNull()
+    // The second row's button is still the un-revealed "Xem mật khẩu" state —
+    // only the clicked row switched.
+    expect(screen.getAllByRole('button', { name: 'Xem mật khẩu' })).toHaveLength(1)
+  })
+
+  it('hides a revealed password again when Ẩn is clicked', async () => {
     revealPassword.mockResolvedValue('s3cret')
     render(<UsersScreen />)
     await screen.findByText('gs1')
 
-    await userEvent.click(screen.getByRole('button', { name: 'Xem mật khẩu' }))
-
+    await userEvent.click(screen.getAllByRole('button', { name: 'Xem mật khẩu' })[0])
     await waitFor(() => expect(screen.getByText('s3cret')).toBeInTheDocument())
-    expect(revealPassword).toHaveBeenCalledWith('u1')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Ẩn' }))
+
+    expect(screen.queryByText('s3cret')).toBeNull()
+    expect(screen.getAllByRole('button', { name: 'Xem mật khẩu' })).toHaveLength(2)
   })
 
   it('shows an error when reveal fails', async () => {
@@ -60,7 +84,7 @@ describe('UsersScreen', () => {
     render(<UsersScreen />)
     await screen.findByText('gs1')
 
-    await userEvent.click(screen.getByRole('button', { name: 'Xem mật khẩu' }))
+    await userEvent.click(screen.getAllByRole('button', { name: 'Xem mật khẩu' })[0])
 
     expect(await screen.findByText('No stored credential')).toBeInTheDocument()
   })

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { createGsUser, revealPassword } from './adminApi'
+import { createGsUser, deactivateGsUser, revealPassword, setPassword } from './adminApi'
 
 // vi.mock factories are hoisted above the whole file, so a plain `const invoke =
 // vi.fn()` here would still be in its temporal dead zone when the factory below
@@ -42,5 +42,21 @@ describe('adminApi', () => {
   it('returns the revealed password', async () => {
     invoke.mockResolvedValue({ data: { password: 's3cret' }, error: null })
     await expect(revealPassword('u1')).resolves.toBe('s3cret')
+  })
+
+  it('calls the set-password action with the user id and new password', async () => {
+    invoke.mockResolvedValue({ data: { ok: true }, error: null })
+    await setPassword('u1', 'newpw')
+    expect(invoke).toHaveBeenCalledWith('admin-users', {
+      body: { action: 'set-password', userId: 'u1', password: 'newpw' },
+    })
+  })
+
+  it('calls the deactivate action with the user id', async () => {
+    invoke.mockResolvedValue({ data: { ok: true }, error: null })
+    await deactivateGsUser('u1')
+    expect(invoke).toHaveBeenCalledWith('admin-users', {
+      body: { action: 'deactivate', userId: 'u1' },
+    })
   })
 })
