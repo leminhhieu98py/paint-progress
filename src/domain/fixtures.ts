@@ -43,6 +43,11 @@ export function deckFromCumulative(
 
   ordered.forEach((stage, i) => {
     const next = i + 1 < cumulative.length ? cumulative[i + 1] : 0
+    if (cumulative[i] < next) {
+      throw new Error(
+        `cumulative areas must be non-increasing: stage ${stage.seq} has ${cumulative[i]} but stage ${stage.seq + 1} has ${next}`,
+      )
+    }
     push(stage.id, cumulative[i] - next)
   })
   push(null, totalAreaM2 - (cumulative[0] ?? 0))

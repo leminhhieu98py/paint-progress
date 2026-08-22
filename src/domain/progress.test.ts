@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { WORKBOOK_DECKS, WORKBOOK_STAGES, deckFromCumulative } from './fixtures'
 import { computeDeckProgress, computeProjectProgress, stageSeqOf } from './progress'
-import type { Stage } from './types'
+import type { Deck, Stage } from './types'
 
 const stages: Stage[] = WORKBOOK_STAGES
 
@@ -52,6 +52,27 @@ describe('computeDeckProgress — golden fixture from THEO DÕI CÔNG VIỆC CPP
     expect(computeDeckProgress(deck, stages).stages[0].ratio).toBeCloseTo(0.5, 12)
   })
 
+  it('divides by totalAreaM2 even when cells cover only part of the deck', () => {
+    // Built as a literal on purpose: deckFromCumulative always emits a
+    // leftover not-started cell, so every deck it builds has
+    // sum(cell.areaM2) === totalAreaM2 and cannot distinguish the two
+    // denominators. Real decks under-cover: openings and the E-house are
+    // not cells at all.
+    const deck: Deck = {
+      id: 'partial',
+      code: 'PART',
+      name: 'Partially mapped deck',
+      totalAreaM2: 1000,
+      cells: [
+        { id: 'c1', code: 'R1C1', x: 0, y: 0, w: 0, h: 0, areaM2: 500, stageId: 'coat1' },
+      ],
+    }
+    const result = computeDeckProgress(deck, stages)
+    // 500 of 1000 m² reached stage 1. A sum-of-cells denominator would say 1.0.
+    expect(result.stages[0].ratio).toBeCloseTo(0.5, 12)
+    expect(result.progress).toBeCloseTo(0.25 * 0.5, 12)
+  })
+
   it('returns zero ratios for a deck with no area rather than dividing by zero', () => {
     const deck = deckFromCumulative('Z', 'Z', 0, [0, 0, 0, 0, 0], stages)
     const result = computeDeckProgress(deck, stages)
@@ -74,5 +95,13 @@ describe('computeProjectProgress', () => {
 
   it('returns zero for an empty project', () => {
     expect(computeProjectProgress([], stages).progress).toBe(0)
+  })
+})
+
+describe('deckFromCumulative', () => {
+  it('rejects a non-monotonic cumulative array', () => {
+    expect(() => deckFromCumulative('BAD', 'Bad', 100, [10, 20, 0, 0, 0], stages)).toThrow(
+      /non-increasing/,
+    )
   })
 })
