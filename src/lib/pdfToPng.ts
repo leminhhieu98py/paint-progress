@@ -1,4 +1,14 @@
-import { getDocument, GlobalWorkerOptions, version } from 'pdfjs-dist'
+import { getDocument, GlobalWorkerOptions } from 'pdfjs-dist'
+import type { PDFDocumentProxy } from 'pdfjs-dist'
+// The worker ships as a build asset rather than a CDN fetch. Two reasons, and
+// the second is the real one. First, a same-install file makes the worker and
+// library versions match structurally instead of by interpolating a version
+// string into a URL. Second, when a CDN fetch fails pdf.js retries the same URL
+// on the main thread before rejecting, so the caller waits out two failed round
+// trips and then gets "Setting up fake worker failed", which names neither the
+// network nor the CDN -- on a firewalled or flaky link that is a slow, badly
+// diagnosable failure instead of no failure at all.
+import workerSrc from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 
 /**
  * Render width in pixels. The drawing is the substrate the admin places guides
@@ -14,13 +24,26 @@ export interface RenderedPage {
   height: number
 }
 
-// pdf.js needs a worker. Sourcing it from the same CDN version as the installed
-// package avoids a version-mismatch error that presents as a blank canvas.
-GlobalWorkerOptions.workerSrc = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${version}/build/pdf.worker.min.mjs`
+GlobalWorkerOptions.workerSrc = workerSrc
 
-async function loadPdf(file: File) {
-  const bytes = new Uint8Array(await file.arrayBuffer())
-  return getDocument({ data: bytes }).promise
+/**
+ * Loaded documents, keyed by the File the caller handed us. The page picker
+ * calls pdfPageCount and then renderPdfPage on the same File, and without this
+ * both re-read the bytes and re-parse the structure -- doubling worker spin-up
+ * on a large drawing for no gain. A WeakMap so the document is collectable once
+ * the caller drops the File.
+ */
+const loaded = new WeakMap<File, Promise<PDFDocumentProxy>>()
+
+async function loadPdf(file: File): Promise<PDFDocumentProxy> {
+  const cached = loaded.get(file)
+  if (cached) return cached
+  const pending = (async () => {
+    const bytes = new Uint8Array(await file.arrayBuffer())
+    return getDocument({ data: bytes }).promise
+  })()
+  loaded.set(file, pending)
+  return pending
 }
 
 export async function pdfPageCount(file: File): Promise<number> {
@@ -42,12 +65,10 @@ export async function renderPdfPage(
   const unscaled = page.getViewport({ scale: 1 })
   const viewport = page.getViewport({ scale: targetWidth / unscaled.width })
 
-  const canvas = document.createElement('canvas')
-  canvas.width = Math.round(viewport.width)
-  canvas.height = Math.round(viewport.height)
-  const context = canvas.getContext('2d')
-  if (!context) throw new Error('Could not get a 2d canvas context')
-
+  const { canvas, context } = createCanvas(Math.round(viewport.width), Math.round(viewport.height))
+  // canvasContext is passed for backwards compatibility only: pdf.js ignores
+  // it whenever canvas is also present and re-derives its own context from
+  // the canvas instead, so this argument is inert, not load-bearing.
   await page.render({ canvas, canvasContext: context, viewport }).promise
 
   return {
@@ -60,14 +81,19 @@ export async function renderPdfPage(
 /** An uploaded PNG/JPG is normalised to PNG so the editor has one format. */
 export async function imageFileToPng(file: File): Promise<RenderedPage> {
   const bitmap = await createImageBitmap(file)
-  const canvas = document.createElement('canvas')
-  canvas.width = bitmap.width
-  canvas.height = bitmap.height
-  const context = canvas.getContext('2d')
-  if (!context) throw new Error('Could not get a 2d canvas context')
+  const { canvas, context } = createCanvas(bitmap.width, bitmap.height)
   context.drawImage(bitmap, 0, 0)
   bitmap.close()
   return { blob: await canvasToPng(canvas), width: canvas.width, height: canvas.height }
+}
+
+function createCanvas(width: number, height: number): { canvas: HTMLCanvasElement; context: CanvasRenderingContext2D } {
+  const canvas = document.createElement('canvas')
+  canvas.width = width
+  canvas.height = height
+  const context = canvas.getContext('2d')
+  if (!context) throw new Error('Could not get a 2d canvas context')
+  return { canvas, context }
 }
 
 function canvasToPng(canvas: HTMLCanvasElement): Promise<Blob> {
