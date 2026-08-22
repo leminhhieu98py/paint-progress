@@ -3,6 +3,7 @@ import { RequireRole } from './auth/RequireRole'
 import { APP_BASE_PATH } from './config'
 import { NotFound } from './screens/NotFound'
 import { AdminLayout } from './screens/admin/AdminLayout'
+import { DecksScreen } from './screens/admin/DecksScreen'
 import { ProjectsScreen } from './screens/admin/ProjectsScreen'
 import { UsersScreen } from './screens/admin/UsersScreen'
 
@@ -24,7 +25,7 @@ export function AppRoutes() {
           <Route index element={<Navigate to="users" replace />} />
           <Route path="users" element={<UsersScreen />} />
           <Route path="projects" element={<ProjectsScreen />} />
-          <Route path="decks" element={<Placeholder name="Sàn" />} />
+          <Route path="decks" element={<DecksScreen />} />
           <Route path="progress" element={<Placeholder name="Tiến độ" />} />
         </Route>
         <Route
