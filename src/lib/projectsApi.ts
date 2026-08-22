@@ -28,8 +28,9 @@ export async function createProject(input: { name: string; code: string }): Prom
 
   const projectId = (data as { id: string }).id
 
-  // Seed the template so a new project is never left with an empty stage list,
-  // which would make every progress percentage undefined.
+  // Seed the template so a new project is never left with an empty stage list:
+  // reducing over zero stages yields a silent, permanent 0% rather than a
+  // crash, which is harder to notice than a failed create.
   const { error: stageError } = await supabase.from('project_stages').insert(
     DEFAULT_STAGE_TEMPLATE.map((s) => ({
       project_id: projectId,
@@ -39,7 +40,14 @@ export async function createProject(input: { name: string; code: string }): Prom
       weight: s.weight,
     })),
   )
-  if (stageError) throw new Error(stageError.message)
+  if (stageError) {
+    // The two inserts are not in a transaction. If the project row committed
+    // but the stage seed failed, roll the project back rather than leaving it
+    // stranded with zero stages -- the same silent-0% hazard the comment above
+    // describes, except now permanent because nothing prompts anyone to retry.
+    await supabase.from('projects').delete().eq('id', projectId)
+    throw new Error(stageError.message)
+  }
 
   return projectId
 }
