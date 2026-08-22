@@ -29,7 +29,9 @@ describe('StageConfigPanel', () => {
 
   it('shows the running weight total', async () => {
     render(<StageConfigPanel projectId="p1" />)
-    expect(await screen.findByText(/1\.0000/)).toBeInTheDocument()
+    // vi-VN formatting: comma decimal separator, matching the paperwork the
+    // operators already read from.
+    expect(await screen.findByText(/1,0000/)).toBeInTheDocument()
   })
 
   it('blocks save when the weights do not sum to 1', async () => {
@@ -87,13 +89,28 @@ describe('StageConfigPanel', () => {
     await waitFor(() => expect(saveStages).toHaveBeenCalledTimes(1))
   })
 
-  it('surfaces a save failure', async () => {
+  it('surfaces a save failure and closes the confirmation modal', async () => {
     saveStages.mockRejectedValue(new Error('weights must sum to 1, got 0.9000'))
     render(<StageConfigPanel projectId="p1" />)
     await screen.findByDisplayValue('Coat 2')
     await userEvent.click(screen.getByRole('button', { name: 'Lưu' }))
     await userEvent.click(screen.getByRole('button', { name: 'Vẫn lưu' }))
     expect(await screen.findByText(/must sum to 1/)).toBeInTheDocument()
+    // The Alert lives outside the modal: if the dialog were still open, the
+    // error would be rendered behind its mask, so the admin would just see
+    // the confirm dialog fail to go away with no visible reason why.
+    //
+    // jsdom never fires a real `transitionend`, so antd's Modal close motion
+    // never finishes here and the dialog node is never actually removed --
+    // querying for the OK button by its accessible name is *also* unusable as
+    // a "did it close" signal, because that button's own loading-icon leave
+    // motion litters its accessible name with a stray "loading" label in both
+    // the open and the closed state (confirmed by inspecting both). What
+    // *does* flip synchronously the instant `open` goes false is rc-motion's
+    // CSS phase class on the dialog itself, swapping from an "-appear"/
+    // "-enter" family to a "-leave" one -- so that is the one assertion here
+    // that is actually coupled to the `confirming` state, not to the mock.
+    expect(screen.getByRole('dialog').className).toMatch(/-leave/)
   })
 
   it('adds a stage at the end with the next seq', async () => {
@@ -101,6 +118,9 @@ describe('StageConfigPanel', () => {
     await screen.findByDisplayValue('Coat 2')
     await userEvent.click(screen.getByRole('button', { name: 'Thêm lớp' }))
     expect(screen.getAllByRole('textbox')).toHaveLength(3)
+    // Cumulative progress reads stages by seq, so the new row must land at 3,
+    // not stay at the placeholder 0 a dropped renumber() would leave it at.
+    expect(screen.getByTestId('seq-2')).toHaveTextContent('3')
     // A new row starts at weight 0, which leaves the total unchanged --
     // 0.6 + 0.4 + 0 is exactly 1 in IEEE754, not an approximation -- so Lưu
     // stays enabled. The row still needs a real weight assigned before the
@@ -136,6 +156,27 @@ describe('StageConfigPanel', () => {
     await screen.findByDisplayValue('Coat 2')
     await userEvent.click(screen.getAllByRole('button', { name: 'Xoá' })[1])
     expect(screen.queryByDisplayValue('Coat 2')).toBeNull()
+  })
+
+  it('renumbers seq contiguously after removing a middle stage', async () => {
+    // A 2-row fixture can't expose a broken renumber(): its sole survivor is
+    // already seq 1 whether or not renumber ran. Only removing the middle of
+    // three rows leaves a detectable gap (1, 3) if renumber were dropped.
+    listStages.mockResolvedValue([
+      { id: 's1', seq: 1, name: 'First', color: '#111111', weight: 0.5 },
+      { id: 's2', seq: 2, name: 'Middle', color: '#222222', weight: 0.3 },
+      { id: 's3', seq: 3, name: 'Last', color: '#333333', weight: 0.2 },
+    ])
+    render(<StageConfigPanel projectId="p1" />)
+    await screen.findByDisplayValue('Middle')
+
+    await userEvent.click(screen.getAllByRole('button', { name: 'Xoá' })[1])
+
+    // 1,2,3 minus the middle must become 1,2 -- not 1,3. Cumulative progress
+    // reads stages by seq, so a gap silently corrupts every percentage.
+    expect(screen.queryByDisplayValue('Middle')).toBeNull()
+    expect(screen.getByTestId('seq-0')).toHaveTextContent('1')
+    expect(screen.getByTestId('seq-1')).toHaveTextContent('2')
   })
 
   it('refuses to remove the last remaining stage', async () => {

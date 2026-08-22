@@ -59,7 +59,8 @@ describe('ProjectsScreen', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Tạo' }))
 
     expect(await screen.findByText(/duplicate key/)).toBeInTheDocument()
-    expect(screen.getByLabelText('Mã dự án')).toBeInTheDocument()
+    expect(screen.getByLabelText('Tên dự án')).toHaveValue('X')
+    expect(screen.getByLabelText('Mã dự án')).toHaveValue('BB1')
   })
 
   it('edits a project through the same form', async () => {
