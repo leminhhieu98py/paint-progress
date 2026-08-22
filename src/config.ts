@@ -9,8 +9,11 @@ export const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY ?? ''
 
 /**
  * Maps a login identifier to the email Supabase Auth expects.
- * An identifier already containing `@` is left alone, so a real-email account
- * can be added later without a code change.
+ *
+ * Both branches are trimmed and lower-cased: it absorbs pasted whitespace and a
+ * tablet keyboard's auto-capitalisation, and it matches how account creation
+ * stores `username`. An identifier containing `@` then skips the suffix, so a
+ * real-email account can be added later without a code change.
  */
 export function toAuthEmail(identifier: string): string {
   const normalized = identifier.trim().toLowerCase()

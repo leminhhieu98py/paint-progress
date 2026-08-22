@@ -17,4 +17,16 @@ describe('toAuthEmail', () => {
   it('exposes the suffix as a constant', () => {
     expect(AUTH_EMAIL_SUFFIX).toBe('@app.local')
   })
+
+  it('normalises an @-containing identifier rather than passing it through literally', () => {
+    expect(toAuthEmail('  Someone@Example.COM  ')).toBe('someone@example.com')
+  })
+
+  it('does not append the suffix to an identifier that already has a domain', () => {
+    expect(toAuthEmail('Someone@Example.COM')).not.toContain('@app.local')
+  })
+
+  it('appends the suffix to an empty identifier rather than throwing', () => {
+    expect(toAuthEmail('')).toBe('@app.local')
+  })
 })
