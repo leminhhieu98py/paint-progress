@@ -100,17 +100,56 @@ describe('StageConfigPanel', () => {
     // error would be rendered behind its mask, so the admin would just see
     // the confirm dialog fail to go away with no visible reason why.
     //
-    // jsdom never fires a real `transitionend`, so antd's Modal close motion
-    // never finishes here and the dialog node is never actually removed --
-    // querying for the OK button by its accessible name is *also* unusable as
-    // a "did it close" signal, because that button's own loading-icon leave
-    // motion litters its accessible name with a stray "loading" label in both
-    // the open and the closed state (confirmed by inspecting both). What
-    // *does* flip synchronously the instant `open` goes false is rc-motion's
-    // CSS phase class on the dialog itself, swapping from an "-appear"/
-    // "-enter" family to a "-leave" one -- so that is the one assertion here
-    // that is actually coupled to the `confirming` state, not to the mock.
-    expect(screen.getByRole('dialog').className).toMatch(/-leave/)
+    // The modal is conditionally rendered rather than toggled via `open`, so
+    // its absence from the accessibility tree is a real signal about our own
+    // `confirming` state rather than a claim about antd's leave-animation
+    // internals (which never resolve under jsdom, since no real
+    // `transitionend` ever fires there).
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('keeps an in-progress edit when a stale background refresh resolves late', async () => {
+    // Mirrors the post-mount auth-event test in AuthProvider: control the
+    // resolution order of two overlapping loads by hand rather than relying
+    // on real timing.
+    const initialStages = [
+      { id: 's1', seq: 1, name: 'Blast + Coat 1', color: '#fadb14', weight: 0.6 },
+      { id: 's2', seq: 2, name: 'Coat 2', color: '#bfbfbf', weight: 0.4 },
+    ]
+    let resolveStaleLoad: (stages: typeof initialStages) => void = () => {}
+    const staleLoad = new Promise<typeof initialStages>((resolve) => {
+      resolveStaleLoad = resolve
+    })
+    // Call 1 (mount) resolves immediately; call 2 (the background refresh a
+    // successful save kicks off) returns a promise this test controls and
+    // leaves pending.
+    listStages.mockResolvedValueOnce(initialStages).mockReturnValueOnce(staleLoad)
+    saveStages.mockResolvedValue(undefined)
+
+    render(<StageConfigPanel projectId="p1" />)
+    await screen.findByDisplayValue('Blast + Coat 1')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Lưu' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Vẫn lưu' }))
+    await waitFor(() => expect(saveStages).toHaveBeenCalledTimes(1))
+
+    // The background refresh's `listStages` call is now pending on
+    // `staleLoad`. The row is no longer disabled (the save itself finished;
+    // only the reconciliation fetch is still in flight), so the admin
+    // resumes editing -- this is the edit the guard must protect.
+    const name = screen.getByDisplayValue('Blast + Coat 1')
+    await userEvent.clear(name)
+    await userEvent.type(name, 'Edited Mid-Flight')
+
+    // Now the stale load resolves, carrying the pre-edit name.
+    resolveStaleLoad(initialStages)
+
+    // The edit must survive: a load that started before it, and resolves
+    // after it, must not be allowed to overwrite it.
+    await waitFor(() =>
+      expect(screen.getByDisplayValue('Edited Mid-Flight')).toBeInTheDocument(),
+    )
+    expect(screen.queryByDisplayValue('Blast + Coat 1')).toBeNull()
   })
 
   it('adds a stage at the end with the next seq', async () => {

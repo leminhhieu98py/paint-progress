@@ -17,15 +17,25 @@ export function StageConfigPanel({ projectId }: { projectId: string }) {
   const [confirming, setConfirming] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const generation = useRef(0)
+  // Whether the admin has made a local edit that no refresh has accounted
+  // for yet. The generation token alone only orders *overlapping refreshes*
+  // against each other -- it does nothing to protect an edit made between a
+  // single refresh's start and its resolution, since no later refresh exists
+  // to make that one stale by count. `dirty` is the actual guard for that
+  // case: refresh skips writing whenever it's set, and it is cleared only
+  // right after a successful save, when the draft is known to match what was
+  // just persisted.
+  const dirty = useRef(false)
 
   const refresh = useCallback(async () => {
     const mine = ++generation.current
     setLoading(true)
     try {
       const stages = await listStages(projectId)
-      // Only the newest load may write. Without this, a refresh that resolves
-      // after the admin has resumed editing silently discards their changes.
-      if (mine !== generation.current) return
+      // Discard a load a newer refresh has superseded, and discard one that
+      // resolves after the admin has resumed editing -- either way, applying
+      // it would silently discard something more current than the fetch.
+      if (mine !== generation.current || dirty.current) return
       setDraft(stages.map(({ seq, name, color, weight }) => ({ seq, name, color, weight })))
       setError(null)
     } catch (e) {
@@ -42,22 +52,29 @@ export function StageConfigPanel({ projectId }: { projectId: string }) {
   const total = useMemo(() => draft.reduce((sum, s) => sum + s.weight, 0), [draft])
   const balanced = Math.abs(total - 1) <= STAGE_WEIGHT_EPSILON
 
-  const patch = (index: number, change: Partial<DraftStage>) =>
+  const patch = (index: number, change: Partial<DraftStage>) => {
+    dirty.current = true
     setDraft((prev) => prev.map((s, i) => (i === index ? { ...s, ...change } : s)))
+  }
 
   /** seq is renumbered 1..n on every structural change: cumulative progress
    *  reads stages by seq, so a gap or a tie would corrupt every percentage. */
   const renumber = (rows: DraftStage[]) => rows.map((s, i) => ({ ...s, seq: i + 1 }))
 
-  const addStage = () =>
+  const addStage = () => {
+    dirty.current = true
     setDraft((prev) =>
       renumber([...prev, { seq: 0, name: 'Lớp mới', color: '#8c8c8c', weight: 0 }]),
     )
+  }
 
-  const removeStage = (index: number) =>
+  const removeStage = (index: number) => {
+    dirty.current = true
     setDraft((prev) => renumber(prev.filter((_s, i) => i !== index)))
+  }
 
-  const move = (index: number, delta: number) =>
+  const move = (index: number, delta: number) => {
+    dirty.current = true
     setDraft((prev) => {
       const next = [...prev]
       const target = index + delta
@@ -65,6 +82,7 @@ export function StageConfigPanel({ projectId }: { projectId: string }) {
       ;[next[index], next[target]] = [next[target], next[index]]
       return renumber(next)
     })
+  }
 
   const onSave = async () => {
     setBusy(true)
@@ -72,7 +90,21 @@ export function StageConfigPanel({ projectId }: { projectId: string }) {
       await saveStages(projectId, draft)
       setError(null)
       setConfirming(false)
-      await refresh()
+      // The draft just persisted is the new clean baseline: the background
+      // refresh below is only reconciling with what we already know is
+      // saved. Clearing `dirty` here lets that refresh write -- unless the
+      // admin edits again before it resolves, which flips `dirty` back on
+      // and makes `refresh` skip the write instead of clobbering the edit.
+      dirty.current = false
+      // Deliberately not awaited: the write already succeeded, so the save
+      // itself is done and the row should stop being locked down. The
+      // reconciliation fetch continues in the background under its own
+      // `loading` state; `dirty` and the generation token together are what
+      // keep a late-resolving background fetch from clobbering whatever the
+      // admin has typed by the time it lands, so it is safe to let them keep
+      // working instead of freezing the row for the length of a GET nobody
+      // asked to wait for.
+      void refresh()
     } catch (e) {
       // Close the dialog before surfacing the error. The Alert lives outside the
       // modal, so leaving it open hides the message behind the mask -- the admin
@@ -98,7 +130,15 @@ export function StageConfigPanel({ projectId }: { projectId: string }) {
       <Table<DraftStage>
         rowKey="seq"
         size="small"
-        loading={loading}
+        // Only the very first fetch (before any row exists to show or edit)
+        // should block the table behind Spin's overlay -- antd applies
+        // `pointer-events: none` to the whole content while spinning, which
+        // would also swallow input during every later background
+        // reconciliation refresh, defeating the point of not disabling rows
+        // for those (see the `disabled={busy}` comment below). A project
+        // always has at least one stage once loaded, so `draft.length === 0`
+        // is true only before that first load ever completes.
+        loading={loading && draft.length === 0}
         dataSource={draft}
         pagination={false}
         columns={[
@@ -119,7 +159,14 @@ export function StageConfigPanel({ projectId }: { projectId: string }) {
             render: (v: string, _r, i) => (
               <Input
                 value={v}
-                disabled={busy || loading}
+                // Only `busy` (an active write) locks this down, not `loading`.
+                // `loading` is also true for the background reconciliation
+                // fetch after a save, and that fetch is exactly the case the
+                // generation-token guard in `refresh` exists to make safe to
+                // edit through -- freezing the row for it would make the
+                // guard's protection unreachable. `loading` alone (the very
+                // first fetch on mount) has nothing rendered yet to disable.
+                disabled={busy}
                 onChange={(e) => patch(i, { name: e.target.value })}
               />
             ),
@@ -132,7 +179,7 @@ export function StageConfigPanel({ projectId }: { projectId: string }) {
               <Input
                 type="color"
                 value={v}
-                disabled={busy || loading}
+                disabled={busy}
                 onChange={(e) => patch(i, { color: e.target.value })}
               />
             ),
@@ -146,7 +193,7 @@ export function StageConfigPanel({ projectId }: { projectId: string }) {
                 value={v}
                 min={0}
                 max={1}
-                disabled={busy || loading}
+                disabled={busy}
                 // No explicit `step`/`precision`: rc-input-number derives the
                 // displayed precision from max(precision of value, precision
                 // of step). A step with more decimals than the stored weight
@@ -164,12 +211,12 @@ export function StageConfigPanel({ projectId }: { projectId: string }) {
             width: 200,
             render: (_v, _r, i) => (
               <Space size="small">
-                <Button size="small" disabled={busy || loading || i === 0} onClick={() => move(i, -1)}>
+                <Button size="small" disabled={busy || i === 0} onClick={() => move(i, -1)}>
                   Lên
                 </Button>
                 <Button
                   size="small"
-                  disabled={busy || loading || i === draft.length - 1}
+                  disabled={busy || i === draft.length - 1}
                   onClick={() => move(i, 1)}
                 >
                   Xuống
@@ -177,7 +224,7 @@ export function StageConfigPanel({ projectId }: { projectId: string }) {
                 <Button
                   size="small"
                   danger
-                  disabled={busy || loading || draft.length === 1}
+                  disabled={busy || draft.length === 1}
                   onClick={() => removeStage(i)}
                 >
                   Xoá
@@ -204,29 +251,38 @@ export function StageConfigPanel({ projectId }: { projectId: string }) {
         <Button type="primary" disabled={!balanced} loading={busy} onClick={() => setConfirming(true)}>
           Lưu
         </Button>
-        <Button disabled={busy || loading} onClick={addStage}>
+        <Button disabled={busy} onClick={addStage}>
           Thêm lớp
         </Button>
       </Space>
 
-      <Modal
-        open={confirming}
-        title="Lưu cấu hình lớp sơn?"
-        okText="Vẫn lưu"
-        cancelText="Huỷ"
-        confirmLoading={busy}
-        onCancel={() => setConfirming(false)}
-        onOk={() => void onSave()}
-      >
-        <Typography.Paragraph>
-          Lưu danh sách lớp sơn sẽ <strong>xoá toàn bộ tiến độ đã ghi</strong> của
-          dự án này: mọi ô đang ở một lớp nào đó sẽ trở về trạng thái chưa bắt đầu.
-        </Typography.Paragraph>
-        <Typography.Paragraph type="secondary">
-          Trong lúc đang khai báo sàn thì vô hại — nhưng một khi giám sát đã tick
-          tiến độ thật, tiến độ đó sẽ mất vĩnh viễn và không thể khôi phục.
-        </Typography.Paragraph>
-      </Modal>
+      {/* Conditionally rendered rather than toggled via `open`, so that the
+       * dialog's presence in the DOM is a direct, immediate reflection of
+       * `confirming` -- not something waiting on rc-motion's leave animation
+       * (which never completes under jsdom, since no real `transitionend`
+       * ever fires there) to unmount. The cost is losing the open/close
+       * animation on this one dialog, which is negligible against a save
+       * confirmation whose closed state needs to be trustworthy. */}
+      {confirming && (
+        <Modal
+          open
+          title="Lưu cấu hình lớp sơn?"
+          okText="Vẫn lưu"
+          cancelText="Huỷ"
+          confirmLoading={busy}
+          onCancel={() => setConfirming(false)}
+          onOk={() => void onSave()}
+        >
+          <Typography.Paragraph>
+            Lưu danh sách lớp sơn sẽ <strong>xoá toàn bộ tiến độ đã ghi</strong> của
+            dự án này: mọi ô đang ở một lớp nào đó sẽ trở về trạng thái chưa bắt đầu.
+          </Typography.Paragraph>
+          <Typography.Paragraph type="secondary">
+            Trong lúc đang khai báo sàn thì vô hại — nhưng một khi giám sát đã tick
+            tiến độ thật, tiến độ đó sẽ mất vĩnh viễn và không thể khôi phục.
+          </Typography.Paragraph>
+        </Modal>
+      )}
     </Space>
   )
 }
