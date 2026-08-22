@@ -44,11 +44,13 @@
 --   9. Cleanup itself succeeds: deleting the two VERIFY projects (and
 --      everything cascading from them) must not error.
 --
--- Checks 10-20 are structural RLS assertions added by migrations
--- 0006/0007/0008. They read only the system catalogs (pg_class,
--- pg_policies, pg_proc, pg_trigger, information_schema.role_table_grants)
--- and need no authenticated session -- see the banner above for what that
--- does and does not prove.
+-- Checks 10-21 are structural assertions that read only the system catalogs
+-- (pg_class, pg_policies, pg_proc, pg_trigger, pg_constraint,
+-- information_schema.role_table_grants) and need no authenticated session --
+-- see the banner above for what that does and does not prove. 10-20 are RLS
+-- assertions added by migrations 0006/0007/0008; 21 is a foreign-key
+-- structural assertion for the on-delete-action defect class 0003/0004/0005
+-- exist to fix.
 --   10. Every one of the 12 public tables has row level security enabled.
 --   11. gs_credentials has zero rows in pg_policies: service_role bypasses
 --       RLS, everyone else must be denied by the absence of any policy, not
@@ -101,13 +103,19 @@
 --       three are meant to be written only by service_role or by a definer
 --       function running as postgres, so this makes each fail closed at the
 --       grant level, not only by policy.
+--   21. No foreign key in the public schema is left with a bare ON DELETE
+--       (no action) -- pg_constraint.confdeltype = 'a'. This is the
+--       structural check for the defect class that cost three review rounds
+--       and two BLOCKED returns (0003/0004/0005): a foreign key created
+--       without an explicit ON DELETE action instead of a considered
+--       CASCADE/SET NULL/RESTRICT choice.
 --
 -- How to run:
 --   nvm use 22
 --   npx supabase db query --linked -f supabase/verify_schema.sql
 --
--- Every returned row must begin with PASS (20 rows in total, one per
--- numbered check above, 1-20 with no gaps). A row beginning with FAIL means
+-- Every returned row must begin with PASS (21 rows in total, one per
+-- numbered check above, 1-21 with no gaps). A row beginning with FAIL means
 -- a regression in the trigger/FK/RLS behaviour set up across migrations
 -- 0001-0008; re-read those migrations' comments before changing this file.
 --
@@ -408,6 +416,23 @@ begin
     and privilege_type in ('INSERT', 'UPDATE', 'DELETE');
   return next format('%s anon/authenticated hold no insert/update/delete grant on gs_credentials, cell_events or credential_access_log: %s found, expected 0',
                      case when grant_count = 0 then 'PASS' else 'FAIL' end, grant_count);
+
+  -- 21. No foreign key in the public schema may be left with a bare
+  -- ON DELETE (no action, confdeltype = 'a', Postgres's own default). An FK
+  -- with no explicit delete action is the exact defect class that cost this
+  -- project three review rounds and two BLOCKED returns (0003/0004/0005
+  -- exist to fix instances of it) -- this is the structural check that
+  -- would have caught it directly instead of relying on the cascade-depth
+  -- race in checks 8-9 to surface it indirectly.
+  select count(*) filter (where confdeltype = 'a'),
+         string_agg(conname, ', ' order by conname) filter (where confdeltype = 'a')
+    into n, bad_tables
+  from pg_constraint
+  where contype = 'f'
+    and connamespace = 'public'::regnamespace;
+  return next format('%s no foreign key with a bare ON DELETE (no action): %s offender(s): %s',
+                     case when n = 0 then 'PASS' else 'FAIL' end,
+                     n, coalesce(bad_tables, 'none'));
 end $$;
 
 -- A single top-level SELECT: `supabase db query -f` surfaces only the last

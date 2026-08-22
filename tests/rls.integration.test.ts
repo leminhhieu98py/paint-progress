@@ -75,7 +75,13 @@ describe.skipIf(!configured)('RLS as a GS session', () => {
   it('cannot read the credential access log', async () => {
     // Positive control: tests/rls-fixtures.sql inserts a log row naming
     // this GS account as the target, so the table is not merely empty.
-    const { data } = await gs.from('credential_access_log').select('id')
+    // error must be checked, not just data: `data ?? []` equals `[]` for a
+    // successful empty result AND for `data === null` from any unrelated
+    // failure. SELECT is still granted on this table (only INSERT/UPDATE/
+    // DELETE are revoked -- see verify_schema.sql check 20), so the denial
+    // here must be a policy-driven empty set, not a 42501.
+    const { data, error } = await gs.from('credential_access_log').select('id')
+    expect(error).toBeNull()
     expect(data ?? []).toEqual([])
   })
 
