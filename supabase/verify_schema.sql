@@ -44,10 +44,11 @@
 --   9. Cleanup itself succeeds: deleting the two VERIFY projects (and
 --      everything cascading from them) must not error.
 --
--- Checks 10-19 are structural RLS assertions added by migrations 0006/0007.
--- They read only the system catalogs (pg_class, pg_policies, pg_proc,
--- pg_trigger) and need no authenticated session -- see the banner above for
--- what that does and does not prove.
+-- Checks 10-20 are structural RLS assertions added by migrations
+-- 0006/0007/0008. They read only the system catalogs (pg_class,
+-- pg_policies, pg_proc, pg_trigger, information_schema.role_table_grants)
+-- and need no authenticated session -- see the banner above for what that
+-- does and does not prove.
 --   10. Every one of the 12 public tables has row level security enabled.
 --   11. gs_credentials has zero rows in pg_policies: service_role bypasses
 --       RLS, everyone else must be denied by the absence of any policy, not
@@ -55,42 +56,60 @@
 --   12. credential_access_log has exactly one policy, and it is a SELECT
 --       policy (admin-only read; no insert/update/delete for anyone but
 --       service_role).
---   13. is_admin() is security definer with search_path=public.
+--   13. is_admin() is security definer with search_path=public, pg_temp.
+--       0008 added the explicit pg_temp: bare `search_path = public` still
+--       searches pg_temp FIRST for relation names, and `authenticated` does
+--       hold TEMPORARY on this database, so a session able to run DDL could
+--       shadow `profiles` and make this return true. is_admin() is what
+--       every admin policy resolves through, so this is the highest-value
+--       target in the whole model.
 --   14. my_projects() is security definer with search_path=public, pg_temp.
 --       0007 pinned pg_temp explicitly and added an `active` filter so a
 --       deactivated GS loses read access immediately, rather than only once
 --       Task 7's handler removes their project_members rows.
---   15. assert_gs_updates_stage_only() is security definer with a pinned
---       search_path. 0007 elevated it -- it calls is_admin(), a privilege
---       boundary -- and added an `id` comparison so a GS cannot renumber a
---       cell's primary key through the update path.
+--   15. assert_gs_updates_stage_only() is security INVOKER (0008 reverted
+--       0007's elevation: the guard reads no tables and its only call,
+--       is_admin(), is already definer, so definer bought nothing here and
+--       would have let any table access added to the guard later silently
+--       bypass RLS) with a pinned search_path (unaffected by invoker vs.
+--       definer -- SET search_path works the same either way, and this
+--       function is still a privilege boundary worth pinning).
 --   16. log_cell_stage_change() is security definer with a pinned
 --       search_path. This is the exact fix for the critical defect 0007
 --       exists for: with RLS enabled on cell_events and no INSERT policy, a
 --       security-invoker trigger made every stage change fail with 42501,
---       for admin and GS alike. Checks 13-16 all matter for the same
---       underlying reason: without security definer, a function that reads
---       or writes an RLS-protected table under the caller's own privileges
---       either recurses (profiles, via is_admin) or is denied (cell_events).
+--       for admin and GS alike. Unlike check 15, this function DOES write
+--       an RLS-protected table (cell_events) under its own logic, which is
+--       why it must stay definer.
 --   17. cells has exactly four triggers (three from 0002, one from 0006).
 --   18. Of those, cells_assert_gs_stage_only sorts alphabetically before
 --       cells_set_audit_columns by name -- necessary for Postgres's
 --       same-timing firing order, but not sufficient alone (see 19).
 --   19. cells_assert_gs_stage_only and cells_set_audit_columns are both
---       row-level BEFORE UPDATE triggers. Check 18 alone would still PASS
---       if cells_assert_gs_stage_only were rewritten as an AFTER UPDATE
---       trigger, silently destroying the guarantee that a rejected write
---       never reaches the audit stamp -- this check asserts timing directly
---       via tgtype, not just the name that determines order among peers.
+--       row-level BEFORE UPDATE triggers, with no column list (tgattr) and
+--       no WHEN clause (tgqual). Check 18 alone would still PASS if
+--       cells_assert_gs_stage_only were rewritten as AFTER UPDATE, or as
+--       `BEFORE UPDATE OF stage_id` (tgtype unchanged at 19, but the guard
+--       then stops firing on a geometry-only update) -- this check asserts
+--       timing, row-level-ness, and the absence of a column/WHEN
+--       restriction directly from the catalog, not just the name that
+--       determines order among peers.
+--   20. anon and authenticated hold no INSERT/UPDATE/DELETE grant on
+--       gs_credentials, cell_events, or credential_access_log. gs_credentials
+--       has no grant at all (0007); the other two keep SELECT, since their
+--       read policies still need it, but lose write grants (0008) -- all
+--       three are meant to be written only by service_role or by a definer
+--       function running as postgres, so this makes each fail closed at the
+--       grant level, not only by policy.
 --
 -- How to run:
 --   nvm use 22
 --   npx supabase db query --linked -f supabase/verify_schema.sql
 --
--- Every returned row must begin with PASS (19 rows in total, one per
--- numbered check above, 1-19 with no gaps). A row beginning with FAIL means
+-- Every returned row must begin with PASS (20 rows in total, one per
+-- numbered check above, 1-20 with no gaps). A row beginning with FAIL means
 -- a regression in the trigger/FK/RLS behaviour set up across migrations
--- 0001-0007; re-read those migrations' comments before changing this file.
+-- 0001-0008; re-read those migrations' comments before changing this file.
 --
 -- WARNING: this script INSERTS and then DELETES test rows (projects named
 -- 'VERIFY A' / 'VERIFY B' and everything cascading from them). It is meant
@@ -243,6 +262,7 @@ declare
   log_ok      boolean;
   trig_count  int;
   trig_order  text;
+  grant_count int;
 begin
   -- 10. RLS enabled on every one of the 12 public tables.
   select count(*),
@@ -274,14 +294,18 @@ begin
                      case when pol_count = 1 and pol_cmd = 'SELECT' then 'PASS' else 'FAIL' end,
                      pol_count, coalesce(pol_cmd, 'n/a'));
 
-  -- 13. is_admin() is security definer with search_path=public. Without
-  -- security definer, the profiles admin policy recurses infinitely: it
-  -- calls is_admin(), which itself reads profiles under RLS.
-  select p.prosecdef and 'search_path=public' = any (p.proconfig)
+  -- 13. is_admin() is security definer with search_path=public, pg_temp.
+  -- Without security definer, the profiles admin policy recurses
+  -- infinitely: it calls is_admin(), which itself reads profiles under RLS.
+  -- pg_temp must be listed explicitly (0008): bare `search_path = public`
+  -- still searches pg_temp FIRST for relation names, and `authenticated`
+  -- holds TEMPORARY on this database, so a DDL-capable session could shadow
+  -- `profiles` and make every admin policy in the system resolve true.
+  select p.prosecdef and 'search_path=public, pg_temp' = any (p.proconfig)
     into is_admin_ok
   from pg_proc p
   where p.pronamespace = 'public'::regnamespace and p.proname = 'is_admin';
-  return next format('%s is_admin() is security definer with search_path=public: %s',
+  return next format('%s is_admin() is security definer with search_path=public, pg_temp: %s',
                      case when is_admin_ok then 'PASS' else 'FAIL' end,
                      coalesce(is_admin_ok::text, 'function not found'));
 
@@ -296,15 +320,18 @@ begin
                      case when my_proj_ok then 'PASS' else 'FAIL' end,
                      coalesce(my_proj_ok::text, 'function not found'));
 
-  -- 15. assert_gs_updates_stage_only() is security definer with a pinned
-  -- search_path. 0007 elevated it because it calls is_admin() and is itself
-  -- a privilege boundary, so its own search_path must not be attacker
-  -- influenced.
-  select p.prosecdef and 'search_path=public, pg_temp' = any (p.proconfig)
+  -- 15. assert_gs_updates_stage_only() is security INVOKER (0008 reverted
+  -- 0007's elevation: the guard reads no tables, and its only call,
+  -- is_admin(), is already definer and so is unaffected by the caller's
+  -- privileges -- definer bought nothing here and would have let any table
+  -- access added to the guard later silently bypass RLS), with search_path
+  -- still pinned (SET search_path works identically on an invoker
+  -- function, and this remains a privilege boundary worth pinning).
+  select (not p.prosecdef) and 'search_path=public, pg_temp' = any (p.proconfig)
     into assert_ok
   from pg_proc p
   where p.pronamespace = 'public'::regnamespace and p.proname = 'assert_gs_updates_stage_only';
-  return next format('%s assert_gs_updates_stage_only() is security definer with search_path=public, pg_temp: %s',
+  return next format('%s assert_gs_updates_stage_only() is security invoker with search_path=public, pg_temp: %s',
                      case when assert_ok then 'PASS' else 'FAIL' end,
                      coalesce(assert_ok::text, 'function not found'));
 
@@ -342,11 +369,17 @@ begin
                           then 'PASS' else 'FAIL' end,
                      coalesce(trig_order, 'not found'));
 
-  -- 19. Both triggers must actually BE row-level BEFORE UPDATE triggers.
-  -- Check 18 alone would still PASS if cells_assert_gs_stage_only were
-  -- rewritten as an AFTER UPDATE trigger -- its name still sorts first, but
-  -- a rejected write would then reach cells_set_audit_columns's stamp
-  -- anyway, destroying the load-bearing guarantee. tgtype is a bitmask:
+  -- 19. Both triggers must actually BE row-level BEFORE UPDATE triggers,
+  -- with no column list and no WHEN clause. Check 18 alone would still PASS
+  -- if cells_assert_gs_stage_only were rewritten as AFTER UPDATE -- its
+  -- name still sorts first, but a rejected write would then reach
+  -- cells_set_audit_columns's stamp anyway, destroying the load-bearing
+  -- guarantee. tgtype alone is not enough either: `BEFORE UPDATE OF
+  -- stage_id` leaves tgtype at the same value (19) and would still PASS a
+  -- tgtype-only check, while the guard silently stops firing on a
+  -- geometry-only update -- the same hole as the original finding, one
+  -- level down. tgattr (the column list; empty = fires on any column) and
+  -- tgqual (the WHEN condition; null = none) close that. tgtype bitmask:
   -- bit 0 (1) = row-level, bit 1 (2) = BEFORE, bit 4 (16) = UPDATE.
   select count(*) into trig_count
   from pg_trigger t
@@ -355,9 +388,26 @@ begin
     and t.tgname in ('cells_assert_gs_stage_only', 'cells_set_audit_columns')
     and (t.tgtype & 1) = 1
     and (t.tgtype & 2) = 2
-    and (t.tgtype & 16) > 0;
-  return next format('%s cells_assert_gs_stage_only and cells_set_audit_columns are both row-level BEFORE UPDATE triggers: %s of 2 qualify',
+    and (t.tgtype & 16) > 0
+    and coalesce(array_length(t.tgattr::int2[], 1), 0) = 0
+    and t.tgqual is null;
+  return next format('%s cells_assert_gs_stage_only and cells_set_audit_columns are both row-level BEFORE UPDATE with no column list or WHEN clause: %s of 2 qualify',
                      case when trig_count = 2 then 'PASS' else 'FAIL' end, trig_count);
+
+  -- 20. anon and authenticated hold no INSERT/UPDATE/DELETE grant on
+  -- gs_credentials, cell_events, or credential_access_log. All three are
+  -- meant to be written only by service_role or by a definer function
+  -- running as postgres, so each must fail closed at the grant level, not
+  -- only by policy. gs_credentials has no grant at all (0007); the other
+  -- two keep SELECT, since their read policies still need it (0008).
+  select count(*) into grant_count
+  from information_schema.role_table_grants
+  where table_schema = 'public'
+    and table_name in ('gs_credentials', 'cell_events', 'credential_access_log')
+    and grantee in ('anon', 'authenticated')
+    and privilege_type in ('INSERT', 'UPDATE', 'DELETE');
+  return next format('%s anon/authenticated hold no insert/update/delete grant on gs_credentials, cell_events or credential_access_log: %s found, expected 0',
+                     case when grant_count = 0 then 'PASS' else 'FAIL' end, grant_count);
 end $$;
 
 -- A single top-level SELECT: `supabase db query -f` surfaces only the last

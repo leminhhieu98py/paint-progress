@@ -18,13 +18,19 @@
 -- zero rows rather than raising an error); the FAIL rows are how that
 -- absence is actually reported.
 --
--- Every statement above the final SELECT is idempotent (ON CONFLICT DO
--- NOTHING / NOT EXISTS guards, or -- for the stage-change update -- the
+-- Almost every statement above the final SELECT is idempotent (ON CONFLICT
+-- DO NOTHING / NOT EXISTS guards, or -- for the stage-change update -- the
 -- app's own no-op guard in log_cell_stage_change), so re-running this
--- script is always safe. Unlike supabase/verify_schema.sql, this script
--- does NOT delete its own rows afterwards: these fixtures are meant to
--- persist across many runs of the integration suite, not be created and
--- torn down by each one.
+-- script is safe. The one exception: the credential_access_log insert
+-- correlates per (admin, gs) pair rather than per row, so with more than
+-- one admin profile a re-run can add another row for a pair that did not
+-- exist yet, until every admin/gs pair has one. That converges and breaks
+-- nothing -- it never duplicates an existing pair, and the assertion below
+-- only checks "at least one" -- but it is not the same as every other
+-- statement here, which are all true no-ops on a second run. Unlike
+-- supabase/verify_schema.sql, this script does NOT delete its own rows
+-- afterwards: these fixtures are meant to persist across many runs of the
+-- integration suite, not be created and torn down by each one.
 --
 -- Only one top-level SELECT appears, at the end. `supabase db query -f`
 -- surfaces only the LAST statement's result set when a file contains more

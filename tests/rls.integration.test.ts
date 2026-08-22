@@ -62,11 +62,14 @@ describe.skipIf(!configured)('RLS as a GS session', () => {
 
   it('cannot read gs_credentials at all', async () => {
     // Positive control: tests/rls-fixtures.sql inserts a dummy-ciphertext
-    // row for this exact GS account, so the table is not merely empty. RLS
-    // with no policy must still return an empty set rather than an error.
+    // row for this exact GS account, so the table is not merely empty.
+    // gs_credentials has both zero RLS policies AND (since 0007) zero table
+    // grants for anon/authenticated, so a GS session is denied at the grant
+    // check before RLS is even consulted: PostgREST surfaces this as 42501
+    // (permission denied), not an RLS-driven empty result set.
     const { data, error } = await gs.from('gs_credentials').select('user_id')
-    expect(error?.code ?? null).not.toBe('PGRST301')
-    expect(data ?? []).toEqual([])
+    expect(error?.code).toBe('42501')
+    expect(data).toBeNull()
   })
 
   it('cannot read the credential access log', async () => {
@@ -86,27 +89,36 @@ describe.skipIf(!configured)('RLS as a GS session', () => {
   })
 
   it("cannot see another project's deck_guides row", async () => {
-    const { data } = await gs.from('deck_guides').select('id')
+    // error must be checked, not just data: `data ?? []` equals `[]` for a
+    // successful empty result AND for `data === null` from any unrelated
+    // failure (a renamed table, a bad embed, PGRST205) -- an empty array
+    // only proves denial once a real, error-free query produced it.
+    const { data, error } = await gs.from('deck_guides').select('id')
+    expect(error).toBeNull()
     expect(data ?? []).toEqual([])
   })
 
   it("cannot see another project's zones or zone_cells rows", async () => {
     const zones = await gs.from('zones').select('id')
+    expect(zones.error).toBeNull()
     expect(zones.data ?? []).toEqual([])
 
     const zoneCells = await gs.from('zone_cells').select('zone_id')
+    expect(zoneCells.error).toBeNull()
     expect(zoneCells.data ?? []).toEqual([])
   })
 
   it("cannot see another project's cell_events row", async () => {
     // Disambiguates from the cell_events row GS's own stage-advance test
     // below legitimately creates, which carries a different stage name.
-    const { data } = await gs.from('cell_events').select('id').eq('to_stage_name', 'RLS Denied Coat')
+    const { data, error } = await gs.from('cell_events').select('id').eq('to_stage_name', 'RLS Denied Coat')
+    expect(error).toBeNull()
     expect(data ?? []).toEqual([])
   })
 
   it("cannot see another project's cell via the decks join", async () => {
-    const { data } = await gs.from('cells').select('id, decks!inner(code)').eq('decks.code', 'DD')
+    const { data, error } = await gs.from('cells').select('id, decks!inner(code)').eq('decks.code', 'DD')
+    expect(error).toBeNull()
     expect(data ?? []).toEqual([])
   })
 
