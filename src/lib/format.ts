@@ -22,8 +22,23 @@ const AREA_M2 = new Intl.NumberFormat('vi-VN', { minimumFractionDigits: 2, maxim
 const PERCENT = new Intl.NumberFormat('vi-VN', {
   style: 'percent', minimumFractionDigits: 2, maximumFractionDigits: 2,
 })
-/** Millimetre coordinates group as 58.100, like every other number on screen. */
-const MM = new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 0 })
+/**
+ * Millimetre coordinates group as 58.100, like every other number on screen.
+ *
+ * Two fraction digits, not zero: `deck_guides.offset_mm` is `numeric(12,2)` and
+ * the span field accepts "14500,5", so at maximumFractionDigits 0 the "Toạ độ
+ * thật (mm)" column rendered a typed 14500,5 as "14.501". No number was wrong --
+ * the areas use the raw value -- but the admin could not read back what they
+ * had entered, on the one column that exists to be checked against the drawing.
+ *
+ * minimumFractionDigits stays 0 so whole millimetres, which is nearly all of
+ * them, still render as "14.500" rather than "14.500,00" -- padding every offset
+ * with two zeroes to accommodate the rare half-millimetre would make the column
+ * harder to scan, not easier.
+ */
+const MM = new Intl.NumberFormat('vi-VN', {
+  minimumFractionDigits: 0, maximumFractionDigits: 2,
+})
 const WEIGHT = new Intl.NumberFormat('vi-VN', { minimumFractionDigits: 4, maximumFractionDigits: 4 })
 
 export const formatAreaM2 = (n: number): string => AREA_M2.format(n)
