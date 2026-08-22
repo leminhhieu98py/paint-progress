@@ -8,6 +8,7 @@ import {
   roundStageWeight,
   saveStages,
   STAGE_WEIGHT_EPSILON,
+  stageSavePlan,
   stagesRemovedBy,
   updateProject,
 } from './projectsApi'
@@ -344,6 +345,75 @@ describe('stagesRemovedBy', () => {
 
   it('names nothing when the project is being loaded for the first time', () => {
     expect(stagesRemovedBy([], [draft(1, 'S1')])).toEqual([])
+  })
+})
+
+describe('stageSavePlan', () => {
+  const persistedStage = (id: string, seq: number, name: string): Stage => ({
+    id, seq, name, color: '#000000', weight: 0.5,
+  })
+  const draft = (seq: number, name: string) => ({ seq, name, color: '#000000', weight: 0.5 })
+
+  it('reports each seq as unchanged when only weights move', () => {
+    expect(
+      stageSavePlan([persistedStage('s1', 1, 'A'), persistedStage('s2', 2, 'B')], [
+        { ...draft(1, 'A'), weight: 0.7 }, { ...draft(2, 'B'), weight: 0.3 },
+      ]),
+    ).toEqual([
+      { seq: 1, fromName: 'A', toName: 'A' },
+      { seq: 2, fromName: 'B', toName: 'B' },
+    ])
+  })
+
+  it('reports a reorder as two seqs changing occupant, with nothing deleted', () => {
+    // The case a removals-only diff cannot see. Neither seq disappears, so a
+    // seq-keyed upsert rewrites both in place -- and the cells and zones pointing
+    // at those rows stay where they are and take the new names.
+    expect(
+      stageSavePlan(
+        [persistedStage('s1', 1, 'A'), persistedStage('s2', 2, 'B'), persistedStage('s3', 3, 'C')],
+        [draft(1, 'A'), draft(2, 'C'), draft(3, 'B')],
+      ),
+    ).toEqual([
+      { seq: 1, fromName: 'A', toName: 'A' },
+      { seq: 2, fromName: 'B', toName: 'C' },
+      { seq: 3, fromName: 'C', toName: 'B' },
+    ])
+  })
+
+  it('reports a middle removal as the last seq going and the rest shifting up', () => {
+    // Removing B from [A, B, C] renumbers to [A, C], so the seq that actually
+    // disappears is 3 -- and seq 2, where B's progress is recorded, becomes C.
+    // Naming "B" as the thing removed would describe a row that survives.
+    expect(
+      stageSavePlan(
+        [persistedStage('s1', 1, 'A'), persistedStage('s2', 2, 'B'), persistedStage('s3', 3, 'C')],
+        [draft(1, 'A'), draft(2, 'C')],
+      ),
+    ).toEqual([
+      { seq: 1, fromName: 'A', toName: 'A' },
+      { seq: 2, fromName: 'B', toName: 'C' },
+      { seq: 3, fromName: 'C', toName: null },
+    ])
+  })
+
+  it('reports an added stage as a new seq, not as a change to an existing one', () => {
+    expect(
+      stageSavePlan([persistedStage('s1', 1, 'A')], [draft(1, 'A'), draft(2, 'Lớp mới')]),
+    ).toEqual([
+      { seq: 1, fromName: 'A', toName: 'A' },
+      { seq: 2, fromName: null, toName: 'Lớp mới' },
+    ])
+  })
+
+  it('orders by seq numerically, not by the order either list arrived in', () => {
+    // Both inputs are deliberately out of order, and seq 10 would sort before
+    // seq 2 as a string. The dialog reads top to bottom as the paint sequence.
+    const plan = stageSavePlan(
+      [persistedStage('s3', 10, 'J'), persistedStage('s1', 2, 'B')],
+      [draft(10, 'J'), draft(2, 'B')],
+    )
+    expect(plan.map((p) => p.seq)).toEqual([2, 10])
   })
 })
 

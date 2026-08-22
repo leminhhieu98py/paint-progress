@@ -120,6 +120,50 @@ export function stagesRemovedBy(
   return persisted.filter((p) => !nextSeqs.has(p.seq))
 }
 
+/** One seq's before-and-after under a `saveStages` call. */
+export interface StagePositionChange {
+  seq: number
+  /** The name the row at this seq holds now, or null if the seq is new. */
+  fromName: string | null
+  /** The name it will hold, or null if the row at this seq is being deleted. */
+  toName: string | null
+}
+
+/**
+ * What `saveStages` will do to each seq, in seq order.
+ *
+ * Position by position, because that is how the write works and how the
+ * consequences land. `cells.stage_id` and `zones.stage_id` point at stage ROWS,
+ * and a seq-keyed upsert never moves a row between seqs -- it rewrites whatever
+ * sits at each seq in place. So when the panel renumbers (which it must: every
+ * cumulative percentage reads stages by seq, and a gap or a tie corrupts all of
+ * them), removing a middle stage or reordering two does not carry the recorded
+ * progress along with the name the admin was looking at. It leaves the progress
+ * where it is and changes the name over the top of it.
+ *
+ * Listing the plan by seq is the only framing that says that without lying:
+ * "seq 2: Coat 2 -> Tháo giáo" is exactly one UPDATE, and naming the same stage
+ * twice -- once as removed, once as moved -- would describe two different
+ * database rows with one word.
+ *
+ * Unchanged seqs are included so the list is the whole plan and can be checked
+ * against the table above it, rather than a set of highlights.
+ */
+export function stageSavePlan(
+  persisted: Stage[],
+  next: Omit<Stage, 'id'>[],
+): StagePositionChange[] {
+  const before = new Map(persisted.map((p) => [p.seq, p.name]))
+  const after = new Map(next.map((s) => [s.seq, s.name]))
+  return [...new Set([...before.keys(), ...after.keys()])]
+    .sort((a, b) => a - b)
+    .map((seq) => ({
+      seq,
+      fromName: before.get(seq) ?? null,
+      toName: after.get(seq) ?? null,
+    }))
+}
+
 /**
  * Brings a project's stage list in line with `stages`, keyed by seq.
  *
