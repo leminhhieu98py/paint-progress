@@ -717,6 +717,25 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
           Kiểm tra các mục dưới đây trước khi xác nhận.
         </Typography.Paragraph>
 
+        {/*
+          Unconditional, because it is always true: `apply` writes saveGuides and
+          updateDeckArea on every path through this dialog, not only on a mesh
+          save. Since A1 collapsed the two save buttons into one, confirming a
+          delete or a merge also commits whatever the admin has done to the guide
+          table and to the deck-area field -- a guide nudged by accident, or an
+          area typed while thinking it over -- with nothing here saying so.
+
+          A conditional version (only when the guides or the area actually
+          differ from what was loaded) was rejected: it would need a second
+          baseline to diff against, kept in step with the one `cells` already
+          has, and a disclosure that is sometimes absent is one more thing to get
+          wrong on the dialog whose whole job is to be trusted.
+        */}
+        <Typography.Paragraph>
+          Thao tác này cũng lưu luôn bảng guide và diện tích sàn đang nhập trên
+          màn hình — kể cả khi bạn chỉ định xoá hoặc gộp ô.
+        </Typography.Paragraph>
+
         {pending && pending.wipes > 0 && (
           <Typography.Paragraph strong>
             Sau thao tác này sàn sẽ không còn ô nào: {pending.wipes} ô hiện có sẽ bị

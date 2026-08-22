@@ -207,6 +207,35 @@ describe('DeckEditor', () => {
     expect(screen.getByText('432,00')).toBeInTheDocument()
   })
 
+  it('reads back a half-millimetre span in the real-coordinate column', async () => {
+    // C6. B8 made the span field accept "14500,5" -- offset_mm is numeric(12,2)
+    // -- but this column rendered through formatMm at maximumFractionDigits 0,
+    // so the typed half-millimetre came back as "14.501". No number was wrong;
+    // the areas use the raw value. The admin simply could not read back what
+    // they had entered, on the one column that exists to be checked against the
+    // printed drawing.
+    listGuides.mockResolvedValue([
+      { id: 'g1', axis: 'x', pos: 0, offsetMm: 0 },
+      { id: 'g2', axis: 'x', pos: 1, offsetMm: 14500 },
+    ])
+    render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+    await screen.findByTestId('canvas')
+
+    // Whole millimetres, which is nearly every offset, stay unpadded: this is
+    // what minimumFractionDigits 0 buys, and it fails if the column is simply
+    // pinned to two digits.
+    expect(screen.getByText('14.500')).toBeInTheDocument()
+
+    const span = screen.getByDisplayValue('14500')
+    await userEvent.clear(span)
+    // Comma decimal, as a Vietnamese admin types it.
+    await userEvent.type(span, '14500,5')
+
+    // vi-VN: dot groups thousands, comma is the decimal separator.
+    expect(await screen.findByText('14.500,5')).toBeInTheDocument()
+    expect(screen.queryByText('14.501')).toBeNull()
+  })
+
   it('propagates an edited y-axis span onto the y-guides, not onto whatever sits at that sorted position', async () => {
     // Mirrors the case above on the axis the review found does the most
     // damage: the y-guides here live at guides-index 2, 3, 4 -- three slots
@@ -691,6 +720,58 @@ describe('DeckEditor', () => {
     expect(syncCells.mock.calls[0][1]).toEqual([
       { code: 'R1C1', x: 0, y: 0, w: 1, h: 1, areaM2: 200 },
     ])
+  })
+
+  it('discloses that the guides and the declared area go down with the write, on all three paths', async () => {
+    // C4. Since A1 collapsed the two save buttons into one, `apply` writes
+    // saveGuides and updateDeckArea on EVERY path through this dialog -- but the
+    // dialog spoke only of cells and zones. Linh nudges a guide by accident, or
+    // types a candidate area she means to reconsider, then deletes one cell, and
+    // both edits are committed with nothing having said so.
+    //
+    // Unconditional, so all three EditKinds are checked: 'delete' and 'merge'
+    // are the two where the disclosure is least expected and most needed, and
+    // 'mesh' is the one where a conditional version would most plausibly have
+    // been thought sufficient.
+    const DISCLOSURE = /cũng lưu luôn bảng guide và diện tích sàn/
+    const twoTickedCells = [
+      { id: 'c1', code: 'R1C1', x: 0, y: 0, w: 0.5, h: 1, areaM2: 100, stageId: 'coat1' },
+      { id: 'c2', code: 'R1C2', x: 0.5, y: 0, w: 0.5, h: 1, areaM2: 100, stageId: 'coat3' },
+    ]
+    const stages = [
+      { id: 'coat1', seq: 1, name: 'Coat 1', color: '#1677ff', weight: 0.15 },
+      { id: 'coat3', seq: 3, name: 'Coat 3', color: '#52c41a', weight: 0.85 },
+    ]
+
+    // delete: one ticked cell selected, so there is progress to lose and the
+    // dialog opens.
+    listGuides.mockResolvedValue(ONE_BAY_GUIDES)
+    listCells.mockResolvedValue(twoTickedCells)
+    listStages.mockResolvedValue(stages)
+    let view = render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+    await screen.findByTestId('canvas')
+    await userEvent.click(screen.getByRole('button', { name: 'chọn R1C1' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Xoá ô đã chọn' }))
+    await screen.findByRole('button', { name: 'Vẫn xoá' })
+    expect(screen.getByText(DISCLOSURE)).toBeInTheDocument()
+    view.unmount()
+
+    // merge: both cells, so the survivor keeps its row and the other's tick goes.
+    view = render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+    await screen.findByTestId('canvas')
+    await userEvent.click(screen.getByRole('button', { name: 'Chọn tất cả' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Gộp ô đã chọn' }))
+    await screen.findByRole('button', { name: 'Vẫn gộp' })
+    expect(screen.getByText(DISCLOSURE)).toBeInTheDocument()
+    view.unmount()
+
+    // mesh: ONE_BAY_GUIDES generates a single R1C1, so persisted R1C2 is dropped.
+    view = render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+    await screen.findByTestId('canvas')
+    await userEvent.click(screen.getByRole('button', { name: 'Sinh lưới ô' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Lưu bản vẽ và lưới ô' }))
+    await screen.findByRole('button', { name: 'Vẫn lưu' })
+    expect(screen.getByText(DISCLOSURE)).toBeInTheDocument()
   })
 
   it('does not show the merge-survivor caveat for a delete, even with progress at stake', async () => {
