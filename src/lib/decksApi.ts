@@ -208,96 +208,103 @@ export async function zoneImpactOf(deckId: string, cellIds: string[]): Promise<Z
 }
 
 /**
- * Replaces a deck's entire cell set, carrying stage progress and zone
- * membership across by cell code.
+ * Make the deck's persisted cells match `cells`, keyed by code.
  *
- * Delete before insert, always. `cells` has unique(deck_id, code) and a merge
- * keeps the top-left source's code, so inserting first collides with the very
- * row being replaced.
+ * Diff, not replace. An untouched cell keeps its id, and with it the stage GS
+ * recorded, its zone membership, and its cell_events history — cell_events
+ * cascades on cell_id, so deleting and re-inserting a cell destroys its audit
+ * trail. The upsert payload deliberately carries no stage_id: authoring
+ * geometry must never overwrite recorded progress.
  *
- * The carry-across is not a nicety, it is the difference between this function
- * being usable and being a footgun. Deleting a cell cascades `zone_cells` and
- * discards `stage_id`, so a naive delete-and-reinsert would wipe every zone on
- * the deck and every tick of recorded progress — even for cells the edit never
- * touched. Code is the stable identity across a regeneration, so both are
- * re-attached by code.
- *
- * `zoneLinks` lets a merge satisfy spec §8.3's requirement that the merged cell
- * inherits every zone its sources belonged to: pass
- * `{ [mergedCode]: [...sourceCodes] }` and the union of those zones is applied
- * to the survivor.
- *
- * The carry-across covers zone membership and the surviving cell's own progress.
- * It does NOT rescue progress recorded on a merge source that is not the
- * survivor: that stage_id is discarded. There is no honest rule that would --
- * taking the furthest-along stage over-reports the merged bay, taking the least
- * under-reports it, and both distort a percentage that must match the
- * spreadsheet in circulation. Merging bays with divergent recorded progress is a
- * data-modelling mistake, so Task 8's editor warns before allowing it rather
- * than this function guessing.
+ * `inheritFrom` maps a surviving code to the codes it absorbed, so a merge
+ * survivor picks up the zones its sources belonged to (spec 8.3). Its own
+ * links need no work — its row was updated, not replaced.
  */
-export async function replaceCells(
+export async function syncCells(
   deckId: string,
   cells: MeshCell[],
-  zoneLinks: Record<string, string[]> = {},
+  inheritFrom: Record<string, string[]> = {},
 ): Promise<void> {
-  // Snapshot what must survive, keyed by the code that identifies it.
   const before = await listCells(deckId)
-  const stageByCode = new Map(before.filter((c) => c.stageId).map((c) => [c.code, c.stageId!]))
+  const nextCodes = new Set(cells.map((c) => c.code))
+  const removed = before.filter((b) => !nextCodes.has(b.code))
 
-  const { data: linkRows, error: linkError } = await supabase
-    .from('zone_cells')
-    .select('zone_id, cells!inner(code, deck_id)')
-    .eq('cells.deck_id', deckId)
-  if (linkError) throw new Error(linkError.message)
-
+  // Snapshot the zones held by the codes a survivor absorbs, BEFORE the delete:
+  // zone_cells cascades on cell_id, so afterwards those rows no longer exist.
+  // Only worth a round trip when a survivor actually absorbs a vanishing code.
+  const absorbed = new Set(Object.values(inheritFrom).flat())
   const zonesByCode = new Map<string, Set<string>>()
-  for (const row of (linkRows ?? []) as Record<string, unknown>[]) {
-    const code = (row.cells as { code: string } | null)?.code
-    if (!code) continue
-    const set = zonesByCode.get(code) ?? new Set<string>()
-    set.add(row.zone_id as string)
-    zonesByCode.set(code, set)
+  if (removed.some((r) => absorbed.has(r.code))) {
+    const { data, error } = await supabase
+      .from('zone_cells')
+      .select('zone_id, cell_id')
+      .in('cell_id', removed.map((r) => r.id))
+    if (error) throw new Error(error.message)
+
+    const codeById = new Map(before.map((b) => [b.id, b.code]))
+    for (const row of (data ?? []) as Record<string, unknown>[]) {
+      const code = codeById.get(row.cell_id as string)
+      if (!code) continue
+      const set = zonesByCode.get(code) ?? new Set<string>()
+      set.add(row.zone_id as string)
+      zonesByCode.set(code, set)
+    }
   }
 
-  const { error: deleteError } = await supabase.from('cells').delete().eq('deck_id', deckId)
-  if (deleteError) throw new Error(deleteError.message)
+  // Geometry only. PostgREST builds the `do update set` from the payload keys,
+  // so omitting stage_id leaves an existing cell's stage untouched and a new
+  // cell's null -- which is exactly the guarantee this function is for.
+  const idByCode = new Map<string, string>()
+  if (cells.length > 0) {
+    const { data: upserted, error } = await supabase
+      .from('cells')
+      .upsert(
+        cells.map((c) => ({
+          deck_id: deckId,
+          code: c.code,
+          x: c.x,
+          y: c.y,
+          w: c.w,
+          h: c.h,
+          area_m2: c.areaM2,
+        })),
+        { onConflict: 'deck_id,code' },
+      )
+      .select('id, code')
+    if (error) throw new Error(error.message)
+    for (const row of (upserted ?? []) as Record<string, unknown>[]) {
+      idByCode.set(row.code as string, row.id as string)
+    }
+  }
 
-  if (cells.length === 0) return
+  // By explicit id, and only when there is something to delete: `.in('id', [])`
+  // is a pointless round trip, and a deck-wide delete here would be the bug
+  // this whole function exists to avoid.
+  if (removed.length > 0) {
+    const { error } = await supabase
+      .from('cells')
+      .delete()
+      .in('id', removed.map((r) => r.id))
+    if (error) throw new Error(error.message)
+  }
 
-  const { data: inserted, error } = await supabase
-    .from('cells')
-    .insert(
-      cells.map((c) => ({
-        deck_id: deckId,
-        code: c.code,
-        x: c.x,
-        y: c.y,
-        w: c.w,
-        h: c.h,
-        area_m2: c.areaM2,
-        stage_id: stageByCode.get(c.code) ?? null,
-      })),
-    )
-    .select('id, code')
-  if (error) throw new Error(error.message)
-
-  // Re-attach zone membership. A merged code inherits the union of the zones its
-  // sources held, so a zone that planned any source still plans the survivor.
-  const idByCode = new Map(
-    ((inserted ?? []) as Record<string, unknown>[]).map((r) => [r.code as string, r.id as string]),
-  )
+  // Re-link the survivor into every zone its sources held. Upserted against the
+  // zone_cells primary key with ignoreDuplicates: a source may share a zone
+  // with the survivor, and that is a no-op, not a conflict.
   const links: { zone_id: string; cell_id: string }[] = []
-  for (const [code, cellId] of idByCode) {
-    const sources = zoneLinks[code] ?? [code]
+  for (const [survivorCode, sourceCodes] of Object.entries(inheritFrom)) {
+    const cellId = idByCode.get(survivorCode)
+    if (!cellId) continue
     const zoneIds = new Set<string>()
-    for (const source of sources) {
+    for (const source of sourceCodes) {
       for (const zoneId of zonesByCode.get(source) ?? []) zoneIds.add(zoneId)
     }
     for (const zoneId of zoneIds) links.push({ zone_id: zoneId, cell_id: cellId })
   }
   if (links.length === 0) return
 
-  const { error: relinkError } = await supabase.from('zone_cells').insert(links)
+  const { error: relinkError } = await supabase
+    .from('zone_cells')
+    .upsert(links, { onConflict: 'zone_id,cell_id', ignoreDuplicates: true })
   if (relinkError) throw new Error(relinkError.message)
 }

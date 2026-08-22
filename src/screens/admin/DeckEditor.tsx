@@ -4,27 +4,78 @@ import {
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   AREA_DIVERGENCE_THRESHOLD, areaDivergence, buildMeshFromGuides,
-  divergesBeyondThreshold, mergeCells, prorateCellAreas,
+  divergesBeyondThreshold, mergeCells, offsetsFromSpans, prorateCellAreas,
+  spansFromOffsets,
 } from '../../domain/geometry'
 import type { Guide, MeshCell, Stage } from '../../domain/types'
 import {
-  getDrawingUrl, listCells, listGuides, replaceCells, saveGuides,
+  getDrawingUrl, listCells, listGuides, saveGuides, syncCells,
   updateDeckArea, zoneImpactOf, type DeckRow, type ZoneImpact,
 } from '../../lib/decksApi'
 import { listStages } from '../../lib/projectsApi'
 import { DrawingCanvas } from './DrawingCanvas'
 
 const area = new Intl.NumberFormat('vi-VN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+const percent = new Intl.NumberFormat('vi-VN', {
+  style: 'percent', minimumFractionDigits: 1, maximumFractionDigits: 1,
+})
+/** Millimetre coordinates group as 58.100, like every other number on screen. */
+const mm = new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 0 })
 type DraftGuide = Omit<Guide, 'id'>
 
-/** Pending destructive edit, held while the warning is on screen. */
+/** A guide table row: the guide, its index into the unsorted `guides` array, and the span to the guide before it. */
+type AxisRow = DraftGuide & { index: number; spanMm: number }
+
+/** An edit that replaces the deck's cell set, held while the warning is on screen. */
 interface PendingEdit {
-  kind: 'delete' | 'merge'
+  kind: EditKind
   cells: MeshCell[]
   impact: ZoneImpact[]
-  zoneLinks: Record<string, string[]>
+  inheritFrom: Record<string, string[]>
   /** Cells whose recorded progress this edit discards, with the stage name. */
   progressLoss: { code: string; stageName: string }[]
+}
+
+/**
+ * The three ways the cell set can change. 'mesh' is a regenerated grid being
+ * saved wholesale; it has no selection and no survivor, but it can still drop
+ * a zoned or ticked cell, so it goes through the same gate as the other two.
+ */
+type EditKind = 'delete' | 'merge' | 'mesh'
+
+const EDIT_SUBJECT: Record<EditKind, string> = {
+  delete: 'Xoá ô',
+  merge: 'Gộp ô',
+  mesh: 'Lưu lưới ô',
+}
+
+const EDIT_CONFIRM: Record<EditKind, string> = {
+  delete: 'Vẫn xoá',
+  merge: 'Vẫn gộp',
+  mesh: 'Vẫn lưu',
+}
+
+/**
+ * Domain merge errors, in the admin's language.
+ *
+ * geometry.ts throws in English and stays that way -- it has no business
+ * knowing the UI language -- but these three are routine validation an admin
+ * hits by selecting an L-shape, not infrastructure failures, so they cannot be
+ * surfaced raw. Matched on a stable marker rather than the whole sentence so a
+ * reworded domain message still translates, and anything unrecognised falls
+ * through unchanged so a new domain error is never swallowed.
+ */
+function mergeErrorInVietnamese(message: string): string {
+  if (message.includes('solid rectangle')) {
+    return 'Các ô đã chọn phải ghép thành một hình chữ nhật kín. Bỏ chọn ô lẻ, hoặc chọn thêm ô để bù chỗ trống.'
+  }
+  if (message.includes('overlapping cells')) {
+    return 'Các ô đã chọn bị trùng nhau nên không gộp được. Sinh lại lưới ô rồi chọn lại.'
+  }
+  if (message.includes('at least two cells')) {
+    return 'Cần chọn ít nhất hai ô để gộp.'
+  }
+  return message
 }
 
 export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => void }) {
@@ -60,37 +111,51 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
   }, [load])
 
   const sumCellArea = useMemo(() => cells.reduce((s, c) => s + c.areaM2, 0), [cells])
-  const diverges = divergesBeyondThreshold(totalArea, cells)
+  // No cells means nothing to diverge FROM: the divergence of an empty set
+  // against a declared area is 100% by arithmetic, which would put a
+  // "lệch 100,0%" banner on every deck the admin has not drawn a mesh on yet.
+  const diverges = cells.length > 0 && divergesBeyondThreshold(totalArea, cells)
   const divergence = areaDivergence(totalArea, cells)
 
   /** Guides on one axis, sorted, with the span to the previous one. */
-  const axisRows = (axis: 'x' | 'y') =>
-    guides
+  const axisRows = (axis: 'x' | 'y'): AxisRow[] => {
+    const sorted = guides
       .map((g, index) => ({ ...g, index }))
       .filter((g) => g.axis === axis)
       .sort((a, b) => a.pos - b.pos)
-      .map((g, i, all) => ({ ...g, spanMm: i === 0 ? 0 : g.offsetMm - all[i - 1].offsetMm }))
+    const spans = spansFromOffsets(sorted.map((g) => g.offsetMm))
+    return sorted.map((g, i) => ({ ...g, spanMm: spans[i] }))
+  }
 
-  /** The admin types spans; offsets are the running sum of them. */
+  /**
+   * The admin types spans; offsets are the running sum of them, so editing one
+   * span shifts every guide downstream of it. `rowIndex` is the sorted position
+   * antd's render(_v, _r, i) hands back, not the index into `guides`.
+   */
   const setSpan = (axis: 'x' | 'y', rowIndex: number, spanMm: number) => {
     const rows = axisRows(axis)
-    let running = rows[0]?.offsetMm ?? 0
-    const nextOffsets = new Map<number, number>()
-    rows.forEach((row, i) => {
-      if (i > 0) running += i === rowIndex ? spanMm : row.spanMm
-      nextOffsets.set(row.index, i === 0 ? row.offsetMm : running)
-    })
+    const spans = rows.map((row, i) => (i === rowIndex ? spanMm : row.spanMm))
+    const offsets = offsetsFromSpans(rows[0]?.offsetMm ?? 0, spans)
+    const nextOffsets = new Map(rows.map((row, i) => [row.index, offsets[i]]))
     setGuides((prev) => prev.map((g, i) => (nextOffsets.has(i) ? { ...g, offsetMm: nextOffsets.get(i)! } : g)))
   }
 
   /**
-   * Whether any guide carries a real dimension. All-zero offsets mean the admin
+   * Whether BOTH axes carry real dimensions. All-zero offsets mean the admin
    * never typed the spans -- usually because the drawing does not print usable
    * ones -- so per-cell areas have to be pro-rated from the deck total instead
    * of measured, and the deck records area_source: 'prorated' so a report can
    * disclose that its figures are estimates.
+   *
+   * Both axes, not either: a cell's area is spanX × spanY, so a chain typed on
+   * one axis only still measures every cell at 0 m² -- and recording that as
+   * area_source: 'guides' would present those zeroes as measured fact. A
+   * half-filled chain belongs in the prorate fallback.
    */
-  const hasRealSpans = useMemo(() => guides.some((g) => g.offsetMm > 0), [guides])
+  const hasRealSpans = useMemo(() => {
+    const typed = (axis: 'x' | 'y') => guides.some((g) => g.axis === axis && g.offsetMm > 0)
+    return typed('x') && typed('y')
+  }, [guides])
 
   const generateMesh = () => {
     const withIds: Guide[] = guides.map((g, i) => ({ ...g, id: String(i) }))
@@ -114,53 +179,86 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
     if (chosen.length === 0) return
 
     let next: MeshCell[]
-    let zoneLinks: Record<string, string[]> = {}
+    let inheritFrom: Record<string, string[]> = {}
+    let survivor: string | undefined
     if (kind === 'delete') {
       next = cells.filter((c) => !selected.includes(c.code))
     } else {
       try {
         const merged = mergeCells(chosen)
         next = [...cells.filter((c) => !selected.includes(c.code)), merged]
+        // Named from `merged` itself, not from next's last element: the
+        // survivor's identity is what the progress-loss warning turns on, and
+        // reading it back out of the array only works while this function
+        // happens to append it last.
+        survivor = merged.code
         // Spec 8.3: the survivor inherits every zone its sources belonged to.
-        zoneLinks = { [merged.code]: chosen.map((c) => c.code) }
+        inheritFrom = { [merged.code]: chosen.map((c) => c.code) }
       } catch (e) {
-        setError((e as Error).message)
+        setError(mergeErrorInVietnamese((e as Error).message))
         return
       }
     }
 
+    await reviewEdit(kind, next, { inheritFrom, survivor })
+  }
+
+  /**
+   * The one gate every cell-set replacement goes through: name the zones and
+   * the recorded progress this edit would cost, and either apply it or hold it
+   * behind the confirmation dialog.
+   *
+   * The warning is possible precisely BECAUSE cells are matched by code. A
+   * regenerated mesh mints no ids and knows nothing about zones, but it reuses
+   * R1C1, R1C2, ... -- so its codes collide with persisted cells that a zone
+   * plans and a GS has ticked. Comparing the proposal's codes against the
+   * persisted ones is what turns "this cell has no id yet" into "this cell is
+   * about to take a zoned, ticked cell's place", which is the whole disclosure.
+   * Saving a mesh without coming through here would bypass it silently.
+   */
+  const reviewEdit = async (
+    kind: EditKind,
+    next: MeshCell[],
+    opts: { inheritFrom?: Record<string, string[]>; survivor?: string } = {},
+  ) => {
+    setError(null)
+    const inheritFrom = opts.inheritFrom ?? {}
     try {
-      // Persisted cells carry ids; a freshly generated mesh does not, and cannot
-      // belong to a zone yet, so there is nothing to warn about in that case.
       const persisted = await listCells(deck.id)
-      const affectedIds = persisted.filter((p) => selected.includes(p.code)).map((p) => p.id)
-      const impact = await zoneImpactOf(deck.id, affectedIds)
+      // What this edit takes away. A delete or a merge takes the selection; a
+      // regenerated mesh has no selection, so it takes every persisted cell
+      // whose code the new mesh no longer contains.
+      const nextCodes = new Set(next.map((c) => c.code))
+      const touched = kind === 'mesh'
+        ? persisted.filter((p) => !nextCodes.has(p.code))
+        : persisted.filter((p) => selected.includes(p.code))
+      const impact = await zoneImpactOf(deck.id, touched.map((p) => p.id))
 
       // Which of the touched cells carry recorded progress that this edit
-      // discards. For a delete that is all of them; for a merge it is every
-      // source except the survivor, whose stage replaceCells carries forward.
-      const survivor = kind === 'merge' ? next[next.length - 1]?.code : undefined
-      const progressLoss = persisted
-        .filter((p) => selected.includes(p.code) && p.stageId && p.code !== survivor)
+      // discards. For a delete or a mesh save that is all of them; for a merge
+      // it is every source except the survivor, whose row syncCells updates in
+      // place and whose stage therefore survives untouched.
+      const progressLoss = touched
+        .filter((p) => p.stageId && p.code !== opts.survivor)
         .map((p) => ({
           code: p.code,
           stageName: stages.find((s) => s.id === p.stageId)?.name ?? 'không rõ',
         }))
 
       if (impact.length > 0 || progressLoss.length > 0) {
-        setPending({ kind, cells: next, impact, zoneLinks, progressLoss })
+        setPending({ kind, cells: next, impact, inheritFrom, progressLoss })
         return
       }
-      await apply(next, zoneLinks)
+      await apply(next, inheritFrom)
     } catch (e) {
       setError((e as Error).message)
     }
   }
 
-  const apply = async (next: MeshCell[], zoneLinks: Record<string, string[]> = {}) => {
+  const apply = async (next: MeshCell[], inheritFrom: Record<string, string[]> = {}) => {
     setBusy(true)
     try {
-      await replaceCells(deck.id, next, zoneLinks)
+      await syncCells(deck.id, next, inheritFrom)
       setCells(next)
       setSelected([])
       setPending(null)
@@ -186,7 +284,7 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
   }
 
   const guideTable = (axis: 'x' | 'y', title: string) => (
-    <Table
+    <Table<AxisRow>
       rowKey="index"
       size="small"
       pagination={false}
@@ -204,7 +302,28 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
               <InputNumber value={v} min={0} step={100} onChange={(n) => setSpan(axis, i, n ?? 0)} />
             ),
         },
-        { title: 'Toạ độ thật (mm)', dataIndex: 'offsetMm' },
+        { title: 'Toạ độ thật (mm)', dataIndex: 'offsetMm', render: (v: number) => mm.format(v) },
+        {
+          title: '',
+          key: 'remove',
+          width: 70,
+          // row.index, never the rendered position: the table is sorted by pos
+          // and `guides` is not, so the two disagree the moment a guide is
+          // added anywhere but the far edge -- and deleting by the rendered
+          // position would then remove a different guide than the one the
+          // admin clicked. A stray guide is not cosmetic: a double-click on a
+          // cell adds one at offsetMm 0, which the next mesh turns into a
+          // zero-width column of 0 m² cells.
+          render: (_v, row) => (
+            <Button
+              size="small"
+              danger
+              onClick={() => setGuides((prev) => prev.filter((_, i) => i !== row.index))}
+            >
+              Xoá
+            </Button>
+          ),
+        },
       ]}
     />
   )
@@ -216,7 +335,7 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
       {diverges && (
         <Alert
           type="warning"
-          message={`Tổng diện tích các ô lệch ${(Math.abs(divergence) * 100).toFixed(1)}% so với diện tích sàn`}
+          message={`Tổng diện tích các ô lệch ${percent.format(Math.abs(divergence))} so với diện tích sàn`}
           description={`Các ô cộng lại ${area.format(sumCellArea)} m², sàn khai báo ${area.format(totalArea)} m². Lệch quá ${AREA_DIVERGENCE_THRESHOLD * 100}% thường là do nhập sai khoảng cách guide — nhưng sàn thật vẫn có thể lệch vì có opening hoặc E-house không phải là ô, nên đây chỉ là cảnh báo.`}
         />
       )}
@@ -235,7 +354,18 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
         { key: 'sum', label: 'Σ diện tích ô (m²)', children: area.format(sumCellArea) },
         {
           key: 'total', label: 'Diện tích sàn (m²)',
-          children: <InputNumber value={totalArea} min={0} step={10} onChange={(n) => setTotalArea(n ?? 0)} />,
+          children: (
+            <InputNumber
+              value={totalArea}
+              min={0}
+              step={10}
+              // A Vietnamese admin types "5258,5". Without this antd parses
+              // that as 5258 and the deck silently loses half a square metre
+              // from the denominator of every percentage on the project.
+              decimalSeparator=","
+              onChange={(n) => setTotalArea(n ?? 0)}
+            />
+          ),
         },
       ]} />
 
@@ -251,6 +381,19 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
         </Button>
         <Button type="primary" loading={busy} onClick={() => void persistGuidesAndArea()}>
           Lưu guide và diện tích
+        </Button>
+        {/*
+          Two save buttons, deliberately. Guides and the deck area are one
+          decision; replacing the persisted cell set is another, and it can drop
+          a zoned or ticked cell, so it goes through reviewEdit's gate. Folding
+          it into "Lưu guide và diện tích" would bypass that disclosure -- and
+          leaving it out entirely (as this screen originally did) means a deck
+          needing no delete and no merge can never save its cells at all, while
+          the guide offsets and area_source it saves next to them move on
+          without them.
+        */}
+        <Button type="primary" loading={busy} onClick={() => void reviewEdit('mesh', cells)}>
+          Lưu lưới ô
         </Button>
         <Button onClick={onClose}>Đóng</Button>
       </Space>
@@ -284,19 +427,37 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
         {guideTable('y', 'Guide ngang (hàng)')}
       </Space>
 
+      {/*
+        The dialog opens on zone impact OR on progress loss alone, so neither
+        the title nor the lead paragraph may assert zone impact unconditionally:
+        telling an admin their cells belong to a zone when they do not teaches
+        them to skim the one dialog in this screen that must be read.
+      */}
       <Modal
         open={pending !== null}
-        title={pending?.kind === 'delete' ? 'Xoá ô sẽ ảnh hưởng zone' : 'Gộp ô sẽ ảnh hưởng zone'}
-        okText={pending?.kind === 'delete' ? 'Vẫn xoá' : 'Vẫn gộp'}
+        title={
+          pending &&
+          (pending.impact.length > 0
+            ? `${EDIT_SUBJECT[pending.kind]} sẽ ảnh hưởng zone`
+            : `${EDIT_SUBJECT[pending.kind]} sẽ làm mất tiến độ đã ghi`)
+        }
+        okText={pending ? EDIT_CONFIRM[pending.kind] : undefined}
         cancelText="Huỷ"
         confirmLoading={busy}
         onCancel={() => setPending(null)}
-        onOk={() => pending && void apply(pending.cells, pending.zoneLinks)}
+        onOk={() => pending && void apply(pending.cells, pending.inheritFrom)}
       >
-        <Typography.Paragraph>
-          Các ô này đang thuộc zone. Xoá hoặc gộp sẽ làm chúng rời khỏi zone đó, và
-          kế hoạch tiến độ của zone sẽ nhỏ lại mà không có cảnh báo nào khác.
-        </Typography.Paragraph>
+        {pending && pending.impact.length > 0 ? (
+          <Typography.Paragraph>
+            Các ô này đang thuộc zone. Thao tác này sẽ làm chúng rời khỏi zone đó, và
+            kế hoạch tiến độ của zone sẽ nhỏ lại mà không có cảnh báo nào khác.
+          </Typography.Paragraph>
+        ) : (
+          <Typography.Paragraph>
+            Không có zone nào bị ảnh hưởng. Nhưng thao tác này sẽ xoá tiến độ đã ghi
+            của các ô dưới đây.
+          </Typography.Paragraph>
+        )}
         {pending && pending.impact.length > 0 && (
           <ul>
             {pending.impact.map((z) => (
@@ -319,11 +480,13 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
                 </li>
               ))}
             </ul>
-            <Typography.Paragraph type="secondary">
-              Ô sống sót giữ tiến độ của chính nó. Không có cách gộp nào trung
-              thực cho phần còn lại: lấy lớp cao nhất thì báo vượt, lấy lớp thấp
-              nhất thì bỏ mất công đã làm.
-            </Typography.Paragraph>
+            {pending.kind === 'merge' && (
+              <Typography.Paragraph type="secondary">
+                Ô sống sót giữ tiến độ của chính nó. Không có cách gộp nào trung
+                thực cho phần còn lại: lấy lớp cao nhất thì báo vượt, lấy lớp thấp
+                nhất thì bỏ mất công đã làm.
+              </Typography.Paragraph>
+            )}
           </>
         )}
       </Modal>

@@ -48,7 +48,16 @@ export function DecksScreen() {
   }, [])
 
   const refreshDecks = useCallback(async () => {
-    if (!projectId) return
+    // Clear `loading` before returning, not after. It initialises true so the
+    // table spins on first paint, and with no project to load -- an empty
+    // project list, or listProjects throwing -- nothing downstream would ever
+    // turn it off again: the admin gets a spinner forever instead of an empty
+    // state. UsersScreen carries a note about the same failure mode.
+    if (!projectId) {
+      setDecks([])
+      setLoading(false)
+      return
+    }
     setLoading(true)
     try {
       setDecks(await listDecks(projectId))

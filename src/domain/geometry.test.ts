@@ -6,7 +6,9 @@ import {
   deriveCellArea,
   divergesBeyondThreshold,
   mergeCells,
+  offsetsFromSpans,
   prorateCellAreas,
+  spansFromOffsets,
 } from './geometry'
 import type { Guide, MeshCell } from './types'
 
@@ -30,6 +32,54 @@ const MAIN_DECK_GUIDES: Guide[] = [
   g('y1', 'y', 0.7, 16000),
   g('y2', 'y', 1.0, 22200),
 ]
+
+/**
+ * The Main Deck drawing's full across-chain, as the admin types it: the datum
+ * row carries no span, then 2500, 9500, 14500, 14500, 9500, 7600.
+ */
+const ACROSS_SPANS = [0, 2500, 9500, 14500, 14500, 9500, 7600]
+const ACROSS_OFFSETS = [0, 2500, 12000, 26500, 41000, 50500, 58100]
+
+describe('offsetsFromSpans', () => {
+  it('running-sums the real drawing across-chain from a zero datum', () => {
+    expect(offsetsFromSpans(0, ACROSS_SPANS)).toEqual(ACROSS_OFFSETS)
+  })
+
+  it('produces a strictly increasing chain', () => {
+    const offsets = offsetsFromSpans(0, ACROSS_SPANS)
+    for (let i = 1; i < offsets.length; i++) expect(offsets[i]).toBeGreaterThan(offsets[i - 1])
+  })
+
+  it('shifts every offset downstream of an edited span, and none upstream', () => {
+    // The third real span, 14500 -> 15000. This is the whole point of the
+    // conversion: rows 0-2 must be untouched and rows 3-6 must each move by
+    // exactly +500. A conversion that writes only the edited row's offset
+    // fails on element 4; one that also moves the datum fails on element 1.
+    const edited = [...ACROSS_SPANS]
+    edited[3] = 15000
+    expect(offsetsFromSpans(0, edited)).toEqual([0, 2500, 12000, 27000, 41500, 51000, 58600])
+  })
+
+  it('places the datum wherever the caller says, not at zero', () => {
+    expect(offsetsFromSpans(1000, [0, 2500, 9500])).toEqual([1000, 3500, 13000])
+  })
+})
+
+describe('spansFromOffsets', () => {
+  it('differences the real drawing across-chain, datum first', () => {
+    expect(spansFromOffsets(ACROSS_OFFSETS)).toEqual(ACROSS_SPANS)
+  })
+
+  it('round-trips through offsetsFromSpans unchanged', () => {
+    expect(spansFromOffsets(offsetsFromSpans(0, ACROSS_SPANS))).toEqual(ACROSS_SPANS)
+    expect(offsetsFromSpans(0, spansFromOffsets(ACROSS_OFFSETS))).toEqual(ACROSS_OFFSETS)
+  })
+
+  it('has nothing to say about an empty or single-guide axis', () => {
+    expect(spansFromOffsets([])).toEqual([])
+    expect(spansFromOffsets([58100])).toEqual([0])
+  })
+})
 
 describe('deriveCellArea', () => {
   it('multiplies real-world spans and converts mm² to m²', () => {

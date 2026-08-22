@@ -10,6 +10,36 @@ export const AREA_DIVERGENCE_THRESHOLD = 0.05
  */
 const EPSILON = 1e-9
 
+/**
+ * Spans between consecutive offsets. The first entry is the datum, span 0.
+ *
+ * The admin reads spans off the drawing ("this bay is 14500 wide"), but every
+ * area calculation needs cumulative offsets, so the editor converts in both
+ * directions on every keystroke. Both halves live here, next to
+ * deriveCellArea, because a stale downstream offset is indistinguishable from
+ * a correct one by eye and turns straight into a wrong m² figure.
+ */
+export function spansFromOffsets(offsetsMm: number[]): number[] {
+  return offsetsMm.map((offsetMm, i) => (i === 0 ? 0 : offsetMm - offsetsMm[i - 1]))
+}
+
+/**
+ * Offsets from a datum of offsetsMm[0], running-summing the spans.
+ *
+ * The inverse of spansFromOffsets, so it takes the same shape back:
+ * `spansMm[0]` is the datum's own span and is ignored — the datum sits at
+ * `datumMm`, whatever that is — and every later entry shifts itself and
+ * everything after it. Editing one span therefore moves every offset
+ * downstream of it and none upstream.
+ */
+export function offsetsFromSpans(datumMm: number, spansMm: number[]): number[] {
+  let running = datumMm
+  return spansMm.map((spanMm, i) => {
+    if (i > 0) running += spanMm
+    return running
+  })
+}
+
 /** Real-world area of the bay bounded by two x-guides and two y-guides, in m². */
 export function deriveCellArea(x1: Guide, x2: Guide, y1: Guide, y2: Guide): number {
   const spanX = Math.abs(x2.offsetMm - x1.offsetMm)
