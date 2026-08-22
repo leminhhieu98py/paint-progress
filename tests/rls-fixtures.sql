@@ -1,0 +1,205 @@
+-- Fixture seeder for tests/rls.integration.test.ts.
+--
+-- Run once, by hand, as `postgres` via the Supabase CLI -- AFTER the two
+-- dashboard accounts exist (the bootstrap admin `linhdeptrai123` and the
+-- test GS `rlstest-gs`). See supabase/README.md and
+-- .env.test.local.example for the full, required run order.
+--
+--   nvm use 22
+--   npx supabase db query --linked -f tests/rls-fixtures.sql
+--
+-- Every returned row must begin with PASS before the integration suite is
+-- run. A row beginning with FAIL means a precondition this script cannot
+-- supply on its own -- almost always a missing or misconfigured account --
+-- and the integration suite must not be trusted until it is fixed and this
+-- script re-run clean. This script deliberately does not error out when an
+-- account is missing (the account-dependent inserts below are written as
+-- `insert ... select ... from profiles where ...`, which silently inserts
+-- zero rows rather than raising an error); the FAIL rows are how that
+-- absence is actually reported.
+--
+-- Every statement above the final SELECT is idempotent (ON CONFLICT DO
+-- NOTHING / NOT EXISTS guards, or -- for the stage-change update -- the
+-- app's own no-op guard in log_cell_stage_change), so re-running this
+-- script is always safe. Unlike supabase/verify_schema.sql, this script
+-- does NOT delete its own rows afterwards: these fixtures are meant to
+-- persist across many runs of the integration suite, not be created and
+-- torn down by each one.
+--
+-- Only one top-level SELECT appears, at the end. `supabase db query -f`
+-- surfaces only the LAST statement's result set when a file contains more
+-- than one top-level SELECT -- a behaviour discovered while building
+-- supabase/verify_schema.sql -- so every precondition assertion below is
+-- combined into that single SELECT rather than issued separately.
+--
+-- WARNING: this script INSERTS test rows (projects 'RLS Allowed' / 'RLS
+-- Denied' and everything under them, plus a gs_credentials row and a
+-- credential_access_log row) and links the real `rlstest-gs` account to
+-- one of those projects. It is meant to run against a disposable or
+-- pre-production database only. Never run it against a database holding
+-- real project data.
+
+-- Domain fixtures: two projects, one deck each, one stage each, one cell
+-- each. None of this depends on any auth account existing yet.
+--
+-- RLSD's id is pinned to a fixed, well-known uuid (rather than the default
+-- gen_random_uuid()) so tests/rls.integration.test.ts can reference the
+-- denied project directly for its "add itself to a project it cannot read"
+-- escalation test, without needing a service-role lookup.
+insert into projects (id, name, code) values
+  ('00000000-0000-4000-8000-0000000000d1', 'RLS Denied', 'RLSD')
+  on conflict (code) do nothing;
+insert into projects (name, code) values ('RLS Allowed', 'RLSA')
+  on conflict (code) do nothing;
+
+insert into decks (project_id, seq, name, code, total_area_m2)
+select id, 1, 'Allowed Deck', 'AD', 100 from projects where code = 'RLSA'
+  on conflict (project_id, code) do nothing;
+insert into decks (project_id, seq, name, code, total_area_m2)
+select id, 1, 'Denied Deck', 'DD', 100 from projects where code = 'RLSD'
+  on conflict (project_id, code) do nothing;
+
+insert into project_stages (project_id, seq, name, color, weight)
+select id, 1, 'Coat 1', '#fadb14', 1 from projects where code = 'RLSA'
+  on conflict (project_id, seq) do nothing;
+-- Distinctively named so a leaked cell_events row is unambiguous in the
+-- suite's cross-project cell_events assertion.
+insert into project_stages (project_id, seq, name, color, weight)
+select id, 1, 'RLS Denied Coat', '#ff4d4f', 1 from projects where code = 'RLSD'
+  on conflict (project_id, seq) do nothing;
+
+insert into cells (deck_id, code, x, y, w, h, area_m2)
+select id, 'R1C1', 0, 0, 1, 1, 100 from decks where code = 'AD'
+  on conflict (deck_id, code) do nothing;
+insert into cells (deck_id, code, x, y, w, h, area_m2)
+select id, 'R1C1', 0, 0, 1, 1, 100 from decks where code = 'DD'
+  on conflict (deck_id, code) do nothing;
+
+-- A guide and a zone/zone_cells pair on the denied deck. Neither AD nor
+-- RLSA has any row in these two tables, so "GS sees zero rows here" is by
+-- itself a sufficient cross-project assertion in the suite -- no marker
+-- column needed for those two.
+insert into deck_guides (deck_id, axis, pos, offset_mm, label)
+select d.id, 'x', 0.5, 100, 'rls denied guide'
+from decks d
+where d.code = 'DD'
+  and not exists (
+    select 1 from deck_guides where deck_id = d.id and label = 'rls denied guide'
+  );
+
+insert into zones (deck_id, seq, name, stage_id)
+select d.id, 1, 'RLS Denied Zone', ps.id
+from decks d
+join project_stages ps on ps.project_id = d.project_id and ps.name = 'RLS Denied Coat'
+where d.code = 'DD'
+  on conflict (deck_id, stage_id, seq) do nothing;
+
+insert into zone_cells (zone_id, cell_id)
+select z.id, c.id
+from zones z, decks d, cells c
+where z.name = 'RLS Denied Zone' and d.code = 'DD' and c.deck_id = d.id
+  on conflict (zone_id, cell_id) do nothing;
+
+-- Advance the denied deck's own cell through the app's real mechanism (not
+-- a hand-written cell_events insert) so the AFTER trigger creates a
+-- distinctively-named cell_events row. Only stage_id changes, so this is
+-- allowed by assert_gs_updates_stage_only regardless of who runs it, and
+-- the trigger's own no-op guard (0004/0005) makes re-running this safe: a
+-- second run sets the same value, so no second event is logged.
+update cells set stage_id = (
+  select id from project_stages where name = 'RLS Denied Coat'
+) where deck_id = (select id from decks where code = 'DD');
+
+-- Account-dependent fixtures. Each is written as `insert ... select ...
+-- from profiles where ...`, so if the account it depends on does not exist
+-- yet, the SELECT returns zero rows and the INSERT silently does nothing --
+-- no error here, just a FAIL in the assertions below.
+
+-- Link the real GS account to the allowed project only.
+insert into project_members (project_id, user_id)
+select pr.id, p.id
+from projects pr, profiles p
+where pr.code = 'RLSA' and p.username = 'rlstest-gs'
+  on conflict (project_id, user_id) do nothing;
+
+-- Hidden positive control for "cannot read gs_credentials at all". The
+-- ciphertext is a dummy string: no test ever decrypts it, only checks that
+-- a GS session cannot see the row exists. Pointed at the GS profile's own
+-- user id, so no extra identity is needed.
+insert into gs_credentials (user_id, secret)
+select id, 'dummy-ciphertext-never-decrypted-only-checked-for-invisibility'
+from profiles where username = 'rlstest-gs'
+  on conflict (user_id) do nothing;
+
+-- Hidden positive control for "cannot read the credential access log": a
+-- realistic entry recording that an admin looked up the GS's own
+-- credentials. The GS must not be able to read this regardless of whose
+-- record it references.
+insert into credential_access_log (admin_id, target_user_id)
+select a.id, g.id
+from profiles a, profiles g
+where a.role = 'admin' and g.username = 'rlstest-gs'
+  and not exists (
+    select 1 from credential_access_log l
+    where l.admin_id = a.id and l.target_user_id = g.id
+  )
+limit 1;
+
+-- Precondition assertions. These are what make the integration suite's
+-- negative tests non-vacuous instead of accidentally passing because a row
+-- never existed to hide in the first place. See the file header for why
+-- these all have to live in one SELECT.
+create or replace function _verify_fixture_preconditions() returns setof text language plpgsql as $$
+declare
+  n int;
+begin
+  -- 1. A second, real profile with role = 'admin' exists. This is what
+  -- makes "cannot read another user profile" in the integration suite a
+  -- genuine test of `id = auth.uid()`, rather than one that passes only
+  -- because a single profile happens to be the only row in the table.
+  select count(*) into n from profiles where role = 'admin';
+  return next format('%s at least one admin profile exists: %s found',
+                     case when n >= 1 then 'PASS' else 'FAIL' end, n);
+
+  -- 2. The real GS test account's profile exists with the right role.
+  select count(*) into n from profiles where username = 'rlstest-gs' and role = 'gs';
+  return next format('%s rlstest-gs profile exists with role=gs: %s found',
+                     case when n = 1 then 'PASS' else 'FAIL' end, n);
+
+  -- 3. That profile is a member of the allowed project.
+  select count(*) into n
+  from project_members pm
+  join profiles p on p.id = pm.user_id
+  join projects pr on pr.id = pm.project_id
+  where p.username = 'rlstest-gs' and pr.code = 'RLSA';
+  return next format('%s rlstest-gs is a member of RLSA: %s found',
+                     case when n = 1 then 'PASS' else 'FAIL' end, n);
+
+  -- 4. ...and is NOT a member of the denied project.
+  select count(*) into n
+  from project_members pm
+  join profiles p on p.id = pm.user_id
+  join projects pr on pr.id = pm.project_id
+  where p.username = 'rlstest-gs' and pr.code = 'RLSD';
+  return next format('%s rlstest-gs is NOT a member of RLSD: %s found, expected 0',
+                     case when n = 0 then 'PASS' else 'FAIL' end, n);
+
+  -- 5. The gs_credentials positive control exists.
+  select count(*) into n
+  from gs_credentials gc
+  join profiles p on p.id = gc.user_id
+  where p.username = 'rlstest-gs';
+  return next format('%s gs_credentials positive control exists: %s found',
+                     case when n = 1 then 'PASS' else 'FAIL' end, n);
+
+  -- 6. The credential_access_log positive control exists.
+  select count(*) into n
+  from credential_access_log l
+  join profiles g on g.id = l.target_user_id
+  where g.username = 'rlstest-gs';
+  return next format('%s credential_access_log positive control exists: %s found',
+                     case when n >= 1 then 'PASS' else 'FAIL' end, n);
+end $$;
+
+select * from _verify_fixture_preconditions();
+drop function _verify_fixture_preconditions();
