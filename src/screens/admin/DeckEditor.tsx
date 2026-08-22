@@ -4,23 +4,18 @@ import {
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   AREA_DIVERGENCE_THRESHOLD, areaDivergence, buildMeshFromGuides, cellReshaped,
-  divergesBeyondThreshold, hasUndeclaredArea, mergeCells, moveGuideClamped,
-  offsetsFromSpans, prorateCellAreas, spansFromOffsets,
+  divergesBeyondThreshold, hasUndeclaredArea, interpolateOffsetMm, mergeCells,
+  moveGuideClamped, offsetsFromSpans, prorateCellAreas, spansFromOffsets,
 } from '../../domain/geometry'
 import type { Guide, MeshCell, Stage } from '../../domain/types'
 import {
   getDrawingUrl, listCells, listGuides, saveGuides, syncCells,
   updateDeckArea, zoneImpactOf, type DeckRow, type ZoneImpact,
 } from '../../lib/decksApi'
+import { formatAreaM2, formatMm, formatPercent } from '../../lib/format'
 import { listStages } from '../../lib/projectsApi'
 import { DrawingCanvas } from './DrawingCanvas'
 
-const area = new Intl.NumberFormat('vi-VN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-const percent = new Intl.NumberFormat('vi-VN', {
-  style: 'percent', minimumFractionDigits: 1, maximumFractionDigits: 1,
-})
-/** Millimetre coordinates group as 58.100, like every other number on screen. */
-const mm = new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 0 })
 type DraftGuide = Omit<Guide, 'id'>
 
 /** A guide table row: the guide, its index into the unsorted `guides` array, and the span to the guide before it. */
@@ -72,13 +67,19 @@ const EDIT_CONFIRM: Record<EditKind, string> = {
  * Domain merge errors, in the admin's language.
  *
  * geometry.ts throws in English and stays that way -- it has no business
- * knowing the UI language -- but these three are routine validation an admin
- * hits by selecting an L-shape, not infrastructure failures, so they cannot be
- * surfaced raw. Matched on a stable marker rather than the whole sentence so a
- * reworded domain message still translates, and anything unrecognised falls
- * through unchanged so a new domain error is never swallowed.
+ * knowing the UI language -- but all four of mergeCells' own errors are
+ * routine validation an admin hits by selecting an L-shape or the same cell
+ * twice, not infrastructure failures, so they cannot be surfaced raw. Matched
+ * on a stable marker rather than the whole sentence so a reworded domain
+ * message still translates, and anything unrecognised falls through unchanged
+ * so a new domain error is never swallowed.
+ *
+ * Exported so its one hard-to-reach branch (a duplicate cell in the
+ * selection) can be unit tested directly: `cells` and `selected` both hold
+ * unique codes by construction under every UI path that reaches mergeCells,
+ * so there is no way to drive that branch through the rendered screen.
  */
-function mergeErrorInVietnamese(message: string): string {
+export function mergeErrorInVietnamese(message: string): string {
   if (message.includes('solid rectangle')) {
     return 'Các ô đã chọn phải ghép thành một hình chữ nhật kín. Bỏ chọn ô lẻ, hoặc chọn thêm ô để bù chỗ trống.'
   }
@@ -88,6 +89,9 @@ function mergeErrorInVietnamese(message: string): string {
   if (message.includes('at least two cells')) {
     return 'Cần chọn ít nhất hai ô để gộp.'
   }
+  if (message.includes('same cell more than once')) {
+    return 'Danh sách ô chọn có ô bị lặp lại. Bỏ chọn rồi chọn lại.'
+  }
   return message
 }
 
@@ -95,6 +99,20 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
   const [guides, setGuides] = useState<DraftGuide[]>([])
   const [stages, setStages] = useState<Stage[]>([])
   const [cells, setCells] = useState<MeshCell[]>([])
+  /**
+   * Recorded stage id per cell code, as last read from the database --
+   * `MeshCell` itself carries no stage, so this is the only place that
+   * information survives once `cells` is trimmed down to geometry.
+   *
+   * Not re-derived on every local edit (delete/merge/generateMesh): it is a
+   * fact about what is PERSISTED, refreshed only where `cells` is refreshed
+   * from the server (load, and the error-recovery re-read in `apply`). A
+   * generated mesh deliberately keeps showing a stale entry's colour when its
+   * code collides with a persisted one -- that collision is exactly the
+   * progress this edit is about to discard, and Task 7 / B2 exist so the
+   * admin can see it before confirming.
+   */
+  const [cellStages, setCellStages] = useState<Record<string, string | null>>({})
   const [selected, setSelected] = useState<string[]>([])
   const [imageUrl, setImageUrl] = useState<string | null>(null)
   const [totalArea, setTotalArea] = useState(deck.totalAreaM2)
@@ -135,6 +153,7 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
       setStages(s)
       setGuides(g.map(({ axis, pos, offsetMm }) => ({ axis, pos, offsetMm })))
       setCells(c.map(({ code, x, y, w, h, areaM2 }) => ({ code, x, y, w, h, areaM2 })))
+      setCellStages(Object.fromEntries(c.map((p) => [p.code, p.stageId])))
       if (deck.imagePath) setImageUrl(await getDrawingUrl(deck.imagePath))
       setLoadFailed(false)
       setError(null)
@@ -155,6 +174,26 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
   const diverges = cells.length > 0 && divergesBeyondThreshold(totalArea, cells)
   const divergence = areaDivergence(totalArea, cells)
   const undeclaredArea = hasUndeclaredArea(totalArea, cells)
+
+  /**
+   * Stage colour per cell code, fed to DrawingCanvas so the admin can see
+   * which cells carry recorded progress while choosing what to select --
+   * Task 7 established that a cell keeps its own stage colour underneath the
+   * selection overlay; this is what actually supplies it. Not cosmetic: the
+   * confirmation gate in reviewEdit warns that an edit will discard recorded
+   * progress, and this is the only way to see which cells that would be
+   * BEFORE picking a selection, not after.
+   */
+  const cellColors = useMemo(() => {
+    const colors: Record<string, string> = {}
+    for (const cell of cells) {
+      const stageId = cellStages[cell.code]
+      if (!stageId) continue
+      const stage = stages.find((s) => s.id === stageId)
+      if (stage) colors[cell.code] = stage.color
+    }
+    return colors
+  }, [cells, cellStages, stages])
 
   /** Guides on one axis, sorted, with the span to the previous one. */
   const axisRows = (axis: 'x' | 'y'): AxisRow[] => {
@@ -221,34 +260,53 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
     setError(null)
   }
 
+  /**
+   * `busy` is set here for the whole of beginEdit, not just apply(): it
+   * awaits two round trips (listCells + zoneImpactOf, inside reviewEdit)
+   * before either opening the confirmation dialog or applying directly, and
+   * nothing disabled the delete/merge buttons across that gap. A double-tap
+   * on a tablet fired two overlapping passes, and whichever one's `pending`
+   * write landed second is the proposal the admin actually confirmed --
+   * possibly not the one they read. Cleared in `finally` regardless of which
+   * branch reviewEdit took: if it opened `pending`, busy should already be
+   * back off by the time the dialog is on screen (its own confirmLoading is
+   * driven by apply(), not by this); if it went straight to apply(), apply()
+   * has already flipped busy off itself by the time this runs, so this is a
+   * harmless no-op there.
+   */
   const beginEdit = async (kind: 'delete' | 'merge') => {
     setError(null)
     const chosen = cells.filter((c) => selected.includes(c.code))
     if (chosen.length === 0) return
 
-    let next: MeshCell[]
-    let inheritFrom: Record<string, string[]> = {}
-    let survivor: string | undefined
-    if (kind === 'delete') {
-      next = cells.filter((c) => !selected.includes(c.code))
-    } else {
-      try {
-        const merged = mergeCells(chosen)
-        next = [...cells.filter((c) => !selected.includes(c.code)), merged]
-        // Named from `merged` itself, not from next's last element: the
-        // survivor's identity is what the progress-loss warning turns on, and
-        // reading it back out of the array only works while this function
-        // happens to append it last.
-        survivor = merged.code
-        // Spec 8.3: the survivor inherits every zone its sources belonged to.
-        inheritFrom = { [merged.code]: chosen.map((c) => c.code) }
-      } catch (e) {
-        setError(mergeErrorInVietnamese((e as Error).message))
-        return
+    setBusy(true)
+    try {
+      let next: MeshCell[]
+      let inheritFrom: Record<string, string[]> = {}
+      let survivor: string | undefined
+      if (kind === 'delete') {
+        next = cells.filter((c) => !selected.includes(c.code))
+      } else {
+        try {
+          const merged = mergeCells(chosen)
+          next = [...cells.filter((c) => !selected.includes(c.code)), merged]
+          // Named from `merged` itself, not from next's last element: the
+          // survivor's identity is what the progress-loss warning turns on, and
+          // reading it back out of the array only works while this function
+          // happens to append it last.
+          survivor = merged.code
+          // Spec 8.3: the survivor inherits every zone its sources belonged to.
+          inheritFrom = { [merged.code]: chosen.map((c) => c.code) }
+        } catch (e) {
+          setError(mergeErrorInVietnamese((e as Error).message))
+          return
+        }
       }
-    }
 
-    await reviewEdit(kind, next, { inheritFrom, survivor })
+      await reviewEdit(kind, next, { inheritFrom, survivor })
+    } finally {
+      setBusy(false)
+    }
   }
 
   /**
@@ -396,6 +454,7 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
       try {
         const fresh = await listCells(deck.id)
         setCells(fresh.map(({ code, x, y, w, h, areaM2 }) => ({ code, x, y, w, h, areaM2 })))
+        setCellStages(Object.fromEntries(fresh.map((p) => [p.code, p.stageId])))
       } catch {
         // Now the screen matches neither the database nor a successful read.
         // Refuse the next save rather than let it write this over the deck.
@@ -422,10 +481,21 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
             i === 0 ? (
               <Typography.Text type="secondary">gốc</Typography.Text>
             ) : (
-              <InputNumber value={v} min={0} step={100} onChange={(n) => setSpan(axis, i, n ?? 0)} />
+              <InputNumber
+                value={v}
+                min={0}
+                step={100}
+                // A Vietnamese admin types "14500,5". Without this antd parses
+                // that as 14500 and every guide downstream of this one -- and
+                // every cell area on this axis -- shifts by the lost
+                // half-millimetre. The deck-area and stage-weight fields both
+                // carry this same fix already, each with this same comment.
+                decimalSeparator=","
+                onChange={(n) => setSpan(axis, i, n ?? 0)}
+              />
             ),
         },
-        { title: 'Toạ độ thật (mm)', dataIndex: 'offsetMm', render: (v: number) => mm.format(v) },
+        { title: 'Toạ độ thật (mm)', dataIndex: 'offsetMm', render: (v: number) => formatMm(v) },
         {
           title: '',
           key: 'remove',
@@ -478,8 +548,8 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
           // declared area (thiếu = short), negative means they over-cover it
           // (vượt = exceeds). Naming the direction here means the admin does
           // not have to open the description to know which way to correct.
-          message={`Tổng diện tích các ô ${divergence > 0 ? 'thiếu' : 'vượt'} ${percent.format(Math.abs(divergence))} so với diện tích sàn`}
-          description={`Các ô cộng lại ${area.format(sumCellArea)} m², sàn khai báo ${area.format(totalArea)} m². Lệch quá ${AREA_DIVERGENCE_THRESHOLD * 100}% thường là do nhập sai khoảng cách guide — nhưng sàn thật vẫn có thể lệch vì có opening hoặc E-house không phải là ô, nên đây chỉ là cảnh báo.`}
+          message={`Tổng diện tích các ô ${divergence > 0 ? 'thiếu' : 'vượt'} ${formatPercent(Math.abs(divergence))} so với diện tích sàn`}
+          description={`Các ô cộng lại ${formatAreaM2(sumCellArea)} m², sàn khai báo ${formatAreaM2(totalArea)} m². Lệch quá ${formatPercent(AREA_DIVERGENCE_THRESHOLD)} thường là do nhập sai khoảng cách guide — nhưng sàn thật vẫn có thể lệch vì có opening hoặc E-house không phải là ô, nên đây chỉ là cảnh báo.`}
         />
       )}
 
@@ -500,7 +570,7 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
       <Descriptions size="small" column={4} bordered items={[
         { key: 'name', label: 'Sàn', children: `${deck.name} (${deck.code})` },
         { key: 'cells', label: 'Số ô', children: cells.length },
-        { key: 'sum', label: 'Σ diện tích ô (m²)', children: area.format(sumCellArea) },
+        { key: 'sum', label: 'Σ diện tích ô (m²)', children: formatAreaM2(sumCellArea) },
         {
           key: 'total', label: 'Diện tích sàn (m²)',
           children: (
@@ -522,10 +592,16 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
         <Button onClick={generateMesh}>Sinh lưới ô</Button>
         <Button onClick={() => setSelected(cells.map((c) => c.code))}>Chọn tất cả</Button>
         <Button onClick={() => setSelected([])} disabled={selected.length === 0}>Bỏ chọn</Button>
-        <Button danger disabled={selected.length === 0} onClick={() => void beginEdit('delete')}>
+        {/*
+          `|| busy`: beginEdit awaits two round trips (listCells,
+          zoneImpactOf) before it can even open the confirmation dialog, and
+          without this guard nothing stopped a double-tap on a tablet from
+          firing two overlapping reviews of the same selection.
+        */}
+        <Button danger disabled={selected.length === 0 || busy} onClick={() => void beginEdit('delete')}>
           Xoá ô đã chọn
         </Button>
-        <Button disabled={selected.length < 2} onClick={() => void beginEdit('merge')}>
+        <Button disabled={selected.length < 2 || busy} onClick={() => void beginEdit('merge')}>
           Gộp ô đã chọn
         </Button>
         {/*
@@ -551,12 +627,19 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
           guides={guides}
           cells={cells}
           selectedCodes={selected}
+          cellColors={cellColors}
           // Clamped, never applied raw: a drag moves `pos` and leaves the mm
           // chain alone, so a guide dragged past its neighbour puts pos-order
           // and offset-order in disagreement -- and every area is computed from
           // the offsets in pos-order. See moveGuideClamped for what that costs.
           onGuideMove={(index, pos) => setGuides((prev) => moveGuideClamped(prev, index, pos))}
-          onGuideAdd={(axis, pos) => setGuides((prev) => [...prev, { axis, pos, offsetMm: 0 }])}
+          // Interpolated, not a bare 0: an offset smaller than a real
+          // neighbour to its left breaks the mm chain's pos-order
+          // monotonicity and produces a negative span -- A6's dragging
+          // defect, reached through the other door. See interpolateOffsetMm.
+          onGuideAdd={(axis, pos) =>
+            setGuides((prev) => [...prev, { axis, pos, offsetMm: interpolateOffsetMm(prev, axis, pos) }])
+          }
           onCellClick={(code, additive) =>
             setSelected((prev) =>
               additive
@@ -673,7 +756,7 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
             <ul>
               {pending.reshaped.map((r) => (
                 <li key={r.code}>
-                  <strong>{r.code}</strong> — {r.stageName}: {area.format(r.fromAreaM2)} → {area.format(r.toAreaM2)} m²
+                  <strong>{r.code}</strong> — {r.stageName}: {formatAreaM2(r.fromAreaM2)} → {formatAreaM2(r.toAreaM2)} m²
                 </li>
               ))}
             </ul>

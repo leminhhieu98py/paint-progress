@@ -1,7 +1,7 @@
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { DeckEditor } from './DeckEditor'
+import { DeckEditor, mergeErrorInVietnamese } from './DeckEditor'
 
 const listGuides = vi.hoisted(() => vi.fn())
 const saveGuides = vi.hoisted(() => vi.fn())
@@ -41,17 +41,19 @@ vi.mock('../../lib/projectsApi', () => ({
 // survivor's identity can be got wrong.
 vi.mock('./DrawingCanvas', () => ({
   DrawingCanvas: ({
-    cells, guides, onCellClick, onGuideMove,
+    cells, guides, onCellClick, onGuideMove, onGuideAdd, cellColors,
   }: {
     cells: { code: string }[]
     guides: { axis: 'x' | 'y'; pos: number }[]
     onCellClick?: (code: string, additive: boolean) => void
     onGuideMove?: (index: number, pos: number) => void
+    onGuideAdd?: (axis: 'x' | 'y', pos: number) => void
+    cellColors?: Record<string, string>
   }) => (
     <div data-testid="canvas">
       {cells.map((c) => c.code).join(',')}
       {cells.map((c) => (
-        <button key={c.code} onClick={() => onCellClick?.(c.code, true)}>
+        <button key={c.code} data-color={cellColors?.[c.code] ?? ''} onClick={() => onCellClick?.(c.code, true)}>
           chọn {c.code}
         </button>
       ))}
@@ -66,6 +68,8 @@ vi.mock('./DrawingCanvas', () => ({
           kéo guide {i}
         </button>
       ))}
+      {/* Stands in for a double-click adding a guide midway across the axis. */}
+      <button onClick={() => onGuideAdd?.('x', 0.5)}>thêm guide x giữa</button>
     </div>
   ),
 }))
@@ -122,6 +126,26 @@ describe('DeckEditor', () => {
     // entire text is exactly "232,00", so an exact match is unambiguous and
     // still fails if the mesh area were ever wrong.
     expect(screen.getByText('232,00')).toBeInTheDocument()
+  })
+
+  it('passes each cell its recorded stage colour, and nothing for a cell with no stage', async () => {
+    // DrawingCanvas's own fill/opacity logic for cellColors is covered at the
+    // component level (DrawingCanvas.test.tsx, Task 7); what only this screen
+    // can prove is that DeckEditor actually computes and forwards the map --
+    // `cellColors` was previously never passed at all, so every cell rendered
+    // plain regardless of recorded progress.
+    listCells.mockResolvedValue([
+      { id: 'c1', code: 'R1C1', x: 0, y: 0, w: 0.5, h: 1, areaM2: 100, stageId: 'coat1' },
+      { id: 'c2', code: 'R1C2', x: 0.5, y: 0, w: 0.5, h: 1, areaM2: 100, stageId: null },
+    ])
+    listStages.mockResolvedValue([
+      { id: 'coat1', seq: 1, name: 'Coat 1', color: '#1677ff', weight: 0.2 },
+    ])
+    render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+    await screen.findByTestId('canvas')
+
+    expect(screen.getByRole('button', { name: 'chọn R1C1' })).toHaveAttribute('data-color', '#1677ff')
+    expect(screen.getByRole('button', { name: 'chọn R1C2' })).toHaveAttribute('data-color', '')
   })
 
   it('converts a typed span into the cumulative offset the mesh is built from', async () => {
@@ -224,6 +248,31 @@ describe('DeckEditor', () => {
     expect(screen.getByText('243,00')).toBeInTheDocument()
   })
 
+  it('reads a comma-decimal guide span the way a Vietnamese admin types it', async () => {
+    // The deck-area and stage-weight fields both carry decimalSeparator=","
+    // with a comment about this exact bug; the guide-span field was the one
+    // numeric input in this screen missing it. Proven through the generated
+    // mesh's area rather than the field's own display value: clearing an
+    // antd InputNumber with min={0} briefly reports 0 before the typed
+    // characters land, so a literal display-value assertion here would be
+    // pinned on that transient artifact rather than on the parsed number
+    // that actually reaches state.
+    listGuides.mockResolvedValue(ONE_BAY_GUIDES)
+    render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+    await screen.findByTestId('canvas')
+
+    const span = screen.getByDisplayValue('14500')
+    await userEvent.clear(span)
+    await userEvent.type(span, '14500,5')
+    await userEvent.click(screen.getByRole('button', { name: 'Sinh lưới ô' }))
+
+    // 14500.5mm x 16000mm = 232.008 m², rendered 232,01. Without
+    // decimalSeparator="," antd truncates the typed span to 14500 and this
+    // reads 232,00 instead -- the lost half-millimetre has nowhere left to
+    // show up once that happens.
+    expect(await screen.findByText('232,01')).toBeInTheDocument()
+  })
+
   it('deletes the guide the admin clicked, by its index into the unsorted list', async () => {
     // The rows are sorted by pos; `guides` is not. These three x-guides are
     // deliberately stored out of order, so the middle ROW is guides[2]. Deleting
@@ -257,6 +306,23 @@ describe('DeckEditor', () => {
     expect(screen.getByText('17,50')).toBeInTheDocument()
   })
 
+  it('gives a newly added guide an offset interpolated between its neighbours, not a bare 0', async () => {
+    // ONE_BAY_GUIDES: x at pos 0 (0mm) and pos 1 (14500mm). Adding a guide at
+    // pos 0.5 with the old offsetMm: 0 would sort AFTER the pos-0 guide but
+    // BEFORE the pos-1 guide in mm terms too (0 < 14500), so this fixture
+    // alone would not expose the old bug -- the interpolated midpoint
+    // (7250mm) is what proves the wiring reached DeckEditor at all, since 0
+    // happens to also be "monotonic" against a datum of 0.
+    listGuides.mockResolvedValue(ONE_BAY_GUIDES)
+    render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+    await screen.findByTestId('canvas')
+
+    await userEvent.click(screen.getByRole('button', { name: 'thêm guide x giữa' }))
+
+    // (0 + 14500) / 2 = 7250mm, vi-VN grouped.
+    expect(await screen.findByText('7.250')).toBeInTheDocument()
+  })
+
   it('warns when the cell areas diverge from the deck total beyond 5%', async () => {
     listCells.mockResolvedValue([
       { id: 'c1', code: 'R1C1', x: 0, y: 0, w: 1, h: 1, areaM2: 100, stageId: null },
@@ -270,7 +336,7 @@ describe('DeckEditor', () => {
     expect((await screen.findAllByText(/lệch/i)).length).toBeGreaterThan(0)
     // vi-VN throughout: a dot would read as a thousands separator here.
     // "thiếu" because the cells (100 m²) under-cover the declared 5258.5 m².
-    expect(screen.getByText(/thiếu 98,1%/)).toBeInTheDocument()
+    expect(screen.getByText(/thiếu 98,10%/)).toBeInTheDocument()
   })
 
   it('warns on over-coverage too, naming it "vượt" -- not just under-coverage', async () => {
@@ -286,7 +352,7 @@ describe('DeckEditor', () => {
       { id: 'c1', code: 'R1C1', x: 0, y: 0, w: 1, h: 1, areaM2: 6000, stageId: null },
     ])
     render(<DeckEditor deck={deck} onClose={vi.fn()} />)
-    expect(await screen.findByText(/vượt 14,1%/)).toBeInTheDocument()
+    expect(await screen.findByText(/vượt 14,10%/)).toBeInTheDocument()
   })
 
   it('does not warn when the areas agree', async () => {
@@ -306,6 +372,32 @@ describe('DeckEditor', () => {
     render(<DeckEditor deck={deck} onClose={vi.fn()} />)
     await screen.findByTestId('canvas')
     expect(screen.queryByText(/lệch/i)).toBeNull()
+  })
+
+  it('refuses to generate an empty mesh instead of silently wiping the cell set', async () => {
+    // Fewer than 2 guides on the y axis: buildMeshFromGuides returns [] for
+    // this shape. Replacing generateMesh's `if (mesh.length === 0)` guard
+    // with `if (false)` leaves every OTHER DeckEditor test green -- none of
+    // them exercises an axis with under 2 guides -- while in real use it
+    // would silently set `cells` to [] with no error at all, and the next
+    // save wipes the deck's whole geometry.
+    listGuides.mockResolvedValue([
+      { id: 'g1', axis: 'x', pos: 0, offsetMm: 0 },
+      { id: 'g2', axis: 'x', pos: 1, offsetMm: 14500 },
+      { id: 'g3', axis: 'y', pos: 0, offsetMm: 0 },
+    ])
+    listCells.mockResolvedValue([
+      { id: 'c1', code: 'R1C1', x: 0, y: 0, w: 1, h: 1, areaM2: 232, stageId: null },
+    ])
+    render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+    await screen.findByTestId('canvas')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Sinh lưới ô' }))
+
+    expect(await screen.findByText(/Cần ít nhất 2 đường guide/)).toBeInTheDocument()
+    // The cell that was already on screen must survive: silently emptying
+    // `cells` here is exactly the defect this guard exists to prevent.
+    expect(screen.getByTestId('canvas')).toHaveTextContent('R1C1')
   })
 
   it('pro-rates and records estimates when only one axis carries real spans', async () => {
@@ -404,6 +496,36 @@ describe('DeckEditor', () => {
     expect(syncCells.mock.calls[0][1]).toEqual([
       { code: 'R1C1', x: 0, y: 0, w: 1, h: 1, areaM2: 232 },
     ])
+  })
+
+  it('disables the delete and merge buttons while a review is in flight, so a double-tap cannot fire two passes', async () => {
+    listCells.mockResolvedValue([
+      { id: 'c1', code: 'R1C1', x: 0, y: 0, w: 1, h: 1, areaM2: 100, stageId: null },
+    ])
+    let resolveZoneImpact: (v: unknown[]) => void = () => {}
+    zoneImpactOf.mockImplementation(
+      () => new Promise((resolve) => { resolveZoneImpact = resolve }),
+    )
+    render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+    await screen.findByTestId('canvas')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Chọn tất cả' }))
+    const deleteButton = screen.getByRole('button', { name: 'Xoá ô đã chọn' })
+    await userEvent.click(deleteButton)
+
+    // beginEdit is awaiting zoneImpactOf -- the whole review is still in
+    // flight, and RTL's userEvent will not dispatch a click on a genuinely
+    // disabled button, so a second tap landing here is exactly what the
+    // disabled state prevents.
+    expect(deleteButton).toBeDisabled()
+    // The initial load's listCells, plus reviewEdit's own re-read: a second
+    // tap reaching beginEdit again would add a third call here.
+    expect(listCells).toHaveBeenCalledTimes(2)
+    await userEvent.click(deleteButton)
+    expect(listCells).toHaveBeenCalledTimes(2)
+
+    resolveZoneImpact([])
+    await waitFor(() => expect(deleteButton).not.toBeDisabled())
   })
 
   it('names the affected zones before deleting a cell', async () => {
@@ -1105,5 +1227,22 @@ describe('DeckEditor', () => {
     listCells.mockRejectedValue(new Error('JWT expired'))
     render(<DeckEditor deck={deck} onClose={vi.fn()} />)
     expect(await screen.findByText('JWT expired')).toBeInTheDocument()
+  })
+})
+
+describe('mergeErrorInVietnamese', () => {
+  // Unit-tested directly, unlike the other three markers this function
+  // matches (covered end to end through the rendered screen above): `cells`
+  // and `selected` both hold unique codes by construction under every UI
+  // path that reaches mergeCells, so there is no way to select the same cell
+  // twice through the DOM and drive mergeCells' 4th error that way.
+  it('translates the duplicate-cell merge error', () => {
+    const translated = mergeErrorInVietnamese('Merge selection contains the same cell more than once')
+    expect(translated).not.toMatch(/same cell more than once/i)
+    expect(translated).toMatch(/lặp lại/)
+  })
+
+  it('leaves an error it does not recognise unchanged', () => {
+    expect(mergeErrorInVietnamese('Some new domain error')).toBe('Some new domain error')
   })
 })

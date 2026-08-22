@@ -193,11 +193,11 @@ describe('DrawingCanvas', () => {
     render(
       <DrawingCanvas
         imageUrl="u" imageW={2000} imageH={1600} guides={guides} cells={cells}
-        selectedCodes={[]} width={1000}
+        selectedCodes={[]}
       />,
     )
-    // R1C2 sits at x = 0.5 of a 1000px-wide stage.
-    expect(screen.getByTestId('rect:cell-R1C2')).toHaveAttribute('data-x', '500')
+    // R1C2 sits at x = 0.5 of the fixed 900px-wide stage.
+    expect(screen.getByTestId('rect:cell-R1C2')).toHaveAttribute('data-x', '450')
   })
 
   it('scales normalized coordinates to the rendered height', () => {
@@ -208,84 +208,89 @@ describe('DrawingCanvas', () => {
     render(
       <DrawingCanvas
         imageUrl="u" imageW={2000} imageH={1600} guides={guides} cells={cellsWithVerticalOffset}
-        selectedCodes={[]} width={1000}
+        selectedCodes={[]}
       />,
     )
-    // height = imageH * (width / imageW) = 1600 * (1000 / 2000) = 800; y = 0.5 * 800 = 400.
-    expect(screen.getByTestId('rect:cell-R2C1')).toHaveAttribute('data-y', '400')
+    // height = imageH * (width / imageW) = 1600 * (900 / 2000) = 720; y = 0.5 * 720 = 360.
+    expect(screen.getByTestId('rect:cell-R2C1')).toHaveAttribute('data-y', '360')
   })
 
   describe('double-click axis tie-break', () => {
-    // A 1000x1000 stage (imageW === imageH, width === 1000) makes the
-    // vertical-edge distance and horizontal-edge distance directly
-    // comparable in the same units, so the boundary can be pinned exactly.
+    // A square drawing (imageW === imageH) makes the rendered stage square
+    // too (900x900, the fixed stage width): the vertical-edge distance and
+    // horizontal-edge distance are directly comparable in the same units, so
+    // the boundary can be pinned exactly. Click coordinates below are 0.9x
+    // what they would be against a 1000-wide stage, so the resulting
+    // fractions land on the same clean 0.1 / 0.5 values either way.
     const renderSquareStage = (onGuideAdd: (axis: 'x' | 'y', pos: number) => void) =>
       render(
         <DrawingCanvas
           imageUrl="u" imageW={1000} imageH={1000} guides={[]} cells={[]}
-          selectedCodes={[]} width={1000} onGuideAdd={onGuideAdd}
+          selectedCodes={[]} onGuideAdd={onGuideAdd}
         />,
       )
 
     it('adds a vertical guide when strictly closer to a vertical edge', () => {
       const onGuideAdd = vi.fn()
       renderSquareStage(onGuideAdd)
-      // (100, 500): 100 from the left edge vs. 500 from the top — vertical wins.
-      fireEvent.doubleClick(screen.getByTestId('stage:drawing'), { clientX: 100, clientY: 500 })
+      // (90, 450): 90 from the left edge vs. 450 from the top — vertical wins.
+      fireEvent.doubleClick(screen.getByTestId('stage:drawing'), { clientX: 90, clientY: 450 })
       expect(onGuideAdd).toHaveBeenCalledWith('x', 0.1)
     })
 
     it('adds a horizontal guide when strictly closer to a horizontal edge', () => {
       const onGuideAdd = vi.fn()
       renderSquareStage(onGuideAdd)
-      // (500, 100): 500 from the left edge vs. 100 from the top — horizontal wins.
-      fireEvent.doubleClick(screen.getByTestId('stage:drawing'), { clientX: 500, clientY: 100 })
+      // (450, 90): 450 from the left edge vs. 90 from the top — horizontal wins.
+      fireEvent.doubleClick(screen.getByTestId('stage:drawing'), { clientX: 450, clientY: 90 })
       expect(onGuideAdd).toHaveBeenCalledWith('y', 0.1)
     })
 
     it('breaks an exact tie in favour of the vertical (x) axis', () => {
       const onGuideAdd = vi.fn()
       renderSquareStage(onGuideAdd)
-      // (500, 500): equidistant (500) from both a vertical and a horizontal
-      // edge. This is the boundary itself — if the comparison flipped from
-      // `<=` to `<`, this assertion would fail and 'y' would win instead.
-      fireEvent.doubleClick(screen.getByTestId('stage:drawing'), { clientX: 500, clientY: 500 })
+      // (450, 450): equidistant from both a vertical and a horizontal edge on
+      // a 900-wide stage. This is the boundary itself -- if the comparison
+      // flipped from `<=` to `<`, this assertion would fail and 'y' would
+      // win instead.
+      fireEvent.doubleClick(screen.getByTestId('stage:drawing'), { clientX: 450, clientY: 450 })
       expect(onGuideAdd).toHaveBeenCalledWith('x', 0.5)
     })
   })
 
   describe('guide drag clamp', () => {
-    // width === imageW === imageH === 1000 keeps the pixel/normalized math 1:1.
+    // imageW === imageH keeps height === width (900, the fixed stage width),
+    // so the pixel/normalized math is 1:1 on this square stage.
     const renderWithGuide = (onGuideMove: (index: number, pos: number) => void, pos: number) =>
       render(
         <DrawingCanvas
           imageUrl="u" imageW={1000} imageH={1000}
           guides={[{ axis: 'x' as const, pos, offsetMm: 0 }]} cells={[]}
-          selectedCodes={[]} width={1000} onGuideMove={onGuideMove}
+          selectedCodes={[]} onGuideMove={onGuideMove}
         />,
       )
 
     it('clamps a drag that would push the guide past 1 back to 1', () => {
       const onGuideMove = vi.fn()
       renderWithGuide(onGuideMove, 0.9)
-      // (0.9 * 1000 + 500) / 1000 = 1.4 — past the top of the 0..1 range.
-      fireEvent.mouseUp(screen.getByTestId('line:guide-x-0'), { clientX: 500, clientY: 0 })
+      // (0.9 * 900 + 450) / 900 = 1.4 — past the top of the 0..1 range.
+      fireEvent.mouseUp(screen.getByTestId('line:guide-x-0'), { clientX: 450, clientY: 0 })
       expect(onGuideMove).toHaveBeenCalledWith(0, 1)
     })
 
     it('clamps a drag that would push the guide past 0 back to 0', () => {
       const onGuideMove = vi.fn()
       renderWithGuide(onGuideMove, 0.1)
-      // (0.1 * 1000 + -500) / 1000 = -0.4 — past the bottom of the 0..1 range.
-      fireEvent.mouseUp(screen.getByTestId('line:guide-x-0'), { clientX: -500, clientY: 0 })
+      // (0.1 * 900 + -450) / 900 = -0.4 — past the bottom of the 0..1 range.
+      fireEvent.mouseUp(screen.getByTestId('line:guide-x-0'), { clientX: -450, clientY: 0 })
       expect(onGuideMove).toHaveBeenCalledWith(0, 0)
     })
 
     it('reports an in-range drag unclamped', () => {
       const onGuideMove = vi.fn()
       renderWithGuide(onGuideMove, 0.5)
-      // (0.5 * 1000 + 100) / 1000 = 0.6 — safely inside 0..1.
-      fireEvent.mouseUp(screen.getByTestId('line:guide-x-0'), { clientX: 100, clientY: 0 })
+      // (0.5 * 900 + 90) / 900 = 0.6 — safely inside 0..1.
+      fireEvent.mouseUp(screen.getByTestId('line:guide-x-0'), { clientX: 90, clientY: 0 })
       expect(onGuideMove).toHaveBeenCalledWith(0, 0.6)
     })
 
@@ -297,7 +302,7 @@ describe('DrawingCanvas', () => {
       // areas, and cell areas determine every reported percentage).
       const onGuideMove = vi.fn()
       renderWithGuide(onGuideMove, 0.5)
-      fireEvent.mouseUp(screen.getByTestId('line:guide-x-0'), { clientX: 100, clientY: 0 })
+      fireEvent.mouseUp(screen.getByTestId('line:guide-x-0'), { clientX: 90, clientY: 0 })
       expect(positionSpy).toHaveBeenCalledWith({ x: 0, y: 0 })
     })
 
@@ -305,8 +310,8 @@ describe('DrawingCanvas', () => {
       const onGuideMove = vi.fn()
       const { rerender } = renderWithGuide(onGuideMove, 0.5)
 
-      // First drag: pointer moves +100px. (0.5 * 1000 + 100) / 1000 = 0.6.
-      fireEvent.mouseUp(screen.getByTestId('line:guide-x-0'), { clientX: 100, clientY: 0 })
+      // First drag: pointer moves +90px. (0.5 * 900 + 90) / 900 = 0.6.
+      fireEvent.mouseUp(screen.getByTestId('line:guide-x-0'), { clientX: 90, clientY: 0 })
       expect(onGuideMove).toHaveBeenNthCalledWith(1, 0, 0.6)
 
       // The real consumer (Task 8's DeckEditor) applies that update and
@@ -315,18 +320,18 @@ describe('DrawingCanvas', () => {
         <DrawingCanvas
           imageUrl="u" imageW={1000} imageH={1000}
           guides={[{ axis: 'x' as const, pos: 0.6, offsetMm: 0 }]} cells={[]}
-          selectedCodes={[]} width={1000} onGuideMove={onGuideMove}
+          selectedCodes={[]} onGuideMove={onGuideMove}
         />,
       )
 
-      // Second drag: pointer moves +100px again -- the same size step as the
+      // Second drag: pointer moves +90px again -- the same size step as the
       // first. The second reported position must be exactly one more step
       // past the first (0.7), not further from it than the first step was
       // from the start (0.6 -> 0.7 is a 0.1 step, same as 0.5 -> 0.6). If the
-      // reset above were missing, the first drag's leftover 100px would still
+      // reset above were missing, the first drag's leftover 90px would still
       // be sitting on the node, and this would report 0.8 instead -- the
       // guide drifting by twice the intended step.
-      fireEvent.mouseUp(screen.getByTestId('line:guide-x-0'), { clientX: 100, clientY: 0 })
+      fireEvent.mouseUp(screen.getByTestId('line:guide-x-0'), { clientX: 90, clientY: 0 })
       expect(onGuideMove).toHaveBeenNthCalledWith(2, 0, 0.7)
     })
   })

@@ -26,21 +26,14 @@ const STAGE_FILL_OPACITY = 0.45
  */
 const SELECTION_OVERLAY_FILL = 'rgba(235, 47, 150, 0.28)'
 const SELECTION_STROKE = '#eb2f96'
-
-export interface DrawingCanvasProps {
-  imageUrl: string
-  imageW: number
-  imageH: number
-  guides: Omit<Guide, 'id'>[]
-  cells: MeshCell[]
-  selectedCodes: string[]
-  /** Colour per cell code; a code absent from the map renders unfilled. */
-  cellColors?: Record<string, string>
-  onGuideMove?: (index: number, pos: number) => void
-  onGuideAdd?: (axis: 'x' | 'y', pos: number) => void
-  onCellClick?: (code: string, additive: boolean) => void
-  width?: number
-}
+/**
+ * Rendered stage width, in px. Not a prop: no production caller ever supplied
+ * one, so the customisability was dead flexibility rather than something the
+ * app actually used -- see the task report for the review finding this
+ * removes. The drawing's own aspect ratio (imageW/imageH) still determines
+ * the rendered height.
+ */
+const STAGE_WIDTH = 900
 
 export function DrawingCanvas({
   imageUrl,
@@ -53,9 +46,21 @@ export function DrawingCanvas({
   onGuideMove,
   onGuideAdd,
   onCellClick,
-  width = 900,
-}: DrawingCanvasProps) {
+}: {
+  imageUrl: string
+  imageW: number
+  imageH: number
+  guides: Omit<Guide, 'id'>[]
+  cells: MeshCell[]
+  selectedCodes: string[]
+  /** Colour per cell code; a code absent from the map renders unfilled. */
+  cellColors?: Record<string, string>
+  onGuideMove?: (index: number, pos: number) => void
+  onGuideAdd?: (axis: 'x' | 'y', pos: number) => void
+  onCellClick?: (code: string, additive: boolean) => void
+}) {
   const [image] = useImage(imageUrl)
+  const width = STAGE_WIDTH
   const scale = width / imageW
   const height = imageH * scale
   const selected = new Set(selectedCodes)
