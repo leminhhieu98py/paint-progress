@@ -149,65 +149,249 @@ describe('listGuides', () => {
 })
 
 describe('saveGuides', () => {
-  it('deletes every existing guide for the deck, then inserts the new set', async () => {
-    const del = builder({})
-    const ins = builder({})
-    from.mockImplementationOnce(() => del).mockImplementationOnce(() => ins)
+  type GuideRow = { id: string; deck_id: string; axis: 'x' | 'y'; pos: number; offset_mm: number }
+
+  /**
+   * A stand-in for `deck_guides` that holds ROWS, so what a test asserts is what
+   * the deck would still contain -- not which builder answered which call.
+   *
+   * The call-counting version of these tests could not fail. "A failed upsert
+   * cannot lose an existing guide" was expressed as "the second `from` call
+   * errored and the third builder was untouched", which stays true when the
+   * delete and the upsert swap places: the delete simply becomes the statement
+   * that errors, having already removed the guide the test claims survived. That
+   * is the same shape of hole that let the stage-removal regression through three
+   * layers of evidence, one table over.
+   *
+   * `failOn` fails one statement without applying it, the way a rejected
+   * statement leaves the table alone.
+   */
+  function guideTable(initial: GuideRow[], failOn?: 'upsert' | 'delete') {
+    let rows = initial.map((r) => ({ ...r }))
+    const statements: string[] = []
+
+    const from = () => {
+      let op: 'select' | 'upsert' | 'delete' | null = null
+      let payload: GuideRow[] = []
+      let conflictTarget: string[] = []
+      let ids: string[] | null = null
+      const filters: [string, unknown][] = []
+
+      const run = (): { data: unknown; error: unknown } => {
+        statements.push(op ?? 'none')
+        if (op === failOn) return { data: null, error: { message: `${op} refused` } }
+        const matches = (r: GuideRow) =>
+          filters.every(([col, v]) => (r as unknown as Record<string, unknown>)[col] === v)
+
+        if (op === 'delete') {
+          // No id list means a filter-only delete -- the deck-wide wipe this
+          // rewrite exists to remove. Modelled faithfully so it shows up as
+          // missing rows rather than as a passing assertion.
+          rows = rows.filter((r) => !(matches(r) && (ids === null || ids.includes(r.id))))
+          return { data: null, error: null }
+        }
+        if (op === 'upsert') {
+          const keyOf = (r: Record<string, unknown>) =>
+            conflictTarget.map((k) => String(r[k])).join('|')
+          for (const incoming of payload) {
+            const existing = rows.find((r) => keyOf(r) === keyOf(incoming))
+            if (existing) Object.assign(existing, incoming)
+            else rows.push({ ...incoming })
+          }
+          return { data: null, error: null }
+        }
+        return {
+          data: rows
+            .filter(matches)
+            .slice()
+            .sort((a, b) => a.offset_mm - b.offset_mm)
+            .map((r) => ({
+              id: r.id, axis: r.axis, pos: String(r.pos), offset_mm: String(r.offset_mm),
+            })),
+          error: null,
+        }
+      }
+
+      const b: Record<string, unknown> = {}
+      b.select = vi.fn(() => { op = 'select'; return b })
+      b.delete = vi.fn(() => { op = 'delete'; return b })
+      b.insert = vi.fn((p: GuideRow[]) => {
+        // The pre-rewrite write shape. Kept so a reverted saveGuides is answered
+        // rather than crashing on an undefined method: an insert appends rows
+        // with no identity, which is exactly what it used to do.
+        op = 'upsert'
+        payload = p
+        conflictTarget = ['id']
+        return b
+      })
+      b.upsert = vi.fn((p: GuideRow[], opts: { onConflict: string }) => {
+        op = 'upsert'
+        payload = p
+        conflictTarget = opts.onConflict.split(',')
+        return b
+      })
+      b.eq = vi.fn((col: string, value: unknown) => { filters.push([col, value]); return b })
+      b.in = vi.fn((_col: string, values: string[]) => { ids = values; return b })
+      b.order = vi.fn(() => b)
+      b.then = (resolve: (v: unknown) => unknown) => Promise.resolve(run()).then(resolve)
+      return b
+    }
+
+    return { rows: () => rows, statements, from }
+  }
+
+  /** Two x-guides 14500 mm apart on deck d1 -- the shape every fixture here uses. */
+  const twoGuides = (): GuideRow[] => [
+    { id: 'g1', deck_id: 'd1', axis: 'x', pos: 0, offset_mm: 0 },
+    { id: 'g2', deck_id: 'd1', axis: 'x', pos: 1, offset_mm: 14500 },
+  ]
+
+  it('keeps an untouched guide on its own row across a save', async () => {
+    // The whole point of the rewrite. A guide the admin did not touch is an
+    // UPDATE of its own row, so its id survives and there is nothing for a later
+    // failure to lose. Under the delete-then-insert version both ids changed on
+    // every save, which is why identity was not available to diff on at all.
+    const table = guideTable(twoGuides())
+    from.mockImplementation(table.from)
 
     await saveGuides('d1', [
-      { axis: 'x', pos: 0, offsetMm: 0 },
-      { axis: 'x', pos: 1, offsetMm: 14500 },
+      { id: 'g1', axis: 'x', pos: 0, offsetMm: 0 },
+      { id: 'g2', axis: 'x', pos: 1, offsetMm: 14500.5 },
     ])
 
-    // Ordering is pinned by which builder answers which `from()` call: the
-    // real function must call delete before insert for this sequence to
-    // resolve without throwing (an insert-then-delete order would see the
-    // insert answered by `del`, which has no rows to report and no error --
-    // masking the bug rather than catching it -- so the payload assertions
-    // below are what actually pins the order).
-    expect(del.delete).toHaveBeenCalled()
-    expect(del.eq).toHaveBeenCalledWith('deck_id', 'd1')
-    expect(ins.insert).toHaveBeenCalledWith([
-      { deck_id: 'd1', axis: 'x', pos: 0, offset_mm: 0 },
-      { deck_id: 'd1', axis: 'x', pos: 1, offset_mm: 14500 },
+    expect(table.rows()).toEqual([
+      { id: 'g1', deck_id: 'd1', axis: 'x', pos: 0, offset_mm: 0 },
+      { id: 'g2', deck_id: 'd1', axis: 'x', pos: 1, offset_mm: 14500.5 },
+    ])
+    // Nothing removed, so no delete round trip at all.
+    expect(table.statements).toEqual(['select', 'upsert'])
+  })
+
+  it('cannot lose an existing guide when the upsert fails', async () => {
+    // The failure the rewrite exists for, asserted on the rows that survive.
+    //
+    // A save now fires on every cell delete and every merge, so this runs on a
+    // site tether constantly. When it fails, the deck must still hold its mm
+    // chain -- local state is the only other copy, and closing the editor would
+    // have lost it for good. The upsert is issued BEFORE the delete precisely so
+    // a failure here has deleted nothing.
+    const table = guideTable(twoGuides(), 'upsert')
+    from.mockImplementation(table.from)
+
+    // g2 dropped, so there is a delete queued behind the upsert that just failed.
+    await expect(
+      saveGuides('d1', [{ id: 'g1', axis: 'x', pos: 0, offsetMm: 0 }]),
+    ).rejects.toThrow('upsert refused')
+
+    expect(table.rows()).toEqual(twoGuides())
+    expect(table.statements).toEqual(['select', 'upsert'])
+  })
+
+  it('loses nothing the admin typed when the delete fails after the upsert', async () => {
+    // The half-failure this order deliberately chooses. The typed offsets are
+    // committed and the deck keeps one stale guide, which shows up on the next
+    // generated mesh as a spurious column and is fixable from the screen.
+    const table = guideTable(twoGuides(), 'delete')
+    from.mockImplementation(table.from)
+
+    await expect(
+      saveGuides('d1', [{ id: 'g1', axis: 'x', pos: 0, offsetMm: 250 }]),
+    ).rejects.toThrow('delete refused')
+
+    expect(table.rows()).toEqual([
+      { id: 'g1', deck_id: 'd1', axis: 'x', pos: 0, offset_mm: 250 },
+      { id: 'g2', deck_id: 'd1', axis: 'x', pos: 1, offset_mm: 14500 },
     ])
   })
 
-  it('does not insert at all when the new guide set is empty', async () => {
-    const del = builder({})
-    from.mockImplementationOnce(() => del)
+  it('removes only the guide the admin deleted', async () => {
+    const table = guideTable([
+      ...twoGuides(),
+      { id: 'g3', deck_id: 'd1', axis: 'x', pos: 0.5, offset_mm: 7000 },
+    ])
+    from.mockImplementation(table.from)
+
+    await saveGuides('d1', [
+      { id: 'g1', axis: 'x', pos: 0, offsetMm: 0 },
+      { id: 'g2', axis: 'x', pos: 1, offsetMm: 14500 },
+    ])
+
+    expect(table.rows().map((r) => r.id)).toEqual(['g1', 'g2'])
+  })
+
+  it('leaves another deck\'s guides alone', async () => {
+    // The delete is by id, but a deck-wide `.eq('deck_id', ...)` delete would
+    // still pass every assertion above -- this is the one that separates them,
+    // and it is why the stand-in honours filters instead of ignoring them.
+    const table = guideTable([
+      ...twoGuides(),
+      { id: 'other', deck_id: 'd2', axis: 'x', pos: 0, offset_mm: 0 },
+    ])
+    from.mockImplementation(table.from)
+
+    await saveGuides('d1', [{ id: 'g1', axis: 'x', pos: 0, offsetMm: 0 }])
+
+    expect(table.rows().map((r) => r.id)).toEqual(['g1', 'other'])
+  })
+
+  it('carries a newly minted id into the upsert, so a new guide is an insert of a known row', async () => {
+    // DeckEditor mints the id when the admin adds the guide, so the row arrives
+    // already identified rather than needing to be matched up afterwards.
+    const table = guideTable(twoGuides())
+    from.mockImplementation(table.from)
+
+    await saveGuides('d1', [
+      { id: 'g1', axis: 'x', pos: 0, offsetMm: 0 },
+      { id: 'g2', axis: 'x', pos: 1, offsetMm: 14500 },
+      { id: 'fresh-uuid', axis: 'x', pos: 0.5, offsetMm: 7000 },
+    ])
+
+    expect(table.rows().map((r) => r.id)).toEqual(['g1', 'g2', 'fresh-uuid'])
+  })
+
+  it('upserts on the id, with the payload PostgREST expects', async () => {
+    const read = builder({ data: [] })
+    const up = builder({})
+    from.mockImplementationOnce(() => read).mockImplementationOnce(() => up)
+
+    await saveGuides('d1', [{ id: 'g1', axis: 'y', pos: 0.25, offsetMm: 4000 }])
+
+    expect(up.upsert).toHaveBeenCalledWith(
+      [{ id: 'g1', deck_id: 'd1', axis: 'y', pos: 0.25, offset_mm: 4000 }],
+      { onConflict: 'id' },
+    )
+  })
+
+  it('clears every guide without an upsert when the new set is empty', async () => {
+    // Deleting the last guide is a legitimate edit, so an empty set still has to
+    // remove the persisted rows -- by their ids, not by the deck.
+    const table = guideTable(twoGuides())
+    from.mockImplementation(table.from)
 
     await saveGuides('d1', [])
 
-    // Exactly one call: the delete. A second would mean an insert([]) round
-    // trip that can only ever write nothing.
-    expect(from).toHaveBeenCalledTimes(1)
+    expect(table.rows()).toEqual([])
+    // An upsert([]) round trip could only ever write nothing.
+    expect(table.statements).toEqual(['select', 'delete'])
   })
 
-  it('throws when the delete fails, and never attempts the insert', async () => {
-    from.mockImplementationOnce(() => builder({ error: { message: 'delete blocked' } }))
+  it('issues no write at all for a deck that has no guides and is given none', async () => {
+    const table = guideTable([])
+    from.mockImplementation(table.from)
 
-    await expect(
-      saveGuides('d1', [{ axis: 'x', pos: 0, offsetMm: 0 }]),
-    ).rejects.toThrow('delete blocked')
+    await saveGuides('d1', [])
 
-    expect(from).toHaveBeenCalledTimes(1)
+    expect(table.statements).toEqual(['select'])
   })
 
-  it('throws when the insert fails -- after the delete already committed, with no transaction covering both', async () => {
-    // The hazard B7 flags: saveGuides is two round trips with no transaction.
-    // By the time this rejects, every guide for this deck is already gone
-    // from the database; the insert meant to replace them never landed. The
-    // editor's local state still shows the old mm chain until the next
-    // reload, but the database holds none of it.
-    const del = builder({})
-    from.mockImplementationOnce(() => del).mockImplementationOnce(() => builder({ error: { message: 'insert refused' } }))
+  it('throws when the snapshot read fails, before writing anything', async () => {
+    from.mockImplementationOnce(() => builder({ error: { message: 'network down' } }))
 
     await expect(
-      saveGuides('d1', [{ axis: 'x', pos: 0, offsetMm: 0 }]),
-    ).rejects.toThrow('insert refused')
+      saveGuides('d1', [{ id: 'g1', axis: 'x', pos: 0, offsetMm: 0 }]),
+    ).rejects.toThrow('network down')
 
-    expect(from).toHaveBeenCalledTimes(2)
+    expect(from).toHaveBeenCalledTimes(1)
   })
 })
 

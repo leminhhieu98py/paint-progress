@@ -5,26 +5,7 @@ import { formatWeight } from '../../lib/format'
 import {
   listStages, roundStageWeight, saveStages, stagesRemovedBy, STAGE_WEIGHT_EPSILON,
 } from '../../lib/projectsApi'
-
-/**
- * `crypto.randomUUID` requires a secure context (https, or localhost) -- and
- * this admin app has no promise of being served over https. A site office on
- * a bare HTTP LAN IP is entirely plausible, and there `crypto.randomUUID` is
- * simply not a function: "Thêm lớp" throws, with nothing on screen to explain
- * why, and the admin cannot add a paint layer at all.
- *
- * `crypto.getRandomValues` carries no such restriction, so it is the fallback
- * here, building a v4 UUID by hand from 16 random bytes. `randomUUID` stays
- * the preferred path wherever it exists.
- */
-function randomUUID(): string {
-  if (typeof crypto.randomUUID === 'function') return crypto.randomUUID()
-  const bytes = crypto.getRandomValues(new Uint8Array(16))
-  bytes[6] = (bytes[6] & 0x0f) | 0x40 // version 4
-  bytes[8] = (bytes[8] & 0x3f) | 0x80 // variant 10xx
-  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')
-  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
-}
+import { randomUUID } from '../../lib/uuid'
 
 /**
  * saveStages' own guard errors, in the admin's language.
@@ -173,8 +154,8 @@ export function StageConfigPanel({
         // The id is minted here, not by the database, so the row carries its
         // identity from the moment it exists: saveStages' upsert keys on the id,
         // which turns a new stage into an INSERT of a known row rather than a
-        // match to be worked out afterwards. See randomUUID above for why this
-        // is not a bare crypto.randomUUID() call.
+        // match to be worked out afterwards. See lib/uuid.ts for why this is
+        // not a bare crypto.randomUUID() call.
         { id: randomUUID(), seq: 0, name: 'Lớp mới', color: '#8c8c8c', weight: 0 },
       ]),
     )

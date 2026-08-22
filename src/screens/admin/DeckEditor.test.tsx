@@ -464,6 +464,47 @@ describe('DeckEditor', () => {
     )
   })
 
+  it('sends every untouched guide back under the id it was loaded with', async () => {
+    // C3. saveGuides diffs on the guide id, so the ids have to survive the round
+    // trip through this screen's state. They were stripped on load and
+    // re-invented as array indices on the way into buildMeshFromGuides, which
+    // left saveGuides nothing to diff on -- so it deleted every guide for the
+    // deck and re-inserted them, and a failed insert on a site tether took the
+    // deck's whole mm chain with it.
+    listGuides.mockResolvedValue(ONE_BAY_GUIDES)
+    syncCells.mockResolvedValue(undefined)
+    render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+    await screen.findByTestId('canvas')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Lưu bản vẽ và lưới ô' }))
+
+    await waitFor(() => expect(saveGuides).toHaveBeenCalledTimes(1))
+    expect(saveGuides.mock.calls[0][1]).toEqual(ONE_BAY_GUIDES)
+  })
+
+  it('mints a real uuid for a guide the admin adds, so it is an insert of a known row', async () => {
+    // The other half: a guide that has no database row yet still needs an
+    // identity before the write, because the write is an upsert keyed on it.
+    // Index-shaped ids would collide with nothing and match nothing.
+    listGuides.mockResolvedValue(ONE_BAY_GUIDES)
+    syncCells.mockResolvedValue(undefined)
+    render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+    await screen.findByTestId('canvas')
+
+    await userEvent.click(screen.getByRole('button', { name: 'thêm guide x giữa' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Lưu bản vẽ và lưới ô' }))
+
+    await waitFor(() => expect(saveGuides).toHaveBeenCalledTimes(1))
+    const saved = saveGuides.mock.calls[0][1] as { id: string }[]
+    expect(saved).toHaveLength(5)
+    // The four loaded guides keep their own ids, in order, and the new one
+    // carries a v4 uuid rather than an array index.
+    expect(saved.slice(0, 4).map((g) => g.id)).toEqual(['g1', 'g2', 'g3', 'g4'])
+    expect(saved[4].id).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+    )
+  })
+
   it('gates the mesh save behind the warning when it would drop a ticked cell', async () => {
     // A regenerated mesh reuses R1C1, R1C2, ... so its codes collide with
     // persisted cells -- and any persisted code the new mesh does NOT contain

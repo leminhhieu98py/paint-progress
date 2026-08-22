@@ -14,12 +14,11 @@ import {
 } from '../../lib/decksApi'
 import { formatAreaM2, formatMm, formatPercent } from '../../lib/format'
 import { listStages } from '../../lib/projectsApi'
+import { randomUUID } from '../../lib/uuid'
 import { DrawingCanvas } from './DrawingCanvas'
 
-type DraftGuide = Omit<Guide, 'id'>
-
 /** A guide table row: the guide, its index into the unsorted `guides` array, and the span to the guide before it. */
-type AxisRow = DraftGuide & { index: number; spanMm: number }
+type AxisRow = Guide & { index: number; spanMm: number }
 
 /** An edit that replaces the deck's cell set, held while the warning is on screen. */
 interface PendingEdit {
@@ -96,7 +95,16 @@ export function mergeErrorInVietnamese(message: string): string {
 }
 
 export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => void }) {
-  const [guides, setGuides] = useState<DraftGuide[]>([])
+  /**
+   * The guides being edited, each carrying the id it is identified by.
+   *
+   * The ids are real: `listGuides` supplies the database's own, and a guide the
+   * admin adds gets one minted here. They used to be discarded on load and
+   * re-invented as array indices on the way into buildMeshFromGuides, which left
+   * saveGuides no identity to diff on -- so it deleted every guide for the deck
+   * and re-inserted, and a failed insert lost the whole mm chain. See saveGuides.
+   */
+  const [guides, setGuides] = useState<Guide[]>([])
   const [stages, setStages] = useState<Stage[]>([])
   const [cells, setCells] = useState<MeshCell[]>([])
   /**
@@ -151,7 +159,9 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
         listStages(deck.projectId),
       ])
       setStages(s)
-      setGuides(g.map(({ axis, pos, offsetMm }) => ({ axis, pos, offsetMm })))
+      // Ids kept, not stripped: they are what saveGuides diffs on, so an
+      // untouched guide keeps its row instead of being deleted and re-inserted.
+      setGuides(g)
       setCells(c.map(({ code, x, y, w, h, areaM2 }) => ({ code, x, y, w, h, areaM2 })))
       setCellStages(Object.fromEntries(c.map((p) => [p.code, p.stageId])))
       if (deck.imagePath) setImageUrl(await getDrawingUrl(deck.imagePath))
@@ -241,8 +251,11 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
   }, [guides])
 
   const generateMesh = () => {
-    const withIds: Guide[] = guides.map((g, i) => ({ ...g, id: String(i) }))
-    const mesh = buildMeshFromGuides(withIds)
+    // `guides` carries real ids, so there is nothing to substitute. This used to
+    // overwrite every id with the array index -- harmless for the mesh, which
+    // reads only axis/pos/offsetMm, but it is why the ids were being thrown away
+    // on load in the first place, and why saveGuides had no identity to diff on.
+    const mesh = buildMeshFromGuides(guides)
     if (mesh.length === 0) {
       // The brief's own draft used "đường giống dọc/ngang" here ("giống" =
       // "similar to"), which does not mean anything in this context. Every
@@ -637,8 +650,16 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
           // neighbour to its left breaks the mm chain's pos-order
           // monotonicity and produces a negative span -- A6's dragging
           // defect, reached through the other door. See interpolateOffsetMm.
+          // The id is minted here, not by the database, so the guide carries its
+          // identity from the moment it exists -- saveGuides' upsert keys on it,
+          // which makes a new guide an INSERT of a known row rather than
+          // something to match up afterwards. See lib/uuid.ts for why this is
+          // not a bare crypto.randomUUID() call.
           onGuideAdd={(axis, pos) =>
-            setGuides((prev) => [...prev, { axis, pos, offsetMm: interpolateOffsetMm(prev, axis, pos) }])
+            setGuides((prev) => [
+              ...prev,
+              { id: randomUUID(), axis, pos, offsetMm: interpolateOffsetMm(prev, axis, pos) },
+            ])
           }
           onCellClick={(code, additive) =>
             setSelected((prev) =>
