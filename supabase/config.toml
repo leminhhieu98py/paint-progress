@@ -385,6 +385,16 @@ deno_version = 2
 # [edge_runtime.secrets]
 # secret_key = "env(SECRET_VALUE)"
 
+# admin-users is the only privileged HTTP surface in the system (create/reveal/
+# set-password/deactivate for GS accounts). Keep the platform's JWT gateway check
+# on: an unauthenticated call should be rejected before the function even runs.
+# The function's own callerAdminId check is the second layer -- it re-validates
+# the token and requires an active admin profile -- so a valid but non-admin JWT
+# (e.g. a GS account) still gets 403 from our own code. Defence in depth, not
+# either/or.
+[functions.admin-users]
+verify_jwt = true
+
 [analytics]
 enabled = true
 port = 54327
