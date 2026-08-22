@@ -63,6 +63,15 @@ describe('offsetsFromSpans', () => {
   it('places the datum wherever the caller says, not at zero', () => {
     expect(offsetsFromSpans(1000, [0, 2500, 9500])).toEqual([1000, 3500, 13000])
   })
+
+  it('ignores spansMm[0], the datum row\'s own span, no matter what value it carries', () => {
+    // The doc comment says spansMm[0] is ignored -- every other test in this
+    // file passes 0 there, which folding it into the running sum would also
+    // satisfy, so this is the one case that actually exercises the contract.
+    // A huge, obviously-wrong value proves it: if it were not ignored, the
+    // first offset alone would come back as 1000 + 999999, not 1000.
+    expect(offsetsFromSpans(1000, [999999, 2500, 9500])).toEqual([1000, 3500, 13000])
+  })
 })
 
 describe('spansFromOffsets', () => {

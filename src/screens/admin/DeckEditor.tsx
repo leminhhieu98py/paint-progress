@@ -34,6 +34,14 @@ interface PendingEdit {
   inheritFrom: Record<string, string[]>
   /** Cells whose recorded progress this edit discards, with the stage name. */
   progressLoss: { code: string; stageName: string }[]
+  /**
+   * Cells whose code survives this edit, and whose recorded stage therefore
+   * survives with it, but whose area moves by more than
+   * AREA_DIVERGENCE_THRESHOLD -- so the stage's "completed" area quietly
+   * grows or shrinks onto a different extent than whoever ticked it signed
+   * off on.
+   */
+  reshaped: { code: string; stageName: string; fromAreaM2: number; toAreaM2: number }[]
 }
 
 /**
@@ -245,8 +253,26 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
           stageName: stages.find((s) => s.id === p.stageId)?.name ?? 'không rõ',
         }))
 
-      if (impact.length > 0 || progressLoss.length > 0) {
-        setPending({ kind, cells: next, impact, inheritFrom, progressLoss })
+      // Cells whose code survives this edit -- so their recorded stage
+      // survives with it, untouched by syncCells -- but whose area moves by
+      // more than AREA_DIVERGENCE_THRESHOLD. That stage's "completed" area
+      // then quietly covers a different extent than whoever ticked it
+      // inspected, with no other signal that it happened.
+      const reshaped = persisted
+        .filter((p) => p.stageId && nextCodes.has(p.code))
+        .flatMap((p) => {
+          const match = next.find((n) => n.code === p.code)
+          if (!match || !divergesBeyondThreshold(p.areaM2, [{ areaM2: match.areaM2 }])) return []
+          return [{
+            code: p.code,
+            stageName: stages.find((s) => s.id === p.stageId)?.name ?? 'không rõ',
+            fromAreaM2: p.areaM2,
+            toAreaM2: match.areaM2,
+          }]
+        })
+
+      if (impact.length > 0 || progressLoss.length > 0 || reshaped.length > 0) {
+        setPending({ kind, cells: next, impact, inheritFrom, progressLoss, reshaped })
         return
       }
       await apply(next, inheritFrom)
@@ -435,11 +461,14 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
       */}
       <Modal
         open={pending !== null}
+        destroyOnHidden
         title={
           pending &&
           (pending.impact.length > 0
             ? `${EDIT_SUBJECT[pending.kind]} sẽ ảnh hưởng zone`
-            : `${EDIT_SUBJECT[pending.kind]} sẽ làm mất tiến độ đã ghi`)
+            : pending.progressLoss.length > 0
+              ? `${EDIT_SUBJECT[pending.kind]} sẽ làm mất tiến độ đã ghi`
+              : `${EDIT_SUBJECT[pending.kind]} sẽ đổi diện tích ô đang có tiến độ`)
         }
         okText={pending ? EDIT_CONFIRM[pending.kind] : undefined}
         cancelText="Huỷ"
@@ -452,10 +481,16 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
             Các ô này đang thuộc zone. Thao tác này sẽ làm chúng rời khỏi zone đó, và
             kế hoạch tiến độ của zone sẽ nhỏ lại mà không có cảnh báo nào khác.
           </Typography.Paragraph>
-        ) : (
+        ) : pending && pending.progressLoss.length > 0 ? (
           <Typography.Paragraph>
             Không có zone nào bị ảnh hưởng. Nhưng thao tác này sẽ xoá tiến độ đã ghi
             của các ô dưới đây.
+          </Typography.Paragraph>
+        ) : (
+          <Typography.Paragraph>
+            Không có zone nào bị ảnh hưởng, và không có tiến độ nào bị xoá. Nhưng các
+            ô dưới đây sẽ đổi diện tích trong khi vẫn giữ nguyên tiến độ đã ghi, nên
+            diện tích đã hoàn thành của chúng sẽ tự đổi theo mà chưa ai kiểm tra lại.
           </Typography.Paragraph>
         )}
         {pending && pending.impact.length > 0 && (
@@ -487,6 +522,22 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
                 nhất thì bỏ mất công đã làm.
               </Typography.Paragraph>
             )}
+          </>
+        )}
+
+        {pending && pending.reshaped.length > 0 && (
+          <>
+            <Typography.Paragraph strong>
+              Các ô sau đổi diện tích hơn {AREA_DIVERGENCE_THRESHOLD * 100}% nhưng vẫn giữ
+              tiến độ đã ghi, nên diện tích đã hoàn thành của chúng sẽ tự đổi theo:
+            </Typography.Paragraph>
+            <ul>
+              {pending.reshaped.map((r) => (
+                <li key={r.code}>
+                  <strong>{r.code}</strong> — {r.stageName}: {area.format(r.fromAreaM2)} → {area.format(r.toAreaM2)} m²
+                </li>
+              ))}
+            </ul>
           </>
         )}
       </Modal>

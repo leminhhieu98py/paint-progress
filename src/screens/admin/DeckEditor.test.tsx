@@ -115,55 +115,100 @@ describe('DeckEditor', () => {
     // The arithmetic itself is table-tested in domain/geometry.test.ts. What
     // only the DOM can prove is the wiring: that antd's render(_v, _r, i) row
     // index reaches setSpan, and that the offsets come back out onto the right
-    // entries of the unsorted `guides` array.
+    // entries of the UNSORTED `guides` array -- which this fixture must
+    // actually exercise, or the wiring bug it is meant to catch has nowhere to
+    // hide.
     //
-    // The edited span is deliberately NOT the last one. Four x-guides at
-    // cumulative 0, 1000, 2500, 6000 (spans 1000, 1500, 3500) and two y-guides
-    // 2000mm apart: editing the 1500 span to 4000 must move BOTH the guide it
-    // belongs to (2500 -> 5000) and the one after it (6000 -> 8500), while the
-    // datum and the 1000 above it stay put. Editing the last span instead --
-    // as this test originally did -- leaves nothing downstream to shift, so it
-    // could not tell propagation from a single-row write.
+    // An admin draws the two outer verticals, then the middle one: `guides`
+    // holds x@pos0.0, x@pos1.0, x@pos0.5 in THAT order (guides-index 0, 1, 2),
+    // while the sorted table order is x@pos0.0, x@pos0.5, x@pos1.0 (sorted
+    // position 0, 1, 2). From the second row on, sorted position and
+    // guides-index disagree -- a fixture with guides already stored in `pos`
+    // order (as this test previously used) cannot tell a write-back keyed by
+    // guides-index from one keyed by sorted position, because the two never
+    // differ. Editing the middle span, sorted position 1 / guides-index 2,
+    // is where they first do.
     listGuides.mockResolvedValue([
       { id: 'g1', axis: 'x', pos: 0, offsetMm: 0 },
-      { id: 'g2', axis: 'x', pos: 0.2, offsetMm: 1000 },
-      { id: 'g3', axis: 'x', pos: 0.5, offsetMm: 2500 },
-      { id: 'g4', axis: 'x', pos: 1, offsetMm: 6000 },
-      { id: 'g5', axis: 'y', pos: 0, offsetMm: 0 },
-      { id: 'g6', axis: 'y', pos: 1, offsetMm: 2000 },
+      { id: 'g2', axis: 'x', pos: 1, offsetMm: 26500 },
+      { id: 'g3', axis: 'x', pos: 0.5, offsetMm: 12000 },
+      { id: 'g4', axis: 'y', pos: 0, offsetMm: 0 },
+      { id: 'g5', axis: 'y', pos: 1, offsetMm: 16000 },
     ])
     render(<DeckEditor deck={deck} onClose={vi.fn()} />)
     await screen.findByTestId('canvas')
 
     // Sanity check on the pre-edit state, vi-VN formatted like every other
     // number in this screen.
-    expect(screen.getByText('1.000')).toBeInTheDocument()
-    expect(screen.getByText('2.500')).toBeInTheDocument()
-    expect(screen.getByText('6.000')).toBeInTheDocument()
+    expect(screen.getByText('12.000')).toBeInTheDocument()
+    expect(screen.getByText('26.500')).toBeInTheDocument()
 
-    // Row 3's span input shows 1500 (2500 - 1000); it is the only field on the
+    // The middle row's span input shows 12000; it is the only field on the
     // page with that value, so it can be located by display value the same
     // way StageConfigPanel's tests locate its weight InputNumber cells.
-    const editedSpan = screen.getByDisplayValue('1500')
+    const editedSpan = screen.getByDisplayValue('12000')
     await userEvent.clear(editedSpan)
-    await userEvent.type(editedSpan, '4000')
+    await userEvent.type(editedSpan, '12500')
 
-    await waitFor(() => expect(screen.getByText('5.000')).toBeInTheDocument())
-    // The guide AFTER the edited one moves by the same +2500. This is the
-    // assertion the old version of this test could not make.
-    expect(screen.getByText('8.500')).toBeInTheDocument()
-    expect(screen.queryByText('6.000')).toBeNull()
-    // Upstream is untouched, and the old cumulative value is gone.
-    expect(screen.getByText('1.000')).toBeInTheDocument()
-    expect(screen.queryByText('2.500')).toBeNull()
+    await waitFor(() => expect(screen.getByText('12.500')).toBeInTheDocument())
+    // The guide after the edited one (sorted position 2, guides-index 1)
+    // moves by the same +500. A write-back keyed by sorted position instead
+    // would write 12500 and 27000 onto guides-index 1 and 2 respectively --
+    // the reverse of the correct assignment -- which the per-row offsets
+    // alone cannot expose (both values would still appear somewhere in the
+    // table either way). Only the mesh built from them can.
+    expect(screen.getByText('27.000')).toBeInTheDocument()
+    expect(screen.queryByText('26.500')).toBeNull()
 
     await userEvent.click(screen.getByRole('button', { name: 'Sinh lưới ô' }))
-    // New x-offsets are (0, 1000, 5000, 8500); y-offsets are (0, 2000). Three
-    // bays: 2 m², 8 m² and 7 m², summing to 17.
-    expect(await screen.findByTestId('canvas')).toHaveTextContent('R1C1,R1C2,R1C3')
-    // Exact match, not a regex: the divergence banner's own description also
-    // repeats "17,00" inside a longer sentence, same ambiguity as the first test.
-    expect(screen.getByText('17,00')).toBeInTheDocument()
+    // Two bays: 12500mm x 16000mm = 200 m², and 14500mm x 16000mm = 232 m²,
+    // summing to 432. Swap the guides-index 1 and 2 write targets and the
+    // split becomes 27000mm x 16000mm = 432 m² plus 14500mm x 16000mm = 232
+    // m², summing to 664 instead -- a different total, not just a relabeled
+    // one, so this assertion fails under that mutation.
+    expect(await screen.findByTestId('canvas')).toHaveTextContent('R1C1,R1C2')
+    expect(screen.getByText('432,00')).toBeInTheDocument()
+  })
+
+  it('propagates an edited y-axis span onto the y-guides, not onto whatever sits at that sorted position', async () => {
+    // Mirrors the case above on the axis the review found does the most
+    // damage: the y-guides here live at guides-index 2, 3, 4 -- three slots
+    // after the two x-guides -- so a write-back keyed by sorted position (0,
+    // 1, 2) instead of guides-index lands on guides-index 0, 1 and 2, i.e. on
+    // BOTH x-guides and the y-datum, while the y span the admin actually typed
+    // is left completely unchanged.
+    listGuides.mockResolvedValue([
+      { id: 'g1', axis: 'x', pos: 0, offsetMm: 0 },
+      { id: 'g2', axis: 'x', pos: 1, offsetMm: 9000 },
+      { id: 'g3', axis: 'y', pos: 0, offsetMm: 0 },
+      { id: 'g4', axis: 'y', pos: 1, offsetMm: 26500 },
+      { id: 'g5', axis: 'y', pos: 0.5, offsetMm: 12000 },
+    ])
+    render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+    await screen.findByTestId('canvas')
+
+    expect(screen.getByText('9.000')).toBeInTheDocument()
+    expect(screen.getByText('12.000')).toBeInTheDocument()
+    expect(screen.getByText('26.500')).toBeInTheDocument()
+
+    const editedSpan = screen.getByDisplayValue('12000')
+    await userEvent.clear(editedSpan)
+    await userEvent.type(editedSpan, '12500')
+
+    await waitFor(() => expect(screen.getByText('12.500')).toBeInTheDocument())
+    expect(screen.getByText('27.000')).toBeInTheDocument()
+    expect(screen.queryByText('26.500')).toBeNull()
+    // A y-axis edit must not touch the x-guide.
+    expect(screen.getByText('9.000')).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Sinh lưới ô' }))
+    // One column (9000mm), two rows (12500mm, 14500mm): 112.5 m² + 130.5 m² =
+    // 243. A write-back keyed by sorted position instead corrupts the x span
+    // and leaves the y offsets exactly as they were before the edit, turning
+    // the mesh into 368,75 -- a different total, so this assertion fails
+    // under that mutation even though nothing about it looks "swapped".
+    expect(await screen.findByTestId('canvas')).toHaveTextContent('R1C1,R2C1')
+    expect(screen.getByText('243,00')).toBeInTheDocument()
   })
 
   it('deletes the guide the admin clicked, by its index into the unsorted list', async () => {
@@ -311,6 +356,9 @@ describe('DeckEditor', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Lưu lưới ô' }))
 
     expect(await screen.findByText(listItem('R9C9 — Coat 1'))).toBeInTheDocument()
+    // The merge-only caveat is about a merge's missing honest carry rule; a
+    // mesh save has no survivor at all, so it must not appear here.
+    expect(screen.queryByText(/Ô sống sót giữ tiến độ/)).toBeNull()
     expect(syncCells).not.toHaveBeenCalled()
 
     // Confirming goes through, and the mesh -- not the old cell -- is what
@@ -409,7 +457,111 @@ describe('DeckEditor', () => {
     // keeps its row: it is the survivor and its Coat 1 is NOT lost.
     expect(await screen.findByText(listItem('R1C2 — Coat 3'))).toBeInTheDocument()
     expect(screen.queryByText(listItem('R1C1 — Coat 1'))).toBeNull()
+    // The merge-only caveat: there is no honest carry rule for the cell that
+    // did not survive, so the dialog says so. Deleting the `kind === 'merge'`
+    // guard on this paragraph would restore exactly the overstatement it
+    // exists to remove, and ship green unless this is asserted.
+    expect(screen.getByText(/Ô sống sót giữ tiến độ của chính nó/)).toBeInTheDocument()
     expect(syncCells).not.toHaveBeenCalled()
+
+    // 'Vẫn gộp' -- EDIT_CONFIRM.merge -- is not exercised by any other test.
+    syncCells.mockResolvedValue(undefined)
+    await userEvent.click(screen.getByRole('button', { name: 'Vẫn gộp' }))
+    await waitFor(() => expect(syncCells).toHaveBeenCalledTimes(1))
+    expect(syncCells.mock.calls[0][1]).toEqual([
+      { code: 'R1C1', x: 0, y: 0, w: 1, h: 1, areaM2: 200 },
+    ])
+  })
+
+  it('does not show the merge-survivor caveat for a delete, even with progress at stake', async () => {
+    // The caveat is specifically about a MERGE's missing honest carry rule --
+    // a delete has no survivor at all, so showing it here would promise a
+    // cell that was never part of the operation.
+    listCells.mockResolvedValue([
+      { id: 'c1', code: 'R1C1', x: 0, y: 0, w: 1, h: 1, areaM2: 100, stageId: 'coat1' },
+    ])
+    listStages.mockResolvedValue([
+      { id: 'coat1', seq: 1, name: 'Coat 1', color: '#1677ff', weight: 0.2 },
+    ])
+    render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+    await screen.findByTestId('canvas')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Chọn tất cả' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Xoá ô đã chọn' }))
+
+    expect(await screen.findByText(listItem('R1C1 — Coat 1'))).toBeInTheDocument()
+    expect(screen.queryByText(/Ô sống sót giữ tiến độ/)).toBeNull()
+    expect(syncCells).not.toHaveBeenCalled()
+  })
+
+  it('raises the dialog on its own for a reshape that carries a stage onto a very different extent', async () => {
+    // The review's own example: same code, same stage, no vanished code and
+    // no zone impact -- so before this round, reviewEdit's gate had nothing
+    // to trip on and this applied with no confirmation at all, silently
+    // moving 168 m² of "Coat 3 complete" onto ground nobody inspected.
+    listGuides.mockResolvedValue([
+      { id: 'g1', axis: 'x', pos: 0, offsetMm: 0 },
+      { id: 'g2', axis: 'x', pos: 1, offsetMm: 20000 },
+      { id: 'g3', axis: 'y', pos: 0, offsetMm: 0 },
+      { id: 'g4', axis: 'y', pos: 1, offsetMm: 20000 },
+    ])
+    listCells.mockResolvedValue([
+      { id: 'c1', code: 'R1C1', x: 0, y: 0, w: 1, h: 1, areaM2: 232, stageId: 'coat3' },
+    ])
+    listStages.mockResolvedValue([
+      { id: 'coat3', seq: 3, name: 'Coat 3', color: '#52c41a', weight: 0.35 },
+    ])
+    render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+    await screen.findByTestId('canvas')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Sinh lưới ô' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Lưu lưới ô' }))
+
+    expect(await screen.findByText('Lưu lưới ô sẽ đổi diện tích ô đang có tiến độ')).toBeInTheDocument()
+    // vi-VN formatted, in the exact form the review specified.
+    expect(screen.getByText(listItem('R1C1 — Coat 3: 232,00 → 400,00 m²'))).toBeInTheDocument()
+    // Neither of the other two paragraphs applies here -- there is no zone
+    // impact and nothing is actually being deleted -- so asserting either
+    // would catch this dialog quietly reverting to an overstatement.
+    expect(screen.queryByText(/Các ô này đang thuộc zone/)).toBeNull()
+    expect(screen.queryByText(/sẽ xoá tiến độ đã ghi/)).toBeNull()
+    expect(syncCells).not.toHaveBeenCalled()
+
+    syncCells.mockResolvedValue(undefined)
+    await userEvent.click(screen.getByRole('button', { name: 'Vẫn lưu' }))
+    await waitFor(() => expect(syncCells).toHaveBeenCalledTimes(1))
+    expect(syncCells.mock.calls[0][1]).toEqual([
+      { code: 'R1C1', x: 0, y: 0, w: 1, h: 1, areaM2: 400 },
+    ])
+  })
+
+  it('does not raise the dialog for a reshape that stays within the divergence threshold', async () => {
+    // 240 m² is within 5% of 232 m² (AREA_DIVERGENCE_THRESHOLD), so this
+    // applies with no confirmation -- proving the threshold is guarded on the
+    // low side too, not just raised unconditionally on any area change at all.
+    listGuides.mockResolvedValue([
+      { id: 'g1', axis: 'x', pos: 0, offsetMm: 0 },
+      { id: 'g2', axis: 'x', pos: 1, offsetMm: 20000 },
+      { id: 'g3', axis: 'y', pos: 0, offsetMm: 0 },
+      { id: 'g4', axis: 'y', pos: 1, offsetMm: 12000 },
+    ])
+    listCells.mockResolvedValue([
+      { id: 'c1', code: 'R1C1', x: 0, y: 0, w: 1, h: 1, areaM2: 232, stageId: 'coat3' },
+    ])
+    listStages.mockResolvedValue([
+      { id: 'coat3', seq: 3, name: 'Coat 3', color: '#52c41a', weight: 0.35 },
+    ])
+    syncCells.mockResolvedValue(undefined)
+    render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+    await screen.findByTestId('canvas')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Sinh lưới ô' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Lưu lưới ô' }))
+
+    await waitFor(() => expect(syncCells).toHaveBeenCalledTimes(1))
+    expect(syncCells.mock.calls[0][1]).toEqual([
+      { code: 'R1C1', x: 0, y: 0, w: 1, h: 1, areaM2: 240 },
+    ])
   })
 
   it('keeps the survivor out of the loss list when only some cells are merged', async () => {
