@@ -55,3 +55,21 @@ export interface ProjectProgress {
   decks: WeightedDeckProgress[]
   progress: number
 }
+
+export interface Guide {
+  id: string
+  axis: 'x' | 'y'
+  /** Normalized 0..1 position on the drawing image. */
+  pos: number
+  /** Real-world coordinate along this axis, in millimetres. */
+  offsetMm: number
+}
+
+export interface MeshCell {
+  code: string
+  x: number
+  y: number
+  w: number
+  h: number
+  areaM2: number
+}
