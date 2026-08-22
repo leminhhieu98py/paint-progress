@@ -355,7 +355,11 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
       {diverges && (
         <Alert
           type="warning"
-          message={`Tổng diện tích các ô lệch ${percent.format(Math.abs(divergence))} so với diện tích sàn`}
+          // areaDivergence is signed: positive means the cells under-cover the
+          // declared area (thiếu = short), negative means they over-cover it
+          // (vượt = exceeds). Naming the direction here means the admin does
+          // not have to open the description to know which way to correct.
+          message={`Tổng diện tích các ô ${divergence > 0 ? 'thiếu' : 'vượt'} ${percent.format(Math.abs(divergence))} so với diện tích sàn`}
           description={`Các ô cộng lại ${area.format(sumCellArea)} m², sàn khai báo ${area.format(totalArea)} m². Lệch quá ${AREA_DIVERGENCE_THRESHOLD * 100}% thường là do nhập sai khoảng cách guide — nhưng sàn thật vẫn có thể lệch vì có opening hoặc E-house không phải là ô, nên đây chỉ là cảnh báo.`}
         />
       )}

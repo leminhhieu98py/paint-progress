@@ -174,7 +174,7 @@ export function UsersScreen() {
         title="Tạo tài khoản GS"
         onCancel={() => setCreateOpen(false)}
         footer={null}
-        destroyOnClose
+        destroyOnHidden
       >
         <Form<CreateValues>
           layout="vertical"
@@ -209,7 +209,7 @@ export function UsersScreen() {
         title={`Đổi mật khẩu — ${pwTarget?.username ?? ''}`}
         onCancel={() => setPwTarget(null)}
         footer={null}
-        destroyOnClose
+        destroyOnHidden
       >
         <Form<{ password: string }>
           layout="vertical"

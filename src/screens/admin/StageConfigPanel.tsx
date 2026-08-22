@@ -201,6 +201,10 @@ export function StageConfigPanel({ projectId }: { projectId: string }) {
                 // the input silently stops mirroring the raw stored number.
                 // Leaving step at its default (1, precision 0) lets the
                 // value's own digits decide the display.
+                // A Vietnamese admin types "0,25" for a weight. Without this,
+                // antd parses that as 0 and the stage silently loses its
+                // weight -- the same class of bug the deck-area field had.
+                decimalSeparator=","
                 onChange={(n) => patch(i, { weight: n ?? 0 })}
               />
             ),

@@ -6,7 +6,7 @@ describe('toAuthEmail', () => {
     expect(toAuthEmail('linhdeptrai123')).toBe('linhdeptrai123@app.local')
   })
 
-  it('passes an identifier that already contains @ through unchanged', () => {
+  it('does not append the app suffix when the identifier already contains @', () => {
     expect(toAuthEmail('someone@example.com')).toBe('someone@example.com')
   })
 

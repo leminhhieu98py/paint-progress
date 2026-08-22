@@ -3,6 +3,7 @@ import {
   createProject,
   listProjects,
   listStages,
+  myFirstProjectId,
   saveStages,
   STAGE_WEIGHT_EPSILON,
   updateProject,
@@ -16,7 +17,7 @@ beforeEach(() => from.mockReset())
 /** Minimal PostgREST builder stub: every method chains, `then` resolves. */
 function builder(result: { data?: unknown; error?: unknown }) {
   const b: Record<string, unknown> = {}
-  for (const m of ['select', 'insert', 'update', 'delete', 'eq', 'order', 'single']) {
+  for (const m of ['select', 'insert', 'update', 'delete', 'eq', 'order', 'single', 'limit']) {
     b[m] = vi.fn(() => b)
   }
   b.then = (resolve: (v: unknown) => unknown) =>
@@ -64,6 +65,27 @@ describe('createProject', () => {
     expect(from).toHaveBeenNthCalledWith(3, 'projects')
     expect(projectDelete.delete).toHaveBeenCalled()
     expect(projectDelete.eq).toHaveBeenCalledWith('id', 'p1')
+  })
+})
+
+describe('myFirstProjectId', () => {
+  it('returns the project_id of the first membership row', async () => {
+    from.mockImplementationOnce(() => builder({ data: [{ project_id: 'p1' }] }))
+
+    await expect(myFirstProjectId()).resolves.toBe('p1')
+    expect(from).toHaveBeenCalledWith('project_members')
+  })
+
+  it('returns null rather than throwing when the GS has no membership', async () => {
+    from.mockImplementationOnce(() => builder({ data: [] }))
+
+    await expect(myFirstProjectId()).resolves.toBeNull()
+  })
+
+  it('throws when the read fails', async () => {
+    from.mockImplementationOnce(() => builder({ error: { message: 'network down' } }))
+
+    await expect(myFirstProjectId()).rejects.toThrow('network down')
   })
 })
 

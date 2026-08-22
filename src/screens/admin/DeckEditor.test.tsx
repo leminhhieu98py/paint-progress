@@ -256,7 +256,24 @@ describe('DeckEditor', () => {
     // renders at all.
     expect((await screen.findAllByText(/lệch/i)).length).toBeGreaterThan(0)
     // vi-VN throughout: a dot would read as a thousands separator here.
-    expect(screen.getByText(/lệch 98,1%/)).toBeInTheDocument()
+    // "thiếu" because the cells (100 m²) under-cover the declared 5258.5 m².
+    expect(screen.getByText(/thiếu 98,1%/)).toBeInTheDocument()
+  })
+
+  it('warns on over-coverage too, naming it "vượt" -- not just under-coverage', async () => {
+    // Regression guard: `diverges` must stay on the absolute-value helper
+    // (divergesBeyondThreshold), not a signed `areaDivergence(...) >
+    // THRESHOLD` comparison. Cells summing to 6000 m² against a declared
+    // 5258.5 m² deck is over-coverage (a negative divergence), which a signed
+    // `>` comparison against a positive threshold would silently pass as
+    // "within tolerance" -- geometry.test.ts already proves the helper itself
+    // is bidirectional; this pins that DeckEditor actually calls it instead
+    // of re-deriving the comparison from the signed value.
+    listCells.mockResolvedValue([
+      { id: 'c1', code: 'R1C1', x: 0, y: 0, w: 1, h: 1, areaM2: 6000, stageId: null },
+    ])
+    render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+    expect(await screen.findByText(/vượt 14,1%/)).toBeInTheDocument()
   })
 
   it('does not warn when the areas agree', async () => {

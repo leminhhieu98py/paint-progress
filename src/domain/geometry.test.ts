@@ -161,7 +161,8 @@ describe('mergeCells', () => {
     expect(mergeCells([byCode('R1C2'), byCode('R1C1')]).code).toBe('R1C1')
   })
 
-  it('merges a 2x2 block', () => {
+  it('accepts adjacent cells that share an edge exactly, merging a 2x2 block', () => {
+    // Regression guard: an inclusive overlap test would reject every real merge.
     const merged = mergeCells([byCode('R1C1'), byCode('R1C2'), byCode('R2C1'), byCode('R2C2')])
     expect(merged.w).toBeCloseTo(0.5, 12)
     expect(merged.h).toBeCloseTo(1, 12)
@@ -197,13 +198,6 @@ describe('mergeCells', () => {
     const covered = selection.reduce((s, c) => s + c.w * c.h, 0)
     expect(covered).toBeCloseTo(1, 12) // the area check alone would pass
     expect(() => mergeCells(selection)).toThrow(/overlapping/i)
-  })
-
-  it('accepts adjacent cells that share an edge exactly', () => {
-    // Regression guard: an inclusive overlap test would reject every real merge.
-    const merged = mergeCells([byCode('R1C1'), byCode('R1C2'), byCode('R2C1'), byCode('R2C2')])
-    expect(merged.w).toBeCloseTo(0.5, 12)
-    expect(merged.h).toBeCloseTo(1, 12)
   })
 })
 

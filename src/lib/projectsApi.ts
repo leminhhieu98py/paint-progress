@@ -127,6 +127,22 @@ export async function saveStages(
   if (insertError) throw new Error(insertError.message)
 }
 
+/**
+ * The project a GS user belongs to, for landing them on their own GS route
+ * after sign-in. RLS on `project_members` already restricts a non-admin read
+ * to that user's own rows (`user_id = auth.uid()`), so no explicit filter is
+ * needed here -- adding one would only be redundant, and screens never call
+ * `supabase` directly, so this wrapper is the only way to fetch it.
+ *
+ * A GS is assigned to at most one project today; `limit(1)` reflects that
+ * rather than picking arbitrarily among several.
+ */
+export async function myFirstProjectId(): Promise<string | null> {
+  const { data, error } = await supabase.from('project_members').select('project_id').limit(1)
+  if (error) throw new Error(error.message)
+  return (data?.[0]?.project_id as string | undefined) ?? null
+}
+
 export async function listProjects(): Promise<ProjectRow[]> {
   const { data, error } = await supabase
     .from('projects')

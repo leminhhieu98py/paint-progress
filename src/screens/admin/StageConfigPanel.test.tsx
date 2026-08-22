@@ -36,9 +36,10 @@ describe('StageConfigPanel', () => {
 
   it('blocks save when the weights do not sum to 1', async () => {
     render(<StageConfigPanel projectId="p1" />)
-    const weight = await screen.findByDisplayValue('0.6')
+    // vi-VN comma decimal, matching decimalSeparator="," on the field.
+    const weight = await screen.findByDisplayValue('0,6')
     await userEvent.clear(weight)
-    await userEvent.type(weight, '0.5')
+    await userEvent.type(weight, '0,5')
 
     const save = screen.getByRole('button', { name: 'Lưu' })
     await waitFor(() => expect(save).toBeDisabled())
@@ -47,9 +48,9 @@ describe('StageConfigPanel', () => {
 
   it('enables save once the weights sum to 1 again', async () => {
     render(<StageConfigPanel projectId="p1" />)
-    const weight = await screen.findByDisplayValue('0.4')
+    const weight = await screen.findByDisplayValue('0,4')
     await userEvent.clear(weight)
-    await userEvent.type(weight, '0.4')
+    await userEvent.type(weight, '0,4')
     await waitFor(() =>
       expect(screen.getByRole('button', { name: 'Lưu' })).toBeEnabled(),
     )
@@ -169,11 +170,11 @@ describe('StageConfigPanel', () => {
 
   it('keeps save enabled right at the epsilon boundary', async () => {
     render(<StageConfigPanel projectId="p1" />)
-    const weight = await screen.findByDisplayValue('0.4')
+    const weight = await screen.findByDisplayValue('0,4')
     await userEvent.clear(weight)
     // total becomes 1.000001 == 1 + 1e-6, exactly STAGE_WEIGHT_EPSILON: the
     // gate uses <=, so this must still be considered balanced.
-    await userEvent.type(weight, '0.400001')
+    await userEvent.type(weight, '0,400001')
     await waitFor(() =>
       expect(screen.getByRole('button', { name: 'Lưu' })).toBeEnabled(),
     )
@@ -181,10 +182,10 @@ describe('StageConfigPanel', () => {
 
   it('disables save just past the epsilon boundary', async () => {
     render(<StageConfigPanel projectId="p1" />)
-    const weight = await screen.findByDisplayValue('0.4')
+    const weight = await screen.findByDisplayValue('0,4')
     await userEvent.clear(weight)
     // total becomes 1.000002 == 1 + 2e-6, one step past STAGE_WEIGHT_EPSILON.
-    await userEvent.type(weight, '0.400002')
+    await userEvent.type(weight, '0,400002')
     await waitFor(() =>
       expect(screen.getByRole('button', { name: 'Lưu' })).toBeDisabled(),
     )
