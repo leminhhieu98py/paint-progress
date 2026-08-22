@@ -44,13 +44,15 @@
 --   9. Cleanup itself succeeds: deleting the two VERIFY projects (and
 --      everything cascading from them) must not error.
 --
--- Checks 10-21 are structural assertions that read only the system catalogs
+-- Checks 10-24 are structural assertions that read only the system catalogs
 -- (pg_class, pg_policies, pg_proc, pg_trigger, pg_constraint,
--- information_schema.role_table_grants) and need no authenticated session --
--- see the banner above for what that does and does not prove. 10-20 are RLS
--- assertions added by migrations 0006/0007/0008; 21 is a foreign-key
--- structural assertion for the on-delete-action defect class 0003/0004/0005
--- exist to fix.
+-- information_schema.role_table_grants, storage.buckets) and need no
+-- authenticated session -- see the banner above for what that does and does
+-- not prove. 10-20 are RLS assertions added by migrations 0006/0007/0008; 21
+-- is a foreign-key structural assertion for the on-delete-action defect
+-- class 0003/0004/0005 exist to fix; 22-24 are added by 0009 for the
+-- `drawings` storage bucket, its policies, and the last two search_path
+-- pins.
 --   10. Every one of the 12 public tables has row level security enabled.
 --   11. gs_credentials has zero rows in pg_policies: service_role bypasses
 --       RLS, everyone else must be denied by the absence of any policy, not
@@ -110,14 +112,24 @@
 --       without an explicit ON DELETE action instead of a considered
 --       CASCADE/SET NULL/RESTRICT choice.
 --
+-- Checks 22-24 are added by 0009, the private `drawings` storage bucket and
+-- the last two search_path pins.
+--   22. The `drawings` bucket exists and is private. A public bucket would
+--       make every deck drawing world-readable by URL.
+--   23. storage.objects carries both drawings_admin_all and
+--       drawings_member_read policies.
+--   24. assert_stage_belongs_to_project and set_cell_audit_columns -- the
+--       last two definer/invoker functions left unpinned after 0008 -- now
+--       report search_path=public, pg_temp.
+--
 -- How to run:
 --   nvm use 22
 --   npx supabase db query --linked -f supabase/verify_schema.sql
 --
--- Every returned row must begin with PASS (21 rows in total, one per
--- numbered check above, 1-21 with no gaps). A row beginning with FAIL means
+-- Every returned row must begin with PASS (24 rows in total, one per
+-- numbered check above, 1-24 with no gaps). A row beginning with FAIL means
 -- a regression in the trigger/FK/RLS behaviour set up across migrations
--- 0001-0008; re-read those migrations' comments before changing this file.
+-- 0001-0009; re-read those migrations' comments before changing this file.
 --
 -- WARNING: this script INSERTS and then DELETES test rows (projects named
 -- 'VERIFY A' / 'VERIFY B' and everything cascading from them). It is meant
@@ -433,6 +445,28 @@ begin
   return next format('%s no foreign key with a bare ON DELETE (no action): %s offender(s): %s',
                      case when n = 0 then 'PASS' else 'FAIL' end,
                      n, coalesce(bad_tables, 'none'));
+
+  -- 22. The `drawings` bucket (0009) exists and is private. A public bucket
+  -- would make every deck drawing world-readable by URL.
+  select count(*) into n from storage.buckets where id = 'drawings' and public = false;
+  return next format('%s drawings bucket exists and is private: %s',
+                     case when n = 1 then 'PASS' else 'FAIL' end, n);
+
+  -- 23. storage.objects carries both drawings storage policies (0009):
+  -- admin read+write, and GS read where the path's project is in
+  -- my_projects().
+  select count(*) into n from pg_policies
+   where schemaname = 'storage' and tablename = 'objects'
+     and policyname in ('drawings_admin_all', 'drawings_member_read');
+  return next format('%s drawings storage policies: %s of 2',
+                     case when n = 2 then 'PASS' else 'FAIL' end, n);
+
+  -- 24. The last two definer/invoker functions (0009) now pin search_path.
+  select count(*) into n from pg_proc
+   where proname in ('assert_stage_belongs_to_project', 'set_cell_audit_columns')
+     and proconfig @> array['search_path=public, pg_temp'];
+  return next format('%s remaining functions pin search_path: %s of 2',
+                     case when n = 2 then 'PASS' else 'FAIL' end, n);
 end $$;
 
 -- A single top-level SELECT: `supabase db query -f` surfaces only the last

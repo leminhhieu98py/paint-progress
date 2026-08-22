@@ -6,7 +6,7 @@ Local `supabase start` needs Docker and is not required for this project.
 ## Schema verification
 
 `supabase/verify_schema.sql` exercises the trigger, foreign-key and RLS
-behaviour set up across migrations 0001-0008: cross-project stage
+behaviour set up across migrations 0001-0009: cross-project stage
 rejection, the audit trigger, the stage-change log, the durability of the
 `cell_events` name snapshot against both a stage rename and a hard stage
 delete (on separate fixtures, so destroying one stage cannot disarm the
@@ -17,7 +17,10 @@ and `credential_access_log` carry exactly the policies (or absence of
 policies) they're supposed to, that the security-definer helper/trigger
 functions are configured correctly, that the `cells` trigger firing order is
 both named and timed correctly, and that no foreign key in the schema is
-left with a bare `ON DELETE` (no action). Run it after any change to these
+left with a bare `ON DELETE` (no action). Since 0009, it also checks that the
+`drawings` storage bucket exists and is private, that its two storage
+policies exist, and that the last two functions (`assert_stage_belongs_to_project`,
+`set_cell_audit_columns`) pin `search_path`. Run it after any change to these
 migrations:
 
 ```bash
@@ -25,7 +28,7 @@ nvm use 22
 npx supabase db query --linked -f supabase/verify_schema.sql
 ```
 
-Every returned row must begin with `PASS` — 21 rows in a passing run, one
+Every returned row must begin with `PASS` — 24 rows in a passing run, one
 per numbered check in the file's header comment.
 
 **WARNING: this script inserts and then deletes test rows. Never run it
