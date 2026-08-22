@@ -48,9 +48,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let cancelled = false
+    let generation = 0
 
     const resolve = async (next: Session | null) => {
-      if (cancelled) return
+      const mine = ++generation
+      // Only the newest invocation may write results. Two auth events in quick
+      // succession (a SIGNED_OUT immediately followed by a SIGNED_IN for a
+      // different account, or a TOKEN_REFRESHED racing a slow initial fetch)
+      // would otherwise let the older, slower fetch land after the newer one
+      // and overwrite its correct profile with a stale one.
+      const isCurrent = () => !cancelled && mine === generation
+
       // Every auth change re-opens a window where the session is known but the
       // profile is not. RequireRole reads "session but no profile" as
       // unauthorised, so without holding loading true across that window every
@@ -58,21 +66,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setLoading(true)
       setProfileError(false)
       try {
+        // Synchronous and unguarded on purpose: invocations run this in
+        // arrival order, so the last event always wins here regardless of how
+        // the awaited fetch below resolves.
         setSession(next)
-        setProfile(next?.user ? await fetchProfile(next.user.id) : null)
+        const nextProfile = next?.user ? await fetchProfile(next.user.id) : null
+        if (isCurrent()) setProfile(nextProfile)
       } catch {
         // A failed profile read must not strand the UI in a spinner, and must
         // not look like "unauthorised" either -- the credentials were fine.
-        if (!cancelled) {
+        if (isCurrent()) {
           setProfile(null)
           setProfileError(true)
         }
       } finally {
-        if (!cancelled) setLoading(false)
+        if (isCurrent()) setLoading(false)
       }
     }
 
-    void supabase.auth.getSession().then(({ data }) => resolve(data.session))
+    void supabase.auth
+      .getSession()
+      .then(({ data }) => resolve(data.session))
+      .catch(() => {
+        // A rejected getSession means we cannot determine auth state at all.
+        // Falling through to the login screen is the safe reading: worst case
+        // the user signs in again. Leaving loading true would strand them in
+        // a spinner, which is the bug this whole round exists to close.
+        if (cancelled) return
+        setSession(null)
+        setProfile(null)
+        setLoading(false)
+      })
 
     const { data: sub } = supabase.auth.onAuthStateChange((event, next) => {
       // getSession() above already handled the initial read. Letting

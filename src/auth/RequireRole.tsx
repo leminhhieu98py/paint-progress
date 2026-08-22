@@ -16,7 +16,7 @@ export function RequireRole({ role, children }: { role: 'admin' | 'gs'; children
   // A profile read failure is not an authorisation failure — the credentials
   // were fine, the network wasn't. Telling the two apart leaks nothing, since
   // both already require valid credentials to reach this point.
-  if (session && profileError) {
+  if (profileError) {
     return (
       <div style={{ maxWidth: 360, margin: '25vh auto' }}>
         <Alert
