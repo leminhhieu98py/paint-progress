@@ -15,12 +15,17 @@ export function LoginScreen() {
   const onFinish = async ({ identifier, password }: Values) => {
     setBusy(true)
     setError(null)
-    const { error: signInError } = await signIn(identifier, password)
-    setBusy(false)
-    if (signInError) {
-      // Never echo the provider's message — it distinguishes "no such user"
-      // from "wrong password" and would confirm which usernames exist.
-      setError('Tên đăng nhập hoặc mật khẩu không đúng')
+    try {
+      const { error: signInError } = await signIn(identifier, password)
+      if (signInError) {
+        // Never echo the provider's message: it distinguishes "no such user"
+        // from "wrong password" and would confirm which usernames exist.
+        setError('Tên đăng nhập hoặc mật khẩu không đúng')
+      }
+    } catch {
+      setError('Không kết nối được. Kiểm tra mạng rồi thử lại.')
+    } finally {
+      setBusy(false)
     }
   }
 
