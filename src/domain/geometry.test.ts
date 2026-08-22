@@ -8,6 +8,7 @@ import {
   deriveCellArea,
   divergesBeyondThreshold,
   hasUndeclaredArea,
+  interpolateOffsetMm,
   mergeCells,
   MIN_GUIDE_GAP,
   moveGuideClamped,
@@ -183,6 +184,61 @@ describe('moveGuideClamped', () => {
   })
 })
 
+describe('interpolateOffsetMm', () => {
+  it('returns 0 when the axis has no guides yet', () => {
+    expect(interpolateOffsetMm([], 'x', 0.5)).toBe(0)
+  })
+
+  it('interpolates the midpoint when inserted between two existing guides', () => {
+    const guides = [g('x0', 'x', 0, 0), g('x1', 'x', 1, 20000)]
+    expect(interpolateOffsetMm(guides, 'x', 0.5)).toBe(10000)
+  })
+
+  it('uses the sole upper neighbour\'s offset when inserted before the first guide', () => {
+    const guides = [g('x0', 'x', 0.3, 5000), g('x1', 'x', 1, 20000)]
+    expect(interpolateOffsetMm(guides, 'x', 0.1)).toBe(5000)
+  })
+
+  it('uses the sole lower neighbour\'s offset when appended after the last guide', () => {
+    const guides = [g('x0', 'x', 0, 0), g('x1', 'x', 0.7, 20000)]
+    expect(interpolateOffsetMm(guides, 'x', 0.9)).toBe(20000)
+  })
+
+  it('ignores guides on the other axis', () => {
+    const guides = [g('x0', 'x', 0, 0), g('x1', 'x', 1, 20000), g('y0', 'y', 0.4, 999999)]
+    expect(interpolateOffsetMm(guides, 'x', 0.5)).toBe(10000)
+  })
+
+  it('does not depend on array order, only on pos', () => {
+    // onGuideAdd appends to `guides` in click order, not pos order -- the
+    // real-use shape this exists to handle.
+    const shuffled = [g('x1', 'x', 1, 20000), g('x0', 'x', 0, 0)]
+    expect(interpolateOffsetMm(shuffled, 'x', 0.5)).toBe(10000)
+  })
+
+  it('keeps the mm chain monotonic and every resulting span positive when the guide lands between two real ones', () => {
+    // The concrete failure B3 exists to fix: a guide added at offsetMm 0
+    // between two guides carrying real, positive offsets breaks
+    // spansFromOffsets' pos-order monotonicity and produces a negative span --
+    // exactly A6's dragging defect, reached by adding rather than moving.
+    const guides = [
+      { axis: 'x' as const, pos: 0, offsetMm: 0 },
+      { axis: 'x' as const, pos: 1, offsetMm: 20000 },
+    ]
+    const newOffset = interpolateOffsetMm(guides, 'x', 0.5)
+    const withNewGuide = [...guides, { axis: 'x' as const, pos: 0.5, offsetMm: newOffset }]
+      .sort((a, b) => a.pos - b.pos)
+    const spans = spansFromOffsets(withNewGuide.map((wg) => wg.offsetMm))
+    for (const span of spans) expect(span).toBeGreaterThanOrEqual(0)
+    // Strictly positive here specifically: the new guide sits strictly between
+    // two DIFFERENT real offsets, so both spans it creates must be > 0, not
+    // merely >= 0 -- the weaker bound alone would not catch offsetMm: 0
+    // (the original bug) if the neighbours' offsets happened to be positive.
+    expect(spans[1]).toBeGreaterThan(0)
+    expect(spans[2]).toBeGreaterThan(0)
+  })
+})
+
 describe('deriveCellArea', () => {
   it('multiplies real-world spans and converts mm² to m²', () => {
     // 14500mm × 16000mm = 232 m²
@@ -222,10 +278,17 @@ describe('buildMeshFromGuides', () => {
   })
 
   it('sorts unordered guides before building', () => {
+    // Codes alone are a tautology here: they come from loop indices, so both
+    // sides read ['R1C1', 'R1C2', ...] regardless of input order -- even with
+    // the `.sort((a,b) => a.pos - b.pos)` inside buildMeshFromGuides deleted
+    // entirely. generateMesh passes guides in INSERTION order in real use,
+    // essentially never pre-sorted by pos, so without that sort `w` goes
+    // negative and `x` becomes the wrong edge while `areaM2` still comes out
+    // right (Math.abs in deriveCellArea) -- the mesh renders scrambled while
+    // every number on screen looks correct. Comparing whole cell objects is
+    // what actually depends on the sort running.
     const shuffled = [...MAIN_DECK_GUIDES].reverse()
-    expect(buildMeshFromGuides(shuffled).map((c) => c.code)).toEqual(
-      buildMeshFromGuides(MAIN_DECK_GUIDES).map((c) => c.code),
-    )
+    expect(buildMeshFromGuides(shuffled)).toEqual(buildMeshFromGuides(MAIN_DECK_GUIDES))
   })
 
   it('returns nothing when an axis has fewer than two guides', () => {

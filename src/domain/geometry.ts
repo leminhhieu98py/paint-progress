@@ -108,6 +108,40 @@ export function moveGuideClamped<T extends { axis: 'x' | 'y'; pos: number }>(
   return guides.map((guide, i) => (i === index ? { ...guide, pos: clamped } : guide))
 }
 
+/**
+ * The offset (mm) a freshly added guide should start at, so the mm chain
+ * stays monotonic in pos order from the moment the guide exists.
+ *
+ * onGuideAdd used to always insert offsetMm: 0 regardless of where `pos` put
+ * the new guide among its neighbours. Added anywhere but the very start,
+ * that broke monotonicity the same way A6 found for dragging (see
+ * moveGuideClamped): spansFromOffsets reads the chain in pos order, so a
+ * guide added to the right of an existing, larger offset produced a negative
+ * span there, and deriveCellArea's Math.abs rendered it as an ordinary-looking
+ * bay -- reached through the other door.
+ *
+ * Interpolated as the midpoint of the guide's pos-order neighbours on its own
+ * axis. With only one neighbour (inserted before the first real span, or
+ * appended after the last), that neighbour's own offset is used -- there is
+ * nothing to interpolate between yet, and matching it keeps the chain
+ * non-decreasing rather than guessing at a real-world distance nobody has
+ * typed. With no guides at all yet on this axis, 0 is returned, same as
+ * before this fix.
+ */
+export function interpolateOffsetMm(
+  guides: { axis: 'x' | 'y'; pos: number; offsetMm: number }[],
+  axis: 'x' | 'y',
+  pos: number,
+): number {
+  const sorted = guides.filter((g) => g.axis === axis).sort((a, b) => a.pos - b.pos)
+  const lower = [...sorted].reverse().find((g) => g.pos <= pos)
+  const upper = sorted.find((g) => g.pos >= pos)
+  if (lower && upper) return (lower.offsetMm + upper.offsetMm) / 2
+  if (lower) return lower.offsetMm
+  if (upper) return upper.offsetMm
+  return 0
+}
+
 /** Real-world area of the bay bounded by two x-guides and two y-guides, in m². */
 export function deriveCellArea(x1: Guide, x2: Guide, y1: Guide, y2: Guide): number {
   const spanX = Math.abs(x2.offsetMm - x1.offsetMm)
