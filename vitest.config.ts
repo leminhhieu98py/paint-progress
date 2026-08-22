@@ -1,7 +1,8 @@
-import { config as loadEnv } from 'dotenv'
+import { loadEnv } from 'vite'
 import { defineConfig } from 'vitest/config'
 
-loadEnv({ path: '.env.test.local' })
+// Empty prefix so non-VITE_ vars (RLS_TEST_*) are exposed too.
+Object.assign(process.env, loadEnv('test', process.cwd(), ''))
 
 export default defineConfig({
   test: {

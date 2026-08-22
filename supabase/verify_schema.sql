@@ -1,5 +1,18 @@
 -- Schema verification for paint-progress.
 --
+-- ============================================================================
+-- READ THIS FIRST: this script connects as `postgres`, which has
+-- rolbypassrls = true. Every statement below runs with RLS bypassed, so NOT
+-- ONE check in this file can observe an RLS policy accept or reject a
+-- request -- postgres never asks. This script verifies structure only: that
+-- the expected functions, policies, grants and triggers exist with the
+-- right shape. It cannot prove the security boundary actually holds for an
+-- `authenticated` session. The only test that exercises real RLS decisions
+-- is tests/rls.integration.test.ts, run as an actual GS user. All rows PASS
+-- here is necessary and NOT sufficient: do not read a screen of green rows
+-- as "RLS is verified".
+-- ============================================================================
+--
 -- What this checks:
 --   1. A cell cannot be assigned a stage from a different project
 --      (cells_assert_stage_project).
@@ -28,12 +41,13 @@
 --      SET NULL at a different cascade depth, and earlier attempts aborted
 --      here twice. Check 7 immediately above is what guarantees this delete
 --      is actually exercising that race and not passing vacuously.
+--   9. Cleanup itself succeeds: deleting the two VERIFY projects (and
+--      everything cascading from them) must not error.
 --
--- Checks 10-16 are structural RLS assertions added by migration 0006. They
--- read only the system catalogs (pg_class, pg_policies, pg_proc, pg_trigger)
--- and need no authenticated session, so they can run unconditionally, unlike
--- the row-level *behaviour* of the policies, which needs a real GS session
--- and is covered separately by tests/rls.integration.test.ts.
+-- Checks 10-19 are structural RLS assertions added by migrations 0006/0007.
+-- They read only the system catalogs (pg_class, pg_policies, pg_proc,
+-- pg_trigger) and need no authenticated session -- see the banner above for
+-- what that does and does not prove.
 --   10. Every one of the 12 public tables has row level security enabled.
 --   11. gs_credentials has zero rows in pg_policies: service_role bypasses
 --       RLS, everyone else must be denied by the absence of any policy, not
@@ -42,23 +56,41 @@
 --       policy (admin-only read; no insert/update/delete for anyone but
 --       service_role).
 --   13. is_admin() is security definer with search_path=public.
---   14. my_projects() is security definer with search_path=public. Both 13
---       and 14 matter because without security definer the profiles admin
---       policy would recurse infinitely when it calls is_admin(), which
---       itself reads profiles.
---   15. cells has exactly four triggers (three from 0002, one from 0006).
---   16. Of those, cells_assert_gs_stage_only sorts alphabetically before
---       cells_set_audit_columns. Postgres fires same-timing triggers in name
---       order, and a rejected write must never reach the audit stamp.
+--   14. my_projects() is security definer with search_path=public, pg_temp.
+--       0007 pinned pg_temp explicitly and added an `active` filter so a
+--       deactivated GS loses read access immediately, rather than only once
+--       Task 7's handler removes their project_members rows.
+--   15. assert_gs_updates_stage_only() is security definer with a pinned
+--       search_path. 0007 elevated it -- it calls is_admin(), a privilege
+--       boundary -- and added an `id` comparison so a GS cannot renumber a
+--       cell's primary key through the update path.
+--   16. log_cell_stage_change() is security definer with a pinned
+--       search_path. This is the exact fix for the critical defect 0007
+--       exists for: with RLS enabled on cell_events and no INSERT policy, a
+--       security-invoker trigger made every stage change fail with 42501,
+--       for admin and GS alike. Checks 13-16 all matter for the same
+--       underlying reason: without security definer, a function that reads
+--       or writes an RLS-protected table under the caller's own privileges
+--       either recurses (profiles, via is_admin) or is denied (cell_events).
+--   17. cells has exactly four triggers (three from 0002, one from 0006).
+--   18. Of those, cells_assert_gs_stage_only sorts alphabetically before
+--       cells_set_audit_columns by name -- necessary for Postgres's
+--       same-timing firing order, but not sufficient alone (see 19).
+--   19. cells_assert_gs_stage_only and cells_set_audit_columns are both
+--       row-level BEFORE UPDATE triggers. Check 18 alone would still PASS
+--       if cells_assert_gs_stage_only were rewritten as an AFTER UPDATE
+--       trigger, silently destroying the guarantee that a rejected write
+--       never reaches the audit stamp -- this check asserts timing directly
+--       via tgtype, not just the name that determines order among peers.
 --
 -- How to run:
 --   nvm use 22
 --   npx supabase db query --linked -f supabase/verify_schema.sql
 --
--- Every returned row must begin with PASS (16 rows in total, one per
--- numbered check above). A row beginning with FAIL means a regression in
--- the trigger/FK/RLS behaviour set up across migrations 0001-0006; re-read
--- those migrations' comments before changing this file.
+-- Every returned row must begin with PASS (19 rows in total, one per
+-- numbered check above, 1-19 with no gaps). A row beginning with FAIL means
+-- a regression in the trigger/FK/RLS behaviour set up across migrations
+-- 0001-0007; re-read those migrations' comments before changing this file.
 --
 -- WARNING: this script INSERTS and then DELETES test rows (projects named
 -- 'VERIFY A' / 'VERIFY B' and everything cascading from them). It is meant
@@ -197,8 +229,8 @@ begin
   end;
 end $$;
 
--- Checks 10-16: structural RLS assertions from migration 0006. Catalog-only,
--- no session required, no rows inserted or deleted.
+-- Checks 10-19: structural RLS assertions from migrations 0006/0007.
+-- Catalog-only, no session required, no rows inserted or deleted.
 create or replace function _verify_rls() returns setof text language plpgsql as $$
 declare
   n           int;
@@ -207,6 +239,8 @@ declare
   pol_cmd     text;
   is_admin_ok boolean;
   my_proj_ok  boolean;
+  assert_ok   boolean;
+  log_ok      boolean;
   trig_count  int;
   trig_order  text;
 begin
@@ -251,16 +285,42 @@ begin
                      case when is_admin_ok then 'PASS' else 'FAIL' end,
                      coalesce(is_admin_ok::text, 'function not found'));
 
-  -- 14. my_projects() is security definer with search_path=public, same reason.
-  select p.prosecdef and 'search_path=public' = any (p.proconfig)
+  -- 14. my_projects() is security definer with search_path=public, pg_temp
+  -- (0007 pinned pg_temp explicitly, and added an `active` filter that is
+  -- not observable from this catalog-only script -- see the banner above).
+  select p.prosecdef and 'search_path=public, pg_temp' = any (p.proconfig)
     into my_proj_ok
   from pg_proc p
   where p.pronamespace = 'public'::regnamespace and p.proname = 'my_projects';
-  return next format('%s my_projects() is security definer with search_path=public: %s',
+  return next format('%s my_projects() is security definer with search_path=public, pg_temp: %s',
                      case when my_proj_ok then 'PASS' else 'FAIL' end,
                      coalesce(my_proj_ok::text, 'function not found'));
 
-  -- 15. cells carries exactly four triggers (three from 0002, one from 0006).
+  -- 15. assert_gs_updates_stage_only() is security definer with a pinned
+  -- search_path. 0007 elevated it because it calls is_admin() and is itself
+  -- a privilege boundary, so its own search_path must not be attacker
+  -- influenced.
+  select p.prosecdef and 'search_path=public, pg_temp' = any (p.proconfig)
+    into assert_ok
+  from pg_proc p
+  where p.pronamespace = 'public'::regnamespace and p.proname = 'assert_gs_updates_stage_only';
+  return next format('%s assert_gs_updates_stage_only() is security definer with search_path=public, pg_temp: %s',
+                     case when assert_ok then 'PASS' else 'FAIL' end,
+                     coalesce(assert_ok::text, 'function not found'));
+
+  -- 16. log_cell_stage_change() is security definer with a pinned
+  -- search_path. This is the exact fix for 0007's critical defect: with RLS
+  -- enabled on cell_events and no INSERT policy, a security-invoker trigger
+  -- made every stage change fail with 42501, for admin and GS alike.
+  select p.prosecdef and 'search_path=public, pg_temp' = any (p.proconfig)
+    into log_ok
+  from pg_proc p
+  where p.pronamespace = 'public'::regnamespace and p.proname = 'log_cell_stage_change';
+  return next format('%s log_cell_stage_change() is security definer with search_path=public, pg_temp: %s',
+                     case when log_ok then 'PASS' else 'FAIL' end,
+                     coalesce(log_ok::text, 'function not found'));
+
+  -- 17. cells carries exactly four triggers (three from 0002, one from 0006).
   select count(*) into trig_count
   from pg_trigger t
   join pg_class c on c.oid = t.tgrelid
@@ -268,8 +328,10 @@ begin
   return next format('%s cells has four triggers: %s found',
                      case when trig_count = 4 then 'PASS' else 'FAIL' end, trig_count);
 
-  -- 16. cells_assert_gs_stage_only must sort alphabetically before
-  -- cells_set_audit_columns, so a rejected write never stamps updated_at.
+  -- 18. cells_assert_gs_stage_only must sort alphabetically before
+  -- cells_set_audit_columns by name. Necessary for Postgres's same-timing
+  -- firing order, but not sufficient alone -- a name comparison proves
+  -- nothing about whether either trigger is actually BEFORE UPDATE. See 19.
   select string_agg(tgname, ',' order by tgname) into trig_order
   from pg_trigger t
   join pg_class c on c.oid = t.tgrelid
@@ -279,6 +341,23 @@ begin
                      case when trig_order = 'cells_assert_gs_stage_only,cells_set_audit_columns'
                           then 'PASS' else 'FAIL' end,
                      coalesce(trig_order, 'not found'));
+
+  -- 19. Both triggers must actually BE row-level BEFORE UPDATE triggers.
+  -- Check 18 alone would still PASS if cells_assert_gs_stage_only were
+  -- rewritten as an AFTER UPDATE trigger -- its name still sorts first, but
+  -- a rejected write would then reach cells_set_audit_columns's stamp
+  -- anyway, destroying the load-bearing guarantee. tgtype is a bitmask:
+  -- bit 0 (1) = row-level, bit 1 (2) = BEFORE, bit 4 (16) = UPDATE.
+  select count(*) into trig_count
+  from pg_trigger t
+  join pg_class c on c.oid = t.tgrelid
+  where c.relname = 'cells' and not t.tgisinternal
+    and t.tgname in ('cells_assert_gs_stage_only', 'cells_set_audit_columns')
+    and (t.tgtype & 1) = 1
+    and (t.tgtype & 2) = 2
+    and (t.tgtype & 16) > 0;
+  return next format('%s cells_assert_gs_stage_only and cells_set_audit_columns are both row-level BEFORE UPDATE triggers: %s of 2 qualify',
+                     case when trig_count = 2 then 'PASS' else 'FAIL' end, trig_count);
 end $$;
 
 -- A single top-level SELECT: `supabase db query -f` surfaces only the last
