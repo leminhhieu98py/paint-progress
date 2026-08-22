@@ -18,7 +18,8 @@
 --      (cells_assert_stage_project).
 --   2. A cell can be assigned a stage from its own project, and doing so
 --      logs exactly one cell_events row (cells_log_stage_change).
---   3. cells_set_audit_columns stamps updated_at on every update.
+--   3. cells_set_audit_columns stamps updated_at when a cell's stage changes.
+--      (That it does NOT stamp on any other update is check 25, added by 0011.)
 --   4. Re-setting the same stage is a no-op: it must not log a second event.
 --   5. The cell_events name snapshot (from 0005) is durable against a
 --      RENAME: renaming the stage of an already-recorded event must not
@@ -122,19 +123,31 @@
 --       last two definer/invoker functions left unpinned after 0008 -- now
 --       report search_path=public, pg_temp.
 --
+-- Check 25 is added by 0011 and has its own fixtures ('VERIFY C'), which is why
+-- it lives in a third function rather than inside _verify_triggers: appending it
+-- there would have renumbered every check after it for no gain.
+--   25. set_cell_audit_columns stamps updated_at/updated_by ONLY when stage_id
+--       actually changes. Those columns are the progress audit trail -- spec §9
+--       reports "last updated, updated by" per cell to the customer -- and the
+--       trigger fired on every UPDATE, so syncCells' geometry upsert re-stamped
+--       every cell on the deck: a guide nudged in March rewrote the dates of
+--       coats recorded weeks earlier. Asserted in both directions in one row,
+--       because a guard that skipped the stamp unconditionally would satisfy
+--       either half alone.
+--
 -- How to run:
 --   nvm use 22
 --   npx supabase db query --linked -f supabase/verify_schema.sql
 --
--- Every returned row must begin with PASS (24 rows in total, one per
--- numbered check above, 1-24 with no gaps). A row beginning with FAIL means
+-- Every returned row must begin with PASS (25 rows in total, one per
+-- numbered check above, 1-25 with no gaps). A row beginning with FAIL means
 -- a regression in the trigger/FK/RLS behaviour set up across migrations
--- 0001-0009; re-read those migrations' comments before changing this file.
+-- 0001-0011; re-read those migrations' comments before changing this file.
 --
 -- WARNING: this script INSERTS and then DELETES test rows (projects named
--- 'VERIFY A' / 'VERIFY B' and everything cascading from them). It is meant
--- to run against a disposable or pre-production database only. Never run
--- it against a database holding real project data.
+-- 'VERIFY A' / 'VERIFY B' / 'VERIFY C' and everything cascading from them). It
+-- is meant to run against a disposable or pre-production database only. Never
+-- run it against a database holding real project data.
 
 create or replace function _verify_triggers() returns setof text language plpgsql as $$
 declare
@@ -191,7 +204,10 @@ begin
   return next format('%s cell_events: %s row(s), expected 1',
                      case when ev_count = 1 then 'PASS' else 'FAIL' end, ev_count);
 
-  -- 4. the audit trigger must have stamped updated_at
+  -- 4. the audit trigger must have stamped updated_at for the stage change
+  -- above. Weak on its own -- updated_at is `not null default now()`, so it is
+  -- never null -- and it says nothing about updates that are NOT progress:
+  -- that is check 25 (0011), which asserts both directions against a sentinel.
   select updated_at into upd from cells where id = c1;
   return next format('%s updated_at: %s',
                      case when upd is not null then 'PASS' else 'FAIL' end, upd);
@@ -469,12 +485,79 @@ begin
                      case when n = 2 then 'PASS' else 'FAIL' end, n);
 end $$;
 
+-- Check 25 (migration 0011): the progress audit columns are stamped only by a
+-- progress change.
+--
+-- Its own fixtures, so it can be appended without renumbering checks 1-24.
+--
+-- The stage-unchanged update here writes `updated_at` rather than a geometry
+-- column, and that is deliberate: cells_assert_gs_stage_only (0006) rejects any
+-- change to deck_id/code/x/y/w/h/area_m2 from a non-admin, and this script runs
+-- as postgres with auth.uid() null, so is_admin() is false and a geometry write
+-- would be refused before the audit trigger ever ran. `updated_at` is not in
+-- that guard's list, is stage-unchanged exactly like a geometry save, and has
+-- the property this check needs: a client-supplied sentinel that the old trigger
+-- would overwrite and the fixed one must leave alone.
+--
+-- updated_by is not asserted. It is set from auth.uid() in the same `if` as
+-- updated_at, which is null in this session, so it cannot be observed to change
+-- either way -- guarding updated_at guards both.
+create or replace function _verify_audit_columns() returns setof text language plpgsql as $$
+declare
+  p uuid; d uuid; s1 uuid; s2 uuid; cid uuid;
+  sentinel timestamptz := timestamptz '2000-01-01 00:00:00+00';
+  after_geometry timestamptz; after_stage timestamptz;
+begin
+  begin
+    insert into projects (name, code) values ('VERIFY C','VERIFYC') returning id into p;
+    insert into decks (project_id, seq, name, code, total_area_m2)
+      values (p, 1, 'Deck', 'VC', 100) returning id into d;
+    insert into project_stages (project_id, seq, name, color, weight)
+      values (p, 1, 'Coat 1', '#fadb14', 1) returning id into s1;
+    insert into project_stages (project_id, seq, name, color, weight)
+      values (p, 2, 'Coat 2', '#bfbfbf', 0) returning id into s2;
+    insert into cells (deck_id, code, x, y, w, h, area_m2)
+      values (d, 'R1C1', 0, 0, 1, 1, 100) returning id into cid;
+
+    -- Real progress: this must stamp, and does (check 4 covers that directly).
+    update cells set stage_id = s1 where id = cid;
+
+    -- Stage unchanged, twice. The first write plants the sentinel, and the old
+    -- trigger would already have overwritten it with now(). The second is the
+    -- closer analogue of a geometry save -- it leaves updated_at at the value
+    -- the row already holds, exactly as PostgREST's geometry-only UPDATE does --
+    -- and must not disturb it either.
+    update cells set updated_at = sentinel where id = cid;
+    update cells set updated_at = sentinel where id = cid;
+    select updated_at into after_geometry from cells where id = cid;
+
+    -- Progress again: the stamp must come back. Without this half, a trigger
+    -- body that skipped the stamp unconditionally would report PASS -- and the
+    -- audit trail would simply stop recording anything.
+    update cells set stage_id = s2 where id = cid;
+    select updated_at into after_stage from cells where id = cid;
+
+    delete from projects where id = p;
+
+    return next format(
+      '%s audit columns follow progress only: after a stage-unchanged update %L (want %L), after a stage change %L (want a fresh stamp)',
+      case when after_geometry = sentinel and after_stage <> sentinel
+           then 'PASS' else 'FAIL' end,
+      after_geometry, sentinel, after_stage);
+  exception when others then
+    return next 'FAIL audit columns: ' || sqlerrm;
+  end;
+end $$;
+
 -- A single top-level SELECT: `supabase db query -f` surfaces only the last
--- result set a multi-statement file produces, so the two checks are combined
--- here with UNION ALL rather than issued as two separate SELECTs.
+-- result set a multi-statement file produces, so the checks are combined
+-- here with UNION ALL rather than issued as separate SELECTs.
 select * from _verify_triggers()
 union all
-select * from _verify_rls();
+select * from _verify_rls()
+union all
+select * from _verify_audit_columns();
 
 drop function _verify_triggers();
 drop function _verify_rls();
+drop function _verify_audit_columns();
