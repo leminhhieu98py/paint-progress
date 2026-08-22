@@ -54,7 +54,6 @@ export async function pdfPageCount(file: File): Promise<number> {
 export async function renderPdfPage(
   file: File,
   pageNumber: number,
-  targetWidth: number = PDF_RENDER_WIDTH,
 ): Promise<RenderedPage> {
   const pdf = await loadPdf(file)
   if (pageNumber < 1 || pageNumber > pdf.numPages) {
@@ -63,7 +62,7 @@ export async function renderPdfPage(
 
   const page = await pdf.getPage(pageNumber)
   const unscaled = page.getViewport({ scale: 1 })
-  const viewport = page.getViewport({ scale: targetWidth / unscaled.width })
+  const viewport = page.getViewport({ scale: PDF_RENDER_WIDTH / unscaled.width })
 
   const { canvas, context } = createCanvas(Math.round(viewport.width), Math.round(viewport.height))
   // canvasContext is passed for backwards compatibility only: pdf.js ignores

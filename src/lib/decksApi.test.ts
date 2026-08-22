@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { getDrawingUrl, syncCells, uploadDrawing, zoneImpactOf } from './decksApi'
+import {
+  createDeck, getDrawingUrl, listCells, listDecks, listGuides, saveGuides,
+  syncCells, updateDeckArea, uploadDrawing, zoneImpactOf,
+} from './decksApi'
 
 const from = vi.hoisted(() => vi.fn())
 const upload = vi.hoisted(() => vi.fn())
@@ -10,7 +13,7 @@ vi.mock('./supabase', () => ({
 
 function builder(result: { data?: unknown; error?: unknown }) {
   const b: Record<string, unknown> = {}
-  for (const m of ['select', 'insert', 'upsert', 'update', 'delete', 'eq', 'in', 'order']) {
+  for (const m of ['select', 'insert', 'upsert', 'update', 'delete', 'eq', 'in', 'order', 'single']) {
     b[m] = vi.fn(() => b)
   }
   b.then = (resolve: (v: unknown) => unknown) =>
@@ -22,6 +25,232 @@ beforeEach(() => {
   from.mockReset()
   upload.mockReset()
   createSignedUrl.mockReset()
+})
+
+describe('listDecks', () => {
+  it('lists a project\'s decks with each one\'s cell count', async () => {
+    from.mockImplementationOnce(() => builder({
+      data: [{
+        id: 'd1', project_id: 'p1', seq: 1, name: 'Main Deck', code: 'MD',
+        image_path: 'p1/d1.png', image_w: 2000, image_h: 1600,
+        total_area_m2: '5258.50', area_source: 'guides',
+        cells: [{ id: 'c1' }, { id: 'c2' }],
+      }],
+    }))
+
+    const rows = await listDecks('p1')
+
+    expect(rows).toEqual([{
+      id: 'd1', projectId: 'p1', seq: 1, name: 'Main Deck', code: 'MD',
+      imagePath: 'p1/d1.png', imageW: 2000, imageH: 1600,
+      totalAreaM2: 5258.5, areaSource: 'guides', cellCount: 2,
+    }])
+  })
+
+  it('defaults a deck with no drawing yet to null image fields and a zero cell count', async () => {
+    from.mockImplementationOnce(() => builder({
+      data: [{
+        id: 'd2', project_id: 'p1', seq: 2, name: 'Cellar', code: 'CD',
+        image_path: null, image_w: null, image_h: null,
+        total_area_m2: '0', area_source: 'prorated', cells: [],
+      }],
+    }))
+
+    const [row] = await listDecks('p1')
+
+    expect(row.imagePath).toBeNull()
+    expect(row.imageW).toBeNull()
+    expect(row.imageH).toBeNull()
+    expect(row.cellCount).toBe(0)
+  })
+
+  it('scopes the query to the project and orders by seq', async () => {
+    const stub = builder({ data: [] })
+    from.mockImplementationOnce(() => stub)
+
+    await listDecks('p1')
+
+    expect(stub.eq).toHaveBeenCalledWith('project_id', 'p1')
+    expect(stub.order).toHaveBeenCalledWith('seq')
+  })
+
+  it('throws when the query fails', async () => {
+    from.mockImplementationOnce(() => builder({ error: { message: 'permission denied' } }))
+    await expect(listDecks('p1')).rejects.toThrow('permission denied')
+  })
+})
+
+describe('createDeck', () => {
+  it('inserts the deck under its project and seq, and returns its id', async () => {
+    const stub = builder({ data: { id: 'd9' } })
+    from.mockImplementationOnce(() => stub)
+
+    const id = await createDeck({ projectId: 'p1', seq: 3, name: 'Roof', code: 'RF' })
+
+    expect(id).toBe('d9')
+    expect(stub.insert).toHaveBeenCalledWith({
+      project_id: 'p1', seq: 3, name: 'Roof', code: 'RF',
+    })
+  })
+
+  it('throws when the insert fails', async () => {
+    from.mockImplementationOnce(() => builder({ error: { message: 'duplicate key value' } }))
+    await expect(
+      createDeck({ projectId: 'p1', seq: 1, name: 'X', code: 'X' }),
+    ).rejects.toThrow('duplicate key value')
+  })
+})
+
+describe('updateDeckArea', () => {
+  it('updates the total area and its provenance together, on the right deck', async () => {
+    const stub = builder({})
+    from.mockImplementationOnce(() => stub)
+
+    await updateDeckArea('d1', 1234.5, 'prorated')
+
+    expect(stub.update).toHaveBeenCalledWith({ total_area_m2: 1234.5, area_source: 'prorated' })
+    expect(stub.eq).toHaveBeenCalledWith('id', 'd1')
+  })
+
+  it('throws when the update fails', async () => {
+    from.mockImplementationOnce(() => builder({ error: { message: 'permission denied' } }))
+    await expect(updateDeckArea('d1', 1, 'guides')).rejects.toThrow('permission denied')
+  })
+})
+
+describe('listGuides', () => {
+  it('maps a guide\'s numeric fields, including the axis and its id', async () => {
+    from.mockImplementationOnce(() => builder({
+      data: [{ id: 'g1', axis: 'x', pos: '0.500000', offset_mm: '12000.00' }],
+    }))
+
+    const guides = await listGuides('d1')
+
+    expect(guides).toEqual([{ id: 'g1', axis: 'x', pos: 0.5, offsetMm: 12000 }])
+  })
+
+  it('scopes to the deck and orders by offset_mm', async () => {
+    const stub = builder({ data: [] })
+    from.mockImplementationOnce(() => stub)
+
+    await listGuides('d1')
+
+    expect(stub.eq).toHaveBeenCalledWith('deck_id', 'd1')
+    // B12: without this, both current consumers happen to re-sort themselves
+    // so it is benign today, but it is an unstated non-guarantee this endpoint
+    // should not leave to its callers.
+    expect(stub.order).toHaveBeenCalledWith('offset_mm')
+  })
+
+  it('throws when the query fails', async () => {
+    from.mockImplementationOnce(() => builder({ error: { message: 'permission denied' } }))
+    await expect(listGuides('d1')).rejects.toThrow('permission denied')
+  })
+})
+
+describe('saveGuides', () => {
+  it('deletes every existing guide for the deck, then inserts the new set', async () => {
+    const del = builder({})
+    const ins = builder({})
+    from.mockImplementationOnce(() => del).mockImplementationOnce(() => ins)
+
+    await saveGuides('d1', [
+      { axis: 'x', pos: 0, offsetMm: 0 },
+      { axis: 'x', pos: 1, offsetMm: 14500 },
+    ])
+
+    // Ordering is pinned by which builder answers which `from()` call: the
+    // real function must call delete before insert for this sequence to
+    // resolve without throwing (an insert-then-delete order would see the
+    // insert answered by `del`, which has no rows to report and no error --
+    // masking the bug rather than catching it -- so the payload assertions
+    // below are what actually pins the order).
+    expect(del.delete).toHaveBeenCalled()
+    expect(del.eq).toHaveBeenCalledWith('deck_id', 'd1')
+    expect(ins.insert).toHaveBeenCalledWith([
+      { deck_id: 'd1', axis: 'x', pos: 0, offset_mm: 0 },
+      { deck_id: 'd1', axis: 'x', pos: 1, offset_mm: 14500 },
+    ])
+  })
+
+  it('does not insert at all when the new guide set is empty', async () => {
+    const del = builder({})
+    from.mockImplementationOnce(() => del)
+
+    await saveGuides('d1', [])
+
+    // Exactly one call: the delete. A second would mean an insert([]) round
+    // trip that can only ever write nothing.
+    expect(from).toHaveBeenCalledTimes(1)
+  })
+
+  it('throws when the delete fails, and never attempts the insert', async () => {
+    from.mockImplementationOnce(() => builder({ error: { message: 'delete blocked' } }))
+
+    await expect(
+      saveGuides('d1', [{ axis: 'x', pos: 0, offsetMm: 0 }]),
+    ).rejects.toThrow('delete blocked')
+
+    expect(from).toHaveBeenCalledTimes(1)
+  })
+
+  it('throws when the insert fails -- after the delete already committed, with no transaction covering both', async () => {
+    // The hazard B7 flags: saveGuides is two round trips with no transaction.
+    // By the time this rejects, every guide for this deck is already gone
+    // from the database; the insert meant to replace them never landed. The
+    // editor's local state still shows the old mm chain until the next
+    // reload, but the database holds none of it.
+    const del = builder({})
+    from.mockImplementationOnce(() => del).mockImplementationOnce(() => builder({ error: { message: 'insert refused' } }))
+
+    await expect(
+      saveGuides('d1', [{ axis: 'x', pos: 0, offsetMm: 0 }]),
+    ).rejects.toThrow('insert refused')
+
+    expect(from).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('listCells', () => {
+  it('maps a cell\'s numeric fields and its recorded stage', async () => {
+    from.mockImplementationOnce(() => builder({
+      data: [{
+        id: 'c1', code: 'R1C1', x: '0.000000', y: '0.000000',
+        w: '0.500000', h: '1.000000', area_m2: '100.00', stage_id: 's1',
+      }],
+    }))
+
+    const cells = await listCells('d1')
+
+    expect(cells).toEqual([
+      { id: 'c1', code: 'R1C1', x: 0, y: 0, w: 0.5, h: 1, areaM2: 100, stageId: 's1' },
+    ])
+  })
+
+  it('reports null, not undefined, for a cell with no recorded stage', async () => {
+    from.mockImplementationOnce(() => builder({
+      data: [{ id: 'c1', code: 'R1C1', x: 0, y: 0, w: 1, h: 1, area_m2: 10, stage_id: null }],
+    }))
+
+    const [cell] = await listCells('d1')
+
+    expect(cell.stageId).toBeNull()
+  })
+
+  it('scopes to the deck and orders by code', async () => {
+    const stub = builder({ data: [] })
+    from.mockImplementationOnce(() => stub)
+
+    await listCells('d1')
+
+    expect(stub.eq).toHaveBeenCalledWith('deck_id', 'd1')
+    expect(stub.order).toHaveBeenCalledWith('code')
+  })
+
+  it('throws when the query fails', async () => {
+    from.mockImplementationOnce(() => builder({ error: { message: 'permission denied' } }))
+    await expect(listCells('d1')).rejects.toThrow('permission denied')
+  })
 })
 
 describe('syncCells', () => {

@@ -82,16 +82,6 @@ describe('renderPdfPage viewport scale', () => {
     expect(stub.page.getViewport).toHaveBeenNthCalledWith(2, { scale: PDF_RENDER_WIDTH / 800 })
   })
 
-  it('scales the viewport proportionally to a caller-supplied target width', async () => {
-    const stub = pdfStub(1, { width: 800, height: 600 })
-    getDocument.mockReturnValue(stub)
-    const file = new File([new Uint8Array([1])], 'deck.pdf', { type: 'application/pdf' })
-
-    await expect(renderPdfPage(file, 1, 500)).rejects.toThrow(/2d canvas context/)
-
-    expect(stub.page.getViewport).toHaveBeenNthCalledWith(1, { scale: 1 })
-    expect(stub.page.getViewport).toHaveBeenNthCalledWith(2, { scale: 500 / 800 })
-  })
 })
 
 describe('imageFileToPng', () => {

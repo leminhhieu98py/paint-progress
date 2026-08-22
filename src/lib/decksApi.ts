@@ -15,7 +15,7 @@ export interface DeckRow {
   cellCount: number
 }
 
-export type PersistedCell = MeshCell & { id: string; stageId: string | null }
+type PersistedCell = MeshCell & { id: string; stageId: string | null }
 
 export interface ZoneImpact {
   zoneId: string
@@ -121,6 +121,12 @@ export async function listGuides(deckId: string): Promise<Guide[]> {
     .from('deck_guides')
     .select('id, axis, pos, offset_mm')
     .eq('deck_id', deckId)
+    // Both current consumers re-sort this themselves (DeckEditor's axisRows,
+    // buildMeshFromGuides), so nothing depends on this order today -- but it
+    // is a real guarantee this endpoint should make rather than an unstated
+    // accident, and DeckEditor's mm-chain math (spansFromOffsets) is exactly
+    // the kind of caller that would silently misbehave without one.
+    .order('offset_mm')
   if (error) throw new Error(error.message)
   return (data ?? []).map((g) => ({
     id: g.id as string,
