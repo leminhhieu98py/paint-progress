@@ -143,6 +143,22 @@ export async function myFirstProjectId(): Promise<string | null> {
   return (data?.[0]?.project_id as string | undefined) ?? null
 }
 
+/**
+ * Project names for dropdowns in screens (e.g., UsersScreen). Intentionally
+ * lean: no stages, decks, or cells — just the id and name for selector options.
+ */
+export async function listProjectNames(): Promise<Array<{ id: string; name: string }>> {
+  const { data, error } = await supabase
+    .from('projects')
+    .select('id, name')
+    .order('name')
+  if (error) throw new Error(error.message)
+  return (data ?? []).map((row) => ({
+    id: row.id as string,
+    name: row.name as string,
+  }))
+}
+
 export async function listProjects(): Promise<ProjectRow[]> {
   const { data, error } = await supabase
     .from('projects')

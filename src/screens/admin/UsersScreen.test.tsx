@@ -6,6 +6,7 @@ import { UsersScreen } from './UsersScreen'
 const listGsUsers = vi.fn()
 const revealPassword = vi.fn()
 const deactivateGsUser = vi.fn()
+const listProjectNames = vi.fn()
 
 vi.mock('../../lib/adminApi', () => ({
   listGsUsers: () => listGsUsers(),
@@ -15,17 +16,17 @@ vi.mock('../../lib/adminApi', () => ({
   deactivateGsUser: (id: string) => deactivateGsUser(id),
 }))
 
-vi.mock('../../lib/supabase', () => ({
-  supabase: {
-    from: () => ({ select: () => ({ order: () => Promise.resolve({ data: [], error: null }) }) }),
-  },
+vi.mock('../../lib/projectsApi', () => ({
+  listProjectNames: () => listProjectNames(),
 }))
 
 beforeEach(() => {
   listGsUsers.mockReset()
   revealPassword.mockReset()
   deactivateGsUser.mockReset()
+  listProjectNames.mockReset()
   deactivateGsUser.mockResolvedValue(undefined)
+  listProjectNames.mockResolvedValue([])
   // Two rows so a reveal-the-wrong-row bug in the per-row `revealed[user.id]`
   // keying would actually show up in a test, instead of being masked by a
   // fixture with only one row to get right. Ids deliberately do not coincide

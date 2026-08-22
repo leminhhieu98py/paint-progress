@@ -120,4 +120,18 @@ describe('AppRoutes: landing at the base path by role', () => {
     expect(await screen.findByText('Chưa được thêm vào dự án nào')).toBeInTheDocument()
     expect(screen.queryByText('404')).toBeNull()
   })
+
+  it('tells a gs whose profile load failed to check their connection, not the bare 404', async () => {
+    maybeSingle.mockResolvedValue({
+      data: { id: 'user-1', username: 'gs3', full_name: 'GS Ba', role: 'gs', active: true },
+      error: null,
+    })
+    myFirstProjectId.mockRejectedValue(new Error('Network error'))
+
+    renderAtBasePath()
+
+    expect(await screen.findByText('Không tải được thông tin dự án')).toBeInTheDocument()
+    expect(screen.queryByText('Chưa được thêm vào dự án nào')).toBeNull()
+    expect(screen.queryByText('404')).toBeNull()
+  })
 })

@@ -8,7 +8,7 @@ import {
   setPassword,
   type GsUser,
 } from '../../lib/adminApi'
-import { supabase } from '../../lib/supabase'
+import { listProjectNames } from '../../lib/projectsApi'
 
 interface ProjectOption {
   value: string
@@ -45,18 +45,14 @@ export function UsersScreen() {
 
   useEffect(() => {
     void refresh()
-    void supabase
-      .from('projects')
-      .select('id, name')
-      .order('name')
-      .then(({ data, error: projectsError }) => {
-        if (projectsError) {
-          // Every other failure in this screen surfaces through setError; an
-          // empty Select with no explanation is the worst of both worlds.
-          setError(projectsError.message)
-          return
-        }
-        setProjects((data ?? []).map((p) => ({ value: p.id, label: p.name })))
+    void listProjectNames()
+      .then((data) => {
+        setProjects(data.map((p) => ({ value: p.id, label: p.name })))
+      })
+      .catch((e) => {
+        // Every other failure in this screen surfaces through setError; an
+        // empty Select with no explanation is the worst of both worlds.
+        setError((e as Error).message)
       })
   }, [refresh])
 
