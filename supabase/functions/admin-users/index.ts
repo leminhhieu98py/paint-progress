@@ -171,12 +171,34 @@ Deno.serve(async (req) => {
         const { userId, password } = body
         if (!userId || !password) return json({ error: 'userId and password are required' }, 400)
 
-        const { error } = await admin.auth.admin.updateUserById(userId, { password })
-        if (error) return json({ error: error.message }, 400)
+        // Ciphertext first, deliberately. If the ciphertext write fails,
+        // nothing has changed yet and the supervisor keeps working with
+        // their existing password -- the worst case is "nothing happened".
+        // If it succeeds and the auth update then fails, restore the saved
+        // value below so the stored secret and the real password can never
+        // disagree -- the alternative is a supervisor locked out of an
+        // account whose password the admin can no longer look up.
+        const { data: existing } = await admin
+          .from('gs_credentials')
+          .select('secret')
+          .eq('user_id', userId)
+          .maybeSingle()
+        const previousSecret = existing?.secret ?? null
 
-        await admin
+        const { error: credError } = await admin
           .from('gs_credentials')
           .upsert({ user_id: userId, secret: await encryptSecret(key, password) })
+        if (credError) return json({ error: credError.message }, 500)
+
+        const { error: authError } = await admin.auth.admin.updateUserById(userId, { password })
+        if (authError) {
+          if (previousSecret !== null) {
+            await admin.from('gs_credentials').upsert({ user_id: userId, secret: previousSecret })
+          }
+          // else: no prior row (account created before credentials existed,
+          // or `create` half-failed) -- nothing to restore to.
+          return json({ error: authError.message }, 500)
+        }
 
         return json({ ok: true })
       }
@@ -192,12 +214,12 @@ Deno.serve(async (req) => {
           return json({ error: `Could not ban account: ${banError.message}` }, 500)
         }
 
-        // Ban alone does not revoke a refresh token already in the supervisor's
-        // tablet -- invalidate existing sessions explicitly.
-        const { error: signOutError } = await admin.auth.admin.signOut(userId, 'global')
-        if (signOutError) {
-          return json({ error: `Could not invalidate sessions: ${signOutError.message}` }, 500)
-        }
+        // No session revocation here on purpose. my_projects() requires
+        // profiles.active, and every GS read policy plus cells_member_update
+        // resolves through it, so an unexpired access token grants nothing the
+        // moment this commits. The ban stops new sign-ins. An earlier attempt to
+        // call auth.admin.signOut(userId) was wrong twice over: that API takes a
+        // JWT, not a user id, and it made this whole action fail.
 
         const { error: memberError } = await admin.from('project_members').delete().eq('user_id', userId)
         if (memberError) {
