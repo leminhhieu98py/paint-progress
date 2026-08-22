@@ -116,6 +116,34 @@ describe('mergeCells', () => {
   it('rejects a selection of fewer than two cells', () => {
     expect(() => mergeCells([byCode('R1C1')])).toThrow(/at least two/i)
   })
+
+  it('rejects a selection containing the same cell twice', () => {
+    expect(() => mergeCells([byCode('R1C1'), byCode('R1C1')])).toThrow(/more than once/i)
+  })
+
+  it('rejects overlapping cells even when their areas sum to the bounding box', () => {
+    // The overlap masks a real gap: footprint is [0,0.9] plus [0.95,1.0], but
+    // the summed area equals the bounding box exactly.
+    const strip = (code: string, x: number, w: number): MeshCell => ({
+      code, x, y: 0, w, h: 1, areaM2: w * 100,
+    })
+    const selection = [
+      strip('A', 0, 0.4),
+      strip('B', 0.35, 0.35),
+      strip('C', 0.7, 0.2),
+      strip('D', 0.95, 0.05),
+    ]
+    const covered = selection.reduce((s, c) => s + c.w * c.h, 0)
+    expect(covered).toBeCloseTo(1, 12) // the area check alone would pass
+    expect(() => mergeCells(selection)).toThrow(/overlapping/i)
+  })
+
+  it('accepts adjacent cells that share an edge exactly', () => {
+    // Regression guard: an inclusive overlap test would reject every real merge.
+    const merged = mergeCells([byCode('R1C1'), byCode('R1C2'), byCode('R2C1'), byCode('R2C2')])
+    expect(merged.w).toBeCloseTo(0.5, 12)
+    expect(merged.h).toBeCloseTo(1, 12)
+  })
 })
 
 describe('areaDivergence', () => {

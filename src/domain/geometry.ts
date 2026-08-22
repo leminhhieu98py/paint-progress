@@ -3,6 +3,11 @@ import type { Guide, MeshCell } from './types'
 /** Spec §3.4: the deck editor warns when cell areas diverge from the deck total by more than this. */
 export const AREA_DIVERGENCE_THRESHOLD = 0.05
 
+/**
+ * Tolerance for comparing normalized (0..1) areas, never real-world m². Summing
+ * hundreds of such values accumulates error around 1e-13, three orders of
+ * magnitude below this, so no legitimate merge is rejected for rounding.
+ */
 const EPSILON = 1e-9
 
 /** Real-world area of the bay bounded by two x-guides and two y-guides, in m². */
@@ -44,14 +49,39 @@ export function buildMeshFromGuides(guides: Guide[]): MeshCell[] {
 /**
  * Collapses a selection into one cell spanning their bounding box.
  *
- * A selection is valid only if it tiles that bounding box completely. Because
- * every mesh cell is axis-aligned and non-overlapping, comparing the summed
- * normalized area against the bounding box area is a sufficient check — an
- * L-shape leaves a hole and fails it.
+ * A selection is valid only if it tiles that bounding box completely. Three
+ * things are checked, and all three are needed:
+ *
+ *   - no duplicate cells, by code;
+ *   - no two cells overlap;
+ *   - the summed area equals the bounding-box area.
+ *
+ * The area comparison alone is NOT sufficient. Overlap can mask a gap and
+ * still balance the books: cells covering [0,0.4], [0.35,0.7], [0.7,0.9] and
+ * [0.95,1.0] sum to exactly their bounding box while leaving a real hole at
+ * (0.9,0.95). Cells from one buildMeshFromGuides call never overlap, so the
+ * area check would be enough for them — but MeshCell deliberately carries no
+ * mesh provenance, so nothing here can verify that the caller respected it.
+ * Checking overlap directly makes the guarantee hold for any input.
  */
 export function mergeCells(selected: MeshCell[]): MeshCell {
   if (selected.length < 2) {
     throw new Error('Merge needs at least two cells')
+  }
+
+  const codes = new Set(selected.map((c) => c.code))
+  if (codes.size !== selected.length) {
+    throw new Error('Merge selection contains the same cell more than once')
+  }
+
+  for (let i = 0; i < selected.length; i++) {
+    for (let j = i + 1; j < selected.length; j++) {
+      if (overlaps(selected[i], selected[j])) {
+        throw new Error(
+          `Merge selection has overlapping cells: ${selected[i].code} and ${selected[j].code}`,
+        )
+      }
+    }
   }
 
   const minX = Math.min(...selected.map((c) => c.x))
@@ -76,6 +106,20 @@ export function mergeCells(selected: MeshCell[]): MeshCell {
     h: maxY - minY,
     areaM2: selected.reduce((sum, c) => sum + c.areaM2, 0),
   }
+}
+
+/**
+ * Do two axis-aligned cells share interior area? Cells that merely touch along
+ * an edge do not overlap — that is the normal case for adjacent mesh cells, so
+ * the comparison is strict.
+ */
+function overlaps(a: MeshCell, b: MeshCell): boolean {
+  return (
+    a.x < b.x + b.w - EPSILON &&
+    b.x < a.x + a.w - EPSILON &&
+    a.y < b.y + b.h - EPSILON &&
+    b.y < a.y + a.h - EPSILON
+  )
 }
 
 /**
