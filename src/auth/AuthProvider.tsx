@@ -1,4 +1,4 @@
-import type { Session } from '@supabase/supabase-js'
+import { isAuthRetryableFetchError, type Session } from '@supabase/supabase-js'
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { toAuthEmail } from '../config'
 import { supabase } from '../lib/supabase'
@@ -17,19 +17,30 @@ interface AuthValue {
   loading: boolean
   /** True when a session exists but its profile could not be read. */
   profileError: boolean
-  signIn: (identifier: string, password: string) => Promise<{ error: { message: string } | null }>
+  signIn: (
+    identifier: string,
+    password: string,
+  ) => Promise<{ error: { message: string; retryable: boolean } | null }>
   signOut: () => Promise<void>
 }
 
 const AuthContext = createContext<AuthValue | null>(null)
 
 async function fetchProfile(userId: string): Promise<Profile | null> {
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('profiles')
     .select('id, username, full_name, role, active')
     .eq('id', userId)
     .maybeSingle()
 
+  // postgrest-js resolves failures as a value instead of throwing: a
+  // network blip or a paused project comes back as `{ data: null, error }`,
+  // not a rejection. Discarding `error` here would make that
+  // indistinguishable from "no profile row exists" and this function would
+  // return null either way -- which is exactly the bug this fixes: the
+  // caller's catch block (and the retry Alert it drives) would never run,
+  // and a legitimately signed-in user would see the bare 404 instead.
+  if (error) throw error
   if (!data) return null
   return {
     id: data.id,
@@ -125,7 +136,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           email: toAuthEmail(identifier),
           password,
         })
-        return { error: error ? { message: error.message } : null }
+        // auth-js resolves a network/transport failure as an
+        // AuthRetryableFetchError value rather than throwing, so it must be
+        // told apart here from a genuine credential rejection -- the caller
+        // (LoginScreen) uses `retryable` to choose which Vietnamese copy to
+        // show, and never echoes `message` (it would reveal whether a
+        // username exists).
+        return {
+          error: error ? { message: error.message, retryable: isAuthRetryableFetchError(error) } : null,
+        }
       },
       signOut: async () => {
         await supabase.auth.signOut()

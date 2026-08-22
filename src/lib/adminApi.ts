@@ -60,7 +60,16 @@ export async function listGsUsers(): Promise<GsUser[]> {
   if (error) throw new Error(error.message)
 
   return (data ?? []).map((row) => {
-    const membership = (row.project_members as { project_id: string; projects: { name: string } | null }[])[0]
+    // supabase-js infers `projects` as an array here because no generated
+    // Database type is supplied to the client, so every embed defaults to
+    // one-to-many. At runtime PostgREST returns a single object for this
+    // many-to-one embed (each project_members row belongs to exactly one
+    // project) -- the target type below matches that runtime reality, not
+    // the inferred query type, so the cast must go through `unknown` first.
+    // Do not "simplify" this back to a direct cast or an array-shaped access.
+    const membership = (
+      row.project_members as unknown as { project_id: string; projects: { name: string } | null }[]
+    )[0]
     return {
       id: row.id,
       username: row.username,

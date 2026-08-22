@@ -6,7 +6,9 @@ import { AuthProvider } from './AuthProvider'
 import { RequireRole } from './RequireRole'
 
 const getSession = vi.fn()
-const onAuthStateChange = vi.fn(() => ({ data: { subscription: { unsubscribe: vi.fn() } } }))
+const onAuthStateChange = vi.fn((_cb?: (event: string, next: Session | null) => void) => ({
+  data: { subscription: { unsubscribe: vi.fn() } },
+}))
 const maybeSingle = vi.fn()
 
 // AuthProvider is exercised for real here (unlike LoginScreen.test.tsx, which
@@ -16,7 +18,8 @@ vi.mock('../lib/supabase', () => ({
   supabase: {
     auth: {
       getSession: (...args: unknown[]) => getSession(...args),
-      onAuthStateChange: (...args: unknown[]) => onAuthStateChange(...args),
+      onAuthStateChange: (cb?: (event: string, next: Session | null) => void) =>
+        onAuthStateChange(cb),
       signInWithPassword: vi.fn(),
       signOut: vi.fn(),
     },
@@ -33,7 +36,16 @@ const fakeSession = { access_token: 'token', user: { id: 'user-1' } } as unknown
 describe('RequireRole with a real AuthProvider', () => {
   it('shows a retry alert — not a stuck spinner or the bare 404 — when the profile fetch fails', async () => {
     getSession.mockResolvedValue({ data: { session: fakeSession } })
-    maybeSingle.mockRejectedValue(new Error('network down'))
+    // postgrest-js does not reject on a failed read -- it resolves with a
+    // populated `error` and `data: null`. That is the shape a real failure
+    // (a network blip, a paused project) produces in production, so that is
+    // what must be mocked here -- as opposed to a genuinely missing row,
+    // which resolves with both `data` and `error` null and must keep
+    // falling through to the bare 404 (see RequireRole.tsx).
+    maybeSingle.mockResolvedValue({
+      data: null,
+      error: { message: 'network down', details: '', hint: '', code: '' },
+    })
 
     render(
       <AuthProvider>
@@ -56,7 +68,7 @@ describe('RequireRole with a real AuthProvider', () => {
     getSession.mockResolvedValue({ data: { session: null } })
 
     let authCallback: ((event: string, next: Session | null) => void) | undefined
-    onAuthStateChange.mockImplementation((cb: (event: string, next: Session | null) => void) => {
+    onAuthStateChange.mockImplementation((cb?: (event: string, next: Session | null) => void) => {
       authCallback = cb
       return { data: { subscription: { unsubscribe: vi.fn() } } }
     })

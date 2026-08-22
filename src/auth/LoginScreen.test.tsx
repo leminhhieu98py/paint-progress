@@ -22,7 +22,7 @@ describe('LoginScreen', () => {
   })
 
   it('shows a Vietnamese error when sign-in is rejected', async () => {
-    signIn.mockResolvedValue({ error: { message: 'Invalid login credentials' } })
+    signIn.mockResolvedValue({ error: { message: 'Invalid login credentials', retryable: false } })
     render(<LoginScreen />)
 
     await userEvent.type(screen.getByLabelText('Tên đăng nhập'), 'x')
@@ -32,7 +32,30 @@ describe('LoginScreen', () => {
     expect(await screen.findByText('Tên đăng nhập hoặc mật khẩu không đúng')).toBeInTheDocument()
   })
 
-  it('shows a Vietnamese network error and stops the loading state when signIn throws', async () => {
+  // This is the shape production actually produces: auth-js resolves a
+  // network/transport failure as a value (an AuthRetryableFetchError, here
+  // reduced to signIn's { message, retryable } contract) rather than
+  // throwing. The message itself must never reach the screen either way.
+  it('shows a Vietnamese network error and stops the loading state when signIn returns a retryable error', async () => {
+    signIn.mockResolvedValue({ error: { message: 'fetch failed', retryable: true } })
+    render(<LoginScreen />)
+
+    await userEvent.type(screen.getByLabelText('Tên đăng nhập'), 'x')
+    await userEvent.type(screen.getByLabelText('Mật khẩu'), 'y')
+    await userEvent.click(screen.getByRole('button', { name: 'Đăng nhập' }))
+
+    expect(
+      await screen.findByText('Không kết nối được. Kiểm tra mạng rồi thử lại.'),
+    ).toBeInTheDocument()
+
+    const button = screen.getByRole('button', { name: 'Đăng nhập' })
+    await waitFor(() => expect(button.className).not.toMatch(/loading/i))
+  })
+
+  // Defensive coverage only: signIn should never actually reject (auth-js
+  // resolves failures as values), but the same network copy must still show
+  // up if one ever does.
+  it('shows the same Vietnamese network error if signIn ever rejects', async () => {
     signIn.mockRejectedValue(new Error('network down'))
     render(<LoginScreen />)
 

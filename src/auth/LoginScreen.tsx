@@ -20,9 +20,18 @@ export function LoginScreen() {
       if (signInError) {
         // Never echo the provider's message: it distinguishes "no such user"
         // from "wrong password" and would confirm which usernames exist.
-        setError('Tên đăng nhập hoặc mật khẩu không đúng')
+        // `retryable` (not the message) is what tells a network/transport
+        // failure apart from a genuine credential rejection.
+        setError(
+          signInError.retryable
+            ? 'Không kết nối được. Kiểm tra mạng rồi thử lại.'
+            : 'Tên đăng nhập hoặc mật khẩu không đúng',
+        )
       }
     } catch {
+      // Defensive only: signIn resolves failures as a value rather than
+      // throwing, but this keeps the network copy reachable if a genuine
+      // exception ever escapes it.
       setError('Không kết nối được. Kiểm tra mạng rồi thử lại.')
     } finally {
       setBusy(false)
