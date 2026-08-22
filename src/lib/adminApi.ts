@@ -1,3 +1,4 @@
+import { FunctionsHttpError } from '@supabase/supabase-js'
 import { supabase } from './supabase'
 
 export interface GsUser {
@@ -15,7 +16,26 @@ async function call<T>(action: Action, payload: Record<string, string>): Promise
   const { data, error } = await supabase.functions.invoke('admin-users', {
     body: { action, ...payload },
   })
-  if (error) throw new Error(error.message)
+  if (error) {
+    // supabase-js turns any non-2xx response into a FunctionsHttpError whose
+    // `.message` is a generic "non-2xx status code" -- the function's actual
+    // `{ error: string }` body is only reachable via `.context`, the raw
+    // (unconsumed) Response. Without this, every error string admin-users
+    // crafts for the caller never reaches the admin.
+    if (error instanceof FunctionsHttpError) {
+      let message = error.message
+      try {
+        const body: unknown = await error.context.json()
+        if (body && typeof body === 'object' && 'error' in body) {
+          message = String((body as { error: unknown }).error)
+        }
+      } catch {
+        // Body wasn't JSON (or already consumed) -- fall back to the generic message.
+      }
+      throw new Error(message)
+    }
+    throw new Error(error.message)
+  }
   if (data && typeof data === 'object' && 'error' in data) {
     throw new Error(String((data as { error: unknown }).error))
   }

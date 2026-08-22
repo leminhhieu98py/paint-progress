@@ -27,6 +27,10 @@ describe('credential crypto', () => {
     await expect(importKey(btoa('short'))).rejects.toThrow(/32 bytes/)
   })
 
+  it('rejects a key that is not valid base64, with the same helpful message', async () => {
+    await expect(importKey('not-valid-base64!')).rejects.toThrow(/32 bytes/)
+  })
+
   it('rejects a malformed stored secret', async () => {
     const key = await importKey(KEY_B64)
     await expect(decryptSecret(key, 'nodot')).rejects.toThrow(/Malformed/)
@@ -35,6 +39,6 @@ describe('credential crypto', () => {
   it('fails to decrypt with the wrong key', async () => {
     const stored = await encryptSecret(await importKey(KEY_B64), 'x')
     const other = await importKey(btoa(String.fromCharCode(...new Uint8Array(32).fill(9))))
-    await expect(decryptSecret(other, stored)).rejects.toThrow()
+    await expect(decryptSecret(other, stored)).rejects.toThrow(/operation|OperationError/i)
   })
 })

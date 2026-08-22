@@ -1,3 +1,4 @@
+import { FunctionsHttpError } from '@supabase/supabase-js'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createGsUser, deactivateGsUser, revealPassword, setPassword } from './adminApi'
 
@@ -37,6 +38,22 @@ describe('adminApi', () => {
   it('surfaces an application error returned in the body', async () => {
     invoke.mockResolvedValue({ data: { error: 'No stored credential' }, error: null })
     await expect(revealPassword('u1')).rejects.toThrow('No stored credential')
+  })
+
+  // supabase-js converts any non-2xx invoke response into a FunctionsHttpError
+  // whose own `.message` is a generic "non-2xx status code" -- the function's
+  // real `{ error: string }` body only lives on `.context`, the raw Response.
+  it('reads the real error message out of a FunctionsHttpError context', async () => {
+    const context = new Response(JSON.stringify({ error: 'No stored credential' }), { status: 404 })
+    invoke.mockResolvedValue({ data: null, error: new FunctionsHttpError(context) })
+    await expect(revealPassword('u1')).rejects.toThrow('No stored credential')
+  })
+
+  it('falls back to the generic message when the context body is not usable JSON', async () => {
+    const context = new Response('not json', { status: 500 })
+    const error = new FunctionsHttpError(context)
+    invoke.mockResolvedValue({ data: null, error })
+    await expect(revealPassword('u1')).rejects.toThrow(error.message)
   })
 
   it('returns the revealed password', async () => {

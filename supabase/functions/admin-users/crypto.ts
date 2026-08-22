@@ -17,7 +17,14 @@ function fromBase64(value: string): Uint8Array {
 }
 
 export async function importKey(base64Key: string): Promise<CryptoKey> {
-  const raw = fromBase64(base64Key)
+  let raw: Uint8Array
+  try {
+    raw = fromBase64(base64Key)
+  } catch {
+    // atob() throws a raw InvalidCharacterError for non-base64 input -- surface
+    // the same actionable message as the length check below instead of that.
+    throw new Error('CRED_ENC_KEY must be 32 bytes, base64-encoded')
+  }
   if (raw.length !== 32) {
     throw new Error('CRED_ENC_KEY must be 32 bytes, base64-encoded')
   }
