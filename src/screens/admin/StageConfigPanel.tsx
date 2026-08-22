@@ -1,16 +1,75 @@
 import { Alert, Button, Input, InputNumber, Modal, Space, Table, Typography } from 'antd'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Stage } from '../../domain/types'
+import { formatWeight } from '../../lib/format'
 import {
   listStages, roundStageWeight, saveStages, stagesRemovedBy, STAGE_WEIGHT_EPSILON,
 } from '../../lib/projectsApi'
 
-const weightFmt = new Intl.NumberFormat('vi-VN', {
-  minimumFractionDigits: 4,
-  maximumFractionDigits: 4,
-})
+/**
+ * `crypto.randomUUID` requires a secure context (https, or localhost) -- and
+ * this admin app has no promise of being served over https. A site office on
+ * a bare HTTP LAN IP is entirely plausible, and there `crypto.randomUUID` is
+ * simply not a function: "Thêm lớp" throws, with nothing on screen to explain
+ * why, and the admin cannot add a paint layer at all.
+ *
+ * `crypto.getRandomValues` carries no such restriction, so it is the fallback
+ * here, building a v4 UUID by hand from 16 random bytes. `randomUUID` stays
+ * the preferred path wherever it exists.
+ */
+function randomUUID(): string {
+  if (typeof crypto.randomUUID === 'function') return crypto.randomUUID()
+  const bytes = crypto.getRandomValues(new Uint8Array(16))
+  bytes[6] = (bytes[6] & 0x0f) | 0x40 // version 4
+  bytes[8] = (bytes[8] & 0x3f) | 0x80 // variant 10xx
+  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
+}
 
-export function StageConfigPanel({ projectId }: { projectId: string }) {
+/**
+ * saveStages' own guard errors, in the admin's language.
+ *
+ * projectsApi.ts throws in English and stays that way -- same reasoning as
+ * DeckEditor's mergeErrorInVietnamese: the domain layer has no business
+ * knowing the UI language. The `!balanced` Alert above pre-empts the weight
+ * guard under ordinary use (both check the same total against the same
+ * STAGE_WEIGHT_EPSILON), so this is a defensive translation for the gap
+ * between that client-side check and the write actually landing, not the
+ * primary guard -- but "Stage weights must sum to 1, got 0.9500" reaching an
+ * otherwise Vietnamese-only Alert is exactly the kind of thing an admin
+ * cannot act on. Matched on a stable marker, not the whole sentence, so a
+ * reworded domain message still translates and anything unrecognised falls
+ * through unchanged.
+ */
+function saveStagesErrorInVietnamese(message: string): string {
+  if (message.includes('must sum to 1')) {
+    return 'Tổng trọng số các lớp phải bằng 1. Kiểm tra lại bảng trọng số trước khi lưu.'
+  }
+  if (message.includes('needs at least one stage')) {
+    return 'Dự án cần có ít nhất một lớp sơn.'
+  }
+  if (message.includes('seq values must be unique') || message.includes('ids must be unique')) {
+    return 'Có lỗi dữ liệu khi lưu cấu hình lớp sơn. Tải lại trang rồi thử lại.'
+  }
+  return message
+}
+
+export function StageConfigPanel({
+  projectId,
+  onSaved,
+}: {
+  projectId: string
+  /**
+   * Called after a save that actually persisted. ProjectsScreen's row shows
+   * this project's rollup (e.g. "42,31%") computed from the SAME stages this
+   * panel edits -- removing a stage nulls every cell recorded at it, changing
+   * true progress -- but the row lives in the parent and this panel has no
+   * way to reach it on its own. DecksScreen already re-fetches its own list
+   * through the editor's onClose after any close, not only a save; this is
+   * the same pattern, scoped tighter to when a write actually happened.
+   */
+  onSaved?: () => void
+}) {
   /**
    * The rows being edited, each carrying the id it is identified by.
    *
@@ -99,10 +158,9 @@ export function StageConfigPanel({ projectId }: { projectId: string }) {
         // The id is minted here, not by the database, so the row carries its
         // identity from the moment it exists: saveStages' upsert keys on the id,
         // which turns a new stage into an INSERT of a known row rather than a
-        // match to be worked out afterwards. crypto.randomUUID needs a secure
-        // context, which is what this admin app is served from (https, or
-        // localhost in dev).
-        { id: crypto.randomUUID(), seq: 0, name: 'Lớp mới', color: '#8c8c8c', weight: 0 },
+        // match to be worked out afterwards. See randomUUID above for why this
+        // is not a bare crypto.randomUUID() call.
+        { id: randomUUID(), seq: 0, name: 'Lớp mới', color: '#8c8c8c', weight: 0 },
       ]),
     )
   }
@@ -144,12 +202,13 @@ export function StageConfigPanel({ projectId }: { projectId: string }) {
       // working instead of freezing the row for the length of a GET nobody
       // asked to wait for.
       void refresh()
+      onSaved?.()
     } catch (e) {
       // Close the dialog before surfacing the error. The Alert lives outside the
       // modal, so leaving it open hides the message behind the mask -- the admin
       // would see the confirm dialog simply not go away, with no reason given.
       setConfirming(false)
-      setError((e as Error).message)
+      setError(saveStagesErrorInVietnamese((e as Error).message))
     } finally {
       setBusy(false)
     }
@@ -161,7 +220,10 @@ export function StageConfigPanel({ projectId }: { projectId: string }) {
       {!balanced && (
         <Alert
           type="warning"
-          message={`Tổng trọng số phải bằng 1.00 — hiện tại ${weightFmt.format(total)}`}
+          // formatWeight(1), not a hardcoded "1.00": a literal dot decimal in
+          // the same sentence as a correctly formatted "1,0000" read as two
+          // different number formats stitched together.
+          message={`Tổng trọng số phải bằng ${formatWeight(1)} — hiện tại ${formatWeight(total)}`}
           description="Mọi phần trăm tiến độ đều tính từ các trọng số này, nên không lưu được khi tổng lệch."
         />
       )}
@@ -292,7 +354,7 @@ export function StageConfigPanel({ projectId }: { projectId: string }) {
             </Table.Summary.Cell>
             <Table.Summary.Cell index={3}>
               <Typography.Text type={balanced ? 'success' : 'danger'} strong>
-                {weightFmt.format(total)}
+                {formatWeight(total)}
               </Typography.Text>
             </Table.Summary.Cell>
           </Table.Summary.Row>

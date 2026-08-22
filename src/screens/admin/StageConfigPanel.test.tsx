@@ -53,6 +53,13 @@ describe('StageConfigPanel', () => {
 
   it('shows the running weight total', async () => {
     render(<StageConfigPanel projectId="p1" />)
+    // Wait for the real stages to load first: before they do, `total` is 0
+    // and the balance warning renders too (now also reading "phải bằng
+    // 1,0000" -- B14's fix for its own hardcoded "1.00" -- so a bare
+    // `findByText(/1,0000/)` can resolve against THAT transient node and then
+    // fail `toBeInTheDocument()` a tick later when it unmounts, racing the
+    // mocked listStages promise rather than testing the settled total.
+    await screen.findByDisplayValue('Blast + Coat 1')
     // vi-VN formatting: comma decimal separator, matching the paperwork the
     // operators already read from.
     expect(await screen.findByText(/1,0000/)).toBeInTheDocument()
@@ -98,6 +105,36 @@ describe('StageConfigPanel', () => {
       { id: 's1', seq: 1, name: 'Blast + Coat 1', color: '#fadb14', weight: 0.6 },
       { id: 's2', seq: 2, name: 'Coat 2', color: '#bfbfbf', weight: 0.4 },
     ])
+  })
+
+  it('mints a fallback id via crypto.getRandomValues when randomUUID is unavailable', async () => {
+    // crypto.randomUUID requires a secure context. Over plain http on a site
+    // office's LAN IP it is simply not a function -- stubbing it away here is
+    // what that insecure context looks like. Without the fallback this
+    // throws and "Thêm lớp" does nothing, with no explanation on screen.
+    const originalCrypto = globalThis.crypto
+    vi.stubGlobal('crypto', {
+      getRandomValues: originalCrypto.getRandomValues.bind(originalCrypto),
+      randomUUID: undefined,
+    })
+    try {
+      saveStages.mockResolvedValue(undefined)
+      render(<StageConfigPanel projectId="p1" />)
+      await screen.findByDisplayValue('Blast + Coat 1')
+
+      await userEvent.click(screen.getByRole('button', { name: 'Thêm lớp' }))
+      await userEvent.click(screen.getByRole('button', { name: 'Lưu' }))
+
+      await waitFor(() => expect(saveStages).toHaveBeenCalledTimes(1))
+      const saved = saveStages.mock.calls[0][1] as { id: string }[]
+      // A real v4 uuid, from the fallback path, not a reused or empty one:
+      // project_stages.id is a uuid primary key.
+      expect(saved[2].id).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+      )
+    } finally {
+      vi.stubGlobal('crypto', originalCrypto)
+    }
   })
 
   it('mints an id for a stage the admin adds, so the upsert has one to key on', async () => {
@@ -231,6 +268,30 @@ describe('StageConfigPanel', () => {
     ])
   })
 
+  it('calls onSaved after a save actually persists, so the parent can refresh its own rollup', async () => {
+    saveStages.mockResolvedValue(undefined)
+    const onSaved = vi.fn()
+    render(<StageConfigPanel projectId="p1" onSaved={onSaved} />)
+    await screen.findByDisplayValue('Blast + Coat 1')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Lưu' }))
+
+    await waitFor(() => expect(saveStages).toHaveBeenCalledTimes(1))
+    expect(onSaved).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not call onSaved when the save fails', async () => {
+    saveStages.mockRejectedValue(new Error('permission denied'))
+    const onSaved = vi.fn()
+    render(<StageConfigPanel projectId="p1" onSaved={onSaved} />)
+    await screen.findByDisplayValue('Blast + Coat 1')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Lưu' }))
+
+    await screen.findByText(/permission denied/)
+    expect(onSaved).not.toHaveBeenCalled()
+  })
+
   it('surfaces a save failure and closes the confirmation modal', async () => {
     // Driven through the removal path so there is a modal to close in the first
     // place.
@@ -238,13 +299,16 @@ describe('StageConfigPanel', () => {
       { id: 's1', seq: 1, name: 'Blast + Coat 1', color: '#fadb14', weight: 1 },
       { id: 's2', seq: 2, name: 'Coat 2', color: '#bfbfbf', weight: 0 },
     ])
-    saveStages.mockRejectedValue(new Error('weights must sum to 1, got 0.9000'))
+    saveStages.mockRejectedValue(new Error('Stage weights must sum to 1, got 0.9000'))
     render(<StageConfigPanel projectId="p1" />)
     await screen.findByDisplayValue('Coat 2')
     await userEvent.click(screen.getAllByRole('button', { name: 'Xoá' })[1])
     await userEvent.click(screen.getByRole('button', { name: 'Lưu' }))
     await userEvent.click(screen.getByRole('button', { name: 'Vẫn lưu' }))
-    expect(await screen.findByText(/must sum to 1/)).toBeInTheDocument()
+    // Translated, not the raw domain wording: an admin cannot act on
+    // "Stage weights must sum to 1, got 0.9000" in an otherwise Vietnamese UI.
+    expect(await screen.findByText(/Tổng trọng số các lớp phải bằng 1/)).toBeInTheDocument()
+    expect(screen.queryByText(/must sum to 1/i)).toBeNull()
     // The Alert lives outside the modal: if the dialog were still open, the
     // error would be rendered behind its mask, so the admin would just see
     // the confirm dialog fail to go away with no visible reason why.
@@ -255,6 +319,18 @@ describe('StageConfigPanel', () => {
     // internals (which never resolve under jsdom, since no real
     // `transitionend` ever fires there).
     expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('does not touch an infrastructure error the translator does not recognise', async () => {
+    // Anything unmatched must fall through unchanged, or a new domain error
+    // could be silently swallowed instead of reaching the admin.
+    saveStages.mockRejectedValue(new Error('permission denied for table project_stages'))
+    render(<StageConfigPanel projectId="p1" />)
+    await screen.findByDisplayValue('Coat 2')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Lưu' }))
+
+    expect(await screen.findByText('permission denied for table project_stages')).toBeInTheDocument()
   })
 
   it('keeps an in-progress edit when a stale background refresh resolves late', async () => {
