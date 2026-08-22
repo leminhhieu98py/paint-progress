@@ -213,6 +213,290 @@ describe('saveStages', () => {
       })),
     })
 
+  /** The exact text Postgres raises for (project_id, seq) -- see 0001 and 0012. */
+  const DUPLICATE_SEQ =
+    'duplicate key value violates unique constraint "project_stages_project_id_seq_key"'
+
+  type StageRow = {
+    id: string
+    project_id: string
+    seq: number
+    name: string
+    color: string
+    weight: number
+  }
+
+  /**
+   * A stand-in for `project_stages` that ENFORCES `unique (project_id, seq)`.
+   *
+   * This exists because three separate layers of evidence -- a payload
+   * assertion, a stand-in that applied the upsert, and a verify_schema check --
+   * all passed while removing any stage but the last one failed outright against
+   * a real Postgres. None of them modelled a constraint, so none of them could
+   * see a write that only a constraint rejects. A stand-in that accepts
+   * everything cannot fail the test whose name promises the write works.
+   *
+   * What is modelled, and why each part is load-bearing:
+   *
+   *   - Each `from()` chain is ONE statement in ONE transaction, exactly as each
+   *     PostgREST round trip is. That is why the constraint catches the defect:
+   *     the collision has to survive to the end of a round trip, and under an
+   *     upsert-then-delete order it does.
+   *   - The unique check runs at the END of a statement, not row by row --
+   *     0012 made the constraint `deferrable initially deferred`, so a reorder
+   *     swapping two seqs inside one statement is legal and must stay legal.
+   *     Row-by-row checking here would fail the reorder and misrepresent 0012.
+   *   - A violation rolls the whole statement back and returns the error
+   *     PostgREST would, so a test can assert that nothing was written.
+   *   - The upsert matches rows by whatever conflict target the CODE names, not
+   *     by a target this helper assumes. Keyed on (project_id, seq) it
+   *     reproduces B1's identity defect; keyed on id it does not.
+   *   - `.eq()` filters are honoured on delete, so a `.eq('project_id', ...)`
+   *     delete really does wipe the project here instead of quietly passing.
+   *
+   * Not modelled: two payload rows sharing one id ("ON CONFLICT DO UPDATE
+   * command cannot affect row a second time"). saveStages rejects that before
+   * any write, and 'rejects duplicate ids' above covers it, so modelling it here
+   * would only add an unreachable branch.
+   */
+  function stageTable(initial: StageRow[]) {
+    let rows = initial.map((r) => ({ ...r }))
+    /** Which statements reached the table, in order. */
+    const statements: string[] = []
+
+    const duplicateSeq = (candidate: StageRow[]): boolean => {
+      const seen = new Set<string>()
+      for (const r of candidate) {
+        const key = `${r.project_id}|${r.seq}`
+        if (seen.has(key)) return true
+        seen.add(key)
+      }
+      return false
+    }
+
+    const from = () => {
+      let op: 'select' | 'delete' | 'upsert' | null = null
+      let payload: StageRow[] = []
+      let conflictTarget: string[] = []
+      let ids: string[] | null = null
+      const filters: [string, unknown][] = []
+
+      const run = (): { data: unknown; error: unknown } => {
+        statements.push(op ?? 'none')
+        const matches = (r: StageRow) =>
+          filters.every(([col, value]) => (r as unknown as Record<string, unknown>)[col] === value)
+
+        if (op === 'delete') {
+          rows = rows.filter((r) => !(matches(r) && (ids === null || ids.includes(r.id))))
+          return { data: null, error: null }
+        }
+        if (op === 'upsert') {
+          const before = rows.map((r) => ({ ...r }))
+          const keyOf = (r: Record<string, unknown>) =>
+            conflictTarget.map((k) => String(r[k])).join('|')
+          for (const incoming of payload) {
+            const existing = rows.find((r) => keyOf(r) === keyOf(incoming))
+            if (existing) Object.assign(existing, incoming)
+            else rows.push({ ...incoming })
+          }
+          if (duplicateSeq(rows)) {
+            // Statement-level rollback, the way Postgres would.
+            rows = before
+            return { data: null, error: { message: DUPLICATE_SEQ } }
+          }
+          return { data: null, error: null }
+        }
+        // select: PostgREST hands numerics back as strings.
+        return {
+          data: rows
+            .filter(matches)
+            .slice()
+            .sort((a, b) => a.seq - b.seq)
+            .map((r) => ({
+              id: r.id, seq: r.seq, name: r.name, color: r.color, weight: String(r.weight),
+            })),
+          error: null,
+        }
+      }
+
+      const b: Record<string, unknown> = {}
+      b.select = vi.fn(() => { op = 'select'; return b })
+      b.delete = vi.fn(() => { op = 'delete'; return b })
+      b.upsert = vi.fn((p: StageRow[], opts: { onConflict: string }) => {
+        op = 'upsert'
+        payload = p
+        conflictTarget = opts.onConflict.split(',')
+        return b
+      })
+      b.eq = vi.fn((col: string, value: unknown) => { filters.push([col, value]); return b })
+      b.in = vi.fn((_col: string, values: string[]) => { ids = values; return b })
+      b.order = vi.fn(() => b)
+      b.then = (resolve: (v: unknown) => unknown) => Promise.resolve(run()).then(resolve)
+      return b
+    }
+
+    return { rows: () => rows, statements, from }
+  }
+
+  /** Five stages seq 1..5 under p1, the shape createProject seeds. */
+  const fiveStages = (): StageRow[] => [
+    { id: 'coat1', project_id: 'p1', seq: 1, name: 'Blast + Coat 1', color: '#fadb14', weight: 0.2 },
+    { id: 'coat2', project_id: 'p1', seq: 2, name: 'Coat 2', color: '#bfbfbf', weight: 0.2 },
+    { id: 'coat3', project_id: 'p1', seq: 3, name: 'Coat 3', color: '#52c41a', weight: 0.2 },
+    { id: 'coat4', project_id: 'p1', seq: 4, name: 'Coat 4', color: '#1677ff', weight: 0.2 },
+    { id: 'coat5', project_id: 'p1', seq: 5, name: 'Coat 5', color: '#722ed1', weight: 0.2 },
+  ]
+
+  it('removes a middle stage and renumbers the survivors past the seq it vacated', async () => {
+    // The C1 regression, at the only layer that could ever have caught it.
+    //
+    // Default 5-stage project. Linh removes "Coat 2" (seq 2) and the panel
+    // renumbers the survivors 1..4, so Coat 3 moves INTO seq 2 -- the seq the
+    // row being removed still holds. Upserting before deleting put two rows at
+    // seq 2 and Postgres rejected the statement outright: nothing was deleted,
+    // nothing was renamed, and only the LAST stage could ever be removed.
+    const table = stageTable(fiveStages())
+    from.mockImplementation(table.from)
+
+    await saveStages('p1', [
+      { id: 'coat1', seq: 1, name: 'Blast + Coat 1', color: '#fadb14', weight: 0.25 },
+      { id: 'coat3', seq: 2, name: 'Coat 3', color: '#52c41a', weight: 0.25 },
+      { id: 'coat4', seq: 3, name: 'Coat 4', color: '#1677ff', weight: 0.25 },
+      { id: 'coat5', seq: 4, name: 'Coat 5', color: '#722ed1', weight: 0.25 },
+    ])
+
+    // Four rows, renumbered 1..4 with no gap and no tie, each name still on its
+    // own id.
+    expect(table.rows().map((r) => [r.seq, r.id, r.name])).toEqual([
+      [1, 'coat1', 'Blast + Coat 1'],
+      [2, 'coat3', 'Coat 3'],
+      [3, 'coat4', 'Coat 4'],
+      [4, 'coat5', 'Coat 5'],
+    ])
+    // And the removal actually happened -- this is not passing because the
+    // delete was skipped.
+    expect(table.rows().some((r) => r.id === 'coat2')).toBe(false)
+    // The order is the fix. Reversing these two makes the upsert collide.
+    expect(table.statements).toEqual(['select', 'delete', 'upsert'])
+  })
+
+  it('leaves a cell recorded at a surviving stage pointing at that same stage after a middle removal', async () => {
+    // The consequence on the cell, which is where the customer sees the damage.
+    // cells.stage_id points at a ROW, so what matters is not that the write
+    // succeeded but that the row it names still means Coat 3 afterwards -- now
+    // second in the paint sequence rather than third.
+    const table = stageTable(fiveStages())
+    from.mockImplementation(table.from)
+    const cell = { code: 'R1C1', stage_id: 'coat3' }
+
+    await saveStages('p1', [
+      { id: 'coat1', seq: 1, name: 'Blast + Coat 1', color: '#fadb14', weight: 0.25 },
+      { id: 'coat3', seq: 2, name: 'Coat 3', color: '#52c41a', weight: 0.25 },
+      { id: 'coat4', seq: 3, name: 'Coat 4', color: '#1677ff', weight: 0.25 },
+      { id: 'coat5', seq: 4, name: 'Coat 5', color: '#722ed1', weight: 0.25 },
+    ])
+
+    const recordedAt = table.rows().find((r) => r.id === cell.stage_id)
+    expect(recordedAt?.name).toBe('Coat 3')
+    expect(recordedAt?.seq).toBe(2)
+  })
+
+  it('removes the last stage, the one case the broken order could still do', async () => {
+    // Pinned separately because it is the case that used to work: removing the
+    // last stage shifts no survivor's seq, so it never collided. A fix that
+    // somehow only handled the middle would still have to keep this passing.
+    const table = stageTable(fiveStages())
+    from.mockImplementation(table.from)
+
+    await saveStages('p1', [
+      { id: 'coat1', seq: 1, name: 'Blast + Coat 1', color: '#fadb14', weight: 0.25 },
+      { id: 'coat2', seq: 2, name: 'Coat 2', color: '#bfbfbf', weight: 0.25 },
+      { id: 'coat3', seq: 3, name: 'Coat 3', color: '#52c41a', weight: 0.25 },
+      { id: 'coat4', seq: 4, name: 'Coat 4', color: '#1677ff', weight: 0.25 },
+    ])
+
+    expect(table.rows().map((r) => r.id)).toEqual(['coat1', 'coat2', 'coat3', 'coat4'])
+  })
+
+  it('accepts a reorder that swaps two seqs inside one statement', async () => {
+    // What 0012's deferral buys, asserted against a table that actually
+    // enforces the constraint: after the first payload row is written two rows
+    // momentarily hold seq 1, and an IMMEDIATE constraint rejects a statement
+    // whose final state is perfectly unique. Nothing is removed, so this is the
+    // half of the write order that must survive the C1 fix untouched.
+    const table = stageTable([
+      { id: 'coat1', project_id: 'p1', seq: 1, name: 'Coat 1', color: '#fadb14', weight: 0.5 },
+      { id: 'coat2', project_id: 'p1', seq: 2, name: 'Coat 2', color: '#bfbfbf', weight: 0.5 },
+    ])
+    from.mockImplementation(table.from)
+    const cell = { code: 'R1C1', stage_id: 'coat1' }
+
+    await saveStages('p1', [
+      { id: 'coat2', seq: 1, name: 'Coat 2', color: '#bfbfbf', weight: 0.5 },
+      { id: 'coat1', seq: 2, name: 'Coat 1', color: '#fadb14', weight: 0.5 },
+    ])
+
+    // The cell is still recorded at Coat 1 -- the stage it was recorded at --
+    // and NOT at whatever stage now occupies the seq Coat 1 used to hold.
+    const recordedAt = table.rows().find((r) => r.id === cell.stage_id)
+    expect(recordedAt?.name).toBe('Coat 1')
+    expect(recordedAt?.seq).toBe(2)
+    expect(table.rows().find((r) => r.seq === 1)?.name).toBe('Coat 2')
+    // Two rows in, two rows out: the reorder must not have inserted anything,
+    // and with nothing removed there must have been no delete round trip.
+    expect(table.rows()).toHaveLength(2)
+    expect(table.statements).toEqual(['select', 'upsert'])
+  })
+
+  it('has a stand-in that really does reject a colliding write, and roll it back', async () => {
+    // A self-check on the helper above, driven directly rather than through
+    // saveStages, and it is not ceremony: the reason C1 shipped is that every
+    // layer of evidence stood in for Postgres with something that accepts
+    // anything. If the enforcement here is ever weakened, the four tests above
+    // go on passing while meaning nothing -- so the enforcement itself is
+    // pinned, in the two ways it has to behave.
+    //
+    // Driven directly for a second reason: once the delete goes first,
+    // saveStages CANNOT construct a colliding write. Everything absent from the
+    // draft is removed before the survivors are renumbered, and the draft's own
+    // seqs are checked for uniqueness before any statement is issued. There is
+    // deliberately no test claiming saveStages produces a duplicate key, because
+    // it no longer can -- which is also why StageConfigPanel's translation of
+    // that message is a last line of defence rather than a routine path.
+    const table = stageTable([
+      { id: 'coat1', project_id: 'p1', seq: 1, name: 'Coat 1', color: '#fadb14', weight: 0.5 },
+      { id: 'coat2', project_id: 'p1', seq: 2, name: 'Coat 2', color: '#bfbfbf', weight: 0.5 },
+    ])
+
+    /** One upsert statement against the stand-in, as PostgREST would answer it. */
+    const upsert = (payload: StageRow[]) =>
+      (table.from() as unknown as {
+        upsert: (
+          p: StageRow[],
+          o: { onConflict: string },
+        ) => PromiseLike<{ error: { message: string } | null }>
+      }).upsert(payload, { onConflict: 'id' })
+
+    // Moving coat1 onto the seq coat2 still holds: the exact shape of the write
+    // saveStages issued when it upserted before deleting.
+    const collide = await upsert([
+      { id: 'coat1', project_id: 'p1', seq: 2, name: 'Coat 1', color: '#fadb14', weight: 0.5 },
+    ])
+    expect(collide.error?.message).toBe(DUPLICATE_SEQ)
+    // Rolled back whole, the way a rejected statement is.
+    expect(table.rows().map((r) => [r.id, r.seq])).toEqual([['coat1', 1], ['coat2', 2]])
+
+    // And the other half: the check is DEFERRED to the end of the statement, so
+    // a swap that passes through a momentary tie is accepted. A row-by-row
+    // check here would reject the reorder 0012 exists to allow.
+    const swap = await upsert([
+      { id: 'coat1', project_id: 'p1', seq: 2, name: 'Coat 1', color: '#fadb14', weight: 0.5 },
+      { id: 'coat2', project_id: 'p1', seq: 1, name: 'Coat 2', color: '#bfbfbf', weight: 0.5 },
+    ])
+    expect(swap.error).toBeNull()
+    expect(table.rows().map((r) => [r.id, r.seq])).toEqual([['coat1', 2], ['coat2', 1]])
+  })
+
   it('upserts on the id, carrying every row\'s own id in the payload', async () => {
     // The whole point of the rewrite. Identity is the id, so a rename is an
     // UPDATE of the row the admin renamed -- not of whatever row happens to sit
@@ -320,63 +604,6 @@ describe('saveStages', () => {
     expect(del.delete).not.toHaveBeenCalled()
   })
 
-  it('leaves a cell recorded at the stage it was recorded at when the list is reordered', async () => {
-    // The one that matters. Every other assertion in this file is about the
-    // payload; this one is about the consequence on the cell, which is where the
-    // customer sees the damage.
-    //
-    // The stand-in below applies the upsert the way Postgres would: it matches
-    // each payload row against the stored rows BY THE CONFLICT TARGET THE CODE
-    // ITSELF NAMES, row by row. That is what makes this test able to fail --
-    // keyed on (project_id, seq) it reproduces the real defect exactly, because
-    // the first payload row lands on the row already sitting at the seq it is
-    // moving into.
-    const rows: Record<string, unknown>[] = [
-      { id: 'coat1', project_id: 'p1', seq: 1, name: 'Coat 1', color: '#fadb14', weight: 0.5 },
-      { id: 'coat2', project_id: 'p1', seq: 2, name: 'Coat 2', color: '#bfbfbf', weight: 0.5 },
-    ]
-    // A cell GS recorded at Coat 1. cells.stage_id points at the ROW and no part
-    // of a stage save touches it, so it is a constant here -- which is the
-    // point: whether it still means "Coat 1" afterwards depends entirely on what
-    // the upsert did to the row it names.
-    const cell = { code: 'R1C1', stage_id: 'coat1' }
-
-    const read = persisted([
-      { id: 'coat1', seq: 1, weight: 0.5, name: 'Coat 1' },
-      { id: 'coat2', seq: 2, weight: 0.5, name: 'Coat 2' },
-    ])
-    const up = builder({})
-    up.upsert = vi.fn((payload: Record<string, unknown>[], opts: { onConflict: string }) => {
-      const key = opts.onConflict.split(',')
-      const keyOf = (r: Record<string, unknown>) => key.map((k) => String(r[k])).join(' ')
-      for (const incoming of payload) {
-        const existing = rows.find((r) => keyOf(r) === keyOf(incoming))
-        if (existing) Object.assign(existing, incoming)
-        else rows.push({ ...incoming })
-      }
-      return up
-    })
-    from.mockImplementationOnce(() => read).mockImplementationOnce(() => up)
-
-    // Coat 2 moves up: it takes seq 1 and Coat 1 takes seq 2. Nothing is removed.
-    await saveStages('p1', [
-      { id: 'coat2', seq: 1, name: 'Coat 2', color: '#bfbfbf', weight: 0.5 },
-      { id: 'coat1', seq: 2, name: 'Coat 1', color: '#fadb14', weight: 0.5 },
-    ])
-
-    // The cell is still recorded at Coat 1 -- the stage it was recorded at --
-    // and NOT at whatever stage now occupies the seq Coat 1 used to hold.
-    const recordedAt = rows.find((r) => r.id === cell.stage_id)
-    expect(recordedAt?.name).toBe('Coat 1')
-    // The reorder did happen, so this is not passing because nothing moved: the
-    // cell's own stage is now second in the paint sequence, and the row that
-    // took its old seq is a different stage entirely.
-    expect(recordedAt?.seq).toBe(2)
-    expect(rows.find((r) => r.seq === 1)?.name).toBe('Coat 2')
-    // Two rows in, two rows out: the reorder must not have inserted anything.
-    expect(rows).toHaveLength(2)
-  })
-
   it('deletes exactly the id that disappeared, and the survivors keep theirs', async () => {
     // Removing the MIDDLE of three, which is where a seq-keyed diff went wrong:
     // the panel renumbers 1..n, so the seq that vanishes is 3 and by seq this
@@ -388,12 +615,14 @@ describe('saveStages', () => {
       { id: 's2', seq: 2, weight: 0.3 },
       { id: 's3', seq: 3, weight: 0.3 },
     ])
-    const up = builder({})
+    // Read, then DELETE, then upsert -- the order saveStages issues them in, and
+    // the reason it does: see the write-order paragraph in projectsApi.ts.
     const del = builder({})
+    const up = builder({})
     from
       .mockImplementationOnce(() => read)
-      .mockImplementationOnce(() => up)
       .mockImplementationOnce(() => del)
+      .mockImplementationOnce(() => up)
 
     await saveStages('p1', [
       { id: 's1', seq: 1, name: 'S1', color: '#000000', weight: 0.5 },
@@ -416,22 +645,45 @@ describe('saveStages', () => {
     expect(del.eq).not.toHaveBeenCalled()
   })
 
-  it('throws when the upsert fails, and never reaches the delete', async () => {
+  it('throws when the delete fails, and never reaches the upsert', async () => {
+    // The delete is first now, so it is the statement that can strand the save
+    // before anything else runs. Nothing is written at all in that case.
+    const read = persisted([{ id: 's1', seq: 1, weight: 0.5 }, { id: 's2', seq: 2, weight: 0.5 }])
+    const up = builder({})
+    from
+      .mockImplementationOnce(() => read)
+      .mockImplementationOnce(() => builder({ error: { message: 'delete blocked' } }))
+      .mockImplementationOnce(() => up)
+
+    await expect(
+      saveStages('p1', [{ id: 's1', seq: 1, name: 'S1', color: '#000000', weight: 1 }]),
+    ).rejects.toThrow('delete blocked')
+
+    expect(from).toHaveBeenCalledTimes(2)
+    expect(up.upsert).not.toHaveBeenCalled()
+  })
+
+  it('throws when the upsert fails after the removal already committed', async () => {
+    // The half-failed case the write order deliberately chooses. The removal is
+    // already gone and the survivors were never renumbered, so the project is
+    // left with a GAP in seq plus Σ weight ≠ 1. computeDeckProgress compares
+    // stageSeqOf(...) >= stage.seq over a sorted copy, so a gap changes no
+    // percentage; the admin fixes the weights the panel is already refusing to
+    // save. A tie is what would corrupt every percentage, and this order cannot
+    // produce one.
     const read = persisted([{ id: 's1', seq: 1, weight: 0.5 }, { id: 's2', seq: 2, weight: 0.5 }])
     const del = builder({})
     from
       .mockImplementationOnce(() => read)
-      .mockImplementationOnce(() => builder({ error: { message: 'upsert refused' } }))
       .mockImplementationOnce(() => del)
+      .mockImplementationOnce(() => builder({ error: { message: 'upsert refused' } }))
 
-    // The next list drops s2, so there IS a delete waiting: a third `from` call
-    // would prove it ran anyway.
     await expect(
       saveStages('p1', [{ id: 's1', seq: 1, name: 'S1', color: '#000000', weight: 1 }]),
     ).rejects.toThrow('upsert refused')
 
-    expect(from).toHaveBeenCalledTimes(2)
-    expect(del.delete).not.toHaveBeenCalled()
+    expect(from).toHaveBeenCalledTimes(3)
+    expect(del.in).toHaveBeenCalledWith('id', ['s2'])
   })
 
   it('throws when the snapshot read fails, before writing anything', async () => {

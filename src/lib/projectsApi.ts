@@ -133,10 +133,12 @@ export function stagesRemovedBy(persisted: Stage[], next: Stage[]): Stage[] {
  * Identity is the stage's id; `seq` is display order and nothing more. That
  * distinction is the whole point of this function. `cells.stage_id` and
  * `zones.stage_id` point at stage ROWS, while the panel renumbers seq 1..n on
- * every structural change (cumulative progress reads stages by seq, so a gap or
- * a tie would corrupt every percentage). An upsert keyed on (project_id, seq)
- * therefore never moved a row between seqs -- it rewrote whatever row sat at
- * each seq in place. Clicking "Lên" on Coat 3 rewrote the row where Coat 2's
+ * every structural change (cumulative progress reads stages in seq ORDER, so a
+ * tie corrupts every percentage -- two stages at one seq each count the other's
+ * cells -- while a gap costs nothing at all: see the write order below). An
+ * upsert keyed on (project_id, seq) therefore never moved a row between seqs --
+ * it rewrote whatever row sat at each seq in place. Clicking "Lên" on Coat 3
+ * rewrote the row where Coat 2's
  * progress was recorded, and every cell recorded at Coat 2 was thereafter
  * counted as Coat 3: a later, heavier stage, so the deck's reported percentage
  * rose with nothing deleted and nothing on screen to explain it. Keyed on id, a
@@ -172,9 +174,27 @@ export function stagesRemovedBy(persisted: Stage[], next: Stage[]): Stage[] {
  * middle of a multi-row edit. Validating before any write also means a rejected
  * save leaves the existing stages untouched.
  *
- * Not transactional: the upsert and the delete are separate round trips, so a
- * failure between them leaves the renames applied and the removal not. That is
- * the safe half to lose -- nothing is destroyed -- and closing it needs an RPC.
+ * THE DELETE GOES FIRST, and the order is not a preference. The panel renumbers
+ * the survivors 1..n, so removing anything but the last stage moves a survivor
+ * INTO a seq the row being removed still holds. Upserting first therefore put
+ * two rows at one seq and Postgres rejected the whole statement with `duplicate
+ * key value violates unique constraint "project_stages_project_id_seq_key"`:
+ * nothing was deleted, nothing was renamed, and only the last stage in the list
+ * could ever be removed. 0012's deferral does not save it either -- deferring
+ * moves the check to COMMIT, and the upsert is its own PostgREST round trip, so
+ * it commits on its own with the collision still in place.
+ *
+ * Deleting first cannot collide: it only ever frees seqs. Do not reorder these
+ * two statements back.
+ *
+ * Not transactional: the delete and the upsert are separate round trips, so a
+ * failure between them leaves the removal applied and the renumbering not. That
+ * is the safe half to lose. `computeDeckProgress` compares
+ * `stageSeqOf(...) >= stage.seq` over a sorted copy, so it depends on relative
+ * order only -- a GAP in seq changes no percentage at all. What is left behind
+ * is a gap plus Σ weight ≠ 1, which the admin resolves by re-editing the weights
+ * the panel is already refusing to save. Closing the window entirely needs an
+ * RPC.
  */
 export async function saveStages(projectId: string, stages: Stage[]): Promise<void> {
   if (stages.length === 0) {
@@ -197,9 +217,23 @@ export async function saveStages(projectId: string, stages: Stage[]): Promise<vo
     throw new Error(`Stage weights must sum to 1, got ${total.toFixed(4)}`)
   }
 
-  // Snapshot first: the removals are found by comparing ids, and after the
-  // upsert the rows to remove are indistinguishable from the rows to keep.
+  // Snapshot first: the draft says which stages should exist, never which ones
+  // were removed, so the only way to name them is to diff against what is
+  // persisted right now.
   const removed = stagesRemovedBy(await listStages(projectId), stages)
+
+  // Removals first, so the survivors' renumbered seqs land on seqs nobody holds
+  // any more -- see the write-order paragraph above. By explicit id, and only
+  // when there is something to delete. A `.eq('project_id', projectId)` delete
+  // here would be exactly the bug this rewrite exists to remove, and it would
+  // satisfy any assertion that a delete was issued.
+  if (removed.length > 0) {
+    const { error: deleteError } = await supabase
+      .from('project_stages')
+      .delete()
+      .in('id', removed.map((r) => r.id))
+    if (deleteError) throw new Error(deleteError.message)
+  }
 
   const { error: upsertError } = await supabase.from('project_stages').upsert(
     stages.map((s) => ({
@@ -213,18 +247,6 @@ export async function saveStages(projectId: string, stages: Stage[]): Promise<vo
     { onConflict: 'id' },
   )
   if (upsertError) throw new Error(upsertError.message)
-
-  // By explicit id, and only when there is something to delete. A
-  // `.eq('project_id', projectId)` delete here would be exactly the bug this
-  // rewrite exists to remove, and it would satisfy any assertion that a delete
-  // was issued.
-  if (removed.length > 0) {
-    const { error: deleteError } = await supabase
-      .from('project_stages')
-      .delete()
-      .in('id', removed.map((r) => r.id))
-    if (deleteError) throw new Error(deleteError.message)
-  }
 }
 
 /**

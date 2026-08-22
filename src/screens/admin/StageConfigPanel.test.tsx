@@ -321,6 +321,27 @@ describe('StageConfigPanel', () => {
     expect(screen.queryByRole('dialog')).toBeNull()
   })
 
+  it('translates a raw Postgres duplicate-key error instead of showing it', async () => {
+    // C1's last line of defence. saveStages deletes before it upserts now, so
+    // nothing this panel can do should provoke this -- but the two statements
+    // were the other way round once, and while they were, removing any stage but
+    // the last put `duplicate key value violates unique constraint
+    // "project_stages_project_id_seq_key"` verbatim into an otherwise
+    // Vietnamese-only Alert. If that order is ever restored, the admin at least
+    // gets a sentence they can act on.
+    saveStages.mockRejectedValue(new Error(
+      'duplicate key value violates unique constraint "project_stages_project_id_seq_key"',
+    ))
+    render(<StageConfigPanel projectId="p1" />)
+    await screen.findByDisplayValue('Coat 2')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Lưu' }))
+
+    expect(await screen.findByText(/thứ tự các lớp bị trùng/)).toBeInTheDocument()
+    expect(screen.queryByText(/duplicate key/i)).toBeNull()
+    expect(screen.queryByText(/unique constraint/i)).toBeNull()
+  })
+
   it('does not touch an infrastructure error the translator does not recognise', async () => {
     // Anything unmatched must fall through unchanged, or a new domain error
     // could be silently swallowed instead of reaching the admin.

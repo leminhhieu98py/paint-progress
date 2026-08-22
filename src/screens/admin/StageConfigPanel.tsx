@@ -51,6 +51,15 @@ function saveStagesErrorInVietnamese(message: string): string {
   if (message.includes('seq values must be unique') || message.includes('ids must be unique')) {
     return 'Có lỗi dữ liệu khi lưu cấu hình lớp sơn. Tải lại trang rồi thử lại.'
   }
+  // Postgres, not projectsApi: `duplicate key value violates unique constraint
+  // "project_stages_project_id_seq_key"`. saveStages now deletes before it
+  // upserts, so nothing on this screen should be able to produce it -- but a raw
+  // Postgres constraint message in an otherwise Vietnamese-only Alert is a
+  // defect in its own right, and this is the last line of defence if those two
+  // statements are ever reordered again.
+  if (message.includes('duplicate key')) {
+    return 'Không lưu được cấu hình lớp sơn vì thứ tự các lớp bị trùng. Tải lại trang rồi thử lại.'
+  }
   return message
 }
 
@@ -144,10 +153,16 @@ export function StageConfigPanel({
     setDraft((prev) => prev.map((s, i) => (i === index ? { ...s, ...change } : s)))
   }
 
-  /** seq is renumbered 1..n on every structural change: cumulative progress
-   *  reads stages by seq, so a gap or a tie would corrupt every percentage.
-   *  Renumbering is now free of consequences -- it rewrites display order and
-   *  touches no row's id, so no cell's recorded stage moves with it. */
+  /** seq is renumbered 1..n on every structural change. Cumulative progress
+   *  reads stages in seq ORDER, so a TIE corrupts every percentage -- two
+   *  stages at one seq each count the other's cells. A GAP costs nothing:
+   *  computeDeckProgress compares `stageSeqOf(...) >= stage.seq` over a sorted
+   *  copy, so only relative order matters. Do not restate that as "a gap or a
+   *  tie would corrupt every percentage": overstating the gap half is what made
+   *  saveStages upsert the renumbered survivors before deleting the removed row,
+   *  which put two rows at one seq and made removing any stage but the last fail
+   *  outright. Renumbering itself is free of consequences -- it rewrites display
+   *  order and touches no row's id, so no cell's recorded stage moves with it. */
   const renumber = (rows: Stage[]) => rows.map((s, i) => ({ ...s, seq: i + 1 }))
 
   const addStage = () => {
