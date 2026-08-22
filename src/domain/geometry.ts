@@ -4,11 +4,33 @@ import type { Guide, MeshCell } from './types'
 export const AREA_DIVERGENCE_THRESHOLD = 0.05
 
 /**
- * Tolerance for comparing normalized (0..1) areas, never real-world m². Summing
- * hundreds of such values accumulates error around 1e-13, three orders of
- * magnitude below this, so no legitimate merge is rejected for rounding.
+ * Tolerance for comparing normalized (0..1) areas and coordinates, never
+ * real-world m².
+ *
+ * Sized by the DATABASE, not by float accumulation. `cells.x/y/w/h` are
+ * `numeric(8,6)` (0001_schema.sql:76-79), so every coordinate that has been
+ * through Postgres is quantized to 1e-6 -- and x, y, w and h are each rounded
+ * independently, so two cells that were exactly adjacent when the mesh was
+ * generated come back with a gap or an overlap of up to 1e-6 between them. That
+ * dominates float accumulation (around 1e-13 over hundreds of values) by five
+ * orders of magnitude, and at 1e-9 it made `mergeCells` reject every pair of
+ * adjacent cells on any deck that had been saved and reopened -- with advice
+ * ("select more cells to fill the gap") that could not be followed.
+ *
+ * Do not tighten this back towards float scale without re-reading numeric(8,6)
+ * above. 1e-5 still rejects a real gap by four orders of magnitude: a genuinely
+ * missing cell is a whole bay (0.005 of the drawing or more), not a rounding
+ * artefact.
  */
-const EPSILON = 1e-9
+const EPSILON = 1e-5
+
+/**
+ * The smallest distance two guides on the same axis can be apart and still be
+ * distinguishable once stored: `deck_guides.pos` is `numeric(8,6)`
+ * (0001_schema.sql:68), so anything closer collapses onto the same value and
+ * the two guides' order becomes whatever the array happened to hold.
+ */
+export const MIN_GUIDE_GAP = 1e-6
 
 /**
  * Spans between consecutive offsets. The first entry is the datum, span 0.
@@ -38,6 +60,52 @@ export function offsetsFromSpans(datumMm: number, spansMm: number[]): number[] {
     if (i > 0) running += spanMm
     return running
   })
+}
+
+/**
+ * Moves one guide to `pos`, clamped so it cannot cross either neighbour on its
+ * own axis.
+ *
+ * A drag changes `pos` and leaves `offsetMm` alone -- the mm chain is what the
+ * admin typed and has no business moving because a line was nudged. But every
+ * area calculation reads the offsets in POS order, so the moment pos-order and
+ * offset-order disagree, `spansFromOffsets` yields a negative span and
+ * `deriveCellArea`'s `Math.abs` turns it into a perfectly normal-looking bay:
+ * dragging the 4th vertical past the 5th on a real 7-guide chain produces a
+ * -14500 mm span that computes to exactly 232 m², and inflates the deck's total
+ * by about 50% with nothing on screen to say so.
+ *
+ * Clamping rather than rejecting: the admin's intent when they drag a line past
+ * its neighbour is unambiguous (put it at the end of its own interval) and there
+ * is nothing for them to decide, so an error message would only be noise. The
+ * guide stops MIN_GUIDE_GAP short of the neighbour rather than on top of it --
+ * two guides sharing a pos sort by array order, not by offset, which is the same
+ * disagreement one step further down.
+ *
+ * Returns the array unchanged when the index is out of range, or when the
+ * neighbours leave no room at all.
+ */
+export function moveGuideClamped<T extends { axis: 'x' | 'y'; pos: number }>(
+  guides: T[],
+  index: number,
+  pos: number,
+): T[] {
+  const moving = guides[index]
+  if (!moving) return guides
+
+  const sorted = guides
+    .map((guide, i) => ({ guide, i }))
+    .filter((entry) => entry.guide.axis === moving.axis)
+    .sort((a, b) => a.guide.pos - b.guide.pos)
+  const at = sorted.findIndex((entry) => entry.i === index)
+
+  // No neighbour on a side means the drawing's own edge bounds it there.
+  const lower = at > 0 ? sorted[at - 1].guide.pos + MIN_GUIDE_GAP : 0
+  const upper = at < sorted.length - 1 ? sorted[at + 1].guide.pos - MIN_GUIDE_GAP : 1
+  if (upper < lower) return guides
+
+  const clamped = Math.min(upper, Math.max(lower, pos))
+  return guides.map((guide, i) => (i === index ? { ...guide, pos: clamped } : guide))
 }
 
 /** Real-world area of the bay bounded by two x-guides and two y-guides, in m². */
@@ -180,6 +248,55 @@ export function divergesBeyondThreshold(
   cells: { areaM2: number }[],
 ): boolean {
   return Math.abs(areaDivergence(totalAreaM2, cells)) > AREA_DIVERGENCE_THRESHOLD
+}
+
+/**
+ * A deck with cells but no declared area. Distinct from "no divergence":
+ * areaDivergence returns 0 here to avoid dividing by zero, which silently
+ * disables the divergence banner in the one case where the deck's reported
+ * progress is guaranteed wrong -- every ratio divides by total_area_m2, so a
+ * zero total reports 0% no matter how much paint is on the deck.
+ *
+ * `decks.total_area_m2` is `not null default 0` and `createDeck` never sets it,
+ * so this is the state every deck starts in, not an exotic one.
+ */
+export function hasUndeclaredArea(
+  totalAreaM2: number,
+  cells: { areaM2: number }[],
+): boolean {
+  return totalAreaM2 <= 0 && cells.length > 0
+}
+
+/**
+ * How far one cell's area may move, as a fraction of its old area, before the
+ * move has to be disclosed to whoever is about to save it.
+ *
+ * Deliberately NOT AREA_DIVERGENCE_THRESHOLD, despite sharing its value today.
+ * That one is a deck-level tolerance for cells under-covering a declared area,
+ * which is normal and expected (openings and the E-house are not cells); this
+ * one is a per-cell decision about whether a recorded stage has been carried
+ * onto ground nobody inspected. Retuning the deck tolerance must not silently
+ * change which reshapes get disclosed.
+ */
+export const CELL_RESHAPE_THRESHOLD = 0.05
+
+/**
+ * Whether a cell keeping its code -- and therefore its recorded stage -- has
+ * moved onto a materially different extent.
+ *
+ * The old area is the denominator: the question is how far this cell moved from
+ * what was signed off on, not how far the new extent is from the old one.
+ *
+ * An old area of zero is always disclosed rather than divided by. That case is
+ * the worst one available, not an edge case to shrug at: a deck meshed before
+ * its area was declared holds cells at 0 m², a GS can tick them anyway, and
+ * re-meshing after the area is declared moves every one of them from 0 to
+ * hundreds of m² with its stage intact. Any relative test returns "no change"
+ * there, so the disclosure would be skipped in exactly its worst case.
+ */
+export function cellReshaped(fromAreaM2: number, toAreaM2: number): boolean {
+  if (fromAreaM2 <= 0) return toAreaM2 > 0
+  return Math.abs((fromAreaM2 - toAreaM2) / fromAreaM2) > CELL_RESHAPE_THRESHOLD
 }
 
 /**

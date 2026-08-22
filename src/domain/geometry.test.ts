@@ -3,9 +3,14 @@ import {
   AREA_DIVERGENCE_THRESHOLD,
   areaDivergence,
   buildMeshFromGuides,
+  CELL_RESHAPE_THRESHOLD,
+  cellReshaped,
   deriveCellArea,
   divergesBeyondThreshold,
+  hasUndeclaredArea,
   mergeCells,
+  MIN_GUIDE_GAP,
+  moveGuideClamped,
   offsetsFromSpans,
   prorateCellAreas,
   spansFromOffsets,
@@ -87,6 +92,94 @@ describe('spansFromOffsets', () => {
   it('has nothing to say about an empty or single-guide axis', () => {
     expect(spansFromOffsets([])).toEqual([])
     expect(spansFromOffsets([58100])).toEqual([0])
+  })
+})
+
+describe('moveGuideClamped', () => {
+  /** The real across-chain, one guide per offset, evenly spread across the drawing. */
+  const chain: Guide[] = ACROSS_OFFSETS.map((offsetMm, i) =>
+    g(`x${i}`, 'x', i / (ACROSS_OFFSETS.length - 1), offsetMm),
+  )
+
+  /** The mm chain as the mesh reads it: offsets in POS order. */
+  const posOrderedOffsets = (guides: Guide[]) =>
+    guides
+      .filter((guide) => guide.axis === 'x')
+      .slice()
+      .sort((a, b) => a.pos - b.pos)
+      .map((guide) => guide.offsetMm)
+
+  it('leaves the mm chain monotonic when a guide is dragged past its neighbour', () => {
+    // The reviewer's case: the 4th vertical (26500 mm) dragged beyond the 5th
+    // (41000 mm). Unclamped, the pos-ordered offsets become
+    // [0, 2500, 12000, 41000, 26500, 50500, 58100] and the spans
+    // [0, 2500, 9500, 29000, -14500, 24000, 7600] -- a -14500 mm bay that
+    // deriveCellArea's Math.abs renders as a plausible 232 m², inflating the
+    // chain from 58100 to 87100 mm.
+    const dragged = moveGuideClamped(chain, 3, 0.9)
+
+    const offsets = posOrderedOffsets(dragged)
+    expect(offsets).toEqual(ACROSS_OFFSETS)
+    expect(spansFromOffsets(offsets).every((span) => span >= 0)).toBe(true)
+  })
+
+  it('stops the guide just short of its upper neighbour, not on top of it', () => {
+    // Landing exactly on the neighbour's pos leaves the two ordered by array
+    // position rather than by offset, which is the same pos/offset
+    // disagreement one step down.
+    const dragged = moveGuideClamped(chain, 3, 0.9)
+    expect(dragged[3].pos).toBe(chain[4].pos - MIN_GUIDE_GAP)
+    expect(dragged[3].pos).toBeLessThan(chain[4].pos)
+  })
+
+  it('clamps a drag below the lower neighbour too', () => {
+    const dragged = moveGuideClamped(chain, 3, 0)
+    expect(dragged[3].pos).toBe(chain[2].pos + MIN_GUIDE_GAP)
+    expect(posOrderedOffsets(dragged)).toEqual(ACROSS_OFFSETS)
+  })
+
+  it('allows a move that stays between the neighbours', () => {
+    // The clamp must not be a no-op dressed as a guard: a legitimate nudge has
+    // to actually move the guide.
+    const between = (chain[2].pos + chain[4].pos) / 2
+    expect(moveGuideClamped(chain, 3, between)[3].pos).toBe(between)
+  })
+
+  it('bounds the outermost guides by the drawing edges, not by a missing neighbour', () => {
+    expect(moveGuideClamped(chain, 0, -0.5)[0].pos).toBe(0)
+    expect(moveGuideClamped(chain, 6, 1.5)[6].pos).toBe(1)
+  })
+
+  it('ignores guides on the other axis', () => {
+    // A y-guide sitting between two x-guides must not bound an x-drag: the two
+    // axes have entirely independent chains, and treating them as one would
+    // clamp a legitimate move for no reason.
+    const mixed: Guide[] = [
+      g('x0', 'x', 0, 0),
+      g('y0', 'y', 0.5, 0),
+      g('x1', 'x', 1, 20000),
+      g('y1', 'y', 0.6, 10000),
+    ]
+    // Bounded by the x-guide at pos 1, so 0.9 goes through untouched. Were the
+    // y-guides counted, the nearest "neighbour" would be the one at pos 0.5 and
+    // this would come back clamped to just under it.
+    expect(moveGuideClamped(mixed, 0, 0.9)[0].pos).toBe(0.9)
+  })
+
+  it('returns the guides untouched for an index that does not exist', () => {
+    expect(moveGuideClamped(chain, 99, 0.5)).toBe(chain)
+  })
+
+  it('refuses the move when the neighbours leave no room', () => {
+    // Neighbours one quantization step apart: there is no representable pos
+    // strictly between them, so the only honest answer is to leave the guide
+    // alone rather than pick a side.
+    const cramped: Guide[] = [
+      g('x0', 'x', 0.5, 0),
+      g('x1', 'x', 0.5 + MIN_GUIDE_GAP / 2, 1000),
+      g('x2', 'x', 0.5 + MIN_GUIDE_GAP, 2000),
+    ]
+    expect(moveGuideClamped(cramped, 1, 0.9)).toBe(cramped)
   })
 })
 
@@ -183,6 +276,60 @@ describe('mergeCells', () => {
     expect(() => mergeCells([byCode('R1C1'), byCode('R1C1')])).toThrow(/more than once/i)
   })
 
+  it('merges two adjacent cells that have round-tripped through numeric(8,6)', () => {
+    // The defect: cells.x/y/w/h are numeric(8,6), and x, y, w and h are each
+    // rounded INDEPENDENTLY, so a pair that tiled exactly when the mesh was
+    // generated comes back from Postgres with up to 1e-6 of gap between them.
+    // At EPSILON = 1e-9 that made merging impossible on every saved deck, with
+    // the only escape being a mesh regeneration that discards recorded
+    // progress.
+    //
+    // Quantized here rather than written as exact fractions on purpose: exact
+    // fractions leave no residual at all, so the test would pass at any epsilon
+    // and prove nothing. The guide chain deliberately does NOT start at 0 --
+    // when the first cell's x is 0 its width IS the shared guide's rounded pos,
+    // the residual cancels, and the case disappears.
+    const q6 = (v: number) => Math.round(v * 1e6) / 1e6
+    const chain = [0.1234564, 0.3333335, 0.9999999]
+    const h = 0.5
+    const left: MeshCell = {
+      code: 'R1C1', x: q6(chain[0]), y: 0, w: q6(chain[1] - chain[0]), h, areaM2: 100,
+    }
+    const right: MeshCell = {
+      code: 'R1C2', x: q6(chain[1]), y: 0, w: q6(chain[2] - chain[1]), h, areaM2: 120,
+    }
+
+    // Self-arming: assert the residual this test exists for is actually
+    // present, and is of database-quantization scale rather than float scale.
+    // Without this the fixture could silently become exact and the test would
+    // keep passing while covering nothing.
+    const covered = left.w * left.h + right.w * right.h
+    const bbox = (right.x + right.w - left.x) * h
+    expect(Math.abs(bbox - covered)).toBeGreaterThan(1e-9)
+    expect(Math.abs(bbox - covered)).toBeLessThan(1e-5)
+
+    const merged = mergeCells([left, right])
+    expect(merged.code).toBe('R1C1')
+    expect(merged.areaM2).toBeCloseTo(220, 9)
+  })
+
+  it('still rejects a genuinely missing bay among quantized cells', () => {
+    // The other half of the epsilon change: 1e-5 must not have swallowed a real
+    // hole. These are the same quantized coordinates as above with the middle
+    // bay left out, so the gap is a whole bay (0.2 of the drawing) rather than a
+    // rounding artefact -- four orders of magnitude above the tolerance.
+    const q6 = (v: number) => Math.round(v * 1e6) / 1e6
+    const chain = [0.1234564, 0.3333335, 0.5432109, 0.9999999]
+    const h = 0.5
+    const strip = (code: string, from: number, to: number): MeshCell => ({
+      code, x: q6(chain[from]), y: 0, w: q6(chain[to] - chain[from]), h, areaM2: 100,
+    })
+
+    expect(() => mergeCells([strip('R1C1', 0, 1), strip('R1C3', 2, 3)])).toThrow(
+      /solid rectangle/i,
+    )
+  })
+
   it('rejects overlapping cells even when their areas sum to the bounding box', () => {
     // The overlap masks a real gap: footprint is [0,0.9] plus [0.95,1.0], but
     // the summed area equals the bounding box exactly.
@@ -256,6 +403,80 @@ describe('divergesBeyondThreshold', () => {
 
   it('warns just past the threshold', () => {
     expect(divergesBeyondThreshold(1000, [cell(949)])).toBe(true)
+  })
+})
+
+describe('hasUndeclaredArea', () => {
+  const cell = (areaM2: number) => ({ areaM2 })
+
+  it('is true for a deck that has cells but no declared area', () => {
+    // The state every deck starts in: total_area_m2 is `not null default 0` and
+    // createDeck never sets it. areaDivergence returns 0 here to avoid dividing
+    // by zero, so the divergence banner cannot fire -- while every ratio in
+    // computeDeckProgress divides by the same zero and reports 0% forever.
+    expect(hasUndeclaredArea(0, [cell(5008.22)])).toBe(true)
+  })
+
+  it('is false once an area is declared, however far it diverges', () => {
+    // It must not double as a divergence check: this is specifically about the
+    // denominator being missing, not about the numbers disagreeing.
+    expect(hasUndeclaredArea(5258.5, [cell(100)])).toBe(false)
+  })
+
+  it('is false for a deck with no cells yet', () => {
+    // Nothing has been authored, so there is no wrong number to report yet and
+    // no reason to put an error in front of the admin.
+    expect(hasUndeclaredArea(0, [])).toBe(false)
+  })
+
+  it('is true for a negative total, not just an exactly-zero one', () => {
+    // Matches areaDivergence's own `<= 0` guard: a negative total divides just
+    // as badly, and the check has to cover the same range or the two disagree
+    // about which decks are safe.
+    expect(hasUndeclaredArea(-1, [cell(10)])).toBe(true)
+  })
+})
+
+describe('cellReshaped', () => {
+  it('exposes its own threshold, separate from the deck-level one', () => {
+    expect(CELL_RESHAPE_THRESHOLD).toBe(0.05)
+  })
+
+  it('is false for a move within the threshold', () => {
+    // 232 -> 240 is 3.45% of the old area.
+    expect(cellReshaped(232, 240)).toBe(false)
+  })
+
+  it('is true for a move past the threshold, in both directions', () => {
+    expect(cellReshaped(232, 400)).toBe(true)
+    expect(cellReshaped(400, 232)).toBe(true)
+  })
+
+  it('measures against the OLD area, not the new one', () => {
+    // 200 -> 210.4 is 5.20% of 200 and 4.94% of 210.4: the two denominators
+    // straddle the threshold, so this is the one ratio where swapping them
+    // changes the answer.
+    expect(cellReshaped(200, 210.4)).toBe(true)
+    expect(cellReshaped(210.4, 200)).toBe(false)
+  })
+
+  it('does not fire exactly at the threshold', () => {
+    // 100 -> 105 is exactly 5%. The comparison is strict `>`, matching
+    // divergesBeyondThreshold.
+    expect(cellReshaped(100, 105)).toBe(false)
+    expect(cellReshaped(100, 105.1)).toBe(true)
+  })
+
+  it('always discloses a cell growing out of a zero area', () => {
+    // The worst case, and the one a relative test silently skips: a deck meshed
+    // before its area was declared holds 0 m² cells that a GS can still tick,
+    // and re-meshing after the area is declared moves them to hundreds of m²
+    // with their stage intact.
+    expect(cellReshaped(0, 232)).toBe(true)
+  })
+
+  it('does not claim a reshape when a zero-area cell stays at zero', () => {
+    expect(cellReshaped(0, 0)).toBe(false)
   })
 })
 
