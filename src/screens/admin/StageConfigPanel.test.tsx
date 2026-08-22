@@ -20,18 +20,17 @@ vi.mock('../../lib/projectsApi', async (importOriginal) => {
     listStages: (id: string) => listStages(id),
     saveStages: (id: string, s: unknown) => saveStages(id, s),
     stagesRemovedBy: real.stagesRemovedBy,
-    stageSavePlan: real.stageSavePlan,
     roundStageWeight: real.roundStageWeight,
     STAGE_WEIGHT_EPSILON: real.STAGE_WEIGHT_EPSILON,
   }
 })
 
 /**
- * Matches a list item by its whole rendered text. The save-plan items put each
+ * Matches a list item by its whole rendered text. The removal list puts each
  * stage name in a <strong>, which splits the text across elements and makes the
  * default string matcher (direct text nodes only) miss it. Comparing the item's
- * full textContent pins the assertion on the seq, the old name and the new name
- * together -- which is the whole content of the disclosure.
+ * full textContent also pins that the item is EXACTLY that stage, rather than
+ * merely containing its name.
  */
 const listItem = (text: string) => (_content: string, el: Element | null) =>
   el?.tagName === 'LI' && el.textContent === text
@@ -81,7 +80,7 @@ describe('StageConfigPanel', () => {
     )
   })
 
-  it('saves the edited stages without their ids', async () => {
+  it('saves each stage with the id it was loaded under', async () => {
     saveStages.mockResolvedValue(undefined)
     render(<StageConfigPanel projectId="p1" />)
     await screen.findByDisplayValue('Blast + Coat 1')
@@ -91,21 +90,44 @@ describe('StageConfigPanel', () => {
 
     await waitFor(() => expect(saveStages).toHaveBeenCalledTimes(1))
     const [, stages] = saveStages.mock.calls[0]
-    expect(stages).toHaveLength(2)
-    // saveStages keys the upsert on (project_id, seq), so ids from the old set
-    // must not be sent -- and sending one would make the payload look like an
-    // identity claim the diff does not actually use.
-    for (const s of stages as Record<string, unknown>[]) {
-      expect(s).not.toHaveProperty('id')
-    }
+    // saveStages keys its upsert on the id, so the id is the payload's most
+    // important field: it is what makes the write land on the row whose progress
+    // the admin was looking at. Dropping it would send an anonymous row set that
+    // could only be matched by its mutable seq again.
+    expect(stages).toEqual([
+      { id: 's1', seq: 1, name: 'Blast + Coat 1', color: '#fadb14', weight: 0.6 },
+      { id: 's2', seq: 2, name: 'Coat 2', color: '#bfbfbf', weight: 0.4 },
+    ])
   })
 
-  it('saves without any confirmation when nothing is being removed', async () => {
-    // A rename or a reweight now keeps every stage row, its id, its zones and
-    // every cell's recorded progress: saveStages upserts on (project_id, seq)
-    // and deletes only the seqs that genuinely disappear. There is nothing to
-    // disclose, and a dialog on a save that costs nothing is a dialog the admin
-    // learns to click through -- which is how the one that matters gets skimmed.
+  it('mints an id for a stage the admin adds, so the upsert has one to key on', async () => {
+    // A new row has no database id yet, and the id cannot be left for the
+    // database to invent: the upsert keys on it. It is generated here, client
+    // side, the moment the row appears.
+    saveStages.mockResolvedValue(undefined)
+    render(<StageConfigPanel projectId="p1" />)
+    await screen.findByDisplayValue('Blast + Coat 1')
+    await userEvent.click(screen.getByRole('button', { name: 'Thêm lớp' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Lưu' }))
+
+    await waitFor(() => expect(saveStages).toHaveBeenCalledTimes(1))
+    const saved = saveStages.mock.calls[0][1] as { id: string; seq: number }[]
+    expect(saved).toHaveLength(3)
+    expect(saved[2].id).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+    )
+    // A real uuid, not a reused or empty one: project_stages.id is a uuid
+    // primary key, and colliding with an existing stage would make the upsert
+    // overwrite that stage instead of inserting a new one.
+    expect(saved.map((s) => s.id)).toEqual(['s1', 's2', saved[2].id])
+  })
+
+  it('saves a rename without any confirmation, keeping the row it renames', async () => {
+    // A rename keeps every stage row, its id, its zones and every cell's
+    // recorded progress: saveStages upserts on the id and deletes only the ids
+    // that genuinely disappear. There is nothing to disclose, and a dialog on a
+    // save that costs nothing is a dialog the admin learns to click through --
+    // which is how the one that matters gets skimmed.
     saveStages.mockResolvedValue(undefined)
     render(<StageConfigPanel projectId="p1" />)
     const name = await screen.findByDisplayValue('Blast + Coat 1')
@@ -117,18 +139,23 @@ describe('StageConfigPanel', () => {
     await waitFor(() => expect(saveStages).toHaveBeenCalledTimes(1))
     expect(screen.queryByRole('dialog')).toBeNull()
     const saved = saveStages.mock.calls[0][1] as Record<string, unknown>[]
-    expect(saved[0].name).toBe('Blast + Coat 1 (renamed)')
-    // originSeq is this screen's own bookkeeping for telling a rename from a
-    // shift; it is not a column and must not reach the API.
-    for (const s of saved) expect(s).not.toHaveProperty('originSeq')
+    // The new name arrives attached to the id it was typed on, so the write
+    // renames that stage rather than relabelling whatever sits at its seq.
+    expect(saved[0]).toEqual({
+      id: 's1', seq: 1, name: 'Blast + Coat 1 (renamed)', color: '#fadb14', weight: 0.6,
+    })
   })
 
-  it('names the stage being removed, and what removing it destroys', async () => {
+  it('names the stage actually being removed, and what removing it destroys', async () => {
+    // The MIDDLE stage, which is the case a seq-keyed diff got wrong: the panel
+    // renumbers 1..n, so the seq that disappears is 3 and the old dialog
+    // announced the deletion of "Tháo giáo" while the database deleted "Coat 2".
+    // The disclosure has to name the stage whose id is going.
+    //
     // zones.stage_id references project_stages ON DELETE CASCADE and
     // cells.stage_id ON DELETE SET NULL, so a removal nulls the cells sitting at
-    // that stage and deletes the zones planned against it. The dialog has to name
-    // both consequences and the seq they apply to; the wording it replaced
-    // mentioned neither zones nor which stage.
+    // that stage and deletes the zones planned against it. Both consequences are
+    // named; the wording this replaced mentioned neither zones nor which stage.
     listStages.mockResolvedValue([
       { id: 's1', seq: 1, name: 'Blast + Coat 1', color: '#fadb14', weight: 0.5 },
       { id: 's2', seq: 2, name: 'Coat 2', color: '#bfbfbf', weight: 0.3 },
@@ -138,26 +165,24 @@ describe('StageConfigPanel', () => {
     render(<StageConfigPanel projectId="p1" />)
     await screen.findByDisplayValue('Tháo giáo')
 
-    // The LAST row, so nothing shifts: seq 3 disappears and seqs 1 and 2 keep
-    // both their rows and their names. That isolates the removal disclosure from
-    // the shift disclosure the next test covers.
-    await userEvent.click(screen.getAllByRole('button', { name: 'Xoá' })[2])
+    await userEvent.click(screen.getAllByRole('button', { name: 'Xoá' })[1])
     // Put the freed weight back on an existing row so Lưu is enabled again.
-    const weight = screen.getByDisplayValue('0,3')
+    const weight = screen.getByDisplayValue('0,5')
     await userEvent.clear(weight)
-    await userEvent.type(weight, '0,5')
+    await userEvent.type(weight, '0,8')
     await waitFor(() => expect(screen.getByRole('button', { name: 'Lưu' })).toBeEnabled())
 
     await userEvent.click(screen.getByRole('button', { name: 'Lưu' }))
 
     const dialog = await screen.findByRole('dialog')
     expect(within(dialog).getByText('Xoá lớp sơn khỏi cấu hình?')).toBeInTheDocument()
-    expect(within(dialog).getByText(listItem('thứ tự 3: Tháo giáo → xoá'))).toBeInTheDocument()
-    // The surviving seqs are shown as untouched, which is the claim that
-    // separates this diff from the delete-and-reinsert it replaced.
-    expect(within(dialog).getByText(listItem('thứ tự 1: Blast + Coat 1 (không đổi)'))).toBeInTheDocument()
-    expect(within(dialog).getByText(listItem('thứ tự 2: Coat 2 (không đổi)'))).toBeInTheDocument()
-    // Both consequences of the delete, named: the cells at that seq are reset,
+    expect(within(dialog).getByText(listItem('Coat 2'))).toBeInTheDocument()
+    // The survivors are not named, because nothing happens to them: Tháo giáo
+    // keeps its row, its id and its cells' recorded progress even though its seq
+    // is renumbered from 3 to 2. Naming it here is precisely the old defect.
+    expect(within(dialog).queryByText(listItem('Tháo giáo'))).toBeNull()
+    expect(within(dialog).queryByText(listItem('Blast + Coat 1'))).toBeNull()
+    // Both consequences of the delete, named: the cells at that stage are reset,
     // and the zones planned against it go with it.
     expect(within(dialog).getByText(/trở về trạng thái chưa bắt đầu/)).toBeInTheDocument()
     expect(within(dialog).getByText(/xoá luôn các zone đã lên kế hoạch/)).toBeInTheDocument()
@@ -165,18 +190,22 @@ describe('StageConfigPanel', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Vẫn lưu' }))
     await waitFor(() => expect(saveStages).toHaveBeenCalledTimes(1))
-    expect(saveStages.mock.calls[0][1]).toHaveLength(2)
+    // s2 is gone; s1 and s3 survive with their own ids, s3 renumbered to seq 2.
+    const saved = saveStages.mock.calls[0][1] as { id: string; seq: number }[]
+    expect(saved.map((s) => [s.id, s.seq])).toEqual([
+      ['s1', 1],
+      ['s3', 2],
+    ])
   })
 
-  it('confirms a reorder, which moves recorded progress onto a different layer', async () => {
-    // Nothing is removed here, and that is the point. saveStages upserts on
-    // (project_id, seq) and never moves a row between seqs, while cells.stage_id
-    // and zones.stage_id point at rows -- so swapping seq 2 and seq 3 leaves
-    // every cell where it is and renames the layer over the top of it. A cell
-    // recorded at Coat 2 is thereafter counted as Coat 3: a later, heavier stage,
-    // so the deck's reported percentage rises with nothing deleted and nothing
-    // else on screen to explain it. Under a removals-only gate this saved with no
-    // dialog at all.
+  it('saves a reorder with no dialog, because a reorder moves no recorded progress', async () => {
+    // The disclosure this replaced existed because a seq-keyed upsert rewrote
+    // each seq in place: swapping seq 2 and 3 left every cell where it was and
+    // renamed the layer over the top of it, so a cell recorded at Coat 2 was
+    // thereafter counted as Coat 3 -- a later, heavier stage, and the deck's
+    // reported percentage rose with nothing deleted. Keyed on the id, a reorder
+    // rewrites display order and nothing else: there is nothing to disclose, and
+    // a dialog claiming otherwise would be teaching the admin something false.
     listStages.mockResolvedValue([
       { id: 's1', seq: 1, name: 'Blast + Coat 1', color: '#fadb14', weight: 0.5 },
       { id: 's2', seq: 2, name: 'Coat 2', color: '#bfbfbf', weight: 0.3 },
@@ -190,18 +219,16 @@ describe('StageConfigPanel', () => {
     await userEvent.click(screen.getAllByRole('button', { name: 'Lên' })[2])
     await userEvent.click(screen.getByRole('button', { name: 'Lưu' }))
 
-    const dialog = await screen.findByRole('dialog')
-    // No removals, so the title says what this actually is.
-    expect(within(dialog).getByText('Đổi thứ tự lớp sơn?')).toBeInTheDocument()
-    expect(within(dialog).getByText(listItem('thứ tự 2: Coat 2 → Coat 3'))).toBeInTheDocument()
-    expect(within(dialog).getByText(listItem('thứ tự 3: Coat 3 → Coat 2'))).toBeInTheDocument()
-    expect(within(dialog).getByText(/gắn theo thứ tự lớp, không gắn theo tên/)).toBeInTheDocument()
-    // Nothing is being deleted, so the deletion sentence must not appear.
-    expect(within(dialog).queryByText(/trở về trạng thái chưa bắt đầu/)).toBeNull()
-    expect(saveStages).not.toHaveBeenCalled()
-
-    await userEvent.click(screen.getByRole('button', { name: 'Vẫn lưu' }))
     await waitFor(() => expect(saveStages).toHaveBeenCalledTimes(1))
+    expect(screen.queryByRole('dialog')).toBeNull()
+    // Each stage arrives under its own id, with only seq changed -- so every
+    // cells.stage_id and zones.stage_id still points at the stage it always did.
+    const saved = saveStages.mock.calls[0][1] as { id: string; name: string; seq: number }[]
+    expect(saved.map((s) => [s.id, s.name, s.seq])).toEqual([
+      ['s1', 'Blast + Coat 1', 1],
+      ['s3', 'Coat 3', 2],
+      ['s2', 'Coat 2', 3],
+    ])
   })
 
   it('surfaces a save failure and closes the confirmation modal', async () => {

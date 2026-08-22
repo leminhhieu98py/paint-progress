@@ -106,80 +106,66 @@ export async function listStages(projectId: string): Promise<Stage[]> {
 }
 
 /**
- * Which stage rows a `saveStages` call would delete, identified by seq.
+ * Which stage rows a `saveStages` call would delete, identified by id.
+ *
+ * By id, because that is what identity is: the draft carries every surviving
+ * stage's id, so a row missing from it is a row the admin actually removed --
+ * no matter how the seqs were renumbered around it. A seq-keyed version of this
+ * function named the wrong stage on exactly the edit that matters most: remove
+ * the middle of three and the panel renumbers to 1, 2, so the seq that
+ * disappears is 3, and the dialog announced the deletion of the last stage while
+ * the database deleted the middle one.
  *
  * Exposed so the confirmation dialog can name them: a removal is the only part
  * of a stage save that destroys anything, so it is the only part worth
  * confirming, and the dialog must describe the diff rather than guess at it.
+ * The names come from the persisted rows -- what the database is about to
+ * delete -- not from the draft, which no longer holds these rows at all.
  */
-export function stagesRemovedBy(
-  persisted: Stage[],
-  next: Omit<Stage, 'id'>[],
-): Stage[] {
-  const nextSeqs = new Set(next.map((s) => s.seq))
-  return persisted.filter((p) => !nextSeqs.has(p.seq))
-}
-
-/** One seq's before-and-after under a `saveStages` call. */
-export interface StagePositionChange {
-  seq: number
-  /** The name the row at this seq holds now, or null if the seq is new. */
-  fromName: string | null
-  /** The name it will hold, or null if the row at this seq is being deleted. */
-  toName: string | null
+export function stagesRemovedBy(persisted: Stage[], next: Stage[]): Stage[] {
+  const nextIds = new Set(next.map((s) => s.id))
+  return persisted.filter((p) => !nextIds.has(p.id))
 }
 
 /**
- * What `saveStages` will do to each seq, in seq order.
+ * Brings a project's stage list in line with `stages`, keyed by id.
  *
- * Position by position, because that is how the write works and how the
- * consequences land. `cells.stage_id` and `zones.stage_id` point at stage ROWS,
- * and a seq-keyed upsert never moves a row between seqs -- it rewrites whatever
- * sits at each seq in place. So when the panel renumbers (which it must: every
- * cumulative percentage reads stages by seq, and a gap or a tie corrupts all of
- * them), removing a middle stage or reordering two does not carry the recorded
- * progress along with the name the admin was looking at. It leaves the progress
- * where it is and changes the name over the top of it.
+ * Identity is the stage's id; `seq` is display order and nothing more. That
+ * distinction is the whole point of this function. `cells.stage_id` and
+ * `zones.stage_id` point at stage ROWS, while the panel renumbers seq 1..n on
+ * every structural change (cumulative progress reads stages by seq, so a gap or
+ * a tie would corrupt every percentage). An upsert keyed on (project_id, seq)
+ * therefore never moved a row between seqs -- it rewrote whatever row sat at
+ * each seq in place. Clicking "Lên" on Coat 3 rewrote the row where Coat 2's
+ * progress was recorded, and every cell recorded at Coat 2 was thereafter
+ * counted as Coat 3: a later, heavier stage, so the deck's reported percentage
+ * rose with nothing deleted and nothing on screen to explain it. Keyed on id, a
+ * rename, a reweight and a reorder all preserve every row's id, so every
+ * cells.stage_id and every zones.stage_id keeps pointing at the stage the admin
+ * meant, and nothing cascades.
  *
- * Listing the plan by seq is the only framing that says that without lying:
- * "seq 2: Coat 2 -> Tháo giáo" is exactly one UPDATE, and naming the same stage
- * twice -- once as removed, once as moved -- would describe two different
- * database rows with one word.
+ * Every stage passed in must already carry an id: StageConfigPanel mints one
+ * with crypto.randomUUID() the moment the admin adds a row, so a new stage is an
+ * INSERT of a known id rather than something this function has to match up
+ * afterwards. The ids of existing stages come from `listStages`, so they are the
+ * database's own.
  *
- * Unchanged seqs are included so the list is the whole plan and can be checked
- * against the table above it, rather than a set of highlights.
- */
-export function stageSavePlan(
-  persisted: Stage[],
-  next: Omit<Stage, 'id'>[],
-): StagePositionChange[] {
-  const before = new Map(persisted.map((p) => [p.seq, p.name]))
-  const after = new Map(next.map((s) => [s.seq, s.name]))
-  return [...new Set([...before.keys(), ...after.keys()])]
-    .sort((a, b) => a - b)
-    .map((seq) => ({
-      seq,
-      fromName: before.get(seq) ?? null,
-      toName: after.get(seq) ?? null,
-    }))
-}
-
-/**
- * Brings a project's stage list in line with `stages`, keyed by seq.
+ * A reorder swaps seq between two rows inside one statement, which the immediate
+ * `unique (project_id, seq)` from 0001 rejected row by row. Migration 0012 makes
+ * it `deferrable initially deferred` for exactly this write -- see that file.
  *
  * Diff, not replace -- the same medicine syncCells got, for a sharper version of
  * the same reason. `zones.stage_id references project_stages on delete cascade`
  * (0003) and `cells.stage_id ... on delete set null` (0001), so deleting the
  * stage rows and re-inserting them destroyed EVERY zone and every zone_cells
  * link in the project, plus every tick of recorded progress -- on a rename, on a
- * weight tweak, on any save at all. Upserting on (project_id, seq) keeps the
- * stage row and its id, so a rename or a reweight now costs nothing.
+ * weight tweak, on any save at all.
  *
- * Only a seq that genuinely disappears is deleted, and that delete does cascade
- * its zones away and null the cells sitting at that stage. That is correct --
- * a zone is a plan for one specific stage and is meaningless without it -- and
- * it is what the caller's confirmation dialog has to describe. Use
- * `stagesRemovedBy` to find out whether there is anything to describe.
+ * Only an id that genuinely disappears from the draft is deleted, and that
+ * delete does cascade its zones away and null the cells sitting at that stage.
+ * That is correct -- a zone is a plan for one specific stage and is meaningless
+ * without it -- and it is what the caller's confirmation dialog has to describe.
+ * Use `stagesRemovedBy` to find out whether there is anything to describe.
  *
  * The Σ = 1 rule is enforced here rather than in the database: it spans rows, so
  * a CHECK constraint cannot express it and a deferred trigger would fire in the
@@ -190,10 +176,7 @@ export function stageSavePlan(
  * failure between them leaves the renames applied and the removal not. That is
  * the safe half to lose -- nothing is destroyed -- and closing it needs an RPC.
  */
-export async function saveStages(
-  projectId: string,
-  stages: Omit<Stage, 'id'>[],
-): Promise<void> {
+export async function saveStages(projectId: string, stages: Stage[]): Promise<void> {
   if (stages.length === 0) {
     throw new Error('A project needs at least one stage')
   }
@@ -201,30 +184,40 @@ export async function saveStages(
   if (seqs.size !== stages.length) {
     throw new Error('Stage seq values must be unique')
   }
+  // Two draft rows claiming one id would make the upsert's `do update` touch the
+  // same row twice, which Postgres rejects with "ON CONFLICT DO UPDATE command
+  // cannot affect row a second time" -- and it would mean two stages sharing one
+  // set of recorded cells. Caught here so the message says what is wrong.
+  const ids = new Set(stages.map((s) => s.id))
+  if (ids.size !== stages.length) {
+    throw new Error('Stage ids must be unique')
+  }
   const total = stages.reduce((sum, s) => sum + s.weight, 0)
   if (Math.abs(total - 1) > STAGE_WEIGHT_EPSILON) {
     throw new Error(`Stage weights must sum to 1, got ${total.toFixed(4)}`)
   }
 
-  // Snapshot first: the removals are found by comparing seqs, and after the
+  // Snapshot first: the removals are found by comparing ids, and after the
   // upsert the rows to remove are indistinguishable from the rows to keep.
   const removed = stagesRemovedBy(await listStages(projectId), stages)
 
   const { error: upsertError } = await supabase.from('project_stages').upsert(
     stages.map((s) => ({
+      id: s.id,
       project_id: projectId,
       seq: s.seq,
       name: s.name,
       color: s.color,
       weight: s.weight,
     })),
-    { onConflict: 'project_id,seq' },
+    { onConflict: 'id' },
   )
   if (upsertError) throw new Error(upsertError.message)
 
   // By explicit id, and only when there is something to delete. A
   // `.eq('project_id', projectId)` delete here would be exactly the bug this
-  // rewrite exists to remove.
+  // rewrite exists to remove, and it would satisfy any assertion that a delete
+  // was issued.
   if (removed.length > 0) {
     const { error: deleteError } = await supabase
       .from('project_stages')

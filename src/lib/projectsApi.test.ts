@@ -8,7 +8,6 @@ import {
   roundStageWeight,
   saveStages,
   STAGE_WEIGHT_EPSILON,
-  stageSavePlan,
   stagesRemovedBy,
   updateProject,
 } from './projectsApi'
@@ -126,7 +125,7 @@ describe('listStages', () => {
 
 describe('saveStages', () => {
   const stage = (seq: number, weight: number) => ({
-    seq, name: `S${seq}`, color: '#000000', weight,
+    id: `s${seq}`, seq, name: `S${seq}`, color: '#000000', weight,
   })
 
   it('rejects a weight set that does not sum to 1', async () => {
@@ -180,7 +179,20 @@ describe('saveStages', () => {
   })
 
   it('rejects duplicate seq values', async () => {
-    await expect(saveStages('p1', [stage(1, 0.5), stage(1, 0.5)])).rejects.toThrow(/seq/)
+    await expect(
+      saveStages('p1', [stage(1, 0.5), { ...stage(1, 0.5), id: 's2' }]),
+    ).rejects.toThrow(/seq/)
+    expect(from).not.toHaveBeenCalled()
+  })
+
+  it('rejects duplicate ids', async () => {
+    // Two rows claiming one id would make the upsert's `do update` touch the
+    // same row twice ("ON CONFLICT DO UPDATE command cannot affect row a second
+    // time"), and would mean two stages sharing one set of recorded cells.
+    // Rejected before any write, with a message about ids rather than seqs.
+    await expect(
+      saveStages('p1', [stage(1, 0.5), { ...stage(2, 0.5), id: 's1' }]),
+    ).rejects.toThrow(/ids must be unique/)
     expect(from).not.toHaveBeenCalled()
   })
 
@@ -190,37 +202,40 @@ describe('saveStages', () => {
   })
 
   /** The persisted rows saveStages reads back before diffing, PostgREST-shaped. */
-  const persisted = (rows: { id: string; seq: number; weight: number }[]) =>
+  const persisted = (rows: { id: string; seq: number; weight: number; name?: string }[]) =>
     builder({
       data: rows.map((r) => ({
-        id: r.id, seq: r.seq, name: `S${r.seq}`, color: '#000000', weight: String(r.weight),
+        id: r.id,
+        seq: r.seq,
+        name: r.name ?? `S${r.seq}`,
+        color: '#000000',
+        weight: String(r.weight),
       })),
     })
 
-  it('upserts on (project_id, seq) instead of replacing the list', async () => {
-    // The whole point of the rewrite. zones.stage_id references project_stages
-    // ON DELETE CASCADE and cells.stage_id ON DELETE SET NULL, so a
-    // delete-and-reinsert destroyed every zone, every zone_cells link and every
-    // recorded tick in the project -- for a rename.
+  it('upserts on the id, carrying every row\'s own id in the payload', async () => {
+    // The whole point of the rewrite. Identity is the id, so a rename is an
+    // UPDATE of the row the admin renamed -- not of whatever row happens to sit
+    // at that seq. seq rides along as an ordinary column: display order.
     const read = persisted([{ id: 's1', seq: 1, weight: 0.5 }, { id: 's2', seq: 2, weight: 0.5 }])
     const up = builder({})
     from.mockImplementationOnce(() => read).mockImplementationOnce(() => up)
 
     await saveStages('p1', [
-      { seq: 1, name: 'Renamed', color: '#111111', weight: 0.5 },
-      { seq: 2, name: 'S2', color: '#000000', weight: 0.5 },
+      { id: 's1', seq: 1, name: 'Renamed', color: '#111111', weight: 0.5 },
+      { id: 's2', seq: 2, name: 'S2', color: '#000000', weight: 0.5 },
     ])
 
     expect(up.upsert).toHaveBeenCalledWith(
       [
-        { project_id: 'p1', seq: 1, name: 'Renamed', color: '#111111', weight: 0.5 },
-        { project_id: 'p1', seq: 2, name: 'S2', color: '#000000', weight: 0.5 },
+        { id: 's1', project_id: 'p1', seq: 1, name: 'Renamed', color: '#111111', weight: 0.5 },
+        { id: 's2', project_id: 'p1', seq: 2, name: 'S2', color: '#000000', weight: 0.5 },
       ],
-      { onConflict: 'project_id,seq' },
+      { onConflict: 'id' },
     )
   })
 
-  it('issues no delete at all when a stage is only renamed', async () => {
+  it('preserves the id and issues no delete when a stage is only renamed', async () => {
     // The stage row survives, so its id survives, so its zones and its cells'
     // stage_id survive. Exactly two round trips: the snapshot read and the
     // upsert. A third would mean something was being deleted.
@@ -233,17 +248,19 @@ describe('saveStages', () => {
       .mockImplementationOnce(() => del)
 
     await saveStages('p1', [
-      { seq: 1, name: 'Renamed', color: '#111111', weight: 0.5 },
-      { seq: 2, name: 'S2', color: '#000000', weight: 0.5 },
+      { id: 's1', seq: 1, name: 'Renamed', color: '#111111', weight: 0.5 },
+      { id: 's2', seq: 2, name: 'S2', color: '#000000', weight: 0.5 },
     ])
 
+    const payload = (up.upsert as ReturnType<typeof vi.fn>).mock.calls[0][0] as { id: string }[]
+    expect(payload.map((r) => r.id)).toEqual(['s1', 's2'])
     expect(from).toHaveBeenCalledTimes(2)
     expect(del.delete).not.toHaveBeenCalled()
   })
 
   it('issues no delete when only a weight changes', async () => {
     // Same guarantee on the other edit an admin makes constantly. Weights move
-    // between existing seqs, so nothing disappears.
+    // between existing rows, so nothing disappears.
     const read = persisted([{ id: 's1', seq: 1, weight: 0.5 }, { id: 's2', seq: 2, weight: 0.5 }])
     const up = builder({})
     const del = builder({})
@@ -253,15 +270,119 @@ describe('saveStages', () => {
       .mockImplementationOnce(() => del)
 
     await saveStages('p1', [
-      { seq: 1, name: 'S1', color: '#000000', weight: 0.7 },
-      { seq: 2, name: 'S2', color: '#000000', weight: 0.3 },
+      { id: 's1', seq: 1, name: 'S1', color: '#000000', weight: 0.7 },
+      { id: 's2', seq: 2, name: 'S2', color: '#000000', weight: 0.3 },
     ])
 
     expect(from).toHaveBeenCalledTimes(2)
     expect(del.delete).not.toHaveBeenCalled()
   })
 
-  it('deletes only the seq that disappeared, by id', async () => {
+  it('keeps every id across a reorder, and deletes nothing', async () => {
+    // A reorder is now a pure seq rewrite: the same three rows come back in a
+    // different display order. Under the seq-keyed upsert the payload carried no
+    // ids at all, and each seq's row was rewritten in place -- so the ids stayed
+    // put while the names moved between them.
+    const before = [
+      { id: 's1', seq: 1, weight: 0.4, name: 'Blast + Coat 1' },
+      { id: 's2', seq: 2, weight: 0.3, name: 'Coat 2' },
+      { id: 's3', seq: 3, weight: 0.3, name: 'Coat 3' },
+    ]
+    const read = persisted(before)
+    const up = builder({})
+    const del = builder({})
+    from
+      .mockImplementationOnce(() => read)
+      .mockImplementationOnce(() => up)
+      .mockImplementationOnce(() => del)
+
+    // Coat 3 moves up one, exactly as the panel's "Lên" produces it.
+    await saveStages('p1', [
+      { id: 's1', seq: 1, name: 'Blast + Coat 1', color: '#000000', weight: 0.4 },
+      { id: 's3', seq: 2, name: 'Coat 3', color: '#000000', weight: 0.3 },
+      { id: 's2', seq: 3, name: 'Coat 2', color: '#000000', weight: 0.3 },
+    ])
+
+    const payload = (up.upsert as ReturnType<typeof vi.fn>).mock.calls[0][0] as {
+      id: string
+      seq: number
+      name: string
+    }[]
+    // Every pre-reorder id is still present, each still attached to its own
+    // name, and only the seq differs.
+    expect(payload.map((r) => r.id).sort()).toEqual(before.map((b) => b.id).sort())
+    expect(payload.map((r) => [r.id, r.name, r.seq])).toEqual([
+      ['s1', 'Blast + Coat 1', 1],
+      ['s3', 'Coat 3', 2],
+      ['s2', 'Coat 2', 3],
+    ])
+    expect(from).toHaveBeenCalledTimes(2)
+    expect(del.delete).not.toHaveBeenCalled()
+  })
+
+  it('leaves a cell recorded at the stage it was recorded at when the list is reordered', async () => {
+    // The one that matters. Every other assertion in this file is about the
+    // payload; this one is about the consequence on the cell, which is where the
+    // customer sees the damage.
+    //
+    // The stand-in below applies the upsert the way Postgres would: it matches
+    // each payload row against the stored rows BY THE CONFLICT TARGET THE CODE
+    // ITSELF NAMES, row by row. That is what makes this test able to fail --
+    // keyed on (project_id, seq) it reproduces the real defect exactly, because
+    // the first payload row lands on the row already sitting at the seq it is
+    // moving into.
+    const rows: Record<string, unknown>[] = [
+      { id: 'coat1', project_id: 'p1', seq: 1, name: 'Coat 1', color: '#fadb14', weight: 0.5 },
+      { id: 'coat2', project_id: 'p1', seq: 2, name: 'Coat 2', color: '#bfbfbf', weight: 0.5 },
+    ]
+    // A cell GS recorded at Coat 1. cells.stage_id points at the ROW and no part
+    // of a stage save touches it, so it is a constant here -- which is the
+    // point: whether it still means "Coat 1" afterwards depends entirely on what
+    // the upsert did to the row it names.
+    const cell = { code: 'R1C1', stage_id: 'coat1' }
+
+    const read = persisted([
+      { id: 'coat1', seq: 1, weight: 0.5, name: 'Coat 1' },
+      { id: 'coat2', seq: 2, weight: 0.5, name: 'Coat 2' },
+    ])
+    const up = builder({})
+    up.upsert = vi.fn((payload: Record<string, unknown>[], opts: { onConflict: string }) => {
+      const key = opts.onConflict.split(',')
+      const keyOf = (r: Record<string, unknown>) => key.map((k) => String(r[k])).join(' ')
+      for (const incoming of payload) {
+        const existing = rows.find((r) => keyOf(r) === keyOf(incoming))
+        if (existing) Object.assign(existing, incoming)
+        else rows.push({ ...incoming })
+      }
+      return up
+    })
+    from.mockImplementationOnce(() => read).mockImplementationOnce(() => up)
+
+    // Coat 2 moves up: it takes seq 1 and Coat 1 takes seq 2. Nothing is removed.
+    await saveStages('p1', [
+      { id: 'coat2', seq: 1, name: 'Coat 2', color: '#bfbfbf', weight: 0.5 },
+      { id: 'coat1', seq: 2, name: 'Coat 1', color: '#fadb14', weight: 0.5 },
+    ])
+
+    // The cell is still recorded at Coat 1 -- the stage it was recorded at --
+    // and NOT at whatever stage now occupies the seq Coat 1 used to hold.
+    const recordedAt = rows.find((r) => r.id === cell.stage_id)
+    expect(recordedAt?.name).toBe('Coat 1')
+    // The reorder did happen, so this is not passing because nothing moved: the
+    // cell's own stage is now second in the paint sequence, and the row that
+    // took its old seq is a different stage entirely.
+    expect(recordedAt?.seq).toBe(2)
+    expect(rows.find((r) => r.seq === 1)?.name).toBe('Coat 2')
+    // Two rows in, two rows out: the reorder must not have inserted anything.
+    expect(rows).toHaveLength(2)
+  })
+
+  it('deletes exactly the id that disappeared, and the survivors keep theirs', async () => {
+    // Removing the MIDDLE of three, which is where a seq-keyed diff went wrong:
+    // the panel renumbers 1..n, so the seq that vanishes is 3 and by seq this
+    // deleted s3 -- the last stage -- while the admin had asked for the middle
+    // one. By id it deletes s2, and s1 and s3 survive with their ids intact even
+    // though s3's seq is renumbered from 3 to 2.
     const read = persisted([
       { id: 's1', seq: 1, weight: 0.4 },
       { id: 's2', seq: 2, weight: 0.3 },
@@ -275,12 +396,20 @@ describe('saveStages', () => {
       .mockImplementationOnce(() => del)
 
     await saveStages('p1', [
-      { seq: 1, name: 'S1', color: '#000000', weight: 0.5 },
-      { seq: 2, name: 'S2', color: '#000000', weight: 0.5 },
+      { id: 's1', seq: 1, name: 'S1', color: '#000000', weight: 0.5 },
+      { id: 's3', seq: 2, name: 'S3', color: '#000000', weight: 0.5 },
     ])
 
+    const payload = (up.upsert as ReturnType<typeof vi.fn>).mock.calls[0][0] as {
+      id: string
+      seq: number
+    }[]
+    expect(payload.map((r) => [r.id, r.seq])).toEqual([
+      ['s1', 1],
+      ['s3', 2],
+    ])
     expect(del.delete).toHaveBeenCalled()
-    expect(del.in).toHaveBeenCalledWith('id', ['s3'])
+    expect(del.in).toHaveBeenCalledWith('id', ['s2'])
     // By id, never by project. A `.eq('project_id', 'p1')` delete is the defect
     // this rewrite exists to remove, and it would still satisfy the assertion
     // above if both were issued.
@@ -295,10 +424,10 @@ describe('saveStages', () => {
       .mockImplementationOnce(() => builder({ error: { message: 'upsert refused' } }))
       .mockImplementationOnce(() => del)
 
-    // The next list drops seq 2, so there IS a delete waiting: a third `from`
-    // call would prove it ran anyway.
+    // The next list drops s2, so there IS a delete waiting: a third `from` call
+    // would prove it ran anyway.
     await expect(
-      saveStages('p1', [{ seq: 1, name: 'S1', color: '#000000', weight: 1 }]),
+      saveStages('p1', [{ id: 's1', seq: 1, name: 'S1', color: '#000000', weight: 1 }]),
     ).rejects.toThrow('upsert refused')
 
     expect(from).toHaveBeenCalledTimes(2)
@@ -309,7 +438,7 @@ describe('saveStages', () => {
     from.mockImplementationOnce(() => builder({ error: { message: 'network down' } }))
 
     await expect(
-      saveStages('p1', [{ seq: 1, name: 'S1', color: '#000000', weight: 1 }]),
+      saveStages('p1', [{ id: 's1', seq: 1, name: 'S1', color: '#000000', weight: 1 }]),
     ).rejects.toThrow('network down')
 
     expect(from).toHaveBeenCalledTimes(1)
@@ -317,103 +446,41 @@ describe('saveStages', () => {
 })
 
 describe('stagesRemovedBy', () => {
-  const persistedStage = (id: string, seq: number): Stage => ({
-    id, seq, name: `S${seq}`, color: '#000000', weight: 0.5,
+  const stageAt = (id: string, seq: number, name = `S${seq}`): Stage => ({
+    id, seq, name, color: '#000000', weight: 0.5,
   })
-  const draft = (seq: number, name: string) => ({ seq, name, color: '#000000', weight: 0.5 })
 
-  it('names nothing when every seq survives', () => {
+  it('names nothing when every id survives, however the seqs moved', () => {
+    // A reorder plus a rename: both rows survive, at swapped seqs, one of them
+    // under a new name. Nothing is being deleted, so nothing is named -- which
+    // is what makes the panel save a reorder with no dialog.
     expect(
-      stagesRemovedBy([persistedStage('s1', 1), persistedStage('s2', 2)], [
-        draft(1, 'Renamed'), draft(2, 'Also renamed'),
-      ]),
+      stagesRemovedBy(
+        [stageAt('s1', 1, 'A'), stageAt('s2', 2, 'B')],
+        [stageAt('s2', 1, 'B'), stageAt('s1', 2, 'Renamed')],
+      ),
     ).toEqual([])
   })
 
-  it('names the persisted row whose seq is gone', () => {
-    // By seq, and carrying the PERSISTED name -- what the database is about to
-    // delete, not what the draft calls that position. The panel renumbers on
-    // every structural change, so after removing a middle row the seq that
-    // actually disappears is the last one.
+  it('names the stage the admin actually removed, not the seq that vanished', () => {
+    // The defect a seq-keyed diff had, in one assertion. The panel renumbers
+    // 1..n, so removing the middle of three leaves seqs 1 and 2 and the seq that
+    // disappears is 3: by seq this named C, a row that survives, while the
+    // database deleted B. It carries the PERSISTED name, because the removed row
+    // is no longer in the draft to have a name of its own.
     expect(
       stagesRemovedBy(
-        [persistedStage('s1', 1), persistedStage('s2', 2), persistedStage('s3', 3)],
-        [draft(1, 'First'), draft(2, 'Last')],
+        [stageAt('s1', 1, 'A'), stageAt('s2', 2, 'B'), stageAt('s3', 3, 'C')],
+        [stageAt('s1', 1, 'A'), stageAt('s3', 2, 'C')],
       ),
-    ).toEqual([persistedStage('s3', 3)])
+    ).toEqual([stageAt('s2', 2, 'B')])
   })
 
-  it('names nothing when the project is being loaded for the first time', () => {
-    expect(stagesRemovedBy([], [draft(1, 'S1')])).toEqual([])
-  })
-})
-
-describe('stageSavePlan', () => {
-  const persistedStage = (id: string, seq: number, name: string): Stage => ({
-    id, seq, name, color: '#000000', weight: 0.5,
-  })
-  const draft = (seq: number, name: string) => ({ seq, name, color: '#000000', weight: 0.5 })
-
-  it('reports each seq as unchanged when only weights move', () => {
-    expect(
-      stageSavePlan([persistedStage('s1', 1, 'A'), persistedStage('s2', 2, 'B')], [
-        { ...draft(1, 'A'), weight: 0.7 }, { ...draft(2, 'B'), weight: 0.3 },
-      ]),
-    ).toEqual([
-      { seq: 1, fromName: 'A', toName: 'A' },
-      { seq: 2, fromName: 'B', toName: 'B' },
-    ])
-  })
-
-  it('reports a reorder as two seqs changing occupant, with nothing deleted', () => {
-    // The case a removals-only diff cannot see. Neither seq disappears, so a
-    // seq-keyed upsert rewrites both in place -- and the cells and zones pointing
-    // at those rows stay where they are and take the new names.
-    expect(
-      stageSavePlan(
-        [persistedStage('s1', 1, 'A'), persistedStage('s2', 2, 'B'), persistedStage('s3', 3, 'C')],
-        [draft(1, 'A'), draft(2, 'C'), draft(3, 'B')],
-      ),
-    ).toEqual([
-      { seq: 1, fromName: 'A', toName: 'A' },
-      { seq: 2, fromName: 'B', toName: 'C' },
-      { seq: 3, fromName: 'C', toName: 'B' },
-    ])
-  })
-
-  it('reports a middle removal as the last seq going and the rest shifting up', () => {
-    // Removing B from [A, B, C] renumbers to [A, C], so the seq that actually
-    // disappears is 3 -- and seq 2, where B's progress is recorded, becomes C.
-    // Naming "B" as the thing removed would describe a row that survives.
-    expect(
-      stageSavePlan(
-        [persistedStage('s1', 1, 'A'), persistedStage('s2', 2, 'B'), persistedStage('s3', 3, 'C')],
-        [draft(1, 'A'), draft(2, 'C')],
-      ),
-    ).toEqual([
-      { seq: 1, fromName: 'A', toName: 'A' },
-      { seq: 2, fromName: 'B', toName: 'C' },
-      { seq: 3, fromName: 'C', toName: null },
-    ])
-  })
-
-  it('reports an added stage as a new seq, not as a change to an existing one', () => {
-    expect(
-      stageSavePlan([persistedStage('s1', 1, 'A')], [draft(1, 'A'), draft(2, 'Lớp mới')]),
-    ).toEqual([
-      { seq: 1, fromName: 'A', toName: 'A' },
-      { seq: 2, fromName: null, toName: 'Lớp mới' },
-    ])
-  })
-
-  it('orders by seq numerically, not by the order either list arrived in', () => {
-    // Both inputs are deliberately out of order, and seq 10 would sort before
-    // seq 2 as a string. The dialog reads top to bottom as the paint sequence.
-    const plan = stageSavePlan(
-      [persistedStage('s3', 10, 'J'), persistedStage('s1', 2, 'B')],
-      [draft(10, 'J'), draft(2, 'B')],
-    )
-    expect(plan.map((p) => p.seq)).toEqual([2, 10])
+  it('names nothing for a stage the admin has just added', () => {
+    // A brand new row carries a client-minted id that no persisted row holds.
+    // The diff runs the other way round, so it must stay empty rather than
+    // reporting the whole persisted list as removed.
+    expect(stagesRemovedBy([], [stageAt('fresh-uuid', 1, 'S1')])).toEqual([])
   })
 })
 

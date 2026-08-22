@@ -2,28 +2,8 @@ import { Alert, Button, Input, InputNumber, Modal, Space, Table, Typography } fr
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Stage } from '../../domain/types'
 import {
-  listStages, roundStageWeight, saveStages, stageSavePlan, stagesRemovedBy,
-  STAGE_WEIGHT_EPSILON,
+  listStages, roundStageWeight, saveStages, stagesRemovedBy, STAGE_WEIGHT_EPSILON,
 } from '../../lib/projectsApi'
-
-/**
- * A row being edited, plus the seq it was LOADED at.
- *
- * `originSeq` is what separates a rename from a shift, and the two have opposite
- * consequences. saveStages upserts on (project_id, seq) and never moves a row
- * between seqs, while cells.stage_id and zones.stage_id point at rows -- so
- * renaming the row at seq 2 renames the layer whose progress is recorded there
- * (what the admin asked for), whereas moving a different layer into seq 2
- * re-labels progress that was recorded against the old one (what nobody asked
- * for). A seq-to-seq diff alone cannot tell them apart: both come out as "the
- * name at seq 2 changed". null for a row that was never loaded, i.e. one the
- * admin has just added.
- */
-type DraftStage = Omit<Stage, 'id'> & { originSeq: number | null }
-
-/** The payload saveStages takes: the draft without this screen's own bookkeeping. */
-const forSave = (draft: DraftStage[]) =>
-  draft.map(({ seq, name, color, weight }) => ({ seq, name, color, weight }))
 
 const weightFmt = new Intl.NumberFormat('vi-VN', {
   minimumFractionDigits: 4,
@@ -31,7 +11,18 @@ const weightFmt = new Intl.NumberFormat('vi-VN', {
 })
 
 export function StageConfigPanel({ projectId }: { projectId: string }) {
-  const [draft, setDraft] = useState<DraftStage[]>([])
+  /**
+   * The rows being edited, each carrying the id it is identified by.
+   *
+   * A draft row is a full `Stage`, ids included, because the id IS the identity
+   * saveStages keys its upsert on: a rename, a reweight and a reorder all have
+   * to arrive at the database attached to the row they belong to, or the write
+   * relabels progress recorded against some other stage. Rows are only ever
+   * replaced, never mutated in place -- `persisted` below shares these objects
+   * on load, and an in-place edit would quietly move the baseline the diff is
+   * taken against.
+   */
+  const [draft, setDraft] = useState<Stage[]>([])
   /**
    * The stage list as last read from the database, kept beside the draft so the
    * confirmation dialog can name the rows a save would actually delete. Written
@@ -64,9 +55,7 @@ export function StageConfigPanel({ projectId }: { projectId: string }) {
       // resolves after the admin has resumed editing -- either way, applying
       // it would silently discard something more current than the fetch.
       if (mine !== generation.current || dirty.current) return
-      setDraft(stages.map(({ seq, name, color, weight }) => ({
-        seq, name, color, weight, originSeq: seq,
-      })))
+      setDraft(stages)
       setPersisted(stages)
       setError(null)
     } catch (e) {
@@ -83,42 +72,38 @@ export function StageConfigPanel({ projectId }: { projectId: string }) {
   const total = useMemo(() => draft.reduce((sum, s) => sum + s.weight, 0), [draft])
   const balanced = Math.abs(total - 1) <= STAGE_WEIGHT_EPSILON
 
-  /** The seqs this save would delete, cascading their zones and nulling their cells. */
-  const removed = useMemo(() => stagesRemovedBy(persisted, forSave(draft)), [persisted, draft])
-
   /**
-   * Rows that are no longer at the seq they were loaded at.
-   *
-   * The second thing worth confirming, and the one the plain removal/rename
-   * split misses. Because saveStages rewrites each seq in place and progress is
-   * recorded against rows, moving a layer to another seq leaves the progress
-   * behind and re-labels it: reorder Coat 2 and Coat 3 and every cell recorded
-   * at Coat 2 is thereafter counted as Coat 3 -- a later, heavier stage, so the
-   * deck's reported percentage rises with nothing deleted and nothing on screen
-   * to explain it. Exactly the plausible-looking wrong number this product
-   * cannot afford, and it happens with no removals at all.
+   * The stages this save would delete, cascading their zones and nulling their
+   * cells. The only destructive part of a stage save, and now the only part
+   * worth confirming: with identity on the id, a reorder moves nobody's
+   * recorded progress, so there is nothing left to disclose about it.
    */
-  const shifted = useMemo(
-    () => draft.filter((s) => s.originSeq !== null && s.originSeq !== s.seq),
-    [draft],
-  )
+  const removed = useMemo(() => stagesRemovedBy(persisted, draft), [persisted, draft])
 
-  /** The whole write, seq by seq, for the dialog to show. */
-  const plan = useMemo(() => stageSavePlan(persisted, forSave(draft)), [persisted, draft])
-
-  const patch = (index: number, change: Partial<DraftStage>) => {
+  const patch = (index: number, change: Partial<Stage>) => {
     dirty.current = true
     setDraft((prev) => prev.map((s, i) => (i === index ? { ...s, ...change } : s)))
   }
 
   /** seq is renumbered 1..n on every structural change: cumulative progress
-   *  reads stages by seq, so a gap or a tie would corrupt every percentage. */
-  const renumber = (rows: DraftStage[]) => rows.map((s, i) => ({ ...s, seq: i + 1 }))
+   *  reads stages by seq, so a gap or a tie would corrupt every percentage.
+   *  Renumbering is now free of consequences -- it rewrites display order and
+   *  touches no row's id, so no cell's recorded stage moves with it. */
+  const renumber = (rows: Stage[]) => rows.map((s, i) => ({ ...s, seq: i + 1 }))
 
   const addStage = () => {
     dirty.current = true
     setDraft((prev) =>
-      renumber([...prev, { seq: 0, name: 'Lớp mới', color: '#8c8c8c', weight: 0, originSeq: null }]),
+      renumber([
+        ...prev,
+        // The id is minted here, not by the database, so the row carries its
+        // identity from the moment it exists: saveStages' upsert keys on the id,
+        // which turns a new stage into an INSERT of a known row rather than a
+        // match to be worked out afterwards. crypto.randomUUID needs a secure
+        // context, which is what this admin app is served from (https, or
+        // localhost in dev).
+        { id: crypto.randomUUID(), seq: 0, name: 'Lớp mới', color: '#8c8c8c', weight: 0 },
+      ]),
     )
   }
 
@@ -141,7 +126,7 @@ export function StageConfigPanel({ projectId }: { projectId: string }) {
   const onSave = async () => {
     setBusy(true)
     try {
-      await saveStages(projectId, forSave(draft))
+      await saveStages(projectId, draft)
       setError(null)
       setConfirming(false)
       // The draft just persisted is the new clean baseline: the background
@@ -181,8 +166,12 @@ export function StageConfigPanel({ projectId }: { projectId: string }) {
         />
       )}
 
-      <Table<DraftStage>
-        rowKey="seq"
+      <Table<Stage>
+        // By id, not seq: seq is renumbered under the rows on every reorder and
+        // removal, so keying React's reconciliation on it makes a row's identity
+        // change out from under it -- the same mistake at the UI level that
+        // keying the upsert on seq was at the database level.
+        rowKey="id"
         size="small"
         // Only the very first fetch (before any row exists to show or edit)
         // should block the table behind Spin's overlay -- antd applies
@@ -315,15 +304,12 @@ export function StageConfigPanel({ projectId }: { projectId: string }) {
           type="primary"
           disabled={!balanced}
           loading={busy}
-          // A rename or a reweight keeps every stage row, id, zone and tick, so
-          // there is genuinely nothing to disclose and the save goes straight
-          // through: a dialog on a save that costs nothing is a dialog the admin
-          // learns to click through, which is how the one that does matter gets
-          // skimmed. A removal or a position shift is a different matter -- see
-          // `removed` and `shifted`.
-          onClick={() =>
-            (removed.length > 0 || shifted.length > 0 ? setConfirming(true) : void onSave())
-          }
+          // A rename, a reweight and a reorder all keep every stage row, id,
+          // zone and tick, so there is genuinely nothing to disclose and the
+          // save goes straight through: a dialog on a save that costs nothing is
+          // a dialog the admin learns to click through, which is how the one
+          // that does matter gets skimmed. A removal is the one that matters.
+          onClick={() => (removed.length > 0 ? setConfirming(true) : void onSave())}
         >
           Lưu
         </Button>
@@ -342,7 +328,7 @@ export function StageConfigPanel({ projectId }: { projectId: string }) {
       {confirming && (
         <Modal
           open
-          title={removed.length > 0 ? 'Xoá lớp sơn khỏi cấu hình?' : 'Đổi thứ tự lớp sơn?'}
+          title="Xoá lớp sơn khỏi cấu hình?"
           okText="Vẫn lưu"
           cancelText="Huỷ"
           confirmLoading={busy}
@@ -350,53 +336,38 @@ export function StageConfigPanel({ projectId }: { projectId: string }) {
           onOk={() => void onSave()}
         >
           {/*
-            The plan seq by seq, which is what the write actually is: one UPDATE
-            per seq, plus a DELETE for the seqs that vanish. Every sentence below
-            is about that plan.
+            The stages being deleted, by the name the DATABASE holds for them --
+            `removed` comes from the persisted snapshot, and these rows are no
+            longer in the draft at all, so there is no edited name left to show.
 
-            The wording this replaced claimed a stage save wiped all recorded
-            progress in the project -- true of the delete-and-reinsert write it
-            described, no longer true of the diff -- and never mentioned zones,
-            which were the part being destroyed silently.
-
-            Two separate lists (removed / moved) were tried first and rejected:
-            after removing a middle stage the same NAME appears in both, pointing
-            at two different database rows, which is worse than saying nothing.
+            This list used to be the whole write laid out seq by seq, because a
+            seq-keyed upsert really did rewrite each position in place and the
+            consequences landed per position rather than per stage. With identity
+            on the id that framing would now be a lie: a reorder rewrites nothing
+            but display order, and the only thing a save can destroy is the rows
+            named here. An earlier wording claimed a stage save wiped all recorded
+            progress in the project (true of the delete-and-reinsert write it
+            described) and never mentioned zones, which were the part being
+            destroyed silently.
           */}
-          <Typography.Paragraph>
-            Cấu hình sau khi lưu, theo thứ tự lớp:
-          </Typography.Paragraph>
+          <Typography.Paragraph>Các lớp sơn sẽ bị xoá khỏi cấu hình:</Typography.Paragraph>
           <ul>
-            {plan.map((p) => (
-              <li key={p.seq}>
-                thứ tự {p.seq}:{' '}
-                {p.toName === null ? (
-                  <><strong>{p.fromName}</strong> → xoá</>
-                ) : p.fromName === null ? (
-                  <><strong>{p.toName}</strong> (lớp mới)</>
-                ) : p.fromName === p.toName ? (
-                  <><strong>{p.toName}</strong> (không đổi)</>
-                ) : (
-                  <><strong>{p.fromName}</strong> → <strong>{p.toName}</strong></>
-                )}
+            {removed.map((s) => (
+              <li key={s.id}>
+                <strong>{s.name}</strong>
               </li>
             ))}
           </ul>
           <Typography.Paragraph>
-            Tiến độ đã ghi và zone gắn theo thứ tự lớp, không gắn theo tên. Đổi thứ
-            tự nghĩa là những ô đang ở một thứ tự sẽ được tính theo lớp mới của thứ
-            tự đó, chứ không đi theo lớp cũ.
+            Xoá một lớp sẽ xoá tiến độ đã ghi của mọi ô đang ở lớp đó — các ô đó
+            trở về trạng thái chưa bắt đầu — và xoá luôn các zone đã lên kế hoạch
+            cho lớp đó.
           </Typography.Paragraph>
-          {removed.length > 0 && (
-            <Typography.Paragraph>
-              Xoá một thứ tự sẽ xoá tiến độ đã ghi của mọi ô đang ở đó — các ô đó
-              trở về trạng thái chưa bắt đầu — và xoá luôn các zone đã lên kế hoạch
-              cho lớp đó.
-            </Typography.Paragraph>
-          )}
           <Typography.Paragraph type="secondary">
-            Đổi tên hay đổi trọng số thì không mất gì. Nhưng phần bị xoá ở trên thì
-            mất vĩnh viễn và không thể khôi phục.
+            Đổi tên, đổi trọng số hay đổi thứ tự thì không mất gì: mỗi lớp giữ
+            nguyên danh tính của nó, nên tiến độ đã ghi và zone vẫn đi theo đúng
+            lớp. Nhưng các lớp bị xoá ở trên thì mất vĩnh viễn và không thể khôi
+            phục.
           </Typography.Paragraph>
         </Modal>
       )}
