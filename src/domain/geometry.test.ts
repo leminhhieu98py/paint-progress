@@ -4,7 +4,9 @@ import {
   areaDivergence,
   buildMeshFromGuides,
   deriveCellArea,
+  divergesBeyondThreshold,
   mergeCells,
+  prorateCellAreas,
 } from './geometry'
 import type { Guide, MeshCell } from './types'
 
@@ -163,5 +165,65 @@ describe('areaDivergence', () => {
 
   it('exposes the 5% threshold from the spec', () => {
     expect(AREA_DIVERGENCE_THRESHOLD).toBe(0.05)
+  })
+})
+
+describe('divergesBeyondThreshold', () => {
+  const cell = (areaM2: number) => ({ areaM2 })
+
+  it('is false when cells match the deck total', () => {
+    expect(divergesBeyondThreshold(1000, [cell(1000)])).toBe(false)
+  })
+
+  it('is false just inside the threshold', () => {
+    expect(divergesBeyondThreshold(1000, [cell(960)])).toBe(false)
+  })
+
+  it('is true when cells under-cover beyond the threshold', () => {
+    expect(divergesBeyondThreshold(1000, [cell(900)])).toBe(true)
+  })
+
+  it('is true when cells OVER-cover beyond the threshold', () => {
+    // The reason this helper exists: areaDivergence is signed, so a caller
+    // comparing `> THRESHOLD` would read -0.1 as within tolerance.
+    expect(divergesBeyondThreshold(1000, [cell(1100)])).toBe(true)
+    expect(areaDivergence(1000, [cell(1100)])).toBeLessThan(0)
+  })
+
+  it('is false for a deck with no area, matching areaDivergence', () => {
+    expect(divergesBeyondThreshold(0, [cell(10)])).toBe(false)
+  })
+})
+
+describe('prorateCellAreas', () => {
+  const mesh = (code: string, w: number, h: number) => ({
+    code, x: 0, y: 0, w, h, areaM2: 0,
+  })
+
+  it('splits the deck total by normalized pixel area', () => {
+    const out = prorateCellAreas(1000, [mesh('A', 0.5, 1), mesh('B', 0.5, 1)])
+    expect(out.map((c) => c.areaM2)).toEqual([500, 500])
+  })
+
+  it('weights unequal cells proportionally', () => {
+    const out = prorateCellAreas(900, [mesh('A', 0.3, 1), mesh('B', 0.6, 1)])
+    expect(out[0].areaM2).toBeCloseTo(300, 9)
+    expect(out[1].areaM2).toBeCloseTo(600, 9)
+  })
+
+  it('preserves the deck total exactly', () => {
+    const out = prorateCellAreas(1234.5, [mesh('A', 0.1, 0.2), mesh('B', 0.3, 0.4), mesh('C', 0.5, 0.6)])
+    expect(out.reduce((s, c) => s + c.areaM2, 0)).toBeCloseTo(1234.5, 6)
+  })
+
+  it('leaves geometry untouched', () => {
+    const input = [mesh('A', 0.5, 1)]
+    const out = prorateCellAreas(1000, input)
+    expect(out[0]).toMatchObject({ code: 'A', x: 0, y: 0, w: 0.5, h: 1 })
+  })
+
+  it('returns zero areas when the cells have no pixel area at all', () => {
+    const out = prorateCellAreas(1000, [mesh('A', 0, 0)])
+    expect(out[0].areaM2).toBe(0)
   })
 })

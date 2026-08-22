@@ -27,6 +27,12 @@ export function deckFromCumulative(
   const ordered = [...stages].sort((a, b) => a.seq - b.seq)
   const cells: Cell[] = []
 
+  if (cumulative.length !== ordered.length) {
+    throw new Error(
+      `cumulative must have one entry per stage: got ${cumulative.length}, expected ${ordered.length}`,
+    )
+  }
+
   const push = (stageId: string | null, areaM2: number) => {
     if (areaM2 <= 0) return
     cells.push({

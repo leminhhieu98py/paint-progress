@@ -46,12 +46,6 @@ describe('computeDeckProgress — golden fixture from THEO DÕI CÔNG VIỆC CPP
     expect(computeDeckProgress(cd, stages).stages[0].ratio).toBeCloseTo(0.90747678775044793, 12)
   })
 
-  it('uses totalAreaM2 as the denominator, not the sum of cell areas', () => {
-    const deck = deckFromCumulative('X', 'X', 1000, [500, 0, 0, 0, 0], stages)
-    // only 500 m² of cells reach stage 1; the deck still measures 1000 m²
-    expect(computeDeckProgress(deck, stages).stages[0].ratio).toBeCloseTo(0.5, 12)
-  })
-
   it('divides by totalAreaM2 even when cells cover only part of the deck', () => {
     // Built as a literal on purpose: deckFromCumulative always emits a
     // leftover not-started cell, so every deck it builds has
@@ -102,6 +96,14 @@ describe('deckFromCumulative', () => {
   it('rejects a non-monotonic cumulative array', () => {
     expect(() => deckFromCumulative('BAD', 'Bad', 100, [10, 20, 0, 0, 0], stages)).toThrow(
       /non-increasing/,
+    )
+  })
+
+  it('rejects a cumulative array shorter than the stage list', () => {
+    // Without this guard the missing entries yield areaM2: NaN, which the
+    // `<= 0` push guard does not filter, silently poisoning a fixture.
+    expect(() => deckFromCumulative('SHORT', 'Short', 100, [10, 5], stages)).toThrow(
+      /one entry per stage/,
     )
   })
 })

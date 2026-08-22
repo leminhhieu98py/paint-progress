@@ -136,3 +136,34 @@ export function areaDivergence(
   const sum = cells.reduce((acc, c) => acc + c.areaM2, 0)
   return (totalAreaM2 - sum) / totalAreaM2
 }
+
+/**
+ * Whether the cells diverge from the deck's authoritative area by more than the
+ * threshold, in EITHER direction.
+ *
+ * Prefer this to comparing areaDivergence directly: that value is signed, so
+ * `divergence > AREA_DIVERGENCE_THRESHOLD` silently treats over-coverage as
+ * within tolerance. Spec §3.4 warns on divergence in either direction.
+ */
+export function divergesBeyondThreshold(
+  totalAreaM2: number,
+  cells: { areaM2: number }[],
+): boolean {
+  return Math.abs(areaDivergence(totalAreaM2, cells)) > AREA_DIVERGENCE_THRESHOLD
+}
+
+/**
+ * Fallback for a drawing whose dimensions are unusable: split the deck's
+ * authoritative area across cells by their normalized pixel area.
+ *
+ * The deck records `area_source: 'prorated'` when this is used, so a report can
+ * disclose that its per-cell figures are estimates rather than measured spans.
+ */
+export function prorateCellAreas(totalAreaM2: number, cells: MeshCell[]): MeshCell[] {
+  const totalPixelArea = cells.reduce((sum, c) => sum + c.w * c.h, 0)
+  if (totalPixelArea <= 0) return cells.map((c) => ({ ...c, areaM2: 0 }))
+  return cells.map((c) => ({
+    ...c,
+    areaM2: (totalAreaM2 * (c.w * c.h)) / totalPixelArea,
+  }))
+}
