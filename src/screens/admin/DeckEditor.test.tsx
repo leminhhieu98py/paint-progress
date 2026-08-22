@@ -41,16 +41,29 @@ vi.mock('../../lib/projectsApi', () => ({
 // survivor's identity can be got wrong.
 vi.mock('./DrawingCanvas', () => ({
   DrawingCanvas: ({
-    cells, onCellClick,
+    cells, guides, onCellClick, onGuideMove,
   }: {
     cells: { code: string }[]
+    guides: { axis: 'x' | 'y'; pos: number }[]
     onCellClick?: (code: string, additive: boolean) => void
+    onGuideMove?: (index: number, pos: number) => void
   }) => (
     <div data-testid="canvas">
       {cells.map((c) => c.code).join(',')}
       {cells.map((c) => (
         <button key={c.code} onClick={() => onCellClick?.(c.code, true)}>
           chọn {c.code}
+        </button>
+      ))}
+      {/*
+        One drag per guide, all to the same far-right target, standing in for
+        the real Konva drag. 0.99 is past every interior guide in the fixtures
+        below, which is the whole point: a drag that crosses a neighbour is the
+        case that used to produce a negative mm span.
+      */}
+      {guides.map((_g, i) => (
+        <button key={`drag-${i}`} onClick={() => onGuideMove?.(i, 0.99)}>
+          kéo guide {i}
         </button>
       ))}
     </div>
@@ -313,7 +326,7 @@ describe('DeckEditor', () => {
     // The single bay absorbs the whole declared deck area, pro-rated.
     expect(screen.getByText('5.258,50')).toBeInTheDocument()
 
-    await userEvent.click(screen.getByRole('button', { name: 'Lưu guide và diện tích' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Lưu bản vẽ và lưới ô' }))
     await waitFor(() => expect(updateDeckArea).toHaveBeenCalledWith('d1', 5258.5, 'prorated'))
   })
 
@@ -328,23 +341,28 @@ describe('DeckEditor', () => {
     const areaInput = screen.getByRole('spinbutton')
     await userEvent.clear(areaInput)
     await userEvent.type(areaInput, '1234,5')
-    await userEvent.click(screen.getByRole('button', { name: 'Lưu guide và diện tích' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Lưu bản vẽ và lưới ô' }))
 
-    await waitFor(() => expect(updateDeckArea).toHaveBeenCalledWith('d1', 1234.5, 'prorated'))
+    // 'guides' because that is what the deck already records and no mesh was
+    // regenerated here: the provenance travels with the cell set, so typing in
+    // the area field cannot relabel areas it did not compute.
+    await waitFor(() => expect(updateDeckArea).toHaveBeenCalledWith('d1', 1234.5, 'guides'))
   })
 
   it('saves a generated mesh that needed no delete and no merge', async () => {
     // The defect this covers: syncCells' predecessor was reachable only from a
     // delete or a merge, so a deck whose outline came out right first time
-    // could never persist its cells at all -- while "Lưu guide và diện tích"
-    // happily wrote new offsets and a new area_source next to the old areas.
+    // could never persist its cells at all -- while the separate
+    // guides-and-area button happily wrote new offsets and a new area_source
+    // next to the old areas. Both are one action now, so this also pins that
+    // collapsing them did not lose the cell write.
     listGuides.mockResolvedValue(ONE_BAY_GUIDES)
     syncCells.mockResolvedValue(undefined)
     render(<DeckEditor deck={deck} onClose={vi.fn()} />)
     await screen.findByTestId('canvas')
 
     await userEvent.click(screen.getByRole('button', { name: 'Sinh lưới ô' }))
-    await userEvent.click(screen.getByRole('button', { name: 'Lưu lưới ô' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Lưu bản vẽ và lưới ô' }))
 
     await waitFor(() => expect(syncCells).toHaveBeenCalledTimes(1))
     expect(syncCells).toHaveBeenCalledWith(
@@ -370,7 +388,7 @@ describe('DeckEditor', () => {
     await screen.findByTestId('canvas')
 
     await userEvent.click(screen.getByRole('button', { name: 'Sinh lưới ô' }))
-    await userEvent.click(screen.getByRole('button', { name: 'Lưu lưới ô' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Lưu bản vẽ và lưới ô' }))
 
     expect(await screen.findByText(listItem('R9C9 — Coat 1'))).toBeInTheDocument()
     // The merge-only caveat is about a merge's missing honest carry rule; a
@@ -554,7 +572,7 @@ describe('DeckEditor', () => {
     await screen.findByTestId('canvas')
 
     await userEvent.click(screen.getByRole('button', { name: 'Sinh lưới ô' }))
-    await userEvent.click(screen.getByRole('button', { name: 'Lưu lưới ô' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Lưu bản vẽ và lưới ô' }))
 
     // The title collapses to one generic form once it is not a zone-impact
     // case (task-8-fix-3 R6) -- it no longer names the operation or the reason.
@@ -599,7 +617,7 @@ describe('DeckEditor', () => {
     await screen.findByTestId('canvas')
 
     await userEvent.click(screen.getByRole('button', { name: 'Sinh lưới ô' }))
-    await userEvent.click(screen.getByRole('button', { name: 'Lưu lưới ô' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Lưu bản vẽ và lưới ô' }))
 
     await waitFor(() => expect(syncCells).toHaveBeenCalledTimes(1))
     expect(syncCells.mock.calls[0][1]).toEqual([
@@ -635,7 +653,7 @@ describe('DeckEditor', () => {
     await screen.findByTestId('canvas')
 
     await userEvent.click(screen.getByRole('button', { name: 'Sinh lưới ô' }))
-    await userEvent.click(screen.getByRole('button', { name: 'Lưu lưới ô' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Lưu bản vẽ và lưới ô' }))
 
     expect(await screen.findByText(listItem('R1C1 — Coat 3: 200,00 → 210,40 m²'))).toBeInTheDocument()
     expect(syncCells).not.toHaveBeenCalled()
@@ -658,7 +676,7 @@ describe('DeckEditor', () => {
     await screen.findByTestId('canvas')
 
     await userEvent.click(screen.getByRole('button', { name: 'Sinh lưới ô' }))
-    await userEvent.click(screen.getByRole('button', { name: 'Lưu lưới ô' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Lưu bản vẽ và lưới ô' }))
 
     expect(await screen.findByText(listItem('R1C1 — Coat 3: 400,00 → 232,00 m²'))).toBeInTheDocument()
     expect(syncCells).not.toHaveBeenCalled()
@@ -767,6 +785,318 @@ describe('DeckEditor', () => {
 
     expect(await screen.findByText(/bị trùng nhau/)).toBeInTheDocument()
     expect(screen.queryByText(/overlapping cells/i)).toBeNull()
+  })
+
+  it('records the provenance of the cells it writes, not of the guides at save time', async () => {
+    // A1, forwards. Generate the mesh BEFORE typing the mm spans, so the cells
+    // hold pro-rated pixel shares, then type the spans, then save. area_source
+    // used to be re-derived from the guide table at save time and came out
+    // 'guides' -- pixel estimates persisted and labelled as measured. And
+    // pro-rated areas sum to total_area_m2 exactly, so the divergence banner,
+    // the only guard against this, can never fire: on Main Deck it reports
+    // about 50.9% for a deck truly at 48.5%, with nothing anywhere disclosing
+    // that the figures are estimates.
+    listGuides.mockResolvedValue([
+      { id: 'g1', axis: 'x', pos: 0, offsetMm: 0 },
+      { id: 'g2', axis: 'x', pos: 1, offsetMm: 0 },
+      { id: 'g3', axis: 'y', pos: 0, offsetMm: 0 },
+      { id: 'g4', axis: 'y', pos: 1, offsetMm: 0 },
+    ])
+    syncCells.mockResolvedValue(undefined)
+    render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+    await screen.findByTestId('canvas')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Sinh lưới ô' }))
+    expect(await screen.findByText(/không phải đo thật/)).toBeInTheDocument()
+
+    // Now type the real spans, exactly as the admin would after reading them off
+    // the drawing. Row 1 of each axis is the datum ("gốc"), so each guide table
+    // holds precisely one span input.
+    const spanIn = (title: string) => {
+      const table = screen.getByText(title).closest('.ant-table-wrapper') as HTMLElement
+      return within(table).getByRole('spinbutton')
+    }
+    await userEvent.clear(spanIn('Guide dọc (cột)'))
+    await userEvent.type(spanIn('Guide dọc (cột)'), '14500')
+    await userEvent.clear(spanIn('Guide ngang (hàng)'))
+    await userEvent.type(spanIn('Guide ngang (hàng)'), '16000')
+
+    // The banner must NOT go away: it describes the cells on screen, which are
+    // still pro-rated estimates. It disappearing here is what made the defect
+    // invisible -- the guides now read as measured while the cells are not.
+    await waitFor(() => expect(screen.getByDisplayValue('16000')).toBeInTheDocument())
+    expect(screen.getByText(/không phải đo thật/)).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Lưu bản vẽ và lưới ô' }))
+
+    await waitFor(() => expect(syncCells).toHaveBeenCalledTimes(1))
+    // The label and the areas agree: pro-rated cells, recorded as pro-rated.
+    // 5258.5 m² is the whole declared deck in one bay, not the 232 m² the typed
+    // spans would have measured.
+    expect(syncCells.mock.calls[0][1]).toEqual([
+      { code: 'R1C1', x: 0, y: 0, w: 1, h: 1, areaM2: 5258.5 },
+    ])
+    expect(updateDeckArea).toHaveBeenCalledWith('d1', 5258.5, 'prorated')
+  })
+
+  it('keeps measured provenance when the mm-bearing guide is deleted after the mesh was built', async () => {
+    // A1, backwards, and the direction a state flag can get wrong on its own.
+    // The cells were measured off real spans; deleting the guide that carried
+    // the millimetres makes the guide table read as having none, but the areas
+    // already computed are still measurements. Re-deriving from the table would
+    // relabel 232 m² of measured bay as an estimate.
+    listGuides.mockResolvedValue(ONE_BAY_GUIDES)
+    syncCells.mockResolvedValue(undefined)
+    render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+    await screen.findByTestId('canvas')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Sinh lưới ô' }))
+    expect(await screen.findByText('232,00')).toBeInTheDocument()
+    expect(screen.queryByText(/không phải đo thật/)).toBeNull()
+
+    // Drop the x-guide carrying 14500 mm.
+    const xTable = screen.getByText('Guide dọc (cột)').closest('.ant-table-wrapper') as HTMLElement
+    await userEvent.click(within(xTable).getAllByRole('button', { name: 'Xoá' })[1])
+    expect(screen.queryByText('14.500')).toBeNull()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Lưu bản vẽ và lưới ô' }))
+
+    await waitFor(() => expect(syncCells).toHaveBeenCalledTimes(1))
+    expect(syncCells.mock.calls[0][1]).toEqual([
+      { code: 'R1C1', x: 0, y: 0, w: 1, h: 1, areaM2: 232 },
+    ])
+    expect(updateDeckArea).toHaveBeenCalledWith('d1', 5258.5, 'guides')
+    // Still no prorate banner: nothing about the cells changed.
+    expect(screen.queryByText(/không phải đo thật/)).toBeNull()
+  })
+
+  it('warns that a deck with no declared area reports 0% forever, and refuses to save', async () => {
+    // A2. total_area_m2 is `not null default 0` and createDeck never sets it, so
+    // this is the state every deck starts in. areaDivergence returns 0 for a
+    // zero total (to avoid dividing by zero), which reads as "no divergence" --
+    // so the divergence banner cannot cover this, and computeDeckProgress gives
+    // every stage ratio 0 while computeProjectProgress gives the deck weight 0.
+    // A fully authored, fully painted deck reports 0% and contributes nothing.
+    const undeclared = { ...deck, totalAreaM2: 0 }
+    listCells.mockResolvedValue([
+      { id: 'c1', code: 'R1C1', x: 0, y: 0, w: 1, h: 1, areaM2: 232, stageId: null },
+    ])
+    syncCells.mockResolvedValue(undefined)
+    render(<DeckEditor deck={undeclared} onClose={vi.fn()} />)
+
+    expect(await screen.findByText(/Chưa khai báo diện tích sàn/)).toBeInTheDocument()
+    expect(screen.getByText(/sẽ luôn là 0%/)).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Lưu bản vẽ và lưới ô' }))
+
+    expect(await screen.findByText(/Không lưu được: chưa khai báo diện tích sàn/)).toBeInTheDocument()
+    expect(syncCells).not.toHaveBeenCalled()
+    // Refused before it even read the persisted cells: only the initial load's
+    // call happened.
+    expect(listCells).toHaveBeenCalledTimes(1)
+
+    // And it is the area that is blocking, not the button: declare one and the
+    // same click goes through. Without this the refusal could be a dead save
+    // path and the test would not notice.
+    const areaInput = screen.getByRole('spinbutton')
+    await userEvent.clear(areaInput)
+    await userEvent.type(areaInput, '5258,5')
+    await waitFor(() => expect(screen.queryByText(/Chưa khai báo diện tích sàn/)).toBeNull())
+    await userEvent.click(screen.getByRole('button', { name: 'Lưu bản vẽ và lưới ô' }))
+    await waitFor(() => expect(syncCells).toHaveBeenCalledTimes(1))
+  })
+
+  it('discloses a cell that grows out of a zero area, where a relative test sees no change', async () => {
+    // A2's second half, and the worst case the reshape disclosure has. A deck
+    // meshed before its area was declared holds cells at 0 m²; a GS can tick
+    // them anyway. The admin then declares the real area and re-meshes, and
+    // every cell jumps from 0 to hundreds of m² with its stage intact -- an
+    // infinite relative change, which any ratio test reads as no change at all,
+    // so the section rendered empty in exactly the case it exists for.
+    listGuides.mockResolvedValue(ONE_BAY_GUIDES)
+    listCells.mockResolvedValue([
+      { id: 'c1', code: 'R1C1', x: 0, y: 0, w: 1, h: 1, areaM2: 0, stageId: 'coat2' },
+    ])
+    listStages.mockResolvedValue([
+      { id: 'coat2', seq: 2, name: 'Coat 2', color: '#faad14', weight: 0.2 },
+    ])
+    render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+    await screen.findByTestId('canvas')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Sinh lưới ô' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Lưu bản vẽ và lưới ô' }))
+
+    expect(await screen.findByText(listItem('R1C1 — Coat 2: 0,00 → 232,00 m²'))).toBeInTheDocument()
+    expect(screen.getByText(/Các ô này giữ tiến độ đã ghi nhưng diện tích thay đổi/)).toBeInTheDocument()
+    expect(syncCells).not.toHaveBeenCalled()
+  })
+
+  it('does not claim the merge survivor leaves its zone', async () => {
+    // A4. syncCells matches by code, so the survivor's code is in the new set:
+    // its row is updated in place and it keeps its id and its zone_cells rows.
+    // Passing it to zoneImpactOf made the gate announce "Zone 1: R1C1" and stop
+    // the most common authoring operation there is behind a dialog about
+    // something that does not happen -- and a disclosure dialog that cries wolf
+    // is one the admin learns to skim.
+    listCells.mockResolvedValue([
+      { id: 'c1', code: 'R1C1', x: 0, y: 0, w: 0.5, h: 1, areaM2: 100, stageId: null },
+      { id: 'c2', code: 'R1C2', x: 0.5, y: 0, w: 0.5, h: 1, areaM2: 100, stageId: null },
+    ])
+    // Zoned like the reviewer's probe: the survivor is in Zone 1 and the source
+    // is in nothing. The mock answers by id, so asking about the survivor really
+    // does come back with a zone -- excluding it has to be the caller's job.
+    zoneImpactOf.mockImplementation((_deckId: string, ids: string[]) =>
+      Promise.resolve(
+        ids.includes('c1') ? [{ zoneId: 'z1', zoneName: 'Zone 1', cellCodes: ['R1C1'] }] : [],
+      ),
+    )
+    syncCells.mockResolvedValue(undefined)
+    render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+    await screen.findByTestId('canvas')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Chọn tất cả' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Gộp ô đã chọn' }))
+
+    // Applied straight through: nothing is at stake, so there is nothing to say.
+    await waitFor(() => expect(syncCells).toHaveBeenCalledTimes(1))
+    expect(zoneImpactOf).toHaveBeenCalledWith('d1', ['c2'])
+    expect(screen.queryByText('Thao tác này ảnh hưởng đến zone')).toBeNull()
+    expect(screen.queryByText(/Zone 1/)).toBeNull()
+  })
+
+  it('confirms wiping every cell even when no progress and no zone is at stake', async () => {
+    // A5. The gate only opened when some disclosure list was non-empty, so on a
+    // deck with no progress and no zones "Chọn tất cả" then "Xoá ô đã chọn"
+    // deleted every row immediately. Wiping a deck's geometry is categorically
+    // different from editing it.
+    listCells.mockResolvedValue([
+      { id: 'c1', code: 'R1C1', x: 0, y: 0, w: 0.5, h: 1, areaM2: 2629.25, stageId: null },
+      { id: 'c2', code: 'R1C2', x: 0.5, y: 0, w: 0.5, h: 1, areaM2: 2629.25, stageId: null },
+    ])
+    render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+    await screen.findByTestId('canvas')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Chọn tất cả' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Xoá ô đã chọn' }))
+
+    expect(await screen.findByText('Xoá toàn bộ lưới ô của sàn')).toBeInTheDocument()
+    // The count, so the admin can tell a two-cell mistake from the whole deck.
+    expect(screen.getByText(/2 ô hiện có sẽ bị xoá/)).toBeInTheDocument()
+    expect(syncCells).not.toHaveBeenCalled()
+
+    syncCells.mockResolvedValue(undefined)
+    await userEvent.click(screen.getByRole('button', { name: 'Vẫn xoá' }))
+    await waitFor(() => expect(syncCells).toHaveBeenCalledTimes(1))
+    expect(syncCells.mock.calls[0][1]).toEqual([])
+  })
+
+  it('does not accuse a deck with no cells yet of losing any', async () => {
+    // The other side of the wipe confirmation. Saving guides and an area before
+    // the mesh exists is ordinary work, and there is nothing to destroy, so a
+    // dialog announcing that zero cells will be removed would be pure noise --
+    // and noise is what makes the real one skimmable.
+    listGuides.mockResolvedValue(ONE_BAY_GUIDES)
+    syncCells.mockResolvedValue(undefined)
+    render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+    await screen.findByTestId('canvas')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Lưu bản vẽ và lưới ô' }))
+
+    await waitFor(() => expect(syncCells).toHaveBeenCalledTimes(1))
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(syncCells.mock.calls[0][1]).toEqual([])
+  })
+
+  it('refuses to save when the last load failed', async () => {
+    // A5's other half. load() fetches with Promise.all, so one transient failure
+    // -- likely enough on a site tether -- leaves `cells` at [] behind the error
+    // Alert. Saving from there ran the mesh path with an empty set and wiped the
+    // deck's whole geometry, with no dialog at all: `persisted` is read fresh
+    // inside reviewEdit, so the disclosures were computed correctly and then
+    // applied to a cell set that came from a failed read.
+    listCells.mockRejectedValue(new Error('Failed to fetch'))
+    render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+    await screen.findByText('Failed to fetch')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Lưu bản vẽ và lưới ô' }))
+
+    expect(await screen.findByText(/lần tải dữ liệu gần nhất thất bại/)).toBeInTheDocument()
+    expect(syncCells).not.toHaveBeenCalled()
+    expect(saveGuides).not.toHaveBeenCalled()
+    expect(updateDeckArea).not.toHaveBeenCalled()
+    // Refused before reading anything: only the failed load's call happened.
+    expect(listCells).toHaveBeenCalledTimes(1)
+  })
+
+  it('clamps a guide dragged past its neighbour instead of inverting the mm chain', async () => {
+    // A6. A drag moves `pos` and leaves `offsetMm`, and every area is computed
+    // from the offsets in POS order -- so once the two orders disagree,
+    // spansFromOffsets yields a negative span and deriveCellArea's Math.abs
+    // renders it as a perfectly ordinary bay.
+    //
+    // Three bays of 10000, 40000 and 10000 mm across a 10000 mm depth: 600 m².
+    // Drag the 10000 mm guide (index 1, pos 0.5) past the one at pos 0.8 and,
+    // unclamped, the pos-ordered offsets become 0, 50000, 10000, 60000 -- spans
+    // 50000, -40000, 50000, which compute to 500 + 400 + 500 = 1400 m². Not a
+    // relabelling: a different, plausible, 133%-too-large deck.
+    listGuides.mockResolvedValue([
+      { id: 'g1', axis: 'x', pos: 0, offsetMm: 0 },
+      { id: 'g2', axis: 'x', pos: 0.5, offsetMm: 10000 },
+      { id: 'g3', axis: 'x', pos: 0.8, offsetMm: 50000 },
+      { id: 'g4', axis: 'x', pos: 1, offsetMm: 60000 },
+      { id: 'g5', axis: 'y', pos: 0, offsetMm: 0 },
+      { id: 'g6', axis: 'y', pos: 1, offsetMm: 10000 },
+    ])
+    render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+    await screen.findByTestId('canvas')
+
+    await userEvent.click(screen.getByRole('button', { name: 'kéo guide 1' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Sinh lưới ô' }))
+
+    expect(await screen.findByTestId('canvas')).toHaveTextContent('R1C1,R1C2,R1C3')
+    expect(screen.getByText('600,00')).toBeInTheDocument()
+    expect(screen.queryByText('1.400,00')).toBeNull()
+    // No negative span reaches the guide table's min={0} InputNumber either.
+    expect(screen.getByDisplayValue('40000')).toBeInTheDocument()
+    expect(screen.queryByDisplayValue('-40000')).toBeNull()
+  })
+
+  it('re-reads the cells from the database when the sync fails', async () => {
+    // A10. syncCells is three round trips with no transaction: the upsert widens
+    // the survivor, then the delete fails. setCells(next) never runs, so the
+    // screen kept showing the pre-merge mesh while the database held the widened
+    // R1C1 AND R1C2, overlapping and double-counting. Re-reading does not close
+    // the atomicity gap -- that needs an RPC -- but it stops the screen
+    // disagreeing with the database, so the overlap shows up in the Σ and in the
+    // divergence banner instead of hiding behind stale state.
+    const before = [
+      { id: 'c1', code: 'R1C1', x: 0, y: 0, w: 0.5, h: 1, areaM2: 100, stageId: null },
+      { id: 'c2', code: 'R1C2', x: 0.5, y: 0, w: 0.5, h: 1, areaM2: 100, stageId: null },
+    ]
+    // Call 1 is the initial load, call 2 is reviewEdit's own snapshot, call 3 is
+    // the re-read after the failure -- and it returns what half-applying the
+    // merge actually leaves behind: a widened R1C1 with R1C2 still there.
+    listCells
+      .mockResolvedValueOnce(before)
+      .mockResolvedValueOnce(before)
+      .mockResolvedValue([
+        { ...before[0], w: 1, areaM2: 200 },
+        before[1],
+      ])
+    syncCells.mockRejectedValue(new Error('delete blocked'))
+    render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+    await screen.findByTestId('canvas')
+    expect(screen.getByText('200,00')).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Chọn tất cả' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Gộp ô đã chọn' }))
+
+    expect(await screen.findByText('delete blocked')).toBeInTheDocument()
+    // 300 m², what the database holds: the widened survivor plus the source the
+    // delete failed to remove. The stale screen said 200.
+    await waitFor(() => expect(screen.getByText('300,00')).toBeInTheDocument())
+    expect(screen.queryByText('200,00')).toBeNull()
+    expect(listCells).toHaveBeenCalledTimes(3)
   })
 
   it('surfaces an infrastructure error unchanged rather than swallowing it', async () => {

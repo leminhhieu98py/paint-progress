@@ -3,9 +3,9 @@ import {
 } from 'antd'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
-  AREA_DIVERGENCE_THRESHOLD, areaDivergence, buildMeshFromGuides,
-  divergesBeyondThreshold, mergeCells, offsetsFromSpans, prorateCellAreas,
-  spansFromOffsets,
+  AREA_DIVERGENCE_THRESHOLD, areaDivergence, buildMeshFromGuides, cellReshaped,
+  divergesBeyondThreshold, hasUndeclaredArea, mergeCells, moveGuideClamped,
+  offsetsFromSpans, prorateCellAreas, spansFromOffsets,
 } from '../../domain/geometry'
 import type { Guide, MeshCell, Stage } from '../../domain/types'
 import {
@@ -37,11 +37,22 @@ interface PendingEdit {
   /**
    * Cells whose code survives this edit, and whose recorded stage therefore
    * survives with it, but whose area moves by more than
-   * AREA_DIVERGENCE_THRESHOLD -- so the stage's "completed" area quietly
+   * CELL_RESHAPE_THRESHOLD -- so the stage's "completed" area quietly
    * grows or shrinks onto a different extent than whoever ticked it signed
    * off on.
    */
   reshaped: { code: string; stageName: string; fromAreaM2: number; toAreaM2: number }[]
+  /**
+   * How many persisted cells this edit removes when it leaves the deck with no
+   * cells at all. Zero unless the result set is empty.
+   *
+   * Wiping a deck's whole geometry is categorically different from editing it,
+   * and it is reachable without any of the disclosures above ever firing: a deck
+   * with no progress and no zones has nothing for them to report, so "Chọn tất
+   * cả" then "Xoá ô đã chọn" used to delete every row with no confirmation at
+   * all.
+   */
+  wipes: number
 }
 
 /**
@@ -87,9 +98,32 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
   const [selected, setSelected] = useState<string[]>([])
   const [imageUrl, setImageUrl] = useState<string | null>(null)
   const [totalArea, setTotalArea] = useState(deck.totalAreaM2)
+  /**
+   * Where the areas currently in `cells` came from -- measured off the guide
+   * chain, or pro-rated from the deck total by pixel share.
+   *
+   * Provenance of the cell set, carried WITH the cell set, decided in
+   * generateMesh where the choice is actually made and initialised from the
+   * persisted value on load. It used to be re-derived from `hasRealSpans` at
+   * save time, which put the areas and their label on different clocks:
+   * generate a mesh before typing the mm spans (pro-rated areas), then type
+   * them, then save, and the deck recorded `area_source: 'guides'` over cells
+   * that were pixel estimates. Pro-rated areas sum to total_area_m2 exactly, so
+   * the divergence banner -- the only guard against precisely this -- can never
+   * fire, and Phase 4's report has no reason to disclose that its figures are
+   * estimates. On Main Deck that reads 50.9% for a deck truly at 48.5%.
+   */
+  const [areaSource, setAreaSource] = useState<'guides' | 'prorated'>(deck.areaSource)
   const [pending, setPending] = useState<PendingEdit | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  /**
+   * Whether the last load left this screen holding an incomplete picture of the
+   * deck. `load` fetches with Promise.all, so any one failure -- likely enough
+   * on a site tether -- leaves `cells` at [] behind the error Alert, and saving
+   * from there would write that empty set over the deck's real geometry.
+   */
+  const [loadFailed, setLoadFailed] = useState(false)
 
   const load = useCallback(async () => {
     try {
@@ -102,8 +136,10 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
       setGuides(g.map(({ axis, pos, offsetMm }) => ({ axis, pos, offsetMm })))
       setCells(c.map(({ code, x, y, w, h, areaM2 }) => ({ code, x, y, w, h, areaM2 })))
       if (deck.imagePath) setImageUrl(await getDrawingUrl(deck.imagePath))
+      setLoadFailed(false)
       setError(null)
     } catch (e) {
+      setLoadFailed(true)
       setError((e as Error).message)
     }
   }, [deck.id, deck.imagePath, deck.projectId])
@@ -118,6 +154,7 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
   // "lệch 100,0%" banner on every deck the admin has not drawn a mesh on yet.
   const diverges = cells.length > 0 && divergesBeyondThreshold(totalArea, cells)
   const divergence = areaDivergence(totalArea, cells)
+  const undeclaredArea = hasUndeclaredArea(totalArea, cells)
 
   /** Guides on one axis, sorted, with the span to the previous one. */
   const axisRows = (axis: 'x' | 'y'): AxisRow[] => {
@@ -153,6 +190,11 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
    * one axis only still measures every cell at 0 m² -- and recording that as
    * area_source: 'guides' would present those zeroes as measured fact. A
    * half-filled chain belongs in the prorate fallback.
+   *
+   * Read ONLY by generateMesh. This is a fact about the guide table right now,
+   * not about the cells currently held, so nothing on a save path may consult
+   * it: the guides can change after a mesh is generated, and the areas already
+   * computed do not change with them.
    */
   const hasRealSpans = useMemo(() => {
     const typed = (axis: 'x' | 'y') => guides.some((g) => g.axis === axis && g.offsetMm > 0)
@@ -170,7 +212,11 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
       setError('Cần ít nhất 2 đường guide dọc và 2 đường guide ngang để sinh lưới.')
       return
     }
-    setCells(hasRealSpans ? mesh : prorateCellAreas(totalArea, mesh))
+    // The areas and their provenance are set in the same statement, from the
+    // same condition. That is the whole point: they cannot drift apart later.
+    const measured = hasRealSpans
+    setCells(measured ? mesh : prorateCellAreas(totalArea, mesh))
+    setAreaSource(measured ? 'guides' : 'prorated')
     setSelected([])
     setError(null)
   }
@@ -217,6 +263,10 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
    * persisted ones is what turns "this cell has no id yet" into "this cell is
    * about to take a zoned, ticked cell's place", which is the whole disclosure.
    * Saving a mesh without coming through here would bypass it silently.
+   *
+   * It is also where the two refusals live. Everything else here discloses and
+   * lets the admin decide, because the admin knows things this screen does not;
+   * these two are cases where no answer they could give makes the write correct.
    */
   const reviewEdit = async (
     kind: EditKind,
@@ -225,23 +275,47 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
   ) => {
     setError(null)
     const inheritFrom = opts.inheritFrom ?? {}
+
+    // Saving state that is known to be incomplete cannot be right, whatever the
+    // admin decides, so this is a refusal and not a disclosure.
+    if (loadFailed) {
+      setError(
+        'Không lưu được: lần tải dữ liệu gần nhất thất bại nên lưới ô trên màn hình có thể '
+        + 'chưa đầy đủ. Đóng và mở lại sàn này để tải lại dữ liệu trước khi lưu.',
+      )
+      return
+    }
+    // Cells against a zero total: every ratio divides by total_area_m2, so this
+    // write cannot produce a correct number no matter what else is right.
+    // Judged on `next`, not on what is currently on screen -- clearing the cell
+    // set is a legitimate way out of this state.
+    if (hasUndeclaredArea(totalArea, next)) {
+      setError('Không lưu được: chưa khai báo diện tích sàn. Nhập diện tích sàn (m²) trước khi lưu.')
+      return
+    }
+
     try {
       const persisted = await listCells(deck.id)
       // What this edit takes away. A delete or a merge takes the selection; a
       // regenerated mesh has no selection, so it takes every persisted cell
       // whose code the new mesh no longer contains.
+      //
+      // A merge's survivor is NOT taken away: its code is in nextCodes, so
+      // syncCells updates its row in place and it keeps its id, its zone_cells
+      // links and its recorded stage. Excluding it here is what stops the gate
+      // announcing "Zone 1: R1C1" -- and so crying wolf on the most common
+      // authoring operation there is -- over a cell that never leaves its zone.
       const nextCodes = new Set(next.map((c) => c.code))
       const touched = kind === 'mesh'
         ? persisted.filter((p) => !nextCodes.has(p.code))
-        : persisted.filter((p) => selected.includes(p.code))
+        : persisted.filter((p) => selected.includes(p.code) && p.code !== opts.survivor)
       const impact = await zoneImpactOf(deck.id, touched.map((p) => p.id))
 
       // Which of the touched cells carry recorded progress that this edit
       // discards. For a delete or a mesh save that is all of them; for a merge
-      // it is every source except the survivor, whose row syncCells updates in
-      // place and whose stage therefore survives untouched.
+      // the survivor is already out of `touched`, for the same reason.
       const progressLoss = touched
-        .filter((p) => p.stageId && p.code !== opts.survivor)
+        .filter((p) => p.stageId)
         .map((p) => ({
           code: p.code,
           stageName: stages.find((s) => s.id === p.stageId)?.name ?? 'không rõ',
@@ -249,14 +323,14 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
 
       // Cells whose code survives this edit -- so their recorded stage
       // survives with it, untouched by syncCells -- but whose area moves by
-      // more than AREA_DIVERGENCE_THRESHOLD. That stage's "completed" area
+      // more than CELL_RESHAPE_THRESHOLD. That stage's "completed" area
       // then quietly covers a different extent than whoever ticked it
       // inspected, with no other signal that it happened.
       const reshaped = persisted
         .filter((p) => p.stageId && nextCodes.has(p.code))
         .flatMap((p) => {
           const match = next.find((n) => n.code === p.code)
-          if (!match || !divergesBeyondThreshold(p.areaM2, [{ areaM2: match.areaM2 }])) return []
+          if (!match || !cellReshaped(p.areaM2, match.areaM2)) return []
           return [{
             code: p.code,
             stageName: stages.find((s) => s.id === p.stageId)?.name ?? 'không rõ',
@@ -265,8 +339,14 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
           }]
         })
 
-      if (impact.length > 0 || progressLoss.length > 0 || reshaped.length > 0) {
-        setPending({ kind, cells: next, impact, inheritFrom, progressLoss, reshaped })
+      // Leaving the deck with no cells at all. Counted from the persisted set,
+      // so a deck that has no cells yet is not accused of losing any -- saving
+      // guides and an area before the mesh exists is ordinary work, and a
+      // dialog announcing "0 cells will be removed" would be noise.
+      const wipes = next.length === 0 ? persisted.length : 0
+
+      if (impact.length > 0 || progressLoss.length > 0 || reshaped.length > 0 || wipes > 0) {
+        setPending({ kind, cells: next, impact, inheritFrom, progressLoss, reshaped, wipes })
         return
       }
       await apply(next, inheritFrom)
@@ -275,9 +355,25 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
     }
   }
 
+  /**
+   * The one write. Guides, the deck area with its provenance, and the cell set
+   * all go down together.
+   *
+   * They were two buttons, and that window was the defect: `cells.area_m2`,
+   * `decks.total_area_m2` and `decks.area_source` have to agree with each other,
+   * and two independent saves cannot guarantee that -- whichever one the admin
+   * clicks second describes cells the other one wrote.
+   *
+   * Order is chosen for the half-failed case. `updateDeckArea` goes before
+   * `syncCells`, so if the run stops in between, the deck is labelled for cells
+   * it does not yet hold (under-claiming accuracy, harmless) rather than holding
+   * pro-rated estimates labelled as measured (the defect itself).
+   */
   const apply = async (next: MeshCell[], inheritFrom: Record<string, string[]> = {}) => {
     setBusy(true)
     try {
+      await saveGuides(deck.id, guides)
+      await updateDeckArea(deck.id, totalArea, areaSource)
       await syncCells(deck.id, next, inheritFrom)
       setCells(next)
       setSelected([])
@@ -285,19 +381,26 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
       setError(null)
     } catch (e) {
       setError((e as Error).message)
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  const persistGuidesAndArea = async () => {
-    setBusy(true)
-    try {
-      await saveGuides(deck.id, guides)
-      await updateDeckArea(deck.id, totalArea, hasRealSpans ? 'guides' : 'prorated')
-      setError(null)
-    } catch (e) {
-      setError((e as Error).message)
+      setPending(null)
+      // syncCells is three round trips with no transaction, so a failure can
+      // leave the database holding part of the edit: a merge whose upsert
+      // widened the survivor and whose delete then failed holds the widened
+      // cell AND its source, overlapping, double-counting about 5% of the deck.
+      // Re-reading is the cheap half of the fix -- it removes the "screen shows
+      // something the database does not hold" half, and makes the remaining
+      // overlap visible through the divergence banner instead of hidden behind
+      // stale state. THE ATOMICITY GAP IS STILL OPEN: closing it needs a
+      // transactional RPC, which is Phase 3 work. Only the cells are re-read,
+      // not the guides -- reloading those would throw away the mm chain the
+      // admin has typed and not yet managed to save.
+      try {
+        const fresh = await listCells(deck.id)
+        setCells(fresh.map(({ code, x, y, w, h, areaM2 }) => ({ code, x, y, w, h, areaM2 })))
+      } catch {
+        // Now the screen matches neither the database nor a successful read.
+        // Refuse the next save rather than let it write this over the deck.
+        setLoadFailed(true)
+      }
     } finally {
       setBusy(false)
     }
@@ -352,6 +455,22 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
     <Space direction="vertical" style={{ width: '100%' }} size="middle">
       {error && <Alert type="error" message={error} closable onClose={() => setError(null)} />}
 
+      {/*
+        Error level, not warning, and not closable: this is not a discrepancy to
+        weigh up, it is a deck whose every reported percentage is guaranteed to
+        be 0 until the field above it is filled in. The divergence banner cannot
+        cover it -- areaDivergence returns 0 for a zero total to avoid dividing
+        by zero, which reads as "no divergence" -- and computeProjectProgress
+        gives such a deck weight 0, so it also contributes nothing to the project
+        rollup. Silently, and permanently.
+      */}
+      {undeclaredArea && (
+        <Alert
+          type="error"
+          message="Chưa khai báo diện tích sàn. Tiến độ của sàn này sẽ luôn là 0% cho tới khi nhập diện tích."
+        />
+      )}
+
       {diverges && (
         <Alert
           type="warning"
@@ -364,7 +483,13 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
         />
       )}
 
-      {!hasRealSpans && cells.length > 0 && (
+      {/*
+        Keyed on the provenance of the cells actually held, not on whether the
+        guide table happens to carry mm right now. Those differ exactly when the
+        defect this banner warns about is live: pro-rated cells on screen while
+        the guides have since been given real spans.
+      */}
+      {areaSource === 'prorated' && cells.length > 0 && (
         <Alert
           type="info"
           message="Diện tích ô đang được chia theo tỉ lệ, không phải đo thật"
@@ -403,21 +528,17 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
         <Button disabled={selected.length < 2} onClick={() => void beginEdit('merge')}>
           Gộp ô đã chọn
         </Button>
-        <Button type="primary" loading={busy} onClick={() => void persistGuidesAndArea()}>
-          Lưu guide và diện tích
-        </Button>
         {/*
-          Two save buttons, deliberately. Guides and the deck area are one
-          decision; replacing the persisted cell set is another, and it can drop
-          a zoned or ticked cell, so it goes through reviewEdit's gate. Folding
-          it into "Lưu guide và diện tích" would bypass that disclosure -- and
-          leaving it out entirely (as this screen originally did) means a deck
-          needing no delete and no merge can never save its cells at all, while
-          the guide offsets and area_source it saves next to them move on
-          without them.
+          One save button. There were two -- guides-and-area, and the cell set --
+          on the reasoning that replacing the cell set is a separate decision
+          needing its own gate. That reasoning was wrong, and this button is the
+          correction: the invariant that matters is that cells.area_m2,
+          total_area_m2 and area_source agree with each other, and two
+          independent saves cannot hold it. Both now go through reviewEdit, so
+          the gate is not lost. See `apply` for the write order.
         */}
         <Button type="primary" loading={busy} onClick={() => void reviewEdit('mesh', cells)}>
-          Lưu lưới ô
+          Lưu bản vẽ và lưới ô
         </Button>
         <Button onClick={onClose}>Đóng</Button>
       </Space>
@@ -430,9 +551,11 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
           guides={guides}
           cells={cells}
           selectedCodes={selected}
-          onGuideMove={(index, pos) =>
-            setGuides((prev) => prev.map((g, i) => (i === index ? { ...g, pos } : g)))
-          }
+          // Clamped, never applied raw: a drag moves `pos` and leaves the mm
+          // chain alone, so a guide dragged past its neighbour puts pos-order
+          // and offset-order in disagreement -- and every area is computed from
+          // the offsets in pos-order. See moveGuideClamped for what that costs.
+          onGuideMove={(index, pos) => setGuides((prev) => moveGuideClamped(prev, index, pos))}
           onGuideAdd={(axis, pos) => setGuides((prev) => [...prev, { axis, pos, offsetMm: 0 }])}
           onCellClick={(code, additive) =>
             setSelected((prev) =>
@@ -472,7 +595,13 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
           pending &&
           (pending.impact.length > 0
             ? 'Thao tác này ảnh hưởng đến zone'
-            : 'Xác nhận thay đổi lưới ô')
+            // Zone impact still wins the title when both apply: it is the one
+            // that reaches outside this deck's geometry into a zone's plan. The
+            // wipe still gets its own sentence below either way -- every claim
+            // in this dialog is owned by the section that renders it.
+            : pending.wipes > 0
+              ? 'Xoá toàn bộ lưới ô của sàn'
+              : 'Xác nhận thay đổi lưới ô')
         }
         okText={pending ? EDIT_CONFIRM[pending.kind] : undefined}
         cancelText="Huỷ"
@@ -483,6 +612,13 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
         <Typography.Paragraph>
           Kiểm tra các mục dưới đây trước khi xác nhận.
         </Typography.Paragraph>
+
+        {pending && pending.wipes > 0 && (
+          <Typography.Paragraph strong>
+            Sau thao tác này sàn sẽ không còn ô nào: {pending.wipes} ô hiện có sẽ bị
+            xoá khỏi cơ sở dữ liệu. Muốn kẻ lại lưới thì phải sinh lưới ô mới.
+          </Typography.Paragraph>
+        )}
 
         {pending && pending.impact.length > 0 && (
           <>
