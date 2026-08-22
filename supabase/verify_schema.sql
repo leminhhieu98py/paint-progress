@@ -19,7 +19,8 @@
 --   2. A cell can be assigned a stage from its own project, and doing so
 --      logs exactly one cell_events row (cells_log_stage_change).
 --   3. cells_set_audit_columns stamps updated_at when a cell's stage changes.
---      (That it does NOT stamp on any other update is check 25, added by 0011.)
+--      (That it does NOT stamp on any other update is check 25, added by 0011;
+--      that a non-admin cannot supply one is check 28, added by 0013.)
 --   4. Re-setting the same stage is a no-op: it must not log a second event.
 --   5. The cell_events name snapshot (from 0005) is durable against a
 --      RENAME: renaming the stage of an already-recorded event must not
@@ -146,17 +147,37 @@
 --       halves are asserted because the catalog shape alone would still PASS if
 --       some later migration recreated the index in a way that broke the write.
 --
+-- Check 27 covers the OTHER stage write, with its own fixtures ('VERIFY E').
+--   27. A middle stage can be removed and the survivors renumbered past the seq
+--       it vacated -- the write the stage config panel issues on a removal, in
+--       the order saveStages issues it (delete, then upsert). Check 26 exercises
+--       a reorder, which shifts no seq into an occupied one, so it stayed green
+--       through a regression that made removing anything but the LAST stage fail
+--       outright. Also asserts the two consequences: a cell recorded at a
+--       surviving stage still points at that stage after its seq moves, and a
+--       cell recorded at the removed stage is nulled rather than cascaded away.
+--
+-- Check 28 is added by 0013, with its own fixtures ('VERIFY F').
+--   28. A non-admin cannot forge cells.updated_at or cells.updated_by, while a
+--       plain stage change is still accepted and still stamped. 0011 gave
+--       set_cell_audit_columns a stage-changed guard, which stopped a geometry
+--       save re-stamping every cell -- and as a side effect let a
+--       client-supplied updated_at survive, where pre-0011 it was always
+--       overwritten. 0006's non-admin guard did not list either column, so a GS
+--       could PATCH a forged date or a forged author onto a coat record.
+--
 -- How to run:
 --   nvm use 22
 --   npx supabase db query --linked -f supabase/verify_schema.sql
 --
--- Every returned row must begin with PASS (26 rows in total, one per
--- numbered check above, 1-26 with no gaps). A row beginning with FAIL means
+-- Every returned row must begin with PASS (28 rows in total, one per
+-- numbered check above, 1-28 with no gaps). A row beginning with FAIL means
 -- a regression in the trigger/FK/RLS behaviour set up across migrations
--- 0001-0012; re-read those migrations' comments before changing this file.
+-- 0001-0013; re-read those migrations' comments before changing this file.
 --
 -- WARNING: this script INSERTS and then DELETES test rows (projects named
--- 'VERIFY A' / 'VERIFY B' / 'VERIFY C' / 'VERIFY D' and everything cascading
+-- 'VERIFY A' / 'VERIFY B' / 'VERIFY C' / 'VERIFY D' / 'VERIFY E' / 'VERIFY F'
+-- and everything cascading
 -- from them). It is meant to run against a disposable or pre-production
 -- database only. Never run it against a database holding real project data.
 
@@ -501,14 +522,26 @@ end $$;
 --
 -- Its own fixtures, so it can be appended without renumbering checks 1-24.
 --
--- The stage-unchanged update here writes `updated_at` rather than a geometry
--- column, and that is deliberate: cells_assert_gs_stage_only (0006) rejects any
--- change to deck_id/code/x/y/w/h/area_m2 from a non-admin, and this script runs
--- as postgres with auth.uid() null, so is_admin() is false and a geometry write
--- would be refused before the audit trigger ever ran. `updated_at` is not in
--- that guard's list, is stage-unchanged exactly like a geometry save, and has
--- the property this check needs: a client-supplied sentinel that the old trigger
--- would overwrite and the fixed one must leave alone.
+-- The sentinel is planted by the INSERT, and that is forced rather than
+-- preferred. This check needs a client-supplied updated_at that the old trigger
+-- would overwrite and the fixed one must leave alone, and a sentinel has to be
+-- used because the script runs inside one transaction: now() is the transaction
+-- timestamp, so a re-stamp would be indistinguishable from no stamp at all if
+-- the comparison were against now().
+--
+-- It used to plant that sentinel with `update cells set updated_at = sentinel`.
+-- Migration 0013 added updated_at and updated_by to
+-- cells_assert_gs_stage_only's rejected-column list, and this script runs as
+-- postgres with auth.uid() null -- so is_admin() is false and that UPDATE is now
+-- refused before the audit trigger ever runs, which would have turned this check
+-- FAIL on a perfectly correct schema. (That guard is also why the stage-unchanged
+-- update cannot write a geometry column: those have been on its list since 0006.)
+--
+-- What is left, and what is used here, is an update that changes no guarded
+-- column at all: setting stage_id to the value it already holds. It is a real
+-- UPDATE -- the row version is rewritten and every BEFORE/AFTER UPDATE trigger
+-- fires -- and it is stage-unchanged in exactly the sense set_cell_audit_columns
+-- tests, so it is the same case a geometry save presents to that trigger.
 --
 -- updated_by is not asserted. It is set from auth.uid() in the same `if` as
 -- updated_at, which is null in this session, so it cannot be observed to change
@@ -527,31 +560,37 @@ begin
       values (p, 1, 'Coat 1', '#fadb14', 1) returning id into s1;
     insert into project_stages (project_id, seq, name, color, weight)
       values (p, 2, 'Coat 2', '#bfbfbf', 0) returning id into s2;
-    insert into cells (deck_id, code, x, y, w, h, area_m2)
-      values (d, 'R1C1', 0, 0, 1, 1, 100) returning id into cid;
+    -- The sentinel and the recorded stage both go in with the row. Both
+    -- triggers involved here are UPDATE-only, so an INSERT keeps what is
+    -- supplied -- which is what makes 0013's new rejected columns irrelevant to
+    -- planting it.
+    insert into cells (deck_id, code, x, y, w, h, area_m2, stage_id, updated_at)
+      values (d, 'R1C1', 0, 0, 1, 1, 100, s1, sentinel) returning id into cid;
 
-    -- Real progress: this must stamp, and does (check 4 covers that directly).
+    -- Stage unchanged, twice: stage_id set to the value it already holds. A real
+    -- UPDATE -- the row version is rewritten and every trigger on the table
+    -- fires -- that changes no column the non-admin guard rejects, so it reaches
+    -- set_cell_audit_columns as exactly the case a geometry save presents. The
+    -- old trigger would have answered it by overwriting the sentinel with now().
+    -- Twice, because the second leaves updated_at at the value the row already
+    -- holds, as PostgREST's geometry-only UPDATE does, and must not disturb it
+    -- either.
     update cells set stage_id = s1 where id = cid;
-
-    -- Stage unchanged, twice. The first write plants the sentinel, and the old
-    -- trigger would already have overwritten it with now(). The second is the
-    -- closer analogue of a geometry save -- it leaves updated_at at the value
-    -- the row already holds, exactly as PostgREST's geometry-only UPDATE does --
-    -- and must not disturb it either.
-    update cells set updated_at = sentinel where id = cid;
-    update cells set updated_at = sentinel where id = cid;
+    update cells set stage_id = s1 where id = cid;
     select updated_at into after_geometry from cells where id = cid;
 
-    -- Progress again: the stamp must come back. Without this half, a trigger
-    -- body that skipped the stamp unconditionally would report PASS -- and the
-    -- audit trail would simply stop recording anything.
+    -- Real progress: the stamp must land. Without this half, a trigger body that
+    -- skipped the stamp unconditionally would report PASS -- and the audit trail
+    -- would simply stop recording anything. It is also what proves 0013's guard
+    -- does not block the trigger's own write: the guard runs first and sees an
+    -- updated_at the client did not touch, then the audit trigger stamps it.
     update cells set stage_id = s2 where id = cid;
     select updated_at into after_stage from cells where id = cid;
 
     delete from projects where id = p;
 
     return next format(
-      '%s audit columns follow progress only: after a stage-unchanged update %L (want %L), after a stage change %L (want a fresh stamp)',
+      '%s audit columns follow progress only: after a stage-unchanged update %L (want %L), after a stage change %L (want anything but the sentinel)',
       case when after_geometry = sentinel and after_stage <> sentinel
            then 'PASS' else 'FAIL' end,
       after_geometry, sentinel, after_stage);
@@ -631,6 +670,201 @@ begin
   end;
 end $$;
 
+-- Check 27: removing a middle stage and renumbering the survivors -- the write
+-- the stage config panel actually issues, and the one check 26 does not cover.
+--
+-- Its own fixtures ('VERIFY E'), so it can be appended without renumbering
+-- checks 1-26.
+--
+-- Check 26 exercises a reorder: two rows swapping seq inside one statement, which
+-- is why 0012 exists. A removal is a different write and it was broken in a
+-- different way. The panel renumbers the survivors 1..n, so removing anything but
+-- the LAST stage moves a survivor into a seq the row being removed still holds --
+-- and saveStages upserted the survivors before deleting the removed row, so the
+-- upsert put two rows at one seq and Postgres rejected it. Nothing was deleted,
+-- and only the last stage in a project could ever be removed. A green check 26
+-- said nothing about that, because a reorder shifts no seq into an occupied one.
+--
+-- What this asserts is the fixed write in the order saveStages now issues it:
+-- delete the removed id, then upsert the survivors with their new seqs, in the
+-- `insert ... on conflict (id) do update` shape PostgREST produces. Plus the two
+-- consequences that make it worth the round trip: a cell recorded at a SURVIVING
+-- stage still points at that stage (identity is the id, so its seq moving from 4
+-- to 3 does not move the cell), and a cell recorded at the REMOVED stage is
+-- nulled rather than cascaded away (cells.stage_id ... on delete set null, 0001)
+-- -- which is precisely what the panel's confirmation dialog promises.
+--
+-- What this deliberately does NOT do is reproduce the broken order. It cannot:
+-- this script runs as one transaction and 0012 defers the constraint to COMMIT,
+-- so an upsert followed by a delete inside a single transaction is accepted. The
+-- defect needed the upsert to commit on its own, which is what it did as a
+-- separate PostgREST round trip. The regression is pinned in
+-- src/lib/projectsApi.test.ts, against a stand-in that enforces the constraint
+-- per statement; this check pins that the fixed write is one the database
+-- actually accepts.
+create or replace function _verify_stage_removal() returns setof text language plpgsql as $$
+declare
+  p uuid; d uuid;
+  s1 uuid; s2 uuid; s3 uuid; s4 uuid; s5 uuid;
+  survivor_cell uuid; orphan_cell uuid;
+  write_ok boolean := false;
+  write_err text := 'none';
+  seqs text;
+  survivor_stage uuid; survivor_seq int; orphan_stage uuid;
+begin
+  begin
+    insert into projects (name, code) values ('VERIFY E','VERIFYE') returning id into p;
+    insert into decks (project_id, seq, name, code, total_area_m2)
+      values (p, 1, 'Deck', 'VE', 500) returning id into d;
+    -- The five-stage template a new project is seeded with, which is the shape
+    -- every real removal starts from.
+    insert into project_stages (project_id, seq, name, color, weight)
+      values (p, 1, 'Coat 1', '#fadb14', 0.2) returning id into s1;
+    insert into project_stages (project_id, seq, name, color, weight)
+      values (p, 2, 'Coat 2', '#bfbfbf', 0.2) returning id into s2;
+    insert into project_stages (project_id, seq, name, color, weight)
+      values (p, 3, 'Coat 3', '#52c41a', 0.2) returning id into s3;
+    insert into project_stages (project_id, seq, name, color, weight)
+      values (p, 4, 'Coat 4', '#1677ff', 0.2) returning id into s4;
+    insert into project_stages (project_id, seq, name, color, weight)
+      values (p, 5, 'Coat 5', '#722ed1', 0.2) returning id into s5;
+
+    -- One cell recorded at a stage that survives, one at the stage being
+    -- removed. Without both, the check could pass while doing the wrong thing to
+    -- either.
+    insert into cells (deck_id, code, x, y, w, h, area_m2, stage_id)
+      values (d, 'R1C1', 0, 0, 0.5, 1, 250, s4) returning id into survivor_cell;
+    insert into cells (deck_id, code, x, y, w, h, area_m2, stage_id)
+      values (d, 'R1C2', 0.5, 0, 0.5, 1, 250, s2) returning id into orphan_cell;
+
+    begin
+      -- The delete goes first: it frees seq 2 so the renumbering below has
+      -- somewhere to land. Reverse these two statements against a live PostgREST
+      -- and the upsert fails on its own commit -- see the comment above.
+      delete from project_stages where id = s2;
+
+      -- The survivors, renumbered 1..4, in the statement shape PostgREST builds
+      -- for an upsert keyed on the primary key.
+      insert into project_stages (id, project_id, seq, name, color, weight) values
+        (s1, p, 1, 'Coat 1', '#fadb14', 0.25),
+        (s3, p, 2, 'Coat 3', '#52c41a', 0.25),
+        (s4, p, 3, 'Coat 4', '#1677ff', 0.25),
+        (s5, p, 4, 'Coat 5', '#722ed1', 0.25)
+      on conflict (id) do update set
+        seq = excluded.seq, name = excluded.name,
+        color = excluded.color, weight = excluded.weight;
+      write_ok := true;
+    exception when others then
+      write_err := sqlerrm;
+    end;
+
+    select string_agg(seq::text || '=' || name, ', ' order by seq) into seqs
+    from project_stages where project_id = p;
+    select stage_id into survivor_stage from cells where id = survivor_cell;
+    select seq into survivor_seq from project_stages where id = survivor_stage;
+    select stage_id into orphan_stage from cells where id = orphan_cell;
+
+    delete from projects where id = p;
+
+    return next format(
+      '%s a middle stage can be removed and the survivors renumbered: write %s (%s), after: %s, cell at a surviving stage still on Coat 4 (now seq %s): %s, cell at the removed stage nulled: %s',
+      case when write_ok
+            and seqs = '1=Coat 1, 2=Coat 3, 3=Coat 4, 4=Coat 5'
+            and survivor_stage = s4
+            and survivor_seq = 3
+            and orphan_stage is null
+           then 'PASS' else 'FAIL' end,
+      write_ok, write_err, coalesce(seqs, 'none'),
+      coalesce(survivor_seq::text, 'gone'), survivor_stage = s4, orphan_stage is null);
+  exception when others then
+    return next 'FAIL a middle stage can be removed: ' || sqlerrm;
+  end;
+end $$;
+
+-- Check 28 (migration 0013): a non-admin cannot forge the progress audit
+-- columns, and the audit trigger still stamps them.
+--
+-- Its own fixtures ('VERIFY F'), so it can be appended without renumbering
+-- checks 1-27.
+--
+-- This script runs as postgres with auth.uid() null, so is_admin() is false and
+-- this session IS the non-admin case cells_assert_gs_stage_only exists for --
+-- the one place in this file where that is an advantage rather than the
+-- limitation the banner at the top describes.
+--
+-- Three halves, because each alone is satisfiable by a wrong guard. Rejecting a
+-- forged updated_at and a forged updated_by are what 0013 adds; accepting a plain
+-- stage change is what stops a guard that simply rejects everything from
+-- reporting PASS -- and that last one also carries the ordering claim in 0013's
+-- comment, since the audit trigger has to stamp updated_at on that accepted
+-- write despite this guard having inspected the same column moments earlier.
+-- Asserted on the message, not merely on "something was raised": a forged
+-- updated_by is also a foreign-key violation, so without matching the text this
+-- check would pass on a schema where 0013 was never applied.
+create or replace function _verify_gs_audit_guard() returns setof text language plpgsql as $$
+declare
+  p uuid; d uuid; s1 uuid; s2 uuid; cid uuid;
+  sentinel timestamptz := timestamptz '2000-01-01 00:00:00+00';
+  guard_msg text := 'only stage_id may be changed by a non-admin';
+  at_rejected boolean := false; at_err text := 'accepted';
+  by_rejected boolean := false; by_err text := 'accepted';
+  stage_ok boolean := false; stage_err text := 'none';
+  stamped timestamptz;
+begin
+  begin
+    insert into projects (name, code) values ('VERIFY F','VERIFYF') returning id into p;
+    insert into decks (project_id, seq, name, code, total_area_m2)
+      values (p, 1, 'Deck', 'VF', 100) returning id into d;
+    insert into project_stages (project_id, seq, name, color, weight)
+      values (p, 1, 'Coat 1', '#fadb14', 1) returning id into s1;
+    insert into project_stages (project_id, seq, name, color, weight)
+      values (p, 2, 'Coat 2', '#bfbfbf', 0) returning id into s2;
+    -- Recorded at Coat 1 with a sentinel timestamp, planted on the INSERT
+    -- because both triggers are UPDATE-only.
+    insert into cells (deck_id, code, x, y, w, h, area_m2, stage_id, updated_at)
+      values (d, 'R1C1', 0, 0, 1, 1, 100, s1, sentinel) returning id into cid;
+
+    -- A forged date, carried alongside a legitimate stage change -- the shape a
+    -- crafted PATCH would take, since a GS is allowed to move the stage.
+    begin
+      update cells set stage_id = s2, updated_at = timestamptz '2030-06-01 00:00:00+00'
+       where id = cid;
+    exception when others then
+      at_rejected := sqlerrm like '%' || guard_msg || '%';
+      at_err := sqlerrm;
+    end;
+
+    -- A forged author: attributing a coat to somebody who never recorded it.
+    begin
+      update cells set stage_id = s2, updated_by = gen_random_uuid() where id = cid;
+    exception when others then
+      by_rejected := sqlerrm like '%' || guard_msg || '%';
+      by_err := sqlerrm;
+    end;
+
+    -- What a GS is actually for, which must still work -- and must still be
+    -- stamped by set_cell_audit_columns afterwards.
+    begin
+      update cells set stage_id = s2 where id = cid;
+      stage_ok := true;
+    exception when others then
+      stage_err := sqlerrm;
+    end;
+    select updated_at into stamped from cells where id = cid;
+
+    delete from projects where id = p;
+
+    return next format(
+      '%s non-admin cannot forge the audit columns: updated_at rejected %s (%s), updated_by rejected %s (%s), plain stage change accepted %s (%s) and stamped off the sentinel %s',
+      case when at_rejected and by_rejected and stage_ok and stamped <> sentinel
+           then 'PASS' else 'FAIL' end,
+      at_rejected, at_err, by_rejected, by_err, stage_ok, stage_err,
+      stamped <> sentinel);
+  exception when others then
+    return next 'FAIL non-admin cannot forge the audit columns: ' || sqlerrm;
+  end;
+end $$;
+
 -- A single top-level SELECT: `supabase db query -f` surfaces only the last
 -- result set a multi-statement file produces, so the checks are combined
 -- here with UNION ALL rather than issued as separate SELECTs.
@@ -640,9 +874,15 @@ select * from _verify_rls()
 union all
 select * from _verify_audit_columns()
 union all
-select * from _verify_stage_seq_deferrable();
+select * from _verify_stage_seq_deferrable()
+union all
+select * from _verify_stage_removal()
+union all
+select * from _verify_gs_audit_guard();
 
 drop function _verify_triggers();
 drop function _verify_rls();
 drop function _verify_audit_columns();
 drop function _verify_stage_seq_deferrable();
+drop function _verify_stage_removal();
+drop function _verify_gs_audit_guard();
