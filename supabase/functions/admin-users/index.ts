@@ -178,11 +178,16 @@ Deno.serve(async (req) => {
         // value below so the stored secret and the real password can never
         // disagree -- the alternative is a supervisor locked out of an
         // account whose password the admin can no longer look up.
-        const { data: existing } = await admin
+        const { data: existing, error: readError } = await admin
           .from('gs_credentials')
           .select('secret')
           .eq('user_id', userId)
           .maybeSingle()
+        // A failed read and a genuinely absent row both yield data: null, so the
+        // error has to be checked to tell them apart. Guessing "no prior row" here
+        // would leave nothing to restore if the auth update below fails, which is
+        // the exact divergence this ordering exists to prevent.
+        if (readError) return json({ error: readError.message }, 500)
         const previousSecret = existing?.secret ?? null
 
         const { error: credError } = await admin
