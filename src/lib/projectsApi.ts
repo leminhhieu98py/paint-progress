@@ -244,18 +244,24 @@ export async function myFirstProjectId(): Promise<string | null> {
 }
 
 /**
- * Project names for dropdowns in screens (e.g., UsersScreen). Intentionally
- * lean: no stages, decks, or cells — just the id and name for selector options.
+ * Project names for dropdowns in screens (e.g., UsersScreen, DecksScreen).
+ * Intentionally lean: no stages, decks, or cells — just id, name and code for
+ * selector options. DecksScreen used to fill its project picker from
+ * `listProjects`, a four-level embed pulling every stage, deck and cell's
+ * area_m2/stage_id for every project in order to read three fields off each
+ * row -- on the site tether the admin/GS bundle split exists to protect, that
+ * downloads thousands of rows for a `<Select>`.
  */
-export async function listProjectNames(): Promise<Array<{ id: string; name: string }>> {
+export async function listProjectNames(): Promise<Array<{ id: string; name: string; code: string }>> {
   const { data, error } = await supabase
     .from('projects')
-    .select('id, name')
+    .select('id, name, code')
     .order('name')
   if (error) throw new Error(error.message)
   return (data ?? []).map((row) => ({
     id: row.id as string,
     name: row.name as string,
+    code: row.code as string,
   }))
 }
 
@@ -277,6 +283,12 @@ export async function listProjects(): Promise<ProjectRow[]> {
         color: s.color as string,
         weight: Number(s.weight),
       }))
+      // Redundant today: computeProjectProgress sorts its stages internally,
+      // so this call has no observable effect on `progress` below and a
+      // mutation deleting it survives. Left in and commented, not removed --
+      // `stages` is local to this map body and unused for anything else, but
+      // the next reader should not have to re-derive that from scratch to
+      // know it is safe to leave alone (or unsafe to rely on elsewhere).
       .sort((a, b) => a.seq - b.seq)
 
     const decks: Deck[] = ((row.decks ?? []) as Record<string, unknown>[]).map((d) => ({

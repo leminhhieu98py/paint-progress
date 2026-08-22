@@ -1,10 +1,8 @@
 import { Alert, Button, Form, Input, Modal, Space, Table, Typography } from 'antd'
 import { useCallback, useEffect, useState } from 'react'
+import { formatAreaM2, formatPercent } from '../../lib/format'
 import { createProject, listProjects, updateProject, type ProjectRow } from '../../lib/projectsApi'
 import { StageConfigPanel } from './StageConfigPanel'
-
-const area = new Intl.NumberFormat('vi-VN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-const percent = new Intl.NumberFormat('vi-VN', { style: 'percent', minimumFractionDigits: 2 })
 
 interface CreateValues {
   name: string
@@ -76,7 +74,11 @@ export function ProjectsScreen() {
         dataSource={rows}
         pagination={false}
         expandable={{
-          expandedRowRender: (row) => <StageConfigPanel projectId={row.id} />,
+          // Without onSaved, removing a stage changes true progress but this
+          // row keeps showing the rollup from before the save until the
+          // admin navigates away and back -- DecksScreen already re-fetches
+          // through its editor's onClose; this is the same pattern.
+          expandedRowRender: (row) => <StageConfigPanel projectId={row.id} onSaved={refresh} />,
         }}
         columns={[
           { title: 'Tên dự án', dataIndex: 'name' },
@@ -86,13 +88,13 @@ export function ProjectsScreen() {
             title: 'Tổng diện tích (m²)',
             dataIndex: 'totalAreaM2',
             width: 180,
-            render: (v: number) => area.format(v),
+            render: (v: number) => formatAreaM2(v),
           },
           {
             title: 'Tiến độ',
             dataIndex: 'progress',
             width: 120,
-            render: (v: number) => percent.format(v),
+            render: (v: number) => formatPercent(v),
           },
           {
             title: '',

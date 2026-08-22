@@ -1,11 +1,10 @@
 import { Alert, Button, Form, Input, InputNumber, Modal, Select, Space, Table, Typography } from 'antd'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createDeck, listDecks, uploadDrawing, type DeckRow } from '../../lib/decksApi'
-import { listProjects, type ProjectRow } from '../../lib/projectsApi'
+import { formatAreaM2 } from '../../lib/format'
+import { listProjectNames } from '../../lib/projectsApi'
 import { imageFileToPng, pdfPageCount, renderPdfPage, type RenderedPage } from '../../lib/pdfToPng'
 import { DeckEditor } from './DeckEditor'
-
-const area = new Intl.NumberFormat('vi-VN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
 interface CreateValues {
   name: string
@@ -20,8 +19,10 @@ interface PendingPicker {
   page: number
 }
 
+type ProjectOption = Awaited<ReturnType<typeof listProjectNames>>[number]
+
 export function DecksScreen() {
-  const [projects, setProjects] = useState<ProjectRow[]>([])
+  const [projects, setProjects] = useState<ProjectOption[]>([])
   const [projectId, setProjectId] = useState<string | null>(null)
   const [decks, setDecks] = useState<DeckRow[]>([])
   const [loading, setLoading] = useState(true)
@@ -35,7 +36,7 @@ export function DecksScreen() {
   useEffect(() => {
     void (async () => {
       try {
-        const rows = await listProjects()
+        const rows = await listProjectNames()
         setProjects(rows)
         // Only seed the default once: an explicit later choice must not be
         // clobbered if the project list happens to refresh.
@@ -174,7 +175,7 @@ export function DecksScreen() {
             title: 'Diện tích (m²)',
             dataIndex: 'totalAreaM2',
             width: 160,
-            render: (v: number) => area.format(v),
+            render: (v: number) => formatAreaM2(v),
           },
           {
             title: 'Nguồn diện tích',
@@ -243,6 +244,7 @@ export function DecksScreen() {
         okText="Nhập bản vẽ"
         cancelText="Huỷ"
         confirmLoading={busy}
+        destroyOnHidden
         onCancel={() => setPicker(null)}
         onOk={() => void confirmPicker()}
       >

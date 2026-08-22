@@ -12,7 +12,12 @@ vi.mock('../../lib/projectsApi', () => ({
   updateProject: (id: string, i: unknown) => updateProject(id, i),
 }))
 vi.mock('./StageConfigPanel', () => ({
-  StageConfigPanel: ({ projectId }: { projectId: string }) => <div>stages:{projectId}</div>,
+  StageConfigPanel: ({ projectId, onSaved }: { projectId: string; onSaved?: () => void }) => (
+    <div>
+      stages:{projectId}
+      <button onClick={() => onSaved?.()}>stage saved</button>
+    </div>
+  ),
 }))
 
 beforeEach(() => {
@@ -76,6 +81,21 @@ describe('ProjectsScreen', () => {
     await screen.findByText('BB1 - CPPTS')
     await userEvent.click(screen.getByRole('button', { name: /expand/i }))
     expect(await screen.findByText('stages:p1')).toBeInTheDocument()
+  })
+
+  it('re-fetches the project list after the stage panel saves, so the row does not keep showing a stale rollup', async () => {
+    // DecksScreen already re-fetches through its editor's onClose; a stage
+    // removal changes true progress the same way a deck edit does, and
+    // before this the row kept showing the pre-save rollup until the admin
+    // navigated away and back.
+    render(<ProjectsScreen />)
+    await screen.findByText('BB1 - CPPTS')
+    await userEvent.click(screen.getByRole('button', { name: /expand/i }))
+    await screen.findByText('stages:p1')
+
+    await userEvent.click(screen.getByRole('button', { name: 'stage saved' }))
+
+    await waitFor(() => expect(listProjects).toHaveBeenCalledTimes(2))
   })
 
   it('surfaces a list failure', async () => {

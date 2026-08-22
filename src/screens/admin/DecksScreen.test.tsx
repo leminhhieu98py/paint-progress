@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { DecksScreen } from './DecksScreen'
 
-const listProjects = vi.hoisted(() => vi.fn())
+const listProjectNames = vi.hoisted(() => vi.fn())
 const listDecks = vi.hoisted(() => vi.fn())
 const createDeck = vi.hoisted(() => vi.fn())
 const uploadDrawing = vi.hoisted(() => vi.fn())
@@ -11,7 +11,7 @@ const pdfPageCount = vi.hoisted(() => vi.fn())
 const renderPdfPage = vi.hoisted(() => vi.fn())
 const imageFileToPng = vi.hoisted(() => vi.fn())
 
-vi.mock('../../lib/projectsApi', () => ({ listProjects: () => listProjects() }))
+vi.mock('../../lib/projectsApi', () => ({ listProjectNames: () => listProjectNames() }))
 vi.mock('../../lib/decksApi', () => ({
   listDecks: (p: string) => listDecks(p),
   createDeck: (i: unknown) => createDeck(i),
@@ -31,8 +31,8 @@ vi.mock('./DeckEditor', () => ({
 }))
 
 beforeEach(() => {
-  for (const m of [listProjects, listDecks, createDeck, uploadDrawing, pdfPageCount, renderPdfPage, imageFileToPng]) m.mockReset()
-  listProjects.mockResolvedValue([{ id: 'p1', name: 'BB1', code: 'BB1', deckCount: 1, totalAreaM2: 0, progress: 0 }])
+  for (const m of [listProjectNames, listDecks, createDeck, uploadDrawing, pdfPageCount, renderPdfPage, imageFileToPng]) m.mockReset()
+  listProjectNames.mockResolvedValue([{ id: 'p1', name: 'BB1', code: 'BB1' }])
   listDecks.mockResolvedValue([
     { id: 'd1', projectId: 'p1', seq: 1, name: 'Main Deck', code: 'MD', imagePath: null, imageW: null, imageH: null, totalAreaM2: 5258.5, areaSource: 'guides', cellCount: 24 },
   ])
@@ -62,6 +62,36 @@ describe('DecksScreen', () => {
 
     await waitFor(() => expect(renderPdfPage).toHaveBeenCalledWith(file, 2))
     expect(uploadDrawing).toHaveBeenCalledWith('d1', 'p1', expect.anything(), 2000, 1600)
+  })
+
+  it('resets the page field for a fresh multi-page import, not the previous PDF\'s page', async () => {
+    // Import page 4 of one drawing, cancel, then open the picker again for a
+    // different multi-page PDF: the field must read 1 (PendingPicker always
+    // seeds page: 1), not 4. In THIS component the inner content is gated by
+    // `{picker && (...)}`, so it already unmounts/remounts on every open --
+    // this test cannot distinguish destroyOnHidden's presence from its
+    // absence here (confirmed by temporarily removing the prop: the suite
+    // stayed green). destroyOnHidden is still added, both because every other
+    // Modal in this codebase carries it and because relying on the inner
+    // conditional alone is fragile -- but the regression this test actually
+    // pins is PendingPicker always seeding page: 1, not the prop.
+    pdfPageCount.mockResolvedValueOnce(5).mockResolvedValueOnce(3)
+    render(<DecksScreen />)
+    await screen.findByText('Main Deck')
+
+    const file1 = new File([new Uint8Array([1])], 'a.pdf', { type: 'application/pdf' })
+    await userEvent.upload(screen.getByTestId('drawing-input-d1'), file1)
+    await screen.findByText(/5 trang/)
+    await userEvent.clear(screen.getByLabelText('Trang'))
+    await userEvent.type(screen.getByLabelText('Trang'), '4')
+    await screen.findByDisplayValue('4')
+    await userEvent.click(screen.getByRole('button', { name: 'Huỷ' }))
+
+    const file2 = new File([new Uint8Array([2])], 'b.pdf', { type: 'application/pdf' })
+    await userEvent.upload(screen.getByTestId('drawing-input-d1'), file2)
+    await screen.findByText(/3 trang/)
+
+    expect(screen.getByLabelText('Trang')).toHaveValue('1')
   })
 
   it('surfaces an import failure', async () => {
@@ -148,7 +178,7 @@ describe('DecksScreen', () => {
     // `loading` initialises true and refreshDecks returns early with no
     // project, so anything that fails to clear it leaves the table spinning
     // with no empty state and no error -- indistinguishable from a hung query.
-    listProjects.mockResolvedValue([])
+    listProjectNames.mockResolvedValue([])
     render(<DecksScreen />)
 
     await waitFor(() => expect(document.querySelector('.ant-spin-spinning')).toBeNull())
