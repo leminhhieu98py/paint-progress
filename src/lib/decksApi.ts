@@ -178,19 +178,21 @@ export async function listCells(deckId: string): Promise<PersistedCell[]> {
  * zone_cells cascades on cell_id, so a destructive geometry edit silently
  * shrinks a zone. Spec §8.3 requires naming the affected zones before applying
  * the edit, which is what this feeds.
- *
- * `deckId` is kept in the signature to match every other deck-scoped function
- * in this module (and because the caller always has it to hand), but it is not
- * needed in the query: cellIds are already `cells.id` primary keys, unique
- * across every deck, so no additional filter can narrow the result further.
  */
-export async function zoneImpactOf(_deckId: string, cellIds: string[]): Promise<ZoneImpact[]> {
+export async function zoneImpactOf(deckId: string, cellIds: string[]): Promise<ZoneImpact[]> {
   if (cellIds.length === 0) return []
 
   const { data, error } = await supabase
     .from('zone_cells')
-    .select('cell_id, cells(code), zones(id, name)')
+    // deckId is a safety scope, not redundancy: cell ids are globally unique, so
+    // this query would happily return another deck's zones if a caller passed a
+    // stale selection (DeckEditor is remounted per deck, so a selection carried
+    // over from a previous deck is plausible). Those names would then appear in
+    // a destructive-edit warning for the wrong deck, which is worse than no
+    // warning at all.
+    .select('cell_id, cells!inner(code, deck_id), zones(id, name)')
     .in('cell_id', cellIds)
+    .eq('cells.deck_id', deckId)
   if (error) throw new Error(error.message)
 
   const byZone = new Map<string, ZoneImpact>()
@@ -224,6 +226,15 @@ export async function zoneImpactOf(_deckId: string, cellIds: string[]): Promise<
  * inherits every zone its sources belonged to: pass
  * `{ [mergedCode]: [...sourceCodes] }` and the union of those zones is applied
  * to the survivor.
+ *
+ * The carry-across covers zone membership and the surviving cell's own progress.
+ * It does NOT rescue progress recorded on a merge source that is not the
+ * survivor: that stage_id is discarded. There is no honest rule that would --
+ * taking the furthest-along stage over-reports the merged bay, taking the least
+ * under-reports it, and both distort a percentage that must match the
+ * spreadsheet in circulation. Merging bays with divergent recorded progress is a
+ * data-modelling mistake, so Task 8's editor warns before allowing it rather
+ * than this function guessing.
  */
 export async function replaceCells(
   deckId: string,

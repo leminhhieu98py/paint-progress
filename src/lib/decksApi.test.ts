@@ -1,10 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { replaceCells, uploadDrawing, zoneImpactOf } from './decksApi'
+import { getDrawingUrl, replaceCells, uploadDrawing, zoneImpactOf } from './decksApi'
 
 const from = vi.hoisted(() => vi.fn())
 const upload = vi.hoisted(() => vi.fn())
+const createSignedUrl = vi.hoisted(() => vi.fn())
 vi.mock('./supabase', () => ({
-  supabase: { from, storage: { from: () => ({ upload }) } },
+  supabase: { from, storage: { from: () => ({ upload, createSignedUrl }) } },
 }))
 
 function builder(result: { data?: unknown; error?: unknown }) {
@@ -20,6 +21,7 @@ function builder(result: { data?: unknown; error?: unknown }) {
 beforeEach(() => {
   from.mockReset()
   upload.mockReset()
+  createSignedUrl.mockReset()
 })
 
 describe('replaceCells', () => {
@@ -115,15 +117,27 @@ describe('replaceCells', () => {
     // The failure must be injected on the delete call itself (the 3rd of the
     // five), not an earlier snapshot read -- otherwise this test would still
     // pass even if replaceCells stopped checking the delete error entirely.
+    //
+    // The cells array must be non-empty: with an empty array, the
+    // `cells.length === 0` early return skips the insert regardless of
+    // whether the delete error is checked at all, which would make "does not
+    // insert" true for the wrong reason and not pinned on the delete guard.
     const existing = builder({ data: [] })
     const links = builder({ data: [] })
+    const ins = builder({ data: [{ id: 'new1', code: 'R1C1' }] })
     from
       .mockImplementationOnce(() => existing)
       .mockImplementationOnce(() => links)
       .mockImplementationOnce(() => builder({ error: { message: 'delete blocked' } }))
-    await expect(replaceCells('d1', [])).rejects.toThrow('delete blocked')
+      .mockImplementationOnce(() => ins)
+
+    await expect(
+      replaceCells('d1', [{ code: 'R1C1', x: 0, y: 0, w: 1, h: 1, areaM2: 1 }]),
+    ).rejects.toThrow('delete blocked')
+
     // Exactly 3 calls: snapshot, links, delete. A 4th would mean it inserted anyway.
     expect(from).toHaveBeenCalledTimes(3)
+    expect(ins.insert).not.toHaveBeenCalled()
   })
 
   it('throws when the insert fails', async () => {
@@ -172,6 +186,30 @@ describe('zoneImpactOf', () => {
     await expect(zoneImpactOf('d1', [])).resolves.toEqual([])
     expect(from).not.toHaveBeenCalled()
   })
+
+  it('scopes the query to the given deck, not just the selected cell ids', async () => {
+    // Cell ids are globally unique, so nothing about the response shape stops
+    // a stale, cross-deck selection from returning another deck's zones --
+    // that must be prevented by the query itself.
+    //
+    // This stub ignores .eq()/.in() arguments and always returns its canned
+    // data regardless of what was asked for, so it cannot honestly prove that
+    // PostgREST applies the deck filter server-side (a stub rigged to filter
+    // client-side would just be testing the stub, not this function, and
+    // would still pass if the .eq() call were deleted). What it CAN prove is
+    // that the function issues the correct request: the embedded-filter
+    // select naming cells!inner(..., deck_id), and .eq('cells.deck_id', ...)
+    // called with this deck's id. Confirming PostgREST honours that filter
+    // needs a live smoke test against a real Supabase instance, not a unit
+    // test against a stub -- tracked separately.
+    const stub = builder({ data: [] })
+    from.mockImplementationOnce(() => stub)
+
+    await zoneImpactOf('d1', ['c1'])
+
+    expect(stub.select).toHaveBeenCalledWith('cell_id, cells!inner(code, deck_id), zones(id, name)')
+    expect(stub.eq).toHaveBeenCalledWith('cells.deck_id', 'd1')
+  })
 })
 
 describe('uploadDrawing', () => {
@@ -194,5 +232,21 @@ describe('uploadDrawing', () => {
       'bucket not found',
     )
     expect(from).not.toHaveBeenCalled()
+  })
+})
+
+describe('getDrawingUrl', () => {
+  it('requests a signed URL, not a public one -- the bucket is private', async () => {
+    createSignedUrl.mockResolvedValue({
+      data: { signedUrl: 'https://signed.example/p1/d1.png' },
+      error: null,
+    })
+
+    const url = await getDrawingUrl('p1/d1.png')
+
+    // A public URL would look valid and 403 at fetch time -- nothing else in
+    // this suite would notice, since the bucket really is private.
+    expect(createSignedUrl).toHaveBeenCalledWith('p1/d1.png', 3600)
+    expect(url).toBe('https://signed.example/p1/d1.png')
   })
 })
