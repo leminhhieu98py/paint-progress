@@ -1,7 +1,24 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { DrawingCanvas } from './DrawingCanvas'
+
+// Simulates the one piece of Konva node state that the drag-clamp reset
+// exists to guard: a dragged node's `.x()`/`.y()` report its position
+// relative to where it was last explicitly set via `.position()` — Konva
+// never reverts this on its own once a drag ends. `dragOffsets` tracks that
+// leftover per node by name, so a second drag's `clientX`/`clientY` (the
+// pointer's movement *during that gesture*) lands on top of whatever the
+// previous drag left behind, exactly as real Konva would report it, unless
+// the component calls `.position({ x: 0, y: 0 })` to clear it — which is
+// what `positionSpy` lets the tests assert on directly, and what resetting
+// `dragOffsets` models. This is a deliberately narrow, hand-built state
+// model of one specific Konva behavior, not a claim of general Konva
+// fidelity — see the task report for what it does and does not establish.
+const { positionSpy, dragOffsets } = vi.hoisted(() => ({
+  positionSpy: vi.fn(),
+  dragOffsets: new Map<string, { x: number; y: number }>(),
+}))
 
 // `react-konva` renders to a canvas, which jsdom does not implement, so every
 // Konva node is replaced by a plain `div` carrying its props as data
@@ -39,15 +56,23 @@ vi.mock('react-konva', () => {
           },
         })
       }
-      onMouseUp={(domEvt: React.MouseEvent) =>
-        (props.onDragEnd as ((e: unknown) => void) | undefined)?.({
+      onMouseUp={(domEvt: React.MouseEvent) => {
+        const nodeName = String(props.name ?? '')
+        const leftover = dragOffsets.get(nodeName) ?? { x: 0, y: 0 }
+        const x = leftover.x + domEvt.clientX
+        const y = leftover.y + domEvt.clientY
+        dragOffsets.set(nodeName, { x, y })
+        ;(props.onDragEnd as ((e: unknown) => void) | undefined)?.({
           target: {
-            x: () => domEvt.clientX,
-            y: () => domEvt.clientY,
-            position: () => undefined,
+            x: () => x,
+            y: () => y,
+            position: (p: { x: number; y: number }) => {
+              dragOffsets.set(nodeName, p)
+              positionSpy(p)
+            },
           },
         })
-      }
+      }}
     >
       {props.children as never}
     </div>
@@ -69,6 +94,11 @@ const cells = [
   { code: 'R1C1', x: 0, y: 0, w: 0.5, h: 1, areaM2: 160 },
   { code: 'R1C2', x: 0.5, y: 0, w: 0.5, h: 1, areaM2: 160 },
 ]
+
+beforeEach(() => {
+  positionSpy.mockClear()
+  dragOffsets.clear()
+})
 
 describe('DrawingCanvas', () => {
   it('renders one line per guide', () => {
@@ -115,15 +145,20 @@ describe('DrawingCanvas', () => {
     expect(screen.getByTestId('rect:cell-R1C1')).toHaveAttribute('data-opacity', '1')
   })
 
-  it('marks the selected cells distinctly from the unselected ones', () => {
+  it('keeps a selected cell\'s own stage colour and adds a selection overlay', () => {
     render(
       <DrawingCanvas
         imageUrl="u" imageW={2000} imageH={1600} guides={guides} cells={cells} selectedCodes={['R1C1']}
+        cellColors={{ R1C1: '#52c41a' }}
       />,
     )
-    const selected = screen.getByTestId('rect:cell-R1C1').getAttribute('data-fill')
-    const plain = screen.getByTestId('rect:cell-R1C2').getAttribute('data-fill')
-    expect(selected).not.toBe(plain)
+    // Selection is an overlay, not a fill swap: the cell keeps its own stage
+    // colour so the information Phase 4's zone grouping depends on survives
+    // selection.
+    expect(screen.getByTestId('rect:cell-R1C1')).toHaveAttribute('data-fill', '#52c41a')
+    // A selected cell gains a dedicated overlay node; an unselected one does not.
+    expect(screen.getByTestId('rect:selection-R1C1')).toBeInTheDocument()
+    expect(screen.queryByTestId('rect:selection-R1C2')).not.toBeInTheDocument()
   })
 
   it('reports a cell click with its code', async () => {
@@ -252,6 +287,47 @@ describe('DrawingCanvas', () => {
       // (0.5 * 1000 + 100) / 1000 = 0.6 — safely inside 0..1.
       fireEvent.mouseUp(screen.getByTestId('line:guide-x-0'), { clientX: 100, clientY: 0 })
       expect(onGuideMove).toHaveBeenCalledWith(0, 0.6)
+    })
+
+    it('resets the dragged node so offsets do not accumulate across drags', () => {
+      // Konva does not revert a dragged node's position on its own. Without
+      // this reset, drag N's leftover offset gets added again in drag N+1 --
+      // the guide drifts by the accumulated delta every time, silently
+      // changing every cell area derived from it (guides determine cell
+      // areas, and cell areas determine every reported percentage).
+      const onGuideMove = vi.fn()
+      renderWithGuide(onGuideMove, 0.5)
+      fireEvent.mouseUp(screen.getByTestId('line:guide-x-0'), { clientX: 100, clientY: 0 })
+      expect(positionSpy).toHaveBeenCalledWith({ x: 0, y: 0 })
+    })
+
+    it('does not let a second drag compound the first drag\'s leftover offset', () => {
+      const onGuideMove = vi.fn()
+      const { rerender } = renderWithGuide(onGuideMove, 0.5)
+
+      // First drag: pointer moves +100px. (0.5 * 1000 + 100) / 1000 = 0.6.
+      fireEvent.mouseUp(screen.getByTestId('line:guide-x-0'), { clientX: 100, clientY: 0 })
+      expect(onGuideMove).toHaveBeenNthCalledWith(1, 0, 0.6)
+
+      // The real consumer (Task 8's DeckEditor) applies that update and
+      // re-renders with the guide at its new position -- simulate that.
+      rerender(
+        <DrawingCanvas
+          imageUrl="u" imageW={1000} imageH={1000}
+          guides={[{ axis: 'x' as const, pos: 0.6, offsetMm: 0 }]} cells={[]}
+          selectedCodes={[]} width={1000} onGuideMove={onGuideMove}
+        />,
+      )
+
+      // Second drag: pointer moves +100px again -- the same size step as the
+      // first. The second reported position must be exactly one more step
+      // past the first (0.7), not further from it than the first step was
+      // from the start (0.6 -> 0.7 is a 0.1 step, same as 0.5 -> 0.6). If the
+      // reset above were missing, the first drag's leftover 100px would still
+      // be sitting on the node, and this would report 0.8 instead -- the
+      // guide drifting by twice the intended step.
+      fireEvent.mouseUp(screen.getByTestId('line:guide-x-0'), { clientX: 100, clientY: 0 })
+      expect(onGuideMove).toHaveBeenNthCalledWith(2, 0, 0.7)
     })
   })
 })

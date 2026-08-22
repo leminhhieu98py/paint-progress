@@ -3,13 +3,29 @@ import { Image as KonvaImage, Layer, Line, Rect, Stage } from 'react-konva'
 import useImage from 'use-image'
 import type { Guide, MeshCell } from '../../domain/types'
 
-const SELECTED_FILL = 'rgba(22, 119, 255, 0.45)'
 const PLAIN_FILL = 'rgba(0, 0, 0, 0.04)'
 /**
  * Cells are filled at this opacity so the beams and grid labels underneath stay
  * readable — the drawing is what the operator recognises, not our overlay.
  */
 const STAGE_FILL_OPACITY = 0.45
+/**
+ * Selection is drawn as a translucent overlay on its own layer above every
+ * cell, not by swapping the cell's own fill: Phase 4 groups cells into zones
+ * partly on how far along each one is, so hiding a cell's stage colour on
+ * selection would remove the information that grouping decision is made
+ * from. A stroke alone was rejected too — every cell already carries an
+ * always-on red border, so a selection stroke would compete with the grid's
+ * own boundary on a dense mesh; a large-area fill cue reads faster.
+ *
+ * Magenta (antd's magenta-6) is picked because it sits outside the stage
+ * palette entirely — yellow #fadb14, grey #bfbfbf, green #52c41a, blue
+ * #1677ff, purple #722ed1 (src/domain/stageTemplate.ts) — and is far enough
+ * from the cell grid's own red border (rgba(255, 0, 0, 0.6) below) to read
+ * as a distinct, unmistakable "selected" cue against any stage colour or none.
+ */
+const SELECTION_OVERLAY_FILL = 'rgba(235, 47, 150, 0.28)'
+const SELECTION_STROKE = '#eb2f96'
 
 export interface DrawingCanvasProps {
   imageUrl: string
@@ -43,12 +59,6 @@ export function DrawingCanvas({
   const scale = width / imageW
   const height = imageH * scale
   const selected = new Set(selectedCodes)
-
-  const fillFor = (code: string) => {
-    if (selected.has(code)) return SELECTED_FILL
-    const color = cellColors?.[code]
-    return color ?? PLAIN_FILL
-  }
 
   return (
     <Stage
@@ -84,7 +94,7 @@ export function DrawingCanvas({
             y={cell.y * height}
             width={cell.w * width}
             height={cell.h * height}
-            fill={fillFor(cell.code)}
+            fill={cellColors?.[cell.code] ?? PLAIN_FILL}
             opacity={cellColors?.[cell.code] ? STAGE_FILL_OPACITY : 1}
             stroke="rgba(255, 0, 0, 0.6)"
             strokeWidth={1}
@@ -93,6 +103,24 @@ export function DrawingCanvas({
             }
           />
         ))}
+      </Layer>
+
+      <Layer name="selection" listening={false}>
+        {cells
+          .filter((cell) => selected.has(cell.code))
+          .map((cell) => (
+            <Rect
+              key={cell.code}
+              name={`selection-${cell.code}`}
+              x={cell.x * width}
+              y={cell.y * height}
+              width={cell.w * width}
+              height={cell.h * height}
+              fill={SELECTION_OVERLAY_FILL}
+              stroke={SELECTION_STROKE}
+              strokeWidth={3}
+            />
+          ))}
       </Layer>
 
       <Layer name="guides">
