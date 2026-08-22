@@ -51,12 +51,6 @@ interface PendingEdit {
  */
 type EditKind = 'delete' | 'merge' | 'mesh'
 
-const EDIT_SUBJECT: Record<EditKind, string> = {
-  delete: 'Xoá ô',
-  merge: 'Gộp ô',
-  mesh: 'Lưu lưới ô',
-}
-
 const EDIT_CONFIRM: Record<EditKind, string> = {
   delete: 'Vẫn xoá',
   merge: 'Vẫn gộp',
@@ -454,10 +448,18 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
       </Space>
 
       {/*
-        The dialog opens on zone impact OR on progress loss alone, so neither
-        the title nor the lead paragraph may assert zone impact unconditionally:
-        telling an admin their cells belong to a zone when they do not teaches
-        them to skim the one dialog in this screen that must be read.
+        The dialog can open for any of three independent reasons -- zone
+        impact, progress loss, or a reshape -- in any combination, so no
+        sentence anywhere in this dialog may make a claim about a list it does
+        not own. The title only ever distinguishes zone impact (the one that
+        also affects a zone's progress plan) from everything else; the lead
+        paragraph states nothing about specific cells; and each section below
+        carries its own sentence immediately above its own list, rendering
+        only when that list is non-empty. A merge whose survivor's area moves
+        by more than AREA_DIVERGENCE_THRESHOLD lands in BOTH the progress-loss
+        section (for its discarded sources) and the reshape section (for
+        itself) at once -- see R6 in task-8-fix-3 -- so this is not a
+        theoretical case to design for.
       */}
       <Modal
         open={pending !== null}
@@ -465,10 +467,8 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
         title={
           pending &&
           (pending.impact.length > 0
-            ? `${EDIT_SUBJECT[pending.kind]} sẽ ảnh hưởng zone`
-            : pending.progressLoss.length > 0
-              ? `${EDIT_SUBJECT[pending.kind]} sẽ làm mất tiến độ đã ghi`
-              : `${EDIT_SUBJECT[pending.kind]} sẽ đổi diện tích ô đang có tiến độ`)
+            ? 'Thao tác này ảnh hưởng đến zone'
+            : 'Xác nhận thay đổi lưới ô')
         }
         okText={pending ? EDIT_CONFIRM[pending.kind] : undefined}
         cancelText="Huỷ"
@@ -476,37 +476,29 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
         onCancel={() => setPending(null)}
         onOk={() => pending && void apply(pending.cells, pending.inheritFrom)}
       >
-        {pending && pending.impact.length > 0 ? (
-          <Typography.Paragraph>
-            Các ô này đang thuộc zone. Thao tác này sẽ làm chúng rời khỏi zone đó, và
-            kế hoạch tiến độ của zone sẽ nhỏ lại mà không có cảnh báo nào khác.
-          </Typography.Paragraph>
-        ) : pending && pending.progressLoss.length > 0 ? (
-          <Typography.Paragraph>
-            Không có zone nào bị ảnh hưởng. Nhưng thao tác này sẽ xoá tiến độ đã ghi
-            của các ô dưới đây.
-          </Typography.Paragraph>
-        ) : (
-          <Typography.Paragraph>
-            Không có zone nào bị ảnh hưởng, và không có tiến độ nào bị xoá. Nhưng các
-            ô dưới đây sẽ đổi diện tích trong khi vẫn giữ nguyên tiến độ đã ghi, nên
-            diện tích đã hoàn thành của chúng sẽ tự đổi theo mà chưa ai kiểm tra lại.
-          </Typography.Paragraph>
-        )}
+        <Typography.Paragraph>
+          Kiểm tra các mục dưới đây trước khi xác nhận.
+        </Typography.Paragraph>
+
         {pending && pending.impact.length > 0 && (
-          <ul>
-            {pending.impact.map((z) => (
-              <li key={z.zoneId}>
-                <strong>{z.zoneName}</strong>: {z.cellCodes.join(', ')}
-              </li>
-            ))}
-          </ul>
+          <>
+            <Typography.Paragraph strong>
+              Các ô này đang thuộc zone. Xoá hoặc gộp sẽ làm chúng rời khỏi zone:
+            </Typography.Paragraph>
+            <ul>
+              {pending.impact.map((z) => (
+                <li key={z.zoneId}>
+                  <strong>{z.zoneName}</strong>: {z.cellCodes.join(', ')}
+                </li>
+              ))}
+            </ul>
+          </>
         )}
 
         {pending && pending.progressLoss.length > 0 && (
           <>
             <Typography.Paragraph strong>
-              Các ô sau đang có tiến độ đã ghi, và tiến độ đó sẽ bị mất:
+              Các ô này sẽ mất tiến độ đã ghi:
             </Typography.Paragraph>
             <ul>
               {pending.progressLoss.map((p) => (
@@ -527,9 +519,16 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
 
         {pending && pending.reshaped.length > 0 && (
           <>
+            {/*
+              R9: structurally unreachable when kind === 'delete' -- a delete
+              never changes a surviving cell's geometry (it only removes
+              cells), so `reshaped` is always empty on that path and this
+              section can never render there. It is reachable, and covered by
+              tests, for 'merge' and 'mesh'. Not dead code: kept intentionally.
+            */}
             <Typography.Paragraph strong>
-              Các ô sau đổi diện tích hơn {AREA_DIVERGENCE_THRESHOLD * 100}% nhưng vẫn giữ
-              tiến độ đã ghi, nên diện tích đã hoàn thành của chúng sẽ tự đổi theo:
+              Các ô này giữ tiến độ đã ghi nhưng diện tích thay đổi, nên phần trăm
+              hoàn thành sẽ thay đổi theo:
             </Typography.Paragraph>
             <ul>
               {pending.reshaped.map((r) => (

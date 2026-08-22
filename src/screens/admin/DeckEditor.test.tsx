@@ -387,8 +387,10 @@ describe('DeckEditor', () => {
 
     // zone_cells cascades on cell_id, so deleting silently shrinks the zone.
     expect(await screen.findByText(/Zone 3/)).toBeInTheDocument()
-    // There IS zone impact here, so the dialog may say so.
-    expect(screen.getByText('Xoá ô sẽ ảnh hưởng zone')).toBeInTheDocument()
+    // There IS zone impact here, so the dialog may say so. The title no
+    // longer names the operation (delete/merge/mesh) -- it only ever
+    // distinguishes zone impact from everything else.
+    expect(screen.getByText('Thao tác này ảnh hưởng đến zone')).toBeInTheDocument()
     expect(screen.getByText(/Các ô này đang thuộc zone/)).toBeInTheDocument()
     expect(syncCells).not.toHaveBeenCalled()
   })
@@ -428,7 +430,7 @@ describe('DeckEditor', () => {
     expect(syncCells.mock.calls[0][2]).toEqual({ R1C1: ['R1C1', 'R1C2'] })
   })
 
-  it('names the cells whose recorded progress a merge would discard', async () => {
+  it('names the cells whose recorded progress a merge would discard, and shows the survivor as reshaped rather than lost', async () => {
     // syncCells updates the SURVIVOR's row in place, so its stage survives; any
     // other merge source is deleted and its progress goes with it. There is no
     // honest carry rule -- taking the furthest-along stage over-reports the
@@ -439,6 +441,12 @@ describe('DeckEditor', () => {
     // survivor clause in the progress-loss filter could be deleted outright and
     // this test would still pass, proving nothing about a mis-identified
     // survivor -- which is the failure mode that matters.
+    //
+    // R1C1 (Coat 1, 100 m²) and R1C2 (Coat 3, 100 m²) merge into R1C1 over
+    // 200 m². R1C1's code survives (task-8-fix-3 R6), so it lands in the
+    // RESHAPED section, not the progress-loss one: the deck would otherwise
+    // silently claim Coat 1 complete across 200 m² when only 100 m² was ever
+    // ticked, which is exactly the silent-inflation defect R5 exists to catch.
     listCells.mockResolvedValue([
       { id: 'c1', code: 'R1C1', x: 0, y: 0, w: 0.5, h: 1, areaM2: 100, stageId: 'coat1' },
       { id: 'c2', code: 'R1C2', x: 0.5, y: 0, w: 0.5, h: 1, areaM2: 100, stageId: 'coat3' },
@@ -454,9 +462,23 @@ describe('DeckEditor', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Gộp ô đã chọn' }))
 
     // R1C1 is the top-left source, so mergeCells keeps its code and syncCells
-    // keeps its row: it is the survivor and its Coat 1 is NOT lost.
+    // keeps its row: it is the survivor and its Coat 1 is NOT lost -- but its
+    // area moved from 100 to 200 m², so it must appear here, not below.
     expect(await screen.findByText(listItem('R1C2 — Coat 3'))).toBeInTheDocument()
     expect(screen.queryByText(listItem('R1C1 — Coat 1'))).toBeNull()
+    // The survivor caveat this decision requires: kept in reshaped, both its
+    // areas shown, vi-VN formatted.
+    expect(screen.getByText(listItem('R1C1 — Coat 1: 100,00 → 200,00 m²'))).toBeInTheDocument()
+    // Each section owns its own sentence -- both must be present at once here,
+    // since both lists are non-empty simultaneously. Folding them back under
+    // one umbrella sentence (the round-2 defect) can show at most one of the
+    // two, so this pair fails under that mutation.
+    expect(screen.getByText('Các ô này sẽ mất tiến độ đã ghi:')).toBeInTheDocument()
+    expect(screen.getByText(/Các ô này giữ tiến độ đã ghi nhưng diện tích thay đổi/)).toBeInTheDocument()
+    // No sentence may claim, as an umbrella, that recorded progress is being
+    // wiped -- R1C1 is listed below and keeps its progress; the round-2 lead
+    // paragraph asserted the opposite about it.
+    expect(screen.queryByText(/sẽ xoá tiến độ đã ghi/)).toBeNull()
     // The merge-only caveat: there is no honest carry rule for the cell that
     // did not survive, so the dialog says so. Deleting the `kind === 'merge'`
     // guard on this paragraph would restore exactly the overstatement it
@@ -517,13 +539,17 @@ describe('DeckEditor', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Sinh lưới ô' }))
     await userEvent.click(screen.getByRole('button', { name: 'Lưu lưới ô' }))
 
-    expect(await screen.findByText('Lưu lưới ô sẽ đổi diện tích ô đang có tiến độ')).toBeInTheDocument()
+    // The title collapses to one generic form once it is not a zone-impact
+    // case (task-8-fix-3 R6) -- it no longer names the operation or the reason.
+    expect(await screen.findByText('Xác nhận thay đổi lưới ô')).toBeInTheDocument()
     // vi-VN formatted, in the exact form the review specified.
     expect(screen.getByText(listItem('R1C1 — Coat 3: 232,00 → 400,00 m²'))).toBeInTheDocument()
-    // Neither of the other two paragraphs applies here -- there is no zone
+    expect(screen.getByText(/Các ô này giữ tiến độ đã ghi nhưng diện tích thay đổi/)).toBeInTheDocument()
+    // Neither of the other two sections applies here -- there is no zone
     // impact and nothing is actually being deleted -- so asserting either
     // would catch this dialog quietly reverting to an overstatement.
     expect(screen.queryByText(/Các ô này đang thuộc zone/)).toBeNull()
+    expect(screen.queryByText('Các ô này sẽ mất tiến độ đã ghi:')).toBeNull()
     expect(screen.queryByText(/sẽ xoá tiến độ đã ghi/)).toBeNull()
     expect(syncCells).not.toHaveBeenCalled()
 
@@ -562,6 +588,63 @@ describe('DeckEditor', () => {
     expect(syncCells.mock.calls[0][1]).toEqual([
       { code: 'R1C1', x: 0, y: 0, w: 1, h: 1, areaM2: 240 },
     ])
+  })
+
+  it('guards the reshape check\'s denominator: diverges against the OLD area, not the new one', async () => {
+    // The re-review mutated the reshape check's argument order -- denominator
+    // from the old area to the new -- and all 24 tests at the time still
+    // passed. Both existing R5 cases use ratios too extreme for the choice to
+    // matter (232->400 is 72.4% one way and 42.0% the other; 232->240 is
+    // 3.45% and 3.33%). 200 -> 210,4 m² is chosen so the two denominators
+    // straddle 5%: 5.20% against the old area (200, the shipped and correct
+    // choice -- must raise the dialog) and 4.94% against the new area (210.4,
+    // what the mutated argument order would compute -- must not raise). The
+    // window is narrow by construction: for the two denominators to straddle
+    // 5% the new area must fall between 1.0500 and 1.0526 times the old one;
+    // 210,4 / 200 = 1.052 sits inside it.
+    listGuides.mockResolvedValue([
+      { id: 'g1', axis: 'x', pos: 0, offsetMm: 0 },
+      { id: 'g2', axis: 'x', pos: 1, offsetMm: 20000 },
+      { id: 'g3', axis: 'y', pos: 0, offsetMm: 0 },
+      { id: 'g4', axis: 'y', pos: 1, offsetMm: 10520 },
+    ])
+    listCells.mockResolvedValue([
+      { id: 'c1', code: 'R1C1', x: 0, y: 0, w: 1, h: 1, areaM2: 200, stageId: 'coat3' },
+    ])
+    listStages.mockResolvedValue([
+      { id: 'coat3', seq: 3, name: 'Coat 3', color: '#52c41a', weight: 0.35 },
+    ])
+    render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+    await screen.findByTestId('canvas')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Sinh lưới ô' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Lưu lưới ô' }))
+
+    expect(await screen.findByText(listItem('R1C1 — Coat 3: 200,00 → 210,40 m²'))).toBeInTheDocument()
+    expect(syncCells).not.toHaveBeenCalled()
+  })
+
+  it('raises the dialog for a shrink past the threshold too, not only for growth', async () => {
+    // Both R5 cases grow. By inspection shrinking is symmetric -- the
+    // denominator is always p.areaM2 and divergesBeyondThreshold takes
+    // Math.abs -- but that is reasoning, not a test, and a denominator-argument
+    // bug of exactly the R7 kind tends to surface as growth-fires-but-shrink-
+    // does-not rather than as something direction-symmetric.
+    listGuides.mockResolvedValue(ONE_BAY_GUIDES) // one 232 m² bay, as elsewhere in this file
+    listCells.mockResolvedValue([
+      { id: 'c1', code: 'R1C1', x: 0, y: 0, w: 1, h: 1, areaM2: 400, stageId: 'coat3' },
+    ])
+    listStages.mockResolvedValue([
+      { id: 'coat3', seq: 3, name: 'Coat 3', color: '#52c41a', weight: 0.35 },
+    ])
+    render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+    await screen.findByTestId('canvas')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Sinh lưới ô' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Lưu lưới ô' }))
+
+    expect(await screen.findByText(listItem('R1C1 — Coat 3: 400,00 → 232,00 m²'))).toBeInTheDocument()
+    expect(syncCells).not.toHaveBeenCalled()
   })
 
   it('keeps the survivor out of the loss list when only some cells are merged', async () => {
@@ -610,8 +693,10 @@ describe('DeckEditor', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Chọn tất cả' }))
     await userEvent.click(screen.getByRole('button', { name: 'Gộp ô đã chọn' }))
 
-    expect(await screen.findByText('Gộp ô sẽ làm mất tiến độ đã ghi')).toBeInTheDocument()
-    expect(screen.getByText(/Không có zone nào bị ảnh hưởng/)).toBeInTheDocument()
+    expect(await screen.findByText('Xác nhận thay đổi lưới ô')).toBeInTheDocument()
+    // The progress-loss section carries its own claim now; there is no
+    // shared sentence left to assert "no zone impact" against.
+    expect(screen.getByText('Các ô này sẽ mất tiến độ đã ghi:')).toBeInTheDocument()
     expect(screen.queryByText(/Các ô này đang thuộc zone/)).toBeNull()
   })
 
