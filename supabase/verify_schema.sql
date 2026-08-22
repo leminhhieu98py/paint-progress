@@ -135,19 +135,30 @@
 --       because a guard that skipped the stamp unconditionally would satisfy
 --       either half alone.
 --
+-- Check 26 is added by 0012, with its own fixtures ('VERIFY D') for the same
+-- reason.
+--   26. project_stages' (project_id, seq) uniqueness is DEFERRABLE INITIALLY
+--       DEFERRED, and a reorder -- two rows swapping seq inside one statement --
+--       is actually accepted. A stage's identity is its id (cells.stage_id and
+--       zones.stage_id point at rows), seq is only display order, and saveStages
+--       upserts on the id; the immediate constraint 0001 created rejected the
+--       swap row by row even though the statement's final state is unique. Both
+--       halves are asserted because the catalog shape alone would still PASS if
+--       some later migration recreated the index in a way that broke the write.
+--
 -- How to run:
 --   nvm use 22
 --   npx supabase db query --linked -f supabase/verify_schema.sql
 --
--- Every returned row must begin with PASS (25 rows in total, one per
--- numbered check above, 1-25 with no gaps). A row beginning with FAIL means
+-- Every returned row must begin with PASS (26 rows in total, one per
+-- numbered check above, 1-26 with no gaps). A row beginning with FAIL means
 -- a regression in the trigger/FK/RLS behaviour set up across migrations
--- 0001-0011; re-read those migrations' comments before changing this file.
+-- 0001-0012; re-read those migrations' comments before changing this file.
 --
 -- WARNING: this script INSERTS and then DELETES test rows (projects named
--- 'VERIFY A' / 'VERIFY B' / 'VERIFY C' and everything cascading from them). It
--- is meant to run against a disposable or pre-production database only. Never
--- run it against a database holding real project data.
+-- 'VERIFY A' / 'VERIFY B' / 'VERIFY C' / 'VERIFY D' and everything cascading
+-- from them). It is meant to run against a disposable or pre-production
+-- database only. Never run it against a database holding real project data.
 
 create or replace function _verify_triggers() returns setof text language plpgsql as $$
 declare
@@ -549,6 +560,77 @@ begin
   end;
 end $$;
 
+-- Check 26 (migration 0012): (project_id, seq) uniqueness is deferred, and a
+-- reorder is accepted.
+--
+-- Its own fixtures, so it can be appended without renumbering checks 1-25.
+--
+-- Two halves in one row. The catalog half pins the shape a future reader might
+-- "tidy" back to a plain unique constraint; the functional half pins the write
+-- that shape exists for -- a single UPDATE moving two rows past each other,
+-- which is what a reorder in the stage config panel produces once saveStages
+-- keys its upsert on the id instead of the seq.
+--
+-- What is deliberately NOT asserted here: that a genuine duplicate seq is still
+-- rejected. A deferred violation is only raised at the outer COMMIT, and this
+-- script runs as one transaction, so provoking one would abort the whole
+-- verification run instead of returning a FAIL row. Forcing it early with SET
+-- CONSTRAINTS ALL IMMEDIATE inside a subtransaction would leave the constraint
+-- mode altered for whatever ran afterwards. The catalog half is what guards it:
+-- contype = 'u' over exactly (project_id, seq) is the constraint still being
+-- there, and `deferred` changes only WHEN it is checked, never whether.
+create or replace function _verify_stage_seq_deferrable() returns setof text language plpgsql as $$
+declare
+  p uuid;
+  shape_ok boolean;
+  swap_ok boolean := false;
+  swap_err text := 'none';
+  seqs text;
+begin
+  begin
+    select c.contype = 'u' and c.condeferrable and c.condeferred
+      into shape_ok
+    from pg_constraint c
+    where c.conrelid = 'public.project_stages'::regclass
+      and c.conname = 'project_stages_project_id_seq_key'
+      -- attname is `name`, not `text`, and there is no name[] = text[] operator
+      -- -- so the cast is load-bearing, not decoration.
+      and (select array_agg(a.attname::text order by k.ord)
+             from unnest(c.conkey) with ordinality as k(attnum, ord)
+             join pg_attribute a on a.attrelid = c.conrelid and a.attnum = k.attnum)
+          = array['project_id', 'seq'];
+
+    insert into projects (name, code) values ('VERIFY D','VERIFYD') returning id into p;
+    insert into project_stages (project_id, seq, name, color, weight)
+      values (p, 1, 'Coat 1', '#fadb14', 0.5);
+    insert into project_stages (project_id, seq, name, color, weight)
+      values (p, 2, 'Coat 2', '#bfbfbf', 0.5);
+
+    begin
+      -- One statement, both rows: after the first row is rewritten two rows hold
+      -- seq 2, which an immediate constraint rejects even though the statement
+      -- leaves the seqs unique.
+      update project_stages set seq = 3 - seq where project_id = p;
+      swap_ok := true;
+    exception when others then
+      swap_err := sqlerrm;
+    end;
+
+    select string_agg(seq::text || '=' || name, ', ' order by seq) into seqs
+    from project_stages where project_id = p;
+
+    delete from projects where id = p;
+
+    return next format(
+      '%s stage seq uniqueness is deferred and a reorder is accepted: shape %s, swap %s (%s), after swap: %s',
+      case when coalesce(shape_ok, false) and swap_ok and seqs = '1=Coat 2, 2=Coat 1'
+           then 'PASS' else 'FAIL' end,
+      coalesce(shape_ok::text, 'constraint missing'), swap_ok, swap_err, coalesce(seqs, 'none'));
+  exception when others then
+    return next 'FAIL stage seq uniqueness is deferred: ' || sqlerrm;
+  end;
+end $$;
+
 -- A single top-level SELECT: `supabase db query -f` surfaces only the last
 -- result set a multi-statement file produces, so the checks are combined
 -- here with UNION ALL rather than issued as separate SELECTs.
@@ -556,8 +638,11 @@ select * from _verify_triggers()
 union all
 select * from _verify_rls()
 union all
-select * from _verify_audit_columns();
+select * from _verify_audit_columns()
+union all
+select * from _verify_stage_seq_deferrable();
 
 drop function _verify_triggers();
 drop function _verify_rls();
 drop function _verify_audit_columns();
+drop function _verify_stage_seq_deferrable();
