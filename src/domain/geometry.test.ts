@@ -193,6 +193,17 @@ describe('divergesBeyondThreshold', () => {
   it('is false for a deck with no area, matching areaDivergence', () => {
     expect(divergesBeyondThreshold(0, [cell(10)])).toBe(false)
   })
+
+  it('does not warn at exactly the threshold', () => {
+    // 950 of 1000 is exactly 5%. The comparison is strict `>`, so the threshold
+    // itself is within tolerance -- "diverges beyond 5%", not "reaches 5%".
+    // Pinned because a refactor to >= would pass every other test in this block.
+    expect(divergesBeyondThreshold(1000, [cell(950)])).toBe(false)
+  })
+
+  it('warns just past the threshold', () => {
+    expect(divergesBeyondThreshold(1000, [cell(949)])).toBe(true)
+  })
 })
 
 describe('prorateCellAreas', () => {
@@ -217,9 +228,11 @@ describe('prorateCellAreas', () => {
   })
 
   it('leaves geometry untouched', () => {
-    const input = [mesh('A', 0.5, 1)]
+    // Non-zero x/y on purpose: with both at 0 the assertion cannot tell a
+    // preserved coordinate from a coincidentally-zero one.
+    const input = [{ code: 'A', x: 0.25, y: 0.4, w: 0.5, h: 1, areaM2: 0 }]
     const out = prorateCellAreas(1000, input)
-    expect(out[0]).toMatchObject({ code: 'A', x: 0, y: 0, w: 0.5, h: 1 })
+    expect(out[0]).toMatchObject({ code: 'A', x: 0.25, y: 0.4, w: 0.5, h: 1 })
   })
 
   it('returns zero areas when the cells have no pixel area at all', () => {
