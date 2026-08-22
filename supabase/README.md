@@ -6,7 +6,7 @@ Local `supabase start` needs Docker and is not required for this project.
 ## Schema verification
 
 `supabase/verify_schema.sql` exercises the trigger, foreign-key and RLS
-behaviour set up across migrations 0001-0009: cross-project stage
+behaviour set up across migrations 0001-0010: cross-project stage
 rejection, the audit trigger, the stage-change log, the durability of the
 `cell_events` name snapshot against both a stage rename and a hard stage
 delete (on separate fixtures, so destroying one stage cannot disarm the
