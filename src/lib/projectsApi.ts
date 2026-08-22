@@ -15,8 +15,34 @@ export interface ProjectRow {
 /**
  * Weights are entered as decimals in a form, so an exact === 1 test would
  * reject 0.1+0.1+0.1+0.7. Compare within this instead.
+ *
+ * Sized to `project_stages.weight`, which is `numeric(6,5)` -- scale 5. A
+ * three-way split typed as 0.333333 / 0.333333 / 0.333334 sums to exactly 1 and
+ * passes any tighter guard, but Postgres stores 0.33333 three times, so on
+ * reload the total is 0.99999 and the config that just saved successfully fails
+ * its own validation: the banner appears and the Save button disables on a
+ * configuration the admin cannot edit their way out of. 1e-5 is the smallest
+ * difference scale 5 can express, so the residual the column's own rounding
+ * introduces has to be inside it.
+ *
+ * This is only half the fix. StageConfigPanel clamps what is typed to 5 decimal
+ * places so that what is entered is what is stored; without that, a weight can
+ * still be silently rounded away under the admin between typing and reload.
  */
-export const STAGE_WEIGHT_EPSILON = 1e-6
+export const STAGE_WEIGHT_EPSILON = 1e-5
+
+/**
+ * Rounds a weight to what `project_stages.weight` can actually hold.
+ *
+ * numeric(6,5) is scale 5, and Postgres rounds silently on the way in. Applying
+ * the same rounding in the form means the admin sees the value that will be
+ * stored, instead of typing a sixth decimal that vanishes between the save and
+ * the reload -- which is how a configuration ends up failing the Σ = 1 check it
+ * had just passed.
+ */
+export function roundStageWeight(weight: number): number {
+  return Math.round(weight * 1e5) / 1e5
+}
 
 export async function createProject(input: { name: string; code: string }): Promise<string> {
   const { data, error } = await supabase
@@ -80,18 +106,45 @@ export async function listStages(projectId: string): Promise<Stage[]> {
 }
 
 /**
- * Replaces a project's stage list wholesale.
+ * Which stage rows a `saveStages` call would delete, identified by seq.
+ *
+ * Exposed so the confirmation dialog can name them: a removal is the only part
+ * of a stage save that destroys anything, so it is the only part worth
+ * confirming, and the dialog must describe the diff rather than guess at it.
+ */
+export function stagesRemovedBy(
+  persisted: Stage[],
+  next: Omit<Stage, 'id'>[],
+): Stage[] {
+  const nextSeqs = new Set(next.map((s) => s.seq))
+  return persisted.filter((p) => !nextSeqs.has(p.seq))
+}
+
+/**
+ * Brings a project's stage list in line with `stages`, keyed by seq.
+ *
+ * Diff, not replace -- the same medicine syncCells got, for a sharper version of
+ * the same reason. `zones.stage_id references project_stages on delete cascade`
+ * (0003) and `cells.stage_id ... on delete set null` (0001), so deleting the
+ * stage rows and re-inserting them destroyed EVERY zone and every zone_cells
+ * link in the project, plus every tick of recorded progress -- on a rename, on a
+ * weight tweak, on any save at all. Upserting on (project_id, seq) keeps the
+ * stage row and its id, so a rename or a reweight now costs nothing.
+ *
+ * Only a seq that genuinely disappears is deleted, and that delete does cascade
+ * its zones away and null the cells sitting at that stage. That is correct --
+ * a zone is a plan for one specific stage and is meaningless without it -- and
+ * it is what the caller's confirmation dialog has to describe. Use
+ * `stagesRemovedBy` to find out whether there is anything to describe.
  *
  * The Σ = 1 rule is enforced here rather than in the database: it spans rows, so
  * a CHECK constraint cannot express it and a deferred trigger would fire in the
  * middle of a multi-row edit. Validating before any write also means a rejected
  * save leaves the existing stages untouched.
  *
- * `cells.stage_id` references `project_stages` with `on delete set null`, so
- * deleting and reinserting the stage list nulls every cell's stage for this
- * project -- every tick of recorded progress. That is acceptable during Phase 2
- * authoring, before any progress exists, but do not call this casually once GS
- * users have started painting.
+ * Not transactional: the upsert and the delete are separate round trips, so a
+ * failure between them leaves the renames applied and the removal not. That is
+ * the safe half to lose -- nothing is destroyed -- and closing it needs an RPC.
  */
 export async function saveStages(
   projectId: string,
@@ -109,13 +162,11 @@ export async function saveStages(
     throw new Error(`Stage weights must sum to 1, got ${total.toFixed(4)}`)
   }
 
-  const { error: deleteError } = await supabase
-    .from('project_stages')
-    .delete()
-    .eq('project_id', projectId)
-  if (deleteError) throw new Error(deleteError.message)
+  // Snapshot first: the removals are found by comparing seqs, and after the
+  // upsert the rows to remove are indistinguishable from the rows to keep.
+  const removed = stagesRemovedBy(await listStages(projectId), stages)
 
-  const { error: insertError } = await supabase.from('project_stages').insert(
+  const { error: upsertError } = await supabase.from('project_stages').upsert(
     stages.map((s) => ({
       project_id: projectId,
       seq: s.seq,
@@ -123,8 +174,20 @@ export async function saveStages(
       color: s.color,
       weight: s.weight,
     })),
+    { onConflict: 'project_id,seq' },
   )
-  if (insertError) throw new Error(insertError.message)
+  if (upsertError) throw new Error(upsertError.message)
+
+  // By explicit id, and only when there is something to delete. A
+  // `.eq('project_id', projectId)` delete here would be exactly the bug this
+  // rewrite exists to remove.
+  if (removed.length > 0) {
+    const { error: deleteError } = await supabase
+      .from('project_stages')
+      .delete()
+      .in('id', removed.map((r) => r.id))
+    if (deleteError) throw new Error(deleteError.message)
+  }
 }
 
 /**

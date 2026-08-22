@@ -1,15 +1,29 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { StageConfigPanel } from './StageConfigPanel'
 
 const listStages = vi.hoisted(() => vi.fn())
 const saveStages = vi.hoisted(() => vi.fn())
-vi.mock('../../lib/projectsApi', () => ({
-  listStages: (id: string) => listStages(id),
-  saveStages: (id: string, s: unknown) => saveStages(id, s),
-  STAGE_WEIGHT_EPSILON: 1e-6,
-}))
+// stagesRemovedBy and roundStageWeight are pure, and the panel's behaviour IS
+// what they compute -- which stages the dialog names, and what value a keystroke
+// stores. Stubbing them would leave the dialog and the clamp asserted against a
+// fixture instead of against the real diff, so the real implementations are used
+// here and only the two I/O functions are mocked.
+// projectsApi imports the supabase client at module scope, so stub that out to
+// let importOriginal run without reaching for real credentials. Nothing in this
+// file goes through it -- the two functions that would are mocked below.
+vi.mock('../../lib/supabase', () => ({ supabase: { from: vi.fn() } }))
+vi.mock('../../lib/projectsApi', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../../lib/projectsApi')>()
+  return {
+    listStages: (id: string) => listStages(id),
+    saveStages: (id: string, s: unknown) => saveStages(id, s),
+    stagesRemovedBy: real.stagesRemovedBy,
+    roundStageWeight: real.roundStageWeight,
+    STAGE_WEIGHT_EPSILON: real.STAGE_WEIGHT_EPSILON,
+  }
+})
 
 beforeEach(() => {
   listStages.mockReset()
@@ -60,40 +74,93 @@ describe('StageConfigPanel', () => {
     saveStages.mockResolvedValue(undefined)
     render(<StageConfigPanel projectId="p1" />)
     await screen.findByDisplayValue('Blast + Coat 1')
+    // Nothing is being removed here, so Lưu saves directly -- see the
+    // no-dialog test below.
     await userEvent.click(screen.getByRole('button', { name: 'Lưu' }))
-    // Lưu only opens the destructive-save confirmation (pinned by the next
-    // test); the actual save happens on the modal's own confirm button.
-    await userEvent.click(screen.getByRole('button', { name: 'Vẫn lưu' }))
 
     await waitFor(() => expect(saveStages).toHaveBeenCalledTimes(1))
     const [, stages] = saveStages.mock.calls[0]
     expect(stages).toHaveLength(2)
-    // saveStages replaces the rows, so ids from the old set must not be sent.
+    // saveStages keys the upsert on (project_id, seq), so ids from the old set
+    // must not be sent -- and sending one would make the payload look like an
+    // identity claim the diff does not actually use.
     for (const s of stages as Record<string, unknown>[]) {
       expect(s).not.toHaveProperty('id')
     }
   })
 
-  it('warns that saving will clear recorded progress, and needs confirmation', async () => {
-    // cells.stage_id references project_stages ON DELETE SET NULL, and saveStages
-    // replaces the whole list -- so every tick of recorded progress in the project
-    // is nulled. Harmless while authoring, destructive once GS users have started.
+  it('saves without any confirmation when nothing is being removed', async () => {
+    // A rename or a reweight now keeps every stage row, its id, its zones and
+    // every cell's recorded progress: saveStages upserts on (project_id, seq)
+    // and deletes only the seqs that genuinely disappear. There is nothing to
+    // disclose, and a dialog on a save that costs nothing is a dialog the admin
+    // learns to click through -- which is how the one that matters gets skimmed.
     saveStages.mockResolvedValue(undefined)
     render(<StageConfigPanel projectId="p1" />)
-    await screen.findByDisplayValue('Blast + Coat 1')
+    const name = await screen.findByDisplayValue('Blast + Coat 1')
+    await userEvent.clear(name)
+    await userEvent.type(name, 'Blast + Coat 1 (renamed)')
 
     await userEvent.click(screen.getByRole('button', { name: 'Lưu' }))
-    expect(await screen.findByText(/tiến độ đã ghi/i)).toBeInTheDocument()
+
+    await waitFor(() => expect(saveStages).toHaveBeenCalledTimes(1))
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect((saveStages.mock.calls[0][1] as { name: string }[])[0].name).toBe(
+      'Blast + Coat 1 (renamed)',
+    )
+  })
+
+  it('names the stage being removed, and what removing it destroys', async () => {
+    // zones.stage_id references project_stages ON DELETE CASCADE and
+    // cells.stage_id ON DELETE SET NULL, so a removal -- and now only a removal
+    // -- nulls the cells sitting at that stage and deletes the zones planned
+    // against it. The dialog has to name both consequences and the stage they
+    // apply to; the wording it replaced mentioned neither zones nor which stage.
+    listStages.mockResolvedValue([
+      { id: 's1', seq: 1, name: 'Blast + Coat 1', color: '#fadb14', weight: 0.5 },
+      { id: 's2', seq: 2, name: 'Coat 2', color: '#bfbfbf', weight: 0.3 },
+      { id: 's3', seq: 3, name: 'Tháo giáo', color: '#722ed1', weight: 0.2 },
+    ])
+    saveStages.mockResolvedValue(undefined)
+    render(<StageConfigPanel projectId="p1" />)
+    await screen.findByDisplayValue('Tháo giáo')
+
+    // Remove the last row, so the seq that disappears (3) is the row whose name
+    // the dialog must show.
+    await userEvent.click(screen.getAllByRole('button', { name: 'Xoá' })[2])
+    // Put the freed weight back on an existing row so Lưu is enabled again.
+    const weight = screen.getByDisplayValue('0,3')
+    await userEvent.clear(weight)
+    await userEvent.type(weight, '0,5')
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Lưu' })).toBeEnabled())
+
+    await userEvent.click(screen.getByRole('button', { name: 'Lưu' }))
+
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText(/Tháo giáo/)).toBeInTheDocument()
+    // Not a surviving stage: naming one of those would be the over-disclosure
+    // the diff exists to remove.
+    expect(within(dialog).queryByText(/Blast \+ Coat 1/)).toBeNull()
+    expect(within(dialog).getByText(/tiến độ đã ghi/i)).toBeInTheDocument()
+    expect(within(dialog).getByText(/zone/i)).toBeInTheDocument()
     expect(saveStages).not.toHaveBeenCalled()
 
     await userEvent.click(screen.getByRole('button', { name: 'Vẫn lưu' }))
     await waitFor(() => expect(saveStages).toHaveBeenCalledTimes(1))
+    expect(saveStages.mock.calls[0][1]).toHaveLength(2)
   })
 
   it('surfaces a save failure and closes the confirmation modal', async () => {
+    // Driven through the removal path so there is a modal to close in the first
+    // place.
+    listStages.mockResolvedValue([
+      { id: 's1', seq: 1, name: 'Blast + Coat 1', color: '#fadb14', weight: 1 },
+      { id: 's2', seq: 2, name: 'Coat 2', color: '#bfbfbf', weight: 0 },
+    ])
     saveStages.mockRejectedValue(new Error('weights must sum to 1, got 0.9000'))
     render(<StageConfigPanel projectId="p1" />)
     await screen.findByDisplayValue('Coat 2')
+    await userEvent.click(screen.getAllByRole('button', { name: 'Xoá' })[1])
     await userEvent.click(screen.getByRole('button', { name: 'Lưu' }))
     await userEvent.click(screen.getByRole('button', { name: 'Vẫn lưu' }))
     expect(await screen.findByText(/must sum to 1/)).toBeInTheDocument()
@@ -130,8 +197,8 @@ describe('StageConfigPanel', () => {
     render(<StageConfigPanel projectId="p1" />)
     await screen.findByDisplayValue('Blast + Coat 1')
 
+    // No removal here, so Lưu saves directly with no dialog in the way.
     await userEvent.click(screen.getByRole('button', { name: 'Lưu' }))
-    await userEvent.click(screen.getByRole('button', { name: 'Vẫn lưu' }))
     await waitFor(() => expect(saveStages).toHaveBeenCalledTimes(1))
 
     // The background refresh's `listStages` call is now pending on
@@ -168,24 +235,82 @@ describe('StageConfigPanel', () => {
     expect(screen.getByRole('button', { name: 'Lưu' })).toBeEnabled()
   })
 
-  it('keeps save enabled right at the epsilon boundary', async () => {
+  it('clamps a typed weight to the five decimals the column can store', async () => {
+    // A8's first half. weight is numeric(6,5), so a sixth decimal is rounded
+    // away by Postgres. Clamping as it is typed means the admin sees the value
+    // that will actually be stored, instead of discovering on reload that the
+    // total no longer sums to 1.
     render(<StageConfigPanel projectId="p1" />)
-    const weight = await screen.findByDisplayValue('0,4')
+    const weight = await screen.findByDisplayValue('0,6')
     await userEvent.clear(weight)
-    // total becomes 1.000001 == 1 + 1e-6, exactly STAGE_WEIGHT_EPSILON: the
-    // gate uses <=, so this must still be considered balanced.
-    await userEvent.type(weight, '0,400001')
-    await waitFor(() =>
-      expect(screen.getByRole('button', { name: 'Lưu' })).toBeEnabled(),
-    )
+    await userEvent.type(weight, '0,333333')
+    // Blur: while focused rc-input-number echoes the raw keystrokes back, so
+    // the field only shows the stored value once it stops being edited. The
+    // running total below reads the state either way, and is what every
+    // percentage on the project is computed from.
+    await userEvent.tab()
+
+    await waitFor(() => expect(screen.getByDisplayValue('0,33333')).toBeInTheDocument())
+    expect(screen.queryByDisplayValue('0,333333')).toBeNull()
+    // 0.4 + 0.33333, not 0.4 + 0.333333.
+    expect(screen.getByText('0,7333')).toBeInTheDocument()
   })
 
-  it('disables save just past the epsilon boundary', async () => {
+  it('saves the three-way split that used to disable its own Save button', async () => {
+    // The whole A8 defect, end to end. 0.333333 / 0.333333 / 0.333334 sums to
+    // exactly 1 as typed, so it saved -- and Postgres stored 0.33333 three
+    // times, leaving a reloaded total of 0.99999 that failed the old 1e-6 check:
+    // the red banner appeared and Save disabled on a configuration that had just
+    // saved successfully, with nothing on screen saying five decimals was the
+    // limit. Both halves are needed here: the clamp makes the typed values the
+    // stored ones, and the widened epsilon accepts the 1e-5 the clamp leaves
+    // behind.
+    listStages.mockResolvedValue([
+      { id: 's1', seq: 1, name: 'A', color: '#111111', weight: 0.4 },
+      { id: 's2', seq: 2, name: 'B', color: '#222222', weight: 0.3 },
+      { id: 's3', seq: 3, name: 'C', color: '#333333', weight: 0.3 },
+    ])
+    saveStages.mockResolvedValue(undefined)
+    render(<StageConfigPanel projectId="p1" />)
+    await screen.findByDisplayValue('0,4')
+
+    // By row, not by display value: two rows start at 0,3, and after the first
+    // edit three rows share a value.
+    const typed = ['0,333333', '0,333333', '0,333334']
+    for (let row = 0; row < typed.length; row++) {
+      const field = screen.getAllByRole('spinbutton')[row]
+      await userEvent.clear(field)
+      await userEvent.type(field, typed[row])
+      await userEvent.tab()
+    }
+
+    // Every field holds the value the database will hold.
+    await waitFor(() => expect(screen.getAllByDisplayValue('0,33333')).toHaveLength(3))
+    // The total row formats to 4 decimals, so the 1e-5 the clamp leaves behind
+    // rounds away and it reads 1,0000. That is precisely why the epsilon has to
+    // forgive it: at 1e-6 the banner appeared next to a total the admin reads as
+    // exactly 1,0000, saying "Tổng trọng số phải bằng 1.00 — hiện tại 1,0000".
+    expect(screen.getByText('1,0000')).toBeInTheDocument()
+    expect(screen.queryByText(/Tổng trọng số phải bằng/)).toBeNull()
+
+    const save = screen.getByRole('button', { name: 'Lưu' })
+    expect(save).toBeEnabled()
+    await userEvent.click(save)
+
+    await waitFor(() => expect(saveStages).toHaveBeenCalledTimes(1))
+    expect((saveStages.mock.calls[0][1] as { weight: number }[]).map((s) => s.weight)).toEqual([
+      0.33333, 0.33333, 0.33333,
+    ])
+  })
+
+  it('disables save when the weights are a whole storable step away from 1', async () => {
+    // 0.6 + 0.39998 is 0.99998: two units at scale 5, comfortably past
+    // STAGE_WEIGHT_EPSILON. Widening the epsilon to absorb the clamp's own
+    // residual must not have turned the Σ = 1 rule into a suggestion.
     render(<StageConfigPanel projectId="p1" />)
     const weight = await screen.findByDisplayValue('0,4')
     await userEvent.clear(weight)
-    // total becomes 1.000002 == 1 + 2e-6, one step past STAGE_WEIGHT_EPSILON.
-    await userEvent.type(weight, '0,400002')
+    await userEvent.type(weight, '0,39998')
     await waitFor(() =>
       expect(screen.getByRole('button', { name: 'Lưu' })).toBeDisabled(),
     )

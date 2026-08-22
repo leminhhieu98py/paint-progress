@@ -1,7 +1,9 @@
 import { Alert, Button, Input, InputNumber, Modal, Space, Table, Typography } from 'antd'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Stage } from '../../domain/types'
-import { listStages, saveStages, STAGE_WEIGHT_EPSILON } from '../../lib/projectsApi'
+import {
+  listStages, roundStageWeight, saveStages, stagesRemovedBy, STAGE_WEIGHT_EPSILON,
+} from '../../lib/projectsApi'
 
 type DraftStage = Omit<Stage, 'id'>
 
@@ -12,6 +14,14 @@ const weightFmt = new Intl.NumberFormat('vi-VN', {
 
 export function StageConfigPanel({ projectId }: { projectId: string }) {
   const [draft, setDraft] = useState<DraftStage[]>([])
+  /**
+   * The stage list as last read from the database, kept beside the draft so the
+   * confirmation dialog can name the rows a save would actually delete. Written
+   * only where `draft` is written, and under the same guards: the two are one
+   * pair -- an edit and the baseline it was made against -- and a diff between
+   * a fresh baseline and a stale draft would name the wrong stages.
+   */
+  const [persisted, setPersisted] = useState<Stage[]>([])
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [confirming, setConfirming] = useState(false)
@@ -37,6 +47,7 @@ export function StageConfigPanel({ projectId }: { projectId: string }) {
       // it would silently discard something more current than the fetch.
       if (mine !== generation.current || dirty.current) return
       setDraft(stages.map(({ seq, name, color, weight }) => ({ seq, name, color, weight })))
+      setPersisted(stages)
       setError(null)
     } catch (e) {
       if (mine === generation.current) setError((e as Error).message)
@@ -51,6 +62,14 @@ export function StageConfigPanel({ projectId }: { projectId: string }) {
 
   const total = useMemo(() => draft.reduce((sum, s) => sum + s.weight, 0), [draft])
   const balanced = Math.abs(total - 1) <= STAGE_WEIGHT_EPSILON
+
+  /**
+   * The stages this save would delete. Removing a stage is the only part of a
+   * stage save that destroys anything -- a rename or a reweight now keeps the
+   * row, its id, its zones and every cell's recorded progress -- so it is the
+   * only part worth a confirmation, and the dialog names exactly these.
+   */
+  const removed = useMemo(() => stagesRemovedBy(persisted, draft), [persisted, draft])
 
   const patch = (index: number, change: Partial<DraftStage>) => {
     dirty.current = true
@@ -205,7 +224,12 @@ export function StageConfigPanel({ projectId }: { projectId: string }) {
                 // antd parses that as 0 and the stage silently loses its
                 // weight -- the same class of bug the deck-area field had.
                 decimalSeparator=","
-                onChange={(n) => patch(i, { weight: n ?? 0 })}
+                // Clamped to the column's own scale (numeric(6,5)) as it is
+                // typed, so the admin never enters a sixth decimal that
+                // Postgres rounds away behind their back. That rounding is what
+                // turned a successful save into a config whose total no longer
+                // summed to 1 on reload, disabling this very button.
+                onChange={(n) => patch(i, { weight: roundStageWeight(n ?? 0) })}
               />
             ),
           },
@@ -252,7 +276,17 @@ export function StageConfigPanel({ projectId }: { projectId: string }) {
       />
 
       <Space>
-        <Button type="primary" disabled={!balanced} loading={busy} onClick={() => setConfirming(true)}>
+        <Button
+          type="primary"
+          disabled={!balanced}
+          loading={busy}
+          // Nothing is being removed means nothing is being destroyed, so there
+          // is nothing to confirm: saveStages upserts on (project_id, seq) and a
+          // rename or a reweight keeps every stage row, id, zone and tick. A
+          // dialog on a save that costs nothing is a dialog the admin learns to
+          // click through, which is how the one that does matter gets skimmed.
+          onClick={() => (removed.length > 0 ? setConfirming(true) : void onSave())}
+        >
           Lưu
         </Button>
         <Button disabled={busy} onClick={addStage}>
@@ -270,20 +304,39 @@ export function StageConfigPanel({ projectId }: { projectId: string }) {
       {confirming && (
         <Modal
           open
-          title="Lưu cấu hình lớp sơn?"
+          title="Xoá lớp sơn khỏi cấu hình?"
           okText="Vẫn lưu"
           cancelText="Huỷ"
           confirmLoading={busy}
           onCancel={() => setConfirming(false)}
           onOk={() => void onSave()}
         >
+          {/*
+            Every sentence here is about the removals and only the removals.
+            The old wording claimed a stage save wiped all recorded progress in
+            the project, which was true of the delete-and-reinsert write it
+            described and is no longer true of the diff -- and it never
+            mentioned zones at all, which were the part being destroyed
+            silently.
+          */}
           <Typography.Paragraph>
-            Lưu danh sách lớp sơn sẽ <strong>xoá toàn bộ tiến độ đã ghi</strong> của
-            dự án này: mọi ô đang ở một lớp nào đó sẽ trở về trạng thái chưa bắt đầu.
+            Các lớp sau sẽ bị <strong>xoá</strong> khỏi cấu hình dự án:
+          </Typography.Paragraph>
+          <ul>
+            {removed.map((s) => (
+              <li key={s.id}>
+                <strong>{s.name}</strong> (thứ tự {s.seq})
+              </li>
+            ))}
+          </ul>
+          <Typography.Paragraph>
+            Xoá một lớp sẽ xoá tiến độ đã ghi của mọi ô đang ở lớp đó — các ô đó
+            trở về trạng thái chưa bắt đầu — và xoá luôn các zone đã lên kế hoạch
+            cho lớp đó.
           </Typography.Paragraph>
           <Typography.Paragraph type="secondary">
-            Trong lúc đang khai báo sàn thì vô hại — nhưng một khi giám sát đã tick
-            tiến độ thật, tiến độ đó sẽ mất vĩnh viễn và không thể khôi phục.
+            Đổi tên hay đổi trọng số thì không mất gì. Nhưng phần bị xoá ở trên thì
+            mất vĩnh viễn và không thể khôi phục.
           </Typography.Paragraph>
         </Modal>
       )}
