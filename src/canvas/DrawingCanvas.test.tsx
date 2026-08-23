@@ -55,6 +55,12 @@ vi.mock('react-konva', () => {
       data-draggable={String(props.draggable ?? '')}
       data-text={String(props.text ?? '')}
       data-dash={String(props.dash ?? '')}
+      // `listening` cannot be observed behaviourally here: with react-konva
+      // mocked away there is no hit graph, so a layer that swallows pointer
+      // events looks identical to one that does not. Exposing the prop lets a
+      // test at least discriminate the regression -- see the non-listening
+      // layers test below for why that particular regression matters.
+      data-listening={String(props.listening ?? '')}
       // Probes the stage's own drag clamp with a position far outside any
       // sane viewport, at the CURRENT width/height/zoom the component computed
       // -- not a hardcoded stand-in for them. This is what lets the pan tests
@@ -685,4 +691,29 @@ describe('DrawingCanvas', () => {
       expect(screen.queryByTestId('rect:plan-R1C1')).toBeNull()
     })
   })
+  it('keeps the selection and plan layers out of the hit graph', () => {
+    // The overlays draw on top of every cell. If either one listened, it would
+    // absorb the tap that records progress -- and ticking a bay is the only
+    // thing the GS screen does, so an overlay in front of it removes the app's
+    // entire function while looking completely normal.
+    //
+    // Asserted as a prop rather than by clicking through the overlay: with
+    // react-konva mocked there is no hit graph to click through, so a
+    // behavioural test here would pass either way. Deliberately narrow, and on
+    // the browser checklist for real verification.
+    render(
+      <DrawingCanvas
+        imageUrl="i.png"
+        imageW={100}
+        imageH={100}
+        guides={[]}
+        cells={[{ code: 'R1C1', x: 0, y: 0, w: 1, h: 1, areaM2: 10 }]}
+        selectedCodes={['R1C1']}
+        planLabels={{ R1C1: '13/08 – 19/08' }}
+      />,
+    )
+    expect(screen.getByTestId('layer:selection')).toHaveAttribute('data-listening', 'false')
+    expect(screen.getByTestId('layer:plan')).toHaveAttribute('data-listening', 'false')
+  })
+
 })
