@@ -501,6 +501,30 @@ describe('GsScreen: realtime', () => {
     expect(await screen.findByText('Mất kết nối, đang kết nối lại...')).toBeInTheDocument()
   })
 
+  it('re-reads the deck shortly after subscribing, to cover the registration lag', async () => {
+    // Probed against the live project: a write issued immediately after
+    // SUBSCRIBED is not delivered, while the same write four seconds later is.
+    // So the gap between the load effect's fetch and the subscription actually
+    // being live loses another foreman's tap outright, and nothing on screen
+    // would say so. One re-read after SUBSCRIBED closes it.
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      renderScreen()
+      await screen.findByRole('button', { name: 'ô R1C1' })
+      const afterLoad = listDeckCells.mock.calls.length
+
+      act(() => { liveHandlers?.onStatus('subscribed') })
+      await act(async () => {
+        vi.advanceTimersByTime(2_000)
+      })
+
+      expect(listDeckCells.mock.calls.length).toBe(afterLoad + 1)
+      expect(listDeckCells.mock.calls.at(-1)?.[0]).toBe('d1')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('warns when the channel never reaches subscribed at all', async () => {
     // realtimeStatus starts optimistically at 'subscribed', so a socket that
     // neither connects nor errors -- a captive portal, a proxy holding the

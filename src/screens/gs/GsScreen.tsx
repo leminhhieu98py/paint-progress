@@ -30,6 +30,22 @@ import { StageSpecTable } from './StageSpecTable'
  */
 const REALTIME_CONNECT_TIMEOUT_MS = 10_000
 
+/**
+ * How long after SUBSCRIBED to re-read the deck.
+ *
+ * SUBSCRIBED does not mean the server has registered the subscription. Probed
+ * against the live project: two clients signed in as the same GS, the watcher
+ * subscribed, and a write issued immediately after SUBSCRIBED was NOT
+ * delivered -- the same write four seconds later was. So there is a window
+ * between the load effect's fetch and the subscription actually being live in
+ * which another foreman's tap is lost entirely, and nothing on screen would
+ * ever say so: the next refetch only happens on a reconnect.
+ *
+ * One re-read shortly after SUBSCRIBED closes it. Two seconds is longer than
+ * the lag observed and cheap -- it is one small query per deck open.
+ */
+const REALTIME_REGISTRATION_GRACE_MS = 2_000
+
 export function GsScreen() {
   const { projectId } = useParams()
   const { profile, signOut } = useAuth()
@@ -119,6 +135,8 @@ export function GsScreen() {
    * succeed over plain HTTP.
    */
   const connectWatchdog = useRef<ReturnType<typeof setTimeout> | null>(null)
+  /** Pending post-SUBSCRIBED re-read; see REALTIME_REGISTRATION_GRACE_MS. */
+  const registrationRefetch = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
     if (!activeDeckId) return
@@ -152,18 +170,30 @@ export function GsScreen() {
         }
         // Reconnected: the socket may have missed any number of writes while it
         // was down, so nothing short of a full re-read of the deck's cells is
-        // safe (spec §11 row 2). Gated on having actually been down -- the first
-        // SUBSCRIBED arrives right after the load effect's own fetch.
+        // safe (spec §11 row 2). Immediate, because the foreman is looking at a
+        // screen we have already told them is stale.
         if (wasDisconnected.current) {
           wasDisconnected.current = false
           void refetchCells(activeDeckId)
         }
+        // And once more shortly after every SUBSCRIBED, reconnect or not: the
+        // server registers the subscription some time AFTER reporting
+        // SUBSCRIBED, so a write in that window reaches nobody.
+        if (registrationRefetch.current) clearTimeout(registrationRefetch.current)
+        registrationRefetch.current = setTimeout(() => {
+          registrationRefetch.current = null
+          void refetchCells(activeDeckId)
+        }, REALTIME_REGISTRATION_GRACE_MS)
       },
     })
     return () => {
       if (connectWatchdog.current) {
         clearTimeout(connectWatchdog.current)
         connectWatchdog.current = null
+      }
+      if (registrationRefetch.current) {
+        clearTimeout(registrationRefetch.current)
+        registrationRefetch.current = null
       }
       wasDisconnected.current = false
       setRealtimeStatus('subscribed')
