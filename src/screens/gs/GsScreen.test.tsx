@@ -1,5 +1,7 @@
 import { App as AntApp } from 'antd'
-import { render, screen, waitFor } from '@testing-library/react'
+import {
+  render, screen, waitFor, within,
+} from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -254,8 +256,13 @@ describe('GsScreen: recording a stage', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'ô R1C2' }))
 
     expect(await screen.findByText('Ô R1C2')).toBeInTheDocument()
-    // Its own area and its own current stage, not the first cell's.
-    expect(screen.getByText('200,00 m²')).toBeInTheDocument()
+    // Its own area and its own current stage, not the first cell's. Scoped to
+    // the modal's info rows: Task 7's pie legend also shows "200,00 m²" for the
+    // Coat 2 slice, which happens to hold exactly this one cell -- an unscoped
+    // query would find both.
+    expect(
+      within(screen.getByTestId('cell-stage-info')).getByText('200,00 m²'),
+    ).toBeInTheDocument()
   })
 
   it('writes only the cell\'s stage id', async () => {

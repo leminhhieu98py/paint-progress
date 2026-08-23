@@ -3,15 +3,17 @@ import { useEffect, useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { useAuth } from '../../auth/AuthProvider'
 import { DrawingCanvas } from '../../canvas/DrawingCanvas'
+import { buildStageSlices } from '../../domain/pieSlices'
 import { computeDeckProgress } from '../../domain/progress'
 import type { Cell, Deck, Stage } from '../../domain/types'
 // One signed-URL helper for both roles: the bucket name and the 3600-second
 // expiry belong in one place, and decksApi is a lib module rather than an admin
 // one. Screens still never touch `supabase` directly.
 import { getDrawingUrl } from '../../lib/decksApi'
-import { formatAreaM2, formatPercent } from '../../lib/format'
+import { formatAreaM2 } from '../../lib/format'
 import { listDeckCells, loadGsProject, setCellStage, type GsDeck } from '../../lib/gsApi'
 import { CellStageModal } from './CellStageModal'
+import { StagePie } from './StagePie'
 
 export function GsScreen() {
   const { projectId } = useParams()
@@ -117,6 +119,11 @@ export function GsScreen() {
     }
     return computeDeckProgress(asDomainDeck, stages)
   }, [deck, cells, stages])
+
+  const slices = useMemo(
+    () => buildStageSlices(deck?.totalAreaM2 ?? 0, cells, stages),
+    [deck?.totalAreaM2, cells, stages],
+  )
 
   /** Stage colour per cell CODE, which is what DrawingCanvas keys on. A cell
    *  with no stage is left out of the map and renders unfilled. */
@@ -237,10 +244,11 @@ export function GsScreen() {
           </Col>
           <Col xs={24} md={10}>
             <div data-testid="gs-chart-region">
-              <Typography.Title level={2} style={{ margin: 0 }}>
-                {formatPercent(deckProgress?.progress ?? 0)}
-              </Typography.Title>
-              <Typography.Text type="secondary">Tiến độ sàn</Typography.Text>
+              <StagePie
+                slices={slices}
+                totalAreaM2={deck?.totalAreaM2 ?? 0}
+                progress={deckProgress?.progress ?? 0}
+              />
             </div>
           </Col>
         </Row>
