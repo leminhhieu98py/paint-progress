@@ -14,6 +14,7 @@ import { formatAreaM2 } from '../../lib/format'
 import { listDeckCells, loadGsProject, setCellStage, type GsDeck } from '../../lib/gsApi'
 import { CellStageModal } from './CellStageModal'
 import { StagePie } from './StagePie'
+import { StageSpecTable } from './StageSpecTable'
 
 export function GsScreen() {
   const { projectId } = useParams()
@@ -264,6 +265,7 @@ export function GsScreen() {
         <Typography.Text>
           Tổng diện tích sàn: {formatAreaM2(deck?.totalAreaM2 ?? 0)} m²
         </Typography.Text>
+        <StageSpecTable stages={deckProgress?.stages ?? []} />
       </div>
 
       <CellStageModal
