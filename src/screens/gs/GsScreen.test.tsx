@@ -491,6 +491,46 @@ describe('GsScreen: realtime', () => {
     expect(await screen.findByText('Mất kết nối, đang kết nối lại...')).toBeInTheDocument()
   })
 
+  it('warns when the channel never reaches subscribed at all', async () => {
+    // realtimeStatus starts optimistically at 'subscribed', so a socket that
+    // neither connects nor errors -- a captive portal, a proxy holding the
+    // websocket open -- would otherwise leave the foreman reading numbers that
+    // stopped updating, with nothing on screen saying so.
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      renderScreen()
+      await screen.findByRole('button', { name: 'ô R1C1' })
+      expect(screen.queryByText('Mất kết nối, đang kết nối lại...')).toBeNull()
+
+      await act(async () => {
+        vi.advanceTimersByTime(10_000)
+      })
+
+      expect(screen.getByText('Mất kết nối, đang kết nối lại...')).toBeInTheDocument()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('does not warn when the channel connects before the watchdog fires', async () => {
+    // The other half of the pair: a slow tether must not flash a warning on
+    // every deck change, so reaching subscribed has to cancel the watchdog.
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      renderScreen()
+      await screen.findByRole('button', { name: 'ô R1C1' })
+
+      act(() => { liveHandlers?.onStatus('subscribed') })
+      await act(async () => {
+        vi.advanceTimersByTime(30_000)
+      })
+
+      expect(screen.queryByText('Mất kết nối, đang kết nối lại...')).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('refetches the deck\'s cells on reconnect, and only then', async () => {
     renderScreen()
     await waitFor(() => expect(listDeckCells).toHaveBeenCalledTimes(1))

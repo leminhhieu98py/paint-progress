@@ -19,6 +19,14 @@ import { CellStageModal } from './CellStageModal'
 import { StagePie } from './StagePie'
 import { StageSpecTable } from './StageSpecTable'
 
+/**
+ * How long to wait for the realtime channel to reach SUBSCRIBED before telling
+ * the foreman the screen may be stale. Ten seconds: long enough that a slow
+ * site tether does not flash a warning on every deck change, short enough that
+ * nobody works a whole bay off numbers that stopped moving.
+ */
+const REALTIME_CONNECT_TIMEOUT_MS = 10_000
+
 export function GsScreen() {
   const { projectId } = useParams()
   const { profile, signOut } = useAuth()
@@ -96,9 +104,28 @@ export function GsScreen() {
    * (which would tear the channel down and rebuild it on every disconnect).
    */
   const wasDisconnected = useRef(false)
+  /**
+   * Watchdog for a channel that never connects at all.
+   *
+   * realtimeStatus starts optimistically at 'subscribed', so if the socket
+   * never reaches SUBSCRIBED and never errors -- a captive portal on the site
+   * wifi answers every request, a proxy that holds the websocket open -- no
+   * status callback ever fires and the foreman sees no banner. They would go on
+   * reading numbers that stopped updating, while deciding what to paint next.
+   * Nothing else on this screen would say so, because their own writes still
+   * succeed over plain HTTP.
+   */
+  const connectWatchdog = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
     if (!activeDeckId) return
+    connectWatchdog.current = setTimeout(() => {
+      setRealtimeStatus('disconnected')
+      // Treated as a real disconnect so that if it does connect later, the
+      // reconnect branch below re-reads the deck rather than trusting a socket
+      // that has already missed an unknown number of writes.
+      wasDisconnected.current = true
+    }, REALTIME_CONNECT_TIMEOUT_MS)
     const unsubscribe = subscribeDeckCells(activeDeckId, {
       onCellChange: (next) => {
         // Last write wins on stage_id (spec §11 row 3): whatever arrives is the
@@ -111,6 +138,10 @@ export function GsScreen() {
         )
       },
       onStatus: (status) => {
+        if (status === 'subscribed' && connectWatchdog.current) {
+          clearTimeout(connectWatchdog.current)
+          connectWatchdog.current = null
+        }
         setRealtimeStatus(status)
         if (status === 'disconnected') {
           wasDisconnected.current = true
@@ -127,6 +158,10 @@ export function GsScreen() {
       },
     })
     return () => {
+      if (connectWatchdog.current) {
+        clearTimeout(connectWatchdog.current)
+        connectWatchdog.current = null
+      }
       wasDisconnected.current = false
       setRealtimeStatus('subscribed')
       unsubscribe()
