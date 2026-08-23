@@ -39,7 +39,7 @@ vi.mock('../../lib/projectsApi', () => ({
 // One button per cell so a test can select a SUBSET, which "Chọn tất cả"
 // cannot: a merge of some-but-not-all cells is the only shape in which the
 // survivor's identity can be got wrong.
-vi.mock('./DrawingCanvas', () => ({
+vi.mock('../../canvas/DrawingCanvas', () => ({
   DrawingCanvas: ({
     cells, guides, onCellClick, onGuideMove, onGuideAdd, cellColors,
   }: {

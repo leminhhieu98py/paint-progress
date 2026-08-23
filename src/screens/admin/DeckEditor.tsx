@@ -15,7 +15,7 @@ import {
 import { formatAreaM2, formatMm, formatPercent } from '../../lib/format'
 import { listStages } from '../../lib/projectsApi'
 import { randomUUID } from '../../lib/uuid'
-import { DrawingCanvas } from './DrawingCanvas'
+import { DrawingCanvas } from '../../canvas/DrawingCanvas'
 
 /** A guide table row: the guide, its index into the unsorted `guides` array, and the span to the guide before it. */
 type AxisRow = Guide & { index: number; spanMm: number }

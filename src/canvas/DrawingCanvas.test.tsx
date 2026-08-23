@@ -1,6 +1,6 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DrawingCanvas } from './DrawingCanvas'
 
 // Simulates the one piece of Konva node state that the drag-clamp reset
@@ -44,6 +44,13 @@ vi.mock('react-konva', () => {
       data-y={String(props.y ?? '')}
       data-fill={String(props.fill ?? '')}
       data-opacity={String(props.opacity ?? '')}
+      // width/height/hitFunc are read by the container-sizing and guide-grab-area
+      // tests. jsdom has no canvas, so a hitFunc can only be observed as
+      // "present"; what it actually paints is asserted on guideHitProfile in
+      // canvasView.test.ts, which is where the geometry lives.
+      data-width={String(props.width ?? '')}
+      data-height={String(props.height ?? '')}
+      data-hashitfunc={String(typeof props.hitFunc === 'function')}
       onClick={(domEvt: React.MouseEvent) =>
         (props.onClick as ((e: unknown) => void) | undefined)?.({ evt: domEvt })
       }
@@ -196,7 +203,7 @@ describe('DrawingCanvas', () => {
         selectedCodes={[]}
       />,
     )
-    // R1C2 sits at x = 0.5 of the fixed 900px-wide stage.
+    // R1C2 sits at x = 0.5 of the fallback width: jsdom reports clientWidth 0, so the component falls back to FALLBACK_STAGE_WIDTH (900).
     expect(screen.getByTestId('rect:cell-R1C2')).toHaveAttribute('data-x', '450')
   })
 
@@ -211,7 +218,7 @@ describe('DrawingCanvas', () => {
         selectedCodes={[]}
       />,
     )
-    // height = imageH * (width / imageW) = 1600 * (900 / 2000) = 720; y = 0.5 * 720 = 360.
+    // height = imageH * (width / imageW) = 1600 * (900 / 2000) = 720 at the 900px fallback width; y = 0.5 * 720 = 360.
     expect(screen.getByTestId('rect:cell-R2C1')).toHaveAttribute('data-y', '360')
   })
 
@@ -333,6 +340,123 @@ describe('DrawingCanvas', () => {
       // guide drifting by twice the intended step.
       fireEvent.mouseUp(screen.getByTestId('line:guide-x-0'), { clientX: 90, clientY: 0 })
       expect(onGuideMove).toHaveBeenNthCalledWith(2, 0, 0.7)
+    })
+  })
+
+  describe('container sizing', () => {
+    // jsdom reports clientWidth 0 for every element and implements no
+    // ResizeObserver, so both have to be installed per test. Both are restored
+    // by the afterEach below -- leaving a global clientWidth of 640 behind would
+    // silently retune every other test in this file.
+    let restoreClientWidth: (() => void) | null = null
+
+    const stubClientWidth = (px: number) => {
+      const original = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'clientWidth')
+      Object.defineProperty(HTMLElement.prototype, 'clientWidth', {
+        configurable: true,
+        get: () => px,
+      })
+      restoreClientWidth = () => {
+        if (original) Object.defineProperty(HTMLElement.prototype, 'clientWidth', original)
+        else delete (HTMLElement.prototype as unknown as Record<string, unknown>).clientWidth
+      }
+    }
+
+    afterEach(() => {
+      restoreClientWidth?.()
+      restoreClientWidth = null
+      delete (globalThis as unknown as Record<string, unknown>).ResizeObserver
+    })
+
+    it('sizes the stage to its container instead of a fixed width', () => {
+      // The defect: a 900px stage inside a 636px container, overflowing rather
+      // than scaling. 640 is not 900, so this fails against the unfixed
+      // component -- which is the whole point of stubbing a width at all.
+      stubClientWidth(640)
+      render(
+        <DrawingCanvas
+          imageUrl="u" imageW={2000} imageH={1600} guides={guides} cells={cells}
+          selectedCodes={[]}
+        />,
+      )
+      expect(screen.getByTestId('stage:drawing')).toHaveAttribute('data-width', '640')
+    })
+
+    it('derives the height from the container width and the image aspect ratio', () => {
+      stubClientWidth(640)
+      render(
+        <DrawingCanvas
+          imageUrl="u" imageW={2000} imageH={1600} guides={guides} cells={cells}
+          selectedCodes={[]}
+        />,
+      )
+      // 1600 * (640 / 2000) = 512. Catches a height that keeps scaling off the
+      // old constant while only the width follows the container.
+      expect(screen.getByTestId('stage:drawing')).toHaveAttribute('data-height', '512')
+    })
+
+    it('re-measures when the container is resized', () => {
+      // A tablet rotation is the case this exists for. The double enforces the
+      // one constraint that matters: the callback fires only when something
+      // triggers it, and only for an element that was actually observed -- a
+      // stub that called back immediately and unconditionally would let a
+      // measure-once implementation pass.
+      const observed: Element[] = []
+      let trigger: (() => void) | null = null
+      class FakeResizeObserver {
+        constructor(callback: () => void) { trigger = callback }
+        observe(el: Element) { observed.push(el) }
+        disconnect() { trigger = null }
+      }
+      ;(globalThis as unknown as Record<string, unknown>).ResizeObserver = FakeResizeObserver
+
+      stubClientWidth(640)
+      render(
+        <DrawingCanvas
+          imageUrl="u" imageW={2000} imageH={1600} guides={guides} cells={cells}
+          selectedCodes={[]}
+        />,
+      )
+      expect(screen.getByTestId('stage:drawing')).toHaveAttribute('data-width', '640')
+      expect(observed).toHaveLength(1)
+
+      restoreClientWidth?.()
+      restoreClientWidth = null
+      stubClientWidth(320)
+      act(() => { trigger?.() })
+
+      expect(screen.getByTestId('stage:drawing')).toHaveAttribute('data-width', '320')
+    })
+
+    it('falls back to a usable width when the container measures zero', () => {
+      // Every other test in this file relies on this fallback, so it is pinned
+      // rather than left implicit.
+      render(
+        <DrawingCanvas
+          imageUrl="u" imageW={2000} imageH={1600} guides={guides} cells={cells}
+          selectedCodes={[]}
+        />,
+      )
+      expect(screen.getByTestId('stage:drawing')).toHaveAttribute('data-width', '900')
+    })
+  })
+
+  describe('guide grab target', () => {
+    it('gives every guide a custom hit area', () => {
+      // jsdom has no canvas, so the hitFunc cannot be executed here; the
+      // geometry it paints is asserted directly on guideHitProfile in
+      // canvasView.test.ts. What this catches is the hitFunc being dropped from
+      // the Line entirely, which returns the grab target to the 2 px stroke the
+      // browser session found unusable and hands intersections back to z-order.
+      render(
+        <DrawingCanvas
+          imageUrl="u" imageW={2000} imageH={1600} guides={guides} cells={cells}
+          selectedCodes={[]}
+          onGuideMove={() => {}}
+        />,
+      )
+      expect(screen.getByTestId('line:guide-x-1')).toHaveAttribute('data-hashitfunc', 'true')
+      expect(screen.getByTestId('line:guide-y-3')).toHaveAttribute('data-hashitfunc', 'true')
     })
   })
 })
