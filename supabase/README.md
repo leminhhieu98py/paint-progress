@@ -6,7 +6,7 @@ Local `supabase start` needs Docker and is not required for this project.
 ## Schema verification
 
 `supabase/verify_schema.sql` exercises the trigger, foreign-key and RLS
-behaviour set up across migrations 0001-0013: cross-project stage
+behaviour set up across migrations 0001-0014: cross-project stage
 rejection, the audit trigger, the stage-change log, the durability of the
 `cell_events` name snapshot against both a stage rename and a hard stage
 delete (on separate fixtures, so destroying one stage cannot disarm the
@@ -29,7 +29,15 @@ writes the config panel issues are accepted — a reorder that swaps two
 `seq` values in one statement, and a middle-stage removal that renumbers
 the survivors past the vacated `seq` — and that a non-admin cannot forge
 `cells.updated_at` or `cells.updated_by` while a plain stage change is
-still accepted and still stamped. Run it after any change to these
+still accepted and still stamped.
+Since 0014 it also checks that deleting a stage a cell currently sits at
+writes exactly one `cell_events` row carrying the deleted stage's name (it
+used to write a nameless one, permanently, because `cells.stage_id` is `ON
+DELETE SET NULL` and 0005 dropped the recovering foreign key), that returning
+a cell to "not started" while its stage is still alive is still logged with
+that name, and that a whole-project delete still succeeds with the new
+`before delete` trigger inside its cascade.
+Run it after any change to these
 migrations:
 
 ```bash
@@ -37,8 +45,15 @@ nvm use 22
 npx supabase db query --linked -f supabase/verify_schema.sql
 ```
 
-Every returned row must begin with `PASS` — 28 rows in a passing run, one
+Every returned row must begin with `PASS` — 31 rows in a passing run, one
 per numbered check in the file's header comment.
+
+Checks 29-31 arrived with `0014` and report `FAIL` until that migration is
+applied — check 29 with `from_stage_name <NULL>`, which is the defect it fixes,
+reproduced. Once this project holds real data, stop running this script against
+it and use a disposable copy. It is self-cleaning in every ordinary outcome, but
+a cleanup step that fails and is caught leaves that check's `VERIFY` fixtures
+behind — see check 9's comment.
 
 **WARNING: this script inserts and then deletes test rows. Never run it
 against a database holding real project data.**

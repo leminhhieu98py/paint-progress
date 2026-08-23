@@ -166,17 +166,59 @@
 --       overwritten. 0006's non-admin guard did not list either column, so a GS
 --       could PATCH a forged date or a forged author onto a coat record.
 --
+-- Checks 29-31 are added by 0014, with their own fixtures ('VERIFY G').
+--   29. Deleting a stage a cell is CURRENTLY sitting at writes exactly ONE
+--       cell_events row, and that row carries the deleted stage's NAME.
+--       Before 0014 it carried NULL: cells.stage_id is ON DELETE SET NULL, so
+--       the referential action reaches log_cell_stage_change after the
+--       project_stages row is already gone, and 0005 dropped the FK that could
+--       have recovered the name. Check 7 above stayed green because it reads
+--       back the event created when the cell was SET to that stage -- a
+--       different row, written while the stage still existed. The row count is
+--       asserted in both directions: 2 means the cascade double-logged, 0 means
+--       the BEFORE DELETE trigger did not fire. This row also carries the
+--       catalog half -- log_stage_deletion_on_cells() must be security definer
+--       with search_path pinned, or every stage deletion fails with 42501
+--       against the RLS on cell_events.
+--   30. NEGATIVE CONTROL for 29. Returning a cell to "not started" while its
+--       stage is still alive -- which the GS modal offers -- must STILL be
+--       logged, with the name. 0014's skip in log_cell_stage_change is one
+--       missing `not exists` away from swallowing this too, and check 29 alone
+--       would not notice: it would still see exactly one row.
+--   31. A whole project can still be deleted with 0014's BEFORE DELETE trigger
+--       in place. That trigger inserts into cell_events from inside the fan-out
+--       of projects -> project_stages, racing projects -> decks -> cells
+--       CASCADE at a different depth -- the defect class that aborted this
+--       delete twice in Phase 1. Its `exists (select 1 from projects ...)`
+--       guard is what makes it safe; this check is what proves the guard works.
+--
 -- How to run:
 --   nvm use 22
 --   npx supabase db query --linked -f supabase/verify_schema.sql
 --
--- Every returned row must begin with PASS (28 rows in total, one per
--- numbered check above, 1-28 with no gaps). A row beginning with FAIL means
+-- Every returned row must begin with PASS (31 rows in total, one per
+-- numbered check above, 1-31 with no gaps). A row beginning with FAIL means
 -- a regression in the trigger/FK/RLS behaviour set up across migrations
--- 0001-0013; re-read those migrations' comments before changing this file.
+-- 0001-0014; re-read those migrations' comments before changing this file.
+--
+-- One standing exception while a migration is outstanding: checks 29-31 test
+-- migration 0014, so against a database where 0014 has not been applied yet
+-- check 29 reports FAIL with `from_stage_name <NULL>` -- which IS the defect
+-- 0014 fixes, reproduced. A FAIL there means "not applied", not "broken", and
+-- it is the evidence that the check is not vacuous.
+--
+-- ONCE THIS PROJECT HOLDS REAL PROJECT DATA, do not run this against it again.
+-- The WARNING below is not theoretical. This file is self-cleaning in every
+-- ordinary outcome -- one implicit transaction, so a raised error rolls the
+-- whole thing back, and each check's begin/exception block is a subtransaction
+-- that undoes its own inserts when it catches one -- but a CLEANUP step whose
+-- failure is caught and reported as a FAIL row leaves that check's VERIFY
+-- fixtures behind. See check 9's comment: that happened twice in Phase 1.
+-- Point it at a disposable copy from then on.
 --
 -- WARNING: this script INSERTS and then DELETES test rows (projects named
 -- 'VERIFY A' / 'VERIFY B' / 'VERIFY C' / 'VERIFY D' / 'VERIFY E' / 'VERIFY F'
+-- / 'VERIFY G'
 -- and everything cascading
 -- from them). It is meant to run against a disposable or pre-production
 -- database only. Never run it against a database holding real project data.
@@ -865,6 +907,91 @@ begin
   end;
 end $$;
 
+-- Checks 29-31 (migration 0014): the stage-deletion audit gap, its negative
+-- control, and the project-delete cascade the new trigger sits inside.
+--
+-- Its own fixtures ('VERIFY G'), so it can be appended without renumbering
+-- checks 1-28.
+--
+-- Every cell below takes its stage on the INSERT, never on an UPDATE. That is
+-- deliberate: cells_log_stage_change is an AFTER UPDATE trigger, so an insert
+-- logs nothing, and the event counts below can therefore be read as "events
+-- caused by the statement under test" rather than "events, minus the ones the
+-- setup happened to create".
+create or replace function _verify_stage_deletion_audit() returns setof text language plpgsql as $$
+declare
+  p uuid; d uuid; s_doomed uuid; s_live uuid; c_doomed uuid; c_live uuid;
+  fn_ok boolean;
+  del_count int; del_name text; del_from uuid;
+  live_count int; live_name text;
+  project_deleted boolean := false; project_err text := 'none';
+begin
+  select p2.prosecdef and 'search_path=public, pg_temp' = any (p2.proconfig)
+    into fn_ok
+  from pg_proc p2
+  where p2.pronamespace = 'public'::regnamespace
+    and p2.proname = 'log_stage_deletion_on_cells';
+
+  begin
+    insert into projects (name, code) values ('VERIFY G','VERIFYG') returning id into p;
+    insert into decks (project_id, seq, name, code, total_area_m2)
+      values (p, 1, 'Deck', 'VG', 100) returning id into d;
+    insert into project_stages (project_id, seq, name, color, weight)
+      values (p, 1, 'Doomed Coat', '#ff4d4f', 0.5) returning id into s_doomed;
+    insert into project_stages (project_id, seq, name, color, weight)
+      values (p, 2, 'Living Coat', '#52c41a', 0.5) returning id into s_live;
+    insert into cells (deck_id, code, x, y, w, h, area_m2, stage_id)
+      values (d, 'R1C1', 0, 0, 1, 0.5, 60, s_doomed) returning id into c_doomed;
+    insert into cells (deck_id, code, x, y, w, h, area_m2, stage_id)
+      values (d, 'R2C1', 0, 0.5, 1, 0.5, 40, s_live) returning id into c_live;
+
+    -- 29. the removal itself
+    delete from project_stages where id = s_doomed;
+
+    select count(*) into del_count from cell_events where cell_id = c_doomed;
+    select from_stage_name, from_stage_id into del_name, del_from
+      from cell_events where cell_id = c_doomed order by id desc limit 1;
+
+    return next format(
+      '%s stage deletion is logged once, with the name: %s row(s) (expected 1), from_stage_name %L (expected %L), from_stage_id retained %s, log_stage_deletion_on_cells definer+search_path %s',
+      case when del_count = 1
+             and del_name = 'Doomed Coat'
+             and del_from = s_doomed
+             and coalesce(fn_ok, false)
+           then 'PASS' else 'FAIL' end,
+      del_count, del_name, 'Doomed Coat', del_from = s_doomed,
+      coalesce(fn_ok::text, 'function not found'));
+
+    -- 30. negative control: an ordinary return to "not started", stage alive
+    update cells set stage_id = null where id = c_live;
+    select count(*) into live_count from cell_events where cell_id = c_live;
+    select from_stage_name into live_name
+      from cell_events where cell_id = c_live order by id desc limit 1;
+
+    return next format(
+      '%s clearing a cell whose stage is still alive is still logged with its name: %s row(s) (expected 1), from_stage_name %L (expected %L)',
+      case when live_count = 1 and live_name = 'Living Coat' then 'PASS' else 'FAIL' end,
+      live_count, live_name, 'Living Coat');
+
+    -- 31. the project delete, with the new BEFORE DELETE trigger inside it
+    begin
+      delete from projects where id = p;
+      project_deleted := true;
+    exception when others then
+      project_err := sqlerrm;
+    end;
+
+    return next format(
+      '%s a project delete still succeeds with project_stages_log_deletion in place: %s (%s)',
+      case when project_deleted then 'PASS' else 'FAIL' end,
+      project_deleted, project_err);
+  exception when others then
+    return next 'FAIL stage deletion audit: ' || sqlerrm;
+    return next 'FAIL stage deletion audit negative control: not reached';
+    return next 'FAIL project delete with the deletion trigger: not reached';
+  end;
+end $$;
+
 -- A single top-level SELECT: `supabase db query -f` surfaces only the last
 -- result set a multi-statement file produces, so the checks are combined
 -- here with UNION ALL rather than issued as separate SELECTs.
@@ -878,7 +1005,9 @@ select * from _verify_stage_seq_deferrable()
 union all
 select * from _verify_stage_removal()
 union all
-select * from _verify_gs_audit_guard();
+select * from _verify_gs_audit_guard()
+union all
+select * from _verify_stage_deletion_audit();
 
 drop function _verify_triggers();
 drop function _verify_rls();
@@ -886,3 +1015,4 @@ drop function _verify_audit_columns();
 drop function _verify_stage_seq_deferrable();
 drop function _verify_stage_removal();
 drop function _verify_gs_audit_guard();
+drop function _verify_stage_deletion_audit();
