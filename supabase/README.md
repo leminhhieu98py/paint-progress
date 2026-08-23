@@ -6,7 +6,7 @@ Local `supabase start` needs Docker and is not required for this project.
 ## Schema verification
 
 `supabase/verify_schema.sql` exercises the trigger, foreign-key and RLS
-behaviour set up across migrations 0001-0010: cross-project stage
+behaviour set up across migrations 0001-0013: cross-project stage
 rejection, the audit trigger, the stage-change log, the durability of the
 `cell_events` name snapshot against both a stage rename and a hard stage
 delete (on separate fixtures, so destroying one stage cannot disarm the
@@ -20,7 +20,16 @@ both named and timed correctly, and that no foreign key in the schema is
 left with a bare `ON DELETE` (no action). Since 0009, it also checks that the
 `drawings` storage bucket exists and is private, that its two storage
 policies exist, and that the last two functions (`assert_stage_belongs_to_project`,
-`set_cell_audit_columns`) pin `search_path`. Run it after any change to these
+`set_cell_audit_columns`) pin `search_path`. Since 0011/0012/0013 it also
+checks that `set_cell_audit_columns` stamps `updated_at`/`updated_by` only
+when `stage_id` actually changes (so a geometry-only save no longer
+re-stamps every cell on the deck), that `project_stages`' `(project_id,
+seq)` uniqueness is `deferrable initially deferred` and that both stage
+writes the config panel issues are accepted — a reorder that swaps two
+`seq` values in one statement, and a middle-stage removal that renumbers
+the survivors past the vacated `seq` — and that a non-admin cannot forge
+`cells.updated_at` or `cells.updated_by` while a plain stage change is
+still accepted and still stamped. Run it after any change to these
 migrations:
 
 ```bash
@@ -29,8 +38,7 @@ npx supabase db query --linked -f supabase/verify_schema.sql
 ```
 
 Every returned row must begin with `PASS` — 28 rows in a passing run, one
-per numbered check in the file's header comment. (Checks 25-28 were added by
-0011, 0012 and 0013; this count was left at 24 until then.)
+per numbered check in the file's header comment.
 
 **WARNING: this script inserts and then deletes test rows. Never run it
 against a database holding real project data.**
