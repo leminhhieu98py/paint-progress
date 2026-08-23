@@ -10,5 +10,9 @@ export default defineConfig({
     globals: true,
     setupFiles: ['./src/test-setup.ts'],
     include: ['src/**/*.test.{ts,tsx}', 'tests/**/*.test.ts', 'supabase/functions/**/*.test.ts'],
+    // Purges what the RLS suite leaves in the live project, via this file's
+    // exported `teardown`. No-ops when the RLS credentials are absent, so an
+    // ordinary unit-test run is unaffected.
+    globalSetup: ['./tests/global-setup.ts'],
   },
 })
