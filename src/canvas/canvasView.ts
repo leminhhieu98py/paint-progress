@@ -58,3 +58,43 @@ export function guideHitProfile(
     .sort((a, b) => a - b)
     .map((at): [number, number] => [at, halfWidthAt(at)])
 }
+
+/** 1 = the drawing exactly fills its container. Zooming out further would
+ *  letterbox the drawing inside its own canvas, which is never useful. */
+export const MIN_ZOOM = 1
+export const MAX_ZOOM = 4
+/** Per button press. */
+export const ZOOM_STEP = 0.5
+/** Per wheel notch — finer than a button press, because a wheel emits many. */
+export const WHEEL_ZOOM_STEP = 0.25
+
+export function clampZoom(zoom: number): number {
+  // NaN would propagate into Konva's scaleX/scaleY and blank the canvas with no
+  // error anywhere; a wheel handler is one emulated input away from producing
+  // one.
+  if (Number.isNaN(zoom)) return MIN_ZOOM
+  return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom))
+}
+
+/**
+ * Keeps the panned drawing covering its viewport.
+ *
+ * At zoom z the content is width*z by height*z inside a width by height
+ * viewport, so the stage's own position may run from width*(1-z) (content's
+ * right edge flush with the viewport's) to 0 (left edges flush). At z = 1 both
+ * bounds are 0: there is nothing off-screen, so there is nothing to pan.
+ *
+ * Without this a foreman can flick the drawing off the screen entirely and is
+ * left with a blank canvas and no way back short of reloading.
+ */
+export function clampStagePan(
+  pos: { x: number; y: number },
+  width: number,
+  height: number,
+  zoom: number,
+): { x: number; y: number } {
+  return {
+    x: Math.min(0, Math.max(width * (1 - zoom), pos.x)),
+    y: Math.min(0, Math.max(height * (1 - zoom), pos.y)),
+  }
+}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { guideHitProfile } from './canvasView'
+import { clampStagePan, clampZoom, guideHitProfile, MAX_ZOOM, MIN_ZOOM } from './canvasView'
 
 /**
  * Reads a profile at an arbitrary point along the guide, the way the canvas
@@ -84,5 +84,50 @@ describe('guideHitProfile', () => {
     // An image whose dimensions have not loaded yet. Returning a single vertex
     // would ask the canvas to fill a degenerate polygon.
     expect(guideHitProfile(0, [], 7)).toEqual([])
+  })
+})
+
+describe('clampZoom', () => {
+  it('keeps a value inside the range', () => {
+    expect(clampZoom(2.5)).toBe(2.5)
+  })
+
+  it('refuses to zoom out past fit-to-container', () => {
+    // MIN_ZOOM is 1 = the whole drawing exactly fills the container. Zooming out
+    // further would letterbox the drawing inside its own canvas.
+    expect(clampZoom(0.25)).toBe(MIN_ZOOM)
+  })
+
+  it('caps zoom in', () => {
+    expect(clampZoom(99)).toBe(MAX_ZOOM)
+  })
+
+  it('falls back to fit-to-container for NaN', () => {
+    // A wheel event on some trackpads reports deltaY through emulated input;
+    // NaN would propagate into every Konva scale and blank the canvas with no
+    // error anywhere.
+    expect(clampZoom(Number.NaN)).toBe(MIN_ZOOM)
+  })
+})
+
+describe('clampStagePan', () => {
+  it('allows no panning at all at fit-to-container zoom', () => {
+    // At zoom 1 there is nothing off-screen to pan to, so both bounds collapse
+    // to 0. Catches a clamp derived from the stage size instead of the zoom.
+    expect(clampStagePan({ x: -300, y: 120 }, 900, 720, 1)).toEqual({ x: 0, y: 0 })
+  })
+
+  it('stops the drawing being dragged past its right and bottom edges', () => {
+    // At zoom 2 the content is 1800 x 1440 in a 900 x 720 viewport, so the
+    // furthest left/up it may sit is -900 / -720.
+    expect(clampStagePan({ x: -5000, y: -5000 }, 900, 720, 2)).toEqual({ x: -900, y: -720 })
+  })
+
+  it('stops the drawing being dragged past its left and top edges', () => {
+    expect(clampStagePan({ x: 400, y: 300 }, 900, 720, 2)).toEqual({ x: 0, y: 0 })
+  })
+
+  it('leaves an in-range pan untouched', () => {
+    expect(clampStagePan({ x: -300, y: -100 }, 900, 720, 2)).toEqual({ x: -300, y: -100 })
   })
 })

@@ -51,6 +51,30 @@ vi.mock('react-konva', () => {
       data-width={String(props.width ?? '')}
       data-height={String(props.height ?? '')}
       data-hashitfunc={String(typeof props.hitFunc === 'function')}
+      data-scalex={String(props.scaleX ?? '')}
+      data-draggable={String(props.draggable ?? '')}
+      // Probes the stage's own drag clamp with a position far outside any
+      // sane viewport, at the CURRENT width/height/zoom the component computed
+      // -- not a hardcoded stand-in for them. This is what lets the pan tests
+      // below assert the real clamped boundary numbers instead of only "a
+      // dragBoundFunc was passed", which would still pass if it clamped to the
+      // wrong bounds or used stale zoom.
+      data-dragboundx={String(
+        typeof props.dragBoundFunc === 'function'
+          ? (props.dragBoundFunc as (p: { x: number; y: number }) => { x: number; y: number })({
+              x: -5000,
+              y: -5000,
+            }).x
+          : '',
+      )}
+      data-dragboundy={String(
+        typeof props.dragBoundFunc === 'function'
+          ? (props.dragBoundFunc as (p: { x: number; y: number }) => { x: number; y: number })({
+              x: -5000,
+              y: -5000,
+            }).y
+          : '',
+      )}
       onClick={(domEvt: React.MouseEvent) =>
         (props.onClick as ((e: unknown) => void) | undefined)?.({ evt: domEvt })
       }
@@ -62,6 +86,9 @@ vi.mock('react-konva', () => {
             }),
           },
         })
+      }
+      onWheel={(domEvt: React.WheelEvent) =>
+        (props.onWheel as ((e: unknown) => void) | undefined)?.({ evt: domEvt })
       }
       onMouseUp={(domEvt: React.MouseEvent) => {
         const nodeName = String(props.name ?? '')
@@ -457,6 +484,163 @@ describe('DrawingCanvas', () => {
       )
       expect(screen.getByTestId('line:guide-x-1')).toHaveAttribute('data-hashitfunc', 'true')
       expect(screen.getByTestId('line:guide-y-3')).toHaveAttribute('data-hashitfunc', 'true')
+    })
+  })
+
+  describe('pan and zoom', () => {
+    it('is off unless asked for, so the admin editor is unchanged', () => {
+      render(
+        <DrawingCanvas
+          imageUrl="u" imageW={2000} imageH={1600} guides={guides} cells={cells}
+          selectedCodes={[]}
+        />,
+      )
+      expect(screen.getByTestId('stage:drawing')).toHaveAttribute('data-draggable', 'false')
+      expect(screen.queryByRole('button', { name: 'Phóng to' })).not.toBeInTheDocument()
+    })
+
+    it('makes the stage draggable and offers zoom controls when enabled', () => {
+      render(
+        <DrawingCanvas
+          imageUrl="u" imageW={2000} imageH={1600} guides={guides} cells={cells}
+          selectedCodes={[]} panZoom
+        />,
+      )
+      expect(screen.getByTestId('stage:drawing')).toHaveAttribute('data-draggable', 'true')
+      expect(screen.getByRole('button', { name: 'Phóng to' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Thu nhỏ' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Vừa khung' })).toBeInTheDocument()
+    })
+
+    it('zooms in by one step per press and caps at the maximum', async () => {
+      render(
+        <DrawingCanvas
+          imageUrl="u" imageW={2000} imageH={1600} guides={guides} cells={cells}
+          selectedCodes={[]} panZoom
+        />,
+      )
+      expect(screen.getByTestId('stage:drawing')).toHaveAttribute('data-scalex', '1')
+
+      await userEvent.click(screen.getByRole('button', { name: 'Phóng to' }))
+      expect(screen.getByTestId('stage:drawing')).toHaveAttribute('data-scalex', '1.5')
+
+      // Seven more presses would reach 5 unclamped; MAX_ZOOM is 4.
+      for (let i = 0; i < 7; i += 1) {
+        await userEvent.click(screen.getByRole('button', { name: 'Phóng to' }))
+      }
+      expect(screen.getByTestId('stage:drawing')).toHaveAttribute('data-scalex', '4')
+    })
+
+    it('will not zoom out below fit-to-container', async () => {
+      render(
+        <DrawingCanvas
+          imageUrl="u" imageW={2000} imageH={1600} guides={guides} cells={cells}
+          selectedCodes={[]} panZoom
+        />,
+      )
+      await userEvent.click(screen.getByRole('button', { name: 'Thu nhỏ' }))
+      expect(screen.getByTestId('stage:drawing')).toHaveAttribute('data-scalex', '1')
+    })
+
+    it('returns to fit-to-container', async () => {
+      render(
+        <DrawingCanvas
+          imageUrl="u" imageW={2000} imageH={1600} guides={guides} cells={cells}
+          selectedCodes={[]} panZoom
+        />,
+      )
+      await userEvent.click(screen.getByRole('button', { name: 'Phóng to' }))
+      await userEvent.click(screen.getByRole('button', { name: 'Phóng to' }))
+      expect(screen.getByTestId('stage:drawing')).toHaveAttribute('data-scalex', '2')
+
+      await userEvent.click(screen.getByRole('button', { name: 'Vừa khung' }))
+      expect(screen.getByTestId('stage:drawing')).toHaveAttribute('data-scalex', '1')
+    })
+
+    it('wires the current viewport size and zoom into the stage drag clamp, not stale or hardcoded ones', async () => {
+      // jsdom reports clientWidth 0, so width falls back to 900 and height to
+      // 1600 * (900 / 2000) = 720 -- the same numbers clampStagePan's own unit
+      // tests use, so the boundary below is directly comparable to them.
+      render(
+        <DrawingCanvas
+          imageUrl="u" imageW={2000} imageH={1600} guides={guides} cells={cells}
+          selectedCodes={[]} panZoom
+        />,
+      )
+      // At fit-to-container zoom there is nothing off-screen, so even a wildly
+      // out-of-range drag target ({-5000, -5000}) must clamp back to {0, 0}.
+      // A test that only checked "a dragBoundFunc prop exists" would still
+      // pass if it clamped to the wrong bounds entirely.
+      expect(screen.getByTestId('stage:drawing')).toHaveAttribute('data-dragboundx', '0')
+      expect(screen.getByTestId('stage:drawing')).toHaveAttribute('data-dragboundy', '0')
+
+      const zoomIn = screen.getByRole('button', { name: 'Phóng to' })
+      await userEvent.click(zoomIn)
+      await userEvent.click(zoomIn)
+      expect(screen.getByTestId('stage:drawing')).toHaveAttribute('data-scalex', '2')
+
+      // At zoom 2 the content is 1800 x 1440 in the 900 x 720 viewport, so the
+      // furthest the drawing may be dragged is -900 / -720 -- exactly the
+      // clampStagePan(_, 900, 720, 2) case in canvasView.test.ts. Matching
+      // those literals here proves the component feeds its real measured
+      // size and live zoom state into the same function, not a copy of it.
+      expect(screen.getByTestId('stage:drawing')).toHaveAttribute('data-dragboundx', '-900')
+      expect(screen.getByTestId('stage:drawing')).toHaveAttribute('data-dragboundy', '-720')
+    })
+
+    it('zooms in on wheel-up by the finer wheel step', () => {
+      render(
+        <DrawingCanvas
+          imageUrl="u" imageW={2000} imageH={1600} guides={guides} cells={cells}
+          selectedCodes={[]} panZoom
+        />,
+      )
+      fireEvent.wheel(screen.getByTestId('stage:drawing'), { deltaY: -100 })
+      // WHEEL_ZOOM_STEP is 0.25, finer than a button's 0.5 -- a wheel emits many
+      // events per gesture, so a coarser step would overshoot fast.
+      expect(screen.getByTestId('stage:drawing')).toHaveAttribute('data-scalex', '1.25')
+    })
+
+    it('is a no-op on wheel-down at the minimum zoom, not a drift past it', () => {
+      render(
+        <DrawingCanvas
+          imageUrl="u" imageW={2000} imageH={1600} guides={guides} cells={cells}
+          selectedCodes={[]} panZoom
+        />,
+      )
+      expect(screen.getByTestId('stage:drawing')).toHaveAttribute('data-scalex', '1')
+      fireEvent.wheel(screen.getByTestId('stage:drawing'), { deltaY: 100 })
+      // clampZoom pins this at MIN_ZOOM. A test that only asserted "still 1"
+      // would look identical whether the handler clamped correctly or threw
+      // away the event entirely -- the point of this test, paired with the
+      // wheel-up one above, is that the SAME handler does react to input and
+      // still cannot be pushed past the boundary.
+      expect(screen.getByTestId('stage:drawing')).toHaveAttribute('data-scalex', '1')
+    })
+
+    it('is a no-op on wheel-up at the maximum zoom, not a drift past it', () => {
+      render(
+        <DrawingCanvas
+          imageUrl="u" imageW={2000} imageH={1600} guides={guides} cells={cells}
+          selectedCodes={[]} panZoom
+        />,
+      )
+      const stage = screen.getByTestId('stage:drawing')
+      for (let i = 0; i < 20; i += 1) fireEvent.wheel(stage, { deltaY: -100 })
+      expect(stage).toHaveAttribute('data-scalex', '4')
+      fireEvent.wheel(stage, { deltaY: -100 })
+      expect(stage).toHaveAttribute('data-scalex', '4')
+    })
+
+    it('ignores the wheel entirely when pan/zoom is off, so admin scrolling is unaffected', () => {
+      render(
+        <DrawingCanvas
+          imageUrl="u" imageW={2000} imageH={1600} guides={guides} cells={cells}
+          selectedCodes={[]}
+        />,
+      )
+      fireEvent.wheel(screen.getByTestId('stage:drawing'), { deltaY: -100 })
+      expect(screen.getByTestId('stage:drawing')).toHaveAttribute('data-scalex', '1')
     })
   })
 })

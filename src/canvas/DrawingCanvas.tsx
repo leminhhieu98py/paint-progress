@@ -1,9 +1,13 @@
+import { Button, Space } from 'antd'
 import Konva from 'konva'
 import { useEffect, useRef, useState } from 'react'
 import { Image as KonvaImage, Layer, Line, Rect, Stage } from 'react-konva'
 import useImage from 'use-image'
 import type { Guide, MeshCell } from '../domain/types'
-import { GUIDE_HIT_WIDTH, guideHitProfile } from './canvasView'
+import {
+  clampStagePan, clampZoom, GUIDE_HIT_WIDTH, guideHitProfile,
+  MIN_ZOOM, WHEEL_ZOOM_STEP, ZOOM_STEP,
+} from './canvasView'
 
 const PLAIN_FILL = 'rgba(0, 0, 0, 0.04)'
 /**
@@ -49,6 +53,7 @@ export function DrawingCanvas({
   cells,
   selectedCodes,
   cellColors,
+  panZoom = false,
   onGuideMove,
   onGuideAdd,
   onCellClick,
@@ -61,6 +66,13 @@ export function DrawingCanvas({
   selectedCodes: string[]
   /** Colour per cell code; a code absent from the map renders unfilled. */
   cellColors?: Record<string, string>
+  /**
+   * Pan by dragging, zoom by the buttons or the wheel. Off by default: the
+   * admin editor drags guides, and it has never had (or wanted) a viewport of
+   * its own. Spec §8.1 requires it for the GS screen, where the drawing is
+   * bigger than the tablet.
+   */
+  panZoom?: boolean
   onGuideMove?: (index: number, pos: number) => void
   onGuideAdd?: (axis: 'x' | 'y', pos: number) => void
   onCellClick?: (code: string, additive: boolean) => void
@@ -68,6 +80,8 @@ export function DrawingCanvas({
   const [image] = useImage(imageUrl)
   const containerRef = useRef<HTMLDivElement>(null)
   const [measuredWidth, setMeasuredWidth] = useState(0)
+  const stageRef = useRef<Konva.Stage>(null)
+  const [zoom, setZoom] = useState(MIN_ZOOM)
 
   useEffect(() => {
     const el = containerRef.current
@@ -90,12 +104,55 @@ export function DrawingCanvas({
   const xGuides = guides.filter((g) => g.axis === 'x')
   const yGuides = guides.filter((g) => g.axis === 'y')
 
+  /**
+   * Zoom is React state, pan is Konva's own. dragBoundFunc is bound per node, so
+   * the stage's clamp never sees a guide's drag — which is why there is no
+   * `onDragEnd` on the stage to tell the two apart (Konva events bubble; a
+   * guide's dragend would arrive there and be mistaken for a pan).
+   *
+   * Changing the zoom can leave an existing pan outside the new bounds, and
+   * Konva does not re-run dragBoundFunc on a scale change, so the position is
+   * re-clamped here by hand. stageRef is null under the mocked react-konva, so
+   * this branch has no unit coverage — it is in the browser checklist.
+   */
+  const applyZoom = (next: number) => {
+    const clamped = clampZoom(next)
+    setZoom(clamped)
+    const stage = stageRef.current
+    if (stage) {
+      stage.position(clampStagePan({ x: stage.x(), y: stage.y() }, width, height, clamped))
+    }
+  }
+
   return (
     <div ref={containerRef} style={{ width: '100%', position: 'relative' }}>
+      {panZoom && (
+        <Space size={4} style={{ position: 'absolute', top: 8, right: 8, zIndex: 1 }}>
+          <Button size="large" onClick={() => applyZoom(zoom + ZOOM_STEP)}>
+            Phóng to
+          </Button>
+          <Button size="large" onClick={() => applyZoom(zoom - ZOOM_STEP)}>
+            Thu nhỏ
+          </Button>
+          <Button size="large" onClick={() => applyZoom(MIN_ZOOM)}>
+            Vừa khung
+          </Button>
+        </Space>
+      )}
       <Stage
         name="drawing"
         width={width}
         height={height}
+        ref={stageRef}
+        scaleX={zoom}
+        scaleY={zoom}
+        draggable={panZoom}
+        dragBoundFunc={(pos) => clampStagePan(pos, width, height, zoom)}
+        onWheel={(e: Konva.KonvaEventObject<WheelEvent>) => {
+          if (!panZoom) return
+          e.evt.preventDefault()
+          applyZoom(zoom + (e.evt.deltaY < 0 ? WHEEL_ZOOM_STEP : -WHEEL_ZOOM_STEP))
+        }}
         onDblClick={(e: Konva.KonvaEventObject<MouseEvent>) => {
           if (!onGuideAdd) return
           const point = e.target.getStage()?.getPointerPosition()
