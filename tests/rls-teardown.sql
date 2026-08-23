@@ -53,9 +53,11 @@ where target_user_id in (select id from profiles where username like 'rlstest-ef
 -- from there to gs_credentials and project_members.
 delete from auth.users where email like 'rlstest-ef-%@app.local';
 
--- 3. Any rlstest-ef-% profile whose auth user was already gone -- the
--- inactive-admin test deletes the temporary admin's profile itself, and a
--- crashed run can leave either half.
+-- 3. Any rlstest-ef-% profile whose auth user was already gone. A crashed run
+-- can leave either half, since the auth user and the profile are separate
+-- writes. (This used to also cover a temporary admin profile the
+-- inactive-admin test created and deleted; that test now flips rlstest-gs
+-- instead and creates no account, so nothing of its own reaches this step.)
 delete from profiles where username like 'rlstest-ef-%';
 
 -- 4. The scratch projects, in case a run was killed before afterAll.
