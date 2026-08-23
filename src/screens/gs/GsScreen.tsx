@@ -41,10 +41,12 @@ const REALTIME_CONNECT_TIMEOUT_MS = 10_000
  * which another foreman's tap is lost entirely, and nothing on screen would
  * ever say so: the next refetch only happens on a reconnect.
  *
- * One re-read shortly after SUBSCRIBED closes it. Two seconds is longer than
- * the lag observed and cheap -- it is one small query per deck open.
+ * One re-read shortly after SUBSCRIBED closes it. Six seconds, not two: the
+ * probe saw a write at four seconds delivered and one issued immediately not,
+ * so a two-second grace could still fire inside the window it exists to close.
+ * Cheap either way -- one small query per deck open.
  */
-const REALTIME_REGISTRATION_GRACE_MS = 2_000
+const REALTIME_REGISTRATION_GRACE_MS = 6_000
 
 export function GsScreen() {
   const { projectId } = useParams()
@@ -98,12 +100,34 @@ export function GsScreen() {
    * slow reply for the previous deck lands on the new deck's drawing, colouring
    * bays that are not there and dividing by the wrong deck's area.
    */
+  /**
+   * Cell ids with a write in flight. A re-read must not overwrite these with
+   * the server's pre-write value: the PATCH and the GET race, and the GET can
+   * answer first. Without this, a tap made shortly before a re-read is undone
+   * on screen with no error -- the write did not fail, so nothing reports it.
+   */
+  const inFlightWrites = useRef<Set<string>>(new Set())
+
   const refetchCells = useCallback(async (deckId: string) => {
     try {
       const next = await listDeckCells(deckId)
-      if (wantedDeckId.current === deckId) setCells(next)
+      if (wantedDeckId.current !== deckId) return
+      setCells((prev) => {
+        if (inFlightWrites.current.size === 0) return next
+        // Keep the optimistic stage for any cell still being written. Geometry
+        // and everything else comes from the server as normal.
+        const local = new Map(prev.map((c) => [c.id, c]))
+        return next.map((c) =>
+          inFlightWrites.current.has(c.id) && local.has(c.id)
+            ? { ...c, stageId: local.get(c.id)!.stageId }
+            : c,
+        )
+      })
     } catch {
-      if (wantedDeckId.current === deckId) setCells([])
+      // Deliberately does NOT clear the cells. A re-read failing on a site
+      // tether is the common case, and blanking the deck would take the drawing
+      // and every number away from a foreman whose data is still valid. The
+      // load effect owns the empty state; this only ever refreshes.
     }
   }, [])
 
@@ -308,13 +332,18 @@ export function GsScreen() {
    */
   const commitStage = (cellId: string, stageId: string | null) => {
     const previousStageId = cells.find((c) => c.id === cellId)?.stageId ?? null
+    inFlightWrites.current.add(cellId)
     setCells((prev) => prev.map((c) => (c.id === cellId ? { ...c, stageId } : c)))
-    void setCellStage(cellId, stageId).catch(() => {
-      setCells((prev) =>
-        prev.map((c) => (c.id === cellId ? { ...c, stageId: previousStageId } : c)),
-      )
-      message.error('Không lưu được tiến độ. Kiểm tra kết nối rồi thử lại.')
-    })
+    void setCellStage(cellId, stageId)
+      .catch(() => {
+        setCells((prev) =>
+          prev.map((c) => (c.id === cellId ? { ...c, stageId: previousStageId } : c)),
+        )
+        message.error('Không lưu được tiến độ. Kiểm tra kết nối rồi thử lại.')
+      })
+      .finally(() => {
+        inFlightWrites.current.delete(cellId)
+      })
   }
 
   if (loading) {

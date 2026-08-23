@@ -357,6 +357,62 @@ describe('GsScreen: recording a stage', () => {
     await waitFor(() => expect(screen.getByText('25,50%')).toBeInTheDocument())
   })
 
+  it('keeps the deck on screen when a re-read fails', async () => {
+    // A re-read failing on a site tether is the common case, not the edge one.
+    // Clearing the cells there would take the drawing, the pie and both table
+    // rows away from a foreman whose data is still perfectly valid -- and the
+    // load effect, not this path, owns the genuine empty state.
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      renderScreen()
+      expect(await screen.findByText('15,50%')).toBeInTheDocument()
+
+      listDeckCells.mockRejectedValueOnce(new Error('network'))
+      act(() => { liveHandlers?.onStatus('subscribed') })
+      await act(async () => {
+        vi.advanceTimersByTime(6_000)
+      })
+
+      expect(screen.getByText('15,50%')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'ô R1C1' })).toBeInTheDocument()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('does not let the post-subscribe re-read undo a write still in flight', async () => {
+    // The PATCH and the re-read race, and the re-read can answer first. When it
+    // does, the server still reports the PRE-write row, so a whole-array
+    // replace puts the old value back on screen -- and no error fires, because
+    // the write did not fail. The foreman watches their own tap get undone with
+    // nothing explaining it. This is the guard on the fix for that.
+    const pending = deferred()
+    setCellStage.mockReturnValue(pending.promise)
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      renderScreen()
+      expect(await screen.findByText('15,50%')).toBeInTheDocument()
+
+      await tapCellAndChoose('R2C1', 'Tháo giáo')
+      expect(await screen.findByText('25,50%')).toBeInTheDocument()
+
+      // The re-read answers with the deck as the server still has it: R2C1 not
+      // started. Exactly what the grace re-read fetches mid-write.
+      act(() => { liveHandlers?.onStatus('subscribed') })
+      await act(async () => {
+        vi.advanceTimersByTime(6_000)
+      })
+
+      // Still the optimistic value. A plain setCells(next) here shows 15,50%.
+      expect(screen.getByText('25,50%')).toBeInTheDocument()
+
+      pending.resolve()
+      await waitFor(() => expect(screen.getByText('25,50%')).toBeInTheDocument())
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('rolls the cell back and says so when the write fails', async () => {
     const pending = deferred()
     setCellStage.mockReturnValue(pending.promise)
@@ -515,7 +571,7 @@ describe('GsScreen: realtime', () => {
 
       act(() => { liveHandlers?.onStatus('subscribed') })
       await act(async () => {
-        vi.advanceTimersByTime(2_000)
+        vi.advanceTimersByTime(6_000)
       })
 
       expect(listDeckCells.mock.calls.length).toBe(afterLoad + 1)

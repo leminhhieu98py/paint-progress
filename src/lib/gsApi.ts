@@ -146,8 +146,26 @@ export async function listDeckCells(deckId: string): Promise<Cell[]> {
  * is refused, by design (0013).
  */
 export async function setCellStage(cellId: string, stageId: string | null): Promise<void> {
-  const { error } = await supabase.from('cells').update({ stage_id: stageId }).eq('id', cellId)
+  // `.select('id')` is load-bearing, not decoration. PostgREST answers an
+  // UPDATE that matches ZERO rows with 204 and no error, so without asking for
+  // the affected rows back this function cannot tell "written" from "matched
+  // nothing" -- and it reports success either way. Both no-match paths are
+  // reachable from a tablet: an admin deletes or merges the cell while the
+  // foreman has the deck open (DELETE is not subscribed, so the cell is still
+  // on their drawing and still tappable), or the GS's project_members row is
+  // removed mid-shift, after which the RLS USING clause filters the row out --
+  // which is a zero-row update, not an error. Left unchecked the optimistic
+  // value stays on screen, the pie and both spec-table rows move, and the
+  // database never changed.
+  const { data, error } = await supabase
+    .from('cells')
+    .update({ stage_id: stageId })
+    .eq('id', cellId)
+    .select('id')
   if (error) throw new Error(error.message)
+  if (!data || data.length === 0) {
+    throw new Error(`Cell ${cellId} was not updated: it no longer exists, or is no longer readable`)
+  }
 }
 
 /**

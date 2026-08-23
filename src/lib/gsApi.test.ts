@@ -245,7 +245,7 @@ describe('listDeckZones', () => {
 
 describe('setCellStage', () => {
   it('sends stage_id and nothing else', async () => {
-    const stub = builder({ data: null })
+    const stub = builder({ data: [{ id: 'c1' }] })
     from.mockImplementationOnce(() => stub)
 
     await setCellStage('c1', 's3')
@@ -262,8 +262,24 @@ describe('setCellStage', () => {
     expect(stub.eq).toHaveBeenCalledWith('id', 'c1')
   })
 
+  it('throws when the update matched no row at all', async () => {
+    // PostgREST answers a zero-row UPDATE with 204 and NO error, so without
+    // asking for the affected rows back this function would report success
+    // while the database was never touched. Reachable from a tablet: the admin
+    // deleted or merged the cell (DELETE is unsubscribed, so it is still on the
+    // foreman's drawing and still tappable), or their project_members row was
+    // removed and the RLS USING clause now filters the row out -- a zero-row
+    // update, not an error. Verified against the live project: status 204,
+    // error null, data null.
+    const stub = builder({ data: [] })
+    from.mockImplementationOnce(() => stub)
+
+    await expect(setCellStage('c1', 's3')).rejects.toThrow(/was not updated/)
+    expect(stub.select).toHaveBeenCalledWith('id')
+  })
+
   it('can clear a cell back to not started', async () => {
-    const stub = builder({ data: null })
+    const stub = builder({ data: [{ id: 'c1' }] })
     from.mockImplementationOnce(() => stub)
 
     await setCellStage('c1', null)
