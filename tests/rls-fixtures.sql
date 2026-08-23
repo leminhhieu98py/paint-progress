@@ -74,12 +74,15 @@ delete from auth.users where email like 'rlstest-ef-%@app.local';
 delete from profiles where username like 'rlstest-ef-%';
 delete from projects where code in ('RLSX', 'RLSY', 'RLSE');
 
--- The admin fixture must be able to act as an admin, unconditionally. The
--- inactive-admin Edge Function test flips this flag to false and restores it
--- in a `finally`; this line is the second half of that belt and braces,
--- because the `finally` can be skipped -- a killed process leaves the account
--- unable to pass is_admin(), and every admin assertion in the suite then
--- fails for a reason that has nothing to do with the policies under test.
+-- The admin fixture must be able to act as an admin, unconditionally. Nothing
+-- in the current suite deliberately sets rlstest-admin.active to false any
+-- more -- the inactive-admin Edge Function test flips rlstest-gs instead (see
+-- tests/rls.integration.test.ts, 'refuses an admin whose profile has been
+-- deactivated with 403'), precisely so restoring the flipped row never needs
+-- a second, temporary admin account. This line stays anyway, as a
+-- belt-and-braces measure rather than the primary restore path: it is what
+-- makes a run that somehow left rlstest-admin inactive recoverable without
+-- hand-editing the database, and it is a no-op when the flag is already true.
 update profiles set active = true where username = 'rlstest-admin';
 
 -- Domain fixtures: two projects, one deck each, one stage each, one cell

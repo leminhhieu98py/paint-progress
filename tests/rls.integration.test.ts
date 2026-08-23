@@ -805,6 +805,7 @@ describe.skipIf(!adminConfigured)('admin-users Edge Function', () => {
   let admin: SupabaseClient
   let gs: SupabaseClient
   let adminUserId: string
+  let gsUserId: string
   let projectId: string
 
   // The throwaway GS account the four happy paths walk through, in order.
@@ -827,6 +828,7 @@ describe.skipIf(!adminConfigured)('admin-users Edge Function', () => {
       password: password!,
     })
     expect(gsSignIn.error).toBeNull()
+    gsUserId = gsSignIn.data.user!.id
 
     const cleared = await admin.from('projects').delete().eq('code', EF_PROJECT_CODE)
     expect(cleared.error).toBeNull()
@@ -1038,104 +1040,68 @@ describe.skipIf(!adminConfigured)('admin-users Edge Function', () => {
 
   it('refuses an admin whose profile has been deactivated with 403', async () => {
     // is_admin() and callerAdminId both require profiles.active, so this is
-    // the check that makes deactivating an admin actually revoke them.
+    // the check that makes deactivating an admin actually revoke them. The
+    // function returns a bare { error: 'Forbidden' } for both "not an admin"
+    // and "admin but inactive", so the status code alone cannot show which
+    // rule fired -- only these three rows, together, discriminate it:
     //
-    // Flipping the flag on rlstest-admin is a trap: once active is false no
+    //   rlstest-admin              role=admin, active=true  -> succeeds
+    //     (every 200 elsewhere in this describe block)
+    //   rlstest-gs                 role=gs,    active=true  -> 403
+    //     ('refuses a GS session with 403', above)
+    //   rlstest-gs, flipped        role=admin, active=false -> 403
+    //     (this test)
+    //
+    // If profile.active were dropped from callerAdminId, all three rows would
+    // still be green -- the role check alone would explain them -- so the
+    // third row is the one that actually exercises the active check, and it
+    // is written here rather than by deactivating rlstest-admin.
+    //
+    // Deactivating rlstest-admin itself is a trap: once active is false no
     // policy on profiles grants that session an UPDATE any more
     // (profiles_admin_all needs is_admin(); profiles_self_read is SELECT
-    // only), so it cannot restore itself -- the restore has to come from a
-    // second, still-active admin. This test therefore builds one first, and
-    // refuses to flip anything until it has PROVEN that account is accepted
-    // by the function. Never reorder those two steps.
-    const tempUsername = throwawayUsername('admin')
-    const tempPassword = throwawayPassword()
-
-    const created = await invokeAdminUsers(admin, {
-      action: 'create',
-      username: tempUsername,
-      fullName: 'RLS Temporary Restoring Admin',
-      password: tempPassword,
-      projectId,
-    })
-    expect(created.status).toBe(200)
-    const tempUserId = created.body.userId as string
-
-    // `create` only makes GS accounts, so the promotion is a separate write
-    // -- itself another exercise of profiles_admin_all on somebody else's row.
-    const promoted = await admin
+    // only), so it cannot restore itself. The only fix is a second,
+    // still-active admin session -- and for as long as that second account
+    // exists, it can call `reveal` and read every GS password. That window is
+    // the trade-off this design avoids entirely: no second account is ever
+    // created. rlstest-gs is the subject instead, and the still-active
+    // rlstest-admin fixture -- already a real, separate admin -- does the
+    // restoring.
+    //
+    // Both columns move in the same UPDATE, so this row is never
+    // simultaneously role='admin' and active=true. That also closes the read
+    // side: is_admin() (supabase/migrations/0006_rls.sql) is `role = 'admin'
+    // and active`, so for the entire time this row holds role='admin' its
+    // active is false, and is_admin() for this session never once evaluates
+    // true. There is no moment where rlstest-gs's RLS reads actually widen.
+    const flipped = await admin
       .from('profiles')
-      .update({ role: 'admin' })
-      .eq('id', tempUserId)
-      .select('role')
+      .update({ role: 'admin', active: false })
+      .eq('id', gsUserId)
+      .select('role, active')
       .single()
-    expect(promoted.error).toBeNull()
-    expect(promoted.data?.role).toBe('admin')
-
-    const restorer = createClient(url!, anon!, { auth: { persistSession: false } })
-    const restorerSignIn = await restorer.auth.signInWithPassword({
-      email: toAuthEmail(tempUsername),
-      password: tempPassword,
-    })
-    expect(restorerSignIn.error).toBeNull()
-
-    // The precondition. If this is not a 400 "Unknown action" then the
-    // restorer is not an accepted admin, and the flip below must not happen.
-    const restorerAccepted = await invokeAdminUsers(restorer, { action: 'probe-unknown-action' })
-    expect(restorerAccepted.status).toBe(400)
-    expect(String(restorerAccepted.body.error)).toContain('Unknown action')
+    expect(flipped.error).toBeNull()
+    expect(flipped.data?.role).toBe('admin')
+    expect(flipped.data?.active).toBe(false)
 
     try {
-      const deactivated = await restorer
-        .from('profiles')
-        .update({ active: false })
-        .eq('id', adminUserId)
-        .select('active')
-        .single()
-      expect(deactivated.error).toBeNull()
-      expect(deactivated.data?.active).toBe(false)
-
-      // Visible to the session under test through profiles_self_read, so the
-      // flip is confirmed from the same client the assertion below uses.
-      const selfView = await admin.from('profiles').select('active').eq('id', adminUserId).single()
-      expect(selfView.error).toBeNull()
-      expect(selfView.data?.active).toBe(false)
-
-      const refused = await invokeAdminUsers(admin, { action: 'probe-unknown-action' })
+      const refused = await invokeAdminUsers(gs, { action: 'probe-unknown-action' })
       expect(refused.status).toBe(403)
       expect(refused.body.error).toBe('Forbidden')
-
-      // The same flag governs the RLS layer: RLSD was readable through
-      // projects_admin_all a moment ago and is not any more.
-      const lostReach = await admin.from('projects').select('code').eq('code', 'RLSD')
-      expect(lostReach.error).toBeNull()
-      expect(lostReach.data ?? []).toEqual([])
     } finally {
-      // First half of the belt and braces. tests/rls-fixtures.sql sets
-      // active = true for this username unconditionally at setup, because
-      // this block can be skipped -- a SIGKILL between the flip above and
-      // this line would otherwise leave the suite unable to act as an admin
-      // on the next run, with nothing in the repo to explain why.
-      const restored = await restorer
+      // Restored through rlstest-admin, which was never touched above and so
+      // needs no precondition probe of its own -- unlike the rejected design,
+      // this restore does not depend on the row under test being able to act
+      // on itself, so it always works.
+      const restored = await admin
         .from('profiles')
-        .update({ active: true })
-        .eq('id', adminUserId)
-        .select('active')
+        .update({ role: 'gs', active: true })
+        .eq('id', gsUserId)
+        .select('role, active')
         .single()
       expect(restored.error).toBeNull()
+      expect(restored.data?.role).toBe('gs')
       expect(restored.data?.active).toBe(true)
-
-      const acceptedAgain = await invokeAdminUsers(admin, { action: 'probe-unknown-action' })
-      expect(acceptedAgain.status).toBe(400)
-
-      // Drop the temporary admin's profile the moment it is no longer needed:
-      // an account that can read every GS password should exist for as short a
-      // time as possible. This removes its is_admin() standing immediately
-      // (and its gs_credentials row by cascade). The auth user it leaves
-      // behind can do nothing without a profile, and goes in
-      // tests/rls-teardown.sql.
-      const demoted = await admin.from('profiles').delete().eq('id', tempUserId).select('id')
-      expect(demoted.error).toBeNull()
-      expect((demoted.data ?? []).length).toBe(1)
     }
   })
 })
