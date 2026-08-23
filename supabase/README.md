@@ -6,7 +6,7 @@ Local `supabase start` needs Docker and is not required for this project.
 ## Schema verification
 
 `supabase/verify_schema.sql` exercises the trigger, foreign-key and RLS
-behaviour set up across migrations 0001-0014: cross-project stage
+behaviour set up across migrations 0001-0015: cross-project stage
 rejection, the audit trigger, the stage-change log, the durability of the
 `cell_events` name snapshot against both a stage rename and a hard stage
 delete (on separate fixtures, so destroying one stage cannot disarm the
@@ -37,6 +37,11 @@ DELETE SET NULL` and 0005 dropped the recovering foreign key), that returning
 a cell to "not started" while its stage is still alive is still logged with
 that name, and that a whole-project delete still succeeds with the new
 `before delete` trigger inside its cascade.
+Since 0015 it also checks that `public.cells` is a member of the
+`supabase_realtime` publication — Realtime replicates that publication and
+nothing else, so without the membership the GS screen's channel subscribes
+successfully and then receives nothing at all. Like checks 29-31, check 32
+reports `FAIL` until its migration is applied.
 Run it after any change to these
 migrations:
 
@@ -45,12 +50,14 @@ nvm use 22
 npx supabase db query --linked -f supabase/verify_schema.sql
 ```
 
-Every returned row must begin with `PASS` — 31 rows in a passing run, one
+Every returned row must begin with `PASS` — 32 rows in a passing run, one
 per numbered check in the file's header comment.
 
 Checks 29-31 arrived with `0014` and report `FAIL` until that migration is
 applied — check 29 with `from_stage_name NULL`, which is the defect it fixes,
-reproduced. Once this project holds real data, stop running this script against
+reproduced. Check 32 arrived with `0015` and reports `FAIL` with `0 membership
+row(s)` until that migration is applied, which is the state in which realtime
+is silently dead. Once this project holds real data, stop running this script against
 it and use a disposable copy. It is self-cleaning in every ordinary outcome, but
 a cleanup step that fails and is caught leaves that check's `VERIFY` fixtures
 behind — see check 9's comment.

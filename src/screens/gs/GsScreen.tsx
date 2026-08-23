@@ -1,5 +1,5 @@
 import { Alert, App, Button, Col, Layout, Row, Spin, Tabs, Typography } from 'antd'
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { useAuth } from '../../auth/AuthProvider'
 import { DrawingCanvas } from '../../canvas/DrawingCanvas'
@@ -11,7 +11,10 @@ import type { Cell, Deck, Stage } from '../../domain/types'
 // one. Screens still never touch `supabase` directly.
 import { getDrawingUrl } from '../../lib/decksApi'
 import { formatAreaM2 } from '../../lib/format'
-import { listDeckCells, loadGsProject, setCellStage, type GsDeck } from '../../lib/gsApi'
+import {
+  listDeckCells, loadGsProject, setCellStage, subscribeDeckCells,
+  type GsDeck, type GsRealtimeStatus,
+} from '../../lib/gsApi'
 import { CellStageModal } from './CellStageModal'
 import { StagePie } from './StagePie'
 import { StageSpecTable } from './StageSpecTable'
@@ -54,27 +57,81 @@ export function GsScreen() {
 
   const deck = decks.find((d) => d.id === activeDeckId) ?? null
 
+  /** The deck whose answer is still wanted. See refetchCells. */
+  const wantedDeckId = useRef<string | null>(null)
+
   /**
-   * Per-deck cell fetch. Task 9's realtime effect refetches on reconnect using
-   * the same `listDeckCells(activeDeckId)` call; it will extract this into a
-   * `useCallback` at that point so the reconnect handler and this effect share
-   * one function instead of two copies drifting apart. Not extracted now: an
-   * unused callback would fail this repo's `noUnusedLocals` build.
+   * The one per-deck cell fetch, shared by the load effect below and by the
+   * realtime reconnect handler (spec §11 row 2), so the two cannot drift into
+   * disagreeing about what "the deck's cells" means.
+   *
+   * Both callers can have a read in flight while the foreman changes tab, so the
+   * answer is dropped unless its deck is still the one on screen -- the guard
+   * the load effect used to carry as a per-effect `cancelled` flag. Without it a
+   * slow reply for the previous deck lands on the new deck's drawing, colouring
+   * bays that are not there and dividing by the wrong deck's area.
    */
+  const refetchCells = useCallback(async (deckId: string) => {
+    try {
+      const next = await listDeckCells(deckId)
+      if (wantedDeckId.current === deckId) setCells(next)
+    } catch {
+      if (wantedDeckId.current === deckId) setCells([])
+    }
+  }, [])
+
+  useEffect(() => {
+    wantedDeckId.current = activeDeckId
+    if (!activeDeckId) return
+    void refetchCells(activeDeckId)
+    return () => {
+      wantedDeckId.current = null
+    }
+  }, [activeDeckId, refetchCells])
+
+  const [realtimeStatus, setRealtimeStatus] = useState<GsRealtimeStatus>('subscribed')
+  /**
+   * Whether this subscription has been down since it was opened. A ref, not
+   * state: it is read inside the status callback and must not re-run the effect
+   * (which would tear the channel down and rebuild it on every disconnect).
+   */
+  const wasDisconnected = useRef(false)
+
   useEffect(() => {
     if (!activeDeckId) return
-    let cancelled = false
-    void listDeckCells(activeDeckId)
-      .then((next) => {
-        if (!cancelled) setCells(next)
-      })
-      .catch(() => {
-        if (!cancelled) setCells([])
-      })
+    const unsubscribe = subscribeDeckCells(activeDeckId, {
+      onCellChange: (next) => {
+        // Last write wins on stage_id (spec §11 row 3): whatever arrives is the
+        // newer truth. Merged by id, and appended when the id is unknown -- the
+        // admin can add a cell to a deck a foreman is already looking at.
+        setCells((prev) =>
+          prev.some((c) => c.id === next.id)
+            ? prev.map((c) => (c.id === next.id ? next : c))
+            : [...prev, next],
+        )
+      },
+      onStatus: (status) => {
+        setRealtimeStatus(status)
+        if (status === 'disconnected') {
+          wasDisconnected.current = true
+          return
+        }
+        // Reconnected: the socket may have missed any number of writes while it
+        // was down, so nothing short of a full re-read of the deck's cells is
+        // safe (spec §11 row 2). Gated on having actually been down -- the first
+        // SUBSCRIBED arrives right after the load effect's own fetch.
+        if (wasDisconnected.current) {
+          wasDisconnected.current = false
+          void refetchCells(activeDeckId)
+        }
+      },
+    })
     return () => {
-      cancelled = true
+      wasDisconnected.current = false
+      setRealtimeStatus('subscribed')
+      unsubscribe()
     }
-  }, [activeDeckId])
+  }, [activeDeckId, refetchCells])
 
   /**
    * Re-signed on every deck change rather than cached per deck: the URL is good
@@ -204,6 +261,16 @@ export function GsScreen() {
           onChange={(key) => setActiveDeckId(key)}
           items={decks.map((d) => ({ key: d.id, label: d.name }))}
         />
+
+        {realtimeStatus === 'disconnected' && (
+          <Alert
+            type="warning"
+            showIcon
+            style={{ marginBottom: 12 }}
+            message="Mất kết nối, đang kết nối lại..."
+            description="Số liệu trên màn hình có thể chưa cập nhật. Ghi tiến độ vẫn được lưu khi có mạng trở lại."
+          />
+        )}
 
         {drawingError && (
           <Alert

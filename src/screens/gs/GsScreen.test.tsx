@@ -1,6 +1,6 @@
 import { App as AntApp } from 'antd'
 import {
-  render, screen, waitFor, within,
+  act, render, screen, waitFor, within,
 } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
@@ -10,6 +10,7 @@ import { GsScreen } from './GsScreen'
 const loadGsProject = vi.hoisted(() => vi.fn())
 const listDeckCells = vi.hoisted(() => vi.fn())
 const setCellStage = vi.hoisted(() => vi.fn())
+const subscribeDeckCells = vi.hoisted(() => vi.fn())
 const getDrawingUrl = vi.hoisted(() => vi.fn())
 const signOut = vi.hoisted(() => vi.fn())
 
@@ -17,7 +18,10 @@ vi.mock('../../lib/gsApi', () => ({
   loadGsProject: (projectId: string) => loadGsProject(projectId),
   listDeckCells: (deckId: string) => listDeckCells(deckId),
   setCellStage: (cellId: string, stageId: string | null) => setCellStage(cellId, stageId),
-  subscribeDeckCells: vi.fn(() => () => {}),
+  subscribeDeckCells: (
+    deckId: string,
+    handlers: { onCellChange: (cell: unknown) => void; onStatus: (status: string) => void },
+  ) => subscribeDeckCells(deckId, handlers),
 }))
 vi.mock('../../lib/decksApi', () => ({
   getDrawingUrl: (path: string) => getDrawingUrl(path),
@@ -97,12 +101,35 @@ const renderScreen = () =>
     </AntApp>,
   )
 
+/**
+ * Captures the handlers the screen registers, and models the two constraints of
+ * the real subscription that the screen's correctness depends on: exactly one
+ * live subscription at a time (the returned function must be called before a
+ * new one is opened), and status callbacks that arrive as the two states gsApi
+ * maps to, never as a boolean.
+ */
+let liveHandlers: {
+  onCellChange: (cell: unknown) => void
+  onStatus: (status: string) => void
+} | null = null
+const subscribedDecks: string[] = []
+const unsubscribe = vi.fn()
+
 beforeEach(() => {
   loadGsProject.mockReset()
   listDeckCells.mockReset()
   setCellStage.mockReset()
   getDrawingUrl.mockReset()
   signOut.mockReset()
+  subscribeDeckCells.mockReset()
+  unsubscribe.mockReset()
+  subscribedDecks.length = 0
+  liveHandlers = null
+  subscribeDeckCells.mockImplementation((deckId: string, handlers: typeof liveHandlers) => {
+    subscribedDecks.push(deckId)
+    liveHandlers = handlers
+    return unsubscribe
+  })
   setCellStage.mockResolvedValue(undefined)
   loadGsProject.mockResolvedValue({ stages: STAGES, decks: DECKS })
   listDeckCells.mockImplementation((deckId: string) =>
@@ -138,6 +165,30 @@ describe('GsScreen', () => {
     await waitFor(() =>
       expect(screen.getByTestId('canvas')).toHaveAttribute('data-image', 'https://signed/p1/d2.png'))
     expect(getDrawingUrl).toHaveBeenCalledWith('p1/d2.png')
+  })
+
+  it('drops a slow answer for the deck the foreman has already left', async () => {
+    // Task 9 moved this fetch out of the effect and into a shared callback, so
+    // the effect's own `cancelled` closure is gone and the guard is now a ref on
+    // the wanted deck id. Same defect either way: the Cellar Deck's cells land
+    // on the Main Deck's drawing, colouring bays that are not there and being
+    // divided by the wrong deck's 500 m².
+    let resolveD1: (cells: typeof D1_CELLS) => void = () => {}
+    listDeckCells.mockImplementation((deckId: string) =>
+      deckId === 'd1'
+        ? new Promise((res) => { resolveD1 = res })
+        : Promise.resolve(D2_CELLS))
+
+    renderScreen()
+    await userEvent.click(await screen.findByRole('tab', { name: 'Main Deck' }))
+    await waitFor(() => expect(listDeckCells).toHaveBeenCalledWith('d2'))
+
+    resolveD1(D1_CELLS)
+
+    // d2 has one cell, R1C1 at Tháo giáo. R2C1 exists only on d1.
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'ô R1C1' })).toHaveAttribute('data-color', '#722ed1'))
+    expect(screen.queryByRole('button', { name: 'ô R2C1' })).toBeNull()
   })
 
   it('colours each cell with its current stage colour', async () => {
@@ -378,5 +429,112 @@ describe('GsScreen: recording a stage', () => {
     expect(setCellStage).toHaveBeenCalledTimes(1)
     // And the colour moves with it, straight away.
     expect(screen.getByRole('button', { name: 'ô R1C1' })).toHaveAttribute('data-color', '#bfbfbf')
+  })
+})
+
+describe('GsScreen: realtime', () => {
+  it('subscribes to the deck on screen', async () => {
+    renderScreen()
+    await waitFor(() => expect(subscribedDecks).toEqual(['d1']))
+  })
+
+  it('closes the old subscription before opening the new one on a tab change', async () => {
+    renderScreen()
+    await screen.findByRole('tab', { name: 'Main Deck' })
+    await userEvent.click(screen.getByRole('tab', { name: 'Main Deck' }))
+
+    await waitFor(() => expect(subscribedDecks).toEqual(['d1', 'd2']))
+    // Without this every visited tab leaves a live socket subscription behind,
+    // and the Cellar Deck's cells keep arriving into the Main Deck's state.
+    expect(unsubscribe).toHaveBeenCalledTimes(1)
+  })
+
+  it('folds another client\'s write into the drawing and the numbers', async () => {
+    renderScreen()
+    expect(await screen.findByText('15,50%')).toBeInTheDocument()
+
+    act(() => {
+      liveHandlers?.onCellChange({
+        id: 'c1', code: 'R1C1', x: 0, y: 0, w: 0.5, h: 0.5, areaM2: 300, stageId: 's3',
+      })
+    })
+
+    // R1C1 moves from Blast + Coat 1 to Coat 3: A_1 = 500, A_2 = 500, A_3 = 300,
+    // so prog = 0.25*0.5 + 0.15*0.5 + 0.35*0.3 = 0.305.
+    expect(await screen.findByText('30,50%')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'ô R1C1' })).toHaveAttribute('data-color', '#52c41a')
+  })
+
+  it('adds a cell it has never seen', async () => {
+    renderScreen()
+    await screen.findByRole('button', { name: 'ô R1C1' })
+
+    act(() => {
+      liveHandlers?.onCellChange({
+        id: 'c4', code: 'R2C2', x: 0.5, y: 0.5, w: 0.5, h: 0.5, areaM2: 50, stageId: 's1',
+      })
+    })
+
+    // The admin can add cells to a deck a foreman is looking at. Merging only
+    // known ids would drop it silently -- the foreman would tap a bay that is
+    // not on their screen.
+    expect(await screen.findByRole('button', { name: 'ô R2C2' })).toBeInTheDocument()
+  })
+
+  it('shows a banner while the connection is down', async () => {
+    renderScreen()
+    await screen.findByRole('button', { name: 'ô R1C1' })
+    expect(screen.queryByText('Mất kết nối, đang kết nối lại...')).toBeNull()
+
+    act(() => { liveHandlers?.onStatus('disconnected') })
+
+    expect(await screen.findByText('Mất kết nối, đang kết nối lại...')).toBeInTheDocument()
+  })
+
+  it('refetches the deck\'s cells on reconnect, and only then', async () => {
+    renderScreen()
+    await waitFor(() => expect(listDeckCells).toHaveBeenCalledTimes(1))
+
+    // The initial SUBSCRIBED must NOT refetch: the load effect has just done it,
+    // and a second read on every mount doubles the round trips on a tether.
+    act(() => { liveHandlers?.onStatus('subscribed') })
+    expect(listDeckCells).toHaveBeenCalledTimes(1)
+
+    act(() => { liveHandlers?.onStatus('disconnected') })
+    act(() => { liveHandlers?.onStatus('subscribed') })
+
+    // A socket that was down may have missed any number of writes, so the only
+    // safe recovery is a full re-read of the deck (spec §11 row 2).
+    await waitFor(() => expect(listDeckCells).toHaveBeenCalledTimes(2))
+    expect(listDeckCells).toHaveBeenLastCalledWith('d1')
+    expect(screen.queryByText('Mất kết nối, đang kết nối lại...')).toBeNull()
+  })
+
+  it('keeps another client\'s write when its own write is rolled back', async () => {
+    let reject: (e: Error) => void = () => {}
+    setCellStage.mockReturnValue(new Promise<void>((_res, rej) => { reject = rej }))
+
+    renderScreen()
+    await userEvent.click(await screen.findByRole('button', { name: 'ô R2C1' }))
+    await userEvent.click(await screen.findByRole('combobox', { name: 'Công đoạn' }))
+    await userEvent.click(await screen.findByTitle('Tháo giáo'))
+    await userEvent.click(screen.getByRole('button', { name: 'Xác nhận' }))
+
+    // Another foreman's tick lands while this write is still in flight.
+    act(() => {
+      liveHandlers?.onCellChange({
+        id: 'c1', code: 'R1C1', x: 0, y: 0, w: 0.5, h: 0.5, areaM2: 300, stageId: 's3',
+      })
+    })
+
+    reject(new Error('Failed to fetch'))
+
+    // The rollback must undo ONE cell. A snapshot-based rollback restores the
+    // array as it was before this write and silently discards R1C1's realtime
+    // update -- which is a lost write, reported to nobody, and the reason the
+    // rollback is written by id.
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'ô R2C1' })).toHaveAttribute('data-color', ''))
+    expect(screen.getByRole('button', { name: 'ô R1C1' })).toHaveAttribute('data-color', '#52c41a')
   })
 })

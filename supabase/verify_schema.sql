@@ -195,20 +195,30 @@
 --       delete twice in Phase 1. Its `exists (select 1 from projects ...)`
 --       guard is what makes it safe; this check is what proves the guard works.
 --
+-- Check 32 is added by 0015. Catalog-only, no fixtures.
+--   32. public.cells is a member of the supabase_realtime publication. Realtime
+--       replicates that publication and nothing else, so without this the GS
+--       screen's channel reports SUBSCRIBED and then delivers nothing, with no
+--       error on either side -- and spec §11 row 3's "every open client
+--       converged" is quietly false.
+--
 -- How to run:
 --   nvm use 22
 --   npx supabase db query --linked -f supabase/verify_schema.sql
 --
--- Every returned row must begin with PASS (31 rows in total, one per
--- numbered check above, 1-31 with no gaps). A row beginning with FAIL means
+-- Every returned row must begin with PASS (32 rows in total, one per
+-- numbered check above, 1-32 with no gaps). A row beginning with FAIL means
 -- a regression in the trigger/FK/RLS behaviour set up across migrations
--- 0001-0014; re-read those migrations' comments before changing this file.
+-- 0001-0015; re-read those migrations' comments before changing this file.
 --
 -- One standing exception while a migration is outstanding: checks 29-31 test
 -- migration 0014, so against a database where 0014 has not been applied yet
 -- check 29 reports FAIL with `from_stage_name NULL` -- which IS the defect
 -- 0014 fixes, reproduced. A FAIL there means "not applied", not "broken", and
--- it is the evidence that the check is not vacuous.
+-- it is the evidence that the check is not vacuous. Check 32 stands in the same
+-- relation to 0015: until that migration is applied it reports FAIL with 0
+-- membership rows, which is exactly the state in which the GS screen's channel
+-- subscribes successfully and then receives nothing.
 --
 -- ONCE THIS PROJECT HOLDS REAL PROJECT DATA, do not run this against it again.
 -- The WARNING below is not theoretical. This file is self-cleaning in every
@@ -995,6 +1005,22 @@ begin
   end;
 end $$;
 
+-- Check 32 (migration 0015): cells is published for realtime.
+create or replace function _verify_realtime_publication() returns setof text language plpgsql as $$
+declare
+  n int;
+begin
+  select count(*) into n
+  from pg_publication_tables
+  where pubname = 'supabase_realtime'
+    and schemaname = 'public'
+    and tablename = 'cells';
+
+  return next format(
+    '%s public.cells is published for realtime: %s membership row(s) in supabase_realtime, need 1',
+    case when n = 1 then 'PASS' else 'FAIL' end, n);
+end $$;
+
 -- A single top-level SELECT: `supabase db query -f` surfaces only the last
 -- result set a multi-statement file produces, so the checks are combined
 -- here with UNION ALL rather than issued as separate SELECTs.
@@ -1010,7 +1036,9 @@ select * from _verify_stage_removal()
 union all
 select * from _verify_gs_audit_guard()
 union all
-select * from _verify_stage_deletion_audit();
+select * from _verify_stage_deletion_audit()
+union all
+select * from _verify_realtime_publication();
 
 drop function _verify_triggers();
 drop function _verify_rls();
@@ -1019,3 +1047,4 @@ drop function _verify_stage_seq_deferrable();
 drop function _verify_stage_removal();
 drop function _verify_gs_audit_guard();
 drop function _verify_stage_deletion_audit();
+drop function _verify_realtime_publication();
