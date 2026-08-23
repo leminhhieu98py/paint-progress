@@ -10,7 +10,8 @@
 --
 -- It picks the first project by name, that project's first deck by seq, that
 -- project's last stage by seq (the scaffolding-removal stage, which is what the
--- `Kế hoạch tháo GG` sheet plans), and that deck's first four cells by code.
+-- `Kế hoạch tháo GG` sheet plans), and that deck's first four cells by code --
+-- or all of them, if the deck holds fewer than four.
 -- Deterministic, so re-running it is a no-op rather than a second zone.
 --
 -- To remove it again:
@@ -56,9 +57,20 @@ begin
 end $$;
 
 -- Single result set, because `supabase db query -f` shows only the last one.
+--
+-- The criterion is "at least one cell, and no more than the four requested",
+-- not "exactly four". The insert above takes `limit 4` from whatever the deck
+-- actually holds, so on a deck with one, two or three cells -- which the live
+-- project currently is -- a completely correct run has always reported
+-- `FAIL ... covers 1 cell(s)`. Both bounds still bite: 0 means the zone exists
+-- with no membership (or does not exist at all), and more than 4 means the
+-- `limit 4` was lost or the fixture ran twice into the same zone.
+--
+-- count(zc.cell_id), not count(*): the left join yields one row with a NULL
+-- cell_id for a zone that has no members, which count(*) would report as 1.
 select format('%s DEMO Zone 1 on deck %s covers %s cell(s)',
-              case when count(*) = 4 then 'PASS' else 'FAIL' end,
-              max(z.deck_id::text), count(*)) as result
+              case when count(zc.cell_id) between 1 and 4 then 'PASS' else 'FAIL' end,
+              max(z.deck_id::text), count(zc.cell_id)) as result
 from zones z
 left join zone_cells zc on zc.zone_id = z.id
 where z.name = 'DEMO Zone 1';
