@@ -1038,6 +1038,11 @@ describe.skipIf(!adminConfigured)('admin-users Edge Function', () => {
     expect(result.body.error).toBe('Forbidden')
   })
 
+  // 20s, not the 5s default: this test makes three round trips against the live
+  // project (flip the flag, invoke the function, restore through the admin
+  // session) and it timed out at 5s once during Phase 3. A timeout here is an
+  // environment signal, not a correctness one, and aborting it mid-way risks
+  // skipping the restore in the `finally`.
   it('refuses an admin whose profile has been deactivated with 403', async () => {
     // is_admin() and callerAdminId both require profiles.active, so this is
     // the check that makes deactivating an admin actually revoke them. The
@@ -1103,5 +1108,5 @@ describe.skipIf(!adminConfigured)('admin-users Edge Function', () => {
       expect(restored.data?.role).toBe('gs')
       expect(restored.data?.active).toBe(true)
     }
-  })
+  }, 20_000)
 })

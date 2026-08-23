@@ -69,6 +69,17 @@ delete from projects where code in ('RLSX', 'RLSY', 'RLSE');
 -- run killed mid-test is exactly when someone reaches for this file.
 update profiles set active = true where username = 'rlstest-admin';
 
+-- 6. The GS fixture must be a GS again. The inactive-admin test flips it to
+-- role='admin', active=false in one statement and restores it through the
+-- still-active admin session in a `finally` -- but that test makes three
+-- network round trips against the live project and has timed out at least once
+-- in this phase, and a `finally` is not guaranteed to run when the runner
+-- aborts the test. Left flipped, rlstest-gs is an INACTIVE admin: harmless
+-- (resolveAdmin requires active, so it can reveal nothing) but it breaks every
+-- GS test on the next run, and rls-fixtures.sql would report it as a FAIL
+-- rather than repair it. This makes it self-healing instead of self-detecting.
+update profiles set role = 'gs', active = true where username = 'rlstest-gs';
+
 create or replace function _verify_teardown() returns setof text language plpgsql as $$
 declare
   n int;
