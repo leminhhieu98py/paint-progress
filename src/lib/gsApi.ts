@@ -1,5 +1,5 @@
 import { REALTIME_SUBSCRIBE_STATES } from '@supabase/supabase-js'
-import type { Cell, Stage } from '../domain/types'
+import type { Cell, Stage, Zone } from '../domain/types'
 import { listStages } from './projectsApi'
 import { supabase } from './supabase'
 
@@ -91,6 +91,36 @@ export async function loadGsProject(projectId: string): Promise<GsProject> {
       areaSource: d.area_source as 'guides' | 'prorated',
     })),
   }
+}
+
+/**
+ * A deck's planned zones, with their member cell ids.
+ *
+ * Ordered by seq, which buildPlanLabels relies on to resolve a cell claimed by
+ * two zones. One embedded select rather than two queries: zone_cells has no
+ * columns of its own worth returning, and a second round trip on a site tether
+ * to attach ids is a round trip for nothing.
+ *
+ * Every deck has zero zones until Phase 4 ships the zone editor (spec §8.5).
+ * That is not a reason to defer this: a GS toggling "Show plan" is meant to see
+ * a zone the moment one exists, with no synchronisation step anywhere.
+ */
+export async function listDeckZones(deckId: string): Promise<Zone[]> {
+  const { data, error } = await supabase
+    .from('zones')
+    .select('id, name, stage_id, start_date, finish_date, zone_cells(cell_id)')
+    .eq('deck_id', deckId)
+    .order('seq')
+  if (error) throw new Error(error.message)
+
+  return (data ?? []).map((z) => ({
+    id: z.id as string,
+    name: z.name as string,
+    stageId: z.stage_id as string,
+    startDate: (z.start_date as string | null) ?? null,
+    finishDate: (z.finish_date as string | null) ?? null,
+    cellIds: ((z.zone_cells ?? []) as { cell_id: string }[]).map((zc) => zc.cell_id),
+  }))
 }
 
 /** One deck's cells. Ordered by code so the cell list is stable across reloads. */

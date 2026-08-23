@@ -1,7 +1,7 @@
 import { Button, Space } from 'antd'
 import Konva from 'konva'
 import { useEffect, useRef, useState } from 'react'
-import { Image as KonvaImage, Layer, Line, Rect, Stage } from 'react-konva'
+import { Image as KonvaImage, Layer, Line, Rect, Stage, Text } from 'react-konva'
 import useImage from 'use-image'
 import type { Guide, MeshCell } from '../domain/types'
 import {
@@ -53,6 +53,7 @@ export function DrawingCanvas({
   cells,
   selectedCodes,
   cellColors,
+  planLabels,
   panZoom = false,
   onGuideMove,
   onGuideAdd,
@@ -66,6 +67,12 @@ export function DrawingCanvas({
   selectedCodes: string[]
   /** Colour per cell code; a code absent from the map renders unfilled. */
   cellColors?: Record<string, string>
+  /**
+   * Planned date range per cell CODE. A code present here gets a dashed outline
+   * and its label drawn over the cell; a code absent gets nothing. Spec §8.1's
+   * "Show plan" toggle.
+   */
+  planLabels?: Record<string, string>
   /**
    * Pan by dragging, zoom by the buttons or the wheel. Off by default: the
    * admin editor drags guides, and it has never had (or wanted) a viewport of
@@ -208,6 +215,39 @@ export function DrawingCanvas({
                 fill={SELECTION_OVERLAY_FILL}
                 stroke={SELECTION_STROKE}
                 strokeWidth={3}
+              />
+            ))}
+        </Layer>
+
+        <Layer name="plan" listening={false}>
+          {cells
+            .filter((cell) => planLabels?.[cell.code] !== undefined)
+            .map((cell) => (
+              <Rect
+                key={`plan-${cell.code}`}
+                name={`plan-${cell.code}`}
+                x={cell.x * width}
+                y={cell.y * height}
+                width={cell.w * width}
+                height={cell.h * height}
+                stroke="#000000"
+                strokeWidth={2}
+                dash={[6, 4]}
+              />
+            ))}
+          {cells
+            .filter((cell) => planLabels?.[cell.code] !== undefined)
+            .map((cell) => (
+              <Text
+                key={`plan-label-${cell.code}`}
+                name={`plan-label-${cell.code}`}
+                x={cell.x * width}
+                y={cell.y * height + cell.h * height / 2 - 6}
+                width={cell.w * width}
+                align="center"
+                text={planLabels?.[cell.code] ?? ''}
+                fontSize={12}
+                fill="#000000"
               />
             ))}
         </Layer>

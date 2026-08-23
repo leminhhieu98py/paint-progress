@@ -73,3 +73,21 @@ export interface MeshCell {
   h: number
   areaM2: number
 }
+
+/**
+ * A named group of cells carrying a planned date range for one stage — the
+ * `Kế hoạch tháo GG` sheet, and the dated annotations on the source PDFs.
+ *
+ * `startDate` / `finishDate` are ISO date-only strings ('2026-08-13') as
+ * PostgREST returns a `date` column, never Date objects: a Date would carry a
+ * timezone this value does not have, and formatting it locally shifts the day.
+ */
+export interface Zone {
+  id: string
+  name: string
+  stageId: string
+  startDate: string | null
+  finishDate: string | null
+  /** cells.id, not code. */
+  cellIds: string[]
+}

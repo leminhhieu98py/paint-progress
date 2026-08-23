@@ -9,6 +9,7 @@ import { GsScreen } from './GsScreen'
 
 const loadGsProject = vi.hoisted(() => vi.fn())
 const listDeckCells = vi.hoisted(() => vi.fn())
+const listDeckZones = vi.hoisted(() => vi.fn())
 const setCellStage = vi.hoisted(() => vi.fn())
 const subscribeDeckCells = vi.hoisted(() => vi.fn())
 const getDrawingUrl = vi.hoisted(() => vi.fn())
@@ -17,6 +18,7 @@ const signOut = vi.hoisted(() => vi.fn())
 vi.mock('../../lib/gsApi', () => ({
   loadGsProject: (projectId: string) => loadGsProject(projectId),
   listDeckCells: (deckId: string) => listDeckCells(deckId),
+  listDeckZones: (deckId: string) => listDeckZones(deckId),
   setCellStage: (cellId: string, stageId: string | null) => setCellStage(cellId, stageId),
   subscribeDeckCells: (
     deckId: string,
@@ -37,17 +39,23 @@ vi.mock('../../auth/AuthProvider', () => ({
 // here; what it renders for real was established by driving it in Chrome.
 vi.mock('../../canvas/DrawingCanvas', () => ({
   DrawingCanvas: ({
-    imageUrl, cells, cellColors, panZoom, onCellClick,
+    imageUrl, cells, cellColors, planLabels, panZoom, onCellClick,
   }: {
     imageUrl: string
     cells: { code: string }[]
     cellColors?: Record<string, string>
+    planLabels?: Record<string, string>
     panZoom?: boolean
     onCellClick?: (code: string, additive: boolean) => void
   }) => (
     <div data-testid="canvas" data-image={imageUrl} data-panzoom={String(Boolean(panZoom))}>
       {cells.map((c) => (
-        <button key={c.code} data-color={cellColors?.[c.code] ?? ''} onClick={() => onCellClick?.(c.code, false)}>
+        <button
+          key={c.code}
+          data-color={cellColors?.[c.code] ?? ''}
+          data-plan={planLabels?.[c.code] ?? ''}
+          onClick={() => onCellClick?.(c.code, false)}
+        >
           ô {c.code}
         </button>
       ))}
@@ -118,6 +126,8 @@ const unsubscribe = vi.fn()
 beforeEach(() => {
   loadGsProject.mockReset()
   listDeckCells.mockReset()
+  listDeckZones.mockReset()
+  listDeckZones.mockResolvedValue([])
   setCellStage.mockReset()
   getDrawingUrl.mockReset()
   signOut.mockReset()
@@ -576,5 +586,63 @@ describe('GsScreen: realtime', () => {
     await waitFor(() =>
       expect(screen.getByRole('button', { name: 'ô R2C1' })).toHaveAttribute('data-color', ''))
     expect(screen.getByRole('button', { name: 'ô R1C1' })).toHaveAttribute('data-color', '#52c41a')
+  })
+})
+
+describe('GsScreen: the plan overlay', () => {
+  it('fetches no zones while the toggle is off', async () => {
+    renderScreen()
+    await screen.findByRole('button', { name: 'ô R1C1' })
+    // Zero zones exist until Phase 4, so this round trip would buy nothing on
+    // a site tether -- and it must not be made per deck tab either.
+    expect(listDeckZones).not.toHaveBeenCalled()
+  })
+
+  it('draws the planned date range on the zone\'s cells when switched on', async () => {
+    listDeckZones.mockResolvedValue([{
+      id: 'z1', name: 'Zone 1', stageId: 's5',
+      startDate: '2026-08-13', finishDate: '2026-08-19',
+      cellIds: ['c1'],
+    }])
+
+    renderScreen()
+    await userEvent.click(await screen.findByRole('switch'))
+
+    await waitFor(() => expect(listDeckZones).toHaveBeenCalledWith('d1'))
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'ô R1C1' }))
+        .toHaveAttribute('data-plan', '13/08 – 19/08'))
+    // Only the zone's own cells: a deck with one zone must not read as fully
+    // planned.
+    expect(screen.getByRole('button', { name: 'ô R1C2' })).toHaveAttribute('data-plan', '')
+  })
+
+  it('shows nothing when the deck has no zones yet', async () => {
+    // The state this ships in. It must be a quiet no-op, not an error or an
+    // empty dashed outline on every cell.
+    renderScreen()
+    await userEvent.click(await screen.findByRole('switch'))
+
+    await waitFor(() => expect(listDeckZones).toHaveBeenCalledWith('d1'))
+    expect(screen.getByRole('button', { name: 'ô R1C1' })).toHaveAttribute('data-plan', '')
+  })
+
+  it('clears the overlay when switched off again', async () => {
+    listDeckZones.mockResolvedValue([{
+      id: 'z1', name: 'Zone 1', stageId: 's5',
+      startDate: '2026-08-13', finishDate: '2026-08-19',
+      cellIds: ['c1'],
+    }])
+
+    renderScreen()
+    await userEvent.click(await screen.findByRole('switch'))
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'ô R1C1' }))
+        .toHaveAttribute('data-plan', '13/08 – 19/08'))
+
+    await userEvent.click(screen.getByRole('switch'))
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'ô R1C1' })).toHaveAttribute('data-plan', ''))
   })
 })

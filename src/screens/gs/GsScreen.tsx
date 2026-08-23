@@ -1,18 +1,21 @@
-import { Alert, App, Button, Col, Layout, Row, Spin, Tabs, Typography } from 'antd'
+import {
+  Alert, App, Button, Col, Layout, Row, Space, Spin, Switch, Tabs, Typography,
+} from 'antd'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { useAuth } from '../../auth/AuthProvider'
 import { DrawingCanvas } from '../../canvas/DrawingCanvas'
+import { buildPlanLabels } from '../../domain/plan'
 import { buildStageSlices } from '../../domain/pieSlices'
 import { computeDeckProgress } from '../../domain/progress'
-import type { Cell, Deck, Stage } from '../../domain/types'
+import type { Cell, Deck, Stage, Zone } from '../../domain/types'
 // One signed-URL helper for both roles: the bucket name and the 3600-second
 // expiry belong in one place, and decksApi is a lib module rather than an admin
 // one. Screens still never touch `supabase` directly.
 import { getDrawingUrl } from '../../lib/decksApi'
 import { formatAreaM2 } from '../../lib/format'
 import {
-  listDeckCells, loadGsProject, setCellStage, subscribeDeckCells,
+  listDeckCells, listDeckZones, loadGsProject, setCellStage, subscribeDeckCells,
   type GsDeck, type GsRealtimeStatus,
 } from '../../lib/gsApi'
 import { CellStageModal } from './CellStageModal'
@@ -230,6 +233,37 @@ export function GsScreen() {
     return colors
   }, [cells, stages])
 
+  const [showPlan, setShowPlan] = useState(false)
+  const [zones, setZones] = useState<Zone[]>([])
+
+  /**
+   * Fetched only while the toggle is on. Zones are empty for every deck until
+   * Phase 4 ships the zone editor, so fetching them on every deck open would be
+   * a round trip per tab, on a site tether, for nothing.
+   */
+  useEffect(() => {
+    if (!showPlan || !activeDeckId) {
+      setZones([])
+      return
+    }
+    let cancelled = false
+    void listDeckZones(activeDeckId)
+      .then((next) => {
+        if (!cancelled) setZones(next)
+      })
+      .catch(() => {
+        if (!cancelled) setZones([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [showPlan, activeDeckId])
+
+  const planLabels = useMemo(
+    () => (showPlan ? buildPlanLabels(zones, cells) : undefined),
+    [showPlan, zones, cells],
+  )
+
   const [selectedCell, setSelectedCell] = useState<Cell | null>(null)
   const { message } = App.useApp()
 
@@ -317,6 +351,14 @@ export function GsScreen() {
           />
         )}
 
+        {/* aria-label on the Switch rather than a <label htmlFor>: antd renders
+            a <button>, which is not a labelable element, so a label would
+            associate with nothing and leave the control with no accessible name. */}
+        <Space style={{ marginBottom: 8 }}>
+          <Switch checked={showPlan} onChange={setShowPlan} aria-label="Hiện kế hoạch" />
+          <Typography.Text>Hiện kế hoạch</Typography.Text>
+        </Space>
+
         <Row gutter={12}>
           <Col xs={24} md={14}>
             {deck && deck.imagePath && deck.imageW && deck.imageH && imageUrl ? (
@@ -329,6 +371,7 @@ export function GsScreen() {
                 cells={cells}
                 selectedCodes={[]}
                 cellColors={cellColors}
+                planLabels={planLabels}
                 panZoom
                 onCellClick={(code) => {
                   setSelectedCell(cells.find((c) => c.code === code) ?? null)

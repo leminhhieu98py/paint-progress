@@ -53,6 +53,8 @@ vi.mock('react-konva', () => {
       data-hashitfunc={String(typeof props.hitFunc === 'function')}
       data-scalex={String(props.scaleX ?? '')}
       data-draggable={String(props.draggable ?? '')}
+      data-text={String(props.text ?? '')}
+      data-dash={String(props.dash ?? '')}
       // Probes the stage's own drag clamp with a position far outside any
       // sane viewport, at the CURRENT width/height/zoom the component computed
       // -- not a hardcoded stand-in for them. This is what lets the pan tests
@@ -111,7 +113,10 @@ vi.mock('react-konva', () => {
       {props.children as never}
     </div>
   )
-  return { Stage: node('stage'), Layer: node('layer'), Rect: node('rect'), Line: node('line'), Image: node('image') }
+  return {
+    Stage: node('stage'), Layer: node('layer'), Rect: node('rect'),
+    Line: node('line'), Image: node('image'), Text: node('text'),
+  }
 })
 
 vi.mock('use-image', () => ({ default: () => [undefined, 'loaded'] }))
@@ -641,6 +646,43 @@ describe('DrawingCanvas', () => {
       )
       fireEvent.wheel(screen.getByTestId('stage:drawing'), { deltaY: -100 })
       expect(screen.getByTestId('stage:drawing')).toHaveAttribute('data-scalex', '1')
+    })
+  })
+
+  describe('plan overlay', () => {
+    it('draws a dashed outline and the date range on a planned cell', () => {
+      render(
+        <DrawingCanvas
+          imageUrl="u" imageW={2000} imageH={1600} guides={guides} cells={cells}
+          selectedCodes={[]}
+          planLabels={{ R1C1: '13/08 – 19/08' }}
+        />,
+      )
+      expect(screen.getByTestId('rect:plan-R1C1')).toHaveAttribute('data-dash', '6,4')
+      expect(screen.getByTestId('text:plan-label-R1C1')).toHaveAttribute('data-text', '13/08 – 19/08')
+    })
+
+    it('leaves an unplanned cell alone', () => {
+      // Catches an overlay drawn over every cell, which on a deck with one zone
+      // would annotate the whole drawing as planned.
+      render(
+        <DrawingCanvas
+          imageUrl="u" imageW={2000} imageH={1600} guides={guides} cells={cells}
+          selectedCodes={[]}
+          planLabels={{ R1C1: '13/08 – 19/08' }}
+        />,
+      )
+      expect(screen.queryByTestId('rect:plan-R1C2')).toBeNull()
+    })
+
+    it('draws no overlay at all when no plan is supplied', () => {
+      render(
+        <DrawingCanvas
+          imageUrl="u" imageW={2000} imageH={1600} guides={guides} cells={cells}
+          selectedCodes={[]}
+        />,
+      )
+      expect(screen.queryByTestId('rect:plan-R1C1')).toBeNull()
     })
   })
 })
