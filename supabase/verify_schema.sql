@@ -186,14 +186,14 @@
 --       missing `not exists` away from swallowing this too, and check 29 alone
 --       would not notice: it would still see exactly one row.
 --   31. A whole project can still be deleted with 0014's BEFORE DELETE trigger
---       -- and note this check IS its own cleanup step, so if it ever FAILs its
---       VERIFY G fixtures commit and stay in the database, the same shape as the
---       incident check 9 records. A FAIL here means residue, not just a red row.
 --       in place. That trigger inserts into cell_events from inside the fan-out
 --       of projects -> project_stages, racing projects -> decks -> cells
 --       CASCADE at a different depth -- the defect class that aborted this
 --       delete twice in Phase 1. Its `exists (select 1 from projects ...)`
 --       guard is what makes it safe; this check is what proves the guard works.
+--       Note that this check IS its own cleanup step, so if it ever FAILs its
+--       VERIFY G fixtures commit and stay in the database, the same shape as the
+--       incident check 9 records. A FAIL here means residue, not just a red row.
 --
 -- Check 32 is added by 0015. Catalog-only, no fixtures.
 --   32. public.cells is a member of the supabase_realtime publication. Realtime
@@ -202,14 +202,28 @@
 --       error on either side -- and spec §11 row 3's "every open client
 --       converged" is quietly false.
 --
+-- Check 33 is added by 0016. Catalog-only, no fixtures.
+--   33. public.cells has REPLICA IDENTITY FULL (pg_class.relreplident = 'f').
+--       Membership in the publication (check 32) is what makes INSERT and UPDATE
+--       deliverable; this is what makes DELETE deliverable. Under the default
+--       replica identity a delete's WAL old record carries only the primary key,
+--       so Realtime cannot evaluate cells_member_read (0006) -- which needs
+--       deck_id -- and silently drops the event for that subscriber. Measured
+--       against the live project: with DEFAULT, a DELETE binding filtered on
+--       deck_id AND an unfiltered one both received nothing. The consequence is
+--       not cosmetic: a merge in the deck editor is one UPDATE of the survivor
+--       plus a DELETE of each absorbed cell, so without this the absorbed cells
+--       stay on the foreman's drawing with their area counted twice in every
+--       reported percentage.
+--
 -- How to run:
 --   nvm use 22
 --   npx supabase db query --linked -f supabase/verify_schema.sql
 --
--- Every returned row must begin with PASS (32 rows in total, one per
--- numbered check above, 1-32 with no gaps). A row beginning with FAIL means
+-- Every returned row must begin with PASS (33 rows in total, one per
+-- numbered check above, 1-33 with no gaps). A row beginning with FAIL means
 -- a regression in the trigger/FK/RLS behaviour set up across migrations
--- 0001-0015; re-read those migrations' comments before changing this file.
+-- 0001-0016; re-read those migrations' comments before changing this file.
 --
 -- One standing exception while a migration is outstanding: checks 29-31 test
 -- migration 0014, so against a database where 0014 has not been applied yet
@@ -218,7 +232,10 @@
 -- it is the evidence that the check is not vacuous. Check 32 stands in the same
 -- relation to 0015: until that migration is applied it reports FAIL with 0
 -- membership rows, which is exactly the state in which the GS screen's channel
--- subscribes successfully and then receives nothing.
+-- subscribes successfully and then receives nothing. Check 33 stands in the same
+-- relation to 0016: until that migration is applied it reports FAIL with
+-- relreplident = 'd', which is exactly the state in which the channel delivers
+-- INSERT and UPDATE and drops every DELETE.
 --
 -- ONCE THIS PROJECT HOLDS REAL PROJECT DATA, do not run this against it again.
 -- The WARNING below is not theoretical. This file is self-cleaning in every
@@ -1021,6 +1038,25 @@ begin
     case when n = 1 then 'PASS' else 'FAIL' end, n);
 end $$;
 
+-- Check 33 (migration 0016): cells logs its whole old row, so DELETE is
+-- deliverable. Read straight from pg_class rather than from a DELETE probe: a
+-- probe would have to be delivered over a websocket to prove anything, which
+-- this file cannot do, whereas relreplident IS the switch Realtime's decoder
+-- reads. 'f' = FULL, 'd' = DEFAULT (primary key only), 'n' = NOTHING,
+-- 'i' = a specific index. Only 'f' carries deck_id in the old record, and
+-- without deck_id Realtime cannot evaluate cells_member_read for the subscriber
+-- and drops the event.
+create or replace function _verify_cells_replica_identity() returns setof text language plpgsql as $$
+declare
+  ident "char";
+begin
+  select relreplident into ident from pg_class where oid = 'public.cells'::regclass;
+
+  return next format(
+    '%s public.cells has REPLICA IDENTITY FULL so DELETE is deliverable: relreplident = %L, need %L',
+    case when ident = 'f' then 'PASS' else 'FAIL' end, ident, 'f');
+end $$;
+
 -- A single top-level SELECT: `supabase db query -f` surfaces only the last
 -- result set a multi-statement file produces, so the checks are combined
 -- here with UNION ALL rather than issued as separate SELECTs.
@@ -1038,7 +1074,9 @@ select * from _verify_gs_audit_guard()
 union all
 select * from _verify_stage_deletion_audit()
 union all
-select * from _verify_realtime_publication();
+select * from _verify_realtime_publication()
+union all
+select * from _verify_cells_replica_identity();
 
 drop function _verify_triggers();
 drop function _verify_rls();
@@ -1048,3 +1086,4 @@ drop function _verify_stage_removal();
 drop function _verify_gs_audit_guard();
 drop function _verify_stage_deletion_audit();
 drop function _verify_realtime_publication();
+drop function _verify_cells_replica_identity();

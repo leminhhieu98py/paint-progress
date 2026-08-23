@@ -28,6 +28,26 @@ export interface GsDeck {
 export interface GsProject {
   stages: Stage[]
   decks: GsDeck[]
+  /**
+   * Whether the signed-in user actually holds a `project_members` row for this
+   * project.
+   *
+   * Fetched because RLS makes a refusal and an empty project indistinguishable
+   * from the outside: `/gs/:projectId` gates on role alone, so a GS deep-linking
+   * to a project they are not in gets zero stages and zero decks -- no error, no
+   * empty payload to catch -- and the screen renders "Sàn này chưa có bản vẽ"
+   * over "Tổng diện tích sàn: 0,00 m²". That is the exact shape of a project
+   * whose drawings the admin has not uploaded yet. This project's rule, adopted
+   * after a Phase 1 defect of the same class, is that a refusal must never
+   * render as missing data.
+   *
+   * `project_members_self_read` (0006) is `user_id = auth.uid()`, so this reads
+   * the caller's own row and nothing else -- the same policy myFirstProjectId
+   * relies on from the index route. It cannot tell "not a member of this
+   * project" from "this project does not exist", and deliberately does not try:
+   * both get the same message, so nothing leaks about which ids exist.
+   */
+  isMember: boolean
 }
 
 export type GsRealtimeStatus = 'subscribed' | 'disconnected'
@@ -60,25 +80,41 @@ function mapCellRow(row: Record<string, unknown>): Cell {
 }
 
 /**
- * The project's stage configuration and its decks, in one round trip pair.
+ * The project's stage configuration, its decks, and whether the caller is a
+ * member of it at all -- in one parallel batch.
  *
  * Stages come from projectsApi.listStages: the mapping is identical for both
  * roles, and two copies of it would let the admin's percentages and the GS's
  * disagree after any change to the row shape.
+ *
+ * The membership read rides along here rather than being a second call from the
+ * screen so that the three cannot land in different render passes: a screen that
+ * learned "no decks" before "not a member" would flash the empty-project state
+ * at somebody it is about to refuse.
  */
 export async function loadGsProject(projectId: string): Promise<GsProject> {
-  const [stages, decksResult] = await Promise.all([
+  const [stages, decksResult, membershipResult] = await Promise.all([
     listStages(projectId),
     supabase
       .from('decks')
       .select('id, seq, name, code, image_path, image_w, image_h, total_area_m2, area_source')
       .eq('project_id', projectId)
       .order('seq'),
+    supabase
+      .from('project_members')
+      .select('project_id')
+      .eq('project_id', projectId)
+      .limit(1),
   ])
   if (decksResult.error) throw new Error(decksResult.error.message)
+  // Thrown, not treated as "not a member": a failed membership read is a network
+  // or policy fault, and reporting it as a refusal would tell a foreman with a
+  // dropped tether to go and find the administrator.
+  if (membershipResult.error) throw new Error(membershipResult.error.message)
 
   return {
     stages,
+    isMember: (membershipResult.data ?? []).length > 0,
     decks: (decksResult.data ?? []).map((d) => ({
       id: d.id as string,
       seq: d.seq as number,
@@ -151,12 +187,17 @@ export async function setCellStage(cellId: string, stageId: string | null): Prom
   // the affected rows back this function cannot tell "written" from "matched
   // nothing" -- and it reports success either way. Both no-match paths are
   // reachable from a tablet: an admin deletes or merges the cell while the
-  // foreman has the deck open (DELETE is not subscribed, so the cell is still
-  // on their drawing and still tappable), or the GS's project_members row is
-  // removed mid-shift, after which the RLS USING clause filters the row out --
-  // which is a zero-row update, not an error. Left unchecked the optimistic
-  // value stays on screen, the pie and both spec-table rows move, and the
-  // database never changed.
+  // foreman has the deck open, or the GS's project_members row is removed
+  // mid-shift, after which the RLS USING clause filters the row out -- which is
+  // a zero-row update, not an error. Left unchecked the optimistic value stays
+  // on screen, the pie and both spec-table rows move, and the database never
+  // changed.
+  //
+  // The delete binding added for 0016 narrows the first path but does not close
+  // it: the DELETE and the tap still race, and a tablet whose socket is down --
+  // the state the staleness banner exists for -- keeps the removed bay on its
+  // drawing and tappable. This check is what turns that into an error the
+  // foreman sees instead of a phantom write.
   const { data, error } = await supabase
     .from('cells')
     .update({ stage_id: stageId })
@@ -175,16 +216,26 @@ export async function setCellStage(cellId: string, stageId: string | null): Prom
  * Per deck, filtered server side: an unfiltered subscription would fold another
  * deck's cells into this one's list and therefore into its percentages.
  *
- * DELETE is deliberately not subscribed. Under the default replica identity a
- * delete's payload carries only the primary key, and a filter on deck_id cannot
- * match it, so the binding would be dead code. The consequence is recorded in
- * the Phase 3 carry-over: an admin deleting a cell while a GS watches leaves a
- * stale cell on the drawing until the next deck switch or refetch.
+ * DELETE is subscribed, and depends on migration 0016. A merge in the admin's
+ * deck editor is ONE update of the survivor to the union area plus a DELETE of
+ * each absorbed cell (mergeCells keeps `topLeft.code`), so without the delete
+ * binding the survivor grows on the foreman's tablet while the absorbed cells
+ * stay -- their area counted twice in every A_i, and therefore in the number the
+ * customer is billed against, until the foreman happens to change tab. The
+ * binding needs `replica identity full`: measured against the live project, with
+ * the default identity BOTH a deck_id-filtered DELETE binding and an unfiltered
+ * one received nothing, because the old record carries only the primary key and
+ * Realtime cannot evaluate cells_member_read without deck_id. Do not "simplify"
+ * 0016 away on the theory that the filter was the problem.
+ *
+ * The DELETE callback reads `payload.old`, not `payload.new`: Realtime sends the
+ * removed row as the old record and leaves `new` an empty object.
  */
 export function subscribeDeckCells(
   deckId: string,
   handlers: {
     onCellChange: (cell: Cell) => void
+    onCellDelete: (cellId: string) => void
     onStatus: (status: GsRealtimeStatus) => void
   },
 ): () => void {
@@ -199,6 +250,11 @@ export function subscribeDeckCells(
       'postgres_changes',
       { event: 'UPDATE', schema: 'public', table: 'cells', filter: `deck_id=eq.${deckId}` },
       (payload) => handlers.onCellChange(mapCellRow(payload.new as Record<string, unknown>)),
+    )
+    .on(
+      'postgres_changes',
+      { event: 'DELETE', schema: 'public', table: 'cells', filter: `deck_id=eq.${deckId}` },
+      (payload) => handlers.onCellDelete((payload.old as { id: string }).id),
     )
     .subscribe((status) => {
       // Compared against the enum member, not the string 'SUBSCRIBED': the

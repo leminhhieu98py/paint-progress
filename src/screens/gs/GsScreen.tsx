@@ -48,6 +48,38 @@ const REALTIME_CONNECT_TIMEOUT_MS = 10_000
  */
 const REALTIME_REGISTRATION_GRACE_MS = 6_000
 
+/**
+ * How far Σ cell.area_m2 must exceed the deck's declared area before the pie's
+ * renormalisation is worth telling the foreman about.
+ *
+ * Sized by the DATABASE, like geometry.ts's EPSILON: `cells.area_m2` is
+ * `numeric(12,3)`, so 0,001 m² is the smallest over-coverage the column can even
+ * express -- anything under that is float residue from summing a few thousand
+ * three-decimal values, and on a 6139 m² deck it renormalises the wedges by
+ * 1,6e-7, which is invisible. Warning on that would put a "0,00 m² over" banner
+ * on decks whose pro-rated cell areas are meant to sum to the total exactly.
+ */
+const OVER_COVERAGE_EPSILON_M2 = 1e-3
+
+/** One in-flight `setCellStage` for one cell. See `pendingWrites`. */
+interface PendingWrite {
+  /**
+   * Bumped by every later tap on the same cell. A rollback whose generation is
+   * no longer the current one has been superseded and is dropped. Server truth
+   * arriving for the cell over realtime removes the entry outright, which has
+   * the same effect.
+   */
+  generation: number
+  /**
+   * The stage this cell is believed to hold on the SERVER -- deliberately NOT
+   * the value on screen. A second tap while the first write is in flight
+   * inherits the first tap's baseline, so if both writes fail the cell lands back
+   * on the last confirmed value instead of on the first tap's optimistic one,
+   * which was never persisted anywhere.
+   */
+  baselineStageId: string | null
+}
+
 export function GsScreen() {
   const { projectId } = useParams()
   const { profile, signOut } = useAuth()
@@ -60,15 +92,25 @@ export function GsScreen() {
   const [loading, setLoading] = useState(true)
   const [projectError, setProjectError] = useState(false)
   const [drawingError, setDrawingError] = useState(false)
+  /**
+   * The route gates on role, not on membership, so a GS can reach
+   * `/gs/:projectId` for a project they are not in. RLS then answers every query
+   * with zero rows and no error, which is byte-for-byte what a project whose
+   * drawings nobody has uploaded yet looks like. Tracked separately so the
+   * refusal can say so, rather than rendering as missing data (see GsProject).
+   */
+  const [notMember, setNotMember] = useState(false)
 
   useEffect(() => {
     if (!projectId) return
     let cancelled = false
     setLoading(true)
     setProjectError(false)
+    setNotMember(false)
     loadGsProject(projectId)
       .then((project) => {
         if (cancelled) return
+        setNotMember(!project.isMember)
         setStages(project.stages)
         setDecks(project.decks)
         setActiveDeckId(project.decks[0]?.id ?? null)
@@ -101,24 +143,39 @@ export function GsScreen() {
    * bays that are not there and dividing by the wrong deck's area.
    */
   /**
-   * Cell ids with a write in flight. A re-read must not overwrite these with
-   * the server's pre-write value: the PATCH and the GET race, and the GET can
-   * answer first. Without this, a tap made shortly before a re-read is undone
-   * on screen with no error -- the write did not fail, so nothing reports it.
+   * A cell's write in flight, and what to put back on screen if it fails.
+   *
+   * Two jobs, in one map because both are keyed on the same thing -- one cell
+   * and one write attempt.
+   *
+   * 1. A re-read must not overwrite a cell with a write in flight with the
+   *    server's pre-write value: the PATCH and the GET race, and the GET can
+   *    answer first. Without this, a tap made shortly before a re-read is undone
+   *    on screen with no error -- the write did not fail, so nothing reports it.
+   *
+   * 2. The rollback must not restore a value that has since been superseded.
+   *    `commitStage` used to close over the stage read from render-scope `cells`
+   *    at tap time, which goes stale in two reproduced ways. Two foremen, one
+   *    bay: A taps Tháo giáo, B commits Coat 3 and it arrives over realtime, A's
+   *    write then fails and the rollback puts A's remembered "not started" back
+   *    over B's Coat 3 -- the screen now contradicts the database with no further
+   *    event coming to correct it. One foreman, double tap: Coat 2 then Coat 3 on
+   *    the same bay, the first write fails and its rollback wipes the second
+   *    write's optimistic value. `generation` is what discards a stale rollback.
    */
-  const inFlightWrites = useRef<Set<string>>(new Set())
+  const pendingWrites = useRef<Map<string, PendingWrite>>(new Map())
 
   const refetchCells = useCallback(async (deckId: string) => {
     try {
       const next = await listDeckCells(deckId)
       if (wantedDeckId.current !== deckId) return
       setCells((prev) => {
-        if (inFlightWrites.current.size === 0) return next
+        if (pendingWrites.current.size === 0) return next
         // Keep the optimistic stage for any cell still being written. Geometry
         // and everything else comes from the server as normal.
         const local = new Map(prev.map((c) => [c.id, c]))
         return next.map((c) =>
-          inFlightWrites.current.has(c.id) && local.has(c.id)
+          pendingWrites.current.has(c.id) && local.has(c.id)
             ? { ...c, stageId: local.get(c.id)!.stageId }
             : c,
         )
@@ -164,6 +221,23 @@ export function GsScreen() {
 
   useEffect(() => {
     if (!activeDeckId) return
+    /**
+     * Whether this effect's channel has already been torn down.
+     *
+     * `RealtimeChannel.unsubscribe` does not remove the `_onClose` hook that
+     * `subscribe` registered (RealtimeChannel.js:159), so leaving a channel calls
+     * this effect's own status callback with CLOSED -- AFTER the cleanup below has
+     * run. Measured at the tip before this flag: one deck tab change produced
+     * `listDeckCells` calls ['d1','d2','d2','d2'], three full-deck reads for one
+     * deck on the exact tether the design worries about, plus a "Mất kết nối"
+     * banner when nothing was wrong. A banner that appears routinely is one a
+     * foreman learns to ignore, which is how a real outage gets missed.
+     *
+     * It gates onCellChange and onCellDelete too: a payload for the deck the
+     * foreman has just left must not be folded into the deck they are now
+     * looking at, which is the same defect wantedDeckId guards on the read path.
+     */
+    let disposed = false
     connectWatchdog.current = setTimeout(() => {
       setRealtimeStatus('disconnected')
       // Treated as a real disconnect so that if it does connect later, the
@@ -173,16 +247,37 @@ export function GsScreen() {
     }, REALTIME_CONNECT_TIMEOUT_MS)
     const unsubscribe = subscribeDeckCells(activeDeckId, {
       onCellChange: (next) => {
+        if (disposed) return
         // Last write wins on stage_id (spec §11 row 3): whatever arrives is the
         // newer truth. Merged by id, and appended when the id is unknown -- the
         // admin can add a cell to a deck a foreman is already looking at.
+        //
+        // Server truth for this cell also retires any pending rollback for it:
+        // what arrived is newer than the value this tablet remembered before its
+        // own write went out, so restoring that value would contradict the
+        // database with no further event coming to correct it.
+        pendingWrites.current.delete(next.id)
         setCells((prev) =>
           prev.some((c) => c.id === next.id)
             ? prev.map((c) => (c.id === next.id ? next : c))
             : [...prev, next],
         )
       },
+      onCellDelete: (cellId) => {
+        if (disposed) return
+        // A merge in the admin's deck editor is one UPDATE of the survivor to the
+        // union area plus a DELETE of each absorbed cell (mergeCells keeps
+        // topLeft.code). Without this branch the survivor grows here while the
+        // absorbed cells stay, so their area is counted twice in every A_i and
+        // in the percentage the customer makes schedule decisions from -- and it
+        // can push Σ cell area past total_area_m2, which is the over-coverage
+        // the pie has to disclose. Unknown ids fall out as a no-op: filter finds
+        // nothing, which is what a delete on another client's stale row means.
+        pendingWrites.current.delete(cellId)
+        setCells((prev) => prev.filter((c) => c.id !== cellId))
+      },
       onStatus: (status) => {
+        if (disposed) return
         if (status === 'subscribed' && connectWatchdog.current) {
           clearTimeout(connectWatchdog.current)
           connectWatchdog.current = null
@@ -211,6 +306,8 @@ export function GsScreen() {
       },
     })
     return () => {
+      // Set BEFORE unsubscribe(), which is what fires the CLOSED this guards.
+      disposed = true
       if (connectWatchdog.current) {
         clearTimeout(connectWatchdog.current)
         connectWatchdog.current = null
@@ -219,8 +316,18 @@ export function GsScreen() {
         clearTimeout(registrationRefetch.current)
         registrationRefetch.current = null
       }
+      // The latch resets because the NEXT channel opens alongside a fresh
+      // listDeckCells from the deck effect, so it has nothing to catch up on.
       wasDisconnected.current = false
-      setRealtimeStatus('subscribed')
+      // realtimeStatus deliberately does NOT reset. It used to be set back to
+      // 'subscribed' here, which meant that during a genuine outage a deck tab
+      // change cleared the staleness banner and nothing restored it for ten
+      // seconds -- the connect watchdog's whole timeout. Reproduced: banner
+      // shown, tab changed, absent at +9 s, back at +10,5 s. For those ten
+      // seconds the screen looked healthy while showing whatever the last
+      // successful read had left. The socket is shared across decks and its
+      // health does not change because the foreman looked at another drawing, so
+      // the last known state is carried across instead.
       unsubscribe()
     }
   }, [activeDeckId, refetchCells])
@@ -274,6 +381,30 @@ export function GsScreen() {
     () => buildStageSlices(deck?.totalAreaM2 ?? 0, cells, stages),
     [deck?.totalAreaM2, cells, stages],
   )
+
+  /**
+   * Whether the cells cover more than the deck declares -- the one state in which
+   * the pie's picture contradicts its own legend.
+   *
+   * recharts derives each wedge's angle from the sum of the array it is handed,
+   * and buildStageSlices omits the unmapped slice when it would be negative
+   * (there is no negative wedge to draw). So on a deck declaring 500 m² whose
+   * cells cover 700, a stage holding 300 m² occupies 300/700 = 42,86% of the ring
+   * while its own legend row an inch away reads 300/500 = 60,00%. The printed
+   * numbers are the right ones and are tested; the picture is the thing lying.
+   *
+   * Disclosed, NOT renormalised. Dividing the legend by Σ cell area instead would
+   * make it agree with a wedge whose denominator is not the deck -- and spec §3.2
+   * makes total_area_m2 the denominator of every percentage in this product,
+   * including the one the customer is billed against. Non-blocking, matching how
+   * spec §11 treats divergence in the admin's deck editor.
+   */
+  const mappedAreaM2 = useMemo(
+    () => cells.reduce((sum, c) => sum + c.areaM2, 0),
+    [cells],
+  )
+  const overCovered = deck !== null
+    && mappedAreaM2 - deck.totalAreaM2 > OVER_COVERAGE_EPSILON_M2
 
   /** Stage colour per cell CODE, which is what DrawingCanvas keys on. A cell
    *  with no stage is left out of the map and renders unfilled. */
@@ -329,20 +460,39 @@ export function GsScreen() {
    * whole array. A snapshot would also discard anything that arrived for another
    * cell while this write was in flight -- another foreman's tick, delivered over
    * realtime -- and it would look correct in any test that only touches one cell.
+   *
+   * And it is gated on this cell's write generation, so a rollback that has been
+   * overtaken is dropped rather than applied over the newer truth. See
+   * PendingWrite for the two reproduced scenarios that needs.
    */
   const commitStage = (cellId: string, stageId: string | null) => {
-    const previousStageId = cells.find((c) => c.id === cellId)?.stageId ?? null
-    inFlightWrites.current.add(cellId)
+    const superseded = pendingWrites.current.get(cellId)
+    const generation = (superseded?.generation ?? 0) + 1
+    const baselineStageId = superseded
+      ? superseded.baselineStageId
+      : cells.find((c) => c.id === cellId)?.stageId ?? null
+    pendingWrites.current.set(cellId, { generation, baselineStageId })
     setCells((prev) => prev.map((c) => (c.id === cellId ? { ...c, stageId } : c)))
     void setCellStage(cellId, stageId)
       .catch(() => {
-        setCells((prev) =>
-          prev.map((c) => (c.id === cellId ? { ...c, stageId: previousStageId } : c)),
-        )
+        // Only the newest attempt for this cell may roll it back. An older one
+        // finishing late would otherwise undo a later tap, or overwrite a value
+        // another foreman's write has since delivered over realtime.
+        if (pendingWrites.current.get(cellId)?.generation === generation) {
+          setCells((prev) =>
+            prev.map((c) => (c.id === cellId ? { ...c, stageId: baselineStageId } : c)),
+          )
+        }
+        // Raised either way. This tablet's write did not land, and that is true
+        // whether or not the cell on screen still shows what was tapped.
         message.error('Không lưu được tiến độ. Kiểm tra kết nối rồi thử lại.')
       })
       .finally(() => {
-        inFlightWrites.current.delete(cellId)
+        // Guarded, so an earlier attempt settling late does not strip the
+        // re-read protection from a write that is still in flight.
+        if (pendingWrites.current.get(cellId)?.generation === generation) {
+          pendingWrites.current.delete(cellId)
+        }
       })
   }
 
@@ -362,6 +512,25 @@ export function GsScreen() {
               Thử lại
             </Button>
           }
+        />
+      </div>
+    )
+  }
+
+  // A refusal, rendered as a refusal. Before this the screen showed the same
+  // "Sàn này chưa có bản vẽ" over "Tổng diện tích sàn: 0,00 m²" that a project
+  // awaiting its drawings shows, so a GS who mistyped a project id -- or followed
+  // a link to a platform they are not assigned to -- had no way to tell "not
+  // yours" from "not uploaded yet", and would wait for an upload that was never
+  // coming. Same wording as the index route's, in the singular: whatever the
+  // cause, the action is to talk to the administrator.
+  if (notMember) {
+    return (
+      <div style={{ maxWidth: 360, margin: '25vh auto' }}>
+        <Alert
+          type="info"
+          message="Không xem được dự án này"
+          description="Tài khoản hợp lệ, nhưng chưa được gán vào dự án này. Liên hệ quản trị viên để được thêm vào dự án."
         />
       </div>
     )
@@ -449,6 +618,15 @@ export function GsScreen() {
           </Col>
           <Col xs={24} md={10}>
             <div data-testid="gs-chart-region">
+              {overCovered && deck && (
+                <Alert
+                  type="warning"
+                  showIcon
+                  style={{ marginBottom: 8 }}
+                  message="Diện tích các ô vượt diện tích sàn khai báo"
+                  description={`Các ô cộng lại ${formatAreaM2(mappedAreaM2)} m², sàn khai báo ${formatAreaM2(deck.totalAreaM2)} m². Hình vẽ chia theo tổng diện tích các ô nên không khớp với tỷ lệ ghi bên cạnh, và các tỷ lệ cộng lại vượt 100%. Các con số vẫn tính theo diện tích sàn khai báo. Nhờ quản trị viên kiểm tra lại diện tích sàn hoặc lưới ô.`}
+                />
+              )}
               <StagePie
                 slices={slices}
                 totalAreaM2={deck?.totalAreaM2 ?? 0}

@@ -16,7 +16,7 @@ vi.mock('./supabase', () => ({
  *  `{ data, error }` -- postgrest-js reports failure as a value, never a throw. */
 function builder(result: { data?: unknown; error?: unknown }) {
   const b: Record<string, unknown> = {}
-  for (const m of ['select', 'insert', 'upsert', 'update', 'delete', 'eq', 'in', 'order', 'single']) {
+  for (const m of ['select', 'insert', 'upsert', 'update', 'delete', 'eq', 'in', 'order', 'limit', 'single']) {
     b[m] = vi.fn(() => b)
   }
   b.then = (resolve: (v: unknown) => unknown) =>
@@ -40,6 +40,10 @@ interface Binding {
  * - a payload reaches ONLY the handlers registered for that table and that
  *   event. Without this, a test asserting "onCellChange was called" would pass
  *   against a subscription bound to the wrong event or the wrong table.
+ * - a DELETE payload carries the removed row as `old` and leaves `new` empty,
+ *   which is what the real service sends. A double that put the row in `new` for
+ *   every event would let a DELETE handler reading `payload.new` pass here and
+ *   throw on a tablet.
  * - the subscribe callback is invoked with the state strings the real client
  *   uses ('SUBSCRIBED' / 'CHANNEL_ERROR' / 'TIMED_OUT' / 'CLOSED'), never a
  *   boolean.
@@ -67,7 +71,10 @@ function fakeChannel() {
     },
     deliver(event: string, table: string, row: Record<string, unknown>) {
       for (const b of bindings) {
-        if (b.event === event && b.table === table) b.callback({ new: row })
+        if (b.event !== event || b.table !== table) continue
+        // The real payload shape, per event: a DELETE reports the removed row as
+        // `old` and sends `new` as an empty object, INSERT and UPDATE the reverse.
+        b.callback(event === 'DELETE' ? { old: row, new: {} } : { new: row, old: {} })
       }
     },
     setStatus(status: string) {
@@ -82,6 +89,13 @@ beforeEach(() => {
   channel.mockReset()
   removeChannel.mockReset()
 })
+
+/**
+ * loadGsProject issues its three queries inside one Promise.all, in the order
+ * they appear in that array: project_stages, then decks, then project_members.
+ * `from` is mocked per call, so every test here has to queue all three.
+ */
+const MEMBER = [{ project_id: 'p1' }]
 
 describe('loadGsProject', () => {
   it('returns the project\'s stages and decks', async () => {
@@ -98,6 +112,7 @@ describe('loadGsProject', () => {
         total_area_m2: '6139.00', area_source: 'guides',
       }],
     }))
+    from.mockImplementationOnce(() => builder({ data: MEMBER }))
 
     const project = await loadGsProject('p1')
 
@@ -113,6 +128,7 @@ describe('loadGsProject', () => {
       imagePath: 'p1/d1.png', imageW: 2000, imageH: 1600,
       totalAreaM2: 6139, areaSource: 'guides',
     }])
+    expect(project.isMember).toBe(true)
   })
 
   it('defaults a deck with no drawing yet to null image fields', async () => {
@@ -124,6 +140,7 @@ describe('loadGsProject', () => {
         total_area_m2: '0', area_source: 'prorated',
       }],
     }))
+    from.mockImplementationOnce(() => builder({ data: MEMBER }))
 
     const [deck] = (await loadGsProject('p1')).decks
 
@@ -136,6 +153,7 @@ describe('loadGsProject', () => {
     from.mockImplementationOnce(() => builder({ data: [] }))
     const decks = builder({ data: [] })
     from.mockImplementationOnce(() => decks)
+    from.mockImplementationOnce(() => builder({ data: MEMBER }))
 
     await loadGsProject('p1')
 
@@ -145,16 +163,59 @@ describe('loadGsProject', () => {
     expect(decks.order).toHaveBeenCalledWith('seq')
   })
 
+  it('reports membership in THIS project, asking project_members for it', async () => {
+    from.mockImplementationOnce(() => builder({ data: [] }))
+    from.mockImplementationOnce(() => builder({ data: [] }))
+    const members = builder({ data: MEMBER })
+    from.mockImplementationOnce(() => members)
+
+    expect((await loadGsProject('p1')).isMember).toBe(true)
+
+    // Scoped to the project in the route, and to this table. Without the filter
+    // `project_members_self_read` still returns the caller's OTHER projects, so
+    // any GS assigned to anything would read as a member of every project id --
+    // which is precisely the refusal this field exists to detect.
+    expect(from).toHaveBeenCalledWith('project_members')
+    expect(members.eq).toHaveBeenCalledWith('project_id', 'p1')
+  })
+
+  it('reports no membership when RLS returns nothing, without erroring', async () => {
+    // The deep-link case. RLS answers a non-member with zero rows and NO error
+    // for all three queries, so an empty project and a refusal are identical
+    // from the outside -- this flag is the only thing that separates them.
+    from.mockImplementationOnce(() => builder({ data: [] }))
+    from.mockImplementationOnce(() => builder({ data: [] }))
+    from.mockImplementationOnce(() => builder({ data: [] }))
+
+    const project = await loadGsProject('p9')
+
+    expect(project.isMember).toBe(false)
+    expect(project.decks).toEqual([])
+    expect(project.stages).toEqual([])
+  })
+
   it('throws when the deck query fails', async () => {
     from.mockImplementationOnce(() => builder({ data: [] }))
     from.mockImplementationOnce(() => builder({ error: { message: 'permission denied' } }))
+    from.mockImplementationOnce(() => builder({ data: MEMBER }))
     await expect(loadGsProject('p1')).rejects.toThrow('permission denied')
   })
 
   it('throws when the stage query fails', async () => {
     from.mockImplementationOnce(() => builder({ error: { message: 'JWT expired' } }))
     from.mockImplementationOnce(() => builder({ data: [] }))
+    from.mockImplementationOnce(() => builder({ data: MEMBER }))
     await expect(loadGsProject('p1')).rejects.toThrow('JWT expired')
+  })
+
+  it('throws when the membership query fails instead of reporting a refusal', async () => {
+    // A dropped tether must not be reported as "you are not in this project":
+    // that sends a foreman to find the administrator over a network fault, and
+    // the administrator finds nothing wrong.
+    from.mockImplementationOnce(() => builder({ data: [] }))
+    from.mockImplementationOnce(() => builder({ data: [] }))
+    from.mockImplementationOnce(() => builder({ error: { message: 'Failed to fetch' } }))
+    await expect(loadGsProject('p1')).rejects.toThrow('Failed to fetch')
   })
 })
 
@@ -301,13 +362,23 @@ describe('subscribeDeckCells', () => {
     const ch = fakeChannel()
     channel.mockReturnValue(ch)
 
-    subscribeDeckCells('d1', { onCellChange: vi.fn(), onStatus: vi.fn() })
+    subscribeDeckCells('d1', {
+      onCellChange: vi.fn(), onCellDelete: vi.fn(), onStatus: vi.fn(),
+    })
 
     expect(channel).toHaveBeenCalledWith('gs-cells-d1')
     // Every binding is scoped to this deck. Without the filter a foreman
     // watching the Cellar Deck would fold the Main Deck's cells into the
     // Cellar's cell list -- and its percentages.
-    expect(ch.bindings.map((b) => b.event)).toEqual(['INSERT', 'UPDATE'])
+    //
+    // DELETE is in the list, and its absence was a real defect: a merge in the
+    // deck editor is one UPDATE of the survivor plus a DELETE of each absorbed
+    // cell, so without it the absorbed cells stayed on the foreman's drawing
+    // with their area counted twice. The deck_id filter on it only works because
+    // migration 0016 sets replica identity full -- under the default identity the
+    // old record carries the primary key alone, and Realtime drops the event
+    // rather than deliver it, filter or no filter.
+    expect(ch.bindings.map((b) => b.event)).toEqual(['INSERT', 'UPDATE', 'DELETE'])
     for (const binding of ch.bindings) {
       expect(binding.table).toBe('cells')
       expect(binding.filter).toBe('deck_id=eq.d1')
@@ -319,7 +390,7 @@ describe('subscribeDeckCells', () => {
     channel.mockReturnValue(ch)
     const onCellChange = vi.fn<(cell: Cell) => void>()
 
-    subscribeDeckCells('d1', { onCellChange, onStatus: vi.fn() })
+    subscribeDeckCells('d1', { onCellChange, onCellDelete: vi.fn(), onStatus: vi.fn() })
     ch.deliver('UPDATE', 'cells', {
       id: 'c1', code: 'R1C1', x: '0.1', y: '0.2', w: '0.3', h: '0.4',
       area_m2: '148.000', stage_id: 's4', deck_id: 'd1',
@@ -338,7 +409,7 @@ describe('subscribeDeckCells', () => {
     channel.mockReturnValue(ch)
     const onCellChange = vi.fn<(cell: Cell) => void>()
 
-    subscribeDeckCells('d1', { onCellChange, onStatus: vi.fn() })
+    subscribeDeckCells('d1', { onCellChange, onCellDelete: vi.fn(), onStatus: vi.fn() })
     ch.deliver('INSERT', 'cells', {
       id: 'c9', code: 'R9C9', x: 0, y: 0, w: 1, h: 1, area_m2: '5', stage_id: null,
     })
@@ -348,12 +419,36 @@ describe('subscribeDeckCells', () => {
     )
   })
 
+  it('reports a deleted cell by id, off the OLD record', () => {
+    const ch = fakeChannel()
+    channel.mockReturnValue(ch)
+    const onCellChange = vi.fn<(cell: Cell) => void>()
+    const onCellDelete = vi.fn<(cellId: string) => void>()
+
+    subscribeDeckCells('d1', { onCellChange, onCellDelete, onStatus: vi.fn() })
+    ch.deliver('DELETE', 'cells', {
+      id: 'c2', code: 'R1C2', x: 0.5, y: 0, w: 0.5, h: 0.5,
+      area_m2: '200.000', stage_id: 's2', deck_id: 'd1',
+    })
+
+    // The id, not a mapped Cell: there is nothing left to render, and a delete
+    // handler that went through mapCellRow on `payload.new` would read an empty
+    // object and hand the screen `undefined` as an id -- which removes nothing
+    // and reports no error.
+    expect(onCellDelete).toHaveBeenCalledWith('c2')
+    // And it must NOT arrive as a change: folding a deleted row back into the
+    // cell list is the same phantom area, by a different route.
+    expect(onCellChange).not.toHaveBeenCalled()
+  })
+
   it('reports the channel state as connected or not', () => {
     const ch = fakeChannel()
     channel.mockReturnValue(ch)
     const seen: GsRealtimeStatus[] = []
 
-    subscribeDeckCells('d1', { onCellChange: vi.fn(), onStatus: (s) => seen.push(s) })
+    subscribeDeckCells('d1', {
+      onCellChange: vi.fn(), onCellDelete: vi.fn(), onStatus: (s) => seen.push(s),
+    })
 
     ch.setStatus('SUBSCRIBED')
     ch.setStatus('CHANNEL_ERROR')
@@ -373,7 +468,9 @@ describe('subscribeDeckCells', () => {
     const ch = fakeChannel()
     channel.mockReturnValue(ch)
 
-    const unsubscribe = subscribeDeckCells('d1', { onCellChange: vi.fn(), onStatus: vi.fn() })
+    const unsubscribe = subscribeDeckCells('d1', {
+      onCellChange: vi.fn(), onCellDelete: vi.fn(), onStatus: vi.fn(),
+    })
     expect(removeChannel).not.toHaveBeenCalled()
 
     unsubscribe()

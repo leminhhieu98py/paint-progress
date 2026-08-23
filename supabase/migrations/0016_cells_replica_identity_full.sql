@@ -1,0 +1,40 @@
+-- Make a DELETE on `cells` deliverable over Realtime.
+--
+-- The defect this fixes. `mergeCells` returns `code: topLeft.code`, so the
+-- admin's deck editor implements a merge as ONE update of the survivor to the
+-- union area plus a DELETE of each absorbed cell. 0015 published `cells` and the
+-- GS screen subscribes to INSERT and UPDATE, so on a foreman's tablet the
+-- survivor's area grows while the absorbed cells stay -- their area counted
+-- twice, in every A_i and therefore in the customer-facing percentage, until the
+-- foreman happens to change deck tab. On the suite's own 1000 m² fixture deck
+-- one merge moves the reported progress from a true 12,50% to 20,50%. Scaled to
+-- the real Cellar Deck at 6139 m², merging four 200 m² bays adds ~600 m² of
+-- phantom area to every A_i: about +3.9 percentage points of fictitious
+-- progress. It can also push Σ cell area above `total_area_m2`, which deletes
+-- the pie's unmapped slice and makes its wedges renormalise.
+--
+-- Why a DELETE subscription alone does not fix it, MEASURED against the live
+-- project rather than reasoned about. A temp cell was inserted and deleted with
+-- two watchers open: one bound to DELETE with `filter: deck_id=eq.<deck>`, one
+-- bound to DELETE with no filter at all. NEITHER fired. Under `REPLICA IDENTITY
+-- DEFAULT` the WAL's old record for a delete carries only the primary key, so
+-- Realtime has no `deck_id` with which to evaluate `cells_member_read` (0006)
+-- for the subscriber, and drops the event for that user. The filter is not the
+-- obstacle; RLS evaluability is. Publishing the table (0015) is necessary and
+-- not sufficient.
+--
+-- The cost, stated so nobody "optimises" this back. REPLICA IDENTITY FULL logs
+-- the WHOLE old row into the WAL on every update and delete, instead of just the
+-- key. `cells` is a narrow table (a code, four numeric(8,6) coordinates, one
+-- numeric(12,3) area, two ids, two audit columns) holding a few thousand rows per
+-- project, and it takes a handful of writes a minute -- a foreman tapping bays,
+-- an admin saving a mesh. The extra WAL volume at that scale is negligible, and
+-- it buys the only mechanism by which a deleted bay can leave a tablet's screen
+-- before the reported progress has already been read off it. Do not revert this
+-- to DEFAULT or NOTHING without re-reading the paragraph above: the failure it
+-- reintroduces is silent on both the client and the server, and it inflates the
+-- number the customer is billed against.
+--
+-- Idempotent by nature: `alter table ... replica identity full` is a no-op when
+-- the table is already FULL, so replaying the migration history is safe.
+alter table public.cells replica identity full;

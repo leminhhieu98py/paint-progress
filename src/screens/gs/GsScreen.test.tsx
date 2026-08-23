@@ -20,10 +20,8 @@ vi.mock('../../lib/gsApi', () => ({
   listDeckCells: (deckId: string) => listDeckCells(deckId),
   listDeckZones: (deckId: string) => listDeckZones(deckId),
   setCellStage: (cellId: string, stageId: string | null) => setCellStage(cellId, stageId),
-  subscribeDeckCells: (
-    deckId: string,
-    handlers: { onCellChange: (cell: unknown) => void; onStatus: (status: string) => void },
-  ) => subscribeDeckCells(deckId, handlers),
+  subscribeDeckCells: (deckId: string, handlers: Handlers) =>
+    subscribeDeckCells(deckId, handlers),
 }))
 vi.mock('../../lib/decksApi', () => ({
   getDrawingUrl: (path: string) => getDrawingUrl(path),
@@ -109,17 +107,31 @@ const renderScreen = () =>
     </AntApp>,
   )
 
-/**
- * Captures the handlers the screen registers, and models the two constraints of
- * the real subscription that the screen's correctness depends on: exactly one
- * live subscription at a time (the returned function must be called before a
- * new one is opened), and status callbacks that arrive as the two states gsApi
- * maps to, never as a boolean.
- */
-let liveHandlers: {
+interface Handlers {
   onCellChange: (cell: unknown) => void
+  onCellDelete: (cellId: string) => void
   onStatus: (status: string) => void
-} | null = null
+}
+
+/**
+ * Captures the handlers the screen registers, and models the constraints of the
+ * real subscription that the screen's correctness depends on:
+ *
+ * - exactly one live subscription at a time (the returned function must be
+ *   called before a new one is opened);
+ * - status callbacks that arrive as the two states gsApi maps to, never as a
+ *   boolean;
+ * - leaving a channel calls that channel's OWN status callback with the
+ *   disconnected state, after the caller has already torn down. See the teardown
+ *   comment below -- this used to be a bare `vi.fn()`, which is the whole reason
+ *   no test in this repo could see the defect it now reproduces.
+ */
+let liveHandlers: Handlers | null = null
+/**
+ * Every handler set registered so far, newest last, so a test can address a
+ * subscription the screen has already left.
+ */
+const allHandlers: Handlers[] = []
 const subscribedDecks: string[] = []
 const unsubscribe = vi.fn()
 
@@ -134,14 +146,26 @@ beforeEach(() => {
   subscribeDeckCells.mockReset()
   unsubscribe.mockReset()
   subscribedDecks.length = 0
+  allHandlers.length = 0
   liveHandlers = null
-  subscribeDeckCells.mockImplementation((deckId: string, handlers: typeof liveHandlers) => {
+  subscribeDeckCells.mockImplementation((deckId: string, handlers: Handlers) => {
     subscribedDecks.push(deckId)
+    allHandlers.push(handlers)
     liveHandlers = handlers
-    return unsubscribe
+    return () => {
+      unsubscribe(deckId)
+      // What the real client does, and it is not incidental: RealtimeChannel's
+      // `unsubscribe` does not remove the `_onClose` hook `subscribe` registered
+      // (RealtimeChannel.js:159), so leaving a channel drives that channel's own
+      // status callback with CLOSED -- which gsApi maps to 'disconnected' --
+      // AFTER the effect that owns it has finished cleaning up. Fired on
+      // `handlers`, not on `liveHandlers`, because the point is that it reaches
+      // the OLD subscription's handlers and not the new one's.
+      handlers.onStatus('disconnected')
+    }
   })
   setCellStage.mockResolvedValue(undefined)
-  loadGsProject.mockResolvedValue({ stages: STAGES, decks: DECKS })
+  loadGsProject.mockResolvedValue({ stages: STAGES, decks: DECKS, isMember: true })
   listDeckCells.mockImplementation((deckId: string) =>
     Promise.resolve(deckId === 'd1' ? D1_CELLS : D2_CELLS))
   getDrawingUrl.mockImplementation((path: string) => Promise.resolve(`https://signed/${path}`))
@@ -283,10 +307,44 @@ describe('GsScreen', () => {
     loadGsProject.mockResolvedValue({
       stages: STAGES,
       decks: [{ ...DECKS[0], imagePath: null, imageW: null, imageH: null }],
+      isMember: true,
     })
     renderScreen()
     expect(await screen.findByText('Sàn này chưa có bản vẽ')).toBeInTheDocument()
     expect(getDrawingUrl).not.toHaveBeenCalled()
+  })
+
+  it('refuses a project the foreman is not in, instead of showing it empty', async () => {
+    // `/gs/:projectId` gates on role alone, so a GS can reach a project they are
+    // not assigned to -- a mistyped id, or a link to another platform. RLS then
+    // answers every query with zero rows and NO error, so the screen used to
+    // render "Sàn này chưa có bản vẽ" over "Tổng diện tích sàn: 0,00 m²":
+    // byte-for-byte what a project awaiting its drawings looks like. The foreman
+    // would wait for an upload that was never coming. This codebase's rule,
+    // adopted after a Phase 1 defect of the same class, is that a refusal must
+    // never render as missing data.
+    loadGsProject.mockResolvedValue({ stages: [], decks: [], isMember: false })
+    renderScreen()
+
+    expect(await screen.findByText('Không xem được dự án này')).toBeInTheDocument()
+    expect(
+      screen.getByText(/Liên hệ quản trị viên để được thêm vào dự án/),
+    ).toBeInTheDocument()
+    expect(screen.queryByText('Sàn này chưa có bản vẽ')).toBeNull()
+    // And none of the plausible-empty-deck furniture: no 0,00 m² total, no pie.
+    expect(screen.queryByTestId('gs-spec-region')).toBeNull()
+    expect(screen.queryByTestId('gs-chart-region')).toBeNull()
+  })
+
+  it('still shows the empty-drawing state to a member whose project has no decks', async () => {
+    // The negative control, and the reason this needed a membership read rather
+    // than "zero decks means refused": a member of a project the admin has not
+    // finished setting up must not be sent to ask for access they already have.
+    loadGsProject.mockResolvedValue({ stages: STAGES, decks: [], isMember: true })
+    renderScreen()
+
+    expect(await screen.findByText('Sàn này chưa có bản vẽ')).toBeInTheDocument()
+    expect(screen.queryByText('Không xem được dự án này')).toBeNull()
   })
 })
 
@@ -482,6 +540,93 @@ describe('GsScreen: recording a stage', () => {
     expect(screen.getByText('35,00%')).toBeInTheDocument()
   })
 
+  it('does not put a remembered value back over another foreman\'s newer write', async () => {
+    // Two foremen, one bay. This tablet taps Tháo giáo; the other commits Coat 3
+    // and it arrives over realtime, so the screen correctly reads 23,00%. Then
+    // this tablet's write fails. A rollback to the value remembered at tap time
+    // -- "not started" -- leaves the screen contradicting the database with
+    // nothing coming to correct it: realtime has already delivered the only
+    // notification of that cell it is going to send, and the next full re-read is
+    // a reconnect or a deck change away.
+    const pending = deferred()
+    setCellStage.mockReturnValue(pending.promise)
+
+    renderScreen()
+    await tapCellAndChoose('R2C1', 'Tháo giáo')
+    expect(await screen.findByText('25,50%')).toBeInTheDocument()
+
+    act(() => {
+      liveHandlers?.onCellChange({
+        id: 'c3', code: 'R2C1', x: 0, y: 0.5, w: 0.5, h: 0.5, areaM2: 100, stageId: 's3',
+      })
+    })
+    // A_1 = 600, A_2 = 300, A_3 = 100: 0.15 + 0.045 + 0.035 = 0.23.
+    expect(await screen.findByText('23,00%')).toBeInTheDocument()
+
+    pending.reject(new Error('Failed to fetch'))
+
+    // The failure is still reported -- this tablet's tap did not land, and the
+    // foreman has to know that whatever else is on screen...
+    expect(
+      await screen.findByText('Không lưu được tiến độ. Kiểm tra kết nối rồi thử lại.'),
+    ).toBeInTheDocument()
+    // ...but the newer truth stays. A remembered-value rollback reads 15,50%
+    // here, with the bay back to uncoloured over a database that holds Coat 3.
+    expect(screen.getByText('23,00%')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'ô R2C1' })).toHaveAttribute('data-color', '#52c41a')
+  })
+
+  it('does not let a failed write undo the next tap on the same cell', async () => {
+    // One foreman, double tap: Coat 2, then Coat 3 on the same bay before the
+    // first write comes back. The first write fails, and its rollback wipes the
+    // second tap's optimistic value -- while the second write, which is about to
+    // succeed, has already gone out. The screen then disagrees with the database
+    // in the direction that under-reports paid work.
+    const first = deferred()
+    const second = deferred()
+    setCellStage.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise)
+
+    renderScreen()
+    await tapCellAndChoose('R2C1', 'Coat 2')
+    await tapCellAndChoose('R2C1', 'Coat 3')
+    expect(await screen.findByText('23,00%')).toBeInTheDocument()
+
+    first.reject(new Error('Failed to fetch'))
+    await screen.findByText('Không lưu được tiến độ. Kiểm tra kết nối rồi thử lại.')
+
+    // A rollback not gated on this cell's write generation reads 15,50% here.
+    expect(screen.getByText('23,00%')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'ô R2C1' })).toHaveAttribute('data-color', '#52c41a')
+
+    second.resolve()
+    await waitFor(() => expect(screen.getByText('23,00%')).toBeInTheDocument())
+  })
+
+  it('rolls a double tap back to the last CONFIRMED value, not the first tap\'s', async () => {
+    // Both writes fail, so the cell does have to roll back -- to what the server
+    // last confirmed, which is "not started". Coat 2 existed only as the first
+    // tap's optimistic value on this one screen; landing there would leave the
+    // deck reporting progress the database never recorded, permanently, because
+    // nothing else on this path ever re-reads that cell.
+    const first = deferred()
+    const second = deferred()
+    setCellStage.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise)
+
+    renderScreen()
+    await tapCellAndChoose('R2C1', 'Coat 2')
+    await tapCellAndChoose('R2C1', 'Coat 3')
+    expect(await screen.findByText('23,00%')).toBeInTheDocument()
+
+    first.reject(new Error('Failed to fetch'))
+    second.reject(new Error('Failed to fetch'))
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'ô R2C1' })).toHaveAttribute('data-color', ''))
+    // 15,50%, the value before either tap -- not 19,50%, which is where a
+    // baseline read from render scope at the second tap would leave it.
+    expect(screen.getByText('15,50%')).toBeInTheDocument()
+  })
+
   it('advances the tapped cell one stage in a single tap', async () => {
     renderScreen()
     await userEvent.click(await screen.findByRole('button', { name: 'ô R1C1' }))
@@ -545,6 +690,58 @@ describe('GsScreen: realtime', () => {
     // known ids would drop it silently -- the foreman would tap a bay that is
     // not on their screen.
     expect(await screen.findByRole('button', { name: 'ô R2C2' })).toBeInTheDocument()
+  })
+
+  it('drops a cell the admin deleted, and the deck total with it', async () => {
+    renderScreen()
+    expect(await screen.findByText('15,50%')).toBeInTheDocument()
+
+    act(() => { liveHandlers?.onCellDelete('c2') })
+
+    // R1C2 was 200 m² at Coat 2, so its area has to leave every A_i: A_1 = 300,
+    // A_2 = 0, prog = 0.25*0.3 = 0.075. The DENOMINATOR does not move -- the
+    // deck still declares 1000 m² whether or not a bay is mapped (spec §3.2).
+    expect(await screen.findByText('7,50%')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'ô R1C2' })).toBeNull()
+  })
+
+  it('keeps a merged-away cell\'s area out of the total', async () => {
+    // The reproduced failure this branch exists for. mergeCells returns
+    // `code: topLeft.code`, so a merge in the admin's deck editor is ONE update
+    // of the survivor to the union area plus a DELETE of each absorbed cell.
+    // Subscribed to INSERT and UPDATE only, the survivor grows here while the
+    // absorbed cell stays -- its 200 m² counted twice, in every A_i and therefore
+    // in the percentage the customer makes schedule and payment decisions from,
+    // until the foreman happens to change deck tab.
+    renderScreen()
+    expect(await screen.findByText('15,50%')).toBeInTheDocument()
+
+    act(() => {
+      // R1C1 absorbs R1C2: 300 + 200 = 500 m², keeping the survivor's own stage.
+      liveHandlers?.onCellChange({
+        id: 'c1', code: 'R1C1', x: 0, y: 0, w: 1, h: 0.5, areaM2: 500, stageId: 's1',
+      })
+      liveHandlers?.onCellDelete('c2')
+    })
+
+    // Truth: A_1 = 500 of 1000 and nothing beyond it, so prog = 0.25*0.5.
+    expect(await screen.findByText('12,50%')).toBeInTheDocument()
+    // Without the delete branch this reads 20,50% -- A_1 = 700, A_2 = 200 -- and
+    // on the real 6139 m² Cellar Deck four merged bays are about +3.9 points.
+    expect(screen.queryByText('20,50%')).toBeNull()
+  })
+
+  it('ignores a delete for a cell it never held', async () => {
+    renderScreen()
+    expect(await screen.findByText('15,50%')).toBeInTheDocument()
+
+    act(() => { liveHandlers?.onCellDelete('c-not-on-this-deck') })
+
+    // A no-op, not a throw and not a cleared deck. An unknown id is reachable:
+    // a row this tablet has already dropped, or one it never read because the
+    // deck load and the delete crossed.
+    expect(screen.getByText('15,50%')).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: /^ô / })).toHaveLength(3)
   })
 
   it('shows a banner while the connection is down', async () => {
@@ -640,6 +837,85 @@ describe('GsScreen: realtime', () => {
     expect(screen.queryByText('Mất kết nối, đang kết nối lại...')).toBeNull()
   })
 
+  it('does not report a disconnect just because a deck tab was left', async () => {
+    renderScreen()
+    await screen.findByRole('tab', { name: 'Main Deck' })
+    await userEvent.click(screen.getByRole('tab', { name: 'Main Deck' }))
+    await waitFor(() => expect(subscribedDecks).toEqual(['d1', 'd2']))
+
+    const readsOfD2 = () => listDeckCells.mock.calls.filter(([id]) => id === 'd2').length
+    expect(readsOfD2()).toBe(1)
+
+    // Leaving d1 drives d1's OWN status callback with CLOSED, after this screen's
+    // cleanup has already run. Without the per-effect `disposed` flag the screen
+    // takes that as an outage: measured at the tip, one deck tab change produced
+    // listDeckCells calls ['d1','d2','d2','d2'] -- three full-deck reads for one
+    // deck, on the exact site tether the whole design worries about -- and a
+    // "Mất kết nối" banner when nothing was wrong. A banner that appears on every
+    // tab change is one a foreman learns to ignore, which is how a real outage
+    // gets missed.
+    expect(screen.queryByText('Mất kết nối, đang kết nối lại...')).toBeNull()
+
+    // And the new channel connecting must not trigger a recovery re-read either,
+    // because there was nothing to recover from.
+    act(() => { liveHandlers?.onStatus('subscribed') })
+    expect(readsOfD2()).toBe(1)
+  })
+
+  it('ignores a payload from a channel it has already left', async () => {
+    renderScreen()
+    await screen.findByRole('tab', { name: 'Main Deck' })
+    await userEvent.click(screen.getByRole('tab', { name: 'Main Deck' }))
+    await waitFor(() => expect(subscribedDecks).toEqual(['d1', 'd2']))
+    // getByTestId, not getByText: the Main Deck's one cell sits at the last
+    // stage, so 100,00% is also every legend row and every spec-table cell.
+    const headline = () => screen.getByTestId('gs-deck-progress')
+    await waitFor(() => expect(headline()).toHaveTextContent('100,00%'))
+
+    const [leftBehind] = allHandlers
+    act(() => {
+      leftBehind.onCellChange({
+        id: 'c4', code: 'R2C2', x: 0.5, y: 0.5, w: 0.5, h: 0.5, areaM2: 50, stageId: 's1',
+      })
+      leftBehind.onCellDelete('c9')
+    })
+
+    // The same defect wantedDeckId guards on the read path: a payload for the
+    // Cellar Deck must not land on the Main Deck, colouring a bay that is not
+    // there and being divided by the wrong deck's 500 m². The delete half matters
+    // as much -- a stale DELETE would take the Main Deck's only cell away.
+    expect(screen.queryByRole('button', { name: 'ô R2C2' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'ô R1C1' })).toBeInTheDocument()
+    expect(headline()).toHaveTextContent('100,00%')
+  })
+
+  it('keeps the outage banner across a deck change', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      renderScreen()
+      await screen.findByRole('tab', { name: 'Main Deck' })
+      act(() => { liveHandlers?.onStatus('disconnected') })
+      expect(await screen.findByText('Mất kết nối, đang kết nối lại...')).toBeInTheDocument()
+
+      await userEvent.click(screen.getByRole('tab', { name: 'Main Deck' }))
+      await waitFor(() => expect(subscribedDecks).toEqual(['d1', 'd2']))
+
+      // The socket is shared across decks and its health does not change because
+      // the foreman looked at another drawing. Resetting the status on teardown
+      // hid the banner for the connect watchdog's full ten seconds -- reproduced
+      // as shown, tab changed, absent at +9 s, back at +10,5 s -- during which
+      // the screen looked healthy while showing whatever the last successful read
+      // had left on it.
+      expect(screen.getByText('Mất kết nối, đang kết nối lại...')).toBeInTheDocument()
+      await act(async () => {
+        vi.advanceTimersByTime(9_000)
+      })
+      expect(screen.getByText('Mất kết nối, đang kết nối lại...')).toBeInTheDocument()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('keeps another client\'s write when its own write is rolled back', async () => {
     let reject: (e: Error) => void = () => {}
     setCellStage.mockReturnValue(new Promise<void>((_res, rej) => { reject = rej }))
@@ -666,6 +942,59 @@ describe('GsScreen: realtime', () => {
     await waitFor(() =>
       expect(screen.getByRole('button', { name: 'ô R2C1' })).toHaveAttribute('data-color', ''))
     expect(screen.getByRole('button', { name: 'ô R1C1' })).toHaveAttribute('data-color', '#52c41a')
+  })
+})
+
+describe('GsScreen: a deck its cells over-cover', () => {
+  it('discloses that the pie\'s shares add past 100%', async () => {
+    // recharts derives each wedge's angle from the sum of the array it is handed,
+    // and buildStageSlices omits the unmapped slice when it would be negative
+    // (there is no negative wedge to draw). So on a deck declaring 500 m² whose
+    // cells cover 700, the Coat 3 wedge fills 300/700 = 42,86% of the ring while
+    // its own legend row an inch away reads 300/500 = 60,00%. The printed numbers
+    // are the right ones and are tested; the picture is what is lying, and the
+    // GS screen said nothing -- the divergence banner lives only in the admin's
+    // deck editor.
+    loadGsProject.mockResolvedValue({ stages: STAGES, decks: [DECKS[1]], isMember: true })
+    listDeckCells.mockResolvedValue([
+      { id: 'x1', code: 'R1C1', x: 0, y: 0, w: 0.5, h: 1, areaM2: 300, stageId: 's3' },
+      { id: 'x2', code: 'R1C2', x: 0.5, y: 0, w: 0.5, h: 1, areaM2: 400, stageId: null },
+    ])
+    renderScreen()
+
+    expect(
+      await screen.findByText('Diện tích các ô vượt diện tích sàn khai báo'),
+    ).toBeInTheDocument()
+    // Both numbers, so the foreman can see which way and by how much. Scoped to
+    // the chart region: the bottom strip also prints 500,00 m².
+    expect(
+      within(screen.getByTestId('gs-chart-region'))
+        .getByText(/Các ô cộng lại 700,00 m², sàn khai báo 500,00 m²/),
+    ).toBeInTheDocument()
+    // Disclosed, NOT renormalised: the legend still divides by the deck's own
+    // declared area, which is the denominator of every percentage in this
+    // product (spec §3.2) including the one the customer is billed against.
+    expect(within(screen.getByTestId('legend-s3')).getByText('60,00%')).toBeInTheDocument()
+  })
+
+  it('does not warn when the cells fit the deck, exactly or with room to spare', async () => {
+    renderScreen()
+    expect(await screen.findByText('15,50%')).toBeInTheDocument()
+    // The Cellar Deck's cells cover 600 m² of 1000 -- the ordinary state, since
+    // openings and the E-house are not cells. The unmapped slice keeps the pie
+    // honest there, so there is nothing to disclose.
+    expect(screen.queryByText('Diện tích các ô vượt diện tích sàn khai báo')).toBeNull()
+
+    await userEvent.click(screen.getByRole('tab', { name: 'Main Deck' }))
+    // getByTestId, not getByText: the Main Deck's one cell sits at the last
+    // stage, so 100,00% is also every legend row and every spec-table cell.
+    await waitFor(() =>
+      expect(screen.getByTestId('gs-deck-progress')).toHaveTextContent('100,00%'))
+    // The Main Deck's one cell covers its 500 m² exactly, and exact coverage is
+    // the boundary that matters: at >= this banner would sit permanently on every
+    // pro-rated deck, whose cell areas are divided out of the declared total and
+    // therefore sum back to it.
+    expect(screen.queryByText('Diện tích các ô vượt diện tích sàn khai báo')).toBeNull()
   })
 })
 
