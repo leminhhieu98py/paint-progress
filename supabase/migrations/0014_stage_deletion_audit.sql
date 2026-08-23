@@ -17,6 +17,14 @@
 --
 -- The fix has to write the name before the row disappears, which means a BEFORE
 -- DELETE trigger on project_stages -- the last moment `old.name` exists.
+-- One consequence worth stating from the other side, because the guard below
+-- only describes its own half: deleting a whole PROJECT now logs no stage
+-- events at all. Both halves decline -- the BEFORE DELETE pre-stamp finds the
+-- cells already gone (cell_events cascades from cells, so their history goes
+-- with them), and the AFTER guard skips the row it would otherwise duplicate.
+-- That is correct: an audit row whose cell no longer exists has no reader, and
+-- 0004 added an existence check for exactly that reason.
+--
 create or replace function log_stage_deletion_on_cells()
 returns trigger
 language plpgsql

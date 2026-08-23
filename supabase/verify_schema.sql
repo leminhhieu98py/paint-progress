@@ -186,6 +186,9 @@
 --       missing `not exists` away from swallowing this too, and check 29 alone
 --       would not notice: it would still see exactly one row.
 --   31. A whole project can still be deleted with 0014's BEFORE DELETE trigger
+--       -- and note this check IS its own cleanup step, so if it ever FAILs its
+--       VERIFY G fixtures commit and stay in the database, the same shape as the
+--       incident check 9 records. A FAIL here means residue, not just a red row.
 --       in place. That trigger inserts into cell_events from inside the fan-out
 --       of projects -> project_stages, racing projects -> decks -> cells
 --       CASCADE at a different depth -- the defect class that aborted this
@@ -203,7 +206,7 @@
 --
 -- One standing exception while a migration is outstanding: checks 29-31 test
 -- migration 0014, so against a database where 0014 has not been applied yet
--- check 29 reports FAIL with `from_stage_name <NULL>` -- which IS the defect
+-- check 29 reports FAIL with `from_stage_name NULL` -- which IS the defect
 -- 0014 fixes, reproduced. A FAIL there means "not applied", not "broken", and
 -- it is the evidence that the check is not vacuous.
 --

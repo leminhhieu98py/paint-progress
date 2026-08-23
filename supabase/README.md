@@ -49,7 +49,7 @@ Every returned row must begin with `PASS` — 31 rows in a passing run, one
 per numbered check in the file's header comment.
 
 Checks 29-31 arrived with `0014` and report `FAIL` until that migration is
-applied — check 29 with `from_stage_name <NULL>`, which is the defect it fixes,
+applied — check 29 with `from_stage_name NULL`, which is the defect it fixes,
 reproduced. Once this project holds real data, stop running this script against
 it and use a disposable copy. It is self-cleaning in every ordinary outcome, but
 a cleanup step that fails and is caught leaves that check's `VERIFY` fixtures
