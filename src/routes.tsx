@@ -1,19 +1,27 @@
 import { Alert, Spin } from 'antd'
 import { lazy, Suspense, useEffect, useState, type ReactNode } from 'react'
-import { Navigate, Route, Routes, useParams } from 'react-router-dom'
+import { Navigate, Route, Routes } from 'react-router-dom'
 import { useAuth } from './auth/AuthProvider'
 import { RequireRole } from './auth/RequireRole'
 import { APP_BASE_PATH } from './config'
 import { myFirstProjectId } from './lib/projectsApi'
 import { NotFound } from './screens/NotFound'
 
-// Every admin screen pulls in pdf.js and/or Konva (and, from Phase 4,
-// ExcelJS). The GS user is a foreman on a tablet on a site tether: they must
-// never pay for that download to look at one drawing and one pie chart. Each
-// admin screen is therefore React.lazy, loaded only once its route actually
-// matches. The GS route below (Placeholder for now) and the login screen
-// (reached through RequireRole) stay eager -- they are the latency-critical
-// paths this split exists to protect, and must not gain a chunk round-trip.
+// Every screen behind a role gate is React.lazy, and for two different reasons.
+// The admin screens pull in pdf.js and Konva (and, from Phase 4, ExcelJS), which
+// a foreman must never download. The GS screen pulls in Konva and recharts,
+// which nobody should download to look at the LOGIN form -- and login is the
+// one screen everybody loads first, on a site tether. Only the login screen
+// (reached through RequireRole) and IndexRedirect stay eager: they are the
+// latency-critical paths this split exists to protect. The GS pays one chunk
+// round trip immediately after signing in, while already committed to opening a
+// drawing.
+//
+// This REVERSES the Phase 2 decision that kept the GS route eager, recorded in
+// the comment this replaces. That decision was right while the GS route was a
+// one-line placeholder and wrong the moment it became a Konva canvas and a
+// chart: eager stopped meaning "the GS pays nothing" and started meaning
+// "everyone pays, at the login form". Changed deliberately, not drifted.
 const AdminLayout = lazy(() =>
   import('./screens/admin/AdminLayout').then((m) => ({ default: m.AdminLayout })),
 )
@@ -26,8 +34,11 @@ const DecksScreen = lazy(() =>
 const UsersScreen = lazy(() =>
   import('./screens/admin/UsersScreen').then((m) => ({ default: m.UsersScreen })),
 )
+const GsScreen = lazy(() =>
+  import('./screens/gs/GsScreen').then((m) => ({ default: m.GsScreen })),
+)
 
-function AdminSuspense({ children }: { children: ReactNode }) {
+function LazySuspense({ children }: { children: ReactNode }) {
   return (
     <Suspense fallback={<Spin style={{ display: 'block', margin: '25vh auto' }} />}>
       {children}
@@ -36,17 +47,6 @@ function AdminSuspense({ children }: { children: ReactNode }) {
 }
 
 const Placeholder = ({ name }: { name: string }) => <div>{name} — chưa làm</div>
-
-/**
- * Phase 3 replaces this with the real GS screen. Rendering the :projectId
- * param (rather than a fixed string) matters now, not just later: it is what
- * lets a test prove the index redirect landed on THIS project's GS route,
- * not merely "some" GS route.
- */
-function GsPlaceholder() {
-  const { projectId } = useParams()
-  return <div>GS — chưa làm (dự án {projectId})</div>
-}
 
 /**
  * The base-path index route used to be pinned to `RequireRole role="admin"`,
@@ -127,9 +127,9 @@ export function AppRoutes() {
           path="admin"
           element={
             <RequireRole role="admin">
-              <AdminSuspense>
+              <LazySuspense>
                 <AdminLayout />
-              </AdminSuspense>
+              </LazySuspense>
             </RequireRole>
           }
         >
@@ -137,25 +137,25 @@ export function AppRoutes() {
           <Route
             path="users"
             element={
-              <AdminSuspense>
+              <LazySuspense>
                 <UsersScreen />
-              </AdminSuspense>
+              </LazySuspense>
             }
           />
           <Route
             path="projects"
             element={
-              <AdminSuspense>
+              <LazySuspense>
                 <ProjectsScreen />
-              </AdminSuspense>
+              </LazySuspense>
             }
           />
           <Route
             path="decks"
             element={
-              <AdminSuspense>
+              <LazySuspense>
                 <DecksScreen />
-              </AdminSuspense>
+              </LazySuspense>
             }
           />
           <Route path="progress" element={<Placeholder name="Tiến độ" />} />
@@ -164,7 +164,9 @@ export function AppRoutes() {
           path="gs/:projectId"
           element={
             <RequireRole role="gs">
-              <GsPlaceholder />
+              <LazySuspense>
+                <GsScreen />
+              </LazySuspense>
             </RequireRole>
           }
         />

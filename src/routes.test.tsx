@@ -1,6 +1,6 @@
 import type { Session } from '@supabase/supabase-js'
 import { render, screen } from '@testing-library/react'
-import { MemoryRouter, Outlet } from 'react-router-dom'
+import { MemoryRouter, Outlet, useParams } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { AuthProvider } from './auth/AuthProvider'
 import { APP_BASE_PATH } from './config'
@@ -58,6 +58,16 @@ vi.mock('./screens/admin/DecksScreen', () => ({
 vi.mock('./screens/admin/UsersScreen', () => ({
   UsersScreen: () => <div>USERS SCREEN</div>,
 }))
+// Konva and recharts, and its own data fetching. This file is about which route
+// a signed-in profile lands on, not what the destination renders. The projectId
+// is rendered so the assertion below can prove the redirect landed on THIS
+// project's screen and not merely "some" GS route.
+vi.mock('./screens/gs/GsScreen', () => ({
+  GsScreen: () => {
+    const { projectId } = useParams()
+    return <div>GS SCREEN (dự án {projectId})</div>
+  },
+}))
 
 const fakeSession = { access_token: 'token', user: { id: 'user-1' } } as unknown as Session
 
@@ -103,8 +113,8 @@ describe('AppRoutes: landing at the base path by role', () => {
 
     // Asserts on the destination project id actually reaching the rendered
     // screen, not merely "some" GS route -- a redirect that landed on the
-    // wrong project would still show "GS — chưa làm" with no project id.
-    expect(await screen.findByText('GS — chưa làm (dự án proj-1)')).toBeInTheDocument()
+    // wrong project would still show "GS SCREEN" with no project id.
+    expect(await screen.findByText('GS SCREEN (dự án proj-1)')).toBeInTheDocument()
     expect(screen.queryByText('404')).toBeNull()
   })
 
