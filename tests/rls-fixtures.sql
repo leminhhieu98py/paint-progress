@@ -1,9 +1,16 @@
 -- Fixture seeder for tests/rls.integration.test.ts.
 --
--- Run once, by hand, as `postgres` via the Supabase CLI -- AFTER the two
--- dashboard accounts exist (the bootstrap admin `linhdeptrai123` and the
--- test GS `rlstest-gs`). See supabase/README.md and
--- .env.test.local.example for the full, required run order.
+-- Run by hand, as `postgres` via the Supabase CLI -- AFTER the three
+-- dashboard accounts exist (the bootstrap admin `linhdeptrai123`, the test
+-- GS `rlstest-gs` and the test admin `rlstest-admin`). See
+-- supabase/README.md and .env.test.local.example for the full, required run
+-- order.
+--
+-- Originally a one-off. It is now also the recovery path when a run of the
+-- integration suite is killed: it purges the admin and Edge Function suites'
+-- residue and restores rlstest-admin's `active` flag before re-seeding (see
+-- the purge block below, and tests/rls-teardown.sql for the routine cleanup
+-- this duplicates).
 --
 --   nvm use 22
 --   npx supabase db query --linked -f tests/rls-fixtures.sql
@@ -30,7 +37,10 @@
 -- statement here, which are all true no-ops on a second run. Unlike
 -- supabase/verify_schema.sql, this script does NOT delete its own rows
 -- afterwards: these fixtures are meant to persist across many runs of the
--- integration suite, not be created and torn down by each one.
+-- integration suite, not be created and torn down by each one. The purge
+-- block below is not an exception to that: it deletes the *other* suites'
+-- scratch rows (project codes RLSX/RLSY/RLSE and `rlstest-ef-%` accounts),
+-- never anything this file seeds.
 --
 -- Only one top-level SELECT appears, at the end. `supabase db query -f`
 -- surfaces only the LAST statement's result set when a file contains more
@@ -44,6 +54,33 @@
 -- one of those projects. It is meant to run against a disposable or
 -- pre-production database only. Never run it against a database holding
 -- real project data.
+
+-- Residue purge, first. tests/rls-teardown.sql is what normally removes the
+-- rows the admin and Edge Function suites create, and the suites' own afterAll
+-- hooks remove everything a session can reach -- but both can be skipped: a
+-- SIGKILL mid-run skips the hooks, and forgetting to run the teardown script
+-- skips the rest. This block exists because of that, and it deliberately
+-- duplicates statements 1-4 of tests/rls-teardown.sql rather than trusting
+-- them to have run. Left in place, that residue makes the next run fail on
+-- projects.code's unique constraint instead of on anything real.
+--
+-- The order matches rls-teardown.sql for the same reason: log rows before the
+-- auth user, because credential_access_log.target_user_id is ON DELETE SET
+-- NULL (0003) and deleting the account first would erase the only column that
+-- identifies those rows.
+delete from credential_access_log
+where target_user_id in (select id from profiles where username like 'rlstest-ef-%');
+delete from auth.users where email like 'rlstest-ef-%@app.local';
+delete from profiles where username like 'rlstest-ef-%';
+delete from projects where code in ('RLSX', 'RLSY', 'RLSE');
+
+-- The admin fixture must be able to act as an admin, unconditionally. The
+-- inactive-admin Edge Function test flips this flag to false and restores it
+-- in a `finally`; this line is the second half of that belt and braces,
+-- because the `finally` can be skipped -- a killed process leaves the account
+-- unable to pass is_admin(), and every admin assertion in the suite then
+-- fails for a reason that has nothing to do with the policies under test.
+update profiles set active = true where username = 'rlstest-admin';
 
 -- Domain fixtures: two projects, one deck each, one stage each, one cell
 -- each. None of this depends on any auth account existing yet.
@@ -65,14 +102,32 @@ insert into decks (project_id, seq, name, code, total_area_m2)
 select id, 1, 'Denied Deck', 'DD', 100 from projects where code = 'RLSD'
   on conflict (project_id, code) do nothing;
 
+-- NOT `on conflict (project_id, seq)`, which is what this used to say and
+-- what every other insert in this file still does. Migration 0012 made
+-- project_stages_project_id_seq_key DEFERRABLE INITIALLY DEFERRED so a stage
+-- reorder can swap two seqs inside one statement, and Postgres refuses a
+-- deferrable unique constraint as an ON CONFLICT arbiter: the old form failed
+-- outright with `55000: ON CONFLICT does not support deferrable unique
+-- constraints/exclusion constraints as arbiters`, aborting this whole script
+-- before a single assertion could be reported. 0012's own migration comment
+-- predicted exactly this. A NOT EXISTS guard keys on the same pair without
+-- naming the constraint, and matches the deck_guides insert further down.
 insert into project_stages (project_id, seq, name, color, weight)
-select id, 1, 'Coat 1', '#fadb14', 1 from projects where code = 'RLSA'
-  on conflict (project_id, seq) do nothing;
+select p.id, 1, 'Coat 1', '#fadb14', 1
+from projects p
+where p.code = 'RLSA'
+  and not exists (
+    select 1 from project_stages where project_id = p.id and seq = 1
+  );
 -- Distinctively named so a leaked cell_events row is unambiguous in the
 -- suite's cross-project cell_events assertion.
 insert into project_stages (project_id, seq, name, color, weight)
-select id, 1, 'RLS Denied Coat', '#ff4d4f', 1 from projects where code = 'RLSD'
-  on conflict (project_id, seq) do nothing;
+select p.id, 1, 'RLS Denied Coat', '#ff4d4f', 1
+from projects p
+where p.code = 'RLSD'
+  and not exists (
+    select 1 from project_stages where project_id = p.id and seq = 1
+  );
 
 insert into cells (deck_id, code, x, y, w, h, area_m2)
 select id, 'R1C1', 0, 0, 1, 1, 100 from decks where code = 'AD'
@@ -205,6 +260,25 @@ begin
   where g.username = 'rlstest-gs';
   return next format('%s credential_access_log positive control exists: %s found',
                      case when n >= 1 then 'PASS' else 'FAIL' end, n);
+
+  -- 7. The admin test account's profile exists, is an admin, and is active.
+  -- Every one of the eleven is_admin() policies the suite exercises resolves
+  -- through all three of those facts, so a FAIL here invalidates the whole
+  -- admin half of the suite rather than one test.
+  select count(*) into n from profiles
+  where username = 'rlstest-admin' and role = 'admin' and active;
+  return next format('%s rlstest-admin profile exists with role=admin and active: %s found',
+                     case when n = 1 then 'PASS' else 'FAIL' end, n);
+
+  -- 8. The purge at the top of this file actually cleared everything. A FAIL
+  -- means a delete above did not match what a previous run left behind, and
+  -- the admin suite's first insert will collide with it.
+  select (select count(*) from auth.users where email like 'rlstest-ef-%@app.local')
+       + (select count(*) from profiles where username like 'rlstest-ef-%')
+       + (select count(*) from projects where code in ('RLSX', 'RLSY', 'RLSE'))
+    into n;
+  return next format('%s no residue from an earlier admin/Edge Function run: %s found, expected 0',
+                     case when n = 0 then 'PASS' else 'FAIL' end, n);
 end $$;
 
 select * from _verify_fixture_preconditions();

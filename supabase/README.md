@@ -28,8 +28,9 @@ nvm use 22
 npx supabase db query --linked -f supabase/verify_schema.sql
 ```
 
-Every returned row must begin with `PASS` — 24 rows in a passing run, one
-per numbered check in the file's header comment.
+Every returned row must begin with `PASS` — 28 rows in a passing run, one
+per numbered check in the file's header comment. (Checks 25-28 were added by
+0011, 0012 and 0013; this count was left at 24 until then.)
 
 **WARNING: this script inserts and then deletes test rows. Never run it
 against a database holding real project data.**
@@ -42,22 +43,61 @@ denied. That is what the RLS integration suite below is for.
 ## RLS integration suite
 
 `tests/rls.integration.test.ts` (run via `npx vitest run
-tests/rls.integration.test.ts`, or as part of `npm test`) exercises RLS as
-a real GS session. It is skipped, not failed, when unconfigured. Required
-run order, once:
+tests/rls.integration.test.ts`, or as part of `npm test`) is the only place
+real RLS decisions are observed, because it is the only thing here that runs
+as an ordinary `authenticated` session rather than as `postgres`. It holds
+three suites:
 
-1. In the Supabase dashboard, create both auth accounts: the bootstrap
-   admin (`linhdeptrai123`, see below) and the test GS (username
-   `rlstest-gs`, any password).
+- **as a GS session** — the member read policies, the stage-only update
+  guard, and the escalation attempts a supervisor could make.
+- **as an admin session** — the eleven policies that resolve through
+  `is_admin()`. Each one gets a positive assertion through the admin session
+  *and* the same operation through a GS session, which must be refused. The
+  pairing is the point: a policy rewritten to `using (true)` passes every
+  positive-only assertion, and only the GS half notices.
+- **the `admin-users` Edge Function** — the four actions, the create
+  rollback, the inactive-admin 403, the GS 403 and the malformed-body 400,
+  all through `functions.invoke` with a real session JWT.
+
+It is skipped, not failed, when unconfigured. Required run order, once:
+
+1. In the Supabase dashboard, create all three auth accounts: the bootstrap
+   admin (`linhdeptrai123`, see below), the test GS (`rlstest-gs`) and the
+   test admin (`rlstest-admin`, which also needs a `profiles` row with
+   `role = 'admin'`). See `.env.test.local.example` for the exact steps.
 2. `nvm use 22 && npx supabase db query --linked -f tests/rls-fixtures.sql`
-   — every returned row must say `PASS`. A `FAIL` means one of the two
+   — every returned row must say `PASS`. A `FAIL` means one of the three
    accounts above is missing or misconfigured; the suite must not be
    trusted until this script reports all-`PASS`.
 3. Copy `.env.test.local.example` to `.env.test.local` and fill in the
-   Supabase URL/anon key and the GS password chosen above.
+   Supabase URL/anon key and the two passwords chosen above.
 
 Set `RLS_TESTS_REQUIRED=1` to make the suite fail loudly instead of
 silently skipping when `.env.test.local` is absent.
+
+### Teardown is a separate step
+
+The admin and Edge Function suites write. Their `afterAll` hooks remove
+everything an authenticated admin session can reach, but two kinds of
+residue are out of reach of *any* session by design — the `auth.users` rows
+the `create` action makes, and the `credential_access_log` rows `reveal`
+writes (0008 revoked write grants on that table from `authenticated`, so the
+only role that may read the log cannot edit it, test suites included). So
+after running the suite against a live project:
+
+```bash
+nvm use 22
+npx supabase db query --linked -f tests/rls-teardown.sql
+```
+
+Every returned row must say `PASS` — ten rows, the last four of which check
+that the shared fixtures the script must *not* touch are still intact.
+`tests/rls-fixtures.sql` repeats the same purge at setup, and unconditionally
+restores `rlstest-admin`'s `active` flag, because a killed run skips both the
+`afterAll` hooks and the teardown script.
+
+**`rlstest-admin` can read every GS password through the Edge Function.**
+Give it a long random password, and treat it as a real admin credential.
 
 ## One-time dashboard setup
 
