@@ -1,4 +1,4 @@
-import { Alert, Button, Col, Layout, Row, Spin, Tabs, Typography } from 'antd'
+import { Alert, App, Button, Col, Layout, Row, Spin, Tabs, Typography } from 'antd'
 import { useEffect, useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { useAuth } from '../../auth/AuthProvider'
@@ -10,7 +10,8 @@ import type { Cell, Deck, Stage } from '../../domain/types'
 // one. Screens still never touch `supabase` directly.
 import { getDrawingUrl } from '../../lib/decksApi'
 import { formatAreaM2, formatPercent } from '../../lib/format'
-import { listDeckCells, loadGsProject, type GsDeck } from '../../lib/gsApi'
+import { listDeckCells, loadGsProject, setCellStage, type GsDeck } from '../../lib/gsApi'
+import { CellStageModal } from './CellStageModal'
 
 export function GsScreen() {
   const { projectId } = useParams()
@@ -129,6 +130,29 @@ export function GsScreen() {
     return colors
   }, [cells, stages])
 
+  const [selectedCell, setSelectedCell] = useState<Cell | null>(null)
+  const { message } = App.useApp()
+
+  /**
+   * Spec §11 row 1: optimistic local update so the chart moves with no
+   * perceptible delay; on failure roll back and raise message.error.
+   *
+   * The rollback restores ONE cell, found by id, rather than a snapshot of the
+   * whole array. A snapshot would also discard anything that arrived for another
+   * cell while this write was in flight -- another foreman's tick, delivered over
+   * realtime -- and it would look correct in any test that only touches one cell.
+   */
+  const commitStage = (cellId: string, stageId: string | null) => {
+    const previousStageId = cells.find((c) => c.id === cellId)?.stageId ?? null
+    setCells((prev) => prev.map((c) => (c.id === cellId ? { ...c, stageId } : c)))
+    void setCellStage(cellId, stageId).catch(() => {
+      setCells((prev) =>
+        prev.map((c) => (c.id === cellId ? { ...c, stageId: previousStageId } : c)),
+      )
+      message.error('Không lưu được tiến độ. Kiểm tra kết nối rồi thử lại.')
+    })
+  }
+
   if (loading) {
     return <Spin style={{ display: 'block', margin: '25vh auto' }} />
   }
@@ -196,6 +220,9 @@ export function GsScreen() {
                 selectedCodes={[]}
                 cellColors={cellColors}
                 panZoom
+                onCellClick={(code) => {
+                  setSelectedCell(cells.find((c) => c.code === code) ?? null)
+                }}
               />
             ) : (
               !drawingError && (
@@ -230,6 +257,14 @@ export function GsScreen() {
           Tổng diện tích sàn: {formatAreaM2(deck?.totalAreaM2 ?? 0)} m²
         </Typography.Text>
       </div>
+
+      <CellStageModal
+        cell={selectedCell}
+        stages={stages}
+        open={selectedCell !== null}
+        onClose={() => setSelectedCell(null)}
+        onCommit={commitStage}
+      />
     </Layout>
   )
 }
