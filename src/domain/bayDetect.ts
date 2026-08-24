@@ -68,6 +68,30 @@ export interface BayOptions {
    * the rest of it.
    */
   closeFraction?: number
+  /**
+   * How much of a line's own length must be inked for it to be a beam's
+   * centreline, once the dashes are bridged. Default 0.7.
+   *
+   * Measured against the DECK's width or height, not the box's -- which is why
+   * the deck has to be found first. Against the box, a very loose one dropped
+   * the count from 24 horizontal lines to 2, because a beam spanning the whole
+   * deck spans only 63% of a box drawn well outside it.
+   */
+  minCentrelineCover?: number
+  /**
+   * The widest gap between two dashes of a centreline, as a fraction of the
+   * image width. Default 0.0033 -- 12px at 3600.
+   */
+  dashGapFraction?: number
+  /**
+   * How much of a grid cell must be enclosed by the drawing for it to be a bay,
+   * as a fraction of the cell's own area. Default 0.3.
+   *
+   * The grid comes from centrelines that span the deck, so it also spans
+   * anything the deck's extent was dragged over -- and a box left loose drags it
+   * onto the title block. A cell with nothing enclosed under it is not a bay.
+   */
+  minEnclosed?: number
   /** Smallest bay to report, as a fraction of the box's area. Default 0.0005. */
   minAreaFraction?: number
   /**
@@ -91,6 +115,9 @@ const DEFAULTS = {
   minRunFraction: 0.004,
   closeFraction: 0.025,
   minAreaFraction: 0.0005,
+  minCentrelineCover: 0.7,
+  minEnclosed: 0.3,
+  dashGapFraction: 0.0033,
   maxAreaFraction: 0.9,
   minFill: 0.8,
 }
@@ -189,7 +216,7 @@ function closeAlong(
  * still closed. That is the only job the box has: it is a wall of last resort,
  * not a measurement, which is why a loose one costs nothing.
  */
-export function detectBays(
+function enclosedRegions(
   rgb: Uint8Array,
   width: number,
   height: number,
@@ -329,4 +356,164 @@ export function nameBays(bays: Bay[]): (Bay & { code: string })[] {
       .sort((a, b) => a.x - b.x)
       .map((bay, c) => ({ ...bay, code: `R${r + 1}C${c + 1}` })),
   )
+}
+
+/**
+ * The ink mask over a box, with the red plan overlay counted IN.
+ *
+ * Red is excluded everywhere else, because it is the admin's own coarse plan
+ * grid and detecting it back would defeat the point. Here it is kept: on this
+ * sheet the red is drawn along beam centrelines, so a beam it covers would
+ * otherwise have no centreline to find.
+ */
+function inkOf(
+  rgb: Uint8Array, width: number, height: number,
+  box: { x0: number; x1: number; y0: number; y1: number }, threshold: number,
+): Uint8Array {
+  const ink = new Uint8Array(width * height)
+  for (let y = box.y0; y <= box.y1; y++) {
+    const rowOffset = y * width
+    for (let x = box.x0; x <= box.x1; x++) {
+      const o = (rowOffset + x) * 3
+      const r = rgb[o]
+      const g = rgb[o + 1]
+      const b = rgb[o + 2]
+      if (r > 180 && g > 180 && b < 140) continue // yellow fill
+      const red = r - g > 40 && r - b > 40
+      if (red || r * 0.299 + g * 0.587 + b * 0.114 <= threshold) ink[rowOffset + x] = 1
+    }
+  }
+  return ink
+}
+
+/**
+ * The positions of the beams' dashed centrelines on one axis, inside `box`.
+ *
+ * A beam on this sheet is drawn as two solid lines with a dashed line down the
+ * middle, and it is the DASHED one that says where the beam's axis is -- which
+ * is where the admin's own sample draws its boundaries, so the bays it produces
+ * tile the deck with no gap for the beam's thickness. The dashes are bridged by
+ * counting each inked pixel as covering the run back to the previous one, up to
+ * `gap`.
+ *
+ * A rule requiring two solid flanks either side was tried, as the drawing's own
+ * convention suggests. It was dropped: measured on the real sheet it rejected a
+ * fifth of the real lines (24 horizontal became 19) and removed none of the
+ * lines outside the deck, which is the only thing it was meant to buy.
+ */
+function centrelines(
+  ink: Uint8Array, width: number,
+  box: { x0: number; x1: number; y0: number; y1: number },
+  horizontal: boolean, minCover: number, gap: number,
+): number[] {
+  const from = horizontal ? box.y0 : box.x0
+  const to = horizontal ? box.y1 : box.x1
+  const alongFrom = horizontal ? box.x0 : box.y0
+  const alongTo = horizontal ? box.x1 : box.y1
+
+  const hits: number[] = []
+  for (let at = from; at <= to; at++) {
+    let inked = 0
+    let last = alongFrom - gap - 1
+    for (let i = alongFrom; i <= alongTo; i++) {
+      if (ink[horizontal ? at * width + i : i * width + at]) {
+        inked += Math.min(i - last, gap + 1)
+        last = i
+      }
+    }
+    if (inked / (alongTo - alongFrom + 1) >= minCover) hits.push(at)
+  }
+
+  // A drawn line is several pixels thick, so collapse each run of adjacent hits
+  // to its middle -- otherwise one beam becomes one line per pixel row.
+  const lines: number[] = []
+  let run: number[] = []
+  for (const at of hits) {
+    if (run.length > 0 && at - run[run.length - 1] > 3) {
+      lines.push(run[run.length >> 1])
+      run = []
+    }
+    run.push(at)
+  }
+  if (run.length > 0) lines.push(run[run.length >> 1])
+  return lines
+}
+
+/**
+ * The bays of the deck inside `region`, in reading order.
+ *
+ * Two stages, because the two questions want different tools:
+ *
+ *   1. WHERE IS THE DECK. The enclosed-region pass answers this the same way
+ *      whatever box it is given -- measured on the real sheet, a tight, a loose
+ *      and a very loose box all put the deck's left and right edges within 2px
+ *      of each other. Nothing else tried came close; see the module docblock.
+ *   2. WHERE ARE ITS BAYS. Inside that extent, the beams' dashed centrelines,
+ *      measured against the DECK's own width and height. Against the box's, a
+ *      very loose one dropped the horizontal line count from 24 to 2.
+ *
+ * The result is a tiling: bays meet along the beams' axes with no gap between
+ * them, which is how the admin draws it by hand. Measured on the real sheet, all
+ * three boxes returned the same 168 bays.
+ *
+ * Falls back to the enclosed regions themselves when the centrelines do not
+ * describe a grid -- a sheet drawn to another convention, where a bay is still
+ * a bay even if nothing on it is dashed.
+ */
+export function detectBays(
+  rgb: Uint8Array,
+  width: number,
+  height: number,
+  region: { x: number; y: number; w: number; h: number },
+  options: BayOptions = {},
+): Bay[] {
+  const opts = { ...DEFAULTS, ...options }
+  const regions = enclosedRegions(rgb, width, height, region, options)
+  if (regions.length === 0) return []
+
+  // Padded by a beam's own thickness: the regions sit BETWEEN the beams, so
+  // their union stops at the outer beams' inner faces and the outermost
+  // centrelines -- the deck's own edges -- would fall outside the box that
+  // looks for them.
+  const pad = Math.max(1, Math.round(opts.closeFraction * width / 4))
+  const box = {
+    x0: Math.round(Math.min(...regions.map((b) => b.x)) * width),
+    x1: Math.round(Math.max(...regions.map((b) => b.x + b.w)) * width) - 1,
+    y0: Math.round(Math.min(...regions.map((b) => b.y)) * height),
+    y1: Math.round(Math.max(...regions.map((b) => b.y + b.h)) * height) - 1,
+  }
+  const deck = {
+    x0: Math.max(0, box.x0 - pad),
+    x1: Math.min(width - 1, box.x1 + pad),
+    y0: Math.max(0, box.y0 - pad),
+    y1: Math.min(height - 1, box.y1 + pad),
+  }
+  const ink = inkOf(rgb, width, height, deck, opts.inkThreshold)
+  const gap = Math.max(1, Math.round(opts.dashGapFraction * width))
+  const xs = centrelines(ink, width, deck, false, opts.minCentrelineCover, gap)
+  const ys = centrelines(ink, width, deck, true, opts.minCentrelineCover, gap)
+  if (xs.length < 2 || ys.length < 2) return regions
+
+  // A grid cell is a bay only where the drawing encloses something. A box left
+  // loose drags the deck's extent past the deck -- on the real sheet, down onto
+  // the title block -- and this is what stops those rows becoming cells: there
+  // is no enclosed region under them.
+  const bays: Bay[] = []
+  for (let r = 0; r < ys.length - 1; r++) {
+    for (let c = 0; c < xs.length - 1; c++) {
+      const bay = {
+        x: xs[c] / width,
+        y: ys[r] / height,
+        w: (xs[c + 1] - xs[c]) / width,
+        h: (ys[r + 1] - ys[r]) / height,
+      }
+      const enclosed = regions.reduce((sum, region) => {
+        const overlapW = Math.min(bay.x + bay.w, region.x + region.w) - Math.max(bay.x, region.x)
+        const overlapH = Math.min(bay.y + bay.h, region.y + region.h) - Math.max(bay.y, region.y)
+        return sum + (overlapW > 0 && overlapH > 0 ? overlapW * overlapH : 0)
+      }, 0)
+      if (enclosed >= opts.minEnclosed * bay.w * bay.h) bays.push(bay)
+    }
+  }
+  return bays
 }

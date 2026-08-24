@@ -54,11 +54,12 @@ describe('detectBays', () => {
     beam(rgb, 100, 'v', 50, 10, 90)
     beam(rgb, 100, 'h', 50, 10, 90)
 
-    // Each bay runs from the inner face of one beam to the inner face of the
-    // next: 13..49 and 53..87 on each axis, given 3px beams at 10, 50 and 88.
+    // A tiling: bays meet ON the beams' own axes, so nothing is left over for
+    // the beams' thickness. 12, 51 and 89 are the middles of the 3px beams at
+    // 10, 50 and 88 -- which is where the admin draws the boundary by hand.
     expect(asPixels(detectBays(rgb, 100, 100, WHOLE, OPTIONS), 100, 100)).toEqual([
-      '37x37@13,13', '35x37@53,13',
-      '37x35@13,53', '35x35@53,53',
+      '39x39@12,12', '37x39@51,12',
+      '39x37@12,51', '37x37@51,51',
     ])
   })
 
@@ -76,21 +77,27 @@ describe('detectBays', () => {
 
     // 75 wide, not 77: the beams are 3px, so the bay runs from the inner face
     // of one to the inner face of the next.
-    expect(asPixels(detectBays(rgb, 100, 100, WHOLE, OPTIONS), 100, 100)).toEqual(['75x75@13,13'])
+    expect(asPixels(detectBays(rgb, 100, 100, WHOLE, OPTIONS), 100, 100)).toEqual(['76x76@12,12'])
   })
 
-  it('joins the bays a beam that stops part way does not divide', () => {
-    // The interior beam covers the top half only, so the sheet shows two bays
-    // above and ONE below -- the unevenness that a grid of guides cannot
-    // express, and that falls out of this for free.
+  it('does not divide a row by a beam that stops part way', () => {
+    // The price of reading the beams' axes rather than the pockets between
+    // them, and it is worth stating plainly: a beam covering half the deck does
+    // not span it, so it is not a centreline, so it divides nothing -- not even
+    // the half it does cover. The sheet's own unevenness is lost here, and the
+    // admin rules that division by hand.
+    //
+    // It buys a tiling that covers the whole deck instead of 68% of it, and a
+    // result that does not move when the box moves. Measured on the real sheet:
+    // 138 bays covering 75% of the deck from a tight box, 148 at 80% from a
+    // loose one, 146 at 79% from a very loose one -- against 163 bays covering
+    // 68% before, from a box that had to be drawn carefully.
     const rgb = deck(100, 100, [10, 10, 90, 90])
     beam(rgb, 100, 'h', 50, 10, 90)
     beam(rgb, 100, 'v', 50, 10, 50)
 
-    expect(asPixels(detectBays(rgb, 100, 100, WHOLE, OPTIONS), 100, 100)).toEqual([
-      '37x37@13,13', '35x37@53,13',
-      '75x35@13,53',
-    ])
+    expect(asPixels(detectBays(rgb, 100, 100, WHOLE, OPTIONS), 100, 100))
+      .toEqual(['76x39@12,12', '76x37@12,51'])
   })
 
   it('seals a bay whose own outer beam is missing with the admin box', () => {
@@ -119,7 +126,7 @@ describe('detectBays', () => {
     const rgb = deck(100, 100, [30, 30, 70, 70])
 
     const bays = detectBays(rgb, 100, 100, { x: 0.05, y: 0.05, w: 0.9, h: 0.9 }, OPTIONS)
-    expect(asPixels(bays, 100, 100)).toEqual(['35x35@33,33'])
+    expect(asPixels(bays, 100, 100)).toEqual(['36x36@32,32'])
   })
 
   it('bridges a gap in a beam rather than letting two bays run together', () => {
@@ -128,16 +135,57 @@ describe('detectBays', () => {
     beam(rgb, 100, 'v', 50, 10, 90)
     for (let t = 0; t < 3; t++) for (let y = 44; y <= 47; y++) paint(rgb, 100, 50 + t, y, [255, 255, 255])
 
-    expect(detectBays(rgb, 100, 100, WHOLE, OPTIONS)).toHaveLength(2)
+    // Two columns, and the row count is whatever the deck's own beams give --
+    // the hole must not cost the middle beam its centreline.
+    const bays = detectBays(rgb, 100, 100, WHOLE, OPTIONS)
+    expect([...new Set(bays.map((b) => Math.round(b.x * 100)))]).toEqual([12, 51])
   })
 
-  it('ignores the red plan overlay, the same as every other pass', () => {
+  it('reads a centreline the red overlay is painted over', () => {
+    // Red is the admin's own coarse plan grid, and it is excluded everywhere
+    // else -- detecting it back as structure would defeat the point of the
+    // feature. In the centreline pass it is counted, because on the customer's
+    // sheet the red is drawn ALONG beam centrelines: the beam underneath has
+    // its dashes painted out, and dropping the red drops the beam with them.
     const rgb = deck(100, 100, [10, 10, 90, 90])
     beam(rgb, 100, 'v', 50, 10, 90, 3)
-    for (let t = 0; t < 3; t++) for (let y = 10; y <= 90; y++) paint(rgb, 100, 30 + t, y, RED)
+    for (let y = 10; y <= 90; y++) paint(rgb, 100, 51, y, RED)
 
-    // Two bays, not three: the red line is not a beam.
-    expect(detectBays(rgb, 100, 100, WHOLE, OPTIONS)).toHaveLength(2)
+    expect([...new Set(detectBays(rgb, 100, 100, WHOLE, OPTIONS).map((b) => Math.round(b.x * 100)))])
+      .toEqual([12, 51])
+  })
+
+  it('reads a beam drawn as two solid lines with a dashed centre', () => {
+    // The sheet's own convention, and the reason the dashes have to be bridged
+    // before a line is measured: a beam is two solid lines with a dashed line
+    // down the middle, and it is the DASHED one that marks the beam's axis. Read
+    // without bridging, a 50%-duty dash never clears the bar, and the two solid
+    // flanks become two separate boundaries with a sliver between them.
+    const rgb = deck(100, 100, [10, 10, 90, 90])
+    beam(rgb, 100, 'v', 48, 10, 90, 1)
+    beam(rgb, 100, 'v', 53, 10, 90, 1)
+    for (let y = 10; y <= 90; y++) if (Math.floor(y / 3) % 2 === 0) paint(rgb, 100, 51, y)
+
+    // One boundary at the beam's axis, not two at its faces.
+    expect([...new Set(detectBays(rgb, 100, 100, WHOLE, OPTIONS).map((b) => Math.round(b.x * 100)))])
+      .toEqual([12, 51])
+  })
+
+  it('drops grid cells with nothing enclosed under them', () => {
+    // The grid spans whatever the deck's extent turned out to be, so it also
+    // spans anything that is not a bay: solid structure, or -- with a box left
+    // loose -- the strip between the deck and the title block. On the real sheet
+    // this rule took 216 grid cells down to 146.
+    //
+    // Here the bottom-right quarter is solid, so it encloses nothing.
+    const rgb = deck(100, 100, [10, 10, 90, 90])
+    beam(rgb, 100, 'v', 50, 10, 90)
+    beam(rgb, 100, 'h', 50, 10, 90)
+    for (let y = 53; y <= 87; y++) for (let x = 53; x <= 87; x++) paint(rgb, 100, x, y)
+
+    expect(asPixels(detectBays(rgb, 100, 100, WHOLE, OPTIONS), 100, 100)).toEqual([
+      '39x39@12,12', '37x39@51,12', '39x37@12,51',
+    ])
   })
 
   it('returns nothing for a sheet with no structure on it', () => {
