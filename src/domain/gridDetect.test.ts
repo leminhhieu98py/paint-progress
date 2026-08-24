@@ -158,6 +158,77 @@ describe('inkProfile / linesFromProfile', () => {
     expect(linesFromProfile(profile, { x: 0.4, y: 0.9 }).x).toEqual([2 / width, 7 / width])
   })
 
+  it('measures a beam against the DECK region, not the sheet the deck is printed on', () => {
+    // The bug this whole option exists for, reproduced at 100x100.
+    //
+    // The sheet has a page border (row 0, row 99, column 0, column 99) and a
+    // deck drawn in its top-left corner, x 10-49 by y 10-49 -- 40% of the
+    // sheet on each axis, which is about what the customer's real Main Deck
+    // occupies on its A3 sheet. The deck's own beams span the deck fully.
+    //
+    // Without a region the content box is the ink bounding box, which IS the
+    // page border, so every deck beam spans only 40% of it and is rejected at
+    // any usable fraction -- while the border itself spans 100% and is
+    // reported as a "beam". That is exactly what the browser harness saw on
+    // the real sheet: one line, zero cells.
+    const width = 100
+    const height = 100
+    const rgb = whiteImage(width, height)
+    fillRow(rgb, width, 0, 0, width - 1, BLACK)
+    fillRow(rgb, width, height - 1, 0, width - 1, BLACK)
+    fillColumn(rgb, width, 0, 0, height - 1, BLACK)
+    fillColumn(rgb, width, width - 1, 0, height - 1, BLACK)
+    for (const x of [10, 30, 49]) fillColumn(rgb, width, x, 10, 49, BLACK)
+    for (const y of [10, 30, 49]) fillRow(rgb, width, y, 10, 49, BLACK)
+
+    // Whole sheet: the border, and only the border.
+    const sheetProfile = inkProfile(rgb, width, height)
+    expect(linesFromProfile(sheetProfile, { x: 0.7, y: 0.7 })).toEqual({
+      x: [0, (width - 1) / width],
+      y: [0, (height - 1) / height],
+    })
+
+    // Same pixels, same fraction, region = the deck: all three beams on each
+    // axis, and the border gone -- its columns carry no ink INSIDE the region.
+    const deckProfile = inkProfile(rgb, width, height, {
+      region: { x: 0.1, y: 0.1, w: 0.4, h: 0.4 },
+    })
+    expect(linesFromProfile(deckProfile, { x: 0.7, y: 0.7 })).toEqual({
+      x: [10 / width, 30 / width, 49 / width],
+      y: [10 / height, 30 / height, 49 / height],
+    })
+  })
+
+  it('keeps the region as the content box even where the region holds no ink', () => {
+    // A region over blank paper must report "nothing here", not fall back to
+    // the sheet's ink box and start finding lines somewhere else entirely.
+    const width = 50
+    const height = 50
+    const rgb = whiteImage(width, height)
+    fillColumn(rgb, width, 5, 0, height - 1, BLACK)
+
+    const profile = inkProfile(rgb, width, height, {
+      region: { x: 0.5, y: 0.5, w: 0.4, h: 0.4 },
+    })
+    // 0.5 -> column 25; 0.9 -> up to but NOT including column 45. Deliberately
+    // away from the image's own edge, so the arithmetic is pinned by the
+    // numbers rather than rescued by the clamp.
+    expect(profile.contentBox).toEqual({ minCol: 25, maxCol: 44, minRow: 25, maxRow: 44 })
+    expect(linesFromProfile(profile, { x: 0.3, y: 0.3 })).toEqual({ x: [], y: [] })
+  })
+
+  it('survives a zero-width region instead of dividing by it', () => {
+    const width = 20
+    const height = 20
+    const rgb = whiteImage(width, height)
+    fillColumn(rgb, width, 10, 0, height - 1, BLACK)
+
+    const profile = inkProfile(rgb, width, height, {
+      region: { x: 0.5, y: 0.5, w: 0, h: 0 },
+    })
+    expect(linesFromProfile(profile, { x: 0.5, y: 0.5 })).toEqual({ x: [], y: [] })
+  })
+
   it('yields empty arrays and does not crash on an all-white image', () => {
     const width = 10
     const height = 10

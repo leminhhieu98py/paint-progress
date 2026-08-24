@@ -46,7 +46,7 @@ vi.mock('../../lib/projectsApi', () => ({
 // survivor's identity can be got wrong.
 vi.mock('../../canvas/DrawingCanvas', () => ({
   DrawingCanvas: ({
-    cells, guides, onCellClick, onGuideMove, onGuideAdd, cellColors,
+    cells, guides, onCellClick, onGuideMove, onGuideAdd, cellColors, cropRect, onCropDraw,
   }: {
     cells: { code: string }[]
     guides: { id: string; axis: 'x' | 'y'; pos: number; offsetMm: number }[]
@@ -54,8 +54,20 @@ vi.mock('../../canvas/DrawingCanvas', () => ({
     onGuideMove?: (index: number, pos: number) => void
     onGuideAdd?: (axis: 'x' | 'y', pos: number) => void
     cellColors?: Record<string, string>
+    cropRect?: { x: number; y: number; w: number; h: number } | null
+    onCropDraw?: (rect: { x: number; y: number; w: number; h: number }) => void
   }) => (
     <div data-testid="canvas">
+      {/*
+        Whether the canvas was put in crop mode is observable ONLY as this
+        button's presence: `onCropDraw` is what puts the real canvas in the
+        mode, so a stand-in that always rendered the button could not tell a
+        screen that entered crop mode from one that never left it.
+      */}
+      {onCropDraw && (
+        <button onClick={() => onCropDraw({ x: 0.1, y: 0.1, w: 0.4, h: 0.5 })}>kéo khung sàn</button>
+      )}
+      <div data-testid="crop">{cropRect ? JSON.stringify(cropRect) : ''}</div>
       {cells.map((c) => c.code).join(',')}
       {cells.map((c) => (
         <button key={c.code} data-color={cellColors?.[c.code] ?? ''} onClick={() => onCellClick?.(c.code, true)}>
@@ -1671,7 +1683,8 @@ describe('DeckEditor', () => {
       render(<DeckEditor deck={deck} onClose={vi.fn()} />)
       await screen.findByTestId('canvas')
 
-      await userEvent.click(screen.getByRole('button', { name: 'Dò lưới tự động' }))
+      await userEvent.click(screen.getByRole('button', { name: 'Chọn vùng sàn để dò lưới' }))
+      await userEvent.click(screen.getByRole('button', { name: 'kéo khung sàn' }))
 
       await waitFor(() => {
         expect(readGuides().filter((g) => g.axis === 'x')).toHaveLength(2)
@@ -1697,7 +1710,8 @@ describe('DeckEditor', () => {
       listGuides.mockResolvedValue([])
       render(<DeckEditor deck={deck} onClose={vi.fn()} />)
       await screen.findByTestId('canvas')
-      await userEvent.click(screen.getByRole('button', { name: 'Dò lưới tự động' }))
+      await userEvent.click(screen.getByRole('button', { name: 'Chọn vùng sàn để dò lưới' }))
+      await userEvent.click(screen.getByRole('button', { name: 'kéo khung sàn' }))
       await waitFor(() => expect(readGuides().filter((g) => g.axis === 'x')).toHaveLength(2))
 
       // Home = the slider's own minimum (0.30): a third, fainter vertical
@@ -1721,7 +1735,8 @@ describe('DeckEditor', () => {
       listGuides.mockResolvedValue([])
       render(<DeckEditor deck={deck} onClose={vi.fn()} />)
       await screen.findByTestId('canvas')
-      await userEvent.click(screen.getByRole('button', { name: 'Dò lưới tự động' }))
+      await userEvent.click(screen.getByRole('button', { name: 'Chọn vùng sàn để dò lưới' }))
+      await userEvent.click(screen.getByRole('button', { name: 'kéo khung sàn' }))
       await waitFor(() => expect(readGuides().filter((g) => g.axis === 'y')).toHaveLength(2))
 
       // End = the slider's own maximum (0.90): only the strongest horizontal
@@ -1735,13 +1750,92 @@ describe('DeckEditor', () => {
       expect(screen.getByText('2 đường dọc × 1 đường ngang → 0 ô')).toBeInTheDocument()
     })
 
+    it('detects only inside the region the admin drew', async () => {
+      // The reason this feature has a crop step at all. Detection over the
+      // whole sheet finds the page border and nothing else -- the border is
+      // the ink bounding box, so every real beam spans a minority of it. The
+      // region the admin drew has to reach the pixel pass, or the sliders are
+      // tuning against the wrong yardstick.
+      inkProfileFromImage.mockResolvedValue(fixtureProfile())
+      listGuides.mockResolvedValue([])
+      render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+      await screen.findByTestId('canvas')
+
+      await userEvent.click(screen.getByRole('button', { name: 'Chọn vùng sàn để dò lưới' }))
+      await userEvent.click(screen.getByRole('button', { name: 'kéo khung sàn' }))
+
+      await waitFor(() => {
+        expect(inkProfileFromImage).toHaveBeenCalledWith('blob:drawing', {
+          region: { x: 0.1, y: 0.1, w: 0.4, h: 0.5 },
+        })
+      })
+    })
+
+    it('puts the canvas in crop mode only while it is waiting for the drag', async () => {
+      inkProfileFromImage.mockResolvedValue(fixtureProfile())
+      listGuides.mockResolvedValue([])
+      render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+      await screen.findByTestId('canvas')
+
+      // Not before: a canvas left in crop mode can neither drag a guide nor
+      // select a cell, which is every other thing this screen does.
+      expect(screen.queryByRole('button', { name: 'kéo khung sàn' })).not.toBeInTheDocument()
+
+      await userEvent.click(screen.getByRole('button', { name: 'Chọn vùng sàn để dò lưới' }))
+      await userEvent.click(screen.getByRole('button', { name: 'kéo khung sàn' }))
+
+      // And not after: the drag is over.
+      await waitFor(() => {
+        expect(screen.queryByRole('button', { name: 'kéo khung sàn' })).not.toBeInTheDocument()
+      })
+    })
+
+    it('hands the drawn region back to the canvas to draw', async () => {
+      inkProfileFromImage.mockResolvedValue(fixtureProfile())
+      listGuides.mockResolvedValue([])
+      render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+      await screen.findByTestId('canvas')
+      expect(screen.getByTestId('crop')).toHaveTextContent('')
+
+      await userEvent.click(screen.getByRole('button', { name: 'Chọn vùng sàn để dò lưới' }))
+      await userEvent.click(screen.getByRole('button', { name: 'kéo khung sàn' }))
+
+      // Whatever the sliders then say, the admin can see which part of the
+      // sheet the numbers are about.
+      await waitFor(() => {
+        expect(screen.getByTestId('crop')).toHaveTextContent('{"x":0.1,"y":0.1,"w":0.4,"h":0.5}')
+      })
+      // Matched by regex, not by the exact name: antd's loading spinner leaves
+      // via a CSS transition that jsdom never completes, so its
+      // `aria-label="loading"` icon stays mounted and the button's accessible
+      // name keeps a "loading " prefix for the rest of the test. The label
+      // itself is what this asserts -- the crop is remembered, so the button
+      // now offers to replace it rather than to draw a first one.
+      expect(await screen.findByRole('button', { name: /Chọn lại vùng sàn/ })).toBeInTheDocument()
+    })
+
+    it('leaves crop mode, and detects nothing, when the admin cancels', async () => {
+      inkProfileFromImage.mockResolvedValue(fixtureProfile())
+      listGuides.mockResolvedValue(ONE_BAY_GUIDES)
+      render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+      await screen.findByTestId('canvas')
+
+      await userEvent.click(screen.getByRole('button', { name: 'Chọn vùng sàn để dò lưới' }))
+      await userEvent.click(screen.getByRole('button', { name: 'Huỷ chọn vùng sàn' }))
+
+      expect(screen.queryByRole('button', { name: 'kéo khung sàn' })).not.toBeInTheDocument()
+      expect(inkProfileFromImage).not.toHaveBeenCalled()
+      expect(readGuides()).toEqual(ONE_BAY_GUIDES)
+    })
+
     it('shows a Vietnamese message when detection fails, and leaves the existing guides alone', async () => {
       inkProfileFromImage.mockRejectedValue(new Error('canvas boom'))
       listGuides.mockResolvedValue(ONE_BAY_GUIDES)
       render(<DeckEditor deck={deck} onClose={vi.fn()} />)
       await screen.findByTestId('canvas')
 
-      await userEvent.click(screen.getByRole('button', { name: 'Dò lưới tự động' }))
+      await userEvent.click(screen.getByRole('button', { name: 'Chọn vùng sàn để dò lưới' }))
+      await userEvent.click(screen.getByRole('button', { name: 'kéo khung sàn' }))
 
       expect(
         await screen.findByText('Không tự động dò được lưới từ bản vẽ này. Hãy kẻ guide thủ công.'),

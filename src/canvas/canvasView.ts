@@ -98,3 +98,51 @@ export function clampStagePan(
     y: Math.min(0, Math.max(height * (1 - zoom), pos.y)),
   }
 }
+
+/**
+ * Smallest crop the admin can draw, as a fraction of the drawing on each axis.
+ *
+ * Below this the "deck" is almost certainly a misfire -- a click that moved a
+ * few pixels -- and a near-zero region is worse than no region at all: every
+ * beam's span is then divided by almost nothing, so every fraction passes and
+ * the detector reports one line per inked pixel column.
+ */
+export const MIN_CROP_FRACTION = 0.05
+
+/**
+ * The deck's rectangle on the sheet, as normalized 0..1 fractions of the
+ * drawing, from the two ends of one drag in stage pixels. `null` when the
+ * gesture does not describe a usable region.
+ *
+ * This exists because the detector has to be told where the deck is. A deck
+ * drawing is not the sheet it is printed on: with nothing but pixels to go on,
+ * the strongest full-span line on a real sheet is the page border, not a beam
+ * (see InkOptions.region in domain/gridDetect.ts). Auto-cropping was tried
+ * first and rejected -- trimming the border then trimming by ink density
+ * still put the box around the title block on the customer's own sheet, and a
+ * wrong crop produces a plausible-looking wrong grid, which is worse than
+ * asking for one drag.
+ *
+ * Either drag direction gives the same rect, and a drag that runs off the
+ * canvas clamps rather than being discarded: dragging past the edge is how you
+ * take in the deck's outermost beam.
+ */
+export function cropFromDrag(
+  start: { x: number; y: number },
+  end: { x: number; y: number },
+  width: number,
+  height: number,
+): { x: number; y: number; w: number; h: number } | null {
+  // The container is unmeasured on the first render; normalizing by 0 would
+  // make every coordinate Infinity and every comparison below meaningless.
+  if (width <= 0 || height <= 0) return null
+
+  const fraction = (value: number, extent: number) => Math.min(1, Math.max(0, value / extent))
+  const x0 = fraction(Math.min(start.x, end.x), width)
+  const x1 = fraction(Math.max(start.x, end.x), width)
+  const y0 = fraction(Math.min(start.y, end.y), height)
+  const y1 = fraction(Math.max(start.y, end.y), height)
+
+  if (x1 - x0 < MIN_CROP_FRACTION || y1 - y0 < MIN_CROP_FRACTION) return null
+  return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 }
+}

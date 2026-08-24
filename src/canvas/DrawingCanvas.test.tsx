@@ -37,6 +37,16 @@ const { positionSpy, dragOffsets } = vi.hoisted(() => ({
 // Konva itself has — it is only the delivery vehicle this test uses to invoke
 // the component's onDragEnd callback with test-controlled coordinates.
 vi.mock('react-konva', () => {
+  // The one shape of Konva event the component's pointer handlers read: a
+  // target that can reach the stage's current pointer position. The crop
+  // rubber-band and the guide-adding double-click both go through this.
+  const konvaPointer = (domEvt: { clientX: number; clientY: number }) => ({
+    target: {
+      getStage: () => ({
+        getPointerPosition: () => ({ x: domEvt.clientX, y: domEvt.clientY }),
+      }),
+    },
+  })
   const node = (name: string) => (props: Record<string, unknown>) => (
     <div
       data-testid={`${name}:${String(props.name ?? '')}`}
@@ -87,13 +97,13 @@ vi.mock('react-konva', () => {
         (props.onClick as ((e: unknown) => void) | undefined)?.({ evt: domEvt })
       }
       onDoubleClick={(domEvt: React.MouseEvent) =>
-        (props.onDblClick as ((e: unknown) => void) | undefined)?.({
-          target: {
-            getStage: () => ({
-              getPointerPosition: () => ({ x: domEvt.clientX, y: domEvt.clientY }),
-            }),
-          },
-        })
+        (props.onDblClick as ((e: unknown) => void) | undefined)?.(konvaPointer(domEvt))
+      }
+      onMouseDown={(domEvt: React.MouseEvent) =>
+        (props.onMouseDown as ((e: unknown) => void) | undefined)?.(konvaPointer(domEvt))
+      }
+      onMouseMove={(domEvt: React.MouseEvent) =>
+        (props.onMouseMove as ((e: unknown) => void) | undefined)?.(konvaPointer(domEvt))
       }
       onWheel={(domEvt: React.WheelEvent) =>
         (props.onWheel as ((e: unknown) => void) | undefined)?.({ evt: domEvt })
@@ -114,6 +124,10 @@ vi.mock('react-konva', () => {
             },
           },
         })
+        // Distinct from onDragEnd above: the stage carries no onDragEnd, and a
+        // guide carries no onMouseUp, so each node runs exactly one of the two
+        // -- the crop gesture ends here, a guide drag ends above.
+        ;(props.onMouseUp as ((e: unknown) => void) | undefined)?.(konvaPointer(domEvt))
       }}
     >
       {props.children as never}
@@ -714,6 +728,82 @@ describe('DrawingCanvas', () => {
     )
     expect(screen.getByTestId('layer:selection')).toHaveAttribute('data-listening', 'false')
     expect(screen.getByTestId('layer:plan')).toHaveAttribute('data-listening', 'false')
+  })
+
+
+  describe('crop mode', () => {
+    // The stage is 900 wide (jsdom measures 0, so the fallback applies) and
+    // 720 tall (1600 * 900/2000), so 90,72 -> 450,432 is x 0.1 y 0.1 w 0.4 h 0.5.
+    const cropProps = {
+      imageUrl: 'u', imageW: 2000, imageH: 1600, guides, cells, selectedCodes: [] as string[],
+    }
+
+    it('draws the committed crop region', () => {
+      render(<DrawingCanvas {...cropProps} cropRect={{ x: 0.1, y: 0.1, w: 0.4, h: 0.5 }} />)
+      const region = screen.getByTestId('rect:crop-region')
+      expect(region).toHaveAttribute('data-x', '90')
+      expect(region).toHaveAttribute('data-y', '72')
+      expect(region).toHaveAttribute('data-width', '360')
+      expect(region).toHaveAttribute('data-height', '360')
+    })
+
+    it('draws no crop region when there is none', () => {
+      render(<DrawingCanvas {...cropProps} />)
+      expect(screen.queryByTestId('rect:crop-region')).not.toBeInTheDocument()
+    })
+
+    it('reports the dragged region', () => {
+      const onCropDraw = vi.fn()
+      render(<DrawingCanvas {...cropProps} onCropDraw={onCropDraw} />)
+      const stage = screen.getByTestId('stage:drawing')
+      fireEvent.mouseDown(stage, { clientX: 90, clientY: 72 })
+      fireEvent.mouseMove(stage, { clientX: 450, clientY: 432 })
+      fireEvent.mouseUp(stage, { clientX: 450, clientY: 432 })
+      expect(onCropDraw).toHaveBeenCalledWith({ x: 0.1, y: 0.1, w: 0.4, h: 0.5 })
+    })
+
+    it('shows the band being dragged before it is committed', () => {
+      render(<DrawingCanvas {...cropProps} onCropDraw={vi.fn()} />)
+      const stage = screen.getByTestId('stage:drawing')
+      fireEvent.mouseDown(stage, { clientX: 90, clientY: 72 })
+      fireEvent.mouseMove(stage, { clientX: 450, clientY: 432 })
+      // Without this the admin drags blind and finds out what they selected
+      // only from the detection result.
+      const band = screen.getByTestId('rect:crop-band')
+      expect(band).toHaveAttribute('data-x', '90')
+      expect(band).toHaveAttribute('data-width', '360')
+      fireEvent.mouseUp(stage, { clientX: 450, clientY: 432 })
+      expect(screen.queryByTestId('rect:crop-band')).not.toBeInTheDocument()
+    })
+
+    it('ignores a click that never became a drag', () => {
+      const onCropDraw = vi.fn()
+      render(<DrawingCanvas {...cropProps} onCropDraw={onCropDraw} />)
+      const stage = screen.getByTestId('stage:drawing')
+      fireEvent.mouseDown(stage, { clientX: 300, clientY: 200 })
+      fireEvent.mouseUp(stage, { clientX: 300, clientY: 200 })
+      expect(onCropDraw).not.toHaveBeenCalled()
+    })
+
+    it('stops guides being draggable while a crop is being drawn', () => {
+      // A guide sits under the pointer everywhere on a detected deck; grabbing
+      // one instead of drawing the box would move a mm-chain axis, which
+      // silently rewrites every cell area.
+      render(<DrawingCanvas {...cropProps} onGuideMove={vi.fn()} onCropDraw={vi.fn()} />)
+      expect(screen.getByTestId('line:guide-x-0')).toHaveAttribute('data-draggable', 'false')
+    })
+
+    it('leaves guides draggable when no crop is being drawn', () => {
+      render(<DrawingCanvas {...cropProps} onGuideMove={vi.fn()} />)
+      expect(screen.getByTestId('line:guide-x-0')).toHaveAttribute('data-draggable', 'true')
+    })
+
+    it('does not select a cell with the gesture that drew the crop', () => {
+      const onCellClick = vi.fn()
+      render(<DrawingCanvas {...cropProps} onCellClick={onCellClick} onCropDraw={vi.fn()} />)
+      fireEvent.click(screen.getByTestId('rect:cell-R1C1'))
+      expect(onCellClick).not.toHaveBeenCalled()
+    })
   })
 
 })

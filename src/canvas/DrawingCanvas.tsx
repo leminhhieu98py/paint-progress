@@ -5,7 +5,7 @@ import { Image as KonvaImage, Layer, Line, Rect, Stage, Text } from 'react-konva
 import useImage from 'use-image'
 import type { Guide, MeshCell } from '../domain/types'
 import {
-  clampStagePan, clampZoom, GUIDE_HIT_WIDTH, guideHitProfile,
+  clampStagePan, clampZoom, cropFromDrag, GUIDE_HIT_WIDTH, guideHitProfile,
   MIN_ZOOM, WHEEL_ZOOM_STEP, ZOOM_STEP,
 } from './canvasView'
 
@@ -34,6 +34,15 @@ const SELECTION_OVERLAY_FILL = 'rgba(235, 47, 150, 0.28)'
 const SELECTION_STROKE = '#eb2f96'
 
 /**
+ * The crop box's stroke — antd cyan-7, chosen the same way SELECTION_STROKE was:
+ * it is outside the stage palette (yellow #fadb14, grey #bfbfbf, green #52c41a,
+ * blue #1677ff, purple #722ed1), away from the guides' own blue, and away from
+ * the cell grid's red border and the magenta selection cue. The crop is drawn
+ * over a sheet that may already carry all of those at once.
+ */
+const CROP_STROKE = '#08979c'
+
+/**
  * Width used until the container has been measured.
  *
  * The stage used to be a hard 900 px, which overflowed a 636 px container in the
@@ -55,9 +64,11 @@ export function DrawingCanvas({
   cellColors,
   planLabels,
   panZoom = false,
+  cropRect,
   onGuideMove,
   onGuideAdd,
   onCellClick,
+  onCropDraw,
 }: {
   imageUrl: string
   imageW: number
@@ -80,15 +91,35 @@ export function DrawingCanvas({
    * bigger than the tablet.
    */
   panZoom?: boolean
+  /**
+   * The deck's own rectangle on the sheet, normalized 0..1, drawn so the admin
+   * can see what the detector will be looking at. Rendered whenever it is set,
+   * in crop mode or out of it.
+   */
+  cropRect?: { x: number; y: number; w: number; h: number } | null
   onGuideMove?: (index: number, pos: number) => void
   onGuideAdd?: (axis: 'x' | 'y', pos: number) => void
   onCellClick?: (code: string, additive: boolean) => void
+  /**
+   * Present = crop mode: one drag on the drawing reports the region it
+   * enclosed. Its presence, not a separate flag, is what puts the canvas in
+   * crop mode — so there is no way to be in the mode with nothing listening,
+   * or to have a listener that the mode ignores.
+   *
+   * While it is set, guides do not drag and cells do not select: on a detected
+   * deck a guide sits under the pointer almost everywhere, and grabbing one
+   * instead of drawing the box moves an mm-chain axis, which silently rewrites
+   * every cell area on the deck.
+   */
+  onCropDraw?: (rect: { x: number; y: number; w: number; h: number }) => void
 }) {
   const [image] = useImage(imageUrl)
   const containerRef = useRef<HTMLDivElement>(null)
   const [measuredWidth, setMeasuredWidth] = useState(0)
   const stageRef = useRef<Konva.Stage>(null)
   const [zoom, setZoom] = useState(MIN_ZOOM)
+  /** The crop gesture in progress, in stage px. `null` between gestures. */
+  const [cropDrag, setCropDrag] = useState<{ from: Konva.Vector2d; to: Konva.Vector2d } | null>(null)
 
   useEffect(() => {
     const el = containerRef.current
@@ -104,6 +135,7 @@ export function DrawingCanvas({
     return () => observer.disconnect()
   }, [])
 
+  const cropping = Boolean(onCropDraw)
   const width = measuredWidth > 0 ? measuredWidth : FALLBACK_STAGE_WIDTH
   const scale = width / imageW
   const height = imageH * scale
@@ -131,6 +163,39 @@ export function DrawingCanvas({
     }
   }
 
+  /**
+   * The crop rubber-band. `getPointerPosition` is stage-relative in screen px
+   * and does not divide out the stage's scale, which is right here: crop mode
+   * is admin-only and the admin editor never zooms (`panZoom` is off there, so
+   * `zoom` stays at MIN_ZOOM = 1). A zoomable crop would have to read
+   * `getRelativePointerPosition` instead.
+   */
+  const cropHandlers = cropping
+    ? {
+        onMouseDown: (e: Konva.KonvaEventObject<MouseEvent>) => {
+          const point = e.target.getStage()?.getPointerPosition()
+          if (point) setCropDrag({ from: point, to: point })
+        },
+        onMouseMove: (e: Konva.KonvaEventObject<MouseEvent>) => {
+          const point = e.target.getStage()?.getPointerPosition()
+          // Only while a gesture is live: without the guard every idle mouse
+          // move over the drawing would re-render the whole stage.
+          if (point) setCropDrag((drag) => (drag ? { ...drag, to: point } : null))
+        },
+        onMouseUp: (e: Konva.KonvaEventObject<MouseEvent>) => {
+          const point = e.target.getStage()?.getPointerPosition() ?? cropDrag?.to
+          setCropDrag(null)
+          if (!cropDrag || !point) return
+          // A misfire (a click, or a drag too small to be a deck) reports
+          // nothing rather than committing a region that would make every
+          // fraction pass -- see cropFromDrag.
+          const rect = cropFromDrag(cropDrag.from, point, width, height)
+          if (rect) onCropDraw?.(rect)
+        },
+      }
+    : {}
+  const cropBand = cropDrag ? cropFromDrag(cropDrag.from, cropDrag.to, width, height) : null
+
   return (
     <div ref={containerRef} style={{ width: '100%', position: 'relative' }}>
       {panZoom && (
@@ -153,8 +218,9 @@ export function DrawingCanvas({
         ref={stageRef}
         scaleX={zoom}
         scaleY={zoom}
-        draggable={panZoom}
+        draggable={panZoom && !cropping}
         dragBoundFunc={(pos) => clampStagePan(pos, width, height, zoom)}
+        {...cropHandlers}
         onWheel={(e: Konva.KonvaEventObject<WheelEvent>) => {
           if (!panZoom) return
           e.evt.preventDefault()
@@ -180,7 +246,7 @@ export function DrawingCanvas({
           <KonvaImage name="deck-drawing" image={image} width={width} height={height} />
         </Layer>
 
-        <Layer name="cells">
+        <Layer name="cells" listening={!cropping}>
           {cells.map((cell) => (
             <Rect
               key={cell.code}
@@ -193,10 +259,14 @@ export function DrawingCanvas({
               opacity={cellColors?.[cell.code] ? STAGE_FILL_OPACITY : 1}
               stroke="rgba(255, 0, 0, 0.6)"
               strokeWidth={1}
-              onClick={(e: Konva.KonvaEventObject<MouseEvent>) =>
+              onClick={(e: Konva.KonvaEventObject<MouseEvent>) => {
+                if (cropping) return
                 onCellClick?.(cell.code, e.evt.shiftKey || e.evt.metaKey || e.evt.ctrlKey)
-              }
-              onTap={() => onCellClick?.(cell.code, false)}
+              }}
+              onTap={() => {
+                if (cropping) return
+                onCellClick?.(cell.code, false)
+              }}
             />
           ))}
         </Layer>
@@ -252,7 +322,7 @@ export function DrawingCanvas({
             ))}
         </Layer>
 
-        <Layer name="guides">
+        <Layer name="guides" listening={!cropping}>
           {guides.map((guide, index) => (
             <Line
               key={`${guide.axis}-${index}`}
@@ -303,7 +373,7 @@ export function DrawingCanvas({
                 ctx.closePath()
                 ctx.fillStrokeShape(shape)
               }}
-              draggable={Boolean(onGuideMove)}
+              draggable={Boolean(onGuideMove) && !cropping}
               dragBoundFunc={(p) => (guide.axis === 'x' ? { x: p.x, y: 0 } : { x: 0, y: p.y })}
               onDragEnd={(e: Konva.KonvaEventObject<DragEvent>) => {
                 if (!onGuideMove) return
@@ -317,6 +387,37 @@ export function DrawingCanvas({
               }}
             />
           ))}
+        </Layer>
+
+        {/*
+          Above every other layer and out of the hit graph: it is a cue, not a
+          target, and the gesture that draws it is handled on the stage itself.
+        */}
+        <Layer name="crop" listening={false}>
+          {cropRect && (
+            <Rect
+              name="crop-region"
+              x={cropRect.x * width}
+              y={cropRect.y * height}
+              width={cropRect.w * width}
+              height={cropRect.h * height}
+              stroke={CROP_STROKE}
+              strokeWidth={2}
+              dash={[10, 6]}
+            />
+          )}
+          {cropBand && (
+            <Rect
+              name="crop-band"
+              x={cropBand.x * width}
+              y={cropBand.y * height}
+              width={cropBand.w * width}
+              height={cropBand.h * height}
+              stroke={CROP_STROKE}
+              strokeWidth={2}
+              dash={[4, 4]}
+            />
+          )}
         </Layer>
       </Stage>
     </div>

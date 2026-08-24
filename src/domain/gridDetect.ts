@@ -45,6 +45,23 @@ export interface InkOptions {
    * width (or height) merge into one line. Default 0.004.
    */
   mergeWithin?: number
+  /**
+   * The deck's own rectangle on the sheet, normalized 0..1 over the whole
+   * image. Ink outside it is not counted at all, and the region -- not the
+   * ink's bounding box -- becomes the content box every line is measured
+   * against.
+   *
+   * This is the difference between detection working and detection returning
+   * nothing on a real sheet. A deck drawing is not the sheet it is printed
+   * on: the customer's Main Deck occupies roughly 40% of its A3 page, and the
+   * page carries a border, a title block and off-deck structure. With no
+   * region the content box is the ink bounding box, which IS the page border
+   * -- so every real beam spans about 40% of it and is rejected at any usable
+   * fraction, while the border spans 100% and is reported as a beam. The
+   * browser harness on the real sheet found exactly that: one line, zero
+   * cells. Omit it only for a synthetic image that is nothing but the drawing.
+   */
+  region?: { x: number; y: number; w: number; h: number }
 }
 
 const DEFAULT_INK_THRESHOLD = 200
@@ -62,12 +79,14 @@ export interface InkProfile {
   /** Inked pixel count per row, index = y. */
   rowInk: number[]
   /**
-   * The first/last column and row carrying any ink at all -- the drawing's
-   * own extent, not the sheet's. A line is measured against this, not
-   * against the paper it is printed on, or a sheet with wide blank margins
-   * makes every real beam look like it spans a smaller fraction than it does.
-   * `null` when nothing on the image is ink (a blank sheet, or one that
-   * failed to load).
+   * The box every line's span is measured against: `InkOptions.region` in
+   * pixels when one was given, and otherwise the first/last column and row
+   * carrying any ink at all -- the drawing's own extent, not the sheet's,
+   * since a sheet with wide blank margins would make every real beam look
+   * like it spans a smaller fraction than it does.
+   *
+   * `null` when there is nothing to measure against: no ink anywhere (a blank
+   * sheet, or one that failed to load), or a region that encloses no pixel.
    */
   contentBox: { minCol: number; maxCol: number; minRow: number; maxRow: number } | null
   width: number
@@ -171,51 +190,77 @@ export function inkProfile(
   const colInk = new Array<number>(Math.max(width, 0)).fill(0)
   const rowInk = new Array<number>(Math.max(height, 0)).fill(0)
 
-  if (width > 0 && height > 0) {
-    for (let y = 0; y < height; y++) {
-      const rowOffset = y * width
-      for (let x = 0; x < width; x++) {
-        const o = (rowOffset + x) * 3
-        const r = rgb[o]
-        const g = rgb[o + 1]
-        const b = rgb[o + 2]
-        if (isExcludedColor(r, g, b)) continue
-        const luminance = r * 0.299 + g * 0.587 + b * 0.114
-        if (luminance <= inkThreshold) {
-          colInk[x]++
-          rowInk[y]++
-        }
+  // Half-open in normalized space, inclusive in pixels: a region ending at
+  // 0.5 of a 100px image scans up to and including column 49, so two regions
+  // meeting at 0.5 never both claim column 50.
+  const scanX = options.region
+    ? { from: pixelFrom(options.region.x, width), to: pixelTo(options.region.x + options.region.w, width) }
+    : { from: 0, to: width - 1 }
+  const scanY = options.region
+    ? { from: pixelFrom(options.region.y, height), to: pixelTo(options.region.y + options.region.h, height) }
+    : { from: 0, to: height - 1 }
+
+  for (let y = scanY.from; y <= scanY.to; y++) {
+    const rowOffset = y * width
+    for (let x = scanX.from; x <= scanX.to; x++) {
+      const o = (rowOffset + x) * 3
+      const r = rgb[o]
+      const g = rgb[o + 1]
+      const b = rgb[o + 2]
+      if (isExcludedColor(r, g, b)) continue
+      const luminance = r * 0.299 + g * 0.587 + b * 0.114
+      if (luminance <= inkThreshold) {
+        colInk[x]++
+        rowInk[y]++
       }
     }
   }
 
-  let minCol = -1
-  let maxCol = -1
-  for (let x = 0; x < width; x++) {
-    if (colInk[x] > 0) {
-      if (minCol === -1) minCol = x
-      maxCol = x
-    }
-  }
-  let minRow = -1
-  let maxRow = -1
-  for (let y = 0; y < height; y++) {
-    if (rowInk[y] > 0) {
-      if (minRow === -1) minRow = y
-      maxRow = y
-    }
-  }
+  return { colInk, rowInk, width, height, mergeWithin, contentBox: contentBox() }
 
-  return {
-    colInk,
-    rowInk,
-    width,
-    height,
-    mergeWithin,
+  /**
+   * The region when there is one, the ink's own bounding box otherwise, and
+   * `null` when neither encloses anything.
+   */
+  function contentBox(): InkProfile['contentBox'] {
+    if (options.region) {
+      // A drag too small to enclose a pixel (or one inverted by rounding)
+      // gives nothing to divide by, so it is refused rather than clamped up to
+      // a one-pixel box that would make every fraction meaningless.
+      if (scanX.to < scanX.from || scanY.to < scanY.from) return null
+      return { minCol: scanX.from, maxCol: scanX.to, minRow: scanY.from, maxRow: scanY.to }
+    }
+    let minCol = -1
+    let maxCol = -1
+    for (let x = 0; x < width; x++) {
+      if (colInk[x] > 0) {
+        if (minCol === -1) minCol = x
+        maxCol = x
+      }
+    }
+    let minRow = -1
+    let maxRow = -1
+    for (let y = 0; y < height; y++) {
+      if (rowInk[y] > 0) {
+        if (minRow === -1) minRow = y
+        maxRow = y
+      }
+    }
     // No ink anywhere -- a blank sheet, or one that failed to load. Nothing
     // to divide by and nothing to detect.
-    contentBox: minCol === -1 || minRow === -1 ? null : { minCol, maxCol, minRow, maxRow },
+    if (minCol === -1 || minRow === -1) return null
+    return { minCol, maxCol, minRow, maxRow }
   }
+}
+
+/** First pixel index at or after normalized `at`, clamped into the image. */
+function pixelFrom(at: number, extent: number): number {
+  return Math.min(Math.max(0, Math.round(at * extent)), Math.max(0, extent - 1))
+}
+
+/** Last pixel index before normalized `at`, clamped into the image. */
+function pixelTo(at: number, extent: number): number {
+  return Math.min(Math.max(-1, Math.round(at * extent) - 1), extent - 1)
 }
 
 /**

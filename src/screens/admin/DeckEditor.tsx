@@ -208,8 +208,24 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
    * 0.60 on each axis, mirroring the measurements in the brief.
    */
   const [detectFraction, setDetectFraction] = useState<{ x: number; y: number }>({ x: 0.6, y: 0.6 })
-  /** Only for the "Dò lưới tự động" button's own spinner -- distinct from `busy`, which gates the save/delete/merge round trips. */
+  /** Only for the detect button's own spinner -- distinct from `busy`, which gates the save/delete/merge round trips. */
   const [detecting, setDetecting] = useState(false)
+  /**
+   * The deck's own rectangle on the sheet, normalized 0..1, as drawn by the
+   * admin. `null` until they draw one, and detection cannot run without one:
+   * on a real sheet the strongest full-span line is the page border, not a
+   * beam, so detecting over the whole sheet finds the border and nothing else
+   * (see InkOptions.region in domain/gridDetect.ts, and the browser harness
+   * result recorded there -- one line, zero cells).
+   *
+   * Deliberately NOT persisted. It is an input to detection, not a property of
+   * the deck: what the deck keeps is the cells detection produced. Re-detecting
+   * months later costs one more drag, and a stored crop would be one more
+   * thing that can silently go stale against a re-uploaded drawing.
+   */
+  const [crop, setCrop] = useState<{ x: number; y: number; w: number; h: number } | null>(null)
+  /** Whether the canvas is waiting for the crop drag right now. */
+  const [cropping, setCropping] = useState(false)
 
   const load = useCallback(async () => {
     try {
@@ -370,20 +386,21 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
   }
 
   /**
-   * "Dò lưới tự động": runs the one expensive pixel pass for this drawing and
-   * applies its result at the sliders' current fractions.
+   * Runs the one expensive pixel pass over `region` of this drawing and applies
+   * its result at the sliders' current fractions. Called with the region the
+   * admin just drew -- never without one.
    *
    * Wrapped in its own busy flag (`detecting`), not `apply`'s `busy`: this
    * touches no persisted data and gates nothing else on screen, so tying it
    * to the same flag would needlessly disable Save/Delete/Merge while a
    * detection request that has nothing to do with them is in flight.
    */
-  const detectGrid = async () => {
+  const detectGrid = async (region: { x: number; y: number; w: number; h: number }) => {
     if (!imageUrl) return
     setDetecting(true)
     setError(null)
     try {
-      const profile = await inkProfileFromImage(imageUrl)
+      const profile = await inkProfileFromImage(imageUrl, { region })
       setDetectProfile(profile)
       applyDetectedLines(profile, detectFraction)
     } catch {
@@ -397,6 +414,18 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
     } finally {
       setDetecting(false)
     }
+  }
+
+  /**
+   * The crop drag finished: remember the region, leave crop mode, and detect
+   * from it straight away. One press and one drag, rather than making the
+   * admin press a second button to say "now use it" -- there is nothing else
+   * they could have meant by drawing the box.
+   */
+  const onCropDraw = (rect: { x: number; y: number; w: number; h: number }) => {
+    setCrop(rect)
+    setCropping(false)
+    void detectGrid(rect)
   }
 
   /**
@@ -891,9 +920,13 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
       */}
       <Space direction="vertical" size="small" style={{ width: '100%' }}>
         <Space wrap align="start">
-          <Button loading={detecting} disabled={!imageUrl} onClick={() => void detectGrid()}>
-            Dò lưới tự động
-          </Button>
+          {cropping ? (
+            <Button onClick={() => setCropping(false)}>Huỷ chọn vùng sàn</Button>
+          ) : (
+            <Button loading={detecting} disabled={!imageUrl} onClick={() => setCropping(true)}>
+              {crop ? 'Chọn lại vùng sàn' : 'Chọn vùng sàn để dò lưới'}
+            </Button>
+          )}
           <Space direction="vertical" size={0} style={{ width: 220 }}>
             <Typography.Text>Độ nhạy trục dọc</Typography.Text>
             <Slider
@@ -924,8 +957,10 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
             {`${detectedCounts.x} đường dọc × ${detectedCounts.y} đường ngang → ${detectedCounts.cellCount} ô`}
           </Typography.Text>
         </Space>
-        <Typography.Text type="secondary">
-          Kéo thanh trượt sẽ dò lại và thay toàn bộ guide đang có, kể cả guide vừa chỉnh tay — nên dò lưới trước, chỉnh tay sau.
+        <Typography.Text type={cropping ? 'warning' : 'secondary'}>
+          {cropping
+            ? 'Kéo một khung quanh phạm vi sàn trên bản vẽ. Chỉ phần trong khung được dò — hãy bỏ khung tên, chú thích và kết cấu ngoài sàn ra ngoài.'
+            : 'Kéo thanh trượt sẽ dò lại và thay toàn bộ guide đang có, kể cả guide vừa chỉnh tay — nên dò lưới trước, chỉnh tay sau.'}
         </Typography.Text>
       </Space>
 
@@ -969,6 +1004,10 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
           cells={cells}
           selectedCodes={selected}
           cellColors={cellColors}
+          cropRect={crop}
+          // Only while waiting for the drag: passing it always would leave the
+          // canvas permanently unable to drag a guide or select a cell.
+          onCropDraw={cropping ? onCropDraw : undefined}
           // Clamped, never applied raw: a drag moves `pos` and leaves the mm
           // chain alone, so a guide dragged past its neighbour puts pos-order
           // and offset-order in disagreement -- and every area is computed from
