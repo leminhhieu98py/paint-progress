@@ -171,20 +171,21 @@ describe('detectBays', () => {
       .toEqual([12, 51])
   })
 
-  it('drops grid cells with nothing enclosed under them', () => {
-    // The grid spans whatever the deck's extent turned out to be, so it also
-    // spans anything that is not a bay: solid structure, or -- with a box left
-    // loose -- the strip between the deck and the title block. On the real sheet
-    // this rule took 216 grid cells down to 146.
+  it('keeps a bay standing on solid structure', () => {
+    // Deck to paint is deck to paint whether the sheet draws a pocket there or
+    // something solid -- the E-house, a pedestal, a hatched column. Dropping a
+    // cell for enclosing nothing punched 46 holes of 184 in the middle of the
+    // real deck, which is why the "encloses something" rule works on whole rows
+    // and columns instead.
     //
-    // Here the bottom-right quarter is solid, so it encloses nothing.
+    // Here the bottom-right quarter is solid, and it is still a bay.
     const rgb = deck(100, 100, [10, 10, 90, 90])
     beam(rgb, 100, 'v', 50, 10, 90)
     beam(rgb, 100, 'h', 50, 10, 90)
     for (let y = 53; y <= 87; y++) for (let x = 53; x <= 87; x++) paint(rgb, 100, x, y)
 
     expect(asPixels(detectBays(rgb, 100, 100, WHOLE, OPTIONS), 100, 100)).toEqual([
-      '39x39@12,12', '37x39@51,12', '39x37@12,51',
+      '39x39@12,12', '37x39@51,12', '39x37@12,51', '37x37@51,51',
     ])
   })
 

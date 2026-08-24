@@ -84,12 +84,13 @@ export interface BayOptions {
    */
   dashGapFraction?: number
   /**
-   * How much of a grid cell must be enclosed by the drawing for it to be a bay,
-   * as a fraction of the cell's own area. Default 0.3.
+   * How much of a grid ROW or COLUMN must be enclosed by the drawing for it to
+   * be part of the deck, as a fraction of the band's own area. Default 0.1.
    *
    * The grid comes from centrelines that span the deck, so it also spans
    * anything the deck's extent was dragged over -- and a box left loose drags it
-   * onto the title block. A cell with nothing enclosed under it is not a bay.
+   * onto the title block. A band that encloses nothing anywhere along it is not
+   * deck.
    */
   minEnclosed?: number
   /** Smallest bay to report, as a fraction of the box's area. Default 0.0005. */
@@ -116,7 +117,7 @@ const DEFAULTS = {
   closeFraction: 0.025,
   minAreaFraction: 0.0005,
   minCentrelineCover: 0.7,
-  minEnclosed: 0.3,
+  minEnclosed: 0.1,
   dashGapFraction: 0.0033,
   maxAreaFraction: 0.9,
   minFill: 0.8,
@@ -494,25 +495,38 @@ export function detectBays(
   const ys = centrelines(ink, width, deck, true, opts.minCentrelineCover, gap)
   if (xs.length < 2 || ys.length < 2) return regions
 
-  // A grid cell is a bay only where the drawing encloses something. A box left
-  // loose drags the deck's extent past the deck -- on the real sheet, down onto
-  // the title block -- and this is what stops those rows becoming cells: there
-  // is no enclosed region under them.
+  // Whole rows and columns, not single cells. The grid spans whatever the deck's
+  // extent turned out to be, and a box left loose drags that extent past the
+  // deck -- on the real sheet, two bay-rows down onto the title block. Those
+  // rows enclose nothing anywhere along them, so they go.
+  //
+  // Per CELL this rule punched holes in the middle of the deck: 46 of 184 cells
+  // enclose nothing because they sit on solid structure -- the E-house, the
+  // pedestals, the hatched columns -- and those are still deck to paint.
+  const overlap = (bay: Bay, region: Bay) => {
+    const w = Math.min(bay.x + bay.w, region.x + region.w) - Math.max(bay.x, region.x)
+    const h = Math.min(bay.y + bay.h, region.y + region.h) - Math.max(bay.y, region.y)
+    return w > 0 && h > 0 ? w * h : 0
+  }
+  const bandHasBays = (from: number, to: number, vertical: boolean) => {
+    const band: Bay = vertical
+      ? { x: from / width, y: 0, w: (to - from) / width, h: 1 }
+      : { x: 0, y: from / height, w: 1, h: (to - from) / height }
+    const enclosed = regions.reduce((sum, region) => sum + overlap(band, region), 0)
+    return enclosed >= opts.minEnclosed * band.w * band.h
+  }
+
   const bays: Bay[] = []
   for (let r = 0; r < ys.length - 1; r++) {
+    if (!bandHasBays(ys[r], ys[r + 1], false)) continue
     for (let c = 0; c < xs.length - 1; c++) {
-      const bay = {
+      if (!bandHasBays(xs[c], xs[c + 1], true)) continue
+      bays.push({
         x: xs[c] / width,
         y: ys[r] / height,
         w: (xs[c + 1] - xs[c]) / width,
         h: (ys[r + 1] - ys[r]) / height,
-      }
-      const enclosed = regions.reduce((sum, region) => {
-        const overlapW = Math.min(bay.x + bay.w, region.x + region.w) - Math.max(bay.x, region.x)
-        const overlapH = Math.min(bay.y + bay.h, region.y + region.h) - Math.max(bay.y, region.y)
-        return sum + (overlapW > 0 && overlapH > 0 ? overlapW * overlapH : 0)
-      }, 0)
-      if (enclosed >= opts.minEnclosed * bay.w * bay.h) bays.push(bay)
+      })
     }
   }
   return bays
