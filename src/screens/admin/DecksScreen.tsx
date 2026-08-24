@@ -178,12 +178,6 @@ export function DecksScreen() {
             render: (v: number) => formatAreaM2(v),
           },
           {
-            title: 'Nguồn diện tích',
-            dataIndex: 'areaSource',
-            width: 150,
-            render: (v: DeckRow['areaSource']) => (v === 'guides' ? 'Đo từ guide' : 'Chia theo tỉ lệ'),
-          },
-          {
             title: 'Bản vẽ',
             key: 'drawing',
             width: 160,
