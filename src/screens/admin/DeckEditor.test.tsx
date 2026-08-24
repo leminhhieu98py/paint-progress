@@ -210,7 +210,9 @@ function stoppedBeamProfile() {
   for (const x of [4, 36]) for (let y = 4; y <= 36; y++) paint(x, y)
   for (const x of [16, 28]) for (let y = 4; y <= 26; y++) paint(x, y)
   for (const y of [4, 20, 36]) for (let x = 4; x <= 36; x++) paint(x, y)
-  return inkProfile(rgb, width, height, { region: { x: 0, y: 0, w: 1, h: 1 } })
+  // The region hugs the deck's outer beams, which is how the admin drags it --
+  // so the box's own four edges land on those beams and add no line of their own.
+  return inkProfile(rgb, width, height, { region: { x: 0.1, y: 0.1, w: 0.8, h: 0.8 } })
 }
 
 /**
@@ -261,7 +263,9 @@ function fixtureProfile() {
   for (const y of [10, 90]) fillRow(y, 10, 90)
   fillRow(50, 10, 70)
   fillRow(70, 10, 40)
-  return inkProfile(rgb, width, height, { region: { x: 0, y: 0, w: 1, h: 1 } })
+  // The region hugs the deck's outer beams, which is how the admin drags it --
+  // so the box's own four edges land on those beams and add no line of their own.
+  return inkProfile(rgb, width, height, { region: { x: 0.1, y: 0.1, w: 0.8, h: 0.8 } })
 }
 
 describe('DeckEditor', () => {

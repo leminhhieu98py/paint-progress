@@ -103,7 +103,7 @@ describe('inkProfile / linesFromProfile', () => {
     frame(rgb, width, 0, 9, 0, 19)
     fillColumn(rgb, width, 3, 0, 3, BLACK)
 
-    const profile = inkProfile(rgb, width, height, { region: { x: 0, y: 0, w: 1, h: 1 } })
+    const profile = inkProfile(rgb, width, height)
 
     // Both directions, on the same cached profile. The two frame beams are
     // always there -- they are the deck.
@@ -125,7 +125,7 @@ describe('inkProfile / linesFromProfile', () => {
     fillRow(rgb, width, 10, 0, width - 1, BLACK)
     fillColumn(rgb, width, 5, 0, 3, BLACK)
 
-    const profile = inkProfile(rgb, width, height, { region: { x: 0, y: 0, w: 1, h: 1 } })
+    const profile = inkProfile(rgb, width, height)
 
     // Lenient on x: the short vertical is found alongside the horizontal. 0.25,
     // not 0.15 -- the frame's own three horizontals ink EVERY column three
@@ -156,7 +156,7 @@ describe('inkProfile / linesFromProfile', () => {
     fillColumn(rgb, width, 10, 0, height - 1, BLACK)
     fillRow(rgb, width, 8, 0, 3, BLACK)
 
-    const profile = inkProfile(rgb, width, height, { region: { x: 0, y: 0, w: 1, h: 1 } })
+    const profile = inkProfile(rgb, width, height)
 
     // x pinned at 0.7 on both calls; only y moves.
     expect(linesFromProfile(profile, { x: 0.7, y: 0.25 }))
@@ -176,7 +176,7 @@ describe('inkProfile / linesFromProfile', () => {
     fillColumn(rgb, width, 2, 0, height - 1, BLACK)
     fillColumn(rgb, width, 7, 0, 9, BLACK)
 
-    const profile = inkProfile(rgb, width, height, { region: { x: 0, y: 0, w: 1, h: 1 } })
+    const profile = inkProfile(rgb, width, height)
 
     expect(linesFromProfile(profile, { x: 0.9, y: 0.9 }).x).toEqual([0, 2 / width, 19 / width])
     expect(linesFromProfile(profile, { x: 0.4, y: 0.9 }).x)
@@ -218,9 +218,11 @@ describe('inkProfile / linesFromProfile', () => {
     const deckProfile = inkProfile(rgb, width, height, {
       region: { x: 0.1, y: 0.1, w: 0.4, h: 0.4 },
     })
+    // The box's own right edge (0.5) and the beam at column 49 are the same beam
+    // seen twice, so they collapse to one line between them.
     expect(linesFromProfile(deckProfile, { x: 0.7, y: 0.7 })).toEqual({
-      x: [10 / width, 30 / width, 49 / width],
-      y: [10 / height, 30 / height, 49 / height],
+      x: [10 / width, 30 / width, 0.495],
+      y: [10 / height, 30 / height, 0.495],
     })
   })
 
@@ -239,7 +241,8 @@ describe('inkProfile / linesFromProfile', () => {
     // away from the image's own edge, so the arithmetic is pinned by the
     // numbers rather than rescued by the clamp.
     expect(profile.contentBox).toEqual({ minCol: 25, maxCol: 44, minRow: 25, maxRow: 44 })
-    expect(linesFromProfile(profile, { x: 0.3, y: 0.3 })).toEqual({ x: [], y: [] })
+    // Its own four edges and nothing else: no beam inside it to find.
+    expect(linesFromProfile(profile, { x: 0.3, y: 0.3 })).toEqual({ x: [0.5, 0.9], y: [0.5, 0.9] })
   })
 
   it('survives a zero-width region instead of dividing by it', () => {
@@ -270,7 +273,7 @@ describe('inkProfile / linesFromProfile', () => {
     const rgb = whiteImage(width, height)
     for (const x of [20, 60, 100, 103, 140, 180]) fillColumn(rgb, width, x, 0, height - 1, BLACK)
 
-    const profile = inkProfile(rgb, width, height, { region: { x: 0, y: 0, w: 1, h: 1 } })
+    const profile = inkProfile(rgb, width, height)
     const { x } = linesFromProfile(profile, { x: 0.5, y: 0.5 })
 
     // Five lines, and the pair is replaced by its midpoint (101.5) -- not by
@@ -289,7 +292,7 @@ describe('inkProfile / linesFromProfile', () => {
     const rgb = whiteImage(width, height)
     for (const x of [20, 60, 100, 140, 180]) fillColumn(rgb, width, x, 0, height - 1, BLACK)
 
-    const profile = inkProfile(rgb, width, height, { region: { x: 0, y: 0, w: 1, h: 1 } })
+    const profile = inkProfile(rgb, width, height)
     expect(linesFromProfile(profile, { x: 0.5, y: 0.5 }).x)
       .toEqual([20 / width, 60 / width, 100 / width, 140 / width, 180 / width])
   })
@@ -303,7 +306,7 @@ describe('inkProfile / linesFromProfile', () => {
     const rgb = whiteImage(width, height)
     for (const x of [20, 60, 100, 120]) fillColumn(rgb, width, x, 0, height - 1, BLACK)
 
-    const profile = inkProfile(rgb, width, height, { region: { x: 0, y: 0, w: 1, h: 1 } })
+    const profile = inkProfile(rgb, width, height)
     expect(linesFromProfile(profile, { x: 0.5, y: 0.5 }).x)
       .toEqual([20 / width, 60 / width, 100 / width, 120 / width])
   })
@@ -317,7 +320,7 @@ describe('inkProfile / linesFromProfile', () => {
     const rgb = whiteImage(width, height)
     for (const x of [20, 26, 180]) fillColumn(rgb, width, x, 0, height - 1, BLACK)
 
-    const profile = inkProfile(rgb, width, height, { region: { x: 0, y: 0, w: 1, h: 1 } })
+    const profile = inkProfile(rgb, width, height)
     expect(linesFromProfile(profile, { x: 0.5, y: 0.5 }).x)
       .toEqual([20 / width, 26 / width, 180 / width])
   })
@@ -330,7 +333,7 @@ describe('inkProfile / linesFromProfile', () => {
     const rgb = whiteImage(width, height)
     for (const x of [20, 60, 100, 103, 106, 140, 180]) fillColumn(rgb, width, x, 0, height - 1, BLACK)
 
-    const profile = inkProfile(rgb, width, height, { region: { x: 0, y: 0, w: 1, h: 1 } })
+    const profile = inkProfile(rgb, width, height)
     expect(linesFromProfile(profile, { x: 0.5, y: 0.5 }).x
       .map((pos) => Math.round(pos * width * 1e3) / 1e3)).toEqual([20, 60, 103, 140, 180])
   })
@@ -346,7 +349,7 @@ describe('inkProfile / linesFromProfile', () => {
     const rgb = whiteImage(width, height)
     for (const x of [20, 60, 100, 140, 440]) fillColumn(rgb, width, x, 0, height - 1, BLACK)
 
-    const profile = inkProfile(rgb, width, height, { region: { x: 0, y: 0, w: 1, h: 1 } })
+    const profile = inkProfile(rgb, width, height)
     expect(linesFromProfile(profile, { x: 0.5, y: 0.5 }).x.map((pos) => pos * width))
       .toEqual([20, 60, 100, 140, 440])
   })
@@ -360,82 +363,85 @@ describe('inkProfile / linesFromProfile', () => {
     const rgb = whiteImage(width, height)
     for (const y of [20, 60, 100, 103, 140, 180]) fillRow(rgb, width, y, 0, width - 1, BLACK)
 
-    const profile = inkProfile(rgb, width, height, { region: { x: 0, y: 0, w: 1, h: 1 } })
+    const profile = inkProfile(rgb, width, height)
     expect(linesFromProfile(profile, { x: 0.5, y: 0.5 }).y
       .map((pos) => Math.round(pos * height * 1e3) / 1e3)).toEqual([20, 60, 101.5, 140, 180])
   })
 
-  it('always closes the deck at its own outer beams, however strict the slider', () => {
-    // Measured on the customer's real sheet: the deck's outer beams need a far
-    // lower bar than the beams inside it, because the boundary is stepped and
-    // the corners are cut, so an outer beam is interrupted where an interior one
-    // runs clean. At 0.60 the first and last vertical lines came back 161px and
-    // 151px INSIDE the deck's own extent -- so the whole boundary strip of bays
-    // had no closing line and simply did not exist. That is what the admin saw:
-    // "ở các biên, các hình chữ nhật thường bị thiếu".
+  it('always closes the deck at the box the admin drew, however strict the slider', () => {
+    // The reason the boundary is the CROP and not a detected line. Measured on
+    // the customer's real sheet, no threshold over a 1-D profile separates the
+    // deck's outer beam from a dimension line: the left outer beam covers only
+    // ~25% of the deck's height, because its corners are cut, while the
+    // dimension line above the deck covers ~90% of the width. At the sliders'
+    // 0.60 the first and last vertical lines came back 161px and 151px inside
+    // the deck, so every bay along the edge had no closing line and did not
+    // exist -- and a bar low enough to find that beam put a line through the
+    // title block instead.
     //
-    // Here: an interior beam at x=50 spanning the full height, a left outer beam
-    // at x=20 spanning 31%, a right outer at x=80 spanning all of it, and two
-    // horizontals. 31% is chosen to sit between the two bars that matter: far
-    // below the 0.80 slider, so only the boundary rule can find it, and above
-    // the boundary rule's own 0.20 but below 0.50 -- so a boundary bar set any
-    // higher loses it again, which is what the sheet showed at 0.30.
+    // Here: an interior beam at x=50 spanning the full height and a left outer
+    // beam at x=20 spanning 31%, which is far below the 0.80 slider. The region
+    // is the deck, so its own edges close it.
     const width = 100
     const height = 100
     const rgb = whiteImage(width, height)
-    fillColumn(rgb, width, 50, 0, height - 1, BLACK)
-    fillColumn(rgb, width, 80, 0, height - 1, BLACK)
-    fillColumn(rgb, width, 20, 0, 29, BLACK)
-    fillRow(rgb, width, 10, 0, width - 1, BLACK)
-    fillRow(rgb, width, 90, 0, width - 1, BLACK)
+    fillColumn(rgb, width, 50, 10, 90, BLACK)
+    fillColumn(rgb, width, 20, 10, 40, BLACK)
+    fillRow(rgb, width, 10, 20, 80, BLACK)
+    fillRow(rgb, width, 90, 20, 80, BLACK)
 
-    const profile = inkProfile(rgb, width, height, { region: { x: 0, y: 0, w: 1, h: 1 } })
+    const profile = inkProfile(rgb, width, height, { region: { x: 0.2, y: 0.1, w: 0.6, h: 0.8 } })
     const { x, y } = linesFromProfile(profile, { x: 0.8, y: 0.8 })
 
-    // 0.20 is there because the boundary rule put it there; 0.50 and 0.80 clear
-    // the slider on their own.
+    // 0.2 and 0.8 are the box; 0.5 clears the slider on its own. The faint beam
+    // at x=20 IS the box's left edge here, which is the point: the admin puts
+    // the box on it.
     expect(x).toEqual([0.2, 0.5, 0.8])
-    // And the boundary is not double-counted: the two horizontals ARE the deck's
-    // top and bottom, so they appear once each, not twice.
     expect(y).toEqual([0.1, 0.9])
   })
 
-  it('puts the boundary line down the middle of the outer beam, not on its outer face', () => {
-    // Interior lines are run midpoints (see runMidpoints); a boundary read as
-    // "the first inked column" would sit on the beam's outer face instead, and
-    // every edge bay on the deck would be a beam-width too big.
-    const width = 100
-    const height = 100
+  it('closes the deck even where the box holds nothing at all', () => {
+    // A box over blank paper still reports its own four edges. Nothing detected
+    // them and nothing needs to: they are what the admin said the deck is. The
+    // one cell they enclose is then dropped by keepDrawnCells, which reads the
+    // sheet rather than the box.
+    const width = 50
+    const height = 50
     const rgb = whiteImage(width, height)
-    // The left beam is interrupted, so only the boundary rule can find it --
-    // which is the path whose midpoint this pins. The right one clears the
-    // slider on its own.
-    for (const x of [20, 21, 22]) fillColumn(rgb, width, x, 0, 59, BLACK)
-    for (const x of [78, 79, 80]) fillColumn(rgb, width, x, 0, height - 1, BLACK)
-    fillRow(rgb, width, 10, 0, width - 1, BLACK)
-    fillRow(rgb, width, 90, 0, width - 1, BLACK)
+    fillColumn(rgb, width, 5, 0, height - 1, BLACK)
 
-    const profile = inkProfile(rgb, width, height, { region: { x: 0, y: 0, w: 1, h: 1 } })
-    expect(linesFromProfile(profile, { x: 0.9, y: 0.9 }).x).toEqual([0.21, 0.79])
+    const profile = inkProfile(rgb, width, height, { region: { x: 0.5, y: 0.5, w: 0.4, h: 0.4 } })
+    expect(linesFromProfile(profile, { x: 0.3, y: 0.3 })).toEqual({ x: [0.5, 0.9], y: [0.5, 0.9] })
   })
 
-  it('reports no boundary for a sheet with nothing on it', () => {
-    const blank = inkProfile(whiteImage(20, 20), 20, 20, { region: { x: 0, y: 0, w: 1, h: 1 } })
-    expect(linesFromProfile(blank, { x: 0.5, y: 0.5 })).toEqual({ x: [], y: [] })
-  })
-
-  it('still reports two edges when the crop is solid ink', () => {
-    // A crop full of dense structure puts every column over the boundary bar.
-    // Read as one run, its midpoint is the middle of the deck -- one line
-    // through the centre and no boundary anywhere. The run is capped at a beam
-    // width so the two edges stay two edges. 0.475 is the slider's own doing:
-    // over solid ink there is no grid to find, and the whole width is one line.
+  it('reports the box edges over solid ink, where there is no grid to find', () => {
+    // A box full of dense structure gives the sliders nothing to work with --
+    // every column is a candidate, so the whole width collapses to one line.
+    // The two edges are still the two edges.
     const width = 20
     const height = 20
     const rgb = new Uint8Array(width * height * 3).fill(0)
 
     const profile = inkProfile(rgb, width, height, { region: { x: 0, y: 0, w: 1, h: 1 } })
-    expect(linesFromProfile(profile, { x: 0.5, y: 0.5 }).x).toEqual([1 / width, 9.5 / width, 18 / width])
+    expect(linesFromProfile(profile, { x: 0.5, y: 0.5 }).x).toEqual([0, 9.5 / width, 1])
+  })
+
+  it('counts no ink from outside the box, even ink the mask can see', () => {
+    // The mask reaches a little past the box so a beam the admin dragged the box
+    // onto still reads as drawn. The COUNTS must not: a beam just outside the
+    // box is not the deck, and letting the pad into the counts would put a line
+    // through whatever sits against the deck's edge -- which on the real sheet
+    // is the dimension chain.
+    const width = 100
+    const height = 100
+    const rgb = whiteImage(width, height)
+    for (const x of [40, 60]) fillColumn(rgb, width, x, 20, 79, BLACK)
+    for (const y of [40, 60]) fillRow(rgb, width, y, 20, 79, BLACK)
+    // One pixel outside the box's left edge, which is inside the mask's pad.
+    fillColumn(rgb, width, 19, 20, 79, BLACK)
+
+    const profile = inkProfile(rgb, width, height, { region: { x: 0.2, y: 0.2, w: 0.6, h: 0.6 } })
+    expect(linesFromProfile(profile, { x: 0.5, y: 0.5 }).x).toEqual([0.2, 0.4, 0.6, 0.8])
   })
 
   it('yields empty arrays and does not crash on an all-white image', () => {

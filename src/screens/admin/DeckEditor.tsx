@@ -1024,7 +1024,7 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
         </Space>
         <Typography.Text type={cropping || deletingGuides ? 'warning' : 'secondary'}>
           {cropping
-            ? 'Kéo một khung quanh phạm vi sàn trên bản vẽ, kéo lại bao nhiêu lần cũng được. Chỉ phần trong khung được dò — hãy bỏ khung tên, chú thích và kết cấu ngoài sàn ra ngoài. Xong thì bấm “Dò lưới trong khung”.'
+            ? 'Kéo khung TRÙNG với dầm biên của sàn — 4 cạnh khung chính là 4 dầm ngoài cùng, nên đừng kéo rộng ra ngoài sàn. Kéo lại bao nhiêu lần cũng được; xong thì bấm “Dò lưới trong khung”.'
             : deletingGuides
               ? 'Bấm vào một đường xanh trên bản vẽ để xoá đường đó. Đang bật thì không kéo được đường.'
               : 'Kéo thanh trượt sẽ dò lại và thay toàn bộ guide đang có, kể cả guide vừa chỉnh tay — nên dò lưới trước, chỉnh tay sau.'}
