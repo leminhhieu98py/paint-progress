@@ -832,6 +832,39 @@ describe('DrawingCanvas', () => {
       expect(onCropDraw).toHaveBeenCalledWith({ x: 0.1, y: 0.1, w: 0.4, h: 0.5 })
     })
 
+    it('reports a drag that starts and ends inside one render', () => {
+      // Found by driving the real app: an automated drag lost its crop about
+      // half the time. The handlers read the gesture out of React state, so a
+      // mousedown and mouseup batched into the same commit left the mouseup
+      // looking at the state from BEFORE the mousedown -- no gesture, no crop.
+      // A human's drag spans several frames and hides this; a fast flick on a
+      // tablet does not.
+      const onCropDraw = vi.fn()
+      render(<DrawingCanvas {...cropProps} onCropDraw={onCropDraw} />)
+      const stage = screen.getByTestId('stage:drawing')
+      // One act() for both events: React batches them, so nothing this
+      // component sets in the first handler is visible to the second.
+      act(() => {
+        stage.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, clientX: 90, clientY: 72 }))
+        stage.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, clientX: 450, clientY: 432 }))
+      })
+      expect(onCropDraw).toHaveBeenCalledWith({ x: 0.1, y: 0.1, w: 0.4, h: 0.5 })
+    })
+
+    it('does not re-commit the last gesture on a release it never saw start', () => {
+      // A pointer pressed outside the canvas and released inside sends a bare
+      // mouseup. If the finished gesture were still on record it would be
+      // committed a second time, replacing the crop the admin just drew with
+      // the one before it.
+      const onCropDraw = vi.fn()
+      render(<DrawingCanvas {...cropProps} onCropDraw={onCropDraw} />)
+      const stage = screen.getByTestId('stage:drawing')
+      fireEvent.mouseDown(stage, { clientX: 90, clientY: 72 })
+      fireEvent.mouseUp(stage, { clientX: 450, clientY: 432 })
+      fireEvent.mouseUp(stage, { clientX: 700, clientY: 600 })
+      expect(onCropDraw).toHaveBeenCalledTimes(1)
+    })
+
     it('shows the band being dragged before it is committed', () => {
       render(<DrawingCanvas {...cropProps} onCropDraw={vi.fn()} />)
       const stage = screen.getByTestId('stage:drawing')

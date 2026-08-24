@@ -132,7 +132,17 @@ export function DrawingCanvas({
   const [measuredWidth, setMeasuredWidth] = useState(0)
   const stageRef = useRef<Konva.Stage>(null)
   const [zoom, setZoom] = useState(MIN_ZOOM)
-  /** The crop gesture in progress, in stage px. `null` between gestures. */
+  /**
+   * The crop gesture in progress, in stage px. `null` between gestures.
+   *
+   * Held in a ref, with state only mirroring it so the rubber band can render.
+   * The handlers below must not read the gesture out of state: a mousedown and
+   * mouseup that land in the same React commit -- a fast flick, or any automated
+   * drag -- leave the mouseup's closure looking at the state from before the
+   * mousedown, so the gesture is silently dropped. Found by driving the real
+   * app, where an automated drag lost its crop about half the time.
+   */
+  const cropDragRef = useRef<{ from: Konva.Vector2d; to: Konva.Vector2d } | null>(null)
   const [cropDrag, setCropDrag] = useState<{ from: Konva.Vector2d; to: Konva.Vector2d } | null>(null)
 
   useEffect(() => {
@@ -211,22 +221,28 @@ export function DrawingCanvas({
     ? {
         onMouseDown: (e: Konva.KonvaEventObject<MouseEvent>) => {
           const point = e.target.getStage()?.getPointerPosition()
-          if (point) setCropDrag({ from: point, to: point })
+          if (!point) return
+          cropDragRef.current = { from: point, to: point }
+          setCropDrag(cropDragRef.current)
         },
         onMouseMove: (e: Konva.KonvaEventObject<MouseEvent>) => {
           const point = e.target.getStage()?.getPointerPosition()
           // Only while a gesture is live: without the guard every idle mouse
           // move over the drawing would re-render the whole stage.
-          if (point) setCropDrag((drag) => (drag ? { ...drag, to: point } : null))
+          if (!point || !cropDragRef.current) return
+          cropDragRef.current = { ...cropDragRef.current, to: point }
+          setCropDrag(cropDragRef.current)
         },
         onMouseUp: (e: Konva.KonvaEventObject<MouseEvent>) => {
-          const point = e.target.getStage()?.getPointerPosition() ?? cropDrag?.to
+          const drag = cropDragRef.current
+          const point = e.target.getStage()?.getPointerPosition() ?? drag?.to
+          cropDragRef.current = null
           setCropDrag(null)
-          if (!cropDrag || !point) return
+          if (!drag || !point) return
           // A misfire (a click, or a drag too small to be a deck) reports
           // nothing rather than committing a region that would make every
           // fraction pass -- see cropFromDrag.
-          const rect = cropFromDrag(cropDrag.from, point, width, height)
+          const rect = cropFromDrag(drag.from, point, width, height)
           if (rect) onCropDraw?.(rect)
         },
       }
