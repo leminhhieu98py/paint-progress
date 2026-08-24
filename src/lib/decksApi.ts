@@ -1,4 +1,4 @@
-import type { Guide, MeshCell } from '../domain/types'
+import type { MeshCell } from '../domain/types'
 import { supabase } from './supabase'
 
 export interface DeckRow {
@@ -114,94 +114,6 @@ export async function getDrawingUrl(imagePath: string): Promise<string> {
   const { data, error } = await supabase.storage.from(BUCKET).createSignedUrl(imagePath, 3600)
   if (error) throw new Error(error.message)
   return data.signedUrl
-}
-
-export async function listGuides(deckId: string): Promise<Guide[]> {
-  const { data, error } = await supabase
-    .from('deck_guides')
-    .select('id, axis, pos, offset_mm')
-    .eq('deck_id', deckId)
-    // Both current consumers re-sort this themselves (DeckEditor's axisRows,
-    // buildMeshFromGuides), so nothing depends on this order today -- but it
-    // is a real guarantee this endpoint should make rather than an unstated
-    // accident, and DeckEditor's mm-chain math (spansFromOffsets) is exactly
-    // the kind of caller that would silently misbehave without one.
-    .order('offset_mm')
-  if (error) throw new Error(error.message)
-  return (data ?? []).map((g) => ({
-    id: g.id as string,
-    axis: g.axis as 'x' | 'y',
-    pos: Number(g.pos),
-    offsetMm: Number(g.offset_mm),
-  }))
-}
-
-/**
- * Make the deck's persisted guides match `guides`, keyed by id.
- *
- * Diff, not replace, and this is the third write path to get that treatment
- * after syncCells and saveStages. It used to delete every guide for the deck
- * and then insert the new set, which was survivable while saving guides was its
- * own button -- but one save action now writes guides, area and cells together,
- * so it fires on every delete and every merge too. Deleting a single cell
- * destroyed the deck's entire mm chain and rebuilt it; if the insert failed on a
- * site tether, the guides were gone from the database while the editor still
- * showed them. Retrying from the same screen recovered; closing the editor lost
- * the chain permanently, and with it every cell area on the deck.
- *
- * Do NOT "recover" from a failure here by reloading guides. Local state is the
- * only surviving copy of the chain at that point, so a reload would destroy the
- * very thing that makes a retry possible -- see the comment in DeckEditor's
- * `apply`, which deliberately re-reads cells and not guides.
- *
- * `deck_guides.id` is a uuid primary key, so identity is available and this is
- * an upsert on it plus a delete of the ids that disappeared. Every guide passed
- * in must already carry an id: `listGuides` supplies the database's own, and
- * DeckEditor mints one with `randomUUID` the moment the admin adds a guide.
- *
- * THE UPSERT GOES FIRST here, the opposite of saveStages, and the difference is
- * not an inconsistency. saveStages has no choice: `unique (project_id, seq)`
- * means a renumbered survivor collides with a row still holding its seq, so the
- * delete has to free the seq first. deck_guides has no such constraint, which
- * leaves the order free to be chosen on the failure mode -- and here the whole
- * point is that a failed write must not be able to lose an existing guide. If
- * the upsert fails nothing has been deleted yet and the chain is intact; if the
- * delete then fails, the deck keeps a stale guide, which is visible on the next
- * generated mesh and fixable from the screen.
- *
- * Not transactional either way: closing that needs an RPC.
- */
-export async function saveGuides(deckId: string, guides: Guide[]): Promise<void> {
-  // Snapshot first, for the same reason saveStages does: the incoming list says
-  // which guides should exist, never which ones were removed.
-  const before = await listGuides(deckId)
-  const nextIds = new Set(guides.map((g) => g.id))
-  const removed = before.filter((b) => !nextIds.has(b.id))
-
-  if (guides.length > 0) {
-    const { error } = await supabase.from('deck_guides').upsert(
-      guides.map((g) => ({
-        id: g.id,
-        deck_id: deckId,
-        axis: g.axis,
-        pos: g.pos,
-        offset_mm: g.offsetMm,
-      })),
-      { onConflict: 'id' },
-    )
-    if (error) throw new Error(error.message)
-  }
-
-  // By explicit id, and only when there is something to delete. A
-  // `.eq('deck_id', deckId)` delete here is exactly the write this rewrite
-  // exists to remove.
-  if (removed.length > 0) {
-    const { error } = await supabase
-      .from('deck_guides')
-      .delete()
-      .in('id', removed.map((r) => r.id))
-    if (error) throw new Error(error.message)
-  }
 }
 
 export async function listCells(deckId: string): Promise<PersistedCell[]> {

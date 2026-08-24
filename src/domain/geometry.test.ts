@@ -2,302 +2,32 @@ import { describe, expect, it } from 'vitest'
 import {
   AREA_DIVERGENCE_THRESHOLD,
   areaDivergence,
-  buildMeshFromGuides,
   CELL_RESHAPE_THRESHOLD,
   cellReshaped,
-  deriveCellArea,
   divergesBeyondThreshold,
   hasUndeclaredArea,
-  interpolateOffsetMm,
   mergeCells,
-  MIN_GUIDE_GAP,
-  moveGuideClamped,
-  offsetsFromSpans,
   prorateCellAreas,
-  spansFromOffsets,
 } from './geometry'
-import type { Guide, MeshCell } from './types'
-
-const g = (id: string, axis: 'x' | 'y', pos: number, offsetMm: number): Guide => ({
-  id,
-  axis,
-  pos,
-  offsetMm,
-})
+import type { MeshCell } from './types'
 
 /**
- * Three columns and two rows with the spans printed on the Main Deck drawing:
- * across 2500, 9500, 14500; down 16000, 6200.
+ * Three columns and two rows, the shape the Main Deck drawing's own chain used
+ * to produce: across 2500, 9500, 14500 mm; down 16000, 6200 mm. Written out as
+ * cells rather than derived from guides -- guides are gone, and what mergeCells
+ * needs is a set of adjacent cells with known areas, which is what this is.
  */
-const MAIN_DECK_GUIDES: Guide[] = [
-  g('x0', 'x', 0.0, 0),
-  g('x1', 'x', 0.1, 2500),
-  g('x2', 'x', 0.5, 12000),
-  g('x3', 'x', 1.0, 26500),
-  g('y0', 'y', 0.0, 0),
-  g('y1', 'y', 0.7, 16000),
-  g('y2', 'y', 1.0, 22200),
+const MAIN_DECK_CELLS: MeshCell[] = [
+  { code: 'R1C1', x: 0, y: 0, w: 0.1, h: 0.7, areaM2: 40 },
+  { code: 'R1C2', x: 0.1, y: 0, w: 0.4, h: 0.7, areaM2: 152 },
+  { code: 'R1C3', x: 0.5, y: 0, w: 0.5, h: 0.7, areaM2: 232 },
+  { code: 'R2C1', x: 0, y: 0.7, w: 0.1, h: 0.3, areaM2: 15.5 },
+  { code: 'R2C2', x: 0.1, y: 0.7, w: 0.4, h: 0.3, areaM2: 58.9 },
+  { code: 'R2C3', x: 0.5, y: 0.7, w: 0.5, h: 0.3, areaM2: 89.9 },
 ]
 
-/**
- * The Main Deck drawing's full across-chain, as the admin types it: the datum
- * row carries no span, then 2500, 9500, 14500, 14500, 9500, 7600.
- */
-const ACROSS_SPANS = [0, 2500, 9500, 14500, 14500, 9500, 7600]
-const ACROSS_OFFSETS = [0, 2500, 12000, 26500, 41000, 50500, 58100]
-
-describe('offsetsFromSpans', () => {
-  it('running-sums the real drawing across-chain from a zero datum', () => {
-    expect(offsetsFromSpans(0, ACROSS_SPANS)).toEqual(ACROSS_OFFSETS)
-  })
-
-  it('produces a strictly increasing chain', () => {
-    const offsets = offsetsFromSpans(0, ACROSS_SPANS)
-    for (let i = 1; i < offsets.length; i++) expect(offsets[i]).toBeGreaterThan(offsets[i - 1])
-  })
-
-  it('shifts every offset downstream of an edited span, and none upstream', () => {
-    // The third real span, 14500 -> 15000. This is the whole point of the
-    // conversion: rows 0-2 must be untouched and rows 3-6 must each move by
-    // exactly +500. A conversion that writes only the edited row's offset
-    // fails on element 4; one that also moves the datum fails on element 1.
-    const edited = [...ACROSS_SPANS]
-    edited[3] = 15000
-    expect(offsetsFromSpans(0, edited)).toEqual([0, 2500, 12000, 27000, 41500, 51000, 58600])
-  })
-
-  it('places the datum wherever the caller says, not at zero', () => {
-    expect(offsetsFromSpans(1000, [0, 2500, 9500])).toEqual([1000, 3500, 13000])
-  })
-
-  it('ignores spansMm[0], the datum row\'s own span, no matter what value it carries', () => {
-    // The doc comment says spansMm[0] is ignored -- every other test in this
-    // file passes 0 there, which folding it into the running sum would also
-    // satisfy, so this is the one case that actually exercises the contract.
-    // A huge, obviously-wrong value proves it: if it were not ignored, the
-    // first offset alone would come back as 1000 + 999999, not 1000.
-    expect(offsetsFromSpans(1000, [999999, 2500, 9500])).toEqual([1000, 3500, 13000])
-  })
-})
-
-describe('spansFromOffsets', () => {
-  it('differences the real drawing across-chain, datum first', () => {
-    expect(spansFromOffsets(ACROSS_OFFSETS)).toEqual(ACROSS_SPANS)
-  })
-
-  it('round-trips through offsetsFromSpans unchanged', () => {
-    expect(spansFromOffsets(offsetsFromSpans(0, ACROSS_SPANS))).toEqual(ACROSS_SPANS)
-    expect(offsetsFromSpans(0, spansFromOffsets(ACROSS_OFFSETS))).toEqual(ACROSS_OFFSETS)
-  })
-
-  it('has nothing to say about an empty or single-guide axis', () => {
-    expect(spansFromOffsets([])).toEqual([])
-    expect(spansFromOffsets([58100])).toEqual([0])
-  })
-})
-
-describe('moveGuideClamped', () => {
-  /** The real across-chain, one guide per offset, evenly spread across the drawing. */
-  const chain: Guide[] = ACROSS_OFFSETS.map((offsetMm, i) =>
-    g(`x${i}`, 'x', i / (ACROSS_OFFSETS.length - 1), offsetMm),
-  )
-
-  /** The mm chain as the mesh reads it: offsets in POS order. */
-  const posOrderedOffsets = (guides: Guide[]) =>
-    guides
-      .filter((guide) => guide.axis === 'x')
-      .slice()
-      .sort((a, b) => a.pos - b.pos)
-      .map((guide) => guide.offsetMm)
-
-  it('leaves the mm chain monotonic when a guide is dragged past its neighbour', () => {
-    // The reviewer's case: the 4th vertical (26500 mm) dragged beyond the 5th
-    // (41000 mm). Unclamped, the pos-ordered offsets become
-    // [0, 2500, 12000, 41000, 26500, 50500, 58100] and the spans
-    // [0, 2500, 9500, 29000, -14500, 24000, 7600] -- a -14500 mm bay that
-    // deriveCellArea's Math.abs renders as a plausible 232 m², inflating the
-    // chain from 58100 to 87100 mm.
-    const dragged = moveGuideClamped(chain, 3, 0.9)
-
-    const offsets = posOrderedOffsets(dragged)
-    expect(offsets).toEqual(ACROSS_OFFSETS)
-    expect(spansFromOffsets(offsets).every((span) => span >= 0)).toBe(true)
-  })
-
-  it('stops the guide just short of its upper neighbour, not on top of it', () => {
-    // Landing exactly on the neighbour's pos leaves the two ordered by array
-    // position rather than by offset, which is the same pos/offset
-    // disagreement one step down.
-    const dragged = moveGuideClamped(chain, 3, 0.9)
-    expect(dragged[3].pos).toBe(chain[4].pos - MIN_GUIDE_GAP)
-    expect(dragged[3].pos).toBeLessThan(chain[4].pos)
-  })
-
-  it('clamps a drag below the lower neighbour too', () => {
-    const dragged = moveGuideClamped(chain, 3, 0)
-    expect(dragged[3].pos).toBe(chain[2].pos + MIN_GUIDE_GAP)
-    expect(posOrderedOffsets(dragged)).toEqual(ACROSS_OFFSETS)
-  })
-
-  it('allows a move that stays between the neighbours', () => {
-    // The clamp must not be a no-op dressed as a guard: a legitimate nudge has
-    // to actually move the guide.
-    const between = (chain[2].pos + chain[4].pos) / 2
-    expect(moveGuideClamped(chain, 3, between)[3].pos).toBe(between)
-  })
-
-  it('bounds the outermost guides by the drawing edges, not by a missing neighbour', () => {
-    expect(moveGuideClamped(chain, 0, -0.5)[0].pos).toBe(0)
-    expect(moveGuideClamped(chain, 6, 1.5)[6].pos).toBe(1)
-  })
-
-  it('ignores guides on the other axis', () => {
-    // A y-guide sitting between two x-guides must not bound an x-drag: the two
-    // axes have entirely independent chains, and treating them as one would
-    // clamp a legitimate move for no reason.
-    const mixed: Guide[] = [
-      g('x0', 'x', 0, 0),
-      g('y0', 'y', 0.5, 0),
-      g('x1', 'x', 1, 20000),
-      g('y1', 'y', 0.6, 10000),
-    ]
-    // Bounded by the x-guide at pos 1, so 0.9 goes through untouched. Were the
-    // y-guides counted, the nearest "neighbour" would be the one at pos 0.5 and
-    // this would come back clamped to just under it.
-    expect(moveGuideClamped(mixed, 0, 0.9)[0].pos).toBe(0.9)
-  })
-
-  it('returns the guides untouched for an index that does not exist', () => {
-    expect(moveGuideClamped(chain, 99, 0.5)).toBe(chain)
-  })
-
-  it('refuses the move when the neighbours leave no room', () => {
-    // Neighbours one quantization step apart: there is no representable pos
-    // strictly between them, so the only honest answer is to leave the guide
-    // alone rather than pick a side.
-    const cramped: Guide[] = [
-      g('x0', 'x', 0.5, 0),
-      g('x1', 'x', 0.5 + MIN_GUIDE_GAP / 2, 1000),
-      g('x2', 'x', 0.5 + MIN_GUIDE_GAP, 2000),
-    ]
-    expect(moveGuideClamped(cramped, 1, 0.9)).toBe(cramped)
-  })
-})
-
-describe('interpolateOffsetMm', () => {
-  it('returns 0 when the axis has no guides yet', () => {
-    expect(interpolateOffsetMm([], 'x', 0.5)).toBe(0)
-  })
-
-  it('interpolates the midpoint when inserted between two existing guides', () => {
-    const guides = [g('x0', 'x', 0, 0), g('x1', 'x', 1, 20000)]
-    expect(interpolateOffsetMm(guides, 'x', 0.5)).toBe(10000)
-  })
-
-  it('uses the sole upper neighbour\'s offset when inserted before the first guide', () => {
-    const guides = [g('x0', 'x', 0.3, 5000), g('x1', 'x', 1, 20000)]
-    expect(interpolateOffsetMm(guides, 'x', 0.1)).toBe(5000)
-  })
-
-  it('uses the sole lower neighbour\'s offset when appended after the last guide', () => {
-    const guides = [g('x0', 'x', 0, 0), g('x1', 'x', 0.7, 20000)]
-    expect(interpolateOffsetMm(guides, 'x', 0.9)).toBe(20000)
-  })
-
-  it('ignores guides on the other axis', () => {
-    const guides = [g('x0', 'x', 0, 0), g('x1', 'x', 1, 20000), g('y0', 'y', 0.4, 999999)]
-    expect(interpolateOffsetMm(guides, 'x', 0.5)).toBe(10000)
-  })
-
-  it('does not depend on array order, only on pos', () => {
-    // onGuideAdd appends to `guides` in click order, not pos order -- the
-    // real-use shape this exists to handle.
-    const shuffled = [g('x1', 'x', 1, 20000), g('x0', 'x', 0, 0)]
-    expect(interpolateOffsetMm(shuffled, 'x', 0.5)).toBe(10000)
-  })
-
-  it('keeps the mm chain monotonic and every resulting span positive when the guide lands between two real ones', () => {
-    // The concrete failure B3 exists to fix: a guide added at offsetMm 0
-    // between two guides carrying real, positive offsets breaks
-    // spansFromOffsets' pos-order monotonicity and produces a negative span --
-    // exactly A6's dragging defect, reached by adding rather than moving.
-    const guides = [
-      { axis: 'x' as const, pos: 0, offsetMm: 0 },
-      { axis: 'x' as const, pos: 1, offsetMm: 20000 },
-    ]
-    const newOffset = interpolateOffsetMm(guides, 'x', 0.5)
-    const withNewGuide = [...guides, { axis: 'x' as const, pos: 0.5, offsetMm: newOffset }]
-      .sort((a, b) => a.pos - b.pos)
-    const spans = spansFromOffsets(withNewGuide.map((wg) => wg.offsetMm))
-    for (const span of spans) expect(span).toBeGreaterThanOrEqual(0)
-    // Strictly positive here specifically: the new guide sits strictly between
-    // two DIFFERENT real offsets, so both spans it creates must be > 0, not
-    // merely >= 0 -- the weaker bound alone would not catch offsetMm: 0
-    // (the original bug) if the neighbours' offsets happened to be positive.
-    expect(spans[1]).toBeGreaterThan(0)
-    expect(spans[2]).toBeGreaterThan(0)
-  })
-})
-
-describe('deriveCellArea', () => {
-  it('multiplies real-world spans and converts mm² to m²', () => {
-    // 14500mm × 16000mm = 232 m²
-    expect(deriveCellArea(g('a', 'x', 0, 12000), g('b', 'x', 0, 26500), g('c', 'y', 0, 0), g('d', 'y', 0, 16000))).toBeCloseTo(232, 9)
-  })
-
-  it('is orientation-independent', () => {
-    const a = deriveCellArea(g('a', 'x', 0, 0), g('b', 'x', 0, 2500), g('c', 'y', 0, 0), g('d', 'y', 0, 16000))
-    const b = deriveCellArea(g('b', 'x', 0, 2500), g('a', 'x', 0, 0), g('d', 'y', 0, 16000), g('c', 'y', 0, 0))
-    expect(a).toBeCloseTo(b, 12)
-  })
-})
-
-describe('buildMeshFromGuides', () => {
-  it('produces one cell per interval pair', () => {
-    // 4 x-guides → 3 columns; 3 y-guides → 2 rows
-    expect(buildMeshFromGuides(MAIN_DECK_GUIDES)).toHaveLength(6)
-  })
-
-  it('names cells row-major with 1-based row and column', () => {
-    const codes = buildMeshFromGuides(MAIN_DECK_GUIDES).map((c) => c.code)
-    expect(codes).toEqual(['R1C1', 'R1C2', 'R1C3', 'R2C1', 'R2C2', 'R2C3'])
-  })
-
-  it('tiles the image with no gaps and no overlaps', () => {
-    const cells = buildMeshFromGuides(MAIN_DECK_GUIDES)
-    const covered = cells.reduce((sum, c) => sum + c.w * c.h, 0)
-    expect(covered).toBeCloseTo(1, 12)
-  })
-
-  it('derives each area from real-world spans', () => {
-    const cells = buildMeshFromGuides(MAIN_DECK_GUIDES)
-    // R1C3 spans 14500mm × 16000mm
-    expect(cells.find((c) => c.code === 'R1C3')!.areaM2).toBeCloseTo(232, 9)
-    // R2C1 spans 2500mm × 6200mm
-    expect(cells.find((c) => c.code === 'R2C1')!.areaM2).toBeCloseTo(15.5, 9)
-  })
-
-  it('sorts unordered guides before building', () => {
-    // Codes alone are a tautology here: they come from loop indices, so both
-    // sides read ['R1C1', 'R1C2', ...] regardless of input order -- even with
-    // the `.sort((a,b) => a.pos - b.pos)` inside buildMeshFromGuides deleted
-    // entirely. generateMesh passes guides in INSERTION order in real use,
-    // essentially never pre-sorted by pos, so without that sort `w` goes
-    // negative and `x` becomes the wrong edge while `areaM2` still comes out
-    // right (Math.abs in deriveCellArea) -- the mesh renders scrambled while
-    // every number on screen looks correct. Comparing whole cell objects is
-    // what actually depends on the sort running.
-    const shuffled = [...MAIN_DECK_GUIDES].reverse()
-    expect(buildMeshFromGuides(shuffled)).toEqual(buildMeshFromGuides(MAIN_DECK_GUIDES))
-  })
-
-  it('returns nothing when an axis has fewer than two guides', () => {
-    expect(buildMeshFromGuides([g('x0', 'x', 0, 0), g('y0', 'y', 0, 0)])).toEqual([])
-  })
-})
-
 describe('mergeCells', () => {
-  const cells = buildMeshFromGuides(MAIN_DECK_GUIDES)
+  const cells = MAIN_DECK_CELLS
   const byCode = (code: string) => cells.find((c) => c.code === code)!
 
   it('merges two horizontally adjacent cells into their bounding box', () => {

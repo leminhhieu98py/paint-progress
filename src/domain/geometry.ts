@@ -1,4 +1,4 @@
-import type { Guide, MeshCell } from './types'
+import type { MeshCell } from './types'
 
 /** Spec §3.4: the deck editor warns when cell areas diverge from the deck total by more than this. */
 export const AREA_DIVERGENCE_THRESHOLD = 0.05
@@ -25,160 +25,6 @@ export const AREA_DIVERGENCE_THRESHOLD = 0.05
 const EPSILON = 1e-5
 
 /**
- * The smallest distance two guides on the same axis can be apart and still be
- * distinguishable once stored: `deck_guides.pos` is `numeric(8,6)`
- * (0001_schema.sql:68), so anything closer collapses onto the same value and
- * the two guides' order becomes whatever the array happened to hold.
- */
-export const MIN_GUIDE_GAP = 1e-6
-
-/**
- * Spans between consecutive offsets. The first entry is the datum, span 0.
- *
- * The admin reads spans off the drawing ("this bay is 14500 wide"), but every
- * area calculation needs cumulative offsets, so the editor converts in both
- * directions on every keystroke. Both halves live here, next to
- * deriveCellArea, because a stale downstream offset is indistinguishable from
- * a correct one by eye and turns straight into a wrong m² figure.
- */
-export function spansFromOffsets(offsetsMm: number[]): number[] {
-  return offsetsMm.map((offsetMm, i) => (i === 0 ? 0 : offsetMm - offsetsMm[i - 1]))
-}
-
-/**
- * Offsets from a datum of offsetsMm[0], running-summing the spans.
- *
- * The inverse of spansFromOffsets, so it takes the same shape back:
- * `spansMm[0]` is the datum's own span and is ignored — the datum sits at
- * `datumMm`, whatever that is — and every later entry shifts itself and
- * everything after it. Editing one span therefore moves every offset
- * downstream of it and none upstream.
- */
-export function offsetsFromSpans(datumMm: number, spansMm: number[]): number[] {
-  let running = datumMm
-  return spansMm.map((spanMm, i) => {
-    if (i > 0) running += spanMm
-    return running
-  })
-}
-
-/**
- * Moves one guide to `pos`, clamped so it cannot cross either neighbour on its
- * own axis.
- *
- * A drag changes `pos` and leaves `offsetMm` alone -- the mm chain is what the
- * admin typed and has no business moving because a line was nudged. But every
- * area calculation reads the offsets in POS order, so the moment pos-order and
- * offset-order disagree, `spansFromOffsets` yields a negative span and
- * `deriveCellArea`'s `Math.abs` turns it into a perfectly normal-looking bay:
- * dragging the 4th vertical past the 5th on a real 7-guide chain produces a
- * -14500 mm span that computes to exactly 232 m², and inflates the deck's total
- * by about 50% with nothing on screen to say so.
- *
- * Clamping rather than rejecting: the admin's intent when they drag a line past
- * its neighbour is unambiguous (put it at the end of its own interval) and there
- * is nothing for them to decide, so an error message would only be noise. The
- * guide stops MIN_GUIDE_GAP short of the neighbour rather than on top of it --
- * two guides sharing a pos sort by array order, not by offset, which is the same
- * disagreement one step further down.
- *
- * Returns the array unchanged when the index is out of range, or when the
- * neighbours leave no room at all.
- */
-export function moveGuideClamped<T extends { axis: 'x' | 'y'; pos: number }>(
-  guides: T[],
-  index: number,
-  pos: number,
-): T[] {
-  const moving = guides[index]
-  if (!moving) return guides
-
-  const sorted = guides
-    .map((guide, i) => ({ guide, i }))
-    .filter((entry) => entry.guide.axis === moving.axis)
-    .sort((a, b) => a.guide.pos - b.guide.pos)
-  const at = sorted.findIndex((entry) => entry.i === index)
-
-  // No neighbour on a side means the drawing's own edge bounds it there.
-  const lower = at > 0 ? sorted[at - 1].guide.pos + MIN_GUIDE_GAP : 0
-  const upper = at < sorted.length - 1 ? sorted[at + 1].guide.pos - MIN_GUIDE_GAP : 1
-  if (upper < lower) return guides
-
-  const clamped = Math.min(upper, Math.max(lower, pos))
-  return guides.map((guide, i) => (i === index ? { ...guide, pos: clamped } : guide))
-}
-
-/**
- * The offset (mm) a freshly added guide should start at, so the mm chain
- * stays monotonic in pos order from the moment the guide exists.
- *
- * onGuideAdd used to always insert offsetMm: 0 regardless of where `pos` put
- * the new guide among its neighbours. Added anywhere but the very start,
- * that broke monotonicity the same way A6 found for dragging (see
- * moveGuideClamped): spansFromOffsets reads the chain in pos order, so a
- * guide added to the right of an existing, larger offset produced a negative
- * span there, and deriveCellArea's Math.abs rendered it as an ordinary-looking
- * bay -- reached through the other door.
- *
- * Interpolated as the midpoint of the guide's pos-order neighbours on its own
- * axis. With only one neighbour (inserted before the first real span, or
- * appended after the last), that neighbour's own offset is used -- there is
- * nothing to interpolate between yet, and matching it keeps the chain
- * non-decreasing rather than guessing at a real-world distance nobody has
- * typed. With no guides at all yet on this axis, 0 is returned, same as
- * before this fix.
- */
-export function interpolateOffsetMm(
-  guides: { axis: 'x' | 'y'; pos: number; offsetMm: number }[],
-  axis: 'x' | 'y',
-  pos: number,
-): number {
-  const sorted = guides.filter((g) => g.axis === axis).sort((a, b) => a.pos - b.pos)
-  const lower = [...sorted].reverse().find((g) => g.pos <= pos)
-  const upper = sorted.find((g) => g.pos >= pos)
-  if (lower && upper) return (lower.offsetMm + upper.offsetMm) / 2
-  if (lower) return lower.offsetMm
-  if (upper) return upper.offsetMm
-  return 0
-}
-
-/** Real-world area of the bay bounded by two x-guides and two y-guides, in m². */
-export function deriveCellArea(x1: Guide, x2: Guide, y1: Guide, y2: Guide): number {
-  const spanX = Math.abs(x2.offsetMm - x1.offsetMm)
-  const spanY = Math.abs(y2.offsetMm - y1.offsetMm)
-  return (spanX * spanY) / 1e6
-}
-
-/**
- * Generates the full mesh of bays at guide intersections.
- *
- * Rows and columns are numbered 1-based from the top-left of the image, so
- * codes read R1C1, R1C2, ... row-major. The admin renames cells afterwards if
- * the drawing's own grid labels are preferred.
- */
-export function buildMeshFromGuides(guides: Guide[]): MeshCell[] {
-  const xs = guides.filter((g) => g.axis === 'x').sort((a, b) => a.pos - b.pos)
-  const ys = guides.filter((g) => g.axis === 'y').sort((a, b) => a.pos - b.pos)
-
-  if (xs.length < 2 || ys.length < 2) return []
-
-  const cells: MeshCell[] = []
-  for (let r = 0; r < ys.length - 1; r++) {
-    for (let c = 0; c < xs.length - 1; c++) {
-      cells.push({
-        code: `R${r + 1}C${c + 1}`,
-        x: xs[c].pos,
-        y: ys[r].pos,
-        w: xs[c + 1].pos - xs[c].pos,
-        h: ys[r + 1].pos - ys[r].pos,
-        areaM2: deriveCellArea(xs[c], xs[c + 1], ys[r], ys[r + 1]),
-      })
-    }
-  }
-  return cells
-}
-
-/**
  * Collapses a selection into one cell spanning their bounding box.
  *
  * A selection is valid only if it tiles that bounding box completely. Three
@@ -191,7 +37,7 @@ export function buildMeshFromGuides(guides: Guide[]): MeshCell[] {
  * The area comparison alone is NOT sufficient. Overlap can mask a gap and
  * still balance the books: cells covering [0,0.4], [0.35,0.7], [0.7,0.9] and
  * [0.95,1.0] sum to exactly their bounding box while leaving a real hole at
- * (0.9,0.95). Cells from one buildMeshFromGuides call never overlap, so the
+ * (0.9,0.95). Cells from one detection pass never overlap, so the
  * area check would be enough for them — but MeshCell deliberately carries no
  * mesh provenance, so nothing here can verify that the caller respected it.
  * Checking overlap directly makes the guarantee hold for any input.

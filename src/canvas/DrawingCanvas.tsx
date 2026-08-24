@@ -1,11 +1,11 @@
 import { Button, Space } from 'antd'
 import Konva from 'konva'
 import { useEffect, useRef, useState } from 'react'
-import { Image as KonvaImage, Layer, Line, Rect, Stage, Text } from 'react-konva'
+import { Image as KonvaImage, Layer, Rect, Stage, Text } from 'react-konva'
 import useImage from 'use-image'
-import type { Guide, MeshCell } from '../domain/types'
+import type { MeshCell } from '../domain/types'
 import {
-  clampStagePan, clampZoom, cropFromDrag, GUIDE_HIT_WIDTH, guideHitProfile,
+  clampStagePan, clampZoom, cropFromDrag,
   MIN_ZOOM, WHEEL_ZOOM_STEP, ZOOM_STEP,
 } from './canvasView'
 
@@ -36,9 +36,9 @@ const SELECTION_STROKE = '#eb2f96'
 /**
  * The crop box's stroke — antd cyan-7, chosen the same way SELECTION_STROKE was:
  * it is outside the stage palette (yellow #fadb14, grey #bfbfbf, green #52c41a,
- * blue #1677ff, purple #722ed1), away from the guides' own blue, and away from
- * the cell grid's red border and the magenta selection cue. The crop is drawn
- * over a sheet that may already carry all of those at once.
+ * blue #1677ff, purple #722ed1), away from the cell grid's red border and the
+ * magenta selection cue. The crop is drawn over a sheet that may already carry
+ * all of those at once.
  */
 const CROP_STROKE = '#08979c'
 
@@ -58,23 +58,18 @@ export function DrawingCanvas({
   imageUrl,
   imageW,
   imageH,
-  guides,
   cells,
   selectedCodes,
   cellColors,
   planLabels,
   panZoom = false,
   cropRect,
-  onGuideMove,
-  onGuideAdd,
   onCellClick,
   onCropDraw,
-  onGuideClick,
 }: {
   imageUrl: string
   imageW: number
   imageH: number
-  guides: Omit<Guide, 'id'>[]
   cells: MeshCell[]
   selectedCodes: string[]
   /** Colour per cell code; a code absent from the map renders unfilled. */
@@ -87,9 +82,9 @@ export function DrawingCanvas({
   planLabels?: Record<string, string>
   /**
    * Pan by dragging, zoom by the buttons or the wheel. Off by default: the
-   * admin editor drags guides, and it has never had (or wanted) a viewport of
-   * its own. Spec §8.1 requires it for the GS screen, where the drawing is
-   * bigger than the tablet.
+   * admin editor has never had (or wanted) a viewport of its own. Spec §8.1
+   * requires it for the GS screen, where the drawing is bigger than the
+   * tablet.
    */
   panZoom?: boolean
   /**
@@ -98,8 +93,6 @@ export function DrawingCanvas({
    * in crop mode or out of it.
    */
   cropRect?: { x: number; y: number; w: number; h: number } | null
-  onGuideMove?: (index: number, pos: number) => void
-  onGuideAdd?: (axis: 'x' | 'y', pos: number) => void
   onCellClick?: (code: string, additive: boolean) => void
   /**
    * Present = crop mode: one drag on the drawing reports the region it
@@ -107,25 +100,11 @@ export function DrawingCanvas({
    * crop mode — so there is no way to be in the mode with nothing listening,
    * or to have a listener that the mode ignores.
    *
-   * While it is set, guides do not drag and cells do not select: on a detected
-   * deck a guide sits under the pointer almost everywhere, and grabbing one
-   * instead of drawing the box moves an mm-chain axis, which silently rewrites
-   * every cell area on the deck.
+   * While it is set, cells do not select: the box is drawn over the same
+   * pixels the cells occupy, so a drag that started on a cell would select it
+   * instead of drawing the region.
    */
   onCropDraw?: (rect: { x: number; y: number; w: number; h: number }) => void
-  /**
-   * Present = clicking a guide reports its index, so the screen above can
-   * delete it. Guides stop dragging while it is set: a click that moved a pixel
-   * would drag instead of delete, and a dragged guide rewrites the mm chain on
-   * its axis.
-   *
-   * This exists because no single sensitivity is right everywhere on a real
-   * deck -- secondary steel clears the bar a real beam needs, and the admin
-   * reported that no slider position satisfied the whole sheet. Being generous
-   * with the slider and clicking off the few wrong lines is the only way to
-   * reach the exact grid.
-   */
-  onGuideClick?: (index: number) => void
 }) {
   const [image] = useImage(imageUrl)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -164,37 +143,8 @@ export function DrawingCanvas({
   const scale = width / imageW
   const height = imageH * scale
   const selected = new Set(selectedCodes)
-  const xGuides = guides.filter((g) => g.axis === 'x')
-  const yGuides = guides.filter((g) => g.axis === 'y')
-
   /**
-   * How far along its own axis a guide is drawn: from the first to the last
-   * guide of the OTHER axis -- the deck's own extent, which is where the beams
-   * are.
-   *
-   * Not the crop. The crop is a box the admin dragged with a margin round the
-   * deck, and a line ruled out to it reads as a claim about the margin, the
-   * title block and whatever else the box caught. It is also exactly what the
-   * mesh covers: `buildMeshFromGuides` only ever makes cells BETWEEN guides, so
-   * clipping here draws the grid the cells actually form and nothing more.
-   *
-   * Falls back to the whole drawing while an axis has fewer than two guides,
-   * since there is no extent to speak of yet -- that is the state a fresh deck
-   * starts in, and a guide has to be visible for the admin to drag it.
-   */
-  const guideSpan = (axis: 'x' | 'y') => {
-    const across = axis === 'x' ? yGuides : xGuides
-    const extent = axis === 'x' ? height : width
-    if (across.length < 2) return { from: 0, to: extent }
-    const positions = across.map((g) => g.pos)
-    return { from: Math.min(...positions) * extent, to: Math.max(...positions) * extent }
-  }
-
-  /**
-   * Zoom is React state, pan is Konva's own. dragBoundFunc is bound per node, so
-   * the stage's clamp never sees a guide's drag — which is why there is no
-   * `onDragEnd` on the stage to tell the two apart (Konva events bubble; a
-   * guide's dragend would arrive there and be mistaken for a pan).
+   * Zoom is React state, pan is Konva's own.
    *
    * Changing the zoom can leave an existing pan outside the new bounds, and
    * Konva does not re-run dragBoundFunc on a scale change, so the position is
@@ -279,21 +229,6 @@ export function DrawingCanvas({
           e.evt.preventDefault()
           applyZoom(zoom + (e.evt.deltaY < 0 ? WHEEL_ZOOM_STEP : -WHEEL_ZOOM_STEP))
         }}
-        onDblClick={(e: Konva.KonvaEventObject<MouseEvent>) => {
-          if (!onGuideAdd) return
-          const point = e.target.getStage()?.getPointerPosition()
-          if (!point) return
-          // Double-click near an edge adds a guide on the axis you are closest to,
-          // which is how the admin starts a fresh mesh. On an exact tie (equally
-          // close to a vertical and a horizontal edge — the stage centre, or a
-          // perfect square drawing's midline crossing) the vertical guide wins:
-          // deck plans are read column-first (bay letters run along the top),
-          // so the first guide an admin adds is expected to be a vertical split.
-          const nearVertical = Math.min(point.x, width - point.x)
-          const nearHorizontal = Math.min(point.y, height - point.y)
-          if (nearVertical <= nearHorizontal) onGuideAdd('x', point.x / width)
-          else onGuideAdd('y', point.y / height)
-        }}
       >
         <Layer name="drawing-image">
           <KonvaImage name="deck-drawing" image={image} width={width} height={height} />
@@ -375,76 +310,6 @@ export function DrawingCanvas({
             ))}
         </Layer>
 
-        <Layer name="guides" listening={!cropping}>
-          {guides.map((guide, index) => (
-            <Line
-              key={`${guide.axis}-${index}`}
-              name={`guide-${guide.axis}-${index}`}
-              points={
-                guide.axis === 'x'
-                  ? [guide.pos * width, guideSpan('x').from, guide.pos * width, guideSpan('x').to]
-                  : [guideSpan('y').from, guide.pos * height, guideSpan('y').to, guide.pos * height]
-              }
-              stroke="#1677ff"
-              strokeWidth={2}
-              /**
-               * A 14 px grab band that tapers to nothing at every crossing, so a
-               * pointer near an intersection belongs to whichever guide's line is
-               * nearer — see guideHitProfile for why that is the rule.
-               *
-               * hitStrokeWidth is deliberately NOT set alongside this. Konva's
-               * drawHit uses `hitFunc() || sceneFunc()` (konva/lib/Shape.js), so
-               * with a hitFunc present a hitStrokeWidth is dead configuration
-               * that reads like the thing doing the work.
-               */
-              hitFunc={(ctx: Konva.Context, shape: Konva.Shape) => {
-                // Measured from the drawn line's own start, not from the stage's
-                // edge: a clipped guide's grab band has to sit on the part of
-                // the line that exists.
-                const span = guideSpan(guide.axis)
-                const perpendicular =
-                  guide.axis === 'x' ? guide.pos * width : guide.pos * height
-                const crossings = (guide.axis === 'x' ? yGuides : xGuides)
-                  .map((g) => (guide.axis === 'x' ? g.pos * height : g.pos * width) - span.from)
-                const profile = guideHitProfile(span.to - span.from, crossings, GUIDE_HIT_WIDTH / 2)
-                if (profile.length < 2) return
-
-                // One polygon: down the +offset side of the profile, back up the
-                // -offset side. Where the profile pinches to zero the two sides
-                // meet at a point, joining two lobes that a nonzero-winding fill
-                // paints as two regions — which is exactly the intended shape.
-                const lineTo = (at: number, offset: number) => {
-                  if (guide.axis === 'x') ctx.lineTo(perpendicular + offset, span.from + at)
-                  else ctx.lineTo(span.from + at, perpendicular + offset)
-                }
-                ctx.beginPath()
-                if (guide.axis === 'x') {
-                  ctx.moveTo(perpendicular + profile[0][1], span.from + profile[0][0])
-                } else {
-                  ctx.moveTo(span.from + profile[0][0], perpendicular + profile[0][1])
-                }
-                for (const [at, halfWidth] of profile.slice(1)) lineTo(at, halfWidth)
-                for (const [at, halfWidth] of [...profile].reverse()) lineTo(at, -halfWidth)
-                ctx.closePath()
-                ctx.fillStrokeShape(shape)
-              }}
-              draggable={Boolean(onGuideMove) && !cropping && !onGuideClick}
-              onClick={() => onGuideClick?.(index)}
-              onTap={() => onGuideClick?.(index)}
-              dragBoundFunc={(p) => (guide.axis === 'x' ? { x: p.x, y: 0 } : { x: 0, y: p.y })}
-              onDragEnd={(e: Konva.KonvaEventObject<DragEvent>) => {
-                if (!onGuideMove) return
-                const node = e.target
-                const next =
-                  guide.axis === 'x'
-                    ? (guide.pos * width + node.x()) / width
-                    : (guide.pos * height + node.y()) / height
-                node.position({ x: 0, y: 0 })
-                onGuideMove(index, Math.min(1, Math.max(0, next)))
-              }}
-            />
-          ))}
-        </Layer>
 
         {/*
           Above every other layer and out of the hit graph: it is a cue, not a

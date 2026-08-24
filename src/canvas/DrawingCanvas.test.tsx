@@ -162,16 +162,10 @@ beforeEach(() => {
 })
 
 describe('DrawingCanvas', () => {
-  it('renders one line per guide', () => {
-    render(
-      <DrawingCanvas imageUrl="u" imageW={2000} imageH={1600} guides={guides} cells={[]} selectedCodes={[]} />,
-    )
-    expect(screen.getAllByTestId(/^line:guide-/)).toHaveLength(5)
-  })
 
   it('renders one rect per cell', () => {
     render(
-      <DrawingCanvas imageUrl="u" imageW={2000} imageH={1600} guides={guides} cells={cells} selectedCodes={[]} />,
+      <DrawingCanvas imageUrl="u" imageW={2000} imageH={1600} cells={cells} selectedCodes={[]} />,
     )
     expect(screen.getByTestId('rect:cell-R1C1')).toBeInTheDocument()
     expect(screen.getByTestId('rect:cell-R1C2')).toBeInTheDocument()
@@ -180,7 +174,7 @@ describe('DrawingCanvas', () => {
   it('fills a cell with its assigned colour', () => {
     render(
       <DrawingCanvas
-        imageUrl="u" imageW={2000} imageH={1600} guides={guides} cells={cells}
+        imageUrl="u" imageW={2000} imageH={1600} cells={cells}
         selectedCodes={[]} cellColors={{ R1C1: '#52c41a' }}
       />,
     )
@@ -190,7 +184,7 @@ describe('DrawingCanvas', () => {
   it('renders a coloured cell at partial opacity so the drawing stays visible underneath', () => {
     render(
       <DrawingCanvas
-        imageUrl="u" imageW={2000} imageH={1600} guides={guides} cells={cells}
+        imageUrl="u" imageW={2000} imageH={1600} cells={cells}
         selectedCodes={[]} cellColors={{ R1C1: '#52c41a' }}
       />,
     )
@@ -201,7 +195,7 @@ describe('DrawingCanvas', () => {
 
   it('renders an unfilled cell at full opacity', () => {
     render(
-      <DrawingCanvas imageUrl="u" imageW={2000} imageH={1600} guides={guides} cells={cells} selectedCodes={[]} />,
+      <DrawingCanvas imageUrl="u" imageW={2000} imageH={1600} cells={cells} selectedCodes={[]} />,
     )
     expect(screen.getByTestId('rect:cell-R1C1')).toHaveAttribute('data-opacity', '1')
   })
@@ -209,7 +203,7 @@ describe('DrawingCanvas', () => {
   it('keeps a selected cell\'s own stage colour and adds a selection overlay', () => {
     render(
       <DrawingCanvas
-        imageUrl="u" imageW={2000} imageH={1600} guides={guides} cells={cells} selectedCodes={['R1C1']}
+        imageUrl="u" imageW={2000} imageH={1600} cells={cells} selectedCodes={['R1C1']}
         cellColors={{ R1C1: '#52c41a' }}
       />,
     )
@@ -226,7 +220,7 @@ describe('DrawingCanvas', () => {
     const onCellClick = vi.fn()
     render(
       <DrawingCanvas
-        imageUrl="u" imageW={2000} imageH={1600} guides={guides} cells={cells}
+        imageUrl="u" imageW={2000} imageH={1600} cells={cells}
         selectedCodes={[]} onCellClick={onCellClick}
       />,
     )
@@ -242,7 +236,7 @@ describe('DrawingCanvas', () => {
     const onCellClick = vi.fn()
     render(
       <DrawingCanvas
-        imageUrl="u" imageW={2000} imageH={1600} guides={guides} cells={cells}
+        imageUrl="u" imageW={2000} imageH={1600} cells={cells}
         selectedCodes={[]} onCellClick={onCellClick}
       />,
     )
@@ -253,7 +247,7 @@ describe('DrawingCanvas', () => {
   it('scales normalized coordinates to the rendered width', () => {
     render(
       <DrawingCanvas
-        imageUrl="u" imageW={2000} imageH={1600} guides={guides} cells={cells}
+        imageUrl="u" imageW={2000} imageH={1600} cells={cells}
         selectedCodes={[]}
       />,
     )
@@ -268,7 +262,7 @@ describe('DrawingCanvas', () => {
     const cellsWithVerticalOffset = [{ code: 'R2C1', x: 0, y: 0.5, w: 1, h: 0.5, areaM2: 320 }]
     render(
       <DrawingCanvas
-        imageUrl="u" imageW={2000} imageH={1600} guides={guides} cells={cellsWithVerticalOffset}
+        imageUrl="u" imageW={2000} imageH={1600} cells={cellsWithVerticalOffset}
         selectedCodes={[]}
       />,
     )
@@ -276,126 +270,7 @@ describe('DrawingCanvas', () => {
     expect(screen.getByTestId('rect:cell-R2C1')).toHaveAttribute('data-y', '360')
   })
 
-  describe('double-click axis tie-break', () => {
-    // A square drawing (imageW === imageH) makes the rendered stage square
-    // too (900x900, the fixed stage width): the vertical-edge distance and
-    // horizontal-edge distance are directly comparable in the same units, so
-    // the boundary can be pinned exactly. Click coordinates below are 0.9x
-    // what they would be against a 1000-wide stage, so the resulting
-    // fractions land on the same clean 0.1 / 0.5 values either way.
-    const renderSquareStage = (onGuideAdd: (axis: 'x' | 'y', pos: number) => void) =>
-      render(
-        <DrawingCanvas
-          imageUrl="u" imageW={1000} imageH={1000} guides={[]} cells={[]}
-          selectedCodes={[]} onGuideAdd={onGuideAdd}
-        />,
-      )
 
-    it('adds a vertical guide when strictly closer to a vertical edge', () => {
-      const onGuideAdd = vi.fn()
-      renderSquareStage(onGuideAdd)
-      // (90, 450): 90 from the left edge vs. 450 from the top — vertical wins.
-      fireEvent.doubleClick(screen.getByTestId('stage:drawing'), { clientX: 90, clientY: 450 })
-      expect(onGuideAdd).toHaveBeenCalledWith('x', 0.1)
-    })
-
-    it('adds a horizontal guide when strictly closer to a horizontal edge', () => {
-      const onGuideAdd = vi.fn()
-      renderSquareStage(onGuideAdd)
-      // (450, 90): 450 from the left edge vs. 90 from the top — horizontal wins.
-      fireEvent.doubleClick(screen.getByTestId('stage:drawing'), { clientX: 450, clientY: 90 })
-      expect(onGuideAdd).toHaveBeenCalledWith('y', 0.1)
-    })
-
-    it('breaks an exact tie in favour of the vertical (x) axis', () => {
-      const onGuideAdd = vi.fn()
-      renderSquareStage(onGuideAdd)
-      // (450, 450): equidistant from both a vertical and a horizontal edge on
-      // a 900-wide stage. This is the boundary itself -- if the comparison
-      // flipped from `<=` to `<`, this assertion would fail and 'y' would
-      // win instead.
-      fireEvent.doubleClick(screen.getByTestId('stage:drawing'), { clientX: 450, clientY: 450 })
-      expect(onGuideAdd).toHaveBeenCalledWith('x', 0.5)
-    })
-  })
-
-  describe('guide drag clamp', () => {
-    // imageW === imageH keeps height === width (900, the fixed stage width),
-    // so the pixel/normalized math is 1:1 on this square stage.
-    const renderWithGuide = (onGuideMove: (index: number, pos: number) => void, pos: number) =>
-      render(
-        <DrawingCanvas
-          imageUrl="u" imageW={1000} imageH={1000}
-          guides={[{ axis: 'x' as const, pos, offsetMm: 0 }]} cells={[]}
-          selectedCodes={[]} onGuideMove={onGuideMove}
-        />,
-      )
-
-    it('clamps a drag that would push the guide past 1 back to 1', () => {
-      const onGuideMove = vi.fn()
-      renderWithGuide(onGuideMove, 0.9)
-      // (0.9 * 900 + 450) / 900 = 1.4 — past the top of the 0..1 range.
-      fireEvent.mouseUp(screen.getByTestId('line:guide-x-0'), { clientX: 450, clientY: 0 })
-      expect(onGuideMove).toHaveBeenCalledWith(0, 1)
-    })
-
-    it('clamps a drag that would push the guide past 0 back to 0', () => {
-      const onGuideMove = vi.fn()
-      renderWithGuide(onGuideMove, 0.1)
-      // (0.1 * 900 + -450) / 900 = -0.4 — past the bottom of the 0..1 range.
-      fireEvent.mouseUp(screen.getByTestId('line:guide-x-0'), { clientX: -450, clientY: 0 })
-      expect(onGuideMove).toHaveBeenCalledWith(0, 0)
-    })
-
-    it('reports an in-range drag unclamped', () => {
-      const onGuideMove = vi.fn()
-      renderWithGuide(onGuideMove, 0.5)
-      // (0.5 * 900 + 90) / 900 = 0.6 — safely inside 0..1.
-      fireEvent.mouseUp(screen.getByTestId('line:guide-x-0'), { clientX: 90, clientY: 0 })
-      expect(onGuideMove).toHaveBeenCalledWith(0, 0.6)
-    })
-
-    it('resets the dragged node so offsets do not accumulate across drags', () => {
-      // Konva does not revert a dragged node's position on its own. Without
-      // this reset, drag N's leftover offset gets added again in drag N+1 --
-      // the guide drifts by the accumulated delta every time, silently
-      // changing every cell area derived from it (guides determine cell
-      // areas, and cell areas determine every reported percentage).
-      const onGuideMove = vi.fn()
-      renderWithGuide(onGuideMove, 0.5)
-      fireEvent.mouseUp(screen.getByTestId('line:guide-x-0'), { clientX: 90, clientY: 0 })
-      expect(positionSpy).toHaveBeenCalledWith({ x: 0, y: 0 })
-    })
-
-    it('does not let a second drag compound the first drag\'s leftover offset', () => {
-      const onGuideMove = vi.fn()
-      const { rerender } = renderWithGuide(onGuideMove, 0.5)
-
-      // First drag: pointer moves +90px. (0.5 * 900 + 90) / 900 = 0.6.
-      fireEvent.mouseUp(screen.getByTestId('line:guide-x-0'), { clientX: 90, clientY: 0 })
-      expect(onGuideMove).toHaveBeenNthCalledWith(1, 0, 0.6)
-
-      // The real consumer (Task 8's DeckEditor) applies that update and
-      // re-renders with the guide at its new position -- simulate that.
-      rerender(
-        <DrawingCanvas
-          imageUrl="u" imageW={1000} imageH={1000}
-          guides={[{ axis: 'x' as const, pos: 0.6, offsetMm: 0 }]} cells={[]}
-          selectedCodes={[]} onGuideMove={onGuideMove}
-        />,
-      )
-
-      // Second drag: pointer moves +90px again -- the same size step as the
-      // first. The second reported position must be exactly one more step
-      // past the first (0.7), not further from it than the first step was
-      // from the start (0.6 -> 0.7 is a 0.1 step, same as 0.5 -> 0.6). If the
-      // reset above were missing, the first drag's leftover 90px would still
-      // be sitting on the node, and this would report 0.8 instead -- the
-      // guide drifting by twice the intended step.
-      fireEvent.mouseUp(screen.getByTestId('line:guide-x-0'), { clientX: 90, clientY: 0 })
-      expect(onGuideMove).toHaveBeenNthCalledWith(2, 0, 0.7)
-    })
-  })
 
   describe('container sizing', () => {
     // jsdom reports clientWidth 0 for every element and implements no
@@ -429,7 +304,7 @@ describe('DrawingCanvas', () => {
       stubClientWidth(640)
       render(
         <DrawingCanvas
-          imageUrl="u" imageW={2000} imageH={1600} guides={guides} cells={cells}
+          imageUrl="u" imageW={2000} imageH={1600} cells={cells}
           selectedCodes={[]}
         />,
       )
@@ -440,7 +315,7 @@ describe('DrawingCanvas', () => {
       stubClientWidth(640)
       render(
         <DrawingCanvas
-          imageUrl="u" imageW={2000} imageH={1600} guides={guides} cells={cells}
+          imageUrl="u" imageW={2000} imageH={1600} cells={cells}
           selectedCodes={[]}
         />,
       )
@@ -467,7 +342,7 @@ describe('DrawingCanvas', () => {
       stubClientWidth(640)
       render(
         <DrawingCanvas
-          imageUrl="u" imageW={2000} imageH={1600} guides={guides} cells={cells}
+          imageUrl="u" imageW={2000} imageH={1600} cells={cells}
           selectedCodes={[]}
         />,
       )
@@ -487,7 +362,7 @@ describe('DrawingCanvas', () => {
       // rather than left implicit.
       render(
         <DrawingCanvas
-          imageUrl="u" imageW={2000} imageH={1600} guides={guides} cells={cells}
+          imageUrl="u" imageW={2000} imageH={1600} cells={cells}
           selectedCodes={[]}
         />,
       )
@@ -495,30 +370,12 @@ describe('DrawingCanvas', () => {
     })
   })
 
-  describe('guide grab target', () => {
-    it('gives every guide a custom hit area', () => {
-      // jsdom has no canvas, so the hitFunc cannot be executed here; the
-      // geometry it paints is asserted directly on guideHitProfile in
-      // canvasView.test.ts. What this catches is the hitFunc being dropped from
-      // the Line entirely, which returns the grab target to the 2 px stroke the
-      // browser session found unusable and hands intersections back to z-order.
-      render(
-        <DrawingCanvas
-          imageUrl="u" imageW={2000} imageH={1600} guides={guides} cells={cells}
-          selectedCodes={[]}
-          onGuideMove={() => {}}
-        />,
-      )
-      expect(screen.getByTestId('line:guide-x-1')).toHaveAttribute('data-hashitfunc', 'true')
-      expect(screen.getByTestId('line:guide-y-3')).toHaveAttribute('data-hashitfunc', 'true')
-    })
-  })
 
   describe('pan and zoom', () => {
     it('is off unless asked for, so the admin editor is unchanged', () => {
       render(
         <DrawingCanvas
-          imageUrl="u" imageW={2000} imageH={1600} guides={guides} cells={cells}
+          imageUrl="u" imageW={2000} imageH={1600} cells={cells}
           selectedCodes={[]}
         />,
       )
@@ -529,7 +386,7 @@ describe('DrawingCanvas', () => {
     it('makes the stage draggable and offers zoom controls when enabled', () => {
       render(
         <DrawingCanvas
-          imageUrl="u" imageW={2000} imageH={1600} guides={guides} cells={cells}
+          imageUrl="u" imageW={2000} imageH={1600} cells={cells}
           selectedCodes={[]} panZoom
         />,
       )
@@ -542,7 +399,7 @@ describe('DrawingCanvas', () => {
     it('zooms in by one step per press and caps at the maximum', async () => {
       render(
         <DrawingCanvas
-          imageUrl="u" imageW={2000} imageH={1600} guides={guides} cells={cells}
+          imageUrl="u" imageW={2000} imageH={1600} cells={cells}
           selectedCodes={[]} panZoom
         />,
       )
@@ -561,7 +418,7 @@ describe('DrawingCanvas', () => {
     it('will not zoom out below fit-to-container', async () => {
       render(
         <DrawingCanvas
-          imageUrl="u" imageW={2000} imageH={1600} guides={guides} cells={cells}
+          imageUrl="u" imageW={2000} imageH={1600} cells={cells}
           selectedCodes={[]} panZoom
         />,
       )
@@ -572,7 +429,7 @@ describe('DrawingCanvas', () => {
     it('returns to fit-to-container', async () => {
       render(
         <DrawingCanvas
-          imageUrl="u" imageW={2000} imageH={1600} guides={guides} cells={cells}
+          imageUrl="u" imageW={2000} imageH={1600} cells={cells}
           selectedCodes={[]} panZoom
         />,
       )
@@ -590,7 +447,7 @@ describe('DrawingCanvas', () => {
       // tests use, so the boundary below is directly comparable to them.
       render(
         <DrawingCanvas
-          imageUrl="u" imageW={2000} imageH={1600} guides={guides} cells={cells}
+          imageUrl="u" imageW={2000} imageH={1600} cells={cells}
           selectedCodes={[]} panZoom
         />,
       )
@@ -618,7 +475,7 @@ describe('DrawingCanvas', () => {
     it('zooms in on wheel-up by the finer wheel step', () => {
       render(
         <DrawingCanvas
-          imageUrl="u" imageW={2000} imageH={1600} guides={guides} cells={cells}
+          imageUrl="u" imageW={2000} imageH={1600} cells={cells}
           selectedCodes={[]} panZoom
         />,
       )
@@ -631,7 +488,7 @@ describe('DrawingCanvas', () => {
     it('is a no-op on wheel-down at the minimum zoom, not a drift past it', () => {
       render(
         <DrawingCanvas
-          imageUrl="u" imageW={2000} imageH={1600} guides={guides} cells={cells}
+          imageUrl="u" imageW={2000} imageH={1600} cells={cells}
           selectedCodes={[]} panZoom
         />,
       )
@@ -648,7 +505,7 @@ describe('DrawingCanvas', () => {
     it('is a no-op on wheel-up at the maximum zoom, not a drift past it', () => {
       render(
         <DrawingCanvas
-          imageUrl="u" imageW={2000} imageH={1600} guides={guides} cells={cells}
+          imageUrl="u" imageW={2000} imageH={1600} cells={cells}
           selectedCodes={[]} panZoom
         />,
       )
@@ -662,7 +519,7 @@ describe('DrawingCanvas', () => {
     it('ignores the wheel entirely when pan/zoom is off, so admin scrolling is unaffected', () => {
       render(
         <DrawingCanvas
-          imageUrl="u" imageW={2000} imageH={1600} guides={guides} cells={cells}
+          imageUrl="u" imageW={2000} imageH={1600} cells={cells}
           selectedCodes={[]}
         />,
       )
@@ -675,7 +532,7 @@ describe('DrawingCanvas', () => {
     it('draws a dashed outline and the date range on a planned cell', () => {
       render(
         <DrawingCanvas
-          imageUrl="u" imageW={2000} imageH={1600} guides={guides} cells={cells}
+          imageUrl="u" imageW={2000} imageH={1600} cells={cells}
           selectedCodes={[]}
           planLabels={{ R1C1: '13/08 – 19/08' }}
         />,
@@ -689,7 +546,7 @@ describe('DrawingCanvas', () => {
       // would annotate the whole drawing as planned.
       render(
         <DrawingCanvas
-          imageUrl="u" imageW={2000} imageH={1600} guides={guides} cells={cells}
+          imageUrl="u" imageW={2000} imageH={1600} cells={cells}
           selectedCodes={[]}
           planLabels={{ R1C1: '13/08 – 19/08' }}
         />,
@@ -700,7 +557,7 @@ describe('DrawingCanvas', () => {
     it('draws no overlay at all when no plan is supplied', () => {
       render(
         <DrawingCanvas
-          imageUrl="u" imageW={2000} imageH={1600} guides={guides} cells={cells}
+          imageUrl="u" imageW={2000} imageH={1600} cells={cells}
           selectedCodes={[]}
         />,
       )
@@ -722,7 +579,7 @@ describe('DrawingCanvas', () => {
         imageUrl="i.png"
         imageW={100}
         imageH={100}
-        guides={[]}
+       
         cells={[{ code: 'R1C1', x: 0, y: 0, w: 1, h: 1, areaM2: 10 }]}
         selectedCodes={['R1C1']}
         planLabels={{ R1C1: '13/08 – 19/08' }}
@@ -749,73 +606,11 @@ describe('DrawingCanvas', () => {
       expect(region).toHaveAttribute('data-height', '360')
     })
 
-    it('draws guides across the whole drawing while the mesh has no extent yet', () => {
-      // guides here run 0..1 on both axes, so the extent IS the drawing.
-      render(<DrawingCanvas {...cropProps} />)
-      // x-guide at pos 0.5 on a 900x720 stage.
-      expect(screen.getByTestId('line:guide-x-1')).toHaveAttribute('data-points', '450,0,450,720')
-    })
 
-    it('clips a guide to the deck, not to the crop the admin dragged', () => {
-      // The crop is a box with a margin round the deck; a line ruled out to it
-      // claims the margin and the title block. The deck is where the beams are:
-      // x 0.2..0.8 and y 0.25..0.75 here, which on a 900x720 stage is
-      // x 180..720 and y 180..540. The crop is deliberately WIDER than all of
-      // it, so a line still reaching the crop edge is visible as a failure.
-      render(
-        <DrawingCanvas
-          {...cropProps}
-          guides={[
-            { axis: 'x', pos: 0.2, offsetMm: 0 },
-            { axis: 'x', pos: 0.5, offsetMm: 9000 },
-            { axis: 'x', pos: 0.8, offsetMm: 18000 },
-            { axis: 'y', pos: 0.25, offsetMm: 0 },
-            { axis: 'y', pos: 0.75, offsetMm: 16000 },
-          ]}
-          cropRect={{ x: 0.05, y: 0.05, w: 0.9, h: 0.9 }}
-        />,
-      )
-      expect(screen.getByTestId('line:guide-x-1')).toHaveAttribute('data-points', '450,180,450,540')
-      expect(screen.getByTestId('line:guide-y-3')).toHaveAttribute('data-points', '180,180,720,180')
-    })
 
-    it('deletes the guide that was clicked, when line-deleting is on', () => {
-      // No slider setting is right everywhere on a real deck -- secondary steel
-      // clears the bar that a real beam needs. Being generous with the slider
-      // and then clicking off the wrong lines is the only way to get the exact
-      // grid, and this is that click.
-      const onGuideClick = vi.fn()
-      render(<DrawingCanvas {...cropProps} onGuideMove={vi.fn()} onGuideClick={onGuideClick} />)
-      fireEvent.click(screen.getByTestId('line:guide-x-1'))
-      expect(onGuideClick).toHaveBeenCalledWith(1)
-    })
 
-    it('stops guides being draggable while line-deleting is on', () => {
-      // A click that moved a pixel would drag the guide instead of deleting it,
-      // and a dragged guide silently rewrites the mm chain on that axis.
-      render(<DrawingCanvas {...cropProps} onGuideMove={vi.fn()} onGuideClick={vi.fn()} />)
-      expect(screen.getByTestId('line:guide-x-1')).toHaveAttribute('data-draggable', 'false')
-    })
 
-    it('does not delete a guide when line-deleting is off', () => {
-      render(<DrawingCanvas {...cropProps} onGuideMove={vi.fn()} />)
-      expect(screen.getByTestId('line:guide-x-1')).toHaveAttribute('data-draggable', 'true')
-    })
 
-    it('draws the very first guide on a deck that has no other axis yet', () => {
-      // A fresh deck: one guide, nothing across it. There is no extent to clip
-      // to, and a guide has to be visible for the admin to drag it -- an empty
-      // axis reduced to Math.min() of nothing puts the endpoints at Infinity and
-      // the line disappears.
-      render(
-        <DrawingCanvas
-          {...cropProps}
-          guides={[{ axis: 'x', pos: 0.5, offsetMm: 0 }]}
-          cells={[]}
-        />,
-      )
-      expect(screen.getByTestId('line:guide-x-0')).toHaveAttribute('data-points', '450,0,450,720')
-    })
 
     it('draws no crop region when there is none', () => {
       render(<DrawingCanvas {...cropProps} />)
@@ -888,18 +683,7 @@ describe('DrawingCanvas', () => {
       expect(onCropDraw).not.toHaveBeenCalled()
     })
 
-    it('stops guides being draggable while a crop is being drawn', () => {
-      // A guide sits under the pointer everywhere on a detected deck; grabbing
-      // one instead of drawing the box would move a mm-chain axis, which
-      // silently rewrites every cell area.
-      render(<DrawingCanvas {...cropProps} onGuideMove={vi.fn()} onCropDraw={vi.fn()} />)
-      expect(screen.getByTestId('line:guide-x-0')).toHaveAttribute('data-draggable', 'false')
-    })
 
-    it('leaves guides draggable when no crop is being drawn', () => {
-      render(<DrawingCanvas {...cropProps} onGuideMove={vi.fn()} />)
-      expect(screen.getByTestId('line:guide-x-0')).toHaveAttribute('data-draggable', 'true')
-    })
 
     it('does not select a cell with the gesture that drew the crop', () => {
       const onCellClick = vi.fn()

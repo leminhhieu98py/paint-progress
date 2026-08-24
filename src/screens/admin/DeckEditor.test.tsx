@@ -1,12 +1,10 @@
 import { App as AntApp } from 'antd'
 import type { ComponentProps } from 'react'
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { DeckEditor, mergeErrorInVietnamese } from './DeckEditor'
 
-const listGuides = vi.hoisted(() => vi.fn())
-const saveGuides = vi.hoisted(() => vi.fn())
 const listCells = vi.hoisted(() => vi.fn())
 const syncCells = vi.hoisted(() => vi.fn())
 const zoneImpactOf = vi.hoisted(() => vi.fn())
@@ -28,8 +26,6 @@ vi.mock('../../canvas/rgbFromImage', () => ({
     detectBaysFromImage(url, region, options),
 }))
 vi.mock('../../lib/decksApi', () => ({
-  listGuides: (d: string) => listGuides(d),
-  saveGuides: (d: string, g: unknown) => saveGuides(d, g),
   listCells: (d: string) => listCells(d),
   // All three arguments, on both sides. A forwarder that drops the third one
   // makes every assertion about inheritFrom vacuous -- it would read
@@ -49,17 +45,13 @@ vi.mock('../../lib/projectsApi', () => ({
 // survivor's identity can be got wrong.
 vi.mock('../../canvas/DrawingCanvas', () => ({
   DrawingCanvas: ({
-    cells, guides, onCellClick, onGuideMove, onGuideAdd, cellColors, cropRect, onCropDraw, onGuideClick,
+    cells, onCellClick, cellColors, cropRect, onCropDraw,
   }: {
     cells: { code: string; x: number; w: number }[]
-    guides: { id: string; axis: 'x' | 'y'; pos: number; offsetMm: number }[]
     onCellClick?: (code: string, additive: boolean) => void
-    onGuideMove?: (index: number, pos: number) => void
-    onGuideAdd?: (axis: 'x' | 'y', pos: number) => void
     cellColors?: Record<string, string>
     cropRect?: { x: number; y: number; w: number; h: number } | null
     onCropDraw?: (rect: { x: number; y: number; w: number; h: number }) => void
-    onGuideClick?: (index: number) => void
   }) => (
     <div data-testid="canvas">
       {/*
@@ -79,9 +71,6 @@ vi.mock('../../canvas/DrawingCanvas', () => ({
         Present only when guide-clicking is armed, for the same reason as the
         crop button above: the mode is observable ONLY as this button existing.
       */}
-      {onGuideClick && guides.map((_g, i) => (
-        <button key={`del-${i}`} onClick={() => onGuideClick(i)}>bấm xoá đường {i}</button>
-      ))}
       <div data-testid="crop">{cropRect ? JSON.stringify(cropRect) : ''}</div>
       {/*
         Cell geometry, not just codes: a merge across an undrawn beam and a drop
@@ -102,43 +91,6 @@ vi.mock('../../canvas/DrawingCanvas', () => ({
           chọn {c.code}
         </button>
       ))}
-      {/*
-        The screen never renders a guide's raw pos anywhere -- only mm derived
-        from it -- so re-rail tests (which assert exact POSITIONS, not just
-        "moved") have nothing else to read. Exact array order and shape as
-        passed to DrawingCanvas, so a test can index it the same way the
-        fixture below built `guides`.
-      */}
-      <div data-testid="guides">{JSON.stringify(guides)}</div>
-      {/*
-        One drag per guide, all to the same far-right target, standing in for
-        the real Konva drag. 0.99 is past every interior guide in the fixtures
-        below, which is the whole point: a drag that crosses a neighbour is the
-        case that used to produce a negative mm span.
-      */}
-      {guides.map((_g, i) => (
-        <button key={`drag-${i}`} onClick={() => onGuideMove?.(i, 0.99)}>
-          kéo guide {i}
-        </button>
-      ))}
-      {/*
-        Two more fixed targets, standing in for a drag that lands short of the
-        far edge -- 0.99 above only ever exercises "past every neighbour",
-        which cannot tell a re-rail test whether interior guides landed on the
-        right RATIO rather than merely "somewhere that increased".
-      */}
-      {guides.map((_g, i) => (
-        <button key={`drag80-${i}`} onClick={() => onGuideMove?.(i, 0.8)}>
-          kéo guide {i} tới 0.8
-        </button>
-      ))}
-      {guides.map((_g, i) => (
-        <button key={`drag20-${i}`} onClick={() => onGuideMove?.(i, 0.2)}>
-          kéo guide {i} tới 0.2
-        </button>
-      ))}
-      {/* Stands in for a double-click adding a guide midway across the axis. */}
-      <button onClick={() => onGuideAdd?.('x', 0.5)}>thêm guide x giữa</button>
     </div>
   ),
 }))
@@ -149,7 +101,7 @@ vi.mock('../../lib/pdfToPng', () => ({
 const deck = {
   id: 'd1', projectId: 'p1', seq: 1, name: 'Main Deck', code: 'MD',
   imagePath: 'p1/d1.png', imageW: 2000, imageH: 1600,
-  totalAreaM2: 5258.5, areaSource: 'guides' as const, cellCount: 0,
+  totalAreaM2: 5258.5, areaSource: 'prorated' as const, cellCount: 0,
 }
 
 /**
@@ -163,13 +115,6 @@ const deck = {
 const listItem = (text: string) => (_content: string, el: Element | null) =>
   el?.tagName === 'LI' && el.textContent === text
 
-/** Two x-guides 14500mm apart and two y-guides 16000mm apart = one 232 m² bay. */
-const ONE_BAY_GUIDES = [
-  { id: 'g1', axis: 'x', pos: 0, offsetMm: 0 },
-  { id: 'g2', axis: 'x', pos: 1, offsetMm: 14500 },
-  { id: 'g3', axis: 'y', pos: 0, offsetMm: 0 },
-  { id: 'g4', axis: 'y', pos: 1, offsetMm: 16000 },
-]
 
 /**
  * Mounts the editor the way src/App.tsx does. Not optional: the screen reports
@@ -185,37 +130,34 @@ const renderInApp = (deckProp: ComponentProps<typeof DeckEditor>['deck']) =>
     </AntApp>,
   )
 
+/**
+ * Puts one full-deck bay on screen the way the admin gets cells now: drag a box
+ * over the deck, then detect. Replaces the ONE_BAY_GUIDES + "Sinh lưới ô" idiom
+ * these tests used before the guide workflow was removed. The bay covers the
+ * whole region, so pro-rating hands it the entire declared deck area.
+ */
+const detectOneBay = async () => {
+  detectBaysFromImage.mockResolvedValue([{ x: 0, y: 0, w: 1, h: 1 }])
+  await userEvent.click(screen.getByRole('button', { name: /vùng sàn/ }))
+  await userEvent.click(screen.getByRole('button', { name: 'kéo khung sàn' }))
+  await userEvent.click(screen.getByRole('button', { name: 'Dò ô trong khung' }))
+}
+
 /** What antd's message API has on screen, if anything. */
 const toastText = () => document.querySelector('.ant-message')?.textContent ?? ''
 
 beforeEach(() => {
   for (const m of [
-    listGuides, saveGuides, listCells, syncCells, zoneImpactOf, updateDeckArea, getDrawingUrl, listStages,
+    listCells, syncCells, zoneImpactOf, updateDeckArea, getDrawingUrl, listStages,
     detectBaysFromImage,
   ]) m.mockReset()
   getDrawingUrl.mockResolvedValue('blob:drawing')
-  listGuides.mockResolvedValue([])
   listCells.mockResolvedValue([])
   zoneImpactOf.mockResolvedValue([])
   listStages.mockResolvedValue([])
 })
 
 describe('DeckEditor', () => {
-  it('turns typed mm spans into a mesh with real areas', async () => {
-    listGuides.mockResolvedValue(ONE_BAY_GUIDES)
-    renderInApp(deck)
-
-    await userEvent.click(await screen.findByRole('button', { name: 'Sinh lưới ô' }))
-
-    expect(await screen.findByTestId('canvas')).toHaveTextContent('R1C1')
-    // Exact match, not a /232,00/ regex: 232 m² of cells against a 5258.5 m²
-    // deck also crosses the divergence threshold, and that warning's own
-    // description repeats "232,00" in a longer sentence -- a substring regex
-    // matches both nodes and the query becomes ambiguous. The Σ-area cell's
-    // entire text is exactly "232,00", so an exact match is unambiguous and
-    // still fails if the mesh area were ever wrong.
-    expect(screen.getByText('232,00')).toBeInTheDocument()
-  })
 
   it('passes each cell its recorded stage colour, and nothing for a cell with no stage', async () => {
     // DrawingCanvas's own fill/opacity logic for cellColors is covered at the
@@ -237,209 +179,11 @@ describe('DeckEditor', () => {
     expect(screen.getByRole('button', { name: 'chọn R1C2' })).toHaveAttribute('data-color', '')
   })
 
-  it('converts a typed span into the cumulative offset the mesh is built from', async () => {
-    // The arithmetic itself is table-tested in domain/geometry.test.ts. What
-    // only the DOM can prove is the wiring: that antd's render(_v, _r, i) row
-    // index reaches setSpan, and that the offsets come back out onto the right
-    // entries of the UNSORTED `guides` array -- which this fixture must
-    // actually exercise, or the wiring bug it is meant to catch has nowhere to
-    // hide.
-    //
-    // An admin draws the two outer verticals, then the middle one: `guides`
-    // holds x@pos0.0, x@pos1.0, x@pos0.5 in THAT order (guides-index 0, 1, 2),
-    // while the sorted table order is x@pos0.0, x@pos0.5, x@pos1.0 (sorted
-    // position 0, 1, 2). From the second row on, sorted position and
-    // guides-index disagree -- a fixture with guides already stored in `pos`
-    // order (as this test previously used) cannot tell a write-back keyed by
-    // guides-index from one keyed by sorted position, because the two never
-    // differ. Editing the middle span, sorted position 1 / guides-index 2,
-    // is where they first do.
-    listGuides.mockResolvedValue([
-      { id: 'g1', axis: 'x', pos: 0, offsetMm: 0 },
-      { id: 'g2', axis: 'x', pos: 1, offsetMm: 26500 },
-      { id: 'g3', axis: 'x', pos: 0.5, offsetMm: 12000 },
-      { id: 'g4', axis: 'y', pos: 0, offsetMm: 0 },
-      { id: 'g5', axis: 'y', pos: 1, offsetMm: 16000 },
-    ])
-    renderInApp(deck)
-    await screen.findByTestId('canvas')
 
-    // Sanity check on the pre-edit state, vi-VN formatted like every other
-    // number in this screen.
-    expect(screen.getByText('12.000')).toBeInTheDocument()
-    expect(screen.getByText('26.500')).toBeInTheDocument()
 
-    // The middle row's span input shows 12000; it is the only field on the
-    // page with that value, so it can be located by display value the same
-    // way StageConfigPanel's tests locate its weight InputNumber cells.
-    const editedSpan = screen.getByDisplayValue('12000')
-    await userEvent.clear(editedSpan)
-    await userEvent.type(editedSpan, '12500')
 
-    await waitFor(() => expect(screen.getByText('12.500')).toBeInTheDocument())
-    // The guide after the edited one (sorted position 2, guides-index 1)
-    // moves by the same +500. A write-back keyed by sorted position instead
-    // would write 12500 and 27000 onto guides-index 1 and 2 respectively --
-    // the reverse of the correct assignment -- which the per-row offsets
-    // alone cannot expose (both values would still appear somewhere in the
-    // table either way). Only the mesh built from them can.
-    expect(screen.getByText('27.000')).toBeInTheDocument()
-    expect(screen.queryByText('26.500')).toBeNull()
 
-    await userEvent.click(screen.getByRole('button', { name: 'Sinh lưới ô' }))
-    // Two bays: 12500mm x 16000mm = 200 m², and 14500mm x 16000mm = 232 m²,
-    // summing to 432. Swap the guides-index 1 and 2 write targets and the
-    // split becomes 27000mm x 16000mm = 432 m² plus 14500mm x 16000mm = 232
-    // m², summing to 664 instead -- a different total, not just a relabeled
-    // one, so this assertion fails under that mutation.
-    expect(await screen.findByTestId('canvas')).toHaveTextContent('R1C1,R1C2')
-    expect(screen.getByText('432,00')).toBeInTheDocument()
-  })
 
-  it('reads back a half-millimetre span in the real-coordinate column', async () => {
-    // C6. B8 made the span field accept "14500,5" -- offset_mm is numeric(12,2)
-    // -- but this column rendered through formatMm at maximumFractionDigits 0,
-    // so the typed half-millimetre came back as "14.501". No number was wrong;
-    // the areas use the raw value. The admin simply could not read back what
-    // they had entered, on the one column that exists to be checked against the
-    // printed drawing.
-    listGuides.mockResolvedValue([
-      { id: 'g1', axis: 'x', pos: 0, offsetMm: 0 },
-      { id: 'g2', axis: 'x', pos: 1, offsetMm: 14500 },
-    ])
-    renderInApp(deck)
-    await screen.findByTestId('canvas')
-
-    // Whole millimetres, which is nearly every offset, stay unpadded: this is
-    // what minimumFractionDigits 0 buys, and it fails if the column is simply
-    // pinned to two digits.
-    expect(screen.getByText('14.500')).toBeInTheDocument()
-
-    const span = screen.getByDisplayValue('14500')
-    await userEvent.clear(span)
-    // Comma decimal, as a Vietnamese admin types it.
-    await userEvent.type(span, '14500,5')
-
-    // vi-VN: dot groups thousands, comma is the decimal separator.
-    expect(await screen.findByText('14.500,5')).toBeInTheDocument()
-    expect(screen.queryByText('14.501')).toBeNull()
-  })
-
-  it('propagates an edited y-axis span onto the y-guides, not onto whatever sits at that sorted position', async () => {
-    // Mirrors the case above on the axis the review found does the most
-    // damage: the y-guides here live at guides-index 2, 3, 4 -- three slots
-    // after the two x-guides -- so a write-back keyed by sorted position (0,
-    // 1, 2) instead of guides-index lands on guides-index 0, 1 and 2, i.e. on
-    // BOTH x-guides and the y-datum, while the y span the admin actually typed
-    // is left completely unchanged.
-    listGuides.mockResolvedValue([
-      { id: 'g1', axis: 'x', pos: 0, offsetMm: 0 },
-      { id: 'g2', axis: 'x', pos: 1, offsetMm: 9000 },
-      { id: 'g3', axis: 'y', pos: 0, offsetMm: 0 },
-      { id: 'g4', axis: 'y', pos: 1, offsetMm: 26500 },
-      { id: 'g5', axis: 'y', pos: 0.5, offsetMm: 12000 },
-    ])
-    renderInApp(deck)
-    await screen.findByTestId('canvas')
-
-    expect(screen.getByText('9.000')).toBeInTheDocument()
-    expect(screen.getByText('12.000')).toBeInTheDocument()
-    expect(screen.getByText('26.500')).toBeInTheDocument()
-
-    const editedSpan = screen.getByDisplayValue('12000')
-    await userEvent.clear(editedSpan)
-    await userEvent.type(editedSpan, '12500')
-
-    await waitFor(() => expect(screen.getByText('12.500')).toBeInTheDocument())
-    expect(screen.getByText('27.000')).toBeInTheDocument()
-    expect(screen.queryByText('26.500')).toBeNull()
-    // A y-axis edit must not touch the x-guide.
-    expect(screen.getByText('9.000')).toBeInTheDocument()
-
-    await userEvent.click(screen.getByRole('button', { name: 'Sinh lưới ô' }))
-    // One column (9000mm), two rows (12500mm, 14500mm): 112.5 m² + 130.5 m² =
-    // 243. A write-back keyed by sorted position instead corrupts the x span
-    // and leaves the y offsets exactly as they were before the edit, turning
-    // the mesh into 368,75 -- a different total, so this assertion fails
-    // under that mutation even though nothing about it looks "swapped".
-    expect(await screen.findByTestId('canvas')).toHaveTextContent('R1C1,R2C1')
-    expect(screen.getByText('243,00')).toBeInTheDocument()
-  })
-
-  it('reads a comma-decimal guide span the way a Vietnamese admin types it', async () => {
-    // The deck-area and stage-weight fields both carry decimalSeparator=","
-    // with a comment about this exact bug; the guide-span field was the one
-    // numeric input in this screen missing it. Proven through the generated
-    // mesh's area rather than the field's own display value: clearing an
-    // antd InputNumber with min={0} briefly reports 0 before the typed
-    // characters land, so a literal display-value assertion here would be
-    // pinned on that transient artifact rather than on the parsed number
-    // that actually reaches state.
-    listGuides.mockResolvedValue(ONE_BAY_GUIDES)
-    renderInApp(deck)
-    await screen.findByTestId('canvas')
-
-    const span = screen.getByDisplayValue('14500')
-    await userEvent.clear(span)
-    await userEvent.type(span, '14500,5')
-    await userEvent.click(screen.getByRole('button', { name: 'Sinh lưới ô' }))
-
-    // 14500.5mm x 16000mm = 232.008 m², rendered 232,01. Without
-    // decimalSeparator="," antd truncates the typed span to 14500 and this
-    // reads 232,00 instead -- the lost half-millimetre has nowhere left to
-    // show up once that happens.
-    expect(await screen.findByText('232,01')).toBeInTheDocument()
-  })
-
-  it('deletes the guide the admin clicked, by its index into the unsorted list', async () => {
-    // The rows are sorted by pos; `guides` is not. These three x-guides are
-    // deliberately stored out of order, so the middle ROW is guides[2]. Deleting
-    // by the rendered position instead would remove guides[1] -- the 2500mm
-    // guide -- and the admin would watch a different line vanish than the one
-    // they aimed at.
-    listGuides.mockResolvedValue([
-      { id: 'g1', axis: 'x', pos: 0, offsetMm: 0 },
-      { id: 'g2', axis: 'x', pos: 1, offsetMm: 2500 },
-      { id: 'g3', axis: 'x', pos: 0.4, offsetMm: 1000 },
-      { id: 'g4', axis: 'y', pos: 0, offsetMm: 0 },
-      { id: 'g5', axis: 'y', pos: 1, offsetMm: 7000 },
-    ])
-    renderInApp(deck)
-    await screen.findByTestId('canvas')
-
-    const xTable = screen.getByText('Guide dọc (cột)').closest('.ant-table-wrapper') as HTMLElement
-    const removeButtons = within(xTable).getAllByRole('button', { name: 'Xoá' })
-    expect(removeButtons).toHaveLength(3)
-    await userEvent.click(removeButtons[1])
-
-    // Two guides left, and they are the datum and the 2500mm one.
-    expect(within(xTable).getAllByRole('button', { name: 'Xoá' })).toHaveLength(2)
-    expect(screen.queryByText('1.000')).toBeNull()
-    expect(screen.getByText('2.500')).toBeInTheDocument()
-
-    // And the mesh proves WHICH guide went: one bay of 2500 x 7000 = 17.5 m².
-    // Deleting the wrong x-guide leaves 1000 x 7000 = 7 m² instead.
-    await userEvent.click(screen.getByRole('button', { name: 'Sinh lưới ô' }))
-    expect(await screen.findByTestId('canvas')).toHaveTextContent('R1C1')
-    expect(screen.getByText('17,50')).toBeInTheDocument()
-  })
-
-  it('gives a newly added guide an offset interpolated between its neighbours, not a bare 0', async () => {
-    // ONE_BAY_GUIDES: x at pos 0 (0mm) and pos 1 (14500mm). Adding a guide at
-    // pos 0.5 with the old offsetMm: 0 would sort AFTER the pos-0 guide but
-    // BEFORE the pos-1 guide in mm terms too (0 < 14500), so this fixture
-    // alone would not expose the old bug -- the interpolated midpoint
-    // (7250mm) is what proves the wiring reached DeckEditor at all, since 0
-    // happens to also be "monotonic" against a datum of 0.
-    listGuides.mockResolvedValue(ONE_BAY_GUIDES)
-    renderInApp(deck)
-    await screen.findByTestId('canvas')
-
-    await userEvent.click(screen.getByRole('button', { name: 'thêm guide x giữa' }))
-
-    // (0 + 14500) / 2 = 7250mm, vi-VN grouped.
-    expect(await screen.findByText('7.250')).toBeInTheDocument()
-  })
 
   it('warns when the cell areas diverge from the deck total beyond 5%', async () => {
     listCells.mockResolvedValue([
@@ -492,53 +236,7 @@ describe('DeckEditor', () => {
     expect(screen.queryByText(/lệch/i)).toBeNull()
   })
 
-  it('refuses to generate an empty mesh instead of silently wiping the cell set', async () => {
-    // Fewer than 2 guides on the y axis: buildMeshFromGuides returns [] for
-    // this shape. Replacing generateMesh's `if (mesh.length === 0)` guard
-    // with `if (false)` leaves every OTHER DeckEditor test green -- none of
-    // them exercises an axis with under 2 guides -- while in real use it
-    // would silently set `cells` to [] with no error at all, and the next
-    // save wipes the deck's whole geometry.
-    listGuides.mockResolvedValue([
-      { id: 'g1', axis: 'x', pos: 0, offsetMm: 0 },
-      { id: 'g2', axis: 'x', pos: 1, offsetMm: 14500 },
-      { id: 'g3', axis: 'y', pos: 0, offsetMm: 0 },
-    ])
-    listCells.mockResolvedValue([
-      { id: 'c1', code: 'R1C1', x: 0, y: 0, w: 1, h: 1, areaM2: 232, stageId: null },
-    ])
-    renderInApp(deck)
-    await screen.findByTestId('canvas')
 
-    await userEvent.click(screen.getByRole('button', { name: 'Sinh lưới ô' }))
-
-    expect(await screen.findByText(/Cần ít nhất 2 đường guide/)).toBeInTheDocument()
-    // The cell that was already on screen must survive: silently emptying
-    // `cells` here is exactly the defect this guard exists to prevent.
-    expect(screen.getByTestId('canvas')).toHaveTextContent('R1C1')
-  })
-
-  it('pro-rates and records estimates when only one axis carries real spans', async () => {
-    // x has a real chain, y does not. A cell's area is spanX x spanY, so every
-    // cell still measures 0 m² -- treating that as "measured from guides" would
-    // publish zeroes as fact. Both axes or neither.
-    listGuides.mockResolvedValue([
-      { id: 'g1', axis: 'x', pos: 0, offsetMm: 0 },
-      { id: 'g2', axis: 'x', pos: 1, offsetMm: 14500 },
-      { id: 'g3', axis: 'y', pos: 0, offsetMm: 0 },
-      { id: 'g4', axis: 'y', pos: 1, offsetMm: 0 },
-    ])
-    renderInApp(deck)
-    await screen.findByTestId('canvas')
-    await userEvent.click(screen.getByRole('button', { name: 'Sinh lưới ô' }))
-
-    expect(await screen.findByText(/không phải đo thật/)).toBeInTheDocument()
-    // The single bay absorbs the whole declared deck area, pro-rated.
-    expect(screen.getByText('5.258,50')).toBeInTheDocument()
-
-    await userEvent.click(screen.getByRole('button', { name: 'Lưu bản vẽ và lưới ô' }))
-    await waitFor(() => expect(updateDeckArea).toHaveBeenCalledWith('d1', 5258.5, 'prorated'))
-  })
 
   it('reads a comma-decimal deck area the way a Vietnamese admin types it', async () => {
     // The denominator of every percentage on the project. Without
@@ -553,10 +251,9 @@ describe('DeckEditor', () => {
     await userEvent.type(areaInput, '1234,5')
     await userEvent.click(screen.getByRole('button', { name: 'Lưu bản vẽ và lưới ô' }))
 
-    // 'guides' because that is what the deck already records and no mesh was
-    // regenerated here: the provenance travels with the cell set, so typing in
-    // the area field cannot relabel areas it did not compute.
-    await waitFor(() => expect(updateDeckArea).toHaveBeenCalledWith('d1', 1234.5, 'guides'))
+    // Always 'prorated': pixel-share is the only way this screen produces a
+    // cell area now, so the column records that on every write.
+    await waitFor(() => expect(updateDeckArea).toHaveBeenCalledWith('d1', 1234.5, 'prorated'))
   })
 
   it('saves a generated mesh that needed no delete and no merge', async () => {
@@ -566,12 +263,11 @@ describe('DeckEditor', () => {
     // guides-and-area button happily wrote new offsets and a new area_source
     // next to the old areas. Both are one action now, so this also pins that
     // collapsing them did not lose the cell write.
-    listGuides.mockResolvedValue(ONE_BAY_GUIDES)
     syncCells.mockResolvedValue(undefined)
-    renderInApp(deck)
+    renderInApp({ ...deck, totalAreaM2: 232 })
     await screen.findByTestId('canvas')
 
-    await userEvent.click(screen.getByRole('button', { name: 'Sinh lưới ô' }))
+    await detectOneBay()
     await userEvent.click(screen.getByRole('button', { name: 'Lưu bản vẽ và lưới ô' }))
 
     await waitFor(() => expect(syncCells).toHaveBeenCalledTimes(1))
@@ -582,63 +278,23 @@ describe('DeckEditor', () => {
     )
   })
 
-  it('sends every untouched guide back under the id it was loaded with', async () => {
-    // C3. saveGuides diffs on the guide id, so the ids have to survive the round
-    // trip through this screen's state. They were stripped on load and
-    // re-invented as array indices on the way into buildMeshFromGuides, which
-    // left saveGuides nothing to diff on -- so it deleted every guide for the
-    // deck and re-inserted them, and a failed insert on a site tether took the
-    // deck's whole mm chain with it.
-    listGuides.mockResolvedValue(ONE_BAY_GUIDES)
-    syncCells.mockResolvedValue(undefined)
-    renderInApp(deck)
-    await screen.findByTestId('canvas')
 
-    await userEvent.click(screen.getByRole('button', { name: 'Lưu bản vẽ và lưới ô' }))
-
-    await waitFor(() => expect(saveGuides).toHaveBeenCalledTimes(1))
-    expect(saveGuides.mock.calls[0][1]).toEqual(ONE_BAY_GUIDES)
-  })
-
-  it('mints a real uuid for a guide the admin adds, so it is an insert of a known row', async () => {
-    // The other half: a guide that has no database row yet still needs an
-    // identity before the write, because the write is an upsert keyed on it.
-    // Index-shaped ids would collide with nothing and match nothing.
-    listGuides.mockResolvedValue(ONE_BAY_GUIDES)
-    syncCells.mockResolvedValue(undefined)
-    renderInApp(deck)
-    await screen.findByTestId('canvas')
-
-    await userEvent.click(screen.getByRole('button', { name: 'thêm guide x giữa' }))
-    await userEvent.click(screen.getByRole('button', { name: 'Lưu bản vẽ và lưới ô' }))
-
-    await waitFor(() => expect(saveGuides).toHaveBeenCalledTimes(1))
-    const saved = saveGuides.mock.calls[0][1] as { id: string }[]
-    expect(saved).toHaveLength(5)
-    // The four loaded guides keep their own ids, in order, and the new one
-    // carries a v4 uuid rather than an array index.
-    expect(saved.slice(0, 4).map((g) => g.id)).toEqual(['g1', 'g2', 'g3', 'g4'])
-    expect(saved[4].id).toMatch(
-      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
-    )
-  })
 
   it('gates the mesh save behind the warning when it would drop a ticked cell', async () => {
     // A regenerated mesh reuses R1C1, R1C2, ... so its codes collide with
     // persisted cells -- and any persisted code the new mesh does NOT contain
     // is a cell about to be deleted, taking its recorded progress with it.
     // Saving the mesh without this gate would discard it silently.
-    listGuides.mockResolvedValue(ONE_BAY_GUIDES)
     listCells.mockResolvedValue([
       { id: 'c9', code: 'R9C9', x: 0, y: 0, w: 1, h: 1, areaM2: 300, stageId: 'coat1' },
     ])
     listStages.mockResolvedValue([
       { id: 'coat1', seq: 1, name: 'Coat 1', color: '#1677ff', weight: 0.2 },
     ])
-    renderInApp(deck)
+    renderInApp({ ...deck, totalAreaM2: 232 })
     await screen.findByTestId('canvas')
 
-    await userEvent.click(screen.getByRole('button', { name: 'Sinh lưới ô' }))
+    await detectOneBay()
     await userEvent.click(screen.getByRole('button', { name: 'Lưu bản vẽ và lưới ô' }))
 
     expect(await screen.findByText(listItem('R9C9 — Coat 1'))).toBeInTheDocument()
@@ -813,7 +469,7 @@ describe('DeckEditor', () => {
 
   it('discloses that the guides and the declared area go down with the write, on all three paths', async () => {
     // C4. Since A1 collapsed the two save buttons into one, `apply` writes
-    // saveGuides and updateDeckArea on EVERY path through this dialog -- but the
+    // updateDeckArea on EVERY path through this dialog -- but the
     // dialog spoke only of cells and zones. Linh nudges a guide by accident, or
     // types a candidate area she means to reconsider, then deletes one cell, and
     // both edits are committed with nothing having said so.
@@ -834,7 +490,6 @@ describe('DeckEditor', () => {
 
     // delete: one ticked cell selected, so there is progress to lose and the
     // dialog opens.
-    listGuides.mockResolvedValue(ONE_BAY_GUIDES)
     listCells.mockResolvedValue(twoTickedCells)
     listStages.mockResolvedValue(stages)
     let view = renderInApp(deck)
@@ -854,10 +509,10 @@ describe('DeckEditor', () => {
     expect(screen.getByText(DISCLOSURE)).toBeInTheDocument()
     view.unmount()
 
-    // mesh: ONE_BAY_GUIDES generates a single R1C1, so persisted R1C2 is dropped.
+    // mesh: detection returns a single R1C1, so persisted R1C2 is dropped.
     view = renderInApp(deck)
     await screen.findByTestId('canvas')
-    await userEvent.click(screen.getByRole('button', { name: 'Sinh lưới ô' }))
+    await detectOneBay()
     await userEvent.click(screen.getByRole('button', { name: 'Lưu bản vẽ và lưới ô' }))
     await screen.findByRole('button', { name: 'Vẫn lưu' })
     expect(screen.getByText(DISCLOSURE)).toBeInTheDocument()
@@ -889,22 +544,16 @@ describe('DeckEditor', () => {
     // no zone impact -- so before this round, reviewEdit's gate had nothing
     // to trip on and this applied with no confirmation at all, silently
     // moving 168 m² of "Coat 3 complete" onto ground nobody inspected.
-    listGuides.mockResolvedValue([
-      { id: 'g1', axis: 'x', pos: 0, offsetMm: 0 },
-      { id: 'g2', axis: 'x', pos: 1, offsetMm: 20000 },
-      { id: 'g3', axis: 'y', pos: 0, offsetMm: 0 },
-      { id: 'g4', axis: 'y', pos: 1, offsetMm: 20000 },
-    ])
     listCells.mockResolvedValue([
       { id: 'c1', code: 'R1C1', x: 0, y: 0, w: 1, h: 1, areaM2: 232, stageId: 'coat3' },
     ])
     listStages.mockResolvedValue([
       { id: 'coat3', seq: 3, name: 'Coat 3', color: '#52c41a', weight: 0.35 },
     ])
-    renderInApp(deck)
+    renderInApp({ ...deck, totalAreaM2: 400 })
     await screen.findByTestId('canvas')
 
-    await userEvent.click(screen.getByRole('button', { name: 'Sinh lưới ô' }))
+    await detectOneBay()
     await userEvent.click(screen.getByRole('button', { name: 'Lưu bản vẽ và lưới ô' }))
 
     // The title collapses to one generic form once it is not a zone-impact
@@ -933,12 +582,6 @@ describe('DeckEditor', () => {
     // 240 m² is within 5% of 232 m² (AREA_DIVERGENCE_THRESHOLD), so this
     // applies with no confirmation -- proving the threshold is guarded on the
     // low side too, not just raised unconditionally on any area change at all.
-    listGuides.mockResolvedValue([
-      { id: 'g1', axis: 'x', pos: 0, offsetMm: 0 },
-      { id: 'g2', axis: 'x', pos: 1, offsetMm: 20000 },
-      { id: 'g3', axis: 'y', pos: 0, offsetMm: 0 },
-      { id: 'g4', axis: 'y', pos: 1, offsetMm: 12000 },
-    ])
     listCells.mockResolvedValue([
       { id: 'c1', code: 'R1C1', x: 0, y: 0, w: 1, h: 1, areaM2: 232, stageId: 'coat3' },
     ])
@@ -946,10 +589,10 @@ describe('DeckEditor', () => {
       { id: 'coat3', seq: 3, name: 'Coat 3', color: '#52c41a', weight: 0.35 },
     ])
     syncCells.mockResolvedValue(undefined)
-    renderInApp(deck)
+    renderInApp({ ...deck, totalAreaM2: 240 })
     await screen.findByTestId('canvas')
 
-    await userEvent.click(screen.getByRole('button', { name: 'Sinh lưới ô' }))
+    await detectOneBay()
     await userEvent.click(screen.getByRole('button', { name: 'Lưu bản vẽ và lưới ô' }))
 
     await waitFor(() => expect(syncCells).toHaveBeenCalledTimes(1))
@@ -970,22 +613,16 @@ describe('DeckEditor', () => {
     // window is narrow by construction: for the two denominators to straddle
     // 5% the new area must fall between 1.0500 and 1.0526 times the old one;
     // 210,4 / 200 = 1.052 sits inside it.
-    listGuides.mockResolvedValue([
-      { id: 'g1', axis: 'x', pos: 0, offsetMm: 0 },
-      { id: 'g2', axis: 'x', pos: 1, offsetMm: 20000 },
-      { id: 'g3', axis: 'y', pos: 0, offsetMm: 0 },
-      { id: 'g4', axis: 'y', pos: 1, offsetMm: 10520 },
-    ])
     listCells.mockResolvedValue([
       { id: 'c1', code: 'R1C1', x: 0, y: 0, w: 1, h: 1, areaM2: 200, stageId: 'coat3' },
     ])
     listStages.mockResolvedValue([
       { id: 'coat3', seq: 3, name: 'Coat 3', color: '#52c41a', weight: 0.35 },
     ])
-    renderInApp(deck)
+    renderInApp({ ...deck, totalAreaM2: 210.4 })
     await screen.findByTestId('canvas')
 
-    await userEvent.click(screen.getByRole('button', { name: 'Sinh lưới ô' }))
+    await detectOneBay()
     await userEvent.click(screen.getByRole('button', { name: 'Lưu bản vẽ và lưới ô' }))
 
     expect(await screen.findByText(listItem('R1C1 — Coat 3: 200,00 → 210,40 m²'))).toBeInTheDocument()
@@ -998,17 +635,16 @@ describe('DeckEditor', () => {
     // Math.abs -- but that is reasoning, not a test, and a denominator-argument
     // bug of exactly the R7 kind tends to surface as growth-fires-but-shrink-
     // does-not rather than as something direction-symmetric.
-    listGuides.mockResolvedValue(ONE_BAY_GUIDES) // one 232 m² bay, as elsewhere in this file
     listCells.mockResolvedValue([
       { id: 'c1', code: 'R1C1', x: 0, y: 0, w: 1, h: 1, areaM2: 400, stageId: 'coat3' },
     ])
     listStages.mockResolvedValue([
       { id: 'coat3', seq: 3, name: 'Coat 3', color: '#52c41a', weight: 0.35 },
     ])
-    renderInApp(deck)
+    renderInApp({ ...deck, totalAreaM2: 232 })
     await screen.findByTestId('canvas')
 
-    await userEvent.click(screen.getByRole('button', { name: 'Sinh lưới ô' }))
+    await detectOneBay()
     await userEvent.click(screen.getByRole('button', { name: 'Lưu bản vẽ và lưới ô' }))
 
     expect(await screen.findByText(listItem('R1C1 — Coat 3: 400,00 → 232,00 m²'))).toBeInTheDocument()
@@ -1120,88 +756,7 @@ describe('DeckEditor', () => {
     expect(screen.queryByText(/overlapping cells/i)).toBeNull()
   })
 
-  it('records the provenance of the cells it writes, not of the guides at save time', async () => {
-    // A1, forwards. Generate the mesh BEFORE typing the mm spans, so the cells
-    // hold pro-rated pixel shares, then type the spans, then save. area_source
-    // used to be re-derived from the guide table at save time and came out
-    // 'guides' -- pixel estimates persisted and labelled as measured. And
-    // pro-rated areas sum to total_area_m2 exactly, so the divergence banner,
-    // the only guard against this, can never fire: on Main Deck it reports
-    // about 50.9% for a deck truly at 48.5%, with nothing anywhere disclosing
-    // that the figures are estimates.
-    listGuides.mockResolvedValue([
-      { id: 'g1', axis: 'x', pos: 0, offsetMm: 0 },
-      { id: 'g2', axis: 'x', pos: 1, offsetMm: 0 },
-      { id: 'g3', axis: 'y', pos: 0, offsetMm: 0 },
-      { id: 'g4', axis: 'y', pos: 1, offsetMm: 0 },
-    ])
-    syncCells.mockResolvedValue(undefined)
-    renderInApp(deck)
-    await screen.findByTestId('canvas')
 
-    await userEvent.click(screen.getByRole('button', { name: 'Sinh lưới ô' }))
-    expect(await screen.findByText(/không phải đo thật/)).toBeInTheDocument()
-
-    // Now type the real spans, exactly as the admin would after reading them off
-    // the drawing. Row 1 of each axis is the datum ("gốc"), so each guide table
-    // holds precisely one span input.
-    const spanIn = (title: string) => {
-      const table = screen.getByText(title).closest('.ant-table-wrapper') as HTMLElement
-      return within(table).getByRole('spinbutton')
-    }
-    await userEvent.clear(spanIn('Guide dọc (cột)'))
-    await userEvent.type(spanIn('Guide dọc (cột)'), '14500')
-    await userEvent.clear(spanIn('Guide ngang (hàng)'))
-    await userEvent.type(spanIn('Guide ngang (hàng)'), '16000')
-
-    // The banner must NOT go away: it describes the cells on screen, which are
-    // still pro-rated estimates. It disappearing here is what made the defect
-    // invisible -- the guides now read as measured while the cells are not.
-    await waitFor(() => expect(screen.getByDisplayValue('16000')).toBeInTheDocument())
-    expect(screen.getByText(/không phải đo thật/)).toBeInTheDocument()
-
-    await userEvent.click(screen.getByRole('button', { name: 'Lưu bản vẽ và lưới ô' }))
-
-    await waitFor(() => expect(syncCells).toHaveBeenCalledTimes(1))
-    // The label and the areas agree: pro-rated cells, recorded as pro-rated.
-    // 5258.5 m² is the whole declared deck in one bay, not the 232 m² the typed
-    // spans would have measured.
-    expect(syncCells.mock.calls[0][1]).toEqual([
-      { code: 'R1C1', x: 0, y: 0, w: 1, h: 1, areaM2: 5258.5 },
-    ])
-    expect(updateDeckArea).toHaveBeenCalledWith('d1', 5258.5, 'prorated')
-  })
-
-  it('keeps measured provenance when the mm-bearing guide is deleted after the mesh was built', async () => {
-    // A1, backwards, and the direction a state flag can get wrong on its own.
-    // The cells were measured off real spans; deleting the guide that carried
-    // the millimetres makes the guide table read as having none, but the areas
-    // already computed are still measurements. Re-deriving from the table would
-    // relabel 232 m² of measured bay as an estimate.
-    listGuides.mockResolvedValue(ONE_BAY_GUIDES)
-    syncCells.mockResolvedValue(undefined)
-    renderInApp(deck)
-    await screen.findByTestId('canvas')
-
-    await userEvent.click(screen.getByRole('button', { name: 'Sinh lưới ô' }))
-    expect(await screen.findByText('232,00')).toBeInTheDocument()
-    expect(screen.queryByText(/không phải đo thật/)).toBeNull()
-
-    // Drop the x-guide carrying 14500 mm.
-    const xTable = screen.getByText('Guide dọc (cột)').closest('.ant-table-wrapper') as HTMLElement
-    await userEvent.click(within(xTable).getAllByRole('button', { name: 'Xoá' })[1])
-    expect(screen.queryByText('14.500')).toBeNull()
-
-    await userEvent.click(screen.getByRole('button', { name: 'Lưu bản vẽ và lưới ô' }))
-
-    await waitFor(() => expect(syncCells).toHaveBeenCalledTimes(1))
-    expect(syncCells.mock.calls[0][1]).toEqual([
-      { code: 'R1C1', x: 0, y: 0, w: 1, h: 1, areaM2: 232 },
-    ])
-    expect(updateDeckArea).toHaveBeenCalledWith('d1', 5258.5, 'guides')
-    // Still no prorate banner: nothing about the cells changed.
-    expect(screen.queryByText(/không phải đo thật/)).toBeNull()
-  })
 
   it('warns that a deck with no declared area reports 0% forever, and refuses to save', async () => {
     // A2. total_area_m2 is `not null default 0` and createDeck never sets it, so
@@ -1246,17 +801,16 @@ describe('DeckEditor', () => {
     // every cell jumps from 0 to hundreds of m² with its stage intact -- an
     // infinite relative change, which any ratio test reads as no change at all,
     // so the section rendered empty in exactly the case it exists for.
-    listGuides.mockResolvedValue(ONE_BAY_GUIDES)
     listCells.mockResolvedValue([
       { id: 'c1', code: 'R1C1', x: 0, y: 0, w: 1, h: 1, areaM2: 0, stageId: 'coat2' },
     ])
     listStages.mockResolvedValue([
       { id: 'coat2', seq: 2, name: 'Coat 2', color: '#faad14', weight: 0.2 },
     ])
-    renderInApp(deck)
+    renderInApp({ ...deck, totalAreaM2: 232 })
     await screen.findByTestId('canvas')
 
-    await userEvent.click(screen.getByRole('button', { name: 'Sinh lưới ô' }))
+    await detectOneBay()
     await userEvent.click(screen.getByRole('button', { name: 'Lưu bản vẽ và lưới ô' }))
 
     expect(await screen.findByText(listItem('R1C1 — Coat 2: 0,00 → 232,00 m²'))).toBeInTheDocument()
@@ -1328,7 +882,6 @@ describe('DeckEditor', () => {
     // the mesh exists is ordinary work, and there is nothing to destroy, so a
     // dialog announcing that zero cells will be removed would be pure noise --
     // and noise is what makes the real one skimmable.
-    listGuides.mockResolvedValue(ONE_BAY_GUIDES)
     syncCells.mockResolvedValue(undefined)
     renderInApp(deck)
     await screen.findByTestId('canvas')
@@ -1355,44 +908,11 @@ describe('DeckEditor', () => {
 
     expect(await screen.findAllByText(/lần tải dữ liệu gần nhất thất bại/)).not.toHaveLength(0)
     expect(syncCells).not.toHaveBeenCalled()
-    expect(saveGuides).not.toHaveBeenCalled()
     expect(updateDeckArea).not.toHaveBeenCalled()
     // Refused before reading anything: only the failed load's call happened.
     expect(listCells).toHaveBeenCalledTimes(1)
   })
 
-  it('clamps a guide dragged past its neighbour instead of inverting the mm chain', async () => {
-    // A6. A drag moves `pos` and leaves `offsetMm`, and every area is computed
-    // from the offsets in POS order -- so once the two orders disagree,
-    // spansFromOffsets yields a negative span and deriveCellArea's Math.abs
-    // renders it as a perfectly ordinary bay.
-    //
-    // Three bays of 10000, 40000 and 10000 mm across a 10000 mm depth: 600 m².
-    // Drag the 10000 mm guide (index 1, pos 0.5) past the one at pos 0.8 and,
-    // unclamped, the pos-ordered offsets become 0, 50000, 10000, 60000 -- spans
-    // 50000, -40000, 50000, which compute to 500 + 400 + 500 = 1400 m². Not a
-    // relabelling: a different, plausible, 133%-too-large deck.
-    listGuides.mockResolvedValue([
-      { id: 'g1', axis: 'x', pos: 0, offsetMm: 0 },
-      { id: 'g2', axis: 'x', pos: 0.5, offsetMm: 10000 },
-      { id: 'g3', axis: 'x', pos: 0.8, offsetMm: 50000 },
-      { id: 'g4', axis: 'x', pos: 1, offsetMm: 60000 },
-      { id: 'g5', axis: 'y', pos: 0, offsetMm: 0 },
-      { id: 'g6', axis: 'y', pos: 1, offsetMm: 10000 },
-    ])
-    renderInApp(deck)
-    await screen.findByTestId('canvas')
-
-    await userEvent.click(screen.getByRole('button', { name: 'kéo guide 1' }))
-    await userEvent.click(screen.getByRole('button', { name: 'Sinh lưới ô' }))
-
-    expect(await screen.findByTestId('canvas')).toHaveTextContent('R1C1,R1C2,R1C3')
-    expect(screen.getByText('600,00')).toBeInTheDocument()
-    expect(screen.queryByText('1.400,00')).toBeNull()
-    // No negative span reaches the guide table's min={0} InputNumber either.
-    expect(screen.getByDisplayValue('40000')).toBeInTheDocument()
-    expect(screen.queryByDisplayValue('-40000')).toBeNull()
-  })
 
   it('re-reads the cells from the database when the sync fails', async () => {
     // A10. syncCells is three round trips with no transaction: the upsert widens
@@ -1440,224 +960,8 @@ describe('DeckEditor', () => {
     expect(await screen.findByText('JWT expired')).toBeInTheDocument()
   })
 
-  /** Reads the exact guides array the screen handed to DrawingCanvas. */
-  const readGuides = () =>
-    JSON.parse(screen.getByTestId('guides').textContent!) as
-      { id: string; axis: 'x' | 'y'; pos: number; offsetMm: number }[]
 
-  describe('re-railing interior guides on an edge drag (dimension-chain paste, step 3)', () => {
-    // The real Main Deck across-chain, laid out the way the CURRENT
-    // (pre-feature) workflow actually leaves guides: dragged into rough,
-    // monotonic, but otherwise arbitrary positions unrelated to their mm
-    // ratios. Re-railing is what corrects them once one edge is dragged to a
-    // real position -- a fixture already laid out by ratio would not
-    // exercise it at all.
-    const REAL_OFFSETS = [0, 2500, 12000, 26500, 41000, 50500, 58100]
 
-    it('re-rails every interior x-guide to its mm ratio when the LAST one is dragged to 0.8', async () => {
-      const positions = [0, 0.1, 0.2, 0.3, 0.4, 0.5, 1]
-      listGuides.mockResolvedValue(
-        REAL_OFFSETS.map((offsetMm, i) => ({ id: `gx${i}`, axis: 'x', pos: positions[i], offsetMm })),
-      )
-      renderInApp(deck)
-      await screen.findByTestId('canvas')
-
-      // Guide 6's only neighbour (guide 5, pos 0.5) leaves 0.8 well clear, so
-      // moveGuideClamped lets the drag through unclamped.
-      await userEvent.click(screen.getByRole('button', { name: 'kéo guide 6 tới 0.8' }))
-
-      const guides = readGuides()
-      const total = REAL_OFFSETS[REAL_OFFSETS.length - 1]
-      REAL_OFFSETS.forEach((offsetMm, i) => {
-        // The mapping the whole feature rests on: pos = ratio * newEdgePos.
-        // Asserting the actual numbers, not just "increased" -- a re-rail
-        // that scattered guides anywhere still-increasing would pass a
-        // weaker check.
-        expect(guides[i].pos).toBeCloseTo((offsetMm / total) * 0.8, 9)
-        // Dragging never edits the mm chain the admin typed.
-        expect(guides[i].offsetMm).toBe(offsetMm)
-      })
-    })
-
-    it('re-rails every interior x-guide when the FIRST one is dragged to 0.2 instead', async () => {
-      const positions = [0, 0.5, 0.6, 0.7, 0.8, 0.9, 1]
-      listGuides.mockResolvedValue(
-        REAL_OFFSETS.map((offsetMm, i) => ({ id: `gx${i}`, axis: 'x', pos: positions[i], offsetMm })),
-      )
-      renderInApp(deck)
-      await screen.findByTestId('canvas')
-
-      await userEvent.click(screen.getByRole('button', { name: 'kéo guide 0 tới 0.2' }))
-
-      const guides = readGuides()
-      const total = REAL_OFFSETS[REAL_OFFSETS.length - 1]
-      REAL_OFFSETS.forEach((offsetMm, i) => {
-        const ratio = offsetMm / total
-        expect(guides[i].pos).toBeCloseTo(0.2 + ratio * (1 - 0.2), 9)
-      })
-    })
-
-    it('does not re-rail an interior guide drag -- only moveGuideClamped governs it', async () => {
-      const positions = [0, 0.1, 0.2, 0.3, 0.4, 0.5, 1]
-      listGuides.mockResolvedValue(
-        REAL_OFFSETS.map((offsetMm, i) => ({ id: `gx${i}`, axis: 'x', pos: positions[i], offsetMm })),
-      )
-      renderInApp(deck)
-      await screen.findByTestId('canvas')
-
-      // Guide 3 (pos 0.3) stays strictly between guides 2 (0.2) and 4 (0.4).
-      await userEvent.click(screen.getByRole('button', { name: 'kéo guide 3 tới 0.2' }))
-
-      const guides = readGuides()
-      // Only the dragged guide moved (clamped between 0.2+gap and 0.4-gap);
-      // every OTHER guide is untouched, not re-railed onto some new ratio.
-      expect(guides[0].pos).toBe(0)
-      expect(guides[1].pos).toBe(0.1)
-      expect(guides[2].pos).toBe(0.2)
-      expect(guides[4].pos).toBe(0.4)
-      expect(guides[5].pos).toBe(0.5)
-      expect(guides[6].pos).toBe(1)
-    })
-
-    it('does not re-rail on a degenerate axis with no mm chain yet, and leaves the others exactly where they were', async () => {
-      // Guides added by double-click before any span was typed: nothing to
-      // scale by, so this must behave exactly as plain moveGuideClamped.
-      listGuides.mockResolvedValue([
-        { id: 'g0', axis: 'x', pos: 0, offsetMm: 0 },
-        { id: 'g1', axis: 'x', pos: 0.3, offsetMm: 0 },
-        { id: 'g2', axis: 'x', pos: 0.6, offsetMm: 0 },
-        { id: 'g3', axis: 'x', pos: 1, offsetMm: 0 },
-      ])
-      renderInApp(deck)
-      await screen.findByTestId('canvas')
-
-      await userEvent.click(screen.getByRole('button', { name: 'kéo guide 3 tới 0.8' }))
-
-      const guides = readGuides()
-      expect(guides[0].pos).toBe(0)
-      expect(guides[1].pos).toBe(0.3)
-      expect(guides[2].pos).toBe(0.6)
-      // Only the dragged edge itself moved.
-      expect(guides[3].pos).toBe(0.8)
-    })
-  })
-
-  describe('pasting a dimension chain (dimension-chain paste, step 4)', () => {
-    const REAL_CHAIN_TEXT = '2500 9500 14500 14500 9500 7600'
-
-    it('previews a good paste with the right total and applies it as 7 guides spanning 0..1', async () => {
-      listGuides.mockResolvedValue([])
-      renderInApp(deck)
-      await screen.findByTestId('canvas')
-
-      const xBox = within(screen.getByTestId('chain-box-x'))
-      await userEvent.type(xBox.getByRole('textbox'), REAL_CHAIN_TEXT)
-      await userEvent.click(xBox.getByRole('button', { name: 'Xem trước' }))
-
-      // vi-VN grouped, via the shared formatter -- the brief's own example.
-      expect(xBox.getByText('Tổng: 58.100 mm')).toBeInTheDocument()
-
-      await userEvent.click(xBox.getByRole('button', { name: 'Áp dụng' }))
-
-      const xGuides = readGuides()
-        .filter((g) => g.axis === 'x')
-        .sort((a, b) => a.offsetMm - b.offsetMm)
-      expect(xGuides).toHaveLength(7)
-      expect(xGuides.map((g) => g.offsetMm)).toEqual([0, 2500, 12000, 26500, 41000, 50500, 58100])
-      // No existing x-guides to reuse edge positions from, so 0 and 1.
-      expect(xGuides[0].pos).toBeCloseTo(0, 9)
-      expect(xGuides[xGuides.length - 1].pos).toBeCloseTo(1, 9)
-      expect(xGuides[1].pos).toBeCloseTo(2500 / 58100, 9)
-
-      // Applying changed guides, not cells -- the note says so.
-      expect(
-        await screen.findByText('Đã đổi guide. Bấm "Sinh lưới ô" để cập nhật các ô.'),
-      ).toBeInTheDocument()
-    })
-
-    it('applies a chain between the axis own existing edge positions, not 0 and 1, when guides already exist', async () => {
-      listGuides.mockResolvedValue([
-        { id: 'gx0', axis: 'x', pos: 0.2, offsetMm: 0 },
-        { id: 'gx1', axis: 'x', pos: 0.7, offsetMm: 999 },
-      ])
-      renderInApp(deck)
-      await screen.findByTestId('canvas')
-
-      const xBox = within(screen.getByTestId('chain-box-x'))
-      await userEvent.type(xBox.getByRole('textbox'), REAL_CHAIN_TEXT)
-      await userEvent.click(xBox.getByRole('button', { name: 'Xem trước' }))
-      await userEvent.click(xBox.getByRole('button', { name: 'Áp dụng' }))
-
-      const xGuides = readGuides()
-        .filter((g) => g.axis === 'x')
-        .sort((a, b) => a.offsetMm - b.offsetMm)
-      expect(xGuides).toHaveLength(7)
-      expect(xGuides[0].pos).toBeCloseTo(0.2, 9)
-      expect(xGuides[xGuides.length - 1].pos).toBeCloseTo(0.7, 9)
-      // Interior guide 1 (2500mm of 58100mm) lands at 0.2 + ratio * 0.5.
-      expect(xGuides[1].pos).toBeCloseTo(0.2 + (2500 / 58100) * 0.5, 9)
-    })
-
-    it('shows the named-token Alert on a bad paste and leaves the guides untouched', async () => {
-      listGuides.mockResolvedValue(ONE_BAY_GUIDES)
-      renderInApp(deck)
-      await screen.findByTestId('canvas')
-
-      const xBox = within(screen.getByTestId('chain-box-x'))
-      // 2500 is 4 digits (not 1-3), so not a thousands group; 9500 is 4
-      // fraction digits (not 1-2), so not a decimal either -- the brief's own
-      // worked rejection example.
-      await userEvent.type(xBox.getByRole('textbox'), '2500 2500,9500 14500')
-      await userEvent.click(xBox.getByRole('button', { name: 'Xem trước' }))
-
-      expect(
-        xBox.getByText('Không đọc được "2500,9500". Mỗi số cách nhau bằng dấu cách hoặc xuống dòng.'),
-      ).toBeInTheDocument()
-      expect(xBox.getByRole('button', { name: 'Áp dụng' })).toBeDisabled()
-      expect(readGuides()).toEqual(ONE_BAY_GUIDES)
-    })
-
-    it('keeps Áp dụng disabled until the CURRENT text has been previewed successfully', async () => {
-      listGuides.mockResolvedValue([])
-      renderInApp(deck)
-      await screen.findByTestId('canvas')
-
-      const xBox = within(screen.getByTestId('chain-box-x'))
-      const apply = () => xBox.getByRole('button', { name: 'Áp dụng' })
-      const textbox = xBox.getByRole('textbox')
-
-      expect(apply()).toBeDisabled()
-
-      await userEvent.type(textbox, REAL_CHAIN_TEXT)
-      // Typed but not yet previewed.
-      expect(apply()).toBeDisabled()
-
-      await userEvent.click(xBox.getByRole('button', { name: 'Xem trước' }))
-      expect(apply()).toBeEnabled()
-
-      // Editing after a successful preview must invalidate it -- applying
-      // must never read spans that describe text no longer in the box.
-      await userEvent.type(textbox, ' 100')
-      expect(apply()).toBeDisabled()
-    })
-
-    it('applying a chain on one axis does not touch the other axis guides', async () => {
-      listGuides.mockResolvedValue(ONE_BAY_GUIDES)
-      renderInApp(deck)
-      await screen.findByTestId('canvas')
-
-      const xBox = within(screen.getByTestId('chain-box-x'))
-      await userEvent.type(xBox.getByRole('textbox'), REAL_CHAIN_TEXT)
-      await userEvent.click(xBox.getByRole('button', { name: 'Xem trước' }))
-      await userEvent.click(xBox.getByRole('button', { name: 'Áp dụng' }))
-
-      const guides = readGuides()
-      const yGuides = guides.filter((g) => g.axis === 'y')
-      // ONE_BAY_GUIDES' two y-guides, g3 and g4, untouched.
-      expect(yGuides).toEqual(ONE_BAY_GUIDES.filter((g) => g.axis === 'y'))
-      expect(guides.filter((g) => g.axis === 'x')).toHaveLength(7)
-    })
-  })
 
   describe('reading the bays out of the drawing', () => {
     const BAYS = [
@@ -1675,7 +979,6 @@ describe('DeckEditor', () => {
       // Getting the box right takes more than one attempt, and detecting on
       // mouse-up threw away the cells on every one of them.
       detectBaysFromImage.mockResolvedValue(BAYS)
-      listGuides.mockResolvedValue(ONE_BAY_GUIDES)
       renderInApp(deck)
       await screen.findByTestId('canvas')
 
@@ -1699,7 +1002,6 @@ describe('DeckEditor', () => {
       // nothing left to generate afterwards. The third bay spans both columns,
       // which a grid of guides could not have produced.
       detectBaysFromImage.mockResolvedValue(BAYS)
-      listGuides.mockResolvedValue([])
       renderInApp(deck)
       await screen.findByTestId('canvas')
 
@@ -1721,7 +1023,6 @@ describe('DeckEditor', () => {
 
     it('re-dragging replaces the region, and only the last one is detected', async () => {
       detectBaysFromImage.mockResolvedValue(BAYS)
-      listGuides.mockResolvedValue([])
       renderInApp(deck)
       await screen.findByTestId('canvas')
 
@@ -1739,7 +1040,6 @@ describe('DeckEditor', () => {
     })
 
     it('cannot commit a region that was never drawn', async () => {
-      listGuides.mockResolvedValue([])
       renderInApp(deck)
       await screen.findByTestId('canvas')
 
@@ -1752,7 +1052,6 @@ describe('DeckEditor', () => {
       // crosses them; bridging a wider hole finds MORE bays, because an
       // unbridged break is a door between two the drawing shows as separate.
       detectBaysFromImage.mockResolvedValue(BAYS)
-      listGuides.mockResolvedValue([])
       renderInApp(deck)
       await screen.findByTestId('canvas')
       await drawTheBox()
@@ -1776,7 +1075,6 @@ describe('DeckEditor', () => {
     })
 
     it('does not re-detect on the slider before a box has been drawn', async () => {
-      listGuides.mockResolvedValue([])
       renderInApp(deck)
       await screen.findByTestId('canvas')
 
@@ -1786,7 +1084,6 @@ describe('DeckEditor', () => {
     })
 
     it('leaves crop mode, and detects nothing, when the admin cancels', async () => {
-      listGuides.mockResolvedValue(ONE_BAY_GUIDES)
       renderInApp(deck)
       await screen.findByTestId('canvas')
 
@@ -1795,69 +1092,24 @@ describe('DeckEditor', () => {
 
       expect(screen.queryByRole('button', { name: 'kéo khung sàn' })).not.toBeInTheDocument()
       expect(detectBaysFromImage).not.toHaveBeenCalled()
-      expect(readGuides()).toEqual(ONE_BAY_GUIDES)
     })
 
-    it('deletes the guide the admin clicked, while line-deleting is on', async () => {
-      // Guides are hand work now that detection makes cells directly, but the
-      // admin still rules them by hand for a deck the detector cannot read.
-      listGuides.mockResolvedValue(ONE_BAY_GUIDES)
-      renderInApp(deck)
-      await screen.findByTestId('canvas')
 
-      expect(screen.queryByRole('button', { name: 'bấm xoá đường 1' })).not.toBeInTheDocument()
-
-      await userEvent.click(screen.getByRole('button', { name: 'Bật xoá đường' }))
-      await userEvent.click(screen.getByRole('button', { name: 'bấm xoá đường 1' }))
-
-      expect(readGuides()).toEqual([ONE_BAY_GUIDES[0], ONE_BAY_GUIDES[2], ONE_BAY_GUIDES[3]])
-      expect(screen.getByRole('button', { name: 'Tắt xoá đường' })).toBeInTheDocument()
-
-      await userEvent.click(screen.getByRole('button', { name: 'Tắt xoá đường' }))
-      expect(screen.queryByRole('button', { name: 'bấm xoá đường 1' })).not.toBeInTheDocument()
-    })
-
-    it('offers nothing to delete when there are no guides', async () => {
-      listGuides.mockResolvedValue([])
-      renderInApp(deck)
-      await screen.findByTestId('canvas')
-
-      expect(screen.getByRole('button', { name: 'Bật xoá đường' })).toBeDisabled()
-    })
 
     it('shows a Vietnamese message when detection fails, and leaves the cells alone', async () => {
       detectBaysFromImage.mockRejectedValue(new Error('canvas boom'))
-      listGuides.mockResolvedValue(ONE_BAY_GUIDES)
       renderInApp(deck)
       await screen.findByTestId('canvas')
 
       await drawTheBox()
       await userEvent.click(screen.getByRole('button', { name: 'Dò ô trong khung' }))
 
+      // Banner and toast both carry it, so this asks whether the admin was
+      // told -- not which of the two channels told them.
       expect(
-        await screen.findByText('Không tự động dò được ô từ bản vẽ này. Hãy kẻ guide thủ công.'),
-      ).toBeInTheDocument()
-      expect(readGuides()).toEqual(ONE_BAY_GUIDES)
+        await screen.findAllByText('Không tự động dò được ô từ bản vẽ này. Kéo lại khung sàn rồi thử lại.'),
+      ).not.toHaveLength(0)
     })
-  })
-  it('names the axis that is still missing its mm chain', async () => {
-    // The old copy said "no guide carries a mm dimension" for ANY prorated
-    // deck, including one where the admin had just pasted a chain on one axis.
-    // It read as "nothing you did registered", which is how the paste feature
-    // came to look broken on its first real use.
-    listGuides.mockResolvedValue([
-      { id: 'gx1', axis: 'x', pos: 0, offsetMm: 0, label: null },
-      { id: 'gx2', axis: 'x', pos: 1, offsetMm: 58100, label: null },
-      { id: 'gy1', axis: 'y', pos: 0, offsetMm: 0, label: null },
-      { id: 'gy2', axis: 'y', pos: 1, offsetMm: 0, label: null },
-    ])
-    listCells.mockResolvedValue([
-      { id: 'c1', code: 'R1C1', x: 0, y: 0, w: 1, h: 1, areaM2: 100, stageId: null },
-    ])
-    renderInApp({ ...deck, areaSource: 'prorated' })
-
-    expect(await screen.findByText(/Trục ngang đã có kích thước mm/)).toBeInTheDocument()
-    expect(screen.queryByText(/Chưa có guide nào mang kích thước mm/)).toBeNull()
   })
 
 })
@@ -1876,25 +1128,6 @@ describe('mergeErrorInVietnamese', () => {
 
   it('leaves an error it does not recognise unchanged', () => {
     expect(mergeErrorInVietnamese('Some new domain error')).toBe('Some new domain error')
-  })
-  it('names the axis that is still missing its mm chain', async () => {
-    // The old copy said "no guide carries a mm dimension" for ANY prorated
-    // deck, including one where the admin had just pasted a chain on one axis.
-    // It read as "nothing you did registered", which is how the paste feature
-    // came to look broken on its first real use.
-    listGuides.mockResolvedValue([
-      { id: 'gx1', axis: 'x', pos: 0, offsetMm: 0, label: null },
-      { id: 'gx2', axis: 'x', pos: 1, offsetMm: 58100, label: null },
-      { id: 'gy1', axis: 'y', pos: 0, offsetMm: 0, label: null },
-      { id: 'gy2', axis: 'y', pos: 1, offsetMm: 0, label: null },
-    ])
-    listCells.mockResolvedValue([
-      { id: 'c1', code: 'R1C1', x: 0, y: 0, w: 1, h: 1, areaM2: 100, stageId: null },
-    ])
-    renderInApp({ ...deck, areaSource: 'prorated' })
-
-    expect(await screen.findByText(/Trục ngang đã có kích thước mm/)).toBeInTheDocument()
-    expect(screen.queryByText(/Chưa có guide nào mang kích thước mm/)).toBeNull()
   })
 
   it('puts a refused save in front of an admin who has scrolled away from the banner', async () => {

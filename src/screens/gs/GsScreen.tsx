@@ -595,7 +595,7 @@ export function GsScreen() {
                 imageUrl={imageUrl}
                 imageW={deck.imageW}
                 imageH={deck.imageH}
-                guides={[]}
+
                 cells={cells}
                 selectedCodes={[]}
                 cellColors={cellColors}

@@ -1,27 +1,22 @@
 import {
-  Alert, App, Button, Descriptions, Input, InputNumber, Modal, Slider, Space, Table, Typography,
+  Alert, App, Button, Descriptions, InputNumber, Modal, Slider, Space, Typography,
 } from 'antd'
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
-import { distributeChain, moveGuideOnAxis, parseDimensionChain, type ChainParse } from '../../domain/dimensionChain'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
-  AREA_DIVERGENCE_THRESHOLD, areaDivergence, buildMeshFromGuides, cellReshaped,
-  divergesBeyondThreshold, hasUndeclaredArea, interpolateOffsetMm, mergeCells,
-  offsetsFromSpans, prorateCellAreas, spansFromOffsets,
+  AREA_DIVERGENCE_THRESHOLD, areaDivergence, cellReshaped,
+  divergesBeyondThreshold, hasUndeclaredArea, mergeCells, prorateCellAreas,
 } from '../../domain/geometry'
 import { nameBays, type BayOptions } from '../../domain/bayDetect'
-import type { Guide, MeshCell, Stage } from '../../domain/types'
+import type { MeshCell, Stage } from '../../domain/types'
 import {
-  getDrawingUrl, listCells, listGuides, saveGuides, syncCells,
+  getDrawingUrl, listCells, syncCells,
   updateDeckArea, zoneImpactOf, type DeckRow, type ZoneImpact,
 } from '../../lib/decksApi'
-import { formatAreaM2, formatMm, formatPercent } from '../../lib/format'
+import { formatAreaM2, formatPercent } from '../../lib/format'
 import { listStages } from '../../lib/projectsApi'
-import { randomUUID } from '../../lib/uuid'
 import { DrawingCanvas } from '../../canvas/DrawingCanvas'
 import { detectBaysFromImage, DETECT_RENDER_WIDTH } from '../../canvas/rgbFromImage'
 
-/** A guide table row: the guide, its index into the unsorted `guides` array, and the span to the guide before it. */
-type AxisRow = Guide & { index: number; spanMm: number }
 
 /** An edit that replaces the deck's cell set, held while the warning is on screen. */
 interface PendingEdit {
@@ -76,18 +71,6 @@ const EDIT_CONFIRM: Record<EditKind, string> = {
  * shown above the vertical table teaches the wrong thing. Both are the real
  * Main Deck's own chains, so an admin holding that drawing recognises them.
  */
-const CHAIN_PLACEHOLDER: Record<'x' | 'y', string> = {
-  x: '2500 9500 14500 14500 9500 7600',
-  y: '5500 16000 16000 16000',
-}
-
-/** One axis' paste-box state: the raw text, and the last "Xem trước" result for it. */
-interface ChainDraft {
-  text: string
-  preview: ChainParse | null
-}
-
-const EMPTY_CHAIN_DRAFT: ChainDraft = { text: '', preview: null }
 
 /**
  * Domain merge errors, in the admin's language.
@@ -141,16 +124,6 @@ function saveErrorInVietnamese(message: string): string {
 }
 
 export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => void }) {
-  /**
-   * The guides being edited, each carrying the id it is identified by.
-   *
-   * The ids are real: `listGuides` supplies the database's own, and a guide the
-   * admin adds gets one minted here. They used to be discarded on load and
-   * re-invented as array indices on the way into buildMeshFromGuides, which left
-   * saveGuides no identity to diff on -- so it deleted every guide for the deck
-   * and re-inserted, and a failed insert lost the whole mm chain. See saveGuides.
-   */
-  const [guides, setGuides] = useState<Guide[]>([])
   const [stages, setStages] = useState<Stage[]>([])
   const [cells, setCells] = useState<MeshCell[]>([])
   /**
@@ -170,22 +143,6 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
   const [selected, setSelected] = useState<string[]>([])
   const [imageUrl, setImageUrl] = useState<string | null>(null)
   const [totalArea, setTotalArea] = useState(deck.totalAreaM2)
-  /**
-   * Where the areas currently in `cells` came from -- measured off the guide
-   * chain, or pro-rated from the deck total by pixel share.
-   *
-   * Provenance of the cell set, carried WITH the cell set, decided in
-   * generateMesh where the choice is actually made and initialised from the
-   * persisted value on load. It used to be re-derived from `hasRealSpans` at
-   * save time, which put the areas and their label on different clocks:
-   * generate a mesh before typing the mm spans (pro-rated areas), then type
-   * them, then save, and the deck recorded `area_source: 'guides'` over cells
-   * that were pixel estimates. Pro-rated areas sum to total_area_m2 exactly, so
-   * the divergence banner -- the only guard against precisely this -- can never
-   * fire, and Phase 4's report has no reason to disclose that its figures are
-   * estimates. On Main Deck that reads 50.9% for a deck truly at 48.5%.
-   */
-  const [areaSource, setAreaSource] = useState<'guides' | 'prorated'>(deck.areaSource)
   const [pending, setPending] = useState<PendingEdit | null>(null)
   const [error, setError] = useState<string | null>(null)
   const { message } = App.useApp()
@@ -214,18 +171,6 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
    * from there would write that empty set over the deck's real geometry.
    */
   const [loadFailed, setLoadFailed] = useState(false)
-  /** Each axis' paste-box text and its last preview, kept independent per axis. */
-  const [chainDrafts, setChainDrafts] = useState<Record<'x' | 'y', ChainDraft>>({
-    x: EMPTY_CHAIN_DRAFT,
-    y: EMPTY_CHAIN_DRAFT,
-  })
-  /**
-   * Whether a chain was applied to either axis since the mesh was last
-   * (re)generated. The existing cells are untouched by "Áp dụng" -- only the
-   * guides change -- so without this note nothing on screen says the mesh is
-   * now stale until the admin happens to notice the guide table changed.
-   */
-  const [chainAppliedNote, setChainAppliedNote] = useState(false)
   /**
    * How wide a hole in a beam to bridge, as a fraction of the image width.
    *
@@ -257,28 +202,14 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
   const [crop, setCrop] = useState<{ x: number; y: number; w: number; h: number } | null>(null)
   /** Whether the canvas is waiting for the crop drag right now. */
   const [cropping, setCropping] = useState(false)
-  /**
-   * Whether clicking a guide deletes it.
-   *
-   * A mode rather than a plain click-to-delete, because a stray click on a
-   * dense grid would silently change the mesh, and rather than a slider,
-   * because no single sensitivity is right everywhere on a real deck --
-   * secondary steel clears the bar a real beam needs. Be generous with the
-   * slider, then click off the few wrong lines.
-   */
-  const [deletingGuides, setDeletingGuides] = useState(false)
 
   const load = useCallback(async () => {
     try {
-      const [g, c, s] = await Promise.all([
-        listGuides(deck.id),
+      const [c, s] = await Promise.all([
         listCells(deck.id),
         listStages(deck.projectId),
       ])
       setStages(s)
-      // Ids kept, not stripped: they are what saveGuides diffs on, so an
-      // untouched guide keeps its row instead of being deleted and re-inserted.
-      setGuides(g)
       setCells(c.map(({ code, x, y, w, h, areaM2 }) => ({ code, x, y, w, h, areaM2 })))
       setCellStages(Object.fromEntries(c.map((p) => [p.code, p.stageId])))
       if (deck.imagePath) setImageUrl(await getDrawingUrl(deck.imagePath))
@@ -322,88 +253,7 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
     return colors
   }, [cells, cellStages, stages])
 
-  /** Guides on one axis, sorted, with the span to the previous one. */
-  const axisRows = (axis: 'x' | 'y'): AxisRow[] => {
-    const sorted = guides
-      .map((g, index) => ({ ...g, index }))
-      .filter((g) => g.axis === axis)
-      .sort((a, b) => a.pos - b.pos)
-    const spans = spansFromOffsets(sorted.map((g) => g.offsetMm))
-    return sorted.map((g, i) => ({ ...g, spanMm: spans[i] }))
-  }
 
-  /**
-   * The admin types spans; offsets are the running sum of them, so editing one
-   * span shifts every guide downstream of it. `rowIndex` is the sorted position
-   * antd's render(_v, _r, i) hands back, not the index into `guides`.
-   */
-  const setSpan = (axis: 'x' | 'y', rowIndex: number, spanMm: number) => {
-    const rows = axisRows(axis)
-    const spans = rows.map((row, i) => (i === rowIndex ? spanMm : row.spanMm))
-    const offsets = offsetsFromSpans(rows[0]?.offsetMm ?? 0, spans)
-    const nextOffsets = new Map(rows.map((row, i) => [row.index, offsets[i]]))
-    setGuides((prev) => prev.map((g, i) => (nextOffsets.has(i) ? { ...g, offsetMm: nextOffsets.get(i)! } : g)))
-  }
-
-  /**
-   * Whether BOTH axes carry real dimensions. All-zero offsets mean the admin
-   * never typed the spans -- usually because the drawing does not print usable
-   * ones -- so per-cell areas have to be pro-rated from the deck total instead
-   * of measured, and the deck records area_source: 'prorated' so a report can
-   * disclose that its figures are estimates.
-   *
-   * Both axes, not either: a cell's area is spanX × spanY, so a chain typed on
-   * one axis only still measures every cell at 0 m² -- and recording that as
-   * area_source: 'guides' would present those zeroes as measured fact. A
-   * half-filled chain belongs in the prorate fallback.
-   *
-   * Read ONLY by generateMesh. This is a fact about the guide table right now,
-   * not about the cells currently held, so nothing on a save path may consult
-   * it: the guides can change after a mesh is generated, and the areas already
-   * computed do not change with them.
-   */
-  /**
-   * Which axes carry a real mm chain, and whether BOTH do.
-   *
-   * Both is the condition for measured areas -- one axis alone would multiply a
-   * real span by a pixel ratio. The per-axis flags exist because the banner used
-   * to say "no guide carries a mm dimension" whenever this was false, which is
-   * plainly untrue once one axis has been filled in: the admin pastes a chain on
-   * one axis, the screen tells them nothing has been entered, and they conclude
-   * the feature is broken. It reads as a bug and cost real trust.
-   */
-  const spanAxes = useMemo(() => {
-    const typed = (axis: 'x' | 'y') => guides.some((g) => g.axis === axis && g.offsetMm > 0)
-    const x = typed('x')
-    const y = typed('y')
-    return { x, y, both: x && y, neither: !x && !y }
-  }, [guides])
-  const hasRealSpans = spanAxes.both
-
-  const generateMesh = () => {
-    // `guides` carries real ids, so there is nothing to substitute. This used to
-    // overwrite every id with the array index -- harmless for the mesh, which
-    // reads only axis/pos/offsetMm, but it is why the ids were being thrown away
-    // on load in the first place, and why saveGuides had no identity to diff on.
-    const mesh = buildMeshFromGuides(guides)
-    if (mesh.length === 0) {
-      // The brief's own draft used "đường giống dọc/ngang" here ("giống" =
-      // "similar to"), which does not mean anything in this context. Every
-      // other label in this file calls these lines "guide" (see the table
-      // titles below), so this message is corrected to match.
-      setError('Cần ít nhất 2 đường guide dọc và 2 đường guide ngang để sinh lưới.')
-      return
-    }
-    // The areas and their provenance are set in the same statement, from the
-    // same condition. That is the whole point: they cannot drift apart later.
-    const measured = hasRealSpans
-    setCells(measured ? mesh : prorateCellAreas(totalArea, mesh))
-    setAreaSource(measured ? 'guides' : 'prorated')
-    setSelected([])
-    setError(null)
-    // Regenerating is the "update the cells" step the stale note asks for.
-    setChainAppliedNote(false)
-  }
 
   /**
    * Reads the bays out of the drawing inside `region` and makes them the deck's
@@ -434,16 +284,14 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
       const bays = await detectBaysFromImage(imageUrl, region, options)
       const mesh = nameBays(bays).map(({ code, x, y, w, h }) => ({ code, x, y, w, h, areaM2: 0 }))
       setCells(prorateCellAreas(totalArea, mesh))
-      setAreaSource('prorated')
       setSelected([])
-      setChainAppliedNote(false)
     } catch {
       // The pixel pass and the browser Image load are the only things that can
       // fail here (a broken URL, a CORS-tainted canvas, decode failure). None of
       // that is the admin's to fix by retyping anything, so this is a plain
       // refusal, not a validation message -- and it must say something rather
       // than leave the screen exactly as it was with no sign anything happened.
-      setError('Không tự động dò được ô từ bản vẽ này. Hãy kẻ guide thủ công.')
+      fail('Không tự động dò được ô từ bản vẽ này. Kéo lại khung sàn rồi thử lại.')
     } finally {
       setDetecting(false)
     }
@@ -475,48 +323,7 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
     if (crop) void detectGrid(crop, { closeFraction: value })
   }
 
-  /**
-   * Parses the axis' current paste-box text and holds the result for the
-   * preview to render. Re-running this on the same, unedited text is
-   * idempotent -- the preview IS the parse result, not a separate summary of
-   * it, so there is nothing for the two to disagree about.
-   */
-  const previewChain = (axis: 'x' | 'y') => {
-    setChainDrafts((prev) => ({
-      ...prev,
-      [axis]: { ...prev[axis], preview: parseDimensionChain(prev[axis].text) },
-    }))
-  }
 
-  /**
-   * Replaces one axis' guides with distributeChain's placement of the
-   * previewed chain, reusing that axis' current edge positions -- so
-   * applying a chain does not also relocate guides the admin already placed
-   * by hand at the drawing's true edges. Only reachable once `preview.ok`,
-   * which the "Áp dụng" button enforces by staying disabled until then: the
-   * preview is the only thing standing between a mis-typed separator and a
-   * deck whose every percentage is wrong, so nothing may apply straight from
-   * the textarea.
-   */
-  const applyChain = (axis: 'x' | 'y') => {
-    const preview = chainDrafts[axis].preview
-    if (!preview || !preview.ok) return
-
-    const existing = axisRows(axis)
-    const firstPos = existing.length >= 2 ? existing[0].pos : 0
-    const lastPos = existing.length >= 2 ? existing[existing.length - 1].pos : 1
-    const distributed = distributeChain(preview.spansMm, firstPos, lastPos)
-
-    setGuides((prev) => [
-      ...prev.filter((g) => g.axis !== axis),
-      ...distributed.map((d) => ({ id: randomUUID(), axis, pos: d.pos, offsetMm: d.offsetMm })),
-    ])
-    // The applied text is spent -- clearing it (and the preview with it)
-    // stops the admin re-applying the same chain a second time by re-reading
-    // stale text, and matches the textarea coming back empty on screen.
-    setChainDrafts((prev) => ({ ...prev, [axis]: EMPTY_CHAIN_DRAFT }))
-    setChainAppliedNote(true)
-  }
 
   /**
    * `busy` is set here for the whole of beginEdit, not just apply(): it
@@ -688,8 +495,7 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
   const apply = async (next: MeshCell[], inheritFrom: Record<string, string[]> = {}) => {
     setBusy(true)
     try {
-      await saveGuides(deck.id, guides)
-      await updateDeckArea(deck.id, totalArea, areaSource)
+      await updateDeckArea(deck.id, totalArea, 'prorated')
       await syncCells(deck.id, next, inheritFrom)
       setCells(next)
       setSelected([])
@@ -723,126 +529,7 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
     }
   }
 
-  const guideTable = (axis: 'x' | 'y', title: string) => (
-    <Table<AxisRow>
-      rowKey="index"
-      size="small"
-      pagination={false}
-      title={() => title}
-      dataSource={axisRows(axis)}
-      columns={[
-        { title: '#', render: (_v, _r, i) => i + 1, width: 50 },
-        {
-          title: 'Khoảng cách tới đường trước (mm)',
-          dataIndex: 'spanMm',
-          render: (v: number, _r, i) =>
-            i === 0 ? (
-              <Typography.Text type="secondary">gốc</Typography.Text>
-            ) : (
-              <InputNumber
-                value={v}
-                min={0}
-                step={100}
-                // A Vietnamese admin types "14500,5". Without this antd parses
-                // that as 14500 and every guide downstream of this one -- and
-                // every cell area on this axis -- shifts by the lost
-                // half-millimetre. The deck-area and stage-weight fields both
-                // carry this same fix already, each with this same comment.
-                decimalSeparator=","
-                onChange={(n) => setSpan(axis, i, n ?? 0)}
-              />
-            ),
-        },
-        { title: 'Toạ độ thật (mm)', dataIndex: 'offsetMm', render: (v: number) => formatMm(v) },
-        {
-          title: '',
-          key: 'remove',
-          width: 70,
-          // row.index, never the rendered position: the table is sorted by pos
-          // and `guides` is not, so the two disagree the moment a guide is
-          // added anywhere but the far edge -- and deleting by the rendered
-          // position would then remove a different guide than the one the
-          // admin clicked. A stray guide is not cosmetic: a double-click on a
-          // cell adds one at offsetMm 0, which the next mesh turns into a
-          // zero-width column of 0 m² cells.
-          render: (_v, row) => (
-            <Button
-              size="small"
-              danger
-              onClick={() => setGuides((prev) => prev.filter((_, i) => i !== row.index))}
-            >
-              Xoá
-            </Button>
-          ),
-        },
-      ]}
-    />
-  )
 
-  /**
-   * Paste the printed mm chain instead of double-clicking and dragging every
-   * guide by hand -- see dimensionChain.ts. The preview is not decoration: it
-   * is the only thing standing between a mis-typed separator and a deck whose
-   * every percentage is wrong, so "Áp dụng" stays disabled until a preview of
-   * the CURRENT text has actually succeeded. Editing the text after a
-   * successful preview clears it (see the TextArea's onChange below), so a
-   * stale preview can never be applied against different text than it
-   * describes.
-   */
-  const chainPasteBox = (axis: 'x' | 'y') => {
-    const preview = chainDrafts[axis].preview
-
-    let previewBody: ReactNode = null
-    if (preview && !preview.ok) {
-      previewBody = (
-        <Alert
-          type="error"
-          message={`Không đọc được "${preview.badToken}". Mỗi số cách nhau bằng dấu cách hoặc xuống dòng.`}
-        />
-      )
-    } else if (preview && preview.ok) {
-      // 0..1 here is purely to read back offsetMm's running sum for display;
-      // the pos it also computes is discarded -- applying uses the axis' own
-      // edge positions, not 0 and 1. See applyChain.
-      const distributed = distributeChain(preview.spansMm, 0, 1)
-      previewBody = (
-        <div>
-          {preview.spansMm.map((span, i) => (
-            <div key={i}>
-              {formatMm(span)} mm — cộng dồn {formatMm(distributed[i + 1].offsetMm)} mm
-            </div>
-          ))}
-          <div>
-            <strong>{`Tổng: ${formatMm(distributed[distributed.length - 1].offsetMm)} mm`}</strong>
-          </div>
-        </div>
-      )
-    }
-
-    return (
-      <Space direction="vertical" size="small" style={{ width: '100%' }} data-testid={`chain-box-${axis}`}>
-        <Input.TextArea
-          rows={1}
-          placeholder={CHAIN_PLACEHOLDER[axis]}
-          value={chainDrafts[axis].text}
-          onChange={(e) => {
-            const text = e.target.value
-            // The preview describes OLD text the moment new text is typed --
-            // clearing it here is what keeps "Áp dụng" disabled until the
-            // admin re-previews, rather than applying stale spans.
-            setChainDrafts((prev) => ({ ...prev, [axis]: { text, preview: null } }))
-          }}
-        />
-        <Space>
-          <Button onClick={() => previewChain(axis)}>Xem trước</Button>
-          <Button type="primary" disabled={!preview?.ok} onClick={() => applyChain(axis)}>
-            Áp dụng
-          </Button>
-        </Space>
-        {previewBody}
-      </Space>
-    )
-  }
 
   return (
     <Space direction="vertical" style={{ width: '100%' }} size="middle">
@@ -877,37 +564,23 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
       )}
 
       {/*
-        Keyed on the provenance of the cells actually held, not on whether the
-        guide table happens to carry mm right now. Those differ exactly when the
-        defect this banner warns about is live: pro-rated cells on screen while
-        the guides have since been given real spans.
+        Not conditional on provenance any more: pro-rated is the only kind of
+        area this screen produces. Detection reads bays off the drawing in
+        pixels and nothing on the sheet tells it what a pixel is worth, so the
+        deck total the admin types is the only real measurement in the deck and
+        every cell area is a share of it.
       */}
-      {areaSource === 'prorated' && cells.length > 0 && (
+      {cells.length > 0 && (
         <Alert
           type="info"
           message="Diện tích ô đang được chia theo tỉ lệ, không phải đo thật"
           description={
-            spanAxes.neither
-              ? 'Chưa có guide nào mang kích thước mm, nên diện tích từng ô được chia từ tổng diện tích sàn theo tỉ lệ pixel.'
-              : `Trục ${spanAxes.x ? 'ngang' : 'dọc'} đã có kích thước mm, nhưng trục ${spanAxes.x ? 'dọc' : 'ngang'} thì chưa — cần cả hai trục mới đo được diện tích thật, nên hiện tại diện tích đang chia theo tỉ lệ pixel.`
+            'Diện tích từng ô được chia từ tổng diện tích sàn theo tỉ lệ pixel, nên từng ô là ước lượng. '
+            + 'Tổng các ô thì đúng bằng diện tích sàn đã khai báo.'
           }
         />
       )}
 
-      {/*
-        Applying a chain replaces guides only -- the cells already on screen
-        are untouched until "Sinh lưới ô" regenerates them -- and nothing else
-        here says that happened. Closable, and also cleared by generateMesh
-        itself once the admin acts on it.
-      */}
-      {chainAppliedNote && (
-        <Alert
-          type="info"
-          closable
-          onClose={() => setChainAppliedNote(false)}
-          message={'Đã đổi guide. Bấm "Sinh lưới ô" để cập nhật các ô.'}
-        />
-      )}
 
       <Descriptions size="small" column={4} bordered items={[
         { key: 'name', label: 'Sàn', children: `${deck.name} (${deck.code})` },
@@ -962,13 +635,6 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
               <Button loading={detecting} disabled={!imageUrl} onClick={() => setCropping(true)}>
                 {crop ? 'Chọn lại vùng sàn' : 'Chọn vùng sàn để dò ô'}
               </Button>
-              <Button
-                danger={deletingGuides}
-                disabled={guides.length === 0}
-                onClick={() => setDeletingGuides((on) => !on)}
-              >
-                {deletingGuides ? 'Tắt xoá đường' : 'Bật xoá đường'}
-              </Button>
             </>
           )}
           <Space direction="vertical" size={0} style={{ width: 260 }}>
@@ -990,17 +656,14 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
           </Space>
           <Typography.Text>{`${cells.length} ô`}</Typography.Text>
         </Space>
-        <Typography.Text type={cropping || deletingGuides ? 'warning' : 'secondary'}>
+        <Typography.Text type={cropping ? 'warning' : 'secondary'}>
           {cropping
             ? 'Kéo một khung bao quanh sàn. Không cần chính xác — thừa ra ngoài mép sàn một chút là được — nhưng đừng trùm cả tờ giấy, vì khung tên và hàng kích thước lọt vào sẽ làm hỏng kết quả. Kéo lại bao nhiêu lần cũng được; xong thì bấm “Dò ô trong khung”.'
-            : deletingGuides
-              ? 'Bấm vào một đường xanh trên bản vẽ để xoá đường đó. Đang bật thì không kéo được đường.'
-              : 'Dò ô sẽ thay toàn bộ ô đang có. Kéo thanh “Nối khe hở dầm” lên nếu vài ô bị dính vào nhau, hạ xuống nếu một ô bị chia vụn.'}
+            : 'Dò ô sẽ thay toàn bộ ô đang có. Kéo thanh “Nối khe hở dầm” lên nếu vài ô bị dính vào nhau, hạ xuống nếu một ô bị chia vụn.'}
         </Typography.Text>
       </Space>
 
       <Space wrap>
-        <Button onClick={generateMesh}>Sinh lưới ô</Button>
         <Button onClick={() => setSelected(cells.map((c) => c.code))}>Chọn tất cả</Button>
         <Button onClick={() => setSelected([])} disabled={selected.length === 0}>Bỏ chọn</Button>
         {/*
@@ -1035,7 +698,6 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
           imageUrl={imageUrl}
           imageW={deck.imageW}
           imageH={deck.imageH}
-          guides={guides}
           cells={cells}
           selectedCodes={selected}
           cellColors={cellColors}
@@ -1043,40 +705,6 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
           // Only while waiting for the drag: passing it always would leave the
           // canvas permanently unable to drag a guide or select a cell.
           onCropDraw={cropping ? onCropDraw : undefined}
-          // Same rule, and the two modes cannot both be on: `cropping` renders
-          // its own button pair, so the toggle below is unreachable while it is
-          // set, and the canvas ignores guide clicks in crop mode anyway.
-          onGuideClick={deletingGuides ? (index) => setGuides((prev) => prev.filter((_g, i) => i !== index)) : undefined}
-          // Clamped, never applied raw: a drag moves `pos` and leaves the mm
-          // chain alone, so a guide dragged past its neighbour puts pos-order
-          // and offset-order in disagreement -- and every area is computed from
-          // the offsets in pos-order. See moveGuideClamped for what that costs.
-          //
-          // Re-railed after the clamp: if the just-clamped guide is now the
-          // first or last on its axis, rerailAxisGuides recomputes every
-          // INTERIOR guide's pos from the mm chain between the two edges --
-          // so dragging only the two edges is enough to place a whole chain.
-          // See rerailAxisGuides for its own guards (degenerate chain,
-          // interior-only drags, edges out of order).
-          // moveGuideOnAxis, not moveGuideClamped-then-rerail: an edge drag must
-          // not be stopped by the interior guide next to it, or the chain can
-          // never be compressed onto the deck's real extent. See its docblock.
-          onGuideMove={(index, pos) => setGuides((prev) => moveGuideOnAxis(prev, index, pos))}
-          // Interpolated, not a bare 0: an offset smaller than a real
-          // neighbour to its left breaks the mm chain's pos-order
-          // monotonicity and produces a negative span -- A6's dragging
-          // defect, reached through the other door. See interpolateOffsetMm.
-          // The id is minted here, not by the database, so the guide carries its
-          // identity from the moment it exists -- saveGuides' upsert keys on it,
-          // which makes a new guide an INSERT of a known row rather than
-          // something to match up afterwards. See lib/uuid.ts for why this is
-          // not a bare crypto.randomUUID() call.
-          onGuideAdd={(axis, pos) =>
-            setGuides((prev) => [
-              ...prev,
-              { id: randomUUID(), axis, pos, offsetMm: interpolateOffsetMm(prev, axis, pos) },
-            ])
-          }
           onCellClick={(code, additive) =>
             setSelected((prev) =>
               additive
@@ -1086,19 +714,9 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
           }
         />
       ) : (
-        <Alert type="info" message="Sàn này chưa có bản vẽ. Upload PDF hoặc ảnh trước khi kẻ guide." />
+        <Alert type="info" message="Sàn này chưa có bản vẽ. Upload PDF hoặc ảnh trước khi dò ô." />
       )}
 
-      <Space align="start" wrap>
-        <Space direction="vertical" size="small">
-          {chainPasteBox('x')}
-          {guideTable('x', 'Guide dọc (cột)')}
-        </Space>
-        <Space direction="vertical" size="small">
-          {chainPasteBox('y')}
-          {guideTable('y', 'Guide ngang (hàng)')}
-        </Space>
-      </Space>
 
       {/*
         The dialog can open for any of three independent reasons -- zone
