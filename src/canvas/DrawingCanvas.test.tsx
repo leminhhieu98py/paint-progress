@@ -65,6 +65,8 @@ vi.mock('react-konva', () => {
       data-draggable={String(props.draggable ?? '')}
       data-text={String(props.text ?? '')}
       data-dash={String(props.dash ?? '')}
+      // A guide's drawn extent -- the crop-clipping tests read the endpoints.
+      data-points={Array.isArray(props.points) ? props.points.join(',') : ''}
       // `listening` cannot be observed behaviourally here: with react-konva
       // mocked away there is no hit graph, so a layer that swallows pointer
       // events looks identical to one that does not. Exposing the prop lets a
@@ -745,6 +747,44 @@ describe('DrawingCanvas', () => {
       expect(region).toHaveAttribute('data-y', '72')
       expect(region).toHaveAttribute('data-width', '360')
       expect(region).toHaveAttribute('data-height', '360')
+    })
+
+    it('draws guides across the whole drawing when there is no crop', () => {
+      render(<DrawingCanvas {...cropProps} />)
+      // x-guide at pos 0.5 on a 900x720 stage.
+      expect(screen.getByTestId('line:guide-x-1')).toHaveAttribute('data-points', '450,0,450,720')
+    })
+
+    it('clips guides to the crop, since a guide outside the deck means nothing', () => {
+      // Quarter-fractions, so every endpoint is an exact float: this asserts
+      // the endpoints, and a 503.99999999999994 would be a distraction.
+      render(<DrawingCanvas {...cropProps} cropRect={{ x: 0.25, y: 0.25, w: 0.5, h: 0.5 }} />)
+      // Crop = x 225..675, y 180..540 in stage px.
+      expect(screen.getByTestId('line:guide-x-1')).toHaveAttribute('data-points', '450,180,450,540')
+      expect(screen.getByTestId('line:guide-y-4')).toHaveAttribute('data-points', '225,720,675,720')
+    })
+
+    it('deletes the guide that was clicked, when line-deleting is on', () => {
+      // No slider setting is right everywhere on a real deck -- secondary steel
+      // clears the bar that a real beam needs. Being generous with the slider
+      // and then clicking off the wrong lines is the only way to get the exact
+      // grid, and this is that click.
+      const onGuideClick = vi.fn()
+      render(<DrawingCanvas {...cropProps} onGuideMove={vi.fn()} onGuideClick={onGuideClick} />)
+      fireEvent.click(screen.getByTestId('line:guide-x-1'))
+      expect(onGuideClick).toHaveBeenCalledWith(1)
+    })
+
+    it('stops guides being draggable while line-deleting is on', () => {
+      // A click that moved a pixel would drag the guide instead of deleting it,
+      // and a dragged guide silently rewrites the mm chain on that axis.
+      render(<DrawingCanvas {...cropProps} onGuideMove={vi.fn()} onGuideClick={vi.fn()} />)
+      expect(screen.getByTestId('line:guide-x-1')).toHaveAttribute('data-draggable', 'false')
+    })
+
+    it('does not delete a guide when line-deleting is off', () => {
+      render(<DrawingCanvas {...cropProps} onGuideMove={vi.fn()} />)
+      expect(screen.getByTestId('line:guide-x-1')).toHaveAttribute('data-draggable', 'true')
     })
 
     it('draws no crop region when there is none', () => {

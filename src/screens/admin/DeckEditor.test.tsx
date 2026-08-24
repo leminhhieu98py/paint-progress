@@ -46,7 +46,7 @@ vi.mock('../../lib/projectsApi', () => ({
 // survivor's identity can be got wrong.
 vi.mock('../../canvas/DrawingCanvas', () => ({
   DrawingCanvas: ({
-    cells, guides, onCellClick, onGuideMove, onGuideAdd, cellColors, cropRect, onCropDraw,
+    cells, guides, onCellClick, onGuideMove, onGuideAdd, cellColors, cropRect, onCropDraw, onGuideClick,
   }: {
     cells: { code: string }[]
     guides: { id: string; axis: 'x' | 'y'; pos: number; offsetMm: number }[]
@@ -56,6 +56,7 @@ vi.mock('../../canvas/DrawingCanvas', () => ({
     cellColors?: Record<string, string>
     cropRect?: { x: number; y: number; w: number; h: number } | null
     onCropDraw?: (rect: { x: number; y: number; w: number; h: number }) => void
+    onGuideClick?: (index: number) => void
   }) => (
     <div data-testid="canvas">
       {/*
@@ -67,6 +68,17 @@ vi.mock('../../canvas/DrawingCanvas', () => ({
       {onCropDraw && (
         <button onClick={() => onCropDraw({ x: 0.1, y: 0.1, w: 0.4, h: 0.5 })}>kéo khung sàn</button>
       )}
+      {/* A second, different drag: re-cropping has to replace the box, not add to it. */}
+      {onCropDraw && (
+        <button onClick={() => onCropDraw({ x: 0.2, y: 0.2, w: 0.3, h: 0.3 })}>kéo khung sàn nhỏ</button>
+      )}
+      {/*
+        Present only when guide-clicking is armed, for the same reason as the
+        crop button above: the mode is observable ONLY as this button existing.
+      */}
+      {onGuideClick && guides.map((_g, i) => (
+        <button key={`del-${i}`} onClick={() => onGuideClick(i)}>bấm xoá đường {i}</button>
+      ))}
       <div data-testid="crop">{cropRect ? JSON.stringify(cropRect) : ''}</div>
       {cells.map((c) => c.code).join(',')}
       {cells.map((c) => (
@@ -1685,6 +1697,7 @@ describe('DeckEditor', () => {
 
       await userEvent.click(screen.getByRole('button', { name: 'Chọn vùng sàn để dò lưới' }))
       await userEvent.click(screen.getByRole('button', { name: 'kéo khung sàn' }))
+      await userEvent.click(screen.getByRole('button', { name: 'Dò lưới trong khung' }))
 
       await waitFor(() => {
         expect(readGuides().filter((g) => g.axis === 'x')).toHaveLength(2)
@@ -1712,6 +1725,7 @@ describe('DeckEditor', () => {
       await screen.findByTestId('canvas')
       await userEvent.click(screen.getByRole('button', { name: 'Chọn vùng sàn để dò lưới' }))
       await userEvent.click(screen.getByRole('button', { name: 'kéo khung sàn' }))
+      await userEvent.click(screen.getByRole('button', { name: 'Dò lưới trong khung' }))
       await waitFor(() => expect(readGuides().filter((g) => g.axis === 'x')).toHaveLength(2))
 
       // Home = the slider's own minimum (0.30): a third, fainter vertical
@@ -1723,7 +1737,11 @@ describe('DeckEditor', () => {
 
       await waitFor(() => expect(readGuides().filter((g) => g.axis === 'x')).toHaveLength(3))
       expect(readGuides().filter((g) => g.axis === 'y')).toHaveLength(2)
-      expect(screen.getByText('3 đường dọc × 2 đường ngang → 2 ô')).toBeInTheDocument()
+      // The line COUNTS are what this test is about. The cell count is not
+      // asserted here on purpose: the drawn-edge filter decides it, and pinning
+      // it here would make every slider test fail whenever that rule changes.
+      // It has its own test below.
+      expect(screen.getByText(/^3 đường dọc × 2 đường ngang/)).toBeInTheDocument()
 
       // inkProfileFromImage's one expensive call is not repeated by a slider
       // move -- only linesFromProfile's cheap re-read of the cached profile is.
@@ -1737,6 +1755,7 @@ describe('DeckEditor', () => {
       await screen.findByTestId('canvas')
       await userEvent.click(screen.getByRole('button', { name: 'Chọn vùng sàn để dò lưới' }))
       await userEvent.click(screen.getByRole('button', { name: 'kéo khung sàn' }))
+      await userEvent.click(screen.getByRole('button', { name: 'Dò lưới trong khung' }))
       await waitFor(() => expect(readGuides().filter((g) => g.axis === 'y')).toHaveLength(2))
 
       // End = the slider's own maximum (0.90): only the strongest horizontal
@@ -1747,7 +1766,7 @@ describe('DeckEditor', () => {
 
       await waitFor(() => expect(readGuides().filter((g) => g.axis === 'y')).toHaveLength(1))
       expect(readGuides().filter((g) => g.axis === 'x')).toHaveLength(2)
-      expect(screen.getByText('2 đường dọc × 1 đường ngang → 0 ô')).toBeInTheDocument()
+      expect(screen.getByText(/^2 đường dọc × 1 đường ngang/)).toBeInTheDocument()
     })
 
     it('detects only inside the region the admin drew', async () => {
@@ -1763,6 +1782,7 @@ describe('DeckEditor', () => {
 
       await userEvent.click(screen.getByRole('button', { name: 'Chọn vùng sàn để dò lưới' }))
       await userEvent.click(screen.getByRole('button', { name: 'kéo khung sàn' }))
+      await userEvent.click(screen.getByRole('button', { name: 'Dò lưới trong khung' }))
 
       await waitFor(() => {
         expect(inkProfileFromImage).toHaveBeenCalledWith('blob:drawing', {
@@ -1771,7 +1791,7 @@ describe('DeckEditor', () => {
       })
     })
 
-    it('puts the canvas in crop mode only while it is waiting for the drag', async () => {
+    it('puts the canvas in crop mode only until the region is committed', async () => {
       inkProfileFromImage.mockResolvedValue(fixtureProfile())
       listGuides.mockResolvedValue([])
       render(<DeckEditor deck={deck} onClose={vi.fn()} />)
@@ -1783,8 +1803,9 @@ describe('DeckEditor', () => {
 
       await userEvent.click(screen.getByRole('button', { name: 'Chọn vùng sàn để dò lưới' }))
       await userEvent.click(screen.getByRole('button', { name: 'kéo khung sàn' }))
+      await userEvent.click(screen.getByRole('button', { name: 'Dò lưới trong khung' }))
 
-      // And not after: the drag is over.
+      // And not after committing: the box is settled.
       await waitFor(() => {
         expect(screen.queryByRole('button', { name: 'kéo khung sàn' })).not.toBeInTheDocument()
       })
@@ -1799,6 +1820,7 @@ describe('DeckEditor', () => {
 
       await userEvent.click(screen.getByRole('button', { name: 'Chọn vùng sàn để dò lưới' }))
       await userEvent.click(screen.getByRole('button', { name: 'kéo khung sàn' }))
+      await userEvent.click(screen.getByRole('button', { name: 'Dò lưới trong khung' }))
 
       // Whatever the sliders then say, the admin can see which part of the
       // sheet the numbers are about.
@@ -1828,6 +1850,154 @@ describe('DeckEditor', () => {
       expect(readGuides()).toEqual(ONE_BAY_GUIDES)
     })
 
+    it('does not detect when the drag ends -- only when the region is committed', async () => {
+      // The admin has to see the box against the sheet and decide whether the
+      // title block and the off-deck structure are outside it, which takes more
+      // than one attempt. Detecting on mouse-up replaced the whole guide table
+      // on every attempt.
+      inkProfileFromImage.mockResolvedValue(fixtureProfile())
+      listGuides.mockResolvedValue(ONE_BAY_GUIDES)
+      render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+      await screen.findByTestId('canvas')
+
+      await userEvent.click(screen.getByRole('button', { name: 'Chọn vùng sàn để dò lưới' }))
+      await userEvent.click(screen.getByRole('button', { name: 'kéo khung sàn' }))
+
+      expect(inkProfileFromImage).not.toHaveBeenCalled()
+      expect(readGuides()).toEqual(ONE_BAY_GUIDES)
+      // The box IS remembered and drawn, though -- that is what the admin is
+      // looking at while they decide.
+      expect(screen.getByTestId('crop')).toHaveTextContent('{"x":0.1,"y":0.1,"w":0.4,"h":0.5}')
+
+      await userEvent.click(screen.getByRole('button', { name: 'Dò lưới trong khung' }))
+      await waitFor(() => expect(inkProfileFromImage).toHaveBeenCalledTimes(1))
+    })
+
+    it('re-dragging replaces the region, and only the last one is detected', async () => {
+      inkProfileFromImage.mockResolvedValue(fixtureProfile())
+      listGuides.mockResolvedValue([])
+      render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+      await screen.findByTestId('canvas')
+
+      await userEvent.click(screen.getByRole('button', { name: 'Chọn vùng sàn để dò lưới' }))
+      await userEvent.click(screen.getByRole('button', { name: 'kéo khung sàn' }))
+      await userEvent.click(screen.getByRole('button', { name: 'kéo khung sàn nhỏ' }))
+      await userEvent.click(screen.getByRole('button', { name: 'Dò lưới trong khung' }))
+
+      await waitFor(() => {
+        expect(inkProfileFromImage).toHaveBeenCalledWith('blob:drawing', {
+          region: { x: 0.2, y: 0.2, w: 0.3, h: 0.3 },
+        })
+      })
+      expect(inkProfileFromImage).toHaveBeenCalledTimes(1)
+    })
+
+    it('cannot commit a region that was never drawn', async () => {
+      listGuides.mockResolvedValue([])
+      render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+      await screen.findByTestId('canvas')
+
+      await userEvent.click(screen.getByRole('button', { name: 'Chọn vùng sàn để dò lưới' }))
+      expect(screen.getByRole('button', { name: 'Dò lưới trong khung' })).toBeDisabled()
+    })
+
+    it('deletes the guide the admin clicked, while line-deleting is on', async () => {
+      // The answer to "no slider position satisfies the whole sheet": be
+      // generous with the slider, then click off the wrong lines.
+      listGuides.mockResolvedValue(ONE_BAY_GUIDES)
+      render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+      await screen.findByTestId('canvas')
+
+      // Not armed until asked -- a stray click on a dense grid would otherwise
+      // change the mesh with nothing said.
+      expect(screen.queryByRole('button', { name: 'bấm xoá đường 1' })).not.toBeInTheDocument()
+
+      await userEvent.click(screen.getByRole('button', { name: 'Bật xoá đường' }))
+      await userEvent.click(screen.getByRole('button', { name: 'bấm xoá đường 1' }))
+
+      // g2 gone, the other three untouched, and the mode is still on for the
+      // next wrong line.
+      expect(readGuides()).toEqual([ONE_BAY_GUIDES[0], ONE_BAY_GUIDES[2], ONE_BAY_GUIDES[3]])
+      expect(screen.getByRole('button', { name: 'Tắt xoá đường' })).toBeInTheDocument()
+
+      await userEvent.click(screen.getByRole('button', { name: 'Tắt xoá đường' }))
+      expect(screen.queryByRole('button', { name: 'bấm xoá đường 1' })).not.toBeInTheDocument()
+    })
+
+    it('offers nothing to delete when there are no guides', async () => {
+      listGuides.mockResolvedValue([])
+      render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+      await screen.findByTestId('canvas')
+
+      expect(screen.getByRole('button', { name: 'Bật xoá đường' })).toBeDisabled()
+    })
+
+    it('counts only the cells the drawing encloses, and says how many it dropped', async () => {
+      // A grid of guides makes a cell per crossing whether the sheet draws that
+      // bay or not, so a mesh over a real deck covers the E-house, the circular
+      // structures and the blank corners with cells nobody will ever paint. The
+      // count next to the sliders has to be the number the admin will actually
+      // get, or they tune against a number that is not the answer.
+      //
+      // At the vertical slider's minimum the fixture yields three vertical
+      // guides, and its faintest line (7 of 19 rows) is too short to enclose
+      // the second cell -- the same shape as a beam that stops part-way.
+      inkProfileFromImage.mockResolvedValue(fixtureProfile())
+      listGuides.mockResolvedValue([])
+      render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+      await screen.findByTestId('canvas')
+      await userEvent.click(screen.getByRole('button', { name: 'Chọn vùng sàn để dò lưới' }))
+      await userEvent.click(screen.getByRole('button', { name: 'kéo khung sàn' }))
+      await userEvent.click(screen.getByRole('button', { name: 'Dò lưới trong khung' }))
+      await waitFor(() => expect(readGuides().filter((g) => g.axis === 'x')).toHaveLength(2))
+
+      const xSlider = screen.getByRole('slider', { name: 'Độ nhạy trục dọc' })
+      xSlider.focus()
+      fireEvent.keyDown(xSlider, { key: 'Home', keyCode: 36, which: 36 })
+
+      expect(await screen.findByText(
+        '3 đường dọc × 2 đường ngang → 1 ô (đã bỏ 1 ô không có khung trên bản vẽ)',
+      )).toBeInTheDocument()
+    })
+
+    it('generates only the cells the drawing encloses', async () => {
+      // The count above and the mesh actually built have to come from the same
+      // filter -- a count that promised one thing and a Save that wrote another
+      // is worse than no count at all.
+      inkProfileFromImage.mockResolvedValue(fixtureProfile())
+      listGuides.mockResolvedValue([])
+      render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+      await screen.findByTestId('canvas')
+      await userEvent.click(screen.getByRole('button', { name: 'Chọn vùng sàn để dò lưới' }))
+      await userEvent.click(screen.getByRole('button', { name: 'kéo khung sàn' }))
+      await userEvent.click(screen.getByRole('button', { name: 'Dò lưới trong khung' }))
+      await waitFor(() => expect(readGuides().filter((g) => g.axis === 'x')).toHaveLength(2))
+
+      const xSlider = screen.getByRole('slider', { name: 'Độ nhạy trục dọc' })
+      xSlider.focus()
+      fireEvent.keyDown(xSlider, { key: 'Home', keyCode: 36, which: 36 })
+      await screen.findByText(/đã bỏ 1 ô/)
+
+      await userEvent.click(screen.getByRole('button', { name: 'Sinh lưới ô' }))
+
+      // One cell reaches the canvas, not the two the 3x2 grid would give. Read
+      // off the per-cell buttons the canvas stand-in renders, so this counts
+      // cells rather than matching a joined string that other stand-in output
+      // now precedes.
+      expect(screen.getAllByRole('button', { name: /^chọn R/ })).toHaveLength(1)
+    })
+
+    it('does not drop hand-drawn cells, having no pixels to check them against', async () => {
+      // With no detection run there is no record of what the sheet draws, and a
+      // cell vanishing from a hand-built grid would be indistinguishable from
+      // losing it.
+      listGuides.mockResolvedValue(ONE_BAY_GUIDES)
+      render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+      await screen.findByTestId('canvas')
+
+      expect(screen.getByText('2 đường dọc × 2 đường ngang → 1 ô')).toBeInTheDocument()
+    })
+
     it('shows a Vietnamese message when detection fails, and leaves the existing guides alone', async () => {
       inkProfileFromImage.mockRejectedValue(new Error('canvas boom'))
       listGuides.mockResolvedValue(ONE_BAY_GUIDES)
@@ -1836,6 +2006,7 @@ describe('DeckEditor', () => {
 
       await userEvent.click(screen.getByRole('button', { name: 'Chọn vùng sàn để dò lưới' }))
       await userEvent.click(screen.getByRole('button', { name: 'kéo khung sàn' }))
+      await userEvent.click(screen.getByRole('button', { name: 'Dò lưới trong khung' }))
 
       expect(
         await screen.findByText('Không tự động dò được lưới từ bản vẽ này. Hãy kẻ guide thủ công.'),

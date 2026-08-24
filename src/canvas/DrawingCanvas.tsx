@@ -69,6 +69,7 @@ export function DrawingCanvas({
   onGuideAdd,
   onCellClick,
   onCropDraw,
+  onGuideClick,
 }: {
   imageUrl: string
   imageW: number
@@ -112,6 +113,19 @@ export function DrawingCanvas({
    * every cell area on the deck.
    */
   onCropDraw?: (rect: { x: number; y: number; w: number; h: number }) => void
+  /**
+   * Present = clicking a guide reports its index, so the screen above can
+   * delete it. Guides stop dragging while it is set: a click that moved a pixel
+   * would drag instead of delete, and a dragged guide rewrites the mm chain on
+   * its axis.
+   *
+   * This exists because no single sensitivity is right everywhere on a real
+   * deck -- secondary steel clears the bar a real beam needs, and the admin
+   * reported that no slider position satisfied the whole sheet. Being generous
+   * with the slider and clicking off the few wrong lines is the only way to
+   * reach the exact grid.
+   */
+  onGuideClick?: (index: number) => void
 }) {
   const [image] = useImage(imageUrl)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -142,6 +156,23 @@ export function DrawingCanvas({
   const selected = new Set(selectedCodes)
   const xGuides = guides.filter((g) => g.axis === 'x')
   const yGuides = guides.filter((g) => g.axis === 'y')
+
+  /**
+   * How far along its own axis a guide is drawn: the crop's extent when there
+   * is one, the whole drawing otherwise.
+   *
+   * A guide outside the deck region says nothing -- the detector only measured
+   * inside the crop -- and a line ruled across the title block and the margins
+   * reads as a claim about them. Clipping is also what makes the drawn grid
+   * match the mesh: `buildMeshFromGuides` only ever makes cells between
+   * guides, so nothing is drawn here that the mesh does not cover.
+   */
+  const guideSpan = (axis: 'x' | 'y') => {
+    if (!cropRect) return { from: 0, to: axis === 'x' ? height : width }
+    return axis === 'x'
+      ? { from: cropRect.y * height, to: (cropRect.y + cropRect.h) * height }
+      : { from: cropRect.x * width, to: (cropRect.x + cropRect.w) * width }
+  }
 
   /**
    * Zoom is React state, pan is Konva's own. dragBoundFunc is bound per node, so
@@ -329,8 +360,8 @@ export function DrawingCanvas({
               name={`guide-${guide.axis}-${index}`}
               points={
                 guide.axis === 'x'
-                  ? [guide.pos * width, 0, guide.pos * width, height]
-                  : [0, guide.pos * height, width, guide.pos * height]
+                  ? [guide.pos * width, guideSpan('x').from, guide.pos * width, guideSpan('x').to]
+                  : [guideSpan('y').from, guide.pos * height, guideSpan('y').to, guide.pos * height]
               }
               stroke="#1677ff"
               strokeWidth={2}
@@ -345,13 +376,15 @@ export function DrawingCanvas({
                * that reads like the thing doing the work.
                */
               hitFunc={(ctx: Konva.Context, shape: Konva.Shape) => {
-                const along = guide.axis === 'x' ? height : width
+                // Measured from the drawn line's own start, not from the stage's
+                // edge: a clipped guide's grab band has to sit on the part of
+                // the line that exists.
+                const span = guideSpan(guide.axis)
                 const perpendicular =
                   guide.axis === 'x' ? guide.pos * width : guide.pos * height
-                const crossings = (guide.axis === 'x' ? yGuides : xGuides).map((g) =>
-                  guide.axis === 'x' ? g.pos * height : g.pos * width,
-                )
-                const profile = guideHitProfile(along, crossings, GUIDE_HIT_WIDTH / 2)
+                const crossings = (guide.axis === 'x' ? yGuides : xGuides)
+                  .map((g) => (guide.axis === 'x' ? g.pos * height : g.pos * width) - span.from)
+                const profile = guideHitProfile(span.to - span.from, crossings, GUIDE_HIT_WIDTH / 2)
                 if (profile.length < 2) return
 
                 // One polygon: down the +offset side of the profile, back up the
@@ -359,21 +392,23 @@ export function DrawingCanvas({
                 // meet at a point, joining two lobes that a nonzero-winding fill
                 // paints as two regions — which is exactly the intended shape.
                 const lineTo = (at: number, offset: number) => {
-                  if (guide.axis === 'x') ctx.lineTo(perpendicular + offset, at)
-                  else ctx.lineTo(at, perpendicular + offset)
+                  if (guide.axis === 'x') ctx.lineTo(perpendicular + offset, span.from + at)
+                  else ctx.lineTo(span.from + at, perpendicular + offset)
                 }
                 ctx.beginPath()
                 if (guide.axis === 'x') {
-                  ctx.moveTo(perpendicular + profile[0][1], profile[0][0])
+                  ctx.moveTo(perpendicular + profile[0][1], span.from + profile[0][0])
                 } else {
-                  ctx.moveTo(profile[0][0], perpendicular + profile[0][1])
+                  ctx.moveTo(span.from + profile[0][0], perpendicular + profile[0][1])
                 }
                 for (const [at, halfWidth] of profile.slice(1)) lineTo(at, halfWidth)
                 for (const [at, halfWidth] of [...profile].reverse()) lineTo(at, -halfWidth)
                 ctx.closePath()
                 ctx.fillStrokeShape(shape)
               }}
-              draggable={Boolean(onGuideMove) && !cropping}
+              draggable={Boolean(onGuideMove) && !cropping && !onGuideClick}
+              onClick={() => onGuideClick?.(index)}
+              onTap={() => onGuideClick?.(index)}
               dragBoundFunc={(p) => (guide.axis === 'x' ? { x: p.x, y: 0 } : { x: 0, y: p.y })}
               onDragEnd={(e: Konva.KonvaEventObject<DragEvent>) => {
                 if (!onGuideMove) return

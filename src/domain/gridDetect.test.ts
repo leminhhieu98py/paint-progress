@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { inkProfile, linesFromProfile } from './gridDetect'
+import { inkProfile, keepDrawnCells, linesFromProfile } from './gridDetect'
 
 const BLACK: [number, number, number] = [0, 0, 0]
 // r-g=150, r-b=150 -- well past the >40 exclusion threshold. The customer's
@@ -7,6 +7,7 @@ const BLACK: [number, number, number] = [0, 0, 0]
 const RED: [number, number, number] = [200, 50, 50]
 // r>180, g>180, b<140 -- the sheet's yellow fills.
 const YELLOW: [number, number, number] = [200, 200, 100]
+const WHITE: [number, number, number] = [255, 255, 255]
 
 function whiteImage(width: number, height: number): Uint8Array {
   return new Uint8Array(width * height * 3).fill(255)
@@ -229,6 +230,117 @@ describe('inkProfile / linesFromProfile', () => {
     expect(linesFromProfile(profile, { x: 0.5, y: 0.5 })).toEqual({ x: [], y: [] })
   })
 
+  it('collapses a beam drawn as two edges into one line', () => {
+    // Measured on the customer's real sheet: the bay pitch is 73-86px, but six
+    // gaps came back at 11-46px. Those are not narrow bays -- a beam is drawn
+    // with both of its edges, so each one surfaces as two lines with a sliver
+    // of nothing between them, and the mesh gets a thread-thin cell per beam.
+    //
+    // 200x200, five real lines 40px apart (columns 20/60/100/140/180) with
+    // column 103 added: a second edge 3px off the middle one. mergeWithin
+    // (0.004 = 0.8px here) is far too small to catch it, which is the point --
+    // this is a different scale of duplicate from a beam whose ink dips for a
+    // pixel.
+    const width = 200
+    const height = 200
+    const rgb = whiteImage(width, height)
+    for (const x of [20, 60, 100, 103, 140, 180]) fillColumn(rgb, width, x, 0, height - 1, BLACK)
+
+    const profile = inkProfile(rgb, width, height, { region: { x: 0, y: 0, w: 1, h: 1 } })
+    const { x } = linesFromProfile(profile, { x: 0.5, y: 0.5 })
+
+    // Five lines, and the pair is replaced by its midpoint (101.5) -- not by
+    // either edge, which would bias every bay on that side of the beam.
+    // Read back in pixels, rounded: a mean of normalized positions lands a
+    // float ulp off the same division done directly, and 101.5 is the claim,
+    // not the ulp.
+    expect(x.map((pos) => Math.round(pos * width * 1e3) / 1e3)).toEqual([20, 60, 101.5, 140, 180])
+  })
+
+  it('leaves an evenly spaced grid alone', () => {
+    // The guard on the rule above: every gap equals the median, so nothing is
+    // a duplicate of anything, and a collapse here would eat real bays.
+    const width = 200
+    const height = 200
+    const rgb = whiteImage(width, height)
+    for (const x of [20, 60, 100, 140, 180]) fillColumn(rgb, width, x, 0, height - 1, BLACK)
+
+    const profile = inkProfile(rgb, width, height, { region: { x: 0, y: 0, w: 1, h: 1 } })
+    expect(linesFromProfile(profile, { x: 0.5, y: 0.5 }).x)
+      .toEqual([20 / width, 60 / width, 100 / width, 140 / width, 180 / width])
+  })
+
+  it('keeps a genuinely narrow bay that is wide relative to the rest', () => {
+    // Gaps 40/40/20: the 20 is half the median, over the 40% bar, so it stays.
+    // A rule that merged "the smallest gap" unconditionally would delete this
+    // bay, and on a real deck the narrow bays at the edges are real.
+    const width = 200
+    const height = 200
+    const rgb = whiteImage(width, height)
+    for (const x of [20, 60, 100, 120]) fillColumn(rgb, width, x, 0, height - 1, BLACK)
+
+    const profile = inkProfile(rgb, width, height, { region: { x: 0, y: 0, w: 1, h: 1 } })
+    expect(linesFromProfile(profile, { x: 0.5, y: 0.5 }).x)
+      .toEqual([20 / width, 60 / width, 100 / width, 120 / width])
+  })
+
+  it('does not judge duplicates from fewer than three gaps', () => {
+    // Three lines give two gaps, and with two gaps there is no majority to
+    // compare against -- either one could BE the doubled pair. Refusing to
+    // guess is what keeps a two-bay deck from collapsing to one.
+    const width = 200
+    const height = 200
+    const rgb = whiteImage(width, height)
+    for (const x of [20, 26, 180]) fillColumn(rgb, width, x, 0, height - 1, BLACK)
+
+    const profile = inkProfile(rgb, width, height, { region: { x: 0, y: 0, w: 1, h: 1 } })
+    expect(linesFromProfile(profile, { x: 0.5, y: 0.5 }).x)
+      .toEqual([20 / width, 26 / width, 180 / width])
+  })
+
+  it('collapses a beam drawn as three lines, not just two', () => {
+    // A wide beam can surface as both edges plus its own web. One pass that
+    // merged pairs and stopped would leave two lines 1.5px apart.
+    const width = 200
+    const height = 200
+    const rgb = whiteImage(width, height)
+    for (const x of [20, 60, 100, 103, 106, 140, 180]) fillColumn(rgb, width, x, 0, height - 1, BLACK)
+
+    const profile = inkProfile(rgb, width, height, { region: { x: 0, y: 0, w: 1, h: 1 } })
+    expect(linesFromProfile(profile, { x: 0.5, y: 0.5 }).x
+      .map((pos) => Math.round(pos * width * 1e3) / 1e3)).toEqual([20, 60, 103, 140, 180])
+  })
+
+  it('is not fooled into eating real bays by one huge blank span', () => {
+    // Gaps 40/40/40/300 -- three real bays and one long empty stretch, which a
+    // crop with a margin on one side, or a missing beam, produces routinely.
+    // The median gap is 40, so nothing is close enough to collapse. The MEAN is
+    // 105, which would put the bar at 42 and swallow all three real bays into
+    // a single line. That is why the rule is built on the median.
+    const width = 500
+    const height = 200
+    const rgb = whiteImage(width, height)
+    for (const x of [20, 60, 100, 140, 440]) fillColumn(rgb, width, x, 0, height - 1, BLACK)
+
+    const profile = inkProfile(rgb, width, height, { region: { x: 0, y: 0, w: 1, h: 1 } })
+    expect(linesFromProfile(profile, { x: 0.5, y: 0.5 }).x.map((pos) => pos * width))
+      .toEqual([20, 60, 100, 140, 440])
+  })
+
+  it('collapses doubled HORIZONTAL beams too', () => {
+    // Not a mirror for symmetry's sake: on the customer's real sheet every one
+    // of the four 11-12px duplicate gaps was on the horizontal axis. A collapse
+    // wired into the x axis alone would leave the actual defect in place.
+    const width = 200
+    const height = 200
+    const rgb = whiteImage(width, height)
+    for (const y of [20, 60, 100, 103, 140, 180]) fillRow(rgb, width, y, 0, width - 1, BLACK)
+
+    const profile = inkProfile(rgb, width, height, { region: { x: 0, y: 0, w: 1, h: 1 } })
+    expect(linesFromProfile(profile, { x: 0.5, y: 0.5 }).y
+      .map((pos) => Math.round(pos * height * 1e3) / 1e3)).toEqual([20, 60, 101.5, 140, 180])
+  })
+
   it('yields empty arrays and does not crash on an all-white image', () => {
     const width = 10
     const height = 10
@@ -237,5 +349,93 @@ describe('inkProfile / linesFromProfile', () => {
     const profile = inkProfile(rgb, width, height)
     expect(profile.contentBox).toBeNull()
     expect(linesFromProfile(profile, { x: 0.5, y: 0.5 })).toEqual({ x: [], y: [] })
+  })
+})
+
+describe('keepDrawnCells', () => {
+  /**
+   * A 200x200 sheet with a 2x2 grid of bays: lines at 20/100/180 on both axes.
+   * `erase` blanks part of a line, standing in for a beam that is not there --
+   * which is what the corner areas, the E-house and the circular structures on
+   * a real deck look like to this rule.
+   */
+  function grid(erase: (rgb: Uint8Array, width: number) => void = () => {}) {
+    const width = 200
+    const height = 200
+    const rgb = whiteImage(width, height)
+    for (const x of [20, 100, 180]) fillColumn(rgb, width, x, 20, 180, BLACK)
+    for (const y of [20, 100, 180]) fillRow(rgb, width, y, 20, 180, BLACK)
+    erase(rgb, width)
+    return inkProfile(rgb, width, height, { region: { x: 0, y: 0, w: 1, h: 1 } })
+  }
+
+  const CELLS = [
+    { code: 'TL', x: 0.1, y: 0.1, w: 0.4, h: 0.4, areaM2: 1 },
+    { code: 'TR', x: 0.5, y: 0.1, w: 0.4, h: 0.4, areaM2: 1 },
+    { code: 'BL', x: 0.1, y: 0.5, w: 0.4, h: 0.4, areaM2: 1 },
+    { code: 'BR', x: 0.5, y: 0.5, w: 0.4, h: 0.4, areaM2: 1 },
+  ]
+
+  it('keeps every cell of a grid that is fully drawn', () => {
+    expect(keepDrawnCells(grid(), CELLS).map((c) => c.code)).toEqual(['TL', 'TR', 'BL', 'BR'])
+  })
+
+  it('drops a cell the drawing does not enclose, and keeps its neighbours', () => {
+    // Every line bounding the bottom-right bay is erased, so that quarter of
+    // the sheet is blank paper inside the grid -- exactly the shape of the
+    // corner areas the admin says are not bays. Its two neighbours each lose
+    // ONE edge to the same erasure and must survive: a rule strict enough to
+    // need all four edges would delete real deck area either side of every
+    // beam that stops short.
+    const profile = grid((rgb, width) => {
+      for (let y = 101; y <= 180; y++) {
+        fillColumn(rgb, width, 100, y, y, WHITE)
+        fillColumn(rgb, width, 180, y, y, WHITE)
+      }
+      for (let x = 101; x <= 180; x++) {
+        fillRow(rgb, width, 100, x, x, WHITE)
+        fillRow(rgb, width, 180, x, x, WHITE)
+      }
+    })
+    expect(keepDrawnCells(profile, CELLS).map((c) => c.code)).toEqual(['TL', 'TR', 'BL'])
+  })
+
+  it('drops a cell down to two drawn edges', () => {
+    // Two of four is a corner, not a bay: nothing on the sheet says where the
+    // other two sides would be.
+    const profile = grid((rgb, width) => {
+      for (let y = 101; y <= 180; y++) fillColumn(rgb, width, 180, y, y, WHITE)
+      for (let x = 101; x <= 180; x++) fillRow(rgb, width, 180, x, x, WHITE)
+    })
+    expect(keepDrawnCells(profile, CELLS).map((c) => c.code)).toEqual(['TL', 'TR', 'BL'])
+  })
+
+  it('finds a beam whose drawn edges straddle the cell boundary', () => {
+    // A detected line sits at the beam's CENTRE, and a beam is drawn as its two
+    // edges with white in between -- so a cell boundary lands on paper that
+    // carries no ink at all. Testing the exact boundary pixel would reject
+    // every real bay on the sheet.
+    const width = 1000
+    const height = 200
+    const rgb = whiteImage(width, height)
+    // One bay from x 100 to 300. The horizontal beams are drawn as two edges
+    // 6px apart, so the boundary itself is blank; the vertical beams are drawn
+    // ONCE, 3px to the low side, which is what the deck's outermost beams look
+    // like. Both signs of the offset are therefore load-bearing -- a band that
+    // only looked one way would find the horizontals and lose the verticals.
+    for (const centre of [100, 300]) fillColumn(rgb, width, centre - 3, 20, 180, BLACK)
+    for (const centre of [20, 180]) {
+      fillRow(rgb, width, centre - 3, 100, 300, BLACK)
+      fillRow(rgb, width, centre + 3, 100, 300, BLACK)
+    }
+    const profile = inkProfile(rgb, width, height, { region: { x: 0, y: 0, w: 1, h: 1 } })
+
+    const cell = { code: 'A', x: 0.1, y: 0.1, w: 0.2, h: 0.8, areaM2: 1 }
+    expect(keepDrawnCells(profile, [cell])).toEqual([cell])
+  })
+
+  it('drops everything when the profile found nothing to measure', () => {
+    const blank = inkProfile(whiteImage(20, 20), 20, 20)
+    expect(keepDrawnCells(blank, CELLS)).toEqual([])
   })
 })

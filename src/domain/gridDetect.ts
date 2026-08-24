@@ -93,6 +93,19 @@ export interface InkProfile {
   height: number
   /** Carried through from the options `inkProfile` was built with, so `linesFromProfile` merges the same way regardless of fraction. */
   mergeWithin: number
+  /**
+   * One bit per pixel, set where the pixel is ink, row-major
+   * (`bit = y * width + x`). Only pixels inside the region are ever set.
+   *
+   * The per-column and per-row counts above answer "is there a line here",
+   * which is all the sliders need. `keepDrawnCells` asks a different question
+   * -- "is THIS cell's edge drawn on the sheet" -- and no pair of 1-D
+   * projections can answer it: a column's ink count cannot say WHERE along the
+   * column the ink was. Packed to bits rather than bytes because this is React
+   * state on a tablet: at the 3000px render width it is 1.1 MB packed against
+   * 9.2 MB as a byte per pixel.
+   */
+  mask: Uint8Array
 }
 
 /**
@@ -169,6 +182,66 @@ function mergeClose(positions: number[], within: number): number[] {
 }
 
 /**
+ * How close two lines must be, as a fraction of the median gap between lines on
+ * that axis, before they are treated as one beam drawn twice rather than two
+ * beams with a bay between them.
+ *
+ * Measured on the customer's real Main Deck sheet at 3600px: the horizontal bay
+ * pitch is 73-86px, and the detector returned four gaps of 11-12px and two of
+ * 33-46px. The small ones are not narrow bays -- a beam is drawn with both of
+ * its edges, so each beam surfaces as two lines with a sliver of nothing
+ * between them, and every one of those slivers becomes a thread-thin cell in
+ * the mesh. 0.40 of the median clears the 11-12px pairs and the 46px pair on
+ * the vertical axis (median 171px) while leaving the 33px and 42px gaps at the
+ * deck's top and bottom edges alone, which is the right call: those could be
+ * real narrow bays and the admin can see and delete a line, but cannot recover
+ * a bay this rule ate.
+ *
+ * A fraction of the median, not a pixel count: the same code runs on a sheet
+ * rendered at any width and on decks whose bays are any size.
+ */
+const DOUBLE_LINE_GAP_RATIO = 0.4
+
+/** The middle value, averaging the two middles for an even count. */
+function median(values: number[]): number {
+  const sorted = [...values].sort((a, b) => a - b)
+  const mid = sorted.length >> 1
+  return sorted.length % 2 === 1 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2
+}
+
+/**
+ * Replaces each run of lines that sit closer together than
+ * `DOUBLE_LINE_GAP_RATIO` of the median gap with a single line at the run's
+ * mean -- one beam, at its centre, instead of one line per drawn edge.
+ *
+ * Clustered rather than merged pairwise: a wide beam can surface as three lines
+ * (both edges and its own web), and averaging pairwise walks the result off the
+ * beam's centre (100/103/106 becomes 101.5 then 103.75, not 103). The mean of
+ * the whole run is the beam's centre.
+ *
+ * Refuses to act on fewer than three gaps. With two gaps there is no majority
+ * to compare against -- either one could itself be the doubled pair -- and
+ * guessing there would collapse a two-bay deck into one.
+ *
+ * One pass, deliberately. A second pass was written first and no test could
+ * pin it: collapsing a run raises the median in step with the gaps it widens,
+ * so the bar moves with the data and a gap that survived the first pass
+ * survives every later one.
+ */
+function collapseDoubleLines(lines: number[]): number[] {
+  if (lines.length < 4) return lines
+  const gaps = lines.slice(1).map((pos, i) => pos - lines[i])
+  const limit = DOUBLE_LINE_GAP_RATIO * median(gaps)
+
+  const runs: number[][] = [[lines[0]]]
+  for (let i = 1; i < lines.length; i++) {
+    if (gaps[i - 1] < limit) runs[runs.length - 1].push(lines[i])
+    else runs.push([lines[i]])
+  }
+  return runs.map((run) => run.reduce((sum, pos) => sum + pos, 0) / run.length)
+}
+
+/**
  * The expensive pass: one walk over every pixel, building the per-column and
  * per-row ink counts and the content box. Call this once per drawing (or
  * whenever the drawing itself changes) and cache the result; every
@@ -189,6 +262,7 @@ export function inkProfile(
 
   const colInk = new Array<number>(Math.max(width, 0)).fill(0)
   const rowInk = new Array<number>(Math.max(height, 0)).fill(0)
+  const mask = new Uint8Array(Math.ceil(Math.max(width * height, 0) / 8))
 
   // Half-open in normalized space, inclusive in pixels: a region ending at
   // 0.5 of a 100px image scans up to and including column 49, so two regions
@@ -212,11 +286,13 @@ export function inkProfile(
       if (luminance <= inkThreshold) {
         colInk[x]++
         rowInk[y]++
+        const bit = rowOffset + x
+        mask[bit >> 3] |= 1 << (bit & 7)
       }
     }
   }
 
-  return { colInk, rowInk, width, height, mergeWithin, contentBox: contentBox() }
+  return { colInk, rowInk, width, height, mergeWithin, mask, contentBox: contentBox() }
 
   /**
    * The region when there is one, the ink's own bounding box otherwise, and
@@ -299,7 +375,109 @@ export function linesFromProfile(
   const yPositions = runMidpoints(rowCandidates).map((mid) => mid / profile.height)
 
   return {
-    x: mergeClose(xPositions, profile.mergeWithin),
-    y: mergeClose(yPositions, profile.mergeWithin),
+    x: collapseDoubleLines(mergeClose(xPositions, profile.mergeWithin)),
+    y: collapseDoubleLines(mergeClose(yPositions, profile.mergeWithin)),
   }
+}
+
+/**
+ * How far to either side of a cell's edge to look for the beam that edge is
+ * meant to sit on, as a fraction of the image's width.
+ *
+ * A detected line sits at the beam's CENTRE, because a beam is drawn as its two
+ * edges and `collapseDoubleLines` replaces that pair with their mean -- so the
+ * cell boundary itself lands on the white between the two drawn edges and
+ * carries no ink at all. Measured on the customer's real sheet, the doubled
+ * pairs were 11-12px apart at 3600px wide, so the drawn edge is ~6px off the
+ * centre; 0.004 gives 14px there, which covers that with room for the collapse
+ * having moved the line, and stays far short of the 73-86px bay pitch, so an
+ * edge can never find its neighbour's beam instead of its own.
+ */
+const EDGE_INK_BAND_FRACTION = 0.004
+
+/**
+ * How much of an edge's length must find ink before that edge counts as drawn.
+ * Below 1 on purpose: a beam is interrupted where other structure crosses it,
+ * and every bay on a real deck has something crossing at least one side.
+ */
+const MIN_EDGE_INK = 0.6
+
+/**
+ * How many of a cell's four edges must be drawn for the cell to be a bay.
+ *
+ * Three, not four. A beam that stops part-way leaves the cells either side of
+ * it each missing ONE edge, and both of those are real deck the admin still has
+ * to paint -- requiring all four would delete deck area on every such beam,
+ * which on this sheet is many of them. Two or fewer is a corner rather than a
+ * bay: nothing on the sheet says where the other two sides are, which is
+ * exactly the case of the areas the admin pointed at and said "those are not
+ * rectangles".
+ */
+const MIN_INKED_EDGES = 3
+
+/**
+ * The cells the drawing actually encloses, in the order given.
+ *
+ * A grid of guides makes a cell for every crossing whether the sheet draws that
+ * bay or not, so a mesh over a real deck covers the E-house, the two circular
+ * structures, the diagonal brace and the blank corners with cells that are not
+ * bays and that nobody will ever paint. This reads the sheet back and keeps the
+ * cells whose sides are on it.
+ *
+ * Generic over the cell type so it can filter a mesh without knowing what else
+ * a mesh cell carries; every field is preserved untouched, since this decides
+ * membership only and never geometry.
+ *
+ * A blank sheet needs no special case: no edge finds ink, so nothing is kept.
+ */
+export function keepDrawnCells<T extends { x: number; y: number; w: number; h: number }>(
+  profile: InkProfile,
+  cells: T[],
+): T[] {
+  const { width, height, mask } = profile
+  const band = Math.max(1, Math.round(EDGE_INK_BAND_FRACTION * width))
+
+  const isInk = (x: number, y: number) => {
+    if (x < 0 || y < 0 || x >= width || y >= height) return false
+    const bit = y * width + x
+    return (mask[bit >> 3] & (1 << (bit & 7))) !== 0
+  }
+
+  /**
+   * The fraction of an axis-aligned edge that finds ink within `band` pixels of
+   * itself. `along` walks the edge; `across` is the perpendicular the band
+   * sweeps.
+   */
+  const edgeInk = (fixed: number, from: number, to: number, axis: 'row' | 'column') => {
+    const start = Math.round(from)
+    const end = Math.round(to)
+    if (end < start) return 0
+    let inked = 0
+    for (let along = start; along <= end; along++) {
+      for (let offset = -band; offset <= band; offset++) {
+        const found = axis === 'row'
+          ? isInk(along, Math.round(fixed) + offset)
+          : isInk(Math.round(fixed) + offset, along)
+        if (found) {
+          inked++
+          break
+        }
+      }
+    }
+    return inked / (end - start + 1)
+  }
+
+  return cells.filter((cell) => {
+    const left = cell.x * width
+    const right = (cell.x + cell.w) * width
+    const top = cell.y * height
+    const bottom = (cell.y + cell.h) * height
+    const edges = [
+      edgeInk(top, left, right, 'row'),
+      edgeInk(bottom, left, right, 'row'),
+      edgeInk(left, top, bottom, 'column'),
+      edgeInk(right, top, bottom, 'column'),
+    ]
+    return edges.filter((coverage) => coverage >= MIN_EDGE_INK).length >= MIN_INKED_EDGES
+  })
 }
