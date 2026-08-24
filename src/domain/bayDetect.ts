@@ -440,10 +440,10 @@ function centrelines(
     bridged.push(joined / span)
   }
 
-  // Each run of rows over the bar is a candidate; its position is the row the
-  // bridging helped most, which is the dashed one.
+  // Each run of rows over the bar is a candidate band. Its dashed row, if it has
+  // one, is the row the bridging helped most.
   const DASH_ENOUGH = 0.05
-  const found: { at: number; dash: number }[] = []
+  const found: { at: number; from: number; to: number; dash: number }[] = []
   let start = -1
   for (let i = 0; i <= bridged.length; i++) {
     const over = i < bridged.length && bridged[i] >= minCover
@@ -461,31 +461,42 @@ function centrelines(
         bestDash = dash
       }
     }
-    found.push({
-      at: from + (bestDash >= DASH_ENOUGH ? best : start + ((i - 1 - start) >> 1)),
-      dash: bestDash,
-    })
+    found.push({ at: from + best, from: from + start, to: from + i - 1, dash: bestDash })
     start = -1
   }
-  if (found.length < 3) return found.map((f) => f.at)
+  if (found.length < 3) return found.map((f) => (f.dash >= DASH_ENOUGH ? f.at : (f.from + f.to) >> 1))
 
-  // One beam, one line. Where the render separates a beam's three lines into
-  // three bands -- the two flanks and the dashed centre -- they arrive here as
-  // three candidates a few pixels apart, and the boundary belongs on the dashed
-  // one. Anything closer together than a third of the typical bay pitch is the
-  // same beam; the survivor is the candidate the bridging helped most.
-  const gaps = found.slice(1).map((f, i) => f.at - found[i].at).sort((a, b) => a - b)
-  const together = gaps[gaps.length >> 1] / 6
+  // One beam, one line.
+  //
+  // A beam reaches here as one band when its dashes survived the render, and as
+  // two -- its solid flanks, with the dashes lost between them -- when they did
+  // not. Measured on the admin's own uploaded drawing, which is stored at
+  // 1622px: across a beam the flanks read 82% and 59% while the three rows
+  // between them read 5-7%, because at that size a dash is under a pixel wide.
+  // Both cases give the beam's axis: the dashed row where there is one, the
+  // middle of the flanks where there is not.
+  //
+  // Bands closer together than a sixth of the bay pitch are the same beam. The
+  // pitch is the median of the LARGER half of the gaps, not of all of them: when
+  // every beam arrives as a flank pair, half the gaps are a beam's own thickness
+  // and the plain median lands between the two populations, which left every
+  // beam with a boundary on each side and a sliver of a cell between them.
+  const gaps = found.slice(1).map((f, i) => f.from - found[i].to).sort((a, b) => a - b)
+  const wide = gaps.slice(gaps.length >> 1)
+  const together = wide[wide.length >> 1] / 6
 
   const lines: number[] = []
   let group: typeof found = []
   const flush = () => {
     if (group.length === 0) return
-    lines.push(group.reduce((best, f) => (f.dash > best.dash ? f : best)).at)
+    const dashed = group.reduce((best, f) => (f.dash > best.dash ? f : best))
+    lines.push(dashed.dash >= DASH_ENOUGH
+      ? dashed.at
+      : (group[0].from + group[group.length - 1].to) >> 1)
     group = []
   }
   for (const f of found) {
-    if (group.length > 0 && f.at - group[group.length - 1].at > together) flush()
+    if (group.length > 0 && f.from - group[group.length - 1].to > together) flush()
     group.push(f)
   }
   flush()
