@@ -69,7 +69,15 @@ const EDIT_CONFIRM: Record<EditKind, string> = {
  * spaces or line breaks) rather than an empty box. Illustrative only -- it is
  * never read as a value, only displayed until something is typed.
  */
-const CHAIN_PLACEHOLDER = '2500 9500 14500 14500 9500 7600'
+/**
+ * Per axis, because the placeholder is read as guidance and a horizontal chain
+ * shown above the vertical table teaches the wrong thing. Both are the real
+ * Main Deck's own chains, so an admin holding that drawing recognises them.
+ */
+const CHAIN_PLACEHOLDER: Record<'x' | 'y', string> = {
+  x: '2500 9500 14500 14500 9500 7600',
+  y: '5500 16000 16000 16000',
+}
 
 /** One axis' paste-box state: the raw text, and the last "Xem trước" result for it. */
 interface ChainDraft {
@@ -652,7 +660,7 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
       <Space direction="vertical" size="small" style={{ width: '100%' }} data-testid={`chain-box-${axis}`}>
         <Input.TextArea
           rows={1}
-          placeholder={CHAIN_PLACEHOLDER}
+          placeholder={CHAIN_PLACEHOLDER[axis]}
           value={chainDrafts[axis].text}
           onChange={(e) => {
             const text = e.target.value
