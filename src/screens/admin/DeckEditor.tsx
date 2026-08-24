@@ -8,7 +8,7 @@ import {
   divergesBeyondThreshold, hasUndeclaredArea, interpolateOffsetMm, mergeCells,
   offsetsFromSpans, prorateCellAreas, spansFromOffsets,
 } from '../../domain/geometry'
-import { keepDrawnCells, linesFromProfile, type InkProfile } from '../../domain/gridDetect'
+import { keepDrawnCells, linesFromProfile, mergeUndrawnCells, type InkProfile } from '../../domain/gridDetect'
 import type { Guide, MeshCell, Stage } from '../../domain/types'
 import {
   getDrawingUrl, listCells, listGuides, saveGuides, syncCells,
@@ -363,8 +363,12 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
    */
   const drawnMesh = useMemo(() => {
     const mesh = buildMeshFromGuides(guides)
+    if (!detectProfile) return { cells: mesh, gridCount: mesh.length }
+    // Merge FIRST, then drop. The other order drops a cell for missing the very
+    // edge it should have merged across -- which is the deck area either side
+    // of every beam that stops part-way.
     return {
-      cells: detectProfile ? keepDrawnCells(detectProfile, mesh) : mesh,
+      cells: keepDrawnCells(detectProfile, mergeUndrawnCells(detectProfile, mesh)),
       gridCount: mesh.length,
     }
   }, [guides, detectProfile])
@@ -482,6 +486,7 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
     x: guides.filter((g) => g.axis === 'x').length,
     y: guides.filter((g) => g.axis === 'y').length,
     cellCount: drawnMesh.cells.length,
+    gridCount: drawnMesh.gridCount,
     dropped: drawnMesh.gridCount - drawnMesh.cells.length,
   }), [guides, drawnMesh])
 
@@ -1013,7 +1018,7 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
           <Typography.Text>
             {`${detectedCounts.x} đường dọc × ${detectedCounts.y} đường ngang → ${detectedCounts.cellCount} ô`
               + (detectedCounts.dropped > 0
-                ? ` (đã bỏ ${detectedCounts.dropped} ô không có khung trên bản vẽ)`
+                ? ` (lưới thô ${detectedCounts.gridCount} ô, đã gộp/bỏ ${detectedCounts.dropped} ô theo bản vẽ)`
                 : '')}
           </Typography.Text>
         </Space>

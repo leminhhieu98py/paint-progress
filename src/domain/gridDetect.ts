@@ -31,6 +31,8 @@
  * pass -- that is the whole performance case for the split.
  */
 
+import type { MeshCell } from './types'
+
 /** One RGB pixel already decided to be ink (dark, and not an excluded colour). */
 export interface InkOptions {
   /**
@@ -416,6 +418,13 @@ const MIN_EDGE_INK = 0.6
 const MIN_INKED_EDGES = 3
 
 /**
+ * How close two cell boundaries must be, in normalized units, to count as the
+ * same boundary. Cell coordinates are sums and differences of guide positions,
+ * so two edges that describe the same line can differ by a float ulp.
+ */
+const TOUCH_TOLERANCE = 1e-9
+
+/**
  * The cells the drawing actually encloses, in the order given.
  *
  * A grid of guides makes a cell for every crossing whether the sheet draws that
@@ -434,6 +443,17 @@ export function keepDrawnCells<T extends { x: number; y: number; w: number; h: n
   profile: InkProfile,
   cells: T[],
 ): T[] {
+  const drawn = edgeReader(profile)
+  return cells.filter((cell) => drawn.sidesOf(cell).filter(Boolean).length >= MIN_INKED_EDGES)
+}
+
+/**
+ * Reads the sheet back: whether a given edge of a given rectangle is drawn on
+ * it. Shared by `keepDrawnCells` and `mergeUndrawnCells` so the two can never
+ * disagree about what "drawn" means -- if they could, a cell could be merged
+ * across an edge and then dropped for missing that same edge.
+ */
+function edgeReader(profile: InkProfile) {
   const { width, height, mask } = profile
   const band = Math.max(1, Math.round(EDGE_INK_BAND_FRACTION * width))
 
@@ -445,10 +465,9 @@ export function keepDrawnCells<T extends { x: number; y: number; w: number; h: n
 
   /**
    * The fraction of an axis-aligned edge that finds ink within `band` pixels of
-   * itself. `along` walks the edge; `across` is the perpendicular the band
-   * sweeps.
+   * itself. `along` walks the edge; the band sweeps the perpendicular.
    */
-  const edgeInk = (fixed: number, from: number, to: number, axis: 'row' | 'column') => {
+  const coverage = (fixed: number, from: number, to: number, axis: 'row' | 'column') => {
     const start = Math.round(from)
     const end = Math.round(to)
     if (end < start) return 0
@@ -467,17 +486,102 @@ export function keepDrawnCells<T extends { x: number; y: number; w: number; h: n
     return inked / (end - start + 1)
   }
 
-  return cells.filter((cell) => {
-    const left = cell.x * width
-    const right = (cell.x + cell.w) * width
-    const top = cell.y * height
-    const bottom = (cell.y + cell.h) * height
-    const edges = [
-      edgeInk(top, left, right, 'row'),
-      edgeInk(bottom, left, right, 'row'),
-      edgeInk(left, top, bottom, 'column'),
-      edgeInk(right, top, bottom, 'column'),
-    ]
-    return edges.filter((coverage) => coverage >= MIN_EDGE_INK).length >= MIN_INKED_EDGES
+  /** Whether a horizontal run at normalized `y`, from `x0` to `x1`, is drawn. */
+  const rowDrawn = (y: number, x0: number, x1: number) =>
+    coverage(y * height, x0 * width, x1 * width, 'row') >= MIN_EDGE_INK
+  /** Whether a vertical run at normalized `x`, from `y0` to `y1`, is drawn. */
+  const columnDrawn = (x: number, y0: number, y1: number) =>
+    coverage(x * width, y0 * height, y1 * height, 'column') >= MIN_EDGE_INK
+
+  return {
+    rowDrawn,
+    columnDrawn,
+    sidesOf: (cell: { x: number; y: number; w: number; h: number }) => [
+      rowDrawn(cell.y, cell.x, cell.x + cell.w),
+      rowDrawn(cell.y + cell.h, cell.x, cell.x + cell.w),
+      columnDrawn(cell.x, cell.y, cell.y + cell.h),
+      columnDrawn(cell.x + cell.w, cell.y, cell.y + cell.h),
+    ],
+  }
+}
+
+/**
+ * Merges neighbouring cells of a full grid wherever the beam between them is
+ * not drawn on the sheet, so the mesh ends up with the bays the drawing shows:
+ * fine where the sheet subdivides, coarse where it does not.
+ *
+ * This is what a grid alone cannot express. A grid makes every vertical cross
+ * every horizontal, so a beam that runs across two bays and stops still cuts
+ * the whole deck in half; the admin's own sample of the Main Deck is an uneven
+ * tiling -- one wide bay at the top left, a cluster of small ones mid-deck --
+ * and that unevenness is the drawing, not their preference.
+ *
+ * Two passes, in this order, because both must yield rectangles:
+ *
+ *   1. Along each grid row, merge runs of cells whose shared VERTICAL edge is
+ *      absent. Each run is a rectangle by construction.
+ *   2. Merge a run with the run directly below it when their left and right
+ *      edges line up exactly and the HORIZONTAL edge between them is absent.
+ *      The alignment test is what refuses a staircase: cells are `x, y, w, h`
+ *      in the database, so a merge that is not a rectangle cannot be stored.
+ *
+ * `cells` must be a full grid from one `buildMeshFromGuides` call. Areas are
+ * summed, which is exact for both measured and prorated meshes, and the merged
+ * cell takes the code of its top-left member.
+ */
+export function mergeUndrawnCells(profile: InkProfile, cells: MeshCell[]): MeshCell[] {
+  if (cells.length === 0) return []
+  const drawn = edgeReader(profile)
+
+  const rowTops = [...new Set(cells.map((c) => c.y))].sort((a, b) => a - b)
+  const byRow = rowTops.map((top) =>
+    cells.filter((c) => c.y === top).sort((a, b) => a.x - b.x),
+  )
+
+  // Pass 1: along each row.
+  const runs = byRow.map((row) => {
+    const merged: MeshCell[] = []
+    for (const cell of row) {
+      const open = merged[merged.length - 1]
+      // Touching, not merely consecutive. Without this the merge closes a gap
+      // where a cell is missing -- and it then makes no difference whether the
+      // caller dropped undrawn cells before merging or after, because the
+      // merge would swallow the hole either way and claim deck that the
+      // drawing does not enclose.
+      const touches = open !== undefined && Math.abs(open.x + open.w - cell.x) < TOUCH_TOLERANCE
+      if (touches && !drawn.columnDrawn(cell.x, cell.y, cell.y + cell.h)) {
+        merged[merged.length - 1] = { ...open, w: cell.x + cell.w - open.x, areaM2: open.areaM2 + cell.areaM2 }
+      } else {
+        merged.push({ ...cell })
+      }
+    }
+    return merged
   })
+
+  // Pass 2: down the rows. `carried` holds the rectangles still open from the
+  // row above; a rectangle stops being open as soon as the row below does not
+  // continue it, which is what keeps every result a rectangle.
+  const done: MeshCell[] = []
+  let carried: MeshCell[] = []
+  for (const row of runs) {
+    const next: MeshCell[] = []
+    for (const run of row) {
+      const above = carried.find(
+        (c) => c.x === run.x && c.w === run.w && Math.abs(c.y + c.h - run.y) < TOUCH_TOLERANCE,
+      )
+      if (above && !drawn.rowDrawn(run.y, run.x, run.x + run.w)) {
+        next.push({ ...above, h: run.y + run.h - above.y, areaM2: above.areaM2 + run.areaM2 })
+      } else {
+        next.push({ ...run })
+      }
+    }
+    // Anything the new row did not continue is finished.
+    done.push(...carried.filter((c) => !next.some((n) => n.code === c.code)))
+    carried = next
+  }
+  done.push(...carried)
+
+  // Reading order, so the mesh a merge produces is ordered the same way the
+  // grid it came from was.
+  return done.sort((a, b) => (a.y - b.y) || (a.x - b.x))
 }

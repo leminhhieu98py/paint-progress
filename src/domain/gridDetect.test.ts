@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { inkProfile, keepDrawnCells, linesFromProfile } from './gridDetect'
+import { inkProfile, keepDrawnCells, linesFromProfile, mergeUndrawnCells } from './gridDetect'
 
 const BLACK: [number, number, number] = [0, 0, 0]
 // r-g=150, r-b=150 -- well past the >40 exclusion threshold. The customer's
@@ -437,5 +437,127 @@ describe('keepDrawnCells', () => {
   it('drops everything when the profile found nothing to measure', () => {
     const blank = inkProfile(whiteImage(20, 20), 20, 20)
     expect(keepDrawnCells(blank, CELLS)).toEqual([])
+  })
+})
+
+describe('mergeUndrawnCells', () => {
+  /**
+   * A 200x200 sheet. `lines` names the grid to draw; `skip` names the segments
+   * to leave off it, as `['v', x, yFrom, yTo]` or `['h', y, xFrom, xTo]` --
+   * a beam that stops part-way, which is what makes a real deck's bays uneven.
+   */
+  function sheet(
+    xs: number[],
+    ys: number[],
+    skip: (['v' | 'h', number, number, number])[] = [],
+  ) {
+    const width = 200
+    const height = 200
+    const rgb = whiteImage(width, height)
+    const top = ys[0]
+    const bottom = ys[ys.length - 1]
+    const left = xs[0]
+    const right = xs[xs.length - 1]
+    for (const x of xs) fillColumn(rgb, width, x, top, bottom, BLACK)
+    for (const y of ys) fillRow(rgb, width, y, left, right, BLACK)
+    for (const [axis, at, from, to] of skip) {
+      if (axis === 'v') for (let y = from; y <= to; y++) fillColumn(rgb, width, at, y, y, WHITE)
+      else for (let x = from; x <= to; x++) fillRow(rgb, width, at, x, x, WHITE)
+    }
+    return inkProfile(rgb, width, height, { region: { x: 0, y: 0, w: 1, h: 1 } })
+  }
+
+  /** The full grid `buildMeshFromGuides` would produce over `xs` x `ys`, in px. */
+  function grid(xs: number[], ys: number[]) {
+    const cells = []
+    for (let r = 0; r < ys.length - 1; r++) {
+      for (let c = 0; c < xs.length - 1; c++) {
+        cells.push({
+          code: `R${r + 1}C${c + 1}`,
+          x: xs[c] / 200, y: ys[r] / 200,
+          w: (xs[c + 1] - xs[c]) / 200, h: (ys[r + 1] - ys[r]) / 200,
+          areaM2: 1,
+        })
+      }
+    }
+    return cells
+  }
+
+  // Rounded: a merged width is a sum of normalized parts, so it lands an ulp
+  // off the same division done directly, and the boundary is the claim.
+  const px = (v: number) => Math.round(v * 200 * 1e3) / 1e3
+  const read = (cells: { code: string; x: number; w: number; areaM2: number }[]) =>
+    cells.map((c) => `${c.code} x${px(c.x)}..${px(c.x + c.w)} a${c.areaM2}`)
+
+  it('merges two bays across a beam that is not drawn', () => {
+    // The interior line is absent, so the sheet shows ONE bay 160 wide, not two
+    // 80 wide. The merged cell keeps the top-left code and carries the summed
+    // area -- area is additive, so this is exact whether the parts were
+    // measured from the mm chain or prorated from the deck total.
+    const profile = sheet([20, 100, 180], [20, 180], [['v', 100, 20, 180]])
+    expect(read(mergeUndrawnCells(profile, grid([20, 100, 180], [20, 180]))))
+      .toEqual(['R1C1 x20..180 a2'])
+  })
+
+  it('leaves two bays alone when the beam between them IS drawn', () => {
+    const profile = sheet([20, 100, 180], [20, 180])
+    expect(read(mergeUndrawnCells(profile, grid([20, 100, 180], [20, 180]))))
+      .toEqual(['R1C1 x20..100 a1', 'R1C2 x100..180 a1'])
+  })
+
+  it('merges vertically too', () => {
+    const profile = sheet([20, 180], [20, 100, 180], [['h', 100, 20, 180]])
+    const merged = mergeUndrawnCells(profile, grid([20, 180], [20, 100, 180]))
+    expect(merged.map((c) => `${c.code} y${c.y * 200}..${(c.y + c.h) * 200}`))
+      .toEqual(['R1C1 y20..180'])
+  })
+
+  it('keeps the fine bays where the sheet draws them and the coarse ones where it does not', () => {
+    // The shape of the admin's own sample, and the reason a plain grid could
+    // never match it: the interior beam runs across the TOP row only. The top
+    // row stays split in two, the bottom row is one wide bay, and neither row
+    // merges into the other because their bay boundaries no longer line up.
+    const profile = sheet([20, 100, 180], [20, 100, 180], [['v', 100, 101, 180]])
+    expect(read(mergeUndrawnCells(profile, grid([20, 100, 180], [20, 100, 180]))))
+      .toEqual(['R1C1 x20..100 a1', 'R1C2 x100..180 a1', 'R2C1 x20..180 a2'])
+  })
+
+  it('does not close a gap between cells that do not touch', () => {
+    // Given a mesh a caller already filtered, the two survivors either side of
+    // a removed cell are consecutive in the list but not adjacent on the deck.
+    // Merging them would claim the hole -- area the drawing does not enclose --
+    // and would make it moot whether the caller dropped undrawn cells before
+    // merging or after.
+    const profile = sheet([20, 70, 120, 180], [20, 180], [['v', 70, 20, 180], ['v', 120, 20, 180]])
+    const full = grid([20, 70, 120, 180], [20, 180])
+    const holed = full.filter((c) => c.code !== 'R1C2')
+    expect(read(mergeUndrawnCells(profile, holed)))
+      .toEqual(['R1C1 x20..70 a1', 'R1C3 x120..180 a1'])
+  })
+
+  it('does not close a vertical gap either', () => {
+    // The same guard on the other axis. `carried` holds only the row above, so
+    // without it a run whose row was filtered out lets the row above merge with
+    // the row below-below, straight across the hole.
+    const profile = sheet([20, 180], [20, 80, 140, 180], [['h', 80, 20, 180], ['h', 140, 20, 180]])
+    const holed = grid([20, 180], [20, 80, 140, 180]).filter((c) => c.code !== 'R2C1')
+    expect(mergeUndrawnCells(profile, holed).map((c) => `${c.code} y${px(c.y)}..${px(c.y + c.h)}`))
+      .toEqual(['R1C1 y20..80', 'R3C1 y140..180'])
+  })
+
+  it('refuses a vertical merge that would not be a rectangle', () => {
+    // Rows of three: the top row splits after the first bay, the bottom row
+    // after the second. Both horizontal beams between them are absent, so a
+    // naive merge would join them into a staircase -- and a cell is `x, y, w, h`
+    // in the database, so a staircase cannot be stored.
+    const profile = sheet(
+      [20, 70, 120, 180], [20, 100, 180],
+      [['v', 120, 20, 100], ['v', 70, 101, 180], ['h', 100, 20, 180]],
+    )
+    const merged = mergeUndrawnCells(profile, grid([20, 70, 120, 180], [20, 100, 180]))
+    expect(read(merged)).toEqual([
+      'R1C1 x20..70 a1', 'R1C2 x70..180 a2',
+      'R2C1 x20..120 a2', 'R2C3 x120..180 a1',
+    ])
   })
 })

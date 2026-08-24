@@ -48,7 +48,7 @@ vi.mock('../../canvas/DrawingCanvas', () => ({
   DrawingCanvas: ({
     cells, guides, onCellClick, onGuideMove, onGuideAdd, cellColors, cropRect, onCropDraw, onGuideClick,
   }: {
-    cells: { code: string }[]
+    cells: { code: string; x: number; w: number }[]
     guides: { id: string; axis: 'x' | 'y'; pos: number; offsetMm: number }[]
     onCellClick?: (code: string, additive: boolean) => void
     onGuideMove?: (index: number, pos: number) => void
@@ -80,6 +80,19 @@ vi.mock('../../canvas/DrawingCanvas', () => ({
         <button key={`del-${i}`} onClick={() => onGuideClick(i)}>bấm xoá đường {i}</button>
       ))}
       <div data-testid="crop">{cropRect ? JSON.stringify(cropRect) : ''}</div>
+      {/*
+        Cell geometry, not just codes: a merge across an undrawn beam and a drop
+        of one of the two cells leave the same COUNT behind, so only the
+        surviving cell's own extent can tell them apart.
+      */}
+      <div data-testid="cell-geometry">
+        {cells
+          .map((c) => {
+            const round = (v: number) => Math.round(v * 1e6) / 1e6
+            return `${c.code}:${round(c.x)}+${round(c.w)}`
+          })
+          .join(' ')}
+      </div>
       {cells.map((c) => c.code).join(',')}
       {cells.map((c) => (
         <button key={c.code} data-color={cellColors?.[c.code] ?? ''} onClick={() => onCellClick?.(c.code, true)}>
@@ -187,6 +200,39 @@ beforeEach(() => {
  * stray ink from the other axis' lines; every other column/row in the image
  * carries at most 3 stray ink pixels, far under the lowest threshold (5.7).
  */
+/**
+ * A 40x40 sheet whose two middle vertical beams STOP part way down: columns
+ * 4/16/28/36 and rows 4/20/36 are drawn, but columns 16 and 28 only run from
+ * row 4 to row 26.
+ *
+ * Both middle columns still cover 23 of the 33 content rows, so both are
+ * detected as beams at the default 0.60 -- and over the BOTTOM row's own span
+ * (rows 20-36) each covers only 7 of 17, so neither divides those bays. The
+ * bottom row is therefore one bay across while the top row is three, which is
+ * the shape a lines-times-lines grid gets wrong and the whole reason
+ * mergeUndrawnCells exists.
+ *
+ * It also pins the ORDER of merge and drop. The bottom middle bay has both of
+ * its verticals absent, so on its own it has two drawn edges out of four and
+ * `keepDrawnCells` would delete it -- taking real deck with it -- if dropping
+ * ran before merging.
+ */
+function stoppedBeamProfile() {
+  const width = 40
+  const height = 40
+  const rgb = new Uint8Array(width * height * 3).fill(255)
+  const paint = (x: number, y: number) => {
+    const o = (y * width + x) * 3
+    rgb[o] = 0
+    rgb[o + 1] = 0
+    rgb[o + 2] = 0
+  }
+  for (const x of [4, 36]) for (let y = 4; y <= 36; y++) paint(x, y)
+  for (const x of [16, 28]) for (let y = 4; y <= 26; y++) paint(x, y)
+  for (const y of [4, 20, 36]) for (let x = 4; x <= 36; x++) paint(x, y)
+  return inkProfile(rgb, width, height, { region: { x: 0, y: 0, w: 1, h: 1 } })
+}
+
 function fixtureProfile() {
   const width = 20
   const height = 20
@@ -1956,7 +2002,7 @@ describe('DeckEditor', () => {
       fireEvent.keyDown(xSlider, { key: 'Home', keyCode: 36, which: 36 })
 
       expect(await screen.findByText(
-        '3 đường dọc × 2 đường ngang → 1 ô (đã bỏ 1 ô không có khung trên bản vẽ)',
+        '3 đường dọc × 2 đường ngang → 1 ô (lưới thô 2 ô, đã gộp/bỏ 1 ô theo bản vẽ)',
       )).toBeInTheDocument()
     })
 
@@ -1976,7 +2022,7 @@ describe('DeckEditor', () => {
       const xSlider = screen.getByRole('slider', { name: 'Độ nhạy trục dọc' })
       xSlider.focus()
       fireEvent.keyDown(xSlider, { key: 'Home', keyCode: 36, which: 36 })
-      await screen.findByText(/đã bỏ 1 ô/)
+      await screen.findByText(/đã gộp\/bỏ 1 ô/)
 
       await userEvent.click(screen.getByRole('button', { name: 'Sinh lưới ô' }))
 
@@ -1985,6 +2031,38 @@ describe('DeckEditor', () => {
       // cells rather than matching a joined string that other stand-in output
       // now precedes.
       expect(screen.getAllByRole('button', { name: /^chọn R/ })).toHaveLength(1)
+    })
+
+    it('merges the bays a missing beam joins, rather than dropping one of them', async () => {
+      // The admin's own sample of this deck is an uneven tiling -- one wide bay
+      // where no beam divides it, a cluster of small ones where beams do -- and
+      // that unevenness is the drawing, not their preference. A grid cannot
+      // express it: every vertical crosses every horizontal, so a beam that
+      // runs across the top of the deck and stops still cuts the bottom too.
+      //
+      // stoppedBeamProfile draws exactly that: the middle vertical covers the
+      // top row and stops. Expected result -- the top row stays split in two,
+      // the bottom row is ONE bay across. Dropping a cell instead would leave
+      // the same cell COUNT while losing real deck, which is why this asserts
+      // the extents rather than the count.
+      inkProfileFromImage.mockResolvedValue(stoppedBeamProfile())
+      listGuides.mockResolvedValue([])
+      render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+      await screen.findByTestId('canvas')
+      await userEvent.click(screen.getByRole('button', { name: 'Chọn vùng sàn để dò lưới' }))
+      await userEvent.click(screen.getByRole('button', { name: 'kéo khung sàn' }))
+      await userEvent.click(screen.getByRole('button', { name: 'Dò lưới trong khung' }))
+
+      expect(await screen.findByText(
+        '4 đường dọc × 3 đường ngang → 4 ô (lưới thô 6 ô, đã gộp/bỏ 2 ô theo bản vẽ)',
+      )).toBeInTheDocument()
+
+      await userEvent.click(screen.getByRole('button', { name: 'Sinh lưới ô' }))
+      // Top row three bays, bottom row one. Dropping before merging would give
+      // the bottom row two bays with a hole in the middle instead.
+      expect(screen.getByTestId('cell-geometry')).toHaveTextContent(
+        'R1C1:0.1+0.3 R1C2:0.4+0.3 R1C3:0.7+0.2 R2C1:0.1+0.8',
+      )
     })
 
     it('does not drop hand-drawn cells, having no pixels to check them against', async () => {
