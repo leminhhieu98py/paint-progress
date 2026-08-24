@@ -2,11 +2,11 @@ import {
   Alert, Button, Descriptions, Input, InputNumber, Modal, Space, Table, Typography,
 } from 'antd'
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
-import { distributeChain, parseDimensionChain, rerailAxisGuides, type ChainParse } from '../../domain/dimensionChain'
+import { distributeChain, moveGuideOnAxis, parseDimensionChain, type ChainParse } from '../../domain/dimensionChain'
 import {
   AREA_DIVERGENCE_THRESHOLD, areaDivergence, buildMeshFromGuides, cellReshaped,
   divergesBeyondThreshold, hasUndeclaredArea, interpolateOffsetMm, mergeCells,
-  moveGuideClamped, offsetsFromSpans, prorateCellAreas, spansFromOffsets,
+  offsetsFromSpans, prorateCellAreas, spansFromOffsets,
 } from '../../domain/geometry'
 import type { Guide, MeshCell, Stage } from '../../domain/types'
 import {
@@ -806,13 +806,10 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
           // so dragging only the two edges is enough to place a whole chain.
           // See rerailAxisGuides for its own guards (degenerate chain,
           // interior-only drags, edges out of order).
-          onGuideMove={(index, pos) =>
-            setGuides((prev) => {
-              const moving = prev[index]
-              const clamped = moveGuideClamped(prev, index, pos)
-              return moving ? rerailAxisGuides(clamped, moving.axis, index) : clamped
-            })
-          }
+          // moveGuideOnAxis, not moveGuideClamped-then-rerail: an edge drag must
+          // not be stopped by the interior guide next to it, or the chain can
+          // never be compressed onto the deck's real extent. See its docblock.
+          onGuideMove={(index, pos) => setGuides((prev) => moveGuideOnAxis(prev, index, pos))}
           // Interpolated, not a bare 0: an offset smaller than a real
           // neighbour to its left breaks the mm chain's pos-order
           // monotonicity and produces a negative span -- A6's dragging

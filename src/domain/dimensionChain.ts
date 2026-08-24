@@ -1,4 +1,4 @@
-import { offsetsFromSpans, spansFromOffsets } from './geometry'
+import { MIN_GUIDE_GAP, moveGuideClamped, offsetsFromSpans, spansFromOffsets } from './geometry'
 
 /**
  * Pasting the printed mm chain instead of double-clicking and dragging every
@@ -156,5 +156,80 @@ export function rerailAxisGuides<T extends { axis: 'x' | 'y'; pos: number; offse
   const posByIndex = new Map(sorted.map((entry, i) => [entry.index, distributed[i].pos]))
   return guides.map((guide, index) =>
     posByIndex.has(index) ? { ...guide, pos: posByIndex.get(index)! } : guide,
+  )
+}
+
+/**
+ * Move one guide, then re-rail the axis if the moved guide was an edge.
+ *
+ * Why this exists rather than calling moveGuideClamped and rerailAxisGuides in
+ * sequence: moveGuideClamped stops a guide MIN_GUIDE_GAP short of its nearest
+ * neighbour, which is right for an interior guide and wrong for an edge one.
+ * The whole point of dragging an edge is to fit the chain to the deck's real
+ * extent on the drawing, and a deck typically occupies a fraction of the image
+ * -- so the admin needs to pull the right edge well inside where interior
+ * guides currently sit. Measured on the real Main Deck chain: dragging the last
+ * guide from 1.0 towards 0.5 stopped at 0.869, the neighbour's position, and
+ * the chain never compressed. The feature could not do the one thing it is for.
+ *
+ * An edge drag needs no neighbour clamp, because re-railing moves every
+ * interior guide proportionally with it -- they cannot be crossed, only
+ * carried. It needs only to stay clear of the OPPOSITE edge, with enough room
+ * left for the interior guides not to collapse onto each other.
+ */
+export function moveGuideOnAxis<
+  T extends { axis: 'x' | 'y'; pos: number; offsetMm: number },
+>(guides: T[], index: number, pos: number): T[] {
+  const moving = guides[index]
+  if (!moving) return guides
+
+  const sorted = guides
+    .map((guide, i) => ({ guide, i }))
+    .filter((entry) => entry.guide.axis === moving.axis)
+    .sort((a, b) => a.guide.pos - b.guide.pos)
+  const at = sorted.findIndex((entry) => entry.i === index)
+  const isEdge = at === 0 || at === sorted.length - 1
+  const first = sorted[0]?.guide
+  const last = sorted[sorted.length - 1]?.guide
+  const hasChain = sorted.length >= 3 && !!first && !!last && last.offsetMm - first.offsetMm > 0
+
+  if (!isEdge || !hasChain) {
+    // Interior guide, or an axis with no mm chain to scale by: the neighbour
+    // clamp is exactly right, and rerailAxisGuides returns the array untouched
+    // for an interior move.
+    return rerailAxisGuides(moveGuideClamped(guides, index, pos), moving.axis, index)
+  }
+
+  // Room for every interior guide to remain distinct once re-railed.
+  const room = (sorted.length - 1) * MIN_GUIDE_GAP
+  const clamped =
+    at === 0
+      ? Math.min(Math.max(0, pos), last.pos - room)
+      : Math.max(Math.min(1, pos), first.pos + room)
+
+  // Distribute by offsetMm order, NOT by pos order, and do it here rather than
+  // handing off to rerailAxisGuides. That function decides which guide is an
+  // edge from the positions it is given -- but a compressing drag deliberately
+  // moves the dragged edge PAST its neighbours' current positions, so by then
+  // it is no longer the outermost by pos and the re-rail declines to run. The
+  // chain's true order is the one the admin typed: offsetMm. Positions are
+  // derived from it, never the reverse.
+  const byOffset = guides
+    .map((guide, i) => ({ guide, i }))
+    .filter((entry) => entry.guide.axis === moving.axis)
+    .sort((a, b) => a.guide.offsetMm - b.guide.offsetMm)
+  const startPos = at === 0 ? clamped : byOffset[0].guide.pos
+  const endPos = at === 0 ? byOffset[byOffset.length - 1].guide.pos : clamped
+
+  const spansMm = spansFromOffsets(byOffset.map((entry) => entry.guide.offsetMm)).slice(1)
+  let distributed: { offsetMm: number; pos: number }[]
+  try {
+    distributed = distributeChain(spansMm, startPos, endPos)
+  } catch {
+    return guides
+  }
+  const posByIndex = new Map(byOffset.map((entry, k) => [entry.i, distributed[k].pos]))
+  return guides.map((guide, i) =>
+    posByIndex.has(i) ? { ...guide, pos: posByIndex.get(i)! } : guide,
   )
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { distributeChain, parseDimensionChain, rerailAxisGuides } from './dimensionChain'
+import { distributeChain, moveGuideOnAxis, parseDimensionChain, rerailAxisGuides } from './dimensionChain'
 
 /**
  * The Main Deck's real across-chain, as printed on the drawing and typed by
@@ -288,5 +288,54 @@ describe('rerailAxisGuides', () => {
     const dragged = [guides[0], { ...guides[1], pos: 0.8 }]
 
     expect(rerailAxisGuides(dragged, 'x', 1)).toBe(dragged)
+  })
+})
+
+describe('moveGuideOnAxis', () => {
+  // The real Main Deck across-chain, laid out over the whole image width.
+  const X = [0, 2500, 12000, 26500, 41000, 50500, 58100]
+  const chain = () => X.map((mm) => ({ axis: 'x' as const, pos: mm / 58100, offsetMm: mm }))
+
+  it('compresses the whole chain when the right edge is pulled inside its neighbour', () => {
+    // The case the feature exists for: a deck occupies a fraction of the
+    // drawing, so the admin pulls the right edge well inside where the interior
+    // guides currently sit. Composing moveGuideClamped with rerailAxisGuides
+    // stopped at 0.8692 -- the neighbour's position -- and never compressed.
+    const out = moveGuideOnAxis(chain(), 6, 0.5)
+    expect(out[6].pos).toBeCloseTo(0.5, 6)
+    expect(out[2].pos).toBeCloseTo((12000 / 58100) * 0.5, 6)
+    expect(out[5].pos).toBeCloseTo((50500 / 58100) * 0.5, 6)
+    // Dragging repositions the overlay. It must never edit the dimension the
+    // admin typed.
+    expect(out.map((g) => g.offsetMm)).toEqual(X)
+  })
+
+  it('shifts and rescales when the left edge is pulled in', () => {
+    const out = moveGuideOnAxis(chain(), 0, 0.2)
+    expect(out[0].pos).toBeCloseTo(0.2, 6)
+    expect(out[6].pos).toBeCloseTo(1, 6)
+    expect(out[2].pos).toBeCloseTo(0.2 + (12000 / 58100) * 0.8, 6)
+  })
+
+  it('moves only the dragged guide for an interior drag', () => {
+    const out = moveGuideOnAxis(chain(), 3, 0.5)
+    expect(out[3].pos).toBeCloseTo(0.5, 6)
+    expect(out[6].pos).toBeCloseTo(1, 6)
+    expect(out[1].pos).toBeCloseTo(2500 / 58100, 6)
+  })
+
+  it('keeps the edges apart when one is dragged onto the other', () => {
+    const out = moveGuideOnAxis(chain(), 6, 0)
+    expect(out[6].pos).toBeGreaterThan(out[0].pos)
+  })
+
+  it('falls back to the neighbour clamp on an axis with no mm chain', () => {
+    // Guides added by double-click before any mm was typed: nothing to scale
+    // by, so an edge drag must behave exactly as it did before this feature.
+    const bare = [0, 0.4, 0.8].map((pos) => ({ axis: 'x' as const, pos, offsetMm: 0 }))
+    const out = moveGuideOnAxis(bare, 2, 0.5)
+    expect(out[2].pos).toBeCloseTo(0.5, 6)
+    expect(out[0].pos).toBeCloseTo(0, 6)
+    expect(out[1].pos).toBeCloseTo(0.4, 6)
   })
 })
