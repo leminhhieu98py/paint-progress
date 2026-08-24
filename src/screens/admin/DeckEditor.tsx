@@ -1,5 +1,5 @@
 import {
-  Alert, Button, Descriptions, Input, InputNumber, Modal, Slider, Space, Table, Typography,
+  Alert, App, Button, Descriptions, Input, InputNumber, Modal, Slider, Space, Table, Typography,
 } from 'antd'
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { distributeChain, moveGuideOnAxis, parseDimensionChain, type ChainParse } from '../../domain/dimensionChain'
@@ -121,6 +121,25 @@ export function mergeErrorInVietnamese(message: string): string {
   return message
 }
 
+/**
+ * A failed round trip, in the admin's language.
+ *
+ * A dropped connection reaches here as a TypeError carrying the browser's own
+ * English -- "Failed to fetch" in Chrome, "Load failed" in Safari,
+ * "NetworkError when attempting to fetch resource" in Firefox. Rendering that
+ * verbatim told a Vietnamese admin nothing and hid the only thing they can act
+ * on: the network, not the deck. Matched on the browsers' markers rather than
+ * on the error's type, because postgrest-js and supabase-js both re-wrap the
+ * failure before it gets here. Anything unrecognised falls through unchanged
+ * rather than being flattened into a generic apology that loses the detail.
+ */
+function saveErrorInVietnamese(message: string): string {
+  if (/failed to fetch|load failed|networkerror|network request failed/i.test(message)) {
+    return 'Mất kết nối tới máy chủ. Kiểm tra mạng rồi thử lại.'
+  }
+  return message
+}
+
 export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => void }) {
   /**
    * The guides being edited, each carrying the id it is identified by.
@@ -169,6 +188,24 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
   const [areaSource, setAreaSource] = useState<'guides' | 'prorated'>(deck.areaSource)
   const [pending, setPending] = useState<PendingEdit | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const { message } = App.useApp()
+
+  /**
+   * Raises a failure both ways: the Alert holds the detail and stays until it
+   * is dismissed, the toast is what actually reaches the admin.
+   *
+   * The Alert alone was the defect. This screen is as tall as a drawing, the
+   * Alert renders at the top of it, and every button that raises one of these
+   * messages sits beside the drawing -- measured in the running app at 385px
+   * above the top of the viewport while the admin was looking at the deck.
+   * A refusal the admin cannot see is indistinguishable from a dead button,
+   * and the cells stay on screen either way, because setCells only runs after
+   * a write succeeds.
+   */
+  const fail = (msg: string) => {
+    setError(msg)
+    message.error(msg)
+  }
   const [busy, setBusy] = useState(false)
   /**
    * Whether the last load left this screen holding an incomplete picture of the
@@ -519,7 +556,7 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
           // Spec 8.3: the survivor inherits every zone its sources belonged to.
           inheritFrom = { [merged.code]: chosen.map((c) => c.code) }
         } catch (e) {
-          setError(mergeErrorInVietnamese((e as Error).message))
+          fail(mergeErrorInVietnamese((e as Error).message))
           return
         }
       }
@@ -558,7 +595,7 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
     // Saving state that is known to be incomplete cannot be right, whatever the
     // admin decides, so this is a refusal and not a disclosure.
     if (loadFailed) {
-      setError(
+      fail(
         'Không lưu được: lần tải dữ liệu gần nhất thất bại nên lưới ô trên màn hình có thể '
         + 'chưa đầy đủ. Đóng và mở lại sàn này để tải lại dữ liệu trước khi lưu.',
       )
@@ -569,7 +606,7 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
     // Judged on `next`, not on what is currently on screen -- clearing the cell
     // set is a legitimate way out of this state.
     if (hasUndeclaredArea(totalArea, next)) {
-      setError('Không lưu được: chưa khai báo diện tích sàn. Nhập diện tích sàn (m²) trước khi lưu.')
+      fail('Không lưu được: chưa khai báo diện tích sàn. Nhập diện tích sàn (m²) trước khi lưu.')
       return
     }
 
@@ -630,7 +667,7 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
       }
       await apply(next, inheritFrom)
     } catch (e) {
-      setError((e as Error).message)
+      fail(saveErrorInVietnamese((e as Error).message))
     }
   }
 
@@ -659,7 +696,7 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
       setPending(null)
       setError(null)
     } catch (e) {
-      setError((e as Error).message)
+      fail(saveErrorInVietnamese((e as Error).message))
       setPending(null)
       // syncCells is three round trips with no transaction, so a failure can
       // leave the database holding part of the edit: a merge whose upsert

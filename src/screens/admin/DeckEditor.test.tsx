@@ -1,3 +1,5 @@
+import { App as AntApp } from 'antd'
+import type { ComponentProps } from 'react'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -169,6 +171,23 @@ const ONE_BAY_GUIDES = [
   { id: 'g4', axis: 'y', pos: 1, offsetMm: 16000 },
 ]
 
+/**
+ * Mounts the editor the way src/App.tsx does. Not optional: the screen reports
+ * a failed or refused write through antd's message API, and App.useApp()
+ * outside an <App> provider hands back a context whose `message` has no
+ * methods at all -- so any test reaching a failure path without this dies on
+ * "message.error is not a function" rather than on what it meant to assert.
+ */
+const renderInApp = (deckProp: ComponentProps<typeof DeckEditor>['deck']) =>
+  render(
+    <AntApp>
+      <DeckEditor deck={deckProp} onClose={vi.fn()} />
+    </AntApp>,
+  )
+
+/** What antd's message API has on screen, if anything. */
+const toastText = () => document.querySelector('.ant-message')?.textContent ?? ''
+
 beforeEach(() => {
   for (const m of [
     listGuides, saveGuides, listCells, syncCells, zoneImpactOf, updateDeckArea, getDrawingUrl, listStages,
@@ -184,7 +203,7 @@ beforeEach(() => {
 describe('DeckEditor', () => {
   it('turns typed mm spans into a mesh with real areas', async () => {
     listGuides.mockResolvedValue(ONE_BAY_GUIDES)
-    render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+    renderInApp(deck)
 
     await userEvent.click(await screen.findByRole('button', { name: 'Sinh lưới ô' }))
 
@@ -211,7 +230,7 @@ describe('DeckEditor', () => {
     listStages.mockResolvedValue([
       { id: 'coat1', seq: 1, name: 'Coat 1', color: '#1677ff', weight: 0.2 },
     ])
-    render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+    renderInApp(deck)
     await screen.findByTestId('canvas')
 
     expect(screen.getByRole('button', { name: 'chọn R1C1' })).toHaveAttribute('data-color', '#1677ff')
@@ -242,7 +261,7 @@ describe('DeckEditor', () => {
       { id: 'g4', axis: 'y', pos: 0, offsetMm: 0 },
       { id: 'g5', axis: 'y', pos: 1, offsetMm: 16000 },
     ])
-    render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+    renderInApp(deck)
     await screen.findByTestId('canvas')
 
     // Sanity check on the pre-edit state, vi-VN formatted like every other
@@ -288,7 +307,7 @@ describe('DeckEditor', () => {
       { id: 'g1', axis: 'x', pos: 0, offsetMm: 0 },
       { id: 'g2', axis: 'x', pos: 1, offsetMm: 14500 },
     ])
-    render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+    renderInApp(deck)
     await screen.findByTestId('canvas')
 
     // Whole millimetres, which is nearly every offset, stay unpadded: this is
@@ -320,7 +339,7 @@ describe('DeckEditor', () => {
       { id: 'g4', axis: 'y', pos: 1, offsetMm: 26500 },
       { id: 'g5', axis: 'y', pos: 0.5, offsetMm: 12000 },
     ])
-    render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+    renderInApp(deck)
     await screen.findByTestId('canvas')
 
     expect(screen.getByText('9.000')).toBeInTheDocument()
@@ -357,7 +376,7 @@ describe('DeckEditor', () => {
     // pinned on that transient artifact rather than on the parsed number
     // that actually reaches state.
     listGuides.mockResolvedValue(ONE_BAY_GUIDES)
-    render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+    renderInApp(deck)
     await screen.findByTestId('canvas')
 
     const span = screen.getByDisplayValue('14500')
@@ -385,7 +404,7 @@ describe('DeckEditor', () => {
       { id: 'g4', axis: 'y', pos: 0, offsetMm: 0 },
       { id: 'g5', axis: 'y', pos: 1, offsetMm: 7000 },
     ])
-    render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+    renderInApp(deck)
     await screen.findByTestId('canvas')
 
     const xTable = screen.getByText('Guide dọc (cột)').closest('.ant-table-wrapper') as HTMLElement
@@ -413,7 +432,7 @@ describe('DeckEditor', () => {
     // (7250mm) is what proves the wiring reached DeckEditor at all, since 0
     // happens to also be "monotonic" against a datum of 0.
     listGuides.mockResolvedValue(ONE_BAY_GUIDES)
-    render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+    renderInApp(deck)
     await screen.findByTestId('canvas')
 
     await userEvent.click(screen.getByRole('button', { name: 'thêm guide x giữa' }))
@@ -426,7 +445,7 @@ describe('DeckEditor', () => {
     listCells.mockResolvedValue([
       { id: 'c1', code: 'R1C1', x: 0, y: 0, w: 1, h: 1, areaM2: 100, stageId: null },
     ])
-    render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+    renderInApp(deck)
     // 100 m² of cells against a 5258.5 m² deck is far beyond the threshold.
     // The warning's message and description are separate DOM nodes and both
     // contain the word "lệch", so a singular findByText is ambiguous here;
@@ -450,7 +469,7 @@ describe('DeckEditor', () => {
     listCells.mockResolvedValue([
       { id: 'c1', code: 'R1C1', x: 0, y: 0, w: 1, h: 1, areaM2: 6000, stageId: null },
     ])
-    render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+    renderInApp(deck)
     expect(await screen.findByText(/vượt 14,10%/)).toBeInTheDocument()
   })
 
@@ -458,7 +477,7 @@ describe('DeckEditor', () => {
     listCells.mockResolvedValue([
       { id: 'c1', code: 'R1C1', x: 0, y: 0, w: 1, h: 1, areaM2: 5258.5, stageId: null },
     ])
-    render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+    renderInApp(deck)
     await screen.findByTestId('canvas')
     expect(screen.queryByText(/lệch/i)).toBeNull()
   })
@@ -468,7 +487,7 @@ describe('DeckEditor', () => {
     // without a guard every untouched deck greets the admin with a warning
     // about work they have not done yet -- and a banner that is always on is
     // a banner nobody reads.
-    render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+    renderInApp(deck)
     await screen.findByTestId('canvas')
     expect(screen.queryByText(/lệch/i)).toBeNull()
   })
@@ -488,7 +507,7 @@ describe('DeckEditor', () => {
     listCells.mockResolvedValue([
       { id: 'c1', code: 'R1C1', x: 0, y: 0, w: 1, h: 1, areaM2: 232, stageId: null },
     ])
-    render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+    renderInApp(deck)
     await screen.findByTestId('canvas')
 
     await userEvent.click(screen.getByRole('button', { name: 'Sinh lưới ô' }))
@@ -509,7 +528,7 @@ describe('DeckEditor', () => {
       { id: 'g3', axis: 'y', pos: 0, offsetMm: 0 },
       { id: 'g4', axis: 'y', pos: 1, offsetMm: 0 },
     ])
-    render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+    renderInApp(deck)
     await screen.findByTestId('canvas')
     await userEvent.click(screen.getByRole('button', { name: 'Sinh lưới ô' }))
 
@@ -525,7 +544,7 @@ describe('DeckEditor', () => {
     // The denominator of every percentage on the project. Without
     // decimalSeparator="," antd truncates "1234,5" to 1234 and the deck loses
     // half a square metre with nothing on screen to show it happened.
-    render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+    renderInApp(deck)
     await screen.findByTestId('canvas')
 
     // No guides in this test, so the deck-area field is the only spin button.
@@ -549,7 +568,7 @@ describe('DeckEditor', () => {
     // collapsing them did not lose the cell write.
     listGuides.mockResolvedValue(ONE_BAY_GUIDES)
     syncCells.mockResolvedValue(undefined)
-    render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+    renderInApp(deck)
     await screen.findByTestId('canvas')
 
     await userEvent.click(screen.getByRole('button', { name: 'Sinh lưới ô' }))
@@ -572,7 +591,7 @@ describe('DeckEditor', () => {
     // deck's whole mm chain with it.
     listGuides.mockResolvedValue(ONE_BAY_GUIDES)
     syncCells.mockResolvedValue(undefined)
-    render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+    renderInApp(deck)
     await screen.findByTestId('canvas')
 
     await userEvent.click(screen.getByRole('button', { name: 'Lưu bản vẽ và lưới ô' }))
@@ -587,7 +606,7 @@ describe('DeckEditor', () => {
     // Index-shaped ids would collide with nothing and match nothing.
     listGuides.mockResolvedValue(ONE_BAY_GUIDES)
     syncCells.mockResolvedValue(undefined)
-    render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+    renderInApp(deck)
     await screen.findByTestId('canvas')
 
     await userEvent.click(screen.getByRole('button', { name: 'thêm guide x giữa' }))
@@ -616,7 +635,7 @@ describe('DeckEditor', () => {
     listStages.mockResolvedValue([
       { id: 'coat1', seq: 1, name: 'Coat 1', color: '#1677ff', weight: 0.2 },
     ])
-    render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+    renderInApp(deck)
     await screen.findByTestId('canvas')
 
     await userEvent.click(screen.getByRole('button', { name: 'Sinh lưới ô' }))
@@ -646,7 +665,7 @@ describe('DeckEditor', () => {
     zoneImpactOf.mockImplementation(
       () => new Promise((resolve) => { resolveZoneImpact = resolve }),
     )
-    render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+    renderInApp(deck)
     await screen.findByTestId('canvas')
 
     await userEvent.click(screen.getByRole('button', { name: 'Chọn tất cả' }))
@@ -676,7 +695,7 @@ describe('DeckEditor', () => {
     zoneImpactOf.mockResolvedValue([
       { zoneId: 'z1', zoneName: 'Zone 3', cellCodes: ['R1C1'] },
     ])
-    render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+    renderInApp(deck)
     await screen.findByTestId('canvas')
 
     await userEvent.click(screen.getByRole('button', { name: 'Chọn tất cả' }))
@@ -699,7 +718,7 @@ describe('DeckEditor', () => {
     ])
     zoneImpactOf.mockResolvedValue([{ zoneId: 'z1', zoneName: 'Zone 3', cellCodes: ['R1C1'] }])
     syncCells.mockResolvedValue(undefined)
-    render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+    renderInApp(deck)
     await screen.findByTestId('canvas')
 
     await userEvent.click(screen.getByRole('button', { name: 'Chọn tất cả' }))
@@ -716,7 +735,7 @@ describe('DeckEditor', () => {
       { id: 'c2', code: 'R1C2', x: 0.5, y: 0, w: 0.5, h: 1, areaM2: 100, stageId: null },
     ])
     syncCells.mockResolvedValue(undefined)
-    render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+    renderInApp(deck)
     await screen.findByTestId('canvas')
 
     await userEvent.click(screen.getByRole('button', { name: 'Chọn tất cả' }))
@@ -752,7 +771,7 @@ describe('DeckEditor', () => {
       { id: 'coat1', seq: 1, name: 'Coat 1', color: '#1677ff', weight: 0.15 },
       { id: 'coat3', seq: 3, name: 'Coat 3', color: '#52c41a', weight: 0.35 },
     ])
-    render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+    renderInApp(deck)
     await screen.findByTestId('canvas')
 
     await userEvent.click(screen.getByRole('button', { name: 'Chọn tất cả' }))
@@ -818,7 +837,7 @@ describe('DeckEditor', () => {
     listGuides.mockResolvedValue(ONE_BAY_GUIDES)
     listCells.mockResolvedValue(twoTickedCells)
     listStages.mockResolvedValue(stages)
-    let view = render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+    let view = renderInApp(deck)
     await screen.findByTestId('canvas')
     await userEvent.click(screen.getByRole('button', { name: 'chọn R1C1' }))
     await userEvent.click(screen.getByRole('button', { name: 'Xoá ô đã chọn' }))
@@ -827,7 +846,7 @@ describe('DeckEditor', () => {
     view.unmount()
 
     // merge: both cells, so the survivor keeps its row and the other's tick goes.
-    view = render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+    view = renderInApp(deck)
     await screen.findByTestId('canvas')
     await userEvent.click(screen.getByRole('button', { name: 'Chọn tất cả' }))
     await userEvent.click(screen.getByRole('button', { name: 'Gộp ô đã chọn' }))
@@ -836,7 +855,7 @@ describe('DeckEditor', () => {
     view.unmount()
 
     // mesh: ONE_BAY_GUIDES generates a single R1C1, so persisted R1C2 is dropped.
-    view = render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+    view = renderInApp(deck)
     await screen.findByTestId('canvas')
     await userEvent.click(screen.getByRole('button', { name: 'Sinh lưới ô' }))
     await userEvent.click(screen.getByRole('button', { name: 'Lưu bản vẽ và lưới ô' }))
@@ -854,7 +873,7 @@ describe('DeckEditor', () => {
     listStages.mockResolvedValue([
       { id: 'coat1', seq: 1, name: 'Coat 1', color: '#1677ff', weight: 0.2 },
     ])
-    render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+    renderInApp(deck)
     await screen.findByTestId('canvas')
 
     await userEvent.click(screen.getByRole('button', { name: 'Chọn tất cả' }))
@@ -882,7 +901,7 @@ describe('DeckEditor', () => {
     listStages.mockResolvedValue([
       { id: 'coat3', seq: 3, name: 'Coat 3', color: '#52c41a', weight: 0.35 },
     ])
-    render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+    renderInApp(deck)
     await screen.findByTestId('canvas')
 
     await userEvent.click(screen.getByRole('button', { name: 'Sinh lưới ô' }))
@@ -927,7 +946,7 @@ describe('DeckEditor', () => {
       { id: 'coat3', seq: 3, name: 'Coat 3', color: '#52c41a', weight: 0.35 },
     ])
     syncCells.mockResolvedValue(undefined)
-    render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+    renderInApp(deck)
     await screen.findByTestId('canvas')
 
     await userEvent.click(screen.getByRole('button', { name: 'Sinh lưới ô' }))
@@ -963,7 +982,7 @@ describe('DeckEditor', () => {
     listStages.mockResolvedValue([
       { id: 'coat3', seq: 3, name: 'Coat 3', color: '#52c41a', weight: 0.35 },
     ])
-    render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+    renderInApp(deck)
     await screen.findByTestId('canvas')
 
     await userEvent.click(screen.getByRole('button', { name: 'Sinh lưới ô' }))
@@ -986,7 +1005,7 @@ describe('DeckEditor', () => {
     listStages.mockResolvedValue([
       { id: 'coat3', seq: 3, name: 'Coat 3', color: '#52c41a', weight: 0.35 },
     ])
-    render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+    renderInApp(deck)
     await screen.findByTestId('canvas')
 
     await userEvent.click(screen.getByRole('button', { name: 'Sinh lưới ô' }))
@@ -1012,7 +1031,7 @@ describe('DeckEditor', () => {
       { id: 'coat2', seq: 2, name: 'Coat 2', color: '#faad14', weight: 0.2 },
       { id: 'coat3', seq: 3, name: 'Coat 3', color: '#52c41a', weight: 0.35 },
     ])
-    render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+    renderInApp(deck)
     await screen.findByTestId('canvas')
 
     await userEvent.click(screen.getByRole('button', { name: 'chọn R1C1' }))
@@ -1036,7 +1055,7 @@ describe('DeckEditor', () => {
     listStages.mockResolvedValue([
       { id: 'coat3', seq: 3, name: 'Coat 3', color: '#52c41a', weight: 0.35 },
     ])
-    render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+    renderInApp(deck)
     await screen.findByTestId('canvas')
 
     await userEvent.click(screen.getByRole('button', { name: 'Chọn tất cả' }))
@@ -1055,7 +1074,7 @@ describe('DeckEditor', () => {
       { id: 'c2', code: 'R1C2', x: 0.5, y: 0, w: 0.5, h: 1, areaM2: 100, stageId: null },
     ])
     syncCells.mockResolvedValue(undefined)
-    render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+    renderInApp(deck)
     await screen.findByTestId('canvas')
 
     await userEvent.click(screen.getByRole('button', { name: 'Chọn tất cả' }))
@@ -1073,13 +1092,13 @@ describe('DeckEditor', () => {
       { id: 'c1', code: 'R1C1', x: 0, y: 0, w: 0.5, h: 0.5, areaM2: 10, stageId: null },
       { id: 'c2', code: 'R2C2', x: 0.5, y: 0.5, w: 0.5, h: 0.5, areaM2: 10, stageId: null },
     ])
-    render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+    renderInApp(deck)
     await screen.findByTestId('canvas')
 
     await userEvent.click(screen.getByRole('button', { name: 'Chọn tất cả' }))
     await userEvent.click(screen.getByRole('button', { name: 'Gộp ô đã chọn' }))
 
-    expect(await screen.findByText(/hình chữ nhật kín/)).toBeInTheDocument()
+    expect(await screen.findAllByText(/hình chữ nhật kín/)).not.toHaveLength(0)
     expect(screen.queryByText(/solid rectangle/i)).toBeNull()
     expect(syncCells).not.toHaveBeenCalled()
   })
@@ -1091,13 +1110,13 @@ describe('DeckEditor', () => {
       { id: 'c1', code: 'R1C1', x: 0, y: 0, w: 0.6, h: 1, areaM2: 120, stageId: null },
       { id: 'c2', code: 'R1C2', x: 0.5, y: 0, w: 0.5, h: 1, areaM2: 100, stageId: null },
     ])
-    render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+    renderInApp(deck)
     await screen.findByTestId('canvas')
 
     await userEvent.click(screen.getByRole('button', { name: 'Chọn tất cả' }))
     await userEvent.click(screen.getByRole('button', { name: 'Gộp ô đã chọn' }))
 
-    expect(await screen.findByText(/bị trùng nhau/)).toBeInTheDocument()
+    expect(await screen.findAllByText(/bị trùng nhau/)).not.toHaveLength(0)
     expect(screen.queryByText(/overlapping cells/i)).toBeNull()
   })
 
@@ -1117,7 +1136,7 @@ describe('DeckEditor', () => {
       { id: 'g4', axis: 'y', pos: 1, offsetMm: 0 },
     ])
     syncCells.mockResolvedValue(undefined)
-    render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+    renderInApp(deck)
     await screen.findByTestId('canvas')
 
     await userEvent.click(screen.getByRole('button', { name: 'Sinh lưới ô' }))
@@ -1161,7 +1180,7 @@ describe('DeckEditor', () => {
     // relabel 232 m² of measured bay as an estimate.
     listGuides.mockResolvedValue(ONE_BAY_GUIDES)
     syncCells.mockResolvedValue(undefined)
-    render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+    renderInApp(deck)
     await screen.findByTestId('canvas')
 
     await userEvent.click(screen.getByRole('button', { name: 'Sinh lưới ô' }))
@@ -1196,14 +1215,14 @@ describe('DeckEditor', () => {
       { id: 'c1', code: 'R1C1', x: 0, y: 0, w: 1, h: 1, areaM2: 232, stageId: null },
     ])
     syncCells.mockResolvedValue(undefined)
-    render(<DeckEditor deck={undeclared} onClose={vi.fn()} />)
+    renderInApp(undeclared)
 
     expect(await screen.findByText(/Chưa khai báo diện tích sàn/)).toBeInTheDocument()
     expect(screen.getByText(/sẽ luôn là 0%/)).toBeInTheDocument()
 
     await userEvent.click(screen.getByRole('button', { name: 'Lưu bản vẽ và lưới ô' }))
 
-    expect(await screen.findByText(/Không lưu được: chưa khai báo diện tích sàn/)).toBeInTheDocument()
+    expect(await screen.findAllByText(/Không lưu được: chưa khai báo diện tích sàn/)).not.toHaveLength(0)
     expect(syncCells).not.toHaveBeenCalled()
     // Refused before it even read the persisted cells: only the initial load's
     // call happened.
@@ -1234,7 +1253,7 @@ describe('DeckEditor', () => {
     listStages.mockResolvedValue([
       { id: 'coat2', seq: 2, name: 'Coat 2', color: '#faad14', weight: 0.2 },
     ])
-    render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+    renderInApp(deck)
     await screen.findByTestId('canvas')
 
     await userEvent.click(screen.getByRole('button', { name: 'Sinh lưới ô' }))
@@ -1265,7 +1284,7 @@ describe('DeckEditor', () => {
       ),
     )
     syncCells.mockResolvedValue(undefined)
-    render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+    renderInApp(deck)
     await screen.findByTestId('canvas')
 
     await userEvent.click(screen.getByRole('button', { name: 'Chọn tất cả' }))
@@ -1287,7 +1306,7 @@ describe('DeckEditor', () => {
       { id: 'c1', code: 'R1C1', x: 0, y: 0, w: 0.5, h: 1, areaM2: 2629.25, stageId: null },
       { id: 'c2', code: 'R1C2', x: 0.5, y: 0, w: 0.5, h: 1, areaM2: 2629.25, stageId: null },
     ])
-    render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+    renderInApp(deck)
     await screen.findByTestId('canvas')
 
     await userEvent.click(screen.getByRole('button', { name: 'Chọn tất cả' }))
@@ -1311,7 +1330,7 @@ describe('DeckEditor', () => {
     // and noise is what makes the real one skimmable.
     listGuides.mockResolvedValue(ONE_BAY_GUIDES)
     syncCells.mockResolvedValue(undefined)
-    render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+    renderInApp(deck)
     await screen.findByTestId('canvas')
 
     await userEvent.click(screen.getByRole('button', { name: 'Lưu bản vẽ và lưới ô' }))
@@ -1329,12 +1348,12 @@ describe('DeckEditor', () => {
     // inside reviewEdit, so the disclosures were computed correctly and then
     // applied to a cell set that came from a failed read.
     listCells.mockRejectedValue(new Error('Failed to fetch'))
-    render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+    renderInApp(deck)
     await screen.findByText('Failed to fetch')
 
     await userEvent.click(screen.getByRole('button', { name: 'Lưu bản vẽ và lưới ô' }))
 
-    expect(await screen.findByText(/lần tải dữ liệu gần nhất thất bại/)).toBeInTheDocument()
+    expect(await screen.findAllByText(/lần tải dữ liệu gần nhất thất bại/)).not.toHaveLength(0)
     expect(syncCells).not.toHaveBeenCalled()
     expect(saveGuides).not.toHaveBeenCalled()
     expect(updateDeckArea).not.toHaveBeenCalled()
@@ -1361,7 +1380,7 @@ describe('DeckEditor', () => {
       { id: 'g5', axis: 'y', pos: 0, offsetMm: 0 },
       { id: 'g6', axis: 'y', pos: 1, offsetMm: 10000 },
     ])
-    render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+    renderInApp(deck)
     await screen.findByTestId('canvas')
 
     await userEvent.click(screen.getByRole('button', { name: 'kéo guide 1' }))
@@ -1398,14 +1417,14 @@ describe('DeckEditor', () => {
         before[1],
       ])
     syncCells.mockRejectedValue(new Error('delete blocked'))
-    render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+    renderInApp(deck)
     await screen.findByTestId('canvas')
     expect(screen.getByText('200,00')).toBeInTheDocument()
 
     await userEvent.click(screen.getByRole('button', { name: 'Chọn tất cả' }))
     await userEvent.click(screen.getByRole('button', { name: 'Gộp ô đã chọn' }))
 
-    expect(await screen.findByText('delete blocked')).toBeInTheDocument()
+    expect(await screen.findAllByText('delete blocked')).not.toHaveLength(0)
     // 300 m², what the database holds: the widened survivor plus the source the
     // delete failed to remove. The stale screen said 200.
     await waitFor(() => expect(screen.getByText('300,00')).toBeInTheDocument())
@@ -1417,7 +1436,7 @@ describe('DeckEditor', () => {
     // The fallback in the translator is the original message, so a failure it
     // has never heard of still reaches the admin instead of vanishing.
     listCells.mockRejectedValue(new Error('JWT expired'))
-    render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+    renderInApp(deck)
     expect(await screen.findByText('JWT expired')).toBeInTheDocument()
   })
 
@@ -1440,7 +1459,7 @@ describe('DeckEditor', () => {
       listGuides.mockResolvedValue(
         REAL_OFFSETS.map((offsetMm, i) => ({ id: `gx${i}`, axis: 'x', pos: positions[i], offsetMm })),
       )
-      render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+      renderInApp(deck)
       await screen.findByTestId('canvas')
 
       // Guide 6's only neighbour (guide 5, pos 0.5) leaves 0.8 well clear, so
@@ -1465,7 +1484,7 @@ describe('DeckEditor', () => {
       listGuides.mockResolvedValue(
         REAL_OFFSETS.map((offsetMm, i) => ({ id: `gx${i}`, axis: 'x', pos: positions[i], offsetMm })),
       )
-      render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+      renderInApp(deck)
       await screen.findByTestId('canvas')
 
       await userEvent.click(screen.getByRole('button', { name: 'kéo guide 0 tới 0.2' }))
@@ -1483,7 +1502,7 @@ describe('DeckEditor', () => {
       listGuides.mockResolvedValue(
         REAL_OFFSETS.map((offsetMm, i) => ({ id: `gx${i}`, axis: 'x', pos: positions[i], offsetMm })),
       )
-      render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+      renderInApp(deck)
       await screen.findByTestId('canvas')
 
       // Guide 3 (pos 0.3) stays strictly between guides 2 (0.2) and 4 (0.4).
@@ -1509,7 +1528,7 @@ describe('DeckEditor', () => {
         { id: 'g2', axis: 'x', pos: 0.6, offsetMm: 0 },
         { id: 'g3', axis: 'x', pos: 1, offsetMm: 0 },
       ])
-      render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+      renderInApp(deck)
       await screen.findByTestId('canvas')
 
       await userEvent.click(screen.getByRole('button', { name: 'kéo guide 3 tới 0.8' }))
@@ -1528,7 +1547,7 @@ describe('DeckEditor', () => {
 
     it('previews a good paste with the right total and applies it as 7 guides spanning 0..1', async () => {
       listGuides.mockResolvedValue([])
-      render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+      renderInApp(deck)
       await screen.findByTestId('canvas')
 
       const xBox = within(screen.getByTestId('chain-box-x'))
@@ -1561,7 +1580,7 @@ describe('DeckEditor', () => {
         { id: 'gx0', axis: 'x', pos: 0.2, offsetMm: 0 },
         { id: 'gx1', axis: 'x', pos: 0.7, offsetMm: 999 },
       ])
-      render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+      renderInApp(deck)
       await screen.findByTestId('canvas')
 
       const xBox = within(screen.getByTestId('chain-box-x'))
@@ -1581,7 +1600,7 @@ describe('DeckEditor', () => {
 
     it('shows the named-token Alert on a bad paste and leaves the guides untouched', async () => {
       listGuides.mockResolvedValue(ONE_BAY_GUIDES)
-      render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+      renderInApp(deck)
       await screen.findByTestId('canvas')
 
       const xBox = within(screen.getByTestId('chain-box-x'))
@@ -1600,7 +1619,7 @@ describe('DeckEditor', () => {
 
     it('keeps Áp dụng disabled until the CURRENT text has been previewed successfully', async () => {
       listGuides.mockResolvedValue([])
-      render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+      renderInApp(deck)
       await screen.findByTestId('canvas')
 
       const xBox = within(screen.getByTestId('chain-box-x'))
@@ -1624,7 +1643,7 @@ describe('DeckEditor', () => {
 
     it('applying a chain on one axis does not touch the other axis guides', async () => {
       listGuides.mockResolvedValue(ONE_BAY_GUIDES)
-      render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+      renderInApp(deck)
       await screen.findByTestId('canvas')
 
       const xBox = within(screen.getByTestId('chain-box-x'))
@@ -1657,7 +1676,7 @@ describe('DeckEditor', () => {
       // mouse-up threw away the cells on every one of them.
       detectBaysFromImage.mockResolvedValue(BAYS)
       listGuides.mockResolvedValue(ONE_BAY_GUIDES)
-      render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+      renderInApp(deck)
       await screen.findByTestId('canvas')
 
       await drawTheBox()
@@ -1681,7 +1700,7 @@ describe('DeckEditor', () => {
       // which a grid of guides could not have produced.
       detectBaysFromImage.mockResolvedValue(BAYS)
       listGuides.mockResolvedValue([])
-      render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+      renderInApp(deck)
       await screen.findByTestId('canvas')
 
       await drawTheBox()
@@ -1703,7 +1722,7 @@ describe('DeckEditor', () => {
     it('re-dragging replaces the region, and only the last one is detected', async () => {
       detectBaysFromImage.mockResolvedValue(BAYS)
       listGuides.mockResolvedValue([])
-      render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+      renderInApp(deck)
       await screen.findByTestId('canvas')
 
       await userEvent.click(screen.getByRole('button', { name: 'Chọn vùng sàn để dò ô' }))
@@ -1721,7 +1740,7 @@ describe('DeckEditor', () => {
 
     it('cannot commit a region that was never drawn', async () => {
       listGuides.mockResolvedValue([])
-      render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+      renderInApp(deck)
       await screen.findByTestId('canvas')
 
       await userEvent.click(screen.getByRole('button', { name: 'Chọn vùng sàn để dò ô' }))
@@ -1734,7 +1753,7 @@ describe('DeckEditor', () => {
       // unbridged break is a door between two the drawing shows as separate.
       detectBaysFromImage.mockResolvedValue(BAYS)
       listGuides.mockResolvedValue([])
-      render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+      renderInApp(deck)
       await screen.findByTestId('canvas')
       await drawTheBox()
       await userEvent.click(screen.getByRole('button', { name: 'Dò ô trong khung' }))
@@ -1758,7 +1777,7 @@ describe('DeckEditor', () => {
 
     it('does not re-detect on the slider before a box has been drawn', async () => {
       listGuides.mockResolvedValue([])
-      render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+      renderInApp(deck)
       await screen.findByTestId('canvas')
 
       expect(screen.getByRole('slider', { name: 'Nối khe hở dầm' }))
@@ -1768,7 +1787,7 @@ describe('DeckEditor', () => {
 
     it('leaves crop mode, and detects nothing, when the admin cancels', async () => {
       listGuides.mockResolvedValue(ONE_BAY_GUIDES)
-      render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+      renderInApp(deck)
       await screen.findByTestId('canvas')
 
       await userEvent.click(screen.getByRole('button', { name: 'Chọn vùng sàn để dò ô' }))
@@ -1783,7 +1802,7 @@ describe('DeckEditor', () => {
       // Guides are hand work now that detection makes cells directly, but the
       // admin still rules them by hand for a deck the detector cannot read.
       listGuides.mockResolvedValue(ONE_BAY_GUIDES)
-      render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+      renderInApp(deck)
       await screen.findByTestId('canvas')
 
       expect(screen.queryByRole('button', { name: 'bấm xoá đường 1' })).not.toBeInTheDocument()
@@ -1800,7 +1819,7 @@ describe('DeckEditor', () => {
 
     it('offers nothing to delete when there are no guides', async () => {
       listGuides.mockResolvedValue([])
-      render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+      renderInApp(deck)
       await screen.findByTestId('canvas')
 
       expect(screen.getByRole('button', { name: 'Bật xoá đường' })).toBeDisabled()
@@ -1809,7 +1828,7 @@ describe('DeckEditor', () => {
     it('shows a Vietnamese message when detection fails, and leaves the cells alone', async () => {
       detectBaysFromImage.mockRejectedValue(new Error('canvas boom'))
       listGuides.mockResolvedValue(ONE_BAY_GUIDES)
-      render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+      renderInApp(deck)
       await screen.findByTestId('canvas')
 
       await drawTheBox()
@@ -1835,7 +1854,7 @@ describe('DeckEditor', () => {
     listCells.mockResolvedValue([
       { id: 'c1', code: 'R1C1', x: 0, y: 0, w: 1, h: 1, areaM2: 100, stageId: null },
     ])
-    render(<DeckEditor deck={{ ...deck, areaSource: 'prorated' }} onClose={vi.fn()} />)
+    renderInApp({ ...deck, areaSource: 'prorated' })
 
     expect(await screen.findByText(/Trục ngang đã có kích thước mm/)).toBeInTheDocument()
     expect(screen.queryByText(/Chưa có guide nào mang kích thước mm/)).toBeNull()
@@ -1872,10 +1891,46 @@ describe('mergeErrorInVietnamese', () => {
     listCells.mockResolvedValue([
       { id: 'c1', code: 'R1C1', x: 0, y: 0, w: 1, h: 1, areaM2: 100, stageId: null },
     ])
-    render(<DeckEditor deck={{ ...deck, areaSource: 'prorated' }} onClose={vi.fn()} />)
+    renderInApp({ ...deck, areaSource: 'prorated' })
 
     expect(await screen.findByText(/Trục ngang đã có kích thước mm/)).toBeInTheDocument()
     expect(screen.queryByText(/Chưa có guide nào mang kích thước mm/)).toBeNull()
+  })
+
+  it('puts a refused save in front of an admin who has scrolled away from the banner', async () => {
+    // The banner this duplicates sits at the very top of a page tall enough
+    // to hold a full drawing. Measured in the running app: the admin clicks
+    // "Xoá ô đã chọn" from beside the drawing and the refusal renders 385px
+    // above the top of the viewport, so nothing at all appears to happen --
+    // the cells stay on screen (setCells only runs after a successful write),
+    // and the deck looks like it simply ignored the click.
+    listCells.mockResolvedValue([
+      { id: 'c1', code: 'R1C1', x: 0, y: 0, w: 1, h: 1, areaM2: 100, stageId: null },
+    ])
+    renderInApp({ ...deck, totalAreaM2: 0 })
+    await screen.findByTestId('canvas')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Lưu bản vẽ và lưới ô' }))
+
+    await waitFor(() => expect(toastText()).toContain('chưa khai báo diện tích sàn'))
+    expect(syncCells).not.toHaveBeenCalled()
+  })
+
+  it('says a dropped connection in Vietnamese instead of pasting the browser at the admin', async () => {
+    listCells
+      .mockResolvedValueOnce([
+        { id: 'c1', code: 'R1C1', x: 0, y: 0, w: 1, h: 1, areaM2: 100, stageId: null },
+      ])
+      // What a real drop looks like from fetch: a TypeError whose message is
+      // this English string, which reviewEdit used to render verbatim.
+      .mockRejectedValue(new TypeError('Failed to fetch'))
+    renderInApp(deck)
+    await screen.findByTestId('canvas')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Lưu bản vẽ và lưới ô' }))
+
+    await waitFor(() => expect(toastText()).toContain('Mất kết nối'))
+    expect(screen.queryByText(/Failed to fetch/)).toBeNull()
   })
 
 })
