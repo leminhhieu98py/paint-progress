@@ -390,12 +390,22 @@ function inkOf(
 /**
  * The positions of the beams' dashed centrelines on one axis, inside `box`.
  *
- * A beam on this sheet is drawn as two solid lines with a dashed line down the
- * middle, and it is the DASHED one that says where the beam's axis is -- which
- * is where the admin's own sample draws its boundaries, so the bays it produces
- * tile the deck with no gap for the beam's thickness. The dashes are bridged by
- * counting each inked pixel as covering the run back to the previous one, up to
- * `gap`.
+ * A beam on this sheet is drawn as two solid lines with a DASHED line down the
+ * middle, and it is the dashed one that marks the beam's axis -- which is where
+ * the admin draws a bay's boundary by hand, so the bays tile the deck with no
+ * gap for the beam's thickness.
+ *
+ * Finding it takes two readings of the same line. `solid` is the fraction of the
+ * line that is inked outright; `bridged` counts each inked pixel as covering the
+ * run back to the previous one, up to `gap`, which closes a dash's gaps. A solid
+ * flank reads the same either way; a dashed line reads far higher bridged than
+ * solid, and that difference is what picks it out of the band. Taking the band's
+ * middle instead put the boundary on a flank -- visibly off-centre at any zoom,
+ * and the admin said so.
+ *
+ * Where a band has no dashes at all -- a dimension rule, or a beam whose dashes
+ * the render blurred away -- every row reads alike and the middle is used, which
+ * is the best available answer.
  *
  * A rule requiring two solid flanks either side was tried, as the drawing's own
  * convention suggests. It was dropped: measured on the real sheet it rejected a
@@ -411,32 +421,74 @@ function centrelines(
   const to = horizontal ? box.y1 : box.x1
   const alongFrom = horizontal ? box.x0 : box.y0
   const alongTo = horizontal ? box.x1 : box.y1
+  const span = alongTo - alongFrom + 1
 
-  const hits: number[] = []
+  const solid: number[] = []
+  const bridged: number[] = []
   for (let at = from; at <= to; at++) {
     let inked = 0
+    let joined = 0
     let last = alongFrom - gap - 1
     for (let i = alongFrom; i <= alongTo; i++) {
       if (ink[horizontal ? at * width + i : i * width + at]) {
-        inked += Math.min(i - last, gap + 1)
+        inked++
+        joined += Math.min(i - last, gap + 1)
         last = i
       }
     }
-    if (inked / (alongTo - alongFrom + 1) >= minCover) hits.push(at)
+    solid.push(inked / span)
+    bridged.push(joined / span)
   }
 
-  // A drawn line is several pixels thick, so collapse each run of adjacent hits
-  // to its middle -- otherwise one beam becomes one line per pixel row.
-  const lines: number[] = []
-  let run: number[] = []
-  for (const at of hits) {
-    if (run.length > 0 && at - run[run.length - 1] > 3) {
-      lines.push(run[run.length >> 1])
-      run = []
+  // Each run of rows over the bar is a candidate; its position is the row the
+  // bridging helped most, which is the dashed one.
+  const DASH_ENOUGH = 0.05
+  const found: { at: number; dash: number }[] = []
+  let start = -1
+  for (let i = 0; i <= bridged.length; i++) {
+    const over = i < bridged.length && bridged[i] >= minCover
+    if (over) {
+      if (start === -1) start = i
+      continue
     }
-    run.push(at)
+    if (start === -1) continue
+    let best = start
+    let bestDash = bridged[start] - solid[start]
+    for (let k = start; k < i; k++) {
+      const dash = bridged[k] - solid[k]
+      if (dash > bestDash) {
+        best = k
+        bestDash = dash
+      }
+    }
+    found.push({
+      at: from + (bestDash >= DASH_ENOUGH ? best : start + ((i - 1 - start) >> 1)),
+      dash: bestDash,
+    })
+    start = -1
   }
-  if (run.length > 0) lines.push(run[run.length >> 1])
+  if (found.length < 3) return found.map((f) => f.at)
+
+  // One beam, one line. Where the render separates a beam's three lines into
+  // three bands -- the two flanks and the dashed centre -- they arrive here as
+  // three candidates a few pixels apart, and the boundary belongs on the dashed
+  // one. Anything closer together than a third of the typical bay pitch is the
+  // same beam; the survivor is the candidate the bridging helped most.
+  const gaps = found.slice(1).map((f, i) => f.at - found[i].at).sort((a, b) => a - b)
+  const together = gaps[gaps.length >> 1] / 6
+
+  const lines: number[] = []
+  let group: typeof found = []
+  const flush = () => {
+    if (group.length === 0) return
+    lines.push(group.reduce((best, f) => (f.dash > best.dash ? f : best)).at)
+    group = []
+  }
+  for (const f of found) {
+    if (group.length > 0 && f.at - group[group.length - 1].at > together) flush()
+    group.push(f)
+  }
+  flush()
   return lines
 }
 

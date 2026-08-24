@@ -171,6 +171,34 @@ describe('detectBays', () => {
       .toEqual([12, 51])
   })
 
+  it('takes the dashed line even where it is not the middle of the ink', () => {
+    // The case the admin pointed at, zoomed in on their own screen: the boundary
+    // was sitting on a beam's solid edge instead of its dashed axis. It happens
+    // wherever the beam's ink is not symmetric -- a thicker flange on one side,
+    // or a stiffener drawn against it -- because the middle of the ink is then
+    // not the middle of the beam.
+    //
+    // Here the ink runs 190..203 with the dashes at 199..201: the middle of the
+    // band is 196, and the answer is 200.
+    const width = 400
+    const height = 400
+    const rgb = whiteImage(width, height)
+    for (const x of [40, 358]) beam(rgb, width, 'v', x, 40, 360)
+    for (const y of [40, 358]) beam(rgb, width, 'h', y, 40, 360)
+    for (let y = 190; y <= 198; y++) beam(rgb, width, 'h', y, 40, 360, 1)
+    for (let y = 202; y <= 203; y++) beam(rgb, width, 'h', y, 40, 360, 1)
+    for (let y = 199; y <= 201; y++) {
+      for (let x = 40; x <= 360; x++) if (Math.floor(x / 4) % 2 === 0) paint(rgb, width, x, y)
+    }
+
+    const tops = [...new Set(detectBays(rgb, width, height, WHOLE, {
+      ...OPTIONS, minRunFraction: 0.05, dashGapFraction: 0.02,
+    }).map((b) => Math.round(b.y * height)))]
+    // Somewhere on the dashes, and nowhere near the middle of the ink.
+    expect(tops.some((t) => t >= 199 && t <= 201)).toBe(true)
+    expect(tops.some((t) => t >= 190 && t <= 198)).toBe(false)
+  })
+
   it('keeps a bay standing on solid structure', () => {
     // Deck to paint is deck to paint whether the sheet draws a pocket there or
     // something solid -- the E-house, a pedestal, a hatched column. Dropping a
