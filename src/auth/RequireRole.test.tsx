@@ -1,8 +1,8 @@
 import type { Session } from '@supabase/supabase-js'
 import { render, screen } from '@testing-library/react'
-import { act } from 'react'
+import { act, useEffect } from 'react'
 import { describe, expect, it, vi } from 'vitest'
-import { AuthProvider } from './AuthProvider'
+import { AuthProvider, useAuth } from './AuthProvider'
 import { RequireRole } from './RequireRole'
 
 const getSession = vi.fn()
@@ -109,5 +109,63 @@ describe('RequireRole with a real AuthProvider', () => {
 
     expect(await screen.findByText('Protected content')).toBeInTheDocument()
     expect(screen.queryByText('404')).toBeNull()
+  })
+  it('rides out a token refresh for the same account without unmounting the screen', async () => {
+    // The defect this pins: every auth event re-entered the gate, and
+    // RequireRole swaps the whole tree for a spinner while loading is held --
+    // so holding it unmounts the screen underneath. TOKEN_REFRESHED arrives on
+    // its own timer AND every time the tab is focused again, which made an
+    // admin who alt-tabbed away come back to a remounted screen with every
+    // unsaved edit on it gone: guides, detected cells, the crop, the selection.
+    getSession.mockResolvedValue({ data: { session: fakeSession } })
+    maybeSingle.mockResolvedValue({
+      data: { id: 'user-1', username: 'linh', full_name: 'Linh', role: 'admin', active: true },
+      error: null,
+    })
+
+    let authCallback: ((event: string, next: Session | null) => void) | undefined
+    onAuthStateChange.mockImplementation((cb?: (event: string, next: Session | null) => void) => {
+      authCallback = cb
+      return { data: { subscription: { unsubscribe: vi.fn() } } }
+    })
+
+    // Counts mounts rather than asserting the text is still on screen: a
+    // remount that finishes before the assertion runs would leave identical
+    // text behind, and that is precisely the case that loses the admin's work.
+    let mounts = 0
+    function Screen() {
+      const { session } = useAuth()
+      useEffect(() => {
+        mounts += 1
+      }, [])
+      return <div>{`Protected content ${session?.access_token}`}</div>
+    }
+
+    render(
+      <AuthProvider>
+        <RequireRole role="admin">
+          <Screen />
+        </RequireRole>
+      </AuthProvider>,
+    )
+
+    expect(await screen.findByText('Protected content token')).toBeInTheDocument()
+    const mountsBefore = mounts
+    const profileReads = maybeSingle.mock.calls.length
+
+    act(() => {
+      authCallback?.('TOKEN_REFRESHED', { ...fakeSession, access_token: 'fresher' } as Session)
+    })
+
+    // Asserted synchronously on purpose: the failure is what the screen looks
+    // like DURING the event, not what it settles back to afterwards.
+    expect(document.querySelector('.ant-spin-spinning')).toBeNull()
+    expect(mounts).toBe(mountsBefore)
+    // The refreshed token still has to reach consumers -- skipping the gate
+    // must not also mean skipping the update.
+    expect(screen.getByText('Protected content fresher')).toBeInTheDocument()
+    // A token refresh says nothing about the profiles row, so re-reading it is
+    // a round trip bought for nothing.
+    expect(maybeSingle.mock.calls.length).toBe(profileReads)
   })
 })

@@ -60,6 +60,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let cancelled = false
     let generation = 0
+    // Whose profile the provider is currently holding. Read by the auth
+    // listener below to tell "the token changed" from "the account changed".
+    let currentUserId: string | null = null
 
     const resolve = async (next: Session | null) => {
       const mine = ++generation
@@ -81,6 +84,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // arrival order, so the last event always wins here regardless of how
         // the awaited fetch below resolves.
         setSession(next)
+        currentUserId = next?.user?.id ?? null
         const nextProfile = next?.user ? await fetchProfile(next.user.id) : null
         if (isCurrent()) setProfile(nextProfile)
       } catch {
@@ -105,6 +109,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // a spinner, which is the bug this whole round exists to close.
         if (cancelled) return
         setSession(null)
+        currentUserId = null
         setProfile(null)
         setLoading(false)
       })
@@ -116,6 +121,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // if that event ever failed to fire, loading would stick true forever,
       // which is the exact bug this round is fixing.
       if (event === 'INITIAL_SESSION') return
+
+      // Same account, new token: nothing this provider exposes has changed
+      // except the token itself, so take it and leave the tree alone.
+      //
+      // Going through resolve() here was a data-loss bug, not an
+      // inefficiency. resolve() holds `loading` true across the profile
+      // fetch, and RequireRole renders a spinner INSTEAD of its children
+      // while it is -- so a routine token refresh unmounted whatever screen
+      // the user was on and threw away its state. supabase-js emits
+      // TOKEN_REFRESHED on its own timer and re-checks the session every time
+      // the tab becomes visible again, so this fired on nothing more than
+      // switching windows and coming back: the deck editor came back empty,
+      // with the admin's detected cells, guides and selection gone, and any
+      // save they had just clicked silently dropped mid-flight.
+      //
+      // The profile is deliberately not re-read: it belongs to the profiles
+      // table, which a token refresh says nothing about.
+      const nextUserId = next?.user?.id ?? null
+      if (nextUserId !== null && nextUserId === currentUserId) {
+        setSession(next)
+        return
+      }
+
       void resolve(next)
     })
 
