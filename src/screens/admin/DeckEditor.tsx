@@ -282,10 +282,23 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
    * it: the guides can change after a mesh is generated, and the areas already
    * computed do not change with them.
    */
-  const hasRealSpans = useMemo(() => {
+  /**
+   * Which axes carry a real mm chain, and whether BOTH do.
+   *
+   * Both is the condition for measured areas -- one axis alone would multiply a
+   * real span by a pixel ratio. The per-axis flags exist because the banner used
+   * to say "no guide carries a mm dimension" whenever this was false, which is
+   * plainly untrue once one axis has been filled in: the admin pastes a chain on
+   * one axis, the screen tells them nothing has been entered, and they conclude
+   * the feature is broken. It reads as a bug and cost real trust.
+   */
+  const spanAxes = useMemo(() => {
     const typed = (axis: 'x' | 'y') => guides.some((g) => g.axis === axis && g.offsetMm > 0)
-    return typed('x') && typed('y')
+    const x = typed('x')
+    const y = typed('y')
+    return { x, y, both: x && y, neither: !x && !y }
   }, [guides])
+  const hasRealSpans = spanAxes.both
 
   const generateMesh = () => {
     // `guides` carries real ids, so there is nothing to substitute. This used to
@@ -723,7 +736,11 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
         <Alert
           type="info"
           message="Diện tích ô đang được chia theo tỉ lệ, không phải đo thật"
-          description="Chưa có guide nào mang kích thước mm, nên diện tích từng ô được chia từ tổng diện tích sàn theo tỉ lệ pixel. Nhập khoảng cách thật vào bảng guide bên dưới để có số đo chính xác."
+          description={
+            spanAxes.neither
+              ? 'Chưa có guide nào mang kích thước mm, nên diện tích từng ô được chia từ tổng diện tích sàn theo tỉ lệ pixel.'
+              : `Trục ${spanAxes.x ? 'ngang' : 'dọc'} đã có kích thước mm, nhưng trục ${spanAxes.x ? 'dọc' : 'ngang'} thì chưa — cần cả hai trục mới đo được diện tích thật, nên hiện tại diện tích đang chia theo tỉ lệ pixel.`
+          }
         />
       )}
 

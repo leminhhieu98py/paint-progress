@@ -1610,4 +1610,24 @@ describe('mergeErrorInVietnamese', () => {
   it('leaves an error it does not recognise unchanged', () => {
     expect(mergeErrorInVietnamese('Some new domain error')).toBe('Some new domain error')
   })
+  it('names the axis that is still missing its mm chain', async () => {
+    // The old copy said "no guide carries a mm dimension" for ANY prorated
+    // deck, including one where the admin had just pasted a chain on one axis.
+    // It read as "nothing you did registered", which is how the paste feature
+    // came to look broken on its first real use.
+    listGuides.mockResolvedValue([
+      { id: 'gx1', axis: 'x', pos: 0, offsetMm: 0, label: null },
+      { id: 'gx2', axis: 'x', pos: 1, offsetMm: 58100, label: null },
+      { id: 'gy1', axis: 'y', pos: 0, offsetMm: 0, label: null },
+      { id: 'gy2', axis: 'y', pos: 1, offsetMm: 0, label: null },
+    ])
+    listCells.mockResolvedValue([
+      { id: 'c1', code: 'R1C1', x: 0, y: 0, w: 1, h: 1, areaM2: 100, stageId: null },
+    ])
+    render(<DeckEditor deck={{ ...deck, areaSource: 'prorated' }} onClose={vi.fn()} />)
+
+    expect(await screen.findByText(/Trục ngang đã có kích thước mm/)).toBeInTheDocument()
+    expect(screen.queryByText(/Chưa có guide nào mang kích thước mm/)).toBeNull()
+  })
+
 })
