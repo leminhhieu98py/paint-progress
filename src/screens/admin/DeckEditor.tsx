@@ -1,5 +1,5 @@
 import {
-  Alert, Button, Descriptions, Input, InputNumber, Modal, Space, Table, Typography,
+  Alert, Button, Descriptions, Input, InputNumber, Modal, Slider, Space, Table, Typography,
 } from 'antd'
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { distributeChain, moveGuideOnAxis, parseDimensionChain, type ChainParse } from '../../domain/dimensionChain'
@@ -8,6 +8,7 @@ import {
   divergesBeyondThreshold, hasUndeclaredArea, interpolateOffsetMm, mergeCells,
   offsetsFromSpans, prorateCellAreas, spansFromOffsets,
 } from '../../domain/geometry'
+import { linesFromProfile, type InkProfile } from '../../domain/gridDetect'
 import type { Guide, MeshCell, Stage } from '../../domain/types'
 import {
   getDrawingUrl, listCells, listGuides, saveGuides, syncCells,
@@ -17,6 +18,7 @@ import { formatAreaM2, formatMm, formatPercent } from '../../lib/format'
 import { listStages } from '../../lib/projectsApi'
 import { randomUUID } from '../../lib/uuid'
 import { DrawingCanvas } from '../../canvas/DrawingCanvas'
+import { inkProfileFromImage } from '../../canvas/inkProfileFromImage'
 
 /** A guide table row: the guide, its index into the unsorted `guides` array, and the span to the guide before it. */
 type AxisRow = Guide & { index: number; spanMm: number }
@@ -187,6 +189,27 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
    * now stale until the admin happens to notice the guide table changed.
    */
   const [chainAppliedNote, setChainAppliedNote] = useState(false)
+  /**
+   * The cached expensive pass over the drawing's pixels -- per-column and
+   * per-row ink counts, keyed to whatever image `detectGrid` last ran
+   * against. `null` until the admin runs detection at least once.
+   *
+   * Held separately from `guides` on purpose: the sliders below re-derive
+   * guides from THIS on every move via the cheap `linesFromProfile`, so the
+   * expensive pixel walk in `inkProfileFromImage` runs exactly once per
+   * "Dò lưới tự động" click, never once per slider tick. See
+   * detect-sliders-brief.md's whole case for the two-pass split.
+   */
+  const [detectProfile, setDetectProfile] = useState<InkProfile | null>(null)
+  /**
+   * The two sliders' current values. Independent per axis -- the customer's
+   * real deck under-detects vertical beams at every fraction that finds the
+   * horizontal ones cleanly, so one number can never serve both. Default
+   * 0.60 on each axis, mirroring the measurements in the brief.
+   */
+  const [detectFraction, setDetectFraction] = useState<{ x: number; y: number }>({ x: 0.6, y: 0.6 })
+  /** Only for the "Dò lưới tự động" button's own spinner -- distinct from `busy`, which gates the save/delete/merge round trips. */
+  const [detecting, setDetecting] = useState(false)
 
   const load = useCallback(async () => {
     try {
@@ -324,6 +347,82 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
     // Regenerating is the "update the cells" step the stale note asks for.
     setChainAppliedNote(false)
   }
+
+  /**
+   * Replaces every guide on both axes with `linesFromProfile`'s result at
+   * `fraction`, against the given (already-cached) profile.
+   *
+   * Both axes always, even though only one slider may have moved: a profile
+   * carries counts for both, `linesFromProfile` always returns both, and the
+   * canvas already draws whatever `guides` holds, which IS the live preview
+   * the brief asks for -- there is no separate preview state to reconcile.
+   * Detected guides carry `offsetMm: 0` deliberately (not interpolated, not
+   * inferred): they have no printed dimension to measure, so `generateMesh`
+   * routes them through `prorateCellAreas` the same way a deck with no mm
+   * chain at all already does, and `area_source` records `prorated`.
+   */
+  const applyDetectedLines = (profile: InkProfile, fraction: { x: number; y: number }) => {
+    const { x, y } = linesFromProfile(profile, fraction)
+    setGuides([
+      ...x.map((pos): Guide => ({ id: randomUUID(), axis: 'x', pos, offsetMm: 0 })),
+      ...y.map((pos): Guide => ({ id: randomUUID(), axis: 'y', pos, offsetMm: 0 })),
+    ])
+  }
+
+  /**
+   * "Dò lưới tự động": runs the one expensive pixel pass for this drawing and
+   * applies its result at the sliders' current fractions.
+   *
+   * Wrapped in its own busy flag (`detecting`), not `apply`'s `busy`: this
+   * touches no persisted data and gates nothing else on screen, so tying it
+   * to the same flag would needlessly disable Save/Delete/Merge while a
+   * detection request that has nothing to do with them is in flight.
+   */
+  const detectGrid = async () => {
+    if (!imageUrl) return
+    setDetecting(true)
+    setError(null)
+    try {
+      const profile = await inkProfileFromImage(imageUrl)
+      setDetectProfile(profile)
+      applyDetectedLines(profile, detectFraction)
+    } catch {
+      // The pixel pass and the browser Image load are the only things that
+      // can fail here (a broken URL, a CORS-tainted canvas, decode failure).
+      // None of that is the admin's to fix by retyping anything, so this is
+      // a plain refusal, not a validation message -- and it must say
+      // something rather than leave the guides exactly as they were with no
+      // sign anything happened at all.
+      setError('Không tự động dò được lưới từ bản vẽ này. Hãy kẻ guide thủ công.')
+    } finally {
+      setDetecting(false)
+    }
+  }
+
+  /**
+   * A slider move: update its own fraction, and -- only once a profile is
+   * cached -- re-detect and replace the guides immediately from it. Cheap by
+   * construction: `linesFromProfile` reads the cached counts, it never
+   * re-runs `inkProfileFromImage`.
+   */
+  const onFractionChange = (axis: 'x' | 'y', value: number) => {
+    const next = { ...detectFraction, [axis]: value }
+    setDetectFraction(next)
+    if (detectProfile) applyDetectedLines(detectProfile, next)
+  }
+
+  /**
+   * The live "N đường dọc × M đường ngang → K ô" count next to the sliders.
+   * Reads `guides` directly rather than tracking detection results
+   * separately, so it stays true of the guide table no matter how the
+   * guides on screen got there -- detected, hand-drawn, or a mix after the
+   * admin adjusts one by hand.
+   */
+  const detectedCounts = useMemo(() => {
+    const x = guides.filter((g) => g.axis === 'x').length
+    const y = guides.filter((g) => g.axis === 'y').length
+    return { x, y, cellCount: x >= 2 && y >= 2 ? (x - 1) * (y - 1) : 0 }
+  }, [guides])
 
   /**
    * Parses the axis' current paste-box text and holds the result for the
@@ -779,6 +878,56 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
           ),
         },
       ]} />
+
+      {/*
+        Detect first, hand-tune after: moving either slider replaces every
+        guide on screen from the cached profile, so a hand-placed guide does
+        not survive a later slider move. The note below says so; nothing here
+        stops the admin using it anyway, the same way nothing stops them
+        clicking "Sinh lưới ô" over cells they already curated -- both are
+        ordinary, reversible authoring actions, not destructive-edit territory
+        (see PendingEdit / reviewEdit, which gate deck-level SAVES, not local
+        edits to the working guide table).
+      */}
+      <Space direction="vertical" size="small" style={{ width: '100%' }}>
+        <Space wrap align="start">
+          <Button loading={detecting} disabled={!imageUrl} onClick={() => void detectGrid()}>
+            Dò lưới tự động
+          </Button>
+          <Space direction="vertical" size={0} style={{ width: 220 }}>
+            <Typography.Text>Độ nhạy trục dọc</Typography.Text>
+            <Slider
+              min={0.3}
+              max={0.9}
+              step={0.05}
+              value={detectFraction.x}
+              disabled={!detectProfile}
+              ariaLabelForHandle="Độ nhạy trục dọc"
+              tooltip={{ formatter: (v) => formatPercent(v ?? 0) }}
+              onChange={(v) => onFractionChange('x', v)}
+            />
+          </Space>
+          <Space direction="vertical" size={0} style={{ width: 220 }}>
+            <Typography.Text>Độ nhạy trục ngang</Typography.Text>
+            <Slider
+              min={0.3}
+              max={0.9}
+              step={0.05}
+              value={detectFraction.y}
+              disabled={!detectProfile}
+              ariaLabelForHandle="Độ nhạy trục ngang"
+              tooltip={{ formatter: (v) => formatPercent(v ?? 0) }}
+              onChange={(v) => onFractionChange('y', v)}
+            />
+          </Space>
+          <Typography.Text>
+            {`${detectedCounts.x} đường dọc × ${detectedCounts.y} đường ngang → ${detectedCounts.cellCount} ô`}
+          </Typography.Text>
+        </Space>
+        <Typography.Text type="secondary">
+          Kéo thanh trượt sẽ dò lại và thay toàn bộ guide đang có, kể cả guide vừa chỉnh tay — nên dò lưới trước, chỉnh tay sau.
+        </Typography.Text>
+      </Space>
 
       <Space wrap>
         <Button onClick={generateMesh}>Sinh lưới ô</Button>

@@ -1,6 +1,7 @@
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { inkProfile } from '../../domain/gridDetect'
 import { DeckEditor, mergeErrorInVietnamese } from './DeckEditor'
 
 const listGuides = vi.hoisted(() => vi.fn())
@@ -18,7 +19,11 @@ const getDrawingUrl = vi.hoisted(() => vi.fn())
 // be a defined identifier in this file, so the test referencing it could not
 // have run as written.
 const listStages = vi.hoisted(() => vi.fn())
+const inkProfileFromImage = vi.hoisted(() => vi.fn())
 
+vi.mock('../../canvas/inkProfileFromImage', () => ({
+  inkProfileFromImage: (url: string, options?: unknown) => inkProfileFromImage(url, options),
+}))
 vi.mock('../../lib/decksApi', () => ({
   listGuides: (d: string) => listGuides(d),
   saveGuides: (d: string, g: unknown) => saveGuides(d, g),
@@ -127,13 +132,61 @@ const ONE_BAY_GUIDES = [
 ]
 
 beforeEach(() => {
-  for (const m of [listGuides, saveGuides, listCells, syncCells, zoneImpactOf, updateDeckArea, getDrawingUrl, listStages]) m.mockReset()
+  for (const m of [
+    listGuides, saveGuides, listCells, syncCells, zoneImpactOf, updateDeckArea, getDrawingUrl, listStages,
+    inkProfileFromImage,
+  ]) m.mockReset()
   getDrawingUrl.mockResolvedValue('blob:drawing')
   listGuides.mockResolvedValue([])
   listCells.mockResolvedValue([])
   zoneImpactOf.mockResolvedValue([])
   listStages.mockResolvedValue([])
 })
+
+/**
+ * A hand-built InkProfile, run through the REAL `inkProfile`, standing in
+ * for `inkProfileFromImage`'s (mocked, since jsdom has no canvas) expensive
+ * pass. Three vertical lines (columns 2/10/16) and three horizontal lines
+ * (rows 3/9/15), each painted for a different number of rows/columns so they
+ * cross the sliders' three interesting fractions -- 0.30 (Home), 0.60
+ * (default), 0.90 (End) -- at different points:
+ *
+ *   column/row ink   |  candidate at fraction
+ *   2 / 3   (19/19)  |  0.30, 0.60, 0.90 (always)
+ *   10 / 9  (13/19)  |  0.30, 0.60
+ *   16 / 15 ( 7/19)  |  0.30 only
+ *
+ * so moving either slider to its default/min/max changes that axis' guide
+ * count (2 / 3 / 1) while leaving the other axis untouched -- which is the
+ * one thing this whole feature exists to prove. Each line's own span fully
+ * contains where the perpendicular lines cross it, so nothing here picks up
+ * stray ink from the other axis' lines; every other column/row in the image
+ * carries at most 3 stray ink pixels, far under the lowest threshold (5.7).
+ */
+function fixtureProfile() {
+  const width = 20
+  const height = 20
+  const rgb = new Uint8Array(width * height * 3).fill(255)
+  const paint = (x: number, y: number) => {
+    const o = (y * width + x) * 3
+    rgb[o] = 0
+    rgb[o + 1] = 0
+    rgb[o + 2] = 0
+  }
+  const fillColumn = (x: number, yFrom: number, yTo: number) => {
+    for (let y = yFrom; y <= yTo; y++) paint(x, y)
+  }
+  const fillRow = (y: number, xFrom: number, xTo: number) => {
+    for (let x = xFrom; x <= xTo; x++) paint(x, y)
+  }
+  fillColumn(2, 0, 18)
+  fillColumn(10, 0, 12)
+  fillColumn(16, 0, 6)
+  fillRow(3, 0, 18)
+  fillRow(9, 0, 12)
+  fillRow(15, 0, 6)
+  return inkProfile(rgb, width, height)
+}
 
 describe('DeckEditor', () => {
   it('turns typed mm spans into a mesh with real areas', async () => {
@@ -1591,6 +1644,109 @@ describe('DeckEditor', () => {
       // ONE_BAY_GUIDES' two y-guides, g3 and g4, untouched.
       expect(yGuides).toEqual(ONE_BAY_GUIDES.filter((g) => g.axis === 'y'))
       expect(guides.filter((g) => g.axis === 'x')).toHaveLength(7)
+    })
+  })
+
+  describe('auto-detecting the grid, with per-axis sensitivity sliders (detect-sliders)', () => {
+    it('shows the live guide count for whatever guides are on screen, with no detection run yet', async () => {
+      listGuides.mockResolvedValue(ONE_BAY_GUIDES)
+      render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+      await screen.findByTestId('canvas')
+
+      expect(screen.getByText('2 đường dọc × 2 đường ngang → 1 ô')).toBeInTheDocument()
+    })
+
+    it('disables both sliders until a profile has been detected', async () => {
+      listGuides.mockResolvedValue([])
+      render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+      await screen.findByTestId('canvas')
+
+      expect(screen.getByRole('slider', { name: 'Độ nhạy trục dọc' })).toHaveAttribute('aria-disabled', 'true')
+      expect(screen.getByRole('slider', { name: 'Độ nhạy trục ngang' })).toHaveAttribute('aria-disabled', 'true')
+    })
+
+    it('detects at the default 0.60 fraction on both axes, replaces the guides and updates the live count', async () => {
+      inkProfileFromImage.mockResolvedValue(fixtureProfile())
+      listGuides.mockResolvedValue(ONE_BAY_GUIDES)
+      render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+      await screen.findByTestId('canvas')
+
+      await userEvent.click(screen.getByRole('button', { name: 'Dò lưới tự động' }))
+
+      await waitFor(() => {
+        expect(readGuides().filter((g) => g.axis === 'x')).toHaveLength(2)
+      })
+      const guides = readGuides()
+      const xGuides = guides.filter((g) => g.axis === 'x').sort((a, b) => a.pos - b.pos)
+      const yGuides = guides.filter((g) => g.axis === 'y').sort((a, b) => a.pos - b.pos)
+      expect(xGuides.map((g) => g.pos)).toEqual([0.1, 0.5])
+      expect(yGuides.map((g) => g.pos)).toEqual([0.15, 0.45])
+      // Detected guides carry no mm dimension -- they route through
+      // prorateCellAreas via `hasRealSpans`/generateMesh, same as any other
+      // guide with offsetMm 0.
+      expect(guides.every((g) => g.offsetMm === 0)).toBe(true)
+      // ONE_BAY_GUIDES is entirely replaced, not merged with.
+      expect(guides).toHaveLength(4)
+
+      expect(screen.getByText('2 đường dọc × 2 đường ngang → 1 ô')).toBeInTheDocument()
+      expect(screen.getByRole('slider', { name: 'Độ nhạy trục dọc' })).toHaveAttribute('aria-disabled', 'false')
+    })
+
+    it('moving the vertical-axis slider re-detects that axis only, from the cached profile', async () => {
+      inkProfileFromImage.mockResolvedValue(fixtureProfile())
+      listGuides.mockResolvedValue([])
+      render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+      await screen.findByTestId('canvas')
+      await userEvent.click(screen.getByRole('button', { name: 'Dò lưới tự động' }))
+      await waitFor(() => expect(readGuides().filter((g) => g.axis === 'x')).toHaveLength(2))
+
+      // Home = the slider's own minimum (0.30): a third, fainter vertical
+      // line now clears the bar. The horizontal axis is untouched -- this is
+      // the split the whole feature is built around.
+      const xSlider = screen.getByRole('slider', { name: 'Độ nhạy trục dọc' })
+      xSlider.focus()
+      fireEvent.keyDown(xSlider, { key: 'Home', keyCode: 36, which: 36 })
+
+      await waitFor(() => expect(readGuides().filter((g) => g.axis === 'x')).toHaveLength(3))
+      expect(readGuides().filter((g) => g.axis === 'y')).toHaveLength(2)
+      expect(screen.getByText('3 đường dọc × 2 đường ngang → 2 ô')).toBeInTheDocument()
+
+      // inkProfileFromImage's one expensive call is not repeated by a slider
+      // move -- only linesFromProfile's cheap re-read of the cached profile is.
+      expect(inkProfileFromImage).toHaveBeenCalledTimes(1)
+    })
+
+    it('moving the horizontal-axis slider re-detects that axis only, from the cached profile', async () => {
+      inkProfileFromImage.mockResolvedValue(fixtureProfile())
+      listGuides.mockResolvedValue([])
+      render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+      await screen.findByTestId('canvas')
+      await userEvent.click(screen.getByRole('button', { name: 'Dò lưới tự động' }))
+      await waitFor(() => expect(readGuides().filter((g) => g.axis === 'y')).toHaveLength(2))
+
+      // End = the slider's own maximum (0.90): only the strongest horizontal
+      // line still clears the bar. The vertical axis is untouched.
+      const ySlider = screen.getByRole('slider', { name: 'Độ nhạy trục ngang' })
+      ySlider.focus()
+      fireEvent.keyDown(ySlider, { key: 'End', keyCode: 35, which: 35 })
+
+      await waitFor(() => expect(readGuides().filter((g) => g.axis === 'y')).toHaveLength(1))
+      expect(readGuides().filter((g) => g.axis === 'x')).toHaveLength(2)
+      expect(screen.getByText('2 đường dọc × 1 đường ngang → 0 ô')).toBeInTheDocument()
+    })
+
+    it('shows a Vietnamese message when detection fails, and leaves the existing guides alone', async () => {
+      inkProfileFromImage.mockRejectedValue(new Error('canvas boom'))
+      listGuides.mockResolvedValue(ONE_BAY_GUIDES)
+      render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+      await screen.findByTestId('canvas')
+
+      await userEvent.click(screen.getByRole('button', { name: 'Dò lưới tự động' }))
+
+      expect(
+        await screen.findByText('Không tự động dò được lưới từ bản vẽ này. Hãy kẻ guide thủ công.'),
+      ).toBeInTheDocument()
+      expect(readGuides()).toEqual(ONE_BAY_GUIDES)
     })
   })
 })
