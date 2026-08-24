@@ -44,7 +44,7 @@ vi.mock('../../canvas/DrawingCanvas', () => ({
     cells, guides, onCellClick, onGuideMove, onGuideAdd, cellColors,
   }: {
     cells: { code: string }[]
-    guides: { axis: 'x' | 'y'; pos: number }[]
+    guides: { id: string; axis: 'x' | 'y'; pos: number; offsetMm: number }[]
     onCellClick?: (code: string, additive: boolean) => void
     onGuideMove?: (index: number, pos: number) => void
     onGuideAdd?: (axis: 'x' | 'y', pos: number) => void
@@ -58,6 +58,14 @@ vi.mock('../../canvas/DrawingCanvas', () => ({
         </button>
       ))}
       {/*
+        The screen never renders a guide's raw pos anywhere -- only mm derived
+        from it -- so re-rail tests (which assert exact POSITIONS, not just
+        "moved") have nothing else to read. Exact array order and shape as
+        passed to DrawingCanvas, so a test can index it the same way the
+        fixture below built `guides`.
+      */}
+      <div data-testid="guides">{JSON.stringify(guides)}</div>
+      {/*
         One drag per guide, all to the same far-right target, standing in for
         the real Konva drag. 0.99 is past every interior guide in the fixtures
         below, which is the whole point: a drag that crosses a neighbour is the
@@ -66,6 +74,22 @@ vi.mock('../../canvas/DrawingCanvas', () => ({
       {guides.map((_g, i) => (
         <button key={`drag-${i}`} onClick={() => onGuideMove?.(i, 0.99)}>
           kéo guide {i}
+        </button>
+      ))}
+      {/*
+        Two more fixed targets, standing in for a drag that lands short of the
+        far edge -- 0.99 above only ever exercises "past every neighbour",
+        which cannot tell a re-rail test whether interior guides landed on the
+        right RATIO rather than merely "somewhere that increased".
+      */}
+      {guides.map((_g, i) => (
+        <button key={`drag80-${i}`} onClick={() => onGuideMove?.(i, 0.8)}>
+          kéo guide {i} tới 0.8
+        </button>
+      ))}
+      {guides.map((_g, i) => (
+        <button key={`drag20-${i}`} onClick={() => onGuideMove?.(i, 0.2)}>
+          kéo guide {i} tới 0.2
         </button>
       ))}
       {/* Stands in for a double-click adding a guide midway across the axis. */}
@@ -1349,6 +1373,225 @@ describe('DeckEditor', () => {
     listCells.mockRejectedValue(new Error('JWT expired'))
     render(<DeckEditor deck={deck} onClose={vi.fn()} />)
     expect(await screen.findByText('JWT expired')).toBeInTheDocument()
+  })
+
+  /** Reads the exact guides array the screen handed to DrawingCanvas. */
+  const readGuides = () =>
+    JSON.parse(screen.getByTestId('guides').textContent!) as
+      { id: string; axis: 'x' | 'y'; pos: number; offsetMm: number }[]
+
+  describe('re-railing interior guides on an edge drag (dimension-chain paste, step 3)', () => {
+    // The real Main Deck across-chain, laid out the way the CURRENT
+    // (pre-feature) workflow actually leaves guides: dragged into rough,
+    // monotonic, but otherwise arbitrary positions unrelated to their mm
+    // ratios. Re-railing is what corrects them once one edge is dragged to a
+    // real position -- a fixture already laid out by ratio would not
+    // exercise it at all.
+    const REAL_OFFSETS = [0, 2500, 12000, 26500, 41000, 50500, 58100]
+
+    it('re-rails every interior x-guide to its mm ratio when the LAST one is dragged to 0.8', async () => {
+      const positions = [0, 0.1, 0.2, 0.3, 0.4, 0.5, 1]
+      listGuides.mockResolvedValue(
+        REAL_OFFSETS.map((offsetMm, i) => ({ id: `gx${i}`, axis: 'x', pos: positions[i], offsetMm })),
+      )
+      render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+      await screen.findByTestId('canvas')
+
+      // Guide 6's only neighbour (guide 5, pos 0.5) leaves 0.8 well clear, so
+      // moveGuideClamped lets the drag through unclamped.
+      await userEvent.click(screen.getByRole('button', { name: 'kéo guide 6 tới 0.8' }))
+
+      const guides = readGuides()
+      const total = REAL_OFFSETS[REAL_OFFSETS.length - 1]
+      REAL_OFFSETS.forEach((offsetMm, i) => {
+        // The mapping the whole feature rests on: pos = ratio * newEdgePos.
+        // Asserting the actual numbers, not just "increased" -- a re-rail
+        // that scattered guides anywhere still-increasing would pass a
+        // weaker check.
+        expect(guides[i].pos).toBeCloseTo((offsetMm / total) * 0.8, 9)
+        // Dragging never edits the mm chain the admin typed.
+        expect(guides[i].offsetMm).toBe(offsetMm)
+      })
+    })
+
+    it('re-rails every interior x-guide when the FIRST one is dragged to 0.2 instead', async () => {
+      const positions = [0, 0.5, 0.6, 0.7, 0.8, 0.9, 1]
+      listGuides.mockResolvedValue(
+        REAL_OFFSETS.map((offsetMm, i) => ({ id: `gx${i}`, axis: 'x', pos: positions[i], offsetMm })),
+      )
+      render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+      await screen.findByTestId('canvas')
+
+      await userEvent.click(screen.getByRole('button', { name: 'kéo guide 0 tới 0.2' }))
+
+      const guides = readGuides()
+      const total = REAL_OFFSETS[REAL_OFFSETS.length - 1]
+      REAL_OFFSETS.forEach((offsetMm, i) => {
+        const ratio = offsetMm / total
+        expect(guides[i].pos).toBeCloseTo(0.2 + ratio * (1 - 0.2), 9)
+      })
+    })
+
+    it('does not re-rail an interior guide drag -- only moveGuideClamped governs it', async () => {
+      const positions = [0, 0.1, 0.2, 0.3, 0.4, 0.5, 1]
+      listGuides.mockResolvedValue(
+        REAL_OFFSETS.map((offsetMm, i) => ({ id: `gx${i}`, axis: 'x', pos: positions[i], offsetMm })),
+      )
+      render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+      await screen.findByTestId('canvas')
+
+      // Guide 3 (pos 0.3) stays strictly between guides 2 (0.2) and 4 (0.4).
+      await userEvent.click(screen.getByRole('button', { name: 'kéo guide 3 tới 0.2' }))
+
+      const guides = readGuides()
+      // Only the dragged guide moved (clamped between 0.2+gap and 0.4-gap);
+      // every OTHER guide is untouched, not re-railed onto some new ratio.
+      expect(guides[0].pos).toBe(0)
+      expect(guides[1].pos).toBe(0.1)
+      expect(guides[2].pos).toBe(0.2)
+      expect(guides[4].pos).toBe(0.4)
+      expect(guides[5].pos).toBe(0.5)
+      expect(guides[6].pos).toBe(1)
+    })
+
+    it('does not re-rail on a degenerate axis with no mm chain yet, and leaves the others exactly where they were', async () => {
+      // Guides added by double-click before any span was typed: nothing to
+      // scale by, so this must behave exactly as plain moveGuideClamped.
+      listGuides.mockResolvedValue([
+        { id: 'g0', axis: 'x', pos: 0, offsetMm: 0 },
+        { id: 'g1', axis: 'x', pos: 0.3, offsetMm: 0 },
+        { id: 'g2', axis: 'x', pos: 0.6, offsetMm: 0 },
+        { id: 'g3', axis: 'x', pos: 1, offsetMm: 0 },
+      ])
+      render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+      await screen.findByTestId('canvas')
+
+      await userEvent.click(screen.getByRole('button', { name: 'kéo guide 3 tới 0.8' }))
+
+      const guides = readGuides()
+      expect(guides[0].pos).toBe(0)
+      expect(guides[1].pos).toBe(0.3)
+      expect(guides[2].pos).toBe(0.6)
+      // Only the dragged edge itself moved.
+      expect(guides[3].pos).toBe(0.8)
+    })
+  })
+
+  describe('pasting a dimension chain (dimension-chain paste, step 4)', () => {
+    const REAL_CHAIN_TEXT = '2500 9500 14500 14500 9500 7600'
+
+    it('previews a good paste with the right total and applies it as 7 guides spanning 0..1', async () => {
+      listGuides.mockResolvedValue([])
+      render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+      await screen.findByTestId('canvas')
+
+      const xBox = within(screen.getByTestId('chain-box-x'))
+      await userEvent.type(xBox.getByRole('textbox'), REAL_CHAIN_TEXT)
+      await userEvent.click(xBox.getByRole('button', { name: 'Xem trước' }))
+
+      // vi-VN grouped, via the shared formatter -- the brief's own example.
+      expect(xBox.getByText('Tổng: 58.100 mm')).toBeInTheDocument()
+
+      await userEvent.click(xBox.getByRole('button', { name: 'Áp dụng' }))
+
+      const xGuides = readGuides()
+        .filter((g) => g.axis === 'x')
+        .sort((a, b) => a.offsetMm - b.offsetMm)
+      expect(xGuides).toHaveLength(7)
+      expect(xGuides.map((g) => g.offsetMm)).toEqual([0, 2500, 12000, 26500, 41000, 50500, 58100])
+      // No existing x-guides to reuse edge positions from, so 0 and 1.
+      expect(xGuides[0].pos).toBeCloseTo(0, 9)
+      expect(xGuides[xGuides.length - 1].pos).toBeCloseTo(1, 9)
+      expect(xGuides[1].pos).toBeCloseTo(2500 / 58100, 9)
+
+      // Applying changed guides, not cells -- the note says so.
+      expect(
+        await screen.findByText('Đã đổi guide. Bấm "Sinh lưới ô" để cập nhật các ô.'),
+      ).toBeInTheDocument()
+    })
+
+    it('applies a chain between the axis own existing edge positions, not 0 and 1, when guides already exist', async () => {
+      listGuides.mockResolvedValue([
+        { id: 'gx0', axis: 'x', pos: 0.2, offsetMm: 0 },
+        { id: 'gx1', axis: 'x', pos: 0.7, offsetMm: 999 },
+      ])
+      render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+      await screen.findByTestId('canvas')
+
+      const xBox = within(screen.getByTestId('chain-box-x'))
+      await userEvent.type(xBox.getByRole('textbox'), REAL_CHAIN_TEXT)
+      await userEvent.click(xBox.getByRole('button', { name: 'Xem trước' }))
+      await userEvent.click(xBox.getByRole('button', { name: 'Áp dụng' }))
+
+      const xGuides = readGuides()
+        .filter((g) => g.axis === 'x')
+        .sort((a, b) => a.offsetMm - b.offsetMm)
+      expect(xGuides).toHaveLength(7)
+      expect(xGuides[0].pos).toBeCloseTo(0.2, 9)
+      expect(xGuides[xGuides.length - 1].pos).toBeCloseTo(0.7, 9)
+      // Interior guide 1 (2500mm of 58100mm) lands at 0.2 + ratio * 0.5.
+      expect(xGuides[1].pos).toBeCloseTo(0.2 + (2500 / 58100) * 0.5, 9)
+    })
+
+    it('shows the named-token Alert on a bad paste and leaves the guides untouched', async () => {
+      listGuides.mockResolvedValue(ONE_BAY_GUIDES)
+      render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+      await screen.findByTestId('canvas')
+
+      const xBox = within(screen.getByTestId('chain-box-x'))
+      // 2500 is 4 digits (not 1-3), so not a thousands group; 9500 is 4
+      // fraction digits (not 1-2), so not a decimal either -- the brief's own
+      // worked rejection example.
+      await userEvent.type(xBox.getByRole('textbox'), '2500 2500,9500 14500')
+      await userEvent.click(xBox.getByRole('button', { name: 'Xem trước' }))
+
+      expect(
+        xBox.getByText('Không đọc được "2500,9500". Mỗi số cách nhau bằng dấu cách hoặc xuống dòng.'),
+      ).toBeInTheDocument()
+      expect(xBox.getByRole('button', { name: 'Áp dụng' })).toBeDisabled()
+      expect(readGuides()).toEqual(ONE_BAY_GUIDES)
+    })
+
+    it('keeps Áp dụng disabled until the CURRENT text has been previewed successfully', async () => {
+      listGuides.mockResolvedValue([])
+      render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+      await screen.findByTestId('canvas')
+
+      const xBox = within(screen.getByTestId('chain-box-x'))
+      const apply = () => xBox.getByRole('button', { name: 'Áp dụng' })
+      const textbox = xBox.getByRole('textbox')
+
+      expect(apply()).toBeDisabled()
+
+      await userEvent.type(textbox, REAL_CHAIN_TEXT)
+      // Typed but not yet previewed.
+      expect(apply()).toBeDisabled()
+
+      await userEvent.click(xBox.getByRole('button', { name: 'Xem trước' }))
+      expect(apply()).toBeEnabled()
+
+      // Editing after a successful preview must invalidate it -- applying
+      // must never read spans that describe text no longer in the box.
+      await userEvent.type(textbox, ' 100')
+      expect(apply()).toBeDisabled()
+    })
+
+    it('applying a chain on one axis does not touch the other axis guides', async () => {
+      listGuides.mockResolvedValue(ONE_BAY_GUIDES)
+      render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+      await screen.findByTestId('canvas')
+
+      const xBox = within(screen.getByTestId('chain-box-x'))
+      await userEvent.type(xBox.getByRole('textbox'), REAL_CHAIN_TEXT)
+      await userEvent.click(xBox.getByRole('button', { name: 'Xem trước' }))
+      await userEvent.click(xBox.getByRole('button', { name: 'Áp dụng' }))
+
+      const guides = readGuides()
+      const yGuides = guides.filter((g) => g.axis === 'y')
+      // ONE_BAY_GUIDES' two y-guides, g3 and g4, untouched.
+      expect(yGuides).toEqual(ONE_BAY_GUIDES.filter((g) => g.axis === 'y'))
+      expect(guides.filter((g) => g.axis === 'x')).toHaveLength(7)
+    })
   })
 })
 

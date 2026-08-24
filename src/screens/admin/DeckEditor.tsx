@@ -1,7 +1,8 @@
 import {
-  Alert, Button, Descriptions, InputNumber, Modal, Space, Table, Typography,
+  Alert, Button, Descriptions, Input, InputNumber, Modal, Space, Table, Typography,
 } from 'antd'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { distributeChain, parseDimensionChain, rerailAxisGuides, type ChainParse } from '../../domain/dimensionChain'
 import {
   AREA_DIVERGENCE_THRESHOLD, areaDivergence, buildMeshFromGuides, cellReshaped,
   divergesBeyondThreshold, hasUndeclaredArea, interpolateOffsetMm, mergeCells,
@@ -61,6 +62,22 @@ const EDIT_CONFIRM: Record<EditKind, string> = {
   merge: 'Vẫn gộp',
   mesh: 'Vẫn lưu',
 }
+
+/**
+ * The Main Deck's real across-chain, shown as the paste box's placeholder on
+ * both axes so the admin sees the expected shape (numbers separated by
+ * spaces or line breaks) rather than an empty box. Illustrative only -- it is
+ * never read as a value, only displayed until something is typed.
+ */
+const CHAIN_PLACEHOLDER = '2500 9500 14500 14500 9500 7600'
+
+/** One axis' paste-box state: the raw text, and the last "Xem trước" result for it. */
+interface ChainDraft {
+  text: string
+  preview: ChainParse | null
+}
+
+const EMPTY_CHAIN_DRAFT: ChainDraft = { text: '', preview: null }
 
 /**
  * Domain merge errors, in the admin's language.
@@ -150,6 +167,18 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
    * from there would write that empty set over the deck's real geometry.
    */
   const [loadFailed, setLoadFailed] = useState(false)
+  /** Each axis' paste-box text and its last preview, kept independent per axis. */
+  const [chainDrafts, setChainDrafts] = useState<Record<'x' | 'y', ChainDraft>>({
+    x: EMPTY_CHAIN_DRAFT,
+    y: EMPTY_CHAIN_DRAFT,
+  })
+  /**
+   * Whether a chain was applied to either axis since the mesh was last
+   * (re)generated. The existing cells are untouched by "Áp dụng" -- only the
+   * guides change -- so without this note nothing on screen says the mesh is
+   * now stale until the admin happens to notice the guide table changed.
+   */
+  const [chainAppliedNote, setChainAppliedNote] = useState(false)
 
   const load = useCallback(async () => {
     try {
@@ -271,6 +300,51 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
     setAreaSource(measured ? 'guides' : 'prorated')
     setSelected([])
     setError(null)
+    // Regenerating is the "update the cells" step the stale note asks for.
+    setChainAppliedNote(false)
+  }
+
+  /**
+   * Parses the axis' current paste-box text and holds the result for the
+   * preview to render. Re-running this on the same, unedited text is
+   * idempotent -- the preview IS the parse result, not a separate summary of
+   * it, so there is nothing for the two to disagree about.
+   */
+  const previewChain = (axis: 'x' | 'y') => {
+    setChainDrafts((prev) => ({
+      ...prev,
+      [axis]: { ...prev[axis], preview: parseDimensionChain(prev[axis].text) },
+    }))
+  }
+
+  /**
+   * Replaces one axis' guides with distributeChain's placement of the
+   * previewed chain, reusing that axis' current edge positions -- so
+   * applying a chain does not also relocate guides the admin already placed
+   * by hand at the drawing's true edges. Only reachable once `preview.ok`,
+   * which the "Áp dụng" button enforces by staying disabled until then: the
+   * preview is the only thing standing between a mis-typed separator and a
+   * deck whose every percentage is wrong, so nothing may apply straight from
+   * the textarea.
+   */
+  const applyChain = (axis: 'x' | 'y') => {
+    const preview = chainDrafts[axis].preview
+    if (!preview || !preview.ok) return
+
+    const existing = axisRows(axis)
+    const firstPos = existing.length >= 2 ? existing[0].pos : 0
+    const lastPos = existing.length >= 2 ? existing[existing.length - 1].pos : 1
+    const distributed = distributeChain(preview.spansMm, firstPos, lastPos)
+
+    setGuides((prev) => [
+      ...prev.filter((g) => g.axis !== axis),
+      ...distributed.map((d) => ({ id: randomUUID(), axis, pos: d.pos, offsetMm: d.offsetMm })),
+    ])
+    // The applied text is spent -- clearing it (and the preview with it)
+    // stops the admin re-applying the same chain a second time by re-reading
+    // stale text, and matches the textarea coming back empty on screen.
+    setChainDrafts((prev) => ({ ...prev, [axis]: EMPTY_CHAIN_DRAFT }))
+    setChainAppliedNote(true)
   }
 
   /**
@@ -534,6 +608,71 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
     />
   )
 
+  /**
+   * Paste the printed mm chain instead of double-clicking and dragging every
+   * guide by hand -- see dimensionChain.ts. The preview is not decoration: it
+   * is the only thing standing between a mis-typed separator and a deck whose
+   * every percentage is wrong, so "Áp dụng" stays disabled until a preview of
+   * the CURRENT text has actually succeeded. Editing the text after a
+   * successful preview clears it (see the TextArea's onChange below), so a
+   * stale preview can never be applied against different text than it
+   * describes.
+   */
+  const chainPasteBox = (axis: 'x' | 'y') => {
+    const preview = chainDrafts[axis].preview
+
+    let previewBody: ReactNode = null
+    if (preview && !preview.ok) {
+      previewBody = (
+        <Alert
+          type="error"
+          message={`Không đọc được "${preview.badToken}". Mỗi số cách nhau bằng dấu cách hoặc xuống dòng.`}
+        />
+      )
+    } else if (preview && preview.ok) {
+      // 0..1 here is purely to read back offsetMm's running sum for display;
+      // the pos it also computes is discarded -- applying uses the axis' own
+      // edge positions, not 0 and 1. See applyChain.
+      const distributed = distributeChain(preview.spansMm, 0, 1)
+      previewBody = (
+        <div>
+          {preview.spansMm.map((span, i) => (
+            <div key={i}>
+              {formatMm(span)} mm — cộng dồn {formatMm(distributed[i + 1].offsetMm)} mm
+            </div>
+          ))}
+          <div>
+            <strong>{`Tổng: ${formatMm(distributed[distributed.length - 1].offsetMm)} mm`}</strong>
+          </div>
+        </div>
+      )
+    }
+
+    return (
+      <Space direction="vertical" size="small" style={{ width: '100%' }} data-testid={`chain-box-${axis}`}>
+        <Input.TextArea
+          rows={1}
+          placeholder={CHAIN_PLACEHOLDER}
+          value={chainDrafts[axis].text}
+          onChange={(e) => {
+            const text = e.target.value
+            // The preview describes OLD text the moment new text is typed --
+            // clearing it here is what keeps "Áp dụng" disabled until the
+            // admin re-previews, rather than applying stale spans.
+            setChainDrafts((prev) => ({ ...prev, [axis]: { text, preview: null } }))
+          }}
+        />
+        <Space>
+          <Button onClick={() => previewChain(axis)}>Xem trước</Button>
+          <Button type="primary" disabled={!preview?.ok} onClick={() => applyChain(axis)}>
+            Áp dụng
+          </Button>
+        </Space>
+        {previewBody}
+      </Space>
+    )
+  }
+
   return (
     <Space direction="vertical" style={{ width: '100%' }} size="middle">
       {error && <Alert type="error" message={error} closable onClose={() => setError(null)} />}
@@ -577,6 +716,21 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
           type="info"
           message="Diện tích ô đang được chia theo tỉ lệ, không phải đo thật"
           description="Chưa có guide nào mang kích thước mm, nên diện tích từng ô được chia từ tổng diện tích sàn theo tỉ lệ pixel. Nhập khoảng cách thật vào bảng guide bên dưới để có số đo chính xác."
+        />
+      )}
+
+      {/*
+        Applying a chain replaces guides only -- the cells already on screen
+        are untouched until "Sinh lưới ô" regenerates them -- and nothing else
+        here says that happened. Closable, and also cleared by generateMesh
+        itself once the admin acts on it.
+      */}
+      {chainAppliedNote && (
+        <Alert
+          type="info"
+          closable
+          onClose={() => setChainAppliedNote(false)}
+          message={'Đã đổi guide. Bấm "Sinh lưới ô" để cập nhật các ô.'}
         />
       )}
 
@@ -645,7 +799,20 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
           // chain alone, so a guide dragged past its neighbour puts pos-order
           // and offset-order in disagreement -- and every area is computed from
           // the offsets in pos-order. See moveGuideClamped for what that costs.
-          onGuideMove={(index, pos) => setGuides((prev) => moveGuideClamped(prev, index, pos))}
+          //
+          // Re-railed after the clamp: if the just-clamped guide is now the
+          // first or last on its axis, rerailAxisGuides recomputes every
+          // INTERIOR guide's pos from the mm chain between the two edges --
+          // so dragging only the two edges is enough to place a whole chain.
+          // See rerailAxisGuides for its own guards (degenerate chain,
+          // interior-only drags, edges out of order).
+          onGuideMove={(index, pos) =>
+            setGuides((prev) => {
+              const moving = prev[index]
+              const clamped = moveGuideClamped(prev, index, pos)
+              return moving ? rerailAxisGuides(clamped, moving.axis, index) : clamped
+            })
+          }
           // Interpolated, not a bare 0: an offset smaller than a real
           // neighbour to its left breaks the mm chain's pos-order
           // monotonicity and produces a negative span -- A6's dragging
@@ -674,8 +841,14 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
       )}
 
       <Space align="start" wrap>
-        {guideTable('x', 'Guide dọc (cột)')}
-        {guideTable('y', 'Guide ngang (hàng)')}
+        <Space direction="vertical" size="small">
+          {chainPasteBox('x')}
+          {guideTable('x', 'Guide dọc (cột)')}
+        </Space>
+        <Space direction="vertical" size="small">
+          {chainPasteBox('y')}
+          {guideTable('y', 'Guide ngang (hàng)')}
+        </Space>
       </Space>
 
       {/*
