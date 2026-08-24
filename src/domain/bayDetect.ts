@@ -504,6 +504,34 @@ function centrelines(
 }
 
 /**
+ * Adds a line at the deck's own edge where the outermost beam did not produce
+ * one, so the bays along the boundary exist.
+ *
+ * The deck's outer beams are the ones a centreline is hardest to read from:
+ * their corners are cut, so they span less of the deck than any beam inside it
+ * and fall below the bar. The whole boundary strip of bays then has no closing
+ * line and simply is not there -- the admin found exactly that, and said the
+ * gaps were at the edges, next to where they had cropped.
+ *
+ * `lo` and `hi` are the extent of the enclosed regions, which is the INNER face
+ * of those outer beams: a boundary bay reaches the beam's face rather than its
+ * axis, a fraction of a beam short. Present and a few pixels small beats absent.
+ *
+ * Only when the outermost line is a real distance inside the deck -- a third of
+ * the bay pitch -- since a beam that did read is already the right line and a
+ * second one beside it would make a sliver.
+ */
+function closeAtDeckEdge(lines: number[], lo: number, hi: number): number[] {
+  if (lines.length < 2) return lines
+  const gaps = lines.slice(1).map((at, i) => at - lines[i]).sort((a, b) => a - b)
+  const room = gaps[gaps.length >> 1] / 3
+  const out = [...lines]
+  if (out[0] - lo > room) out.unshift(lo)
+  if (hi - out[out.length - 1] > room) out.push(hi)
+  return out
+}
+
+/**
  * The bays of the deck inside `region`, in reading order.
  *
  * Two stages, because the two questions want different tools:
@@ -554,8 +582,8 @@ export function detectBays(
   }
   const ink = inkOf(rgb, width, height, deck, opts.inkThreshold)
   const gap = Math.max(1, Math.round(opts.dashGapFraction * width))
-  const xs = centrelines(ink, width, deck, false, opts.minCentrelineCover, gap)
-  const ys = centrelines(ink, width, deck, true, opts.minCentrelineCover, gap)
+  const xs = closeAtDeckEdge(centrelines(ink, width, deck, false, opts.minCentrelineCover, gap), box.x0, box.x1)
+  const ys = closeAtDeckEdge(centrelines(ink, width, deck, true, opts.minCentrelineCover, gap), box.y0, box.y1)
   if (xs.length < 2 || ys.length < 2) return regions
 
   // Whole rows and columns, not single cells. The grid spans whatever the deck's

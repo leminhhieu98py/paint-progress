@@ -199,6 +199,35 @@ describe('detectBays', () => {
     expect(tops.some((t) => t >= 190 && t <= 198)).toBe(false)
   })
 
+  it('closes the deck at its edge when the outer beam is too cut to read', () => {
+    // The admin found the gaps were all at the boundary, next to where they had
+    // cropped. The deck's outer beams are the hardest to read a centreline from:
+    // their corners are cut, so they span less of the deck than any beam inside
+    // it and fall below the bar -- and the whole boundary strip of bays then has
+    // no closing line and is not there.
+    //
+    // Here the two outer beams are drawn over the middle half only; the two
+    // interior beams span the deck. Without the edge rule this is one bay.
+    const width = 200
+    const height = 200
+    const rgb = whiteImage(width, height)
+    for (const at of [20, 180]) {
+      beam(rgb, width, 'v', at, 70, 130)
+      beam(rgb, width, 'h', at, 70, 130)
+    }
+    for (const at of [80, 120]) {
+      beam(rgb, width, 'v', at, 20, 180)
+      beam(rgb, width, 'h', at, 20, 180)
+    }
+
+    const bays = detectBays(rgb, width, height, { x: 0.1, y: 0.1, w: 0.8, h: 0.8 }, OPTIONS)
+    expect(bays).toHaveLength(9)
+    // And the boundary bays reach the deck's edge rather than stopping at the
+    // first beam that happened to read.
+    expect(Math.round(Math.min(...bays.map((b) => b.x)) * width)).toBeLessThan(30)
+    expect(Math.round(Math.max(...bays.map((b) => (b.x + b.w))) * width)).toBeGreaterThan(170)
+  })
+
   it('keeps a bay standing on solid structure', () => {
     // Deck to paint is deck to paint whether the sheet draws a pocket there or
     // something solid -- the E-house, a pedestal, a hatched column. Dropping a
