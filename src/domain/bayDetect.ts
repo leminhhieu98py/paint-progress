@@ -53,10 +53,19 @@ export interface BayOptions {
   minRunFraction?: number
   /**
    * How wide a hole in a beam to bridge, as a fraction of the image width.
-   * Beams break where other structure crosses them, and an unbridged break is a
-   * door between two bays that the drawing shows as separate. Default 0.0033 --
-   * 12px at 3600, measured: 5 gave 102 bays on the real sheet, 8 gave 118, 12
-   * gave 137, and past that real bays start merging.
+   *
+   * Beams break wherever the sheet draws something over them -- a symbol bubble,
+   * a pedestal outline, a leader line -- and an unbridged break is a door
+   * between two bays the drawing shows as separate, so the two come back as one
+   * region running the width of the deck. The holes are far wider than a beam is
+   * thick, which is why the bridge is closed along the beam's own axis (see
+   * closeAlong) and can be this large.
+   *
+   * Default 0.025 -- 90px on the real sheet at 3600px, measured there: 12px gave
+   * 103 bays covering 63% of the deck, 29px gave 123 at 66%, 54px gave 145 at
+   * 63%, 90px gave 163 at 68%, 144px gave 220 at 70% but started bridging the
+   * dimension chain into the deck. The ceiling is ~78%: the beams themselves are
+   * the rest of it.
    */
   closeFraction?: number
   /** Smallest bay to report, as a fraction of the box's area. Default 0.0005. */
@@ -80,7 +89,7 @@ export interface BayOptions {
 const DEFAULTS = {
   inkThreshold: 200,
   minRunFraction: 0.004,
-  closeFraction: 0.0033,
+  closeFraction: 0.025,
   minAreaFraction: 0.0005,
   maxAreaFraction: 0.9,
   minFill: 0.8,
@@ -127,16 +136,28 @@ function openAlong(
 }
 
 /**
- * Grows the mask by `radius` and shrinks it back, closing holes narrower than
- * that without moving anything else.
+ * Grows then shrinks the mask by `radius` ALONG ONE AXIS, closing holes in a
+ * line without fattening it sideways.
  *
- * Separable, and each step is a running count over the window, so this is O(n)
- * in the pixels rather than O(n · radius²) -- at the 3600px render width the
- * naive form is nine billion operations.
+ * One axis, not a square kernel, and this is the difference between the grid
+ * working and not. A beam is interrupted wherever a symbol bubble, a pedestal
+ * outline or a leader line is drawn over it, and those holes are far wider than
+ * a beam is thick -- but a square kernel big enough to bridge them also welds
+ * neighbouring parallel beams together, so raising it made the result worse:
+ * measured on the real sheet with a square kernel, 12px gave 135 bays, 18px
+ * gave 124, 25px gave 113 -- it got worse as it got bigger.
+ * Closing a horizontal line along x and a vertical one along y bridges the holes
+ * and leaves the gap between parallel beams untouched.
+ *
+ * Separable and O(n) in the pixels: each step is a running count over the
+ * window, since at the 3000px render width the naive form is billions of
+ * operations.
  */
-function closeGaps(src: Uint8Array, width: number, height: number, radius: number): Uint8Array {
+function closeAlong(
+  src: Uint8Array, width: number, height: number, radius: number, horizontal: boolean,
+): Uint8Array {
   if (radius <= 0) return src
-  const pass = (m: Uint8Array, horizontal: boolean, grow: boolean) => {
+  const pass = (m: Uint8Array, grow: boolean) => {
     const out = new Uint8Array(width * height)
     const outer = horizontal ? height : width
     const inner = horizontal ? width : height
@@ -156,10 +177,7 @@ function closeGaps(src: Uint8Array, width: number, height: number, radius: numbe
     }
     return out
   }
-  let mask = pass(src, true, true)
-  mask = pass(mask, false, true)
-  mask = pass(mask, true, false)
-  return pass(mask, false, false)
+  return pass(pass(src, true), false)
 }
 
 /**
@@ -202,12 +220,11 @@ export function detectBays(
   // axis. Everything else on the sheet -- every label, bubble and arrowhead --
   // is gone after this.
   const run = Math.max(2, Math.round(opts.minRunFraction * width))
-  const horizontal = openAlong(ink, width, height, run, true)
-  const vertical = openAlong(ink, width, height, run, false)
-  const structure = new Uint8Array(width * height)
-  for (let i = 0; i < structure.length; i++) structure[i] = horizontal[i] | vertical[i]
-
-  const wall = closeGaps(structure, width, height, Math.max(1, Math.round(opts.closeFraction * width)))
+  const bridge = Math.max(1, Math.round(opts.closeFraction * width))
+  const horizontal = closeAlong(openAlong(ink, width, height, run, true), width, height, bridge, true)
+  const vertical = closeAlong(openAlong(ink, width, height, run, false), width, height, bridge, false)
+  const wall = new Uint8Array(width * height)
+  for (let i = 0; i < wall.length; i++) wall[i] = horizontal[i] | vertical[i]
   for (let x = x0; x <= x1; x++) {
     wall[y0 * width + x] = 1
     wall[y1 * width + x] = 1

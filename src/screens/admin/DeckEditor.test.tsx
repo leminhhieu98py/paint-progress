@@ -1671,7 +1671,7 @@ describe('DeckEditor', () => {
       expect(detectBaysFromImage).toHaveBeenCalledWith(
         'blob:drawing',
         { x: 0.1, y: 0.1, w: 0.4, h: 0.5 },
-        { closeFraction: 0.0035 },
+        { closeFraction: 0.025 },
       )
     })
 
@@ -1715,7 +1715,7 @@ describe('DeckEditor', () => {
       expect(detectBaysFromImage).toHaveBeenCalledWith(
         'blob:drawing',
         { x: 0.2, y: 0.2, w: 0.3, h: 0.3 },
-        { closeFraction: 0.0035 },
+        { closeFraction: 0.025 },
       )
     })
 
@@ -1752,7 +1752,7 @@ describe('DeckEditor', () => {
       expect(detectBaysFromImage).toHaveBeenLastCalledWith(
         'blob:drawing',
         { x: 0.1, y: 0.1, w: 0.4, h: 0.5 },
-        { closeFraction: 0.004 },
+        { closeFraction: 0.03 },
       )
     })
 

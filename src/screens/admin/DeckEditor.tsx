@@ -192,16 +192,15 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
   /**
    * How wide a hole in a beam to bridge, as a fraction of the image width.
    *
-   * The one control detection has left. Beams break where other structure
-   * crosses them and where the sheet draws a symbol over them; an unbridged
-   * break is a door between two bays the drawing shows as separate, so raising
-   * this finds MORE bays, not fewer. Measured on the customer's sheet: 5px gave
-   * 102 bays, 8px gave 118, 12px gave 137, and past that real bays start
-   * merging. Default 0.0035 -- 10px at the 3000px render width, and on the
-   * slider's own step grid so a keyboard nudge moves by one step rather than
-   * snapping first.
+   * The one control detection has left. Beams break wherever the sheet draws
+   * something over them -- a symbol bubble, a pedestal outline, a leader line --
+   * and an unbridged break is a door between two bays the drawing shows as
+   * separate, so raising this finds MORE bays, not fewer. Measured on the
+   * customer's sheet: 12px gave 103 bays covering 63% of the deck, 29px gave 123
+   * at 66%, 54px gave 145 at 63%, 90px gave 163 at 68%, and 144px gave 220 but
+   * began bridging the dimension chain into the deck.
    */
-  const [bridge, setBridge] = useState(0.0035)
+  const [bridge, setBridge] = useState(0.025)
   /** Only for the detect button's own spinner -- distinct from `busy`, which gates the save/delete/merge round trips. */
   const [detecting, setDetecting] = useState(false)
   /**
@@ -938,9 +937,9 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
           <Space direction="vertical" size={0} style={{ width: 260 }}>
             <Typography.Text>Nối khe hở dầm</Typography.Text>
             <Slider
-              min={0.001}
-              max={0.006}
-              step={0.0005}
+              min={0.005}
+              max={0.05}
+              step={0.005}
               value={bridge}
               disabled={!crop}
               ariaLabelForHandle="Nối khe hở dầm"
