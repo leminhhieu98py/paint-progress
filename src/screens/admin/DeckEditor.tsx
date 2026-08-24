@@ -955,7 +955,7 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
         </Space>
         <Typography.Text type={cropping || deletingGuides ? 'warning' : 'secondary'}>
           {cropping
-            ? 'Kéo một khung bao quanh sàn trên bản vẽ. Không cần chính xác — khung chỉ để giới hạn phạm vi tìm và bịt chỗ dầm biên bị hở. Kéo lại bao nhiêu lần cũng được; xong thì bấm “Dò ô trong khung”.'
+            ? 'Kéo một khung bao quanh sàn. Không cần chính xác — thừa ra ngoài mép sàn một chút là được — nhưng đừng trùm cả tờ giấy, vì khung tên và hàng kích thước lọt vào sẽ làm hỏng kết quả. Kéo lại bao nhiêu lần cũng được; xong thì bấm “Dò ô trong khung”.'
             : deletingGuides
               ? 'Bấm vào một đường xanh trên bản vẽ để xoá đường đó. Đang bật thì không kéo được đường.'
               : 'Dò ô sẽ thay toàn bộ ô đang có. Kéo thanh “Nối khe hở dầm” lên nếu vài ô bị dính vào nhau, hạ xuống nếu một ô bị chia vụn.'}
