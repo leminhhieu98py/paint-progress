@@ -8,7 +8,7 @@ import {
   divergesBeyondThreshold, hasUndeclaredArea, interpolateOffsetMm, mergeCells,
   offsetsFromSpans, prorateCellAreas, spansFromOffsets,
 } from '../../domain/geometry'
-import { keepDrawnCells, linesFromProfile, mergeUndrawnCells, type InkProfile } from '../../domain/gridDetect'
+import { nameBays, type BayOptions } from '../../domain/bayDetect'
 import type { Guide, MeshCell, Stage } from '../../domain/types'
 import {
   getDrawingUrl, listCells, listGuides, saveGuides, syncCells,
@@ -18,7 +18,7 @@ import { formatAreaM2, formatMm, formatPercent } from '../../lib/format'
 import { listStages } from '../../lib/projectsApi'
 import { randomUUID } from '../../lib/uuid'
 import { DrawingCanvas } from '../../canvas/DrawingCanvas'
-import { inkProfileFromImage } from '../../canvas/inkProfileFromImage'
+import { detectBaysFromImage, DETECT_RENDER_WIDTH } from '../../canvas/rgbFromImage'
 
 /** A guide table row: the guide, its index into the unsorted `guides` array, and the span to the guide before it. */
 type AxisRow = Guide & { index: number; spanMm: number }
@@ -190,33 +190,28 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
    */
   const [chainAppliedNote, setChainAppliedNote] = useState(false)
   /**
-   * The cached expensive pass over the drawing's pixels -- per-column and
-   * per-row ink counts, keyed to whatever image `detectGrid` last ran
-   * against. `null` until the admin runs detection at least once.
+   * How wide a hole in a beam to bridge, as a fraction of the image width.
    *
-   * Held separately from `guides` on purpose: the sliders below re-derive
-   * guides from THIS on every move via the cheap `linesFromProfile`, so the
-   * expensive pixel walk in `inkProfileFromImage` runs exactly once per
-   * "Dò lưới tự động" click, never once per slider tick. See
-   * detect-sliders-brief.md's whole case for the two-pass split.
+   * The one control detection has left. Beams break where other structure
+   * crosses them and where the sheet draws a symbol over them; an unbridged
+   * break is a door between two bays the drawing shows as separate, so raising
+   * this finds MORE bays, not fewer. Measured on the customer's sheet: 5px gave
+   * 102 bays, 8px gave 118, 12px gave 137, and past that real bays start
+   * merging. Default 0.0035 -- 10px at the 3000px render width, and on the
+   * slider's own step grid so a keyboard nudge moves by one step rather than
+   * snapping first.
    */
-  const [detectProfile, setDetectProfile] = useState<InkProfile | null>(null)
-  /**
-   * The two sliders' current values. Independent per axis -- the customer's
-   * real deck under-detects vertical beams at every fraction that finds the
-   * horizontal ones cleanly, so one number can never serve both. Default
-   * 0.60 on each axis, mirroring the measurements in the brief.
-   */
-  const [detectFraction, setDetectFraction] = useState<{ x: number; y: number }>({ x: 0.6, y: 0.6 })
+  const [bridge, setBridge] = useState(0.0035)
   /** Only for the detect button's own spinner -- distinct from `busy`, which gates the save/delete/merge round trips. */
   const [detecting, setDetecting] = useState(false)
   /**
-   * The deck's own rectangle on the sheet, normalized 0..1, as drawn by the
-   * admin. `null` until they draw one, and detection cannot run without one:
-   * on a real sheet the strongest full-span line is the page border, not a
-   * beam, so detecting over the whole sheet finds the border and nothing else
-   * (see InkOptions.region in domain/gridDetect.ts, and the browser harness
-   * result recorded there -- one line, zero cells).
+   * The deck's rectangle on the sheet, normalized 0..1, as drawn by the admin.
+   * `null` until they draw one.
+   *
+   * It bounds the search and walls off a bay whose own outer beam is
+   * interrupted -- see detectBays. It is NOT a measurement any more: nothing is
+   * scaled to it, so a box dragged loosely costs nothing. Measured on the real
+   * sheet, tight, loose and very loose boxes all returned the same 129 bays.
    *
    * Deliberately NOT persisted. It is an input to detection, not a property of
    * the deck: what the deck keeps is the cells detection produced. Re-detecting
@@ -349,36 +344,12 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
   }, [guides])
   const hasRealSpans = spanAxes.both
 
-  /**
-   * The mesh the guides describe, with the cells the drawing does not enclose
-   * removed -- see keepDrawnCells. Only once a profile has been detected: with
-   * a hand-drawn grid there are no pixels on record to check against, and
-   * silently dropping a guide-drawn cell would be indistinguishable from
-   * losing it.
-   *
-   * Cheap enough to run on every render (measured 4 ms over the customer's real
-   * 105-cell mesh at the 3000px render width), which is what lets the live
-   * count next to the sliders show the number of cells the admin will actually
-   * get rather than the number the raw grid would give.
-   */
-  const drawnMesh = useMemo(() => {
-    const mesh = buildMeshFromGuides(guides)
-    if (!detectProfile) return { cells: mesh, gridCount: mesh.length }
-    // Merge FIRST, then drop. The other order drops a cell for missing the very
-    // edge it should have merged across -- which is the deck area either side
-    // of every beam that stops part-way.
-    return {
-      cells: keepDrawnCells(detectProfile, mergeUndrawnCells(detectProfile, mesh)),
-      gridCount: mesh.length,
-    }
-  }, [guides, detectProfile])
-
   const generateMesh = () => {
     // `guides` carries real ids, so there is nothing to substitute. This used to
     // overwrite every id with the array index -- harmless for the mesh, which
     // reads only axis/pos/offsetMm, but it is why the ids were being thrown away
     // on load in the first place, and why saveGuides had no identity to diff on.
-    const mesh = drawnMesh.cells
+    const mesh = buildMeshFromGuides(guides)
     if (mesh.length === 0) {
       // The brief's own draft used "đường giống dọc/ngang" here ("giống" =
       // "similar to"), which does not mean anything in this context. Every
@@ -399,52 +370,44 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
   }
 
   /**
-   * Replaces every guide on both axes with `linesFromProfile`'s result at
-   * `fraction`, against the given (already-cached) profile.
+   * Reads the bays out of the drawing inside `region` and makes them the deck's
+   * cells, replacing whatever was there.
    *
-   * Both axes always, even though only one slider may have moved: a profile
-   * carries counts for both, `linesFromProfile` always returns both, and the
-   * canvas already draws whatever `guides` holds, which IS the live preview
-   * the brief asks for -- there is no separate preview state to reconcile.
-   * Detected guides carry `offsetMm: 0` deliberately (not interpolated, not
-   * inferred): they have no printed dimension to measure, so `generateMesh`
-   * routes them through `prorateCellAreas` the same way a deck with no mm
-   * chain at all already does, and `area_source` records `prorated`.
-   */
-  const applyDetectedLines = (profile: InkProfile, fraction: { x: number; y: number }) => {
-    const { x, y } = linesFromProfile(profile, fraction)
-    setGuides([
-      ...x.map((pos): Guide => ({ id: randomUUID(), axis: 'x', pos, offsetMm: 0 })),
-      ...y.map((pos): Guide => ({ id: randomUUID(), axis: 'y', pos, offsetMm: 0 })),
-    ])
-  }
-
-  /**
-   * Runs the one expensive pixel pass over `region` of this drawing and applies
-   * its result at the sliders' current fractions. Called with the region the
-   * admin just drew -- never without one.
+   * Cells, not guides: a bay is a closed region on the sheet, and the sheet's
+   * bays are not the crossings of a grid -- one wide where nothing divides it,
+   * three narrow where beams do. There is nothing to generate afterwards, so
+   * this sets `cells` and the admin can go straight to curating them.
+   *
+   * Areas are prorated from the deck total, and `areaSource` says so: a detected
+   * bay carries no printed dimension, so its area is its share of the deck's
+   * pixels. The banner above says this in as many words.
    *
    * Wrapped in its own busy flag (`detecting`), not `apply`'s `busy`: this
-   * touches no persisted data and gates nothing else on screen, so tying it
-   * to the same flag would needlessly disable Save/Delete/Merge while a
-   * detection request that has nothing to do with them is in flight.
+   * touches no persisted data and gates nothing else on screen, so tying it to
+   * the same flag would needlessly disable Save/Delete/Merge while a detection
+   * that has nothing to do with them is in flight.
    */
-  const detectGrid = async (region: { x: number; y: number; w: number; h: number }) => {
+  const detectGrid = async (
+    region: { x: number; y: number; w: number; h: number },
+    options: BayOptions = { closeFraction: bridge },
+  ) => {
     if (!imageUrl) return
     setDetecting(true)
     setError(null)
     try {
-      const profile = await inkProfileFromImage(imageUrl, { region })
-      setDetectProfile(profile)
-      applyDetectedLines(profile, detectFraction)
+      const bays = await detectBaysFromImage(imageUrl, region, options)
+      const mesh = nameBays(bays).map(({ code, x, y, w, h }) => ({ code, x, y, w, h, areaM2: 0 }))
+      setCells(prorateCellAreas(totalArea, mesh))
+      setAreaSource('prorated')
+      setSelected([])
+      setChainAppliedNote(false)
     } catch {
-      // The pixel pass and the browser Image load are the only things that
-      // can fail here (a broken URL, a CORS-tainted canvas, decode failure).
-      // None of that is the admin's to fix by retyping anything, so this is
-      // a plain refusal, not a validation message -- and it must say
-      // something rather than leave the guides exactly as they were with no
-      // sign anything happened at all.
-      setError('Không tự động dò được lưới từ bản vẽ này. Hãy kẻ guide thủ công.')
+      // The pixel pass and the browser Image load are the only things that can
+      // fail here (a broken URL, a CORS-tainted canvas, decode failure). None of
+      // that is the admin's to fix by retyping anything, so this is a plain
+      // refusal, not a validation message -- and it must say something rather
+      // than leave the screen exactly as it was with no sign anything happened.
+      setError('Không tự động dò được ô từ bản vẽ này. Hãy kẻ guide thủ công.')
     } finally {
       setDetecting(false)
     }
@@ -457,38 +420,24 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
    * than one attempt -- the admin has to see it against the sheet and decide
    * whether the title block and the off-deck structure are outside it -- and
    * detecting on mouse-up replaced the whole guide table on every attempt.
-   * Re-dragging replaces the box; "Dò lưới trong khung" is what commits it.
+   * Re-dragging replaces the box; "Dò ô trong khung" is what commits it.
    */
   const onCropDraw = (rect: { x: number; y: number; w: number; h: number }) => {
     setCrop(rect)
   }
 
   /**
-   * A slider move: update its own fraction, and -- only once a profile is
-   * cached -- re-detect and replace the guides immediately from it. Cheap by
-   * construction: `linesFromProfile` reads the cached counts, it never
-   * re-runs `inkProfileFromImage`.
+   * The bridge slider settled: re-detect at the new value.
+   *
+   * On settle rather than on every tick, and re-running the whole pass rather
+   * than a cached half of it: the pixel work is ~800ms on the customer's sheet,
+   * which is fine once per adjustment and useless as a drag preview. Only when
+   * a box has been drawn -- there is nothing to detect without one.
    */
-  const onFractionChange = (axis: 'x' | 'y', value: number) => {
-    const next = { ...detectFraction, [axis]: value }
-    setDetectFraction(next)
-    if (detectProfile) applyDetectedLines(detectProfile, next)
+  const onBridgeChange = (value: number) => {
+    setBridge(value)
+    if (crop) void detectGrid(crop, { closeFraction: value })
   }
-
-  /**
-   * The live "N đường dọc × M đường ngang → K ô" count next to the sliders.
-   * Reads `guides` directly rather than tracking detection results
-   * separately, so it stays true of the guide table no matter how the
-   * guides on screen got there -- detected, hand-drawn, or a mix after the
-   * admin adjusts one by hand.
-   */
-  const detectedCounts = useMemo(() => ({
-    x: guides.filter((g) => g.axis === 'x').length,
-    y: guides.filter((g) => g.axis === 'y').length,
-    cellCount: drawnMesh.cells.length,
-    gridCount: drawnMesh.gridCount,
-    dropped: drawnMesh.gridCount - drawnMesh.cells.length,
-  }), [guides, drawnMesh])
 
   /**
    * Parses the axis' current paste-box text and holds the result for the
@@ -968,14 +917,14 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
                   void detectGrid(crop)
                 }}
               >
-                Dò lưới trong khung
+                Dò ô trong khung
               </Button>
               <Button onClick={() => setCropping(false)}>Huỷ chọn vùng sàn</Button>
             </>
           ) : (
             <>
               <Button loading={detecting} disabled={!imageUrl} onClick={() => setCropping(true)}>
-                {crop ? 'Chọn lại vùng sàn' : 'Chọn vùng sàn để dò lưới'}
+                {crop ? 'Chọn lại vùng sàn' : 'Chọn vùng sàn để dò ô'}
               </Button>
               <Button
                 danger={deletingGuides}
@@ -986,48 +935,31 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
               </Button>
             </>
           )}
-          <Space direction="vertical" size={0} style={{ width: 220 }}>
-            <Typography.Text>Độ nhạy trục dọc</Typography.Text>
+          <Space direction="vertical" size={0} style={{ width: 260 }}>
+            <Typography.Text>Nối khe hở dầm</Typography.Text>
             <Slider
-              min={0.3}
-              max={0.9}
-              step={0.05}
-              value={detectFraction.x}
-              disabled={!detectProfile}
-              ariaLabelForHandle="Độ nhạy trục dọc"
-              tooltip={{ formatter: (v) => formatPercent(v ?? 0) }}
-              onChange={(v) => onFractionChange('x', v)}
+              min={0.001}
+              max={0.006}
+              step={0.0005}
+              value={bridge}
+              disabled={!crop}
+              ariaLabelForHandle="Nối khe hở dầm"
+              tooltip={{ formatter: (v) => `${Math.round((v ?? 0) * DETECT_RENDER_WIDTH)} px` }}
+              // Both handlers: the slider is controlled, so without onChange
+              // its value never moves during the gesture and onChangeComplete
+              // reports the number it started from.
+              onChange={setBridge}
+              onChangeComplete={onBridgeChange}
             />
           </Space>
-          <Space direction="vertical" size={0} style={{ width: 220 }}>
-            <Typography.Text>Độ nhạy trục ngang</Typography.Text>
-            <Slider
-              min={0.3}
-              max={0.9}
-              step={0.05}
-              value={detectFraction.y}
-              disabled={!detectProfile}
-              ariaLabelForHandle="Độ nhạy trục ngang"
-              tooltip={{ formatter: (v) => formatPercent(v ?? 0) }}
-              onChange={(v) => onFractionChange('y', v)}
-            />
-          </Space>
-          {/* One expression, not two children: two adjacent text nodes split
-              the element's text and every test matching this line by its whole
-              string stops finding it. */}
-          <Typography.Text>
-            {`${detectedCounts.x} đường dọc × ${detectedCounts.y} đường ngang → ${detectedCounts.cellCount} ô`
-              + (detectedCounts.dropped > 0
-                ? ` (lưới thô ${detectedCounts.gridCount} ô, đã gộp/bỏ ${detectedCounts.dropped} ô theo bản vẽ)`
-                : '')}
-          </Typography.Text>
+          <Typography.Text>{`${cells.length} ô`}</Typography.Text>
         </Space>
         <Typography.Text type={cropping || deletingGuides ? 'warning' : 'secondary'}>
           {cropping
-            ? 'Kéo khung TRÙNG với dầm biên của sàn — 4 cạnh khung chính là 4 dầm ngoài cùng, nên đừng kéo rộng ra ngoài sàn. Kéo lại bao nhiêu lần cũng được; xong thì bấm “Dò lưới trong khung”.'
+            ? 'Kéo một khung bao quanh sàn trên bản vẽ. Không cần chính xác — khung chỉ để giới hạn phạm vi tìm và bịt chỗ dầm biên bị hở. Kéo lại bao nhiêu lần cũng được; xong thì bấm “Dò ô trong khung”.'
             : deletingGuides
               ? 'Bấm vào một đường xanh trên bản vẽ để xoá đường đó. Đang bật thì không kéo được đường.'
-              : 'Kéo thanh trượt sẽ dò lại và thay toàn bộ guide đang có, kể cả guide vừa chỉnh tay — nên dò lưới trước, chỉnh tay sau.'}
+              : 'Dò ô sẽ thay toàn bộ ô đang có. Kéo thanh “Nối khe hở dầm” lên nếu vài ô bị dính vào nhau, hạ xuống nếu một ô bị chia vụn.'}
         </Typography.Text>
       </Space>
 

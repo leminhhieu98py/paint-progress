@@ -1,7 +1,6 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { inkProfile } from '../../domain/gridDetect'
 import { DeckEditor, mergeErrorInVietnamese } from './DeckEditor'
 
 const listGuides = vi.hoisted(() => vi.fn())
@@ -19,10 +18,12 @@ const getDrawingUrl = vi.hoisted(() => vi.fn())
 // be a defined identifier in this file, so the test referencing it could not
 // have run as written.
 const listStages = vi.hoisted(() => vi.fn())
-const inkProfileFromImage = vi.hoisted(() => vi.fn())
+const detectBaysFromImage = vi.hoisted(() => vi.fn())
 
-vi.mock('../../canvas/inkProfileFromImage', () => ({
-  inkProfileFromImage: (url: string, options?: unknown) => inkProfileFromImage(url, options),
+vi.mock('../../canvas/rgbFromImage', () => ({
+  DETECT_RENDER_WIDTH: 3000,
+  detectBaysFromImage: (url: string, region: unknown, options?: unknown) =>
+    detectBaysFromImage(url, region, options),
 }))
 vi.mock('../../lib/decksApi', () => ({
   listGuides: (d: string) => listGuides(d),
@@ -171,7 +172,7 @@ const ONE_BAY_GUIDES = [
 beforeEach(() => {
   for (const m of [
     listGuides, saveGuides, listCells, syncCells, zoneImpactOf, updateDeckArea, getDrawingUrl, listStages,
-    inkProfileFromImage,
+    detectBaysFromImage,
   ]) m.mockReset()
   getDrawingUrl.mockResolvedValue('blob:drawing')
   listGuides.mockResolvedValue([])
@@ -179,94 +180,6 @@ beforeEach(() => {
   zoneImpactOf.mockResolvedValue([])
   listStages.mockResolvedValue([])
 })
-
-/**
- * A 40x40 sheet whose two middle vertical beams STOP part way down: columns
- * 4/16/28/36 and rows 4/20/36 are drawn, but columns 16 and 28 only run from
- * row 4 to row 26.
- *
- * Both middle columns still cover 23 of the 33 content rows, so both are
- * detected as beams at the default 0.60 -- and over the BOTTOM row's own span
- * (rows 20-36) each covers only 7 of 17, so neither divides those bays. The
- * bottom row is therefore one bay across while the top row is three, which is
- * the shape a lines-times-lines grid gets wrong and the whole reason
- * mergeUndrawnCells exists.
- *
- * It also pins the ORDER of merge and drop. The bottom middle bay has both of
- * its verticals absent, so on its own it has two drawn edges out of four and
- * `keepDrawnCells` would delete it -- taking real deck with it -- if dropping
- * ran before merging.
- */
-function stoppedBeamProfile() {
-  const width = 40
-  const height = 40
-  const rgb = new Uint8Array(width * height * 3).fill(255)
-  const paint = (x: number, y: number) => {
-    const o = (y * width + x) * 3
-    rgb[o] = 0
-    rgb[o + 1] = 0
-    rgb[o + 2] = 0
-  }
-  for (const x of [4, 36]) for (let y = 4; y <= 36; y++) paint(x, y)
-  for (const x of [16, 28]) for (let y = 4; y <= 26; y++) paint(x, y)
-  for (const y of [4, 20, 36]) for (let x = 4; x <= 36; x++) paint(x, y)
-  // The region hugs the deck's outer beams, which is how the admin drags it --
-  // so the box's own four edges land on those beams and add no line of their own.
-  return inkProfile(rgb, width, height, { region: { x: 0.1, y: 0.1, w: 0.8, h: 0.8 } })
-}
-
-/**
- * A hand-built InkProfile, run through the REAL `inkProfile`, standing in for
- * `inkProfileFromImage`'s (mocked, since jsdom has no canvas) expensive pass.
- *
- * A little deck on a 100x100 sheet: its own outer beams at columns 10 and 90 and
- * rows 10 and 90, plus two interior beams per axis that STOP part way, so each
- * spans a different fraction of the deck and the two sliders' three interesting
- * settings each land somewhere different:
- *
- *   beam            spans   candidate at fraction
- *   col/row 10, 90  81/81   0.30, 0.60, 0.90 (always -- these are the deck)
- *   col/row 50      62/81   0.30, 0.60
- *   col/row 70      34/81   0.30 only
- *
- * so moving either slider to its default/min/max changes that axis' line count
- * (3 / 4 / 2) while leaving the other axis untouched -- the one thing the
- * per-axis split exists to prove.
- *
- * 100x100 rather than the 20x20 this started as, and framed by the deck's own
- * outer beams, because both the boundary rule and the drawn-edge filter are
- * expressed as FRACTIONS of a span. On a 20-row sheet the four beams crossing a
- * blank column ink 20% of it, which is the boundary rule's own bar, so blank
- * columns became the deck's edge; at 81 rows the same four crossings are 5%.
- * Keep any beam added here inside columns 10..90 and rows 10..90 for the same
- * reason.
- */
-function fixtureProfile() {
-  const width = 100
-  const height = 100
-  const rgb = new Uint8Array(width * height * 3).fill(255)
-  const paint = (x: number, y: number) => {
-    const o = (y * width + x) * 3
-    rgb[o] = 0
-    rgb[o + 1] = 0
-    rgb[o + 2] = 0
-  }
-  const fillColumn = (x: number, yFrom: number, yTo: number) => {
-    for (let y = yFrom; y <= yTo; y++) paint(x, y)
-  }
-  const fillRow = (y: number, xFrom: number, xTo: number) => {
-    for (let x = xFrom; x <= xTo; x++) paint(x, y)
-  }
-  for (const x of [10, 90]) fillColumn(x, 10, 90)
-  fillColumn(50, 10, 70)
-  fillColumn(70, 10, 40)
-  for (const y of [10, 90]) fillRow(y, 10, 90)
-  fillRow(50, 10, 70)
-  fillRow(70, 10, 40)
-  // The region hugs the deck's outer beams, which is how the admin drags it --
-  // so the box's own four edges land on those beams and add no line of their own.
-  return inkProfile(rgb, width, height, { region: { x: 0.1, y: 0.1, w: 0.8, h: 0.8 } })
-}
 
 describe('DeckEditor', () => {
   it('turns typed mm spans into a mesh with real areas', async () => {
@@ -1727,230 +1640,83 @@ describe('DeckEditor', () => {
     })
   })
 
-  describe('auto-detecting the grid, with per-axis sensitivity sliders (detect-sliders)', () => {
-    it('shows the live guide count for whatever guides are on screen, with no detection run yet', async () => {
-      listGuides.mockResolvedValue(ONE_BAY_GUIDES)
-      render(<DeckEditor deck={deck} onClose={vi.fn()} />)
-      await screen.findByTestId('canvas')
+  describe('reading the bays out of the drawing', () => {
+    const BAYS = [
+      { x: 0.1, y: 0.1, w: 0.35, h: 0.35 },
+      { x: 0.5, y: 0.1, w: 0.4, h: 0.35 },
+      { x: 0.1, y: 0.5, w: 0.8, h: 0.4 },
+    ]
 
-      expect(screen.getByText('2 đường dọc × 2 đường ngang → 1 ô')).toBeInTheDocument()
-    })
-
-    it('disables both sliders until a profile has been detected', async () => {
-      listGuides.mockResolvedValue([])
-      render(<DeckEditor deck={deck} onClose={vi.fn()} />)
-      await screen.findByTestId('canvas')
-
-      expect(screen.getByRole('slider', { name: 'Độ nhạy trục dọc' })).toHaveAttribute('aria-disabled', 'true')
-      expect(screen.getByRole('slider', { name: 'Độ nhạy trục ngang' })).toHaveAttribute('aria-disabled', 'true')
-    })
-
-    it('detects at the default 0.60 fraction on both axes, replaces the guides and updates the live count', async () => {
-      inkProfileFromImage.mockResolvedValue(fixtureProfile())
-      listGuides.mockResolvedValue(ONE_BAY_GUIDES)
-      render(<DeckEditor deck={deck} onClose={vi.fn()} />)
-      await screen.findByTestId('canvas')
-
-      await userEvent.click(screen.getByRole('button', { name: 'Chọn vùng sàn để dò lưới' }))
+    const drawTheBox = async () => {
+      await userEvent.click(screen.getByRole('button', { name: 'Chọn vùng sàn để dò ô' }))
       await userEvent.click(screen.getByRole('button', { name: 'kéo khung sàn' }))
-      await userEvent.click(screen.getByRole('button', { name: 'Dò lưới trong khung' }))
-
-      await waitFor(() => {
-        expect(readGuides().filter((g) => g.axis === 'x')).toHaveLength(3)
-      })
-      const guides = readGuides()
-      const xGuides = guides.filter((g) => g.axis === 'x').sort((a, b) => a.pos - b.pos)
-      const yGuides = guides.filter((g) => g.axis === 'y').sort((a, b) => a.pos - b.pos)
-      // The deck's own two edges on each axis, plus the one interior beam that
-      // clears 0.60. The edges are there whatever the slider says.
-      expect(xGuides.map((g) => g.pos)).toEqual([0.1, 0.5, 0.9])
-      expect(yGuides.map((g) => g.pos)).toEqual([0.1, 0.5, 0.9])
-      // Detected guides carry no mm dimension -- they route through
-      // prorateCellAreas via `hasRealSpans`/generateMesh, same as any other
-      // guide with offsetMm 0.
-      expect(guides.every((g) => g.offsetMm === 0)).toBe(true)
-      // ONE_BAY_GUIDES is entirely replaced, not merged with.
-      expect(guides).toHaveLength(6)
-
-      expect(screen.getByText(
-        '3 đường dọc × 3 đường ngang → 3 ô (lưới thô 4 ô, đã gộp/bỏ 1 ô theo bản vẽ)',
-      )).toBeInTheDocument()
-      expect(screen.getByRole('slider', { name: 'Độ nhạy trục dọc' })).toHaveAttribute('aria-disabled', 'false')
-    })
-
-    it('moving the vertical-axis slider re-detects that axis only, from the cached profile', async () => {
-      inkProfileFromImage.mockResolvedValue(fixtureProfile())
-      listGuides.mockResolvedValue([])
-      render(<DeckEditor deck={deck} onClose={vi.fn()} />)
-      await screen.findByTestId('canvas')
-      await userEvent.click(screen.getByRole('button', { name: 'Chọn vùng sàn để dò lưới' }))
-      await userEvent.click(screen.getByRole('button', { name: 'kéo khung sàn' }))
-      await userEvent.click(screen.getByRole('button', { name: 'Dò lưới trong khung' }))
-      await waitFor(() => expect(readGuides().filter((g) => g.axis === 'x')).toHaveLength(3))
-
-      // Home = the slider's own minimum (0.30): the fainter of the two interior
-      // verticals now clears the bar. The horizontal axis is untouched -- this
-      // is the split the whole feature is built around.
-      const xSlider = screen.getByRole('slider', { name: 'Độ nhạy trục dọc' })
-      xSlider.focus()
-      fireEvent.keyDown(xSlider, { key: 'Home', keyCode: 36, which: 36 })
-
-      await waitFor(() => expect(readGuides().filter((g) => g.axis === 'x')).toHaveLength(4))
-      expect(readGuides().filter((g) => g.axis === 'y')).toHaveLength(3)
-      // The line COUNTS are what this test is about. The cell count is not
-      // asserted here on purpose: the drawn-edge filter decides it, and pinning
-      // it here would make every slider test fail whenever that rule changes.
-      // It has its own test below.
-      expect(screen.getByText(/^4 đường dọc × 3 đường ngang/)).toBeInTheDocument()
-
-      // inkProfileFromImage's one expensive call is not repeated by a slider
-      // move -- only linesFromProfile's cheap re-read of the cached profile is.
-      expect(inkProfileFromImage).toHaveBeenCalledTimes(1)
-    })
-
-    it('moving the horizontal-axis slider re-detects that axis only, from the cached profile', async () => {
-      inkProfileFromImage.mockResolvedValue(fixtureProfile())
-      listGuides.mockResolvedValue([])
-      render(<DeckEditor deck={deck} onClose={vi.fn()} />)
-      await screen.findByTestId('canvas')
-      await userEvent.click(screen.getByRole('button', { name: 'Chọn vùng sàn để dò lưới' }))
-      await userEvent.click(screen.getByRole('button', { name: 'kéo khung sàn' }))
-      await userEvent.click(screen.getByRole('button', { name: 'Dò lưới trong khung' }))
-      await waitFor(() => expect(readGuides().filter((g) => g.axis === 'y')).toHaveLength(3))
-
-      // End = the slider's own maximum (0.90): the interior horizontal drops
-      // out and only the deck's own two edges remain. The vertical axis is
-      // untouched.
-      const ySlider = screen.getByRole('slider', { name: 'Độ nhạy trục ngang' })
-      ySlider.focus()
-      fireEvent.keyDown(ySlider, { key: 'End', keyCode: 35, which: 35 })
-
-      await waitFor(() => expect(readGuides().filter((g) => g.axis === 'y')).toHaveLength(2))
-      expect(readGuides().filter((g) => g.axis === 'x')).toHaveLength(3)
-      expect(screen.getByText(/^3 đường dọc × 2 đường ngang/)).toBeInTheDocument()
-    })
-
-    it('detects only inside the region the admin drew', async () => {
-      // The reason this feature has a crop step at all. Detection over the
-      // whole sheet finds the page border and nothing else -- the border is
-      // the ink bounding box, so every real beam spans a minority of it. The
-      // region the admin drew has to reach the pixel pass, or the sliders are
-      // tuning against the wrong yardstick.
-      inkProfileFromImage.mockResolvedValue(fixtureProfile())
-      listGuides.mockResolvedValue([])
-      render(<DeckEditor deck={deck} onClose={vi.fn()} />)
-      await screen.findByTestId('canvas')
-
-      await userEvent.click(screen.getByRole('button', { name: 'Chọn vùng sàn để dò lưới' }))
-      await userEvent.click(screen.getByRole('button', { name: 'kéo khung sàn' }))
-      await userEvent.click(screen.getByRole('button', { name: 'Dò lưới trong khung' }))
-
-      await waitFor(() => {
-        expect(inkProfileFromImage).toHaveBeenCalledWith('blob:drawing', {
-          region: { x: 0.1, y: 0.1, w: 0.4, h: 0.5 },
-        })
-      })
-    })
-
-    it('puts the canvas in crop mode only until the region is committed', async () => {
-      inkProfileFromImage.mockResolvedValue(fixtureProfile())
-      listGuides.mockResolvedValue([])
-      render(<DeckEditor deck={deck} onClose={vi.fn()} />)
-      await screen.findByTestId('canvas')
-
-      // Not before: a canvas left in crop mode can neither drag a guide nor
-      // select a cell, which is every other thing this screen does.
-      expect(screen.queryByRole('button', { name: 'kéo khung sàn' })).not.toBeInTheDocument()
-
-      await userEvent.click(screen.getByRole('button', { name: 'Chọn vùng sàn để dò lưới' }))
-      await userEvent.click(screen.getByRole('button', { name: 'kéo khung sàn' }))
-      await userEvent.click(screen.getByRole('button', { name: 'Dò lưới trong khung' }))
-
-      // And not after committing: the box is settled.
-      await waitFor(() => {
-        expect(screen.queryByRole('button', { name: 'kéo khung sàn' })).not.toBeInTheDocument()
-      })
-    })
-
-    it('hands the drawn region back to the canvas to draw', async () => {
-      inkProfileFromImage.mockResolvedValue(fixtureProfile())
-      listGuides.mockResolvedValue([])
-      render(<DeckEditor deck={deck} onClose={vi.fn()} />)
-      await screen.findByTestId('canvas')
-      expect(screen.getByTestId('crop')).toHaveTextContent('')
-
-      await userEvent.click(screen.getByRole('button', { name: 'Chọn vùng sàn để dò lưới' }))
-      await userEvent.click(screen.getByRole('button', { name: 'kéo khung sàn' }))
-      await userEvent.click(screen.getByRole('button', { name: 'Dò lưới trong khung' }))
-
-      // Whatever the sliders then say, the admin can see which part of the
-      // sheet the numbers are about.
-      await waitFor(() => {
-        expect(screen.getByTestId('crop')).toHaveTextContent('{"x":0.1,"y":0.1,"w":0.4,"h":0.5}')
-      })
-      // Matched by regex, not by the exact name: antd's loading spinner leaves
-      // via a CSS transition that jsdom never completes, so its
-      // `aria-label="loading"` icon stays mounted and the button's accessible
-      // name keeps a "loading " prefix for the rest of the test. The label
-      // itself is what this asserts -- the crop is remembered, so the button
-      // now offers to replace it rather than to draw a first one.
-      expect(await screen.findByRole('button', { name: /Chọn lại vùng sàn/ })).toBeInTheDocument()
-    })
-
-    it('leaves crop mode, and detects nothing, when the admin cancels', async () => {
-      inkProfileFromImage.mockResolvedValue(fixtureProfile())
-      listGuides.mockResolvedValue(ONE_BAY_GUIDES)
-      render(<DeckEditor deck={deck} onClose={vi.fn()} />)
-      await screen.findByTestId('canvas')
-
-      await userEvent.click(screen.getByRole('button', { name: 'Chọn vùng sàn để dò lưới' }))
-      await userEvent.click(screen.getByRole('button', { name: 'Huỷ chọn vùng sàn' }))
-
-      expect(screen.queryByRole('button', { name: 'kéo khung sàn' })).not.toBeInTheDocument()
-      expect(inkProfileFromImage).not.toHaveBeenCalled()
-      expect(readGuides()).toEqual(ONE_BAY_GUIDES)
-    })
+    }
 
     it('does not detect when the drag ends -- only when the region is committed', async () => {
-      // The admin has to see the box against the sheet and decide whether the
-      // title block and the off-deck structure are outside it, which takes more
-      // than one attempt. Detecting on mouse-up replaced the whole guide table
-      // on every attempt.
-      inkProfileFromImage.mockResolvedValue(fixtureProfile())
+      // Getting the box right takes more than one attempt, and detecting on
+      // mouse-up threw away the cells on every one of them.
+      detectBaysFromImage.mockResolvedValue(BAYS)
       listGuides.mockResolvedValue(ONE_BAY_GUIDES)
       render(<DeckEditor deck={deck} onClose={vi.fn()} />)
       await screen.findByTestId('canvas')
 
-      await userEvent.click(screen.getByRole('button', { name: 'Chọn vùng sàn để dò lưới' }))
-      await userEvent.click(screen.getByRole('button', { name: 'kéo khung sàn' }))
-
-      expect(inkProfileFromImage).not.toHaveBeenCalled()
-      expect(readGuides()).toEqual(ONE_BAY_GUIDES)
-      // The box IS remembered and drawn, though -- that is what the admin is
-      // looking at while they decide.
+      await drawTheBox()
+      expect(detectBaysFromImage).not.toHaveBeenCalled()
+      // The box IS remembered and drawn -- that is what the admin looks at
+      // while they decide.
       expect(screen.getByTestId('crop')).toHaveTextContent('{"x":0.1,"y":0.1,"w":0.4,"h":0.5}')
 
-      await userEvent.click(screen.getByRole('button', { name: 'Dò lưới trong khung' }))
-      await waitFor(() => expect(inkProfileFromImage).toHaveBeenCalledTimes(1))
+      await userEvent.click(screen.getByRole('button', { name: 'Dò ô trong khung' }))
+      await waitFor(() => expect(detectBaysFromImage).toHaveBeenCalledTimes(1))
+      expect(detectBaysFromImage).toHaveBeenCalledWith(
+        'blob:drawing',
+        { x: 0.1, y: 0.1, w: 0.4, h: 0.5 },
+        { closeFraction: 0.0035 },
+      )
+    })
+
+    it('turns the bays into cells, named by where they sit and sharing the deck area', async () => {
+      // Cells, not guides: a bay is a closed region on the sheet, so there is
+      // nothing left to generate afterwards. The third bay spans both columns,
+      // which a grid of guides could not have produced.
+      detectBaysFromImage.mockResolvedValue(BAYS)
+      listGuides.mockResolvedValue([])
+      render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+      await screen.findByTestId('canvas')
+
+      await drawTheBox()
+      await userEvent.click(screen.getByRole('button', { name: 'Dò ô trong khung' }))
+
+      await waitFor(() => expect(screen.getByTestId('cell-geometry')).toHaveTextContent(
+        'R1C1:0.1+0.35 R1C2:0.5+0.4 R2C1:0.1+0.8',
+      ))
+      expect(screen.getByText('3 ô')).toBeInTheDocument()
+      // Prorated: a detected bay carries no printed dimension, so its area is
+      // its share of the deck's pixels, and the banner says so.
+      expect(await screen.findByText('Diện tích ô đang được chia theo tỉ lệ, không phải đo thật'))
+        .toBeInTheDocument()
+      // Σ diện tích ô: the whole deck, shared out over the three bays.
+      expect(document.querySelectorAll('.ant-descriptions-item-content')[2]?.textContent)
+        .toBe('5.258,50')
     })
 
     it('re-dragging replaces the region, and only the last one is detected', async () => {
-      inkProfileFromImage.mockResolvedValue(fixtureProfile())
+      detectBaysFromImage.mockResolvedValue(BAYS)
       listGuides.mockResolvedValue([])
       render(<DeckEditor deck={deck} onClose={vi.fn()} />)
       await screen.findByTestId('canvas')
 
-      await userEvent.click(screen.getByRole('button', { name: 'Chọn vùng sàn để dò lưới' }))
+      await userEvent.click(screen.getByRole('button', { name: 'Chọn vùng sàn để dò ô' }))
       await userEvent.click(screen.getByRole('button', { name: 'kéo khung sàn' }))
       await userEvent.click(screen.getByRole('button', { name: 'kéo khung sàn nhỏ' }))
-      await userEvent.click(screen.getByRole('button', { name: 'Dò lưới trong khung' }))
+      await userEvent.click(screen.getByRole('button', { name: 'Dò ô trong khung' }))
 
-      await waitFor(() => {
-        expect(inkProfileFromImage).toHaveBeenCalledWith('blob:drawing', {
-          region: { x: 0.2, y: 0.2, w: 0.3, h: 0.3 },
-        })
-      })
-      expect(inkProfileFromImage).toHaveBeenCalledTimes(1)
+      await waitFor(() => expect(detectBaysFromImage).toHaveBeenCalledTimes(1))
+      expect(detectBaysFromImage).toHaveBeenCalledWith(
+        'blob:drawing',
+        { x: 0.2, y: 0.2, w: 0.3, h: 0.3 },
+        { closeFraction: 0.0035 },
+      )
     })
 
     it('cannot commit a region that was never drawn', async () => {
@@ -1958,26 +1724,73 @@ describe('DeckEditor', () => {
       render(<DeckEditor deck={deck} onClose={vi.fn()} />)
       await screen.findByTestId('canvas')
 
-      await userEvent.click(screen.getByRole('button', { name: 'Chọn vùng sàn để dò lưới' }))
-      expect(screen.getByRole('button', { name: 'Dò lưới trong khung' })).toBeDisabled()
+      await userEvent.click(screen.getByRole('button', { name: 'Chọn vùng sàn để dò ô' }))
+      expect(screen.getByRole('button', { name: 'Dò ô trong khung' })).toBeDisabled()
     })
 
-    it('deletes the guide the admin clicked, while line-deleting is on', async () => {
-      // The answer to "no slider position satisfies the whole sheet": be
-      // generous with the slider, then click off the wrong lines.
+    it('re-detects at the new bridge when the slider settles', async () => {
+      // The one control detection has left. Beams break where other structure
+      // crosses them; bridging a wider hole finds MORE bays, because an
+      // unbridged break is a door between two the drawing shows as separate.
+      detectBaysFromImage.mockResolvedValue(BAYS)
+      listGuides.mockResolvedValue([])
+      render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+      await screen.findByTestId('canvas')
+      await drawTheBox()
+      await userEvent.click(screen.getByRole('button', { name: 'Dò ô trong khung' }))
+      await waitFor(() => expect(detectBaysFromImage).toHaveBeenCalledTimes(1))
+
+      const slider = screen.getByRole('slider', { name: 'Nối khe hở dầm' })
+      slider.focus()
+      // keyUp as well: antd settles a keyboard change on release, which is what
+      // onChangeComplete listens for -- the whole point of not re-running an
+      // 800ms pixel pass per tick.
+      fireEvent.keyDown(slider, { key: 'ArrowRight', keyCode: 39, which: 39 })
+      fireEvent.keyUp(slider, { key: 'ArrowRight', keyCode: 39, which: 39 })
+
+      await waitFor(() => expect(detectBaysFromImage).toHaveBeenCalledTimes(2))
+      expect(detectBaysFromImage).toHaveBeenLastCalledWith(
+        'blob:drawing',
+        { x: 0.1, y: 0.1, w: 0.4, h: 0.5 },
+        { closeFraction: 0.004 },
+      )
+    })
+
+    it('does not re-detect on the slider before a box has been drawn', async () => {
+      listGuides.mockResolvedValue([])
+      render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+      await screen.findByTestId('canvas')
+
+      expect(screen.getByRole('slider', { name: 'Nối khe hở dầm' }))
+        .toHaveAttribute('aria-disabled', 'true')
+      expect(detectBaysFromImage).not.toHaveBeenCalled()
+    })
+
+    it('leaves crop mode, and detects nothing, when the admin cancels', async () => {
       listGuides.mockResolvedValue(ONE_BAY_GUIDES)
       render(<DeckEditor deck={deck} onClose={vi.fn()} />)
       await screen.findByTestId('canvas')
 
-      // Not armed until asked -- a stray click on a dense grid would otherwise
-      // change the mesh with nothing said.
+      await userEvent.click(screen.getByRole('button', { name: 'Chọn vùng sàn để dò ô' }))
+      await userEvent.click(screen.getByRole('button', { name: 'Huỷ chọn vùng sàn' }))
+
+      expect(screen.queryByRole('button', { name: 'kéo khung sàn' })).not.toBeInTheDocument()
+      expect(detectBaysFromImage).not.toHaveBeenCalled()
+      expect(readGuides()).toEqual(ONE_BAY_GUIDES)
+    })
+
+    it('deletes the guide the admin clicked, while line-deleting is on', async () => {
+      // Guides are hand work now that detection makes cells directly, but the
+      // admin still rules them by hand for a deck the detector cannot read.
+      listGuides.mockResolvedValue(ONE_BAY_GUIDES)
+      render(<DeckEditor deck={deck} onClose={vi.fn()} />)
+      await screen.findByTestId('canvas')
+
       expect(screen.queryByRole('button', { name: 'bấm xoá đường 1' })).not.toBeInTheDocument()
 
       await userEvent.click(screen.getByRole('button', { name: 'Bật xoá đường' }))
       await userEvent.click(screen.getByRole('button', { name: 'bấm xoá đường 1' }))
 
-      // g2 gone, the other three untouched, and the mode is still on for the
-      // next wrong line.
       expect(readGuides()).toEqual([ONE_BAY_GUIDES[0], ONE_BAY_GUIDES[2], ONE_BAY_GUIDES[3]])
       expect(screen.getByRole('button', { name: 'Tắt xoá đường' })).toBeInTheDocument()
 
@@ -1993,120 +1806,41 @@ describe('DeckEditor', () => {
       expect(screen.getByRole('button', { name: 'Bật xoá đường' })).toBeDisabled()
     })
 
-    it('counts only the cells the drawing encloses, and says how many it dropped', async () => {
-      // A grid of guides makes a cell per crossing whether the sheet draws that
-      // bay or not, so a mesh over a real deck covers the E-house, the circular
-      // structures and the blank corners with cells nobody will ever paint. The
-      // count next to the sliders has to be the number the admin will actually
-      // get, or they tune against a number that is not the answer.
-      //
-      // At the vertical slider's minimum the fixture yields four vertical
-      // guides, and its two interior beams both stop part-way down, so the bays
-      // below where they stop are joined rather than divided.
-      inkProfileFromImage.mockResolvedValue(fixtureProfile())
-      listGuides.mockResolvedValue([])
-      render(<DeckEditor deck={deck} onClose={vi.fn()} />)
-      await screen.findByTestId('canvas')
-      await userEvent.click(screen.getByRole('button', { name: 'Chọn vùng sàn để dò lưới' }))
-      await userEvent.click(screen.getByRole('button', { name: 'kéo khung sàn' }))
-      await userEvent.click(screen.getByRole('button', { name: 'Dò lưới trong khung' }))
-      await waitFor(() => expect(readGuides().filter((g) => g.axis === 'x')).toHaveLength(3))
-
-      const xSlider = screen.getByRole('slider', { name: 'Độ nhạy trục dọc' })
-      xSlider.focus()
-      fireEvent.keyDown(xSlider, { key: 'Home', keyCode: 36, which: 36 })
-
-      expect(await screen.findByText(
-        '4 đường dọc × 3 đường ngang → 4 ô (lưới thô 6 ô, đã gộp/bỏ 2 ô theo bản vẽ)',
-      )).toBeInTheDocument()
-    })
-
-    it('generates only the cells the drawing encloses', async () => {
-      // The count above and the mesh actually built have to come from the same
-      // filter -- a count that promised one thing and a Save that wrote another
-      // is worse than no count at all.
-      inkProfileFromImage.mockResolvedValue(fixtureProfile())
-      listGuides.mockResolvedValue([])
-      render(<DeckEditor deck={deck} onClose={vi.fn()} />)
-      await screen.findByTestId('canvas')
-      await userEvent.click(screen.getByRole('button', { name: 'Chọn vùng sàn để dò lưới' }))
-      await userEvent.click(screen.getByRole('button', { name: 'kéo khung sàn' }))
-      await userEvent.click(screen.getByRole('button', { name: 'Dò lưới trong khung' }))
-      await waitFor(() => expect(readGuides().filter((g) => g.axis === 'x')).toHaveLength(3))
-
-      const xSlider = screen.getByRole('slider', { name: 'Độ nhạy trục dọc' })
-      xSlider.focus()
-      fireEvent.keyDown(xSlider, { key: 'Home', keyCode: 36, which: 36 })
-      await screen.findByText(/đã gộp\/bỏ 2 ô/)
-
-      await userEvent.click(screen.getByRole('button', { name: 'Sinh lưới ô' }))
-
-      // Four cells reach the canvas, not the six the 4x3 grid would give. Read
-      // off the per-cell buttons the canvas stand-in renders, so this counts
-      // cells rather than matching a joined string that other stand-in output
-      // now precedes.
-      expect(screen.getAllByRole('button', { name: /^chọn R/ })).toHaveLength(4)
-    })
-
-    it('merges the bays a missing beam joins, rather than dropping one of them', async () => {
-      // The admin's own sample of this deck is an uneven tiling -- one wide bay
-      // where no beam divides it, a cluster of small ones where beams do -- and
-      // that unevenness is the drawing, not their preference. A grid cannot
-      // express it: every vertical crosses every horizontal, so a beam that
-      // runs across the top of the deck and stops still cuts the bottom too.
-      //
-      // stoppedBeamProfile draws exactly that: the middle vertical covers the
-      // top row and stops. Expected result -- the top row stays split in two,
-      // the bottom row is ONE bay across. Dropping a cell instead would leave
-      // the same cell COUNT while losing real deck, which is why this asserts
-      // the extents rather than the count.
-      inkProfileFromImage.mockResolvedValue(stoppedBeamProfile())
-      listGuides.mockResolvedValue([])
-      render(<DeckEditor deck={deck} onClose={vi.fn()} />)
-      await screen.findByTestId('canvas')
-      await userEvent.click(screen.getByRole('button', { name: 'Chọn vùng sàn để dò lưới' }))
-      await userEvent.click(screen.getByRole('button', { name: 'kéo khung sàn' }))
-      await userEvent.click(screen.getByRole('button', { name: 'Dò lưới trong khung' }))
-
-      expect(await screen.findByText(
-        '4 đường dọc × 3 đường ngang → 4 ô (lưới thô 6 ô, đã gộp/bỏ 2 ô theo bản vẽ)',
-      )).toBeInTheDocument()
-
-      await userEvent.click(screen.getByRole('button', { name: 'Sinh lưới ô' }))
-      // Top row three bays, bottom row one. Dropping before merging would give
-      // the bottom row two bays with a hole in the middle instead.
-      expect(screen.getByTestId('cell-geometry')).toHaveTextContent(
-        'R1C1:0.1+0.3 R1C2:0.4+0.3 R1C3:0.7+0.2 R2C1:0.1+0.8',
-      )
-    })
-
-    it('does not drop hand-drawn cells, having no pixels to check them against', async () => {
-      // With no detection run there is no record of what the sheet draws, and a
-      // cell vanishing from a hand-built grid would be indistinguishable from
-      // losing it.
+    it('shows a Vietnamese message when detection fails, and leaves the cells alone', async () => {
+      detectBaysFromImage.mockRejectedValue(new Error('canvas boom'))
       listGuides.mockResolvedValue(ONE_BAY_GUIDES)
       render(<DeckEditor deck={deck} onClose={vi.fn()} />)
       await screen.findByTestId('canvas')
 
-      expect(screen.getByText('2 đường dọc × 2 đường ngang → 1 ô')).toBeInTheDocument()
-    })
-
-    it('shows a Vietnamese message when detection fails, and leaves the existing guides alone', async () => {
-      inkProfileFromImage.mockRejectedValue(new Error('canvas boom'))
-      listGuides.mockResolvedValue(ONE_BAY_GUIDES)
-      render(<DeckEditor deck={deck} onClose={vi.fn()} />)
-      await screen.findByTestId('canvas')
-
-      await userEvent.click(screen.getByRole('button', { name: 'Chọn vùng sàn để dò lưới' }))
-      await userEvent.click(screen.getByRole('button', { name: 'kéo khung sàn' }))
-      await userEvent.click(screen.getByRole('button', { name: 'Dò lưới trong khung' }))
+      await drawTheBox()
+      await userEvent.click(screen.getByRole('button', { name: 'Dò ô trong khung' }))
 
       expect(
-        await screen.findByText('Không tự động dò được lưới từ bản vẽ này. Hãy kẻ guide thủ công.'),
+        await screen.findByText('Không tự động dò được ô từ bản vẽ này. Hãy kẻ guide thủ công.'),
       ).toBeInTheDocument()
       expect(readGuides()).toEqual(ONE_BAY_GUIDES)
     })
   })
+  it('names the axis that is still missing its mm chain', async () => {
+    // The old copy said "no guide carries a mm dimension" for ANY prorated
+    // deck, including one where the admin had just pasted a chain on one axis.
+    // It read as "nothing you did registered", which is how the paste feature
+    // came to look broken on its first real use.
+    listGuides.mockResolvedValue([
+      { id: 'gx1', axis: 'x', pos: 0, offsetMm: 0, label: null },
+      { id: 'gx2', axis: 'x', pos: 1, offsetMm: 58100, label: null },
+      { id: 'gy1', axis: 'y', pos: 0, offsetMm: 0, label: null },
+      { id: 'gy2', axis: 'y', pos: 1, offsetMm: 0, label: null },
+    ])
+    listCells.mockResolvedValue([
+      { id: 'c1', code: 'R1C1', x: 0, y: 0, w: 1, h: 1, areaM2: 100, stageId: null },
+    ])
+    render(<DeckEditor deck={{ ...deck, areaSource: 'prorated' }} onClose={vi.fn()} />)
+
+    expect(await screen.findByText(/Trục ngang đã có kích thước mm/)).toBeInTheDocument()
+    expect(screen.queryByText(/Chưa có guide nào mang kích thước mm/)).toBeNull()
+  })
+
 })
 
 describe('mergeErrorInVietnamese', () => {
