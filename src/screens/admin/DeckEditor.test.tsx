@@ -181,26 +181,6 @@ beforeEach(() => {
 })
 
 /**
- * A hand-built InkProfile, run through the REAL `inkProfile`, standing in
- * for `inkProfileFromImage`'s (mocked, since jsdom has no canvas) expensive
- * pass. Three vertical lines (columns 2/10/16) and three horizontal lines
- * (rows 3/9/15), each painted for a different number of rows/columns so they
- * cross the sliders' three interesting fractions -- 0.30 (Home), 0.60
- * (default), 0.90 (End) -- at different points:
- *
- *   column/row ink   |  candidate at fraction
- *   2 / 3   (19/19)  |  0.30, 0.60, 0.90 (always)
- *   10 / 9  (13/19)  |  0.30, 0.60
- *   16 / 15 ( 7/19)  |  0.30 only
- *
- * so moving either slider to its default/min/max changes that axis' guide
- * count (2 / 3 / 1) while leaving the other axis untouched -- which is the
- * one thing this whole feature exists to prove. Each line's own span fully
- * contains where the perpendicular lines cross it, so nothing here picks up
- * stray ink from the other axis' lines; every other column/row in the image
- * carries at most 3 stray ink pixels, far under the lowest threshold (5.7).
- */
-/**
  * A 40x40 sheet whose two middle vertical beams STOP part way down: columns
  * 4/16/28/36 and rows 4/20/36 are drawn, but columns 16 and 28 only run from
  * row 4 to row 26.
@@ -233,9 +213,35 @@ function stoppedBeamProfile() {
   return inkProfile(rgb, width, height, { region: { x: 0, y: 0, w: 1, h: 1 } })
 }
 
+/**
+ * A hand-built InkProfile, run through the REAL `inkProfile`, standing in for
+ * `inkProfileFromImage`'s (mocked, since jsdom has no canvas) expensive pass.
+ *
+ * A little deck on a 100x100 sheet: its own outer beams at columns 10 and 90 and
+ * rows 10 and 90, plus two interior beams per axis that STOP part way, so each
+ * spans a different fraction of the deck and the two sliders' three interesting
+ * settings each land somewhere different:
+ *
+ *   beam            spans   candidate at fraction
+ *   col/row 10, 90  81/81   0.30, 0.60, 0.90 (always -- these are the deck)
+ *   col/row 50      62/81   0.30, 0.60
+ *   col/row 70      34/81   0.30 only
+ *
+ * so moving either slider to its default/min/max changes that axis' line count
+ * (3 / 4 / 2) while leaving the other axis untouched -- the one thing the
+ * per-axis split exists to prove.
+ *
+ * 100x100 rather than the 20x20 this started as, and framed by the deck's own
+ * outer beams, because both the boundary rule and the drawn-edge filter are
+ * expressed as FRACTIONS of a span. On a 20-row sheet the four beams crossing a
+ * blank column ink 20% of it, which is the boundary rule's own bar, so blank
+ * columns became the deck's edge; at 81 rows the same four crossings are 5%.
+ * Keep any beam added here inside columns 10..90 and rows 10..90 for the same
+ * reason.
+ */
 function fixtureProfile() {
-  const width = 20
-  const height = 20
+  const width = 100
+  const height = 100
   const rgb = new Uint8Array(width * height * 3).fill(255)
   const paint = (x: number, y: number) => {
     const o = (y * width + x) * 3
@@ -249,13 +255,13 @@ function fixtureProfile() {
   const fillRow = (y: number, xFrom: number, xTo: number) => {
     for (let x = xFrom; x <= xTo; x++) paint(x, y)
   }
-  fillColumn(2, 0, 18)
-  fillColumn(10, 0, 12)
-  fillColumn(16, 0, 6)
-  fillRow(3, 0, 18)
-  fillRow(9, 0, 12)
-  fillRow(15, 0, 6)
-  return inkProfile(rgb, width, height)
+  for (const x of [10, 90]) fillColumn(x, 10, 90)
+  fillColumn(50, 10, 70)
+  fillColumn(70, 10, 40)
+  for (const y of [10, 90]) fillRow(y, 10, 90)
+  fillRow(50, 10, 70)
+  fillRow(70, 10, 40)
+  return inkProfile(rgb, width, height, { region: { x: 0, y: 0, w: 1, h: 1 } })
 }
 
 describe('DeckEditor', () => {
@@ -1746,21 +1752,25 @@ describe('DeckEditor', () => {
       await userEvent.click(screen.getByRole('button', { name: 'Dò lưới trong khung' }))
 
       await waitFor(() => {
-        expect(readGuides().filter((g) => g.axis === 'x')).toHaveLength(2)
+        expect(readGuides().filter((g) => g.axis === 'x')).toHaveLength(3)
       })
       const guides = readGuides()
       const xGuides = guides.filter((g) => g.axis === 'x').sort((a, b) => a.pos - b.pos)
       const yGuides = guides.filter((g) => g.axis === 'y').sort((a, b) => a.pos - b.pos)
-      expect(xGuides.map((g) => g.pos)).toEqual([0.1, 0.5])
-      expect(yGuides.map((g) => g.pos)).toEqual([0.15, 0.45])
+      // The deck's own two edges on each axis, plus the one interior beam that
+      // clears 0.60. The edges are there whatever the slider says.
+      expect(xGuides.map((g) => g.pos)).toEqual([0.1, 0.5, 0.9])
+      expect(yGuides.map((g) => g.pos)).toEqual([0.1, 0.5, 0.9])
       // Detected guides carry no mm dimension -- they route through
       // prorateCellAreas via `hasRealSpans`/generateMesh, same as any other
       // guide with offsetMm 0.
       expect(guides.every((g) => g.offsetMm === 0)).toBe(true)
       // ONE_BAY_GUIDES is entirely replaced, not merged with.
-      expect(guides).toHaveLength(4)
+      expect(guides).toHaveLength(6)
 
-      expect(screen.getByText('2 đường dọc × 2 đường ngang → 1 ô')).toBeInTheDocument()
+      expect(screen.getByText(
+        '3 đường dọc × 3 đường ngang → 3 ô (lưới thô 4 ô, đã gộp/bỏ 1 ô theo bản vẽ)',
+      )).toBeInTheDocument()
       expect(screen.getByRole('slider', { name: 'Độ nhạy trục dọc' })).toHaveAttribute('aria-disabled', 'false')
     })
 
@@ -1772,22 +1782,22 @@ describe('DeckEditor', () => {
       await userEvent.click(screen.getByRole('button', { name: 'Chọn vùng sàn để dò lưới' }))
       await userEvent.click(screen.getByRole('button', { name: 'kéo khung sàn' }))
       await userEvent.click(screen.getByRole('button', { name: 'Dò lưới trong khung' }))
-      await waitFor(() => expect(readGuides().filter((g) => g.axis === 'x')).toHaveLength(2))
+      await waitFor(() => expect(readGuides().filter((g) => g.axis === 'x')).toHaveLength(3))
 
-      // Home = the slider's own minimum (0.30): a third, fainter vertical
-      // line now clears the bar. The horizontal axis is untouched -- this is
-      // the split the whole feature is built around.
+      // Home = the slider's own minimum (0.30): the fainter of the two interior
+      // verticals now clears the bar. The horizontal axis is untouched -- this
+      // is the split the whole feature is built around.
       const xSlider = screen.getByRole('slider', { name: 'Độ nhạy trục dọc' })
       xSlider.focus()
       fireEvent.keyDown(xSlider, { key: 'Home', keyCode: 36, which: 36 })
 
-      await waitFor(() => expect(readGuides().filter((g) => g.axis === 'x')).toHaveLength(3))
-      expect(readGuides().filter((g) => g.axis === 'y')).toHaveLength(2)
+      await waitFor(() => expect(readGuides().filter((g) => g.axis === 'x')).toHaveLength(4))
+      expect(readGuides().filter((g) => g.axis === 'y')).toHaveLength(3)
       // The line COUNTS are what this test is about. The cell count is not
       // asserted here on purpose: the drawn-edge filter decides it, and pinning
       // it here would make every slider test fail whenever that rule changes.
       // It has its own test below.
-      expect(screen.getByText(/^3 đường dọc × 2 đường ngang/)).toBeInTheDocument()
+      expect(screen.getByText(/^4 đường dọc × 3 đường ngang/)).toBeInTheDocument()
 
       // inkProfileFromImage's one expensive call is not repeated by a slider
       // move -- only linesFromProfile's cheap re-read of the cached profile is.
@@ -1802,17 +1812,18 @@ describe('DeckEditor', () => {
       await userEvent.click(screen.getByRole('button', { name: 'Chọn vùng sàn để dò lưới' }))
       await userEvent.click(screen.getByRole('button', { name: 'kéo khung sàn' }))
       await userEvent.click(screen.getByRole('button', { name: 'Dò lưới trong khung' }))
-      await waitFor(() => expect(readGuides().filter((g) => g.axis === 'y')).toHaveLength(2))
+      await waitFor(() => expect(readGuides().filter((g) => g.axis === 'y')).toHaveLength(3))
 
-      // End = the slider's own maximum (0.90): only the strongest horizontal
-      // line still clears the bar. The vertical axis is untouched.
+      // End = the slider's own maximum (0.90): the interior horizontal drops
+      // out and only the deck's own two edges remain. The vertical axis is
+      // untouched.
       const ySlider = screen.getByRole('slider', { name: 'Độ nhạy trục ngang' })
       ySlider.focus()
       fireEvent.keyDown(ySlider, { key: 'End', keyCode: 35, which: 35 })
 
-      await waitFor(() => expect(readGuides().filter((g) => g.axis === 'y')).toHaveLength(1))
-      expect(readGuides().filter((g) => g.axis === 'x')).toHaveLength(2)
-      expect(screen.getByText(/^2 đường dọc × 1 đường ngang/)).toBeInTheDocument()
+      await waitFor(() => expect(readGuides().filter((g) => g.axis === 'y')).toHaveLength(2))
+      expect(readGuides().filter((g) => g.axis === 'x')).toHaveLength(3)
+      expect(screen.getByText(/^3 đường dọc × 2 đường ngang/)).toBeInTheDocument()
     })
 
     it('detects only inside the region the admin drew', async () => {
@@ -1985,9 +1996,9 @@ describe('DeckEditor', () => {
       // count next to the sliders has to be the number the admin will actually
       // get, or they tune against a number that is not the answer.
       //
-      // At the vertical slider's minimum the fixture yields three vertical
-      // guides, and its faintest line (7 of 19 rows) is too short to enclose
-      // the second cell -- the same shape as a beam that stops part-way.
+      // At the vertical slider's minimum the fixture yields four vertical
+      // guides, and its two interior beams both stop part-way down, so the bays
+      // below where they stop are joined rather than divided.
       inkProfileFromImage.mockResolvedValue(fixtureProfile())
       listGuides.mockResolvedValue([])
       render(<DeckEditor deck={deck} onClose={vi.fn()} />)
@@ -1995,14 +2006,14 @@ describe('DeckEditor', () => {
       await userEvent.click(screen.getByRole('button', { name: 'Chọn vùng sàn để dò lưới' }))
       await userEvent.click(screen.getByRole('button', { name: 'kéo khung sàn' }))
       await userEvent.click(screen.getByRole('button', { name: 'Dò lưới trong khung' }))
-      await waitFor(() => expect(readGuides().filter((g) => g.axis === 'x')).toHaveLength(2))
+      await waitFor(() => expect(readGuides().filter((g) => g.axis === 'x')).toHaveLength(3))
 
       const xSlider = screen.getByRole('slider', { name: 'Độ nhạy trục dọc' })
       xSlider.focus()
       fireEvent.keyDown(xSlider, { key: 'Home', keyCode: 36, which: 36 })
 
       expect(await screen.findByText(
-        '3 đường dọc × 2 đường ngang → 1 ô (lưới thô 2 ô, đã gộp/bỏ 1 ô theo bản vẽ)',
+        '4 đường dọc × 3 đường ngang → 4 ô (lưới thô 6 ô, đã gộp/bỏ 2 ô theo bản vẽ)',
       )).toBeInTheDocument()
     })
 
@@ -2017,20 +2028,20 @@ describe('DeckEditor', () => {
       await userEvent.click(screen.getByRole('button', { name: 'Chọn vùng sàn để dò lưới' }))
       await userEvent.click(screen.getByRole('button', { name: 'kéo khung sàn' }))
       await userEvent.click(screen.getByRole('button', { name: 'Dò lưới trong khung' }))
-      await waitFor(() => expect(readGuides().filter((g) => g.axis === 'x')).toHaveLength(2))
+      await waitFor(() => expect(readGuides().filter((g) => g.axis === 'x')).toHaveLength(3))
 
       const xSlider = screen.getByRole('slider', { name: 'Độ nhạy trục dọc' })
       xSlider.focus()
       fireEvent.keyDown(xSlider, { key: 'Home', keyCode: 36, which: 36 })
-      await screen.findByText(/đã gộp\/bỏ 1 ô/)
+      await screen.findByText(/đã gộp\/bỏ 2 ô/)
 
       await userEvent.click(screen.getByRole('button', { name: 'Sinh lưới ô' }))
 
-      // One cell reaches the canvas, not the two the 3x2 grid would give. Read
+      // Four cells reach the canvas, not the six the 4x3 grid would give. Read
       // off the per-cell buttons the canvas stand-in renders, so this counts
       // cells rather than matching a joined string that other stand-in output
       // now precedes.
-      expect(screen.getAllByRole('button', { name: /^chọn R/ })).toHaveLength(1)
+      expect(screen.getAllByRole('button', { name: /^chọn R/ })).toHaveLength(4)
     })
 
     it('merges the bays a missing beam joins, rather than dropping one of them', async () => {

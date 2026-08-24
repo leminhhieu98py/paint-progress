@@ -749,19 +749,34 @@ describe('DrawingCanvas', () => {
       expect(region).toHaveAttribute('data-height', '360')
     })
 
-    it('draws guides across the whole drawing when there is no crop', () => {
+    it('draws guides across the whole drawing while the mesh has no extent yet', () => {
+      // guides here run 0..1 on both axes, so the extent IS the drawing.
       render(<DrawingCanvas {...cropProps} />)
       // x-guide at pos 0.5 on a 900x720 stage.
       expect(screen.getByTestId('line:guide-x-1')).toHaveAttribute('data-points', '450,0,450,720')
     })
 
-    it('clips guides to the crop, since a guide outside the deck means nothing', () => {
-      // Quarter-fractions, so every endpoint is an exact float: this asserts
-      // the endpoints, and a 503.99999999999994 would be a distraction.
-      render(<DrawingCanvas {...cropProps} cropRect={{ x: 0.25, y: 0.25, w: 0.5, h: 0.5 }} />)
-      // Crop = x 225..675, y 180..540 in stage px.
+    it('clips a guide to the deck, not to the crop the admin dragged', () => {
+      // The crop is a box with a margin round the deck; a line ruled out to it
+      // claims the margin and the title block. The deck is where the beams are:
+      // x 0.2..0.8 and y 0.25..0.75 here, which on a 900x720 stage is
+      // x 180..720 and y 180..540. The crop is deliberately WIDER than all of
+      // it, so a line still reaching the crop edge is visible as a failure.
+      render(
+        <DrawingCanvas
+          {...cropProps}
+          guides={[
+            { axis: 'x', pos: 0.2, offsetMm: 0 },
+            { axis: 'x', pos: 0.5, offsetMm: 9000 },
+            { axis: 'x', pos: 0.8, offsetMm: 18000 },
+            { axis: 'y', pos: 0.25, offsetMm: 0 },
+            { axis: 'y', pos: 0.75, offsetMm: 16000 },
+          ]}
+          cropRect={{ x: 0.05, y: 0.05, w: 0.9, h: 0.9 }}
+        />,
+      )
       expect(screen.getByTestId('line:guide-x-1')).toHaveAttribute('data-points', '450,180,450,540')
-      expect(screen.getByTestId('line:guide-y-4')).toHaveAttribute('data-points', '225,720,675,720')
+      expect(screen.getByTestId('line:guide-y-3')).toHaveAttribute('data-points', '180,180,720,180')
     })
 
     it('deletes the guide that was clicked, when line-deleting is on', () => {
@@ -785,6 +800,21 @@ describe('DrawingCanvas', () => {
     it('does not delete a guide when line-deleting is off', () => {
       render(<DrawingCanvas {...cropProps} onGuideMove={vi.fn()} />)
       expect(screen.getByTestId('line:guide-x-1')).toHaveAttribute('data-draggable', 'true')
+    })
+
+    it('draws the very first guide on a deck that has no other axis yet', () => {
+      // A fresh deck: one guide, nothing across it. There is no extent to clip
+      // to, and a guide has to be visible for the admin to drag it -- an empty
+      // axis reduced to Math.min() of nothing puts the endpoints at Infinity and
+      // the line disappears.
+      render(
+        <DrawingCanvas
+          {...cropProps}
+          guides={[{ axis: 'x', pos: 0.5, offsetMm: 0 }]}
+          cells={[]}
+        />,
+      )
+      expect(screen.getByTestId('line:guide-x-0')).toHaveAttribute('data-points', '450,0,450,720')
     })
 
     it('draws no crop region when there is none', () => {

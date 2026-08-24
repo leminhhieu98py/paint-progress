@@ -158,20 +158,26 @@ export function DrawingCanvas({
   const yGuides = guides.filter((g) => g.axis === 'y')
 
   /**
-   * How far along its own axis a guide is drawn: the crop's extent when there
-   * is one, the whole drawing otherwise.
+   * How far along its own axis a guide is drawn: from the first to the last
+   * guide of the OTHER axis -- the deck's own extent, which is where the beams
+   * are.
    *
-   * A guide outside the deck region says nothing -- the detector only measured
-   * inside the crop -- and a line ruled across the title block and the margins
-   * reads as a claim about them. Clipping is also what makes the drawn grid
-   * match the mesh: `buildMeshFromGuides` only ever makes cells between
-   * guides, so nothing is drawn here that the mesh does not cover.
+   * Not the crop. The crop is a box the admin dragged with a margin round the
+   * deck, and a line ruled out to it reads as a claim about the margin, the
+   * title block and whatever else the box caught. It is also exactly what the
+   * mesh covers: `buildMeshFromGuides` only ever makes cells BETWEEN guides, so
+   * clipping here draws the grid the cells actually form and nothing more.
+   *
+   * Falls back to the whole drawing while an axis has fewer than two guides,
+   * since there is no extent to speak of yet -- that is the state a fresh deck
+   * starts in, and a guide has to be visible for the admin to drag it.
    */
   const guideSpan = (axis: 'x' | 'y') => {
-    if (!cropRect) return { from: 0, to: axis === 'x' ? height : width }
-    return axis === 'x'
-      ? { from: cropRect.y * height, to: (cropRect.y + cropRect.h) * height }
-      : { from: cropRect.x * width, to: (cropRect.x + cropRect.w) * width }
+    const across = axis === 'x' ? yGuides : xGuides
+    const extent = axis === 'x' ? height : width
+    if (across.length < 2) return { from: 0, to: extent }
+    const positions = across.map((g) => g.pos)
+    return { from: Math.min(...positions) * extent, to: Math.max(...positions) * extent }
   }
 
   /**

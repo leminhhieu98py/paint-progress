@@ -70,6 +70,28 @@ const DEFAULT_INK_THRESHOLD = 200
 const DEFAULT_MERGE_WITHIN = 0.004
 
 /**
+ * How much of its own span a column or row must ink to be read as the deck's
+ * OUTER beam, independent of the sliders.
+ *
+ * The boundary is a different question from the interior and needs its own,
+ * much lower bar. Measured on the customer's real sheet: at the sliders' 0.60
+ * the first and last vertical lines came back 161px and 151px inside the deck's
+ * own extent, because the deck's boundary is stepped and its corners are cut,
+ * so an outer beam is interrupted where an interior one runs clean. Every bay
+ * along the edge then had no closing line and did not exist -- the admin's
+ * "ở các biên, các hình chữ nhật thường bị thiếu".
+ *
+ * 0.20 because the answer is stable across 0.15-0.25 on that sheet (x 886..2200,
+ * y 255..2026, which is the deck's real extent to the pixel) and both ends of
+ * that range are wrong: 0.30 loses the left beam again, 0.10 reaches out to a
+ * dimension line. It is still a threshold over a drawing, so a crop left loose
+ * enough to include the title block can pull the bottom bound down onto it --
+ * one click with "xoá đường" removes that, and the hint tells the admin to crop
+ * close.
+ */
+const DECK_BOUNDS_FRACTION = 0.2
+
+/**
  * The per-column and per-row ink counts, plus the content box, computed once
  * over the whole image. Opaque to callers other than `linesFromProfile` --
  * treat it as a token to cache and pass back in, not as data to read fields
@@ -294,7 +316,10 @@ export function inkProfile(
     }
   }
 
-  return { colInk, rowInk, width, height, mergeWithin, mask, contentBox: contentBox() }
+  return {
+    colInk, rowInk, width, height, mergeWithin, mask,
+    contentBox: contentBox(),
+  }
 
   /**
    * The region when there is one, the ink's own bounding box otherwise, and
@@ -376,9 +401,64 @@ export function linesFromProfile(
   const xPositions = runMidpoints(colCandidates).map((mid) => mid / profile.width)
   const yPositions = runMidpoints(rowCandidates).map((mid) => mid / profile.height)
 
+  // The deck's own two edges on each axis, always, whatever the sliders say --
+  // see DECK_BOUNDS_FRACTION. Added before the merge below, so a boundary that
+  // is also a beam the slider found appears once rather than as a near-duplicate
+  // pair.
+  const bounds = deckBounds(profile)
+
   return {
-    x: collapseDoubleLines(mergeClose(xPositions, profile.mergeWithin)),
-    y: collapseDoubleLines(mergeClose(yPositions, profile.mergeWithin)),
+    x: collapseDoubleLines(mergeClose(bounds ? [...xPositions, bounds.x0, bounds.x1] : xPositions, profile.mergeWithin)),
+    y: collapseDoubleLines(mergeClose(bounds ? [...yPositions, bounds.y0, bounds.y1] : yPositions, profile.mergeWithin)),
+  }
+}
+
+/**
+ * The deck's own outer edges inside the profile's content box, normalized, as
+ * the midpoints of the outermost beams -- not the first and last inked pixel,
+ * which would sit on a beam's outer face and make every edge bay a beam-width
+ * too big.
+ *
+ * `null` when there is nothing to measure, or when nothing inks enough of its
+ * span to be a beam at all.
+ */
+function deckBounds(profile: InkProfile): { x0: number; x1: number; y0: number; y1: number } | null {
+  if (!profile.contentBox) return null
+  const { minCol, maxCol, minRow, maxRow } = profile.contentBox
+
+  /**
+   * The midpoints of the first and last runs of `counts` that reach `least`,
+   * scanning inward from each end of `from`..`to`.
+   */
+  const outerRuns = (counts: number[], from: number, to: number, least: number) => {
+    let first = -1
+    for (let i = from; i <= to; i++) if (counts[i] >= least) { first = i; break }
+    if (first === -1) return null
+    let last = -1
+    for (let i = to; i >= from; i--) if (counts[i] >= least) { last = i; break }
+    // The walk is capped at a beam's width. Uncapped, a content box whose every
+    // column reaches the bar -- a crop full of dense structure -- is one single
+    // run, and its "midpoint" is the middle of the deck: one line through the
+    // centre and no boundary at all.
+    // Floor of 3, because a drawn line is a few pixels wide at any render size
+    // and the fraction alone rounds to zero on a small image.
+    const widest = Math.max(3, Math.round(profile.mergeWithin * (to - from + 1)))
+    let firstEnd = first
+    while (firstEnd + 1 <= to && firstEnd + 1 - first < widest && counts[firstEnd + 1] >= least) firstEnd++
+    let lastStart = last
+    while (lastStart - 1 >= from && last - (lastStart - 1) < widest && counts[lastStart - 1] >= least) lastStart--
+    return [(first + firstEnd) / 2, (lastStart + last) / 2]
+  }
+
+  const cols = outerRuns(profile.colInk, minCol, maxCol, DECK_BOUNDS_FRACTION * (maxRow - minRow + 1))
+  const rows = outerRuns(profile.rowInk, minRow, maxRow, DECK_BOUNDS_FRACTION * (maxCol - minCol + 1))
+  if (!cols || !rows) return null
+
+  return {
+    x0: cols[0] / profile.width,
+    x1: cols[1] / profile.width,
+    y0: rows[0] / profile.height,
+    y1: rows[1] / profile.height,
   }
 }
 
