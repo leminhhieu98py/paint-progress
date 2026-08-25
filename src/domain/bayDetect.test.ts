@@ -549,4 +549,36 @@ describe('nameBays', () => {
       }
     }
   })
+  it('does not let a closed area below the deck become a bay', () => {
+    // The customer's sheet underlines its own title, and the deck's bottom beam
+    // plus that underline close a strip of blank paper between them. It is
+    // closed and it touches the deck, so nothing in the rescue rule tells it
+    // from a pedestal: it came back as a bay hanging 115px under the
+    // bottom-right corner, over the title text.
+    //
+    // What gives it away is that its bounding box overshoots the shape inside
+    // it. A pedestal is a box -- four walls, all drawn, every side reads 1.00.
+    // This one's floor is drawn in two pieces at different depths, so the bottom
+    // of its box carries ink over half its length.
+    const width = 300
+    const height = 260
+    const rgb = whiteImage(width, height)
+    for (const at of [40, 150, 260]) {
+      beam(rgb, width, 'v', at, 40, 178)
+      beam(rgb, width, 'h', at, 40, 260)
+    }
+    beam(rgb, width, 'h', 178, 40, 260)
+    beam(rgb, width, 'v', 100, 178, 210)
+    beam(rgb, width, 'v', 200, 178, 200)
+    beam(rgb, width, 'v', 150, 200, 210)   // the riser between the two pieces
+    beam(rgb, width, 'h', 210, 100, 150)
+    beam(rgb, width, 'h', 200, 150, 200)
+
+    // A shorter opening than the rest of this file uses, so the 11px riser that
+    // closes the shape survives to close it.
+    const bays = detectBays(rgb, width, height, WHOLE, { ...OPTIONS, minRunFraction: 0.02 })
+
+    // Nothing may reach below the deck's bottom beam at 178.
+    expect(bays.filter((b) => (b.y + b.h) * height > 185)).toEqual([])
+  })
 })

@@ -146,6 +146,13 @@ export interface BayOptions {
    * it. On the customer's top strip that split one open run into six bays.
    */
   minEdgeSupport?: number
+  /**
+   * How much ink every side of a rescued region's own bounding box must carry.
+   * Default 0.7, and stricter than `minEdgeSupport` on purpose: that one asks
+   * whether a line divides two bays, this asks whether a shape is the box it
+   * claims to be.
+   */
+  minRegionEdges?: number
 }
 
 const DEFAULTS = {
@@ -162,6 +169,7 @@ const DEFAULTS = {
   minCellCover: 0.35,
   maxRegionCovered: 0.15,
   minEdgeSupport: 0.5,
+  minRegionEdges: 0.7,
 }
 
 /**
@@ -811,7 +819,35 @@ export function detectBays(
   // sheet's own furniture is not.
   const padX = pad / width
   const padY = pad / height
+
+  /**
+   * Every side of a region's own bounding box carries ink, over the length of
+   * that side.
+   *
+   * A pedestal is a box: four walls, all drawn, all four sides read 1.00. What
+   * fails this is a region whose box overshoots the shape inside it -- the
+   * customer's sheet underlines its own title, and the deck's bottom beam plus
+   * that underline shut in a strip of blank paper whose sides are drawn for
+   * only two thirds of their length. It is closed, and it touches the deck, so
+   * nothing else here tells it from a pedestal; on their sheet it came back as
+   * a bay hanging 115px under the bottom-right corner, over the title text.
+   *
+   * Measured on that sheet: 21 of 24 regions read 0.73 or better and 18 of them
+   * read 1.00, against 0.62, 0.33 and 0.21 for the three that were wrong.
+   */
+  const boxed = (region: Bay) => {
+    const x0 = Math.round(region.x * width)
+    const x1 = Math.round((region.x + region.w) * width)
+    const y0 = Math.round(region.y * height)
+    const y1 = Math.round((region.y + region.h) * height)
+    return Math.min(
+      edgeSupport(y0, x0, x1, true), edgeSupport(y1, x0, x1, true),
+      edgeSupport(x0, y0, y1, false), edgeSupport(x1, y0, y1, false),
+    ) >= opts.minRegionEdges
+  }
+
   for (const region of regions) {
+    if (!boxed(region)) continue
     const area = region.w * region.h
     if (bays.reduce((sum, bay) => sum + overlap(bay, region), 0) >= opts.maxRegionCovered * area) continue
     // Touching counts, not just overlapping: a region stops at the beam's inner
