@@ -128,6 +128,15 @@ export interface BayOptions {
    * mostly outside.
    */
   minCellCover?: number
+  /**
+   * How much of a closed region the grid must already cover before the region
+   * is considered dealt with. Default 0.15.
+   *
+   * Low, because this is a rescue and not a second opinion: a region the grid
+   * has any real hold on belongs to the grid, and only the ones it plainly
+   * never reached -- things hanging off the deck's outline -- are handed back.
+   */
+  maxRegionCovered?: number
 }
 
 const DEFAULTS = {
@@ -142,6 +151,7 @@ const DEFAULTS = {
   minFill: 0.8,
   solidCover: 0.85,
   minCellCover: 0.35,
+  maxRegionCovered: 0.15,
 }
 
 /**
@@ -712,6 +722,38 @@ export function detectBays(
         h: (ys[r + 1] - ys[r]) / height,
       })
     }
+  }
+
+  // What the grid could not reach. A deck's outline is not only stepped, it has
+  // things hanging off it -- pedestals, stair landings, a corner platform -- and
+  // those sit outside every line the grid produced. The grid cannot propose
+  // them: their own beams are short, so no centreline reads from them, and the
+  // extent rule above is right to refuse a cell out there on the strength of a
+  // line it cannot see.
+  //
+  // They are already in `regions`, which are closed areas the drawing itself
+  // drew. This hands back the ones no bay covers -- adding only, so a deck the
+  // admin is already happy with cannot lose anything to this.
+  //
+  // The `touches` test is what separates a pedestal from the title block, which
+  // is a closed rectangle too, as is every detail frame on the sheet and
+  // anything else a loose crop caught. A pedestal is attached to the deck; the
+  // sheet's own furniture is not.
+  const padX = pad / width
+  const padY = pad / height
+  for (const region of regions) {
+    const area = region.w * region.h
+    if (bays.reduce((sum, bay) => sum + overlap(bay, region), 0) >= opts.maxRegionCovered * area) continue
+    // Touching counts, not just overlapping: a region stops at the beam's inner
+    // face and a bay's edge is that beam's centreline, so the two are always
+    // half a beam apart and never actually overlap. `pad` is that half-beam.
+    const near = {
+      x: region.x - padX, y: region.y - padY, w: region.w + 2 * padX, h: region.h + 2 * padY,
+    }
+    const touches = bays.some((bay) =>
+      Math.min(bay.x + bay.w, near.x + near.w) >= Math.max(bay.x, near.x)
+      && Math.min(bay.y + bay.h, near.y + near.h) >= Math.max(bay.y, near.y))
+    if (touches) bays.push(region)
   }
   return bays
 }

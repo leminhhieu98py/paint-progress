@@ -399,4 +399,56 @@ describe('nameBays', () => {
 
     expect(detectBays(rgb, width, height, WHOLE, OPTIONS)).toHaveLength(4)
   })
+  it('picks up a bay hanging off the deck that no grid line reaches', () => {
+    // A pedestal box on the outside of the left beam. The deck's outline is not
+    // just stepped -- things hang off it: pedestals, stair landings, corner
+    // platforms -- and they sit outside every line the beam grid produced. The
+    // grid cannot reach them: the box's own beams are too short to read a
+    // centreline from, and the deck-extent rule correctly refuses to put a cell
+    // out there on the strength of a line it cannot see.
+    //
+    // The drawing already closed it, so it is in `regions` -- this is about
+    // handing back a closed area the grid had no way to propose.
+    const width = 200
+    const height = 200
+    const rgb = whiteImage(width, height)
+    for (const at of [40, 110, 178]) {
+      beam(rgb, width, 'v', at, 40, 178)
+      beam(rgb, width, 'h', at, 40, 178)
+    }
+    beam(rgb, width, 'v', 15, 60, 100)    // the box's outer wall
+    beam(rgb, width, 'h', 60, 15, 40)
+    beam(rgb, width, 'h', 100, 15, 40)
+
+    const bays = detectBays(rgb, width, height, WHOLE, OPTIONS)
+
+    expect(bays).toHaveLength(5)
+    const hanging = bays.filter((b) => b.x * width < 30)
+    expect(hanging).toHaveLength(1)
+    expect(Math.round(hanging[0].y * height)).toBeGreaterThan(55)
+    expect(Math.round((hanging[0].y + hanging[0].h) * height)).toBeLessThan(105)
+  })
+
+  it('does not hand back a closed box that is not attached to the deck', () => {
+    // The title block is a closed rectangle too, and so is every detail frame on
+    // the sheet. What separates a pedestal from them is that a pedestal touches
+    // the deck. Same box as above, moved 15 px clear of the left beam: nothing
+    // else about it changed, and it must not become a bay.
+    const width = 200
+    const height = 200
+    const rgb = whiteImage(width, height)
+    for (const at of [40, 110, 178]) {
+      beam(rgb, width, 'v', at, 40, 178)
+      beam(rgb, width, 'h', at, 40, 178)
+    }
+    beam(rgb, width, 'v', 5, 60, 100)
+    beam(rgb, width, 'v', 25, 60, 100)
+    beam(rgb, width, 'h', 60, 5, 25)
+    beam(rgb, width, 'h', 100, 5, 25)
+
+    const bays = detectBays(rgb, width, height, WHOLE, OPTIONS)
+
+    expect(bays).toHaveLength(4)
+    expect(bays.filter((b) => b.x * width < 30)).toEqual([])
+  })
 })
