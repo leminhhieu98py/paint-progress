@@ -28,6 +28,26 @@ function beam(
   }
 }
 
+/**
+ * A beam the render has broken up: 40 px drawn, 8 px missing, all the way.
+ *
+ * Long enough that the opening keeps it (OPTIONS' minRunFraction is 20 px on a
+ * 200 px image) and the closing bridges it, so it is still a beam -- but 83%
+ * covered, which is under the 85% a deck edge has to reach.
+ */
+function brokenBeam(
+  rgb: Uint8Array, width: number,
+  axis: 'v' | 'h', at: number, from: number, to: number, thickness = 3,
+): void {
+  for (let i = from; i <= to; i++) {
+    if (i % 48 >= 40) continue
+    for (let t = 0; t < thickness; t++) {
+      if (axis === 'v') paint(rgb, width, at + t, i)
+      else paint(rgb, width, i, at + t)
+    }
+  }
+}
+
 /** The whole deck: four outer beams and whatever interior ones are asked for. */
 function deck(width: number, height: number, box: [number, number, number, number]) {
   const [x0, y0, x1, y1] = box
@@ -206,26 +226,32 @@ describe('detectBays', () => {
     // it and fall below the bar -- and the whole boundary strip of bays then has
     // no closing line and is not there.
     //
-    // Here the two outer beams are drawn over the middle half only; the two
-    // interior beams span the deck. Without the edge rule this is one bay.
+    // Here the left outer beam stops two thirds of the way down: 63% of the
+    // deck, under the 70% a centreline needs. Its column of bays still has to
+    // exist -- for the two rows the beam does run past. The third is a corner
+    // the beam never reaches, and deckSpan drops it, which is the other half of
+    // this rule and why the count is 8 rather than 9.
     const width = 200
     const height = 200
     const rgb = whiteImage(width, height)
-    for (const at of [20, 180]) {
-      beam(rgb, width, 'v', at, 70, 130)
-      beam(rgb, width, 'h', at, 70, 130)
-    }
+    beam(rgb, width, 'v', 20, 20, 120)      // left edge, cut two thirds down
+    beam(rgb, width, 'v', 178, 20, 180)     // right edge
+    beam(rgb, width, 'h', 20, 20, 180)      // top edge
+    beam(rgb, width, 'h', 178, 20, 180)     // bottom edge
     for (const at of [80, 120]) {
       beam(rgb, width, 'v', at, 20, 180)
       beam(rgb, width, 'h', at, 20, 180)
     }
 
-    const bays = detectBays(rgb, width, height, { x: 0.1, y: 0.1, w: 0.8, h: 0.8 }, OPTIONS)
-    expect(bays).toHaveLength(9)
-    // And the boundary bays reach the deck's edge rather than stopping at the
-    // first beam that happened to read.
+    const bays = detectBays(rgb, width, height, { x: 0.05, y: 0.05, w: 0.9, h: 0.9 }, OPTIONS)
+
+    expect(bays).toHaveLength(8)
+    // The boundary bays reach the deck's own edge rather than stopping at the
+    // first beam that happened to read -- that is what the edge line buys.
     expect(Math.round(Math.min(...bays.map((b) => b.x)) * width)).toBeLessThan(30)
-    expect(Math.round(Math.max(...bays.map((b) => (b.x + b.w))) * width)).toBeGreaterThan(170)
+    // And the one bay missing is the corner the cut beam never reached: bottom
+    // row, left column.
+    expect(bays.filter((b) => b.x < 0.3 && b.y > 0.55)).toEqual([])
   })
 
   it('keeps a bay standing on solid structure', () => {
@@ -276,5 +302,101 @@ describe('nameBays', () => {
   it('starts a new row for a bay that overlaps nothing above it', () => {
     expect(nameBays([at(0.1, 0.1, 0.3, 0.2), at(0.1, 0.6, 0.3, 0.2)]).map((b) => b.code))
       .toEqual(['R1C1', 'R2C1'])
+  })
+  it('leaves out the corner an L-shaped deck does not reach into', () => {
+    // Two thirds of a square: the top-left quadrant is not deck. Its two beams
+    // stop where the deck stops -- the left beam only runs down the bottom
+    // half, the top beam only across the right half -- which is exactly how a
+    // real sheet draws a deck that is not a rectangle.
+    //
+    // The grid cannot express that: it is a product of every x line with every
+    // y line, so it always proposes a cell in that corner. On the customer's
+    // sheet that cost 35 phantom cells out of 198, all of them along an edge,
+    // and the admin had to find and delete each one.
+    const rgb = whiteImage(200, 200)
+    beam(rgb, 200, 'v', 20, 100, 180)   // left edge: bottom half only
+    beam(rgb, 200, 'v', 100, 20, 180)   // middle, full height
+    beam(rgb, 200, 'v', 178, 20, 180)   // right edge, full height
+    beam(rgb, 200, 'h', 20, 100, 180)   // top edge: right half only
+    beam(rgb, 200, 'h', 100, 20, 180)   // middle, full width
+    beam(rgb, 200, 'h', 178, 20, 180)   // bottom edge, full width
+
+    const bays = detectBays(rgb, 200, 200, WHOLE, OPTIONS)
+
+    expect(bays).toHaveLength(3)
+    // Named rather than counted: a rule that dropped the wrong cell would still
+    // leave three.
+    const inTopLeft = bays.filter((b) => b.x < 0.4 && b.y < 0.4)
+    expect(inTopLeft).toEqual([])
+  })
+
+  it('keeps every cell of a deck that really is a rectangle', () => {
+    // The other half of the rule above. Dropping a cell because its edge reads
+    // weakly is a one-way loss -- the admin cannot get it back except by
+    // re-detecting the whole deck -- so the guard has to leave a plain
+    // rectangular deck completely alone.
+    const rgb = deck(200, 200, [20, 20, 180, 180])
+    beam(rgb, 200, 'v', 100, 20, 180)
+    beam(rgb, 200, 'h', 100, 20, 180)
+
+    expect(detectBays(rgb, 200, 200, WHOLE, OPTIONS)).toHaveLength(4)
+  })
+  it('drops a cell over a slot the deck leaves open at its edge', () => {
+    // A notch in the middle of the top edge, not at a corner: the top beam runs
+    // either side of it and stops. Scanning the top row across still finds the
+    // deck's left and right edges, so the row reads full width and cannot see
+    // the slot -- only the column can, by finding no top edge above it.
+    const width = 200
+    const height = 200
+    const rgb = whiteImage(width, height)
+    for (const at of [20, 80, 120, 178]) beam(rgb, width, 'v', at, 20, 178)
+    beam(rgb, width, 'h', 80, 20, 178)
+    beam(rgb, width, 'h', 178, 20, 178)
+    beam(rgb, width, 'h', 20, 20, 80)     // top edge, left of the slot
+    beam(rgb, width, 'h', 20, 120, 178)   // top edge, right of the slot
+
+    const bays = detectBays(rgb, width, height, { x: 0.05, y: 0.05, w: 0.9, h: 0.9 }, OPTIONS)
+
+    expect(bays.filter((b) => b.x > 0.35 && b.x < 0.5 && b.y < 0.3)).toEqual([])
+    // Everything either side of the slot survives: the notch is one cell wide.
+    expect(bays.filter((b) => b.y < 0.3)).toHaveLength(2)
+  })
+
+  it('drops a cell over a slot the deck leaves open at its far edge', () => {
+    // The right edge stops for one row band and picks up again below it. Only a
+    // scan that comes inward from the RIGHT can see that: from the left, the
+    // first solid line is the left edge and everything looks normal, so an
+    // extent that ran from the first solid line to the end of the search would
+    // read this band as full width and keep a cell that is off the deck.
+    const width = 200
+    const height = 200
+    const rgb = whiteImage(width, height)
+    for (const at of [20, 80, 120, 178]) beam(rgb, width, 'h', at, 20, 178)
+    beam(rgb, width, 'v', 20, 20, 178)
+    beam(rgb, width, 'v', 100, 20, 178)
+    beam(rgb, width, 'v', 178, 20, 80)     // right edge, above the slot
+    beam(rgb, width, 'v', 178, 120, 178)   // right edge, below the slot
+
+    const bays = detectBays(rgb, width, height, WHOLE, OPTIONS)
+
+    expect(bays).toHaveLength(5)
+    expect(bays.filter((b) => b.x > 0.4 && b.y > 0.35 && b.y < 0.5)).toEqual([])
+  })
+
+  it('keeps every cell when no edge reads solidly enough to place the deck', () => {
+    // Every beam broken 1 px in 4, so nothing reaches the bar a deck edge has to
+    // clear. The extent is then unknown, and unknown must mean "keep" -- this
+    // rule is here to remove cells that are demonstrably outside the deck, not
+    // cells it cannot see. Reading a missing measurement as "outside" would
+    // empty the whole deck on any drawing that renders faintly.
+    const width = 200
+    const height = 200
+    const rgb = whiteImage(width, height)
+    for (const at of [20, 100, 178]) {
+      brokenBeam(rgb, width, 'v', at, 20, 178)
+      brokenBeam(rgb, width, 'h', at, 20, 178)
+    }
+
+    expect(detectBays(rgb, width, height, WHOLE, OPTIONS)).toHaveLength(4)
   })
 })

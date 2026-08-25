@@ -109,6 +109,25 @@ export interface BayOptions {
    * whole box and fills almost none of it.
    */
   minFill?: number
+  /**
+   * How much of a line segment must be inked for it to count as the deck's own
+   * edge. Default 0.85.
+   *
+   * Deliberately not 1: a beam is interrupted wherever the sheet draws a
+   * pedestal, a bubble or a leader line over it, and an edge that had to be
+   * unbroken would be found nowhere on a real drawing.
+   */
+  solidCover?: number
+  /**
+   * How much of a grid cell must fall inside the deck for the cell to be kept.
+   * Default 0.35.
+   *
+   * Low on purpose. Dropping a cell is a one-way loss -- the admin can delete a
+   * cell they did not want, but a cell that was never proposed can only be got
+   * back by re-detecting the whole deck -- so this only removes cells that are
+   * mostly outside.
+   */
+  minCellCover?: number
 }
 
 const DEFAULTS = {
@@ -121,6 +140,8 @@ const DEFAULTS = {
   dashGapFraction: 0.0033,
   maxAreaFraction: 0.9,
   minFill: 0.8,
+  solidCover: 0.85,
+  minCellCover: 0.35,
 }
 
 /**
@@ -521,6 +542,56 @@ function centrelines(
  * the bay pitch -- since a beam that did read is already the right line and a
  * second one beside it would make a sliver.
  */
+/**
+ * How far the deck itself reaches across one band, as the first and last
+ * position carrying a solid line.
+ *
+ * The grid is a product: every x line crossed with every y line. A deck that is
+ * not a rectangle -- and a real one rarely is -- gets cells proposed in the
+ * corners it does not reach into. Measured on the customer's sheet, the grid put
+ * the left edge at x=729 for all 22 rows while the deck's own left edge stood at
+ * 854 for the top seven of them, so a whole column of cells sat 125px out in the
+ * margin; the bottom row sat below the deck entirely.
+ *
+ * A band is bounded by two beams, so the deck's edge inside it is a single
+ * unbroken line and reads as one. Scanning inward from each side finds it: the
+ * first solid line from the left IS the left edge, because anything further left
+ * would have to be outside the deck. Interior beams are solid too, which is why
+ * the scan has to start at the outside and stop at the first hit.
+ *
+ * `null` when the band carries no solid line at all -- an empty band, or one
+ * whose edges the render lost. The caller leaves such a band uncut rather than
+ * emptying it: this rule exists to remove cells that are demonstrably outside,
+ * not to remove cells it cannot see.
+ *
+ * The step is assumed to fall ON a grid line, which is what a deck drawn to a
+ * beam grid does -- the customer's sheet steps at 854 against a line at 859.
+ * A deck that stepped in the MIDDLE of a bay would have that bay measured
+ * against the wrong extent; nothing here would notice.
+ */
+function deckSpan(
+  ink: Uint8Array, width: number,
+  from: number, to: number, lo: number, hi: number,
+  horizontal: boolean, solidCover: number,
+): { first: number; last: number } | null {
+  const span = to - from + 1
+  const solid = (at: number) => {
+    let inked = 0
+    for (let i = from; i <= to; i++) if (ink[horizontal ? at * width + i : i * width + at]) inked++
+    return inked / span >= solidCover
+  }
+  let first: number | null = null
+  for (let at = lo; at <= hi; at++) {
+    if (solid(at)) { first = at; break }
+  }
+  if (first === null) return null
+  let last = first
+  for (let at = hi; at > first; at--) {
+    if (solid(at)) { last = at; break }
+  }
+  return { first, last }
+}
+
 function closeAtDeckEdge(lines: number[], lo: number, hi: number): number[] {
   if (lines.length < 2) return lines
   const gaps = lines.slice(1).map((at, i) => at - lines[i]).sort((a, b) => a - b)
@@ -607,11 +678,33 @@ export function detectBays(
     return enclosed >= opts.minEnclosed * band.w * band.h
   }
 
+  // Where the deck actually reaches, band by band, so the corners it does not
+  // reach into stop being proposed. Measured once per band rather than once per
+  // cell: a band is bounded by two beams, so its extent is one number.
+  const rows = ys.slice(0, -1).map((_y, r) =>
+    deckSpan(ink, width, ys[r], ys[r + 1], deck.x0, deck.x1, false, opts.solidCover))
+  const cols = xs.slice(0, -1).map((_x, c) =>
+    deckSpan(ink, width, xs[c], xs[c + 1], deck.y0, deck.y1, true, opts.solidCover))
+
+  /** How much of [from,to] lies inside the band's own extent, as a fraction. */
+  const inside = (from: number, to: number, extent: { first: number; last: number } | null) => {
+    if (!extent) return 1
+    return Math.max(0, Math.min(to, extent.last) - Math.max(from, extent.first)) / (to - from)
+  }
+
   const bays: Bay[] = []
   for (let r = 0; r < ys.length - 1; r++) {
     if (!bandHasBays(ys[r], ys[r + 1], false)) continue
     for (let c = 0; c < xs.length - 1; c++) {
       if (!bandHasBays(xs[c], xs[c + 1], true)) continue
+      // Both axes, and the cell is kept whole or not at all. Trimming it to the
+      // measured edge was tried and dropped: the edge reads a few pixels off the
+      // grid line it belongs to -- 854 against 859 on the customer's sheet --
+      // and trimming to it leaves every boundary bay a sliver out of step with
+      // the column beside it. Dropping whole cells gives the same staircase and
+      // keeps every bay on the beam grid.
+      if (inside(xs[c], xs[c + 1], rows[r]) < opts.minCellCover) continue
+      if (inside(ys[r], ys[r + 1], cols[c]) < opts.minCellCover) continue
       bays.push({
         x: xs[c] / width,
         y: ys[r] / height,
