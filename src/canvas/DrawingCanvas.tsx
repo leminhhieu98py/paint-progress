@@ -261,6 +261,35 @@ export function DrawingCanvas({
         },
       }
     : {}
+  /**
+   * The pointer this mode asks for. Crop and band both sweep a rectangle;
+   * drawing a bay adds one, which is what the OS's own "copy" pointer means
+   * everywhere else.
+   */
+  const cursor = drawingCell ? 'copy' : onCropDraw ? 'crosshair' : ''
+
+  /**
+   * Makes the browser look at the pointer again after the mode changed.
+   *
+   * Chrome decides which pointer to draw from its last hit-test, and it only
+   * runs another one when the mouse moves. The modes here are switched with a
+   * key -- I turns drawing bays on and off -- and a key does not move the
+   * mouse, so the old pointer stayed on screen over a canvas that had already
+   * changed mode. Reported after the first fix: the + would not go away.
+   *
+   * Turning pointer-events off and on changes what is under the pointer, which
+   * is a thing Chrome does re-hit-test for. The read in between is what stops
+   * the two writes being coalesced into no change at all. It runs on a mode
+   * change only, never during a gesture.
+   */
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+    el.style.pointerEvents = 'none'
+    void el.offsetWidth
+    el.style.pointerEvents = ''
+  }, [cursor])
+
   const cropBand = cropDrag
     ? cropFromDrag(
       cropDrag.from, cropDrag.to, width, height,
@@ -274,10 +303,7 @@ export function DrawingCanvas({
       style={{
         width: '100%',
         position: 'relative',
-        // The pointer says which gesture the drawing is waiting for. Crop and
-        // band both sweep a rectangle; drawing a bay adds one, which is what
-        // the OS's own "copy" pointer means everywhere else.
-        cursor: drawingCell ? 'copy' : onCropDraw ? 'crosshair' : undefined,
+        cursor: cursor || undefined,
       }}
     >
       {panZoom && (

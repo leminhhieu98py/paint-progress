@@ -717,6 +717,25 @@ describe('DrawingCanvas', () => {
       expect((drawing.container.firstChild as HTMLElement).style.cursor).toBe('copy')
     })
 
+    it('leaves the drawing clickable after nudging the pointer', () => {
+      // The nudge that makes Chrome look at the pointer again turns
+      // pointer-events off and on. Left off, the drawing takes no clicks at
+      // all: no selecting a bay, no crop, no band -- and nothing on screen
+      // would say why.
+      const view = render(<DrawingCanvas {...cropProps} />)
+      const container = view.container.firstChild as HTMLElement
+      expect(container.style.pointerEvents).toBe('')
+
+      view.rerender(<DrawingCanvas {...cropProps} onCellDraw={vi.fn()} />)
+      expect(container.style.pointerEvents).toBe('')
+
+      const onCellClick = vi.fn()
+      view.rerender(<DrawingCanvas {...cropProps} onCellClick={onCellClick} />)
+      expect(container.style.pointerEvents).toBe('')
+      fireEvent.click(screen.getByTestId('rect:cell-R1C1'))
+      expect(onCellClick).toHaveBeenCalled()
+    })
+
     it('draws no crop region when there is none', () => {
       render(<DrawingCanvas {...cropProps} />)
       expect(screen.queryByTestId('rect:crop-region')).not.toBeInTheDocument()
