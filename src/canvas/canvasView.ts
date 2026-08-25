@@ -76,6 +76,13 @@ export function cropFromDrag(
   end: { x: number; y: number },
   width: number,
   height: number,
+  /**
+   * The shortest side the drag may describe. Defaults to a deck's worth; a
+   * single bay is drawn with a much smaller one, and the point of the floor at
+   * all is that a click, or a drag of a few pixels, reports nothing rather than
+   * committing a rectangle nobody meant.
+   */
+  minFraction = MIN_CROP_FRACTION,
 ): { x: number; y: number; w: number; h: number } | null {
   // The container is unmeasured on the first render; normalizing by 0 would
   // make every coordinate Infinity and every comparison below meaningless.
@@ -87,6 +94,6 @@ export function cropFromDrag(
   const y0 = fraction(Math.min(start.y, end.y), height)
   const y1 = fraction(Math.max(start.y, end.y), height)
 
-  if (x1 - x0 < MIN_CROP_FRACTION || y1 - y0 < MIN_CROP_FRACTION) return null
+  if (x1 - x0 < minFraction || y1 - y0 < minFraction) return null
   return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 }
 }

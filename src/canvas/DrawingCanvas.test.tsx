@@ -612,6 +612,29 @@ describe('DrawingCanvas', () => {
 
 
 
+    it('reports a drag as one bay when the screen is drawing bays', () => {
+      // The same gesture, the other meaning. 90,72 -> 180,144 is a twentieth of
+      // the drawing, which is a bay -- and well under the floor a crop has to
+      // clear, so a mode that shared the crop's floor would refuse every bay.
+      const onCellDraw = vi.fn()
+      render(<DrawingCanvas {...cropProps} onCellDraw={onCellDraw} />)
+      const stage = screen.getByTestId('stage:drawing')
+      fireEvent.mouseDown(stage, { clientX: 90, clientY: 72 })
+      fireEvent.mouseMove(stage, { clientX: 180, clientY: 144 })
+      fireEvent.mouseUp(stage, { clientX: 180, clientY: 144 })
+      expect(onCellDraw).toHaveBeenCalledWith({ x: 0.1, y: 0.1, w: 0.1, h: 0.1 })
+    })
+
+    it('does not select a cell with the gesture that drew a bay', () => {
+      // Bays are drawn over the same pixels the existing bays occupy, so
+      // without this the drag that adds a bay also selects whatever it started
+      // on -- and the next tap on "Xoá ô đã chọn" takes that one away.
+      const onCellClick = vi.fn()
+      render(<DrawingCanvas {...cropProps} onCellClick={onCellClick} onCellDraw={vi.fn()} />)
+      fireEvent.click(screen.getByTestId('rect:cell-R1C1'))
+      expect(onCellClick).not.toHaveBeenCalled()
+    })
+
     it('draws no crop region when there is none', () => {
       render(<DrawingCanvas {...cropProps} />)
       expect(screen.queryByTestId('rect:crop-region')).not.toBeInTheDocument()

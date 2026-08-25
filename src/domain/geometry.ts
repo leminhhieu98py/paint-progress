@@ -198,3 +198,80 @@ export function prorateCellAreas(totalAreaM2: number, cells: MeshCell[]): MeshCe
     areaM2: (totalAreaM2 * (c.w * c.h)) / totalPixelArea,
   }))
 }
+
+/**
+ * How near a drawn edge has to be to an existing bay's edge to be taken as
+ * meaning it, as a fraction of the drawing. About 1.5% -- a centimetre of
+ * finger on a tablet-sized drawing.
+ */
+export const SNAP_FRACTION = 0.015
+
+/** The shortest side a drawn bay may have, as a fraction of the drawing. */
+export const MIN_DRAWN_SIDE = 0.005
+
+/**
+ * A bay the admin drew by hand, snapped to the bays around it.
+ *
+ * Detection leaves gaps that no rule reaches: a corner the drawing never closed,
+ * a strip the beam grid has no line for. This is the way out of them -- and the
+ * reason it is worth having is that every alternative is worse: re-detecting
+ * costs the whole deck's curation, and hand-drawing every bay is what detection
+ * exists to avoid.
+ *
+ * Snapping is not a convenience. A bay that misses its neighbour by a hair
+ * leaves a sliver of deck belonging to nobody, and one that overlaps has that
+ * ground counted twice in every percentage the deck reports. Edges with nothing
+ * near them are left where they were drawn: a bay hanging off the deck has one
+ * edge on open paper, and dragging it back to the nearest bay would be wrong.
+ *
+ * Throws rather than returning a bad bay: both refusals are cases where no
+ * answer the admin could give makes the result correct.
+ */
+export function drawnCell(
+  cells: MeshCell[],
+  rect: { x: number; y: number; w: number; h: number },
+  snap = SNAP_FRACTION,
+): MeshCell {
+  const snapTo = (at: number, edges: number[]) => {
+    let best = at
+    let nearest = snap
+    for (const edge of edges) {
+      const gap = Math.abs(edge - at)
+      if (gap < nearest) {
+        nearest = gap
+        best = edge
+      }
+    }
+    return best
+  }
+  const verticals = cells.flatMap((c) => [c.x, c.x + c.w])
+  const horizontals = cells.flatMap((c) => [c.y, c.y + c.h])
+  const x0 = snapTo(rect.x, verticals)
+  const x1 = snapTo(rect.x + rect.w, verticals)
+  const y0 = snapTo(rect.y, horizontals)
+  const y1 = snapTo(rect.y + rect.h, horizontals)
+  const box = { x: x0, y: y0, w: x1 - x0, h: y1 - y0 }
+
+  if (box.w < MIN_DRAWN_SIDE || box.h < MIN_DRAWN_SIDE) {
+    throw new Error('drawn cell is too small')
+  }
+  const over = cells.reduce((sum, cell) => {
+    const w = Math.min(box.x + box.w, cell.x + cell.w) - Math.max(box.x, cell.x)
+    const h = Math.min(box.y + box.h, cell.y + cell.h) - Math.max(box.y, cell.y)
+    return sum + (w > 0 && h > 0 ? w * h : 0)
+  }, 0)
+  // Any overlap at all. A tolerance was tried and removed as unreachable: an
+  // edge near a neighbour snaps onto its exact value and meets it at zero width,
+  // and an edge with no neighbour near it has nothing to overlap.
+  if (over > 0) {
+    throw new Error('drawn cell overlaps cells that are already there')
+  }
+
+  // X, so a hand-drawn bay can never take a grid bay's R1C1 -- and codes ARE the
+  // identity here: zone membership and recorded progress are matched on them.
+  const taken = cells
+    .map((c) => /^X(\d+)$/.exec(c.code))
+    .filter((m): m is RegExpExecArray => m !== null)
+    .map((m) => Number(m[1]))
+  return { ...box, code: `X${(taken.length > 0 ? Math.max(...taken) : 0) + 1}`, areaM2: 0 }
+}

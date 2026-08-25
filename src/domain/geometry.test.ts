@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   AREA_DIVERGENCE_THRESHOLD,
+  drawnCell,
   areaDivergence,
   CELL_RESHAPE_THRESHOLD,
   cellReshaped,
@@ -305,5 +306,65 @@ describe('prorateCellAreas', () => {
   it('returns zero areas when the cells have no pixel area at all', () => {
     const out = prorateCellAreas(1000, [mesh('A', 0, 0)])
     expect(out[0].areaM2).toBe(0)
+  })
+})
+
+describe('drawnCell', () => {
+  /** Two bays side by side with a gap between them, as a detected deck leaves one. */
+  const NEIGHBOURS: MeshCell[] = [
+    { code: 'R1C1', x: 0.1, y: 0.1, w: 0.2, h: 0.2, areaM2: 100 },
+    { code: 'R1C2', x: 0.5, y: 0.1, w: 0.2, h: 0.2, areaM2: 100 },
+  ]
+
+  it('snaps a rough drag onto the edges of the bays around it', () => {
+    // The admin drags by hand on a tablet, over a drawing scaled to fit. Landing
+    // within a pixel of a beam is not something to ask of them, and a bay that
+    // misses its neighbour by a hair leaves a sliver of deck belonging to
+    // nobody -- or overlaps it and has that ground counted twice.
+    const drawn = drawnCell(NEIGHBOURS, { x: 0.305, y: 0.104, w: 0.19, h: 0.198 })
+
+    expect(drawn.x).toBeCloseTo(0.3, 9)
+    expect(drawn.y).toBeCloseTo(0.1, 9)
+    expect(drawn.x + drawn.w).toBeCloseTo(0.5, 9)
+    expect(drawn.y + drawn.h).toBeCloseTo(0.3, 9)
+  })
+
+  it('leaves an edge alone when there is nothing near it to snap to', () => {
+    // A bay hanging off the deck has one edge on open paper. Snapping it to the
+    // nearest thing regardless of distance would drag it back onto the deck.
+    const drawn = drawnCell(NEIGHBOURS, { x: 0.7, y: 0.1, w: 0.15, h: 0.2 })
+
+    expect(drawn.x).toBeCloseTo(0.7, 9)
+    expect(drawn.x + drawn.w).toBeCloseTo(0.85, 9)
+  })
+
+  it('numbers hand-drawn bays apart from the grid, so no code is claimed twice', () => {
+    // Codes ARE the identity: zone membership and recorded progress are matched
+    // on them. A hand-drawn bay that took R1C2 would silently inherit whatever
+    // that bay had been ticked to.
+    const first = drawnCell(NEIGHBOURS, { x: 0.3, y: 0.1, w: 0.2, h: 0.2 })
+    expect(first.code).toBe('X1')
+
+    const second = drawnCell([...NEIGHBOURS, first], { x: 0.1, y: 0.5, w: 0.2, h: 0.2 })
+    expect(second.code).toBe('X2')
+  })
+
+  it('refuses a bay drawn over one that is already there', () => {
+    // Two bays over the same ground are two the GS can tick and two the report
+    // counts. The deck would read over 100% complete with paint left to do.
+    expect(() => drawnCell(NEIGHBOURS, { x: 0.15, y: 0.15, w: 0.2, h: 0.2 }))
+      .toThrow(/overlaps/)
+  })
+
+  it('refuses a drag too small to have been meant', () => {
+    // A tap that moved a few pixels is a tap, not a bay.
+    expect(() => drawnCell(NEIGHBOURS, { x: 0.4, y: 0.4, w: 0.002, h: 0.2 }))
+      .toThrow(/too small/)
+  })
+
+  it('allows a bay that only meets its neighbour along an edge', () => {
+    // Bays tile: they share their boundary exactly. An overlap test that counted
+    // a shared edge would refuse every bay drawn where one belongs.
+    expect(() => drawnCell(NEIGHBOURS, { x: 0.3, y: 0.1, w: 0.2, h: 0.2 })).not.toThrow()
   })
 })

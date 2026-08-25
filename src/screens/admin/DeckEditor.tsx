@@ -4,7 +4,7 @@ import {
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   AREA_DIVERGENCE_THRESHOLD, areaDivergence, cellReshaped,
-  divergesBeyondThreshold, hasUndeclaredArea, mergeCells, prorateCellAreas,
+  divergesBeyondThreshold, drawnCell, hasUndeclaredArea, mergeCells, prorateCellAreas,
 } from '../../domain/geometry'
 import { nameBays, type BayOptions } from '../../domain/bayDetect'
 import type { MeshCell, Stage } from '../../domain/types'
@@ -123,6 +123,22 @@ function saveErrorInVietnamese(message: string): string {
   return message
 }
 
+/**
+ * Refusals from `drawnCell`, in the admin's language. Same rule as
+ * mergeErrorInVietnamese: the domain throws in English and stays that way, and
+ * both of these are things an admin hits by drawing, not infrastructure
+ * failures, so neither may reach them raw.
+ */
+function drawErrorInVietnamese(message: string): string {
+  if (message.includes('too small')) {
+    return 'Ô vừa vẽ quá nhỏ. Kéo một khung lớn hơn.'
+  }
+  if (message.includes('overlaps')) {
+    return 'Chỗ đó đã có ô rồi. Chỉ vẽ được vào chỗ còn trống.'
+  }
+  return message
+}
+
 export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => void }) {
   const [stages, setStages] = useState<Stage[]>([])
   const [cells, setCells] = useState<MeshCell[]>([])
@@ -202,6 +218,15 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
   const [crop, setCrop] = useState<{ x: number; y: number; w: number; h: number } | null>(null)
   /** Whether the canvas is waiting for the crop drag right now. */
   const [cropping, setCropping] = useState(false)
+  /**
+   * Whether a drag on the drawing adds a bay.
+   *
+   * Exclusive with `cropping`: both are one drag on the same pixels, and
+   * leaving the other listening would make which one fires depend on nothing
+   * the admin can see. Not persisted and not a property of the deck -- it is a
+   * mode, like crop mode, and it ends when the admin turns it off.
+   */
+  const [drawingCell, setDrawingCell] = useState(false)
 
   const load = useCallback(async () => {
     try {
@@ -254,6 +279,24 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
   }, [cells, cellStages, stages])
 
 
+
+  /**
+   * Adds the bay the admin drew, and re-shares the deck's area across the new
+   * set.
+   *
+   * Re-prorating is not optional: every area here is a share of the deck total,
+   * so a bay added without re-sharing leaves the cells summing to more than the
+   * deck is, and every percentage the project reports reads low.
+   */
+  const onCellDraw = (rect: { x: number; y: number; w: number; h: number }) => {
+    try {
+      const next = [...cells, drawnCell(cells, rect)]
+      setCells(prorateCellAreas(totalArea, next))
+      setError(null)
+    } catch (e) {
+      fail(drawErrorInVietnamese((e as Error).message))
+    }
+  }
 
   /**
    * Reads the bays out of the drawing inside `region` and makes them the deck's
@@ -632,8 +675,19 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
             </>
           ) : (
             <>
-              <Button loading={detecting} disabled={!imageUrl} onClick={() => setCropping(true)}>
+              <Button
+                loading={detecting}
+                disabled={!imageUrl || drawingCell}
+                onClick={() => setCropping(true)}
+              >
                 {crop ? 'Chọn lại vùng sàn' : 'Chọn vùng sàn để dò ô'}
+              </Button>
+              <Button
+                danger={drawingCell}
+                disabled={!imageUrl}
+                onClick={() => setDrawingCell((on) => !on)}
+              >
+                {drawingCell ? 'Tắt vẽ ô' : 'Vẽ thêm ô'}
               </Button>
             </>
           )}
@@ -656,8 +710,10 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
           </Space>
           <Typography.Text>{`${cells.length} ô`}</Typography.Text>
         </Space>
-        <Typography.Text type={cropping ? 'warning' : 'secondary'}>
-          {cropping
+        <Typography.Text type={cropping || drawingCell ? 'warning' : 'secondary'}>
+          {drawingCell
+            ? 'Kéo một khung vào chỗ còn thiếu ô. Cạnh nào gần ô có sẵn sẽ tự dính vào cạnh ô đó. Không vẽ đè lên ô đã có.'
+            : cropping
             ? 'Kéo một khung bao quanh sàn. Không cần chính xác — thừa ra ngoài mép sàn một chút là được — nhưng đừng trùm cả tờ giấy, vì khung tên và hàng kích thước lọt vào sẽ làm hỏng kết quả. Kéo lại bao nhiêu lần cũng được; xong thì bấm “Dò ô trong khung”.'
             : 'Dò ô sẽ thay toàn bộ ô đang có. Kéo thanh “Nối khe hở dầm” lên nếu vài ô bị dính vào nhau, hạ xuống nếu một ô bị chia vụn.'}
         </Typography.Text>
@@ -705,6 +761,7 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
           // Only while waiting for the drag: passing it always would leave the
           // canvas permanently unable to drag a guide or select a cell.
           onCropDraw={cropping ? onCropDraw : undefined}
+          onCellDraw={drawingCell ? onCellDraw : undefined}
           onCellClick={(code, additive) =>
             setSelected((prev) =>
               additive

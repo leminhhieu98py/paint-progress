@@ -43,6 +43,13 @@ const SELECTION_STROKE = '#eb2f96'
 const CROP_STROKE = '#08979c'
 
 /**
+ * The shortest side a drawn bay's drag may describe, as a fraction of the
+ * drawing. Well under a bay, so the floor only ever rejects a click or a
+ * twitch; whether the result is a usable bay is `drawnCell`'s to say.
+ */
+const MIN_DRAWN_FRACTION = 0.004
+
+/**
  * Width used until the container has been measured.
  *
  * The stage used to be a hard 900 px, which overflowed a 636 px container in the
@@ -66,6 +73,7 @@ export function DrawingCanvas({
   cropRect,
   onCellClick,
   onCropDraw,
+  onCellDraw,
 }: {
   imageUrl: string
   imageW: number
@@ -105,6 +113,13 @@ export function DrawingCanvas({
    * instead of drawing the region.
    */
   onCropDraw?: (rect: { x: number; y: number; w: number; h: number }) => void
+  /**
+   * Present = draw-a-bay mode: the same drag, reported as one bay rather than
+   * as the region to detect in. Mutually exclusive with `onCropDraw` -- the
+   * screen above offers one mode or the other, never both -- and it uses a much
+   * smaller floor, because a bay is a fraction of the size of a deck.
+   */
+  onCellDraw?: (rect: { x: number; y: number; w: number; h: number }) => void
 }) {
   const [image] = useImage(imageUrl)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -138,7 +153,9 @@ export function DrawingCanvas({
     return () => observer.disconnect()
   }, [])
 
-  const cropping = Boolean(onCropDraw)
+  const drawingCell = Boolean(onCellDraw)
+  // One gesture, two meanings: both modes take the drawing out of selection.
+  const cropping = Boolean(onCropDraw) || drawingCell
   const width = measuredWidth > 0 ? measuredWidth : FALLBACK_STAGE_WIDTH
   const scale = width / imageW
   const height = imageH * scale
@@ -192,12 +209,19 @@ export function DrawingCanvas({
           // A misfire (a click, or a drag too small to be a deck) reports
           // nothing rather than committing a region that would make every
           // fraction pass -- see cropFromDrag.
-          const rect = cropFromDrag(drag.from, point, width, height)
-          if (rect) onCropDraw?.(rect)
+          const rect = cropFromDrag(
+            drag.from, point, width, height,
+            drawingCell ? MIN_DRAWN_FRACTION : undefined,
+          )
+          if (!rect) return
+          if (drawingCell) onCellDraw?.(rect)
+          else onCropDraw?.(rect)
         },
       }
     : {}
-  const cropBand = cropDrag ? cropFromDrag(cropDrag.from, cropDrag.to, width, height) : null
+  const cropBand = cropDrag
+    ? cropFromDrag(cropDrag.from, cropDrag.to, width, height, drawingCell ? MIN_DRAWN_FRACTION : undefined)
+    : null
 
   return (
     <div ref={containerRef} style={{ width: '100%', position: 'relative' }}>

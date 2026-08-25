@@ -45,13 +45,14 @@ vi.mock('../../lib/projectsApi', () => ({
 // survivor's identity can be got wrong.
 vi.mock('../../canvas/DrawingCanvas', () => ({
   DrawingCanvas: ({
-    cells, onCellClick, cellColors, cropRect, onCropDraw,
+    cells, onCellClick, cellColors, cropRect, onCropDraw, onCellDraw,
   }: {
     cells: { code: string; x: number; w: number }[]
     onCellClick?: (code: string, additive: boolean) => void
     cellColors?: Record<string, string>
     cropRect?: { x: number; y: number; w: number; h: number } | null
     onCropDraw?: (rect: { x: number; y: number; w: number; h: number }) => void
+    onCellDraw?: (rect: { x: number; y: number; w: number; h: number }) => void
   }) => (
     <div data-testid="canvas">
       {/*
@@ -62,6 +63,14 @@ vi.mock('../../canvas/DrawingCanvas', () => ({
       */}
       {onCropDraw && (
         <button onClick={() => onCropDraw({ x: 0.1, y: 0.1, w: 0.4, h: 0.5 })}>kéo khung sàn</button>
+      )}
+      {/* Whether the canvas was put in draw-a-bay mode is observable only as
+          these two, for the same reason the crop buttons exist. */}
+      {onCellDraw && (
+        <button onClick={() => onCellDraw({ x: 0.6, y: 0.6, w: 0.2, h: 0.2 })}>vẽ ô vào chỗ trống</button>
+      )}
+      {onCellDraw && (
+        <button onClick={() => onCellDraw({ x: 0.05, y: 0.05, w: 0.2, h: 0.2 })}>vẽ ô đè lên ô cũ</button>
       )}
       {/* A second, different drag: re-cropping has to replace the box, not add to it. */}
       {onCropDraw && (
@@ -1166,4 +1175,74 @@ describe('mergeErrorInVietnamese', () => {
     expect(screen.queryByText(/Failed to fetch/)).toBeNull()
   })
 
+
+  describe('drawing a bay by hand', () => {
+    const ONE_CELL = [
+      { id: 'c1', code: 'R1C1', x: 0, y: 0, w: 0.5, h: 0.5, areaM2: 100, stageId: null },
+    ]
+
+    it('adds the bay the admin drew, under a code the grid cannot claim', async () => {
+      // Detection leaves gaps no rule reaches -- a corner the drawing never
+      // closed, a strip the beam grid has no line for. This is the way out of
+      // them, and the alternative is re-detecting the whole deck and curating it
+      // again. The code is X1, not R1C2: codes are the identity that zone
+      // membership and recorded progress are matched on.
+      listCells.mockResolvedValue(ONE_CELL)
+      renderInApp(deck)
+      await screen.findByTestId('canvas')
+
+      await userEvent.click(screen.getByRole('button', { name: 'Vẽ thêm ô' }))
+      await userEvent.click(screen.getByRole('button', { name: 'vẽ ô vào chỗ trống' }))
+
+      expect(await screen.findByTestId('canvas')).toHaveTextContent('R1C1,X1')
+      expect(screen.getByText('2 ô')).toBeInTheDocument()
+    })
+
+    it('re-prorates every area, so the deck still sums to its declared total', async () => {
+      // Areas are shares of the deck total. A bay added without re-sharing them
+      // leaves the deck summing to more than it is, and every percentage on the
+      // project reads low.
+      listCells.mockResolvedValue(ONE_CELL)
+      renderInApp({ ...deck, totalAreaM2: 400 })
+      await screen.findByTestId('canvas')
+
+      await userEvent.click(screen.getByRole('button', { name: 'Vẽ thêm ô' }))
+      await userEvent.click(screen.getByRole('button', { name: 'vẽ ô vào chỗ trống' }))
+
+      // 0.25 of the drawing against 0.04: 400 m² split 344.83 / 55.17.
+      await waitFor(() => expect(screen.getByText('400,00')).toBeInTheDocument())
+    })
+
+    it('refuses a bay drawn on top of one that is already there', async () => {
+      // Two bays over the same ground are two the GS can tick and two the report
+      // counts, and the deck reads over 100% with paint left to do.
+      listCells.mockResolvedValue(ONE_CELL)
+      renderInApp(deck)
+      await screen.findByTestId('canvas')
+
+      await userEvent.click(screen.getByRole('button', { name: 'Vẽ thêm ô' }))
+      await userEvent.click(screen.getByRole('button', { name: 'vẽ ô đè lên ô cũ' }))
+
+      await waitFor(() => expect(toastText()).toContain('đã có ô'))
+      expect(screen.getByTestId('canvas')).toHaveTextContent('R1C1')
+      expect(screen.getByText('1 ô')).toBeInTheDocument()
+    })
+
+    it('cannot be drawing bays and choosing the deck region at once', async () => {
+      // Both are one drag on the same pixels. Leaving the other listening would
+      // make which one fires depend on nothing the admin can see.
+      listCells.mockResolvedValue(ONE_CELL)
+      renderInApp(deck)
+      await screen.findByTestId('canvas')
+
+      await userEvent.click(screen.getByRole('button', { name: 'Vẽ thêm ô' }))
+      expect(screen.queryByRole('button', { name: 'kéo khung sàn' })).not.toBeInTheDocument()
+      // And the way into the other mode is shut while this one is on, so the
+      // admin cannot arm both and then wonder which their drag went to.
+      expect(screen.getByRole('button', { name: /vùng sàn để dò ô/ })).toBeDisabled()
+
+      await userEvent.click(screen.getByRole('button', { name: 'Tắt vẽ ô' }))
+      expect(screen.queryByRole('button', { name: 'vẽ ô vào chỗ trống' })).not.toBeInTheDocument()
+    })
+  })
 })
