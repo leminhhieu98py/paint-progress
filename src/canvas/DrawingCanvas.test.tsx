@@ -234,13 +234,9 @@ describe('DrawingCanvas', () => {
   })
 
   it.each([
-    ['metaKey', { metaKey: true }, true],
-    ['ctrlKey', { ctrlKey: true }, true],
-    // Shift belongs to the rubber band now. A Shift-click that also added would
-    // make a band started on top of a bay take that bay twice -- once by the
-    // band, once by the click that began it -- which cancels it back out.
-    ['shiftKey', { shiftKey: true }, false],
-  ] as const)('reports additive=%s for %s', (_name, modifier, additive) => {
+    ['metaKey', { metaKey: true }],
+    ['ctrlKey', { ctrlKey: true }],
+  ] as const)('reports additive=true when %s is held', (_name, modifier) => {
     const onCellClick = vi.fn()
     render(
       <DrawingCanvas
@@ -249,7 +245,23 @@ describe('DrawingCanvas', () => {
       />,
     )
     fireEvent.click(screen.getByTestId('rect:cell-R1C2'), modifier)
-    expect(onCellClick).toHaveBeenCalledWith('R1C2', additive)
+    expect(onCellClick).toHaveBeenCalledWith('R1C2', true)
+  })
+
+  it('lets a Shift-click alone: it is the tail of a band, not a selection', () => {
+    // The browser fires a click after every drag, and Konva hands it to the
+    // shape under the pointer. A Shift-band that ended over a bay was being
+    // overwritten by that bay -- the band selected a block and the click
+    // collapsed it to one, which read as "Shift-drag does not work".
+    const onCellClick = vi.fn()
+    render(
+      <DrawingCanvas
+        imageUrl="u" imageW={2000} imageH={1600} cells={cells}
+        selectedCodes={[]} onCellClick={onCellClick}
+      />,
+    )
+    fireEvent.click(screen.getByTestId('rect:cell-R1C2'), { shiftKey: true })
+    expect(onCellClick).not.toHaveBeenCalled()
   })
 
   it('scales normalized coordinates to the rendered width', () => {
@@ -670,6 +682,39 @@ describe('DrawingCanvas', () => {
       fireEvent.mouseUp(stage, { clientX: 450, clientY: 432 })
       expect(onSelectDraw).toHaveBeenCalledTimes(1)
       expect(onCropDraw).not.toHaveBeenCalled()
+    })
+
+    it('swallows the click a finished band leaves behind, even without Shift', () => {
+      // The modifier can be let go before the mouse is, and then the trailing
+      // click carries none -- so the Shift guard alone would miss it. Measured
+      // on the real app, one drag is: mousedown, mousemove x3, mouseup, click.
+      const onCellClick = vi.fn()
+      const onSelectDraw = vi.fn()
+      render(
+        <DrawingCanvas {...cropProps} onCellClick={onCellClick} onSelectDraw={onSelectDraw} />,
+      )
+      const stage = screen.getByTestId('stage:drawing')
+      fireEvent.mouseDown(stage, { clientX: 90, clientY: 72, shiftKey: true })
+      fireEvent.mouseUp(stage, { clientX: 450, clientY: 432 })
+      expect(onSelectDraw).toHaveBeenCalledTimes(1)
+
+      fireEvent.click(screen.getByTestId('rect:cell-R1C1'))
+      expect(onCellClick).not.toHaveBeenCalled()
+    })
+
+    it('says which gesture the drawing is waiting for with the pointer', () => {
+      // The modes look alike: the same drawing, the same drag. The pointer is
+      // the only thing on screen that says which one a drag is about to be.
+      const plain = render(<DrawingCanvas {...cropProps} />)
+      expect((plain.container.firstChild as HTMLElement).style.cursor).toBe('')
+      plain.unmount()
+
+      const cropping = render(<DrawingCanvas {...cropProps} onCropDraw={vi.fn()} />)
+      expect((cropping.container.firstChild as HTMLElement).style.cursor).toBe('crosshair')
+      cropping.unmount()
+
+      const drawing = render(<DrawingCanvas {...cropProps} onCellDraw={vi.fn()} />)
+      expect((drawing.container.firstChild as HTMLElement).style.cursor).toBe('copy')
     })
 
     it('draws no crop region when there is none', () => {

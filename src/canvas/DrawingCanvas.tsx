@@ -149,6 +149,16 @@ export function DrawingCanvas({
   const cropDragRef = useRef<{ from: Konva.Vector2d; to: Konva.Vector2d } | null>(null)
   /** Which of the three gestures the live drag is, fixed at its mousedown. */
   const gestureRef = useRef<'crop' | 'cell' | 'select' | null>(null)
+  /**
+   * Set for as long as the click that follows a finished drag takes to arrive.
+   *
+   * The browser fires `click` after every `mouseup`, and Konva hands it to the
+   * shape under the pointer. Without this, a Shift-band that ended over a bay
+   * was immediately overwritten by that bay being clicked -- the band selected
+   * a block and the trailing click collapsed it to one. Measured on the real
+   * app: mousedown, mousemove x3, mouseup, click.
+   */
+  const swallowClickRef = useRef(false)
   const [cropDrag, setCropDrag] = useState<
     { from: Konva.Vector2d; to: Konva.Vector2d; kind: 'crop' | 'cell' | 'select' } | null
   >(null)
@@ -241,6 +251,10 @@ export function DrawingCanvas({
             kind === 'crop' ? undefined : MIN_DRAWN_FRACTION,
           )
           if (!rect) return
+          // Before the callback, so a re-render triggered by it cannot land
+          // between the flag and the click it is there to swallow.
+          swallowClickRef.current = true
+          setTimeout(() => { swallowClickRef.current = false }, 0)
           if (kind === 'select') onSelectDraw?.(rect)
           else if (kind === 'cell') onCellDraw?.(rect)
           else if (kind === 'crop') onCropDraw?.(rect)
@@ -255,7 +269,17 @@ export function DrawingCanvas({
     : null
 
   return (
-    <div ref={containerRef} style={{ width: '100%', position: 'relative' }}>
+    <div
+      ref={containerRef}
+      style={{
+        width: '100%',
+        position: 'relative',
+        // The pointer says which gesture the drawing is waiting for. Crop and
+        // band both sweep a rectangle; drawing a bay adds one, which is what
+        // the OS's own "copy" pointer means everywhere else.
+        cursor: drawingCell ? 'copy' : onCropDraw ? 'crosshair' : undefined,
+      }}
+    >
       {panZoom && (
         <Space size={4} style={{ position: 'absolute', top: 8, right: 8, zIndex: 1 }}>
           <Button size="large" onClick={() => applyZoom(zoom + ZOOM_STEP)}>
@@ -303,9 +327,13 @@ export function DrawingCanvas({
               stroke="rgba(255, 0, 0, 0.6)"
               strokeWidth={1}
               onClick={(e: Konva.KonvaEventObject<MouseEvent>) => {
-                if (cropping) return
-                // Shift is the rubber band's modifier now; Ctrl/Cmd is the one
-                // that adds a bay to a selection one at a time.
+                if (cropping || swallowClickRef.current) return
+                // Shift belongs to the band, so a click carrying it is the tail
+                // of one, not a selection. Two guards rather than one: the flag
+                // catches a band whose Shift was let go before the mouse, and
+                // this catches a Shift-click the flag never saw.
+                if (e.evt.shiftKey) return
+                // Ctrl/Cmd is what adds a bay to a selection one at a time.
                 onCellClick?.(cell.code, e.evt.metaKey || e.evt.ctrlKey)
               }}
               onTap={() => {

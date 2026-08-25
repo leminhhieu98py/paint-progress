@@ -659,15 +659,30 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
   useEffect(() => {
     if (!shortcuts) return
     const onKey = (e: KeyboardEvent) => {
-      // A field with the keyboard keeps it. Cmd+A in the deck-area field means
-      // "select this number", and the number is the denominator of every
-      // percentage the project reports.
+      const mod = e.metaKey || e.ctrlKey
+      const key = e.key.toLowerCase()
+
+      // Save is this screen's wherever the keyboard is. The admin had the
+      // deck-area field focused -- the one field on this screen -- and the
+      // browser's own save dialog opened over the deck, because the field guard
+      // below was handing Cmd+S back. Nobody editing a deck wants the HTML of
+      // it saved.
+      if (mod && key === 's') {
+        // Hands the keys back first: the save opens a dialog on the paths that
+        // need confirming, and the dialog's own keyboard is not this screen's.
+        setShortcuts(false)
+        void reviewEdit('mesh', cells)
+        e.preventDefault()
+        return
+      }
+
+      // Everything else yields to a field that has the keyboard: Cmd+A in the
+      // deck-area box means "select this number", and that number is the
+      // denominator of every percentage the project reports.
       const target = e.target as HTMLElement | null
       if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
         return
       }
-      const mod = e.metaKey || e.ctrlKey
-      const key = e.key.toLowerCase()
       if (key === 'escape') {
         setSelected([])
       } else if (mod && key === 'a') {
@@ -675,11 +690,11 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
       } else if (mod && key === 'z') {
         if (e.shiftKey) redo()
         else undo()
-      } else if (mod && key === 's') {
-        // Hands the keys back first: the save opens a dialog on the paths that
-        // need confirming, and the dialog's own keyboard is not this screen's.
-        setShortcuts(false)
-        void reviewEdit('mesh', cells)
+      } else if (!mod && key === 'i') {
+        // The mode the admin spends longest in, and the one they leave and
+        // come back to most: draw a missing bay, look, draw another.
+        setDrawingCell((on) => !on)
+        setCropping(false)
       } else if (key === 'delete' || key === 'backspace') {
         deleteSelected()
       } else {
@@ -855,6 +870,7 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
             { key: 'click', label: 'Ctrl/Cmd + bấm ô', children: 'Chọn thêm từng ô' },
             { key: 'band', label: 'Shift + kéo chuột', children: 'Quét chọn cả mảng ô' },
             { key: 'all', label: 'Ctrl/Cmd + A', children: 'Chọn tất cả' },
+            { key: 'draw', label: 'I', children: 'Bật/tắt vẽ thêm ô (con trỏ đổi thành dấu +)' },
             { key: 'del', label: 'Delete / Backspace', children: 'Xoá ô đang chọn (chưa lưu)' },
             { key: 'undo', label: 'Ctrl/Cmd + Z', children: 'Hoàn tác' },
             { key: 'redo', label: 'Ctrl/Cmd + Shift + Z', children: 'Làm lại' },

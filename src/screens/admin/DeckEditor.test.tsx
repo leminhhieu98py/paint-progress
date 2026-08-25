@@ -1276,6 +1276,7 @@ describe('mergeErrorInVietnamese', () => {
       expect(screen.getByText('Ctrl/Cmd + Shift + Z')).toBeInTheDocument()
       expect(screen.getByText('Ctrl/Cmd + S')).toBeInTheDocument()
       expect(screen.getByText('Delete / Backspace')).toBeInTheDocument()
+      expect(screen.getByText('I')).toBeInTheDocument()
     })
 
     it('takes no keys until the admin turns them on', async () => {
@@ -1386,6 +1387,38 @@ describe('mergeErrorInVietnamese', () => {
 
       await waitFor(() => expect(syncCells).toHaveBeenCalledTimes(1))
       expect(await screen.findByRole('button', { name: 'Bật phím tắt' })).toBeInTheDocument()
+    })
+
+    it('turns drawing bays on and off with I', async () => {
+      listCells.mockResolvedValue(FOUR_CELLS)
+      renderInApp(deck)
+      await arm()
+
+      press('i')
+      expect(await screen.findByRole('button', { name: 'Tắt vẽ ô' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'vẽ ô vào chỗ trống' })).toBeInTheDocument()
+
+      press('i')
+      expect(await screen.findByRole('button', { name: 'Vẽ thêm ô' })).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'vẽ ô vào chỗ trống' })).not.toBeInTheDocument()
+    })
+
+    it('saves on Ctrl/Cmd + S even when a field has the keyboard', async () => {
+      // Reported: the browser's own save dialog opened over the deck. The field
+      // guard was handing Cmd+S back to the browser whenever the admin had last
+      // touched the deck-area box -- which is most of the time, since that is
+      // the field on this screen. Cmd+S is this screen's everywhere: nobody
+      // editing a deck wants to save the HTML of it.
+      listCells.mockResolvedValue(FOUR_CELLS)
+      syncCells.mockResolvedValue(undefined)
+      renderInApp(deck)
+      await arm()
+      const area = screen.getByRole('spinbutton')
+      area.focus()
+
+      expect(fireEvent.keyDown(area, { key: 's', metaKey: true })).toBe(false)
+
+      await waitFor(() => expect(syncCells).toHaveBeenCalledTimes(1))
     })
 
     it('keeps its hands off the keyboard while a field has it', async () => {
