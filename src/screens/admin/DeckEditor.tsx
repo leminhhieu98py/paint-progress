@@ -1,10 +1,10 @@
 import {
   Alert, App, Button, Descriptions, InputNumber, Modal, Slider, Space, Typography,
 } from 'antd'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   AREA_DIVERGENCE_THRESHOLD, areaDivergence, cellReshaped,
-  divergesBeyondThreshold, drawnCell, hasUndeclaredArea, mergeCells, prorateCellAreas,
+  cellsInBox, divergesBeyondThreshold, drawnCell, hasUndeclaredArea, mergeCells, prorateCellAreas,
 } from '../../domain/geometry'
 import { nameBays, type BayOptions } from '../../domain/bayDetect'
 import type { MeshCell, Stage } from '../../domain/types'
@@ -227,6 +227,29 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
    * mode, like crop mode, and it ends when the admin turns it off.
    */
   const [drawingCell, setDrawingCell] = useState(false)
+  /**
+   * Whether the window's keys belong to this screen.
+   *
+   * Off until asked for, and that is not politeness. The editor shares its
+   * window with the deck-area field -- where Cmd+A means "select this number",
+   * the denominator of every percentage the project reports -- and with the
+   * browser's own Cmd+S. A screen that took those from the moment it opened
+   * would be taking them from an admin who never asked.
+   */
+  const [shortcuts, setShortcuts] = useState(false)
+  /**
+   * Cell sets this screen has moved away from, and moved back from.
+   *
+   * Refs, not state: nothing renders from them, and the key handler has to read
+   * the newest values rather than whichever ones its closure captured.
+   *
+   * Local edits only. A successful save empties both -- see `apply`. Undoing
+   * past a write would offer to restore a cell set the database no longer
+   * holds, and the admin would have no way to tell that is what they were
+   * looking at.
+   */
+  const past = useRef<MeshCell[][]>([])
+  const future = useRef<MeshCell[][]>([])
 
   const load = useCallback(async () => {
     try {
@@ -281,6 +304,53 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
 
 
   /**
+   * Replaces the cell set and remembers what it replaced, so the edit can be
+   * taken back. Every local edit goes through here; the ones that come back
+   * from the server do not.
+   */
+  const commitCells = (next: MeshCell[]) => {
+    past.current = [...past.current, cells]
+    future.current = []
+    setCells(next)
+  }
+
+  const undo = () => {
+    const previous = past.current.at(-1)
+    if (!previous) return
+    past.current = past.current.slice(0, -1)
+    future.current = [cells, ...future.current]
+    setCells(previous)
+    // The selection named bays that may not exist in the set being restored.
+    setSelected([])
+  }
+
+  const redo = () => {
+    const next = future.current[0]
+    if (!next) return
+    future.current = future.current.slice(1)
+    past.current = [...past.current, cells]
+    setCells(next)
+    setSelected([])
+  }
+
+  /**
+   * Takes the selected bays off the screen, and re-shares the deck's area over
+   * what is left.
+   *
+   * Local, unlike the button of the same name: the admin curating 180 bays
+   * deletes a dozen and saves once, and a write per keystroke would also put
+   * the zone-and-progress gate in front of them a dozen times. The gate still
+   * runs, at the save -- reviewEdit reads every persisted code the new set no
+   * longer contains, which is exactly what these deletes took away.
+   */
+  const deleteSelected = () => {
+    if (selected.length === 0) return
+    commitCells(prorateCellAreas(totalArea, cells.filter((c) => !selected.includes(c.code))))
+    setSelected([])
+  }
+
+
+  /**
    * Adds the bay the admin drew, and re-shares the deck's area across the new
    * set.
    *
@@ -291,7 +361,7 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
   const onCellDraw = (rect: { x: number; y: number; w: number; h: number }) => {
     try {
       const next = [...cells, drawnCell(cells, rect)]
-      setCells(prorateCellAreas(totalArea, next))
+      commitCells(prorateCellAreas(totalArea, next))
       setError(null)
     } catch (e) {
       fail(drawErrorInVietnamese((e as Error).message))
@@ -326,7 +396,7 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
     try {
       const bays = await detectBaysFromImage(imageUrl, region, options)
       const mesh = nameBays(bays).map(({ code, x, y, w, h }) => ({ code, x, y, w, h, areaM2: 0 }))
-      setCells(prorateCellAreas(totalArea, mesh))
+      commitCells(prorateCellAreas(totalArea, mesh))
       setSelected([])
     } catch {
       // The pixel pass and the browser Image load are the only things that can
@@ -541,6 +611,10 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
       await updateDeckArea(deck.id, totalArea, 'prorated')
       await syncCells(deck.id, next, inheritFrom)
       setCells(next)
+      // The written set is the new floor: see `past` for why undoing past a
+      // write is not offered.
+      past.current = []
+      future.current = []
       setSelected([])
       setPending(null)
       setError(null)
@@ -573,6 +647,51 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
   }
 
 
+
+  /**
+   * The window's keys, while the admin has handed them over.
+   *
+   * Re-bound on every render rather than held in refs: the handler reads the
+   * cell set and the selection, and a listener registered once would act on
+   * whichever ones its closure captured. Binding is cheap; acting on a stale
+   * selection is a wrong delete.
+   */
+  useEffect(() => {
+    if (!shortcuts) return
+    const onKey = (e: KeyboardEvent) => {
+      // A field with the keyboard keeps it. Cmd+A in the deck-area field means
+      // "select this number", and the number is the denominator of every
+      // percentage the project reports.
+      const target = e.target as HTMLElement | null
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
+        return
+      }
+      const mod = e.metaKey || e.ctrlKey
+      const key = e.key.toLowerCase()
+      if (key === 'escape') {
+        setSelected([])
+      } else if (mod && key === 'a') {
+        setSelected(cells.map((c) => c.code))
+      } else if (mod && key === 'z') {
+        if (e.shiftKey) redo()
+        else undo()
+      } else if (mod && key === 's') {
+        // Hands the keys back first: the save opens a dialog on the paths that
+        // need confirming, and the dialog's own keyboard is not this screen's.
+        setShortcuts(false)
+        void reviewEdit('mesh', cells)
+      } else if (key === 'delete' || key === 'backspace') {
+        deleteSelected()
+      } else {
+        return
+      }
+      // Only for the keys actually taken: Cmd+S would open the browser's save
+      // dialog over the deck, and Backspace outside a field is Back.
+      e.preventDefault()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  })
 
   return (
     <Space direction="vertical" style={{ width: '100%' }} size="middle">
@@ -689,6 +808,12 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
               >
                 {drawingCell ? 'Tắt vẽ ô' : 'Vẽ thêm ô'}
               </Button>
+              <Button
+                type={shortcuts ? 'primary' : 'default'}
+                onClick={() => setShortcuts((on) => !on)}
+              >
+                {shortcuts ? 'Tắt phím tắt' : 'Bật phím tắt'}
+              </Button>
             </>
           )}
           <Space direction="vertical" size={0} style={{ width: 260 }}>
@@ -718,6 +843,25 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
             : 'Dò ô sẽ thay toàn bộ ô đang có. Kéo thanh “Nối khe hở dầm” lên nếu vài ô bị dính vào nhau, hạ xuống nếu một ô bị chia vụn.'}
         </Typography.Text>
       </Space>
+
+      {shortcuts && (
+        <Descriptions
+          size="small"
+          column={2}
+          bordered
+          title="Phím tắt"
+          items={[
+            { key: 'esc', label: 'Esc', children: 'Bỏ chọn' },
+            { key: 'click', label: 'Ctrl/Cmd + bấm ô', children: 'Chọn thêm từng ô' },
+            { key: 'band', label: 'Shift + kéo chuột', children: 'Quét chọn cả mảng ô' },
+            { key: 'all', label: 'Ctrl/Cmd + A', children: 'Chọn tất cả' },
+            { key: 'del', label: 'Delete / Backspace', children: 'Xoá ô đang chọn (chưa lưu)' },
+            { key: 'undo', label: 'Ctrl/Cmd + Z', children: 'Hoàn tác' },
+            { key: 'redo', label: 'Ctrl/Cmd + Shift + Z', children: 'Làm lại' },
+            { key: 'save', label: 'Ctrl/Cmd + S', children: 'Tắt phím tắt và lưu' },
+          ]}
+        />
+      )}
 
       <Space wrap>
         <Button onClick={() => setSelected(cells.map((c) => c.code))}>Chọn tất cả</Button>
@@ -762,6 +906,10 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
           // canvas permanently unable to drag a guide or select a cell.
           onCropDraw={cropping ? onCropDraw : undefined}
           onCellDraw={drawingCell ? onCellDraw : undefined}
+          // Shift-drag belongs to the same opt-in as the keys: it is the
+          // mouse half of the same way of working, and an admin who has not
+          // asked for it should not find their drags doing something new.
+          onSelectDraw={shortcuts ? (rect) => setSelected(cellsInBox(cells, rect)) : undefined}
           onCellClick={(code, additive) =>
             setSelected((prev) =>
               additive

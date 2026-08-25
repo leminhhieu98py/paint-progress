@@ -74,6 +74,7 @@ export function DrawingCanvas({
   onCellClick,
   onCropDraw,
   onCellDraw,
+  onSelectDraw,
 }: {
   imageUrl: string
   imageW: number
@@ -120,6 +121,15 @@ export function DrawingCanvas({
    * smaller floor, because a bay is a fraction of the size of a deck.
    */
   onCellDraw?: (rect: { x: number; y: number; w: number; h: number }) => void
+  /**
+   * Present = a drag started with Shift held reports the band it swept, so the
+   * screen above can select what is under it.
+   *
+   * Not a mode, unlike the two above: it is armed by the modifier, gesture by
+   * gesture, so it costs the admin nothing when they are not using it and takes
+   * nothing away from whichever mode they are in.
+   */
+  onSelectDraw?: (rect: { x: number; y: number; w: number; h: number }) => void
 }) {
   const [image] = useImage(imageUrl)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -137,7 +147,11 @@ export function DrawingCanvas({
    * app, where an automated drag lost its crop about half the time.
    */
   const cropDragRef = useRef<{ from: Konva.Vector2d; to: Konva.Vector2d } | null>(null)
-  const [cropDrag, setCropDrag] = useState<{ from: Konva.Vector2d; to: Konva.Vector2d } | null>(null)
+  /** Which of the three gestures the live drag is, fixed at its mousedown. */
+  const gestureRef = useRef<'crop' | 'cell' | 'select' | null>(null)
+  const [cropDrag, setCropDrag] = useState<
+    { from: Konva.Vector2d; to: Konva.Vector2d; kind: 'crop' | 'cell' | 'select' } | null
+  >(null)
 
   useEffect(() => {
     const el = containerRef.current
@@ -154,8 +168,10 @@ export function DrawingCanvas({
   }, [])
 
   const drawingCell = Boolean(onCellDraw)
-  // One gesture, two meanings: both modes take the drawing out of selection.
+  // One gesture, three meanings. The two modes take the drawing out of
+  // selection; a Shift-band does not, because it IS selection.
   const cropping = Boolean(onCropDraw) || drawingCell
+  const banding = cropping || Boolean(onSelectDraw)
   const width = measuredWidth > 0 ? measuredWidth : FALLBACK_STAGE_WIDTH
   const scale = width / imageW
   const height = imageH * scale
@@ -184,13 +200,22 @@ export function DrawingCanvas({
    * `zoom` stays at MIN_ZOOM = 1). A zoomable crop would have to read
    * `getRelativePointerPosition` instead.
    */
-  const cropHandlers = cropping
+  const cropHandlers = banding
     ? {
         onMouseDown: (e: Konva.KonvaEventObject<MouseEvent>) => {
           const point = e.target.getStage()?.getPointerPosition()
           if (!point) return
+          // Which gesture this is, decided once at the start and carried to the
+          // end. Reading the modifier again at mouseup would let a key released
+          // mid-drag change what the drag meant.
+          const kind = e.evt.shiftKey && onSelectDraw ? 'select' : drawingCell ? 'cell' : 'crop'
+          if (kind !== 'select' && !cropping) return
+          gestureRef.current = kind
           cropDragRef.current = { from: point, to: point }
-          setCropDrag(cropDragRef.current)
+          // The kind travels with the state mirror as well as with the ref: the
+          // band renders from state, and a ref read during render is a value
+          // React has no way to re-render for.
+          setCropDrag({ ...cropDragRef.current, kind })
         },
         onMouseMove: (e: Konva.KonvaEventObject<MouseEvent>) => {
           const point = e.target.getStage()?.getPointerPosition()
@@ -198,7 +223,7 @@ export function DrawingCanvas({
           // move over the drawing would re-render the whole stage.
           if (!point || !cropDragRef.current) return
           cropDragRef.current = { ...cropDragRef.current, to: point }
-          setCropDrag(cropDragRef.current)
+          setCropDrag((live) => (live ? { ...live, to: point } : live))
         },
         onMouseUp: (e: Konva.KonvaEventObject<MouseEvent>) => {
           const drag = cropDragRef.current
@@ -209,18 +234,24 @@ export function DrawingCanvas({
           // A misfire (a click, or a drag too small to be a deck) reports
           // nothing rather than committing a region that would make every
           // fraction pass -- see cropFromDrag.
+          const kind = gestureRef.current
+          gestureRef.current = null
           const rect = cropFromDrag(
             drag.from, point, width, height,
-            drawingCell ? MIN_DRAWN_FRACTION : undefined,
+            kind === 'crop' ? undefined : MIN_DRAWN_FRACTION,
           )
           if (!rect) return
-          if (drawingCell) onCellDraw?.(rect)
-          else onCropDraw?.(rect)
+          if (kind === 'select') onSelectDraw?.(rect)
+          else if (kind === 'cell') onCellDraw?.(rect)
+          else if (kind === 'crop') onCropDraw?.(rect)
         },
       }
     : {}
   const cropBand = cropDrag
-    ? cropFromDrag(cropDrag.from, cropDrag.to, width, height, drawingCell ? MIN_DRAWN_FRACTION : undefined)
+    ? cropFromDrag(
+      cropDrag.from, cropDrag.to, width, height,
+      cropDrag.kind === 'crop' ? undefined : MIN_DRAWN_FRACTION,
+    )
     : null
 
   return (
@@ -273,7 +304,9 @@ export function DrawingCanvas({
               strokeWidth={1}
               onClick={(e: Konva.KonvaEventObject<MouseEvent>) => {
                 if (cropping) return
-                onCellClick?.(cell.code, e.evt.shiftKey || e.evt.metaKey || e.evt.ctrlKey)
+                // Shift is the rubber band's modifier now; Ctrl/Cmd is the one
+                // that adds a bay to a selection one at a time.
+                onCellClick?.(cell.code, e.evt.metaKey || e.evt.ctrlKey)
               }}
               onTap={() => {
                 if (cropping) return

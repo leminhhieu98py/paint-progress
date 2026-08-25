@@ -46,6 +46,11 @@ vi.mock('react-konva', () => {
         getPointerPosition: () => ({ x: domEvt.clientX, y: domEvt.clientY }),
       }),
     },
+    // Konva always hands the native event through as `evt`, and the component
+    // reads the modifier keys off it to tell one gesture from another. A
+    // stand-in without it does not just lose the modifiers -- the handler
+    // throws on the first one it reads, and the gesture never starts.
+    evt: domEvt,
   })
   const node = (name: string) => (props: Record<string, unknown>) => (
     <div
@@ -229,10 +234,13 @@ describe('DrawingCanvas', () => {
   })
 
   it.each([
-    ['shiftKey', { shiftKey: true }],
-    ['metaKey', { metaKey: true }],
-    ['ctrlKey', { ctrlKey: true }],
-  ] as const)('reports additive=true when %s is held', (_name, modifier) => {
+    ['metaKey', { metaKey: true }, true],
+    ['ctrlKey', { ctrlKey: true }, true],
+    // Shift belongs to the rubber band now. A Shift-click that also added would
+    // make a band started on top of a bay take that bay twice -- once by the
+    // band, once by the click that began it -- which cancels it back out.
+    ['shiftKey', { shiftKey: true }, false],
+  ] as const)('reports additive=%s for %s', (_name, modifier, additive) => {
     const onCellClick = vi.fn()
     render(
       <DrawingCanvas
@@ -241,7 +249,7 @@ describe('DrawingCanvas', () => {
       />,
     )
     fireEvent.click(screen.getByTestId('rect:cell-R1C2'), modifier)
-    expect(onCellClick).toHaveBeenCalledWith('R1C2', true)
+    expect(onCellClick).toHaveBeenCalledWith('R1C2', additive)
   })
 
   it('scales normalized coordinates to the rendered width', () => {
@@ -633,6 +641,35 @@ describe('DrawingCanvas', () => {
       render(<DrawingCanvas {...cropProps} onCellClick={onCellClick} onCellDraw={vi.fn()} />)
       fireEvent.click(screen.getByTestId('rect:cell-R1C1'))
       expect(onCellClick).not.toHaveBeenCalled()
+    })
+
+    it('reports a Shift-drag as a band to select with', () => {
+      // Armed by the modifier, gesture by gesture, rather than by a mode: it
+      // costs nothing when the admin is not using it and takes nothing away
+      // from whichever mode they are in.
+      const onSelectDraw = vi.fn()
+      const onCropDraw = vi.fn()
+      render(<DrawingCanvas {...cropProps} onCropDraw={onCropDraw} onSelectDraw={onSelectDraw} />)
+      const stage = screen.getByTestId('stage:drawing')
+      fireEvent.mouseDown(stage, { clientX: 90, clientY: 72, shiftKey: true })
+      fireEvent.mouseMove(stage, { clientX: 450, clientY: 432, shiftKey: true })
+      fireEvent.mouseUp(stage, { clientX: 450, clientY: 432, shiftKey: true })
+      expect(onSelectDraw).toHaveBeenCalledWith({ x: 0.1, y: 0.1, w: 0.4, h: 0.5 })
+      expect(onCropDraw).not.toHaveBeenCalled()
+    })
+
+    it('keeps the gesture it started as, even if the key is let go mid-drag', () => {
+      // Reading the modifier again at the end would let a finger lifted early
+      // turn a band into a crop -- replacing the deck's whole cell set with
+      // whatever the band happened to cover.
+      const onSelectDraw = vi.fn()
+      const onCropDraw = vi.fn()
+      render(<DrawingCanvas {...cropProps} onCropDraw={onCropDraw} onSelectDraw={onSelectDraw} />)
+      const stage = screen.getByTestId('stage:drawing')
+      fireEvent.mouseDown(stage, { clientX: 90, clientY: 72, shiftKey: true })
+      fireEvent.mouseUp(stage, { clientX: 450, clientY: 432 })
+      expect(onSelectDraw).toHaveBeenCalledTimes(1)
+      expect(onCropDraw).not.toHaveBeenCalled()
     })
 
     it('draws no crop region when there is none', () => {

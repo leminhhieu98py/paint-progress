@@ -294,3 +294,25 @@ export function drawnCell(
     .map((m) => Number(m[1]))
   return { ...box, code: `X${(taken.length > 0 ? Math.max(...taken) : 0) + 1}`, areaM2: 0 }
 }
+
+/**
+ * The bays a rubber band picked out: every bay whose CENTRE the band covers.
+ *
+ * Centre-inside, not "touches". On a deck that tiles, a band drawn across a row
+ * brushes the bays above and below it for a pixel or two at every step, and
+ * touching would hand back a selection nobody drew -- which the next Delete
+ * would then act on. Covering more than half of a bay is a thing the admin can
+ * see themselves doing.
+ */
+export function cellsInBox(
+  cells: MeshCell[],
+  box: { x: number; y: number; w: number; h: number },
+): string[] {
+  return cells
+    .filter((cell) => {
+      const cx = cell.x + cell.w / 2
+      const cy = cell.y + cell.h / 2
+      return cx >= box.x && cx <= box.x + box.w && cy >= box.y && cy <= box.y + box.h
+    })
+    .map((cell) => cell.code)
+}

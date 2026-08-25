@@ -45,7 +45,7 @@ vi.mock('../../lib/projectsApi', () => ({
 // survivor's identity can be got wrong.
 vi.mock('../../canvas/DrawingCanvas', () => ({
   DrawingCanvas: ({
-    cells, onCellClick, cellColors, cropRect, onCropDraw, onCellDraw,
+    cells, onCellClick, cellColors, cropRect, onCropDraw, onCellDraw, onSelectDraw,
   }: {
     cells: { code: string; x: number; w: number }[]
     onCellClick?: (code: string, additive: boolean) => void
@@ -53,6 +53,7 @@ vi.mock('../../canvas/DrawingCanvas', () => ({
     cropRect?: { x: number; y: number; w: number; h: number } | null
     onCropDraw?: (rect: { x: number; y: number; w: number; h: number }) => void
     onCellDraw?: (rect: { x: number; y: number; w: number; h: number }) => void
+    onSelectDraw?: (rect: { x: number; y: number; w: number; h: number }) => void
   }) => (
     <div data-testid="canvas">
       {/*
@@ -71,6 +72,10 @@ vi.mock('../../canvas/DrawingCanvas', () => ({
       )}
       {onCellDraw && (
         <button onClick={() => onCellDraw({ x: 0.05, y: 0.05, w: 0.2, h: 0.2 })}>vẽ ô đè lên ô cũ</button>
+      )}
+      {/* The Shift-band, which the canvas only offers while the shortcuts are on. */}
+      {onSelectDraw && (
+        <button onClick={() => onSelectDraw({ x: 0, y: 0, w: 0.3, h: 1 })}>quét chọn nửa trái</button>
       )}
       {/* A second, different drag: re-cropping has to replace the box, not add to it. */}
       {onCropDraw && (
@@ -1243,6 +1248,159 @@ describe('mergeErrorInVietnamese', () => {
 
       await userEvent.click(screen.getByRole('button', { name: 'Tắt vẽ ô' }))
       expect(screen.queryByRole('button', { name: 'vẽ ô vào chỗ trống' })).not.toBeInTheDocument()
+    })
+  })
+
+  describe('keyboard shortcuts', () => {
+    const FOUR_CELLS = [
+      { id: 'c1', code: 'R1C1', x: 0, y: 0, w: 0.25, h: 0.5, areaM2: 100, stageId: null },
+      { id: 'c2', code: 'R1C2', x: 0.25, y: 0, w: 0.25, h: 0.5, areaM2: 100, stageId: null },
+      { id: 'c3', code: 'R2C1', x: 0, y: 0.5, w: 0.25, h: 0.5, areaM2: 100, stageId: null },
+      { id: 'c4', code: 'R2C2', x: 0.25, y: 0.5, w: 0.25, h: 0.5, areaM2: 100, stageId: null },
+    ]
+    const arm = async () => {
+      await screen.findByTestId('canvas')
+      await userEvent.click(screen.getByRole('button', { name: 'Bật phím tắt' }))
+    }
+    const press = (key: string, opts: Record<string, boolean> = {}) =>
+      fireEvent.keyDown(window, { key, ...opts })
+
+    it('lists what every key does, so the admin does not have to be told', async () => {
+      listCells.mockResolvedValue(FOUR_CELLS)
+      renderInApp(deck)
+      await arm()
+
+      expect(screen.getByText('Esc')).toBeInTheDocument()
+      expect(screen.getByText('Ctrl/Cmd + A')).toBeInTheDocument()
+      expect(screen.getByText('Ctrl/Cmd + Z')).toBeInTheDocument()
+      expect(screen.getByText('Ctrl/Cmd + Shift + Z')).toBeInTheDocument()
+      expect(screen.getByText('Ctrl/Cmd + S')).toBeInTheDocument()
+      expect(screen.getByText('Delete / Backspace')).toBeInTheDocument()
+    })
+
+    it('takes no keys until the admin turns them on', async () => {
+      // The editor shares its window with a deck-area field and the browser's
+      // own Cmd+S. Listening before being asked would take those over from the
+      // moment the screen opens.
+      listCells.mockResolvedValue(FOUR_CELLS)
+      renderInApp(deck)
+      await screen.findByTestId('canvas')
+
+      await userEvent.click(screen.getByRole('button', { name: 'Chọn tất cả' }))
+      press('Escape')
+
+      expect(screen.getByRole('button', { name: 'Bỏ chọn' })).not.toBeDisabled()
+    })
+
+    it('clears the selection on Esc', async () => {
+      listCells.mockResolvedValue(FOUR_CELLS)
+      renderInApp(deck)
+      await arm()
+      await userEvent.click(screen.getByRole('button', { name: 'Chọn tất cả' }))
+
+      press('Escape')
+
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Bỏ chọn' })).toBeDisabled())
+    })
+
+    it('selects every bay on Ctrl/Cmd + A', async () => {
+      listCells.mockResolvedValue(FOUR_CELLS)
+      renderInApp(deck)
+      await arm()
+
+      press('a', { metaKey: true })
+
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Gộp ô đã chọn' })).not.toBeDisabled())
+    })
+
+    it('takes the bays a Shift-band swept', async () => {
+      listCells.mockResolvedValue(FOUR_CELLS)
+      renderInApp(deck)
+      await arm()
+
+      await userEvent.click(screen.getByRole('button', { name: 'quét chọn nửa trái' }))
+      press('Delete')
+
+      // The band covers the left column only: R1C1 and R2C1 go, the right stays.
+      await waitFor(() => expect(screen.getByTestId('canvas')).toHaveTextContent('R1C2,R2C2'))
+    })
+
+    it('deletes the selection on Delete without writing anything yet', async () => {
+      // Delete is an edit, not a save: the admin curates a deck of 180 bays and
+      // then saves once. Writing on every keystroke would also put the
+      // zone-and-progress gate in front of them 20 times in a row.
+      listCells.mockResolvedValue(FOUR_CELLS)
+      renderInApp(deck)
+      await arm()
+      await userEvent.click(screen.getByRole('button', { name: 'chọn R1C1' }))
+
+      press('Backspace')
+
+      await waitFor(() => expect(screen.getByText('3 ô')).toBeInTheDocument())
+      expect(syncCells).not.toHaveBeenCalled()
+      // The deck total is the truth, so what is left absorbs the area.
+      expect(screen.getByText('5.258,50')).toBeInTheDocument()
+    })
+
+    it('puts back what Ctrl/Cmd + Z undoes, and takes it away again on redo', async () => {
+      listCells.mockResolvedValue(FOUR_CELLS)
+      renderInApp(deck)
+      await arm()
+      await userEvent.click(screen.getByRole('button', { name: 'chọn R1C1' }))
+      press('Delete')
+      await waitFor(() => expect(screen.getByText('3 ô')).toBeInTheDocument())
+
+      press('z', { metaKey: true })
+      await waitFor(() => expect(screen.getByText('4 ô')).toBeInTheDocument())
+
+      press('z', { metaKey: true, shiftKey: true })
+      await waitFor(() => expect(screen.getByText('3 ô')).toBeInTheDocument())
+    })
+
+    it('keeps the browser out of the keys it takes', async () => {
+      // Cmd+S opens the browser's own save dialog over the deck, and Backspace
+      // outside a field is Back -- which leaves the editor entirely, taking
+      // every unsaved edit with it.
+      listCells.mockResolvedValue(FOUR_CELLS)
+      syncCells.mockResolvedValue(undefined)
+      renderInApp(deck)
+      await arm()
+
+      // Cmd+S last: it hands the keys back, so anything after it is not this
+      // screen's to take.
+      const taken = [
+        fireEvent.keyDown(window, { key: 'Backspace' }),
+        fireEvent.keyDown(window, { key: 'q' }),
+        fireEvent.keyDown(window, { key: 's', metaKey: true }),
+      ]
+      expect(taken).toEqual([false, true, false])
+    })
+
+    it('saves and hands the keys back on Ctrl/Cmd + S', async () => {
+      listCells.mockResolvedValue(FOUR_CELLS)
+      syncCells.mockResolvedValue(undefined)
+      renderInApp(deck)
+      await arm()
+
+      press('s', { metaKey: true })
+
+      await waitFor(() => expect(syncCells).toHaveBeenCalledTimes(1))
+      expect(await screen.findByRole('button', { name: 'Bật phím tắt' })).toBeInTheDocument()
+    })
+
+    it('keeps its hands off the keyboard while a field has it', async () => {
+      // Cmd+A in the deck-area field is "select this number", not "select every
+      // bay on the deck", and the number is the denominator of every percentage
+      // the project reports.
+      listCells.mockResolvedValue(FOUR_CELLS)
+      renderInApp(deck)
+      await arm()
+      const area = screen.getByRole('spinbutton')
+      area.focus()
+
+      fireEvent.keyDown(area, { key: 'a', metaKey: true })
+
+      expect(screen.getByRole('button', { name: 'Gộp ô đã chọn' })).toBeDisabled()
     })
   })
 })

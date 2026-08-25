@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   AREA_DIVERGENCE_THRESHOLD,
+  cellsInBox,
   drawnCell,
   areaDivergence,
   CELL_RESHAPE_THRESHOLD,
@@ -411,5 +412,28 @@ describe('drawnCell', () => {
     // Bays tile: they share their boundary exactly. An overlap test that counted
     // a shared edge would refuse every bay drawn where one belongs.
     expect(() => drawnCell(NEIGHBOURS, { x: 0.3, y: 0.1, w: 0.2, h: 0.2 })).not.toThrow()
+  })
+})
+
+describe('cellsInBox', () => {
+  const ROW: MeshCell[] = [
+    { code: 'R1C1', x: 0.0, y: 0.0, w: 0.2, h: 0.2, areaM2: 10 },
+    { code: 'R1C2', x: 0.2, y: 0.0, w: 0.2, h: 0.2, areaM2: 10 },
+    { code: 'R2C1', x: 0.0, y: 0.2, w: 0.2, h: 0.2, areaM2: 10 },
+  ]
+
+  it('takes the bays the band covers more than half of', () => {
+    expect(cellsInBox(ROW, { x: 0.05, y: 0.05, w: 0.3, h: 0.1 })).toEqual(['R1C1', 'R1C2'])
+  })
+
+  it('leaves out a bay the band only brushes', () => {
+    // A band drawn across one row of a tiling deck laps onto the row below at
+    // every step. Taking those too would hand back a selection nobody drew --
+    // and the next Delete would act on it.
+    expect(cellsInBox(ROW, { x: 0.0, y: 0.0, w: 0.4, h: 0.21 })).toEqual(['R1C1', 'R1C2'])
+  })
+
+  it('takes nothing when the band covers nothing', () => {
+    expect(cellsInBox(ROW, { x: 0.6, y: 0.6, w: 0.2, h: 0.2 })).toEqual([])
   })
 })
