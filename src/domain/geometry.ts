@@ -206,6 +206,19 @@ export function prorateCellAreas(totalAreaM2: number, cells: MeshCell[]): MeshCe
  */
 export const SNAP_FRACTION = 0.015
 
+/**
+ * The furthest a snap may carry an edge, as a fraction of the drawn bay's own
+ * side. A snap is meant to close the gap between a bay and the one it meets,
+ * so it may nudge an edge -- never relocate it.
+ *
+ * The admin drew the 5500 strip at the top-left of their deck against the
+ * drawing's own lines and the top edge jumped onto the top of the bay BESIDE
+ * it, which touches along a vertical edge and has no business saying where the
+ * top is. It landed 45% of the drawn height away. The two snaps in that same
+ * gesture that were right moved their edges 4% and 16%.
+ */
+export const MAX_SNAP_OF_SIDE = 0.25
+
 /** The shortest side a drawn bay may have, as a fraction of the drawing. */
 export const MIN_DRAWN_SIDE = 0.005
 
@@ -232,9 +245,13 @@ export function drawnCell(
   rect: { x: number; y: number; w: number; h: number },
   snap = SNAP_FRACTION,
 ): MeshCell {
-  const snapTo = (at: number, edges: number[]) => {
+  const snapTo = (at: number, edges: number[], side: number) => {
     let best = at
-    let nearest = snap
+    // Two ceilings, and the tighter one wins: the absolute one keeps a snap
+    // from reaching across a drawing, the relative one keeps a small bay from
+    // being carried off by an edge that is near in absolute terms but nowhere
+    // near it in its own.
+    let nearest = Math.min(snap, MAX_SNAP_OF_SIDE * side)
     for (const edge of edges) {
       const gap = Math.abs(edge - at)
       if (gap < nearest) {
@@ -246,10 +263,12 @@ export function drawnCell(
   }
   const verticals = cells.flatMap((c) => [c.x, c.x + c.w])
   const horizontals = cells.flatMap((c) => [c.y, c.y + c.h])
-  const x0 = snapTo(rect.x, verticals)
-  const x1 = snapTo(rect.x + rect.w, verticals)
-  const y0 = snapTo(rect.y, horizontals)
-  const y1 = snapTo(rect.y + rect.h, horizontals)
+  // Measured against the drawn side, not the snapped one, so the first edge to
+  // move cannot loosen or tighten the ceiling for the second.
+  const x0 = snapTo(rect.x, verticals, rect.w)
+  const x1 = snapTo(rect.x + rect.w, verticals, rect.w)
+  const y0 = snapTo(rect.y, horizontals, rect.h)
+  const y1 = snapTo(rect.y + rect.h, horizontals, rect.h)
   const box = { x: x0, y: y0, w: x1 - x0, h: y1 - y0 }
 
   if (box.w < MIN_DRAWN_SIDE || box.h < MIN_DRAWN_SIDE) {

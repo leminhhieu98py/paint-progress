@@ -349,6 +349,51 @@ describe('drawnCell', () => {
     expect(second.code).toBe('X2')
   })
 
+  it('nudges an edge onto its neighbour but never relocates it', () => {
+    // Reported from a screen recording: the admin drew the 5500 strip at the
+    // top-left of their deck, correctly, against the drawing's own lines. The
+    // top edge jumped down onto the top of the bay BESIDE it -- a bay that
+    // touches the drawn one along a vertical edge and has no business saying
+    // where its top is. The bay came out 45% shorter than drawn.
+    //
+    // The two snaps in the same gesture that were RIGHT moved their edges by 4%
+    // and 16% of the drawn bay's own side. That is the line: a snap may nudge an
+    // edge onto the bay it meets, not carry it somewhere else.
+    const beside: MeshCell = { code: 'R1C1', x: 0.18, y: 0.083, w: 0.06, h: 0.058, areaM2: 10 }
+    const below: MeshCell = { code: 'R2C1', x: 0.24, y: 0.099, w: 0.06, h: 0.058, areaM2: 10 }
+
+    const drawn = drawnCell([beside, below], { x: 0.24, y: 0.07, w: 0.06, h: 0.029 })
+
+    // 0.013 away and inside the absolute tolerance, but 45% of the drawn height.
+    expect(drawn.y).toBeCloseTo(0.07, 9)
+    // The edge it actually meets.
+    expect(drawn.y + drawn.h).toBeCloseTo(0.099, 9)
+  })
+
+  it('still snaps an edge that is only a nudge from its neighbour', () => {
+    // The other side of the same rule. Left alone, a bay drawn a few pixels
+    // short of the bay above it leaves a sliver of deck belonging to nobody.
+    const above: MeshCell = { code: 'R1C1', x: 0.24, y: 0.04, w: 0.06, h: 0.058, areaM2: 10 }
+
+    const drawn = drawnCell([above], { x: 0.24, y: 0.102, w: 0.06, h: 0.029 })
+
+    // 0.004 away, and 14% of the drawn height.
+    expect(drawn.y).toBeCloseTo(0.098, 9)
+  })
+
+  it('will not reach across the drawing for a big bay either', () => {
+    // The relative ceiling alone is not enough: a quarter of a bay spanning half
+    // the deck is an eighth of the deck, and an edge that far away is not one
+    // this bay meets. Both ceilings apply, and the tighter one wins.
+    const far: MeshCell = { code: 'R1C1', x: 0.1, y: 0.2, w: 0.2, h: 0.2, areaM2: 10 }
+
+    const drawn = drawnCell([far], { x: 0.35, y: 0.2, w: 0.6, h: 0.2 })
+
+    // 0.05 away: inside a quarter of the drawn width, nowhere near 1.5% of the
+    // drawing.
+    expect(drawn.x).toBeCloseTo(0.35, 9)
+  })
+
   it('refuses a bay drawn over one that is already there', () => {
     // Two bays over the same ground are two the GS can tick and two the report
     // counts. The deck would read over 100% complete with paint left to do.
