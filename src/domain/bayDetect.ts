@@ -137,6 +137,15 @@ export interface BayOptions {
    * never reached -- things hanging off the deck's outline -- are handed back.
    */
   maxRegionCovered?: number
+  /**
+   * How much of a grid line must carry ink, over the length of the edge it is
+   * being asked to be, before it may divide two cells. Default 0.5.
+   *
+   * A line that reads as a centreline over the deck as a whole is a line
+   * everywhere in the grid, including stretches where the drawing never drew
+   * it. On the customer's top strip that split one open run into six bays.
+   */
+  minEdgeSupport?: number
 }
 
 const DEFAULTS = {
@@ -152,6 +161,7 @@ const DEFAULTS = {
   solidCover: 0.85,
   minCellCover: 0.35,
   maxRegionCovered: 0.15,
+  minEdgeSupport: 0.5,
 }
 
 /**
@@ -702,27 +712,87 @@ export function detectBays(
     return Math.max(0, Math.min(to, extent.last) - Math.max(from, extent.first)) / (to - from)
   }
 
-  const bays: Bay[] = []
+  const keep: boolean[][] = []
   for (let r = 0; r < ys.length - 1; r++) {
-    if (!bandHasBays(ys[r], ys[r + 1], false)) continue
+    const row: boolean[] = []
     for (let c = 0; c < xs.length - 1; c++) {
-      if (!bandHasBays(xs[c], xs[c + 1], true)) continue
       // Both axes, and the cell is kept whole or not at all. Trimming it to the
       // measured edge was tried and dropped: the edge reads a few pixels off the
       // grid line it belongs to -- 854 against 859 on the customer's sheet --
       // and trimming to it leaves every boundary bay a sliver out of step with
       // the column beside it. Dropping whole cells gives the same staircase and
       // keeps every bay on the beam grid.
-      if (inside(xs[c], xs[c + 1], rows[r]) < opts.minCellCover) continue
-      if (inside(ys[r], ys[r + 1], cols[c]) < opts.minCellCover) continue
-      bays.push({
-        x: xs[c] / width,
-        y: ys[r] / height,
-        w: (xs[c + 1] - xs[c]) / width,
-        h: (ys[r + 1] - ys[r]) / height,
-      })
+      row.push(
+        bandHasBays(ys[r], ys[r + 1], false)
+        && bandHasBays(xs[c], xs[c + 1], true)
+        && inside(xs[c], xs[c + 1], rows[r]) >= opts.minCellCover
+        && inside(ys[r], ys[r + 1], cols[c]) >= opts.minCellCover,
+      )
+    }
+    keep.push(row)
+  }
+
+  /**
+   * How much of one grid line carries ink over the stretch it is being asked to
+   * divide. Measured within `pad` of the line, not on it: the line is a beam's
+   * dashed axis and the ink is the beam's two drawn faces either side of it.
+   * Gaps up to `gap` are bridged, so a dash pattern and the places a bubble or
+   * a leader line crosses the beam read as covered.
+   */
+  const edgeSupport = (at: number, from: number, to: number, horizontal: boolean) => {
+    let covered = 0
+    let last = from - gap - 1
+    for (let i = from; i <= to; i++) {
+      let hit = false
+      for (let d = -pad; d <= pad && !hit; d++) {
+        const p = at + d
+        if (p < 0 || p >= (horizontal ? height : width)) continue
+        if (ink[horizontal ? p * width + i : i * width + p]) hit = true
+      }
+      if (hit) {
+        covered += Math.min(i - last, gap + 1)
+        last = i
+      }
+    }
+    return Math.min(1, covered / (to - from + 1))
+  }
+
+  // Runs of cells across a row that no drawn line separates. Merged rather than
+  // dropped: the ground is deck either way, it is the boundary between two bays
+  // that is not there.
+  type Block = { r0: number; r1: number; c0: number; c1: number }
+  const blocks: Block[] = []
+  for (let r = 0; r < keep.length; r++) {
+    let c = 0
+    while (c < keep[r].length) {
+      if (!keep[r][c]) { c++; continue }
+      let end = c
+      while (
+        end + 1 < keep[r].length && keep[r][end + 1]
+        && edgeSupport(xs[end + 1], ys[r], ys[r + 1], false) < opts.minEdgeSupport
+      ) end++
+      blocks.push({ r0: r, r1: r, c0: c, c1: end })
+      c = end + 1
     }
   }
+
+  // The same rule down the other axis, over the runs just formed. Only blocks
+  // covering the same columns may join, so every bay stays a rectangle.
+  const merged: Block[] = []
+  for (const block of blocks) {
+    const above = merged.find((m) =>
+      m.c0 === block.c0 && m.c1 === block.c1 && m.r1 === block.r0 - 1
+      && edgeSupport(ys[block.r0], xs[block.c0], xs[block.c1 + 1], true) < opts.minEdgeSupport)
+    if (above) above.r1 = block.r1
+    else merged.push({ ...block })
+  }
+
+  const bays: Bay[] = merged.map((m) => ({
+    x: xs[m.c0] / width,
+    y: ys[m.r0] / height,
+    w: (xs[m.c1 + 1] - xs[m.c0]) / width,
+    h: (ys[m.r1 + 1] - ys[m.r0]) / height,
+  }))
 
   // What the grid could not reach. A deck's outline is not only stepped, it has
   // things hanging off it -- pedestals, stair landings, a corner platform -- and

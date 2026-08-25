@@ -48,6 +48,20 @@ function brokenBeam(
   }
 }
 
+/** A dashed line: 10 px drawn, 12 px missing -- 45% solid, closed by bridging. */
+function dashedBeam(
+  rgb: Uint8Array, width: number,
+  axis: 'v' | 'h', at: number, from: number, to: number, thickness = 3,
+): void {
+  for (let i = from; i <= to; i++) {
+    if (i % 22 >= 10) continue
+    for (let t = 0; t < thickness; t++) {
+      if (axis === 'v') paint(rgb, width, at + t, i)
+      else paint(rgb, width, i, at + t)
+    }
+  }
+}
+
 /** The whole deck: four outer beams and whatever interior ones are asked for. */
 function deck(width: number, height: number, box: [number, number, number, number]) {
   const [x0, y0, x1, y1] = box
@@ -450,5 +464,89 @@ describe('nameBays', () => {
 
     expect(bays).toHaveLength(4)
     expect(bays.filter((b) => b.x * width < 30)).toEqual([])
+  })
+  it('does not split a bay on a line the drawing does not draw there', () => {
+    // The top strip of the customer's deck: two horizontal beams run the full
+    // width, but between them the vertical beams stop -- the strip is one open
+    // run, not six bays. The grid proposes a cell per column anyway, because a
+    // line that reads as a centreline over the deck as a whole is a line
+    // everywhere in the grid, including where it was never drawn.
+    //
+    // Here the middle beam runs the bottom row only. It still clears the
+    // centreline bar over the whole deck (78%), so the grid has that line; over
+    // the top row it is 3% and the two cells either side of it are one bay.
+    const width = 300
+    const height = 200
+    const rgb = whiteImage(width, height)
+    for (const at of [40, 180, 260]) beam(rgb, width, 'v', at, 40, 178)
+    beam(rgb, width, 'v', 100, 70, 178)
+    for (const at of [40, 70, 178]) beam(rgb, width, 'h', at, 40, 260)
+
+    const bays = detectBays(rgb, width, height, WHOLE, OPTIONS)
+
+    expect(bays).toHaveLength(5)
+    // The merged bay spans both columns: from the deck's left edge to the beam
+    // at 180, across the shallow top row.
+    const top = bays.filter((b) => Math.round(b.y * height) < 60)
+    expect(asPixels(top, width, height)).toEqual(['140x30@41,41', '79x30@181,41'])
+  })
+
+  it('does not split a bay on a horizontal line that stops short either', () => {
+    // The same rule the other way up, so a deck whose missing beam runs the
+    // other way is not left to a rule that only ever looked at one axis.
+    const width = 200
+    const height = 300
+    const rgb = whiteImage(width, height)
+    for (const at of [40, 180, 260]) beam(rgb, width, 'h', at, 40, 178)
+    beam(rgb, width, 'h', 100, 70, 178)
+    for (const at of [40, 70, 178]) beam(rgb, width, 'v', at, 40, 260)
+
+    const bays = detectBays(rgb, width, height, WHOLE, OPTIONS)
+
+    expect(bays).toHaveLength(5)
+    const left = bays.filter((b) => Math.round(b.x * width) < 60)
+    expect(asPixels(left, width, height)).toEqual(['29x139@42,42', '29x79@42,181'])
+  })
+  it('counts a dashed beam as drawn, so a dash pattern is not read as a missing line', () => {
+    // Same shape as the merge above, except the middle beam is DASHED across the
+    // top row rather than absent: 45% of that stretch carries ink. Beams on this
+    // sheet are dashed by convention, and reading the gaps between dashes as
+    // "no line here" would merge the whole deck into a handful of bays.
+    const width = 300
+    const height = 200
+    const rgb = whiteImage(width, height)
+    for (const at of [40, 180, 260]) beam(rgb, width, 'v', at, 40, 178)
+    dashedBeam(rgb, width, 'v', 100, 40, 70)
+    beam(rgb, width, 'v', 100, 70, 178)
+    for (const at of [40, 70, 178]) beam(rgb, width, 'h', at, 40, 260)
+
+    // The default bridge is 1 px at this size, which would close nothing; the
+    // customer's sheet renders 3000 px wide where it is 10.
+    const bays = detectBays(rgb, width, height, WHOLE, { ...OPTIONS, dashGapFraction: 0.05 })
+
+    expect(bays).toHaveLength(6)
+  })
+
+  it('leaves no two bays overlapping after a merge', () => {
+    // A merged bay is handed to the admin as one rectangle and its area is
+    // counted once. A merge that joined blocks covering different columns would
+    // hand back an L reported as its bounding box, overlapping the bay beside
+    // it and double-counting that ground in every percentage the deck reports.
+    const width = 300
+    const height = 200
+    const rgb = whiteImage(width, height)
+    for (const at of [40, 180, 260]) beam(rgb, width, 'v', at, 40, 178)
+    beam(rgb, width, 'v', 100, 70, 178)
+    for (const at of [40, 70, 178]) beam(rgb, width, 'h', at, 40, 260)
+
+    const bays = detectBays(rgb, width, height, WHOLE, OPTIONS)
+
+    for (let i = 0; i < bays.length; i++) {
+      for (let j = i + 1; j < bays.length; j++) {
+        const w = Math.min(bays[i].x + bays[i].w, bays[j].x + bays[j].w) - Math.max(bays[i].x, bays[j].x)
+        const h = Math.min(bays[i].y + bays[i].h, bays[j].y + bays[j].h) - Math.max(bays[i].y, bays[j].y)
+        expect(w <= 0 || h <= 0).toBe(true)
+      }
+    }
   })
 })
