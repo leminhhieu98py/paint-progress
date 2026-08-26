@@ -1,0 +1,89 @@
+import type { Cell, Deck, Stage } from '../domain/types'
+import { supabase } from './supabase'
+
+/**
+ * One deck as `/admin/progress` needs it: the whole deck, its own paint spec,
+ * and enough of the drawing to render it.
+ *
+ * Deliberately not `ProjectRow` from projectsApi, which carries one rolled-up
+ * percentage per project and no geometry, and not `GsDeck` from gsApi, which
+ * carries no stages and no cells. The progress screen draws two canvases over
+ * the real bays and needs all of it in one shape.
+ */
+export interface DeckProgressEntry {
+  seq: number
+  deck: Deck
+  stages: Stage[]
+  imagePath: string | null
+  imageW: number | null
+  imageH: number | null
+}
+
+/**
+ * Every deck of a project, each with its own stages and cells, in one query.
+ *
+ * One round trip rather than one per deck: the screen's deck selector switches
+ * instantly, and `computeProjectProgress` needs every deck at once anyway to
+ * weight them against each other. A project has a handful of decks and a few
+ * hundred cells, so the payload is small enough to hold.
+ *
+ * Full geometry, unlike `listProjects` -- this screen draws the cells, it does
+ * not only count them.
+ */
+export async function loadProjectProgress(projectId: string): Promise<DeckProgressEntry[]> {
+  const { data, error } = await supabase
+    .from('decks')
+    .select(
+      'id, seq, code, name, total_area_m2, image_path, image_w, image_h,'
+      + ' deck_stages(id, seq, name, color, weight),'
+      + ' cells(id, code, x, y, w, h, area_m2, stage_id)',
+    )
+    .eq('project_id', projectId)
+    .order('seq')
+  if (error) throw new Error(error.message)
+
+  return (data ?? []).map((row) => {
+    // Through `unknown`: postgrest-js types an embedded relation as a union
+    // with its own error shape, which does not overlap an index signature.
+    // Every field below is read defensively anyway.
+    const r = row as unknown as Record<string, unknown>
+    return {
+      seq: r.seq as number,
+      // Sorted here rather than trusted from the embed: PostgREST returns an
+      // embedded set in whatever order the planner chose, and every consumer of
+      // this list -- nextStage, the spec table, scaffoldLensColors -- reads the
+      // sequence. An unsorted list silently reorders the paint system.
+      stages: ((r.deck_stages ?? []) as Record<string, unknown>[])
+        .map((s): Stage => ({
+          id: s.id as string,
+          seq: s.seq as number,
+          name: s.name as string,
+          color: s.color as string,
+          weight: Number(s.weight),
+        }))
+        .sort((a, b) => a.seq - b.seq),
+      imagePath: (r.image_path as string | null) ?? null,
+      imageW: (r.image_w as number | null) ?? null,
+      imageH: (r.image_h as number | null) ?? null,
+      deck: {
+        id: r.id as string,
+        code: r.code as string,
+        name: r.name as string,
+        totalAreaM2: Number(r.total_area_m2),
+        // Every numeric column coerced. PostgREST serialises `numeric` as a
+        // string, and an uncoerced area makes `sum + cell.areaM2` concatenate,
+        // which renders as a plausible-looking number rather than throwing.
+        cells: ((r.cells ?? []) as Record<string, unknown>[]).map((c): Cell => ({
+          id: c.id as string,
+          code: c.code as string,
+          x: Number(c.x),
+          y: Number(c.y),
+          w: Number(c.w),
+          h: Number(c.h),
+          areaM2: Number(c.area_m2),
+          stageId: (c.stage_id as string | null) ?? null,
+        })),
+      } satisfies Deck,
+    }
+  })
+}

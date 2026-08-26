@@ -37,6 +37,9 @@ const DeckDetailScreen = lazy(() =>
 const UsersScreen = lazy(() =>
   import('./screens/admin/UsersScreen').then((m) => ({ default: m.UsersScreen })),
 )
+const ProgressScreen = lazy(() =>
+  import('./screens/admin/ProgressScreen').then((m) => ({ default: m.ProgressScreen })),
+)
 const GsScreen = lazy(() =>
   import('./screens/gs/GsScreen').then((m) => ({ default: m.GsScreen })),
 )
@@ -48,8 +51,6 @@ function LazySuspense({ children }: { children: ReactNode }) {
     </Suspense>
   )
 }
-
-const Placeholder = ({ name }: { name: string }) => <div>{name} — chưa làm</div>
 
 /**
  * The base-path index route used to be pinned to `RequireRole role="admin"`,
@@ -174,7 +175,14 @@ export function AppRoutes() {
               </LazySuspense>
             }
           />
-          <Route path="progress" element={<Placeholder name="Tiến độ" />} />
+          <Route
+            path="progress"
+            element={
+              <LazySuspense>
+                <ProgressScreen />
+              </LazySuspense>
+            }
+          />
         </Route>
         <Route
           path="gs/:projectId"

@@ -8,6 +8,7 @@ import { useAuth } from '../../auth/AuthProvider'
 import { DrawingCanvas } from '../../canvas/DrawingCanvas'
 import { buildPlanLabels } from '../../domain/plan'
 import { buildStageSlices } from '../../domain/pieSlices'
+import { paintLensColors } from '../../domain/lens'
 import { computeDeckProgress } from '../../domain/progress'
 import type { Cell, Deck, Stage, Zone } from '../../domain/types'
 // One signed-URL helper for both roles: the bucket name and the 3600-second
@@ -437,17 +438,10 @@ export function GsScreen() {
   const overCovered = deck !== null
     && mappedAreaM2 - deck.totalAreaM2 > OVER_COVERAGE_EPSILON_M2
 
-  /** Stage colour per cell CODE, which is what DrawingCanvas keys on. A cell
-   *  with no stage is left out of the map and renders unfilled. */
-  const cellColors = useMemo(() => {
-    const colors: Record<string, string> = {}
-    for (const cell of cells) {
-      if (!cell.stageId) continue
-      const stage = stages.find((s) => s.id === cell.stageId)
-      if (stage) colors[cell.code] = stage.color
-    }
-    return colors
-  }, [cells, stages])
+  /** Stage colour per cell CODE, which is what DrawingCanvas keys on. Shared
+   *  with the admin's progress screen so the two cannot drift into colouring
+   *  one deck two different ways. */
+  const cellColors = useMemo(() => paintLensColors(cells, stages), [cells, stages])
 
   const [showPlan, setShowPlan] = useState(false)
   const [zones, setZones] = useState<Zone[]>([])
