@@ -97,7 +97,7 @@ vi.mock('../../lib/pdfToPng', () => ({
 
 const deck = {
   id: 'd1', projectId: 'p1', seq: 1, name: 'Main Deck', code: 'MD',
-  imagePath: 'p1/d1.png', imageW: 2000, imageH: 1600,
+  imagePath: 'p1/d1.png', imageW: 2000, imageH: 1600, drawingName: null, drawingPage: null,
   totalAreaM2: 5258.5, areaSource: 'prorated' as const, cellCount: 0,
 }
 

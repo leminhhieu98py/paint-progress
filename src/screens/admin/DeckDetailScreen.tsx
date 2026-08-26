@@ -110,7 +110,10 @@ export function DeckDetailScreen() {
 
       if (pdf) {
         const rendered = await renderPdfPage(pdf, page)
-        await uploadDrawing(id, ownerProject, rendered.blob, rendered.width, rendered.height)
+        await uploadDrawing(id, ownerProject, rendered.blob, rendered.width, rendered.height, {
+          name: pdf.name,
+          page: pages > 1 ? page : null,
+        })
       }
       // Always 'prorated': pixel share is the only way a cell area is produced.
       await updateDeckArea(id, area, 'prorated')
@@ -144,6 +147,20 @@ export function DeckDetailScreen() {
     )
   }
 
+  /**
+   * What the deck's drawing came from, in the admin's terms.
+   *
+   * "Đã có" was the whole of it, and it left an admin who had uploaded a
+   * drawing and come back with no way to tell WHICH file they had used -- on a
+   * project whose sheets are all called things like 00171-14. Decks whose
+   * drawing predates recording this say so rather than inventing a name.
+   */
+  const drawingLabel = !deck?.imagePath
+    ? 'Chưa có'
+    : deck.drawingName
+      ? `${deck.drawingName}${deck.drawingPage ? ` (trang ${deck.drawingPage})` : ''}`
+      : 'Đã có (không rõ tên tệp)'
+
   const identity = (
     <Form layout="vertical">
       {/*
@@ -171,6 +188,16 @@ export function DeckDetailScreen() {
         />
       </Form.Item>
       <Form.Item label="Bản vẽ (PDF)">
+        {/*
+          What is on the deck right now, above the picker that would replace it:
+          choosing a file is a destructive act on a deck that already has one,
+          and the admin should be able to see what they are about to lose.
+        */}
+        {!creating && (
+          <Typography.Paragraph type="secondary" style={{ marginBottom: 8 }}>
+            {`Đang dùng: ${drawingLabel}`}
+          </Typography.Paragraph>
+        )}
         <input
           type="file"
           accept="application/pdf"
@@ -232,7 +259,7 @@ export function DeckDetailScreen() {
             { key: 'code', label: 'Mã sàn', children: deck?.code },
             { key: 'area', label: 'Diện tích sàn (m²)', children: formatAreaM2(deck?.totalAreaM2 ?? 0) },
             { key: 'cells', label: 'Số ô', children: deck?.cellCount ?? 0 },
-            { key: 'drawing', label: 'Bản vẽ', children: deck?.imagePath ? 'Đã có' : 'Chưa có' },
+            { key: 'drawing', label: 'Bản vẽ', children: drawingLabel },
           ]} />
           <Button type="primary" onClick={() => setEditing(true)}>Sửa</Button>
         </>

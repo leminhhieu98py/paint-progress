@@ -10,6 +10,9 @@ export interface DeckRow {
   imagePath: string | null
   imageW: number | null
   imageH: number | null
+  /** What the uploaded file was called, and which page. Null on decks whose drawing predates recording it. */
+  drawingName: string | null
+  drawingPage: number | null
   totalAreaM2: number
   areaSource: 'guides' | 'prorated'
   cellCount: number
@@ -28,7 +31,7 @@ const BUCKET = 'drawings'
 export async function listDecks(projectId: string): Promise<DeckRow[]> {
   const { data, error } = await supabase
     .from('decks')
-    .select('id, project_id, seq, name, code, image_path, image_w, image_h, total_area_m2, area_source, cells(id)')
+    .select('id, project_id, seq, name, code, image_path, image_w, image_h, drawing_name, drawing_page, total_area_m2, area_source, cells(id)')
     .eq('project_id', projectId)
     .order('seq')
   if (error) throw new Error(error.message)
@@ -41,6 +44,8 @@ export async function listDecks(projectId: string): Promise<DeckRow[]> {
     imagePath: (d.image_path as string | null) ?? null,
     imageW: (d.image_w as number | null) ?? null,
     imageH: (d.image_h as number | null) ?? null,
+    drawingName: (d.drawing_name as string | null) ?? null,
+    drawingPage: (d.drawing_page as number | null) ?? null,
     totalAreaM2: Number(d.total_area_m2),
     areaSource: d.area_source as 'guides' | 'prorated',
     cellCount: ((d.cells ?? []) as unknown[]).length,
@@ -59,7 +64,7 @@ export async function listDecks(projectId: string): Promise<DeckRow[]> {
 export async function getDeck(deckId: string): Promise<DeckRow | null> {
   const { data, error } = await supabase
     .from('decks')
-    .select('id, project_id, seq, name, code, image_path, image_w, image_h, total_area_m2, area_source, cells(id)')
+    .select('id, project_id, seq, name, code, image_path, image_w, image_h, drawing_name, drawing_page, total_area_m2, area_source, cells(id)')
     .eq('id', deckId)
     .maybeSingle()
   if (error) throw new Error(error.message)
@@ -73,6 +78,8 @@ export async function getDeck(deckId: string): Promise<DeckRow | null> {
     imagePath: (data.image_path as string | null) ?? null,
     imageW: (data.image_w as number | null) ?? null,
     imageH: (data.image_h as number | null) ?? null,
+    drawingName: (data.drawing_name as string | null) ?? null,
+    drawingPage: (data.drawing_page as number | null) ?? null,
     totalAreaM2: Number(data.total_area_m2),
     areaSource: data.area_source as 'guides' | 'prorated',
     cellCount: ((data.cells ?? []) as unknown[]).length,
@@ -133,6 +140,14 @@ export async function uploadDrawing(
   png: Blob,
   width: number,
   height: number,
+  /**
+   * What the file was called, and which page was taken.
+   *
+   * The stored image is a render named from ids, so without this an admin who
+   * uploaded a drawing and came back later had nothing to recognise it by --
+   * on a project whose sheets are all called things like 00171-14.
+   */
+  origin?: { name: string; page: number | null },
 ): Promise<string> {
   const path = `${projectId}/${deckId}.png`
   const { error: uploadError } = await supabase.storage
@@ -142,7 +157,13 @@ export async function uploadDrawing(
 
   const { error } = await supabase
     .from('decks')
-    .update({ image_path: path, image_w: width, image_h: height })
+    .update({
+      image_path: path,
+      image_w: width,
+      image_h: height,
+      drawing_name: origin?.name ?? null,
+      drawing_page: origin?.page ?? null,
+    })
     .eq('id', deckId)
   if (error) throw new Error(error.message)
 

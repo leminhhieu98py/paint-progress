@@ -19,7 +19,7 @@ vi.mock('../../lib/decksApi', () => ({
   createDeck: (i: unknown) => createDeck(i),
   updateDeckIdentity: (a: string, b: string, c: string) => updateDeckIdentity(a, b, c),
   updateDeckArea: (a: string, b: number, c: string) => updateDeckArea(a, b, c),
-  uploadDrawing: (a: string, b: string, c: Blob, d: number, e: number) => uploadDrawing(a, b, c, d, e),
+  uploadDrawing: (...args: unknown[]) => uploadDrawing(...args),
 }))
 vi.mock('../../lib/pdfToPng', () => ({
   pdfPageCount: (f: File) => pdfPageCount(f),
@@ -35,6 +35,7 @@ vi.mock('./DeckEditor', () => ({
 const DECK = {
   id: 'd1', projectId: 'p1', seq: 1, name: 'Main Deck', code: 'MD',
   imagePath: 'p1/d1.png', imageW: 2000, imageH: 1414,
+  drawingName: 'ban-ve.pdf', drawingPage: null,
   totalAreaM2: 5258.5, areaSource: 'prorated' as const, cellCount: 24,
 }
 
@@ -85,6 +86,67 @@ describe('DeckDetailScreen', () => {
 
     expect(await screen.findByLabelText('Bản vẽ (PDF)')).toBeInTheDocument()
     expect(screen.getByText('editor MD')).toBeInTheDocument()
+  })
+
+  it('names the file the drawing came from', async () => {
+    // The stored image is a render named from ids, so "Đã có" was the whole of
+    // what the admin got back. On a project whose sheets are all called things
+    // like 00171-14, that is not a small thing to be unsure about.
+    renderAt('/decks/d1')
+
+    expect(await screen.findByText('ban-ve.pdf')).toBeInTheDocument()
+  })
+
+  it('says which page of a multi-page file was taken', async () => {
+    getDeck.mockResolvedValue({ ...DECK, drawingName: 'ban-ve.pdf', drawingPage: 3 })
+    renderAt('/decks/d1')
+
+    expect(await screen.findByText('ban-ve.pdf (trang 3)')).toBeInTheDocument()
+  })
+
+  it('admits it does not know, on a deck whose drawing predates recording it', async () => {
+    // Every deck that already had a drawing has one whose origin nobody
+    // recorded. Inventing a name would be worse than saying so.
+    getDeck.mockResolvedValue({ ...DECK, drawingName: null, drawingPage: null })
+    renderAt('/decks/d1')
+
+    expect(await screen.findByText('Đã có (không rõ tên tệp)')).toBeInTheDocument()
+  })
+
+  it('shows what is on the deck now, above the picker that would replace it', async () => {
+    // Choosing a file is destructive on a deck that already has one.
+    renderAt('/decks/d1')
+    await screen.findByText('Main Deck (MD)')
+    await userEvent.click(screen.getByRole('button', { name: 'Sửa' }))
+
+    expect(await screen.findByText('Đang dùng: ban-ve.pdf')).toBeInTheDocument()
+  })
+
+  it('records what the uploaded file was called', async () => {
+    renderAt('/decks/new?project=p1')
+
+    await userEvent.type(await screen.findByLabelText('Tên sàn'), 'Cellar Deck')
+    await userEvent.type(screen.getByLabelText('Mã sàn'), 'CD')
+    await userEvent.upload(screen.getByLabelText('Bản vẽ (PDF)'), pdfFile())
+    await userEvent.click(screen.getByRole('button', { name: 'Tạo sàn' }))
+
+    await waitFor(() => expect(uploadDrawing).toHaveBeenCalled())
+    expect(uploadDrawing.mock.calls[0][5]).toEqual({ name: 'deck.pdf', page: null })
+  })
+
+  it('records the page too, when the file had more than one', async () => {
+    pdfPageCount.mockResolvedValue(3)
+    renderAt('/decks/new?project=p1')
+
+    await userEvent.type(await screen.findByLabelText('Tên sàn'), 'Cellar Deck')
+    await userEvent.type(screen.getByLabelText('Mã sàn'), 'CD')
+    await userEvent.upload(screen.getByLabelText('Bản vẽ (PDF)'), pdfFile())
+    await screen.findByText('Tệp có 3 trang')
+    await userEvent.type(screen.getByLabelText('Trang'), '{Backspace}2')
+    await userEvent.click(screen.getByRole('button', { name: 'Tạo sàn' }))
+
+    await waitFor(() => expect(uploadDrawing).toHaveBeenCalled())
+    expect(uploadDrawing.mock.calls[0][5]).toEqual({ name: 'deck.pdf', page: 2 })
   })
 
   it('takes PDFs and nothing else', async () => {
