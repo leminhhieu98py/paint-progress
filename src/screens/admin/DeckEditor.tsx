@@ -9,11 +9,10 @@ import {
 import { nameBays, type BayOptions } from '../../domain/bayDetect'
 import type { MeshCell, Stage } from '../../domain/types'
 import {
-  getDrawingUrl, listCells, syncCells,
+  getDrawingUrl, listCells, listStages, syncCells,
   updateDeckArea, zoneImpactOf, type DeckRow, type ZoneImpact,
 } from '../../lib/decksApi'
 import { formatAreaM2, formatPercent } from '../../lib/format'
-import { listStages } from '../../lib/projectsApi'
 import { DrawingCanvas } from '../../canvas/DrawingCanvas'
 import { detectBaysFromImage } from '../../canvas/rgbFromImage'
 

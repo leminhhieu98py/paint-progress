@@ -12,7 +12,7 @@ const updateDeckArea = vi.hoisted(() => vi.fn())
 const getDrawingUrl = vi.hoisted(() => vi.fn())
 // The brief's original test omitted this mock even though one of its own
 // tests (below) calls `listStages.mockResolvedValue(...)`. DeckEditor loads
-// stages via projectsApi.listStages to resolve a stage id to a human name for
+// stages via decksApi.listStages to resolve a stage id to a human name for
 // the progress-loss warning -- without mocking the module the real
 // implementation would run (hitting supabase) and `listStages` would not even
 // be a defined identifier in this file, so the test referencing it could not
@@ -36,8 +36,6 @@ vi.mock('../../lib/decksApi', () => ({
   updateDeckArea: (d: string, a: number, s: string) => updateDeckArea(d, a, s),
   getDrawingUrl: (p: string) => getDrawingUrl(p),
   uploadDrawing: vi.fn(),
-}))
-vi.mock('../../lib/projectsApi', () => ({
   listStages: (id: string) => listStages(id),
 }))
 // One button per cell so a test can select a SUBSET, which "Chọn tất cả"

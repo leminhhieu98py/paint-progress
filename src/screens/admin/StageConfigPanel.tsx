@@ -5,7 +5,7 @@ import type { Stage } from '../../domain/types'
 import { formatWeight } from '../../lib/format'
 import {
   listStages, roundStageWeight, saveStages, stagesRemovedBy, STAGE_WEIGHT_EPSILON,
-} from '../../lib/projectsApi'
+} from '../../lib/decksApi'
 import { randomUUID } from '../../lib/uuid'
 
 /**

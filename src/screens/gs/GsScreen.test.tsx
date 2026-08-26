@@ -26,8 +26,6 @@ vi.mock('../../lib/gsApi', () => ({
 }))
 vi.mock('../../lib/decksApi', () => ({
   getDrawingUrl: (path: string) => getDrawingUrl(path),
-}))
-vi.mock('../../lib/projectsApi', () => ({
   listStages: (deckId: string) => listStages(deckId),
 }))
 vi.mock('../../auth/AuthProvider', () => ({

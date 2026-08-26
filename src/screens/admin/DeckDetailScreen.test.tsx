@@ -31,6 +31,12 @@ vi.mock('../../lib/pdfToPng', () => ({
 vi.mock('./DeckEditor', () => ({
   DeckEditor: ({ deck }: { deck: { code: string } }) => <div>editor {deck.code}</div>,
 }))
+// Stubbed for the same reason DeckEditor is: this file is about the deck's own
+// form, and the panel has its own test file. Left real it would pull decksApi's
+// stage exports through a mock that does not carry them.
+vi.mock('./StageConfigPanel', () => ({
+  StageConfigPanel: ({ deckId }: { deckId: string }) => <div>stages {deckId}</div>,
+}))
 
 const DECK = {
   id: 'd1', projectId: 'p1', seq: 1, name: 'Main Deck', code: 'MD',

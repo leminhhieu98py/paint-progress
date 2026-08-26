@@ -4,7 +4,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { useAuth } from '../../auth/AuthProvider'
-import { listStages } from '../../lib/projectsApi'
+
 import { DrawingCanvas } from '../../canvas/DrawingCanvas'
 import { buildPlanLabels } from '../../domain/plan'
 import { buildStageSlices } from '../../domain/pieSlices'
@@ -13,7 +13,7 @@ import type { Cell, Deck, Stage, Zone } from '../../domain/types'
 // One signed-URL helper for both roles: the bucket name and the 3600-second
 // expiry belong in one place, and decksApi is a lib module rather than an admin
 // one. Screens still never touch `supabase` directly.
-import { getDrawingUrl } from '../../lib/decksApi'
+import { getDrawingUrl, listStages } from '../../lib/decksApi'
 import { formatAreaM2 } from '../../lib/format'
 import {
   listDeckCells, listDeckZones, loadGsProject, setCellStage, subscribeDeckCells,

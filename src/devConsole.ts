@@ -28,8 +28,7 @@ export function installDevConsole(): void {
   if (!import.meta.env.DEV) return
 
   const load = async (deckId: string) => {
-    const { getDeck, listCells } = await import('./lib/decksApi')
-    const { listStages } = await import('./lib/projectsApi')
+    const { getDeck, listCells, listStages } = await import('./lib/decksApi')
     const row = await getDeck(deckId)
     if (!row) throw new Error(`Không có sàn nào mang id ${deckId}`)
     const cells = await listCells(deckId)
@@ -74,7 +73,7 @@ export function installDevConsole(): void {
 
     /** The stages of a deck, so the mix can be keyed by the right names. */
     async stages(deckId: string) {
-      const { listStages } = await import('./lib/projectsApi')
+      const { listStages } = await import('./lib/decksApi')
       const stages = await listStages(deckId)
       console.table(stages.map((s) => ({ seq: s.seq, name: s.name, color: s.color, weight: s.weight })))
       return stages

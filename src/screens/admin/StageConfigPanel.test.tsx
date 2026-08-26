@@ -10,12 +10,12 @@ const saveStages = vi.hoisted(() => vi.fn())
 // stores. Stubbing them would leave the dialog and the clamp asserted against a
 // fixture instead of against the real diff, so the real implementations are used
 // here and only the two I/O functions are mocked.
-// projectsApi imports the supabase client at module scope, so stub that out to
+// decksApi imports the supabase client at module scope, so stub that out to
 // let importOriginal run without reaching for real credentials. Nothing in this
 // file goes through it -- the two functions that would are mocked below.
 vi.mock('../../lib/supabase', () => ({ supabase: { from: vi.fn() } }))
-vi.mock('../../lib/projectsApi', async (importOriginal) => {
-  const real = await importOriginal<typeof import('../../lib/projectsApi')>()
+vi.mock('../../lib/decksApi', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../../lib/decksApi')>()
   return {
     listStages: (id: string) => listStages(id),
     saveStages: (id: string, s: unknown) => saveStages(id, s),
