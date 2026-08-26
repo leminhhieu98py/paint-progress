@@ -17,6 +17,7 @@ import { buildPlanLabels, formatPlanRange } from '../../domain/plan'
 import { cellsInBox } from '../../domain/geometry'
 import { listDeckZones } from '../../lib/gsApi'
 import { createZone, deleteZone, setZoneActual } from '../../lib/zonesApi'
+import { buildReportWorkbook, reportFileName } from '../../lib/reportXlsx'
 import type { Zone } from '../../domain/types'
 
 type ProjectOption = Awaited<ReturnType<typeof listProjectNames>>[number]
@@ -271,6 +272,50 @@ export function ProgressScreen() {
     }
   }
 
+  const [exporting, setExporting] = useState(false)
+
+  /**
+   * The XLSX (spec §9), built from EVERY deck of the project.
+   *
+   * Not from what is on screen: the Overview sheet is the whole job, and
+   * exporting whichever tab happened to be open is the shape of a report that
+   * quietly under-states it.
+   *
+   * The zones are fetched here rather than held for every deck all the time.
+   * Export is a rare action; a round trip per deck on it is cheaper than a round
+   * trip per deck on every screen open.
+   */
+  const exportReport = async () => {
+    if (entries.length === 0) return
+    setExporting(true)
+    try {
+      const decks = await Promise.all(entries.map(async (entry) => ({
+        deck: entry.deck,
+        stages: entry.stages,
+        zones: await listDeckZones(entry.deck.id),
+      })))
+      const project = projects.find((p) => p.id === projectId)
+      const blob = await buildReportWorkbook({
+        projectName: project?.name ?? '',
+        projectCode: project?.code ?? '',
+        decks,
+      })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = reportFileName(project?.code ?? 'export', dayjs().format('YYYY-MM-DD'))
+      a.click()
+      // Revoked on the next tick, not immediately: Safari has not started the
+      // download when click() returns, and a revoked URL gives a silent
+      // zero-byte file.
+      setTimeout(() => URL.revokeObjectURL(url), 0)
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setExporting(false)
+    }
+  }
+
   const rollupRows: RollupRow[] = entries.map((entry) => {
     const d = rollup.decks.find((x) => x.deckId === entry.deck.id)
     return {
@@ -298,6 +343,13 @@ export function ProgressScreen() {
           options={projects.map((p) => ({ value: p.id, label: `${p.name} (${p.code})` }))}
           onChange={(v) => setProjectId(v)}
         />
+        <Button
+          onClick={() => void exportReport()}
+          loading={exporting}
+          disabled={entries.length === 0}
+        >
+          Xuất báo cáo
+        </Button>
       </Space>
 
       {loading && <Spin style={{ display: 'block', margin: '12vh auto' }} />}

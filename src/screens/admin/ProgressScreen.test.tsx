@@ -12,6 +12,7 @@ const createZone = vi.hoisted(() => vi.fn())
 const updateZone = vi.hoisted(() => vi.fn())
 const deleteZone = vi.hoisted(() => vi.fn())
 const setZoneActual = vi.hoisted(() => vi.fn())
+const buildReportWorkbook = vi.hoisted(() => vi.fn())
 
 vi.mock('../../lib/projectsApi', () => ({
   listProjectNames: () => listProjectNames(),
@@ -24,6 +25,10 @@ vi.mock('../../lib/decksApi', () => ({
 }))
 vi.mock('../../lib/gsApi', () => ({
   listDeckZones: (d: string) => listDeckZones(d),
+}))
+vi.mock('../../lib/reportXlsx', () => ({
+  buildReportWorkbook: (i: unknown) => buildReportWorkbook(i),
+  reportFileName: (c: string, d: string) => `tien-do-${c}-${d}.xlsx`,
 }))
 vi.mock('../../lib/zonesApi', () => ({
   createZone: (d: string, draft: unknown, ids: string[]) => createZone(d, draft, ids),
@@ -118,6 +123,8 @@ beforeEach(() => {
   deleteZone.mockResolvedValue(undefined)
   setZoneActual.mockReset()
   setZoneActual.mockResolvedValue(2)
+  buildReportWorkbook.mockReset()
+  buildReportWorkbook.mockResolvedValue(new Blob(['x']))
 })
 
 // Wrapped in antd's App because src/App.tsx wraps the whole tree in it, and
@@ -384,5 +391,51 @@ describe('ProgressScreen — zones', () => {
   it('says so when a deck has no plan yet', async () => {
     renderScreen()
     expect(await screen.findByText('Sàn này chưa có zone nào')).toBeInTheDocument()
+  })
+})
+
+describe('ProgressScreen — export', () => {
+  it('hands the report every deck of the project, with its own stages and plan', async () => {
+    // Every deck, not just the one on screen: the Overview sheet is the whole
+    // project, and exporting whichever tab happened to be open is the shape of
+    // a report that quietly under-states the job.
+    listDeckZones.mockResolvedValue([])
+    renderScreen()
+    await screen.findByTestId('paint-lens')
+
+    await userEvent.click(screen.getByRole('button', { name: /Xuất báo cáo/ }))
+
+    await waitFor(() => expect(buildReportWorkbook).toHaveBeenCalledTimes(1))
+    const [input] = buildReportWorkbook.mock.calls[0]
+    expect(input.decks).toHaveLength(2)
+    expect(input.decks.map((d: { deck: { code: string } }) => d.deck.code)).toEqual(['CD', 'MD'])
+    expect(input.decks[0].stages).toEqual(STAGES)
+  })
+
+  it('collects each deck\'s own zones, not only the open deck\'s', async () => {
+    listDeckZones.mockImplementation((deckId: string) => Promise.resolve(
+      deckId === 'd2'
+        ? [{ id: 'z9', name: 'Khu B', stageId: 's1', startDate: null, finishDate: null, cellIds: [] }]
+        : [],
+    ))
+    renderScreen()
+    await screen.findByTestId('paint-lens')
+
+    await userEvent.click(screen.getByRole('button', { name: /Xuất báo cáo/ }))
+
+    await waitFor(() => expect(buildReportWorkbook).toHaveBeenCalled())
+    const [input] = buildReportWorkbook.mock.calls[0]
+    expect(input.decks[1].zones).toHaveLength(1)
+    expect(input.decks[1].zones[0].name).toBe('Khu B')
+  })
+
+  it('surfaces a failed export instead of failing silently', async () => {
+    buildReportWorkbook.mockRejectedValue(new Error('out of memory'))
+    renderScreen()
+    await screen.findByTestId('paint-lens')
+
+    await userEvent.click(screen.getByRole('button', { name: /Xuất báo cáo/ }))
+
+    expect(await screen.findByText(/out of memory/)).toBeInTheDocument()
   })
 })
