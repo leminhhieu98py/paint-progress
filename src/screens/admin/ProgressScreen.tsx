@@ -1,4 +1,8 @@
-import { Alert, Card, Col, Row, Select, Space, Spin, Table, Tabs, Typography } from 'antd'
+import {
+  Alert, App, Button, Card, Col, DatePicker, Form, Input, Modal, Popconfirm,
+  Row, Select, Space, Spin, Table, Tabs, Typography,
+} from 'antd'
+import dayjs from 'dayjs'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { DrawingCanvas } from '../../canvas/DrawingCanvas'
 import { paintLensColors, scaffoldLensColors, SCAFFOLD_PENDING_COLOR } from '../../domain/lens'
@@ -9,6 +13,11 @@ import { formatAreaM2, formatPercent } from '../../lib/format'
 import { loadProjectProgress, type DeckProgressEntry } from '../../lib/progressApi'
 import { listProjectNames } from '../../lib/projectsApi'
 import { StageSpecTable } from '../gs/StageSpecTable'
+import { buildPlanLabels, formatPlanRange } from '../../domain/plan'
+import { cellsInBox } from '../../domain/geometry'
+import { listDeckZones } from '../../lib/gsApi'
+import { createZone, deleteZone, setZoneActual } from '../../lib/zonesApi'
+import type { Zone } from '../../domain/types'
 
 type ProjectOption = Awaited<ReturnType<typeof listProjectNames>>[number]
 
@@ -83,6 +92,14 @@ export function ProgressScreen() {
   const [imageUrl, setImageUrl] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [zones, setZones] = useState<Zone[]>([])
+  /** Cell CODES, because that is what DrawingCanvas selects by. Resolved to ids
+   *  only at the moment a zone is written -- zone_cells references cells.id,
+   *  and two decks can both carry an R1C1. */
+  const [selectedCodes, setSelectedCodes] = useState<string[]>([])
+  const [zoneFormOpen, setZoneFormOpen] = useState(false)
+  const { message } = App.useApp()
+  const [form] = Form.useForm()
 
   useEffect(() => {
     void (async () => {
@@ -165,6 +182,95 @@ export function ProgressScreen() {
     [active],
   )
 
+  /** The open deck's plan. Re-read after every write so the table, the labels on
+   *  the drawing and the database cannot disagree. */
+  const refreshZones = useCallback(async (deckId: string) => {
+    try {
+      setZones(await listDeckZones(deckId))
+    } catch (e) {
+      setError((e as Error).message)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!activeDeckId) {
+      setZones([])
+      return
+    }
+    // Cleared first: a zone list held across a deck change would annotate this
+    // drawing with the previous deck's plan, and every label would look real.
+    setZones([])
+    setSelectedCodes([])
+    void refreshZones(activeDeckId)
+  }, [activeDeckId, refreshZones])
+
+  const planLabels = useMemo(
+    () => (active ? buildPlanLabels(zones, active.deck.cells) : {}),
+    [zones, active],
+  )
+
+  const toggleCell = (code: string) => {
+    setSelectedCodes((prev) => (
+      prev.includes(code) ? prev.filter((c) => c !== code) : [...prev, code]
+    ))
+  }
+
+  const sweep = (rect: { x: number; y: number; w: number; h: number }) => {
+    if (!active) return
+    // Additive: a band adds to what is already picked, so a zone can be built
+    // out of two sweeps across a deck the admin has to scroll.
+    const swept = cellsInBox(active.deck.cells, rect)
+    setSelectedCodes((prev) => [...new Set([...prev, ...swept])])
+  }
+
+  const submitZone = async () => {
+    if (!active) return
+    const values = await form.validateFields()
+    const byCode = new Map(active.deck.cells.map((c) => [c.code, c.id]))
+    const cellIds = selectedCodes.map((c) => byCode.get(c)).filter((id): id is string => !!id)
+    try {
+      await createZone(active.deck.id, {
+        name: values.name as string,
+        stageId: values.stageId as string,
+        // A DatePicker hands back a dayjs; the column is a `date` and every
+        // reader treats it as a date-only string. Formatting rather than
+        // toISOString: that would render in UTC and shift the day west of
+        // Greenwich, which domain/plan.ts already carries a warning about.
+        startDate: values.startDate ? dayjs(values.startDate).format('YYYY-MM-DD') : null,
+        finishDate: values.finishDate ? dayjs(values.finishDate).format('YYYY-MM-DD') : null,
+      }, cellIds)
+      setZoneFormOpen(false)
+      setSelectedCodes([])
+      form.resetFields()
+      await refreshZones(active.deck.id)
+    } catch (e) {
+      setError((e as Error).message)
+    }
+  }
+
+  const applyZone = async (zone: Zone) => {
+    if (!active) return
+    try {
+      const written = await setZoneActual(zone.id, zone.stageId)
+      message.success(`Đã ghi ${written} ô`)
+      // The percentages on this screen just moved. Leaving them stale is the
+      // defect the decks list carried before its editor re-fetched on close.
+      await refresh()
+    } catch (e) {
+      setError((e as Error).message)
+    }
+  }
+
+  const removeZone = async (zone: Zone) => {
+    if (!active) return
+    try {
+      await deleteZone(zone.id)
+      await refreshZones(active.deck.id)
+    } catch (e) {
+      setError((e as Error).message)
+    }
+  }
+
   const rollupRows: RollupRow[] = entries.map((entry) => {
     const d = rollup.decks.find((x) => x.deckId === entry.deck.id)
     return {
@@ -222,9 +328,12 @@ export function ProgressScreen() {
                       imageW={active.imageW ?? 0}
                       imageH={active.imageH ?? 0}
                       cells={active.deck.cells}
-                      selectedCodes={[]}
+                      selectedCodes={selectedCodes}
                       cellColors={paintColors}
+                      planLabels={planLabels}
                       panZoom
+                      onCellClick={(code) => toggleCell(code)}
+                      onSelectDraw={sweep}
                     />
                   </div>
                   <ColorKey
@@ -274,6 +383,124 @@ export function ProgressScreen() {
               </div>
             </Card>
           )}
+
+          {active && (
+            <Card
+              size="small"
+              title="Kế hoạch tháo giàn giáo"
+              extra={
+                <Space>
+                  <Typography.Text type="secondary">
+                    {selectedCodes.length > 0 ? `${selectedCodes.length} ô đang chọn` : ''}
+                  </Typography.Text>
+                  {selectedCodes.length > 0 && (
+                    <Button onClick={() => setSelectedCodes([])}>Bỏ chọn</Button>
+                  )}
+                  <Button
+                    type="primary"
+                    disabled={selectedCodes.length === 0}
+                    onClick={() => setZoneFormOpen(true)}
+                  >
+                    Gộp thành zone ({selectedCodes.length})
+                  </Button>
+                </Space>
+              }
+            >
+              <Typography.Text type="secondary" style={{ display: 'block', marginBottom: 8 }}>
+                Giữ Shift rồi kéo trên bản vẽ để quét chọn nhiều ô, hoặc bấm từng ô.
+              </Typography.Text>
+
+              {zones.length === 0 && (
+                <Typography.Text type="secondary">Sàn này chưa có zone nào</Typography.Text>
+              )}
+
+              {zones.length > 0 && (
+                <div data-testid="zone-table">
+                  <Table<Zone>
+                    size="small"
+                    rowKey="id"
+                    pagination={false}
+                    dataSource={zones}
+                    columns={[
+                      { title: 'Zone', dataIndex: 'name', key: 'name' },
+                      {
+                        title: 'Công đoạn',
+                        key: 'stage',
+                        render: (_, z) =>
+                          active.stages.find((st) => st.id === z.stageId)?.name ?? '—',
+                      },
+                      { title: 'Số ô', key: 'cells', align: 'right', render: (_, z) => z.cellIds.length },
+                      {
+                        title: 'Kế hoạch',
+                        key: 'plan',
+                        render: (_, z) => formatPlanRange(z.startDate, z.finishDate) || '—',
+                      },
+                      {
+                        title: '',
+                        key: 'actions',
+                        align: 'right',
+                        render: (_, z) => (
+                          <Space>
+                            <Button size="small" onClick={() => void applyZone(z)}>
+                              Ghi thực tế
+                            </Button>
+                            <Popconfirm
+                              title="Xoá zone này?"
+                              description="Kế hoạch bị xoá, tiến độ đã ghi trên các ô vẫn giữ nguyên."
+                              okText="Xoá zone"
+                              cancelText="Huỷ"
+                              onConfirm={() => void removeZone(z)}
+                            >
+                              <Button size="small" danger>Xoá</Button>
+                            </Popconfirm>
+                          </Space>
+                        ),
+                      },
+                    ]}
+                  />
+                </div>
+              )}
+            </Card>
+          )}
+
+          <Modal
+            title={`Gộp ${selectedCodes.length} ô thành zone`}
+            open={zoneFormOpen}
+            onCancel={() => setZoneFormOpen(false)}
+            okText="Tạo zone"
+            cancelText="Huỷ"
+            onOk={() => void submitZone()}
+            destroyOnHidden
+          >
+            <Form
+              form={form}
+              layout="vertical"
+              initialValues={{ stageId: active?.stages[active.stages.length - 1]?.id }}
+            >
+              <Form.Item
+                label="Tên zone"
+                name="name"
+                rules={[{ required: true, message: 'Đặt tên cho zone' }]}
+              >
+                <Input />
+              </Form.Item>
+              <Form.Item
+                label="Công đoạn"
+                name="stageId"
+                rules={[{ required: true, message: 'Chọn công đoạn' }]}
+              >
+                <Select
+                  options={(active?.stages ?? []).map((st) => ({ value: st.id, label: st.name }))}
+                />
+              </Form.Item>
+              <Form.Item label="Bắt đầu" name="startDate">
+                <DatePicker style={{ width: '100%' }} format="DD/MM/YYYY" />
+              </Form.Item>
+              <Form.Item label="Kết thúc" name="finishDate">
+                <DatePicker style={{ width: '100%' }} format="DD/MM/YYYY" />
+              </Form.Item>
+            </Form>
+          </Modal>
 
           <Card size="small" title="Toàn dự án">
             <div data-testid="project-rollup">

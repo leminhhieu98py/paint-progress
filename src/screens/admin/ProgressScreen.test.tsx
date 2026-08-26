@@ -1,3 +1,4 @@
+import { App as AntApp } from 'antd'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -6,6 +7,11 @@ import { ProgressScreen } from './ProgressScreen'
 const listProjectNames = vi.hoisted(() => vi.fn())
 const loadProjectProgress = vi.hoisted(() => vi.fn())
 const getDrawingUrl = vi.hoisted(() => vi.fn())
+const listDeckZones = vi.hoisted(() => vi.fn())
+const createZone = vi.hoisted(() => vi.fn())
+const updateZone = vi.hoisted(() => vi.fn())
+const deleteZone = vi.hoisted(() => vi.fn())
+const setZoneActual = vi.hoisted(() => vi.fn())
 
 vi.mock('../../lib/projectsApi', () => ({
   listProjectNames: () => listProjectNames(),
@@ -16,22 +22,47 @@ vi.mock('../../lib/progressApi', () => ({
 vi.mock('../../lib/decksApi', () => ({
   getDrawingUrl: (p: string) => getDrawingUrl(p),
 }))
+vi.mock('../../lib/gsApi', () => ({
+  listDeckZones: (d: string) => listDeckZones(d),
+}))
+vi.mock('../../lib/zonesApi', () => ({
+  createZone: (d: string, draft: unknown, ids: string[]) => createZone(d, draft, ids),
+  updateZone: (id: string, f: unknown) => updateZone(id, f),
+  deleteZone: (id: string) => deleteZone(id),
+  setZoneActual: (id: string, s: string) => setZoneActual(id, s),
+}))
 
 // Konva renders to a canvas, which jsdom does not implement. The double exposes
 // the two things this screen is responsible for putting on a canvas: which
 // drawing, and what colour each bay came out.
 vi.mock('../../canvas/DrawingCanvas', () => ({
   DrawingCanvas: ({
-    imageUrl, cells, cellColors,
+    imageUrl, cells, cellColors, planLabels, selectedCodes, onCellClick, onSelectDraw,
   }: {
     imageUrl: string
     cells: { code: string }[]
     cellColors?: Record<string, string>
+    planLabels?: Record<string, string>
+    selectedCodes?: string[]
+    onCellClick?: (code: string, additive: boolean) => void
+    onSelectDraw?: (rect: { x: number; y: number; w: number; h: number }) => void
   }) => (
     <div data-testid="canvas" data-image={imageUrl}>
       {cells.map((c) => (
-        <span key={c.code} data-testid={`cell-${c.code}`} data-color={cellColors?.[c.code] ?? ''} />
+        <button
+          key={c.code}
+          data-testid={`cell-${c.code}`}
+          data-color={cellColors?.[c.code] ?? ''}
+          data-plan={planLabels?.[c.code] ?? ''}
+          data-selected={String(Boolean(selectedCodes?.includes(c.code)))}
+          onClick={() => onCellClick?.(c.code, false)}
+        />
       ))}
+      {/* Stands in for a Shift-drag across the whole drawing. */}
+      <button
+        data-testid="band-all"
+        onClick={() => onSelectDraw?.({ x: 0, y: 0, w: 1, h: 1 })}
+      />
     </div>
   ),
 }))
@@ -77,11 +108,27 @@ beforeEach(() => {
   listProjectNames.mockResolvedValue([{ id: 'p1', name: 'BB1 - CPPTS', code: 'BB1' }])
   loadProjectProgress.mockResolvedValue(ENTRIES)
   getDrawingUrl.mockImplementation((p: string) => Promise.resolve(`https://signed/${p}`))
+  listDeckZones.mockReset()
+  listDeckZones.mockResolvedValue([])
+  createZone.mockReset()
+  createZone.mockResolvedValue('z1')
+  updateZone.mockReset()
+  updateZone.mockResolvedValue(undefined)
+  deleteZone.mockReset()
+  deleteZone.mockResolvedValue(undefined)
+  setZoneActual.mockReset()
+  setZoneActual.mockResolvedValue(2)
 })
+
+// Wrapped in antd's App because src/App.tsx wraps the whole tree in it, and
+// because App.useApp()'s `message` is how "Ghi thực tế" reports how many bays it
+// wrote. Outside the provider that hook hands back an object with no methods,
+// and the call throws -- which a bare render() would have shipped.
+const renderScreen = () => render(<AntApp><ProgressScreen /></AntApp>)
 
 describe('ProgressScreen', () => {
   it('opens the first project and its first deck', async () => {
-    render(<ProgressScreen />)
+    renderScreen()
 
     await waitFor(() => expect(loadProjectProgress).toHaveBeenCalledWith('p1'))
     expect(await screen.findByRole('tab', { name: 'Cellar Deck' })).toBeInTheDocument()
@@ -89,7 +136,7 @@ describe('ProgressScreen', () => {
   })
 
   it('draws the paint lens and the scaffolding lens side by side, on the same deck', async () => {
-    render(<ProgressScreen />)
+    renderScreen()
 
     const paint = await screen.findByTestId('paint-lens')
     const scaffold = screen.getByTestId('scaffold-lens')
@@ -107,7 +154,7 @@ describe('ProgressScreen', () => {
   })
 
   it('shows both lenses over the same signed drawing', async () => {
-    render(<ProgressScreen />)
+    renderScreen()
 
     await waitFor(() => {
       expect(within(screen.getByTestId('paint-lens')).getByTestId('canvas'))
@@ -118,7 +165,7 @@ describe('ProgressScreen', () => {
   })
 
   it('switches both lenses when the deck tab changes', async () => {
-    render(<ProgressScreen />)
+    renderScreen()
     await screen.findByRole('tab', { name: 'Main Deck' })
 
     await userEvent.click(screen.getByRole('tab', { name: 'Main Deck' }))
@@ -139,7 +186,7 @@ describe('ProgressScreen', () => {
     //   prog = .25 + .15 + .6*.5 = 70,00%
     // MD: 250 m² at Blast + Coat 1 → prog = .25 * .25 = 6,25%
     // Equal areas, so the project is (70 + 6,25)/2 = 38,13%.
-    render(<ProgressScreen />)
+    renderScreen()
 
     const rollup = await screen.findByTestId('project-rollup')
     expect(within(rollup).getByText('70,00%')).toBeInTheDocument()
@@ -150,7 +197,7 @@ describe('ProgressScreen', () => {
   it('shows the open deck\'s own spec table, not the project\'s', async () => {
     // Stages are per deck since 0018. The table names the stages of whichever
     // deck is open, and its numbers divide by that deck's declared area.
-    render(<ProgressScreen />)
+    renderScreen()
 
     const spec = await screen.findByTestId('deck-spec')
     // getAllByText: antd renders a fixed-column header twice -- once to measure
@@ -164,7 +211,7 @@ describe('ProgressScreen', () => {
     // saying what any of it meant: the admin had to know that grey was Coat 2
     // and not "untouched". Each lens carries its own key, and the scaffolding
     // one says what its two colours mean in words rather than by convention.
-    render(<ProgressScreen />)
+    renderScreen()
 
     const paintKey = await screen.findByTestId('paint-legend')
     for (const name of ['Blast + Coat 1', 'Coat 2', 'Tháo giáo', 'Chưa bắt đầu']) {
@@ -180,7 +227,7 @@ describe('ProgressScreen', () => {
     loadProjectProgress.mockResolvedValue([
       { ...ENTRIES[0], imagePath: null, imageW: null, imageH: null },
     ])
-    render(<ProgressScreen />)
+    renderScreen()
 
     expect(await screen.findByText('Sàn này chưa có bản vẽ')).toBeInTheDocument()
     expect(getDrawingUrl).not.toHaveBeenCalled()
@@ -188,14 +235,14 @@ describe('ProgressScreen', () => {
 
   it('surfaces a load failure rather than rendering an empty project', async () => {
     loadProjectProgress.mockRejectedValue(new Error('permission denied for table decks'))
-    render(<ProgressScreen />)
+    renderScreen()
 
     expect(await screen.findByText(/permission denied/)).toBeInTheDocument()
   })
 
   it('says so when the project has no decks yet', async () => {
     loadProjectProgress.mockResolvedValue([])
-    render(<ProgressScreen />)
+    renderScreen()
 
     expect(await screen.findByText('Dự án này chưa có sàn nào')).toBeInTheDocument()
   })
@@ -205,12 +252,137 @@ describe('ProgressScreen', () => {
       { id: 'p1', name: 'BB1 - CPPTS', code: 'BB1' },
       { id: 'p2', name: 'BB2', code: 'BB2' },
     ])
-    render(<ProgressScreen />)
+    renderScreen()
     await waitFor(() => expect(loadProjectProgress).toHaveBeenCalledWith('p1'))
 
     await userEvent.click(screen.getByRole('combobox'))
     await userEvent.click(await screen.findByText('BB2 (BB2)'))
 
     await waitFor(() => expect(loadProjectProgress).toHaveBeenCalledWith('p2'))
+  })
+})
+
+describe('ProgressScreen — zones', () => {
+  const ZONE = {
+    id: 'z1', name: 'Khu A', stageId: 's3',
+    startDate: '2026-09-01', finishDate: '2026-09-07',
+    cellIds: ['c1'],
+  }
+
+  it('groups the swept bays into a zone', async () => {
+    renderScreen()
+    await screen.findByTestId('paint-lens')
+
+    // Shift-drag across the drawing, then group.
+    await userEvent.click(within(screen.getByTestId('paint-lens')).getByTestId('band-all'))
+    await userEvent.click(screen.getByRole('button', { name: /Gộp thành zone/ }))
+
+    await userEvent.type(screen.getByLabelText('Tên zone'), 'Khu A')
+    await userEvent.click(screen.getByRole('button', { name: 'Tạo zone' }))
+
+    await waitFor(() => expect(createZone).toHaveBeenCalledTimes(1))
+    const [deckId, draft, cellIds] = createZone.mock.calls[0]
+    expect(deckId).toBe('d1')
+    expect(draft).toMatchObject({ name: 'Khu A' })
+    // Ids, not codes: zone_cells references cells.id, and two decks can both
+    // carry an R1C1.
+    expect(cellIds).toEqual(['c1', 'c2'])
+  })
+
+  it('will not offer to group when nothing is selected', async () => {
+    renderScreen()
+    await screen.findByTestId('paint-lens')
+
+    expect(screen.getByRole('button', { name: /Gộp thành zone/ })).toBeDisabled()
+  })
+
+  it('clears the selection after the zone is created, so the next sweep starts clean', async () => {
+    renderScreen()
+    await screen.findByTestId('paint-lens')
+    await userEvent.click(within(screen.getByTestId('paint-lens')).getByTestId('band-all'))
+    await userEvent.click(screen.getByRole('button', { name: /Gộp thành zone/ }))
+    await userEvent.type(screen.getByLabelText('Tên zone'), 'Khu A')
+    await userEvent.click(screen.getByRole('button', { name: 'Tạo zone' }))
+
+    await waitFor(() => expect(createZone).toHaveBeenCalled())
+    await waitFor(() => {
+      expect(within(screen.getByTestId('paint-lens')).getByTestId('cell-R1C1'))
+        .toHaveAttribute('data-selected', 'false')
+    })
+  })
+
+  it('re-reads the zones after creating one, so the table is not stale', async () => {
+    renderScreen()
+    await screen.findByTestId('paint-lens')
+    await waitFor(() => expect(listDeckZones).toHaveBeenCalledTimes(1))
+
+    await userEvent.click(within(screen.getByTestId('paint-lens')).getByTestId('band-all'))
+    await userEvent.click(screen.getByRole('button', { name: /Gộp thành zone/ }))
+    await userEvent.type(screen.getByLabelText('Tên zone'), 'Khu A')
+    await userEvent.click(screen.getByRole('button', { name: 'Tạo zone' }))
+
+    await waitFor(() => expect(listDeckZones).toHaveBeenCalledTimes(2))
+  })
+
+  it('lists the deck\'s zones with their planned range', async () => {
+    listDeckZones.mockResolvedValue([ZONE])
+    renderScreen()
+
+    const table = await screen.findByTestId('zone-table')
+    expect(within(table).getByText('Khu A')).toBeInTheDocument()
+    // The range in the form the source drawings use.
+    expect(within(table).getByText('01/09 – 07/09')).toBeInTheDocument()
+  })
+
+  it('labels the planned bays on the drawing, the way the foreman sees them', async () => {
+    listDeckZones.mockResolvedValue([ZONE])
+    renderScreen()
+
+    await waitFor(() => {
+      expect(within(screen.getByTestId('paint-lens')).getByTestId('cell-R1C1'))
+        .toHaveAttribute('data-plan', '01/09 – 07/09')
+    })
+  })
+
+  it('writes the zone\'s stage across its bays on Set actual, and re-reads the deck', async () => {
+    listDeckZones.mockResolvedValue([ZONE])
+    renderScreen()
+    await screen.findByTestId('zone-table')
+    await waitFor(() => expect(loadProjectProgress).toHaveBeenCalledTimes(1))
+
+    await userEvent.click(screen.getByRole('button', { name: 'Ghi thực tế' }))
+
+    await waitFor(() => expect(setZoneActual).toHaveBeenCalledWith('z1', 's3'))
+    // The percentages on this screen just changed; leaving them stale is the
+    // defect the decks list had before its editor re-fetched on close.
+    await waitFor(() => expect(loadProjectProgress).toHaveBeenCalledTimes(2))
+  })
+
+  it('deletes a zone and re-reads the list', async () => {
+    listDeckZones.mockResolvedValue([ZONE])
+    renderScreen()
+    await screen.findByTestId('zone-table')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Xoá' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Xoá zone' }))
+
+    await waitFor(() => expect(deleteZone).toHaveBeenCalledWith('z1'))
+    await waitFor(() => expect(listDeckZones).toHaveBeenCalledTimes(2))
+  })
+
+  it('surfaces a failed Set actual instead of leaving the plan looking applied', async () => {
+    listDeckZones.mockResolvedValue([ZONE])
+    setZoneActual.mockRejectedValue(new Error('stage does not belong to deck'))
+    renderScreen()
+    await screen.findByTestId('zone-table')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Ghi thực tế' }))
+
+    expect(await screen.findByText(/stage does not belong to deck/)).toBeInTheDocument()
+  })
+
+  it('says so when a deck has no plan yet', async () => {
+    renderScreen()
+    expect(await screen.findByText('Sàn này chưa có zone nào')).toBeInTheDocument()
   })
 })
