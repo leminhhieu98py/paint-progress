@@ -47,6 +47,46 @@ export async function listDecks(projectId: string): Promise<DeckRow[]> {
   }))
 }
 
+/**
+ * One deck, by the id in the URL.
+ *
+ * The deck screen is addressable now -- a reload, a bookmark or a link opens
+ * the same deck -- and none of those carry the project it belongs to, which is
+ * all `listDecks` can be asked by. `maybeSingle` so an id that no longer names
+ * a deck comes back as null for the screen to report, rather than as an error
+ * indistinguishable from the network being down.
+ */
+export async function getDeck(deckId: string): Promise<DeckRow | null> {
+  const { data, error } = await supabase
+    .from('decks')
+    .select('id, project_id, seq, name, code, image_path, image_w, image_h, total_area_m2, area_source, cells(id)')
+    .eq('id', deckId)
+    .maybeSingle()
+  if (error) throw new Error(error.message)
+  if (!data) return null
+  return {
+    id: data.id as string,
+    projectId: data.project_id as string,
+    seq: data.seq as number,
+    name: data.name as string,
+    code: data.code as string,
+    imagePath: (data.image_path as string | null) ?? null,
+    imageW: (data.image_w as number | null) ?? null,
+    imageH: (data.image_h as number | null) ?? null,
+    totalAreaM2: Number(data.total_area_m2),
+    areaSource: data.area_source as 'guides' | 'prorated',
+    cellCount: ((data.cells ?? []) as unknown[]).length,
+  }
+}
+
+/** Renames a deck and re-codes it, without touching its geometry. */
+export async function updateDeckIdentity(
+  deckId: string, name: string, code: string,
+): Promise<void> {
+  const { error } = await supabase.from('decks').update({ name, code }).eq('id', deckId)
+  if (error) throw new Error(error.message)
+}
+
 export async function createDeck(input: {
   projectId: string
   seq: number

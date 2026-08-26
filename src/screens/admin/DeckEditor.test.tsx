@@ -45,26 +45,18 @@ vi.mock('../../lib/projectsApi', () => ({
 // survivor's identity can be got wrong.
 vi.mock('../../canvas/DrawingCanvas', () => ({
   DrawingCanvas: ({
-    cells, onCellClick, cellColors, cropRect, onCropDraw, onCellDraw, onSelectDraw,
+    cells, selectedCodes, onCellClick, cellColors, onCellDraw, onSelectDraw,
   }: {
     cells: { code: string; x: number; w: number }[]
+    selectedCodes: string[]
     onCellClick?: (code: string, additive: boolean) => void
     cellColors?: Record<string, string>
-    cropRect?: { x: number; y: number; w: number; h: number } | null
-    onCropDraw?: (rect: { x: number; y: number; w: number; h: number }) => void
     onCellDraw?: (rect: { x: number; y: number; w: number; h: number }) => void
     onSelectDraw?: (rect: { x: number; y: number; w: number; h: number }) => void
   }) => (
     <div data-testid="canvas">
-      {/*
-        Whether the canvas was put in crop mode is observable ONLY as this
-        button's presence: `onCropDraw` is what puts the real canvas in the
-        mode, so a stand-in that always rendered the button could not tell a
-        screen that entered crop mode from one that never left it.
-      */}
-      {onCropDraw && (
-        <button onClick={() => onCropDraw({ x: 0.1, y: 0.1, w: 0.4, h: 0.5 })}>kéo khung sàn</button>
-      )}
+      {/* What is selected, which no button on this screen reports any more. */}
+      <div data-testid="selection">{[...selectedCodes].sort().join(',')}</div>
       {/* Whether the canvas was put in draw-a-bay mode is observable only as
           these two, for the same reason the crop buttons exist. */}
       {onCellDraw && (
@@ -77,15 +69,6 @@ vi.mock('../../canvas/DrawingCanvas', () => ({
       {onSelectDraw && (
         <button onClick={() => onSelectDraw({ x: 0, y: 0, w: 0.3, h: 1 })}>quét chọn nửa trái</button>
       )}
-      {/* A second, different drag: re-cropping has to replace the box, not add to it. */}
-      {onCropDraw && (
-        <button onClick={() => onCropDraw({ x: 0.2, y: 0.2, w: 0.3, h: 0.3 })}>kéo khung sàn nhỏ</button>
-      )}
-      {/*
-        Present only when guide-clicking is armed, for the same reason as the
-        crop button above: the mode is observable ONLY as this button existing.
-      */}
-      <div data-testid="crop">{cropRect ? JSON.stringify(cropRect) : ''}</div>
       {/*
         Cell geometry, not just codes: a merge across an undrawn beam and a drop
         of one of the two cells leave the same COUNT behind, so only the
@@ -152,13 +135,35 @@ const renderInApp = (deckProp: ComponentProps<typeof DeckEditor>['deck']) =>
  */
 const detectOneBay = async () => {
   detectBaysFromImage.mockResolvedValue([{ x: 0, y: 0, w: 1, h: 1 }])
-  await userEvent.click(screen.getByRole('button', { name: /vùng sàn/ }))
-  await userEvent.click(screen.getByRole('button', { name: 'kéo khung sàn' }))
-  await userEvent.click(screen.getByRole('button', { name: 'Dò ô trong khung' }))
+  await userEvent.click(screen.getByRole('button', { name: 'Dò ô' }))
 }
 
 /** What antd's message API has on screen, if anything. */
 const toastText = () => document.querySelector('.ant-message')?.textContent ?? ''
+
+/**
+ * The buttons this screen used to carry are gone: selecting, deleting, merging
+ * and saving are all keys now, and the keys only answer once the admin has
+ * asked for them. These are the ways in, so a test says what the admin did
+ * rather than which control they happened to reach for.
+ */
+const arm = async () => {
+  // Waits on the button rather than on the canvas: a deck whose load failed has
+  // no canvas, and refusing to save from that state is one of the things under
+  // test here.
+  const button = await screen.findByRole('button', { name: /Bắt đầu thao tác|Lưu bản vẽ/ })
+  if (button.textContent?.includes('Bắt đầu')) await userEvent.click(button)
+}
+const press = (key: string, opts: Record<string, boolean> = {}) =>
+  fireEvent.keyDown(window, { key, ...opts })
+const selectAll = async () => {
+  await arm()
+  press('a', { metaKey: true })
+}
+const saveDeck = async () => {
+  await arm()
+  await userEvent.click(screen.getByRole('button', { name: 'Lưu bản vẽ' }))
+}
 
 beforeEach(() => {
   for (const m of [
@@ -263,7 +268,7 @@ describe('DeckEditor', () => {
     const areaInput = screen.getByRole('spinbutton')
     await userEvent.clear(areaInput)
     await userEvent.type(areaInput, '1234,5')
-    await userEvent.click(screen.getByRole('button', { name: 'Lưu bản vẽ và lưới ô' }))
+    await saveDeck()
 
     // Always 'prorated': pixel-share is the only way this screen produces a
     // cell area now, so the column records that on every write.
@@ -282,7 +287,7 @@ describe('DeckEditor', () => {
     await screen.findByTestId('canvas')
 
     await detectOneBay()
-    await userEvent.click(screen.getByRole('button', { name: 'Lưu bản vẽ và lưới ô' }))
+    await saveDeck()
 
     await waitFor(() => expect(syncCells).toHaveBeenCalledTimes(1))
     expect(syncCells).toHaveBeenCalledWith(
@@ -309,7 +314,7 @@ describe('DeckEditor', () => {
     await screen.findByTestId('canvas')
 
     await detectOneBay()
-    await userEvent.click(screen.getByRole('button', { name: 'Lưu bản vẽ và lưới ô' }))
+    await saveDeck()
 
     expect(await screen.findByText(listItem('R9C9 — Coat 1'))).toBeInTheDocument()
     // The merge-only caveat is about a merge's missing honest carry rule; a
@@ -327,34 +332,31 @@ describe('DeckEditor', () => {
     ])
   })
 
-  it('disables the delete and merge buttons while a review is in flight, so a double-tap cannot fire two passes', async () => {
+  it('will not run two merges over one selection', async () => {
+    // Merging awaits two round trips (listCells, zoneImpactOf) before it can
+    // even open the confirmation dialog, and nothing stopped a second M landing
+    // in that gap from starting a second pass over the same selection --
+    // whichever one's proposal was written second is the one the admin
+    // confirmed, and it need not be the one they read.
     listCells.mockResolvedValue([
-      { id: 'c1', code: 'R1C1', x: 0, y: 0, w: 1, h: 1, areaM2: 100, stageId: null },
+      { id: 'c1', code: 'R1C1', x: 0, y: 0, w: 0.5, h: 1, areaM2: 100, stageId: null },
+      { id: 'c2', code: 'R1C2', x: 0.5, y: 0, w: 0.5, h: 1, areaM2: 100, stageId: null },
     ])
     let resolveZoneImpact: (v: unknown[]) => void = () => {}
     zoneImpactOf.mockImplementation(
       () => new Promise((resolve) => { resolveZoneImpact = resolve }),
     )
     renderInApp(deck)
-    await screen.findByTestId('canvas')
+    await selectAll()
 
-    await userEvent.click(screen.getByRole('button', { name: 'Chọn tất cả' }))
-    const deleteButton = screen.getByRole('button', { name: 'Xoá ô đã chọn' })
-    await userEvent.click(deleteButton)
-
-    // beginEdit is awaiting zoneImpactOf -- the whole review is still in
-    // flight, and RTL's userEvent will not dispatch a click on a genuinely
-    // disabled button, so a second tap landing here is exactly what the
-    // disabled state prevents.
-    expect(deleteButton).toBeDisabled()
-    // The initial load's listCells, plus reviewEdit's own re-read: a second
-    // tap reaching beginEdit again would add a third call here.
-    expect(listCells).toHaveBeenCalledTimes(2)
-    await userEvent.click(deleteButton)
+    press('m')
+    // The initial load's listCells, plus the review's own re-read.
+    await waitFor(() => expect(listCells).toHaveBeenCalledTimes(2))
+    press('m')
     expect(listCells).toHaveBeenCalledTimes(2)
 
     resolveZoneImpact([])
-    await waitFor(() => expect(deleteButton).not.toBeDisabled())
+    await waitFor(() => expect(screen.getByTestId('canvas')).toBeInTheDocument())
   })
 
   it('names the affected zones before deleting a cell', async () => {
@@ -368,8 +370,9 @@ describe('DeckEditor', () => {
     renderInApp(deck)
     await screen.findByTestId('canvas')
 
-    await userEvent.click(screen.getByRole('button', { name: 'Chọn tất cả' }))
-    await userEvent.click(screen.getByRole('button', { name: 'Xoá ô đã chọn' }))
+    await selectAll()
+    press('Delete')
+    await saveDeck()
 
     // zone_cells cascades on cell_id, so deleting silently shrinks the zone.
     expect(await screen.findByText(/Zone 3/)).toBeInTheDocument()
@@ -391,9 +394,10 @@ describe('DeckEditor', () => {
     renderInApp(deck)
     await screen.findByTestId('canvas')
 
-    await userEvent.click(screen.getByRole('button', { name: 'Chọn tất cả' }))
-    await userEvent.click(screen.getByRole('button', { name: 'Xoá ô đã chọn' }))
-    await userEvent.click(await screen.findByRole('button', { name: 'Vẫn xoá' }))
+    await selectAll()
+    press('Delete')
+    await saveDeck()
+    await userEvent.click(await screen.findByRole('button', { name: 'Vẫn lưu' }))
 
     await waitFor(() => expect(syncCells).toHaveBeenCalledTimes(1))
     expect(syncCells.mock.calls[0][1]).toEqual([])
@@ -408,8 +412,8 @@ describe('DeckEditor', () => {
     renderInApp(deck)
     await screen.findByTestId('canvas')
 
-    await userEvent.click(screen.getByRole('button', { name: 'Chọn tất cả' }))
-    await userEvent.click(screen.getByRole('button', { name: 'Gộp ô đã chọn' }))
+    await selectAll()
+    press('m')
 
     await waitFor(() => expect(syncCells).toHaveBeenCalledTimes(1))
     // Spec 8.3: without this the survivor silently drops out of both zones.
@@ -444,8 +448,8 @@ describe('DeckEditor', () => {
     renderInApp(deck)
     await screen.findByTestId('canvas')
 
-    await userEvent.click(screen.getByRole('button', { name: 'Chọn tất cả' }))
-    await userEvent.click(screen.getByRole('button', { name: 'Gộp ô đã chọn' }))
+    await selectAll()
+    press('m')
 
     // R1C1 is the top-left source, so mergeCells keeps its code and syncCells
     // keeps its row: it is the survivor and its Coat 1 is NOT lost -- but its
@@ -507,18 +511,19 @@ describe('DeckEditor', () => {
     listCells.mockResolvedValue(twoTickedCells)
     listStages.mockResolvedValue(stages)
     let view = renderInApp(deck)
-    await screen.findByTestId('canvas')
+    await arm()
     await userEvent.click(screen.getByRole('button', { name: 'chọn R1C1' }))
-    await userEvent.click(screen.getByRole('button', { name: 'Xoá ô đã chọn' }))
-    await screen.findByRole('button', { name: 'Vẫn xoá' })
+    press('Delete')
+    await saveDeck()
+    await screen.findByRole('button', { name: 'Vẫn lưu' })
     expect(screen.getByText(DISCLOSURE)).toBeInTheDocument()
     view.unmount()
 
     // merge: both cells, so the survivor keeps its row and the other's tick goes.
     view = renderInApp(deck)
     await screen.findByTestId('canvas')
-    await userEvent.click(screen.getByRole('button', { name: 'Chọn tất cả' }))
-    await userEvent.click(screen.getByRole('button', { name: 'Gộp ô đã chọn' }))
+    await selectAll()
+    press('m')
     await screen.findByRole('button', { name: 'Vẫn gộp' })
     expect(screen.getByText(DISCLOSURE)).toBeInTheDocument()
     view.unmount()
@@ -527,7 +532,7 @@ describe('DeckEditor', () => {
     view = renderInApp(deck)
     await screen.findByTestId('canvas')
     await detectOneBay()
-    await userEvent.click(screen.getByRole('button', { name: 'Lưu bản vẽ và lưới ô' }))
+    await saveDeck()
     await screen.findByRole('button', { name: 'Vẫn lưu' })
     expect(screen.getByText(DISCLOSURE)).toBeInTheDocument()
   })
@@ -545,8 +550,9 @@ describe('DeckEditor', () => {
     renderInApp(deck)
     await screen.findByTestId('canvas')
 
-    await userEvent.click(screen.getByRole('button', { name: 'Chọn tất cả' }))
-    await userEvent.click(screen.getByRole('button', { name: 'Xoá ô đã chọn' }))
+    await selectAll()
+    press('Delete')
+    await saveDeck()
 
     expect(await screen.findByText(listItem('R1C1 — Coat 1'))).toBeInTheDocument()
     expect(screen.queryByText(/Ô sống sót giữ tiến độ/)).toBeNull()
@@ -568,7 +574,7 @@ describe('DeckEditor', () => {
     await screen.findByTestId('canvas')
 
     await detectOneBay()
-    await userEvent.click(screen.getByRole('button', { name: 'Lưu bản vẽ và lưới ô' }))
+    await saveDeck()
 
     // The title collapses to one generic form once it is not a zone-impact
     // case (task-8-fix-3 R6) -- it no longer names the operation or the reason.
@@ -607,7 +613,7 @@ describe('DeckEditor', () => {
     await screen.findByTestId('canvas')
 
     await detectOneBay()
-    await userEvent.click(screen.getByRole('button', { name: 'Lưu bản vẽ và lưới ô' }))
+    await saveDeck()
 
     await waitFor(() => expect(syncCells).toHaveBeenCalledTimes(1))
     expect(syncCells.mock.calls[0][1]).toEqual([
@@ -637,7 +643,7 @@ describe('DeckEditor', () => {
     await screen.findByTestId('canvas')
 
     await detectOneBay()
-    await userEvent.click(screen.getByRole('button', { name: 'Lưu bản vẽ và lưới ô' }))
+    await saveDeck()
 
     expect(await screen.findByText(listItem('R1C1 — Coat 3: 200,00 → 210,40 m²'))).toBeInTheDocument()
     expect(syncCells).not.toHaveBeenCalled()
@@ -659,7 +665,7 @@ describe('DeckEditor', () => {
     await screen.findByTestId('canvas')
 
     await detectOneBay()
-    await userEvent.click(screen.getByRole('button', { name: 'Lưu bản vẽ và lưới ô' }))
+    await saveDeck()
 
     expect(await screen.findByText(listItem('R1C1 — Coat 3: 400,00 → 232,00 m²'))).toBeInTheDocument()
     expect(syncCells).not.toHaveBeenCalled()
@@ -684,9 +690,10 @@ describe('DeckEditor', () => {
     renderInApp(deck)
     await screen.findByTestId('canvas')
 
-    await userEvent.click(screen.getByRole('button', { name: 'chọn R1C1' }))
+        await arm()
+await userEvent.click(screen.getByRole('button', { name: 'chọn R1C1' }))
     await userEvent.click(screen.getByRole('button', { name: 'chọn R1C2' }))
-    await userEvent.click(screen.getByRole('button', { name: 'Gộp ô đã chọn' }))
+    press('m')
 
     expect(await screen.findByText(listItem('R1C2 — Coat 3'))).toBeInTheDocument()
     expect(screen.queryByText(listItem('R1C1 — Coat 1'))).toBeNull()
@@ -708,8 +715,8 @@ describe('DeckEditor', () => {
     renderInApp(deck)
     await screen.findByTestId('canvas')
 
-    await userEvent.click(screen.getByRole('button', { name: 'Chọn tất cả' }))
-    await userEvent.click(screen.getByRole('button', { name: 'Gộp ô đã chọn' }))
+    await selectAll()
+    press('m')
 
     expect(await screen.findByText('Xác nhận thay đổi lưới ô')).toBeInTheDocument()
     // The progress-loss section carries its own claim now; there is no
@@ -727,8 +734,8 @@ describe('DeckEditor', () => {
     renderInApp(deck)
     await screen.findByTestId('canvas')
 
-    await userEvent.click(screen.getByRole('button', { name: 'Chọn tất cả' }))
-    await userEvent.click(screen.getByRole('button', { name: 'Gộp ô đã chọn' }))
+    await selectAll()
+    press('m')
 
     // Nothing to lose, so the merge applies without an extra confirmation.
     await waitFor(() => expect(syncCells).toHaveBeenCalledTimes(1))
@@ -745,8 +752,8 @@ describe('DeckEditor', () => {
     renderInApp(deck)
     await screen.findByTestId('canvas')
 
-    await userEvent.click(screen.getByRole('button', { name: 'Chọn tất cả' }))
-    await userEvent.click(screen.getByRole('button', { name: 'Gộp ô đã chọn' }))
+    await selectAll()
+    press('m')
 
     expect(await screen.findAllByText(/hình chữ nhật kín/)).not.toHaveLength(0)
     expect(screen.queryByText(/solid rectangle/i)).toBeNull()
@@ -763,8 +770,8 @@ describe('DeckEditor', () => {
     renderInApp(deck)
     await screen.findByTestId('canvas')
 
-    await userEvent.click(screen.getByRole('button', { name: 'Chọn tất cả' }))
-    await userEvent.click(screen.getByRole('button', { name: 'Gộp ô đã chọn' }))
+    await selectAll()
+    press('m')
 
     expect(await screen.findAllByText(/bị trùng nhau/)).not.toHaveLength(0)
     expect(screen.queryByText(/overlapping cells/i)).toBeNull()
@@ -789,7 +796,7 @@ describe('DeckEditor', () => {
     expect(await screen.findByText(/Chưa khai báo diện tích sàn/)).toBeInTheDocument()
     expect(screen.getByText(/sẽ luôn là 0%/)).toBeInTheDocument()
 
-    await userEvent.click(screen.getByRole('button', { name: 'Lưu bản vẽ và lưới ô' }))
+    await saveDeck()
 
     expect(await screen.findAllByText(/Không lưu được: chưa khai báo diện tích sàn/)).not.toHaveLength(0)
     expect(syncCells).not.toHaveBeenCalled()
@@ -804,7 +811,7 @@ describe('DeckEditor', () => {
     await userEvent.clear(areaInput)
     await userEvent.type(areaInput, '5258,5')
     await waitFor(() => expect(screen.queryByText(/Chưa khai báo diện tích sàn/)).toBeNull())
-    await userEvent.click(screen.getByRole('button', { name: 'Lưu bản vẽ và lưới ô' }))
+    await saveDeck()
     await waitFor(() => expect(syncCells).toHaveBeenCalledTimes(1))
   })
 
@@ -825,7 +832,7 @@ describe('DeckEditor', () => {
     await screen.findByTestId('canvas')
 
     await detectOneBay()
-    await userEvent.click(screen.getByRole('button', { name: 'Lưu bản vẽ và lưới ô' }))
+    await saveDeck()
 
     expect(await screen.findByText(listItem('R1C1 — Coat 2: 0,00 → 232,00 m²'))).toBeInTheDocument()
     expect(screen.getByText(/Các ô này giữ tiến độ đã ghi nhưng diện tích thay đổi/)).toBeInTheDocument()
@@ -855,8 +862,8 @@ describe('DeckEditor', () => {
     renderInApp(deck)
     await screen.findByTestId('canvas')
 
-    await userEvent.click(screen.getByRole('button', { name: 'Chọn tất cả' }))
-    await userEvent.click(screen.getByRole('button', { name: 'Gộp ô đã chọn' }))
+    await selectAll()
+    press('m')
 
     // Applied straight through: nothing is at stake, so there is nothing to say.
     await waitFor(() => expect(syncCells).toHaveBeenCalledTimes(1))
@@ -877,8 +884,9 @@ describe('DeckEditor', () => {
     renderInApp(deck)
     await screen.findByTestId('canvas')
 
-    await userEvent.click(screen.getByRole('button', { name: 'Chọn tất cả' }))
-    await userEvent.click(screen.getByRole('button', { name: 'Xoá ô đã chọn' }))
+    await selectAll()
+    press('Delete')
+    await saveDeck()
 
     expect(await screen.findByText('Xoá toàn bộ lưới ô của sàn')).toBeInTheDocument()
     // The count, so the admin can tell a two-cell mistake from the whole deck.
@@ -886,7 +894,7 @@ describe('DeckEditor', () => {
     expect(syncCells).not.toHaveBeenCalled()
 
     syncCells.mockResolvedValue(undefined)
-    await userEvent.click(screen.getByRole('button', { name: 'Vẫn xoá' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Vẫn lưu' }))
     await waitFor(() => expect(syncCells).toHaveBeenCalledTimes(1))
     expect(syncCells.mock.calls[0][1]).toEqual([])
   })
@@ -900,7 +908,7 @@ describe('DeckEditor', () => {
     renderInApp(deck)
     await screen.findByTestId('canvas')
 
-    await userEvent.click(screen.getByRole('button', { name: 'Lưu bản vẽ và lưới ô' }))
+    await saveDeck()
 
     await waitFor(() => expect(syncCells).toHaveBeenCalledTimes(1))
     expect(screen.queryByRole('dialog')).toBeNull()
@@ -918,7 +926,7 @@ describe('DeckEditor', () => {
     renderInApp(deck)
     await screen.findByText('Failed to fetch')
 
-    await userEvent.click(screen.getByRole('button', { name: 'Lưu bản vẽ và lưới ô' }))
+    await saveDeck()
 
     expect(await screen.findAllByText(/lần tải dữ liệu gần nhất thất bại/)).not.toHaveLength(0)
     expect(syncCells).not.toHaveBeenCalled()
@@ -955,8 +963,8 @@ describe('DeckEditor', () => {
     await screen.findByTestId('canvas')
     expect(screen.getByText('200,00')).toBeInTheDocument()
 
-    await userEvent.click(screen.getByRole('button', { name: 'Chọn tất cả' }))
-    await userEvent.click(screen.getByRole('button', { name: 'Gộp ô đã chọn' }))
+    await selectAll()
+    press('m')
 
     expect(await screen.findAllByText('delete blocked')).not.toHaveLength(0)
     // 300 m², what the database holds: the widened survivor plus the source the
@@ -984,32 +992,7 @@ describe('DeckEditor', () => {
       { x: 0.1, y: 0.5, w: 0.8, h: 0.4 },
     ]
 
-    const drawTheBox = async () => {
-      await userEvent.click(screen.getByRole('button', { name: 'Chọn vùng sàn để dò ô' }))
-      await userEvent.click(screen.getByRole('button', { name: 'kéo khung sàn' }))
-    }
 
-    it('does not detect when the drag ends -- only when the region is committed', async () => {
-      // Getting the box right takes more than one attempt, and detecting on
-      // mouse-up threw away the cells on every one of them.
-      detectBaysFromImage.mockResolvedValue(BAYS)
-      renderInApp(deck)
-      await screen.findByTestId('canvas')
-
-      await drawTheBox()
-      expect(detectBaysFromImage).not.toHaveBeenCalled()
-      // The box IS remembered and drawn -- that is what the admin looks at
-      // while they decide.
-      expect(screen.getByTestId('crop')).toHaveTextContent('{"x":0.1,"y":0.1,"w":0.4,"h":0.5}')
-
-      await userEvent.click(screen.getByRole('button', { name: 'Dò ô trong khung' }))
-      await waitFor(() => expect(detectBaysFromImage).toHaveBeenCalledTimes(1))
-      expect(detectBaysFromImage).toHaveBeenCalledWith(
-        'blob:drawing',
-        { x: 0.1, y: 0.1, w: 0.4, h: 0.5 },
-        { closeFraction: 0.025 },
-      )
-    })
 
     it('turns the bays into cells, named by where they sit and sharing the deck area', async () => {
       // Cells, not guides: a bay is a closed region on the sheet, so there is
@@ -1019,8 +1002,7 @@ describe('DeckEditor', () => {
       renderInApp(deck)
       await screen.findByTestId('canvas')
 
-      await drawTheBox()
-      await userEvent.click(screen.getByRole('button', { name: 'Dò ô trong khung' }))
+      await userEvent.click(screen.getByRole('button', { name: 'Dò ô' }))
 
       await waitFor(() => expect(screen.getByTestId('cell-geometry')).toHaveTextContent(
         'R1C1:0.1+0.35 R1C2:0.5+0.4 R2C1:0.1+0.8',
@@ -1028,85 +1010,15 @@ describe('DeckEditor', () => {
       expect(screen.getByText('3 ô')).toBeInTheDocument()
       // Prorated: a detected bay carries no printed dimension, so its area is
       // its share of the deck's pixels, and the banner says so.
-      expect(await screen.findByText('Diện tích ô đang được chia theo tỉ lệ, không phải đo thật'))
-        .toBeInTheDocument()
       // Σ diện tích ô: the whole deck, shared out over the three bays.
       expect(document.querySelectorAll('.ant-descriptions-item-content')[2]?.textContent)
         .toBe('5.258,50')
     })
 
-    it('re-dragging replaces the region, and only the last one is detected', async () => {
-      detectBaysFromImage.mockResolvedValue(BAYS)
-      renderInApp(deck)
-      await screen.findByTestId('canvas')
 
-      await userEvent.click(screen.getByRole('button', { name: 'Chọn vùng sàn để dò ô' }))
-      await userEvent.click(screen.getByRole('button', { name: 'kéo khung sàn' }))
-      await userEvent.click(screen.getByRole('button', { name: 'kéo khung sàn nhỏ' }))
-      await userEvent.click(screen.getByRole('button', { name: 'Dò ô trong khung' }))
 
-      await waitFor(() => expect(detectBaysFromImage).toHaveBeenCalledTimes(1))
-      expect(detectBaysFromImage).toHaveBeenCalledWith(
-        'blob:drawing',
-        { x: 0.2, y: 0.2, w: 0.3, h: 0.3 },
-        { closeFraction: 0.025 },
-      )
-    })
 
-    it('cannot commit a region that was never drawn', async () => {
-      renderInApp(deck)
-      await screen.findByTestId('canvas')
 
-      await userEvent.click(screen.getByRole('button', { name: 'Chọn vùng sàn để dò ô' }))
-      expect(screen.getByRole('button', { name: 'Dò ô trong khung' })).toBeDisabled()
-    })
-
-    it('re-detects at the new bridge when the slider settles', async () => {
-      // The one control detection has left. Beams break where other structure
-      // crosses them; bridging a wider hole finds MORE bays, because an
-      // unbridged break is a door between two the drawing shows as separate.
-      detectBaysFromImage.mockResolvedValue(BAYS)
-      renderInApp(deck)
-      await screen.findByTestId('canvas')
-      await drawTheBox()
-      await userEvent.click(screen.getByRole('button', { name: 'Dò ô trong khung' }))
-      await waitFor(() => expect(detectBaysFromImage).toHaveBeenCalledTimes(1))
-
-      const slider = screen.getByRole('slider', { name: 'Nối khe hở dầm' })
-      slider.focus()
-      // keyUp as well: antd settles a keyboard change on release, which is what
-      // onChangeComplete listens for -- the whole point of not re-running an
-      // 800ms pixel pass per tick.
-      fireEvent.keyDown(slider, { key: 'ArrowRight', keyCode: 39, which: 39 })
-      fireEvent.keyUp(slider, { key: 'ArrowRight', keyCode: 39, which: 39 })
-
-      await waitFor(() => expect(detectBaysFromImage).toHaveBeenCalledTimes(2))
-      expect(detectBaysFromImage).toHaveBeenLastCalledWith(
-        'blob:drawing',
-        { x: 0.1, y: 0.1, w: 0.4, h: 0.5 },
-        { closeFraction: 0.03 },
-      )
-    })
-
-    it('does not re-detect on the slider before a box has been drawn', async () => {
-      renderInApp(deck)
-      await screen.findByTestId('canvas')
-
-      expect(screen.getByRole('slider', { name: 'Nối khe hở dầm' }))
-        .toHaveAttribute('aria-disabled', 'true')
-      expect(detectBaysFromImage).not.toHaveBeenCalled()
-    })
-
-    it('leaves crop mode, and detects nothing, when the admin cancels', async () => {
-      renderInApp(deck)
-      await screen.findByTestId('canvas')
-
-      await userEvent.click(screen.getByRole('button', { name: 'Chọn vùng sàn để dò ô' }))
-      await userEvent.click(screen.getByRole('button', { name: 'Huỷ chọn vùng sàn' }))
-
-      expect(screen.queryByRole('button', { name: 'kéo khung sàn' })).not.toBeInTheDocument()
-      expect(detectBaysFromImage).not.toHaveBeenCalled()
-    })
 
 
 
@@ -1115,13 +1027,12 @@ describe('DeckEditor', () => {
       renderInApp(deck)
       await screen.findByTestId('canvas')
 
-      await drawTheBox()
-      await userEvent.click(screen.getByRole('button', { name: 'Dò ô trong khung' }))
+      await userEvent.click(screen.getByRole('button', { name: 'Dò ô' }))
 
       // Banner and toast both carry it, so this asks whether the admin was
       // told -- not which of the two channels told them.
       expect(
-        await screen.findAllByText('Không tự động dò được ô từ bản vẽ này. Kéo lại khung sàn rồi thử lại.'),
+        await screen.findAllByText('Không tự động dò được ô từ bản vẽ này. Kiểm tra lại bản vẽ đã tải lên.'),
       ).not.toHaveLength(0)
     })
   })
@@ -1157,7 +1068,7 @@ describe('mergeErrorInVietnamese', () => {
     renderInApp({ ...deck, totalAreaM2: 0 })
     await screen.findByTestId('canvas')
 
-    await userEvent.click(screen.getByRole('button', { name: 'Lưu bản vẽ và lưới ô' }))
+    await saveDeck()
 
     await waitFor(() => expect(toastText()).toContain('chưa khai báo diện tích sàn'))
     expect(syncCells).not.toHaveBeenCalled()
@@ -1174,7 +1085,7 @@ describe('mergeErrorInVietnamese', () => {
     renderInApp(deck)
     await screen.findByTestId('canvas')
 
-    await userEvent.click(screen.getByRole('button', { name: 'Lưu bản vẽ và lưới ô' }))
+    await saveDeck()
 
     await waitFor(() => expect(toastText()).toContain('Mất kết nối'))
     expect(screen.queryByText(/Failed to fetch/)).toBeNull()
@@ -1194,9 +1105,9 @@ describe('mergeErrorInVietnamese', () => {
       // membership and recorded progress are matched on.
       listCells.mockResolvedValue(ONE_CELL)
       renderInApp(deck)
-      await screen.findByTestId('canvas')
+      await arm()
 
-      await userEvent.click(screen.getByRole('button', { name: 'Vẽ thêm ô' }))
+      press('i')
       await userEvent.click(screen.getByRole('button', { name: 'vẽ ô vào chỗ trống' }))
 
       expect(await screen.findByTestId('canvas')).toHaveTextContent('R1C1,X1')
@@ -1209,9 +1120,9 @@ describe('mergeErrorInVietnamese', () => {
       // project reads low.
       listCells.mockResolvedValue(ONE_CELL)
       renderInApp({ ...deck, totalAreaM2: 400 })
-      await screen.findByTestId('canvas')
+      await arm()
 
-      await userEvent.click(screen.getByRole('button', { name: 'Vẽ thêm ô' }))
+      press('i')
       await userEvent.click(screen.getByRole('button', { name: 'vẽ ô vào chỗ trống' }))
 
       // 0.25 of the drawing against 0.04: 400 m² split 344.83 / 55.17.
@@ -1223,9 +1134,9 @@ describe('mergeErrorInVietnamese', () => {
       // counts, and the deck reads over 100% with paint left to do.
       listCells.mockResolvedValue(ONE_CELL)
       renderInApp(deck)
-      await screen.findByTestId('canvas')
+      await arm()
 
-      await userEvent.click(screen.getByRole('button', { name: 'Vẽ thêm ô' }))
+      press('i')
       await userEvent.click(screen.getByRole('button', { name: 'vẽ ô đè lên ô cũ' }))
 
       await waitFor(() => expect(toastText()).toContain('đã có ô'))
@@ -1233,22 +1144,6 @@ describe('mergeErrorInVietnamese', () => {
       expect(screen.getByText('1 ô')).toBeInTheDocument()
     })
 
-    it('cannot be drawing bays and choosing the deck region at once', async () => {
-      // Both are one drag on the same pixels. Leaving the other listening would
-      // make which one fires depend on nothing the admin can see.
-      listCells.mockResolvedValue(ONE_CELL)
-      renderInApp(deck)
-      await screen.findByTestId('canvas')
-
-      await userEvent.click(screen.getByRole('button', { name: 'Vẽ thêm ô' }))
-      expect(screen.queryByRole('button', { name: 'kéo khung sàn' })).not.toBeInTheDocument()
-      // And the way into the other mode is shut while this one is on, so the
-      // admin cannot arm both and then wonder which their drag went to.
-      expect(screen.getByRole('button', { name: /vùng sàn để dò ô/ })).toBeDisabled()
-
-      await userEvent.click(screen.getByRole('button', { name: 'Tắt vẽ ô' }))
-      expect(screen.queryByRole('button', { name: 'vẽ ô vào chỗ trống' })).not.toBeInTheDocument()
-    })
   })
 
   describe('keyboard shortcuts', () => {
@@ -1258,12 +1153,6 @@ describe('mergeErrorInVietnamese', () => {
       { id: 'c3', code: 'R2C1', x: 0, y: 0.5, w: 0.25, h: 0.5, areaM2: 100, stageId: null },
       { id: 'c4', code: 'R2C2', x: 0.25, y: 0.5, w: 0.25, h: 0.5, areaM2: 100, stageId: null },
     ]
-    const arm = async () => {
-      await screen.findByTestId('canvas')
-      await userEvent.click(screen.getByRole('button', { name: 'Bật phím tắt' }))
-    }
-    const press = (key: string, opts: Record<string, boolean> = {}) =>
-      fireEvent.keyDown(window, { key, ...opts })
 
     it('lists what every key does, so the admin does not have to be told', async () => {
       listCells.mockResolvedValue(FOUR_CELLS)
@@ -1287,21 +1176,21 @@ describe('mergeErrorInVietnamese', () => {
       renderInApp(deck)
       await screen.findByTestId('canvas')
 
-      await userEvent.click(screen.getByRole('button', { name: 'Chọn tất cả' }))
+      await userEvent.click(screen.getByRole('button', { name: 'chọn R1C1' }))
       press('Escape')
 
-      expect(screen.getByRole('button', { name: 'Bỏ chọn' })).not.toBeDisabled()
+      expect(screen.getByTestId('selection')).toHaveTextContent('R1C1')
     })
 
     it('clears the selection on Esc', async () => {
       listCells.mockResolvedValue(FOUR_CELLS)
       renderInApp(deck)
       await arm()
-      await userEvent.click(screen.getByRole('button', { name: 'Chọn tất cả' }))
+      await selectAll()
 
       press('Escape')
 
-      await waitFor(() => expect(screen.getByRole('button', { name: 'Bỏ chọn' })).toBeDisabled())
+      await waitFor(() => expect(screen.getByTestId('selection')).toHaveTextContent(''))
     })
 
     it('selects every bay on Ctrl/Cmd + A', async () => {
@@ -1311,7 +1200,7 @@ describe('mergeErrorInVietnamese', () => {
 
       press('a', { metaKey: true })
 
-      await waitFor(() => expect(screen.getByRole('button', { name: 'Gộp ô đã chọn' })).not.toBeDisabled())
+      await waitFor(() => expect(screen.getByTestId('selection')).toHaveTextContent('R1C1,R1C2,R2C1,R2C2'))
     })
 
     it('takes the bays a Shift-band swept', async () => {
@@ -1386,7 +1275,7 @@ describe('mergeErrorInVietnamese', () => {
       press('s', { metaKey: true })
 
       await waitFor(() => expect(syncCells).toHaveBeenCalledTimes(1))
-      expect(await screen.findByRole('button', { name: 'Bật phím tắt' })).toBeInTheDocument()
+      expect(await screen.findByRole('button', { name: 'Bắt đầu thao tác' })).toBeInTheDocument()
     })
 
     it('turns drawing bays on and off with I', async () => {
@@ -1395,11 +1284,11 @@ describe('mergeErrorInVietnamese', () => {
       await arm()
 
       press('i')
-      expect(await screen.findByRole('button', { name: 'Tắt vẽ ô' })).toBeInTheDocument()
+      expect(await screen.findByRole('button', { name: 'vẽ ô vào chỗ trống' })).toBeInTheDocument()
       expect(screen.getByRole('button', { name: 'vẽ ô vào chỗ trống' })).toBeInTheDocument()
 
       press('i')
-      expect(await screen.findByRole('button', { name: 'Vẽ thêm ô' })).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'vẽ ô đè lên ô cũ' })).not.toBeInTheDocument()
       expect(screen.queryByRole('button', { name: 'vẽ ô vào chỗ trống' })).not.toBeInTheDocument()
     })
 
@@ -1433,7 +1322,7 @@ describe('mergeErrorInVietnamese', () => {
 
       fireEvent.keyDown(area, { key: 'a', metaKey: true })
 
-      expect(screen.getByRole('button', { name: 'Gộp ô đã chọn' })).toBeDisabled()
+      expect(screen.getByTestId('selection')).toHaveTextContent('')
     })
   })
 })

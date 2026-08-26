@@ -1,4 +1,4 @@
-import { detectBays, type Bay, type BayOptions } from '../domain/bayDetect'
+import { deckRegion, detectBays, type Bay, type BayOptions } from '../domain/bayDetect'
 
 /**
  * Render width for detection, in pixels. Non-negotiable, not a tuning knob:
@@ -20,7 +20,6 @@ export const DETECT_RENDER_WIDTH = 3000
  */
 export async function detectBaysFromImage(
   imageUrl: string,
-  region: { x: number; y: number; w: number; h: number },
   options?: BayOptions,
 ): Promise<Bay[]> {
   const image = await loadImage(imageUrl)
@@ -46,6 +45,12 @@ export async function detectBaysFromImage(
     rgb[o + 2] = data[i + 2]
   }
 
+  // Where the deck is, rather than where the admin said it was. They used to
+  // drag a box round it first; deckRegion reads the same thing off the sheet --
+  // measured on the customer's drawing, 184 bays against 182 for the box they
+  // dragged by hand.
+  const region = deckRegion(rgb, width, height, options)
+  if (!region) return []
   return detectBays(rgb, width, height, region, options)
 }
 

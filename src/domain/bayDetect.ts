@@ -651,6 +651,115 @@ function closeAtDeckEdge(lines: number[], lo: number, hi: number): number[] {
  * describe a grid -- a sheet drawn to another convention, where a bay is still
  * a bay even if nothing on it is dashed.
  */
+/**
+ * How much room to leave round the crowd, as a fraction of the drawing.
+ *
+ * Bays stop at the inner faces of the outer beams, so the crowd's own extent
+ * cuts those beams in half -- and they are the lines the outermost bays are
+ * drawn to. Measured on the customer's sheet: detecting in exactly the crowd's
+ * extent found 180 bays, and with this margin 185.
+ */
+const CROWD_MARGIN = 0.02
+
+/**
+ * How many times the middling closed area a region may be and still count as
+ * one of the crowd.
+ *
+ * A deck's bays are all roughly a bay's size. What is not is the sheet's own
+ * furniture: measured on the customer's sheet the three border strips came to
+ * 120301, 115280 and 112212 px against a median of 6549 -- seventeen times
+ * over. Without this the crowd swallows them and reports the page as the deck.
+ */
+const CROWD_OUTLIER = 8
+
+/**
+ * How many times the middling bay a region may be along ONE side and still
+ * count as one of the crowd.
+ *
+ * Area alone is not enough. A border strip is long and thin, so it can come in
+ * under the area bar while still running the width of the sheet -- and a region
+ * that long sits within a bay's reach of every bay there is, which drags the
+ * whole page into the crowd.
+ */
+const CROWD_LONG = 4
+
+/**
+ * Where the deck is on the sheet, so the admin does not have to say.
+ *
+ * They used to drag a box round it, and the reason was real: the strongest
+ * full-span lines on a drawing are the page border and the title block, not a
+ * beam, so detecting over the whole sheet reports the page as the deck --
+ * measured, 157 bays spanning 1..2999 x 1..2120 on a deck occupying
+ * 729..1869 x 156..1803.
+ *
+ * What tells them apart is that a deck's bays come in a crowd. The border
+ * encloses a few long strips off on their own at the edges; the deck is a block
+ * of closed areas each about a bay from the next. Joining regions that sit
+ * within a bay of each other and taking the biggest group picks that block out:
+ * on the customer's sheet 153 of 157 regions, extent 729..1870 x 157..1804,
+ * against a hand-dragged 729..1869 x 156..1803.
+ *
+ * The reach is measured against the regions themselves rather than being a
+ * fraction of the sheet, because it has to hold at any scale the drawing is
+ * rendered at -- a fixed grid of bins fails as soon as a bay is bigger than a
+ * bin, which leaves every bay in a group of its own.
+ *
+ * `null` when the sheet encloses nothing at all -- a blank page, or one the
+ * render lost -- so the caller can say so rather than detect in a region
+ * invented out of nothing.
+ */
+export function deckRegion(
+  rgb: Uint8Array,
+  width: number,
+  height: number,
+  options: BayOptions = {},
+): { x: number; y: number; w: number; h: number } | null {
+  const found = enclosedRegions(rgb, width, height, { x: 0, y: 0, w: 1, h: 1 }, options)
+  if (found.length === 0) return null
+
+  const middle = (values: number[]) => [...values].sort((a, b) => a - b)[values.length >> 1]
+  const median = middle(found.map((r) => r.w * r.h))
+  const longW = CROWD_LONG * middle(found.map((r) => r.w))
+  const longH = CROWD_LONG * middle(found.map((r) => r.h))
+  const regions = found.filter(
+    (r) => r.w * r.h <= CROWD_OUTLIER * median && r.w <= longW && r.h <= longH,
+  )
+  if (regions.length === 0) return null
+
+  // A bay's reach, so a bay's neighbours are within it and the sheet's border
+  // strips -- off on their own at the edges -- are not.
+  const reachX = middle(regions.map((r) => r.w))
+  const reachY = middle(regions.map((r) => r.h))
+  const near = (a: Bay, b: Bay) =>
+    Math.min(a.x + a.w + reachX, b.x + b.w + reachX) >= Math.max(a.x - reachX, b.x - reachX)
+    && Math.min(a.y + a.h + reachY, b.y + b.h + reachY) >= Math.max(a.y - reachY, b.y - reachY)
+
+  const group = new Set<number>()
+  let crowd: Bay[] = []
+  for (let start = 0; start < regions.length; start++) {
+    if (group.has(start)) continue
+    group.add(start)
+    const stack = [start]
+    const joined: Bay[] = []
+    while (stack.length > 0) {
+      const at = stack.pop()!
+      joined.push(regions[at])
+      for (let other = 0; other < regions.length; other++) {
+        if (group.has(other) || !near(regions[at], regions[other])) continue
+        group.add(other)
+        stack.push(other)
+      }
+    }
+    if (joined.length > crowd.length) crowd = joined
+  }
+
+  const x0 = Math.max(0, Math.min(...crowd.map((r) => r.x)) - CROWD_MARGIN)
+  const y0 = Math.max(0, Math.min(...crowd.map((r) => r.y)) - CROWD_MARGIN)
+  const x1 = Math.min(1, Math.max(...crowd.map((r) => r.x + r.w)) + CROWD_MARGIN)
+  const y1 = Math.min(1, Math.max(...crowd.map((r) => r.y + r.h)) + CROWD_MARGIN)
+  return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 }
+}
+
 export function detectBays(
   rgb: Uint8Array,
   width: number,

@@ -1,5 +1,5 @@
 import {
-  Alert, App, Button, Descriptions, InputNumber, Modal, Slider, Space, Typography,
+  Alert, App, Button, Descriptions, InputNumber, Modal, Space, Typography,
 } from 'antd'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
@@ -15,7 +15,7 @@ import {
 import { formatAreaM2, formatPercent } from '../../lib/format'
 import { listStages } from '../../lib/projectsApi'
 import { DrawingCanvas } from '../../canvas/DrawingCanvas'
-import { detectBaysFromImage, DETECT_RENDER_WIDTH } from '../../canvas/rgbFromImage'
+import { detectBaysFromImage } from '../../canvas/rgbFromImage'
 
 
 /** An edit that replaces the deck's cell set, held while the warning is on screen. */
@@ -187,37 +187,8 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
    * from there would write that empty set over the deck's real geometry.
    */
   const [loadFailed, setLoadFailed] = useState(false)
-  /**
-   * How wide a hole in a beam to bridge, as a fraction of the image width.
-   *
-   * The one control detection has left. Beams break wherever the sheet draws
-   * something over them -- a symbol bubble, a pedestal outline, a leader line --
-   * and an unbridged break is a door between two bays the drawing shows as
-   * separate, so raising this finds MORE bays, not fewer. Measured on the
-   * customer's sheet: 12px gave 103 bays covering 63% of the deck, 29px gave 123
-   * at 66%, 54px gave 145 at 63%, 90px gave 163 at 68%, and 144px gave 220 but
-   * began bridging the dimension chain into the deck.
-   */
-  const [bridge, setBridge] = useState(0.025)
   /** Only for the detect button's own spinner -- distinct from `busy`, which gates the save/delete/merge round trips. */
   const [detecting, setDetecting] = useState(false)
-  /**
-   * The deck's rectangle on the sheet, normalized 0..1, as drawn by the admin.
-   * `null` until they draw one.
-   *
-   * It bounds the search and walls off a bay whose own outer beam is
-   * interrupted -- see detectBays. It is NOT a measurement any more: nothing is
-   * scaled to it, so a box dragged loosely costs nothing. Measured on the real
-   * sheet, tight, loose and very loose boxes all returned the same 129 bays.
-   *
-   * Deliberately NOT persisted. It is an input to detection, not a property of
-   * the deck: what the deck keeps is the cells detection produced. Re-detecting
-   * months later costs one more drag, and a stored crop would be one more
-   * thing that can silently go stale against a re-uploaded drawing.
-   */
-  const [crop, setCrop] = useState<{ x: number; y: number; w: number; h: number } | null>(null)
-  /** Whether the canvas is waiting for the crop drag right now. */
-  const [cropping, setCropping] = useState(false)
   /**
    * Whether a drag on the drawing adds a bay.
    *
@@ -386,15 +357,12 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
    * the same flag would needlessly disable Save/Delete/Merge while a detection
    * that has nothing to do with them is in flight.
    */
-  const detectGrid = async (
-    region: { x: number; y: number; w: number; h: number },
-    options: BayOptions = { closeFraction: bridge },
-  ) => {
+  const detectGrid = async (options: BayOptions = {}) => {
     if (!imageUrl) return
     setDetecting(true)
     setError(null)
     try {
-      const bays = await detectBaysFromImage(imageUrl, region, options)
+      const bays = await detectBaysFromImage(imageUrl, options)
       const mesh = nameBays(bays).map(({ code, x, y, w, h }) => ({ code, x, y, w, h, areaM2: 0 }))
       commitCells(prorateCellAreas(totalArea, mesh))
       setSelected([])
@@ -404,37 +372,13 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
       // that is the admin's to fix by retyping anything, so this is a plain
       // refusal, not a validation message -- and it must say something rather
       // than leave the screen exactly as it was with no sign anything happened.
-      fail('Không tự động dò được ô từ bản vẽ này. Kéo lại khung sàn rồi thử lại.')
+      fail('Không tự động dò được ô từ bản vẽ này. Kiểm tra lại bản vẽ đã tải lên.')
     } finally {
       setDetecting(false)
     }
   }
 
-  /**
-   * The crop drag finished: remember the region and STAY in crop mode.
-   *
-   * Detection deliberately does not run here. Getting the box right takes more
-   * than one attempt -- the admin has to see it against the sheet and decide
-   * whether the title block and the off-deck structure are outside it -- and
-   * detecting on mouse-up replaced the whole guide table on every attempt.
-   * Re-dragging replaces the box; "Dò ô trong khung" is what commits it.
-   */
-  const onCropDraw = (rect: { x: number; y: number; w: number; h: number }) => {
-    setCrop(rect)
-  }
 
-  /**
-   * The bridge slider settled: re-detect at the new value.
-   *
-   * On settle rather than on every tick, and re-running the whole pass rather
-   * than a cached half of it: the pixel work is ~800ms on the customer's sheet,
-   * which is fine once per adjustment and useless as a drag preview. Only when
-   * a box has been drawn -- there is nothing to detect without one.
-   */
-  const onBridgeChange = (value: number) => {
-    setBridge(value)
-    if (crop) void detectGrid(crop, { closeFraction: value })
-  }
 
 
 
@@ -452,36 +396,29 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
    * has already flipped busy off itself by the time this runs, so this is a
    * harmless no-op there.
    */
-  const beginEdit = async (kind: 'delete' | 'merge') => {
+  const beginMerge = async () => {
     setError(null)
     const chosen = cells.filter((c) => selected.includes(c.code))
     if (chosen.length === 0) return
 
     setBusy(true)
     try {
-      let next: MeshCell[]
-      let inheritFrom: Record<string, string[]> = {}
-      let survivor: string | undefined
-      if (kind === 'delete') {
-        next = cells.filter((c) => !selected.includes(c.code))
-      } else {
-        try {
-          const merged = mergeCells(chosen)
-          next = [...cells.filter((c) => !selected.includes(c.code)), merged]
-          // Named from `merged` itself, not from next's last element: the
-          // survivor's identity is what the progress-loss warning turns on, and
-          // reading it back out of the array only works while this function
-          // happens to append it last.
-          survivor = merged.code
-          // Spec 8.3: the survivor inherits every zone its sources belonged to.
-          inheritFrom = { [merged.code]: chosen.map((c) => c.code) }
-        } catch (e) {
-          fail(mergeErrorInVietnamese((e as Error).message))
-          return
-        }
+      let merged
+      try {
+        merged = mergeCells(chosen)
+      } catch (e) {
+        fail(mergeErrorInVietnamese((e as Error).message))
+        return
       }
-
-      await reviewEdit(kind, next, { inheritFrom, survivor })
+      const next = [...cells.filter((c) => !selected.includes(c.code)), merged]
+      // Named from `merged` itself, not from next's last element: the survivor's
+      // identity is what the progress-loss warning turns on, and reading it back
+      // out of the array only works while this function happens to append it last.
+      await reviewEdit('merge', next, {
+        // Spec 8.3: the survivor inherits every zone its sources belonged to.
+        inheritFrom: { [merged.code]: chosen.map((c) => c.code) },
+        survivor: merged.code,
+      })
     } finally {
       setBusy(false)
     }
@@ -690,11 +627,21 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
       } else if (mod && key === 'z') {
         if (e.shiftKey) redo()
         else undo()
+      } else if (!mod && key === 'm') {
+        // Guarded like the button it replaces: merging awaits two round trips
+        // before it can open its dialog, and a second M in that gap starts a
+        // second pass over the same selection -- whichever proposal is written
+        // second is the one the admin confirmed, and it need not be the one
+        // they read.
+        if (busy) return
+        // The one edit that has to go through the review gate before it can be
+        // undone locally: a merge can be refused (a selection that is not a
+        // rectangle), and the refusal has to reach the admin as words.
+        void beginMerge()
       } else if (!mod && key === 'i') {
         // The mode the admin spends longest in, and the one they leave and
         // come back to most: draw a missing bay, look, draw another.
         setDrawingCell((on) => !on)
-        setCropping(false)
       } else if (key === 'delete' || key === 'backspace') {
         deleteSelected()
       } else {
@@ -740,23 +687,6 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
         />
       )}
 
-      {/*
-        Not conditional on provenance any more: pro-rated is the only kind of
-        area this screen produces. Detection reads bays off the drawing in
-        pixels and nothing on the sheet tells it what a pixel is worth, so the
-        deck total the admin types is the only real measurement in the deck and
-        every cell area is a share of it.
-      */}
-      {cells.length > 0 && (
-        <Alert
-          type="info"
-          message="Diện tích ô đang được chia theo tỉ lệ, không phải đo thật"
-          description={
-            'Diện tích từng ô được chia từ tổng diện tích sàn theo tỉ lệ pixel, nên từng ô là ước lượng. '
-            + 'Tổng các ô thì đúng bằng diện tích sàn đã khai báo.'
-          }
-        />
-      )}
 
 
       <Descriptions size="small" column={4} bordered items={[
@@ -790,74 +720,34 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
         (see PendingEdit / reviewEdit, which gate deck-level SAVES, not local
         edits to the working guide table).
       */}
-      <Space direction="vertical" size="small" style={{ width: '100%' }}>
-        <Space wrap align="start">
-          {cropping ? (
-            <>
-              <Button
-                type="primary"
-                disabled={!crop}
-                onClick={() => {
-                  if (!crop) return
-                  setCropping(false)
-                  void detectGrid(crop)
-                }}
-              >
-                Dò ô trong khung
-              </Button>
-              <Button onClick={() => setCropping(false)}>Huỷ chọn vùng sàn</Button>
-            </>
-          ) : (
-            <>
-              <Button
-                loading={detecting}
-                disabled={!imageUrl || drawingCell}
-                onClick={() => setCropping(true)}
-              >
-                {crop ? 'Chọn lại vùng sàn' : 'Chọn vùng sàn để dò ô'}
-              </Button>
-              <Button
-                danger={drawingCell}
-                disabled={!imageUrl}
-                onClick={() => setDrawingCell((on) => !on)}
-              >
-                {drawingCell ? 'Tắt vẽ ô' : 'Vẽ thêm ô'}
-              </Button>
-              <Button
-                type={shortcuts ? 'primary' : 'default'}
-                onClick={() => setShortcuts((on) => !on)}
-              >
-                {shortcuts ? 'Tắt phím tắt' : 'Bật phím tắt'}
-              </Button>
-            </>
-          )}
-          <Space direction="vertical" size={0} style={{ width: 260 }}>
-            <Typography.Text>Nối khe hở dầm</Typography.Text>
-            <Slider
-              min={0.005}
-              max={0.05}
-              step={0.005}
-              value={bridge}
-              disabled={!crop}
-              ariaLabelForHandle="Nối khe hở dầm"
-              tooltip={{ formatter: (v) => `${Math.round((v ?? 0) * DETECT_RENDER_WIDTH)} px` }}
-              // Both handlers: the slider is controlled, so without onChange
-              // its value never moves during the gesture and onChangeComplete
-              // reports the number it started from.
-              onChange={setBridge}
-              onChangeComplete={onBridgeChange}
-            />
-          </Space>
-          <Typography.Text>{`${cells.length} ô`}</Typography.Text>
-        </Space>
-        <Typography.Text type={cropping || drawingCell ? 'warning' : 'secondary'}>
-          {drawingCell
-            ? 'Kéo một khung vào chỗ còn thiếu ô. Cạnh nào gần ô có sẵn sẽ tự dính vào cạnh ô đó. Không vẽ đè lên ô đã có.'
-            : cropping
-            ? 'Kéo một khung bao quanh sàn. Không cần chính xác — thừa ra ngoài mép sàn một chút là được — nhưng đừng trùm cả tờ giấy, vì khung tên và hàng kích thước lọt vào sẽ làm hỏng kết quả. Kéo lại bao nhiêu lần cũng được; xong thì bấm “Dò ô trong khung”.'
-            : 'Dò ô sẽ thay toàn bộ ô đang có. Kéo thanh “Nối khe hở dầm” lên nếu vài ô bị dính vào nhau, hạ xuống nếu một ô bị chia vụn.'}
-        </Typography.Text>
+      <Space wrap align="center">
+        <Button loading={detecting} disabled={!imageUrl || shortcuts} onClick={() => void detectGrid()}>
+          Dò ô
+        </Button>
+        {/*
+          One button for the whole working session. Off, it is the way in; on,
+          it is the way out, and the way out is a save -- there is no third
+          state where the admin has been editing and has nowhere to put it.
+        */}
+        <Button
+          type={shortcuts ? 'primary' : 'default'}
+          loading={busy}
+          onClick={() => {
+            if (shortcuts) void reviewEdit('mesh', cells)
+            else setShortcuts(true)
+          }}
+        >
+          {shortcuts ? 'Lưu bản vẽ' : 'Bắt đầu thao tác'}
+        </Button>
+        <Button onClick={onClose}>Đóng</Button>
+        <Typography.Text>{`${cells.length} ô`}</Typography.Text>
       </Space>
+
+      <Typography.Text type={drawingCell ? 'warning' : 'secondary'}>
+        {drawingCell
+          ? 'Kéo một khung vào chỗ còn thiếu ô. Cạnh nào gần ô có sẵn sẽ tự dính vào cạnh ô đó. Không vẽ đè lên ô đã có.'
+          : 'Dò ô sẽ thay toàn bộ ô đang có. Bấm “Bắt đầu thao tác” rồi dùng phím tắt để sửa.'}
+      </Typography.Text>
 
       {shortcuts && (
         <Descriptions
@@ -871,43 +761,14 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
             { key: 'band', label: 'Shift + kéo chuột', children: 'Quét chọn cả mảng ô' },
             { key: 'all', label: 'Ctrl/Cmd + A', children: 'Chọn tất cả' },
             { key: 'draw', label: 'I', children: 'Bật/tắt vẽ thêm ô (con trỏ đổi thành dấu +)' },
+            { key: 'merge', label: 'M', children: 'Gộp các ô đang chọn' },
             { key: 'del', label: 'Delete / Backspace', children: 'Xoá ô đang chọn (chưa lưu)' },
             { key: 'undo', label: 'Ctrl/Cmd + Z', children: 'Hoàn tác' },
             { key: 'redo', label: 'Ctrl/Cmd + Shift + Z', children: 'Làm lại' },
-            { key: 'save', label: 'Ctrl/Cmd + S', children: 'Tắt phím tắt và lưu' },
+            { key: 'save', label: 'Ctrl/Cmd + S', children: 'Lưu bản vẽ' },
           ]}
         />
       )}
-
-      <Space wrap>
-        <Button onClick={() => setSelected(cells.map((c) => c.code))}>Chọn tất cả</Button>
-        <Button onClick={() => setSelected([])} disabled={selected.length === 0}>Bỏ chọn</Button>
-        {/*
-          `|| busy`: beginEdit awaits two round trips (listCells,
-          zoneImpactOf) before it can even open the confirmation dialog, and
-          without this guard nothing stopped a double-tap on a tablet from
-          firing two overlapping reviews of the same selection.
-        */}
-        <Button danger disabled={selected.length === 0 || busy} onClick={() => void beginEdit('delete')}>
-          Xoá ô đã chọn
-        </Button>
-        <Button disabled={selected.length < 2 || busy} onClick={() => void beginEdit('merge')}>
-          Gộp ô đã chọn
-        </Button>
-        {/*
-          One save button. There were two -- guides-and-area, and the cell set --
-          on the reasoning that replacing the cell set is a separate decision
-          needing its own gate. That reasoning was wrong, and this button is the
-          correction: the invariant that matters is that cells.area_m2,
-          total_area_m2 and area_source agree with each other, and two
-          independent saves cannot hold it. Both now go through reviewEdit, so
-          the gate is not lost. See `apply` for the write order.
-        */}
-        <Button type="primary" loading={busy} onClick={() => void reviewEdit('mesh', cells)}>
-          Lưu bản vẽ và lưới ô
-        </Button>
-        <Button onClick={onClose}>Đóng</Button>
-      </Space>
 
       {imageUrl && deck.imageW && deck.imageH ? (
         <DrawingCanvas
@@ -917,10 +778,6 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
           cells={cells}
           selectedCodes={selected}
           cellColors={cellColors}
-          cropRect={crop}
-          // Only while waiting for the drag: passing it always would leave the
-          // canvas permanently unable to drag a guide or select a cell.
-          onCropDraw={cropping ? onCropDraw : undefined}
           onCellDraw={drawingCell ? onCellDraw : undefined}
           // Shift-drag belongs to the same opt-in as the keys: it is the
           // mouse half of the same way of working, and an admin who has not

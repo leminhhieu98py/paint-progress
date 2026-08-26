@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { detectBays, nameBays } from './bayDetect'
+import { deckRegion, detectBays, nameBays } from './bayDetect'
 
 const BLACK: [number, number, number] = [0, 0, 0]
 const RED: [number, number, number] = [200, 50, 50]
@@ -580,5 +580,69 @@ describe('nameBays', () => {
 
     // Nothing may reach below the deck's bottom beam at 178.
     expect(bays.filter((b) => (b.y + b.h) * height > 185)).toEqual([])
+  })
+})
+
+describe('deckRegion', () => {
+  it('finds the deck on a sheet, not the sheet', () => {
+    // The admin used to drag a box round the deck before detecting. The reason
+    // was that the strongest full-span lines on a drawing are the page border
+    // and the title block, not a beam -- detecting over the whole sheet reports
+    // the page as the deck.
+    //
+    // What tells them apart is that a deck's bays come in a crowd. The border
+    // encloses two or three long strips off on their own at the edges; the deck
+    // is a dense block of them. This takes the biggest crowd.
+    const width = 400
+    const height = 300
+    const rgb = whiteImage(width, height)
+    // The sheet's own border, drawn the way a drawing draws one: two lines a
+    // few px apart, so what it encloses is four long strips round the edge --
+    // measured on the customer's sheet, 2882x40 across the top and 54x2078 down
+    // the side.
+    for (const inset of [5, 14]) {
+      beam(rgb, width, 'v', inset, 5, 295 - inset)
+      beam(rgb, width, 'v', width - inset - 3, 5, 295 - inset)
+      beam(rgb, width, 'h', inset, 5, 395 - inset)
+      beam(rgb, width, 'h', height - inset - 3, 5, 395 - inset)
+    }
+    // The deck: a 3x3 of bays over on the right.
+    for (const at of [200, 250, 300, 350]) beam(rgb, width, 'v', at, 60, 210)
+    for (const at of [60, 110, 160, 210]) beam(rgb, width, 'h', at, 200, 350)
+
+    const region = deckRegion(rgb, width, height, OPTIONS)
+
+    expect(region).not.toBeNull()
+    expect(Math.round(region!.x * width)).toBeGreaterThan(150)
+    expect(Math.round((region!.x + region!.w) * width)).toBeLessThan(399)
+    expect(Math.round(region!.y * height)).toBeGreaterThan(20)
+    expect(Math.round((region!.y + region!.h) * height)).toBeLessThan(280)
+  })
+
+  it('reports nothing on a sheet with no deck on it', () => {
+    // A blank sheet, or one the render lost. The caller has to be able to say
+    // so rather than detect in a region invented out of nothing.
+    expect(deckRegion(whiteImage(200, 200), 200, 200, OPTIONS)).toBeNull()
+  })
+
+  it('gives the deck room for the beams its own bays stop short of', () => {
+    // Bays stop at the inner faces of the outer beams, so the crowd's own
+    // extent cuts the deck's outermost beams in half -- and those are the lines
+    // the outermost bays are drawn to. Measured on the customer's sheet: the
+    // crowd ends at 729..1870 and detecting in exactly that found 180 bays
+    // against 185 with a margin.
+    const width = 300
+    const height = 300
+    const rgb = deck(width, height, [40, 40, 260, 260])
+    for (const at of [110, 180]) {
+      beam(rgb, width, 'v', at, 40, 260)
+      beam(rgb, width, 'h', at, 40, 260)
+    }
+
+    const region = deckRegion(rgb, width, height, OPTIONS)
+
+    expect(region).not.toBeNull()
+    // Wider than the bays themselves, which start at 40.
+    expect(Math.round(region!.x * width)).toBeLessThan(40)
   })
 })
