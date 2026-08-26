@@ -148,13 +148,6 @@ vi.mock('react-konva', () => {
 
 vi.mock('use-image', () => ({ default: () => [undefined, 'loaded'] }))
 
-const guides = [
-  { axis: 'x' as const, pos: 0, offsetMm: 0 },
-  { axis: 'x' as const, pos: 0.5, offsetMm: 10000 },
-  { axis: 'x' as const, pos: 1, offsetMm: 20000 },
-  { axis: 'y' as const, pos: 0, offsetMm: 0 },
-  { axis: 'y' as const, pos: 1, offsetMm: 16000 },
-]
 
 const cells = [
   { code: 'R1C1', x: 0, y: 0, w: 0.5, h: 1, areaM2: 160 },
@@ -610,21 +603,13 @@ describe('DrawingCanvas', () => {
   })
 
 
-  describe('crop mode', () => {
+  describe('drawing a bay and sweeping a band', () => {
     // The stage is 900 wide (jsdom measures 0, so the fallback applies) and
     // 720 tall (1600 * 900/2000), so 90,72 -> 450,432 is x 0.1 y 0.1 w 0.4 h 0.5.
-    const cropProps = {
-      imageUrl: 'u', imageW: 2000, imageH: 1600, guides, cells, selectedCodes: [] as string[],
+    const boxProps = {
+      imageUrl: 'u', imageW: 2000, imageH: 1600, cells, selectedCodes: [] as string[],
     }
 
-    it('draws the committed crop region', () => {
-      render(<DrawingCanvas {...cropProps} cropRect={{ x: 0.1, y: 0.1, w: 0.4, h: 0.5 }} />)
-      const region = screen.getByTestId('rect:crop-region')
-      expect(region).toHaveAttribute('data-x', '90')
-      expect(region).toHaveAttribute('data-y', '72')
-      expect(region).toHaveAttribute('data-width', '360')
-      expect(region).toHaveAttribute('data-height', '360')
-    })
 
 
 
@@ -637,7 +622,7 @@ describe('DrawingCanvas', () => {
       // the drawing, which is a bay -- and well under the floor a crop has to
       // clear, so a mode that shared the crop's floor would refuse every bay.
       const onCellDraw = vi.fn()
-      render(<DrawingCanvas {...cropProps} onCellDraw={onCellDraw} />)
+      render(<DrawingCanvas {...boxProps} onCellDraw={onCellDraw} />)
       const stage = screen.getByTestId('stage:drawing')
       fireEvent.mouseDown(stage, { clientX: 90, clientY: 72 })
       fireEvent.mouseMove(stage, { clientX: 180, clientY: 144 })
@@ -650,7 +635,7 @@ describe('DrawingCanvas', () => {
       // without this the drag that adds a bay also selects whatever it started
       // on -- and the next tap on "Xoá ô đã chọn" takes that one away.
       const onCellClick = vi.fn()
-      render(<DrawingCanvas {...cropProps} onCellClick={onCellClick} onCellDraw={vi.fn()} />)
+      render(<DrawingCanvas {...boxProps} onCellClick={onCellClick} onCellDraw={vi.fn()} />)
       fireEvent.click(screen.getByTestId('rect:cell-R1C1'))
       expect(onCellClick).not.toHaveBeenCalled()
     })
@@ -660,14 +645,12 @@ describe('DrawingCanvas', () => {
       // costs nothing when the admin is not using it and takes nothing away
       // from whichever mode they are in.
       const onSelectDraw = vi.fn()
-      const onCropDraw = vi.fn()
-      render(<DrawingCanvas {...cropProps} onCropDraw={onCropDraw} onSelectDraw={onSelectDraw} />)
+      render(<DrawingCanvas {...boxProps} onSelectDraw={onSelectDraw} />)
       const stage = screen.getByTestId('stage:drawing')
       fireEvent.mouseDown(stage, { clientX: 90, clientY: 72, shiftKey: true })
       fireEvent.mouseMove(stage, { clientX: 450, clientY: 432, shiftKey: true })
       fireEvent.mouseUp(stage, { clientX: 450, clientY: 432, shiftKey: true })
       expect(onSelectDraw).toHaveBeenCalledWith({ x: 0.1, y: 0.1, w: 0.4, h: 0.5 })
-      expect(onCropDraw).not.toHaveBeenCalled()
     })
 
     it('keeps the gesture it started as, even if the key is let go mid-drag', () => {
@@ -675,13 +658,11 @@ describe('DrawingCanvas', () => {
       // turn a band into a crop -- replacing the deck's whole cell set with
       // whatever the band happened to cover.
       const onSelectDraw = vi.fn()
-      const onCropDraw = vi.fn()
-      render(<DrawingCanvas {...cropProps} onCropDraw={onCropDraw} onSelectDraw={onSelectDraw} />)
+      render(<DrawingCanvas {...boxProps} onSelectDraw={onSelectDraw} />)
       const stage = screen.getByTestId('stage:drawing')
       fireEvent.mouseDown(stage, { clientX: 90, clientY: 72, shiftKey: true })
       fireEvent.mouseUp(stage, { clientX: 450, clientY: 432 })
       expect(onSelectDraw).toHaveBeenCalledTimes(1)
-      expect(onCropDraw).not.toHaveBeenCalled()
     })
 
     it('swallows the click a finished band leaves behind, even without Shift', () => {
@@ -691,7 +672,7 @@ describe('DrawingCanvas', () => {
       const onCellClick = vi.fn()
       const onSelectDraw = vi.fn()
       render(
-        <DrawingCanvas {...cropProps} onCellClick={onCellClick} onSelectDraw={onSelectDraw} />,
+        <DrawingCanvas {...boxProps} onCellClick={onCellClick} onSelectDraw={onSelectDraw} />,
       )
       const stage = screen.getByTestId('stage:drawing')
       fireEvent.mouseDown(stage, { clientX: 90, clientY: 72, shiftKey: true })
@@ -705,15 +686,11 @@ describe('DrawingCanvas', () => {
     it('says which gesture the drawing is waiting for with the pointer', () => {
       // The modes look alike: the same drawing, the same drag. The pointer is
       // the only thing on screen that says which one a drag is about to be.
-      const plain = render(<DrawingCanvas {...cropProps} />)
+      const plain = render(<DrawingCanvas {...boxProps} />)
       expect((plain.container.firstChild as HTMLElement).style.cursor).toBe('')
       plain.unmount()
 
-      const cropping = render(<DrawingCanvas {...cropProps} onCropDraw={vi.fn()} />)
-      expect((cropping.container.firstChild as HTMLElement).style.cursor).toBe('crosshair')
-      cropping.unmount()
-
-      const drawing = render(<DrawingCanvas {...cropProps} onCellDraw={vi.fn()} />)
+      const drawing = render(<DrawingCanvas {...boxProps} onCellDraw={vi.fn()} />)
       expect((drawing.container.firstChild as HTMLElement).style.cursor).toBe('copy')
     })
 
@@ -722,99 +699,47 @@ describe('DrawingCanvas', () => {
       // pointer-events off and on. Left off, the drawing takes no clicks at
       // all: no selecting a bay, no crop, no band -- and nothing on screen
       // would say why.
-      const view = render(<DrawingCanvas {...cropProps} />)
+      const view = render(<DrawingCanvas {...boxProps} />)
       const container = view.container.firstChild as HTMLElement
       expect(container.style.pointerEvents).toBe('')
 
-      view.rerender(<DrawingCanvas {...cropProps} onCellDraw={vi.fn()} />)
+      view.rerender(<DrawingCanvas {...boxProps} onCellDraw={vi.fn()} />)
       expect(container.style.pointerEvents).toBe('')
 
       const onCellClick = vi.fn()
-      view.rerender(<DrawingCanvas {...cropProps} onCellClick={onCellClick} />)
+      view.rerender(<DrawingCanvas {...boxProps} onCellClick={onCellClick} />)
       expect(container.style.pointerEvents).toBe('')
       fireEvent.click(screen.getByTestId('rect:cell-R1C1'))
       expect(onCellClick).toHaveBeenCalled()
     })
 
-    it('draws no crop region when there is none', () => {
-      render(<DrawingCanvas {...cropProps} />)
-      expect(screen.queryByTestId('rect:crop-region')).not.toBeInTheDocument()
-    })
 
-    it('reports the dragged region', () => {
-      const onCropDraw = vi.fn()
-      render(<DrawingCanvas {...cropProps} onCropDraw={onCropDraw} />)
-      const stage = screen.getByTestId('stage:drawing')
-      fireEvent.mouseDown(stage, { clientX: 90, clientY: 72 })
-      fireEvent.mouseMove(stage, { clientX: 450, clientY: 432 })
-      fireEvent.mouseUp(stage, { clientX: 450, clientY: 432 })
-      expect(onCropDraw).toHaveBeenCalledWith({ x: 0.1, y: 0.1, w: 0.4, h: 0.5 })
-    })
 
-    it('reports a drag that starts and ends inside one render', () => {
-      // Found by driving the real app: an automated drag lost its crop about
-      // half the time. The handlers read the gesture out of React state, so a
-      // mousedown and mouseup batched into the same commit left the mouseup
-      // looking at the state from BEFORE the mousedown -- no gesture, no crop.
-      // A human's drag spans several frames and hides this; a fast flick on a
-      // tablet does not.
-      const onCropDraw = vi.fn()
-      render(<DrawingCanvas {...cropProps} onCropDraw={onCropDraw} />)
-      const stage = screen.getByTestId('stage:drawing')
-      // One act() for both events: React batches them, so nothing this
-      // component sets in the first handler is visible to the second.
-      act(() => {
-        stage.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, clientX: 90, clientY: 72 }))
-        stage.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, clientX: 450, clientY: 432 }))
-      })
-      expect(onCropDraw).toHaveBeenCalledWith({ x: 0.1, y: 0.1, w: 0.4, h: 0.5 })
-    })
 
-    it('does not re-commit the last gesture on a release it never saw start', () => {
-      // A pointer pressed outside the canvas and released inside sends a bare
-      // mouseup. If the finished gesture were still on record it would be
-      // committed a second time, replacing the crop the admin just drew with
-      // the one before it.
-      const onCropDraw = vi.fn()
-      render(<DrawingCanvas {...cropProps} onCropDraw={onCropDraw} />)
-      const stage = screen.getByTestId('stage:drawing')
-      fireEvent.mouseDown(stage, { clientX: 90, clientY: 72 })
-      fireEvent.mouseUp(stage, { clientX: 450, clientY: 432 })
-      fireEvent.mouseUp(stage, { clientX: 700, clientY: 600 })
-      expect(onCropDraw).toHaveBeenCalledTimes(1)
-    })
 
     it('shows the band being dragged before it is committed', () => {
-      render(<DrawingCanvas {...cropProps} onCropDraw={vi.fn()} />)
+      render(<DrawingCanvas {...boxProps} onCellDraw={vi.fn()} />)
       const stage = screen.getByTestId('stage:drawing')
       fireEvent.mouseDown(stage, { clientX: 90, clientY: 72 })
       fireEvent.mouseMove(stage, { clientX: 450, clientY: 432 })
       // Without this the admin drags blind and finds out what they selected
       // only from the detection result.
-      const band = screen.getByTestId('rect:crop-band')
+      const band = screen.getByTestId('rect:drag-band')
       expect(band).toHaveAttribute('data-x', '90')
       expect(band).toHaveAttribute('data-width', '360')
       fireEvent.mouseUp(stage, { clientX: 450, clientY: 432 })
-      expect(screen.queryByTestId('rect:crop-band')).not.toBeInTheDocument()
+      expect(screen.queryByTestId('rect:drag-band')).not.toBeInTheDocument()
     })
 
     it('ignores a click that never became a drag', () => {
-      const onCropDraw = vi.fn()
-      render(<DrawingCanvas {...cropProps} onCropDraw={onCropDraw} />)
+      render(<DrawingCanvas {...boxProps} />)
       const stage = screen.getByTestId('stage:drawing')
       fireEvent.mouseDown(stage, { clientX: 300, clientY: 200 })
       fireEvent.mouseUp(stage, { clientX: 300, clientY: 200 })
-      expect(onCropDraw).not.toHaveBeenCalled()
     })
 
 
 
-    it('does not select a cell with the gesture that drew the crop', () => {
-      const onCellClick = vi.fn()
-      render(<DrawingCanvas {...cropProps} onCellClick={onCellClick} onCropDraw={vi.fn()} />)
-      fireEvent.click(screen.getByTestId('rect:cell-R1C1'))
-      expect(onCellClick).not.toHaveBeenCalled()
-    })
   })
 
 })

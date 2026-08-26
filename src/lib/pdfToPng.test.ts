@@ -1,5 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { PDF_RENDER_WIDTH, imageFileToPng, pdfPageCount, renderPdfPage } from './pdfToPng'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { PDF_RENDER_WIDTH, pdfPageCount, renderPdfPage } from './pdfToPng'
 
 const getDocument = vi.hoisted(() => vi.fn())
 vi.mock('pdfjs-dist', () => ({
@@ -84,26 +84,6 @@ describe('renderPdfPage viewport scale', () => {
 
 })
 
-describe('imageFileToPng', () => {
-  afterEach(() => vi.unstubAllGlobals())
-
-  it('decodes the uploaded file itself, never routing it through pdf.js', async () => {
-    // jsdom implements neither createImageBitmap nor a 2d canvas context, so
-    // the stub supplies the first and the missing second is what ends the call.
-    // That distinct error is what proves the file reached the image path: had it
-    // gone to the PDF renderer instead, getDocument would have been called and
-    // the failure would name the PDF structure.
-    const bitmap = { width: 1600, height: 1200, close: vi.fn() }
-    const createImageBitmap = vi.fn(async () => bitmap)
-    vi.stubGlobal('createImageBitmap', createImageBitmap)
-    const file = new File([new Uint8Array([1])], 'deck.png', { type: 'image/png' })
-
-    await expect(imageFileToPng(file)).rejects.toThrow(/2d canvas context/)
-
-    expect(createImageBitmap).toHaveBeenCalledWith(file)
-    expect(getDocument).not.toHaveBeenCalled()
-  })
-})
 
 describe('loadPdf caching', () => {
   it('loads the document once for pdfPageCount followed by renderPdfPage on the same File', async () => {

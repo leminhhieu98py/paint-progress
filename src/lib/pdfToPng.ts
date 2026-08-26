@@ -77,14 +77,6 @@ export async function renderPdfPage(
   }
 }
 
-/** An uploaded PNG/JPG is normalised to PNG so the editor has one format. */
-export async function imageFileToPng(file: File): Promise<RenderedPage> {
-  const bitmap = await createImageBitmap(file)
-  const { canvas, context } = createCanvas(bitmap.width, bitmap.height)
-  context.drawImage(bitmap, 0, 0)
-  bitmap.close()
-  return { blob: await canvasToPng(canvas), width: canvas.width, height: canvas.height }
-}
 
 function createCanvas(width: number, height: number): { canvas: HTMLCanvasElement; context: CanvasRenderingContext2D } {
   const canvas = document.createElement('canvas')

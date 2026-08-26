@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { clampStagePan, clampZoom, cropFromDrag, MAX_ZOOM, MIN_ZOOM } from './canvasView'
+import { clampStagePan, clampZoom, boxFromDrag, MAX_ZOOM, MIN_ZOOM } from './canvasView'
 
 
 describe('clampZoom', () => {
@@ -47,9 +47,9 @@ describe('clampStagePan', () => {
   })
 })
 
-describe('cropFromDrag', () => {
+describe('boxFromDrag', () => {
   it('turns a drag into a normalized rect', () => {
-    expect(cropFromDrag({ x: 90, y: 40 }, { x: 450, y: 240 }, 900, 400)).toEqual({
+    expect(boxFromDrag({ x: 90, y: 40 }, { x: 450, y: 240 }, 900, 400, 0.05)).toEqual({
       x: 0.1, y: 0.1, w: 0.4, h: 0.5,
     })
   })
@@ -57,15 +57,15 @@ describe('cropFromDrag', () => {
   it('gives the same rect whichever corner the drag started from', () => {
     // The admin drags whichever way is comfortable; bottom-right to top-left
     // must not produce a negative width that meshes into nothing.
-    const forward = cropFromDrag({ x: 90, y: 40 }, { x: 450, y: 240 }, 900, 400)
-    const backward = cropFromDrag({ x: 450, y: 240 }, { x: 90, y: 40 }, 900, 400)
+    const forward = boxFromDrag({ x: 90, y: 40 }, { x: 450, y: 240 }, 900, 400, 0.05)
+    const backward = boxFromDrag({ x: 450, y: 240 }, { x: 90, y: 40 }, 900, 400, 0.05)
     expect(backward).toEqual(forward)
   })
 
   it('clamps a drag that runs off the canvas instead of losing it', () => {
     // Dragging past the edge is how you include the deck's outermost beam;
     // the pointer leaving the stage must not throw the whole gesture away.
-    expect(cropFromDrag({ x: -200, y: -50 }, { x: 1400, y: 900 }, 900, 400)).toEqual({
+    expect(boxFromDrag({ x: -200, y: -50 }, { x: 1400, y: 900 }, 900, 400, 0.05)).toEqual({
       x: 0, y: 0, w: 1, h: 1,
     })
   })
@@ -73,14 +73,14 @@ describe('cropFromDrag', () => {
   it('refuses a stray click and a drag too small to be a deck', () => {
     // A click with no movement, and a 4%-wide drag: both are misfires, and a
     // near-zero region would divide every span by almost nothing.
-    expect(cropFromDrag({ x: 300, y: 200 }, { x: 300, y: 200 }, 900, 400)).toBeNull()
-    expect(cropFromDrag({ x: 300, y: 40 }, { x: 336, y: 240 }, 900, 400)).toBeNull()
-    expect(cropFromDrag({ x: 90, y: 200 }, { x: 450, y: 216 }, 900, 400)).toBeNull()
+    expect(boxFromDrag({ x: 300, y: 200 }, { x: 300, y: 200 }, 900, 400, 0.05)).toBeNull()
+    expect(boxFromDrag({ x: 300, y: 40 }, { x: 336, y: 240 }, 900, 400, 0.05)).toBeNull()
+    expect(boxFromDrag({ x: 90, y: 200 }, { x: 450, y: 216 }, 900, 400, 0.05)).toBeNull()
   })
 
   it('refuses a drag on an unmeasured canvas', () => {
     // DrawingCanvas renders once before its container is measured; a zero
     // width there would normalize every coordinate to Infinity.
-    expect(cropFromDrag({ x: 0, y: 0 }, { x: 100, y: 100 }, 0, 0)).toBeNull()
+    expect(boxFromDrag({ x: 0, y: 0 }, { x: 100, y: 100 }, 0, 0, 0.05)).toBeNull()
   })
 })

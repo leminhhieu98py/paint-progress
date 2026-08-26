@@ -5,7 +5,7 @@ import { Image as KonvaImage, Layer, Rect, Stage, Text } from 'react-konva'
 import useImage from 'use-image'
 import type { MeshCell } from '../domain/types'
 import {
-  clampStagePan, clampZoom, cropFromDrag,
+  clampStagePan, clampZoom, boxFromDrag,
   MIN_ZOOM, WHEEL_ZOOM_STEP, ZOOM_STEP,
 } from './canvasView'
 
@@ -70,9 +70,7 @@ export function DrawingCanvas({
   cellColors,
   planLabels,
   panZoom = false,
-  cropRect,
   onCellClick,
-  onCropDraw,
   onCellDraw,
   onSelectDraw,
 }: {
@@ -97,29 +95,12 @@ export function DrawingCanvas({
    */
   panZoom?: boolean
   /**
-   * The deck's own rectangle on the sheet, normalized 0..1, drawn so the admin
-   * can see what the detector will be looking at. Rendered whenever it is set,
-   * in crop mode or out of it.
-   */
-  cropRect?: { x: number; y: number; w: number; h: number } | null
-  onCellClick?: (code: string, additive: boolean) => void
-  /**
-   * Present = crop mode: one drag on the drawing reports the region it
-   * enclosed. Its presence, not a separate flag, is what puts the canvas in
-   * crop mode — so there is no way to be in the mode with nothing listening,
-   * or to have a listener that the mode ignores.
-   *
-   * While it is set, cells do not select: the box is drawn over the same
-   * pixels the cells occupy, so a drag that started on a cell would select it
-   * instead of drawing the region.
-   */
-  onCropDraw?: (rect: { x: number; y: number; w: number; h: number }) => void
-  /**
    * Present = draw-a-bay mode: the same drag, reported as one bay rather than
    * as the region to detect in. Mutually exclusive with `onCropDraw` -- the
    * screen above offers one mode or the other, never both -- and it uses a much
    * smaller floor, because a bay is a fraction of the size of a deck.
    */
+  onCellClick?: (code: string, additive: boolean) => void
   onCellDraw?: (rect: { x: number; y: number; w: number; h: number }) => void
   /**
    * Present = a drag started with Shift held reports the band it swept, so the
@@ -146,9 +127,9 @@ export function DrawingCanvas({
    * mousedown, so the gesture is silently dropped. Found by driving the real
    * app, where an automated drag lost its crop about half the time.
    */
-  const cropDragRef = useRef<{ from: Konva.Vector2d; to: Konva.Vector2d } | null>(null)
+  const dragRef = useRef<{ from: Konva.Vector2d; to: Konva.Vector2d } | null>(null)
   /** Which of the three gestures the live drag is, fixed at its mousedown. */
-  const gestureRef = useRef<'crop' | 'cell' | 'select' | null>(null)
+  const gestureRef = useRef<'cell' | 'select' | null>(null)
   /**
    * Set for as long as the click that follows a finished drag takes to arrive.
    *
@@ -159,8 +140,8 @@ export function DrawingCanvas({
    * app: mousedown, mousemove x3, mouseup, click.
    */
   const swallowClickRef = useRef(false)
-  const [cropDrag, setCropDrag] = useState<
-    { from: Konva.Vector2d; to: Konva.Vector2d; kind: 'crop' | 'cell' | 'select' } | null
+  const [drag, setDrag] = useState<
+    { from: Konva.Vector2d; to: Konva.Vector2d; kind: 'cell' | 'select' } | null
   >(null)
 
   useEffect(() => {
@@ -178,10 +159,9 @@ export function DrawingCanvas({
   }, [])
 
   const drawingCell = Boolean(onCellDraw)
-  // One gesture, three meanings. The two modes take the drawing out of
+  // One gesture, two meanings. Drawing a bay takes the drawing out of
   // selection; a Shift-band does not, because it IS selection.
-  const cropping = Boolean(onCropDraw) || drawingCell
-  const banding = cropping || Boolean(onSelectDraw)
+  const banding = drawingCell || Boolean(onSelectDraw)
   const width = measuredWidth > 0 ? measuredWidth : FALLBACK_STAGE_WIDTH
   const scale = width / imageW
   const height = imageH * scale
@@ -210,7 +190,7 @@ export function DrawingCanvas({
    * `zoom` stays at MIN_ZOOM = 1). A zoomable crop would have to read
    * `getRelativePointerPosition` instead.
    */
-  const cropHandlers = banding
+  const dragHandlers = banding
     ? {
         onMouseDown: (e: Konva.KonvaEventObject<MouseEvent>) => {
           const point = e.target.getStage()?.getPointerPosition()
@@ -218,46 +198,42 @@ export function DrawingCanvas({
           // Which gesture this is, decided once at the start and carried to the
           // end. Reading the modifier again at mouseup would let a key released
           // mid-drag change what the drag meant.
-          const kind = e.evt.shiftKey && onSelectDraw ? 'select' : drawingCell ? 'cell' : 'crop'
-          if (kind !== 'select' && !cropping) return
+          const kind = e.evt.shiftKey && onSelectDraw ? 'select' : drawingCell ? 'cell' : null
+          if (!kind) return
           gestureRef.current = kind
-          cropDragRef.current = { from: point, to: point }
+          dragRef.current = { from: point, to: point }
           // The kind travels with the state mirror as well as with the ref: the
           // band renders from state, and a ref read during render is a value
           // React has no way to re-render for.
-          setCropDrag({ ...cropDragRef.current, kind })
+          setDrag({ ...dragRef.current, kind })
         },
         onMouseMove: (e: Konva.KonvaEventObject<MouseEvent>) => {
           const point = e.target.getStage()?.getPointerPosition()
           // Only while a gesture is live: without the guard every idle mouse
           // move over the drawing would re-render the whole stage.
-          if (!point || !cropDragRef.current) return
-          cropDragRef.current = { ...cropDragRef.current, to: point }
-          setCropDrag((live) => (live ? { ...live, to: point } : live))
+          if (!point || !dragRef.current) return
+          dragRef.current = { ...dragRef.current, to: point }
+          setDrag((live) => (live ? { ...live, to: point } : live))
         },
         onMouseUp: (e: Konva.KonvaEventObject<MouseEvent>) => {
-          const drag = cropDragRef.current
+          const drag = dragRef.current
           const point = e.target.getStage()?.getPointerPosition() ?? drag?.to
-          cropDragRef.current = null
-          setCropDrag(null)
+          dragRef.current = null
+          setDrag(null)
           if (!drag || !point) return
           // A misfire (a click, or a drag too small to be a deck) reports
           // nothing rather than committing a region that would make every
-          // fraction pass -- see cropFromDrag.
+          // fraction pass -- see boxFromDrag.
           const kind = gestureRef.current
           gestureRef.current = null
-          const rect = cropFromDrag(
-            drag.from, point, width, height,
-            kind === 'crop' ? undefined : MIN_DRAWN_FRACTION,
-          )
+          const rect = boxFromDrag(drag.from, point, width, height, MIN_DRAWN_FRACTION)
           if (!rect) return
           // Before the callback, so a re-render triggered by it cannot land
           // between the flag and the click it is there to swallow.
           swallowClickRef.current = true
           setTimeout(() => { swallowClickRef.current = false }, 0)
           if (kind === 'select') onSelectDraw?.(rect)
-          else if (kind === 'cell') onCellDraw?.(rect)
-          else if (kind === 'crop') onCropDraw?.(rect)
+          else onCellDraw?.(rect)
         },
       }
     : {}
@@ -266,7 +242,7 @@ export function DrawingCanvas({
    * drawing a bay adds one, which is what the OS's own "copy" pointer means
    * everywhere else.
    */
-  const cursor = drawingCell ? 'copy' : onCropDraw ? 'crosshair' : ''
+  const cursor = drawingCell ? 'copy' : ''
 
   /**
    * Makes the browser look at the pointer again after the mode changed.
@@ -290,11 +266,8 @@ export function DrawingCanvas({
     el.style.pointerEvents = ''
   }, [cursor])
 
-  const cropBand = cropDrag
-    ? cropFromDrag(
-      cropDrag.from, cropDrag.to, width, height,
-      cropDrag.kind === 'crop' ? undefined : MIN_DRAWN_FRACTION,
-    )
+  const dragBand = drag
+    ? boxFromDrag(drag.from, drag.to, width, height, MIN_DRAWN_FRACTION)
     : null
 
   return (
@@ -326,9 +299,9 @@ export function DrawingCanvas({
         ref={stageRef}
         scaleX={zoom}
         scaleY={zoom}
-        draggable={panZoom && !cropping}
+        draggable={panZoom && !drawingCell}
         dragBoundFunc={(pos) => clampStagePan(pos, width, height, zoom)}
-        {...cropHandlers}
+        {...dragHandlers}
         onWheel={(e: Konva.KonvaEventObject<WheelEvent>) => {
           if (!panZoom) return
           e.evt.preventDefault()
@@ -339,7 +312,7 @@ export function DrawingCanvas({
           <KonvaImage name="deck-drawing" image={image} width={width} height={height} />
         </Layer>
 
-        <Layer name="cells" listening={!cropping}>
+        <Layer name="cells" listening={!drawingCell}>
           {cells.map((cell) => (
             <Rect
               key={cell.code}
@@ -353,7 +326,7 @@ export function DrawingCanvas({
               stroke="rgba(255, 0, 0, 0.6)"
               strokeWidth={1}
               onClick={(e: Konva.KonvaEventObject<MouseEvent>) => {
-                if (cropping || swallowClickRef.current) return
+                if (drawingCell || swallowClickRef.current) return
                 // Shift belongs to the band, so a click carrying it is the tail
                 // of one, not a selection. Two guards rather than one: the flag
                 // catches a band whose Shift was let go before the mouse, and
@@ -363,7 +336,7 @@ export function DrawingCanvas({
                 onCellClick?.(cell.code, e.evt.metaKey || e.evt.ctrlKey)
               }}
               onTap={() => {
-                if (cropping) return
+                if (drawingCell) return
                 onCellClick?.(cell.code, false)
               }}
             />
@@ -426,26 +399,14 @@ export function DrawingCanvas({
           Above every other layer and out of the hit graph: it is a cue, not a
           target, and the gesture that draws it is handled on the stage itself.
         */}
-        <Layer name="crop" listening={false}>
-          {cropRect && (
+        <Layer name="drag-band-layer" listening={false}>
+          {dragBand && (
             <Rect
-              name="crop-region"
-              x={cropRect.x * width}
-              y={cropRect.y * height}
-              width={cropRect.w * width}
-              height={cropRect.h * height}
-              stroke={CROP_STROKE}
-              strokeWidth={2}
-              dash={[10, 6]}
-            />
-          )}
-          {cropBand && (
-            <Rect
-              name="crop-band"
-              x={cropBand.x * width}
-              y={cropBand.y * height}
-              width={cropBand.w * width}
-              height={cropBand.h * height}
+              name="drag-band"
+              x={dragBand.x * width}
+              y={dragBand.y * height}
+              width={dragBand.w * width}
+              height={dragBand.h * height}
               stroke={CROP_STROKE}
               strokeWidth={2}
               dash={[4, 4]}

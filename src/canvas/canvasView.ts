@@ -51,12 +51,10 @@ export function clampStagePan(
  * beam's span is then divided by almost nothing, so every fraction passes and
  * the detector reports one line per inked pixel column.
  */
-export const MIN_CROP_FRACTION = 0.05
-
 /**
- * The deck's rectangle on the sheet, as normalized 0..1 fractions of the
- * drawing, from the two ends of one drag in stage pixels. `null` when the
- * gesture does not describe a usable region.
+ * The rectangle one drag described, as normalized 0..1 fractions of the
+ * drawing, from its two ends in stage pixels. `null` when the gesture does not
+ * describe a usable one.
  *
  * This exists because the detector has to be told where the deck is. A deck
  * drawing is not the sheet it is printed on: with nothing but pixels to go on,
@@ -71,18 +69,17 @@ export const MIN_CROP_FRACTION = 0.05
  * canvas clamps rather than being discarded: dragging past the edge is how you
  * take in the deck's outermost beam.
  */
-export function cropFromDrag(
+export function boxFromDrag(
   start: { x: number; y: number },
   end: { x: number; y: number },
   width: number,
   height: number,
   /**
-   * The shortest side the drag may describe. Defaults to a deck's worth; a
-   * single bay is drawn with a much smaller one, and the point of the floor at
-   * all is that a click, or a drag of a few pixels, reports nothing rather than
+   * The shortest side the drag may describe. The point of a floor at all is
+   * that a click, or a drag of a few pixels, reports nothing rather than
    * committing a rectangle nobody meant.
    */
-  minFraction = MIN_CROP_FRACTION,
+  minFraction: number,
 ): { x: number; y: number; w: number; h: number } | null {
   // The container is unmeasured on the first render; normalizing by 0 would
   // make every coordinate Infinity and every comparison below meaningless.
