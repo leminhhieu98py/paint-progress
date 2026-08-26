@@ -159,6 +159,23 @@ describe('ProgressScreen', () => {
     expect(within(spec).getAllByText('50,00%').length).toBeGreaterThan(0)
   })
 
+  it('names every colour on both lenses', async () => {
+    // Driving the real deck, the two canvases were a wall of colour with nothing
+    // saying what any of it meant: the admin had to know that grey was Coat 2
+    // and not "untouched". Each lens carries its own key, and the scaffolding
+    // one says what its two colours mean in words rather than by convention.
+    render(<ProgressScreen />)
+
+    const paintKey = await screen.findByTestId('paint-legend')
+    for (const name of ['Blast + Coat 1', 'Coat 2', 'Tháo giáo', 'Chưa bắt đầu']) {
+      expect(within(paintKey).getByText(name)).toBeInTheDocument()
+    }
+
+    const scaffoldKey = screen.getByTestId('scaffold-legend')
+    expect(within(scaffoldKey).getByText('Đã tháo giáo')).toBeInTheDocument()
+    expect(within(scaffoldKey).getByText('Chưa tháo giáo')).toBeInTheDocument()
+  })
+
   it('tells the admin when a deck has no drawing, instead of an empty frame', async () => {
     loadProjectProgress.mockResolvedValue([
       { ...ENTRIES[0], imagePath: null, imageW: null, imageH: null },

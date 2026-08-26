@@ -1,4 +1,3 @@
-import { NOT_STARTED_COLOR } from './pieSlices'
 import { stageSeqOf } from './progress'
 import type { Cell, Stage } from './types'
 
@@ -18,11 +17,21 @@ import type { Cell, Stage } from './types'
 /**
  * A bay whose scaffolding has NOT come down.
  *
- * Deliberately the same grey the pie gives "Chưa bắt đầu": on this lens the
- * question is binary, and reusing the palette's one neutral keeps a screen that
- * already carries five stage colours from growing a sixth meaning.
+ * This started as the pie's "Chưa bắt đầu" grey, on the reasoning that a screen
+ * carrying five stage colours should not grow a sixth meaning. Driving the real
+ * deck killed that: #d9d9d9 sits beside Coat 2's #bfbfbf, so with a third of the
+ * bays at Coat 2 the two canvases were the same picture at arm's length -- which
+ * costs the second lens its entire reason for existing.
+ *
+ * A soft red instead, chosen for two reasons. It is far from every colour the
+ * default template ships (the test measures it, so a future palette change that
+ * collides fails rather than quietly degrades). And it puts the emphasis on the
+ * bays that are still BLOCKED, which is the question this lens is asked: not
+ * "what is finished" but "where can the crew not get to yet".
+ *
+ * Filled at 0.45 over the drawing, so the beams and grid labels stay readable.
  */
-export const SCAFFOLD_PENDING_COLOR = NOT_STARTED_COLOR
+export const SCAFFOLD_PENDING_COLOR = '#ffa39e'
 
 /** Stage colour per cell code. A cell with no stage, or one naming a stage this
  *  deck does not declare, is left OUT of the map rather than given a colour --

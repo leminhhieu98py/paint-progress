@@ -59,6 +59,27 @@ describe('scaffoldLensColors', () => {
     })
   })
 
+  it('uses a pending colour no paint stage can be mistaken for', () => {
+    // Measured, not asserted by eye: the first build gave pending the same grey
+    // the pie gives "Chưa bắt đầu" (#d9d9d9), which sits next to Coat 2's
+    // #bfbfbf. Side by side on a real deck the two lenses were indistinguishable
+    // at a glance, which costs the second canvas its entire reason to exist.
+    // Every colour this project's default template ships, plus the pie's two
+    // neutrals, must stay clear of it.
+    const palette = [
+      '#fadb14', '#bfbfbf', '#52c41a', '#1677ff', '#722ed1', // DEFAULT_STAGE_TEMPLATE
+      '#d9d9d9', '#8c8c8c',                                   // not-started, unmapped
+    ]
+    expect(palette).not.toContain(SCAFFOLD_PENDING_COLOR)
+
+    const rgb = (hex: string) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16))
+    const pending = rgb(SCAFFOLD_PENDING_COLOR)
+    for (const other of palette) {
+      const d = rgb(other).reduce((sum, c, i) => sum + (c - pending[i]) ** 2, 0) ** 0.5
+      expect(d).toBeGreaterThan(60)
+    }
+  })
+
   it('reads the last stage by seq, not by array position', () => {
     // listStages sorts, but a caller assembling stages by hand need not, and
     // "the last element" would then call the wrong stage scaffolding removal.

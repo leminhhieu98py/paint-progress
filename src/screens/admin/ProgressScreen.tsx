@@ -1,7 +1,8 @@
 import { Alert, Card, Col, Row, Select, Space, Spin, Table, Tabs, Typography } from 'antd'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { DrawingCanvas } from '../../canvas/DrawingCanvas'
-import { paintLensColors, scaffoldLensColors } from '../../domain/lens'
+import { paintLensColors, scaffoldLensColors, SCAFFOLD_PENDING_COLOR } from '../../domain/lens'
+import { NOT_STARTED_COLOR, NOT_STARTED_LABEL } from '../../domain/pieSlices'
 import { computeDeckProgress, computeProjectProgress } from '../../domain/progress'
 import { getDrawingUrl } from '../../lib/decksApi'
 import { formatAreaM2, formatPercent } from '../../lib/format'
@@ -10,6 +11,44 @@ import { listProjectNames } from '../../lib/projectsApi'
 import { StageSpecTable } from '../gs/StageSpecTable'
 
 type ProjectOption = Awaited<ReturnType<typeof listProjectNames>>[number]
+
+/**
+ * What each fill on the canvas above means.
+ *
+ * Not decoration. Driving the real deck, both lenses were a wall of colour with
+ * nothing saying which grey was Coat 2 and which was "nobody has touched this" --
+ * and the admin reading it is the person deciding what to pay for.
+ */
+function ColorKey({
+  testId,
+  items,
+}: {
+  testId: string
+  items: { color: string; label: string }[]
+}) {
+  return (
+    <Space size="middle" wrap data-testid={testId} style={{ marginTop: 8 }}>
+      {items.map((item) => (
+        <Space size={6} key={item.label}>
+          <span
+            aria-hidden
+            style={{
+              display: 'inline-block',
+              width: 12,
+              height: 12,
+              borderRadius: 2,
+              background: item.color,
+              border: '1px solid rgba(0,0,0,0.15)',
+            }}
+          />
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            {item.label}
+          </Typography.Text>
+        </Space>
+      ))}
+    </Space>
+  )
+}
 
 interface RollupRow {
   key: string
@@ -188,6 +227,13 @@ export function ProgressScreen() {
                       panZoom
                     />
                   </div>
+                  <ColorKey
+                    testId="paint-legend"
+                    items={[
+                      ...active.stages.map((st) => ({ color: st.color, label: st.name })),
+                      { color: NOT_STARTED_COLOR, label: NOT_STARTED_LABEL },
+                    ]}
+                  />
                 </Card>
               </Col>
               <Col xs={24} lg={12}>
@@ -203,6 +249,16 @@ export function ProgressScreen() {
                       panZoom
                     />
                   </div>
+                  <ColorKey
+                    testId="scaffold-legend"
+                    items={[
+                      {
+                        color: active.stages[active.stages.length - 1]?.color ?? NOT_STARTED_COLOR,
+                        label: 'Đã tháo giáo',
+                      },
+                      { color: SCAFFOLD_PENDING_COLOR, label: 'Chưa tháo giáo' },
+                    ]}
+                  />
                 </Card>
               </Col>
             </Row>
