@@ -213,7 +213,7 @@ describe.skipIf(!configured)('RLS as a GS session', () => {
   })
 
   it('can advance the stage of a cell in its own project, and the write lands', async () => {
-    const { data: stage } = await gs.from('project_stages').select('id').single()
+    const { data: stage } = await gs.from('deck_stages').select('id').single()
     const { data: cell } = await gs.from('cells').select('id').single()
     const { data: updated, error } = await gs
       .from('cells')
@@ -271,19 +271,19 @@ describe.skipIf(!configured)('RLS as a GS session', () => {
     expect(error!.code).toBe('42501')
   })
 
-  it('cannot change a project_stage weight', async () => {
+  it('cannot change a deck stage weight', async () => {
     // Same "no applicable UPDATE policy" shape as the profile-role test
-    // above: project_stages_admin_all requires is_admin(); the member
+    // above: deck_stages_admin_all requires is_admin(); the member
     // policy is SELECT-only. Zero rows affected, error === null, so the
     // read-back after the attempt is the actual assertion.
-    const { data: stage } = await gs.from('project_stages').select('id, weight').single()
+    const { data: stage } = await gs.from('deck_stages').select('id, weight').single()
     const { error } = await gs
-      .from('project_stages')
+      .from('deck_stages')
       .update({ weight: 0 })
       .eq('id', stage!.id)
     expect(error).toBeNull()
 
-    const { data: check } = await gs.from('project_stages').select('weight').eq('id', stage!.id).single()
+    const { data: check } = await gs.from('deck_stages').select('weight').eq('id', stage!.id).single()
     expect(Number(check?.weight)).toBe(Number(stage!.weight))
   })
 })
@@ -348,14 +348,7 @@ describe.skipIf(!adminConfigured)('RLS as an admin session', () => {
     expect(project.error).toBeNull()
     projectId = project.data!.id
 
-    const stage = await admin
-      .from('project_stages')
-      .insert({ project_id: projectId, seq: 1, name: 'Admin Coat 1', color: '#1677ff', weight: 1 })
-      .select('id')
-      .single()
-    expect(stage.error).toBeNull()
-    stageId = stage.data!.id
-
+    // The deck first: since 0018 a stage hangs off a deck, not a project.
     const deck = await admin
       .from('decks')
       .insert({ project_id: projectId, seq: 1, name: 'Admin Deck', code: 'XD', total_area_m2: 100 })
@@ -363,6 +356,14 @@ describe.skipIf(!adminConfigured)('RLS as an admin session', () => {
       .single()
     expect(deck.error).toBeNull()
     deckId = deck.data!.id
+
+    const stage = await admin
+      .from('deck_stages')
+      .insert({ deck_id: deckId, seq: 1, name: 'Admin Coat 1', color: '#1677ff', weight: 1 })
+      .select('id')
+      .single()
+    expect(stage.error).toBeNull()
+    stageId = stage.data!.id
 
     const cell = await admin
       .from('cells')
@@ -440,21 +441,21 @@ describe.skipIf(!adminConfigured)('RLS as an admin session', () => {
     expect((deleted.data ?? []).length).toBe(1)
   })
 
-  it('project_stages_admin_all: creates, reads, reweights and deletes a stage no GS can see', async () => {
+  it('deck_stages_admin_all: creates, reads, reweights and deletes a stage no GS can see', async () => {
     const created = await admin
-      .from('project_stages')
-      .insert({ project_id: projectId, seq: 2, name: 'Admin Coat 2', color: '#52c41a', weight: 0.5 })
+      .from('deck_stages')
+      .insert({ deck_id: deckId, seq: 2, name: 'Admin Coat 2', color: '#52c41a', weight: 0.5 })
       .select('id')
       .single()
     expect(created.error).toBeNull()
     const id = created.data!.id
 
-    const read = await admin.from('project_stages').select('name, weight').eq('id', id).single()
+    const read = await admin.from('deck_stages').select('name, weight').eq('id', id).single()
     expect(read.error).toBeNull()
     expect(read.data?.name).toBe('Admin Coat 2')
 
     const reweighted = await admin
-      .from('project_stages')
+      .from('deck_stages')
       .update({ weight: 0.25 })
       .eq('id', id)
       .select('weight')
@@ -462,17 +463,17 @@ describe.skipIf(!adminConfigured)('RLS as an admin session', () => {
     expect(reweighted.error).toBeNull()
     expect(Number(reweighted.data?.weight)).toBe(0.25)
 
-    const gsRead = await gs.from('project_stages').select('id').eq('id', id)
+    const gsRead = await gs.from('deck_stages').select('id').eq('id', id)
     expect(gsRead.error).toBeNull()
     expect(gsRead.data ?? []).toEqual([])
 
-    const gsWrite = await gs.from('project_stages').update({ weight: 1 }).eq('id', id).select('weight')
+    const gsWrite = await gs.from('deck_stages').update({ weight: 1 }).eq('id', id).select('weight')
     expect(gsWrite.error).toBeNull()
     expect(gsWrite.data ?? []).toEqual([])
-    const afterGs = await admin.from('project_stages').select('weight').eq('id', id).single()
+    const afterGs = await admin.from('deck_stages').select('weight').eq('id', id).single()
     expect(Number(afterGs.data?.weight)).toBe(0.25)
 
-    const deleted = await admin.from('project_stages').delete().eq('id', id).select('id')
+    const deleted = await admin.from('deck_stages').delete().eq('id', id).select('id')
     expect(deleted.error).toBeNull()
     expect((deleted.data ?? []).length).toBe(1)
   })

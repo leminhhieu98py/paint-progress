@@ -11,7 +11,7 @@ export interface StageTemplateEntry {
  *
  * Deliberately separate from WORKBOOK_STAGES in fixtures.ts: that one carries
  * string ids ('coat1') for use as test data, which are not uuids and cannot be
- * inserted into project_stages.id. This one has no id at all, so it is
+ * inserted into deck_stages.id. This one has no id at all, so it is
  * insertable exactly as written.
  */
 export const DEFAULT_STAGE_TEMPLATE: StageTemplateEntry[] = [

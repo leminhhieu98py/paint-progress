@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { DEFAULT_STAGE_TEMPLATE } from '../domain/stageTemplate'
 import {
   createDeck, getDrawingUrl, listCells, listDecks,
   syncCells, updateDeckArea, uploadDrawing, zoneImpactOf,
@@ -84,6 +85,7 @@ describe('createDeck', () => {
   it('inserts the deck under its project and seq, and returns its id', async () => {
     const stub = builder({ data: { id: 'd9' } })
     from.mockImplementationOnce(() => stub)
+    from.mockImplementationOnce(() => builder({}))
 
     const id = await createDeck({ projectId: 'p1', seq: 3, name: 'Roof', code: 'RF' })
 
@@ -91,6 +93,39 @@ describe('createDeck', () => {
     expect(stub.insert).toHaveBeenCalledWith({
       project_id: 'p1', seq: 3, name: 'Roof', code: 'RF',
     })
+  })
+
+  it('seeds the new deck with the default stage template', async () => {
+    // A deck with no stages reports 0% for ever: computeDeckProgress reduces
+    // over an empty list and returns a number, so nothing raises the alarm.
+    from.mockImplementationOnce(() => builder({ data: { id: 'd9' } }))
+    const stages = builder({})
+    from.mockImplementationOnce(() => stages)
+
+    await createDeck({ projectId: 'p1', seq: 3, name: 'Roof', code: 'RF' })
+
+    expect(from).toHaveBeenCalledWith('deck_stages')
+    expect(stages.insert).toHaveBeenCalledWith(
+      DEFAULT_STAGE_TEMPLATE.map((t) => ({
+        deck_id: 'd9', seq: t.seq, name: t.name, color: t.color, weight: t.weight,
+      })),
+    )
+  })
+
+  it('deletes the deck again when seeding its stages fails', async () => {
+    // Two statements, no transaction. Leaving the deck behind strands it at a
+    // permanent 0% that no one is prompted to fix.
+    from.mockImplementationOnce(() => builder({ data: { id: 'd9' } }))
+    from.mockImplementationOnce(() => builder({ error: { message: 'deadlock detected' } }))
+    const rollback = builder({})
+    from.mockImplementationOnce(() => rollback)
+
+    await expect(
+      createDeck({ projectId: 'p1', seq: 3, name: 'Roof', code: 'RF' }),
+    ).rejects.toThrow('deadlock detected')
+
+    expect(rollback.delete).toHaveBeenCalled()
+    expect(rollback.eq).toHaveBeenCalledWith('id', 'd9')
   })
 
   it('throws when the insert fails', async () => {

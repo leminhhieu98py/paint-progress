@@ -1,4 +1,3 @@
-import { DEFAULT_STAGE_TEMPLATE } from '../domain/stageTemplate'
 import type { Cell, Deck, Stage } from '../domain/types'
 import { computeProjectProgress } from '../domain/progress'
 import { supabase } from './supabase'
@@ -16,7 +15,7 @@ export interface ProjectRow {
  * Weights are entered as decimals in a form, so an exact === 1 test would
  * reject 0.1+0.1+0.1+0.7. Compare within this instead.
  *
- * Sized to `project_stages.weight`, which is `numeric(6,5)` -- scale 5. A
+ * Sized to `deck_stages.weight`, which is `numeric(6,5)` -- scale 5. A
  * three-way split typed as 0.333333 / 0.333333 / 0.333334 sums to exactly 1 and
  * passes any tighter guard, but Postgres stores 0.33333 three times, so on
  * reload the total is 0.99999 and the config that just saved successfully fails
@@ -32,7 +31,7 @@ export interface ProjectRow {
 export const STAGE_WEIGHT_EPSILON = 1e-5
 
 /**
- * Rounds a weight to what `project_stages.weight` can actually hold.
+ * Rounds a weight to what `deck_stages.weight` can actually hold.
  *
  * numeric(6,5) is scale 5, and Postgres rounds silently on the way in. Applying
  * the same rounding in the form means the admin sees the value that will be
@@ -54,27 +53,6 @@ export async function createProject(input: { name: string; code: string }): Prom
 
   const projectId = (data as { id: string }).id
 
-  // Seed the template so a new project is never left with an empty stage list:
-  // reducing over zero stages yields a silent, permanent 0% rather than a
-  // crash, which is harder to notice than a failed create.
-  const { error: stageError } = await supabase.from('project_stages').insert(
-    DEFAULT_STAGE_TEMPLATE.map((s) => ({
-      project_id: projectId,
-      seq: s.seq,
-      name: s.name,
-      color: s.color,
-      weight: s.weight,
-    })),
-  )
-  if (stageError) {
-    // The two inserts are not in a transaction. If the project row committed
-    // but the stage seed failed, roll the project back rather than leaving it
-    // stranded with zero stages -- the same silent-0% hazard the comment above
-    // describes, except now permanent because nothing prompts anyone to retry.
-    await supabase.from('projects').delete().eq('id', projectId)
-    throw new Error(stageError.message)
-  }
-
   return projectId
 }
 
@@ -89,11 +67,11 @@ export async function updateProject(
   if (error) throw new Error(error.message)
 }
 
-export async function listStages(projectId: string): Promise<Stage[]> {
+export async function listStages(deckId: string): Promise<Stage[]> {
   const { data, error } = await supabase
-    .from('project_stages')
+    .from('deck_stages')
     .select('id, seq, name, color, weight')
-    .eq('project_id', projectId)
+    .eq('deck_id', deckId)
     .order('seq')
   if (error) throw new Error(error.message)
   return (data ?? []).map((r) => ({
@@ -154,13 +132,14 @@ export function stagesRemovedBy(persisted: Stage[], next: Stage[]): Stage[] {
  *
  * A reorder swaps seq between two rows inside one statement, which the immediate
  * `unique (project_id, seq)` from 0001 rejected row by row. Migration 0012 makes
- * it `deferrable initially deferred` for exactly this write -- see that file.
+ * it `deferrable initially deferred` for exactly this write -- see that file;
+ * 0018 carried the deferral onto `unique (deck_id, seq)`.
  *
  * Diff, not replace -- the same medicine syncCells got, for a sharper version of
- * the same reason. `zones.stage_id references project_stages on delete cascade`
+ * the same reason. `zones.stage_id references deck_stages on delete cascade`
  * (0003) and `cells.stage_id ... on delete set null` (0001), so deleting the
  * stage rows and re-inserting them destroyed EVERY zone and every zone_cells
- * link in the project, plus every tick of recorded progress -- on a rename, on a
+ * link on the deck, plus every tick of recorded progress -- on a rename, on a
  * weight tweak, on any save at all.
  *
  * Only an id that genuinely disappears from the draft is deleted, and that
@@ -178,7 +157,7 @@ export function stagesRemovedBy(persisted: Stage[], next: Stage[]): Stage[] {
  * the survivors 1..n, so removing anything but the last stage moves a survivor
  * INTO a seq the row being removed still holds. Upserting first therefore put
  * two rows at one seq and Postgres rejected the whole statement with `duplicate
- * key value violates unique constraint "project_stages_project_id_seq_key"`:
+ * key value violates unique constraint "deck_stages_deck_id_seq_key"`:
  * nothing was deleted, nothing was renamed, and only the last stage in the list
  * could ever be removed. 0012's deferral does not save it either -- deferring
  * moves the check to COMMIT, and the upsert is its own PostgREST round trip, so
@@ -196,9 +175,9 @@ export function stagesRemovedBy(persisted: Stage[], next: Stage[]): Stage[] {
  * the panel is already refusing to save. Closing the window entirely needs an
  * RPC.
  */
-export async function saveStages(projectId: string, stages: Stage[]): Promise<void> {
+export async function saveStages(deckId: string, stages: Stage[]): Promise<void> {
   if (stages.length === 0) {
-    throw new Error('A project needs at least one stage')
+    throw new Error('A deck needs at least one stage')
   }
   const seqs = new Set(stages.map((s) => s.seq))
   if (seqs.size !== stages.length) {
@@ -220,25 +199,25 @@ export async function saveStages(projectId: string, stages: Stage[]): Promise<vo
   // Snapshot first: the draft says which stages should exist, never which ones
   // were removed, so the only way to name them is to diff against what is
   // persisted right now.
-  const removed = stagesRemovedBy(await listStages(projectId), stages)
+  const removed = stagesRemovedBy(await listStages(deckId), stages)
 
   // Removals first, so the survivors' renumbered seqs land on seqs nobody holds
   // any more -- see the write-order paragraph above. By explicit id, and only
-  // when there is something to delete. A `.eq('project_id', projectId)` delete
+  // when there is something to delete. A `.eq('deck_id', deckId)` delete
   // here would be exactly the bug this rewrite exists to remove, and it would
   // satisfy any assertion that a delete was issued.
   if (removed.length > 0) {
     const { error: deleteError } = await supabase
-      .from('project_stages')
+      .from('deck_stages')
       .delete()
       .in('id', removed.map((r) => r.id))
     if (deleteError) throw new Error(deleteError.message)
   }
 
-  const { error: upsertError } = await supabase.from('project_stages').upsert(
+  const { error: upsertError } = await supabase.from('deck_stages').upsert(
     stages.map((s) => ({
       id: s.id,
-      project_id: projectId,
+      deck_id: deckId,
       seq: s.seq,
       name: s.name,
       color: s.color,
@@ -291,58 +270,54 @@ export async function listProjects(): Promise<ProjectRow[]> {
   const { data, error } = await supabase
     .from('projects')
     .select(
-      'id, name, code, project_stages(id, seq, name, color, weight), decks(id, code, name, total_area_m2, cells(id, code, area_m2, stage_id))',
+      'id, name, code, decks(id, code, name, total_area_m2, deck_stages(id, seq, name, color, weight), cells(id, code, area_m2, stage_id))',
     )
     .order('name')
   if (error) throw new Error(error.message)
 
   return (data ?? []).map((row) => {
-    const stages: Stage[] = ((row.project_stages ?? []) as Record<string, unknown>[])
-      .map((s) => ({
-        id: s.id as string,
-        seq: s.seq as number,
-        name: s.name as string,
-        color: s.color as string,
-        weight: Number(s.weight),
-      }))
-      // Redundant today: computeProjectProgress sorts its stages internally,
-      // so this call has no observable effect on `progress` below and a
-      // mutation deleting it survives. Left in and commented, not removed --
-      // `stages` is local to this map body and unused for anything else, but
-      // the next reader should not have to re-derive that from scratch to
-      // know it is safe to leave alone (or unsafe to rely on elsewhere).
-      .sort((a, b) => a.seq - b.seq)
-
-    const decks: Deck[] = ((row.decks ?? []) as Record<string, unknown>[]).map((d) => ({
-      id: d.id as string,
-      code: d.code as string,
-      name: d.name as string,
-      totalAreaM2: Number(d.total_area_m2),
-      // The rollup only needs areaM2 and stageId to compute one percentage per
-      // project; fetching normalized x/y/w/h for every cell of every deck here
-      // would move a lot of data for nothing. The deck editor loads real
-      // geometry separately when it actually needs to draw the cells.
-      cells: ((d.cells ?? []) as Record<string, unknown>[]).map(
-        (c): Cell => ({
-          id: c.id as string,
-          code: c.code as string,
-          x: 0,
-          y: 0,
-          w: 0,
-          h: 0,
-          areaM2: Number(c.area_m2),
-          stageId: (c.stage_id as string | null) ?? null,
-        }),
-      ),
+    // Each deck carries its own stages: their weights sum to 1 within the deck,
+    // so a project percentage is a weighted average of per-deck percentages,
+    // not one sum over one stage list.
+    const entries = ((row.decks ?? []) as Record<string, unknown>[]).map((d) => ({
+      stages: ((d.deck_stages ?? []) as Record<string, unknown>[]).map((s2) => ({
+        id: s2.id as string,
+        seq: s2.seq as number,
+        name: s2.name as string,
+        color: s2.color as string,
+        weight: Number(s2.weight),
+      })),
+      deck: {
+        id: d.id as string,
+        code: d.code as string,
+        name: d.name as string,
+        totalAreaM2: Number(d.total_area_m2),
+        // The rollup only needs areaM2 and stageId to compute one percentage per
+        // project; fetching normalized x/y/w/h for every cell of every deck here
+        // would move a lot of data for nothing. The deck editor loads real
+        // geometry separately when it actually needs to draw the cells.
+        cells: ((d.cells ?? []) as Record<string, unknown>[]).map(
+          (c): Cell => ({
+            id: c.id as string,
+            code: c.code as string,
+            x: 0,
+            y: 0,
+            w: 0,
+            h: 0,
+            areaM2: Number(c.area_m2),
+            stageId: (c.stage_id as string | null) ?? null,
+          }),
+        ),
+      } satisfies Deck,
     }))
 
     return {
       id: row.id as string,
       name: row.name as string,
       code: row.code as string,
-      deckCount: decks.length,
-      totalAreaM2: decks.reduce((sum, d) => sum + d.totalAreaM2, 0),
-      progress: computeProjectProgress(decks, stages).progress,
+      deckCount: entries.length,
+      totalAreaM2: entries.reduce((sum, e) => sum + e.deck.totalAreaM2, 0),
+      progress: computeProjectProgress(entries).progress,
     }
   })
 }

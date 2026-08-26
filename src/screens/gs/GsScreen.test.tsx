@@ -13,6 +13,7 @@ const listDeckZones = vi.hoisted(() => vi.fn())
 const setCellStage = vi.hoisted(() => vi.fn())
 const subscribeDeckCells = vi.hoisted(() => vi.fn())
 const getDrawingUrl = vi.hoisted(() => vi.fn())
+const listStages = vi.hoisted(() => vi.fn())
 const signOut = vi.hoisted(() => vi.fn())
 
 vi.mock('../../lib/gsApi', () => ({
@@ -25,6 +26,9 @@ vi.mock('../../lib/gsApi', () => ({
 }))
 vi.mock('../../lib/decksApi', () => ({
   getDrawingUrl: (path: string) => getDrawingUrl(path),
+}))
+vi.mock('../../lib/projectsApi', () => ({
+  listStages: (deckId: string) => listStages(deckId),
 }))
 vi.mock('../../auth/AuthProvider', () => ({
   useAuth: () => ({
@@ -142,6 +146,10 @@ beforeEach(() => {
   listDeckZones.mockResolvedValue([])
   setCellStage.mockReset()
   getDrawingUrl.mockReset()
+  listStages.mockReset()
+  // Both decks in the fixture declare the same coat system. Per-deck stage
+  // lists are covered by their own test below.
+  listStages.mockResolvedValue(STAGES)
   signOut.mockReset()
   subscribeDeckCells.mockReset()
   unsubscribe.mockReset()
@@ -165,7 +173,7 @@ beforeEach(() => {
     }
   })
   setCellStage.mockResolvedValue(undefined)
-  loadGsProject.mockResolvedValue({ stages: STAGES, decks: DECKS, isMember: true })
+  loadGsProject.mockResolvedValue({ decks: DECKS, isMember: true })
   listDeckCells.mockImplementation((deckId: string) =>
     Promise.resolve(deckId === 'd1' ? D1_CELLS : D2_CELLS))
   getDrawingUrl.mockImplementation((path: string) => Promise.resolve(`https://signed/${path}`))
@@ -199,6 +207,41 @@ describe('GsScreen', () => {
     await waitFor(() =>
       expect(screen.getByTestId('canvas')).toHaveAttribute('data-image', 'https://signed/p1/d2.png'))
     expect(getDrawingUrl).toHaveBeenCalledWith('p1/d2.png')
+  })
+
+  it('reads each deck\'s own paint stages, not one list for the project', async () => {
+    // The point of moving stages onto the deck: a cellar deck and a main deck on
+    // one platform carry different coat systems. A project-wide list put the
+    // wrong legend, the wrong colours and the wrong weights on whichever deck
+    // did not match it -- and the percentage those weights produce is what the
+    // money is paid against.
+    listStages.mockImplementation((deckId: string) =>
+      Promise.resolve(deckId === 'd1'
+        ? STAGES
+        : [{ id: 'm1', seq: 1, name: 'Sơn sàn chính', color: '#eb2f96', weight: 1 }]))
+
+    renderScreen()
+    // findAllByText: a stage name appears both in the legend and in the spec
+    // table, so the singular query is ambiguous here rather than absent.
+    expect(await screen.findAllByText('Blast + Coat 1')).not.toHaveLength(0)
+
+    await userEvent.click(screen.getByRole('tab', { name: 'Main Deck' }))
+
+    expect(await screen.findAllByText('Sơn sàn chính')).not.toHaveLength(0)
+    expect(screen.queryAllByText('Blast + Coat 1')).toHaveLength(0)
+    expect(listStages).toHaveBeenCalledWith('d2')
+  })
+
+  it('says so when a deck\'s stages cannot be read, instead of showing 0%', async () => {
+    // An empty stage list is not an error anywhere downstream: every percentage
+    // reduces over it and comes out 0%, which reads as "nothing has been
+    // painted" -- the same "a refusal must never render as missing data" rule
+    // the not-a-member banner exists for.
+    listStages.mockRejectedValue(new Error('Failed to fetch'))
+
+    renderScreen()
+
+    expect(await screen.findByText('Không tải được lớp sơn của sàn')).toBeInTheDocument()
   })
 
   it('drops a slow answer for the deck the foreman has already left', async () => {
@@ -305,7 +348,6 @@ describe('GsScreen', () => {
 
   it('tells a foreman when a deck has no drawing yet', async () => {
     loadGsProject.mockResolvedValue({
-      stages: STAGES,
       decks: [{ ...DECKS[0], imagePath: null, imageW: null, imageH: null }],
       isMember: true,
     })
@@ -323,7 +365,7 @@ describe('GsScreen', () => {
     // would wait for an upload that was never coming. This codebase's rule,
     // adopted after a Phase 1 defect of the same class, is that a refusal must
     // never render as missing data.
-    loadGsProject.mockResolvedValue({ stages: [], decks: [], isMember: false })
+    loadGsProject.mockResolvedValue({ decks: [], isMember: false })
     renderScreen()
 
     expect(await screen.findByText('Không xem được dự án này')).toBeInTheDocument()
@@ -340,7 +382,7 @@ describe('GsScreen', () => {
     // The negative control, and the reason this needed a membership read rather
     // than "zero decks means refused": a member of a project the admin has not
     // finished setting up must not be sent to ask for access they already have.
-    loadGsProject.mockResolvedValue({ stages: STAGES, decks: [], isMember: true })
+    loadGsProject.mockResolvedValue({ decks: [], isMember: true })
     renderScreen()
 
     expect(await screen.findByText('Sàn này chưa có bản vẽ')).toBeInTheDocument()
@@ -955,7 +997,7 @@ describe('GsScreen: a deck its cells over-cover', () => {
     // are the right ones and are tested; the picture is what is lying, and the
     // GS screen said nothing -- the divergence banner lives only in the admin's
     // deck editor.
-    loadGsProject.mockResolvedValue({ stages: STAGES, decks: [DECKS[1]], isMember: true })
+    loadGsProject.mockResolvedValue({ decks: [DECKS[1]], isMember: true })
     listDeckCells.mockResolvedValue([
       { id: 'x1', code: 'R1C1', x: 0, y: 0, w: 0.5, h: 1, areaM2: 300, stageId: 's3' },
       { id: 'x2', code: 'R1C2', x: 0.5, y: 0, w: 0.5, h: 1, areaM2: 400, stageId: null },

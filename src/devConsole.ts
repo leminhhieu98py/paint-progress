@@ -1,5 +1,5 @@
 import { paintDeck, progressReport, projectReport } from './domain/simulate'
-import type { Deck } from './domain/types'
+import type { Deck, Stage } from './domain/types'
 
 /**
  * A way to ask what the percentages would say, from the browser console,
@@ -33,7 +33,7 @@ export function installDevConsole(): void {
     const row = await getDeck(deckId)
     if (!row) throw new Error(`Không có sàn nào mang id ${deckId}`)
     const cells = await listCells(deckId)
-    const stages = await listStages(row.projectId)
+    const stages = await listStages(deckId)
     const deck: Deck = {
       id: row.id,
       code: row.code,
@@ -59,23 +59,23 @@ export function installDevConsole(): void {
     /** Every deck of a project, each painted to the same mix, plus the rollup. */
     async project(projectId: string, mix: Record<string, number> = {}) {
       const { listDecks } = await import('./lib/decksApi')
-      const { listStages } = await import('./lib/projectsApi')
-      const stages = await listStages(projectId)
       const rows = await listDecks(projectId)
-      const decks: Deck[] = []
+      // Each deck's own stages: the mix is keyed by name, so a deck whose spec
+      // does not carry that name simply reaches none of it.
+      const entries: { deck: Deck; stages: Stage[] }[] = []
       for (const row of rows) {
-        const { deck } = await load(row.id)
-        decks.push(paintDeck(deck, stages, mix))
+        const { deck, stages } = await load(row.id)
+        entries.push({ deck: paintDeck(deck, stages, mix), stages })
       }
-      const report = projectReport(decks, stages)
+      const report = projectReport(entries)
       console.table(report)
       return report
     },
 
-    /** The stages of a project, so the mix can be keyed by the right names. */
-    async stages(projectId: string) {
+    /** The stages of a deck, so the mix can be keyed by the right names. */
+    async stages(deckId: string) {
       const { listStages } = await import('./lib/projectsApi')
-      const stages = await listStages(projectId)
+      const stages = await listStages(deckId)
       console.table(stages.map((s) => ({ seq: s.seq, name: s.name, color: s.color, weight: s.weight })))
       return stages
     },
@@ -83,7 +83,7 @@ export function installDevConsole(): void {
 
   ;(window as unknown as { paint: typeof api }).paint = api
   console.info(
-    'paint.deck(deckId, mix) / paint.project(projectId, mix) / paint.stages(projectId)\n'
+    'paint.deck(deckId, mix) / paint.project(projectId, mix) / paint.stages(deckId)\n'
     + "mix ví dụ: { 'Lót': 1, 'Phủ 1': 0.5 } — phần diện tích đạt ÍT NHẤT tới lớp đó. Không ghi gì vào dữ liệu.",
   )
 }

@@ -46,13 +46,13 @@ beforeEach(() => {
 
 describe('StageConfigPanel', () => {
   it('lists the project stages in seq order', async () => {
-    render(<StageConfigPanel projectId="p1" />)
+    render(<StageConfigPanel deckId="d1" />)
     expect(await screen.findByDisplayValue('Blast + Coat 1')).toBeInTheDocument()
     expect(screen.getByDisplayValue('Coat 2')).toBeInTheDocument()
   })
 
   it('shows the running weight total', async () => {
-    render(<StageConfigPanel projectId="p1" />)
+    render(<StageConfigPanel deckId="d1" />)
     // Wait for the real stages to load first: before they do, `total` is 0
     // and the balance warning renders too (now also reading "phải bằng
     // 1,0000" -- B14's fix for its own hardcoded "1.00" -- so a bare
@@ -66,7 +66,7 @@ describe('StageConfigPanel', () => {
   })
 
   it('blocks save when the weights do not sum to 1', async () => {
-    render(<StageConfigPanel projectId="p1" />)
+    render(<StageConfigPanel deckId="d1" />)
     // vi-VN comma decimal, matching decimalSeparator="," on the field.
     const weight = await screen.findByDisplayValue('0,6')
     await userEvent.clear(weight)
@@ -78,7 +78,7 @@ describe('StageConfigPanel', () => {
   })
 
   it('enables save once the weights sum to 1 again', async () => {
-    render(<StageConfigPanel projectId="p1" />)
+    render(<StageConfigPanel deckId="d1" />)
     const weight = await screen.findByDisplayValue('0,4')
     await userEvent.clear(weight)
     await userEvent.type(weight, '0,4')
@@ -89,7 +89,7 @@ describe('StageConfigPanel', () => {
 
   it('saves each stage with the id it was loaded under', async () => {
     saveStages.mockResolvedValue(undefined)
-    render(<StageConfigPanel projectId="p1" />)
+    render(<StageConfigPanel deckId="d1" />)
     await screen.findByDisplayValue('Blast + Coat 1')
     // Nothing is being removed here, so Lưu saves directly -- see the
     // no-dialog test below.
@@ -119,7 +119,7 @@ describe('StageConfigPanel', () => {
     })
     try {
       saveStages.mockResolvedValue(undefined)
-      render(<StageConfigPanel projectId="p1" />)
+      render(<StageConfigPanel deckId="d1" />)
       await screen.findByDisplayValue('Blast + Coat 1')
 
       await userEvent.click(screen.getByRole('button', { name: 'Thêm lớp' }))
@@ -128,7 +128,7 @@ describe('StageConfigPanel', () => {
       await waitFor(() => expect(saveStages).toHaveBeenCalledTimes(1))
       const saved = saveStages.mock.calls[0][1] as { id: string }[]
       // A real v4 uuid, from the fallback path, not a reused or empty one:
-      // project_stages.id is a uuid primary key.
+      // deck_stages.id is a uuid primary key.
       expect(saved[2].id).toMatch(
         /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
       )
@@ -142,7 +142,7 @@ describe('StageConfigPanel', () => {
     // database to invent: the upsert keys on it. It is generated here, client
     // side, the moment the row appears.
     saveStages.mockResolvedValue(undefined)
-    render(<StageConfigPanel projectId="p1" />)
+    render(<StageConfigPanel deckId="d1" />)
     await screen.findByDisplayValue('Blast + Coat 1')
     await userEvent.click(screen.getByRole('button', { name: 'Thêm lớp' }))
     await userEvent.click(screen.getByRole('button', { name: 'Lưu' }))
@@ -153,7 +153,7 @@ describe('StageConfigPanel', () => {
     expect(saved[2].id).toMatch(
       /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
     )
-    // A real uuid, not a reused or empty one: project_stages.id is a uuid
+    // A real uuid, not a reused or empty one: deck_stages.id is a uuid
     // primary key, and colliding with an existing stage would make the upsert
     // overwrite that stage instead of inserting a new one.
     expect(saved.map((s) => s.id)).toEqual(['s1', 's2', saved[2].id])
@@ -166,7 +166,7 @@ describe('StageConfigPanel', () => {
     // save that costs nothing is a dialog the admin learns to click through --
     // which is how the one that matters gets skimmed.
     saveStages.mockResolvedValue(undefined)
-    render(<StageConfigPanel projectId="p1" />)
+    render(<StageConfigPanel deckId="d1" />)
     const name = await screen.findByDisplayValue('Blast + Coat 1')
     await userEvent.clear(name)
     await userEvent.type(name, 'Blast + Coat 1 (renamed)')
@@ -189,7 +189,7 @@ describe('StageConfigPanel', () => {
     // announced the deletion of "Tháo giáo" while the database deleted "Coat 2".
     // The disclosure has to name the stage whose id is going.
     //
-    // zones.stage_id references project_stages ON DELETE CASCADE and
+    // zones.stage_id references deck_stages ON DELETE CASCADE and
     // cells.stage_id ON DELETE SET NULL, so a removal nulls the cells sitting at
     // that stage and deletes the zones planned against it. Both consequences are
     // named; the wording this replaced mentioned neither zones nor which stage.
@@ -199,7 +199,7 @@ describe('StageConfigPanel', () => {
       { id: 's3', seq: 3, name: 'Tháo giáo', color: '#722ed1', weight: 0.2 },
     ])
     saveStages.mockResolvedValue(undefined)
-    render(<StageConfigPanel projectId="p1" />)
+    render(<StageConfigPanel deckId="d1" />)
     await screen.findByDisplayValue('Tháo giáo')
 
     await userEvent.click(screen.getAllByRole('button', { name: 'Xoá' })[1])
@@ -249,7 +249,7 @@ describe('StageConfigPanel', () => {
       { id: 's3', seq: 3, name: 'Coat 3', color: '#52c41a', weight: 0.2 },
     ])
     saveStages.mockResolvedValue(undefined)
-    render(<StageConfigPanel projectId="p1" />)
+    render(<StageConfigPanel deckId="d1" />)
     await screen.findByDisplayValue('Coat 3')
 
     // Move Coat 3 up one: it takes seq 2 and Coat 2 takes seq 3.
@@ -271,7 +271,7 @@ describe('StageConfigPanel', () => {
   it('calls onSaved after a save actually persists, so the parent can refresh its own rollup', async () => {
     saveStages.mockResolvedValue(undefined)
     const onSaved = vi.fn()
-    render(<StageConfigPanel projectId="p1" onSaved={onSaved} />)
+    render(<StageConfigPanel deckId="d1" onSaved={onSaved} />)
     await screen.findByDisplayValue('Blast + Coat 1')
 
     await userEvent.click(screen.getByRole('button', { name: 'Lưu' }))
@@ -283,7 +283,7 @@ describe('StageConfigPanel', () => {
   it('does not call onSaved when the save fails', async () => {
     saveStages.mockRejectedValue(new Error('permission denied'))
     const onSaved = vi.fn()
-    render(<StageConfigPanel projectId="p1" onSaved={onSaved} />)
+    render(<StageConfigPanel deckId="d1" onSaved={onSaved} />)
     await screen.findByDisplayValue('Blast + Coat 1')
 
     await userEvent.click(screen.getByRole('button', { name: 'Lưu' }))
@@ -300,7 +300,7 @@ describe('StageConfigPanel', () => {
       { id: 's2', seq: 2, name: 'Coat 2', color: '#bfbfbf', weight: 0 },
     ])
     saveStages.mockRejectedValue(new Error('Stage weights must sum to 1, got 0.9000'))
-    render(<StageConfigPanel projectId="p1" />)
+    render(<StageConfigPanel deckId="d1" />)
     await screen.findByDisplayValue('Coat 2')
     await userEvent.click(screen.getAllByRole('button', { name: 'Xoá' })[1])
     await userEvent.click(screen.getByRole('button', { name: 'Lưu' }))
@@ -326,13 +326,13 @@ describe('StageConfigPanel', () => {
     // nothing this panel can do should provoke this -- but the two statements
     // were the other way round once, and while they were, removing any stage but
     // the last put `duplicate key value violates unique constraint
-    // "project_stages_project_id_seq_key"` verbatim into an otherwise
+    // "deck_stages_deck_id_seq_key"` verbatim into an otherwise
     // Vietnamese-only Alert. If that order is ever restored, the admin at least
     // gets a sentence they can act on.
     saveStages.mockRejectedValue(new Error(
-      'duplicate key value violates unique constraint "project_stages_project_id_seq_key"',
+      'duplicate key value violates unique constraint "deck_stages_deck_id_seq_key"',
     ))
-    render(<StageConfigPanel projectId="p1" />)
+    render(<StageConfigPanel deckId="d1" />)
     await screen.findByDisplayValue('Coat 2')
 
     await userEvent.click(screen.getByRole('button', { name: 'Lưu' }))
@@ -345,13 +345,13 @@ describe('StageConfigPanel', () => {
   it('does not touch an infrastructure error the translator does not recognise', async () => {
     // Anything unmatched must fall through unchanged, or a new domain error
     // could be silently swallowed instead of reaching the admin.
-    saveStages.mockRejectedValue(new Error('permission denied for table project_stages'))
-    render(<StageConfigPanel projectId="p1" />)
+    saveStages.mockRejectedValue(new Error('permission denied for table deck_stages'))
+    render(<StageConfigPanel deckId="d1" />)
     await screen.findByDisplayValue('Coat 2')
 
     await userEvent.click(screen.getByRole('button', { name: 'Lưu' }))
 
-    expect(await screen.findByText('permission denied for table project_stages')).toBeInTheDocument()
+    expect(await screen.findByText('permission denied for table deck_stages')).toBeInTheDocument()
   })
 
   it('keeps an in-progress edit when a stale background refresh resolves late', async () => {
@@ -372,7 +372,7 @@ describe('StageConfigPanel', () => {
     listStages.mockResolvedValueOnce(initialStages).mockReturnValueOnce(staleLoad)
     saveStages.mockResolvedValue(undefined)
 
-    render(<StageConfigPanel projectId="p1" />)
+    render(<StageConfigPanel deckId="d1" />)
     await screen.findByDisplayValue('Blast + Coat 1')
 
     // No removal here, so Lưu saves directly with no dialog in the way.
@@ -399,7 +399,7 @@ describe('StageConfigPanel', () => {
   })
 
   it('adds a stage at the end with the next seq', async () => {
-    render(<StageConfigPanel projectId="p1" />)
+    render(<StageConfigPanel deckId="d1" />)
     await screen.findByDisplayValue('Coat 2')
     await userEvent.click(screen.getByRole('button', { name: 'Thêm lớp' }))
     expect(screen.getAllByRole('textbox')).toHaveLength(3)
@@ -418,7 +418,7 @@ describe('StageConfigPanel', () => {
     // away by Postgres. Clamping as it is typed means the admin sees the value
     // that will actually be stored, instead of discovering on reload that the
     // total no longer sums to 1.
-    render(<StageConfigPanel projectId="p1" />)
+    render(<StageConfigPanel deckId="d1" />)
     const weight = await screen.findByDisplayValue('0,6')
     await userEvent.clear(weight)
     await userEvent.type(weight, '0,333333')
@@ -449,7 +449,7 @@ describe('StageConfigPanel', () => {
       { id: 's3', seq: 3, name: 'C', color: '#333333', weight: 0.3 },
     ])
     saveStages.mockResolvedValue(undefined)
-    render(<StageConfigPanel projectId="p1" />)
+    render(<StageConfigPanel deckId="d1" />)
     await screen.findByDisplayValue('0,4')
 
     // By row, not by display value: two rows start at 0,3, and after the first
@@ -485,7 +485,7 @@ describe('StageConfigPanel', () => {
     // 0.6 + 0.39998 is 0.99998: two units at scale 5, comfortably past
     // STAGE_WEIGHT_EPSILON. Widening the epsilon to absorb the clamp's own
     // residual must not have turned the Σ = 1 rule into a suggestion.
-    render(<StageConfigPanel projectId="p1" />)
+    render(<StageConfigPanel deckId="d1" />)
     const weight = await screen.findByDisplayValue('0,4')
     await userEvent.clear(weight)
     await userEvent.type(weight, '0,39998')
@@ -495,7 +495,7 @@ describe('StageConfigPanel', () => {
   })
 
   it('removes a stage', async () => {
-    render(<StageConfigPanel projectId="p1" />)
+    render(<StageConfigPanel deckId="d1" />)
     await screen.findByDisplayValue('Coat 2')
     await userEvent.click(screen.getAllByRole('button', { name: 'Xoá' })[1])
     expect(screen.queryByDisplayValue('Coat 2')).toBeNull()
@@ -510,7 +510,7 @@ describe('StageConfigPanel', () => {
       { id: 's2', seq: 2, name: 'Middle', color: '#222222', weight: 0.3 },
       { id: 's3', seq: 3, name: 'Last', color: '#333333', weight: 0.2 },
     ])
-    render(<StageConfigPanel projectId="p1" />)
+    render(<StageConfigPanel deckId="d1" />)
     await screen.findByDisplayValue('Middle')
 
     await userEvent.click(screen.getAllByRole('button', { name: 'Xoá' })[1])
@@ -526,14 +526,14 @@ describe('StageConfigPanel', () => {
     listStages.mockResolvedValue([
       { id: 's1', seq: 1, name: 'Only', color: '#000000', weight: 1 },
     ])
-    render(<StageConfigPanel projectId="p1" />)
+    render(<StageConfigPanel deckId="d1" />)
     await screen.findByDisplayValue('Only')
     // A project with no stages has no defined progress at all.
     expect(screen.getByRole('button', { name: 'Xoá' })).toBeDisabled()
   })
 
   it('moves a stage up and renumbers seq contiguously', async () => {
-    render(<StageConfigPanel projectId="p1" />)
+    render(<StageConfigPanel deckId="d1" />)
     await screen.findByDisplayValue('Coat 2')
     await userEvent.click(screen.getAllByRole('button', { name: 'Lên' })[1])
 
@@ -553,7 +553,7 @@ describe('StageConfigPanel', () => {
       { id: 's1', seq: 1, name: 'Coat 1', color: '#1677ff', weight: 0.5 },
       { id: 's2', seq: 2, name: 'Coat 2', color: '#52c41a', weight: 0.5 },
     ])
-    render(<StageConfigPanel projectId="p1" />)
+    render(<StageConfigPanel deckId="d1" />)
     await screen.findByDisplayValue('Coat 1')
 
     const second = screen.getAllByRole('textbox')[1]
@@ -573,7 +573,7 @@ describe('StageConfigPanel', () => {
       { id: 's1', seq: 1, name: 'Coat 1', color: '#1677ff', weight: 0.5 },
       { id: 's2', seq: 2, name: 'Coat 2', color: '#52c41a', weight: 0.5 },
     ])
-    render(<StageConfigPanel projectId="p1" />)
+    render(<StageConfigPanel deckId="d1" />)
     await screen.findByDisplayValue('Coat 1')
 
     const rows = document.querySelectorAll('.ant-table-tbody .ant-table-row')

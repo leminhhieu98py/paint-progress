@@ -4,6 +4,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { useAuth } from '../../auth/AuthProvider'
+import { listStages } from '../../lib/projectsApi'
 import { DrawingCanvas } from '../../canvas/DrawingCanvas'
 import { buildPlanLabels } from '../../domain/plan'
 import { buildStageSlices } from '../../domain/pieSlices'
@@ -93,6 +94,14 @@ export function GsScreen() {
   const [projectError, setProjectError] = useState(false)
   const [drawingError, setDrawingError] = useState(false)
   /**
+   * A failed stage read, kept apart from a deck that genuinely has none.
+   *
+   * Both leave `stages` empty, and an empty stage list makes every percentage
+   * read 0% without raising anything -- the same "a refusal must never render as
+   * missing data" rule `notMember` exists for.
+   */
+  const [stagesError, setStagesError] = useState(false)
+  /**
    * The route gates on role, not on membership, so a GS can reach
    * `/gs/:projectId` for a project they are not in. RLS then answers every query
    * with zero rows and no error, which is byte-for-byte what a project whose
@@ -111,7 +120,6 @@ export function GsScreen() {
       .then((project) => {
         if (cancelled) return
         setNotMember(!project.isMember)
-        setStages(project.stages)
         setDecks(project.decks)
         setActiveDeckId(project.decks[0]?.id ?? null)
       })
@@ -125,6 +133,29 @@ export function GsScreen() {
       cancelled = true
     }
   }, [projectId])
+
+  /**
+   * The open deck's own paint stages.
+   *
+   * Loaded per deck, not once per project: a main deck, a cellar deck and a
+   * helideck carry different coat systems, so the legend, the pie and the
+   * percentage all belong to the deck on screen. Cleared while the next deck's
+   * load is in flight, so the legend can never show one deck's colours over
+   * another's bays.
+   */
+  useEffect(() => {
+    if (!activeDeckId) {
+      setStages([])
+      return
+    }
+    let cancelled = false
+    setStages([])
+    setStagesError(false)
+    listStages(activeDeckId)
+      .then((rows: Stage[]) => { if (!cancelled) setStages(rows) })
+      .catch(() => { if (!cancelled) setStagesError(true) })
+    return () => { cancelled = true }
+  }, [activeDeckId])
 
   const deck = decks.find((d) => d.id === activeDeckId) ?? null
 
@@ -566,6 +597,16 @@ export function GsScreen() {
             style={{ marginBottom: 12 }}
             message="Mất kết nối, đang kết nối lại..."
             description="Số liệu trên màn hình có thể chưa cập nhật. Ghi tiến độ vẫn được lưu khi có mạng trở lại."
+          />
+        )}
+
+        {stagesError && (
+          <Alert
+            type="warning"
+            showIcon
+            style={{ marginBottom: 12 }}
+            message="Không tải được lớp sơn của sàn"
+            description="Phần trăm bên dưới đang tính thiếu. Thử lại sau khi có mạng."
           />
         )}
 

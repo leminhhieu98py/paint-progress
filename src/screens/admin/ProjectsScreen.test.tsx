@@ -11,14 +11,6 @@ vi.mock('../../lib/projectsApi', () => ({
   createProject: (i: unknown) => createProject(i),
   updateProject: (id: string, i: unknown) => updateProject(id, i),
 }))
-vi.mock('./StageConfigPanel', () => ({
-  StageConfigPanel: ({ projectId, onSaved }: { projectId: string; onSaved?: () => void }) => (
-    <div>
-      stages:{projectId}
-      <button onClick={() => onSaved?.()}>stage saved</button>
-    </div>
-  ),
-}))
 
 beforeEach(() => {
   listProjects.mockReset()
@@ -76,45 +68,9 @@ describe('ProjectsScreen', () => {
     expect(screen.getByRole('button', { name: 'Lưu' })).toBeInTheDocument()
   })
 
-  it('reveals the stage panel for the expanded row', async () => {
-    render(<ProjectsScreen />)
-    await screen.findByText('BB1 - CPPTS')
-    await userEvent.click(screen.getByRole('button', { name: /expand/i }))
-    expect(await screen.findByText('stages:p1')).toBeInTheDocument()
-  })
-
-  it('re-fetches the project list after the stage panel saves, so the row does not keep showing a stale rollup', async () => {
-    // DecksScreen already re-fetches through its editor's onClose; a stage
-    // removal changes true progress the same way a deck edit does, and
-    // before this the row kept showing the pre-save rollup until the admin
-    // navigated away and back.
-    render(<ProjectsScreen />)
-    await screen.findByText('BB1 - CPPTS')
-    await userEvent.click(screen.getByRole('button', { name: /expand/i }))
-    await screen.findByText('stages:p1')
-
-    await userEvent.click(screen.getByRole('button', { name: 'stage saved' }))
-
-    await waitFor(() => expect(listProjects).toHaveBeenCalledTimes(2))
-  })
-
   it('surfaces a list failure', async () => {
     listProjects.mockRejectedValue(new Error('permission denied for table projects'))
     render(<ProjectsScreen />)
     expect(await screen.findByText(/permission denied/)).toBeInTheDocument()
-  })
-  it('says on the row where the paint stages are configured', async () => {
-    // They were behind an unlabelled expand arrow, and the admin asked twice
-    // where to declare paint stages -- having looked at this screen both times.
-    render(<ProjectsScreen />)
-    await screen.findByText('BB1')
-
-    await userEvent.click(screen.getAllByRole('button', { name: 'Khai báo lớp sơn' })[0])
-
-    expect(await screen.findByText(/stages:p1/)).toBeInTheDocument()
-    // Closing is asserted on the button rather than on the panel: antd keeps a
-    // collapsed expanded-row in the DOM and merely hides it.
-    await userEvent.click(screen.getByRole('button', { name: 'Đóng lớp sơn' }))
-    expect(screen.getByRole('button', { name: 'Khai báo lớp sơn' })).toBeInTheDocument()
   })
 })

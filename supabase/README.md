@@ -23,7 +23,7 @@ policies exist, and that the last two functions (`assert_stage_belongs_to_projec
 `set_cell_audit_columns`) pin `search_path`. Since 0011/0012/0013 it also
 checks that `set_cell_audit_columns` stamps `updated_at`/`updated_by` only
 when `stage_id` actually changes (so a geometry-only save no longer
-re-stamps every cell on the deck), that `project_stages`' `(project_id,
+re-stamps every cell on the deck), that `deck_stages`' `(deck_id,
 seq)` uniqueness is `deferrable initially deferred` and that both stage
 writes the config panel issues are accepted — a reorder that swaps two
 `seq` values in one statement, and a middle-stage removal that renumbers

@@ -1,3 +1,4 @@
+import { DEFAULT_STAGE_TEMPLATE } from '../domain/stageTemplate'
 import type { MeshCell } from '../domain/types'
 import { supabase } from './supabase'
 
@@ -111,7 +112,29 @@ export async function createDeck(input: {
     .select('id')
     .single()
   if (error) throw new Error(error.message)
-  return (data as { id: string }).id
+  const deckId = (data as { id: string }).id
+
+  // Seed the template so a deck is never left with an empty stage list:
+  // reducing over zero stages yields a silent, permanent 0% rather than a
+  // crash, which is harder to notice than a failed create. Stages are per deck,
+  // so this is where the seeding belongs -- it used to be on the project.
+  const { error: stageError } = await supabase.from('deck_stages').insert(
+    DEFAULT_STAGE_TEMPLATE.map((s) => ({
+      deck_id: deckId,
+      seq: s.seq,
+      name: s.name,
+      color: s.color,
+      weight: s.weight,
+    })),
+  )
+  if (stageError) {
+    // Not in a transaction. A deck with no stages reports 0% for ever and
+    // nothing prompts anyone to retry, so roll it back rather than strand it.
+    await supabase.from('decks').delete().eq('id', deckId)
+    throw new Error(stageError.message)
+  }
+
+  return deckId
 }
 
 export async function updateDeckArea(

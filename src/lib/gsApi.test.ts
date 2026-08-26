@@ -91,20 +91,17 @@ beforeEach(() => {
 })
 
 /**
- * loadGsProject issues its three queries inside one Promise.all, in the order
- * they appear in that array: project_stages, then decks, then project_members.
- * `from` is mocked per call, so every test here has to queue all three.
+ * loadGsProject issues its two queries inside one Promise.all, in the order they
+ * appear in that array: decks, then project_members. `from` is mocked per call,
+ * so every test here has to queue both.
+ *
+ * Stages are not among them: they are declared per deck now, and the GS screen
+ * fetches the active deck's own set when the foreman picks one.
  */
 const MEMBER = [{ project_id: 'p1' }]
 
 describe('loadGsProject', () => {
-  it('returns the project\'s stages and decks', async () => {
-    from.mockImplementationOnce(() => builder({
-      data: [
-        { id: 's1', seq: 1, name: 'Blast + Coat 1', color: '#fadb14', weight: '0.25000' },
-        { id: 's2', seq: 2, name: 'Coat 2', color: '#bfbfbf', weight: '0.15000' },
-      ],
-    }))
+  it('returns the project\'s decks', async () => {
     from.mockImplementationOnce(() => builder({
       data: [{
         id: 'd1', seq: 1, name: 'Cellar Deck', code: 'CD',
@@ -116,13 +113,9 @@ describe('loadGsProject', () => {
 
     const project = await loadGsProject('p1')
 
-    // Weights and areas arrive from PostgREST as strings (numeric columns);
-    // a missing Number() turns every later multiplication into NaN or a
-    // concatenation, and NaN renders as "NaN%" rather than throwing.
-    expect(project.stages).toEqual([
-      { id: 's1', seq: 1, name: 'Blast + Coat 1', color: '#fadb14', weight: 0.25 },
-      { id: 's2', seq: 2, name: 'Coat 2', color: '#bfbfbf', weight: 0.15 },
-    ])
+    // Areas arrive from PostgREST as strings (numeric columns); a missing
+    // Number() turns every later division into NaN or a concatenation, and NaN
+    // renders as "NaN%" rather than throwing.
     expect(project.decks).toEqual([{
       id: 'd1', seq: 1, name: 'Cellar Deck', code: 'CD',
       imagePath: 'p1/d1.png', imageW: 2000, imageH: 1600,
@@ -132,7 +125,6 @@ describe('loadGsProject', () => {
   })
 
   it('defaults a deck with no drawing yet to null image fields', async () => {
-    from.mockImplementationOnce(() => builder({ data: [] }))
     from.mockImplementationOnce(() => builder({
       data: [{
         id: 'd2', seq: 2, name: 'Main Deck', code: 'MD',
@@ -150,7 +142,6 @@ describe('loadGsProject', () => {
   })
 
   it('scopes the deck query to the project and orders by seq', async () => {
-    from.mockImplementationOnce(() => builder({ data: [] }))
     const decks = builder({ data: [] })
     from.mockImplementationOnce(() => decks)
     from.mockImplementationOnce(() => builder({ data: MEMBER }))
@@ -164,7 +155,6 @@ describe('loadGsProject', () => {
   })
 
   it('reports membership in THIS project, asking project_members for it', async () => {
-    from.mockImplementationOnce(() => builder({ data: [] }))
     from.mockImplementationOnce(() => builder({ data: [] }))
     const members = builder({ data: MEMBER })
     from.mockImplementationOnce(() => members)
@@ -181,9 +171,8 @@ describe('loadGsProject', () => {
 
   it('reports no membership when RLS returns nothing, without erroring', async () => {
     // The deep-link case. RLS answers a non-member with zero rows and NO error
-    // for all three queries, so an empty project and a refusal are identical
-    // from the outside -- this flag is the only thing that separates them.
-    from.mockImplementationOnce(() => builder({ data: [] }))
+    // for both queries, so an empty project and a refusal are identical from the
+    // outside -- this flag is the only thing that separates them.
     from.mockImplementationOnce(() => builder({ data: [] }))
     from.mockImplementationOnce(() => builder({ data: [] }))
 
@@ -191,28 +180,18 @@ describe('loadGsProject', () => {
 
     expect(project.isMember).toBe(false)
     expect(project.decks).toEqual([])
-    expect(project.stages).toEqual([])
   })
 
   it('throws when the deck query fails', async () => {
-    from.mockImplementationOnce(() => builder({ data: [] }))
     from.mockImplementationOnce(() => builder({ error: { message: 'permission denied' } }))
     from.mockImplementationOnce(() => builder({ data: MEMBER }))
     await expect(loadGsProject('p1')).rejects.toThrow('permission denied')
-  })
-
-  it('throws when the stage query fails', async () => {
-    from.mockImplementationOnce(() => builder({ error: { message: 'JWT expired' } }))
-    from.mockImplementationOnce(() => builder({ data: [] }))
-    from.mockImplementationOnce(() => builder({ data: MEMBER }))
-    await expect(loadGsProject('p1')).rejects.toThrow('JWT expired')
   })
 
   it('throws when the membership query fails instead of reporting a refusal', async () => {
     // A dropped tether must not be reported as "you are not in this project":
     // that sends a foreman to find the administrator over a network fault, and
     // the administrator finds nothing wrong.
-    from.mockImplementationOnce(() => builder({ data: [] }))
     from.mockImplementationOnce(() => builder({ data: [] }))
     from.mockImplementationOnce(() => builder({ error: { message: 'Failed to fetch' } }))
     await expect(loadGsProject('p1')).rejects.toThrow('Failed to fetch')

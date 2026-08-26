@@ -9,6 +9,7 @@ import {
 import { formatAreaM2 } from '../../lib/format'
 import { pdfPageCount, renderPdfPage } from '../../lib/pdfToPng'
 import { DeckEditor } from './DeckEditor'
+import { StageConfigPanel } from './StageConfigPanel'
 
 /**
  * One deck, at its own address.
@@ -270,6 +271,13 @@ export function DeckDetailScreen() {
         attach them to: in create mode there is no deck id, no drawing and no
         cells for them to work on.
       */}
+      {/*
+        Above the drawing tools on purpose: the stages are what the bays are
+        eventually painted to, so they are the deck's spec and the bays are the
+        work against it. Declaring them after drawing 180 bays reads backwards.
+      */}
+      {editing && deck && <StageConfigPanel deckId={deck.id} onSaved={() => void load()} />}
+
       {editing && deck && <DeckEditor deck={deck} onSaved={() => void load()} />}
     </Space>
   )

@@ -14,9 +14,9 @@
 -- ============================================================================
 --
 -- What this checks:
---   1. A cell cannot be assigned a stage from a different project
+--   1. A cell cannot be assigned a stage from a different deck
 --      (cells_assert_stage_project).
---   2. A cell can be assigned a stage from its own project, and doing so
+--   2. A cell can be assigned a stage from its own deck, and doing so
 --      logs exactly one cell_events row (cells_log_stage_change).
 --   3. cells_set_audit_columns stamps updated_at when a cell's stage changes.
 --      (That it does NOT stamp on any other update is check 25, added by 0011;
@@ -25,21 +25,21 @@
 --   5. The cell_events name snapshot (from 0005) is durable against a
 --      RENAME: renaming the stage of an already-recorded event must not
 --      change what that event says happened, because cell_events no longer
---      holds a foreign key to project_stages. Exercised on cell c1 / stage
+--      holds a foreign key to deck_stages. Exercised on cell c1 / stage
 --      s1, which must stay alive afterwards (see check 8 below).
 --   6. The same snapshot is durable against a hard DELETE of the stage:
 --      the recorded name and id must survive, with the id left dangling
---      (no longer present in project_stages) rather than nulled or
+--      (no longer present in deck_stages) rather than nulled or
 --      cascaded away. Exercised on a SEPARATE fixture, cell c2 / stage s3,
 --      specifically so that destroying s3 does not disarm check 8.
---   7. A cell still pointing at a live stage of the project is present
+--   7. A cell still pointing at a live stage of the deck is present
 --      right before cleanup — i.e. the depth-mismatch race that 0004/0005
 --      exist to fix is actually armed, not accidentally defused by an
 --      earlier check. See the comment above check 7 for why this exists.
 --   8. A project (with its decks, stages, cells and cell_events) can be
 --      deleted cleanly. This is the regression the fix chain in
 --      0003/0004/0005 exists to guarantee: deleting a project fans out
---      into a decks -> cells CASCADE and a project_stages -> cells.stage_id
+--      into a decks -> cells CASCADE and a decks -> deck_stages -> cells.stage_id
 --      SET NULL at a different cascade depth, and earlier attempts aborted
 --      here twice. Check 7 immediately above is what guarantees this delete
 --      is actually exercising that race and not passing vacuously.
@@ -138,7 +138,7 @@
 --
 -- Check 26 is added by 0012, with its own fixtures ('VERIFY D') for the same
 -- reason.
---   26. project_stages' (project_id, seq) uniqueness is DEFERRABLE INITIALLY
+--   26. deck_stages' (deck_id, seq) uniqueness is DEFERRABLE INITIALLY
 --       DEFERRED, and a reorder -- two rows swapping seq inside one statement --
 --       is actually accepted. A stage's identity is its id (cells.stage_id and
 --       zones.stage_id point at rows), seq is only display order, and saveStages
@@ -171,7 +171,7 @@
 --       cell_events row, and that row carries the deleted stage's NAME.
 --       Before 0014 it carried NULL: cells.stage_id is ON DELETE SET NULL, so
 --       the referential action reaches log_cell_stage_change after the
---       project_stages row is already gone, and 0005 dropped the FK that could
+--       deck_stages row is already gone, and 0005 dropped the FK that could
 --       have recovered the name. Check 7 above stayed green because it reads
 --       back the event created when the cell was SET to that stage -- a
 --       different row, written while the stage still existed. The row count is
@@ -187,7 +187,7 @@
 --       would not notice: it would still see exactly one row.
 --   31. A whole project can still be deleted with 0014's BEFORE DELETE trigger
 --       in place. That trigger inserts into cell_events from inside the fan-out
---       of projects -> project_stages, racing projects -> decks -> cells
+--       of decks -> deck_stages, racing decks -> cells
 --       CASCADE at a different depth -- the defect class that aborted this
 --       delete twice in Phase 1. Its `exists (select 1 from projects ...)`
 --       guard is what makes it safe; this check is what proves the guard works.
@@ -255,7 +255,7 @@
 
 create or replace function _verify_triggers() returns setof text language plpgsql as $$
 declare
-  p1 uuid; p2 uuid; d1 uuid; s1 uuid; s2 uuid; s3 uuid; c1 uuid; c2 uuid;
+  p1 uuid; p2 uuid; d1 uuid; d2 uuid; s1 uuid; s2 uuid; s3 uuid; c1 uuid; c2 uuid;
   ev_count int; upd timestamptz; ev1_id bigint; ev2_id bigint;
   nm text; tsid uuid; n int;
 begin
@@ -263,38 +263,42 @@ begin
   insert into projects (name, code) values ('VERIFY B','VERIFYB') returning id into p2;
   insert into decks (project_id, seq, name, code, total_area_m2)
     values (p1, 1, 'Deck', 'VD', 100) returning id into d1;
-  insert into project_stages (project_id, seq, name, color, weight)
-    values (p1, 1, 'Coat 1', '#fadb14', 1) returning id into s1;
-  insert into project_stages (project_id, seq, name, color, weight)
-    values (p2, 1, 'Coat 1', '#fadb14', 1) returning id into s2;
+  -- A deck of its own for p2: since 0018 a stage hangs off a deck, so the
+  -- foreign stage this check offers cell c1 has to live on a foreign deck.
+  insert into decks (project_id, seq, name, code, total_area_m2)
+    values (p2, 1, 'Other Deck', 'VD2', 100) returning id into d2;
+  insert into deck_stages (deck_id, seq, name, color, weight)
+    values (d1, 1, 'Coat 1', '#fadb14', 1) returning id into s1;
+  insert into deck_stages (deck_id, seq, name, color, weight)
+    values (d2, 1, 'Coat 1', '#fadb14', 1) returning id into s2;
   insert into cells (deck_id, code, x, y, w, h, area_m2)
     values (d1, 'R1C1', 0, 0, 1, 1, 100) returning id into c1;
 
-  -- A third stage and second cell, both under p1, dedicated to the hard-delete
+  -- A third stage and second cell, both under d1, dedicated to the hard-delete
   -- durability check (check 6). seq = 2 so it does not collide with s1's
-  -- unique (project_id, seq). Named distinctly so a failure message is
+  -- unique (deck_id, seq). Named distinctly so a failure message is
   -- unambiguous about which stage it refers to.
-  insert into project_stages (project_id, seq, name, color, weight)
-    values (p1, 2, 'Doomed Stage', '#ff4d4f', 0) returning id into s3;
+  insert into deck_stages (deck_id, seq, name, color, weight)
+    values (d1, 2, 'Doomed Stage', '#ff4d4f', 0) returning id into s3;
   insert into cells (deck_id, code, x, y, w, h, area_m2)
     values (d1, 'R1C2', 0, 0.5, 1, 0.5, 50) returning id into c2;
   update cells set stage_id = s3 where id = c2;
   select id into ev2_id from cell_events where cell_id = c2 order by id limit 1;
 
-  -- 1. a stage from another project must be rejected
+  -- 1. a stage from another deck must be rejected
   begin
     update cells set stage_id = s2 where id = c1;
-    return next 'FAIL cross-project: the foreign stage was accepted';
+    return next 'FAIL cross-deck: the foreign stage was accepted';
   exception when others then
-    return next 'PASS cross-project: ' || sqlerrm;
+    return next 'PASS cross-deck: ' || sqlerrm;
   end;
 
-  -- 2. a stage from the deck's own project must be accepted
+  -- 2. a stage from the cell's own deck must be accepted
   begin
     update cells set stage_id = s1 where id = c1;
-    return next 'PASS same-project: accepted';
+    return next 'PASS same-deck: accepted';
   exception when others then
-    return next 'FAIL same-project: ' || sqlerrm;
+    return next 'FAIL same-deck: ' || sqlerrm;
   end;
 
   -- capture the event row check 2 created; the rename-durability check below
@@ -327,32 +331,32 @@ begin
   -- changes. Rename the stage, then confirm the already-recorded event still
   -- carries the old name. A live join would fail this. Renaming does not
   -- remove the row, so unlike a delete this cannot disarm check 7.
-  update project_stages set name = 'Coat 3 RENAMED' where id = s1;
+  update deck_stages set name = 'Coat 3 RENAMED' where id = s1;
   select to_stage_name into nm from cell_events where id = ev1_id;
   return next format('%s snapshot survives a rename: recorded %L, stage is now %L',
                      case when nm = 'Coat 1' then 'PASS' else 'FAIL' end,
                      nm,
-                     (select name from project_stages where id = s1));
+                     (select name from deck_stages where id = s1));
 
   -- 7. durability against a hard DELETE, on a SEPARATE fixture (c2 / s3).
   -- This must not be s1/c1: deleting the only stage a project's cells point
   -- at removes the very cascade that the final cleanup delete below needs to
   -- exercise (see check 8's comment), silently disarming the regression test
   -- while still reporting all-PASS. cell_events no longer holds a foreign
-  -- key to project_stages (0005), so to_stage_id is left pointing at a row
+  -- key to deck_stages (0005), so to_stage_id is left pointing at a row
   -- that no longer exists ("dangling") instead of being nulled or cascading
   -- away. Wrapped like checks 1-2 so an unexpected failure here reports a
   -- readable FAIL row instead of aborting the function.
   begin
-    delete from project_stages where id = s3;
+    delete from deck_stages where id = s3;
     select to_stage_name, to_stage_id into nm, tsid from cell_events where id = ev2_id;
     return next format('%s snapshot survives stage deletion: recorded %L, to_stage_id %s',
                        case when nm = 'Doomed Stage'
                              and tsid = s3
-                             and not exists (select 1 from project_stages where id = tsid)
+                             and not exists (select 1 from deck_stages where id = tsid)
                             then 'PASS' else 'FAIL' end,
                        nm,
-                       case when exists (select 1 from project_stages where id = tsid)
+                       case when exists (select 1 from deck_stages where id = tsid)
                             then 'still exists (unexpected)' else 'dangling, as expected' end);
   exception when others then
     return next 'FAIL delete-durability: ' || sqlerrm;
@@ -366,7 +370,7 @@ begin
   select count(*) into n
   from cells c
   join decks d on d.id = c.deck_id
-  join project_stages ps on ps.id = c.stage_id
+  join deck_stages ps on ps.id = c.stage_id
   where d.project_id = p1;
   return next format('%s race armed: %s cell(s) still point at a live stage of p1, need >= 1',
                      case when n >= 1 then 'PASS' else 'FAIL' end, n);
@@ -376,8 +380,8 @@ begin
   -- live stage s1, this delete genuinely fans out into the two
   -- simultaneous, different-depth cascades that 0004/0005 exist to fix:
   -- projects -> decks -> cells (CASCADE, depth 2 from decks) racing against
-  -- projects -> project_stages -> cells.stage_id (SET NULL, depth 1 from
-  -- project_stages). Wrapped like checks 1-2 and 7 so a regression here
+  -- projects -> decks -> deck_stages -> cells.stage_id (SET NULL, depth 2 from
+  -- decks). Wrapped like checks 1-2 and 7 so a regression here
   -- reports a readable FAIL row instead of aborting the function with zero
   -- rows, which is what happened on the first two attempts at this task.
   begin
@@ -413,7 +417,7 @@ begin
     and relkind = 'r'
     and relname in (
       'profiles', 'gs_credentials', 'credential_access_log', 'projects',
-      'project_stages', 'project_members', 'decks', 'deck_guides',
+      'deck_stages', 'project_members', 'decks', 'deck_guides',
       'cells', 'zones', 'zone_cells', 'cell_events'
     );
   return next format('%s rls enabled on all 12 tables: %s of 12 found, offenders: %s',
@@ -628,10 +632,10 @@ begin
     insert into projects (name, code) values ('VERIFY C','VERIFYC') returning id into p;
     insert into decks (project_id, seq, name, code, total_area_m2)
       values (p, 1, 'Deck', 'VC', 100) returning id into d;
-    insert into project_stages (project_id, seq, name, color, weight)
-      values (p, 1, 'Coat 1', '#fadb14', 1) returning id into s1;
-    insert into project_stages (project_id, seq, name, color, weight)
-      values (p, 2, 'Coat 2', '#bfbfbf', 0) returning id into s2;
+    insert into deck_stages (deck_id, seq, name, color, weight)
+      values (d, 1, 'Coat 1', '#fadb14', 1) returning id into s1;
+    insert into deck_stages (deck_id, seq, name, color, weight)
+      values (d, 2, 'Coat 2', '#bfbfbf', 0) returning id into s2;
     -- The sentinel and the recorded stage both go in with the row. Both
     -- triggers involved here are UPDATE-only, so an INSERT keeps what is
     -- supplied -- which is what makes 0013's new rejected columns irrelevant to
@@ -671,7 +675,7 @@ begin
   end;
 end $$;
 
--- Check 26 (migration 0012): (project_id, seq) uniqueness is deferred, and a
+-- Check 26 (migrations 0012 + 0018): (deck_id, seq) uniqueness is deferred, and a
 -- reorder is accepted.
 --
 -- Its own fixtures, so it can be appended without renumbering checks 1-25.
@@ -688,11 +692,11 @@ end $$;
 -- verification run instead of returning a FAIL row. Forcing it early with SET
 -- CONSTRAINTS ALL IMMEDIATE inside a subtransaction would leave the constraint
 -- mode altered for whatever ran afterwards. The catalog half is what guards it:
--- contype = 'u' over exactly (project_id, seq) is the constraint still being
+-- contype = 'u' over exactly (deck_id, seq) is the constraint still being
 -- there, and `deferred` changes only WHEN it is checked, never whether.
 create or replace function _verify_stage_seq_deferrable() returns setof text language plpgsql as $$
 declare
-  p uuid;
+  p uuid; d uuid;
   shape_ok boolean;
   swap_ok boolean := false;
   swap_err text := 'none';
@@ -702,33 +706,35 @@ begin
     select c.contype = 'u' and c.condeferrable and c.condeferred
       into shape_ok
     from pg_constraint c
-    where c.conrelid = 'public.project_stages'::regclass
-      and c.conname = 'project_stages_project_id_seq_key'
+    where c.conrelid = 'public.deck_stages'::regclass
+      and c.conname = 'deck_stages_deck_id_seq_key'
       -- attname is `name`, not `text`, and there is no name[] = text[] operator
       -- -- so the cast is load-bearing, not decoration.
       and (select array_agg(a.attname::text order by k.ord)
              from unnest(c.conkey) with ordinality as k(attnum, ord)
              join pg_attribute a on a.attrelid = c.conrelid and a.attnum = k.attnum)
-          = array['project_id', 'seq'];
+          = array['deck_id', 'seq'];
 
     insert into projects (name, code) values ('VERIFY D','VERIFYD') returning id into p;
-    insert into project_stages (project_id, seq, name, color, weight)
-      values (p, 1, 'Coat 1', '#fadb14', 0.5);
-    insert into project_stages (project_id, seq, name, color, weight)
-      values (p, 2, 'Coat 2', '#bfbfbf', 0.5);
+    insert into decks (project_id, seq, name, code, total_area_m2)
+      values (p, 1, 'Deck', 'VD3', 100) returning id into d;
+    insert into deck_stages (deck_id, seq, name, color, weight)
+      values (d, 1, 'Coat 1', '#fadb14', 0.5);
+    insert into deck_stages (deck_id, seq, name, color, weight)
+      values (d, 2, 'Coat 2', '#bfbfbf', 0.5);
 
     begin
       -- One statement, both rows: after the first row is rewritten two rows hold
       -- seq 2, which an immediate constraint rejects even though the statement
       -- leaves the seqs unique.
-      update project_stages set seq = 3 - seq where project_id = p;
+      update deck_stages set seq = 3 - seq where deck_id = d;
       swap_ok := true;
     exception when others then
       swap_err := sqlerrm;
     end;
 
     select string_agg(seq::text || '=' || name, ', ' order by seq) into seqs
-    from project_stages where project_id = p;
+    from deck_stages where deck_id = d;
 
     delete from projects where id = p;
 
@@ -790,16 +796,16 @@ begin
       values (p, 1, 'Deck', 'VE', 500) returning id into d;
     -- The five-stage template a new project is seeded with, which is the shape
     -- every real removal starts from.
-    insert into project_stages (project_id, seq, name, color, weight)
-      values (p, 1, 'Coat 1', '#fadb14', 0.2) returning id into s1;
-    insert into project_stages (project_id, seq, name, color, weight)
-      values (p, 2, 'Coat 2', '#bfbfbf', 0.2) returning id into s2;
-    insert into project_stages (project_id, seq, name, color, weight)
-      values (p, 3, 'Coat 3', '#52c41a', 0.2) returning id into s3;
-    insert into project_stages (project_id, seq, name, color, weight)
-      values (p, 4, 'Coat 4', '#1677ff', 0.2) returning id into s4;
-    insert into project_stages (project_id, seq, name, color, weight)
-      values (p, 5, 'Coat 5', '#722ed1', 0.2) returning id into s5;
+    insert into deck_stages (deck_id, seq, name, color, weight)
+      values (d, 1, 'Coat 1', '#fadb14', 0.2) returning id into s1;
+    insert into deck_stages (deck_id, seq, name, color, weight)
+      values (d, 2, 'Coat 2', '#bfbfbf', 0.2) returning id into s2;
+    insert into deck_stages (deck_id, seq, name, color, weight)
+      values (d, 3, 'Coat 3', '#52c41a', 0.2) returning id into s3;
+    insert into deck_stages (deck_id, seq, name, color, weight)
+      values (d, 4, 'Coat 4', '#1677ff', 0.2) returning id into s4;
+    insert into deck_stages (deck_id, seq, name, color, weight)
+      values (d, 5, 'Coat 5', '#722ed1', 0.2) returning id into s5;
 
     -- One cell recorded at a stage that survives, one at the stage being
     -- removed. Without both, the check could pass while doing the wrong thing to
@@ -813,11 +819,11 @@ begin
       -- The delete goes first: it frees seq 2 so the renumbering below has
       -- somewhere to land. Reverse these two statements against a live PostgREST
       -- and the upsert fails on its own commit -- see the comment above.
-      delete from project_stages where id = s2;
+      delete from deck_stages where id = s2;
 
       -- The survivors, renumbered 1..4, in the statement shape PostgREST builds
       -- for an upsert keyed on the primary key.
-      insert into project_stages (id, project_id, seq, name, color, weight) values
+      insert into deck_stages (id, deck_id, seq, name, color, weight) values
         (s1, p, 1, 'Coat 1', '#fadb14', 0.25),
         (s3, p, 2, 'Coat 3', '#52c41a', 0.25),
         (s4, p, 3, 'Coat 4', '#1677ff', 0.25),
@@ -831,9 +837,9 @@ begin
     end;
 
     select string_agg(seq::text || '=' || name, ', ' order by seq) into seqs
-    from project_stages where project_id = p;
+    from deck_stages where deck_id = d;
     select stage_id into survivor_stage from cells where id = survivor_cell;
-    select seq into survivor_seq from project_stages where id = survivor_stage;
+    select seq into survivor_seq from deck_stages where id = survivor_stage;
     select stage_id into orphan_stage from cells where id = orphan_cell;
 
     delete from projects where id = p;
@@ -887,10 +893,10 @@ begin
     insert into projects (name, code) values ('VERIFY F','VERIFYF') returning id into p;
     insert into decks (project_id, seq, name, code, total_area_m2)
       values (p, 1, 'Deck', 'VF', 100) returning id into d;
-    insert into project_stages (project_id, seq, name, color, weight)
-      values (p, 1, 'Coat 1', '#fadb14', 1) returning id into s1;
-    insert into project_stages (project_id, seq, name, color, weight)
-      values (p, 2, 'Coat 2', '#bfbfbf', 0) returning id into s2;
+    insert into deck_stages (deck_id, seq, name, color, weight)
+      values (d, 1, 'Coat 1', '#fadb14', 1) returning id into s1;
+    insert into deck_stages (deck_id, seq, name, color, weight)
+      values (d, 2, 'Coat 2', '#bfbfbf', 0) returning id into s2;
     -- Recorded at Coat 1 with a sentinel timestamp, planted on the INSERT
     -- because both triggers are UPDATE-only.
     insert into cells (deck_id, code, x, y, w, h, area_m2, stage_id, updated_at)
@@ -966,17 +972,17 @@ begin
     insert into projects (name, code) values ('VERIFY G','VERIFYG') returning id into p;
     insert into decks (project_id, seq, name, code, total_area_m2)
       values (p, 1, 'Deck', 'VG', 100) returning id into d;
-    insert into project_stages (project_id, seq, name, color, weight)
-      values (p, 1, 'Doomed Coat', '#ff4d4f', 0.5) returning id into s_doomed;
-    insert into project_stages (project_id, seq, name, color, weight)
-      values (p, 2, 'Living Coat', '#52c41a', 0.5) returning id into s_live;
+    insert into deck_stages (deck_id, seq, name, color, weight)
+      values (d, 1, 'Doomed Coat', '#ff4d4f', 0.5) returning id into s_doomed;
+    insert into deck_stages (deck_id, seq, name, color, weight)
+      values (d, 2, 'Living Coat', '#52c41a', 0.5) returning id into s_live;
     insert into cells (deck_id, code, x, y, w, h, area_m2, stage_id)
       values (d, 'R1C1', 0, 0, 1, 0.5, 60, s_doomed) returning id into c_doomed;
     insert into cells (deck_id, code, x, y, w, h, area_m2, stage_id)
       values (d, 'R2C1', 0, 0.5, 1, 0.5, 40, s_live) returning id into c_live;
 
     -- 29. the removal itself
-    delete from project_stages where id = s_doomed;
+    delete from deck_stages where id = s_doomed;
 
     select count(*) into del_count from cell_events where cell_id = c_doomed;
     select from_stage_name, from_stage_id into del_name, del_from
@@ -1012,7 +1018,7 @@ begin
     end;
 
     return next format(
-      '%s a project delete still succeeds with project_stages_log_deletion in place: %s (%s)',
+      '%s a project delete still succeeds with deck_stages_log_deletion in place: %s (%s)',
       case when project_deleted then 'PASS' else 'FAIL' end,
       project_deleted, project_err);
   exception when others then

@@ -28,13 +28,13 @@ function saveStagesErrorInVietnamese(message: string): string {
     return 'Tổng trọng số các lớp phải bằng 1. Kiểm tra lại bảng trọng số trước khi lưu.'
   }
   if (message.includes('needs at least one stage')) {
-    return 'Dự án cần có ít nhất một lớp sơn.'
+    return 'Sàn cần có ít nhất một lớp sơn.'
   }
   if (message.includes('seq values must be unique') || message.includes('ids must be unique')) {
     return 'Có lỗi dữ liệu khi lưu cấu hình lớp sơn. Tải lại trang rồi thử lại.'
   }
   // Postgres, not projectsApi: `duplicate key value violates unique constraint
-  // "project_stages_project_id_seq_key"`. saveStages now deletes before it
+  // "deck_stages_deck_id_seq_key"`. saveStages now deletes before it
   // upserts, so nothing on this screen should be able to produce it -- but a raw
   // Postgres constraint message in an otherwise Vietnamese-only Alert is a
   // defect in its own right, and this is the last line of defence if those two
@@ -46,10 +46,10 @@ function saveStagesErrorInVietnamese(message: string): string {
 }
 
 export function StageConfigPanel({
-  projectId,
+  deckId,
   onSaved,
 }: {
-  projectId: string
+  deckId: string
   /**
    * Called after a save that actually persisted. ProjectsScreen's row shows
    * this project's rollup (e.g. "42,31%") computed from the SAME stages this
@@ -100,7 +100,7 @@ export function StageConfigPanel({
     const mine = ++generation.current
     setLoading(true)
     try {
-      const stages = await listStages(projectId)
+      const stages = await listStages(deckId)
       // Discard a load a newer refresh has superseded, and discard one that
       // resolves after the admin has resumed editing -- either way, applying
       // it would silently discard something more current than the fetch.
@@ -113,7 +113,7 @@ export function StageConfigPanel({
     } finally {
       if (mine === generation.current) setLoading(false)
     }
-  }, [projectId])
+  }, [deckId])
 
   useEffect(() => {
     void refresh()
@@ -218,7 +218,7 @@ export function StageConfigPanel({
   const onSave = async () => {
     setBusy(true)
     try {
-      await saveStages(projectId, draft)
+      await saveStages(deckId, draft)
       setError(null)
       setConfirming(false)
       // The draft just persisted is the new clean baseline: the background

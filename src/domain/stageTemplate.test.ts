@@ -23,7 +23,7 @@ describe('DEFAULT_STAGE_TEMPLATE', () => {
 
   it('carries no id field, so it is insertable as-is', () => {
     // WORKBOOK_STAGES has string ids like 'coat1' which are not uuids and
-    // cannot be inserted into project_stages.id. This template exists so a
+    // cannot be inserted into deck_stages.id. This template exists so a
     // caller never reaches for that one by mistake.
     for (const entry of DEFAULT_STAGE_TEMPLATE) {
       expect(entry).not.toHaveProperty('id')

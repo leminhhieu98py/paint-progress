@@ -105,31 +105,35 @@ insert into decks (project_id, seq, name, code, total_area_m2)
 select id, 1, 'Denied Deck', 'DD', 100 from projects where code = 'RLSD'
   on conflict (project_id, code) do nothing;
 
--- NOT `on conflict (project_id, seq)`, which is what this used to say and
--- what every other insert in this file still does. Migration 0012 made
--- project_stages_project_id_seq_key DEFERRABLE INITIALLY DEFERRED so a stage
--- reorder can swap two seqs inside one statement, and Postgres refuses a
--- deferrable unique constraint as an ON CONFLICT arbiter: the old form failed
--- outright with `55000: ON CONFLICT does not support deferrable unique
--- constraints/exclusion constraints as arbiters`, aborting this whole script
--- before a single assertion could be reported. 0012's own migration comment
--- predicted exactly this. A NOT EXISTS guard keys on the same pair without
--- naming the constraint, and matches the deck_guides insert further down.
-insert into project_stages (project_id, seq, name, color, weight)
-select p.id, 1, 'Coat 1', '#fadb14', 1
-from projects p
-where p.code = 'RLSA'
+-- Stages hang off the DECK since 0018, so these key on the deck, not the
+-- project.
+--
+-- NOT `on conflict (deck_id, seq)`, which is what this used to say and what
+-- every other insert in this file still does. Migration 0012 made the
+-- (project_id, seq) uniqueness DEFERRABLE INITIALLY DEFERRED -- 0018 carried
+-- the deferral onto (deck_id, seq) -- so a stage reorder can swap two seqs
+-- inside one statement, and Postgres refuses a deferrable unique constraint as
+-- an ON CONFLICT arbiter: the old form failed outright with `55000: ON CONFLICT
+-- does not support deferrable unique constraints/exclusion constraints as
+-- arbiters`, aborting this whole script before a single assertion could be
+-- reported. 0012's own migration comment predicted exactly this. A NOT EXISTS
+-- guard keys on the same pair without naming the constraint, and matches the
+-- deck_guides insert further down.
+insert into deck_stages (deck_id, seq, name, color, weight)
+select d.id, 1, 'Coat 1', '#fadb14', 1
+from decks d
+where d.code = 'AD'
   and not exists (
-    select 1 from project_stages where project_id = p.id and seq = 1
+    select 1 from deck_stages where deck_id = d.id and seq = 1
   );
 -- Distinctively named so a leaked cell_events row is unambiguous in the
 -- suite's cross-project cell_events assertion.
-insert into project_stages (project_id, seq, name, color, weight)
-select p.id, 1, 'RLS Denied Coat', '#ff4d4f', 1
-from projects p
-where p.code = 'RLSD'
+insert into deck_stages (deck_id, seq, name, color, weight)
+select d.id, 1, 'RLS Denied Coat', '#ff4d4f', 1
+from decks d
+where d.code = 'DD'
   and not exists (
-    select 1 from project_stages where project_id = p.id and seq = 1
+    select 1 from deck_stages where deck_id = d.id and seq = 1
   );
 
 insert into cells (deck_id, code, x, y, w, h, area_m2)
@@ -154,7 +158,7 @@ where d.code = 'DD'
 insert into zones (deck_id, seq, name, stage_id)
 select d.id, 1, 'RLS Denied Zone', ps.id
 from decks d
-join project_stages ps on ps.project_id = d.project_id and ps.name = 'RLS Denied Coat'
+join deck_stages ps on ps.deck_id = d.id and ps.name = 'RLS Denied Coat'
 where d.code = 'DD'
   on conflict (deck_id, stage_id, seq) do nothing;
 
@@ -171,7 +175,7 @@ where z.name = 'RLS Denied Zone' and d.code = 'DD' and c.deck_id = d.id
 -- the trigger's own no-op guard (0004/0005) makes re-running this safe: a
 -- second run sets the same value, so no second event is logged.
 update cells set stage_id = (
-  select id from project_stages where name = 'RLS Denied Coat'
+  select id from deck_stages where name = 'RLS Denied Coat'
 ) where deck_id = (select id from decks where code = 'DD');
 
 -- Account-dependent fixtures. Each is written as `insert ... select ...

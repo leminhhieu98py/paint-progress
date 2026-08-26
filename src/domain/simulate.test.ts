@@ -79,7 +79,7 @@ describe('progressReport', () => {
 describe('projectReport', () => {
   it('weights each deck by its share of the project area', () => {
     const small: Deck = { ...DECK, id: 'd2', totalAreaM2: 300, cells: DECK.cells }
-    const report = projectReport([paintDeck(DECK, STAGES, { Primer: 1 }), small], STAGES)
+    const report = projectReport([paintDeck(DECK, STAGES, { Primer: 1 }), small].map((deck) => ({ deck, stages: STAGES })))
 
     expect(report.d1).toBe('20.0% × 25.0%')
     expect(report['TỔNG DỰ ÁN']).toBe('5.0%')

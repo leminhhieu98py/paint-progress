@@ -1,6 +1,5 @@
 import { REALTIME_SUBSCRIBE_STATES } from '@supabase/supabase-js'
-import type { Cell, Stage, Zone } from '../domain/types'
-import { listStages } from './projectsApi'
+import type { Cell, Zone } from '../domain/types'
 import { supabase } from './supabase'
 
 /**
@@ -26,7 +25,6 @@ export interface GsDeck {
 }
 
 export interface GsProject {
-  stages: Stage[]
   decks: GsDeck[]
   /**
    * Whether the signed-in user actually holds a `project_members` row for this
@@ -80,21 +78,19 @@ function mapCellRow(row: Record<string, unknown>): Cell {
 }
 
 /**
- * The project's stage configuration, its decks, and whether the caller is a
- * member of it at all -- in one parallel batch.
+ * The project's decks and whether the caller is a member of it at all -- in one
+ * parallel batch.
  *
- * Stages come from projectsApi.listStages: the mapping is identical for both
- * roles, and two copies of it would let the admin's percentages and the GS's
- * disagree after any change to the row shape.
+ * Stages are not here: they belong to a deck, so the screen fetches the active
+ * deck's own set once the foreman has picked one.
  *
  * The membership read rides along here rather than being a second call from the
- * screen so that the three cannot land in different render passes: a screen that
+ * screen so that the two cannot land in different render passes: a screen that
  * learned "no decks" before "not a member" would flash the empty-project state
  * at somebody it is about to refuse.
  */
 export async function loadGsProject(projectId: string): Promise<GsProject> {
-  const [stages, decksResult, membershipResult] = await Promise.all([
-    listStages(projectId),
+  const [decksResult, membershipResult] = await Promise.all([
     supabase
       .from('decks')
       .select('id, seq, name, code, image_path, image_w, image_h, total_area_m2, area_source')
@@ -113,7 +109,6 @@ export async function loadGsProject(projectId: string): Promise<GsProject> {
   if (membershipResult.error) throw new Error(membershipResult.error.message)
 
   return {
-    stages,
     isMember: (membershipResult.data ?? []).length > 0,
     decks: (decksResult.data ?? []).map((d) => ({
       id: d.id as string,

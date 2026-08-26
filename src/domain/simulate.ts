@@ -57,8 +57,8 @@ export function progressReport(deck: Deck, stages: Stage[]): Record<string, stri
 }
 
 /** The same, across a project's decks, weighted by area the way the rollup is. */
-export function projectReport(decks: Deck[], stages: Stage[]): Record<string, string> {
-  const computed = computeProjectProgress(decks, stages)
+export function projectReport(entries: { deck: Deck; stages: Stage[] }[]): Record<string, string> {
+  const computed = computeProjectProgress(entries)
   const lines: Record<string, string> = {}
   for (const deck of computed.decks) {
     lines[deck.deckId] = `${(deck.progress * 100).toFixed(1)}% × ${(deck.weight * 100).toFixed(1)}%`

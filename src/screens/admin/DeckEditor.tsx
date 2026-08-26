@@ -234,7 +234,7 @@ export function DeckEditor({ deck, onSaved }: { deck: DeckRow; onSaved?: () => v
     try {
       const [c, s] = await Promise.all([
         listCells(deck.id),
-        listStages(deck.projectId),
+        listStages(deck.id),
       ])
       setStages(s)
       setCells(c.map(({ code, x, y, w, h, areaM2 }) => ({ code, x, y, w, h, areaM2 })))
@@ -246,7 +246,7 @@ export function DeckEditor({ deck, onSaved }: { deck: DeckRow; onSaved?: () => v
       setLoadFailed(true)
       setError((e as Error).message)
     }
-  }, [deck.id, deck.imagePath, deck.projectId])
+  }, [deck.id, deck.imagePath])
 
   useEffect(() => {
     void load()

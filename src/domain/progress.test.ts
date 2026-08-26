@@ -77,18 +77,18 @@ describe('computeDeckProgress — golden fixture from THEO DÕI CÔNG VIỆC CPP
 
 describe('computeProjectProgress', () => {
   it("reproduces the sheet's project rollup", () => {
-    expect(computeProjectProgress(WORKBOOK_DECKS, stages).progress).toBeCloseTo(0.4846025, 6)
+    expect(computeProjectProgress(WORKBOOK_DECKS.map((deck) => ({ deck, stages }))).progress).toBeCloseTo(0.4846025, 6)
   })
 
   it('weights each deck by its share of total area', () => {
-    const cd = computeProjectProgress(WORKBOOK_DECKS, stages).decks.find(
+    const cd = computeProjectProgress(WORKBOOK_DECKS.map((deck) => ({ deck, stages }))).decks.find(
       (d) => d.deckId === 'CD',
     )!
     expect(cd.weight).toBeCloseTo(0.30728494058524, 11)
   })
 
   it('returns zero for an empty project', () => {
-    expect(computeProjectProgress([], stages).progress).toBe(0)
+    expect(computeProjectProgress([].map((deck) => ({ deck, stages: stages }))).progress).toBe(0)
   })
 })
 
