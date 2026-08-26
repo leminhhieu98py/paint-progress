@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { StageConfigPanel } from './StageConfigPanel'
@@ -541,5 +541,49 @@ describe('StageConfigPanel', () => {
     expect(names).toEqual(['Coat 2', 'Blast + Coat 1'])
     // Cumulative progress reads stages by seq, so gaps or ties would corrupt it.
     expect(screen.getAllByText(/^[12]$/).map((n) => n.textContent)).toEqual(['1', '2'])
+  })
+
+  it('refuses to save two stages under one name or one colour', async () => {
+    // A name and a colour are how a stage is recognised, and by two different
+    // people: the admin reads the name in the report, the GS reads the colour
+    // off the drawing and nothing else. Two stages sharing either make a deck
+    // that cannot be read back, and no error afterwards would say which of the
+    // two a given bay is at.
+    listStages.mockResolvedValue([
+      { id: 's1', seq: 1, name: 'Coat 1', color: '#1677ff', weight: 0.5 },
+      { id: 's2', seq: 2, name: 'Coat 2', color: '#52c41a', weight: 0.5 },
+    ])
+    render(<StageConfigPanel projectId="p1" />)
+    await screen.findByDisplayValue('Coat 1')
+
+    const second = screen.getAllByRole('textbox')[1]
+    await userEvent.clear(second)
+    await userEvent.type(second, 'coat 1 ')
+
+    expect(await screen.findByText('Hai lớp sơn đang trùng nhau')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Lưu' })).toBeDisabled()
+    expect(saveStages).not.toHaveBeenCalled()
+  })
+
+  it('reorders the stages when one is dragged onto another', async () => {
+    // Top to bottom is innermost to outermost: the order the GS ticks them in
+    // and the order cumulative progress reads them in. Renumbering seq from the
+    // list's own order is what makes the drag mean anything.
+    listStages.mockResolvedValue([
+      { id: 's1', seq: 1, name: 'Coat 1', color: '#1677ff', weight: 0.5 },
+      { id: 's2', seq: 2, name: 'Coat 2', color: '#52c41a', weight: 0.5 },
+    ])
+    render(<StageConfigPanel projectId="p1" />)
+    await screen.findByDisplayValue('Coat 1')
+
+    const rows = document.querySelectorAll('.ant-table-tbody .ant-table-row')
+    fireEvent.dragStart(rows[1])
+    fireEvent.dragOver(rows[0])
+    fireEvent.drop(rows[0])
+
+    // Coat 2 is now first, and carries seq 1 with it.
+    await waitFor(() => expect(screen.getAllByRole('textbox')[0]).toHaveValue('Coat 2'))
+    expect(screen.getByTestId('seq-0')).toHaveTextContent('1')
+    expect(screen.getByTestId('seq-1')).toHaveTextContent('2')
   })
 })

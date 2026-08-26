@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { WORKBOOK_STAGES } from './fixtures'
-import { isBackwards, nextStage } from './stageFlow'
+import { duplicateStageFields, isBackwards, nextStage } from './stageFlow'
 import type { Stage } from './types'
 
 /** Seq gaps are reachable: saveStages is not transactional, so a failed removal
@@ -96,5 +96,35 @@ describe('isBackwards', () => {
     const reversed = [...WORKBOOK_STAGES].reverse()
     expect(isBackwards(reversed, 'coat2', 'coat3')).toBe(false)
     expect(isBackwards(reversed, 'coat3', 'coat2')).toBe(true)
+  })
+})
+
+describe('duplicateStageFields', () => {
+  const stage = (name: string, color: string) => ({ name, color })
+
+  it('finds nothing wrong with stages that differ', () => {
+    expect(duplicateStageFields([stage('Coat 1', '#1677ff'), stage('Coat 2', '#52c41a')]))
+      .toEqual({ names: [], colors: [] })
+  })
+
+  it('catches two stages under one name, however it was typed', () => {
+    // "Coat 1" and "coat 1 " are the same stage to everyone except a string
+    // comparison, and the admin reads the name in the config and the report.
+    expect(duplicateStageFields([stage('Coat 1', '#1677ff'), stage('coat 1 ', '#52c41a')]).names)
+      .toEqual(['coat 1'])
+  })
+
+  it('catches two stages under one colour, however it was written', () => {
+    // The GS reads the colour off the drawing and nothing else: the deck is a
+    // wall of coloured rectangles and the legend is the only key to it.
+    expect(duplicateStageFields([stage('Coat 1', '#52C41A'), stage('Coat 2', '#52c41a')]).colors)
+      .toEqual(['#52c41a'])
+  })
+
+  it('does not call two unnamed stages a clash', () => {
+    // A stage the admin has just added and not named yet is not a duplicate of
+    // the next one they add -- it is a row they have not filled in, which the
+    // save guard reports in its own words.
+    expect(duplicateStageFields([stage('', '#1677ff'), stage('', '#52c41a')]).names).toEqual([])
   })
 })

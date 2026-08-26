@@ -43,3 +43,35 @@ export function isBackwards(
 ): boolean {
   return stageSeqOf(stages, toStageId) < stageSeqOf(stages, fromStageId)
 }
+
+/**
+ * Names and colours more than one paint stage is claiming.
+ *
+ * Both are how a stage is recognised, and by two different people: the admin
+ * reads the name in the config and the report, the GS reads the colour off the
+ * drawing and nothing else -- the deck is a wall of coloured rectangles and the
+ * legend is the only key to it. Two stages sharing either one make a deck that
+ * cannot be read back, and no error afterwards would say which of the two a
+ * given bay is at.
+ *
+ * Compared case- and space-insensitively for names, because "Coat 1" and
+ * "coat 1 " are the same stage to everyone except a string comparison, and
+ * case-insensitively for colours, because #52C41A and #52c41a are one colour.
+ */
+export function duplicateStageFields(
+  stages: { name: string; color: string }[],
+): { names: string[]; colors: string[] } {
+  const repeated = (values: string[]) => {
+    const seen = new Set<string>()
+    const twice = new Set<string>()
+    for (const value of values) {
+      if (seen.has(value)) twice.add(value)
+      else seen.add(value)
+    }
+    return [...twice]
+  }
+  return {
+    names: repeated(stages.map((s) => s.name.trim().toLowerCase())).filter((n) => n !== ''),
+    colors: repeated(stages.map((s) => s.color.trim().toLowerCase())),
+  }
+}

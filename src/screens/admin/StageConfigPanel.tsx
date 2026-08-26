@@ -1,5 +1,6 @@
 import { Alert, Button, Input, InputNumber, Modal, Space, Table, Typography } from 'antd'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { duplicateStageFields } from '../../domain/stageFlow'
 import type { Stage } from '../../domain/types'
 import { formatWeight } from '../../lib/format'
 import {
@@ -128,6 +129,16 @@ export function StageConfigPanel({
    * recorded progress, so there is nothing left to disclose about it.
    */
   const removed = useMemo(() => stagesRemovedBy(persisted, draft), [persisted, draft])
+  /**
+   * Names and colours that more than one stage is claiming.
+   *
+   * Blocks the save rather than warning about it: a name and a colour are how a
+   * stage is recognised, by the admin in the report and by the GS on the
+   * drawing, and a deck painted in two identical greens cannot be read back at
+   * all. There is no answer the admin could give that would make it correct.
+   */
+  const clashes = useMemo(() => duplicateStageFields(draft), [draft])
+  const hasClash = clashes.names.length > 0 || clashes.colors.length > 0
 
   const patch = (index: number, change: Partial<Stage>) => {
     dirty.current = true
@@ -145,6 +156,33 @@ export function StageConfigPanel({
    *  outright. Renumbering itself is free of consequences -- it rewrites display
    *  order and touches no row's id, so no cell's recorded stage moves with it. */
   const renumber = (rows: Stage[]) => rows.map((s, i) => ({ ...s, seq: i + 1 }))
+
+  /**
+   * The row being dragged, while it is being dragged.
+   *
+   * A ref rather than state: nothing renders from it, and dragover fires on
+   * every pixel of movement -- re-rendering the whole table on each one makes
+   * the drag stutter badly enough to drop rows in the wrong place.
+   */
+  const dragging = useRef<number | null>(null)
+
+  /**
+   * Moves a stage to where it was dropped.
+   *
+   * Top to bottom is innermost to outermost, which is the order the GS ticks
+   * them in and the order cumulative progress reads them in -- so this is not
+   * cosmetic, and it is why seq is renumbered from the list's own order rather
+   * than being typed.
+   */
+  const dropOn = (target: number) => {
+    const from = dragging.current
+    dragging.current = null
+    if (from === null || from === target) return
+    const rows = [...draft]
+    const [moved] = rows.splice(from, 1)
+    rows.splice(target, 0, moved)
+    setDraft(renumber(rows))
+  }
 
   const addStage = () => {
     dirty.current = true
@@ -242,6 +280,15 @@ export function StageConfigPanel({
         loading={loading && draft.length === 0}
         dataSource={draft}
         pagination={false}
+        onRow={(_row, index) => ({
+          draggable: !busy,
+          'aria-grabbed': false,
+          onDragStart: () => { dragging.current = index ?? null },
+          // Without preventDefault the browser refuses the drop outright: the
+          // default for a dragover is "this is not a drop target".
+          onDragOver: (e: { preventDefault: () => void }) => e.preventDefault(),
+          onDrop: () => dropOn(index ?? 0),
+        })}
         columns={[
           {
             title: 'Thứ tự',
@@ -357,10 +404,22 @@ export function StageConfigPanel({
         )}
       />
 
+      {hasClash && (
+        <Alert
+          type="error"
+          message="Hai lớp sơn đang trùng nhau"
+          description={[
+            clashes.names.length > 0 ? `Trùng tên: ${clashes.names.join(', ')}.` : '',
+            clashes.colors.length > 0 ? `Trùng màu: ${clashes.colors.join(', ')}.` : '',
+            'GS nhận ra lớp sơn bằng màu trên bản vẽ, báo cáo nhận ra bằng tên — trùng thì không đọc lại được.',
+          ].filter(Boolean).join(' ')}
+        />
+      )}
+
       <Space>
         <Button
           type="primary"
-          disabled={!balanced}
+          disabled={!balanced || hasClash}
           loading={busy}
           // A rename, a reweight and a reorder all keep every stage row, id,
           // zone and tick, so there is genuinely nothing to disclose and the
