@@ -1,194 +1,98 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { DecksScreen } from './DecksScreen'
 
 const listProjectNames = vi.hoisted(() => vi.fn())
 const listDecks = vi.hoisted(() => vi.fn())
-const createDeck = vi.hoisted(() => vi.fn())
-const uploadDrawing = vi.hoisted(() => vi.fn())
-const pdfPageCount = vi.hoisted(() => vi.fn())
-const renderPdfPage = vi.hoisted(() => vi.fn())
-const imageFileToPng = vi.hoisted(() => vi.fn())
 
 vi.mock('../../lib/projectsApi', () => ({ listProjectNames: () => listProjectNames() }))
-vi.mock('../../lib/decksApi', () => ({
-  listDecks: (p: string) => listDecks(p),
-  createDeck: (i: unknown) => createDeck(i),
-  uploadDrawing: (a: string, b: string, c: Blob, d: number, e: number) => uploadDrawing(a, b, c, d, e),
-}))
-vi.mock('../../lib/pdfToPng', () => ({
-  pdfPageCount: (f: File) => pdfPageCount(f),
-  renderPdfPage: (f: File, n: number) => renderPdfPage(f, n),
-  imageFileToPng: (f: File) => imageFileToPng(f),
-  PDF_RENDER_WIDTH: 2000,
-}))
-// The mock echoes the deck it was handed, so a test can prove the editor opened
-// on the row that was clicked. A bare <div>editor</div> would pass even if the
-// screen passed the wrong deck, or the same deck every time.
-vi.mock('./DeckEditor', () => ({
-  DeckEditor: ({ deck }: { deck: { code: string } }) => <div>editor {deck.code}</div>,
-}))
+vi.mock('../../lib/decksApi', () => ({ listDecks: (p: string) => listDecks(p) }))
 
 beforeEach(() => {
-  for (const m of [listProjectNames, listDecks, createDeck, uploadDrawing, pdfPageCount, renderPdfPage, imageFileToPng]) m.mockReset()
+  for (const m of [listProjectNames, listDecks]) m.mockReset()
   listProjectNames.mockResolvedValue([{ id: 'p1', name: 'BB1', code: 'BB1' }])
   listDecks.mockResolvedValue([
-    { id: 'd1', projectId: 'p1', seq: 1, name: 'Main Deck', code: 'MD', imagePath: null, imageW: null, imageH: null, totalAreaM2: 5258.5, areaSource: 'guides', cellCount: 24 },
+    {
+      id: 'd1', projectId: 'p1', seq: 1, name: 'Main Deck', code: 'MD',
+      imagePath: null, imageW: null, imageH: null,
+      totalAreaM2: 5258.5, areaSource: 'prorated', cellCount: 24,
+    },
   ])
 })
 
+/**
+ * Rendered inside a router that echoes wherever the screen navigates to.
+ *
+ * Where it goes IS what this screen does now -- creating a deck and attaching
+ * its drawing both moved to the deck's own address -- so a stand-in that only
+ * proved "something was clicked" would leave the whole of it unchecked.
+ */
+const renderScreen = () =>
+  render(
+    <MemoryRouter initialEntries={['/decks']}>
+      <Routes>
+        <Route path="/decks" element={<DecksScreen />} />
+        <Route path="/decks/:deckId" element={<div>deck page</div>} />
+      </Routes>
+    </MemoryRouter>,
+  )
+
 describe('DecksScreen', () => {
   it('lists the decks of the first project', async () => {
-    render(<DecksScreen />)
+    renderScreen()
+
     expect(await screen.findByText('Main Deck')).toBeInTheDocument()
+    expect(screen.getByText('MD')).toBeInTheDocument()
+    expect(screen.getByText('5.258,50')).toBeInTheDocument()
     expect(screen.getByText('24')).toBeInTheDocument()
+    await waitFor(() => expect(listDecks).toHaveBeenCalledWith('p1'))
   })
 
-  it('shows a page picker for a multi-page PDF and uploads the chosen page', async () => {
-    pdfPageCount.mockResolvedValue(3)
-    renderPdfPage.mockResolvedValue({ blob: new Blob(['x']), width: 2000, height: 1600 })
-    uploadDrawing.mockResolvedValue('p1/d1.png')
-    render(<DecksScreen />)
-    await screen.findByText('Main Deck')
+  it('says whether a deck has a drawing yet, without offering to attach one', async () => {
+    // Attaching a drawing belongs to the deck, and the deck has a page of its
+    // own. A row that still carried a file picker would be a second way in,
+    // with its own idea of which file types are allowed.
+    renderScreen()
 
-    const file = new File([new Uint8Array([1])], 'deck.pdf', { type: 'application/pdf' })
-    await userEvent.upload(screen.getByTestId('drawing-input-d1'), file)
-
-    expect(await screen.findByText(/3 trang/)).toBeInTheDocument()
-    await userEvent.clear(screen.getByLabelText('Trang'))
-    await userEvent.type(screen.getByLabelText('Trang'), '2')
-    await userEvent.click(screen.getByRole('button', { name: 'Nhập bản vẽ' }))
-
-    await waitFor(() => expect(renderPdfPage).toHaveBeenCalledWith(file, 2))
-    expect(uploadDrawing).toHaveBeenCalledWith('d1', 'p1', expect.anything(), 2000, 1600)
+    expect(await screen.findByText('Chưa có')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Tải bản vẽ' })).not.toBeInTheDocument()
   })
 
-  it('resets the page field for a fresh multi-page import, not the previous PDF\'s page', async () => {
-    // Import page 4 of one drawing, cancel, then open the picker again for a
-    // different multi-page PDF: the field must read 1 (PendingPicker always
-    // seeds page: 1), not 4. In THIS component the inner content is gated by
-    // `{picker && (...)}`, so it already unmounts/remounts on every open --
-    // this test cannot distinguish destroyOnHidden's presence from its
-    // absence here (confirmed by temporarily removing the prop: the suite
-    // stayed green). destroyOnHidden is still added, both because every other
-    // Modal in this codebase carries it and because relying on the inner
-    // conditional alone is fragile -- but the regression this test actually
-    // pins is PendingPicker always seeding page: 1, not the prop.
-    pdfPageCount.mockResolvedValueOnce(5).mockResolvedValueOnce(3)
-    render(<DecksScreen />)
-    await screen.findByText('Main Deck')
+  it('opens the deck at its own address', async () => {
+    renderScreen()
+    await userEvent.click(await screen.findByRole('button', { name: 'Mở' }))
 
-    const file1 = new File([new Uint8Array([1])], 'a.pdf', { type: 'application/pdf' })
-    await userEvent.upload(screen.getByTestId('drawing-input-d1'), file1)
-    await screen.findByText(/5 trang/)
-    await userEvent.clear(screen.getByLabelText('Trang'))
-    await userEvent.type(screen.getByLabelText('Trang'), '4')
-    await screen.findByDisplayValue('4')
-    await userEvent.click(screen.getByRole('button', { name: 'Huỷ' }))
-
-    const file2 = new File([new Uint8Array([2])], 'b.pdf', { type: 'application/pdf' })
-    await userEvent.upload(screen.getByTestId('drawing-input-d1'), file2)
-    await screen.findByText(/3 trang/)
-
-    expect(screen.getByLabelText('Trang')).toHaveValue('1')
+    expect(await screen.findByText('deck page')).toBeInTheDocument()
   })
 
-  it('surfaces an import failure', async () => {
-    pdfPageCount.mockRejectedValue(new Error('Invalid PDF structure'))
-    render(<DecksScreen />)
-    await screen.findByText('Main Deck')
-    await userEvent.upload(
-      screen.getByTestId('drawing-input-d1'),
-      new File([new Uint8Array([1])], 'bad.pdf', { type: 'application/pdf' }),
-    )
-    expect(await screen.findByText(/Invalid PDF structure/)).toBeInTheDocument()
-  })
+  it('sends "Tạo sàn" to the new-deck page, carrying the project it belongs to', async () => {
+    // The project is in the URL rather than in navigation state so that a
+    // reload of the create form still knows which project it is creating in.
+    renderScreen()
+    await userEvent.click(await screen.findByRole('button', { name: 'Tạo sàn' }))
 
-  it('imports a single-page PDF directly, with no page picker', async () => {
-    // `pageCount > 1`, not `>= 1`: a one-page drawing has nothing to choose, so
-    // asking would be a modal the admin has to dismiss on every single import.
-    pdfPageCount.mockResolvedValue(1)
-    renderPdfPage.mockResolvedValue({ blob: new Blob(['x']), width: 2000, height: 1600 })
-    uploadDrawing.mockResolvedValue('p1/d1.png')
-    render(<DecksScreen />)
-    await screen.findByText('Main Deck')
-
-    const file = new File([new Uint8Array([1])], 'deck.pdf', { type: 'application/pdf' })
-    await userEvent.upload(screen.getByTestId('drawing-input-d1'), file)
-
-    await waitFor(() => expect(renderPdfPage).toHaveBeenCalledWith(file, 1))
-    expect(screen.queryByText('Chọn trang bản vẽ')).toBeNull()
-    expect(uploadDrawing).toHaveBeenCalledWith('d1', 'p1', expect.anything(), 2000, 1600)
-  })
-
-  it('sends an image through the image converter, not the PDF renderer', async () => {
-    // Inverting the `file.type === 'application/pdf'` test would push a PNG
-    // into pdf.js, which fails with "Invalid PDF structure" -- a message that
-    // blames the file the admin just picked rather than the code.
-    imageFileToPng.mockResolvedValue({ blob: new Blob(['x']), width: 1600, height: 1200 })
-    uploadDrawing.mockResolvedValue('p1/d1.png')
-    render(<DecksScreen />)
-    await screen.findByText('Main Deck')
-
-    const file = new File([new Uint8Array([1])], 'deck.png', { type: 'image/png' })
-    await userEvent.upload(screen.getByTestId('drawing-input-d1'), file)
-
-    await waitFor(() => expect(imageFileToPng).toHaveBeenCalledWith(file))
-    expect(pdfPageCount).not.toHaveBeenCalled()
-    expect(renderPdfPage).not.toHaveBeenCalled()
-    expect(uploadDrawing).toHaveBeenCalledWith('d1', 'p1', expect.anything(), 1600, 1200)
-  })
-
-  it('creates a deck and refreshes the list', async () => {
-    createDeck.mockResolvedValue('d2')
-    render(<DecksScreen />)
-    await screen.findByText('Main Deck')
-    await userEvent.click(screen.getByRole('button', { name: 'Tạo sàn' }))
-    await userEvent.type(screen.getByLabelText('Tên sàn'), 'Cellar Deck')
-    await userEvent.type(screen.getByLabelText('Mã sàn'), 'CD')
-    await userEvent.click(screen.getByRole('button', { name: 'Tạo' }))
-    // The whole payload: `toHaveBeenCalled()` alone passes even with name and
-    // code swapped, which is a mistake nothing downstream would catch.
-    await waitFor(() =>
-      expect(createDeck).toHaveBeenCalledWith({
-        projectId: 'p1', seq: 2, name: 'Cellar Deck', code: 'CD',
-      }),
-    )
-    expect(listDecks).toHaveBeenCalledTimes(2)
-  })
-
-  it('opens the editor on the deck whose row was clicked', async () => {
-    // The only entry point to the entire deck editor.
-    listDecks.mockResolvedValue([
-      { id: 'd1', projectId: 'p1', seq: 1, name: 'Main Deck', code: 'MD', imagePath: null, imageW: null, imageH: null, totalAreaM2: 5258.5, areaSource: 'guides', cellCount: 24 },
-      { id: 'd2', projectId: 'p1', seq: 2, name: 'Cellar Deck', code: 'CD', imagePath: null, imageW: null, imageH: null, totalAreaM2: 900, areaSource: 'prorated', cellCount: 8 },
-    ])
-    render(<DecksScreen />)
-    await screen.findByText('Cellar Deck')
-
-    await userEvent.click(screen.getAllByRole('button', { name: 'Mở' })[1])
-
-    expect(await screen.findByText('editor CD')).toBeInTheDocument()
-    // The list is replaced by the editor, not stacked underneath it.
-    expect(screen.queryByText('Main Deck')).toBeNull()
+    expect(await screen.findByText('deck page')).toBeInTheDocument()
   })
 
   it('shows an empty state, not a spinner, when there is no project at all', async () => {
-    // `loading` initialises true and refreshDecks returns early with no
-    // project, so anything that fails to clear it leaves the table spinning
-    // with no empty state and no error -- indistinguishable from a hung query.
+    // The table initialises loading, and with no project to load nothing else
+    // would ever turn it off: the admin gets a spinner for ever.
     listProjectNames.mockResolvedValue([])
-    render(<DecksScreen />)
+    renderScreen()
 
+    // No row, and no spinner either: asserted on the table's own body rather
+    // than on antd's empty-state wording, which is translated.
     await waitFor(() => expect(document.querySelector('.ant-spin-spinning')).toBeNull())
-    // Scoped to the description: antd's empty-state illustration carries an
-    // SVG <title> with the same text, so an unscoped query is ambiguous. The
-    // wording is antd's default locale, not this screen's copy -- these tests
-    // render without the app's viVN ConfigProvider.
-    expect(
-      await screen.findByText('No data', { selector: '.ant-empty-description' }),
-    ).toBeInTheDocument()
+    expect(document.querySelectorAll('.ant-table-tbody .ant-table-row')).toHaveLength(0)
     expect(listDecks).not.toHaveBeenCalled()
+  })
+
+  it('reports a failed project list rather than showing an empty one', async () => {
+    listProjectNames.mockRejectedValue(new Error('JWT expired'))
+    renderScreen()
+
+    expect(await screen.findByText('JWT expired')).toBeInTheDocument()
   })
 })

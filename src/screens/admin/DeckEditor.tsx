@@ -1,5 +1,5 @@
 import {
-  Alert, App, Button, Descriptions, InputNumber, Modal, Space, Typography,
+  Alert, App, Button, Descriptions, Modal, Space, Typography,
 } from 'antd'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
@@ -139,7 +139,7 @@ function drawErrorInVietnamese(message: string): string {
   return message
 }
 
-export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => void }) {
+export function DeckEditor({ deck, onSaved }: { deck: DeckRow; onSaved?: () => void }) {
   const [stages, setStages] = useState<Stage[]>([])
   const [cells, setCells] = useState<MeshCell[]>([])
   /**
@@ -158,7 +158,15 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
   const [cellStages, setCellStages] = useState<Record<string, string | null>>({})
   const [selected, setSelected] = useState<string[]>([])
   const [imageUrl, setImageUrl] = useState<string | null>(null)
-  const [totalArea, setTotalArea] = useState(deck.totalAreaM2)
+  /**
+   * The deck's declared area, owned by the screen above.
+   *
+   * It used to be edited here, and that put it in two places once the deck got
+   * a form of its own. Read-only here because every cell area is a share of it:
+   * a change has to re-share them, which is the form's job at the moment it
+   * writes the new number.
+   */
+  const totalArea = deck.totalAreaM2
   const [pending, setPending] = useState<PendingEdit | null>(null)
   const [error, setError] = useState<string | null>(null)
   const { message } = App.useApp()
@@ -553,6 +561,7 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
       past.current = []
       future.current = []
       setSelected([])
+      onSaved?.()
       setPending(null)
       setError(null)
     } catch (e) {
@@ -689,25 +698,9 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
 
 
 
-      <Descriptions size="small" column={4} bordered items={[
-        { key: 'name', label: 'Sàn', children: `${deck.name} (${deck.code})` },
+      <Descriptions size="small" column={2} bordered items={[
         { key: 'cells', label: 'Số ô', children: cells.length },
         { key: 'sum', label: 'Σ diện tích ô (m²)', children: formatAreaM2(sumCellArea) },
-        {
-          key: 'total', label: 'Diện tích sàn (m²)',
-          children: (
-            <InputNumber
-              value={totalArea}
-              min={0}
-              step={10}
-              // A Vietnamese admin types "5258,5". Without this antd parses
-              // that as 5258 and the deck silently loses half a square metre
-              // from the denominator of every percentage on the project.
-              decimalSeparator=","
-              onChange={(n) => setTotalArea(n ?? 0)}
-            />
-          ),
-        },
       ]} />
 
       {/*
@@ -739,7 +732,6 @@ export function DeckEditor({ deck, onClose }: { deck: DeckRow; onClose: () => vo
         >
           {shortcuts ? 'Lưu bản vẽ' : 'Bắt đầu thao tác'}
         </Button>
-        <Button onClick={onClose}>Đóng</Button>
         <Typography.Text>{`${cells.length} ô`}</Typography.Text>
       </Space>
 

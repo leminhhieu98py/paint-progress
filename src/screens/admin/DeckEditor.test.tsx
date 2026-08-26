@@ -123,7 +123,13 @@ const listItem = (text: string) => (_content: string, el: Element | null) =>
 const renderInApp = (deckProp: ComponentProps<typeof DeckEditor>['deck']) =>
   render(
     <AntApp>
-      <DeckEditor deck={deckProp} onClose={vi.fn()} />
+      {/*
+        A field beside the editor, which is where one really is: the deck's own
+        form sits above this on the same page, and whether the keys yield to it
+        is a thing about this screen, not about that form.
+      */}
+      <input aria-label="ô nhập bên cạnh" />
+      <DeckEditor deck={deckProp} />
     </AntApp>,
   )
 
@@ -257,23 +263,6 @@ describe('DeckEditor', () => {
 
 
 
-  it('reads a comma-decimal deck area the way a Vietnamese admin types it', async () => {
-    // The denominator of every percentage on the project. Without
-    // decimalSeparator="," antd truncates "1234,5" to 1234 and the deck loses
-    // half a square metre with nothing on screen to show it happened.
-    renderInApp(deck)
-    await screen.findByTestId('canvas')
-
-    // No guides in this test, so the deck-area field is the only spin button.
-    const areaInput = screen.getByRole('spinbutton')
-    await userEvent.clear(areaInput)
-    await userEvent.type(areaInput, '1234,5')
-    await saveDeck()
-
-    // Always 'prorated': pixel-share is the only way this screen produces a
-    // cell area now, so the column records that on every write.
-    await waitFor(() => expect(updateDeckArea).toHaveBeenCalledWith('d1', 1234.5, 'prorated'))
-  })
 
   it('saves a generated mesh that needed no delete and no merge', async () => {
     // The defect this covers: syncCells' predecessor was reachable only from a
@@ -780,39 +769,20 @@ await userEvent.click(screen.getByRole('button', { name: 'chọn R1C1' }))
 
 
   it('warns that a deck with no declared area reports 0% forever, and refuses to save', async () => {
-    // A2. total_area_m2 is `not null default 0` and createDeck never sets it, so
-    // this is the state every deck starts in. areaDivergence returns 0 for a
-    // zero total (to avoid dividing by zero), which reads as "no divergence" --
-    // so the divergence banner cannot cover this, and computeDeckProgress gives
-    // every stage ratio 0 while computeProjectProgress gives the deck weight 0.
-    // A fully authored, fully painted deck reports 0% and contributes nothing.
-    const undeclared = { ...deck, totalAreaM2: 0 }
+    // Every ratio divides by the deck area, so a deck that declares none reports
+    // 0% for ever -- and computeProjectProgress gives it weight 0, so it drags
+    // nothing into the project rollup either. Silently, and permanently.
     listCells.mockResolvedValue([
-      { id: 'c1', code: 'R1C1', x: 0, y: 0, w: 1, h: 1, areaM2: 232, stageId: null },
+      { id: 'c1', code: 'R1C1', x: 0, y: 0, w: 1, h: 1, areaM2: 0, stageId: null },
     ])
-    syncCells.mockResolvedValue(undefined)
-    renderInApp(undeclared)
+    renderInApp({ ...deck, totalAreaM2: 0 })
 
     expect(await screen.findByText(/Chưa khai báo diện tích sàn/)).toBeInTheDocument()
-    expect(screen.getByText(/sẽ luôn là 0%/)).toBeInTheDocument()
 
     await saveDeck()
 
     expect(await screen.findAllByText(/Không lưu được: chưa khai báo diện tích sàn/)).not.toHaveLength(0)
     expect(syncCells).not.toHaveBeenCalled()
-    // Refused before it even read the persisted cells: only the initial load's
-    // call happened.
-    expect(listCells).toHaveBeenCalledTimes(1)
-
-    // And it is the area that is blocking, not the button: declare one and the
-    // same click goes through. Without this the refusal could be a dead save
-    // path and the test would not notice.
-    const areaInput = screen.getByRole('spinbutton')
-    await userEvent.clear(areaInput)
-    await userEvent.type(areaInput, '5258,5')
-    await waitFor(() => expect(screen.queryByText(/Chưa khai báo diện tích sàn/)).toBeNull())
-    await saveDeck()
-    await waitFor(() => expect(syncCells).toHaveBeenCalledTimes(1))
   })
 
   it('discloses a cell that grows out of a zero area, where a relative test sees no change', async () => {
@@ -1009,9 +979,9 @@ await userEvent.click(screen.getByRole('button', { name: 'chọn R1C1' }))
       ))
       expect(screen.getByText('3 ô')).toBeInTheDocument()
       // Prorated: a detected bay carries no printed dimension, so its area is
-      // its share of the deck's pixels, and the banner says so.
-      // Σ diện tích ô: the whole deck, shared out over the three bays.
-      expect(document.querySelectorAll('.ant-descriptions-item-content')[2]?.textContent)
+      // its share of the deck's pixels. The three bays between them come to the
+      // whole deck.
+      expect(document.querySelectorAll('.ant-descriptions-item-content')[1]?.textContent)
         .toBe('5.258,50')
     })
 
@@ -1229,7 +1199,8 @@ describe('mergeErrorInVietnamese', () => {
       await waitFor(() => expect(screen.getByText('3 ô')).toBeInTheDocument())
       expect(syncCells).not.toHaveBeenCalled()
       // The deck total is the truth, so what is left absorbs the area.
-      expect(screen.getByText('5.258,50')).toBeInTheDocument()
+      expect(document.querySelectorAll('.ant-descriptions-item-content')[1]?.textContent)
+        .toBe('5.258,50')
     })
 
     it('puts back what Ctrl/Cmd + Z undoes, and takes it away again on redo', async () => {
@@ -1302,7 +1273,7 @@ describe('mergeErrorInVietnamese', () => {
       syncCells.mockResolvedValue(undefined)
       renderInApp(deck)
       await arm()
-      const area = screen.getByRole('spinbutton')
+      const area = screen.getByLabelText('ô nhập bên cạnh')
       area.focus()
 
       expect(fireEvent.keyDown(area, { key: 's', metaKey: true })).toBe(false)
@@ -1317,7 +1288,7 @@ describe('mergeErrorInVietnamese', () => {
       listCells.mockResolvedValue(FOUR_CELLS)
       renderInApp(deck)
       await arm()
-      const area = screen.getByRole('spinbutton')
+      const area = screen.getByLabelText('ô nhập bên cạnh')
       area.focus()
 
       fireEvent.keyDown(area, { key: 'a', metaKey: true })

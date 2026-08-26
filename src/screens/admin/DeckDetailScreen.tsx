@@ -1,0 +1,249 @@
+import { Alert, Button, Descriptions, Form, Input, InputNumber, Space, Spin, Typography } from 'antd'
+import { useCallback, useEffect, useState } from 'react'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { NEW_DECK } from '../../config'
+import {
+  createDeck, getDeck, listDecks, updateDeckArea, updateDeckIdentity, uploadDrawing,
+  type DeckRow,
+} from '../../lib/decksApi'
+import { formatAreaM2 } from '../../lib/format'
+import { pdfPageCount, renderPdfPage } from '../../lib/pdfToPng'
+import { DeckEditor } from './DeckEditor'
+
+/**
+ * One deck, at its own address.
+ *
+ * The deck used to open as a panel over the list, which meant a reload lost it,
+ * a link could not name it and the browser's Back went to the projects screen
+ * rather than out of the deck. The id is in the URL now, so all three work.
+ *
+ * Three states, not two: creating (no deck yet), viewing (read-only, with the
+ * way into editing) and editing. Creating and editing share the same form --
+ * the fields are the same, and a screen that grew a second copy of them would
+ * be a screen where they could disagree.
+ */
+export function DeckDetailScreen() {
+  const { deckId } = useParams<{ deckId: string }>()
+  const [search] = useSearchParams()
+  const navigate = useNavigate()
+  const creating = deckId === NEW_DECK
+
+  const [deck, setDeck] = useState<DeckRow | null>(null)
+  const [loading, setLoading] = useState(!creating)
+  const [error, setError] = useState<string | null>(null)
+  const [editing, setEditing] = useState(creating)
+  const [saving, setSaving] = useState(false)
+
+  const [name, setName] = useState('')
+  const [code, setCode] = useState('')
+  const [area, setArea] = useState(0)
+  /**
+   * The PDF waiting to be rendered, and which page of it.
+   *
+   * PDF only. A drawing that arrives as a photo or a screenshot has already
+   * lost the dashed beam centrelines detection reads, and no message afterwards
+   * explains why the deck came back with a tenth of its bays.
+   */
+  const [pdf, setPdf] = useState<File | null>(null)
+  const [pages, setPages] = useState(1)
+  const [page, setPage] = useState(1)
+
+  const load = useCallback(async () => {
+    if (creating || !deckId) return
+    setLoading(true)
+    try {
+      const row = await getDeck(deckId)
+      setDeck(row)
+      if (row) {
+        setName(row.name)
+        setCode(row.code)
+        setArea(row.totalAreaM2)
+      }
+      setError(null)
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setLoading(false)
+    }
+  }, [creating, deckId])
+
+  useEffect(() => {
+    void load()
+  }, [load])
+
+  const takePdf = async (file: File | null) => {
+    setPdf(file)
+    setPage(1)
+    setPages(1)
+    if (!file) return
+    try {
+      setPages(await pdfPageCount(file))
+    } catch {
+      setPdf(null)
+      setError('Không đọc được tệp PDF này. Chọn tệp khác.')
+    }
+  }
+
+  /**
+   * Writes the whole form in one go.
+   *
+   * Order is chosen for the half-failed case, the same way `DeckEditor.apply`
+   * chooses its: the deck exists before anything is attached to it, so a run
+   * that stops part way leaves a deck with a name and no drawing -- something
+   * the admin can see and finish -- rather than a drawing belonging to nothing.
+   */
+  const save = async () => {
+    setSaving(true)
+    setError(null)
+    try {
+      let id = deck?.id
+      const ownerProject = deck?.projectId ?? search.get('project')
+      if (!ownerProject) throw new Error('Chưa biết sàn này thuộc dự án nào. Mở lại từ danh sách sàn.')
+
+      if (creating) {
+        const siblings = await listDecks(ownerProject)
+        id = await createDeck({ projectId: ownerProject, seq: siblings.length + 1, name, code })
+      } else if (id) {
+        await updateDeckIdentity(id, name, code)
+      }
+      if (!id) throw new Error('Không lưu được sàn.')
+
+      if (pdf) {
+        const rendered = await renderPdfPage(pdf, page)
+        await uploadDrawing(id, ownerProject, rendered.blob, rendered.width, rendered.height)
+      }
+      // Always 'prorated': pixel share is the only way a cell area is produced.
+      await updateDeckArea(id, area, 'prorated')
+
+      setPdf(null)
+      // `relative: 'path'` because `..` otherwise walks the ROUTE tree, which
+      // is nested differently here than in any test that renders this screen on
+      // its own -- and the deck's address is a path, not a route depth.
+      // `replace` so Back does not offer to create the deck a second time.
+      if (creating) navigate(`../${id}`, { replace: true, relative: 'path' })
+      else {
+        setEditing(false)
+        await load()
+      }
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (loading) return <Spin style={{ display: 'block', margin: '25vh auto' }} />
+
+  if (!creating && !deck) {
+    return (
+      <Space direction="vertical" style={{ width: '100%' }} size="middle">
+        {error && <Alert type="error" message={error} />}
+        <Alert type="warning" message="Không tìm thấy sàn này." />
+        <Button onClick={() => navigate('..', { relative: 'path' })}>Về danh sách sàn</Button>
+      </Space>
+    )
+  }
+
+  const identity = (
+    <Form layout="vertical">
+      {/*
+        Ids by hand: these are controlled inputs rather than antd Form fields,
+        and without one the label is text sitting next to a box -- no screen
+        reader, and no test, can tell which box it belongs to.
+      */}
+      <Form.Item label="Tên sàn" htmlFor="deck-name" required>
+        <Input id="deck-name" value={name} onChange={(e) => setName(e.target.value)} />
+      </Form.Item>
+      <Form.Item label="Mã sàn" htmlFor="deck-code" required>
+        <Input id="deck-code" value={code} onChange={(e) => setCode(e.target.value)} />
+      </Form.Item>
+      <Form.Item label="Diện tích sàn (m²)" htmlFor="deck-area" required>
+        <InputNumber
+          id="deck-area"
+          value={area}
+          min={0}
+          step={10}
+          // A Vietnamese admin types "5258,5". Without this antd parses that as
+          // 5258 and the deck silently loses half a square metre from the
+          // denominator of every percentage on the project.
+          decimalSeparator=","
+          onChange={(n) => setArea(n ?? 0)}
+        />
+      </Form.Item>
+      <Form.Item label="Bản vẽ (PDF)">
+        <input
+          type="file"
+          accept="application/pdf"
+          aria-label="Bản vẽ (PDF)"
+          onChange={(e) => void takePdf(e.target.files?.[0] ?? null)}
+        />
+        {pages > 1 && (
+          <Space>
+            <label htmlFor="deck-page">Trang</label>
+            <InputNumber
+              id="deck-page"
+              min={1}
+              max={pages}
+              value={page}
+              onChange={(n) => setPage(n ?? 1)}
+            />
+            <Typography.Text type="secondary">{`Tệp có ${pages} trang`}</Typography.Text>
+          </Space>
+        )}
+      </Form.Item>
+      <Space>
+        <Button type="primary" loading={saving} disabled={!name || !code} onClick={() => void save()}>
+          {creating ? 'Tạo sàn' : 'Lưu thông tin sàn'}
+        </Button>
+        <Button
+          disabled={saving}
+          onClick={() => {
+            if (creating) navigate('..', { relative: 'path' })
+            else {
+              setName(deck?.name ?? '')
+              setCode(deck?.code ?? '')
+              setArea(deck?.totalAreaM2 ?? 0)
+              setPdf(null)
+              setEditing(false)
+            }
+          }}
+        >
+          Huỷ
+        </Button>
+      </Space>
+    </Form>
+  )
+
+  return (
+    <Space direction="vertical" style={{ width: '100%' }} size="middle">
+      {error && <Alert type="error" message={error} closable onClose={() => setError(null)} />}
+
+      <Space>
+        <Button onClick={() => navigate('..', { relative: 'path' })}>← Danh sách sàn</Button>
+        <Typography.Title level={4} style={{ margin: 0 }}>
+          {creating ? 'Sàn mới' : `${deck?.name} (${deck?.code})`}
+        </Typography.Title>
+      </Space>
+
+      {editing ? identity : (
+        <>
+          <Descriptions size="small" column={3} bordered items={[
+            { key: 'name', label: 'Tên sàn', children: deck?.name },
+            { key: 'code', label: 'Mã sàn', children: deck?.code },
+            { key: 'area', label: 'Diện tích sàn (m²)', children: formatAreaM2(deck?.totalAreaM2 ?? 0) },
+            { key: 'cells', label: 'Số ô', children: deck?.cellCount ?? 0 },
+            { key: 'drawing', label: 'Bản vẽ', children: deck?.imagePath ? 'Đã có' : 'Chưa có' },
+          ]} />
+          <Button type="primary" onClick={() => setEditing(true)}>Sửa</Button>
+        </>
+      )}
+
+      {/*
+        The drawing tools belong to editing, and only once there is a deck to
+        attach them to: in create mode there is no deck id, no drawing and no
+        cells for them to work on.
+      */}
+      {editing && deck && <DeckEditor deck={deck} onSaved={() => void load()} />}
+    </Space>
+  )
+}

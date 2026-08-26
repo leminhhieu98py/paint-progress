@@ -31,6 +31,9 @@ const ProjectsScreen = lazy(() =>
 const DecksScreen = lazy(() =>
   import('./screens/admin/DecksScreen').then((m) => ({ default: m.DecksScreen })),
 )
+const DeckDetailScreen = lazy(() =>
+  import('./screens/admin/DeckDetailScreen').then((m) => ({ default: m.DeckDetailScreen })),
+)
 const UsersScreen = lazy(() =>
   import('./screens/admin/UsersScreen').then((m) => ({ default: m.UsersScreen })),
 )
@@ -155,6 +158,19 @@ export function AppRoutes() {
             element={
               <LazySuspense>
                 <DecksScreen />
+              </LazySuspense>
+            }
+          />
+          {/*
+            The deck's own address. `new` is a deck that does not exist yet and
+            takes the project it will belong to from the query, so a reload of
+            the create form keeps it.
+          */}
+          <Route
+            path="decks/:deckId"
+            element={
+              <LazySuspense>
+                <DeckDetailScreen />
               </LazySuspense>
             }
           />

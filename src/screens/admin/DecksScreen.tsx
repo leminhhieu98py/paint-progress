@@ -1,37 +1,27 @@
-import { Alert, Button, Form, Input, InputNumber, Modal, Select, Space, Table, Typography } from 'antd'
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { createDeck, listDecks, uploadDrawing, type DeckRow } from '../../lib/decksApi'
+import { Alert, Button, Select, Space, Table, Typography } from 'antd'
+import { useCallback, useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { listDecks, type DeckRow } from '../../lib/decksApi'
 import { formatAreaM2 } from '../../lib/format'
 import { listProjectNames } from '../../lib/projectsApi'
-import { imageFileToPng, pdfPageCount, renderPdfPage, type RenderedPage } from '../../lib/pdfToPng'
-import { DeckEditor } from './DeckEditor'
-
-interface CreateValues {
-  name: string
-  code: string
-}
-
-/** Page picked from a multi-page PDF, awaiting the admin's confirmation. */
-interface PendingPicker {
-  deck: DeckRow
-  file: File
-  pageCount: number
-  page: number
-}
+import { NEW_DECK } from '../../config'
 
 type ProjectOption = Awaited<ReturnType<typeof listProjectNames>>[number]
 
+/**
+ * The decks of one project, as a way in and nothing more.
+ *
+ * Creating a deck and attaching its drawing both used to happen here, in
+ * modals over the list. They belong to a deck, and a deck has its own address
+ * now: this screen names them and gets out of the way.
+ */
 export function DecksScreen() {
+  const navigate = useNavigate()
   const [projects, setProjects] = useState<ProjectOption[]>([])
   const [projectId, setProjectId] = useState<string | null>(null)
   const [decks, setDecks] = useState<DeckRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [createOpen, setCreateOpen] = useState(false)
-  const [openDeck, setOpenDeck] = useState<DeckRow | null>(null)
-  const [picker, setPicker] = useState<PendingPicker | null>(null)
-  const [busy, setBusy] = useState(false)
-  const fileInputs = useRef(new Map<string, HTMLInputElement | null>())
 
   useEffect(() => {
     void (async () => {
@@ -74,74 +64,6 @@ export function DecksScreen() {
     void refreshDecks()
   }, [refreshDecks])
 
-  const finishImport = async (deck: DeckRow, rendered: RenderedPage) => {
-    await uploadDrawing(deck.id, deck.projectId, rendered.blob, rendered.width, rendered.height)
-    await refreshDecks()
-  }
-
-  const onFileSelected = (deck: DeckRow) => async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    // Reset so choosing the same file again still fires a change event.
-    e.target.value = ''
-    if (!file) return
-    setError(null)
-    try {
-      if (file.type === 'application/pdf') {
-        const pageCount = await pdfPageCount(file)
-        if (pageCount > 1) {
-          setPicker({ deck, file, pageCount, page: 1 })
-          return
-        }
-        await finishImport(deck, await renderPdfPage(file, 1))
-      } else {
-        await finishImport(deck, await imageFileToPng(file))
-      }
-      setError(null)
-    } catch (err) {
-      setError((err as Error).message)
-    }
-  }
-
-  const confirmPicker = async () => {
-    if (!picker) return
-    setBusy(true)
-    try {
-      const rendered = await renderPdfPage(picker.file, picker.page)
-      await finishImport(picker.deck, rendered)
-      setPicker(null)
-      setError(null)
-    } catch (e) {
-      setError((e as Error).message)
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  const onCreateDeck = async (values: CreateValues) => {
-    if (!projectId) return
-    try {
-      await createDeck({ projectId, seq: decks.length + 1, name: values.name, code: values.code })
-      setCreateOpen(false)
-      setError(null)
-      await refreshDecks()
-    } catch (e) {
-      // Deliberately leaves the modal open so the typed values survive.
-      setError((e as Error).message)
-    }
-  }
-
-  if (openDeck) {
-    return (
-      <DeckEditor
-        deck={openDeck}
-        onClose={() => {
-          setOpenDeck(null)
-          void refreshDecks()
-        }}
-      />
-    )
-  }
-
   return (
     <Space direction="vertical" style={{ width: '100%' }} size="middle">
       {error && <Alert type="error" message={error} closable onClose={() => setError(null)} />}
@@ -157,7 +79,11 @@ export function DecksScreen() {
           options={projects.map((p) => ({ value: p.id, label: `${p.name} (${p.code})` }))}
           onChange={(v) => setProjectId(v)}
         />
-        <Button type="primary" disabled={!projectId} onClick={() => setCreateOpen(true)}>
+        <Button
+          type="primary"
+          disabled={!projectId}
+          onClick={() => navigate(`${NEW_DECK}?project=${projectId}`)}
+        >
           Tạo sàn
         </Button>
       </Space>
@@ -180,84 +106,21 @@ export function DecksScreen() {
           {
             title: 'Bản vẽ',
             key: 'drawing',
-            width: 160,
-            render: (_v, deck) => (
-              <>
-                <input
-                  ref={(el) => {
-                    fileInputs.current.set(deck.id, el)
-                  }}
-                  type="file"
-                  accept="application/pdf,image/*"
-                  data-testid={`drawing-input-${deck.id}`}
-                  style={{ display: 'none' }}
-                  onChange={(e) => void onFileSelected(deck)(e)}
-                />
-                <Button size="small" onClick={() => fileInputs.current.get(deck.id)?.click()}>
-                  Tải bản vẽ
-                </Button>
-              </>
-            ),
+            width: 110,
+            render: (_v, deck) => (deck.imagePath ? 'Đã có' : 'Chưa có'),
           },
           {
             title: '',
             key: 'actions',
             width: 90,
             render: (_v, deck) => (
-              <Button size="small" onClick={() => setOpenDeck(deck)}>
+              <Button size="small" onClick={() => navigate(deck.id)}>
                 Mở
               </Button>
             ),
           },
         ]}
       />
-
-      <Modal
-        open={createOpen}
-        title="Tạo sàn"
-        onCancel={() => setCreateOpen(false)}
-        footer={null}
-        destroyOnHidden
-      >
-        <Form<CreateValues> layout="vertical" onFinish={(v) => void onCreateDeck(v)}>
-          <Form.Item name="name" label="Tên sàn" rules={[{ required: true, message: 'Nhập tên sàn' }]}>
-            <Input />
-          </Form.Item>
-          <Form.Item name="code" label="Mã sàn" rules={[{ required: true, message: 'Nhập mã sàn' }]}>
-            <Input />
-          </Form.Item>
-          <Button type="primary" htmlType="submit" block>
-            Tạo
-          </Button>
-        </Form>
-      </Modal>
-
-      <Modal
-        open={picker !== null}
-        title="Chọn trang bản vẽ"
-        okText="Nhập bản vẽ"
-        cancelText="Huỷ"
-        confirmLoading={busy}
-        destroyOnHidden
-        onCancel={() => setPicker(null)}
-        onOk={() => void confirmPicker()}
-      >
-        {picker && (
-          <Space direction="vertical">
-            <Typography.Paragraph>
-              Tệp PDF này có {picker.pageCount} trang. Chọn trang cần nhập.
-            </Typography.Paragraph>
-            <label htmlFor="deck-picker-page">Trang</label>
-            <InputNumber
-              id="deck-picker-page"
-              min={1}
-              max={picker.pageCount}
-              value={picker.page}
-              onChange={(n) => setPicker((p) => (p ? { ...p, page: n ?? 1 } : p))}
-            />
-          </Space>
-        )}
-      </Modal>
     </Space>
   )
 }

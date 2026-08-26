@@ -19,3 +19,13 @@ export function toAuthEmail(identifier: string): string {
   const normalized = identifier.trim().toLowerCase()
   return normalized.includes('@') ? normalized : `${normalized}${AUTH_EMAIL_SUFFIX}`
 }
+
+/**
+ * The id the deck route uses for a deck that does not exist yet.
+ *
+ * Here rather than beside the screen that reads it: the deck list needs it to
+ * build the link, and importing it from the deck page would pull pdf.js into
+ * the list's bundle -- which is also enough to break the list's tests, since
+ * pdf.js touches DOMMatrix at import time.
+ */
+export const NEW_DECK = 'new'
