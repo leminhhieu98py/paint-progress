@@ -103,4 +103,18 @@ describe('ProjectsScreen', () => {
     render(<ProjectsScreen />)
     expect(await screen.findByText(/permission denied/)).toBeInTheDocument()
   })
+  it('says on the row where the paint stages are configured', async () => {
+    // They were behind an unlabelled expand arrow, and the admin asked twice
+    // where to declare paint stages -- having looked at this screen both times.
+    render(<ProjectsScreen />)
+    await screen.findByText('BB1')
+
+    await userEvent.click(screen.getAllByRole('button', { name: 'Khai báo lớp sơn' })[0])
+
+    expect(await screen.findByText(/stages:p1/)).toBeInTheDocument()
+    // Closing is asserted on the button rather than on the panel: antd keeps a
+    // collapsed expanded-row in the DOM and merely hides it.
+    await userEvent.click(screen.getByRole('button', { name: 'Đóng lớp sơn' }))
+    expect(screen.getByRole('button', { name: 'Khai báo lớp sơn' })).toBeInTheDocument()
+  })
 })
