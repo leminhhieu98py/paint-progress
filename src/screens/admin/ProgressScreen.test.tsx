@@ -365,6 +365,71 @@ describe('ProgressScreen — zones', () => {
     await waitFor(() => expect(loadProjectProgress).toHaveBeenCalledTimes(2))
   })
 
+  it('edits a zone\'s start date in place, without remaking the zone', async () => {
+    // Spec §8.5 asks for inline editing. Before this a date that slipped meant
+    // deleting the zone and rebuilding it -- which loses its cell membership and
+    // takes its plan off the foreman's drawing in between.
+    listDeckZones.mockResolvedValue([ZONE])
+    renderScreen()
+    await screen.findByTestId('zone-table')
+
+    await userEvent.click(screen.getByLabelText('Ngày bắt đầu của Khu A'))
+    await userEvent.click(await screen.findByTitle('2026-09-03'))
+
+    await waitFor(() => expect(updateZone).toHaveBeenCalledWith('z1', { startDate: '2026-09-03' }))
+    expect(createZone).not.toHaveBeenCalled()
+    expect(deleteZone).not.toHaveBeenCalled()
+  })
+
+  it('edits a zone\'s finish date in place', async () => {
+    listDeckZones.mockResolvedValue([ZONE])
+    renderScreen()
+    await screen.findByTestId('zone-table')
+
+    await userEvent.click(screen.getByLabelText('Ngày kết thúc của Khu A'))
+    await userEvent.click(await screen.findByTitle('2026-09-12'))
+
+    await waitFor(() => expect(updateZone).toHaveBeenCalledWith('z1', { finishDate: '2026-09-12' }))
+  })
+
+  it('clears a date rather than leaving a stale one', async () => {
+    // null is a value: it says the end is no longer known. A picker that could
+    // only ever set a date would make a slipped zone impossible to express.
+    listDeckZones.mockResolvedValue([ZONE])
+    renderScreen()
+    await screen.findByTestId('zone-table')
+
+    const picker = screen.getByLabelText('Ngày kết thúc của Khu A')
+    await userEvent.hover(picker)
+    await userEvent.click(within(picker.closest('.ant-picker')!).getByRole('button', { hidden: true }))
+
+    await waitFor(() => expect(updateZone).toHaveBeenCalledWith('z1', { finishDate: null }))
+  })
+
+  it('re-reads the plan after an inline edit, so the drawing labels follow', async () => {
+    listDeckZones.mockResolvedValue([ZONE])
+    renderScreen()
+    await screen.findByTestId('zone-table')
+    await waitFor(() => expect(listDeckZones).toHaveBeenCalledTimes(1))
+
+    await userEvent.click(screen.getByLabelText('Ngày bắt đầu của Khu A'))
+    await userEvent.click(await screen.findByTitle('2026-09-03'))
+
+    await waitFor(() => expect(listDeckZones).toHaveBeenCalledTimes(2))
+  })
+
+  it('surfaces a failed inline edit instead of showing the new date as saved', async () => {
+    listDeckZones.mockResolvedValue([ZONE])
+    updateZone.mockRejectedValue(new Error('permission denied for table zones'))
+    renderScreen()
+    await screen.findByTestId('zone-table')
+
+    await userEvent.click(screen.getByLabelText('Ngày bắt đầu của Khu A'))
+    await userEvent.click(await screen.findByTitle('2026-09-03'))
+
+    expect(await screen.findByText(/permission denied/)).toBeInTheDocument()
+  })
+
   it('deletes a zone and re-reads the list', async () => {
     listDeckZones.mockResolvedValue([ZONE])
     renderScreen()

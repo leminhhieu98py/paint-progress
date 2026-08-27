@@ -16,7 +16,7 @@ import { StageSpecTable } from '../gs/StageSpecTable'
 import { buildPlanLabels, formatPlanRange } from '../../domain/plan'
 import { cellsInBox } from '../../domain/geometry'
 import { listDeckZones } from '../../lib/gsApi'
-import { createZone, deleteZone, setZoneActual } from '../../lib/zonesApi'
+import { createZone, deleteZone, setZoneActual, updateZone } from '../../lib/zonesApi'
 import { buildReportWorkbook, reportFileName } from '../../lib/reportXlsx'
 import type { Zone } from '../../domain/types'
 
@@ -262,6 +262,30 @@ export function ProgressScreen() {
     }
   }
 
+  /**
+   * One field of one zone, written as it is changed.
+   *
+   * A patch through `updateZone`, never a delete-and-remake: rebuilding a zone
+   * loses its cell membership and takes its plan off the foreman's drawing in
+   * between. The plan is re-read afterwards so the labels on the canvas follow
+   * the table.
+   */
+  const patchZoneDate = async (
+    zone: Zone,
+    field: 'startDate' | 'finishDate',
+    value: dayjs.Dayjs | null,
+  ) => {
+    if (!active) return
+    try {
+      // null is a value, not "leave alone": it says the date is no longer known,
+      // which is how a slipped zone is expressed.
+      await updateZone(zone.id, { [field]: value ? value.format('YYYY-MM-DD') : null })
+      await refreshZones(active.deck.id)
+    } catch (e) {
+      setError((e as Error).message)
+    }
+  }
+
   const removeZone = async (zone: Zone) => {
     if (!active) return
     try {
@@ -482,6 +506,35 @@ export function ProgressScreen() {
                           active.stages.find((st) => st.id === z.stageId)?.name ?? '—',
                       },
                       { title: 'Số ô', key: 'cells', align: 'right', render: (_, z) => z.cellIds.length },
+                      {
+                        title: 'Bắt đầu',
+                        key: 'start',
+                        render: (_, z) => (
+                          <DatePicker
+                            size="small"
+                            format="DD/MM/YYYY"
+                            // aria-label rather than a <label>: the cell has no
+                            // room for visible text, and every row needs a name
+                            // that says WHICH zone it belongs to.
+                            aria-label={`Ngày bắt đầu của ${z.name}`}
+                            value={z.startDate ? dayjs(z.startDate) : null}
+                            onChange={(v) => void patchZoneDate(z, 'startDate', v)}
+                          />
+                        ),
+                      },
+                      {
+                        title: 'Kết thúc',
+                        key: 'finish',
+                        render: (_, z) => (
+                          <DatePicker
+                            size="small"
+                            format="DD/MM/YYYY"
+                            aria-label={`Ngày kết thúc của ${z.name}`}
+                            value={z.finishDate ? dayjs(z.finishDate) : null}
+                            onChange={(v) => void patchZoneDate(z, 'finishDate', v)}
+                          />
+                        ),
+                      },
                       {
                         title: 'Kế hoạch',
                         key: 'plan',
