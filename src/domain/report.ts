@@ -15,6 +15,21 @@ export interface DeckReportInput {
   deck: Deck
   stages: Stage[]
   zones: Zone[]
+  /** Optional: only the per-deck sheet reads these. Keyed by cell id. */
+  audit?: Record<string, { updatedAt: string | null; updatedBy: string | null }>
+  /** Optional; defaults to 'guides'. 'prorated' is disclosed on the sheet. */
+  areaSource?: 'guides' | 'prorated'
+  /** Optional: user id -> display name, for the "updated by" column. */
+  userNames?: Record<string, string>
+}
+
+export interface CellListRow {
+  code: string
+  areaM2: number
+  /** The stage the bay currently sits at, or "Chưa bắt đầu". */
+  stageName: string
+  updatedAt: string | null
+  updatedBy: string | null
 }
 
 export interface OverviewRow {
@@ -168,4 +183,35 @@ export function buildPlanRows(inputs: DeckReportInput[]): PlanRow[] {
     }
   }
   return rows
+}
+
+/**
+ * The per-deck sheet's cell listing: every bay, its area, where it has got to,
+ * and who moved it there last (spec §9).
+ *
+ * This is the row-level evidence behind the percentages. When a figure is
+ * queried -- and on a job priced off these numbers it will be -- this is the
+ * sheet that answers "which bays, exactly".
+ *
+ * Ordered by code, the same order `listCells` returns, so two exports of an
+ * unchanged deck are identical files and a diff between them means something.
+ *
+ * An unknown `updated_by` renders as the raw id rather than blank: the id is
+ * still traceable in `cell_events`, and a blank would read as "nobody".
+ */
+export function buildCellListRows(input: DeckReportInput): CellListRow[] {
+  const stageName = new Map(input.stages.map((s) => [s.id, s.name]))
+  return [...input.deck.cells]
+    .sort((a, b) => a.code.localeCompare(b.code))
+    .map((cell) => {
+      const audit = input.audit?.[cell.id]
+      const by = audit?.updatedBy ?? null
+      return {
+        code: cell.code,
+        areaM2: cell.areaM2,
+        stageName: cell.stageId ? stageName.get(cell.stageId) ?? '—' : 'Chưa bắt đầu',
+        updatedAt: audit?.updatedAt ?? null,
+        updatedBy: by === null ? null : input.userNames?.[by] ?? by,
+      }
+    })
 }

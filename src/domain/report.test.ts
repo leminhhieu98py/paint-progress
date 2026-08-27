@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildOverviewRows, buildPlanRows, reportStageColumns } from './report'
+import { buildCellListRows, buildOverviewRows, buildPlanRows, reportStageColumns } from './report'
 import type { DeckReportInput } from './report'
 
 const STAGES = [
@@ -204,5 +204,65 @@ describe('buildPlanRows', () => {
 
   it('returns nothing when no deck has a plan', () => {
     expect(buildPlanRows([CD, MD])).toEqual([])
+  })
+})
+
+describe('buildCellListRows', () => {
+  const withAudit: DeckReportInput = {
+    ...CD,
+    audit: {
+      c1: { updatedAt: '2026-08-20T10:00:00+00:00', updatedBy: 'u1' },
+      c2: { updatedAt: null, updatedBy: null },
+    },
+    userNames: { u1: 'Nguyễn Văn A' },
+  }
+
+  it('lists every bay with its area, stage and who last moved it', () => {
+    const [first] = buildCellListRows(withAudit)
+    expect(first).toEqual({
+      code: 'R1C1',
+      areaM2: 500,
+      stageName: 'Tháo giáo',
+      updatedAt: '2026-08-20T10:00:00+00:00',
+      updatedBy: 'Nguyễn Văn A',
+    })
+  })
+
+  it('names an untouched bay rather than leaving the stage blank', () => {
+    const rows = buildCellListRows({
+      ...CD,
+      deck: { ...CD.deck, cells: [{ ...CD.deck.cells[0], stageId: null }] },
+    })
+    expect(rows[0].stageName).toBe('Chưa bắt đầu')
+  })
+
+  it('falls back to the raw id when the user is not in the name map', () => {
+    // The id is still traceable through cell_events; a blank would read as
+    // "nobody did this", which is a different and wrong claim.
+    const rows = buildCellListRows({
+      ...withAudit,
+      userNames: {},
+    })
+    expect(rows[0].updatedBy).toBe('u1')
+  })
+
+  it('sorts by code, so two exports of an unchanged deck are the same file', () => {
+    const rows = buildCellListRows({
+      ...CD,
+      deck: {
+        ...CD.deck,
+        cells: [
+          { ...CD.deck.cells[0], code: 'R2C1' },
+          { ...CD.deck.cells[1], code: 'R1C9' },
+        ],
+      },
+    })
+    expect(rows.map((r) => r.code)).toEqual(['R1C9', 'R2C1'])
+  })
+
+  it('works with no audit map at all', () => {
+    const rows = buildCellListRows(CD)
+    expect(rows[0].updatedAt).toBeNull()
+    expect(rows[0].updatedBy).toBeNull()
   })
 })

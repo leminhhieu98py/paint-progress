@@ -1,6 +1,8 @@
 import {
-  buildOverviewRows, buildPlanRows, reportStageColumns, type DeckReportInput,
+  buildCellListRows, buildOverviewRows, buildPlanRows, reportStageColumns,
+  type DeckReportInput,
 } from '../domain/report'
+import { computeDeckProgress } from '../domain/progress'
 
 /**
  * The XLSX the client already reads, generated in the browser (spec §9).
@@ -9,10 +11,12 @@ import {
  * in the tree, and the foreman's tablet must never download it: the GS screen is
  * opened on a site tether, and this button lives on an admin screen.
  *
- * Two sheets today -- `Overview` and `Plan`. Spec §9's per-deck sheets embed a
- * render of the drawing and the pie, which needs an offscreen Konva stage and an
- * offscreen chart node; that is a separate piece of work and is recorded as
- * outstanding rather than half-built here.
+ * `Overview`, one sheet per deck, then `Plan`.
+ *
+ * The per-deck images are rendered by the CALLER and handed in, not produced
+ * here. Rendering needs a live canvas; keeping it out means this module and its
+ * tests run anywhere, and a deck whose drawing fails to render still gets its
+ * numbers rather than taking the whole export down.
  */
 
 /** Percentages are written as real numbers with a percent format, never as
@@ -21,10 +25,40 @@ import {
 const PERCENT_FORMAT = '0.00%'
 const AREA_FORMAT = '#,##0.00'
 
+/** PNG data URLs for one deck, produced by the caller. Either may be null: a
+ *  deck with no drawing has no snapshot to take, and a render that failed must
+ *  not cost the deck its numbers. */
+export interface DeckImages {
+  drawingPng: string | null
+  piePng: string | null
+}
+
 export interface ReportInput {
   projectName: string
   projectCode: string
   decks: DeckReportInput[]
+  /** Keyed by deck id. Absent entries simply mean no pictures on that sheet. */
+  images?: Record<string, DeckImages>
+}
+
+/**
+ * Excel forbids `[ ] : * ? / \` in a sheet name and caps it at 31 characters,
+ * and it silently refuses a workbook with two sheets of one name. A deck code is
+ * short and unique within a project, so collisions are near-impossible -- but a
+ * report that throws on a deck called `A/B` is worse than one that calls it
+ * `A-B`, and a numeric suffix costs nothing.
+ */
+export function sheetNameFor(code: string, taken: Set<string>): string {
+  const cleaned = (code.replace(/[[\]:*?/\\]/g, '-').trim() || 'Deck').slice(0, 31)
+  let name = cleaned
+  let n = 2
+  while (taken.has(name)) {
+    const suffix = ` (${n})`
+    name = cleaned.slice(0, 31 - suffix.length) + suffix
+    n += 1
+  }
+  taken.add(name)
+  return name
 }
 
 export async function buildReportWorkbook(input: ReportInput): Promise<Blob> {
@@ -69,6 +103,64 @@ export async function buildReportWorkbook(input: ReportInput): Promise<Blob> {
     }
     const added = overview.addRow(values)
     if (row.isTotal) added.font = { bold: true }
+  }
+
+  // One sheet per deck, between Overview and Plan: the row-level evidence
+  // behind the figures above, in the order the decks are laid out on the
+  // platform.
+  const taken = new Set<string>(['Overview', 'Plan'])
+  for (const entry of input.decks) {
+    const sheet = wb.addWorksheet(sheetNameFor(entry.deck.code, taken))
+    const progress = computeDeckProgress(entry.deck, entry.stages)
+
+    sheet.addRow([entry.deck.name, `${entry.deck.code}`])
+    sheet.getRow(1).font = { bold: true, size: 14 }
+    sheet.addRow(['Diện tích sàn (m²)', entry.deck.totalAreaM2])
+    sheet.getCell('B2').numFmt = AREA_FORMAT
+    if (entry.areaSource === 'prorated') {
+      // Spec §9 requires this disclosed. A prorated area was divided out of the
+      // declared total rather than measured off the drawing, and somebody
+      // pricing a variation needs to know which they are looking at.
+      sheet.addRow(['Ghi chú', 'Diện tích từng ô được chia theo tỉ lệ từ tổng diện tích khai báo, không đo từ bản vẽ.'])
+    }
+    sheet.addRow([])
+
+    // The `Dashboard` sheet's two rows, per deck, in its own words.
+    const deckStageNames = entry.stages.map((st: { name: string }) => st.name)
+    sheet.addRow(['', ...deckStageNames])
+    sheet.lastRow!.font = { bold: true }
+    const areaRow = sheet.addRow(['m²', ...progress.stages.map((sp) => sp.cumulativeAreaM2)])
+    const ratioRow = sheet.addRow(['% Total Deck', ...progress.stages.map((sp) => sp.ratio)])
+    for (let i = 2; i <= deckStageNames.length + 1; i += 1) {
+      areaRow.getCell(i).numFmt = AREA_FORMAT
+      ratioRow.getCell(i).numFmt = PERCENT_FORMAT
+    }
+    sheet.addRow(['% Progress', progress.progress]).getCell(2).numFmt = PERCENT_FORMAT
+    sheet.addRow([])
+
+    const pictures = input.images?.[entry.deck.id]
+    if (pictures?.drawingPng) {
+      const id = wb.addImage({ base64: pictures.drawingPng, extension: 'png' })
+      sheet.addImage(id, { tl: { col: 7, row: 1 }, ext: { width: 520, height: 380 } })
+    }
+    if (pictures?.piePng) {
+      const id = wb.addImage({ base64: pictures.piePng, extension: 'png' })
+      sheet.addImage(id, { tl: { col: 15, row: 1 }, ext: { width: 260, height: 260 } })
+    }
+
+    const listHeader = sheet.addRow(['Mã ô', 'Diện tích (m²)', 'Công đoạn', 'Cập nhật lúc', 'Bởi'])
+    listHeader.font = { bold: true }
+    sheet.getColumn(1).width = 12
+    sheet.getColumn(2).width = 15
+    sheet.getColumn(3).width = 18
+    sheet.getColumn(4).width = 22
+    sheet.getColumn(5).width = 20
+    for (const cell of buildCellListRows(entry)) {
+      const row = sheet.addRow([
+        cell.code, cell.areaM2, cell.stageName, cell.updatedAt ?? '', cell.updatedBy ?? '',
+      ])
+      row.getCell(2).numFmt = AREA_FORMAT
+    }
   }
 
   const plan = wb.addWorksheet('Plan')

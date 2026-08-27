@@ -17,7 +17,9 @@ import { buildPlanLabels, formatPlanRange } from '../../domain/plan'
 import { cellsInBox } from '../../domain/geometry'
 import { listDeckZones } from '../../lib/gsApi'
 import { createZone, deleteZone, setZoneActual, updateZone } from '../../lib/zonesApi'
-import { buildReportWorkbook, reportFileName } from '../../lib/reportXlsx'
+import { buildReportWorkbook, reportFileName, type DeckImages } from '../../lib/reportXlsx'
+import { renderDeckDrawing, renderDeckPie } from '../../canvas/deckSnapshot'
+import { listGsUsers } from '../../lib/adminApi'
 import type { Zone } from '../../domain/types'
 
 type ProjectOption = Awaited<ReturnType<typeof listProjectNames>>[number]
@@ -313,16 +315,42 @@ export function ProgressScreen() {
     if (entries.length === 0) return
     setExporting(true)
     try {
+      // Who last moved each bay, resolved to a name. One read for the whole
+      // export -- profiles are small, and a lookup per cell would be hundreds.
+      const profiles = await listGsUsers().catch(() => [])
+      const userNames = Object.fromEntries(profiles.map((u) => [u.id, u.fullName]))
+
       const decks = await Promise.all(entries.map(async (entry) => ({
         deck: entry.deck,
         stages: entry.stages,
+        audit: entry.audit,
+        areaSource: entry.areaSource,
+        userNames,
         zones: await listDeckZones(entry.deck.id),
       })))
+
+      // The pictures, deck by deck. Sequential rather than parallel: each one
+      // decodes a full-size drawing into a canvas, and ten at once on an admin
+      // laptop is a spike for no gain on a button pressed once a week.
+      const images: Record<string, DeckImages> = {}
+      for (const entry of entries) {
+        const url = entry.imagePath ? await getDrawingUrl(entry.imagePath).catch(() => null) : null
+        images[entry.deck.id] = {
+          drawingPng: url
+            ? await renderDeckDrawing(
+              url, entry.imageW ?? 0, entry.imageH ?? 0, entry.deck.cells, entry.stages,
+            )
+            : null,
+          piePng: renderDeckPie(entry.deck.totalAreaM2, entry.deck.cells, entry.stages),
+        }
+      }
+
       const project = projects.find((p) => p.id === projectId)
       const blob = await buildReportWorkbook({
         projectName: project?.name ?? '',
         projectCode: project?.code ?? '',
         decks,
+        images,
       })
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')

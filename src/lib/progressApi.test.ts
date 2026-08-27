@@ -21,6 +21,7 @@ const ROW = {
   code: 'CD',
   name: 'Cellar Deck',
   total_area_m2: '6139.00',
+  area_source: 'prorated',
   image_path: 'p1/d1.png',
   image_w: 2000,
   image_h: 1600,
@@ -32,6 +33,7 @@ const ROW = {
     {
       id: 'c1', code: 'R1C1', x: '0.1', y: '0.2', w: '0.3', h: '0.4',
       area_m2: '60.00', stage_id: 's1',
+      updated_at: '2026-08-20T10:00:00+00:00', updated_by: 'u1',
     },
   ],
 }
@@ -95,6 +97,20 @@ describe('loadProjectProgress', () => {
     expect(b.order).toHaveBeenCalledWith('seq')
   })
 
+  it('carries the audit columns and the area provenance for the report', async () => {
+    // Spec §9's per-deck sheet lists who last moved each bay and when, and has
+    // to disclose when the areas were prorated rather than measured.
+    from.mockImplementation(() => builder({ data: [ROW] }))
+
+    const [entry] = await loadProjectProgress('p1')
+
+    expect(entry.areaSource).toBe('prorated')
+    expect(entry.audit.c1).toEqual({
+      updatedAt: '2026-08-20T10:00:00+00:00',
+      updatedBy: 'u1',
+    })
+  })
+
   it('defaults a deck with no drawing, no stages and no cells rather than throwing', async () => {
     // Every one of these is reachable: a deck created a minute ago has no
     // drawing, and PostgREST omits an embed that matched nothing.
@@ -109,6 +125,10 @@ describe('loadProjectProgress', () => {
     expect(entry.imageH).toBeNull()
     expect(entry.stages).toEqual([])
     expect(entry.deck.cells).toEqual([])
+    // A deck created a minute ago has never had its areas measured, and
+    // 'guides' is the column's own default.
+    expect(entry.areaSource).toBe('guides')
+    expect(entry.audit).toEqual({})
   })
 
   it('throws when the query fails', async () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildReportWorkbook, reportFileName } from './reportXlsx'
+import { buildReportWorkbook, reportFileName, sheetNameFor } from './reportXlsx'
 import type { DeckReportInput } from '../domain/report'
 
 const DECK: DeckReportInput = {
@@ -29,11 +29,11 @@ async function readBack(blob: Blob) {
 }
 
 describe('buildReportWorkbook', () => {
-  it('writes an Overview sheet and a Plan sheet', async () => {
+  it('writes Overview, one sheet per deck, then Plan', async () => {
     const wb = await readBack(await buildReportWorkbook({
       projectName: 'BB1', projectCode: 'BB1', decks: [DECK],
     }))
-    expect(wb.worksheets.map((w) => w.name)).toEqual(['Overview', 'Plan'])
+    expect(wb.worksheets.map((w) => w.name)).toEqual(['Overview', 'CD', 'Plan'])
   })
 
   it('gives every stage two columns, area then share', async () => {
@@ -114,5 +114,101 @@ describe('buildReportWorkbook', () => {
 describe('reportFileName', () => {
   it('names the file by project and date', () => {
     expect(reportFileName('BB1', '2026-08-26')).toBe('tien-do-BB1-2026-08-26.xlsx')
+  })
+})
+
+describe('sheetNameFor', () => {
+  it('strips the characters Excel forbids in a sheet name', () => {
+    // A workbook Excel refuses to open is worse than a deck called A-B.
+    expect(sheetNameFor('A/B:C*D?E[F]G', new Set())).toBe('A-B-C-D-E-F-G')
+  })
+
+  it('caps the name at 31 characters', () => {
+    expect(sheetNameFor('X'.repeat(60), new Set())).toHaveLength(31)
+  })
+
+  it('suffixes a name already taken, rather than producing an invalid workbook', () => {
+    const taken = new Set(['CD'])
+    expect(sheetNameFor('CD', taken)).toBe('CD (2)')
+    expect(sheetNameFor('CD', taken)).toBe('CD (3)')
+  })
+
+  it('never collides with Overview or Plan', () => {
+    const taken = new Set(['Overview', 'Plan'])
+    expect(sheetNameFor('Plan', taken)).toBe('Plan (2)')
+  })
+
+  it('falls back to a name when the code is empty or all-forbidden', () => {
+    expect(sheetNameFor('  ', new Set())).toBe('Deck')
+  })
+})
+
+describe('per-deck sheets', () => {
+  const sheetOf = async (decks: typeof DECK[], images?: Record<string, unknown>) => {
+    const wb = await readBack(await buildReportWorkbook({
+      projectName: 'BB1', projectCode: 'BB1', decks,
+      images: images as never,
+    }))
+    return wb.getWorksheet('CD')!
+  }
+
+  it('heads the sheet with the deck and its declared area', async () => {
+    const sheet = await sheetOf([DECK])
+    expect(sheet.getRow(1).getCell(1).value).toBe('Cellar Deck')
+    expect(sheet.getRow(2).getCell(2).value).toBe(1000)
+  })
+
+  it('carries the two-row spec table and the deck percentage', async () => {
+    const sheet = await sheetOf([DECK])
+    // Row 4 is the stage header, 5 the areas, 6 the ratios, 7 the total.
+    expect(sheet.getRow(4).values).toContain('Tháo giáo')
+    expect(sheet.getRow(5).getCell(1).value).toBe('m²')
+    expect(sheet.getRow(6).getCell(1).value).toBe('% Total Deck')
+    expect(sheet.getRow(7).getCell(1).value).toBe('% Progress')
+    expect(sheet.getRow(7).getCell(2).value as number).toBeCloseTo(0.5, 12)
+  })
+
+  it('lists every bay with its area, stage and who touched it last', async () => {
+    const withAudit = {
+      ...DECK,
+      audit: { c1: { updatedAt: '2026-08-20T10:00:00+00:00', updatedBy: 'u1' } },
+      userNames: { u1: 'Nguyễn Văn A' },
+    }
+    const sheet = await sheetOf([withAudit])
+    // The listing header follows a blank row after the spec block.
+    const headerRow = sheet.getRow(9)
+    expect(headerRow.values).toContain('Mã ô')
+    expect(headerRow.values).toContain('Bởi')
+    const first = sheet.getRow(10)
+    expect(first.getCell(1).value).toBe('R1C1')
+    expect(first.getCell(3).value).toBe('Tháo giáo')
+    expect(first.getCell(5).value).toBe('Nguyễn Văn A')
+  })
+
+  it('discloses a prorated area, and says nothing when it was measured', async () => {
+    // Spec §9. Somebody pricing a variation has to know whether a bay's area was
+    // measured off the drawing or divided out of a declared total.
+    const prorated = await sheetOf([{ ...DECK, areaSource: 'prorated' as const }])
+    expect(String(prorated.getRow(3).getCell(2).value)).toMatch(/chia theo tỉ lệ/)
+
+    const measured = await sheetOf([{ ...DECK, areaSource: 'guides' as const }])
+    expect(measured.getRow(3).getCell(1).value).toBeNull()
+  })
+
+  it('embeds the drawing and the pie when the caller supplies them', async () => {
+    // A 1x1 transparent PNG -- enough to prove it reaches the workbook.
+    const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
+    const wb = await readBack(await buildReportWorkbook({
+      projectName: 'BB1', projectCode: 'BB1', decks: [DECK],
+      images: { d1: { drawingPng: png, piePng: png } },
+    }))
+    expect(wb.getWorksheet('CD')!.getImages()).toHaveLength(2)
+  })
+
+  it('still writes the deck sheet when no image could be rendered', async () => {
+    // A deck with no drawing, or one whose render failed, keeps its numbers.
+    const sheet = await sheetOf([DECK], { d1: { drawingPng: null, piePng: null } })
+    expect(sheet.getRow(1).getCell(1).value).toBe('Cellar Deck')
+    expect(sheet.getImages()).toHaveLength(0)
   })
 })

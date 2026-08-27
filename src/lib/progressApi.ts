@@ -10,6 +10,15 @@ import { supabase } from './supabase'
  * carries no stages and no cells. The progress screen draws two canvases over
  * the real bays and needs all of it in one shape.
  */
+/** Who last moved a cell's stage, and when. Kept beside the deck rather than on
+ *  `Cell`: the domain type is the geometry and the progress, and every screen
+ *  that draws a bay would otherwise carry two fields it never reads. Only the
+ *  per-deck report sheet wants them. */
+export interface CellAudit {
+  updatedAt: string | null
+  updatedBy: string | null
+}
+
 export interface DeckProgressEntry {
   seq: number
   deck: Deck
@@ -17,6 +26,11 @@ export interface DeckProgressEntry {
   imagePath: string | null
   imageW: number | null
   imageH: number | null
+  /** 'prorated' means the areas were divided out of the declared deck total
+   *  rather than measured off guides -- spec §9 requires the report to say so. */
+  areaSource: 'guides' | 'prorated'
+  /** Keyed by cell id. */
+  audit: Record<string, CellAudit>
 }
 
 /**
@@ -34,9 +48,9 @@ export async function loadProjectProgress(projectId: string): Promise<DeckProgre
   const { data, error } = await supabase
     .from('decks')
     .select(
-      'id, seq, code, name, total_area_m2, image_path, image_w, image_h,'
+      'id, seq, code, name, total_area_m2, area_source, image_path, image_w, image_h,'
       + ' deck_stages(id, seq, name, color, weight),'
-      + ' cells(id, code, x, y, w, h, area_m2, stage_id)',
+      + ' cells(id, code, x, y, w, h, area_m2, stage_id, updated_at, updated_by)',
     )
     .eq('project_id', projectId)
     .order('seq')
@@ -62,6 +76,16 @@ export async function loadProjectProgress(projectId: string): Promise<DeckProgre
           weight: Number(s.weight),
         }))
         .sort((a, b) => a.seq - b.seq),
+      areaSource: ((r.area_source as string | null) ?? 'guides') as 'guides' | 'prorated',
+      audit: Object.fromEntries(
+        ((r.cells ?? []) as Record<string, unknown>[]).map((c) => [
+          c.id as string,
+          {
+            updatedAt: (c.updated_at as string | null) ?? null,
+            updatedBy: (c.updated_by as string | null) ?? null,
+          },
+        ]),
+      ),
       imagePath: (r.image_path as string | null) ?? null,
       imageW: (r.image_w as number | null) ?? null,
       imageH: (r.image_h as number | null) ?? null,

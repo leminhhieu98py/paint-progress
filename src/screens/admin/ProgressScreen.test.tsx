@@ -13,6 +13,9 @@ const updateZone = vi.hoisted(() => vi.fn())
 const deleteZone = vi.hoisted(() => vi.fn())
 const setZoneActual = vi.hoisted(() => vi.fn())
 const buildReportWorkbook = vi.hoisted(() => vi.fn())
+const listGsUsers = vi.hoisted(() => vi.fn())
+const renderDeckDrawing = vi.hoisted(() => vi.fn())
+const renderDeckPie = vi.hoisted(() => vi.fn())
 
 vi.mock('../../lib/projectsApi', () => ({
   listProjectNames: () => listProjectNames(),
@@ -25,6 +28,16 @@ vi.mock('../../lib/decksApi', () => ({
 }))
 vi.mock('../../lib/gsApi', () => ({
   listDeckZones: (d: string) => listDeckZones(d),
+}))
+vi.mock('../../lib/adminApi', () => ({
+  listGsUsers: () => listGsUsers(),
+}))
+// jsdom implements no canvas at all, so the snapshot module cannot run here. Its
+// output is a picture; what this file is responsible for is that the export
+// asks for one per deck and survives when there is none.
+vi.mock('../../canvas/deckSnapshot', () => ({
+  renderDeckDrawing: (...a: unknown[]) => renderDeckDrawing(...a),
+  renderDeckPie: (...a: unknown[]) => renderDeckPie(...a),
 }))
 vi.mock('../../lib/reportXlsx', () => ({
   buildReportWorkbook: (i: unknown) => buildReportWorkbook(i),
@@ -125,6 +138,12 @@ beforeEach(() => {
   setZoneActual.mockResolvedValue(2)
   buildReportWorkbook.mockReset()
   buildReportWorkbook.mockResolvedValue(new Blob(['x']))
+  listGsUsers.mockReset()
+  listGsUsers.mockResolvedValue([{ id: 'u1', fullName: 'Nguyễn Văn A' }])
+  renderDeckDrawing.mockReset()
+  renderDeckDrawing.mockResolvedValue('PNGDATA')
+  renderDeckPie.mockReset()
+  renderDeckPie.mockReturnValue('PIEDATA')
 })
 
 // Wrapped in antd's App because src/App.tsx wraps the whole tree in it, and
@@ -502,5 +521,58 @@ describe('ProgressScreen — export', () => {
     await userEvent.click(screen.getByRole('button', { name: /Xuất báo cáo/ }))
 
     expect(await screen.findByText(/out of memory/)).toBeInTheDocument()
+  })
+})
+
+describe('ProgressScreen — export images', () => {
+  it('takes a picture of every deck, not only the one on screen', async () => {
+    renderScreen()
+    await screen.findByTestId('paint-lens')
+
+    await userEvent.click(screen.getByRole('button', { name: /Xuất báo cáo/ }))
+
+    await waitFor(() => expect(buildReportWorkbook).toHaveBeenCalled())
+    expect(renderDeckDrawing).toHaveBeenCalledTimes(2)
+    expect(renderDeckPie).toHaveBeenCalledTimes(2)
+    const [input] = buildReportWorkbook.mock.calls[0]
+    expect(input.images.d1).toEqual({ drawingPng: 'PNGDATA', piePng: 'PIEDATA' })
+    expect(input.images.d2).toEqual({ drawingPng: 'PNGDATA', piePng: 'PIEDATA' })
+  })
+
+  it('still exports when a drawing cannot be rendered', async () => {
+    // A deck whose drawing will not load keeps its numbers. Losing a picture is
+    // a far smaller loss than losing the export.
+    renderDeckDrawing.mockResolvedValue(null)
+    renderScreen()
+    await screen.findByTestId('paint-lens')
+
+    await userEvent.click(screen.getByRole('button', { name: /Xuất báo cáo/ }))
+
+    await waitFor(() => expect(buildReportWorkbook).toHaveBeenCalled())
+    expect(buildReportWorkbook.mock.calls[0][0].images.d1.drawingPng).toBeNull()
+  })
+
+  it('resolves who last touched each bay to a name', async () => {
+    renderScreen()
+    await screen.findByTestId('paint-lens')
+
+    await userEvent.click(screen.getByRole('button', { name: /Xuất báo cáo/ }))
+
+    await waitFor(() => expect(buildReportWorkbook).toHaveBeenCalled())
+    expect(buildReportWorkbook.mock.calls[0][0].decks[0].userNames)
+      .toEqual({ u1: 'Nguyễn Văn A' })
+  })
+
+  it('exports anyway when the profile list cannot be read', async () => {
+    // The names are a convenience; the ids in the sheet are still traceable
+    // through cell_events. Losing them must not lose the report.
+    listGsUsers.mockRejectedValue(new Error('permission denied'))
+    renderScreen()
+    await screen.findByTestId('paint-lens')
+
+    await userEvent.click(screen.getByRole('button', { name: /Xuất báo cáo/ }))
+
+    await waitFor(() => expect(buildReportWorkbook).toHaveBeenCalled())
+    expect(buildReportWorkbook.mock.calls[0][0].decks[0].userNames).toEqual({})
   })
 })
