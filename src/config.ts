@@ -12,6 +12,14 @@
  */
 export const APP_BASE_PATH = import.meta.env.VITE_APP_BASE_PATH ?? ''
 
+/**
+ * Where signing out lands, and the one address worth remembering.
+ *
+ * Spelled once: the two logout buttons live in screens that share nothing else,
+ * and a second literal is a second thing to miss when the base path moves.
+ */
+export const LOGIN_PATH = `${APP_BASE_PATH}/login`
+
 /** Supabase Auth requires an email; accounts here log in with a username. */
 export const AUTH_EMAIL_SUFFIX = '@app.local'
 

@@ -28,6 +28,13 @@ vi.mock('../../lib/decksApi', () => ({
   getDrawingUrl: (path: string) => getDrawingUrl(path),
   listStages: (deckId: string) => listStages(deckId),
 }))
+// react-router's navigate, so the test can see WHERE signing out sends the
+// foreman -- not merely that signOut was called.
+const navigate = vi.hoisted(() => vi.fn())
+vi.mock('react-router-dom', async (importOriginal) => ({
+  ...await importOriginal<typeof import('react-router-dom')>(),
+  useNavigate: () => navigate,
+}))
 vi.mock('../../auth/AuthProvider', () => ({
   useAuth: () => ({
     profile: { id: 'u1', username: 'gs1', fullName: 'Nguyễn Văn A', role: 'gs', active: true },
@@ -149,6 +156,8 @@ beforeEach(() => {
   // lists are covered by their own test below.
   listStages.mockResolvedValue(STAGES)
   signOut.mockReset()
+  signOut.mockResolvedValue(undefined)
+  navigate.mockReset()
   subscribeDeckCells.mockReset()
   unsubscribe.mockReset()
   subscribedDecks.length = 0
@@ -1093,5 +1102,28 @@ describe('GsScreen: the plan overlay', () => {
 
     await waitFor(() =>
       expect(screen.getByRole('button', { name: 'ô R1C1' })).toHaveAttribute('data-plan', ''))
+  })
+})
+
+describe('signing out', () => {
+  it('sends the foreman to the login page, not just away from their session', async () => {
+    // Without the navigate the session goes but the URL stays on /gs/:id, so
+    // the login form appears under a path they are no longer allowed on -- and
+    // a refresh puts them straight back there.
+    renderScreen()
+    await screen.findByRole('tab', { name: 'Cellar Deck' })
+
+    await userEvent.click(screen.getByRole('button', { name: 'Đăng xuất' }))
+
+    await waitFor(() => expect(signOut).toHaveBeenCalled())
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith('/login', { replace: true }))
+  })
+
+  it('replaces the entry rather than pushing one, so Back cannot return', async () => {
+    renderScreen()
+    await screen.findByRole('tab', { name: 'Cellar Deck' })
+    await userEvent.click(screen.getByRole('button', { name: 'Đăng xuất' }))
+    await waitFor(() => expect(navigate).toHaveBeenCalled())
+    expect(navigate.mock.calls[0][1]).toEqual({ replace: true })
   })
 })

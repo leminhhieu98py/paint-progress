@@ -2,7 +2,7 @@ import {
   Alert, App, Button, Col, Layout, Row, Space, Spin, Switch, Tabs, Typography,
 } from 'antd'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import { useAuth } from '../../auth/AuthProvider'
 
 import { DrawingCanvas } from '../../canvas/DrawingCanvas'
@@ -14,6 +14,7 @@ import type { Cell, Deck, Stage, Zone } from '../../domain/types'
 // One signed-URL helper for both roles: the bucket name and the 3600-second
 // expiry belong in one place, and decksApi is a lib module rather than an admin
 // one. Screens still never touch `supabase` directly.
+import { LOGIN_PATH } from '../../config'
 import { getDrawingUrl, listStages } from '../../lib/decksApi'
 import { formatAreaM2 } from '../../lib/format'
 import {
@@ -84,6 +85,7 @@ interface PendingWrite {
 
 export function GsScreen() {
   const { projectId } = useParams()
+  const navigate = useNavigate()
   const { profile, signOut } = useAuth()
 
   const [stages, setStages] = useState<Stage[]>([])
@@ -572,7 +574,10 @@ export function GsScreen() {
         <Typography.Text strong>{profile?.fullName}</Typography.Text>
         <span style={{ flex: 1 }} />
         {/* Spec §8.1: no account UI. Logout only. */}
-        <Button size="large" onClick={() => void signOut()}>
+        <Button
+          size="large"
+          onClick={() => void signOut().then(() => navigate(LOGIN_PATH, { replace: true }))}
+        >
           Đăng xuất
         </Button>
       </Layout.Header>

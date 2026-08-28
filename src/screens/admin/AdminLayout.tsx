@@ -1,6 +1,6 @@
 import { Button, Layout, Menu } from 'antd'
-import { Link, Outlet, useLocation } from 'react-router-dom'
-import { APP_BASE_PATH } from '../../config'
+import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
+import { APP_BASE_PATH, LOGIN_PATH } from '../../config'
 import { useAuth } from '../../auth/AuthProvider'
 
 const items = [
@@ -11,6 +11,7 @@ const items = [
 
 export function AdminLayout() {
   const { profile, signOut } = useAuth()
+  const navigate = useNavigate()
   const { pathname } = useLocation()
   const selected = items.find((i) => pathname.endsWith(`/${i.key}`))?.key ?? 'projects'
 
@@ -37,7 +38,15 @@ export function AdminLayout() {
           }}
         >
           <span>{profile?.fullName}</span>
-          <Button onClick={() => void signOut()}>Đăng xuất</Button>
+          {/* Navigated, not merely signed out. Without this the session goes
+              but the URL stays on an admin route, so the login form appears
+              under a path the person is no longer allowed on -- and a refresh
+              puts them straight back there. */}
+          <Button
+            onClick={() => void signOut().then(() => navigate(LOGIN_PATH, { replace: true }))}
+          >
+            Đăng xuất
+          </Button>
         </Layout.Header>
         <Layout.Content style={{ padding: 24 }}>
           <Outlet />
