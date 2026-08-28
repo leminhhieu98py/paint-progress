@@ -94,3 +94,41 @@ export function boxFromDrag(
   if (x1 - x0 < minFraction || y1 - y0 < minFraction) return null
   return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 }
 }
+
+/** Below this a label is a smudge, not information. A bay too small to carry
+ *  its text legibly gets none: the zone legend under the canvas still names it,
+ *  and an unreadable overlap costs the drawing underneath for nothing. */
+export const MIN_LABEL_FONT_SIZE = 7
+/** What a label gets when the bay has room. Matches the drawing's own dimension
+ *  text, so the overlay does not shout over the plan. */
+export const MAX_LABEL_FONT_SIZE = 12
+
+/**
+ * A font size that fits `label` inside a `boxW` x `boxH` bay, or null when the
+ * bay is too small to carry it legibly.
+ *
+ * Fixed at 12px before this, which is why a date range spilled across three
+ * neighbouring bays on a dense deck -- see the admin's screenshot. The whole
+ * point of the label is to say which plan a bay belongs to, and a label wider
+ * than its bay says it about the wrong bay.
+ *
+ * Width is estimated at 0.55em per character rather than measured. Measuring
+ * means a canvas context and a font that has finished loading, neither of which
+ * is available while React is deciding what to render; 0.55 is a little generous
+ * for the digits and slashes these labels are made of, so the estimate errs
+ * toward too small, which is the safe direction.
+ *
+ * Height is capped at 80% of the bay so the text keeps some air above and below
+ * the beam lines it sits between.
+ */
+export function fitLabelFontSize(
+  label: string,
+  boxW: number,
+  boxH: number,
+): number | null {
+  if (!label) return null
+  const byWidth = boxW / (label.length * 0.55)
+  const byHeight = boxH * 0.8
+  const size = Math.floor(Math.min(MAX_LABEL_FONT_SIZE, byWidth, byHeight))
+  return size >= MIN_LABEL_FONT_SIZE ? size : null
+}

@@ -5,8 +5,8 @@ import { Image as KonvaImage, Layer, Rect, Stage, Text } from 'react-konva'
 import useImage from 'use-image'
 import type { MeshCell } from '../domain/types'
 import {
-  clampStagePan, clampZoom, boxFromDrag,
-  MIN_ZOOM, WHEEL_ZOOM_STEP, ZOOM_STEP,
+  clampStagePan, clampZoom, boxFromDrag, fitLabelFontSize,
+  MIN_LABEL_FONT_SIZE, MIN_ZOOM, WHEEL_ZOOM_STEP, ZOOM_STEP,
 } from './canvasView'
 
 const PLAIN_FILL = 'rgba(0, 0, 0, 0.04)'
@@ -118,6 +118,27 @@ export function DrawingCanvas({
   const stageRef = useRef<Konva.Stage>(null)
   const [zoom, setZoom] = useState(MIN_ZOOM)
   /**
+   * Whether Shift is down right now, so the stage can stop advertising a pan it
+   * will refuse. Window-level and cleared on blur: a Shift held while the window
+   * loses focus never sends its keyup, and the canvas would be stuck refusing to
+   * pan until the next press.
+   */
+  const [shiftHeld, setShiftHeld] = useState(false)
+  useEffect(() => {
+    if (!panZoom || !onSelectDraw) return
+    const down = (e: KeyboardEvent) => { if (e.key === 'Shift') setShiftHeld(true) }
+    const up = (e: KeyboardEvent) => { if (e.key === 'Shift') setShiftHeld(false) }
+    const clear = () => setShiftHeld(false)
+    window.addEventListener('keydown', down)
+    window.addEventListener('keyup', up)
+    window.addEventListener('blur', clear)
+    return () => {
+      window.removeEventListener('keydown', down)
+      window.removeEventListener('keyup', up)
+      window.removeEventListener('blur', clear)
+    }
+  }, [panZoom, onSelectDraw])
+  /**
    * The crop gesture in progress, in stage px. `null` between gestures.
    *
    * Held in a ref, with state only mirroring it so the rubber band can render.
@@ -190,6 +211,13 @@ export function DrawingCanvas({
    * `zoom` stays at MIN_ZOOM = 1). A zoomable crop would have to read
    * `getRelativePointerPosition` instead.
    */
+  /** The font a bay's plan label can carry, or null when it can carry none. */
+  const planFont = (cell: MeshCell) => fitLabelFontSize(
+    planLabels?.[cell.code] ?? '',
+    cell.w * width,
+    cell.h * height,
+  )
+
   const dragHandlers = banding
     ? {
         onMouseDown: (e: Konva.KonvaEventObject<MouseEvent>) => {
@@ -299,7 +327,22 @@ export function DrawingCanvas({
         ref={stageRef}
         scaleX={zoom}
         scaleY={zoom}
-        draggable={panZoom && !drawingCell}
+        // Shift belongs to the band, never to the pan. Without this the stage's
+        // own drag starts first and swallows the gesture, so band-select was
+        // simply dead on any canvas with panZoom on -- which is why it worked in
+        // the deck editor (panZoom off) and not on the progress screen.
+        //
+        // `shiftHeld` is what makes it VISIBLE: draggable=false stops the cursor
+        // promising a pan the canvas is not going to perform. The onDragStart
+        // stop below is what makes it CORRECT -- it reads the modifier off the
+        // gesture itself, so a Shift pressed after the listener missed it (the
+        // window lost focus mid-key, say) still cannot pan.
+        draggable={panZoom && !drawingCell && !(shiftHeld && Boolean(onSelectDraw))}
+        onDragStart={(e: Konva.KonvaEventObject<DragEvent>) => {
+          if (onSelectDraw && (e.evt as unknown as MouseEvent)?.shiftKey) {
+            e.target.stopDrag()
+          }
+        }}
         dragBoundFunc={(pos) => clampStagePan(pos, width, height, zoom)}
         {...dragHandlers}
         onWheel={(e: Konva.KonvaEventObject<WheelEvent>) => {
@@ -384,11 +427,16 @@ export function DrawingCanvas({
                 key={`plan-label-${cell.code}`}
                 name={`plan-label-${cell.code}`}
                 x={cell.x * width}
-                y={cell.y * height + cell.h * height / 2 - 6}
+                y={cell.y * height + cell.h * height / 2 - (planFont(cell) ?? 0) / 2}
                 width={cell.w * width}
                 align="center"
-                text={planLabels?.[cell.code] ?? ''}
-                fontSize={12}
+                // Sized to the bay. Fixed at 12 before, which is why a date
+                // range spilled across three neighbouring bays on a dense deck.
+                // A bay too small to carry its label legibly gets none: the
+                // zone list beside the drawing still names it, and an
+                // unreadable overlap costs the plan underneath for nothing.
+                text={planFont(cell) === null ? '' : planLabels?.[cell.code] ?? ''}
+                fontSize={planFont(cell) ?? MIN_LABEL_FONT_SIZE}
                 fill="#000000"
               />
             ))}

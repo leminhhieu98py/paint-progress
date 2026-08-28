@@ -743,3 +743,61 @@ describe('DrawingCanvas', () => {
   })
 
 })
+
+describe('Shift belongs to the band, not to the pan', () => {
+  const props = {
+    imageUrl: 'https://x/d.png',
+    imageW: 1000,
+    imageH: 800,
+    cells: [{ code: 'R1C1', x: 0, y: 0, w: 0.5, h: 0.5, areaM2: 10 }],
+    selectedCodes: [],
+  }
+
+  it('stops advertising a pan while Shift is down on a band-capable canvas', async () => {
+    // The defect this replaces: with panZoom on, Konva's own stage drag started
+    // first and swallowed every Shift-drag, so band-select was dead on the
+    // progress screen while working fine in the deck editor (panZoom off).
+    render(<DrawingCanvas {...props} panZoom onSelectDraw={vi.fn()} />)
+    const stage = await screen.findByTestId('stage:drawing')
+    expect(stage).toHaveAttribute('data-draggable', 'true')
+
+    await act(async () => {
+      fireEvent.keyDown(window, { key: 'Shift' })
+    })
+    expect(stage).toHaveAttribute('data-draggable', 'false')
+
+    await act(async () => {
+      fireEvent.keyUp(window, { key: 'Shift' })
+    })
+    expect(stage).toHaveAttribute('data-draggable', 'true')
+  })
+
+  it('releases the block when the window loses focus mid-key', async () => {
+    // A Shift held as the window blurs never sends its keyup, and the canvas
+    // would refuse to pan until the next press and release.
+    render(<DrawingCanvas {...props} panZoom onSelectDraw={vi.fn()} />)
+    const stage = await screen.findByTestId('stage:drawing')
+
+    await act(async () => {
+      fireEvent.keyDown(window, { key: 'Shift' })
+    })
+    expect(stage).toHaveAttribute('data-draggable', 'false')
+
+    await act(async () => {
+      fireEvent.blur(window)
+    })
+    expect(stage).toHaveAttribute('data-draggable', 'true')
+  })
+
+  it('leaves panning alone on a canvas with no band to draw', async () => {
+    // Shift means nothing here, and a canvas that stopped panning on it would
+    // be broken for a reason the user could not see.
+    render(<DrawingCanvas {...props} panZoom />)
+    const stage = await screen.findByTestId('stage:drawing')
+
+    await act(async () => {
+      fireEvent.keyDown(window, { key: 'Shift' })
+    })
+    expect(stage).toHaveAttribute('data-draggable', 'true')
+  })
+})

@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { clampStagePan, clampZoom, boxFromDrag, MAX_ZOOM, MIN_ZOOM } from './canvasView'
+import {
+  clampStagePan, clampZoom, boxFromDrag, fitLabelFontSize,
+  MAX_LABEL_FONT_SIZE, MAX_ZOOM, MIN_LABEL_FONT_SIZE, MIN_ZOOM,
+} from './canvasView'
 
 
 describe('clampZoom', () => {
@@ -82,5 +85,44 @@ describe('boxFromDrag', () => {
     // DrawingCanvas renders once before its container is measured; a zero
     // width there would normalize every coordinate to Infinity.
     expect(boxFromDrag({ x: 0, y: 0 }, { x: 100, y: 100 }, 0, 0, 0.05)).toBeNull()
+  })
+})
+
+describe('fitLabelFontSize', () => {
+  it('gives a roomy bay the full size', () => {
+    expect(fitLabelFontSize('01/08', 400, 200)).toBe(MAX_LABEL_FONT_SIZE)
+  })
+
+  it('shrinks the text to fit a narrow bay', () => {
+    // "01/08 – 12/08" is 13 characters. At 0.55em each it needs ~7.15em, so a
+    // 60px bay carries 8px -- readable, and well under the 12 a roomy bay gets.
+    const size = fitLabelFontSize('01/08 – 12/08', 60, 200)!
+    expect(size).toBeLessThan(MAX_LABEL_FONT_SIZE)
+    expect(size).toBeGreaterThanOrEqual(MIN_LABEL_FONT_SIZE)
+    // And it really fits: the estimate must not exceed the bay it was given.
+    expect(size * '01/08 – 12/08'.length * 0.55).toBeLessThanOrEqual(60)
+  })
+
+  it('is limited by a short bay as well as a narrow one', () => {
+    // A wide, flat bay: plenty of room across, none down. Height is what binds.
+    expect(fitLabelFontSize('01/08', 4000, 10)).toBe(8)
+  })
+
+  it('returns null rather than a smudge when the bay is too small', () => {
+    // The admin's screenshot: a date range at a fixed 12px spilling across three
+    // neighbouring bays. Nothing is better than a label about the wrong bay --
+    // the zone legend under the canvas still names it.
+    expect(fitLabelFontSize('01/08 – 12/08', 30, 20)).toBeNull()
+  })
+
+  it('returns null for an empty label', () => {
+    expect(fitLabelFontSize('', 400, 200)).toBeNull()
+  })
+
+  it('never returns a fractional size', () => {
+    // Konva takes a number, but a font size of 9.37 renders differently across
+    // browsers and makes two identical bays disagree by a pixel.
+    const size = fitLabelFontSize('01/08 – 12/08', 137, 61)
+    expect(size).toBe(Math.floor(size!))
   })
 })
