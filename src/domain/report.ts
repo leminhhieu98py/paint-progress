@@ -154,9 +154,14 @@ export function buildOverviewRows(inputs: DeckReportInput[]): OverviewRow[] {
 /**
  * The `Kế hoạch tháo GG` sheet: every zone across every deck.
  *
- * The day count is INCLUSIVE of both ends, the way the source sheet counts a
- * work window -- 1 Sep to 7 Sep is seven days on site, not six. Null when
- * either end is unknown, rather than a guess.
+ * The day count is INCLUSIVE of both ends: 1 Sep to 7 Sep is seven days on
+ * site, not six. Null when either end is unknown, rather than a guess.
+ *
+ * Do not "fix" this to a plain difference after reading the customer's own
+ * workbook. That sheet disagrees with ITSELF -- its zone rows count 15/11 to
+ * 20/11 as 5 while its deck row counts 15/11 to 13/01 as 60, which is
+ * inclusive -- and its author confirmed on 2026-08-28 that the zone rows are
+ * the mistake and this is the count she wants.
  *
  * A cell id the deck does not carry contributes nothing, and a stage the deck no
  * longer declares renders as a dash. Neither should arise -- `zone_cells` and

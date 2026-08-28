@@ -152,8 +152,9 @@ describe('buildPlanRows', () => {
       startDate: '2026-09-01',
       finishDate: '2026-09-07',
     })
-    // Inclusive of both ends, the way the source sheet counts a work window:
-    // 1 Sep to 7 Sep is seven days, not six.
+    // Inclusive of both ends: 1 Sep to 7 Sep is seven days, not six. The
+    // customer's own sheet counts its zone rows by plain difference, and its
+    // author confirmed those rows are wrong -- see buildPlanRows.
     expect(row.days).toBe(7)
   })
 
