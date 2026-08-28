@@ -12,6 +12,7 @@ import { listDeckZones } from '../../lib/zonesApi'
 import { listProjectNames } from '../../lib/projectsApi'
 import { buildReportWorkbook, reportFileName, type DeckImages } from '../../lib/reportXlsx'
 import { NEW_DECK } from '../../config'
+import { PageBody } from '../../components/PageHeader'
 
 interface RollupRow {
   key: string
@@ -179,111 +180,113 @@ export function DecksScreen() {
   }
 
   return (
-    <Space direction="vertical" style={{ width: '100%' }} size="middle">
-      {error && <Alert type="error" message={error} closable onClose={() => setError(null)} />}
+    <PageBody>
+      <Space direction="vertical" style={{ width: '100%' }} size="middle">
+        {error && <Alert type="error" message={error} closable onClose={() => setError(null)} />}
 
-      <Space>
-        <Typography.Title level={4} style={{ margin: 0 }}>
-          Sàn
-        </Typography.Title>
-        <Select
-          style={{ width: 240 }}
-          value={projectId ?? undefined}
-          placeholder="Chọn dự án"
-          options={projects.map((p) => ({ value: p.id, label: `${p.name} (${p.code})` }))}
-          onChange={(v) => setProjectId(v)}
-        />
-        <Button
-          type="primary"
-          disabled={!projectId}
-          onClick={() => navigate(`${NEW_DECK}?project=${projectId}`)}
-        >
-          Tạo sàn
-        </Button>
-      </Space>
-
-      <Table<DeckRow>
-        rowKey="id"
-        loading={loading}
-        dataSource={decks}
-        pagination={false}
-        columns={[
-          { title: 'Tên sàn', dataIndex: 'name' },
-          { title: 'Mã', dataIndex: 'code', width: 100 },
-          { title: 'Số ô', dataIndex: 'cellCount', width: 90 },
-          {
-            title: 'Diện tích (m²)',
-            dataIndex: 'totalAreaM2',
-            width: 160,
-            render: (v: number) => formatAreaM2(v),
-          },
-          {
-            title: 'Bản vẽ',
-            key: 'drawing',
-            width: 110,
-            render: (_v, deck) => (deck.imagePath ? 'Đã có' : 'Chưa có'),
-          },
-          {
-            title: '',
-            key: 'actions',
-            width: 90,
-            render: (_v, deck) => (
-              <Button size="small" onClick={() => navigate(deck.id)}>
-                Mở
-              </Button>
-            ),
-          },
-        ]}
-      />
-
-      <Card
-        size="small"
-        title="Tiến độ toàn dự án"
-        extra={
+        <Space>
+          <Typography.Title level={4} style={{ margin: 0 }}>
+            Sàn
+          </Typography.Title>
+          <Select
+            style={{ width: 240 }}
+            value={projectId ?? undefined}
+            placeholder="Chọn dự án"
+            options={projects.map((p) => ({ value: p.id, label: `${p.name} (${p.code})` }))}
+            onChange={(v) => setProjectId(v)}
+          />
           <Button
-            onClick={() => void exportReport()}
-            loading={exporting}
-            disabled={entries.length === 0}
+            type="primary"
+            disabled={!projectId}
+            onClick={() => navigate(`${NEW_DECK}?project=${projectId}`)}
           >
-            Xuất báo cáo
+            Tạo sàn
           </Button>
-        }
-      >
-        {entries.length === 0 && (
-          <Typography.Text type="secondary">Dự án này chưa có sàn nào</Typography.Text>
-        )}
-        {entries.length > 0 && (
-          <div data-testid="project-rollup">
-            <Table<RollupRow>
-              size="small"
-              pagination={false}
-              dataSource={rollupRows}
-              columns={[
-                { title: 'Sàn', dataIndex: 'name', key: 'name' },
-                { title: 'Mã', dataIndex: 'code', key: 'code' },
-                { title: 'Tỉ trọng', dataIndex: 'share', key: 'share', align: 'right' },
-                {
-                  title: 'Diện tích (m²)',
-                  dataIndex: 'totalAreaM2',
-                  key: 'totalAreaM2',
-                  align: 'right',
-                },
-                { title: 'Tiến độ', dataIndex: 'progress', key: 'progress', align: 'right' },
-              ]}
-              summary={() => (
-                <Table.Summary.Row>
-                  <Table.Summary.Cell index={0} colSpan={4}>
-                    <strong>Tổng dự án</strong>
-                  </Table.Summary.Cell>
-                  <Table.Summary.Cell index={4} align="right">
-                    <strong>{formatPercent(rollup.progress)}</strong>
-                  </Table.Summary.Cell>
-                </Table.Summary.Row>
-              )}
-            />
-          </div>
-        )}
-      </Card>
-    </Space>
+        </Space>
+
+        <Table<DeckRow>
+          rowKey="id"
+          loading={loading}
+          dataSource={decks}
+          pagination={false}
+          columns={[
+            { title: 'Tên sàn', dataIndex: 'name' },
+            { title: 'Mã', dataIndex: 'code', width: 100 },
+            { title: 'Số ô', dataIndex: 'cellCount', width: 90 },
+            {
+              title: 'Diện tích (m²)',
+              dataIndex: 'totalAreaM2',
+              width: 160,
+              render: (v: number) => formatAreaM2(v),
+            },
+            {
+              title: 'Bản vẽ',
+              key: 'drawing',
+              width: 110,
+              render: (_v, deck) => (deck.imagePath ? 'Đã có' : 'Chưa có'),
+            },
+            {
+              title: '',
+              key: 'actions',
+              width: 90,
+              render: (_v, deck) => (
+                <Button size="small" onClick={() => navigate(deck.id)}>
+                  Mở
+                </Button>
+              ),
+            },
+          ]}
+        />
+
+        <Card
+          size="small"
+          title="Tiến độ toàn dự án"
+          extra={
+            <Button
+              onClick={() => void exportReport()}
+              loading={exporting}
+              disabled={entries.length === 0}
+            >
+              Xuất báo cáo
+            </Button>
+          }
+        >
+          {entries.length === 0 && (
+            <Typography.Text type="secondary">Dự án này chưa có sàn nào</Typography.Text>
+          )}
+          {entries.length > 0 && (
+            <div data-testid="project-rollup">
+              <Table<RollupRow>
+                size="small"
+                pagination={false}
+                dataSource={rollupRows}
+                columns={[
+                  { title: 'Sàn', dataIndex: 'name', key: 'name' },
+                  { title: 'Mã', dataIndex: 'code', key: 'code' },
+                  { title: 'Tỉ trọng', dataIndex: 'share', key: 'share', align: 'right' },
+                  {
+                    title: 'Diện tích (m²)',
+                    dataIndex: 'totalAreaM2',
+                    key: 'totalAreaM2',
+                    align: 'right',
+                  },
+                  { title: 'Tiến độ', dataIndex: 'progress', key: 'progress', align: 'right' },
+                ]}
+                summary={() => (
+                  <Table.Summary.Row>
+                    <Table.Summary.Cell index={0} colSpan={4}>
+                      <strong>Tổng dự án</strong>
+                    </Table.Summary.Cell>
+                    <Table.Summary.Cell index={4} align="right">
+                      <strong>{formatPercent(rollup.progress)}</strong>
+                    </Table.Summary.Cell>
+                  </Table.Summary.Row>
+                )}
+              />
+            </div>
+          )}
+        </Card>
+      </Space>
+    </PageBody>
   )
 }

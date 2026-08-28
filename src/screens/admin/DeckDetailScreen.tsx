@@ -11,6 +11,7 @@ import { pdfPageCount, renderPdfPage } from '../../lib/pdfToPng'
 import { DeckEditor } from './DeckEditor'
 import { StageConfigPanel } from './StageConfigPanel'
 import { DeckProgressPanel } from './DeckProgressPanel'
+import { PageBody } from '../../components/PageHeader'
 
 /**
  * One deck, at its own address.
@@ -244,54 +245,56 @@ export function DeckDetailScreen() {
   )
 
   return (
-    <Space direction="vertical" style={{ width: '100%' }} size="middle">
-      {error && <Alert type="error" message={error} closable onClose={() => setError(null)} />}
+    <PageBody>
+      <Space direction="vertical" style={{ width: '100%' }} size="middle">
+        {error && <Alert type="error" message={error} closable onClose={() => setError(null)} />}
 
-      <Space>
-        <Button onClick={() => navigate('..', { relative: 'path' })}>← Danh sách sàn</Button>
-        <Typography.Title level={4} style={{ margin: 0 }}>
-          {creating ? 'Sàn mới' : `${deck?.name} (${deck?.code})`}
-        </Typography.Title>
+        <Space>
+          <Button onClick={() => navigate('..', { relative: 'path' })}>← Danh sách sàn</Button>
+          <Typography.Title level={4} style={{ margin: 0 }}>
+            {creating ? 'Sàn mới' : `${deck?.name} (${deck?.code})`}
+          </Typography.Title>
+        </Space>
+
+        {editing ? identity : (
+          <>
+            <Descriptions size="small" column={3} bordered items={[
+              { key: 'name', label: 'Tên sàn', children: deck?.name },
+              { key: 'code', label: 'Mã sàn', children: deck?.code },
+              { key: 'area', label: 'Diện tích sàn (m²)', children: formatAreaM2(deck?.totalAreaM2 ?? 0) },
+              { key: 'cells', label: 'Số ô', children: deck?.cellCount ?? 0 },
+              { key: 'drawing', label: 'Bản vẽ', children: drawingLabel },
+            ]} />
+            <Button type="primary" onClick={() => setEditing(true)}>Sửa</Button>
+          </>
+        )}
+
+        {/*
+          The drawing tools belong to editing, and only once there is a deck to
+          attach them to: in create mode there is no deck id, no drawing and no
+          cells for them to work on.
+        */}
+        {/*
+          Above the drawing tools on purpose: the stages are what the bays are
+          eventually painted to, so they are the deck's spec and the bays are the
+          work against it. Declaring them after drawing 180 bays reads backwards.
+        */}
+        {editing && deck && <StageConfigPanel deckId={deck.id} onSaved={() => void load()} />}
+
+        {editing && deck && <DeckEditor deck={deck} onSaved={() => void load()} />}
+
+        {/* Progress lives here rather than on a screen of its own: everything on
+            it is about THIS deck, and making the admin pick a project and then a
+            deck to reach what this screen already knows was one navigation too
+            many. The project-wide half -- the rollup and the export -- stayed on
+            the decks list, which is where a project-wide thing belongs.
+
+            Rendered in BOTH modes. It used to be edit-only, which made the deck's
+            view five lines of text and meant pressing "Sửa" to look at the
+            drawing. Looking is not editing; only the writes are behind the
+            button. */}
+        {deck && <DeckProgressPanel deckId={deck.id} editable={editing} />}
       </Space>
-
-      {editing ? identity : (
-        <>
-          <Descriptions size="small" column={3} bordered items={[
-            { key: 'name', label: 'Tên sàn', children: deck?.name },
-            { key: 'code', label: 'Mã sàn', children: deck?.code },
-            { key: 'area', label: 'Diện tích sàn (m²)', children: formatAreaM2(deck?.totalAreaM2 ?? 0) },
-            { key: 'cells', label: 'Số ô', children: deck?.cellCount ?? 0 },
-            { key: 'drawing', label: 'Bản vẽ', children: drawingLabel },
-          ]} />
-          <Button type="primary" onClick={() => setEditing(true)}>Sửa</Button>
-        </>
-      )}
-
-      {/*
-        The drawing tools belong to editing, and only once there is a deck to
-        attach them to: in create mode there is no deck id, no drawing and no
-        cells for them to work on.
-      */}
-      {/*
-        Above the drawing tools on purpose: the stages are what the bays are
-        eventually painted to, so they are the deck's spec and the bays are the
-        work against it. Declaring them after drawing 180 bays reads backwards.
-      */}
-      {editing && deck && <StageConfigPanel deckId={deck.id} onSaved={() => void load()} />}
-
-      {editing && deck && <DeckEditor deck={deck} onSaved={() => void load()} />}
-
-      {/* Progress lives here rather than on a screen of its own: everything on
-          it is about THIS deck, and making the admin pick a project and then a
-          deck to reach what this screen already knows was one navigation too
-          many. The project-wide half -- the rollup and the export -- stayed on
-          the decks list, which is where a project-wide thing belongs.
-
-          Rendered in BOTH modes. It used to be edit-only, which made the deck's
-          view five lines of text and meant pressing "Sửa" to look at the
-          drawing. Looking is not editing; only the writes are behind the
-          button. */}
-      {deck && <DeckProgressPanel deckId={deck.id} editable={editing} />}
-    </Space>
+    </PageBody>
   )
 }

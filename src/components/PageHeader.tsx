@@ -169,3 +169,19 @@ export function PageHeader({
     </div>
   )
 }
+
+/**
+ * The padded area under a PageHeader.
+ *
+ * The layout's content region is deliberately unpadded so a PageHeader's
+ * bottom rule can run the full width of the screen. That makes the inset the
+ * body's own responsibility, and this is it -- in one place, so the four admin
+ * screens cannot drift a few pixels apart from each other.
+ */
+export function PageBody({ children }: { children: ReactNode }) {
+  return (
+    <div style={{ padding: '24px 28px 36px', display: 'flex', flexDirection: 'column', gap: 20 }}>
+      {children}
+    </div>
+  )
+}
