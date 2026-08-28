@@ -1,4 +1,4 @@
-import { Alert, Spin } from 'antd'
+import { Alert, ConfigProvider, Spin } from 'antd'
 import { lazy, Suspense, useEffect, useState, type ReactNode } from 'react'
 import { Navigate, Route, Routes } from 'react-router-dom'
 import { useAuth } from './auth/AuthProvider'
@@ -6,6 +6,7 @@ import { RequireRole } from './auth/RequireRole'
 import { APP_BASE_PATH } from './config'
 import { myFirstProjectId } from './lib/projectsApi'
 import { NotFound } from './screens/NotFound'
+import { fieldTheme } from './theme'
 
 // Every screen behind a role gate is React.lazy, and for two different reasons.
 // The admin screens pull in pdf.js and Konva (and, from Phase 4, ExcelJS), which
@@ -200,9 +201,19 @@ export function AppRoutes() {
           path="gs/:projectId"
           element={
             <RequireRole role="gs">
-              <LazySuspense>
-                <GsScreen />
-              </LazySuspense>
+              {/*
+                Nested over the app-wide admin theme, and only here: 48px
+                controls and a larger base font are right on a tablet held at
+                arm's length and wrong on the admin's dense tables. Wrapping
+                the route rather than the screen means the GS's modals and
+                message popups -- which render through portals -- inherit it
+                too.
+              */}
+              <ConfigProvider theme={fieldTheme}>
+                <LazySuspense>
+                  <GsScreen />
+                </LazySuspense>
+              </ConfigProvider>
             </RequireRole>
           }
         />

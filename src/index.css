@@ -1,2 +1,27 @@
-* { box-sizing: border-box; }
-body { margin: 0; }
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+/*
+  Set here rather than on the antd theme because these three apply to every
+  glyph on the page, including the ones antd does not render.
+
+  `tabular-nums` is the load-bearing one. Every screen in this app is a column
+  of percentages and areas that gets compared vertically -- 44,38% above
+  37,48% -- and proportional digits make those columns ragged enough to
+  misread. It costs nothing and there is no case in this product where
+  proportional figures would be better.
+*/
+body {
+  background: #f8fafc;
+  color: #16202b;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.006em;
+  -webkit-font-smoothing: antialiased;
+}
