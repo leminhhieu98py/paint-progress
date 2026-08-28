@@ -130,3 +130,30 @@ export function zoneLensColors(
   })
   return colors
 }
+
+/**
+ * The bays that have NOT yet reached `stageId`, by code.
+ *
+ * This is the second channel the drawing needs once bays are coloured by ZONE
+ * rather than by coat. With a zone colour on every bay, "done" and "not done"
+ * are the same fill, so the answer the panel exists to give disappears. The
+ * codes returned here are drawn with a hatch over their colour: solid means the
+ * bay has reached the coat being looked at, hatched means it has not.
+ *
+ * Cumulative, like every other progress reading in this app: a bay at Coat 3
+ * has already been through Coat 2, so it is not pending for Coat 2.
+ *
+ * An unknown `stageId` yields NOTHING rather than everything. It is reachable
+ * while an admin edits the stage list -- the filter still holds an id the deck
+ * has just stopped declaring -- and hatching every bay for a fraction of a
+ * second reads as a deck where no work has been done at all. A cell pointing at
+ * a stage the deck does not declare goes the other way and counts as not
+ * started, which is what `stageSeqOf` already returns for it.
+ */
+export function codesNotReaching(cells: Cell[], stages: Stage[], stageId: string): string[] {
+  const target = stages.find((s) => s.id === stageId)
+  if (!target) return []
+  return cells
+    .filter((cell) => stageSeqOf(stages, cell.stageId) < target.seq)
+    .map((cell) => cell.code)
+}

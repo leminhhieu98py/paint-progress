@@ -164,6 +164,12 @@ vi.mock('react-konva', () => {
 
 vi.mock('use-image', () => ({ default: () => [undefined, 'loaded'] }))
 
+// jsdom implements no canvas, so the real factory returns null and the hatch
+// layer renders nothing at all -- which would leave every assertion below
+// passing against a component that never draws a hatch. The stub stands in for
+// the tile a browser produces.
+vi.mock('./hatchPattern', () => ({ createHatchPattern: () => ({ width: 8, height: 8 }) }))
+
 
 const cells = [
   { code: 'R1C1', x: 0, y: 0, w: 0.5, h: 1, areaM2: 160 },
@@ -844,5 +850,57 @@ describe('Shift belongs to the band, not to the pan', () => {
       fireEvent.keyDown(window, { key: 'Shift' })
     })
     expect(stage).toHaveAttribute('data-draggable', 'true')
+  })
+})
+
+describe('DrawingCanvas hatching', () => {
+  const CELLS = [
+    { code: 'R1C1', x: 0, y: 0, w: 0.5, h: 1, areaM2: 10 },
+    { code: 'R1C2', x: 0.5, y: 0, w: 0.5, h: 1, areaM2: 10 },
+  ]
+
+  const renderWith = (hatchedCodes?: string[]) =>
+    render(
+      <DrawingCanvas
+        imageUrl="x.png"
+        imageW={1000}
+        imageH={800}
+        cells={CELLS}
+        selectedCodes={[]}
+        cellColors={{ R1C1: '#C2410C', R1C2: '#C2410C' }}
+        hatchedCodes={hatchedCodes}
+      />,
+    )
+
+  it('hatches only the bays it was given', () => {
+    // Both bays carry the same zone colour. Without the hatch, the drawing
+    // cannot say which of them has reached the coat being looked at -- which
+    // is the entire question the zone lens is asked.
+    renderWith(['R1C1'])
+    expect(screen.getByTestId('rect:hatch-R1C1')).toBeInTheDocument()
+    expect(screen.queryByTestId('rect:hatch-R1C2')).toBeNull()
+  })
+
+  it('leaves the bay itself clickable underneath the hatch', () => {
+    renderWith(['R1C1'])
+    // The hatch is decoration over a control. If it swallowed the tap, a
+    // foreman could record progress on a bay that is done but not on one that
+    // is pending -- exactly backwards.
+    expect(screen.getByTestId('layer:hatch')).toHaveAttribute('data-listening', 'false')
+  })
+
+  it('draws no hatch at all when nothing was passed', () => {
+    renderWith()
+    expect(screen.queryByTestId('rect:hatch-R1C1')).toBeNull()
+  })
+
+  it('positions the hatch exactly over its bay', () => {
+    // A hatch offset from its fill reads as a third state.
+    renderWith(['R1C2'])
+    const hatch = screen.getByTestId('rect:hatch-R1C2')
+    const cell = screen.getByTestId('rect:cell-R1C2')
+    for (const attr of ['data-x', 'data-y', 'data-width', 'data-height']) {
+      expect(hatch.getAttribute(attr)).toBe(cell.getAttribute(attr))
+    }
   })
 })

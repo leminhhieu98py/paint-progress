@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  paintLensColors, scaffoldLensColors, zoneLensColors,
+  codesNotReaching, paintLensColors, scaffoldLensColors, zoneLensColors,
   SCAFFOLD_PENDING_COLOR, ZONE_PALETTE,
 } from './lens'
 import type { Cell, Stage } from './types'
@@ -140,5 +140,43 @@ describe('zoneLensColors', () => {
   it('gives every palette colour a distinct value', () => {
     // A duplicate would silently make two zones look like one.
     expect(new Set(ZONE_PALETTE).size).toBe(ZONE_PALETTE.length)
+  })
+})
+
+describe('codesNotReaching', () => {
+  const stages: Stage[] = [
+    { id: 's1', seq: 1, name: 'Blast + Coat 1', color: '#fadb14', weight: 0.5 },
+    { id: 's2', seq: 2, name: 'Coat 2', color: '#bfbfbf', weight: 0.3 },
+    { id: 's3', seq: 3, name: 'Coat 3', color: '#52c41a', weight: 0.2 },
+  ]
+  const cell = (code: string, stageId: string | null): Cell => ({
+    id: code, code, x: 0, y: 0, w: 0.1, h: 0.1, areaM2: 10, stageId,
+  })
+
+  it('names the bays that have not got this far yet', () => {
+    const cells = [cell('R1C1', null), cell('R1C2', 's1'), cell('R1C3', 's2'), cell('R1C4', 's3')]
+    // Cumulative: a bay at Coat 3 has been through Coat 2, so it is not
+    // pending for Coat 2. Only the two behind it are.
+    expect(codesNotReaching(cells, stages, 's2')).toEqual(['R1C1', 'R1C2'])
+  })
+
+  it('counts a bay sitting exactly on the stage as done, not pending', () => {
+    expect(codesNotReaching([cell('R1C1', 's2')], stages, 's2')).toEqual([])
+  })
+
+  it('treats a not-started bay as pending for the very first stage', () => {
+    expect(codesNotReaching([cell('R1C1', null)], stages, 's1')).toEqual(['R1C1'])
+  })
+
+  it('returns nothing for a stage this deck does not declare', () => {
+    // Reachable while a stage list is being edited: the filter still holds an
+    // id the deck no longer has. Hatching every bay would read as a deck where
+    // nothing has been done.
+    expect(codesNotReaching([cell('R1C1', null)], stages, 'deleted')).toEqual([])
+  })
+
+  it('treats a bay pointing at a stage this deck does not declare as not started', () => {
+    // The same window a stage deletion opens, seen from the cell side.
+    expect(codesNotReaching([cell('R1C1', 'gone')], stages, 's1')).toEqual(['R1C1'])
   })
 })

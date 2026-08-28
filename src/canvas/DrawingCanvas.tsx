@@ -1,6 +1,6 @@
 import { Button, Space } from 'antd'
 import Konva from 'konva'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Image as KonvaImage, Layer, Rect, Stage, Text } from 'react-konva'
 import useImage from 'use-image'
 import type { MeshCell } from '../domain/types'
@@ -8,6 +8,7 @@ import {
   clampStagePan, clampZoom, boxFromDrag, fitLabelFontSize,
   MIN_LABEL_FONT_SIZE, MIN_ZOOM, WHEEL_ZOOM_STEP, ZOOM_STEP,
 } from './canvasView'
+import { createHatchPattern } from './hatchPattern'
 
 const PLAIN_FILL = 'rgba(0, 0, 0, 0.04)'
 /**
@@ -68,6 +69,7 @@ export function DrawingCanvas({
   cells,
   selectedCodes,
   cellColors,
+  hatchedCodes,
   planLabels,
   panZoom = false,
   onCellClick,
@@ -81,6 +83,19 @@ export function DrawingCanvas({
   selectedCodes: string[]
   /** Colour per cell code; a code absent from the map renders unfilled. */
   cellColors?: Record<string, string>
+  /**
+   * Cell codes drawn with a diagonal hatch over their fill.
+   *
+   * The second channel for "not done yet". Once bays are coloured by ZONE
+   * rather than by coat, done and not-done are the same fill and the drawing
+   * stops answering the question it exists for. Solid means the bay has
+   * reached the coat being looked at; hatched means it has not.
+   *
+   * Kept separate from `cellColors` rather than encoded into it, because the
+   * two are independent: any colour can be hatched or not, and a lens that
+   * merged them would need a colour per (zone × state) pair.
+   */
+  hatchedCodes?: string[]
   /**
    * Planned date range per cell CODE. A code present here gets a dashed outline
    * and its label drawn over the cell; a code absent gets nothing. Spec §8.1's
@@ -160,6 +175,13 @@ export function DrawingCanvas({
    * a block and the trailing click collapsed it to one. Measured on the real
    * app: mousedown, mousemove x3, mouseup, click.
    */
+  /*
+    Built once per mount, not per bay: this is one 8x8 tile shared by every
+    hatched Rect on the drawing, and a deck has up to a couple of hundred.
+  */
+  const hatchPattern = useMemo(() => createHatchPattern(), [])
+  const hatched = useMemo(() => new Set(hatchedCodes ?? []), [hatchedCodes])
+
   const swallowClickRef = useRef(false)
   const [drag, setDrag] = useState<
     { from: Konva.Vector2d; to: Konva.Vector2d; kind: 'cell' | 'select' } | null
@@ -395,6 +417,39 @@ export function DrawingCanvas({
               }}
             />
           ))}
+        </Layer>
+
+        {/*
+          Hatching is its own layer above the fills and below the selection
+          overlay. On the cells layer it would have to be a sibling Rect per
+          bay, which doubles that layer's hit graph for something nobody can
+          click; `listening={false}` here keeps every tap landing on the bay
+          underneath.
+        */}
+        <Layer name="hatch" listening={false}>
+          {hatchPattern !== null &&
+            cells
+              .filter((cell) => hatched.has(cell.code))
+              .map((cell) => (
+                <Rect
+                  key={cell.code}
+                  name={`hatch-${cell.code}`}
+                  x={cell.x * width}
+                  y={cell.y * height}
+                  width={cell.w * width}
+                  height={cell.h * height}
+                  /*
+                    Konva types this as HTMLImageElement, but at runtime it goes
+                    straight to ctx.createPattern, which takes any
+                    CanvasImageSource -- a canvas among them. Generating a real
+                    <img> from toDataURL instead would make the pattern load
+                    asynchronously, and Konva does not redraw on image load, so
+                    the first paint of every deck would come up unhatched.
+                  */
+                  fillPatternImage={hatchPattern as unknown as HTMLImageElement}
+                  fillPatternRepeat="repeat"
+                />
+              ))}
         </Layer>
 
         <Layer name="selection" listening={false}>
