@@ -2,6 +2,7 @@ import { EditOutlined, PlusOutlined } from '@ant-design/icons'
 import { Alert, Button, Form, Input, Modal, Table, Tooltip } from 'antd'
 import dayjs from 'dayjs'
 import { useCallback, useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { Mono } from '../../components/Mono'
 import { PageBody, PageHeader } from '../../components/PageHeader'
 import { ProgressBar } from '../../components/ProgressBar'
@@ -10,6 +11,7 @@ import { StatCard } from '../../components/StatCard'
 import { formatAreaM2 } from '../../lib/format'
 import { latestProgressEvent, type ProgressEvent } from '../../lib/progressApi'
 import { createProject, listProjects, updateProject, type ProjectRow } from '../../lib/projectsApi'
+import { APP_BASE_PATH } from '../../config'
 import { palette } from '../../theme'
 
 interface CreateValues {
@@ -40,6 +42,7 @@ function eventDetail(e: ProgressEvent): string {
 }
 
 export function ProjectsScreen() {
+  const navigate = useNavigate()
   const [rows, setRows] = useState<ProjectRow[]>([])
   const [event, setEvent] = useState<ProgressEvent | null>(null)
   const [loading, setLoading] = useState(true)
@@ -180,6 +183,16 @@ export function ProjectsScreen() {
             loading={loading}
             dataSource={rows}
             pagination={false}
+            /*
+              The whole row opens the project. The decks screen has its own
+              project picker, so the id travels in the query string rather than
+              in the path -- which also means the URL an admin bookmarks or
+              sends to Linh opens on the right project.
+            */
+            onRow={(row) => ({
+              style: { cursor: 'pointer' },
+              onClick: () => navigate(`${APP_BASE_PATH}/admin/decks?project=${row.id}`),
+            })}
             columns={[
               {
                 title: 'Tên dự án',
@@ -234,7 +247,13 @@ export function ProjectsScreen() {
                       size="small"
                       aria-label="Sửa"
                       icon={<EditOutlined />}
-                      onClick={() => setEditing(row)}
+                      onClick={(e) => {
+                        // The button sits inside a row that navigates. Without
+                        // this, editing also opens the project's decks behind
+                        // the modal, and closing it strands the admin there.
+                        e.stopPropagation()
+                        setEditing(row)
+                      }}
                     />
                   </Tooltip>
                 ),

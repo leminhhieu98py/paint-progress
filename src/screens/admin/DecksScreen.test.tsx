@@ -1,6 +1,6 @@
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { DecksScreen } from './DecksScreen'
 
@@ -92,15 +92,55 @@ beforeEach(() => {
  * its drawing both moved to the deck's own address -- so a stand-in that only
  * proved "something was clicked" would leave the whole of it unchecked.
  */
-const renderScreen = () =>
+function UrlEcho() {
+  const { search } = useLocation()
+  return <div data-testid="url-search">{search}</div>
+}
+
+const renderScreen = (entry = '/decks') =>
   render(
-    <MemoryRouter initialEntries={['/decks']}>
+    <MemoryRouter initialEntries={[entry]}>
+      <UrlEcho />
       <Routes>
         <Route path="/decks" element={<DecksScreen />} />
         <Route path="/decks/:deckId" element={<div>deck page</div>} />
       </Routes>
     </MemoryRouter>,
   )
+
+describe('DecksScreen project selection', () => {
+  beforeEach(() => {
+    listProjectNames.mockResolvedValue([
+      { id: 'p1', name: 'BB1', code: 'BB1' },
+      { id: 'p2', name: 'Rạng Đông RD-2', code: 'RD2' },
+    ])
+  })
+
+  it('opens the project named in the URL, not the first one', async () => {
+    // This is how the projects list hands a project over. Falling back to the
+    // first would silently show the admin a different project's decks than the
+    // row they clicked.
+    renderScreen('/decks?project=p2')
+    await waitFor(() => expect(listDecks).toHaveBeenCalledWith('p2'))
+  })
+
+  it('falls back to the first project when the URL names one that is gone', async () => {
+    renderScreen('/decks?project=deleted-yesterday')
+    await waitFor(() => expect(listDecks).toHaveBeenCalledWith('p1'))
+  })
+
+  it('writes the chosen project back to the URL so a refresh keeps it', async () => {
+    renderScreen()
+    await screen.findByText('Main Deck')
+
+    await userEvent.click(screen.getByLabelText('Dự án'))
+    await userEvent.click(await screen.findByTitle('Rạng Đông RD-2 (RD2)'))
+
+    await waitFor(() =>
+      expect(screen.getByTestId('url-search')).toHaveTextContent('project=p2'),
+    )
+  })
+})
 
 describe('DecksScreen', () => {
   it('lists the decks of the first project', async () => {
