@@ -16,10 +16,11 @@ import { computeDeckProgress } from '../../domain/progress'
 import type { Stage, Zone } from '../../domain/types'
 import { getDrawingUrl } from '../../lib/decksApi'
 import { formatAreaM2 } from '../../lib/format'
-import { listDeckZones } from '../../lib/gsApi'
 import { loadDeckProgress, type DeckProgressEntry } from '../../lib/progressApi'
-import { createZone, deleteZone, setZoneActual, updateZone } from '../../lib/zonesApi'
-import { StageSpecTable } from '../gs/StageSpecTable'
+import {
+  createZone, deleteZone, listDeckZones, setZoneActual, updateZone,
+} from '../../lib/zonesApi'
+import { StageSpecTable } from '../../components/StageSpecTable'
 
 /**
  * What each fill on the canvas above means.

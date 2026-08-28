@@ -18,10 +18,8 @@ vi.mock('../../lib/progressApi', () => ({
 vi.mock('../../lib/decksApi', () => ({
   getDrawingUrl: (p: string) => getDrawingUrl(p),
 }))
-vi.mock('../../lib/gsApi', () => ({
-  listDeckZones: (d: string) => listDeckZones(d),
-}))
 vi.mock('../../lib/zonesApi', () => ({
+  listDeckZones: (d: string) => listDeckZones(d),
   createZone: (d: string, draft: unknown, ids: string[]) => createZone(d, draft, ids),
   updateZone: (id: string, f: unknown) => updateZone(id, f),
   deleteZone: (id: string) => deleteZone(id),

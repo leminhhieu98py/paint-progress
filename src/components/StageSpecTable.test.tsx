@@ -1,7 +1,7 @@
 import { render, screen, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
-import { computeDeckProgress } from '../../domain/progress'
-import { WORKBOOK_DECKS, WORKBOOK_STAGES } from '../../domain/fixtures'
+import { computeDeckProgress } from '../domain/progress'
+import { WORKBOOK_DECKS, WORKBOOK_STAGES } from '../domain/fixtures'
 import { StageSpecTable } from './StageSpecTable'
 
 /**

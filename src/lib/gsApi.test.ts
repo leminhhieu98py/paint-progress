@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Cell } from '../domain/types'
 import {
-  listDeckCells, listDeckZones, loadGsProject, setCellStage, subscribeDeckCells,
+  listDeckCells, loadGsProject, setCellStage, subscribeDeckCells,
   type GsRealtimeStatus,
 } from './gsApi'
 
@@ -232,54 +232,6 @@ describe('listDeckCells', () => {
   it('throws when the query fails', async () => {
     from.mockImplementationOnce(() => builder({ error: { message: 'permission denied' } }))
     await expect(listDeckCells('d1')).rejects.toThrow('permission denied')
-  })
-})
-
-describe('listDeckZones', () => {
-  it('returns a deck\'s zones with their cell ids', async () => {
-    from.mockImplementationOnce(() => builder({
-      data: [{
-        id: 'z1', name: 'Zone 1', stage_id: 's5',
-        start_date: '2026-08-13', finish_date: '2026-08-19',
-        zone_cells: [{ cell_id: 'c1' }, { cell_id: 'c2' }],
-      }],
-    }))
-
-    expect(await listDeckZones('d1')).toEqual([{
-      id: 'z1', name: 'Zone 1', stageId: 's5',
-      startDate: '2026-08-13', finishDate: '2026-08-19',
-      cellIds: ['c1', 'c2'],
-    }])
-  })
-
-  it('returns an unscheduled zone with null dates and an empty membership', async () => {
-    from.mockImplementationOnce(() => builder({
-      data: [{
-        id: 'z2', name: 'Zone 2', stage_id: 's5',
-        start_date: null, finish_date: null, zone_cells: [],
-      }],
-    }))
-
-    const [zone] = await listDeckZones('d1')
-    expect(zone.startDate).toBeNull()
-    expect(zone.finishDate).toBeNull()
-    expect(zone.cellIds).toEqual([])
-  })
-
-  it('scopes the query to the deck and orders by seq', async () => {
-    const stub = builder({ data: [] })
-    from.mockImplementationOnce(() => stub)
-
-    await listDeckZones('d1')
-
-    // seq order is what lets a later zone win a cell two zones claim.
-    expect(stub.eq).toHaveBeenCalledWith('deck_id', 'd1')
-    expect(stub.order).toHaveBeenCalledWith('seq')
-  })
-
-  it('throws when the query fails', async () => {
-    from.mockImplementationOnce(() => builder({ error: { message: 'permission denied' } }))
-    await expect(listDeckZones('d1')).rejects.toThrow('permission denied')
   })
 })
 

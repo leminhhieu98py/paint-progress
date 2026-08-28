@@ -18,12 +18,13 @@ import { LOGIN_PATH } from '../../config'
 import { getDrawingUrl, listStages } from '../../lib/decksApi'
 import { formatAreaM2 } from '../../lib/format'
 import {
-  listDeckCells, listDeckZones, loadGsProject, setCellStage, subscribeDeckCells,
+  listDeckCells, loadGsProject, setCellStage, subscribeDeckCells,
   type GsDeck, type GsRealtimeStatus,
 } from '../../lib/gsApi'
+import { listDeckZones } from '../../lib/zonesApi'
 import { CellStageModal } from './CellStageModal'
 import { StagePie } from './StagePie'
-import { StageSpecTable } from './StageSpecTable'
+import { StageSpecTable } from '../../components/StageSpecTable'
 
 /**
  * How long to wait for the realtime channel to reach SUBSCRIBED before telling

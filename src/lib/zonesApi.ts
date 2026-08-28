@@ -1,12 +1,14 @@
+import type { Zone } from '../domain/types'
 import { supabase } from './supabase'
 
 /**
- * Writing the plan: the `Kế hoạch tháo GG` sheet, and the dated annotations the
- * admin used to draw on the PDFs by hand.
+ * Zones: the `Kế hoạch tháo GG` sheet, and the dated annotations the admin used
+ * to draw on the PDFs by hand.
  *
- * Reading is `gsApi.listDeckZones`, and stays there rather than being copied:
- * both roles read the same rows, and two mappers for one table is how the
- * foreman's plan labels and the admin's zone table drift apart.
+ * Both roles read these rows -- the admin's zone table and the foreman's plan
+ * labels -- so there is ONE reader here, not one per role. `listDeckZones` used
+ * to live in `gsApi` alongside it, which made every admin screen that shows a
+ * plan import the foreman's module to get it.
  *
  * Zones live in the database, so a GS toggling "Hiện kế hoạch" sees a zone the
  * moment it exists. There is no synchronisation step anywhere, and that is the
@@ -144,4 +146,30 @@ export async function setZoneActual(zoneId: string, stageId: string): Promise<nu
     .select('id')
   if (error) throw new Error(error.message)
   return (data ?? []).length
+}
+
+/**
+ * A deck's planned zones, with their member cell ids.
+ *
+ * Ordered by seq, which buildPlanLabels relies on to resolve a cell claimed by
+ * two zones. One embedded select rather than two queries: zone_cells has no
+ * columns of its own worth returning, and a second round trip on a site tether
+ * to attach ids is a round trip for nothing.
+ * */
+export async function listDeckZones(deckId: string): Promise<Zone[]> {
+  const { data, error } = await supabase
+    .from('zones')
+    .select('id, name, stage_id, start_date, finish_date, zone_cells(cell_id)')
+    .eq('deck_id', deckId)
+    .order('seq')
+  if (error) throw new Error(error.message)
+
+  return (data ?? []).map((z) => ({
+    id: z.id as string,
+    name: z.name as string,
+    stageId: z.stage_id as string,
+    startDate: (z.start_date as string | null) ?? null,
+    finishDate: (z.finish_date as string | null) ?? null,
+    cellIds: ((z.zone_cells ?? []) as { cell_id: string }[]).map((zc) => zc.cell_id),
+  }))
 }

@@ -1,6 +1,6 @@
 import { Table, type TableProps } from 'antd'
-import type { StageProgress } from '../../domain/types'
-import { formatAreaM2, formatPercent } from '../../lib/format'
+import type { StageProgress } from '../domain/types'
+import { formatAreaM2, formatPercent } from '../lib/format'
 
 interface SpecRow {
   key: string

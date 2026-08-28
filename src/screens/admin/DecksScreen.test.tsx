@@ -22,7 +22,7 @@ vi.mock('../../lib/decksApi', () => ({
 vi.mock('../../lib/progressApi', () => ({
   loadProjectProgress: (id: string) => loadProjectProgress(id),
 }))
-vi.mock('../../lib/gsApi', () => ({ listDeckZones: (d: string) => listDeckZones(d) }))
+vi.mock('../../lib/zonesApi', () => ({ listDeckZones: (d: string) => listDeckZones(d) }))
 vi.mock('../../lib/adminApi', () => ({ listGsUsers: () => listGsUsers() }))
 vi.mock('../../lib/reportXlsx', () => ({
   buildReportWorkbook: (i: unknown) => buildReportWorkbook(i),

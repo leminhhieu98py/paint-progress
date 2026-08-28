@@ -19,10 +19,12 @@ const signOut = vi.hoisted(() => vi.fn())
 vi.mock('../../lib/gsApi', () => ({
   loadGsProject: (projectId: string) => loadGsProject(projectId),
   listDeckCells: (deckId: string) => listDeckCells(deckId),
-  listDeckZones: (deckId: string) => listDeckZones(deckId),
   setCellStage: (cellId: string, stageId: string | null) => setCellStage(cellId, stageId),
   subscribeDeckCells: (deckId: string, handlers: Handlers) =>
     subscribeDeckCells(deckId, handlers),
+}))
+vi.mock('../../lib/zonesApi', () => ({
+  listDeckZones: (deckId: string) => listDeckZones(deckId),
 }))
 vi.mock('../../lib/decksApi', () => ({
   getDrawingUrl: (path: string) => getDrawingUrl(path),
