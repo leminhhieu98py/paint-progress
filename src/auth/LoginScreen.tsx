@@ -9,39 +9,41 @@ interface Values {
 }
 
 /**
- * The hero panel beside the form.
+ * The hero panel beside the form: the five stage colours, and what the product
+ * does.
  *
- * Wordless on purpose, and that is a DELIBERATE departure from the approved
- * prototype, which puts "Paint Progress" and a headline naming the product
- * here. This screen is the one thing a stranger who finds the URL can see, and
- * the app is already built not to tell them anything: index.html carries a "—"
- * title and noindex, and the sign-in error refuses to distinguish "no such
- * user" from "wrong password" so it cannot confirm which usernames exist. A
- * hero that names the product and the trade undoes all three.
+ * This panel used to be wordless. The login screen is the one thing a stranger
+ * who finds the URL can see, and naming the product and the trade here tells
+ * them both. That was raised and the owner decided to name it, so it is named
+ * -- but only the copy changed. The two protections that actually cost an
+ * attacker something are still in place and must stay: robots noindex plus a
+ * blanket Disallow in robots.txt, and a sign-in error that refuses to
+ * distinguish "no such user" from "wrong password", so the form cannot be used
+ * to enumerate which usernames exist.
  *
- * The five bars are the stage palette, so the screen still belongs to this
- * product visually. Five coloured rectangles identify nothing.
- *
- * Exported so a test can assert the wordlessness directly. The breakpoint hook
- * reports every screen false under jsdom, so the wide layout -- and this panel
- * with it -- never renders through LoginScreen in a test.
+ * Exported so a test can assert the approved copy directly. antd's breakpoint
+ * hook reports every screen false under jsdom, so the wide layout -- and this
+ * panel with it -- never renders through LoginScreen in a test.
  */
 export function Hero() {
+  // Coat 2's bar carries the prototype's own hairline texture. It is
+  // decoration here, not data -- a flat #bfbfbf between two saturated bars
+  // reads as a gap rather than as a bar.
   const bars: [string, number][] = [
     ['#fadb14', 96],
-    ['#bfbfbf', 70],
+    ['repeating-linear-gradient(90deg,#bfbfbf 0 5px,#949494 5px 6px)', 70],
     ['#52c41a', 126],
     ['#1677ff', 52],
     ['#722ed1', 34],
   ]
   return (
     <div
-      aria-hidden
       style={{
         background: 'linear-gradient(#F6FBFA, #EDF5F4)',
         padding: '0 48px',
         display: 'flex',
-        alignItems: 'center',
+        flexDirection: 'column',
+        justifyContent: 'center',
         minWidth: 0,
         position: 'relative',
         overflow: 'hidden',
@@ -59,10 +61,23 @@ export function Hero() {
         }}
       />
       <div style={{ position: 'relative', display: 'flex', gap: 7, alignItems: 'flex-end' }}>
-        {bars.map(([color, height]) => (
-          <div key={color} style={{ width: 46, height, borderRadius: 8, background: color }} />
+        {bars.map(([background, height]) => (
+          <div key={background} style={{ width: 46, height, borderRadius: 8, background }} />
         ))}
       </div>
+      <h2
+        style={{
+          position: 'relative',
+          margin: '28px 0 0',
+          fontSize: 19,
+          fontWeight: 600,
+          lineHeight: 1.35,
+          letterSpacing: '-0.024em',
+          maxWidth: 300,
+        }}
+      >
+        Tiến độ sơn theo từng ô, ngay trên bản vẽ.
+      </h2>
     </div>
   )
 }
@@ -116,15 +131,19 @@ export function LoginScreen() {
             }
       }
     >
-      <span
-        style={{
-          display: 'inline-block',
-          width: 28,
-          height: 28,
-          borderRadius: 9,
-          background: palette.accent,
-        }}
-      />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <span
+          style={{
+            display: 'inline-block',
+            width: 28,
+            height: 28,
+            borderRadius: 9,
+            background: palette.accent,
+            flex: 'none',
+          }}
+        />
+        <span style={{ fontSize: 13, fontWeight: 600 }}>Paint Progress</span>
+      </div>
       <h1
         style={{
           margin: '20px 0 22px',

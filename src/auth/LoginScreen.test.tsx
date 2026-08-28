@@ -30,6 +30,11 @@ describe('LoginScreen', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Đăng nhập' }))
 
     expect(await screen.findByText('Tên đăng nhập hoặc mật khẩu không đúng')).toBeInTheDocument()
+    // The screen now names the product, so this is the protection that is left:
+    // one message for both failures. The provider distinguishes "no such user"
+    // from "wrong password", and echoing it turns the form into a way to ask
+    // which usernames exist.
+    expect(screen.queryByText(/Invalid login credentials/i)).toBeNull()
   })
 
   // This is the shape production actually produces: auth-js resolves a
@@ -71,20 +76,18 @@ describe('LoginScreen', () => {
     await waitFor(() => expect(button.className).not.toMatch(/loading/i))
   })
 
-  it('renders no text that hints an app exists', () => {
+  it('names the product on the sign-in card', () => {
     render(<LoginScreen />)
-    expect(screen.queryByText(/paint|progress|sơn|tiến độ/i)).toBeNull()
+    expect(screen.getByText('Paint Progress')).toBeInTheDocument()
   })
 
-  it('keeps the wide-screen hero panel entirely wordless', () => {
-    // The approved prototype puts the product name and a headline naming the
-    // trade in this panel. Both are deliberately left out: index.html carries
-    // a "—" title and noindex, and the sign-in error refuses to say whether a
-    // username exists. A hero that names the product undoes all of it.
-    //
-    // Asserted on Hero directly because the breakpoint hook reports every
-    // screen false under jsdom, so the wide layout never renders above.
-    const { container } = render(<Hero />)
-    expect(container.textContent).toBe('')
+  it('carries the approved headline in the wide-screen hero', () => {
+    // Asserted on Hero directly: antd's breakpoint hook reports every screen
+    // false under jsdom, so the wide layout never renders through LoginScreen
+    // in a test and this copy would otherwise go unchecked.
+    render(<Hero />)
+    expect(
+      screen.getByRole('heading', { name: 'Tiến độ sơn theo từng ô, ngay trên bản vẽ.' }),
+    ).toBeInTheDocument()
   })
 })
