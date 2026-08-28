@@ -1,5 +1,6 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { useEffect } from 'react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { DeckDetailScreen } from './DeckDetailScreen'
@@ -36,6 +37,22 @@ vi.mock('./DeckEditor', () => ({
 // stage exports through a mock that does not carry them.
 vi.mock('./StageConfigPanel', () => ({
   StageConfigPanel: ({ deckId }: { deckId: string }) => <div>stages {deckId}</div>,
+}))
+// Stubbed like the other two, and for one more reason: left real it calls
+// loadDeckProgress against the live client, so every test in this file paid a
+// network round trip for a panel none of them are about. The stub reports a
+// fixed percentage upward, which is the contract this screen depends on.
+vi.mock('./DeckProgressPanel', () => ({
+  DeckProgressPanel: ({
+    deckId,
+    onProgress,
+  }: {
+    deckId: string
+    onProgress?: (p: number | null) => void
+  }) => {
+    useEffect(() => onProgress?.(0.4438), [onProgress])
+    return <div>progress {deckId}</div>
+  },
 }))
 
 const DECK = {
@@ -75,7 +92,13 @@ describe('DeckDetailScreen', () => {
   it('opens the deck named in the URL, so a reload keeps it', async () => {
     renderAt('/decks/d1')
 
-    expect(await screen.findByText('Main Deck (MD)')).toBeInTheDocument()
+    // The name is the page heading and the code is the badge beside it --
+    // two nodes, deliberately: the code is a stable identifier the admin reads
+    // off a drawing, and it stays legible while a long deck name truncates.
+    expect(await screen.findByRole('heading', { level: 1, name: 'Main Deck' })).toBeInTheDocument()
+    // Twice: the badge beside the heading, which stays legible while a long
+    // deck name truncates, and the identity card that lists it as a field.
+    expect(screen.getAllByText('MD')).toHaveLength(2)
     expect(getDeck).toHaveBeenCalledWith('d1')
   })
 
@@ -83,12 +106,14 @@ describe('DeckDetailScreen', () => {
     // Curating a deck is destructive work -- detection replaces every cell --
     // and the screen a link lands on should not be one keystroke away from it.
     renderAt('/decks/d1')
-    await screen.findByText('Main Deck (MD)')
+    await screen.findByRole('heading', { level: 1, name: 'Main Deck' })
 
     expect(screen.queryByLabelText('Bản vẽ (PDF)')).not.toBeInTheDocument()
     expect(screen.queryByText('editor MD')).not.toBeInTheDocument()
 
-    await userEvent.click(screen.getByRole('button', { name: 'Sửa' }))
+    // The Segmented's radio input carries pointer-events:none -- its visible
+    // label is what a person clicks, so that is what the test clicks.
+    await userEvent.click(screen.getByText('Sửa'))
 
     expect(await screen.findByLabelText('Bản vẽ (PDF)')).toBeInTheDocument()
     expect(screen.getByText('editor MD')).toBeInTheDocument()
@@ -100,14 +125,19 @@ describe('DeckDetailScreen', () => {
     // like 00171-14, that is not a small thing to be unsure about.
     renderAt('/decks/d1')
 
-    expect(await screen.findByText('ban-ve.pdf')).toBeInTheDocument()
+    // Scoped to the identity cards: the panel header repeats the same label as
+    // its collapsed summary, which is the point of a summary, so an unscoped
+    // query cannot say which of the two it found.
+    const identity = await screen.findByTestId('deck-identity')
+    expect(within(identity).getByText('ban-ve.pdf')).toBeInTheDocument()
   })
 
   it('says which page of a multi-page file was taken', async () => {
     getDeck.mockResolvedValue({ ...DECK, drawingName: 'ban-ve.pdf', drawingPage: 3 })
     renderAt('/decks/d1')
 
-    expect(await screen.findByText('ban-ve.pdf (trang 3)')).toBeInTheDocument()
+    const identity = await screen.findByTestId('deck-identity')
+    expect(within(identity).getByText('ban-ve.pdf (trang 3)')).toBeInTheDocument()
   })
 
   it('admits it does not know, on a deck whose drawing predates recording it', async () => {
@@ -116,14 +146,17 @@ describe('DeckDetailScreen', () => {
     getDeck.mockResolvedValue({ ...DECK, drawingName: null, drawingPage: null })
     renderAt('/decks/d1')
 
-    expect(await screen.findByText('Đã có (không rõ tên tệp)')).toBeInTheDocument()
+    const identity = await screen.findByTestId('deck-identity')
+    expect(within(identity).getByText('Đã có (không rõ tên tệp)')).toBeInTheDocument()
   })
 
   it('shows what is on the deck now, above the picker that would replace it', async () => {
     // Choosing a file is destructive on a deck that already has one.
     renderAt('/decks/d1')
-    await screen.findByText('Main Deck (MD)')
-    await userEvent.click(screen.getByRole('button', { name: 'Sửa' }))
+    await screen.findByRole('heading', { level: 1, name: 'Main Deck' })
+    // The Segmented's radio input carries pointer-events:none -- its visible
+    // label is what a person clicks, so that is what the test clicks.
+    await userEvent.click(screen.getByText('Sửa'))
 
     expect(await screen.findByText('Đang dùng: ban-ve.pdf')).toBeInTheDocument()
   })
@@ -160,16 +193,20 @@ describe('DeckDetailScreen', () => {
     // dashed beam centrelines detection reads, and no message afterwards
     // explains why the deck came back with a tenth of its bays.
     renderAt('/decks/d1')
-    await screen.findByText('Main Deck (MD)')
-    await userEvent.click(screen.getByRole('button', { name: 'Sửa' }))
+    await screen.findByRole('heading', { level: 1, name: 'Main Deck' })
+    // The Segmented's radio input carries pointer-events:none -- its visible
+    // label is what a person clicks, so that is what the test clicks.
+    await userEvent.click(screen.getByText('Sửa'))
 
     expect(await screen.findByLabelText('Bản vẽ (PDF)')).toHaveAttribute('accept', 'application/pdf')
   })
 
   it('writes the name, the code and the area together', async () => {
     renderAt('/decks/d1')
-    await screen.findByText('Main Deck (MD)')
-    await userEvent.click(screen.getByRole('button', { name: 'Sửa' }))
+    await screen.findByRole('heading', { level: 1, name: 'Main Deck' })
+    // The Segmented's radio input carries pointer-events:none -- its visible
+    // label is what a person clicks, so that is what the test clicks.
+    await userEvent.click(screen.getByText('Sửa'))
 
     const name = await screen.findByLabelText('Tên sàn')
     await userEvent.clear(name)
@@ -240,6 +277,31 @@ describe('DeckDetailScreen', () => {
     expect(screen.getByRole('button', { name: 'Tạo sàn' })).toBeDisabled()
     await userEvent.type(screen.getByLabelText('Mã sàn'), 'CD')
     expect(screen.getByRole('button', { name: 'Tạo sàn' })).not.toBeDisabled()
+  })
+
+  it('carries the deck percentage in the header, from the panel that already has it', async () => {
+    // The alternative is loading every cell and stage of the deck a second
+    // time for one number.
+    renderAt('/decks/d1')
+    expect(await screen.findByText('44,38%')).toBeInTheDocument()
+  })
+
+  it('discards unsaved edits when the admin switches back to Xem', async () => {
+    // Switching modes is not saving. Leaving the typed value in place would
+    // mean the next press of Sửa opens a form that disagrees with the deck.
+    renderAt('/decks/d1')
+    await screen.findByRole('heading', { level: 1, name: 'Main Deck' })
+    await userEvent.click(screen.getByText('Sửa'))
+
+    const nameField = await screen.findByLabelText('Tên sàn')
+    await userEvent.clear(nameField)
+    await userEvent.type(nameField, 'Nhập nhầm')
+
+    await userEvent.click(screen.getByText('Xem'))
+    await userEvent.click(screen.getByText('Sửa'))
+
+    expect(await screen.findByLabelText('Tên sàn')).toHaveValue('Main Deck')
+    expect(updateDeckIdentity).not.toHaveBeenCalled()
   })
 
   it('says so when the id in the URL names no deck', async () => {

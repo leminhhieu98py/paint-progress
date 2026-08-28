@@ -1,4 +1,5 @@
-import { Alert, Button, Descriptions, Form, Input, InputNumber, Space, Spin, Typography } from 'antd'
+import { WarningOutlined } from '@ant-design/icons'
+import { Alert, Button, Form, Input, InputNumber, Segmented, Space, Spin, Typography } from 'antd'
 import { useCallback, useEffect, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { NEW_DECK } from '../../config'
@@ -11,7 +12,57 @@ import { pdfPageCount, renderPdfPage } from '../../lib/pdfToPng'
 import { DeckEditor } from './DeckEditor'
 import { StageConfigPanel } from './StageConfigPanel'
 import { DeckProgressPanel } from './DeckProgressPanel'
-import { PageBody } from '../../components/PageHeader'
+import { Mono } from '../../components/Mono'
+import { PageBody, PageHeader } from '../../components/PageHeader'
+import { RulesDisclosure } from '../../components/RulesDisclosure'
+import { SectionCard } from '../../components/SectionCard'
+import { formatPercent } from '../../lib/format'
+import { palette } from '../../theme'
+
+const IDENTITY_RULES = [
+  {
+    id: 'IDN-R5',
+    text: 'Diện tích nhận dấu phẩy thập phân: 5258,5 phải vào đúng là 5258,5 chứ không thành 5258.',
+  },
+  {
+    id: 'IDN-R4',
+    text: 'Tên tệp và trang của bản vẽ hiện tại luôn hiện trước nút chọn tệp, vì chọn tệp mới là thao tác phá huỷ.',
+  },
+]
+
+/** One read-only fact about the deck, in the card grid of panel A3.1. */
+function IdentityCard({
+  label,
+  value,
+  sub,
+  mono = false,
+}: {
+  label: string
+  value: string
+  sub?: string
+  mono?: boolean
+}) {
+  return (
+    <div
+      style={{
+        background: palette.bgSubtle,
+        border: `1px solid ${palette.borderSplit}`,
+        borderRadius: 11,
+        padding: '14px 16px 16px',
+      }}
+    >
+      <div style={{ fontSize: 12, fontWeight: 600, color: palette.textTertiary }}>{label}</div>
+      <div style={{ marginTop: 9, fontSize: mono ? 13 : 16, fontWeight: 600, lineHeight: 1.25, wordBreak: mono ? 'break-all' : 'normal' }}>
+        {mono ? <Mono>{value}</Mono> : value}
+      </div>
+      {sub !== undefined && (
+        <div style={{ marginTop: 4, fontSize: 11, lineHeight: 1.4, color: palette.textTertiary }}>
+          {sub}
+        </div>
+      )}
+    </div>
+  )
+}
 
 /**
  * One deck, at its own address.
@@ -50,6 +101,15 @@ export function DeckDetailScreen() {
   const [pdf, setPdf] = useState<File | null>(null)
   const [pages, setPages] = useState(1)
   const [page, setPage] = useState(1)
+  /**
+   * The deck's own percentage, for the header.
+   *
+   * Reported up by the progress panel rather than fetched again here: that
+   * panel already loads every cell and every stage of this deck to draw them,
+   * and a second read of the same payload for one number is the heaviest query
+   * on the screen run twice.
+   */
+  const [progress, setProgress] = useState<number | null>(null)
 
   const load = useCallback(async () => {
     if (creating || !deckId) return
@@ -207,6 +267,28 @@ export function DeckDetailScreen() {
           aria-label="Bản vẽ (PDF)"
           onChange={(e) => void takePdf(e.target.files?.[0] ?? null)}
         />
+        {/*
+          Said before the picker is used, not after. Replacing the drawing
+          drops every bay on the deck, which takes the recorded progress with
+          it -- and the picker gives no second chance once a file is chosen.
+        */}
+        {!creating && deck?.imagePath && (
+          <div
+            style={{
+              display: 'flex',
+              gap: 7,
+              alignItems: 'flex-start',
+              marginTop: 8,
+              maxWidth: 520,
+              fontSize: 11,
+              lineHeight: 1.45,
+              color: palette.error,
+            }}
+          >
+            <WarningOutlined style={{ marginTop: 2, flex: 'none' }} />
+            <span>Chọn tệp mới sẽ xoá bản vẽ hiện tại và toàn bộ hình học ô của sàn này.</span>
+          </div>
+        )}
         {pages > 1 && (
           <Space>
             <label htmlFor="deck-page">Trang</label>
@@ -244,44 +326,122 @@ export function DeckDetailScreen() {
     </Form>
   )
 
+  const cancelEdit = () => {
+    if (creating) {
+      navigate('..', { relative: 'path' })
+      return
+    }
+    setName(deck?.name ?? '')
+    setCode(deck?.code ?? '')
+    setArea(deck?.totalAreaM2 ?? 0)
+    setPdf(null)
+    setEditing(false)
+  }
+
   return (
-    <PageBody>
-      <Space direction="vertical" style={{ width: '100%' }} size="middle">
+    <>
+      <PageHeader
+        sticky
+        title={creating ? 'Sàn mới' : (deck?.name ?? '')}
+        badge={creating ? undefined : deck?.code}
+        subtitle={
+          creating
+            ? 'Đặt tên, mã và diện tích trước, rồi tải bản vẽ lên.'
+            : `${deck?.cellCount ? `${deck.cellCount} ô` : 'chưa dựng ô'} · ${formatAreaM2(deck?.totalAreaM2 ?? 0)} m²`
+        }
+        breadcrumbs={[{ label: 'Sàn', onClick: () => navigate('..', { relative: 'path' }) }]}
+        onBack={() => navigate('..', { relative: 'path' })}
+        extra={
+          creating ? undefined : (
+            <>
+              {progress !== null && (
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: palette.textTertiary }}>
+                    Tiến độ sàn
+                  </div>
+                  <div style={{ marginTop: 7, fontSize: 23, fontWeight: 700, letterSpacing: '-0.032em' }}>
+                    {formatPercent(progress)}
+                  </div>
+                </div>
+              )}
+              {/*
+                A mode switch, not a "Sửa" button. Curating a deck replaces
+                every bay, so which mode you are in has to be legible at a
+                glance rather than inferred from whether a form is on screen.
+              */}
+              <Segmented
+                value={editing ? 'edit' : 'view'}
+                onChange={(v) => (v === 'edit' ? setEditing(true) : cancelEdit())}
+                options={[
+                  { label: 'Xem', value: 'view' },
+                  { label: 'Sửa', value: 'edit' },
+                ]}
+              />
+            </>
+          )
+        }
+      />
+
+      <PageBody>
         {error && <Alert type="error" message={error} closable onClose={() => setError(null)} />}
 
-        <Space>
-          <Button onClick={() => navigate('..', { relative: 'path' })}>← Danh sách sàn</Button>
-          <Typography.Title level={4} style={{ margin: 0 }}>
-            {creating ? 'Sàn mới' : `${deck?.name} (${deck?.code})`}
-          </Typography.Title>
-        </Space>
-
-        {editing ? identity : (
-          <>
-            <Descriptions size="small" column={3} bordered items={[
-              { key: 'name', label: 'Tên sàn', children: deck?.name },
-              { key: 'code', label: 'Mã sàn', children: deck?.code },
-              { key: 'area', label: 'Diện tích sàn (m²)', children: formatAreaM2(deck?.totalAreaM2 ?? 0) },
-              { key: 'cells', label: 'Số ô', children: deck?.cellCount ?? 0 },
-              { key: 'drawing', label: 'Bản vẽ', children: drawingLabel },
-            ]} />
-            <Button type="primary" onClick={() => setEditing(true)}>Sửa</Button>
-          </>
-        )}
+        <SectionCard
+          code="A3.1"
+          title="Thông tin sàn & bản vẽ"
+          summary={creating ? 'Sàn chưa được tạo' : drawingLabel}
+          collapsible
+          footer={<RulesDisclosure rules={IDENTITY_RULES} />}
+        >
+          {editing ? (
+            identity
+          ) : (
+            <div
+              data-testid="deck-identity"
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(196px, 1fr))',
+                gap: 14,
+              }}
+            >
+              <IdentityCard label="Tên sàn" value={deck?.name ?? ''} />
+              <IdentityCard label="Mã sàn" value={deck?.code ?? ''} mono />
+              <IdentityCard
+                label="Diện tích sàn (m²)"
+                value={formatAreaM2(deck?.totalAreaM2 ?? 0)}
+                sub="Mẫu số của mọi phần trăm trên sàn"
+              />
+              <IdentityCard label="Số ô" value={String(deck?.cellCount ?? 0)} />
+              <IdentityCard
+                label="Bản vẽ (PDF)"
+                value={drawingLabel}
+                mono
+                sub={deck?.imagePath ? undefined : 'Cần tải PDF trước khi dựng ô'}
+              />
+            </div>
+          )}
+        </SectionCard>
 
         {/*
+          Above the drawing tools on purpose: the stages are what the bays are
+          eventually painted to, so they are the deck's spec and the bays are
+          the work against it. Declaring them after drawing 180 bays reads
+          backwards.
+
           The drawing tools belong to editing, and only once there is a deck to
           attach them to: in create mode there is no deck id, no drawing and no
           cells for them to work on.
         */}
-        {/*
-          Above the drawing tools on purpose: the stages are what the bays are
-          eventually painted to, so they are the deck's spec and the bays are the
-          work against it. Declaring them after drawing 180 bays reads backwards.
-        */}
-        {editing && deck && <StageConfigPanel deckId={deck.id} onSaved={() => void load()} />}
+        {editing && deck && (
+          <SectionCard code="A3.2" title="Cấu hình lớp sơn" collapsible bodyPadding={0}>
+            <StageConfigPanel deckId={deck.id} onSaved={() => void load()} />
+          </SectionCard>
+        )}
 
-        {editing && deck && <DeckEditor deck={deck} onSaved={() => void load()} />}
+        {editing && deck && (
+          <SectionCard code="A3.3" title="Phân ô" collapsible bodyPadding={0}>
+            <DeckEditor deck={deck} onSaved={() => void load()} />
+          </SectionCard>
+        )}
 
         {/* Progress lives here rather than on a screen of its own: everything on
             it is about THIS deck, and making the admin pick a project and then a
@@ -293,8 +453,17 @@ export function DeckDetailScreen() {
             view five lines of text and meant pressing "Sửa" to look at the
             drawing. Looking is not editing; only the writes are behind the
             button. */}
-        {deck && <DeckProgressPanel deckId={deck.id} editable={editing} />}
-      </Space>
-    </PageBody>
+        {/*
+          A3.4 carries no summary. The header above is sticky and already shows
+          the deck's percentage in the largest type on the screen; repeating it
+          here would be the same number twice in one viewport.
+        */}
+        {deck && (
+          <SectionCard code="A3.4" title="Tiến độ theo lớp sơn" collapsible bodyPadding={0}>
+            <DeckProgressPanel deckId={deck.id} editable={editing} onProgress={setProgress} />
+          </SectionCard>
+        )}
+      </PageBody>
+    </>
   )
 }

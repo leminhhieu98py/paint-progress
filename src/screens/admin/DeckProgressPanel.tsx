@@ -88,8 +88,16 @@ interface StageWindow {
 export function DeckProgressPanel({
   deckId,
   editable = true,
+  onProgress,
 }: {
   deckId: string
+  /**
+   * Reports this deck's percentage upward as soon as it is computed, so the
+   * screen's sticky header can carry it without loading the deck a second
+   * time. Null while nothing is loaded, and on a deck that failed to load --
+   * a stale percentage above a failed panel is worse than none.
+   */
+  onProgress?: (progress: number | null) => void
   /**
    * Whether the writes are offered. False on the deck's read-only view.
    *
@@ -176,6 +184,12 @@ export function DeckProgressPanel({
     () => (entry ? computeDeckProgress(entry.deck, entry.stages) : null),
     [entry],
   )
+
+  // Reported in an effect rather than during render: this sets state on the
+  // parent, and doing that while rendering a child is a React error.
+  useEffect(() => {
+    onProgress?.(progress ? progress.progress : null)
+  }, [progress, onProgress])
   /** The zones of the filtered coat, in seq order -- the order both the marker
    *  numbering and the colour hand-out follow. */
   const filteredZones = useMemo(
