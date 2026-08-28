@@ -7,6 +7,10 @@ export interface ProjectRow {
   name: string
   code: string
   deckCount: number
+  /** How many of those decks have a drawing attached. */
+  decksWithDrawing: number
+  /** Bays across every deck of the project. */
+  cellCount: number
   totalAreaM2: number
   progress: number
 }
@@ -77,7 +81,7 @@ export async function listProjects(): Promise<ProjectRow[]> {
   const { data, error } = await supabase
     .from('projects')
     .select(
-      'id, name, code, decks(id, code, name, total_area_m2, deck_stages(id, seq, name, color, weight), cells(id, code, area_m2, stage_id))',
+      'id, name, code, decks(id, code, name, total_area_m2, image_path, deck_stages(id, seq, name, color, weight), cells(id, code, area_m2, stage_id))',
     )
     .order('name')
   if (error) throw new Error(error.message)
@@ -86,7 +90,8 @@ export async function listProjects(): Promise<ProjectRow[]> {
     // Each deck carries its own stages: their weights sum to 1 within the deck,
     // so a project percentage is a weighted average of per-deck percentages,
     // not one sum over one stage list.
-    const entries = ((row.decks ?? []) as Record<string, unknown>[]).map((d) => ({
+    const deckRows = (row.decks ?? []) as Record<string, unknown>[]
+    const entries = deckRows.map((d) => ({
       stages: ((d.deck_stages ?? []) as Record<string, unknown>[]).map((s2) => ({
         id: s2.id as string,
         seq: s2.seq as number,
@@ -123,6 +128,13 @@ export async function listProjects(): Promise<ProjectRow[]> {
       name: row.name as string,
       code: row.code as string,
       deckCount: entries.length,
+      // `image_path` is the one column added to this select for the header
+      // counters. Everything else they need -- bays, area, progress -- was
+      // already being fetched to compute the rollup, so counting it here costs
+      // nothing where a second query would cost a round trip over the same rows.
+      decksWithDrawing: deckRows.filter((d) => d.image_path !== null && d.image_path !== undefined)
+        .length,
+      cellCount: entries.reduce((sum, e) => sum + e.deck.cells.length, 0),
       totalAreaM2: entries.reduce((sum, e) => sum + e.deck.totalAreaM2, 0),
       progress: computeProjectProgress(entries).progress,
     }

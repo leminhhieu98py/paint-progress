@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { loadDeckProgress, loadProjectProgress } from './progressApi'
+import { latestProgressEvent, loadDeckProgress, loadProjectProgress } from './progressApi'
 
 const from = vi.hoisted(() => vi.fn())
 vi.mock('./supabase', () => ({ supabase: { from } }))
@@ -8,7 +8,7 @@ vi.mock('./supabase', () => ({ supabase: { from } }))
  *  `{ data, error }` -- postgrest-js reports failure as a value, never a throw. */
 function builder(result: { data?: unknown; error?: unknown }) {
   const b: Record<string, unknown> = {}
-  for (const m of ['select', 'eq', 'order']) b[m] = vi.fn(() => b)
+  for (const m of ['select', 'eq', 'order', 'limit']) b[m] = vi.fn(() => b)
   b.then = (resolve: (v: unknown) => unknown) =>
     Promise.resolve({ data: result.data ?? null, error: result.error ?? null }).then(resolve)
   return b
@@ -160,5 +160,66 @@ describe('loadDeckProgress', () => {
   it('throws when the query fails', async () => {
     from.mockImplementation(() => builder({ error: { message: 'permission denied' } }))
     await expect(loadDeckProgress('d1')).rejects.toThrow('permission denied')
+  })
+})
+
+describe('latestProgressEvent', () => {
+  const EVENT = {
+    at: '2026-08-28T09:42:11.000Z',
+    to_stage_name: 'Coat 3',
+    cells: { code: 'R7C11' },
+    by: { username: 'gs.hieu', full_name: 'Lê Trung Hiếu' },
+  }
+
+  it('reads the newest row, not an arbitrary one', async () => {
+    const b = builder({ data: [EVENT] })
+    from.mockImplementationOnce(() => b)
+
+    await latestProgressEvent()
+
+    expect(from).toHaveBeenCalledWith('cell_events')
+    // Without both of these the header would show whichever row Postgres
+    // happened to return first -- a plausible-looking timestamp from months
+    // ago, presented as "just now".
+    expect(b.order).toHaveBeenCalledWith('at', { ascending: false })
+    expect(b.limit).toHaveBeenCalledWith(1)
+  })
+
+  it('flattens the embedded cell and author', async () => {
+    from.mockImplementationOnce(() => builder({ data: [EVENT] }))
+    await expect(latestProgressEvent()).resolves.toEqual({
+      at: '2026-08-28T09:42:11.000Z',
+      cellCode: 'R7C11',
+      toStageName: 'Coat 3',
+      byName: 'Lê Trung Hiếu',
+      byUsername: 'gs.hieu',
+    })
+  })
+
+  it('keeps a null stage name, which is a bay sent back to not-started', async () => {
+    from.mockImplementationOnce(() =>
+      builder({ data: [{ ...EVENT, to_stage_name: null }] }),
+    )
+    const e = await latestProgressEvent()
+    expect(e?.toStageName).toBeNull()
+  })
+
+  it('survives an author whose profile row is gone', async () => {
+    // cell_events.by is a nullable FK and the trigger writes auth.uid(); a
+    // deleted profile leaves the embed null. The event still happened and its
+    // timestamp is still the answer to "when was the last record".
+    from.mockImplementationOnce(() => builder({ data: [{ ...EVENT, by: null }] }))
+    const e = await latestProgressEvent()
+    expect(e).toMatchObject({ cellCode: 'R7C11', byName: null, byUsername: null })
+  })
+
+  it('returns null on an empty table rather than throwing', async () => {
+    from.mockImplementationOnce(() => builder({ data: [] }))
+    await expect(latestProgressEvent()).resolves.toBeNull()
+  })
+
+  it('throws when the read fails', async () => {
+    from.mockImplementationOnce(() => builder({ error: { message: 'permission denied' } }))
+    await expect(latestProgressEvent()).rejects.toThrow('permission denied')
   })
 })

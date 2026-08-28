@@ -127,3 +127,52 @@ function mapDeckRow(row: unknown): DeckProgressEntry {
       } satisfies Deck,
   }
 }
+
+/** The most recent stage change anyone made, anywhere the reader can see. */
+export interface ProgressEvent {
+  /** ISO timestamp, as `timestamptz` comes back from PostgREST. */
+  at: string
+  cellCode: string
+  /** null is a bay sent back to "not started", which is a real thing a GS does. */
+  toStageName: string | null
+  byName: string | null
+  byUsername: string | null
+}
+
+/**
+ * The single newest row of `cell_events`.
+ *
+ * Answers the one question the projects header cannot answer from the rollup:
+ * is anything still happening? A percentage that has not moved in a week looks
+ * exactly like one that moved five minutes ago.
+ *
+ * Read from `cell_events` rather than from `cells.updated_at` because the
+ * event carries the stage NAME the bay moved to. 0005 denormalised those names
+ * onto the event precisely so this read needs no join to `project_stages` --
+ * and so the record survives the stage row being deleted afterwards.
+ *
+ * Scoped by RLS, not by an argument: `cell_events_admin_read` gives an admin
+ * every row and `cell_events_member_read` gives a GS only their own projects'.
+ * Passing a project id here would be a filter the database already applies.
+ */
+export async function latestProgressEvent(): Promise<ProgressEvent | null> {
+  const { data, error } = await supabase
+    .from('cell_events')
+    .select('at, to_stage_name, cells(code), by:profiles(username, full_name)')
+    .order('at', { ascending: false })
+    .limit(1)
+  if (error) throw new Error(error.message)
+
+  const row = (data ?? [])[0] as Record<string, unknown> | undefined
+  if (!row) return null
+
+  const cell = row.cells as { code?: string } | null
+  const by = row.by as { username?: string; full_name?: string } | null
+  return {
+    at: row.at as string,
+    cellCode: cell?.code ?? '',
+    toStageName: (row.to_stage_name as string | null) ?? null,
+    byName: by?.full_name ?? null,
+    byUsername: by?.username ?? null,
+  }
+}

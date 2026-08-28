@@ -24,6 +24,67 @@ function builder(result: { data?: unknown; error?: unknown }) {
   return b
 }
 
+describe('listProjects', () => {
+  /** Two decks: one drawn with three cells, one with no drawing and no cells. */
+  const twoDecks = [
+    {
+      id: 'p1',
+      name: 'BB1 - CPPTS',
+      code: 'BB1',
+      decks: [
+        {
+          id: 'd1',
+          code: 'MD',
+          name: 'Main Deck',
+          total_area_m2: 100,
+          image_path: 'drawings/d1.png',
+          deck_stages: [{ id: 's1', seq: 1, name: 'Coat 1', color: '#fadb14', weight: 1 }],
+          cells: [
+            { id: 'c1', code: 'R1C1', area_m2: 40, stage_id: 's1' },
+            { id: 'c2', code: 'R1C2', area_m2: 30, stage_id: null },
+            { id: 'c3', code: 'R1C3', area_m2: 30, stage_id: null },
+          ],
+        },
+        {
+          id: 'd2',
+          code: 'CD',
+          name: 'Cellar Deck',
+          total_area_m2: 100,
+          image_path: null,
+          deck_stages: [],
+          cells: [],
+        },
+      ],
+    },
+  ]
+
+  it('counts every bay across the project', async () => {
+    from.mockImplementationOnce(() => builder({ data: twoDecks }))
+    const [row] = await listProjects()
+    // Free: listProjects already pulls every cell to compute the rollup. A
+    // separate count query for the same number would be a second round trip
+    // over the same rows.
+    expect(row.cellCount).toBe(3)
+  })
+
+  it('counts only the decks that actually have a drawing attached', async () => {
+    from.mockImplementationOnce(() => builder({ data: twoDecks }))
+    const [row] = await listProjects()
+    // A deck with no drawing has no bays for a foreman to tap, so this is the
+    // number that says how much of the project is actually recordable.
+    expect(row.decksWithDrawing).toBe(1)
+    expect(row.deckCount).toBe(2)
+  })
+
+  it('reports zeroes for a project with no decks at all', async () => {
+    from.mockImplementationOnce(() =>
+      builder({ data: [{ id: 'p9', name: 'Trống', code: 'T', decks: [] }] }),
+    )
+    const [row] = await listProjects()
+    expect(row).toMatchObject({ deckCount: 0, cellCount: 0, decksWithDrawing: 0, progress: 0 })
+  })
+})
+
 describe('createProject', () => {
   it('inserts the project and returns its id', async () => {
     // It seeds nothing: stages belong to a deck, so the template is seeded by
