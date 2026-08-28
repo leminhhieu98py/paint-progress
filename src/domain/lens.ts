@@ -106,10 +106,11 @@ export const ZONE_PALETTE = [
  * the stage's own colour would be one constant fill saying nothing.
  *
  * Zones are coloured by their position in the list, which is `listDeckZones`'
- * seq order -- the same order `zoneMarkers` numbers them in, so Z1's colour and
- * Z1's row are the same zone. The palette repeats after ten; two zones that far
- * apart in one coat's plan are not going to be confused for each other, and a
- * generated colour would be worse than a repeated one.
+ * seq order -- the same order the zone table lists them in, so a row's swatch
+ * and its bays on the drawing are always the same zone. The palette repeats
+ * after ten; two zones that far apart in one coat's plan are not going to be
+ * confused for each other, and a generated colour would be worse than a
+ * repeated one.
  *
  * A bay in no zone is left OUT of the map, so the drawing shows through: on this
  * lens "not planned" is the common case and filling it would hide the plan.

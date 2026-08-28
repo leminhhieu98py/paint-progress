@@ -110,8 +110,8 @@ describe('zoneLensColors', () => {
     expect(colors.R1C1).not.toBe(colors.R2C1)
   })
 
-  it('colours by position, so Z1\'s colour and Z1\'s row are the same zone', () => {
-    // zoneMarkers numbers from the same list in the same order.
+  it('colours by position, so a table row and its bays are the same zone', () => {
+    // The zone table lists from the same array in the same order.
     const colors = zoneLensColors([zone('a', ['c1']), zone('b', ['c3'])], cells)
     expect(colors.R1C1).toBe(ZONE_PALETTE[0])
     expect(colors.R2C1).toBe(ZONE_PALETTE[1])

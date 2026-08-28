@@ -11,7 +11,7 @@ import {
   SCAFFOLD_PENDING_COLOR, ZONE_PALETTE,
 } from '../../domain/lens'
 import { NOT_STARTED_COLOR, NOT_STARTED_LABEL } from '../../domain/pieSlices'
-import { buildZoneMarkerLabels, formatPlanRange, zoneMarkers } from '../../domain/plan'
+import { formatPlanRange } from '../../domain/plan'
 import { computeDeckProgress } from '../../domain/progress'
 import type { Stage, Zone } from '../../domain/types'
 import { getDrawingUrl } from '../../lib/decksApi'
@@ -181,23 +181,17 @@ export function DeckProgressPanel({ deckId }: { deckId: string }) {
     [entry],
   )
   /**
-   * Short markers, not date ranges.
+   * Zone id -> colour, from the same list in the same order `zoneLensColors`
+   * hands them out, so the swatch in the table and the fill on the drawing are
+   * always the same zone.
    *
-   * Thirteen characters do not fit a two-hundred-bay deck, so the canvas either
-   * refused to draw them (silent about a plan that exists) or spilled them over
-   * the neighbours (loud about the wrong bay). `Z1` fits almost anywhere, and
-   * the table below turns it back into a name and a window.
-   *
-   * The GS screen keeps the full range: a foreman has no table to look a marker
-   * up in.
+   * Nothing writes text onto this canvas. It carried a short marker for a
+   * while -- `Z1` on every bay of a zone -- and on a two-hundred-bay deck that
+   * is two hundred labels over the plan the admin is trying to read. The colour
+   * already says which group a bay is in; the table beside it says which group
+   * that is. The GS screen still labels bays with the date range, because a
+   * foreman has no table to look a colour up in.
    */
-  const planLabels = useMemo(
-    () => (entry ? buildZoneMarkerLabels(filteredZones, entry.deck.cells) : {}),
-    [filteredZones, entry],
-  )
-  const markers = useMemo(() => zoneMarkers(filteredZones), [filteredZones])
-  /** Zone id -> colour, taken from the same list in the same order the markers
-   *  and the canvas fills use, so the key and the drawing cannot disagree. */
   const zoneColors = useMemo(() => Object.fromEntries(
     filteredZones.map((z, i) => [z.id, ZONE_PALETTE[i % ZONE_PALETTE.length]]),
   ), [filteredZones])
@@ -367,7 +361,6 @@ export function DeckProgressPanel({ deckId }: { deckId: string }) {
                   cells={entry.deck.cells}
                   selectedCodes={selectedCodes}
                   cellColors={paintColors}
-                  planLabels={planLabels}
                   panZoom
                   onCellClick={(code) => toggleCell(code)}
                   onSelectDraw={sweep}
@@ -378,10 +371,7 @@ export function DeckProgressPanel({ deckId }: { deckId: string }) {
               <ColorKey
                 testId="paint-legend"
                 items={stageFilter
-                  ? filteredZones.map((z) => ({
-                    color: zoneColors[z.id],
-                    label: `${markers[z.id]} · ${z.name}`,
-                  }))
+                  ? filteredZones.map((z) => ({ color: zoneColors[z.id], label: z.name }))
                   : [
                     ...entry.stages.map((st) => ({ color: st.color, label: st.name })),
                     { color: NOT_STARTED_COLOR, label: NOT_STARTED_LABEL },
@@ -469,12 +459,25 @@ export function DeckProgressPanel({ deckId }: { deckId: string }) {
                 dataSource={zones}
                 columns={[
                   {
-                    title: 'Ký hiệu',
-                    key: 'marker',
-                    width: 80,
-                    // What the bay on the drawing says. Without this column the
-                    // marker is a number with nothing to look it up in.
-                    render: (_, z) => <strong>{markers[z.id]}</strong>,
+                    title: 'Màu',
+                    key: 'swatch',
+                    width: 60,
+                    // How a row is matched to the drawing, now that no text is
+                    // written on it. Blank for a zone of another coat: it is not
+                    // being drawn, so it has no colour to claim.
+                    render: (_, z) => (zoneColors[z.id] ? (
+                      <span
+                        aria-label={`Màu của ${z.name}`}
+                        style={{
+                          display: 'inline-block',
+                          width: 14,
+                          height: 14,
+                          borderRadius: 2,
+                          background: zoneColors[z.id],
+                          border: '1px solid rgba(0,0,0,0.15)',
+                        }}
+                      />
+                    ) : null),
                   },
                   { title: 'Zone', dataIndex: 'name', key: 'name' },
                   { title: 'Công đoạn', key: 'stage', render: (_, z) => stageName(z.stageId) },

@@ -259,24 +259,19 @@ describe('DeckProgressPanel — zones', () => {
     })
   })
 
-  it('marks the planned bays with a short marker the table can be read against', async () => {
-    // Not the date range. Thirteen characters do not fit a two-hundred-bay deck,
-    // so the canvas either refused to draw them -- going silent about a plan
-    // that exists -- or spilled them over the neighbours. `Z1` fits, and the
-    // table turns it back into a name and a window.
+  it('writes no text on the drawing, and names the zone in the table instead', async () => {
+    // A label per bay is two hundred labels over the plan the admin is trying to
+    // read -- which is what a date range, and then a short marker, both became.
+    // The colour says which group a bay is in; the table says which group that
+    // is. The GS screen still labels bays, because a foreman has no table.
     listDeckZones.mockResolvedValue([ZONE])
     renderPanel()
 
     const table = await screen.findByTestId('zone-table')
     expect(within(table).getByText('Khu A — Tháo giáo')).toBeInTheDocument()
     expect(within(table).getByText('01/09 – 07/09')).toBeInTheDocument()
-    // The marker is in the table too, or it is a number with nothing to look it
-    // up in.
-    expect(within(table).getByText('Z1')).toBeInTheDocument()
-    await waitFor(() => {
-      expect(within(screen.getByTestId('paint-lens')).getByTestId('cell-R1C1'))
-        .toHaveAttribute('data-plan', 'Z1')
-    })
+    expect(within(screen.getByTestId('paint-lens')).getByTestId('cell-R1C1'))
+      .toHaveAttribute('data-plan', '')
   })
 
   it('edits a zone date in place, without remaking the zone', async () => {
@@ -374,17 +369,24 @@ describe('DeckProgressPanel — filtering to one coat', () => {
   })
 
   it('hides the zones of every other coat', async () => {
-    // z3 covers both bays but belongs to Tháo giáo. Left in, it would win the
-    // marker on every bay and describe a plan the admin is not looking at.
+    // z3 covers both bays but belongs to Tháo giáo. Left in it would colour the
+    // whole deck and describe a plan the admin is not looking at -- and its row
+    // would claim a swatch the drawing never shows.
     renderPanel()
     await screen.findByTestId('paint-lens')
 
     await userEvent.click(screen.getByRole('combobox', { name: 'Lọc theo lớp sơn' }))
     await userEvent.click(await screen.findByTitle('Coat 2'))
 
-    const paint = screen.getByTestId('paint-lens')
-    expect(within(paint).getByTestId('cell-R1C1')).toHaveAttribute('data-plan', 'Z1')
-    expect(within(paint).getByTestId('cell-R1C2')).toHaveAttribute('data-plan', 'Z2')
+    const key = screen.getByTestId('paint-legend')
+    expect(within(key).getByText('Khu A — Coat 2')).toBeInTheDocument()
+    expect(within(key).queryByText('Khu C — Tháo giáo')).toBeNull()
+    const table = screen.getByTestId('zone-table')
+    // Every zone stays listed -- the filter is about the drawing, not the plan.
+    expect(within(table).getByText('Khu C — Tháo giáo')).toBeInTheDocument()
+    // But only the drawn ones carry a swatch to match against it.
+    expect(within(table).getByLabelText('Màu của Khu A — Coat 2')).toBeInTheDocument()
+    expect(within(table).queryByLabelText('Màu của Khu C — Tháo giáo')).toBeNull()
   })
 
   it('swaps the key to name the zones it is drawing', async () => {
@@ -397,8 +399,8 @@ describe('DeckProgressPanel — filtering to one coat', () => {
     await userEvent.click(await screen.findByTitle('Coat 2'))
 
     const key = screen.getByTestId('paint-legend')
-    expect(within(key).getByText('Z1 · Khu A — Coat 2')).toBeInTheDocument()
-    expect(within(key).getByText('Z2 · Khu B — Coat 2')).toBeInTheDocument()
+    expect(within(key).getByText('Khu A — Coat 2')).toBeInTheDocument()
+    expect(within(key).getByText('Khu B — Coat 2')).toBeInTheDocument()
     expect(within(key).queryByText('Chưa bắt đầu')).toBeNull()
   })
 
