@@ -1,7 +1,7 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
-import { LoginScreen } from './LoginScreen'
+import { Hero, LoginScreen } from './LoginScreen'
 
 const signIn = vi.fn()
 
@@ -74,5 +74,17 @@ describe('LoginScreen', () => {
   it('renders no text that hints an app exists', () => {
     render(<LoginScreen />)
     expect(screen.queryByText(/paint|progress|sơn|tiến độ/i)).toBeNull()
+  })
+
+  it('keeps the wide-screen hero panel entirely wordless', () => {
+    // The approved prototype puts the product name and a headline naming the
+    // trade in this panel. Both are deliberately left out: index.html carries
+    // a "—" title and noindex, and the sign-in error refuses to say whether a
+    // username exists. A hero that names the product undoes all of it.
+    //
+    // Asserted on Hero directly because the breakpoint hook reports every
+    // screen false under jsdom, so the wide layout never renders above.
+    const { container } = render(<Hero />)
+    expect(container.textContent).toBe('')
   })
 })
