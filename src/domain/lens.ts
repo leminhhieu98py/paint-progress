@@ -74,3 +74,58 @@ export function scaffoldLensColors(cells: Cell[], stages: Stage[]): Record<strin
   }
   return colors
 }
+
+/**
+ * Colours for the zone lens, in the order they are handed out.
+ *
+ * Chosen to stay apart from each other at the 0.45 fill opacity the canvas
+ * draws at -- these sit next to one another on a plan and the whole job of the
+ * lens is telling one group from its neighbour. They deliberately do NOT avoid
+ * the stage palette: this lens replaces the stage colouring rather than sitting
+ * beside it, so there is nothing to be confused with.
+ */
+export const ZONE_PALETTE = [
+  '#eb2f96', // magenta
+  '#13c2c2', // cyan
+  '#fa8c16', // orange
+  '#2f54eb', // geekblue
+  '#a0d911', // lime
+  '#f5222d', // red
+  '#722ed1', // purple
+  '#faad14', // gold
+  '#08979c', // teal
+  '#c41d7f', // deep magenta
+]
+
+/**
+ * One colour per zone, per cell code -- the lens the admin gets after filtering
+ * to a single coat.
+ *
+ * The question it answers is "which planned group is this bay in, and how does
+ * it sit against its neighbours". The coat is already fixed by the filter, so
+ * the stage's own colour would be one constant fill saying nothing.
+ *
+ * Zones are coloured by their position in the list, which is `listDeckZones`'
+ * seq order -- the same order `zoneMarkers` numbers them in, so Z1's colour and
+ * Z1's row are the same zone. The palette repeats after ten; two zones that far
+ * apart in one coat's plan are not going to be confused for each other, and a
+ * generated colour would be worse than a repeated one.
+ *
+ * A bay in no zone is left OUT of the map, so the drawing shows through: on this
+ * lens "not planned" is the common case and filling it would hide the plan.
+ */
+export function zoneLensColors(
+  zones: { id: string; cellIds: string[] }[],
+  cells: { id: string; code: string }[],
+): Record<string, string> {
+  const codeById = new Map(cells.map((c) => [c.id, c.code]))
+  const colors: Record<string, string> = {}
+  zones.forEach((zone, i) => {
+    const color = ZONE_PALETTE[i % ZONE_PALETTE.length]
+    for (const cellId of zone.cellIds) {
+      const code = codeById.get(cellId)
+      if (code) colors[code] = color
+    }
+  })
+  return colors
+}

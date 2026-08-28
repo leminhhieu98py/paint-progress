@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { paintLensColors, scaffoldLensColors, SCAFFOLD_PENDING_COLOR } from './lens'
+import {
+  paintLensColors, scaffoldLensColors, zoneLensColors,
+  SCAFFOLD_PENDING_COLOR, ZONE_PALETTE,
+} from './lens'
 import type { Cell, Stage } from './types'
 
 const STAGES: Stage[] = [
@@ -85,5 +88,57 @@ describe('scaffoldLensColors', () => {
     // "the last element" would then call the wrong stage scaffolding removal.
     const unsorted = [STAGES[2], STAGES[0], STAGES[1]]
     expect(scaffoldLensColors([cell('R1C1', 's3')], unsorted).R1C1).toBe('#722ed1')
+  })
+})
+
+describe('zoneLensColors', () => {
+  const cells = [
+    { id: 'c1', code: 'R1C1' },
+    { id: 'c2', code: 'R1C2' },
+    { id: 'c3', code: 'R2C1' },
+  ]
+  const zone = (id: string, cellIds: string[]) => ({ id, cellIds })
+
+  it('gives every bay of a zone that zone\'s colour', () => {
+    expect(zoneLensColors([zone('a', ['c1', 'c2'])], cells)).toEqual({
+      R1C1: ZONE_PALETTE[0], R1C2: ZONE_PALETTE[0],
+    })
+  })
+
+  it('gives each zone a different colour', () => {
+    const colors = zoneLensColors([zone('a', ['c1']), zone('b', ['c3'])], cells)
+    expect(colors.R1C1).not.toBe(colors.R2C1)
+  })
+
+  it('colours by position, so Z1\'s colour and Z1\'s row are the same zone', () => {
+    // zoneMarkers numbers from the same list in the same order.
+    const colors = zoneLensColors([zone('a', ['c1']), zone('b', ['c3'])], cells)
+    expect(colors.R1C1).toBe(ZONE_PALETTE[0])
+    expect(colors.R2C1).toBe(ZONE_PALETTE[1])
+  })
+
+  it('repeats the palette rather than running out', () => {
+    // Eleven zones on one coat is not a plan anybody reads by colour alone, and
+    // a generated eleventh colour would be worse than a repeated one.
+    const many = Array.from({ length: 11 }, (_, i) => zone(`z${i}`, ['c1']))
+    expect(() => zoneLensColors(many, cells)).not.toThrow()
+    expect(zoneLensColors([many[10]], cells).R1C1).toBe(ZONE_PALETTE[0])
+  })
+
+  it('leaves a bay in no zone out of the map', () => {
+    // "Not planned" is the common case on this lens; a fill would hide the
+    // drawing under most of the deck.
+    expect(zoneLensColors([zone('a', ['c1'])], cells).R2C1).toBeUndefined()
+  })
+
+  it('ignores a cell id that is not on this deck', () => {
+    expect(zoneLensColors([zone('a', ['c1', 'nope'])], cells)).toEqual({
+      R1C1: ZONE_PALETTE[0],
+    })
+  })
+
+  it('gives every palette colour a distinct value', () => {
+    // A duplicate would silently make two zones look like one.
+    expect(new Set(ZONE_PALETTE).size).toBe(ZONE_PALETTE.length)
   })
 })

@@ -1,12 +1,15 @@
 import {
   Alert, App, Button, Card, Col, DatePicker, Form, Input, Modal, Popconfirm,
-  Row, Space, Spin, Table, Typography,
+  Row, Select, Space, Spin, Table, Typography,
 } from 'antd'
 import dayjs from 'dayjs'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { DrawingCanvas } from '../../canvas/DrawingCanvas'
 import { cellsInBox } from '../../domain/geometry'
-import { paintLensColors, scaffoldLensColors, SCAFFOLD_PENDING_COLOR } from '../../domain/lens'
+import {
+  paintLensColors, scaffoldLensColors, zoneLensColors,
+  SCAFFOLD_PENDING_COLOR, ZONE_PALETTE,
+} from '../../domain/lens'
 import { NOT_STARTED_COLOR, NOT_STARTED_LABEL } from '../../domain/pieSlices'
 import { buildZoneMarkerLabels, formatPlanRange, zoneMarkers } from '../../domain/plan'
 import { computeDeckProgress } from '../../domain/progress'
@@ -92,6 +95,16 @@ export function DeckProgressPanel({ deckId }: { deckId: string }) {
    *  decks can both carry an R1C1. */
   const [selectedCodes, setSelectedCodes] = useState<string[]>([])
   const [zoneFormOpen, setZoneFormOpen] = useState(false)
+  /**
+   * Which coat the left lens is showing, or null for all of them.
+   *
+   * Filtering swaps what the lens MEANS. Unfiltered it colours each bay by the
+   * coat it has reached, which is the progress question. Filtered it colours by
+   * planned group, because the coat is already fixed and painting every bay one
+   * constant colour would say nothing -- the question becomes "which group is
+   * this bay in, and how does it sit against its neighbours".
+   */
+  const [stageFilter, setStageFilter] = useState<string | null>(null)
   const [windows, setWindows] = useState<Record<string, StageWindow>>({})
   const { message } = App.useApp()
   const [form] = Form.useForm()
@@ -147,9 +160,21 @@ export function DeckProgressPanel({ deckId }: { deckId: string }) {
     () => (entry ? computeDeckProgress(entry.deck, entry.stages) : null),
     [entry],
   )
+  /** The zones of the filtered coat, in seq order -- the order both the marker
+   *  numbering and the colour hand-out follow. */
+  const filteredZones = useMemo(
+    () => (stageFilter ? zones.filter((z) => z.stageId === stageFilter) : zones),
+    [zones, stageFilter],
+  )
+
   const paintColors = useMemo(
-    () => (entry ? paintLensColors(entry.deck.cells, entry.stages) : {}),
-    [entry],
+    () => {
+      if (!entry) return {}
+      return stageFilter
+        ? zoneLensColors(filteredZones, entry.deck.cells)
+        : paintLensColors(entry.deck.cells, entry.stages)
+    },
+    [entry, stageFilter, filteredZones],
   )
   const scaffoldColors = useMemo(
     () => (entry ? scaffoldLensColors(entry.deck.cells, entry.stages) : {}),
@@ -167,10 +192,15 @@ export function DeckProgressPanel({ deckId }: { deckId: string }) {
    * up in.
    */
   const planLabels = useMemo(
-    () => (entry ? buildZoneMarkerLabels(zones, entry.deck.cells) : {}),
-    [zones, entry],
+    () => (entry ? buildZoneMarkerLabels(filteredZones, entry.deck.cells) : {}),
+    [filteredZones, entry],
   )
-  const markers = useMemo(() => zoneMarkers(zones), [zones])
+  const markers = useMemo(() => zoneMarkers(filteredZones), [filteredZones])
+  /** Zone id -> colour, taken from the same list in the same order the markers
+   *  and the canvas fills use, so the key and the drawing cannot disagree. */
+  const zoneColors = useMemo(() => Object.fromEntries(
+    filteredZones.map((z, i) => [z.id, ZONE_PALETTE[i % ZONE_PALETTE.length]]),
+  ), [filteredZones])
 
   const toggleCell = (code: string) => {
     setSelectedCodes((prev) => (
@@ -312,7 +342,23 @@ export function DeckProgressPanel({ deckId }: { deckId: string }) {
       {entry && entry.imagePath && imageUrl && (
         <Row gutter={16}>
           <Col xs={24} lg={12}>
-            <Card size="small" title="Lớp sơn đã đạt">
+            <Card
+              size="small"
+              title={stageFilter ? 'Kế hoạch theo zone' : 'Lớp sơn đã đạt'}
+              extra={
+                <Select
+                  size="small"
+                  style={{ width: 200 }}
+                  value={stageFilter ?? ''}
+                  aria-label="Lọc theo lớp sơn"
+                  onChange={(v) => setStageFilter(v === '' ? null : v)}
+                  options={[
+                    { value: '', label: 'Tất cả lớp sơn' },
+                    ...entry.stages.map((st) => ({ value: st.id, label: st.name })),
+                  ]}
+                />
+              }
+            >
               <div data-testid="paint-lens">
                 <DrawingCanvas
                   imageUrl={imageUrl}
@@ -327,13 +373,25 @@ export function DeckProgressPanel({ deckId }: { deckId: string }) {
                   onSelectDraw={sweep}
                 />
               </div>
+              {/* The key follows what the lens is showing. Filtered, the stage
+                  colours would name something the canvas is not drawing. */}
               <ColorKey
                 testId="paint-legend"
-                items={[
-                  ...entry.stages.map((st) => ({ color: st.color, label: st.name })),
-                  { color: NOT_STARTED_COLOR, label: NOT_STARTED_LABEL },
-                ]}
+                items={stageFilter
+                  ? filteredZones.map((z) => ({
+                    color: zoneColors[z.id],
+                    label: `${markers[z.id]} · ${z.name}`,
+                  }))
+                  : [
+                    ...entry.stages.map((st) => ({ color: st.color, label: st.name })),
+                    { color: NOT_STARTED_COLOR, label: NOT_STARTED_LABEL },
+                  ]}
               />
+              {stageFilter && filteredZones.length === 0 && (
+                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                  Lớp sơn này chưa có zone nào được lên kế hoạch.
+                </Typography.Text>
+              )}
             </Card>
           </Col>
           <Col xs={24} lg={12}>

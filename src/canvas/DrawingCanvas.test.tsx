@@ -15,9 +15,12 @@ import { DrawingCanvas } from './DrawingCanvas'
 // `dragOffsets` models. This is a deliberately narrow, hand-built state
 // model of one specific Konva behavior, not a claim of general Konva
 // fidelity — see the task report for what it does and does not establish.
-const { positionSpy, dragOffsets } = vi.hoisted(() => ({
+const { positionSpy, dragOffsets, STAGE_TRANSFORM } = vi.hoisted(() => ({
   positionSpy: vi.fn(),
   dragOffsets: new Map<string, { x: number; y: number }>(),
+  // The stage's own pan and zoom, as the two pointer reads see it. Identity by
+  // default so every existing test is unaffected; the band tests set it.
+  STAGE_TRANSFORM: { x: 0, y: 0, scale: 1 },
 }))
 
 // `react-konva` renders to a canvas, which jsdom does not implement, so every
@@ -40,10 +43,23 @@ vi.mock('react-konva', () => {
   // The one shape of Konva event the component's pointer handlers read: a
   // target that can reach the stage's current pointer position. The crop
   // rubber-band and the guide-adding double-click both go through this.
+  //
+  // Both pointer reads are modelled, and they DISAGREE, which is the whole
+  // point. Konva's `getPointerPosition` is the pointer in screen px relative to
+  // the stage element; `getRelativePointerPosition` divides out the stage's own
+  // transform. On a canvas that pans and zooms those are different points, and a
+  // band drawn from the first lands nowhere near the cursor -- which is what the
+  // admin recorded. STAGE_TRANSFORM below is the stand-in for a stage that has
+  // been zoomed 2x and dragged; a test asserting the band's corner catches the
+  // wrong read because the two answers cannot be confused.
   const konvaPointer = (domEvt: { clientX: number; clientY: number }) => ({
     target: {
       getStage: () => ({
         getPointerPosition: () => ({ x: domEvt.clientX, y: domEvt.clientY }),
+        getRelativePointerPosition: () => ({
+          x: (domEvt.clientX - STAGE_TRANSFORM.x) / STAGE_TRANSFORM.scale,
+          y: (domEvt.clientY - STAGE_TRANSFORM.y) / STAGE_TRANSFORM.scale,
+        }),
       }),
     },
     // Konva always hands the native event through as `evt`, and the component
@@ -651,6 +667,35 @@ describe('DrawingCanvas', () => {
       fireEvent.mouseMove(stage, { clientX: 450, clientY: 432, shiftKey: true })
       fireEvent.mouseUp(stage, { clientX: 450, clientY: 432, shiftKey: true })
       expect(onSelectDraw).toHaveBeenCalledWith({ x: 0.1, y: 0.1, w: 0.4, h: 0.5 })
+    })
+
+    it('bands where the cursor is, on a stage that has been panned and zoomed', () => {
+      // The admin's screen recording: with the canvas zoomed and dragged, a
+      // Shift-drag selected a block a hand's width up and left of the pointer.
+      // The band is drawn in STAGE coordinates while the pointer was being read
+      // in SCREEN ones, so the two only agreed at zoom 1 with no pan -- which is
+      // every canvas except this one.
+      //
+      // The mock's two pointer reads disagree by exactly this transform, so a
+      // read of the wrong one cannot produce these numbers.
+      STAGE_TRANSFORM.x = 100
+      STAGE_TRANSFORM.y = 40
+      STAGE_TRANSFORM.scale = 2
+      try {
+        const onSelectDraw = vi.fn()
+        render(<DrawingCanvas {...boxProps} onSelectDraw={onSelectDraw} />)
+        const stage = screen.getByTestId('stage:drawing')
+        // Screen (280, 184) -> stage (90, 72); screen (1000, 904) -> (450, 432).
+        // The same band the un-transformed test above describes.
+        fireEvent.mouseDown(stage, { clientX: 280, clientY: 184, shiftKey: true })
+        fireEvent.mouseMove(stage, { clientX: 1000, clientY: 904, shiftKey: true })
+        fireEvent.mouseUp(stage, { clientX: 1000, clientY: 904, shiftKey: true })
+        expect(onSelectDraw).toHaveBeenCalledWith({ x: 0.1, y: 0.1, w: 0.4, h: 0.5 })
+      } finally {
+        STAGE_TRANSFORM.x = 0
+        STAGE_TRANSFORM.y = 0
+        STAGE_TRANSFORM.scale = 1
+      }
     })
 
     it('keeps the gesture it started as, even if the key is let go mid-drag', () => {

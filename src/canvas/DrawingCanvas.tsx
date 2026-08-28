@@ -205,12 +205,23 @@ export function DrawingCanvas({
   }
 
   /**
-   * The crop rubber-band. `getPointerPosition` is stage-relative in screen px
-   * and does not divide out the stage's scale, which is right here: crop mode
-   * is admin-only and the admin editor never zooms (`panZoom` is off there, so
-   * `zoom` stays at MIN_ZOOM = 1). A zoomable crop would have to read
-   * `getRelativePointerPosition` instead.
+   * The rubber-band, read in the STAGE's own coordinates.
+   *
+   * `getPointerPosition` reports screen px relative to the stage element and
+   * divides out neither the zoom nor the pan. That was fine while the only
+   * banding canvas was the deck editor, which never zooms -- and it broke the
+   * moment the progress panel put a band on a pan-and-zoom canvas: the admin
+   * recorded a selection landing a hand's width up and left of the cursor,
+   * because the band is drawn in stage coordinates while the pointer was being
+   * read in screen ones.
+   *
+   * `getRelativePointerPosition` applies the stage's inverse transform, so the
+   * two agree again at any zoom and any pan. The comment this replaces predicted
+   * exactly this failure; it is here now.
    */
+  const pointerIn = (e: Konva.KonvaEventObject<MouseEvent>) =>
+    e.target.getStage()?.getRelativePointerPosition() ?? null
+
   /** The font a bay's plan label can carry, or null when it can carry none. */
   const planFont = (cell: MeshCell) => fitLabelFontSize(
     planLabels?.[cell.code] ?? '',
@@ -221,7 +232,7 @@ export function DrawingCanvas({
   const dragHandlers = banding
     ? {
         onMouseDown: (e: Konva.KonvaEventObject<MouseEvent>) => {
-          const point = e.target.getStage()?.getPointerPosition()
+          const point = pointerIn(e)
           if (!point) return
           // Which gesture this is, decided once at the start and carried to the
           // end. Reading the modifier again at mouseup would let a key released
@@ -236,7 +247,7 @@ export function DrawingCanvas({
           setDrag({ ...dragRef.current, kind })
         },
         onMouseMove: (e: Konva.KonvaEventObject<MouseEvent>) => {
-          const point = e.target.getStage()?.getPointerPosition()
+          const point = pointerIn(e)
           // Only while a gesture is live: without the guard every idle mouse
           // move over the drawing would re-render the whole stage.
           if (!point || !dragRef.current) return
@@ -245,7 +256,7 @@ export function DrawingCanvas({
         },
         onMouseUp: (e: Konva.KonvaEventObject<MouseEvent>) => {
           const drag = dragRef.current
-          const point = e.target.getStage()?.getPointerPosition() ?? drag?.to
+          const point = pointerIn(e) ?? drag?.to
           dragRef.current = null
           setDrag(null)
           if (!drag || !point) return

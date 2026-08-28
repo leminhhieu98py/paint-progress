@@ -332,3 +332,96 @@ describe('DeckProgressPanel — zones', () => {
     expect(await screen.findByText('Sàn này chưa có zone nào')).toBeInTheDocument()
   })
 })
+
+describe('DeckProgressPanel — filtering to one coat', () => {
+  const zone = (id: string, name: string, stageId: string, cellIds: string[]) => ({
+    id, name, stageId, startDate: '2026-09-01', finishDate: '2026-09-07', cellIds,
+  })
+
+  beforeEach(() => {
+    listDeckZones.mockResolvedValue([
+      zone('z1', 'Khu A — Coat 2', 's2', ['c1']),
+      zone('z2', 'Khu B — Coat 2', 's2', ['c2']),
+      zone('z3', 'Khu C — Tháo giáo', 's3', ['c1', 'c2']),
+    ])
+  })
+
+  it('colours by the coat reached until a coat is chosen', async () => {
+    renderPanel()
+    const paint = await screen.findByTestId('paint-lens')
+    expect(within(paint).getByTestId('cell-R1C1')).toHaveAttribute('data-color', '#722ed1')
+  })
+
+  it('colours by planned group once a coat is chosen, each zone its own', async () => {
+    // The coat is already fixed by the filter, so painting every bay one
+    // constant stage colour would say nothing. The question becomes "which
+    // group is this bay in, and how does it sit against its neighbours".
+    renderPanel()
+    await screen.findByTestId('paint-lens')
+
+    await userEvent.click(screen.getByRole('combobox', { name: 'Lọc theo lớp sơn' }))
+    await userEvent.click(await screen.findByTitle('Coat 2'))
+
+    const paint = screen.getByTestId('paint-lens')
+    const a = within(paint).getByTestId('cell-R1C1').getAttribute('data-color')
+    const b = within(paint).getByTestId('cell-R1C2').getAttribute('data-color')
+    expect(a).toBeTruthy()
+    expect(b).toBeTruthy()
+    // Two zones on this coat, and they must be told apart.
+    expect(a).not.toBe(b)
+    // And not the stage's own colour, which is what the filter replaced.
+    expect(a).not.toBe('#bfbfbf')
+  })
+
+  it('hides the zones of every other coat', async () => {
+    // z3 covers both bays but belongs to Tháo giáo. Left in, it would win the
+    // marker on every bay and describe a plan the admin is not looking at.
+    renderPanel()
+    await screen.findByTestId('paint-lens')
+
+    await userEvent.click(screen.getByRole('combobox', { name: 'Lọc theo lớp sơn' }))
+    await userEvent.click(await screen.findByTitle('Coat 2'))
+
+    const paint = screen.getByTestId('paint-lens')
+    expect(within(paint).getByTestId('cell-R1C1')).toHaveAttribute('data-plan', 'Z1')
+    expect(within(paint).getByTestId('cell-R1C2')).toHaveAttribute('data-plan', 'Z2')
+  })
+
+  it('swaps the key to name the zones it is drawing', async () => {
+    // Filtered, the stage colours would name something the canvas is not
+    // drawing at all.
+    renderPanel()
+    await screen.findByTestId('paint-lens')
+
+    await userEvent.click(screen.getByRole('combobox', { name: 'Lọc theo lớp sơn' }))
+    await userEvent.click(await screen.findByTitle('Coat 2'))
+
+    const key = screen.getByTestId('paint-legend')
+    expect(within(key).getByText('Z1 · Khu A — Coat 2')).toBeInTheDocument()
+    expect(within(key).getByText('Z2 · Khu B — Coat 2')).toBeInTheDocument()
+    expect(within(key).queryByText('Chưa bắt đầu')).toBeNull()
+  })
+
+  it('says so when the chosen coat has no plan yet', async () => {
+    // The fixture zones sit on Coat 2 and Tháo giáo; the first coat has none.
+    renderPanel()
+    await screen.findByTestId('paint-lens')
+
+    await userEvent.click(screen.getByRole('combobox', { name: 'Lọc theo lớp sơn' }))
+    await userEvent.click(await screen.findByTitle('Blast + Coat 1'))
+
+    expect(await screen.findByText(/chưa có zone nào được lên kế hoạch/)).toBeInTheDocument()
+  })
+
+  it('leaves the scaffolding lens alone', async () => {
+    // It answers a different question and is not what the filter is about.
+    renderPanel()
+    await screen.findByTestId('scaffold-lens')
+
+    await userEvent.click(screen.getByRole('combobox', { name: 'Lọc theo lớp sơn' }))
+    await userEvent.click(await screen.findByTitle('Coat 2'))
+
+    const scaffold = screen.getByTestId('scaffold-lens')
+    expect(within(scaffold).getByTestId('cell-R1C1')).toHaveAttribute('data-color', '#722ed1')
+  })
+})
