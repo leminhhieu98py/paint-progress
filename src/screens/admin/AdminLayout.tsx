@@ -7,7 +7,6 @@ const items = [
   { key: 'projects', label: 'Dự án' },
   { key: 'decks', label: 'Sàn' },
   { key: 'users', label: 'Người dùng' },
-  { key: 'progress', label: 'Tiến độ' },
 ]
 
 export function AdminLayout() {

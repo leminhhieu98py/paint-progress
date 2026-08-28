@@ -1,0 +1,555 @@
+import {
+  Alert, App, Button, Card, Col, DatePicker, Form, Input, Modal, Popconfirm,
+  Row, Space, Spin, Table, Typography,
+} from 'antd'
+import dayjs from 'dayjs'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { DrawingCanvas } from '../../canvas/DrawingCanvas'
+import { cellsInBox } from '../../domain/geometry'
+import { paintLensColors, scaffoldLensColors, SCAFFOLD_PENDING_COLOR } from '../../domain/lens'
+import { NOT_STARTED_COLOR, NOT_STARTED_LABEL } from '../../domain/pieSlices'
+import { buildZoneMarkerLabels, formatPlanRange, zoneMarkers } from '../../domain/plan'
+import { computeDeckProgress } from '../../domain/progress'
+import type { Stage, Zone } from '../../domain/types'
+import { getDrawingUrl } from '../../lib/decksApi'
+import { formatAreaM2 } from '../../lib/format'
+import { listDeckZones } from '../../lib/gsApi'
+import { loadDeckProgress, type DeckProgressEntry } from '../../lib/progressApi'
+import { createZone, deleteZone, setZoneActual, updateZone } from '../../lib/zonesApi'
+import { StageSpecTable } from '../gs/StageSpecTable'
+
+/**
+ * What each fill on the canvas above means.
+ *
+ * Not decoration. Driving the real deck, both lenses were a wall of colour with
+ * nothing saying which grey was Coat 2 and which was "nobody has touched this" --
+ * and the admin reading it is the person deciding what to pay for.
+ */
+function ColorKey({
+  testId,
+  items,
+}: {
+  testId: string
+  items: { color: string; label: string }[]
+}) {
+  return (
+    <Space size="middle" wrap data-testid={testId} style={{ marginTop: 8 }}>
+      {items.map((item) => (
+        <Space size={6} key={item.label}>
+          <span
+            aria-hidden
+            style={{
+              display: 'inline-block',
+              width: 12,
+              height: 12,
+              borderRadius: 2,
+              background: item.color,
+              border: '1px solid rgba(0,0,0,0.15)',
+            }}
+          />
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            {item.label}
+          </Typography.Text>
+        </Space>
+      ))}
+    </Space>
+  )
+}
+
+/** One row of the create-zone dialog: a stage and the window planned for it. */
+interface StageWindow {
+  startDate: dayjs.Dayjs | null
+  finishDate: dayjs.Dayjs | null
+}
+
+/**
+ * A deck's progress, inside the deck's own screen.
+ *
+ * This started life as a separate `/admin/progress`. It is here because the
+ * admin asked for it here, and the reason holds: everything on it is about ONE
+ * deck, and a screen that made you pick a project and then a deck to see what
+ * the deck screen could have shown you was one navigation too many. The
+ * project-wide half -- the rollup and the XLSX export -- stayed behind on the
+ * decks list, which is where a project-wide thing belongs.
+ *
+ * Two canvases over one deck, because `cells.stage_id` answers two different
+ * questions and reading one for the other is expensive. The left lens colours
+ * each bay by the coat it has reached; the right one says only whether the
+ * scaffolding is down. A bay at Coat 2 is well along on the left and still
+ * blocking access on the right.
+ *
+ * Every number comes from `computeDeckProgress`, asserted against the customer's
+ * own spreadsheet to 1e-9 (spec §3.3). Nothing is recomputed here.
+ */
+export function DeckProgressPanel({ deckId }: { deckId: string }) {
+  const [entry, setEntry] = useState<DeckProgressEntry | null>(null)
+  const [imageUrl, setImageUrl] = useState<string | null>(null)
+  const [zones, setZones] = useState<Zone[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  /** Cell CODES, because that is what DrawingCanvas selects by. Resolved to ids
+   *  only when a zone is written -- zone_cells references cells.id, and two
+   *  decks can both carry an R1C1. */
+  const [selectedCodes, setSelectedCodes] = useState<string[]>([])
+  const [zoneFormOpen, setZoneFormOpen] = useState(false)
+  const [windows, setWindows] = useState<Record<string, StageWindow>>({})
+  const { message } = App.useApp()
+  const [form] = Form.useForm()
+
+  const refresh = useCallback(async () => {
+    setLoading(true)
+    try {
+      setEntry(await loadDeckProgress(deckId))
+      setError(null)
+    } catch (e) {
+      // The deck is NOT cleared. A failed refresh on a flaky connection is the
+      // common case, and blanking the panel takes away numbers that are still
+      // correct.
+      setError((e as Error).message)
+    } finally {
+      setLoading(false)
+    }
+  }, [deckId])
+
+  const refreshZones = useCallback(async () => {
+    try {
+      setZones(await listDeckZones(deckId))
+    } catch (e) {
+      setError((e as Error).message)
+    }
+  }, [deckId])
+
+  useEffect(() => {
+    void refresh()
+    void refreshZones()
+  }, [refresh, refreshZones])
+
+  /**
+   * The signed drawing URL. Cleared before each fetch, so a deck change can
+   * never leave the previous deck's plan under this deck's bays -- the colours
+   * would land on the wrong geometry and look entirely plausible.
+   */
+  useEffect(() => {
+    const path = entry?.imagePath
+    if (!path) {
+      setImageUrl(null)
+      return
+    }
+    let cancelled = false
+    setImageUrl(null)
+    getDrawingUrl(path)
+      .then((url) => { if (!cancelled) setImageUrl(url) })
+      .catch(() => { if (!cancelled) setImageUrl(null) })
+    return () => { cancelled = true }
+  }, [entry?.imagePath])
+
+  const progress = useMemo(
+    () => (entry ? computeDeckProgress(entry.deck, entry.stages) : null),
+    [entry],
+  )
+  const paintColors = useMemo(
+    () => (entry ? paintLensColors(entry.deck.cells, entry.stages) : {}),
+    [entry],
+  )
+  const scaffoldColors = useMemo(
+    () => (entry ? scaffoldLensColors(entry.deck.cells, entry.stages) : {}),
+    [entry],
+  )
+  /**
+   * Short markers, not date ranges.
+   *
+   * Thirteen characters do not fit a two-hundred-bay deck, so the canvas either
+   * refused to draw them (silent about a plan that exists) or spilled them over
+   * the neighbours (loud about the wrong bay). `Z1` fits almost anywhere, and
+   * the table below turns it back into a name and a window.
+   *
+   * The GS screen keeps the full range: a foreman has no table to look a marker
+   * up in.
+   */
+  const planLabels = useMemo(
+    () => (entry ? buildZoneMarkerLabels(zones, entry.deck.cells) : {}),
+    [zones, entry],
+  )
+  const markers = useMemo(() => zoneMarkers(zones), [zones])
+
+  const toggleCell = (code: string) => {
+    setSelectedCodes((prev) => (
+      prev.includes(code) ? prev.filter((c) => c !== code) : [...prev, code]
+    ))
+  }
+
+  const sweep = (rect: { x: number; y: number; w: number; h: number }) => {
+    if (!entry) return
+    // Additive: a band adds to what is already picked, so a zone can be built
+    // out of two sweeps across a deck the admin has to scroll.
+    const swept = cellsInBox(entry.deck.cells, rect)
+    setSelectedCodes((prev) => [...new Set([...prev, ...swept])])
+  }
+
+  const setWindow = (stageId: string, field: keyof StageWindow, value: dayjs.Dayjs | null) => {
+    setWindows((prev) => ({
+      ...prev,
+      [stageId]: {
+        startDate: prev[stageId]?.startDate ?? null,
+        finishDate: prev[stageId]?.finishDate ?? null,
+        [field]: value,
+      },
+    }))
+  }
+
+  const iso = (d: dayjs.Dayjs | null | undefined) => (d ? d.format('YYYY-MM-DD') : null)
+
+  /**
+   * One dialog, one set of bays, a window per coat.
+   *
+   * A zone row in the database is still one stage over one date range -- the
+   * schema is unchanged, and `unique (deck_id, stage_id, seq)` counts per stage.
+   * What changed is the admin's side of it: a zone's cell membership does not
+   * move between coats, so picking the same forty bays five times to say when
+   * each coat happens was five times the work for one decision.
+   *
+   * A coat with no dates at all creates nothing. Leaving a stage blank means
+   * "not planned yet", which is a different statement from planning it for an
+   * unknown window, and an empty zone would still label the drawing.
+   */
+  const submitZones = async () => {
+    if (!entry) return
+    const values = await form.validateFields()
+    const byCode = new Map(entry.deck.cells.map((c) => [c.code, c.id]))
+    const cellIds = selectedCodes.map((c) => byCode.get(c)).filter((id): id is string => !!id)
+
+    const planned = entry.stages.filter((st) => {
+      const w = windows[st.id]
+      return Boolean(w?.startDate || w?.finishDate)
+    })
+    if (planned.length === 0) {
+      setError('Đặt ít nhất một mốc ngày cho một công đoạn')
+      return
+    }
+
+    try {
+      // Sequential: each insert reads the next seq for its own stage, and two
+      // in flight against one stage would both read the same one.
+      for (const st of planned) {
+        await createZone(entry.deck.id, {
+          // Suffixed per coat so the plan sheet and the zone table stay
+          // readable -- five rows called "Khu A" name nothing.
+          name: `${values.name as string} — ${st.name}`,
+          stageId: st.id,
+          startDate: iso(windows[st.id]?.startDate),
+          finishDate: iso(windows[st.id]?.finishDate),
+        }, cellIds)
+      }
+      setZoneFormOpen(false)
+      setSelectedCodes([])
+      setWindows({})
+      form.resetFields()
+      await refreshZones()
+      message.success(`Đã tạo ${planned.length} zone`)
+    } catch (e) {
+      setError((e as Error).message)
+    }
+  }
+
+  /**
+   * One field of one zone, written as it changes.
+   *
+   * A patch, never a delete-and-remake: rebuilding a zone loses its cell
+   * membership and takes its plan off the foreman's drawing in between.
+   */
+  const patchZoneDate = async (
+    zone: Zone,
+    field: 'startDate' | 'finishDate',
+    value: dayjs.Dayjs | null,
+  ) => {
+    try {
+      // null is a value, not "leave alone": it says the date is no longer
+      // known, which is how a slipped zone is expressed.
+      await updateZone(zone.id, { [field]: value ? value.format('YYYY-MM-DD') : null })
+      await refreshZones()
+    } catch (e) {
+      setError((e as Error).message)
+    }
+  }
+
+  const applyZone = async (zone: Zone) => {
+    try {
+      const written = await setZoneActual(zone.id, zone.stageId)
+      message.success(`Đã ghi ${written} ô`)
+      // The percentages just moved. Leaving them stale is the defect the decks
+      // list carried before its editor re-fetched on close.
+      await refresh()
+    } catch (e) {
+      setError((e as Error).message)
+    }
+  }
+
+  const removeZone = async (zone: Zone) => {
+    try {
+      await deleteZone(zone.id)
+      await refreshZones()
+    } catch (e) {
+      setError((e as Error).message)
+    }
+  }
+
+  const stageName = (id: string) => entry?.stages.find((st: Stage) => st.id === id)?.name ?? '—'
+
+  if (loading) return <Spin style={{ display: 'block', margin: '8vh auto' }} />
+
+  return (
+    <Space direction="vertical" style={{ width: '100%' }} size="middle">
+      {error && <Alert type="error" message={error} closable onClose={() => setError(null)} />}
+
+      {!entry && (
+        <Typography.Text type="secondary">Không tải được tiến độ sàn</Typography.Text>
+      )}
+
+      {entry && !entry.imagePath && (
+        <Typography.Text type="secondary">Sàn này chưa có bản vẽ</Typography.Text>
+      )}
+
+      {entry && entry.imagePath && imageUrl && (
+        <Row gutter={16}>
+          <Col xs={24} lg={12}>
+            <Card size="small" title="Lớp sơn đã đạt">
+              <div data-testid="paint-lens">
+                <DrawingCanvas
+                  imageUrl={imageUrl}
+                  imageW={entry.imageW ?? 0}
+                  imageH={entry.imageH ?? 0}
+                  cells={entry.deck.cells}
+                  selectedCodes={selectedCodes}
+                  cellColors={paintColors}
+                  planLabels={planLabels}
+                  panZoom
+                  onCellClick={(code) => toggleCell(code)}
+                  onSelectDraw={sweep}
+                />
+              </div>
+              <ColorKey
+                testId="paint-legend"
+                items={[
+                  ...entry.stages.map((st) => ({ color: st.color, label: st.name })),
+                  { color: NOT_STARTED_COLOR, label: NOT_STARTED_LABEL },
+                ]}
+              />
+            </Card>
+          </Col>
+          <Col xs={24} lg={12}>
+            <Card size="small" title="Tháo giáo">
+              <div data-testid="scaffold-lens">
+                <DrawingCanvas
+                  imageUrl={imageUrl}
+                  imageW={entry.imageW ?? 0}
+                  imageH={entry.imageH ?? 0}
+                  cells={entry.deck.cells}
+                  selectedCodes={[]}
+                  cellColors={scaffoldColors}
+                  panZoom
+                />
+              </div>
+              <ColorKey
+                testId="scaffold-legend"
+                items={[
+                  {
+                    color: entry.stages[entry.stages.length - 1]?.color ?? NOT_STARTED_COLOR,
+                    label: 'Đã tháo giáo',
+                  },
+                  { color: SCAFFOLD_PENDING_COLOR, label: 'Chưa tháo giáo' },
+                ]}
+              />
+            </Card>
+          </Col>
+        </Row>
+      )}
+
+      {entry && (
+        <Card size="small" title={`Tiến độ — ${formatAreaM2(entry.deck.totalAreaM2)} m²`}>
+          <div data-testid="deck-spec">
+            <StageSpecTable stages={progress?.stages ?? []} />
+          </div>
+        </Card>
+      )}
+
+      {entry && (
+        <Card
+          size="small"
+          title="Kế hoạch tháo giàn giáo"
+          extra={
+            <Space>
+              <Typography.Text type="secondary">
+                {selectedCodes.length > 0 ? `${selectedCodes.length} ô đang chọn` : ''}
+              </Typography.Text>
+              {selectedCodes.length > 0 && (
+                <Button onClick={() => setSelectedCodes([])}>Bỏ chọn</Button>
+              )}
+              <Button
+                type="primary"
+                disabled={selectedCodes.length === 0}
+                onClick={() => setZoneFormOpen(true)}
+              >
+                Gộp thành zone ({selectedCodes.length})
+              </Button>
+            </Space>
+          }
+        >
+          <Typography.Text type="secondary" style={{ display: 'block', marginBottom: 8 }}>
+            Giữ Shift rồi kéo trên bản vẽ để quét chọn nhiều ô, hoặc bấm từng ô.
+          </Typography.Text>
+
+          {zones.length === 0 && (
+            <Typography.Text type="secondary">Sàn này chưa có zone nào</Typography.Text>
+          )}
+
+          {zones.length > 0 && (
+            <div data-testid="zone-table">
+              <Table<Zone>
+                size="small"
+                rowKey="id"
+                pagination={false}
+                dataSource={zones}
+                columns={[
+                  {
+                    title: 'Ký hiệu',
+                    key: 'marker',
+                    width: 80,
+                    // What the bay on the drawing says. Without this column the
+                    // marker is a number with nothing to look it up in.
+                    render: (_, z) => <strong>{markers[z.id]}</strong>,
+                  },
+                  { title: 'Zone', dataIndex: 'name', key: 'name' },
+                  { title: 'Công đoạn', key: 'stage', render: (_, z) => stageName(z.stageId) },
+                  {
+                    title: 'Số ô',
+                    key: 'cells',
+                    align: 'right',
+                    render: (_, z) => z.cellIds.length,
+                  },
+                  {
+                    title: 'Bắt đầu',
+                    key: 'start',
+                    render: (_, z) => (
+                      <DatePicker
+                        size="small"
+                        format="DD/MM/YYYY"
+                        // aria-label rather than a <label>: the cell has no room
+                        // for visible text, and every row needs a name that says
+                        // WHICH zone it belongs to.
+                        aria-label={`Ngày bắt đầu của ${z.name}`}
+                        value={z.startDate ? dayjs(z.startDate) : null}
+                        onChange={(v) => void patchZoneDate(z, 'startDate', v)}
+                      />
+                    ),
+                  },
+                  {
+                    title: 'Kết thúc',
+                    key: 'finish',
+                    render: (_, z) => (
+                      <DatePicker
+                        size="small"
+                        format="DD/MM/YYYY"
+                        aria-label={`Ngày kết thúc của ${z.name}`}
+                        value={z.finishDate ? dayjs(z.finishDate) : null}
+                        onChange={(v) => void patchZoneDate(z, 'finishDate', v)}
+                      />
+                    ),
+                  },
+                  {
+                    title: 'Kế hoạch',
+                    key: 'plan',
+                    render: (_, z) => formatPlanRange(z.startDate, z.finishDate) || '—',
+                  },
+                  {
+                    title: '',
+                    key: 'actions',
+                    align: 'right',
+                    render: (_, z) => (
+                      <Space>
+                        <Button size="small" onClick={() => void applyZone(z)}>
+                          Ghi thực tế
+                        </Button>
+                        <Popconfirm
+                          title="Xoá zone này?"
+                          description="Kế hoạch bị xoá, tiến độ đã ghi trên các ô vẫn giữ nguyên."
+                          okText="Xoá zone"
+                          cancelText="Huỷ"
+                          onConfirm={() => void removeZone(z)}
+                        >
+                          <Button size="small" danger>Xoá</Button>
+                        </Popconfirm>
+                      </Space>
+                    ),
+                  },
+                ]}
+              />
+            </div>
+          )}
+        </Card>
+      )}
+
+      <Modal
+        title={`Gộp ${selectedCodes.length} ô thành zone`}
+        open={zoneFormOpen}
+        onCancel={() => setZoneFormOpen(false)}
+        okText="Tạo zone"
+        cancelText="Huỷ"
+        onOk={() => void submitZones()}
+        width={640}
+        destroyOnHidden
+      >
+        <Form form={form} layout="vertical">
+          <Form.Item
+            label="Tên zone"
+            name="name"
+            rules={[{ required: true, message: 'Đặt tên cho zone' }]}
+          >
+            <Input placeholder="Khu A" />
+          </Form.Item>
+        </Form>
+
+        <Typography.Text type="secondary" style={{ display: 'block', marginBottom: 8 }}>
+          Đặt ngày cho từng công đoạn. Công đoạn để trống nghĩa là chưa lên kế hoạch.
+        </Typography.Text>
+
+        <div data-testid="stage-windows">
+          <Table
+            size="small"
+            rowKey="id"
+            pagination={false}
+            dataSource={entry?.stages ?? []}
+            columns={[
+              { title: 'Công đoạn', dataIndex: 'name', key: 'name' },
+              {
+                title: 'Bắt đầu',
+                key: 'start',
+                render: (_, st: Stage) => (
+                  <DatePicker
+                    size="small"
+                    format="DD/MM/YYYY"
+                    aria-label={`Bắt đầu ${st.name}`}
+                    value={windows[st.id]?.startDate ?? null}
+                    onChange={(v) => setWindow(st.id, 'startDate', v)}
+                  />
+                ),
+              },
+              {
+                title: 'Kết thúc',
+                key: 'finish',
+                render: (_, st: Stage) => (
+                  <DatePicker
+                    size="small"
+                    format="DD/MM/YYYY"
+                    aria-label={`Kết thúc ${st.name}`}
+                    value={windows[st.id]?.finishDate ?? null}
+                    onChange={(v) => setWindow(st.id, 'finishDate', v)}
+                  />
+                ),
+              },
+            ]}
+          />
+        </div>
+      </Modal>
+    </Space>
+  )
+}

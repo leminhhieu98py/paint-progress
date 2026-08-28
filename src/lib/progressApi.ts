@@ -44,23 +44,40 @@ export interface DeckProgressEntry {
  * Full geometry, unlike `listProjects` -- this screen draws the cells, it does
  * not only count them.
  */
+const DECK_SELECT =
+  'id, seq, code, name, total_area_m2, area_source, image_path, image_w, image_h,'
+  + ' deck_stages(id, seq, name, color, weight),'
+  + ' cells(id, code, x, y, w, h, area_m2, stage_id, updated_at, updated_by)'
+
+/**
+ * One deck, for the panel inside its own detail screen.
+ *
+ * The same select and the same mapper as the project read, so the deck's own
+ * screen and the project rollup cannot disagree about what a deck is.
+ */
+export async function loadDeckProgress(deckId: string): Promise<DeckProgressEntry | null> {
+  const { data, error } = await supabase.from('decks').select(DECK_SELECT).eq('id', deckId)
+  if (error) throw new Error(error.message)
+  const row = (data ?? [])[0]
+  return row ? mapDeckRow(row) : null
+}
+
 export async function loadProjectProgress(projectId: string): Promise<DeckProgressEntry[]> {
   const { data, error } = await supabase
     .from('decks')
-    .select(
-      'id, seq, code, name, total_area_m2, area_source, image_path, image_w, image_h,'
-      + ' deck_stages(id, seq, name, color, weight),'
-      + ' cells(id, code, x, y, w, h, area_m2, stage_id, updated_at, updated_by)',
-    )
+    .select(DECK_SELECT)
     .eq('project_id', projectId)
     .order('seq')
   if (error) throw new Error(error.message)
 
-  return (data ?? []).map((row) => {
+  return (data ?? []).map(mapDeckRow)
+}
+
+function mapDeckRow(row: unknown): DeckProgressEntry {
     // Through `unknown`: postgrest-js types an embedded relation as a union
     // with its own error shape, which does not overlap an index signature.
     // Every field below is read defensively anyway.
-    const r = row as unknown as Record<string, unknown>
+  const r = row as unknown as Record<string, unknown>
     return {
       seq: r.seq as number,
       // Sorted here rather than trusted from the embed: PostgREST returns an
@@ -108,6 +125,5 @@ export async function loadProjectProgress(projectId: string): Promise<DeckProgre
           stageId: (c.stage_id as string | null) ?? null,
         })),
       } satisfies Deck,
-    }
-  })
+  }
 }

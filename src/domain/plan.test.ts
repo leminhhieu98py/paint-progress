@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildPlanLabels, formatPlanRange } from './plan'
+import { buildPlanLabels, buildZoneMarkerLabels, formatPlanRange, zoneMarkers } from './plan'
 import type { Zone } from './types'
 
 const CELLS = [
@@ -87,5 +87,55 @@ describe('buildPlanLabels', () => {
     // The state this ships in: Phase 4 builds the zone editor, so until then
     // every deck has zero zones and the toggle must draw nothing at all.
     expect(buildPlanLabels([], CELLS)).toEqual({})
+  })
+})
+
+describe('zoneMarkers', () => {
+  it('numbers the zones in the order they were given', () => {
+    expect(zoneMarkers([
+      { id: 'a', name: 'Khu A', stageId: 's1', startDate: null, finishDate: null, cellIds: [] },
+      { id: 'b', name: 'Khu B', stageId: 's1', startDate: null, finishDate: null, cellIds: [] },
+    ])).toEqual({ a: 'Z1', b: 'Z2' })
+  })
+
+  it('returns nothing for a deck with no plan', () => {
+    expect(zoneMarkers([])).toEqual({})
+  })
+})
+
+describe('buildZoneMarkerLabels', () => {
+  const cells = [
+    { id: 'c1', code: 'R1C1' },
+    { id: 'c2', code: 'R1C2' },
+    { id: 'c3', code: 'R2C1' },
+  ]
+  const zone = (id: string, cellIds: string[]) => ({
+    id, name: id, stageId: 's1', startDate: '2026-09-01', finishDate: '2026-09-12', cellIds,
+  })
+
+  it('marks every bay of a zone with that zone\'s number', () => {
+    // Two or three characters fit almost anywhere; the thirteen of a date range
+    // do not, which is why a real deck went silent about a plan that existed.
+    expect(buildZoneMarkerLabels([zone('a', ['c1', 'c2'])], cells)).toEqual({
+      R1C1: 'Z1', R1C2: 'Z1',
+    })
+  })
+
+  it('gives each zone its own number', () => {
+    const labels = buildZoneMarkerLabels([zone('a', ['c1']), zone('b', ['c3'])], cells)
+    expect(labels).toEqual({ R1C1: 'Z1', R2C1: 'Z2' })
+  })
+
+  it('lets a later zone win a bay both claim', () => {
+    // Same rule buildPlanLabels follows: a higher seq is the more recent plan.
+    expect(buildZoneMarkerLabels([zone('a', ['c1']), zone('b', ['c1'])], cells).R1C1).toBe('Z2')
+  })
+
+  it('ignores a cell id that is not on this deck', () => {
+    expect(buildZoneMarkerLabels([zone('a', ['c1', 'nope'])], cells)).toEqual({ R1C1: 'Z1' })
+  })
+
+  it('leaves a bay in no zone unlabelled', () => {
+    expect(buildZoneMarkerLabels([zone('a', ['c1'])], cells).R2C1).toBeUndefined()
   })
 })

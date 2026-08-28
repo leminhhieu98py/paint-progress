@@ -37,9 +37,6 @@ const DeckDetailScreen = lazy(() =>
 const UsersScreen = lazy(() =>
   import('./screens/admin/UsersScreen').then((m) => ({ default: m.UsersScreen })),
 )
-const ProgressScreen = lazy(() =>
-  import('./screens/admin/ProgressScreen').then((m) => ({ default: m.ProgressScreen })),
-)
 const GsScreen = lazy(() =>
   import('./screens/gs/GsScreen').then((m) => ({ default: m.GsScreen })),
 )
@@ -172,14 +169,6 @@ export function AppRoutes() {
             element={
               <LazySuspense>
                 <DeckDetailScreen />
-              </LazySuspense>
-            }
-          />
-          <Route
-            path="progress"
-            element={
-              <LazySuspense>
-                <ProgressScreen />
               </LazySuspense>
             }
           />

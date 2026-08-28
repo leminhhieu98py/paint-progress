@@ -10,6 +10,7 @@ import { formatAreaM2 } from '../../lib/format'
 import { pdfPageCount, renderPdfPage } from '../../lib/pdfToPng'
 import { DeckEditor } from './DeckEditor'
 import { StageConfigPanel } from './StageConfigPanel'
+import { DeckProgressPanel } from './DeckProgressPanel'
 
 /**
  * One deck, at its own address.
@@ -279,6 +280,13 @@ export function DeckDetailScreen() {
       {editing && deck && <StageConfigPanel deckId={deck.id} onSaved={() => void load()} />}
 
       {editing && deck && <DeckEditor deck={deck} onSaved={() => void load()} />}
+
+      {/* Progress lives here rather than on a screen of its own: everything on
+          it is about THIS deck, and making the admin pick a project and then a
+          deck to reach what this screen already knows was one navigation too
+          many. The project-wide half -- the rollup and the export -- stayed on
+          the decks list, which is where a project-wide thing belongs. */}
+      {editing && deck && <DeckProgressPanel deckId={deck.id} />}
     </Space>
   )
 }

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { loadProjectProgress } from './progressApi'
+import { loadDeckProgress, loadProjectProgress } from './progressApi'
 
 const from = vi.hoisted(() => vi.fn())
 vi.mock('./supabase', () => ({ supabase: { from } }))
@@ -134,5 +134,31 @@ describe('loadProjectProgress', () => {
   it('throws when the query fails', async () => {
     from.mockImplementation(() => builder({ error: { message: 'permission denied' } }))
     await expect(loadProjectProgress('p1')).rejects.toThrow('permission denied')
+  })
+})
+
+describe('loadDeckProgress', () => {
+  it('returns one deck through the same mapper the project read uses', async () => {
+    const b = builder({ data: [ROW] })
+    from.mockImplementation(() => b)
+
+    const entry = (await loadDeckProgress('d1'))!
+
+    expect(b.eq).toHaveBeenCalledWith('id', 'd1')
+    expect(entry.deck.code).toBe('CD')
+    expect(entry.stages.map((s) => s.seq)).toEqual([1, 2])
+    expect(entry.areaSource).toBe('prorated')
+    expect(entry.audit.c1?.updatedBy).toBe('u1')
+  })
+
+  it('returns null for a deck that is not there, rather than throwing', async () => {
+    // Reachable from a stale URL, and from a deck another admin has deleted.
+    from.mockImplementation(() => builder({ data: [] }))
+    expect(await loadDeckProgress('gone')).toBeNull()
+  })
+
+  it('throws when the query fails', async () => {
+    from.mockImplementation(() => builder({ error: { message: 'permission denied' } }))
+    await expect(loadDeckProgress('d1')).rejects.toThrow('permission denied')
   })
 })
