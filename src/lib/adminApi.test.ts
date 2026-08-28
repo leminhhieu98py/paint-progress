@@ -94,7 +94,10 @@ describe('adminApi', () => {
 })
 
 describe('listGsUsers', () => {
-  it('maps the nested project_members(project_id, projects(name)) embed to projectId/projectName', async () => {
+  it('returns every project a GS can reach, not just the first', async () => {
+    // project_members is many-to-many and always was; the mapper took [0] and
+    // threw the rest away, so an account added to a second platform still
+    // looked single-project on the only screen that shows it.
     from.mockReturnValue(
       selectChain({
         data: [
@@ -103,7 +106,10 @@ describe('listGsUsers', () => {
             username: 'gs1',
             full_name: 'GS Một',
             active: true,
-            project_members: [{ project_id: 'p1', projects: { name: 'BB1' } }],
+            project_members: [
+              { project_id: 'p1', projects: { name: 'Bạch Hổ BH-7' } },
+              { project_id: 'p2', projects: { name: 'Rạng Đông RD-2' } },
+            ],
           },
         ],
       }),
@@ -113,11 +119,20 @@ describe('listGsUsers', () => {
 
     expect(from).toHaveBeenCalledWith('profiles')
     expect(users).toEqual([
-      { id: 'u1', username: 'gs1', fullName: 'GS Một', active: true, projectId: 'p1', projectName: 'BB1' },
+      {
+        id: 'u1',
+        username: 'gs1',
+        fullName: 'GS Một',
+        active: true,
+        projects: [
+          { id: 'p1', name: 'Bạch Hổ BH-7' },
+          { id: 'p2', name: 'Rạng Đông RD-2' },
+        ],
+      },
     ])
   })
 
-  it('yields null for both projectId and projectName when a GS has no membership, rather than throwing', async () => {
+  it('yields an empty list for a GS with no membership, rather than throwing', async () => {
     from.mockReturnValue(
       selectChain({
         data: [
@@ -126,10 +141,33 @@ describe('listGsUsers', () => {
       }),
     )
 
-    const users = await listGsUsers()
-
-    expect(users).toEqual([
-      { id: 'u2', username: 'gs2', fullName: 'GS Hai', active: true, projectId: null, projectName: null },
+    await expect(listGsUsers()).resolves.toEqual([
+      { id: 'u2', username: 'gs2', fullName: 'GS Hai', active: true, projects: [] },
     ])
+  })
+
+  it('drops a membership whose project row did not come back', async () => {
+    // The embed is nullable: a project deleted between the two halves of the
+    // read leaves { project_id, projects: null }. A chip labelled "undefined"
+    // is worse than one fewer chip.
+    from.mockReturnValue(
+      selectChain({
+        data: [
+          {
+            id: 'u3',
+            username: 'gs3',
+            full_name: 'GS Ba',
+            active: false,
+            project_members: [
+              { project_id: 'p1', projects: null },
+              { project_id: 'p2', projects: { name: 'Rạng Đông RD-2' } },
+            ],
+          },
+        ],
+      }),
+    )
+
+    const [user] = await listGsUsers()
+    expect(user.projects).toEqual([{ id: 'p2', name: 'Rạng Đông RD-2' }])
   })
 })

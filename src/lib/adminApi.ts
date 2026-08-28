@@ -6,8 +6,12 @@ export interface GsUser {
   username: string
   fullName: string
   active: boolean
-  projectId: string | null
-  projectName: string | null
+  /**
+   * Every project this account can reach, in the order PostgREST returned the
+   * memberships. `project_members` has always been many-to-many; a foreman who
+   * covers two platforms has two rows.
+   */
+  projects: Array<{ id: string; name: string }>
 }
 
 type Action = 'create' | 'reveal' | 'set-password' | 'deactivate'
@@ -87,16 +91,22 @@ export async function listGsUsers(): Promise<GsUser[]> {
     // project) -- the target type below matches that runtime reality, not
     // the inferred query type, so the cast must go through `unknown` first.
     // Do not "simplify" this back to a direct cast or an array-shaped access.
-    const membership = (
-      row.project_members as unknown as { project_id: string; projects: { name: string } | null }[]
-    )[0]
+    const memberships = row.project_members as unknown as {
+      project_id: string
+      projects: { name: string } | null
+    }[]
     return {
       id: row.id,
       username: row.username,
       fullName: row.full_name,
       active: row.active,
-      projectId: membership?.project_id ?? null,
-      projectName: membership?.projects?.name ?? null,
+      // A membership whose project embed came back null is dropped rather than
+      // carried with a blank name: the project can be deleted between the two
+      // halves of this read, and a chip reading "undefined" is worse than one
+      // chip fewer.
+      projects: (memberships ?? [])
+        .filter((m) => m.projects !== null)
+        .map((m) => ({ id: m.project_id, name: m.projects!.name })),
     }
   })
 }

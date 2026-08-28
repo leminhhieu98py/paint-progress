@@ -1,5 +1,14 @@
-import { Alert, Button, Form, Input, Modal, Popconfirm, Select, Space, Switch, Table, Typography } from 'antd'
+import { EyeOutlined, KeyOutlined, UserAddOutlined, UserDeleteOutlined } from '@ant-design/icons'
+import { Alert, Button, Form, Input, Modal, Select, Table, Tooltip, Typography } from 'antd'
+import dayjs from 'dayjs'
 import { useCallback, useEffect, useState } from 'react'
+import { useAuth } from '../../auth/AuthProvider'
+import { ConsequenceModal } from '../../components/ConsequenceModal'
+import { Mono } from '../../components/Mono'
+import { PageBody, PageHeader } from '../../components/PageHeader'
+import { RulesDisclosure } from '../../components/RulesDisclosure'
+import { SectionCard } from '../../components/SectionCard'
+import { StatusPill } from '../../components/StatusPill'
 import {
   createGsUser,
   deactivateGsUser,
@@ -8,8 +17,9 @@ import {
   setPassword,
   type GsUser,
 } from '../../lib/adminApi'
+import { initialsOf } from '../../lib/initials'
 import { listProjectNames } from '../../lib/projectsApi'
-import { PageBody } from '../../components/PageHeader'
+import { palette } from '../../theme'
 
 interface ProjectOption {
   value: string
@@ -23,14 +33,67 @@ interface CreateValues {
   projectId: string
 }
 
+/** How many project chips fit a row before the rest collapse into "+N". */
+const CHIPS_SHOWN = 2
+
+const RULES = [
+  {
+    id: 'USR-R5',
+    text: 'Tài khoản chỉ bị tắt, không bị xoá — mọi ghi nhận tiến độ mang tên người này vẫn phải tra được.',
+  },
+  {
+    id: 'USR-R7',
+    text: 'Mỗi lần xem mật khẩu đều được ghi vào nhật ký, kèm tên người xem, tài khoản đích và thời điểm.',
+  },
+]
+
+function ProjectChips({ user }: { user: GsUser }) {
+  if (user.projects.length === 0) {
+    return <span style={{ color: palette.textTertiary }}>—</span>
+  }
+  const shown = user.projects.slice(0, CHIPS_SHOWN)
+  const rest = user.projects.length - shown.length
+  const chip = (label: string, more: boolean) => (
+    <span
+      key={label}
+      style={{
+        fontSize: 11.5,
+        fontWeight: 500,
+        padding: '5px 9px',
+        borderRadius: 7,
+        whiteSpace: 'nowrap',
+        background: more ? 'transparent' : user.active ? palette.bgHover : palette.bgApp,
+        border: `1px ${more ? 'dashed' : 'solid'} ${palette.borderCard}`,
+        color: user.active ? palette.textSecondary : palette.textQuaternary,
+      }}
+    >
+      {label}
+    </span>
+  )
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
+      {shown.map((p) => chip(p.name, false))}
+      {/* The overflow chip names the projects it stands for, so the count is
+          not a dead end on the only screen that shows the assignment. */}
+      {rest > 0 && (
+        <Tooltip title={user.projects.slice(CHIPS_SHOWN).map((p) => p.name).join(' · ')}>
+          {chip(`+${rest}`, true)}
+        </Tooltip>
+      )}
+    </div>
+  )
+}
+
 export function UsersScreen() {
+  const { profile } = useAuth()
   const [users, setUsers] = useState<GsUser[]>([])
   const [projects, setProjects] = useState<ProjectOption[]>([])
-  const [revealed, setRevealed] = useState<Record<string, string>>({})
+  const [revealed, setRevealed] = useState<{ user: GsUser; password: string; at: string } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [createOpen, setCreateOpen] = useState(false)
   const [pwTarget, setPwTarget] = useState<GsUser | null>(null)
+  const [offTarget, setOffTarget] = useState<GsUser | null>(null)
 
   const refresh = useCallback(async () => {
     setLoading(true)
@@ -67,167 +130,281 @@ export function UsersScreen() {
   }
 
   return (
-    <PageBody>
-      <Space direction="vertical" style={{ width: '100%' }} size="middle">
+    <>
+      <PageHeader
+        title="Người dùng"
+        subtitle="Cấp tài khoản GS, gán dự án, giao mật khẩu. Chỉ tắt, không xoá."
+        extra={
+          <Button
+            type="primary"
+            icon={<UserAddOutlined aria-hidden />}
+            onClick={() => setCreateOpen(true)}
+          >
+            Tạo tài khoản GS
+          </Button>
+        }
+      />
+
+      <PageBody>
         {error && <Alert type="error" message={error} closable onClose={() => setError(null)} />}
 
-        <Space>
-          <Typography.Title level={4} style={{ margin: 0 }}>
-            Người dùng GS
-          </Typography.Title>
-          <Button type="primary" onClick={() => setCreateOpen(true)}>
-            Tạo tài khoản
-          </Button>
-        </Space>
-
-        <Table<GsUser>
-          rowKey="id"
-          loading={loading}
-          dataSource={users}
-          pagination={false}
-          columns={[
-            { title: 'Tên đăng nhập', dataIndex: 'username' },
-            { title: 'Họ tên', dataIndex: 'fullName' },
-            { title: 'Dự án', dataIndex: 'projectName', render: (v: string | null) => v ?? '—' },
-            {
-              title: 'Trạng thái',
-              dataIndex: 'active',
-              render: (active: boolean) => (active ? 'Đang dùng' : 'Đã tắt'),
-            },
-            {
-              title: 'Mật khẩu',
-              key: 'password',
-              render: (_, user) =>
-                revealed[user.id] ? (
-                  <Space>
-                    <Typography.Text copyable code>
-                      {revealed[user.id]}
-                    </Typography.Text>
-                    <Button
-                      size="small"
-                      onClick={() =>
-                        setRevealed((prev) => {
-                          // A revealed password otherwise stays on screen for
-                          // the rest of the mount — this closes that window
-                          // back down after the deliberate look.
-                          const next = { ...prev }
-                          delete next[user.id]
-                          return next
-                        })
-                      }
+        <SectionCard bodyPadding={0} footer={<RulesDisclosure rules={RULES} />}>
+          <Table<GsUser>
+            rowKey="id"
+            loading={loading}
+            dataSource={users}
+            pagination={false}
+            columns={[
+              {
+                title: 'Người dùng',
+                key: 'user',
+                width: 280,
+                render: (_v, user) => (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <span
+                      style={{
+                        width: 34,
+                        height: 34,
+                        borderRadius: 10,
+                        flex: 'none',
+                        textAlign: 'center',
+                        fontSize: 11,
+                        fontWeight: 600,
+                        lineHeight: '34px',
+                        background: user.active ? palette.bgHover : palette.bgApp,
+                        color: user.active ? palette.textSecondary : palette.textQuaternary,
+                      }}
                     >
-                      Ẩn
-                    </Button>
-                  </Space>
-                ) : (
-                  <Button
-                    size="small"
-                    onClick={() =>
-                      void run(async () => {
-                        const pw = await revealPassword(user.id)
-                        setRevealed((prev) => ({ ...prev, [user.id]: pw }))
-                      })
-                    }
-                  >
-                    Xem mật khẩu
-                  </Button>
+                      {initialsOf(user.fullName)}
+                    </span>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontWeight: 600, lineHeight: 1.35 }}>{user.fullName}</div>
+                      <Mono style={{ fontSize: 11, color: palette.textTertiary }}>
+                        {user.username}
+                      </Mono>
+                    </div>
+                  </div>
                 ),
-            },
-            {
-              title: '',
-              key: 'actions',
-              render: (_, user) => (
-                <Space>
-                  <Button size="small" onClick={() => setPwTarget(user)}>
-                    Đổi mật khẩu
-                  </Button>
-                  <Popconfirm
-                    title="Vô hiệu hoá tài khoản này?"
-                    description="Không thể hoàn tác trong phiên bản này."
-                    okText="Vô hiệu hoá"
-                    cancelText="Huỷ"
-                    disabled={!user.active}
-                    onConfirm={() =>
-                      void run(async () => {
-                        await deactivateGsUser(user.id)
-                        await refresh()
-                      })
-                    }
-                  >
-                    <Switch
-                      checked={user.active}
-                      checkedChildren="Bật"
-                      unCheckedChildren="Tắt"
-                      disabled={!user.active}
-                    />
-                  </Popconfirm>
-                </Space>
-              ),
-            },
-          ]}
-        />
+              },
+              {
+                title: 'Dự án',
+                key: 'projects',
+                render: (_v, user) => <ProjectChips user={user} />,
+              },
+              {
+                title: 'Trạng thái',
+                dataIndex: 'active',
+                width: 140,
+                render: (active: boolean) => (
+                  <StatusPill tone={active ? 'ok' : 'off'}>
+                    {active ? 'Đang dùng' : 'Đã tắt'}
+                  </StatusPill>
+                ),
+              },
+              {
+                title: 'Thao tác',
+                key: 'actions',
+                width: 150,
+                align: 'right',
+                render: (_v, user) => (
+                  <div style={{ display: 'flex', gap: 7, justifyContent: 'flex-end' }}>
+                    <Tooltip title="Đặt lại mật khẩu">
+                      <Button
+                        size="small"
+                        aria-label="Đổi mật khẩu"
+                        icon={<KeyOutlined />}
+                        onClick={() => setPwTarget(user)}
+                      />
+                    </Tooltip>
+                    <Tooltip title="Xem mật khẩu · được ghi log">
+                      <Button
+                        size="small"
+                        aria-label="Xem mật khẩu"
+                        icon={<EyeOutlined style={{ color: palette.warning }} />}
+                        onClick={() =>
+                          void run(async () => {
+                            const password = await revealPassword(user.id)
+                            setRevealed({ user, password, at: dayjs().format('DD.MM.YYYY HH:mm') })
+                          })
+                        }
+                      />
+                    </Tooltip>
+                    {user.active && (
+                      <Tooltip title="Tắt tài khoản">
+                        <Button
+                          size="small"
+                          danger
+                          aria-label="Tắt tài khoản"
+                          icon={<UserDeleteOutlined />}
+                          onClick={() => setOffTarget(user)}
+                        />
+                      </Tooltip>
+                    )}
+                  </div>
+                ),
+              },
+            ]}
+          />
+        </SectionCard>
+      </PageBody>
 
-        <Modal
-          open={createOpen}
-          title="Tạo tài khoản GS"
-          onCancel={() => setCreateOpen(false)}
-          footer={null}
-          destroyOnHidden
-        >
-          <Form<CreateValues>
-            layout="vertical"
-            onFinish={(values) =>
-              void run(async () => {
-                await createGsUser(values)
-                setCreateOpen(false)
-                await refresh()
-              })
-            }
-          >
-            <Form.Item name="username" label="Tên đăng nhập" rules={[{ required: true, message: 'Nhập tên đăng nhập' }]}>
-              <Input />
-            </Form.Item>
-            <Form.Item name="fullName" label="Họ tên" rules={[{ required: true, message: 'Nhập họ tên' }]}>
-              <Input />
-            </Form.Item>
-            <Form.Item name="password" label="Mật khẩu" rules={[{ required: true, message: 'Nhập mật khẩu' }]}>
-              <Input />
-            </Form.Item>
-            <Form.Item name="projectId" label="Dự án" rules={[{ required: true, message: 'Chọn dự án' }]}>
-              <Select options={projects} />
-            </Form.Item>
-            <Button type="primary" htmlType="submit" block>
-              Tạo
-            </Button>
-          </Form>
-        </Modal>
+      {/*
+        The reveal lives in a modal rather than in a table cell. A password
+        rendered inline stays on screen behind whatever the admin does next --
+        scrolling, opening another row, walking away from the laptop -- and
+        this screen is used with the customer's own staff in the room.
 
-        <Modal
-          open={pwTarget !== null}
-          title={`Đổi mật khẩu — ${pwTarget?.username ?? ''}`}
-          onCancel={() => setPwTarget(null)}
-          footer={null}
-          destroyOnHidden
+        Mounted conditionally rather than left mounted with open={false}, which
+        is what every other dialog in this app does. antd animates a Modal out
+        and only then honours destroyOnHidden, so for the length of that
+        animation the closed dialog still holds the password in the DOM. Here
+        the whole subtree goes on the same tick the admin dismisses it. The
+        cost is the fade-out on one dialog; the gain is that the guarantee does
+        not depend on an animation finishing.
+      */}
+      {revealed !== null && (
+      <Modal
+        open
+        title={`Mật khẩu của ${revealed.user.username}`}
+        onCancel={() => setRevealed(null)}
+        onOk={() => setRevealed(null)}
+        okText="Đã ghi nhận"
+        cancelButtonProps={{ style: { display: 'none' } }}
+        destroyOnHidden
+      >
+        <p style={{ marginTop: 0, fontSize: 13, lineHeight: 1.5, color: palette.textSecondary }}>
+          Mỗi lần xem đều được ghi log kèm tên bạn, tài khoản đích và thời điểm. Log chỉ ghi thêm.
+        </p>
+        <div
+          style={{
+            minHeight: 52,
+            border: `1px solid ${palette.border}`,
+            borderRadius: 11,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+            padding: '0 12px 0 15px',
+            background: palette.bgSubtle,
+          }}
         >
-          <Form<{ password: string }>
-            layout="vertical"
-            onFinish={({ password }) =>
-              void run(async () => {
-                await setPassword(pwTarget!.id, password)
-                setRevealed((prev) => ({ ...prev, [pwTarget!.id]: password }))
-                setPwTarget(null)
-              })
-            }
+          <Typography.Text copyable style={{ fontFamily: 'inherit' }}>
+            <Mono style={{ fontSize: 16, fontWeight: 600, letterSpacing: '0.06em' }}>
+              {revealed.password}
+            </Mono>
+          </Typography.Text>
+        </div>
+        <Mono style={{ display: 'block', marginTop: 9, fontSize: 11, color: palette.textTertiary }}>
+          {`Đã ghi log · ${revealed.at} · ${profile?.fullName ?? ''} → ${revealed.user.username}`}
+        </Mono>
+      </Modal>
+      )}
+
+      <ConsequenceModal
+        open={offTarget !== null}
+        tone="danger"
+        tag="Thao tác phá huỷ"
+        title={`Tắt tài khoản ${offTarget?.username ?? ''}?`}
+        description="Tài khoản sẽ bị tắt, không bị xoá:"
+        items={
+          offTarget
+            ? [
+                {
+                  label: offTarget.fullName,
+                  meta: offTarget.projects.map((p) => p.name).join(' · ') || 'chưa gán dự án',
+                },
+              ]
+            : []
+        }
+        consequence="GS mất quyền truy cập ngay. Toàn bộ lịch sử ghi nhận mang tên người này vẫn còn — vì thế hệ thống chỉ tắt, không xoá (USR-R5). Phiên bản này chưa bật lại được."
+        okText="Vẫn tắt"
+        onCancel={() => setOffTarget(null)}
+        onOk={() =>
+          void run(async () => {
+            await deactivateGsUser(offTarget!.id)
+            setOffTarget(null)
+            await refresh()
+          })
+        }
+      />
+
+      <Modal
+        open={createOpen}
+        title="Tạo tài khoản GS"
+        onCancel={() => setCreateOpen(false)}
+        footer={null}
+        destroyOnHidden
+      >
+        <Form<CreateValues>
+          layout="vertical"
+          onFinish={(values) =>
+            void run(async () => {
+              await createGsUser(values)
+              setCreateOpen(false)
+              await refresh()
+            })
+          }
+        >
+          <Form.Item
+            name="username"
+            label="Tên đăng nhập"
+            rules={[{ required: true, message: 'Nhập tên đăng nhập' }]}
           >
-            <Form.Item name="password" label="Mật khẩu mới" rules={[{ required: true, message: 'Nhập mật khẩu mới' }]}>
-              <Input />
-            </Form.Item>
-            <Button type="primary" htmlType="submit" block>
-              Lưu
-            </Button>
-          </Form>
-        </Modal>
-      </Space>
-    </PageBody>
+            <Input placeholder="Ví dụ: gs.hieu" />
+          </Form.Item>
+          <Form.Item name="fullName" label="Họ tên" rules={[{ required: true, message: 'Nhập họ tên' }]}>
+            <Input placeholder="Ví dụ: Lê Trung Hiếu" />
+          </Form.Item>
+          <Form.Item
+            name="password"
+            label="Mật khẩu"
+            rules={[{ required: true, message: 'Nhập mật khẩu' }]}
+            extra="Bạn giao mật khẩu này cho GS. Xem lại được, nhưng mỗi lần xem đều ghi log."
+          >
+            <Input placeholder="Nhập mật khẩu" />
+          </Form.Item>
+          <Form.Item name="projectId" label="Dự án" rules={[{ required: true, message: 'Chọn dự án' }]}>
+            <Select options={projects} placeholder="Chọn dự án" />
+          </Form.Item>
+          <Button type="primary" htmlType="submit" block>
+            Tạo
+          </Button>
+        </Form>
+      </Modal>
+
+      <Modal
+        open={pwTarget !== null}
+        title={`Đổi mật khẩu — ${pwTarget?.username ?? ''}`}
+        onCancel={() => setPwTarget(null)}
+        footer={null}
+        destroyOnHidden
+      >
+        <Form<{ password: string }>
+          layout="vertical"
+          onFinish={({ password }) =>
+            void run(async () => {
+              const target = pwTarget!
+              await setPassword(target.id, password)
+              // Straight into the reveal modal: the admin has to read this
+              // value out to the foreman, and the old inline cell was the only
+              // place it appeared.
+              setRevealed({ user: target, password, at: dayjs().format('DD.MM.YYYY HH:mm') })
+              setPwTarget(null)
+            })
+          }
+        >
+          <Form.Item
+            name="password"
+            label="Mật khẩu mới"
+            rules={[{ required: true, message: 'Nhập mật khẩu mới' }]}
+            extra="Mật khẩu cũ ngừng hiệu lực ngay. GS không đăng nhập được cho tới khi bạn giao mật khẩu mới."
+          >
+            <Input placeholder="Nhập mật khẩu mới" />
+          </Form.Item>
+          <Button type="primary" htmlType="submit" block>
+            Lưu
+          </Button>
+        </Form>
+      </Modal>
+    </>
   )
 }
