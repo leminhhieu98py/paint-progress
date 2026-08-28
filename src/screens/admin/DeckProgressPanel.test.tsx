@@ -107,7 +107,9 @@ beforeEach(() => {
 // Wrapped in antd's App because src/App.tsx wraps the whole tree in it, and
 // App.useApp()'s `message` is how the writes report what they did. Outside the
 // provider that hook hands back an object with no methods, and the call throws.
-const renderPanel = () => render(<AntApp><DeckProgressPanel deckId="d1" /></AntApp>)
+const renderPanel = (editable = true) => render(
+  <AntApp><DeckProgressPanel deckId="d1" editable={editable} /></AntApp>,
+)
 
 describe('DeckProgressPanel', () => {
   it('loads the deck it was given', async () => {
@@ -425,5 +427,70 @@ describe('DeckProgressPanel — filtering to one coat', () => {
 
     const scaffold = screen.getByTestId('scaffold-lens')
     expect(within(scaffold).getByTestId('cell-R1C1')).toHaveAttribute('data-color', '#722ed1')
+  })
+})
+
+describe('DeckProgressPanel — read-only', () => {
+  // The admin's complaint, and it was fair: the deck's view showed five lines of
+  // text, and seeing the drawing at all meant pressing "Sửa". Looking is not
+  // editing. Everything is on the page now; only the writes are behind the
+  // button.
+  beforeEach(() => {
+    listDeckZones.mockResolvedValue([ZONE])
+  })
+
+  it('shows the drawing, both lenses and the numbers without entering edit', async () => {
+    renderPanel(false)
+
+    expect(await screen.findByTestId('paint-lens')).toBeInTheDocument()
+    expect(screen.getByTestId('scaffold-lens')).toBeInTheDocument()
+    expect(screen.getByTestId('deck-spec')).toBeInTheDocument()
+    expect(screen.getByTestId('zone-table')).toBeInTheDocument()
+  })
+
+  it('still lets the lens be filtered, because filtering changes nothing', async () => {
+    renderPanel(false)
+    await screen.findByTestId('paint-lens')
+    expect(screen.getByRole('combobox', { name: 'Lọc theo lớp sơn' })).toBeInTheDocument()
+  })
+
+  it('offers no way to select bays or make a zone', async () => {
+    renderPanel(false)
+    await screen.findByTestId('paint-lens')
+
+    expect(screen.queryByRole('button', { name: /Gộp thành zone/ })).toBeNull()
+    // And a tap on a bay selects nothing: the canvas gets no click handler at
+    // all, so there is no half-state where bays highlight and nothing can be
+    // done with them.
+    await userEvent.click(within(screen.getByTestId('paint-lens')).getByTestId('cell-R1C1'))
+    expect(within(screen.getByTestId('paint-lens')).getByTestId('cell-R1C1'))
+      .toHaveAttribute('data-selected', 'false')
+  })
+
+  it('shows the zone dates as text rather than as editable fields', async () => {
+    renderPanel(false)
+    const table = await screen.findByTestId('zone-table')
+
+    expect(within(table).queryByLabelText(/Ngày bắt đầu của/)).toBeNull()
+    // The dates are still READ, in the form the source drawings use.
+    expect(within(table).getByText('01/09')).toBeInTheDocument()
+    expect(within(table).getByText('07/09')).toBeInTheDocument()
+  })
+
+  it('offers neither Ghi thực tế nor Xoá', async () => {
+    renderPanel(false)
+    await screen.findByTestId('zone-table')
+
+    expect(screen.queryByRole('button', { name: 'Ghi thực tế' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Xoá' })).toBeNull()
+  })
+
+  it('keeps every write available in edit mode', async () => {
+    renderPanel(true)
+    await screen.findByTestId('zone-table')
+
+    expect(screen.getByRole('button', { name: /Gộp thành zone/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Ghi thực tế' })).toBeInTheDocument()
+    expect(screen.getByLabelText('Ngày bắt đầu của Khu A — Tháo giáo')).toBeInTheDocument()
   })
 })

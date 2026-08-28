@@ -285,8 +285,13 @@ export function DeckDetailScreen() {
           it is about THIS deck, and making the admin pick a project and then a
           deck to reach what this screen already knows was one navigation too
           many. The project-wide half -- the rollup and the export -- stayed on
-          the decks list, which is where a project-wide thing belongs. */}
-      {editing && deck && <DeckProgressPanel deckId={deck.id} />}
+          the decks list, which is where a project-wide thing belongs.
+
+          Rendered in BOTH modes. It used to be edit-only, which made the deck's
+          view five lines of text and meant pressing "Sửa" to look at the
+          drawing. Looking is not editing; only the writes are behind the
+          button. */}
+      {deck && <DeckProgressPanel deckId={deck.id} editable={editing} />}
     </Space>
   )
 }

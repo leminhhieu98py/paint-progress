@@ -84,7 +84,22 @@ interface StageWindow {
  * Every number comes from `computeDeckProgress`, asserted against the customer's
  * own spreadsheet to 1e-9 (spec §3.3). Nothing is recomputed here.
  */
-export function DeckProgressPanel({ deckId }: { deckId: string }) {
+export function DeckProgressPanel({
+  deckId,
+  editable = true,
+}: {
+  deckId: string
+  /**
+   * Whether the writes are offered. False on the deck's read-only view.
+   *
+   * Everything on this panel is visible either way. The admin's complaint was
+   * fair and the fix is the shape of it: the deck's view used to be five lines
+   * of text, and seeing the drawing at all meant pressing "Sửa". Looking is not
+   * editing. Filtering the lens stays available read-only too -- it changes what
+   * is drawn, not what is stored.
+   */
+  editable?: boolean
+}) {
   const [entry, setEntry] = useState<DeckProgressEntry | null>(null)
   const [imageUrl, setImageUrl] = useState<string | null>(null)
   const [zones, setZones] = useState<Zone[]>([])
@@ -359,11 +374,11 @@ export function DeckProgressPanel({ deckId }: { deckId: string }) {
                   imageW={entry.imageW ?? 0}
                   imageH={entry.imageH ?? 0}
                   cells={entry.deck.cells}
-                  selectedCodes={selectedCodes}
+                  selectedCodes={editable ? selectedCodes : []}
                   cellColors={paintColors}
                   panZoom
-                  onCellClick={(code) => toggleCell(code)}
-                  onSelectDraw={sweep}
+                  onCellClick={editable ? ((code) => toggleCell(code)) : undefined}
+                  onSelectDraw={editable ? sweep : undefined}
                 />
               </div>
               {/* The key follows what the lens is showing. Filtered, the stage
@@ -424,7 +439,7 @@ export function DeckProgressPanel({ deckId }: { deckId: string }) {
         <Card
           size="small"
           title="Kế hoạch tháo giàn giáo"
-          extra={
+          extra={editable && (
             <Space>
               <Typography.Text type="secondary">
                 {selectedCodes.length > 0 ? `${selectedCodes.length} ô đang chọn` : ''}
@@ -440,11 +455,13 @@ export function DeckProgressPanel({ deckId }: { deckId: string }) {
                 Gộp thành zone ({selectedCodes.length})
               </Button>
             </Space>
-          }
+          )}
         >
-          <Typography.Text type="secondary" style={{ display: 'block', marginBottom: 8 }}>
-            Giữ Shift rồi kéo trên bản vẽ để quét chọn nhiều ô, hoặc bấm từng ô.
-          </Typography.Text>
+          {editable && (
+            <Typography.Text type="secondary" style={{ display: 'block', marginBottom: 8 }}>
+              Giữ Shift rồi kéo trên bản vẽ để quét chọn nhiều ô, hoặc bấm từng ô.
+            </Typography.Text>
+          )}
 
           {zones.length === 0 && (
             <Typography.Text type="secondary">Sàn này chưa có zone nào</Typography.Text>
@@ -490,7 +507,7 @@ export function DeckProgressPanel({ deckId }: { deckId: string }) {
                   {
                     title: 'Bắt đầu',
                     key: 'start',
-                    render: (_, z) => (
+                    render: (_, z) => (editable ? (
                       <DatePicker
                         size="small"
                         format="DD/MM/YYYY"
@@ -501,12 +518,12 @@ export function DeckProgressPanel({ deckId }: { deckId: string }) {
                         value={z.startDate ? dayjs(z.startDate) : null}
                         onChange={(v) => void patchZoneDate(z, 'startDate', v)}
                       />
-                    ),
+                    ) : (z.startDate ? dayjs(z.startDate).format('DD/MM') : '—')),
                   },
                   {
                     title: 'Kết thúc',
                     key: 'finish',
-                    render: (_, z) => (
+                    render: (_, z) => (editable ? (
                       <DatePicker
                         size="small"
                         format="DD/MM/YYYY"
@@ -514,7 +531,7 @@ export function DeckProgressPanel({ deckId }: { deckId: string }) {
                         value={z.finishDate ? dayjs(z.finishDate) : null}
                         onChange={(v) => void patchZoneDate(z, 'finishDate', v)}
                       />
-                    ),
+                    ) : (z.finishDate ? dayjs(z.finishDate).format('DD/MM') : '—')),
                   },
                   {
                     title: 'Kế hoạch',
@@ -525,7 +542,7 @@ export function DeckProgressPanel({ deckId }: { deckId: string }) {
                     title: '',
                     key: 'actions',
                     align: 'right',
-                    render: (_, z) => (
+                    render: (_, z) => (!editable ? null : (
                       <Space>
                         <Button size="small" onClick={() => void applyZone(z)}>
                           Ghi thực tế
@@ -540,7 +557,7 @@ export function DeckProgressPanel({ deckId }: { deckId: string }) {
                           <Button size="small" danger>Xoá</Button>
                         </Popconfirm>
                       </Space>
-                    ),
+                    )),
                   },
                 ]}
               />
@@ -549,6 +566,7 @@ export function DeckProgressPanel({ deckId }: { deckId: string }) {
         </Card>
       )}
 
+      {editable && (
       <Modal
         title={`Gộp ${selectedCodes.length} ô thành zone`}
         open={zoneFormOpen}
@@ -611,6 +629,7 @@ export function DeckProgressPanel({ deckId }: { deckId: string }) {
           />
         </div>
       </Modal>
+      )}
     </Space>
   )
 }
