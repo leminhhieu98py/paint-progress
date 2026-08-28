@@ -36,16 +36,43 @@ describe('buildReportWorkbook', () => {
     expect(wb.worksheets.map((w) => w.name)).toEqual(['Overview', 'CD', 'Plan'])
   })
 
-  it('gives every stage two columns, area then share', async () => {
+  it('heads the Overview the way the customer\'s own Dashboard does', async () => {
+    // Three rows: the weight over each stage, the stage name spanning its pair,
+    // then m² / % Total Deck under it. Flat headers were readable and wrong for
+    // the job -- this file lands beside the workbook it replaces, in front of
+    // people who have read that layout for months, and the weights row is the
+    // only thing on the sheet that explains how % Progress was arrived at.
     const wb = await readBack(await buildReportWorkbook({
       projectName: 'BB1', projectCode: 'BB1', decks: [DECK],
     }))
-    const header = wb.getWorksheet('Overview')!.getRow(1).values as string[]
-    expect(header).toContain('Blast + Coat 1 (m²)')
-    expect(header).toContain('Blast + Coat 1 (%)')
-    expect(header).toContain('Tháo giáo (m²)')
-    expect(header).toContain('% Progress')
-    expect(header).toContain('% Remain')
+    const ov = wb.getWorksheet('Overview')!
+
+    const names = ov.getRow(2).values as string[]
+    expect(names).toContain('Blast + Coat 1')
+    expect(names).toContain('Tháo giáo')
+    expect(names).toContain('% Progress')
+    expect(names).toContain('% Remain')
+
+    // Only the stage columns: the four fixed ones are merged down from row 2,
+    // so they report their own value on row 3 as well.
+    const units = (ov.getRow(3).values as string[]).slice(5, 9)
+    expect(units).toEqual(['m²', '% Total Deck', 'm²', '% Total Deck'])
+
+    // The weights sit over their own stage's percentage column, as numbers.
+    const weights = (ov.getRow(1).values as (number | undefined)[]).filter((v) => v !== undefined)
+    expect(weights).toEqual([0.4, 0.6])
+  })
+
+  it('freezes the header and rules every cell, like the sheet it replaces', async () => {
+    // A deck listing runs to two hundred rows; a column of numbers with the
+    // header scrolled off is a column nobody can read.
+    const wb = await readBack(await buildReportWorkbook({
+      projectName: 'BB1', projectCode: 'BB1', decks: [DECK],
+    }))
+    const ov = wb.getWorksheet('Overview')!
+    expect(ov.views[0].state).toBe('frozen')
+    expect(ov.getRow(4).getCell(2).border).toBeDefined()
+    expect(ov.getRow(2).getCell(2).fill).toBeDefined()
   })
 
   it('writes percentages as numbers with a percent format, not as text', async () => {
@@ -55,8 +82,8 @@ describe('buildReportWorkbook', () => {
       projectName: 'BB1', projectCode: 'BB1', decks: [DECK],
     }))
     const sheet = wb.getWorksheet('Overview')!
-    const progressCol = (sheet.getRow(1).values as string[]).indexOf('% Progress')
-    const cell = sheet.getRow(2).getCell(progressCol)
+    const progressCol = (sheet.getRow(2).values as string[]).indexOf('% Progress')
+    const cell = sheet.getRow(4).getCell(progressCol)
     // 500 of 1000 reached the last of two stages: .4*.5 + .6*.5 = .5
     expect(typeof cell.value).toBe('number')
     expect(cell.value as number).toBeCloseTo(0.5, 12)
@@ -68,7 +95,7 @@ describe('buildReportWorkbook', () => {
       projectName: 'BB1', projectCode: 'BB1', decks: [DECK],
     }))
     const sheet = wb.getWorksheet('Overview')!
-    expect(sheet.getRow(3).getCell(2).value).toBe('TỔNG DỰ ÁN')
+    expect(sheet.getRow(5).getCell(2).value).toBe('TỔNG DỰ ÁN')
   })
 
   it('leaves a stage the deck does not declare empty rather than zero', async () => {
@@ -81,33 +108,53 @@ describe('buildReportWorkbook', () => {
       projectName: 'BB1', projectCode: 'BB1', decks: [DECK, other],
     }))
     const sheet = wb.getWorksheet('Overview')!
-    const col = (sheet.getRow(1).values as string[]).indexOf('Tháo giáo (m²)')
-    // Row 3 is Main Deck, which has no Tháo giáo in its spec.
-    expect(sheet.getRow(3).getCell(col).value).toBeNull()
+    // The stage name spans two columns on row 2; its m² column is the first.
+    const col = (sheet.getRow(2).values as string[]).indexOf('Tháo giáo')
+    // Row 5 is Main Deck, which has no Tháo giáo in its spec.
+    expect(sheet.getRow(5).getCell(col).value).toBeNull()
   })
 
-  it('writes each zone to the Plan sheet with its dates as date-only strings', async () => {
+  it('mirrors the customer\'s Kế hoạch tháo GG columns', async () => {
+    const wb = await readBack(await buildReportWorkbook({
+      projectName: 'BB1', projectCode: 'BB1', decks: [DECK],
+    }))
+    const plan = wb.getWorksheet('Plan')!
+    expect((plan.getRow(1).values as string[]).filter(Boolean)).toEqual([
+      'Sàn', 'Vị trí tháo GG', 'Công đoạn', 'Đơn vị', 'Khối lượng',
+      'Số ngày', 'Bắt đầu', 'Kết thúc', 'Ghi chú',
+    ])
+
+    const row = plan.getRow(2)
+    expect(row.getCell(1).value).toBe('Cellar Deck')
+    expect(row.getCell(2).value).toBe('Khu A')
+    expect(row.getCell(4).value).toBe('m²')
+    expect(row.getCell(6).value).toBe(7)
+  })
+
+  it('writes the planned dates as dates, on the day they name', async () => {
+    // Text before this: it read correctly and sorted as strings, so a client
+    // sorting the plan by start date got alphabetical order. A Date is the fix,
+    // and anchoring it at local noon is what keeps it on the right DAY -- from
+    // midnight, the host's offset moves it either side.
     const wb = await readBack(await buildReportWorkbook({
       projectName: 'BB1', projectCode: 'BB1', decks: [DECK],
     }))
     const row = wb.getWorksheet('Plan')!.getRow(2)
-    expect(row.getCell(1).value).toBe('Cellar Deck')
-    expect(row.getCell(2).value).toBe('Khu A')
-    expect(row.getCell(3).value).toBe('Tháo giáo')
-    expect(row.getCell(5).value).toBe(7)
-    // Strings, not Dates: a Date carries a timezone these values do not have,
-    // and renders every planned start a day early west of Greenwich.
-    expect(row.getCell(6).value).toBe('2026-09-01')
-    expect(row.getCell(7).value).toBe('2026-09-07')
+
+    const start = row.getCell(7).value as Date
+    expect(start).toBeInstanceOf(Date)
+    expect(`${start.getFullYear()}-${start.getMonth() + 1}-${start.getDate()}`).toBe('2026-9-1')
+    const finish = row.getCell(8).value as Date
+    expect(`${finish.getFullYear()}-${finish.getMonth() + 1}-${finish.getDate()}`).toBe('2026-9-7')
   })
 
   it('produces a workbook for a project with no decks at all', async () => {
     const wb = await readBack(await buildReportWorkbook({
       projectName: 'BB1', projectCode: 'BB1', decks: [],
     }))
-    // Just the header and the rollup -- an export that throws on an empty
+    // Three header rows, then the rollup -- an export that throws on an empty
     // project is an export the admin cannot use to prove it is empty.
-    expect(wb.getWorksheet('Overview')!.getRow(2).getCell(2).value).toBe('TỔNG DỰ ÁN')
+    expect(wb.getWorksheet('Overview')!.getRow(4).getCell(2).value).toBe('TỔNG DỰ ÁN')
   })
 })
 
