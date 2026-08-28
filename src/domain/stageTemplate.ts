@@ -7,7 +7,7 @@ export interface StageTemplateEntry {
 }
 
 /**
- * The stage list a new project is seeded with, taken from the source workbook.
+ * The stage list a new DECK is seeded with, taken from the source workbook.
  *
  * Deliberately separate from WORKBOOK_STAGES in fixtures.ts: that one carries
  * string ids ('coat1') for use as test data, which are not uuids and cannot be

@@ -5,7 +5,7 @@ export interface Stage {
   name: string
   /** Hex, e.g. '#1677ff'. */
   color: string
-  /** 0..1. Across a project's stages these sum to 1. */
+  /** 0..1. Across one DECK's stages these sum to 1. */
   weight: number
 }
 
