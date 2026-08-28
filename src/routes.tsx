@@ -55,7 +55,15 @@ function LazySuspense({ children }: { children: ReactNode }) {
  * only a deep link to their own /gs/:projectId ever worked. This reads the
  * real role and sends each to their own landing spot instead.
  */
-function IndexRedirect() {
+/**
+ * Where a signed-in profile belongs.
+ *
+ * Shared by `/` and `/login` so the two cannot disagree about where an admin or
+ * a foreman lands. Renders its own explanation for the two cases a GS can be in
+ * that are not a destination -- no membership, or a failed read -- because both
+ * follow valid credentials and neither is an authorisation failure.
+ */
+function RoleHome() {
   const { profile } = useAuth()
   const [membership, setMembership] = useState<'loading' | 'error' | string | null>('loading')
 
@@ -115,12 +123,27 @@ function IndexRedirect() {
 export function AppRoutes() {
   return (
     <Routes>
-      <Route path={APP_BASE_PATH}>
+      <Route path={APP_BASE_PATH || '/'}>
+        {/*
+          The memorable entry point. `RequireRole` with no role renders the login
+          form for a stranger and passes an active profile through, so signing in
+          here re-renders this same route WITH a session and RoleHome sends them
+          on -- which is the whole of "redirect by role after login". The role is
+          already on the profile the auth context loads; nothing new is fetched.
+        */}
+        <Route
+          path="login"
+          element={
+            <RequireRole>
+              <RoleHome />
+            </RequireRole>
+          }
+        />
         <Route
           index
           element={
             <RequireRole>
-              <IndexRedirect />
+              <RoleHome />
             </RequireRole>
           }
         />

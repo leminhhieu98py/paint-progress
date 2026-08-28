@@ -1,5 +1,16 @@
-/** Obscured base path for every route. Not a security boundary — see spec §7.3. */
-export const APP_BASE_PATH = import.meta.env.VITE_APP_BASE_PATH ?? '/w8k3ndx'
+/**
+ * Prefix for every route. Empty by default: the app now answers at `/login`.
+ *
+ * Spec §7.3 put every screen behind an unguessable prefix to reduce casual
+ * discovery, and said in the same breath that it "must not be treated as a
+ * security boundary" -- Auth and RLS are. Dropping it opens no door; it only
+ * makes the app findable, which the admin asked for after having to remember
+ * `/w8k3ndx`.
+ *
+ * The env var stays, so a deployment that wants the obscurity back sets
+ * VITE_APP_BASE_PATH and every route moves with it.
+ */
+export const APP_BASE_PATH = import.meta.env.VITE_APP_BASE_PATH ?? ''
 
 /** Supabase Auth requires an email; accounts here log in with a username. */
 export const AUTH_EMAIL_SUFFIX = '@app.local'

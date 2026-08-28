@@ -71,14 +71,16 @@ vi.mock('./screens/gs/GsScreen', () => ({
 
 const fakeSession = { access_token: 'token', user: { id: 'user-1' } } as unknown as Session
 
-const renderAtBasePath = () =>
+const renderAt = (path: string) =>
   render(
     <AuthProvider>
-      <MemoryRouter initialEntries={[APP_BASE_PATH]}>
+      <MemoryRouter initialEntries={[path]}>
         <AppRoutes />
       </MemoryRouter>
     </AuthProvider>,
   )
+
+const renderAtBasePath = () => renderAt(APP_BASE_PATH || '/')
 
 beforeEach(() => {
   getSession.mockReset()
@@ -143,5 +145,46 @@ describe('AppRoutes: landing at the base path by role', () => {
     expect(await screen.findByText('Không tải được thông tin dự án')).toBeInTheDocument()
     expect(screen.queryByText('Chưa được thêm vào dự án nào')).toBeNull()
     expect(screen.queryByText('404')).toBeNull()
+  })
+})
+
+describe('AppRoutes: /login is the entry point', () => {
+  const asRole = (role: 'admin' | 'gs') => maybeSingle.mockResolvedValue({
+    data: { id: 'user-1', username: 'u', full_name: 'U', role, active: true },
+    error: null,
+  })
+
+  it('sends a signed-in admin from /login to their own screen', async () => {
+    // "Redirect by role after login" is this: signing in re-renders the same
+    // route with a session, and the role on the profile the auth context
+    // already loaded decides where it goes. Nothing new is fetched.
+    asRole('admin')
+    renderAt(`${APP_BASE_PATH}/login`)
+    expect(await screen.findByText('PROJECTS SCREEN')).toBeInTheDocument()
+  })
+
+  it('sends a signed-in foreman from /login to their own project', async () => {
+    asRole('gs')
+    myFirstProjectId.mockResolvedValue('proj-9')
+    renderAt(`${APP_BASE_PATH}/login`)
+    expect(await screen.findByText('GS SCREEN (dự án proj-9)')).toBeInTheDocument()
+  })
+
+  it('shows the login form at /login to a stranger', async () => {
+    getSession.mockResolvedValue({ data: { session: null } })
+    renderAt(`${APP_BASE_PATH}/login`)
+    expect(await screen.findByLabelText('Tên đăng nhập')).toBeInTheDocument()
+  })
+
+  it('still answers at the root, so an old bookmark keeps working', async () => {
+    asRole('admin')
+    renderAt(APP_BASE_PATH || '/')
+    expect(await screen.findByText('PROJECTS SCREEN')).toBeInTheDocument()
+  })
+
+  it('gives a path that is not a route the bare 404, as spec §7.3 asks', async () => {
+    asRole('admin')
+    renderAt('/nope')
+    expect(await screen.findByText('404')).toBeInTheDocument()
   })
 })
