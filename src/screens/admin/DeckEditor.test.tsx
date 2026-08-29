@@ -139,7 +139,7 @@ const renderInApp = (deckProp: ComponentProps<typeof DeckEditor>['deck']) =>
  */
 const detectOneBay = async () => {
   detectBaysFromImage.mockResolvedValue([{ x: 0, y: 0, w: 1, h: 1 }])
-  await userEvent.click(screen.getByRole('button', { name: 'Dò ô' }))
+  await userEvent.click(screen.getByRole('button', { name: 'Tự động dò ô từ bản vẽ' }))
 }
 
 /** What antd's message API has on screen, if anything. */
@@ -155,8 +155,8 @@ const arm = async () => {
   // Waits on the button rather than on the canvas: a deck whose load failed has
   // no canvas, and refusing to save from that state is one of the things under
   // test here.
-  const button = await screen.findByRole('button', { name: /Bắt đầu thao tác|Lưu bản vẽ/ })
-  if (button.textContent?.includes('Bắt đầu')) await userEvent.click(button)
+  const button = await screen.findByRole('button', { name: /Hiệu chỉnh ô|Thoát hiệu chỉnh ô/ })
+  if (button.getAttribute('aria-label') === 'Hiệu chỉnh ô') await userEvent.click(button)
 }
 const press = (key: string, opts: Record<string, boolean> = {}) =>
   fireEvent.keyDown(window, { key, ...opts })
@@ -166,7 +166,7 @@ const selectAll = async () => {
 }
 const saveDeck = async () => {
   await arm()
-  await userEvent.click(screen.getByRole('button', { name: 'Lưu bản vẽ' }))
+  await userEvent.click(screen.getByRole('button', { name: 'Lưu hình học ô' }))
 }
 
 beforeEach(() => {
@@ -970,12 +970,12 @@ await userEvent.click(screen.getByRole('button', { name: 'chọn R1C1' }))
       renderInApp(deck)
       await screen.findByTestId('canvas')
 
-      await userEvent.click(screen.getByRole('button', { name: 'Dò ô' }))
+      await userEvent.click(screen.getByRole('button', { name: 'Tự động dò ô từ bản vẽ' }))
 
       await waitFor(() => expect(screen.getByTestId('cell-geometry')).toHaveTextContent(
         'R1C1:0.1+0.35 R1C2:0.5+0.4 R2C1:0.1+0.8',
       ))
-      expect(screen.getByText('3 ô')).toBeInTheDocument()
+      expect(screen.getByText('3 ô đã dựng')).toBeInTheDocument()
       // Prorated: a detected bay carries no printed dimension, so its area is
       // its share of the deck's pixels. The three bays between them come to the
       // whole deck.
@@ -995,7 +995,7 @@ await userEvent.click(screen.getByRole('button', { name: 'chọn R1C1' }))
       renderInApp(deck)
       await screen.findByTestId('canvas')
 
-      await userEvent.click(screen.getByRole('button', { name: 'Dò ô' }))
+      await userEvent.click(screen.getByRole('button', { name: 'Tự động dò ô từ bản vẽ' }))
 
       // Banner and toast both carry it, so this asks whether the admin was
       // told -- not which of the two channels told them.
@@ -1079,7 +1079,7 @@ describe('mergeErrorInVietnamese', () => {
       await userEvent.click(screen.getByRole('button', { name: 'vẽ ô vào chỗ trống' }))
 
       expect(await screen.findByTestId('canvas')).toHaveTextContent('R1C1,X1')
-      expect(screen.getByText('2 ô')).toBeInTheDocument()
+      expect(screen.getByText('2 ô đã dựng')).toBeInTheDocument()
     })
 
     it('re-prorates every area, so the deck still sums to its declared total', async () => {
@@ -1109,7 +1109,7 @@ describe('mergeErrorInVietnamese', () => {
 
       await waitFor(() => expect(toastText()).toContain('đã có ô'))
       expect(screen.getByTestId('canvas')).toHaveTextContent('R1C1')
-      expect(screen.getByText('1 ô')).toBeInTheDocument()
+      expect(screen.getByText('1 ô đã dựng')).toBeInTheDocument()
     })
 
   })
@@ -1194,7 +1194,7 @@ describe('mergeErrorInVietnamese', () => {
 
       press('Backspace')
 
-      await waitFor(() => expect(screen.getByText('3 ô')).toBeInTheDocument())
+      await waitFor(() => expect(screen.getByText('3 ô đã dựng')).toBeInTheDocument())
       expect(syncCells).not.toHaveBeenCalled()
       // The deck total is the truth, so what is left absorbs the area.
       expect(document.querySelectorAll('.ant-descriptions-item-content')[1]?.textContent)
@@ -1207,13 +1207,13 @@ describe('mergeErrorInVietnamese', () => {
       await arm()
       await userEvent.click(screen.getByRole('button', { name: 'chọn R1C1' }))
       press('Delete')
-      await waitFor(() => expect(screen.getByText('3 ô')).toBeInTheDocument())
+      await waitFor(() => expect(screen.getByText('3 ô đã dựng')).toBeInTheDocument())
 
       press('z', { metaKey: true })
-      await waitFor(() => expect(screen.getByText('4 ô')).toBeInTheDocument())
+      await waitFor(() => expect(screen.getByText('4 ô đã dựng')).toBeInTheDocument())
 
       press('z', { metaKey: true, shiftKey: true })
-      await waitFor(() => expect(screen.getByText('3 ô')).toBeInTheDocument())
+      await waitFor(() => expect(screen.getByText('3 ô đã dựng')).toBeInTheDocument())
     })
 
     it('keeps the browser out of the keys it takes', async () => {
@@ -1244,7 +1244,7 @@ describe('mergeErrorInVietnamese', () => {
       press('s', { metaKey: true })
 
       await waitFor(() => expect(syncCells).toHaveBeenCalledTimes(1))
-      expect(await screen.findByRole('button', { name: 'Bắt đầu thao tác' })).toBeInTheDocument()
+      expect(await screen.findByRole('button', { name: 'Hiệu chỉnh ô' })).toBeInTheDocument()
     })
 
     it('turns drawing bays on and off with I', async () => {

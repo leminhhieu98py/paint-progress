@@ -1,66 +1,35 @@
+import { ExpandOutlined, MinusOutlined, PlusOutlined } from '@ant-design/icons'
 import {
-  Alert, App, Button, Card, Col, DatePicker, Form, Input, Modal, Popconfirm,
-  Row, Select, Space, Spin, Table, Typography,
+  Alert, App, Button, DatePicker, Form, Input, Modal, Segmented,
+  Select, Space, Spin, Table, Typography,
 } from 'antd'
 import dayjs from 'dayjs'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { DrawingCanvas } from '../../canvas/DrawingCanvas'
 import { cellsInBox } from '../../domain/geometry'
-import {
-  codesNotReaching, paintLensColors, scaffoldLensColors, zoneLensColors,
-  SCAFFOLD_PENDING_COLOR, ZONE_PALETTE,
-} from '../../domain/lens'
-import { NOT_STARTED_COLOR, NOT_STARTED_LABEL } from '../../domain/pieSlices'
+import { codesNotReaching, zoneLensColors, ZONE_PALETTE } from '../../domain/lens'
+import { buildStageSlices } from '../../domain/pieSlices'
 import { formatPlanRange } from '../../domain/plan'
 import { computeDeckProgress } from '../../domain/progress'
 import type { Stage, Zone } from '../../domain/types'
 import { getDrawingUrl } from '../../lib/decksApi'
-import { formatAreaM2 } from '../../lib/format'
+import { formatAreaM2, formatPercent } from '../../lib/format'
 import { loadDeckProgress, type DeckProgressEntry } from '../../lib/progressApi'
 import {
   createZone, deleteZone, listDeckZones, setZoneActual, updateZone,
 } from '../../lib/zonesApi'
+import { ConsequenceModal } from '../../components/ConsequenceModal'
+import { Donut } from '../../components/Donut'
+import { EmptyState } from '../../components/EmptyState'
+import { ProgressBar } from '../../components/ProgressBar'
+import { RulesDisclosure } from '../../components/RulesDisclosure'
+import { SectionCard } from '../../components/SectionCard'
 import { StageSpecTable } from '../../components/StageSpecTable'
+import { modalStyles } from '../../components/modalChrome'
+import { palette, shadowCard } from '../../theme'
 import { listGsUsers } from '../../lib/adminApi'
 import type { Cell } from '../../domain/types'
 
-/**
- * What each fill on the canvas above means.
- *
- * Not decoration. Driving the real deck, both lenses were a wall of colour with
- * nothing saying which grey was Coat 2 and which was "nobody has touched this" --
- * and the admin reading it is the person deciding what to pay for.
- */
-function ColorKey({
-  testId,
-  items,
-}: {
-  testId: string
-  items: { color: string; label: string }[]
-}) {
-  return (
-    <Space size="middle" wrap data-testid={testId} style={{ marginTop: 8 }}>
-      {items.map((item) => (
-        <Space size={6} key={item.label}>
-          <span
-            aria-hidden
-            style={{
-              display: 'inline-block',
-              width: 12,
-              height: 12,
-              borderRadius: 2,
-              background: item.color,
-              border: '1px solid #00000026',
-            }}
-          />
-          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-            {item.label}
-          </Typography.Text>
-        </Space>
-      ))}
-    </Space>
-  )
-}
 
 /** One row of the create-zone dialog: a stage and the window planned for it. */
 interface StageWindow {
@@ -87,6 +56,21 @@ interface StageWindow {
  * Every number comes from `computeDeckProgress`, asserted against the customer's
  * own spreadsheet to 1e-9 (spec §3.3). Nothing is recomputed here.
  */
+const PROGRESS_RULES = [
+  {
+    id: 'ZON-R5',
+    text: 'Xoá zone chỉ xoá kế hoạch; tiến độ đã ghi trên các ô vẫn giữ nguyên.',
+  },
+  {
+    id: 'LNS-R1',
+    text: 'Ô tô theo màu zone của lớp đang xem, hoặc màu lớp đó nếu chưa có zone. Ô gạch chéo là chưa đạt lớp đang xem; ô tô đặc là đã đạt.',
+  },
+  {
+    id: 'GAP-01',
+    text: 'Panel chưa tự làm mới — số liệu chụp lúc mở màn, GS ghi sau đó phải tải lại.',
+  },
+]
+
 export function DeckProgressPanel({
   deckId,
   editable = true,
@@ -122,15 +106,27 @@ export function DeckProgressPanel({
   const [selectedCodes, setSelectedCodes] = useState<string[]>([])
   const [zoneFormOpen, setZoneFormOpen] = useState(false)
   /**
-   * Which coat the left lens is showing, or null for all of them.
+   * One coat at a time, or two side by side.
    *
-   * Filtering swaps what the lens MEANS. Unfiltered it colours each bay by the
-   * coat it has reached, which is the progress question. Filtered it colours by
-   * planned group, because the coat is already fixed and painting every bay one
-   * constant colour would say nothing -- the question becomes "which group is
-   * this bay in, and how does it sit against its neighbours".
+   * The panel used to be a fixed pair: paint on the left, scaffolding on the
+   * right. Scaffolding is simply the last coat in the list, so half the screen
+   * was permanently spent on one row of the stage table while the other four
+   * coats had no view of their own at all. Now the coat is chosen, and the
+   * second lens is something the admin asks for when they have two to compare.
    */
-  const [stageFilter, setStageFilter] = useState<string | null>(null)
+  const [splitView, setSplitView] = useState(false)
+  /** The coat each lens is showing. Null only before the stages have loaded. */
+  const [viewA, setViewA] = useState<string | null>(null)
+  const [viewB, setViewB] = useState<string | null>(null)
+  /**
+   * Shared by both lenses, which is the whole point of the split view: two
+   * drawings free to sit at different scales are not a comparison.
+   */
+  const [zoom, setZoom] = useState(1)
+  /** The zone whose date popover is open. */
+  const [datesFor, setDatesFor] = useState<Zone | null>(null)
+  /** The zone whose deletion is being confirmed. */
+  const [removingZone, setRemovingZone] = useState<Zone | null>(null)
   const [windows, setWindows] = useState<Record<string, StageWindow>>({})
   /** The bay whose note is open, and the names to attribute it to. */
   const [noteCell, setNoteCell] = useState<Cell | null>(null)
@@ -195,72 +191,81 @@ export function DeckProgressPanel({
   useEffect(() => {
     onProgress?.(progress ? progress.progress : null)
   }, [progress, onProgress])
-  /** The zones of the filtered coat, in seq order -- the order both the marker
-   *  numbering and the colour hand-out follow. */
-  const filteredZones = useMemo(
-    () => (stageFilter ? zones.filter((z) => z.stageId === stageFilter) : zones),
-    [zones, stageFilter],
-  )
+  /**
+   * The coats each lens is showing, resolved.
+   *
+   * A default rather than a nullable everywhere below: the panel is useless
+   * without a coat selected, and the first coat is the one every deck has.
+   */
+  const stages = entry?.stages ?? []
+  const stageA = stages.find((st) => st.id === viewA) ?? stages[0] ?? null
+  const stageB = stages.find((st) => st.id === viewB) ?? stages[stages.length - 1] ?? null
 
-  const paintColors = useMemo(
-    () => {
-      if (!entry) return {}
-      return stageFilter
-        ? zoneLensColors(filteredZones, entry.deck.cells)
-        : paintLensColors(entry.deck.cells, entry.stages)
-    },
-    [entry, stageFilter, filteredZones],
-  )
-  const scaffoldColors = useMemo(
-    () => (entry ? scaffoldLensColors(entry.deck.cells, entry.stages) : {}),
-    [entry],
-  )
   /**
-   * The bays the zone lens has to hatch.
+   * Everything one lens needs, for one coat.
    *
-   * Only when a coat is being filtered on. Unfiltered, each bay already wears
-   * the colour of the coat it has reached, so "done" and "not done" are
-   * different fills and a hatch would say nothing the colour does not. Filtered,
-   * every bay of a zone wears the same zone colour, and without a second
-   * channel the drawing cannot say which of them have actually had that coat --
-   * which is the whole question the filtered lens is asked.
-   */
-  const pendingCodes = useMemo(
-    () => (entry && stageFilter ? codesNotReaching(entry.deck.cells, entry.stages, stageFilter) : []),
-    [entry, stageFilter],
-  )
-  /**
-   * Per-zone: how many of its bays have reached the filtered coat.
+   * Both lenses read the same deck through this, so the split view cannot drift
+   * into showing two differently-computed pictures.
    *
-   * The legend used to be a swatch and a name. On a plan whose whole purpose is
-   * "is Zone A going to make its date", a colour key that cannot say 32/56 is
-   * a colour key nobody has a reason to read.
+   * Bays are coloured by ZONE where the coat has one planned, and by the coat's
+   * own colour where it does not. A zone-only rule would leave an unplanned
+   * deck blank, which is most decks before the plan is drawn; a coat-only rule
+   * would lose the grouping the plan exists to show. Either way the FILL says
+   * "which group", and the HATCH says "not there yet" -- solid means the bay has
+   * reached this coat.
    */
-  const zoneProgress = useMemo(() => {
-    if (!entry || !stageFilter) return {}
-    const pending = new Set(pendingCodes)
+  const lensFor = (stage: Stage | null) => {
+    if (!entry || !stage) {
+      return { stage: null, colors: {}, pending: [], zones: [], zoneColors: {}, reached: 0, total: 0 }
+    }
+    const zonesHere = zones.filter((z) => z.stageId === stage.id)
+    const colorById = Object.fromEntries(
+      zonesHere.map((z, i) => [z.id, ZONE_PALETTE[i % ZONE_PALETTE.length]]),
+    )
+    const pending = codesNotReaching(entry.deck.cells, entry.stages, stage.id)
+    const pendingSet = new Set(pending)
+    const zoned = zoneLensColors(zonesHere, entry.deck.cells)
+    const colors: Record<string, string> = {}
+    for (const cell of entry.deck.cells) colors[cell.code] = zoned[cell.code] ?? stage.color
+
     const codeById = new Map(entry.deck.cells.map((c) => [c.id, c.code]))
-    return Object.fromEntries(filteredZones.map((z) => {
+    const zoneRows = zonesHere.map((z) => {
       const codes = z.cellIds.map((id) => codeById.get(id)).filter((c): c is string => !!c)
-      const done = codes.filter((c) => !pending.has(c)).length
-      return [z.id, { done, total: codes.length }]
-    }))
-  }, [entry, stageFilter, filteredZones, pendingCodes])
+      const done = codes.filter((c) => !pendingSet.has(c)).length
+      return { zone: z, color: colorById[z.id], done, total: codes.length }
+    })
+
+    return {
+      stage,
+      colors,
+      pending,
+      zones: zoneRows,
+      zoneColors: colorById,
+      reached: entry.deck.cells.length - pending.length,
+      total: entry.deck.cells.length,
+    }
+  }
+
+  const lensA = lensFor(stageA)
+  const lensB = lensFor(stageB)
+
   /**
-   * Zone id -> colour, from the same list in the same order `zoneLensColors`
-   * hands them out, so the swatch in the table and the fill on the drawing are
-   * always the same zone.
+   * The ring: how the bays that have been started are spread across the coats.
    *
-   * Nothing writes text onto this canvas. It carried a short marker for a
-   * while -- `Z1` on every bay of a zone -- and on a two-hundred-bay deck that
-   * is two hundred labels over the plan the admin is trying to read. The colour
-   * already says which group a bay is in; the table beside it says which group
-   * that is. The GS screen still labels bays with the date range, because a
-   * foreman has no table to look a colour up in.
+   * Deliberately not the weighted deck percentage -- that number is already the
+   * largest type on the screen, in the header above. This answers the other
+   * question: where is the work actually sitting right now.
    */
-  const zoneColors = useMemo(() => Object.fromEntries(
-    filteredZones.map((z, i) => [z.id, ZONE_PALETTE[i % ZONE_PALETTE.length]]),
-  ), [filteredZones])
+  const ringSlices = useMemo(() => {
+    if (!entry) return []
+    return buildStageSlices(entry.deck.totalAreaM2, entry.deck.cells, entry.stages)
+      .filter((sl) => sl.areaM2 > 0)
+      .map((sl) => ({
+        label: sl.label,
+        value: entry.deck.totalAreaM2 > 0 ? sl.areaM2 / entry.deck.totalAreaM2 : 0,
+        color: sl.color,
+      }))
+  }, [entry])
 
   /**
    * Bays carrying a note, by code.
@@ -418,16 +423,449 @@ export function DeckProgressPanel({
 
   if (loading) return <Spin style={{ display: 'block', margin: '8vh auto' }} />
 
+  /**
+   * One coat's view of the deck: the drawing, and the zones planned for it.
+   *
+   * A function rather than a component so the two lenses cannot drift apart --
+   * the split view exists to compare, and a comparison whose halves are drawn
+   * by different code is not one.
+   */
+  const renderLens = (lens: ReturnType<typeof lensFor>, side: 'A' | 'B') => {
+    if (!entry || !lens.stage || !imageUrl) return null
+    const pct = lens.total > 0 ? (lens.reached / lens.total) * 100 : 0
+    return (
+      <div
+        data-testid={`lens-${side}`}
+        style={{
+          border: `1px solid ${palette.borderSplit}`,
+          borderRadius: 14,
+          overflow: 'hidden',
+          background: palette.bgContainer,
+          boxShadow: shadowCard,
+          minWidth: 0,
+        }}
+      >
+        <div style={{ padding: '13px 14px' }}>
+          <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600, letterSpacing: '-0.015em' }}>
+            {`Tiến độ · ${lens.stage.name}`}
+          </h3>
+          <div style={{ fontSize: 12, lineHeight: 1.35, color: palette.textTertiary, marginTop: 4 }}>
+            {splitView
+              ? (side === 'A' ? 'Lớp bên trái' : 'Lớp bên phải · cùng mức zoom để so sánh')
+              : 'Ô tô theo màu zone · ô chưa đạt lớp này có gạch chéo mờ'}
+          </div>
+        </div>
+
+        <div
+          style={{
+            position: 'relative',
+            borderTop: `1px solid ${palette.borderSplit}`,
+            borderBottom: `1px solid ${palette.borderSplit}`,
+          }}
+        >
+          <DrawingCanvas
+            imageUrl={imageUrl}
+            imageW={entry.imageW ?? 0}
+            imageH={entry.imageH ?? 0}
+            cells={entry.deck.cells}
+            selectedCodes={editable && side === 'A' ? selectedCodes : []}
+            cellColors={lens.colors}
+            hatchedCodes={lens.pending}
+            markedCodes={notedCodes}
+            panZoom
+            zoom={zoom}
+            onZoomChange={setZoom}
+            showZoomControls={false}
+            // Selecting bays is what a click means while editing; reading what
+            // the foreman wrote is what it means while looking. Only the left
+            // lens selects -- two canvases writing one selection would let the
+            // admin build a zone out of bays picked on two different coats.
+            onCellClick={
+              editable && side === 'A'
+                ? ((code) => toggleCell(code))
+                : ((code) => openNote(code))
+            }
+            onSelectDraw={editable && side === 'A' ? sweep : undefined}
+          />
+          <div
+            style={{
+              position: 'absolute',
+              zIndex: 3,
+              left: 12,
+              top: 12,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 9,
+              background: '#FFFFFFF0',
+              border: `1px solid ${palette.borderSplit}`,
+              borderRadius: 9,
+              padding: '6px 10px',
+            }}
+          >
+            <span
+              aria-hidden
+              style={{
+                width: 14,
+                height: 14,
+                borderRadius: 4,
+                background: lens.stage.color,
+                boxShadow: 'inset 0 0 0 1px #16202B47',
+              }}
+            />
+            <span style={{ fontSize: 12, fontWeight: 600 }}>{lens.stage.name}</span>
+            <span style={{ fontSize: 12, fontWeight: 600, color: palette.accent }}>
+              {formatPercent(pct / 100)}
+            </span>
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 9, padding: '12px 14px 8px' }}>
+          <span style={{ fontSize: 12, fontWeight: 600, color: palette.textTertiary }}>
+            {`Tiến độ từng zone · ${lens.stage.name}`}
+          </span>
+          <span style={{ marginLeft: 'auto', fontSize: 12, color: palette.textTertiary }}>
+            {`${lens.reached} / ${lens.total} ô`}
+          </span>
+        </div>
+
+        <div style={{ padding: '0 10px 10px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {lens.zones.length === 0 && (
+            <div style={{ padding: '7px 9px', fontSize: 12, color: palette.textTertiary }}>
+              Lớp sơn này chưa có zone nào được lên kế hoạch.
+            </div>
+          )}
+          {lens.zones.map((row) => {
+            const zonePct = row.total > 0 ? row.done / row.total : 0
+            const planned = formatPlanRange(row.zone.startDate, row.zone.finishDate)
+            const line = (
+              <>
+                <span
+                  aria-hidden
+                  style={{
+                    width: 15,
+                    height: 15,
+                    borderRadius: 5,
+                    flex: 'none',
+                    background: row.color,
+                    boxShadow: 'inset 0 0 0 1px #16202B47',
+                  }}
+                />
+                <span style={{ fontSize: 12, fontWeight: 600, flex: 'none' }}>{row.zone.name}</span>
+                <span style={{ fontSize: 11, color: palette.textTertiary, flex: 'none' }}>
+                  {`${String(row.done).padStart(2, '0')}/${row.total}`}
+                </span>
+                <span style={{ flex: 1, minWidth: 24 }}>
+                  <ProgressBar ratio={zonePct} color={row.color} height={5} />
+                </span>
+                <span
+                  style={{ fontSize: 12, fontWeight: 600, flex: 'none', minWidth: 44, textAlign: 'right' }}
+                >
+                  {formatPercent(zonePct)}
+                </span>
+                <span
+                  style={{
+                    fontSize: 11,
+                    color: planned ? palette.textTertiary : palette.accent,
+                    minWidth: 116,
+                    textAlign: 'right',
+                    flex: 'none',
+                  }}
+                >
+                  {planned || (editable ? 'đặt ngày' : 'chưa đặt mốc ngày')}
+                </span>
+              </>
+            )
+            const rowStyle = {
+              display: 'flex',
+              alignItems: 'center',
+              gap: 9,
+              width: '100%',
+              padding: '7px 9px',
+              background: palette.bgContainer,
+              border: `1px solid ${palette.borderSplit}`,
+              borderRadius: 9,
+              textAlign: 'left' as const,
+            }
+            // A button only where pressing it does something. In view mode the
+            // row is a readout, and a control that opens an empty popover is
+            // worse than no control.
+            return editable ? (
+              <button
+                key={row.zone.id}
+                type="button"
+                aria-label={`Mốc ngày của ${row.zone.name}`}
+                onClick={() => setDatesFor(row.zone)}
+                style={{ ...rowStyle, cursor: 'pointer' }}
+              >
+                {line}
+              </button>
+            ) : (
+              <div key={row.zone.id} style={rowStyle}>
+                {line}
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    )
+  }
+
+  const summary = progress
+    ? `${formatPercent(progress.progress)} · ${zones.length} zone`
+    : undefined
+
   return (
-    <Space direction="vertical" style={{ width: '100%' }} size="middle">
-      {error && <Alert type="error" message={error} closable onClose={() => setError(null)} />}
+    <SectionCard
+      code="A3.4"
+      title="Tiến độ theo lớp sơn"
+      summary={summary}
+      collapsible
+      bodyPadding={0}
+      footer={<RulesDisclosure rules={PROGRESS_RULES} />}
+      extra={
+        entry && entry.imagePath && imageUrl ? (
+          <Space size={10}>
+            <Segmented
+              size="small"
+              value={splitView ? 'split' : 'single'}
+              onChange={(v) => setSplitView(v === 'split')}
+              options={[
+                { value: 'single', label: 'Một lớp' },
+                { value: 'split', label: 'So sánh hai lớp' },
+              ]}
+            />
+            <Space
+              size={4}
+              style={{
+                background: palette.bgSubtle,
+                border: `1px solid ${palette.borderSplit}`,
+                borderRadius: 10,
+                padding: 4,
+              }}
+            >
+              <Button
+                size="small"
+                aria-label="Thu nhỏ"
+                icon={<MinusOutlined aria-hidden />}
+                onClick={() => setZoom((z) => Math.max(1, z - 0.5))}
+              />
+              <span
+                style={{
+                  display: 'inline-flex',
+                  justifyContent: 'center',
+                  minWidth: 50,
+                  fontSize: 12,
+                  fontWeight: 600,
+                  color: palette.textSecondary,
+                }}
+              >
+                {`${Math.round(zoom * 100)}%`}
+              </span>
+              <Button
+                size="small"
+                aria-label="Phóng to"
+                icon={<PlusOutlined aria-hidden />}
+                onClick={() => setZoom((z) => Math.min(4, z + 0.5))}
+              />
+              <Button
+                size="small"
+                aria-label="Vừa khung"
+                icon={<ExpandOutlined aria-hidden />}
+                onClick={() => setZoom(1)}
+              />
+            </Space>
+          </Space>
+        ) : undefined
+      }
+    >
+      {loading && <Spin style={{ display: 'block', margin: '8vh auto' }} />}
 
-      {!entry && (
-        <Typography.Text type="secondary">Không tải được tiến độ sàn</Typography.Text>
-      )}
+      {!loading && (
+        <div style={{ padding: '16px 20px 18px' }}>
+          {error && (
+            <Alert
+              style={{ marginBottom: 14 }}
+              type="error"
+              message={error}
+              closable
+              onClose={() => setError(null)}
+            />
+          )}
 
-      {entry && !entry.imagePath && (
-        <Typography.Text type="secondary">Sàn này chưa có bản vẽ</Typography.Text>
+          {!entry && <EmptyState
+              tone="error"
+              title="Không tải được tiến độ sàn"
+              description="Thử tải lại trang. Nếu vẫn không được, kiểm tra kết nối tới máy chủ."
+            />}
+
+          {entry && !entry.imagePath && (
+            <EmptyState
+              title="Chưa có gì để hiển thị"
+              description="Sàn cần bản vẽ và lưới ô trước khi có tiến độ hay kế hoạch zone."
+            />
+          )}
+
+          {entry && entry.imagePath && imageUrl && (
+            <>
+              <div style={{ display: 'flex', gap: 14, alignItems: 'flex-end', marginBottom: 16 }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+                  <label
+                    htmlFor="lens-a-stage"
+                    style={{ fontSize: 11, fontWeight: 600, color: palette.textTertiary }}
+                  >
+                    {splitView ? 'Lớp bên trái' : 'Lớp sơn đang xem'}
+                  </label>
+                  <Select
+                    id="lens-a-stage"
+                    style={{ minWidth: 190 }}
+                    value={stageA?.id}
+                    onChange={setViewA}
+                    options={entry.stages.map((st) => ({ value: st.id, label: st.name }))}
+                  />
+                </div>
+                {splitView && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+                    <label
+                      htmlFor="lens-b-stage"
+                      style={{ fontSize: 11, fontWeight: 600, color: palette.textTertiary }}
+                    >
+                      Lớp bên phải
+                    </label>
+                    <Select
+                      id="lens-b-stage"
+                      style={{ minWidth: 190 }}
+                      value={stageB?.id}
+                      onChange={setViewB}
+                      options={entry.stages.map((st) => ({ value: st.id, label: st.name }))}
+                    />
+                  </div>
+                )}
+                {editable && selectedCodes.length > 0 && (
+                  <Space style={{ marginLeft: 'auto' }}>
+                    <Button onClick={() => setSelectedCodes([])}>Bỏ chọn</Button>
+                    <Button type="primary" onClick={() => setZoneFormOpen(true)}>
+                      {`Gộp thành zone (${selectedCodes.length})`}
+                    </Button>
+                  </Space>
+                )}
+              </div>
+
+              {editable && (
+                <div style={{ fontSize: 12, color: palette.textTertiary, marginBottom: 12 }}>
+                  Giữ Shift rồi kéo trên bản vẽ để quét chọn nhiều ô, hoặc bấm từng ô.
+                </div>
+              )}
+
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: splitView
+                    ? 'minmax(0,1fr) minmax(0,1fr)'
+                    : 'minmax(0,1fr) minmax(300px,352px)',
+                  gap: 18,
+                  alignItems: 'start',
+                }}
+              >
+                {renderLens(lensA, 'A')}
+                {splitView
+                  ? renderLens(lensB, 'B')
+                  : (
+                    <div
+                      data-testid="stage-ring"
+                      style={{
+                        border: `1px solid ${palette.borderCard}`,
+                        borderRadius: 14,
+                        background: palette.bgContainer,
+                        boxShadow: shadowCard,
+                        overflow: 'hidden',
+                      }}
+                    >
+                      <div style={{ padding: '13px 15px 12px', borderBottom: `1px solid ${palette.borderSplit}` }}>
+                        <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600, letterSpacing: '-0.015em' }}>
+                          Ô đang ở lớp nào
+                        </h3>
+                        <div style={{ fontSize: 12, lineHeight: 1.4, color: palette.textTertiary, marginTop: 4 }}>
+                          Phần diện tích đang dừng ở mỗi lớp, không cộng dồn
+                        </div>
+                      </div>
+                      <div style={{ padding: '18px 15px', display: 'flex', alignItems: 'center', gap: 18 }}>
+                        <Donut slices={ringSlices} size={168} thickness={30}>
+                          <span style={{ fontSize: 10, fontWeight: 600, color: palette.textTertiary }}>
+                            Tiến độ sàn
+                          </span>
+                          <span
+                            style={{
+                              fontSize: 24,
+                              fontWeight: 700,
+                              letterSpacing: '-0.03em',
+                              marginTop: 5,
+                            }}
+                          >
+                            {formatPercent(progress?.progress ?? 0)}
+                          </span>
+                          <span style={{ fontSize: 10, color: palette.textTertiary, marginTop: 3 }}>
+                            {`${formatAreaM2(entry.deck.totalAreaM2)} m²`}
+                          </span>
+                        </Donut>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0 }}>
+                          {ringSlices.map((sl) => (
+                            <div
+                              key={sl.label}
+                              style={{ display: 'flex', alignItems: 'center', gap: 9, minWidth: 0 }}
+                            >
+                              <span
+                                aria-hidden
+                                style={{
+                                  width: 15,
+                                  height: 15,
+                                  borderRadius: 5,
+                                  flex: 'none',
+                                  background: sl.color,
+                                  boxShadow: 'inset 0 0 0 1px #16202B47',
+                                }}
+                              />
+                              <span style={{ fontSize: 12, fontWeight: 600, flex: 1, minWidth: 0 }}>
+                                {sl.label}
+                              </span>
+                              <span style={{ fontSize: 12, color: palette.textTertiary, flex: 'none' }}>
+                                {formatPercent(sl.value)}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                      <div
+                        style={{
+                          padding: '12px 15px',
+                          borderTop: `1px solid ${palette.borderSplit}`,
+                          background: palette.bgSubtle,
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 9,
+                        }}
+                      >
+                        <span style={{ fontSize: 12, fontWeight: 500, color: palette.textSecondary }}>
+                          Tiến độ sàn
+                        </span>
+                        <span
+                          style={{ marginLeft: 'auto', fontSize: 11, color: palette.textTertiary }}
+                        >
+                          {`${entry.deck.cells.length} ô`}
+                        </span>
+                        <span style={{ fontSize: 18, fontWeight: 700, letterSpacing: '-0.025em' }}>
+                          {formatPercent(progress?.progress ?? 0)}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+              </div>
+
+              <div data-testid="deck-spec" style={{ marginTop: 18 }}>
+                <StageSpecTable stages={progress?.stages ?? []} />
+              </div>
+            </>
+          )}
+        </div>
       )}
 
       {/*
@@ -440,7 +878,12 @@ export function DeckProgressPanel({
         open={noteCell !== null}
         title={noteCell ? `Ghi chú · ô ${noteCell.code}` : ''}
         onCancel={() => setNoteCell(null)}
-        footer={null}
+        styles={modalStyles}
+        footer={[
+          <Button key="close" onClick={() => setNoteCell(null)}>
+            Đóng
+          </Button>,
+        ]}
         destroyOnHidden
       >
         {noteCell && (
@@ -465,241 +908,89 @@ export function DeckProgressPanel({
         )}
       </Modal>
 
-      {entry && entry.imagePath && imageUrl && (
-        <Row gutter={16}>
-          <Col xs={24} lg={12}>
-            <Card
-              size="small"
-              title={stageFilter ? 'Kế hoạch theo zone' : 'Lớp sơn đã đạt'}
-              extra={
-                <Select
-                  size="small"
-                  style={{ width: 200 }}
-                  value={stageFilter ?? ''}
-                  aria-label="Lọc theo lớp sơn"
-                  onChange={(v) => setStageFilter(v === '' ? null : v)}
-                  options={[
-                    { value: '', label: 'Tất cả lớp sơn' },
-                    ...entry.stages.map((st) => ({ value: st.id, label: st.name })),
-                  ]}
-                />
-              }
-            >
-              <div data-testid="paint-lens">
-                <DrawingCanvas
-                  imageUrl={imageUrl}
-                  imageW={entry.imageW ?? 0}
-                  imageH={entry.imageH ?? 0}
-                  cells={entry.deck.cells}
-                  selectedCodes={editable ? selectedCodes : []}
-                  cellColors={paintColors}
-                  hatchedCodes={pendingCodes}
-                  markedCodes={notedCodes}
-                  panZoom
-                  // Selecting bays is what a click means while editing; reading
-                  // what the foreman wrote is what it means while looking.
-                  onCellClick={editable ? ((code) => toggleCell(code)) : ((code) => openNote(code))}
-                  onSelectDraw={editable ? sweep : undefined}
+      {/*
+        The zone's plan, opened off its own row.
+
+        Dates write as they are picked rather than behind a Save: a date that
+        looks set but is not is worse than no date, and there is nothing here to
+        validate across the two fields that would need a commit step.
+      */}
+      <Modal
+        open={datesFor !== null}
+        title={datesFor ? `Mốc ngày · ${datesFor.name}` : ''}
+        onCancel={() => setDatesFor(null)}
+        styles={modalStyles}
+        footer={[
+          <Button key="done" type="primary" onClick={() => setDatesFor(null)}>
+            Xong
+          </Button>,
+        ]}
+        destroyOnHidden
+      >
+        {datesFor && (
+          <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              {`${stageName(datesFor.stageId)} · ${datesFor.cellIds.length} ô. Để trống nghĩa là chưa lên kế hoạch.`}
+            </Typography.Text>
+            <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+                <label htmlFor="zone-start" style={{ fontSize: 12, fontWeight: 600, color: palette.textSecondary }}>
+                  Bắt đầu
+                </label>
+                <DatePicker
+                  id="zone-start"
+                  format="DD/MM/YYYY"
+                  placeholder="Chọn ngày"
+                  aria-label={`Ngày bắt đầu của ${datesFor.name}`}
+                  value={datesFor.startDate ? dayjs(datesFor.startDate) : null}
+                  onChange={(v) => void patchZoneDate(datesFor, 'startDate', v)}
                 />
               </div>
-              {/* The key follows what the lens is showing. Filtered, the stage
-                  colours would name something the canvas is not drawing. */}
-              <ColorKey
-                testId="paint-legend"
-                items={stageFilter
-                  ? filteredZones.map((z) => {
-                    const p = zoneProgress[z.id] ?? { done: 0, total: 0 }
-                    return {
-                      color: zoneColors[z.id],
-                      // The count travels IN the legend label rather than in a
-                      // table below it, so the swatch, the name and the number
-                      // are one thing to read.
-                      label: `${z.name} · ${p.done}/${p.total}`,
-                    }
-                  })
-                  : [
-                    ...entry.stages.map((st) => ({ color: st.color, label: st.name })),
-                    { color: NOT_STARTED_COLOR, label: NOT_STARTED_LABEL },
-                  ]}
-              />
-              {stageFilter && (
-                <Typography.Text type="secondary" style={{ fontSize: 12, display: 'block' }}>
-                  Ô tô theo màu zone · ô có gạch chéo là chưa đạt lớp sơn đang lọc.
-                </Typography.Text>
-              )}
-              {stageFilter && filteredZones.length === 0 && (
-                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                  Lớp sơn này chưa có zone nào được lên kế hoạch.
-                </Typography.Text>
-              )}
-            </Card>
-          </Col>
-          <Col xs={24} lg={12}>
-            <Card size="small" title="Tháo giáo">
-              <div data-testid="scaffold-lens">
-                <DrawingCanvas
-                  imageUrl={imageUrl}
-                  imageW={entry.imageW ?? 0}
-                  imageH={entry.imageH ?? 0}
-                  cells={entry.deck.cells}
-                  selectedCodes={[]}
-                  cellColors={scaffoldColors}
-                  panZoom
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+                <label htmlFor="zone-finish" style={{ fontSize: 12, fontWeight: 600, color: palette.textSecondary }}>
+                  Kết thúc
+                </label>
+                <DatePicker
+                  id="zone-finish"
+                  format="DD/MM/YYYY"
+                  placeholder="Chọn ngày"
+                  aria-label={`Ngày kết thúc của ${datesFor.name}`}
+                  value={datesFor.finishDate ? dayjs(datesFor.finishDate) : null}
+                  onChange={(v) => void patchZoneDate(datesFor, 'finishDate', v)}
                 />
               </div>
-              <ColorKey
-                testId="scaffold-legend"
-                items={[
-                  {
-                    color: entry.stages[entry.stages.length - 1]?.color ?? NOT_STARTED_COLOR,
-                    label: 'Đã tháo giáo',
-                  },
-                  { color: SCAFFOLD_PENDING_COLOR, label: 'Chưa tháo giáo' },
-                ]}
-              />
-            </Card>
-          </Col>
-        </Row>
-      )}
-
-      {entry && (
-        <Card size="small" title={`Tiến độ — ${formatAreaM2(entry.deck.totalAreaM2)} m²`}>
-          <div data-testid="deck-spec">
-            <StageSpecTable stages={progress?.stages ?? []} />
-          </div>
-        </Card>
-      )}
-
-      {entry && (
-        <Card
-          size="small"
-          title="Kế hoạch tháo giàn giáo"
-          extra={editable && (
+            </div>
             <Space>
-              <Typography.Text type="secondary">
-                {selectedCodes.length > 0 ? `${selectedCodes.length} ô đang chọn` : ''}
-              </Typography.Text>
-              {selectedCodes.length > 0 && (
-                <Button onClick={() => setSelectedCodes([])}>Bỏ chọn</Button>
-              )}
-              <Button
-                type="primary"
-                disabled={selectedCodes.length === 0}
-                onClick={() => setZoneFormOpen(true)}
-              >
-                Gộp thành zone ({selectedCodes.length})
+              <Button onClick={() => void applyZone(datesFor)}>Ghi thực tế</Button>
+              <Button danger onClick={() => setRemovingZone(datesFor)}>
+                Xoá zone
               </Button>
             </Space>
-          )}
-        >
-          {editable && (
-            <Typography.Text type="secondary" style={{ display: 'block', marginBottom: 8 }}>
-              Giữ Shift rồi kéo trên bản vẽ để quét chọn nhiều ô, hoặc bấm từng ô.
-            </Typography.Text>
-          )}
+          </Space>
+        )}
+      </Modal>
 
-          {zones.length === 0 && (
-            <Typography.Text type="secondary">Sàn này chưa có zone nào</Typography.Text>
-          )}
-
-          {zones.length > 0 && (
-            <div data-testid="zone-table">
-              <Table<Zone>
-                size="small"
-                rowKey="id"
-                pagination={false}
-                dataSource={zones}
-                columns={[
-                  {
-                    title: 'Màu',
-                    key: 'swatch',
-                    width: 60,
-                    // How a row is matched to the drawing, now that no text is
-                    // written on it. Blank for a zone of another coat: it is not
-                    // being drawn, so it has no colour to claim.
-                    render: (_, z) => (zoneColors[z.id] ? (
-                      <span
-                        aria-label={`Màu của ${z.name}`}
-                        style={{
-                          display: 'inline-block',
-                          width: 14,
-                          height: 14,
-                          borderRadius: 2,
-                          background: zoneColors[z.id],
-                          border: '1px solid #00000026',
-                        }}
-                      />
-                    ) : null),
-                  },
-                  { title: 'Zone', dataIndex: 'name', key: 'name' },
-                  { title: 'Công đoạn', key: 'stage', render: (_, z) => stageName(z.stageId) },
-                  {
-                    title: 'Số ô',
-                    key: 'cells',
-                    align: 'right',
-                    render: (_, z) => z.cellIds.length,
-                  },
-                  {
-                    title: 'Bắt đầu',
-                    key: 'start',
-                    render: (_, z) => (editable ? (
-                      <DatePicker
-                        size="small"
-                        format="DD/MM/YYYY"
-                        // aria-label rather than a <label>: the cell has no room
-                        // for visible text, and every row needs a name that says
-                        // WHICH zone it belongs to.
-                        aria-label={`Ngày bắt đầu của ${z.name}`}
-                        value={z.startDate ? dayjs(z.startDate) : null}
-                        onChange={(v) => void patchZoneDate(z, 'startDate', v)}
-                      />
-                    ) : (z.startDate ? dayjs(z.startDate).format('DD/MM') : '—')),
-                  },
-                  {
-                    title: 'Kết thúc',
-                    key: 'finish',
-                    render: (_, z) => (editable ? (
-                      <DatePicker
-                        size="small"
-                        format="DD/MM/YYYY"
-                        aria-label={`Ngày kết thúc của ${z.name}`}
-                        value={z.finishDate ? dayjs(z.finishDate) : null}
-                        onChange={(v) => void patchZoneDate(z, 'finishDate', v)}
-                      />
-                    ) : (z.finishDate ? dayjs(z.finishDate).format('DD/MM') : '—')),
-                  },
-                  {
-                    title: 'Kế hoạch',
-                    key: 'plan',
-                    render: (_, z) => formatPlanRange(z.startDate, z.finishDate) || '—',
-                  },
-                  {
-                    title: '',
-                    key: 'actions',
-                    align: 'right',
-                    render: (_, z) => (!editable ? null : (
-                      <Space>
-                        <Button size="small" onClick={() => void applyZone(z)}>
-                          Ghi thực tế
-                        </Button>
-                        <Popconfirm
-                          title="Xoá zone này?"
-                          description="Kế hoạch bị xoá, tiến độ đã ghi trên các ô vẫn giữ nguyên."
-                          okText="Xoá zone"
-                          cancelText="Huỷ"
-                          onConfirm={() => void removeZone(z)}
-                        >
-                          <Button size="small" danger>Xoá</Button>
-                        </Popconfirm>
-                      </Space>
-                    )),
-                  },
-                ]}
-              />
-            </div>
-          )}
-        </Card>
-      )}
+      <ConsequenceModal
+        open={removingZone !== null}
+        tone="danger"
+        tag="Thao tác phá huỷ"
+        title={`Xoá zone ${removingZone?.name ?? ''}?`}
+        description="Kế hoạch của zone này sẽ bị xoá:"
+        items={
+          removingZone
+            ? [{ label: removingZone.name, meta: `${removingZone.cellIds.length} ô` }]
+            : []
+        }
+        consequence="Chỉ kế hoạch bị xoá. Tiến độ GS đã ghi trên các ô vẫn giữ nguyên, và các ô đó quay về trạng thái chưa được lên kế hoạch cho lớp sơn này (ZON-R5)."
+        okText="Vẫn xoá"
+        onCancel={() => setRemovingZone(null)}
+        onOk={() =>
+          void removeZone(removingZone!).then(() => {
+            setRemovingZone(null)
+            setDatesFor(null)
+          })
+        }
+      />
 
       {editable && (
       <Modal
@@ -709,6 +1000,7 @@ export function DeckProgressPanel({
         okText="Tạo zone"
         cancelText="Huỷ"
         onOk={() => void submitZones()}
+        styles={modalStyles}
         width={640}
         destroyOnHidden
       >
@@ -728,6 +1020,7 @@ export function DeckProgressPanel({
 
         <div data-testid="stage-windows">
           <Table
+            className="pp-table"
             size="small"
             rowKey="id"
             pagination={false}
@@ -765,6 +1058,6 @@ export function DeckProgressPanel({
         </div>
       </Modal>
       )}
-    </Space>
+    </SectionCard>
   )
 }

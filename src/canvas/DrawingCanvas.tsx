@@ -83,6 +83,9 @@ export function DrawingCanvas({
   markedCodes,
   planLabels,
   panZoom = false,
+  zoom: zoomProp,
+  onZoomChange,
+  showZoomControls = true,
   onCellClick,
   onCellDraw,
   onSelectDraw,
@@ -131,6 +134,24 @@ export function DrawingCanvas({
    */
   panZoom?: boolean
   /**
+   * The zoom, when the screen above owns it.
+   *
+   * Uncontrolled by default, which is what every single-canvas screen wants.
+   * The split view in A3.4 is the case that needs it: two canvases free to sit
+   * at different scales are not a comparison of one coat against another.
+   */
+  zoom?: number
+  /** Fired with the clamped value whenever a gesture or a button changes it. */
+  onZoomChange?: (zoom: number) => void
+  /**
+   * The floating -- / % / + / fit group over the top-right of the canvas.
+   *
+   * Turned off by a parent that renders the same controls itself, which is what
+   * a shared zoom across two canvases has to do: one control, not one per
+   * canvas each claiming to be the zoom.
+   */
+  showZoomControls?: boolean
+  /**
    * Present = draw-a-bay mode: the same drag, reported as one bay rather than
    * as the region to detect in. Mutually exclusive with `onCropDraw` -- the
    * screen above offers one mode or the other, never both -- and it uses a much
@@ -152,7 +173,8 @@ export function DrawingCanvas({
   const containerRef = useRef<HTMLDivElement>(null)
   const [measuredWidth, setMeasuredWidth] = useState(0)
   const stageRef = useRef<Konva.Stage>(null)
-  const [zoom, setZoom] = useState(MIN_ZOOM)
+  const [ownZoom, setOwnZoom] = useState(MIN_ZOOM)
+  const zoom = zoomProp ?? ownZoom
   /**
    * Whether Shift is down right now, so the stage can stop advertising a pan it
    * will refuse. Window-level and cleared on blur: a Shift held while the window
@@ -241,7 +263,11 @@ export function DrawingCanvas({
    */
   const applyZoom = (next: number) => {
     const clamped = clampZoom(next)
-    setZoom(clamped)
+    // Written locally whether or not a parent owns the value: a controlled
+    // parent that ignores the callback would otherwise leave the canvas frozen
+    // with no sign why, and when it does honour it the two agree anyway.
+    setOwnZoom(clamped)
+    onZoomChange?.(clamped)
     const stage = stageRef.current
     if (stage) {
       stage.position(clampStagePan({ x: stage.x(), y: stage.y() }, width, height, clamped))
@@ -362,7 +388,7 @@ export function DrawingCanvas({
         cursor: cursor || undefined,
       }}
     >
-      {panZoom && (
+      {panZoom && showZoomControls && (
         /*
           A compact floating group, as the prototypes have it, rather than three
           full-width text buttons sitting over the drawing they are meant to
@@ -431,10 +457,41 @@ export function DrawingCanvas({
         }}
         dragBoundFunc={(pos) => clampStagePan(pos, width, height, zoom)}
         {...dragHandlers}
+        /*
+          One event, two gestures, told apart by ctrlKey.
+
+          Every browser reports a trackpad PINCH as a wheel event with
+          ctrlKey set -- the user is not holding Ctrl, the OS synthesises it --
+          and that is also what Ctrl/Cmd + wheel produces on a mouse. So one
+          branch serves the pinch and the mouse user's fast zoom alike.
+
+          A plain wheel is a SCROLL: two fingers on a trackpad, or the wheel on
+          a mouse. It used to zoom, which meant an admin trying to look further
+          down a drawing rescaled it instead, on every gesture. deltaX is
+          honoured too, so a sideways two-finger swipe pans sideways.
+
+          The pan is written straight onto the Konva node rather than through
+          state: the position already lives there (the stage is `draggable`),
+          and mirroring it into React would re-render the whole mesh on every
+          wheel tick.
+        */
         onWheel={(e: Konva.KonvaEventObject<WheelEvent>) => {
           if (!panZoom) return
           e.evt.preventDefault()
-          applyZoom(zoom + (e.evt.deltaY < 0 ? WHEEL_ZOOM_STEP : -WHEEL_ZOOM_STEP))
+          if (e.evt.ctrlKey || e.evt.metaKey) {
+            applyZoom(zoom + (e.evt.deltaY < 0 ? WHEEL_ZOOM_STEP : -WHEEL_ZOOM_STEP))
+            return
+          }
+          const stage = stageRef.current
+          if (!stage) return
+          stage.position(
+            clampStagePan(
+              { x: stage.x() - e.evt.deltaX, y: stage.y() - e.evt.deltaY },
+              width,
+              height,
+              zoom,
+            ),
+          )
         }}
       >
         <Layer name="drawing-image">

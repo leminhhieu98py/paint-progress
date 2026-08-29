@@ -1,5 +1,8 @@
 import {
-  Alert, App, Button, Descriptions, Modal, Space, Typography,
+  ClearOutlined, ControlOutlined, SaveOutlined, ThunderboltOutlined,
+} from '@ant-design/icons'
+import {
+  Alert, App, Button, Descriptions, Modal, Space, Tooltip, Typography,
 } from 'antd'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
@@ -14,6 +17,8 @@ import {
 } from '../../lib/decksApi'
 import { formatAreaM2, formatPercent } from '../../lib/format'
 import { modalStyles } from '../../components/modalChrome'
+import { SectionCard } from '../../components/SectionCard'
+import { palette } from '../../theme'
 import { DrawingCanvas } from '../../canvas/DrawingCanvas'
 import { detectBaysFromImage } from '../../canvas/rgbFromImage'
 
@@ -139,7 +144,22 @@ function drawErrorInVietnamese(message: string): string {
   return message
 }
 
-export function DeckEditor({ deck, onSaved }: { deck: DeckRow; onSaved?: () => void }) {
+export function DeckEditor({
+  deck,
+  editable = true,
+  onSaved,
+}: {
+  deck: DeckRow
+  /**
+   * Whether the deck screen is in Sửa.
+   *
+   * In Xem the mesh is still drawn -- checking that the bays sit where the
+   * beams do is a reading task, and it is the first thing anyone does after a
+   * drawing is replaced. Every control that could change or write it is gone.
+   */
+  editable?: boolean
+  onSaved?: () => void
+}) {
   const [stages, setStages] = useState<Stage[]>([])
   const [cells, setCells] = useState<MeshCell[]>([])
   /**
@@ -669,6 +689,62 @@ export function DeckEditor({ deck, onSaved }: { deck: DeckRow; onSaved?: () => v
   })
 
   return (
+    <SectionCard
+      code="A3.3"
+      title="Phân ô"
+      summary={cells.length > 0 ? `${cells.length} ô đã dựng` : 'chưa dựng ô'}
+      collapsible
+      bodyPadding="16px 20px 20px"
+      extra={
+        editable ? (
+          <Space size={8}>
+            {selected.length > 0 && (
+              <span
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  fontSize: 12,
+                  fontWeight: 600,
+                  color: palette.accent,
+                  background: palette.accentTint,
+                  padding: '7px 12px',
+                  borderRadius: 999,
+                }}
+              >
+                <span
+                  aria-hidden
+                  style={{ width: 6, height: 6, borderRadius: '50%', background: palette.accent }}
+                />
+                {`${selected.length} ô đang chọn`}
+              </span>
+            )}
+            <Tooltip title="Xoá toàn bộ lưới ô">
+              <span>
+                <Button
+                  danger
+                  aria-label="Xoá toàn bộ lưới ô"
+                  icon={<ClearOutlined aria-hidden />}
+                  disabled={busy || cells.length === 0}
+                  onClick={() => void reviewEdit('mesh', [])}
+                />
+              </span>
+            </Tooltip>
+            <Tooltip title="Lưu hình học ô">
+              <span>
+                <Button
+                  type="primary"
+                  aria-label="Lưu hình học ô"
+                  icon={<SaveOutlined aria-hidden />}
+                  loading={busy}
+                  onClick={() => void reviewEdit('mesh', cells)}
+                />
+              </span>
+            </Tooltip>
+          </Space>
+        ) : undefined
+      }
+    >
     <Space direction="vertical" style={{ width: '100%' }} size="middle">
       {error && <Alert type="error" message={error} closable onClose={() => setError(null)} />}
 
@@ -717,35 +793,56 @@ export function DeckEditor({ deck, onSaved }: { deck: DeckRow; onSaved?: () => v
         (see PendingEdit / reviewEdit, which gate deck-level SAVES, not local
         edits to the working guide table).
       */}
-      <Space wrap align="center">
-        <Button loading={detecting} disabled={!imageUrl || shortcuts} onClick={() => void detectGrid()}>
-          Dò ô
-        </Button>
-        {/*
-          One button for the whole working session. Off, it is the way in; on,
-          it is the way out, and the way out is a save -- there is no third
-          state where the admin has been editing and has nowhere to put it.
-        */}
-        <Button
-          type={shortcuts ? 'primary' : 'default'}
-          loading={busy}
-          onClick={() => {
-            if (shortcuts) void reviewEdit('mesh', cells)
-            else setShortcuts(true)
+      {editable && (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 9,
+            flexWrap: 'wrap',
+            padding: '13px 20px',
+            margin: '0 -20px',
+            background: palette.bgSubtle,
+            borderTop: `1px solid ${palette.borderSplit}`,
+            borderBottom: `1px solid ${palette.borderSplit}`,
           }}
         >
-          {shortcuts ? 'Lưu bản vẽ' : 'Bắt đầu thao tác'}
-        </Button>
-        <Typography.Text>{`${cells.length} ô`}</Typography.Text>
-      </Space>
+          <Tooltip title="Tự động dò ô từ bản vẽ">
+            <span>
+              <Button
+                aria-label="Tự động dò ô từ bản vẽ"
+                icon={<ThunderboltOutlined aria-hidden />}
+                loading={detecting}
+                disabled={!imageUrl || shortcuts}
+                onClick={() => void detectGrid()}
+              />
+            </span>
+          </Tooltip>
+          {/*
+            One button for the whole working session. Off, it is the way in; on,
+            it is the way out -- and the way out is the save in the header, so
+            there is no third state where the admin has been editing and has
+            nowhere to put it.
+          */}
+          <Tooltip title={shortcuts ? 'Đang hiệu chỉnh — bấm để thoát' : 'Hiệu chỉnh ô'}>
+            <Button
+              aria-label={shortcuts ? 'Thoát hiệu chỉnh ô' : 'Hiệu chỉnh ô'}
+              type={shortcuts ? 'primary' : 'default'}
+              icon={<ControlOutlined aria-hidden />}
+              onClick={() => setShortcuts((on) => !on)}
+            />
+          </Tooltip>
+          <span style={{ marginLeft: 'auto', fontSize: 12, color: palette.textTertiary }}>
+            {drawingCell
+              ? 'Kéo một khung vào chỗ còn thiếu ô. Cạnh nào gần ô có sẵn sẽ tự dính vào cạnh đó.'
+              : shortcuts
+                ? 'Dùng phím tắt bên dưới để gộp / xoá / vẽ ô. Lưu bằng nút ở góc trên.'
+                : 'Bấm Hiệu chỉnh để gộp / xoá / vẽ ô bằng phím tắt. Dò ô sẽ thay toàn bộ ô đang có.'}
+          </span>
+        </div>
+      )}
 
-      <Typography.Text type={drawingCell ? 'warning' : 'secondary'}>
-        {drawingCell
-          ? 'Kéo một khung vào chỗ còn thiếu ô. Cạnh nào gần ô có sẵn sẽ tự dính vào cạnh ô đó. Không vẽ đè lên ô đã có.'
-          : 'Dò ô sẽ thay toàn bộ ô đang có. Bấm “Bắt đầu thao tác” rồi dùng phím tắt để sửa.'}
-      </Typography.Text>
-
-      {shortcuts && (
+      {editable && shortcuts && (
         <Descriptions
           size="small"
           column={2}
@@ -772,19 +869,28 @@ export function DeckEditor({ deck, onSaved }: { deck: DeckRow; onSaved?: () => v
           imageW={deck.imageW}
           imageH={deck.imageH}
           cells={cells}
-          selectedCodes={selected}
+          selectedCodes={editable ? selected : []}
           cellColors={cellColors}
-          onCellDraw={drawingCell ? onCellDraw : undefined}
+          // Pan and zoom in BOTH modes. Checking that the bays sit on the beams
+          // is the first thing anyone does after a drawing is replaced, and at
+          // fit-to-width a 200-bay deck is unreadable.
+          panZoom
+          onCellDraw={editable && drawingCell ? onCellDraw : undefined}
           // Shift-drag belongs to the same opt-in as the keys: it is the
           // mouse half of the same way of working, and an admin who has not
           // asked for it should not find their drags doing something new.
-          onSelectDraw={shortcuts ? (rect) => setSelected(cellsInBox(cells, rect)) : undefined}
-          onCellClick={(code, additive) =>
-            setSelected((prev) =>
-              additive
-                ? prev.includes(code) ? prev.filter((c) => c !== code) : [...prev, code]
-                : prev.includes(code) && prev.length === 1 ? [] : [code],
-            )
+          onSelectDraw={
+            editable && shortcuts ? (rect) => setSelected(cellsInBox(cells, rect)) : undefined
+          }
+          onCellClick={
+            editable
+              ? (code, additive) =>
+                setSelected((prev) =>
+                  additive
+                    ? prev.includes(code) ? prev.filter((c) => c !== code) : [...prev, code]
+                    : prev.includes(code) && prev.length === 1 ? [] : [code],
+                )
+              : undefined
           }
         />
       ) : (
@@ -919,5 +1025,6 @@ export function DeckEditor({ deck, onSaved }: { deck: DeckRow; onSaved?: () => v
         )}
       </Modal>
     </Space>
+    </SectionCard>
   )
 }

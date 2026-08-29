@@ -6,6 +6,7 @@ import {
   DeleteOutlined,
   HolderOutlined,
   PlusOutlined,
+  SaveOutlined,
 } from '@ant-design/icons'
 import { Alert, App, Button, Input, InputNumber, Space, Table, Tooltip } from 'antd'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -18,6 +19,7 @@ import {
 import { randomUUID } from '../../lib/uuid'
 import { ConsequenceModal } from '../../components/ConsequenceModal'
 import { RulesDisclosure } from '../../components/RulesDisclosure'
+import { SectionCard } from '../../components/SectionCard'
 import { palette } from '../../theme'
 
 /**
@@ -28,6 +30,25 @@ import { palette } from '../../theme'
  * duplicate check but not to the admin typing them.
  */
 const HEX_COLOR = /^#[0-9a-fA-F]{6}$/
+
+const STAGE_RULES = [
+          {
+            id: 'STG-R1',
+            text: 'Tổng trọng số phải đúng bằng 1; chưa đúng thì nút Lưu bị khoá.',
+          },
+          {
+            id: 'STG-R2',
+            text: 'Không hai lớp trùng tên hoặc trùng màu — GS nhận ra lớp bằng màu trên bản vẽ, báo cáo nhận ra bằng tên.',
+          },
+          {
+            id: 'STG-R3',
+            text: 'Cấu hình này chỉ áp cho sàn đang mở. Sàn khác trong cùng dự án không bị ảnh hưởng.',
+          },
+          {
+            id: 'STG-R4',
+            text: 'Xoá một lớp sẽ đưa mọi ô đang ở lớp đó về “Chưa bắt đầu”; lịch sử ghi nhận vẫn giữ nguyên.',
+          },
+        ]
 
 /**
  * saveStages' own guard errors, in the admin's language.
@@ -68,9 +89,19 @@ function saveStagesErrorInVietnamese(message: string): string {
 
 export function StageConfigPanel({
   deckId,
+  editable = true,
   onSaved,
 }: {
   deckId: string
+  /**
+   * Whether the deck screen is in Sửa.
+   *
+   * In Xem the panel still renders -- the stage list and its weights are what
+   * every percentage on the deck is computed from, so hiding them means the
+   * admin has to enter edit mode to read the spec. What Xem drops is every
+   * control that writes: the drag handles, the fields, add, remove and save.
+   */
+  editable?: boolean
   /**
    * Called after a save that actually persisted. ProjectsScreen's row shows
    * this project's rollup (e.g. "42,31%") computed from the SAME stages this
@@ -295,8 +326,66 @@ export function StageConfigPanel({
     }
   }
 
+  const sumChip = (
+    <span
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 9,
+        padding: '7px 13px',
+        borderRadius: 999,
+        background: balanced ? palette.successBg : palette.errorBg,
+        color: balanced ? palette.success : palette.error,
+      }}
+    >
+      {balanced ? <CheckCircleFilled aria-hidden /> : <CloseCircleFilled aria-hidden />}
+      <span style={{ fontSize: 14, fontWeight: 600 }}>{formatWeight(total)}</span>
+      {/*
+        The target is written as a bare 1, not formatWeight(1). Four zeros on a
+        constant add nothing, and repeating the same string the chip's own total
+        prints when balanced makes the two indistinguishable to read -- and
+        ambiguous to query.
+      */}
+      <span style={{ fontSize: 12, opacity: 0.7 }}>/ 1</span>
+    </span>
+  )
+
   return (
-    <Space direction="vertical" style={{ width: '100%' }}>
+    <SectionCard
+      code="A3.2"
+      title="Cấu hình lớp sơn"
+      summary={`${draft.length} lớp · tổng ${formatWeight(total)}`}
+      collapsible
+      bodyPadding={0}
+      footer={<RulesDisclosure rules={STAGE_RULES} />}
+      extra={
+        <Space size={12}>
+          {sumChip}
+          {editable && (
+            <Tooltip
+              title={
+                balanced && !hasClash && !hexPending
+                  ? 'Lưu cấu hình lớp sơn'
+                  : 'Tổng trọng số phải bằng 1, không trùng tên/màu, và mã màu phải đủ 6 số'
+              }
+            >
+              {/* A span, because antd Tooltip cannot anchor to a disabled button. */}
+              <span>
+                <Button
+                  type="primary"
+                  aria-label="Lưu cấu hình lớp sơn"
+                  icon={<SaveOutlined aria-hidden />}
+                  disabled={!balanced || hasClash || hexPending}
+                  loading={busy}
+                  onClick={() => setConfirming(true)}
+                />
+              </span>
+            </Tooltip>
+          )}
+        </Space>
+      }
+    >
+    <Space direction="vertical" style={{ width: '100%', padding: '16px 0 4px' }}>
       {error && (
         <div style={{ padding: '0 20px' }}>
           <Alert type="error" message={error} closable onClose={() => setError(null)} />
@@ -323,7 +412,7 @@ export function StageConfigPanel({
         dataSource={draft}
         pagination={false}
         onRow={(_row, index) => ({
-          draggable: !busy,
+          draggable: editable && !busy,
           'aria-grabbed': false,
           onDragStart: () => { dragging.current = index ?? null },
           // Without preventDefault the browser refuses the drop outright: the
@@ -340,9 +429,9 @@ export function StageConfigPanel({
             title: '',
             key: 'handle',
             width: 34,
-            render: () => (
+            render: () => (!editable ? null : (
               <HolderOutlined style={{ color: '#647688', cursor: busy ? 'not-allowed' : 'grab' }} />
-            ),
+            )),
           },
           {
             title: 'Thứ tự',
@@ -359,6 +448,7 @@ export function StageConfigPanel({
             title: 'Tên lớp',
             dataIndex: 'name',
             render: (v: string, _r, i) => (
+              editable ? (
               <Input
                 // Stable across a rename, unlike the colour fields beside it:
                 // this IS the field the name is typed into, so labelling it
@@ -376,6 +466,9 @@ export function StageConfigPanel({
                 disabled={busy}
                 onChange={(e) => patch(i, { name: e.target.value })}
               />
+              ) : (
+                <span style={{ fontWeight: 600 }}>{v}</span>
+              )
             ),
           },
           {
@@ -384,6 +477,24 @@ export function StageConfigPanel({
             width: 180,
             render: (v: string, row, i) => (
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                {!editable && (
+                  <>
+                    <span
+                      aria-label={`Màu của ${row.name}`}
+                      style={{
+                        display: 'inline-block',
+                        width: 26,
+                        height: 26,
+                        borderRadius: 8,
+                        background: v,
+                        boxShadow: 'inset 0 0 0 1px #16202B33',
+                      }}
+                    />
+                    <span style={{ fontSize: 12, color: palette.textSecondary }}>{v}</span>
+                  </>
+                )}
+                {editable && (
+                <>
                 <Input
                   aria-label={`Chọn màu · ${row.name}`}
                   type="color"
@@ -420,6 +531,8 @@ export function StageConfigPanel({
                     if (HEX_COLOR.test(typed)) patch(i, { color: typed.toLowerCase() })
                   }}
                 />
+                </>
+                )}
               </div>
             ),
           },
@@ -427,7 +540,9 @@ export function StageConfigPanel({
             title: 'Trọng số',
             dataIndex: 'weight',
             width: 130,
-            render: (v: number, _r, i) => (
+            render: (v: number, _r, i) => (!editable ? (
+              <div style={{ textAlign: 'right', fontWeight: 600 }}>{formatWeight(v)}</div>
+            ) : (
               <InputNumber
                 value={v}
                 min={0}
@@ -451,13 +566,13 @@ export function StageConfigPanel({
                 // summed to 1 on reload, disabling this very button.
                 onChange={(n) => patch(i, { weight: roundStageWeight(n ?? 0) })}
               />
-            ),
+            )),
           },
           {
             title: '',
             key: 'actions',
             width: 200,
-            render: (_v, _r, i) => (
+            render: (_v, _r, i) => (!editable ? null : (
               <Space size="small">
                 {/*
                   Icons with their labels kept as accessible names. The row is
@@ -495,7 +610,7 @@ export function StageConfigPanel({
                   />
                 </Tooltip>
               </Space>
-            ),
+            )),
           },
         ]}
       />
@@ -518,29 +633,6 @@ export function StageConfigPanel({
           but a chip and a bar flush against the card's own border read as
           overflow rather than as content. */}
       <div style={{ padding: '0 20px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
-          <span
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 9,
-              padding: '7px 13px',
-              borderRadius: 999,
-              background: balanced ? palette.successBg : palette.errorBg,
-              color: balanced ? palette.success : palette.error,
-            }}
-          >
-            {balanced ? <CheckCircleFilled /> : <CloseCircleFilled />}
-            <span style={{ fontSize: 14, fontWeight: 600 }}>{formatWeight(total)}</span>
-            {/*
-              The target is written as a bare 1, not formatWeight(1). Four
-              zeros on a constant add nothing, and repeating the same string
-              the chip's own total prints when balanced makes the two
-              indistinguishable to read -- and ambiguous to query.
-            */}
-            <span style={{ fontSize: 12, opacity: 0.7 }}>/ 1</span>
-          </span>
-        </div>
         <div
           style={{
             display: 'flex',
@@ -585,45 +677,24 @@ export function StageConfigPanel({
         </div>
       )}
 
-      <Space style={{ padding: '0 20px' }}>
-        <Button
-          type="primary"
-          disabled={!balanced || hasClash || hexPending}
-          loading={busy}
-          // Both paths ask, but they ask different questions. A removal
-          // destroys recorded progress and is titled as such. An ordinary save
-          // destroys nothing -- it re-bases every percentage on this deck on
-          // new weights, which is the number the customer is billed against,
-          // so it still gets read back before it lands.
-          onClick={() => setConfirming(true)}
+      {editable && (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+            padding: '0 20px',
+          }}
         >
-          Lưu cấu hình lớp sơn
-        </Button>
-        <Button icon={<PlusOutlined aria-hidden />} disabled={busy} onClick={addStage}>
-          Thêm lớp
-        </Button>
-      </Space>
+          <Button icon={<PlusOutlined aria-hidden />} disabled={busy} onClick={addStage}>
+            Thêm lớp
+          </Button>
+          <span style={{ fontSize: 12, color: palette.textTertiary }}>
+            Kéo hàng để đổi thứ tự · nhập trọng số trực tiếp, nhận dấu phẩy
+          </span>
+        </div>
+      )}
 
-      <RulesDisclosure
-        rules={[
-          {
-            id: 'STG-R1',
-            text: 'Tổng trọng số phải đúng bằng 1; chưa đúng thì nút Lưu bị khoá.',
-          },
-          {
-            id: 'STG-R2',
-            text: 'Không hai lớp trùng tên hoặc trùng màu — GS nhận ra lớp bằng màu trên bản vẽ, báo cáo nhận ra bằng tên.',
-          },
-          {
-            id: 'STG-R3',
-            text: 'Cấu hình này chỉ áp cho sàn đang mở. Sàn khác trong cùng dự án không bị ảnh hưởng.',
-          },
-          {
-            id: 'STG-R4',
-            text: 'Xoá một lớp sẽ đưa mọi ô đang ở lớp đó về “Chưa bắt đầu”; lịch sử ghi nhận vẫn giữ nguyên.',
-          },
-        ]}
-      />
 
       {/* Conditionally rendered rather than toggled via `open`, so that the
        * dialog's presence in the DOM is a direct, immediate reflection of
@@ -673,5 +744,6 @@ export function StageConfigPanel({
         />
       )}
     </Space>
+    </SectionCard>
   )
 }

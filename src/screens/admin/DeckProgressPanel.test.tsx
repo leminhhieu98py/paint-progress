@@ -117,180 +117,217 @@ const renderPanel = (editable = true) => render(
   <AntApp><DeckProgressPanel deckId="d1" editable={editable} /></AntApp>,
 )
 
+/** The stage the left lens is showing, by name. */
+const pickLens = async (label: string, name: string) => {
+  await userEvent.click(screen.getByLabelText(label))
+  await userEvent.click(await screen.findByTitle(name))
+}
+
 describe('DeckProgressPanel', () => {
   it('loads the deck it was given', async () => {
     renderPanel()
     await waitFor(() => expect(loadDeckProgress).toHaveBeenCalledWith('d1'))
   })
 
-  it('draws the paint lens and the scaffolding lens over the same drawing', async () => {
+  it('opens on one coat, over the deck\'s own drawing', async () => {
     renderPanel()
-
-    const paint = await screen.findByTestId('paint-lens')
-    const scaffold = screen.getByTestId('scaffold-lens')
-
-    // Paint colours by the coat reached.
-    expect(within(paint).getByTestId('cell-R1C1')).toHaveAttribute('data-color', '#722ed1')
-    expect(within(paint).getByTestId('cell-R1C2')).toHaveAttribute('data-color', '#bfbfbf')
-    // Scaffolding answers a different question: only the bay at the LAST stage
-    // is struck, so R1C2 -- well along on paint -- is still blocked.
-    expect(within(scaffold).getByTestId('cell-R1C1')).toHaveAttribute('data-color', '#722ed1')
-    expect(within(scaffold).getByTestId('cell-R1C2')).not.toHaveAttribute('data-color', '#722ed1')
-
-    await waitFor(() => {
-      expect(within(paint).getByTestId('canvas'))
-        .toHaveAttribute('data-image', 'https://signed/p1/d1.png')
-    })
+    // The first coat, because it is the one every deck has and the one the work
+    // starts at. The panel used to open on a fixed pair -- paint on the left,
+    // scaffolding on the right -- which spent half the screen on the last row
+    // of the stage table and gave the middle coats no view at all.
+    expect(await screen.findByTestId('lens-A')).toBeInTheDocument()
+    expect(screen.queryByTestId('lens-B')).not.toBeInTheDocument()
+    expect(screen.getByTestId('canvas')).toHaveAttribute('data-image', 'https://signed/p1/d1.png')
+    expect(within(screen.getByTestId('lens-A')).getByText('Tiến độ · Blast + Coat 1'))
+      .toBeInTheDocument()
   })
 
-  it('names every colour on both lenses', async () => {
+  it('puts a second lens beside the first, on demand, sharing one zoom', async () => {
     renderPanel()
+    await screen.findByTestId('lens-A')
+    await userEvent.click(screen.getByText('So sánh hai lớp'))
 
-    const paintKey = await screen.findByTestId('paint-legend')
-    for (const name of ['Blast + Coat 1', 'Coat 2', 'Tháo giáo', 'Chưa bắt đầu']) {
-      expect(within(paintKey).getByText(name)).toBeInTheDocument()
-    }
-    const scaffoldKey = screen.getByTestId('scaffold-legend')
-    expect(within(scaffoldKey).getByText('Đã tháo giáo')).toBeInTheDocument()
-    expect(within(scaffoldKey).getByText('Chưa tháo giáo')).toBeInTheDocument()
+    expect(await screen.findByTestId('lens-B')).toBeInTheDocument()
+    // The ring is the single-lens companion. Two drawings and a ring in one row
+    // leaves nothing wide enough to read.
+    expect(screen.queryByTestId('stage-ring')).not.toBeInTheDocument()
+    expect(within(screen.getByTestId('lens-B')).getByText(/cùng mức zoom để so sánh/))
+      .toBeInTheDocument()
+  })
+
+  it('drives both lenses from one zoom control', async () => {
+    renderPanel()
+    await screen.findByTestId('lens-A')
+    expect(screen.getByText('100%')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Phóng to' }))
+    expect(screen.getByText('150%')).toBeInTheDocument()
   })
 
   it('shows the deck\'s own spec table', async () => {
     renderPanel()
-    const spec = await screen.findByTestId('deck-spec')
-    // antd renders a fixed-column header twice -- once to measure.
-    expect(within(spec).getAllByText('Tháo giáo').length).toBeGreaterThan(0)
-    expect(within(spec).getAllByText('50,00%').length).toBeGreaterThan(0)
+    expect(await screen.findByTestId('deck-spec')).toBeInTheDocument()
+  })
+
+  it('breaks the deck down by the coat each bay is sitting at', async () => {
+    renderPanel()
+    const ring = await screen.findByTestId('stage-ring')
+    // Not cumulative, unlike every percentage elsewhere on the screen: this
+    // answers "where is the work sitting right now", which the weighted deck
+    // figure in the header above cannot.
+    expect(within(ring).getByText('Coat 2')).toBeInTheDocument()
+    expect(within(ring).getByText('Tháo giáo')).toBeInTheDocument()
+    expect(within(ring).getAllByText('50,00%')).toHaveLength(2)
   })
 
   it('tells the admin when a deck has no drawing, instead of an empty frame', async () => {
-    loadDeckProgress.mockResolvedValue({ ...ENTRY, imagePath: null, imageW: null, imageH: null })
+    loadDeckProgress.mockResolvedValue({ ...ENTRY, imagePath: null })
     renderPanel()
-    expect(await screen.findByText('Sàn này chưa có bản vẽ')).toBeInTheDocument()
-    expect(getDrawingUrl).not.toHaveBeenCalled()
+    expect(await screen.findByText('Chưa có gì để hiển thị')).toBeInTheDocument()
+    expect(screen.queryByTestId('lens-A')).not.toBeInTheDocument()
   })
 
   it('surfaces a load failure rather than rendering nothing', async () => {
-    loadDeckProgress.mockRejectedValue(new Error('permission denied for table decks'))
+    loadDeckProgress.mockRejectedValue(new Error('mạng hỏng'))
     renderPanel()
-    expect(await screen.findByText(/permission denied/)).toBeInTheDocument()
+    expect(await screen.findByText('mạng hỏng')).toBeInTheDocument()
+  })
+})
+
+describe('DeckProgressPanel — colouring one coat', () => {
+  beforeEach(() => {
+    listDeckZones.mockResolvedValue([ZONE])
+  })
+
+  it('colours a bay by its zone where the coat has a plan', async () => {
+    renderPanel()
+    await screen.findByTestId('lens-A')
+    await pickLens('Lớp sơn đang xem', 'Tháo giáo')
+    // ZONE covers c1 only, on s3.
+    await waitFor(() =>
+      expect(screen.getByTestId('cell-R1C1')).toHaveAttribute('data-color', '#eb2f96'))
+  })
+
+  it('falls back to the coat\'s own colour for a bay outside every zone', async () => {
+    renderPanel()
+    await screen.findByTestId('lens-A')
+    await pickLens('Lớp sơn đang xem', 'Tháo giáo')
+    // A zone-only rule leaves an unplanned deck blank, which is most decks
+    // before the plan is drawn. The fill still says "which group"; the hatch
+    // still says "not there yet".
+    await waitFor(() =>
+      expect(screen.getByTestId('cell-R1C2')).toHaveAttribute('data-color', '#722ed1'))
+  })
+
+  it('hatches exactly the bays that have not reached the coat being viewed', async () => {
+    renderPanel()
+    await screen.findByTestId('lens-A')
+    await pickLens('Lớp sơn đang xem', 'Tháo giáo')
+    // c1 is AT Tháo giáo, c2 is at Coat 2 and has not got there.
+    await waitFor(() =>
+      expect(screen.getByTestId('cell-R1C1')).toHaveAttribute('data-hatched', 'false'))
+    expect(screen.getByTestId('cell-R1C2')).toHaveAttribute('data-hatched', 'true')
+  })
+
+  it('hatches nothing at a coat both bays are already past', async () => {
+    renderPanel()
+    await screen.findByTestId('lens-A')
+    // Cumulative: a bay at Tháo giáo has been through Blast + Coat 1.
+    await waitFor(() =>
+      expect(screen.getByTestId('cell-R1C1')).toHaveAttribute('data-hatched', 'false'))
+    expect(screen.getByTestId('cell-R1C2')).toHaveAttribute('data-hatched', 'false')
+  })
+
+  it('says what the hatch means, rather than leaving it to be inferred', async () => {
+    renderPanel()
+    expect(await screen.findByText(/ô chưa đạt lớp này có gạch chéo mờ/)).toBeInTheDocument()
+  })
+
+  it('counts each zone against the coat being viewed', async () => {
+    renderPanel()
+    await screen.findByTestId('lens-A')
+    await pickLens('Lớp sơn đang xem', 'Tháo giáo')
+
+    const lens = await screen.findByTestId('lens-A')
+    expect(within(lens).getByText('Khu A — Tháo giáo')).toBeInTheDocument()
+    // One bay in the zone, and it has reached the coat.
+    expect(within(lens).getByText('01/1')).toBeInTheDocument()
+    expect(within(lens).getByText('Tiến độ từng zone · Tháo giáo')).toBeInTheDocument()
+    expect(within(lens).getByText('1 / 2 ô')).toBeInTheDocument()
+  })
+
+  it('hides the zones of every other coat', async () => {
+    renderPanel()
+    await screen.findByTestId('lens-A')
+    // ZONE is planned against s3; the lens opens on s1.
+    expect(await screen.findByText(/chưa có zone nào được lên kế hoạch/)).toBeInTheDocument()
   })
 })
 
 describe('DeckProgressPanel — zones', () => {
   it('will not offer to group when nothing is selected', async () => {
     renderPanel()
-    await screen.findByTestId('paint-lens')
-    expect(screen.getByRole('button', { name: /Gộp thành zone/ })).toBeDisabled()
+    await screen.findByTestId('lens-A')
+    expect(screen.queryByRole('button', { name: /Gộp thành zone/ })).not.toBeInTheDocument()
   })
 
   it('creates one zone per coat that was given dates, from one dialog', async () => {
-    // A zone's cell membership does not move between coats, so picking the same
-    // bays five times to say when each coat happens was five times the work for
-    // one decision. The schema is unchanged -- a zone row is still one stage
-    // over one window; what changed is that the admin declares them together.
     renderPanel()
-    await screen.findByTestId('paint-lens')
+    await screen.findByTestId('lens-A')
+    await userEvent.click(screen.getByTestId('band-all'))
+    await userEvent.click(await screen.findByRole('button', { name: /Gộp thành zone/ }))
 
-    await userEvent.click(within(screen.getByTestId('paint-lens')).getByTestId('band-all'))
-    await userEvent.click(screen.getByRole('button', { name: /Gộp thành zone/ }))
     await userEvent.type(screen.getByLabelText('Tên zone'), 'Khu A')
-
-    await userEvent.click(screen.getByLabelText('Bắt đầu Blast + Coat 1'))
-    await userEvent.click(await screen.findByTitle('2026-09-01'))
-    await userEvent.click(screen.getByLabelText('Kết thúc Tháo giáo'))
-    // Within the grid the picker opens on -- it shows the current month plus
-    // the days either side that complete the six-week block. `findAllByTitle`
-    // and the last match: antd leaves the first picker's panel mounted, so the
-    // same date exists twice in the DOM and only the newest one is live.
-    const cells = await screen.findAllByTitle('2026-09-05')
-    await userEvent.click(cells[cells.length - 1])
-
-    await userEvent.click(screen.getByRole('button', { name: 'Tạo zone' }))
-
-    await waitFor(() => expect(createZone).toHaveBeenCalledTimes(2))
-    const names = createZone.mock.calls.map((c) => (c[1] as { name: string }).name)
-    // Suffixed per coat: five rows called "Khu A" name nothing.
-    expect(names).toEqual(['Khu A — Blast + Coat 1', 'Khu A — Tháo giáo'])
-    const stageIds = createZone.mock.calls.map((c) => (c[1] as { stageId: string }).stageId)
-    expect(stageIds).toEqual(['s1', 's3'])
-    // Every zone gets the SAME bays -- ids, not codes.
-    for (const call of createZone.mock.calls) expect(call[2]).toEqual(['c1', 'c2'])
-  })
-
-  it('creates nothing for a coat left blank', async () => {
-    // Blank means "not planned yet", which is a different statement from
-    // planning it for an unknown window.
-    renderPanel()
-    await screen.findByTestId('paint-lens')
-    await userEvent.click(within(screen.getByTestId('paint-lens')).getByTestId('band-all'))
-    await userEvent.click(screen.getByRole('button', { name: /Gộp thành zone/ }))
-    await userEvent.type(screen.getByLabelText('Tên zone'), 'Khu A')
-
-    await userEvent.click(screen.getByLabelText('Bắt đầu Coat 2'))
-    await userEvent.click(await screen.findByTitle('2026-09-05'))
+    await userEvent.type(screen.getByLabelText('Bắt đầu Coat 2'), '01/09/2026')
+    await userEvent.keyboard('{Enter}')
     await userEvent.click(screen.getByRole('button', { name: 'Tạo zone' }))
 
     await waitFor(() => expect(createZone).toHaveBeenCalledTimes(1))
-    expect((createZone.mock.calls[0][1] as { stageId: string }).stageId).toBe('s2')
+    expect(createZone.mock.calls[0][1]).toMatchObject({
+      name: 'Khu A — Coat 2', stageId: 's2', startDate: '2026-09-01',
+    })
+    expect(createZone.mock.calls[0][2]).toEqual(['c1', 'c2'])
   })
 
   it('refuses a zone with no dates at all, rather than writing five empty ones', async () => {
     renderPanel()
-    await screen.findByTestId('paint-lens')
-    await userEvent.click(within(screen.getByTestId('paint-lens')).getByTestId('band-all'))
-    await userEvent.click(screen.getByRole('button', { name: /Gộp thành zone/ }))
+    await screen.findByTestId('lens-A')
+    await userEvent.click(screen.getByTestId('band-all'))
+    await userEvent.click(await screen.findByRole('button', { name: /Gộp thành zone/ }))
     await userEvent.type(screen.getByLabelText('Tên zone'), 'Khu A')
-
     await userEvent.click(screen.getByRole('button', { name: 'Tạo zone' }))
 
-    expect(await screen.findByText(/ít nhất một mốc ngày/)).toBeInTheDocument()
+    expect(await screen.findByText(/Đặt ít nhất một mốc ngày/)).toBeInTheDocument()
     expect(createZone).not.toHaveBeenCalled()
   })
 
   it('clears the selection and re-reads the plan after creating', async () => {
     renderPanel()
-    await screen.findByTestId('paint-lens')
-    await waitFor(() => expect(listDeckZones).toHaveBeenCalledTimes(1))
-
-    await userEvent.click(within(screen.getByTestId('paint-lens')).getByTestId('band-all'))
-    await userEvent.click(screen.getByRole('button', { name: /Gộp thành zone/ }))
+    await screen.findByTestId('lens-A')
+    await userEvent.click(screen.getByTestId('band-all'))
+    await userEvent.click(await screen.findByRole('button', { name: /Gộp thành zone/ }))
     await userEvent.type(screen.getByLabelText('Tên zone'), 'Khu A')
-    await userEvent.click(screen.getByLabelText('Bắt đầu Coat 2'))
-    await userEvent.click(await screen.findByTitle('2026-09-05'))
+    await userEvent.type(screen.getByLabelText('Bắt đầu Coat 2'), '01/09/2026')
+    await userEvent.keyboard('{Enter}')
     await userEvent.click(screen.getByRole('button', { name: 'Tạo zone' }))
 
     await waitFor(() => expect(listDeckZones).toHaveBeenCalledTimes(2))
-    await waitFor(() => {
-      expect(within(screen.getByTestId('paint-lens')).getByTestId('cell-R1C1'))
-        .toHaveAttribute('data-selected', 'false')
-    })
-  })
-
-  it('writes no text on the drawing, and names the zone in the table instead', async () => {
-    // A label per bay is two hundred labels over the plan the admin is trying to
-    // read -- which is what a date range, and then a short marker, both became.
-    // The colour says which group a bay is in; the table says which group that
-    // is. The GS screen still labels bays, because a foreman has no table.
-    listDeckZones.mockResolvedValue([ZONE])
-    renderPanel()
-
-    const table = await screen.findByTestId('zone-table')
-    expect(within(table).getByText('Khu A — Tháo giáo')).toBeInTheDocument()
-    expect(within(table).getByText('01/09 – 07/09')).toBeInTheDocument()
-    expect(within(screen.getByTestId('paint-lens')).getByTestId('cell-R1C1'))
-      .toHaveAttribute('data-plan', '')
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: /Gộp thành zone/ })).not.toBeInTheDocument())
   })
 
   it('edits a zone date in place, without remaking the zone', async () => {
     listDeckZones.mockResolvedValue([ZONE])
     renderPanel()
-    await screen.findByTestId('zone-table')
+    await screen.findByTestId('lens-A')
+    await pickLens('Lớp sơn đang xem', 'Tháo giáo')
 
-    await userEvent.click(screen.getByLabelText('Ngày bắt đầu của Khu A — Tháo giáo'))
-    await userEvent.click(await screen.findByTitle('2026-09-03'))
+    await userEvent.click(await screen.findByRole('button', { name: 'Mốc ngày của Khu A — Tháo giáo' }))
+    const finish = await screen.findByLabelText('Ngày kết thúc của Khu A — Tháo giáo')
+    await userEvent.clear(finish)
+    await userEvent.type(finish, '20/09/2026')
+    await userEvent.keyboard('{Enter}')
 
-    await waitFor(() => expect(updateZone).toHaveBeenCalledWith('z1', { startDate: '2026-09-03' }))
+    await waitFor(() => expect(updateZone).toHaveBeenCalledWith('z1', { finishDate: '2026-09-20' }))
     expect(createZone).not.toHaveBeenCalled()
     expect(deleteZone).not.toHaveBeenCalled()
   })
@@ -298,322 +335,141 @@ describe('DeckProgressPanel — zones', () => {
   it('writes the zone\'s stage across its bays on Ghi thực tế, and re-reads the deck', async () => {
     listDeckZones.mockResolvedValue([ZONE])
     renderPanel()
-    await screen.findByTestId('zone-table')
-    await waitFor(() => expect(loadDeckProgress).toHaveBeenCalledTimes(1))
-
-    await userEvent.click(screen.getByRole('button', { name: 'Ghi thực tế' }))
+    await screen.findByTestId('lens-A')
+    await pickLens('Lớp sơn đang xem', 'Tháo giáo')
+    await userEvent.click(await screen.findByRole('button', { name: 'Mốc ngày của Khu A — Tháo giáo' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Ghi thực tế' }))
 
     await waitFor(() => expect(setZoneActual).toHaveBeenCalledWith('z1', 's3'))
     await waitFor(() => expect(loadDeckProgress).toHaveBeenCalledTimes(2))
   })
 
-  it('deletes a zone and re-reads the list', async () => {
+  it('names what a zone deletion does and does not destroy, before doing it', async () => {
     listDeckZones.mockResolvedValue([ZONE])
     renderPanel()
-    await screen.findByTestId('zone-table')
-
-    await userEvent.click(screen.getByRole('button', { name: 'Xoá' }))
+    await screen.findByTestId('lens-A')
+    await pickLens('Lớp sơn đang xem', 'Tháo giáo')
+    await userEvent.click(await screen.findByRole('button', { name: 'Mốc ngày của Khu A — Tháo giáo' }))
     await userEvent.click(await screen.findByRole('button', { name: 'Xoá zone' }))
 
+    expect(await screen.findByText('Xoá zone Khu A — Tháo giáo?')).toBeInTheDocument()
+    expect(screen.getByText(/Tiến độ GS đã ghi trên các ô vẫn giữ nguyên/)).toBeInTheDocument()
+    expect(deleteZone).not.toHaveBeenCalled()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Vẫn xoá' }))
     await waitFor(() => expect(deleteZone).toHaveBeenCalledWith('z1'))
-    await waitFor(() => expect(listDeckZones).toHaveBeenCalledTimes(2))
   })
 
   it('surfaces a failed Ghi thực tế instead of leaving the plan looking applied', async () => {
     listDeckZones.mockResolvedValue([ZONE])
-    setZoneActual.mockRejectedValue(new Error('stage does not belong to deck'))
+    setZoneActual.mockRejectedValue(new Error('không ghi được'))
     renderPanel()
-    await screen.findByTestId('zone-table')
+    await screen.findByTestId('lens-A')
+    await pickLens('Lớp sơn đang xem', 'Tháo giáo')
+    await userEvent.click(await screen.findByRole('button', { name: 'Mốc ngày của Khu A — Tháo giáo' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Ghi thực tế' }))
 
-    await userEvent.click(screen.getByRole('button', { name: 'Ghi thực tế' }))
-
-    expect(await screen.findByText(/stage does not belong to deck/)).toBeInTheDocument()
+    expect(await screen.findByText('không ghi được')).toBeInTheDocument()
   })
 
-  it('says so when a deck has no plan yet', async () => {
+  it('says so when the coat being viewed has no plan yet', async () => {
     renderPanel()
-    expect(await screen.findByText('Sàn này chưa có zone nào')).toBeInTheDocument()
-  })
-})
-
-describe('DeckProgressPanel — filtering to one coat', () => {
-  const zone = (id: string, name: string, stageId: string, cellIds: string[]) => ({
-    id, name, stageId, startDate: '2026-09-01', finishDate: '2026-09-07', cellIds,
-  })
-
-  beforeEach(() => {
-    listDeckZones.mockResolvedValue([
-      zone('z1', 'Khu A — Coat 2', 's2', ['c1']),
-      zone('z2', 'Khu B — Coat 2', 's2', ['c2']),
-      zone('z3', 'Khu C — Tháo giáo', 's3', ['c1', 'c2']),
-    ])
-  })
-
-  it('colours by the coat reached until a coat is chosen', async () => {
-    renderPanel()
-    const paint = await screen.findByTestId('paint-lens')
-    expect(within(paint).getByTestId('cell-R1C1')).toHaveAttribute('data-color', '#722ed1')
-  })
-
-  it('colours by planned group once a coat is chosen, each zone its own', async () => {
-    // The coat is already fixed by the filter, so painting every bay one
-    // constant stage colour would say nothing. The question becomes "which
-    // group is this bay in, and how does it sit against its neighbours".
-    renderPanel()
-    await screen.findByTestId('paint-lens')
-
-    await userEvent.click(screen.getByRole('combobox', { name: 'Lọc theo lớp sơn' }))
-    await userEvent.click(await screen.findByTitle('Coat 2'))
-
-    const paint = screen.getByTestId('paint-lens')
-    const a = within(paint).getByTestId('cell-R1C1').getAttribute('data-color')
-    const b = within(paint).getByTestId('cell-R1C2').getAttribute('data-color')
-    expect(a).toBeTruthy()
-    expect(b).toBeTruthy()
-    // Two zones on this coat, and they must be told apart.
-    expect(a).not.toBe(b)
-    // And not the stage's own colour, which is what the filter replaced.
-    expect(a).not.toBe('#bfbfbf')
-  })
-
-  it('hides the zones of every other coat', async () => {
-    // z3 covers both bays but belongs to Tháo giáo. Left in it would colour the
-    // whole deck and describe a plan the admin is not looking at -- and its row
-    // would claim a swatch the drawing never shows.
-    renderPanel()
-    await screen.findByTestId('paint-lens')
-
-    await userEvent.click(screen.getByRole('combobox', { name: 'Lọc theo lớp sơn' }))
-    await userEvent.click(await screen.findByTitle('Coat 2'))
-
-    const key = screen.getByTestId('paint-legend')
-    expect(within(key).getByText(/^Khu A — Coat 2 · /)).toBeInTheDocument()
-    expect(within(key).queryByText(/Khu C — Tháo giáo/)).toBeNull()
-    const table = screen.getByTestId('zone-table')
-    // Every zone stays listed -- the filter is about the drawing, not the plan.
-    expect(within(table).getByText('Khu C — Tháo giáo')).toBeInTheDocument()
-    // But only the drawn ones carry a swatch to match against it.
-    expect(within(table).getByLabelText('Màu của Khu A — Coat 2')).toBeInTheDocument()
-    expect(within(table).queryByLabelText('Màu của Khu C — Tháo giáo')).toBeNull()
-  })
-
-  it('swaps the key to name the zones it is drawing', async () => {
-    // Filtered, the stage colours would name something the canvas is not
-    // drawing at all.
-    renderPanel()
-    await screen.findByTestId('paint-lens')
-
-    await userEvent.click(screen.getByRole('combobox', { name: 'Lọc theo lớp sơn' }))
-    await userEvent.click(await screen.findByTitle('Coat 2'))
-
-    const key = screen.getByTestId('paint-legend')
-    // The name now carries how many of the zone's bays have actually reached
-    // this coat. A key that can only say which colour is which is a key with
-    // no reason to be read on a plan whose question is "will Khu A make its
-    // date".
-    expect(within(key).getByText(/^Khu A — Coat 2 · \d+\/\d+$/)).toBeInTheDocument()
-    expect(within(key).getByText(/^Khu B — Coat 2 · \d+\/\d+$/)).toBeInTheDocument()
-    expect(within(key).queryByText('Chưa bắt đầu')).toBeNull()
-  })
-
-  it('says so when the chosen coat has no plan yet', async () => {
-    // The fixture zones sit on Coat 2 and Tháo giáo; the first coat has none.
-    renderPanel()
-    await screen.findByTestId('paint-lens')
-
-    await userEvent.click(screen.getByRole('combobox', { name: 'Lọc theo lớp sơn' }))
-    await userEvent.click(await screen.findByTitle('Blast + Coat 1'))
-
     expect(await screen.findByText(/chưa có zone nào được lên kế hoạch/)).toBeInTheDocument()
-  })
-
-  it('leaves the scaffolding lens alone', async () => {
-    // It answers a different question and is not what the filter is about.
-    renderPanel()
-    await screen.findByTestId('scaffold-lens')
-
-    await userEvent.click(screen.getByRole('combobox', { name: 'Lọc theo lớp sơn' }))
-    await userEvent.click(await screen.findByTitle('Coat 2'))
-
-    const scaffold = screen.getByTestId('scaffold-lens')
-    expect(within(scaffold).getByTestId('cell-R1C1')).toHaveAttribute('data-color', '#722ed1')
   })
 })
 
 describe('DeckProgressPanel — read-only', () => {
-  // The admin's complaint, and it was fair: the deck's view showed five lines of
-  // text, and seeing the drawing at all meant pressing "Sửa". Looking is not
-  // editing. Everything is on the page now; only the writes are behind the
-  // button.
   beforeEach(() => {
     listDeckZones.mockResolvedValue([ZONE])
   })
 
-  it('shows the drawing, both lenses and the numbers without entering edit', async () => {
+  it('shows the drawing, the plan and the numbers without entering edit', async () => {
     renderPanel(false)
-
-    expect(await screen.findByTestId('paint-lens')).toBeInTheDocument()
-    expect(screen.getByTestId('scaffold-lens')).toBeInTheDocument()
+    expect(await screen.findByTestId('lens-A')).toBeInTheDocument()
     expect(screen.getByTestId('deck-spec')).toBeInTheDocument()
-    expect(screen.getByTestId('zone-table')).toBeInTheDocument()
+    expect(screen.getByTestId('stage-ring')).toBeInTheDocument()
   })
 
-  it('still lets the lens be filtered, because filtering changes nothing', async () => {
+  it('still lets the coat be changed, because looking changes nothing', async () => {
     renderPanel(false)
-    await screen.findByTestId('paint-lens')
-    expect(screen.getByRole('combobox', { name: 'Lọc theo lớp sơn' })).toBeInTheDocument()
+    await screen.findByTestId('lens-A')
+    await pickLens('Lớp sơn đang xem', 'Tháo giáo')
+    expect(await screen.findByText('Tiến độ · Tháo giáo')).toBeInTheDocument()
   })
 
   it('offers no way to select bays or make a zone', async () => {
     renderPanel(false)
-    await screen.findByTestId('paint-lens')
-
-    expect(screen.queryByRole('button', { name: /Gộp thành zone/ })).toBeNull()
-    // And a tap on a bay selects nothing: the canvas gets no click handler at
-    // all, so there is no half-state where bays highlight and nothing can be
-    // done with them.
-    await userEvent.click(within(screen.getByTestId('paint-lens')).getByTestId('cell-R1C1'))
-    expect(within(screen.getByTestId('paint-lens')).getByTestId('cell-R1C1'))
-      .toHaveAttribute('data-selected', 'false')
+    await screen.findByTestId('lens-A')
+    await userEvent.click(screen.getByTestId('cell-R1C1'))
+    expect(screen.getByTestId('cell-R1C1')).toHaveAttribute('data-selected', 'false')
+    expect(screen.queryByRole('button', { name: /Gộp thành zone/ })).not.toBeInTheDocument()
   })
 
-  it('shows the zone dates as text rather than as editable fields', async () => {
+  it('shows a zone\'s plan as a readout, with nothing to press', async () => {
     renderPanel(false)
-    const table = await screen.findByTestId('zone-table')
+    await screen.findByTestId('lens-A')
+    await pickLens('Lớp sơn đang xem', 'Tháo giáo')
 
-    expect(within(table).queryByLabelText(/Ngày bắt đầu của/)).toBeNull()
-    // The dates are still READ, in the form the source drawings use.
-    expect(within(table).getByText('01/09')).toBeInTheDocument()
-    expect(within(table).getByText('07/09')).toBeInTheDocument()
-  })
-
-  it('offers neither Ghi thực tế nor Xoá', async () => {
-    renderPanel(false)
-    await screen.findByTestId('zone-table')
-
-    expect(screen.queryByRole('button', { name: 'Ghi thực tế' })).toBeNull()
-    expect(screen.queryByRole('button', { name: 'Xoá' })).toBeNull()
+    const lens = await screen.findByTestId('lens-A')
+    expect(within(lens).getByText('01/09 – 07/09')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Mốc ngày của Khu A — Tháo giáo' })).toBeNull()
   })
 
   it('keeps every write available in edit mode', async () => {
     renderPanel(true)
-    await screen.findByTestId('zone-table')
-
-    expect(screen.getByRole('button', { name: /Gộp thành zone/ })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Ghi thực tế' })).toBeInTheDocument()
-    expect(screen.getByLabelText('Ngày bắt đầu của Khu A — Tháo giáo')).toBeInTheDocument()
-  })
-})
-
-describe('DeckProgressPanel — hatching the bays a coat has not reached', () => {
-  it('hatches nothing while every coat is shown', async () => {
-    // Unfiltered, each bay already wears the colour of the coat it reached, so
-    // done and not-done are different fills and a hatch would add a channel
-    // that says nothing.
-    renderPanel()
-    const paint = await screen.findByTestId('paint-lens')
-    expect(within(paint).getByTestId('cell-R1C1')).toHaveAttribute('data-hatched', 'false')
-    expect(within(paint).getByTestId('cell-R1C2')).toHaveAttribute('data-hatched', 'false')
-  })
-
-  it('hatches only the bays behind the filtered coat', async () => {
-    // R1C1 is at Tháo giáo (seq 3) and R1C2 at Coat 2 (seq 2). Filtering to
-    // Tháo giáo leaves R1C2 short of it; R1C1 has arrived.
-    renderPanel()
-    await screen.findByTestId('paint-lens')
-
-    await userEvent.click(screen.getByRole('combobox', { name: 'Lọc theo lớp sơn' }))
-    await userEvent.click(await screen.findByTitle('Tháo giáo'))
-
-    const paint = screen.getByTestId('paint-lens')
-    expect(within(paint).getByTestId('cell-R1C1')).toHaveAttribute('data-hatched', 'false')
-    expect(within(paint).getByTestId('cell-R1C2')).toHaveAttribute('data-hatched', 'true')
-  })
-
-  it('counts each zone against the filtered coat in the key', async () => {
-    // The zone covers BOTH bays, so the fraction it reports is not the same
-    // number as its bay count -- a mapper that counted the deck's bays rather
-    // than the zone's would pass on a one-bay fixture.
-    listDeckZones.mockResolvedValue([{ ...ZONE, cellIds: ['c1', 'c2'] }])
-    renderPanel()
-    await screen.findByTestId('paint-lens')
-
-    await userEvent.click(screen.getByRole('combobox', { name: 'Lọc theo lớp sơn' }))
-    await userEvent.click(await screen.findByTitle('Tháo giáo'))
-
-    const key = screen.getByTestId('paint-legend')
-    // Khu A covers both bays of this deck and one of them has reached Tháo
-    // giáo, so the plan is half done -- which is the number the admin is
-    // actually asking this screen for.
-    expect(within(key).getByText('Khu A — Tháo giáo · 1/2')).toBeInTheDocument()
-  })
-
-  it('says what the hatch means, rather than leaving it to be inferred', async () => {
-    renderPanel()
-    await screen.findByTestId('paint-lens')
-
-    await userEvent.click(screen.getByRole('combobox', { name: 'Lọc theo lớp sơn' }))
-    await userEvent.click(await screen.findByTitle('Tháo giáo'))
-
-    expect(screen.getByText(/gạch chéo là chưa đạt lớp sơn đang lọc/)).toBeInTheDocument()
+    await screen.findByTestId('lens-A')
+    await pickLens('Lớp sơn đang xem', 'Tháo giáo')
+    expect(
+      await screen.findByRole('button', { name: 'Mốc ngày của Khu A — Tháo giáo' }),
+    ).toBeInTheDocument()
   })
 })
 
 describe('DeckProgressPanel — the foreman\'s note', () => {
-  const WITH_NOTE = {
+  const NOTED = {
     ...ENTRY,
     deck: {
       ...ENTRY.deck,
       cells: [
-        { ...ENTRY.deck.cells[0], note: 'Giàn giáo chắn mất một góc' },
+        { ...ENTRY.deck.cells[0], note: 'Bề mặt còn ẩm, hoãn sơn sang mai' },
         ENTRY.deck.cells[1],
       ],
     },
-    audit: { c1: { updatedAt: '2026-08-29T04:47:56.000Z', updatedBy: 'u1' } },
+    audit: { c1: { updatedBy: 'u1', updatedAt: '2026-08-29T11:47:00Z' } },
   }
 
   it('flags the bay that carries a note, and only that one', async () => {
-    loadDeckProgress.mockResolvedValue(WITH_NOTE)
-    renderPanel()
-    const paint = await screen.findByTestId('paint-lens')
-    expect(within(paint).getByTestId('cell-R1C1')).toHaveAttribute('data-marked', 'true')
-    expect(within(paint).getByTestId('cell-R1C2')).toHaveAttribute('data-marked', 'false')
+    loadDeckProgress.mockResolvedValue(NOTED)
+    renderPanel(false)
+    await waitFor(() => expect(screen.getByTestId('cell-R1C1')).toHaveAttribute('data-marked', 'true'))
+    expect(screen.getByTestId('cell-R1C2')).toHaveAttribute('data-marked', 'false')
   })
 
   it('shows what the foreman wrote, with who wrote it and when', async () => {
-    loadDeckProgress.mockResolvedValue(WITH_NOTE)
+    loadDeckProgress.mockResolvedValue(NOTED)
     renderPanel(false)
-    const paint = await screen.findByTestId('paint-lens')
+    await userEvent.click(await screen.findByTestId('cell-R1C1'))
 
-    await userEvent.click(within(paint).getByTestId('cell-R1C1'))
-
-    expect(await screen.findByText('Giàn giáo chắn mất một góc')).toBeInTheDocument()
-    // The attribution is the reason the note is worth storing at all: a
-    // sentence with nobody's name on it is a rumour.
-    expect(await screen.findByText(/Lê Trung Hiếu/)).toBeInTheDocument()
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText('Bề mặt còn ẩm, hoãn sơn sang mai')).toBeInTheDocument()
+    // The coat it was recorded at, who recorded it, and when -- a note with no
+    // attribution is a sentence the admin cannot follow up on.
+    expect(await within(dialog).findByText(/Tháo giáo · Lê Trung Hiếu · 29\.08\.2026/))
+      .toBeInTheDocument()
   })
 
   it('opens nothing for a bay with no note', async () => {
-    loadDeckProgress.mockResolvedValue(WITH_NOTE)
+    loadDeckProgress.mockResolvedValue(NOTED)
     renderPanel(false)
-    const paint = await screen.findByTestId('paint-lens')
-
-    await userEvent.click(within(paint).getByTestId('cell-R1C2'))
-
-    expect(screen.queryByText(/Ghi chú · ô/)).toBeNull()
+    await userEvent.click(await screen.findByTestId('cell-R1C2'))
+    expect(screen.queryByText(/Ghi chú · ô/)).not.toBeInTheDocument()
   })
 
   it('still selects bays while editing, rather than opening the note', async () => {
-    // Editing is when the admin is building a zone out of bays. A dialog in
-    // the middle of that would make a flagged bay the one bay that cannot be
-    // added to a zone by clicking.
-    loadDeckProgress.mockResolvedValue(WITH_NOTE)
+    loadDeckProgress.mockResolvedValue(NOTED)
     renderPanel(true)
-    const paint = await screen.findByTestId('paint-lens')
-
-    await userEvent.click(within(paint).getByTestId('cell-R1C1'))
-
-    expect(screen.queryByText('Giàn giáo chắn mất một góc')).toBeNull()
-    expect(within(paint).getByTestId('cell-R1C1')).toHaveAttribute('data-selected', 'true')
+    await userEvent.click(await screen.findByTestId('cell-R1C1'))
+    expect(screen.getByTestId('cell-R1C1')).toHaveAttribute('data-selected', 'true')
+    expect(screen.queryByText('Bề mặt còn ẩm, hoãn sơn sang mai')).not.toBeInTheDocument()
   })
 })

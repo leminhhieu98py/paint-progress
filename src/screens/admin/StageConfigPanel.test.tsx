@@ -66,8 +66,10 @@ describe('StageConfigPanel', () => {
     // mocked listStages promise rather than testing the settled total.
     await screen.findByDisplayValue('Blast + Coat 1')
     // vi-VN formatting: comma decimal separator, matching the paperwork the
-    // operators already read from.
-    expect(await screen.findByText(/1,0000/)).toBeInTheDocument()
+    // operators already read from. Twice on purpose: the section summary
+    // survives the panel being collapsed, the chip beside Lưu does not.
+    expect(await screen.findByText('2 lớp · tổng 1,0000')).toBeInTheDocument()
+    expect(screen.getByText('1,0000')).toBeInTheDocument()
   })
 
   it('blocks save when the weights do not sum to 1', async () => {

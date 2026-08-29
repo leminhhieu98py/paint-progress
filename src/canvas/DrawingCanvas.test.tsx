@@ -431,6 +431,58 @@ describe('DrawingCanvas', () => {
       expect(screen.getByRole('button', { name: 'Vừa khung' })).toBeInTheDocument()
     })
 
+    it('scrolls the drawing instead of zooming it, so a trackpad reads as a trackpad', async () => {
+      // A two-finger swipe on a Mac trackpad, and an ordinary mouse wheel, both
+      // arrive as a plain wheel event. Zooming on those made the drawing jump
+      // scale every time the admin tried to look further down it.
+      render(
+        <DrawingCanvas
+          imageUrl="u" imageW={2000} imageH={1600} cells={cells}
+          selectedCodes={[]} panZoom
+        />,
+      )
+      const stage = screen.getByTestId('stage:drawing')
+      fireEvent.click(screen.getByRole('button', { name: 'Phóng to' }))
+      expect(screen.getByText('150%')).toBeInTheDocument()
+
+      fireEvent.wheel(stage, { deltaY: 120, deltaX: 0 })
+      // Still 150%: the gesture moved the viewport, it did not rescale it.
+      expect(screen.getByText('150%')).toBeInTheDocument()
+    })
+
+    it('zooms on a pinch, which is a wheel event carrying ctrlKey', async () => {
+      // Every browser reports a trackpad pinch as wheel + ctrlKey. The same
+      // event is what Ctrl/Cmd + wheel produces on a mouse, so one branch
+      // serves both and the mouse user keeps a fast way to zoom.
+      render(
+        <DrawingCanvas
+          imageUrl="u" imageW={2000} imageH={1600} cells={cells}
+          selectedCodes={[]} panZoom
+        />,
+      )
+      const stage = screen.getByTestId('stage:drawing')
+      fireEvent.wheel(stage, { deltaY: -120, ctrlKey: true })
+      expect(screen.getByText('125%')).toBeInTheDocument()
+    })
+
+    it('lets the screen above own the zoom, so two lenses can share one', async () => {
+      // Split view compares one coat against another. Two canvases free to sit
+      // at different scales are not a comparison.
+      const onZoomChange = vi.fn()
+      render(
+        <DrawingCanvas
+          imageUrl="u" imageW={2000} imageH={1600} cells={cells}
+          selectedCodes={[]} panZoom zoom={2} onZoomChange={onZoomChange} showZoomControls={false}
+        />,
+      )
+      expect(screen.getByTestId('stage:drawing')).toHaveAttribute('data-scalex', '2')
+      // The controls are the parent's to render when it owns the value.
+      expect(screen.queryByRole('button', { name: 'Phóng to' })).not.toBeInTheDocument()
+
+      fireEvent.wheel(screen.getByTestId('stage:drawing'), { deltaY: -120, ctrlKey: true })
+      expect(onZoomChange).toHaveBeenCalled()
+    })
+
     it('zooms in by one step per press and caps at the maximum', async () => {
       render(
         <DrawingCanvas
@@ -514,8 +566,8 @@ describe('DrawingCanvas', () => {
           selectedCodes={[]} panZoom
         />,
       )
-      fireEvent.wheel(screen.getByTestId('stage:drawing'), { deltaY: -100 })
-      // WHEEL_ZOOM_STEP is 0.25, finer than a button's 0.5 -- a wheel emits many
+      fireEvent.wheel(screen.getByTestId('stage:drawing'), { deltaY: -100, ctrlKey: true })
+      // WHEEL_ZOOM_STEP is 0.25, finer than a button's 0.5 -- a pinch emits many
       // events per gesture, so a coarser step would overshoot fast.
       expect(screen.getByTestId('stage:drawing')).toHaveAttribute('data-scalex', '1.25')
     })
@@ -528,7 +580,7 @@ describe('DrawingCanvas', () => {
         />,
       )
       expect(screen.getByTestId('stage:drawing')).toHaveAttribute('data-scalex', '1')
-      fireEvent.wheel(screen.getByTestId('stage:drawing'), { deltaY: 100 })
+      fireEvent.wheel(screen.getByTestId('stage:drawing'), { deltaY: 100, ctrlKey: true })
       // clampZoom pins this at MIN_ZOOM. A test that only asserted "still 1"
       // would look identical whether the handler clamped correctly or threw
       // away the event entirely -- the point of this test, paired with the
@@ -545,9 +597,9 @@ describe('DrawingCanvas', () => {
         />,
       )
       const stage = screen.getByTestId('stage:drawing')
-      for (let i = 0; i < 20; i += 1) fireEvent.wheel(stage, { deltaY: -100 })
+      for (let i = 0; i < 20; i += 1) fireEvent.wheel(stage, { deltaY: -100, ctrlKey: true })
       expect(stage).toHaveAttribute('data-scalex', '4')
-      fireEvent.wheel(stage, { deltaY: -100 })
+      fireEvent.wheel(stage, { deltaY: -100, ctrlKey: true })
       expect(stage).toHaveAttribute('data-scalex', '4')
     })
 

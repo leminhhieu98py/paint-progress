@@ -505,9 +505,13 @@ export function DeckDetailScreen() {
           collapsible
           footer={<RulesDisclosure rules={IDENTITY_RULES} />}
         >
-          {editing ? (
-            identity
-          ) : (
+          {/*
+            The read-only cards are NOT an alternative to the form -- they sit
+            above it in both modes. In edit mode they are what the admin checks
+            their typing against: the deck as it is stored right now, beside the
+            fields about to overwrite it.
+          */}
+          {(
             <div
               data-testid="deck-identity"
               style={{
@@ -532,6 +536,17 @@ export function DeckDetailScreen() {
               />
             </div>
           )}
+          {editing && (
+            <div
+              style={{
+                marginTop: 18,
+                paddingTop: 18,
+                borderTop: `1px solid ${palette.borderSplit}`,
+              }}
+            >
+              {identity}
+            </div>
+          )}
         </SectionCard>
 
         {/*
@@ -544,17 +559,9 @@ export function DeckDetailScreen() {
           attach them to: in create mode there is no deck id, no drawing and no
           cells for them to work on.
         */}
-        {editing && deck && (
-          <SectionCard code="A3.2" title="Cấu hình lớp sơn" collapsible bodyPadding={0}>
-            <StageConfigPanel deckId={deck.id} onSaved={() => void load()} />
-          </SectionCard>
-        )}
+        {deck && <StageConfigPanel deckId={deck.id} editable={editing} onSaved={() => void load()} />}
 
-        {editing && deck && (
-          <SectionCard code="A3.3" title="Phân ô" collapsible bodyPadding={0}>
-            <DeckEditor deck={deck} onSaved={() => void load()} />
-          </SectionCard>
-        )}
+        {deck && <DeckEditor deck={deck} editable={editing} onSaved={() => void load()} />}
 
         {/* Progress lives here rather than on a screen of its own: everything on
             it is about THIS deck, and making the admin pick a project and then a
@@ -566,15 +573,8 @@ export function DeckDetailScreen() {
             view five lines of text and meant pressing "Sửa" to look at the
             drawing. Looking is not editing; only the writes are behind the
             button. */}
-        {/*
-          A3.4 carries no summary. The header above is sticky and already shows
-          the deck's percentage in the largest type on the screen; repeating it
-          here would be the same number twice in one viewport.
-        */}
         {deck && (
-          <SectionCard code="A3.4" title="Tiến độ theo lớp sơn" collapsible bodyPadding={0}>
-            <DeckProgressPanel deckId={deck.id} editable={editing} onProgress={setProgress} />
-          </SectionCard>
+          <DeckProgressPanel deckId={deck.id} editable={editing} onProgress={setProgress} />
         )}
       </PageBody>
 

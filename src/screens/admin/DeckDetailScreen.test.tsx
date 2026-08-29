@@ -31,13 +31,17 @@ vi.mock('../../lib/pdfToPng', () => ({
 // The drawing tools are their own screen with their own tests; here all that
 // matters is whether they are on the page and which deck they were handed.
 vi.mock('./DeckEditor', () => ({
-  DeckEditor: ({ deck }: { deck: { code: string } }) => <div>editor {deck.code}</div>,
+  DeckEditor: ({ deck, editable }: { deck: { code: string }; editable?: boolean }) => (
+    <div>{`editor ${deck.code} ${editable ? 'sửa' : 'xem'}`}</div>
+  ),
 }))
 // Stubbed for the same reason DeckEditor is: this file is about the deck's own
 // form, and the panel has its own test file. Left real it would pull decksApi's
 // stage exports through a mock that does not carry them.
 vi.mock('./StageConfigPanel', () => ({
-  StageConfigPanel: ({ deckId }: { deckId: string }) => <div>stages {deckId}</div>,
+  StageConfigPanel: ({ deckId, editable }: { deckId: string; editable?: boolean }) => (
+    <div>{`stages ${deckId} ${editable ? 'sửa' : 'xem'}`}</div>
+  ),
 }))
 // Stubbed like the other two, and for one more reason: left real it calls
 // loadDeckProgress against the live client, so every test in this file paid a
@@ -109,15 +113,21 @@ describe('DeckDetailScreen', () => {
     renderAt('/decks/d1')
     await screen.findByRole('heading', { level: 1, name: 'Main Deck' })
 
+    // Every panel is on screen in Xem -- the stage spec and the bay mesh are
+    // what the deck's percentages are computed from, so reading them must not
+    // require entering a mode that can overwrite them. What Xem withholds is
+    // the writing: no file picker, and both panels told they are read-only.
     expect(screen.queryByLabelText('Bản vẽ (PDF)')).not.toBeInTheDocument()
-    expect(screen.queryByText('editor MD')).not.toBeInTheDocument()
+    expect(screen.getByText('editor MD xem')).toBeInTheDocument()
+    expect(screen.getByText('stages d1 xem')).toBeInTheDocument()
 
     // The Segmented's radio input carries pointer-events:none -- its visible
     // label is what a person clicks, so that is what the test clicks.
     await userEvent.click(screen.getByText('Sửa'))
 
     expect(await screen.findByLabelText('Bản vẽ (PDF)')).toBeInTheDocument()
-    expect(screen.getByText('editor MD')).toBeInTheDocument()
+    expect(screen.getByText('editor MD sửa')).toBeInTheDocument()
+    expect(screen.getByText('stages d1 sửa')).toBeInTheDocument()
   })
 
   it('names the file the drawing came from', async () => {
