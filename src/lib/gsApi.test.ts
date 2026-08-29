@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Cell } from '../domain/types'
 import {
-  listDeckCells, loadGsProject, setCellStage, subscribeDeckCells,
+  listDeckCells, listProjectStageIndex, loadGsProject, setCellStage, subscribeDeckCells,
   type GsRealtimeStatus,
 } from './gsApi'
 
@@ -232,6 +232,64 @@ describe('listDeckCells', () => {
   it('throws when the query fails', async () => {
     from.mockImplementationOnce(() => builder({ error: { message: 'permission denied' } }))
     await expect(listDeckCells('d1')).rejects.toThrow('permission denied')
+  })
+})
+
+describe('listProjectStageIndex', () => {
+  it('keeps each deck\'s bays with that deck\'s own coats', async () => {
+    // Every deck declares its own stage list, with its own ids. Reading one
+    // deck's cells against another's stages counts every bay as not started,
+    // which is how a deck that is 37% along reported 0% on the tab a foreman
+    // was choosing by.
+    from.mockImplementationOnce(() => builder({
+      data: [
+        { deck_id: 'd1', area_m2: 100, stage_id: 'a1' },
+        { deck_id: 'd2', area_m2: 200, stage_id: 'b1' },
+      ],
+    }))
+    from.mockImplementationOnce(() => builder({
+      data: [
+        { deck_id: 'd1', id: 'a1', seq: 1, name: 'Coat 1', color: '#111111', weight: 1 },
+        { deck_id: 'd2', id: 'b1', seq: 1, name: 'Lót', color: '#222222', weight: 1 },
+      ],
+    }))
+
+    const index = await listProjectStageIndex(['d1', 'd2'])
+
+    expect(index.d1.stages.map((st) => st.id)).toEqual(['a1'])
+    expect(index.d2.stages.map((st) => st.id)).toEqual(['b1'])
+    expect(index.d1.cells).toEqual([{ areaM2: 100, stageId: 'a1' }])
+    expect(index.d2.cells).toEqual([{ areaM2: 200, stageId: 'b1' }])
+  })
+
+  it('gives a deck with no bays and no coats an entry, not a hole', async () => {
+    // The caller divides by these. A missing key would throw on the tab rather
+    // than read 0%.
+    from.mockImplementationOnce(() => builder({ data: [] }))
+    from.mockImplementationOnce(() => builder({ data: [] }))
+
+    const index = await listProjectStageIndex(['d9'])
+
+    expect(index.d9).toEqual({ cells: [], stages: [] })
+  })
+
+  it('orders each deck\'s coats by seq, because cumulative progress reads them in order', async () => {
+    from.mockImplementationOnce(() => builder({ data: [] }))
+    from.mockImplementationOnce(() => builder({
+      data: [
+        { deck_id: 'd1', id: 's2', seq: 2, name: 'Coat 2', color: '#222222', weight: 0.5 },
+        { deck_id: 'd1', id: 's1', seq: 1, name: 'Coat 1', color: '#111111', weight: 0.5 },
+      ],
+    }))
+
+    const index = await listProjectStageIndex(['d1'])
+
+    expect(index.d1.stages.map((st) => st.seq)).toEqual([1, 2])
+  })
+
+  it('asks for nothing when there are no decks', async () => {
+    expect(await listProjectStageIndex([])).toEqual({})
+    expect(from).not.toHaveBeenCalled()
   })
 })
 

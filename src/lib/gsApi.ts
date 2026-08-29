@@ -1,5 +1,5 @@
 import { REALTIME_SUBSCRIBE_STATES } from '@supabase/supabase-js'
-import type { Cell } from '../domain/types'
+import type { Cell, Stage } from '../domain/types'
 import { supabase } from './supabase'
 
 /**
@@ -136,47 +136,84 @@ export async function listDeckCells(deckId: string): Promise<Cell[]> {
   return (data ?? []).map((c) => mapCellRow(c as Record<string, unknown>))
 }
 
+/** One deck's bays and its own coat list, both trimmed to what a percentage needs. */
+export interface DeckProgressInput {
+  cells: { areaM2: number; stageId: string | null }[]
+  stages: Stage[]
+}
+
 /**
- * Just enough of every deck's bays to put a percentage on its tab.
+ * Just enough of every deck to put a percentage on its tab.
  *
- * Area and stage only, for every deck at once. The tabs used to carry the name
- * alone, on the reasoning that a per-deck figure would mean the heaviest read
- * in the app once per deck on a site tether -- true of `listDeckCells`, which
- * pulls geometry and notes as well, and false of this: three small columns in
- * one round trip, lighter than the single full read the open deck already
- * makes.
+ * Two round trips for the whole project: the bays' areas and stages, and the
+ * decks' own coat lists. The tabs used to carry the name alone, on the
+ * reasoning that a per-deck figure would mean the heaviest read in the app once
+ * per deck on a site tether -- true of `listDeckCells`, which pulls geometry
+ * and notes as well, and false of this.
  *
  * It matters on the tablet because the foreman picks a deck to work on, and
  * "which one is behind" is the question he picks by. Without a figure the tabs
- * are three names in an order nobody chose.
+ * are names in an order nobody chose.
  *
- * Grouped by deck here rather than in SQL: PostgREST has no GROUP BY, and the
- * weighted percentage is computeDeckProgress's to work out anyway -- doing half
- * of it in the database would put the spec §3.2 denominator rule in two places.
+ * The coats are read PER DECK and never shared. Each deck declares its own
+ * stage list with its own ids (spec §3.1), so scoring one deck's bays against
+ * another's stages counts every bay as not started -- a deck 37% along reported
+ * 0% on the tab the foreman was choosing by, which is the defect this shape
+ * exists to make impossible: cells and stages arrive together, per deck, or not
+ * at all.
+ *
+ * Grouped here rather than in SQL: PostgREST has no GROUP BY, and the weighted
+ * percentage is computeDeckProgress's to work out anyway -- doing half of it in
+ * the database would put spec §3.2's denominator rule in two places.
  */
-export async function listProjectCellStages(
+export async function listProjectStageIndex(
   deckIds: string[],
-): Promise<Record<string, { areaM2: number; stageId: string | null }[]>> {
+): Promise<Record<string, DeckProgressInput>> {
   if (deckIds.length === 0) return {}
-  const { data, error } = await supabase
+
+  const cellsQuery = await supabase
     .from('cells')
     .select('deck_id, area_m2, stage_id')
     .in('deck_id', deckIds)
-  if (error) throw new Error(error.message)
+  if (cellsQuery.error) throw new Error(cellsQuery.error.message)
 
-  const byDeck: Record<string, { areaM2: number; stageId: string | null }[]> = {}
-  for (const id of deckIds) byDeck[id] = []
-  for (const row of (data ?? []) as Record<string, unknown>[]) {
-    const deckId = row.deck_id as string
-    // A deck id the caller did not ask about cannot appear -- the filter is on
-    // the same list -- but a missing bucket would throw rather than be ignored.
-    if (!byDeck[deckId]) byDeck[deckId] = []
-    byDeck[deckId].push({
+  const stagesQuery = await supabase
+    .from('deck_stages')
+    .select('deck_id, id, seq, name, color, weight')
+    .in('deck_id', deckIds)
+    .order('seq')
+  if (stagesQuery.error) throw new Error(stagesQuery.error.message)
+
+  // Every requested deck gets an entry, including one with no bays and no
+  // coats. The caller divides by these; a missing key would throw on the tab
+  // rather than read 0%.
+  const index: Record<string, DeckProgressInput> = {}
+  for (const id of deckIds) index[id] = { cells: [], stages: [] }
+
+  for (const row of (cellsQuery.data ?? []) as Record<string, unknown>[]) {
+    const entry = index[row.deck_id as string]
+    if (!entry) continue
+    entry.cells.push({
       areaM2: Number(row.area_m2),
       stageId: (row.stage_id as string | null) ?? null,
     })
   }
-  return byDeck
+  for (const row of (stagesQuery.data ?? []) as Record<string, unknown>[]) {
+    const entry = index[row.deck_id as string]
+    if (!entry) continue
+    entry.stages.push({
+      id: row.id as string,
+      seq: row.seq as number,
+      name: row.name as string,
+      color: row.color as string,
+      weight: Number(row.weight),
+    })
+  }
+  // `.order('seq')` sorts the result set, not each deck's slice of it, and
+  // cumulative progress reads coats in seq ORDER.
+  for (const id of deckIds) index[id].stages.sort((a, b) => a.seq - b.seq)
+
+  return index
 }
 
 /**

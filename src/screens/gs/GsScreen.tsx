@@ -17,7 +17,7 @@ import { LOGIN_PATH } from '../../config'
 import { getDrawingUrl, listStages } from '../../lib/decksApi'
 import { formatAreaM2, formatPercent } from '../../lib/format'
 import {
-  listDeckCells, listProjectCellStages, loadGsProject, setCellStage, subscribeDeckCells,
+  listDeckCells, listProjectStageIndex, loadGsProject, setCellStage, subscribeDeckCells,
   type GsDeck, type GsRealtimeStatus,
 } from '../../lib/gsApi'
 import { listDeckZones } from '../../lib/zonesApi'
@@ -458,47 +458,53 @@ export function GsScreen() {
 
   useEffect(() => {
     const ids = decks.map((d) => d.id)
-    if (ids.length === 0 || stages.length === 0) return
+    if (ids.length === 0) return
     let cancelled = false
-    listProjectCellStages(ids)
-      .then((byDeck) => {
+    listProjectStageIndex(ids)
+      .then((index) => {
         if (cancelled) return
         setDeckPercents(
           Object.fromEntries(
-            decks.map((d) => [
-              d.id,
-              computeDeckProgress(
-                {
-                  id: d.id,
-                  code: d.code,
-                  name: d.name,
-                  totalAreaM2: d.totalAreaM2,
-                  // Only area and stage are read; computeDeckProgress touches
-                  // nothing else on a cell.
-                  cells: (byDeck[d.id] ?? []).map((c, i) => ({
-                    id: `${d.id}-${i}`,
-                    code: '',
-                    x: 0,
-                    y: 0,
-                    w: 0,
-                    h: 0,
-                    areaM2: c.areaM2,
-                    stageId: c.stageId,
-                  })),
-                },
-                stages,
-              ).progress,
-            ]),
+            decks.map((d) => {
+              // Each deck's own coats, never the open deck's. Scoring one
+              // deck's bays against another's stage ids counts every bay as
+              // not started -- a deck 37% along read 0,00% on the tab.
+              const entry = index[d.id] ?? { cells: [], stages: [] }
+              return [
+                d.id,
+                computeDeckProgress(
+                  {
+                    id: d.id,
+                    code: d.code,
+                    name: d.name,
+                    totalAreaM2: d.totalAreaM2,
+                    // Only area and stage are read; computeDeckProgress touches
+                    // nothing else on a cell.
+                    cells: entry.cells.map((c, i) => ({
+                      id: `${d.id}-${i}`,
+                      code: '',
+                      x: 0,
+                      y: 0,
+                      w: 0,
+                      h: 0,
+                      areaM2: c.areaM2,
+                      stageId: c.stageId,
+                    })),
+                  },
+                  entry.stages,
+                ).progress,
+              ]
+            }),
           ),
         )
       })
       .catch(() => {
         // The tabs fall back to an em dash. Nothing else on the screen depends
-        // on this, and an error banner for a decoration on a tab would push the
+        // on this, and an error banner for a figure on a tab would push the
         // drawing down the page on a tablet.
       })
     return () => { cancelled = true }
-  }, [decks, stages, cells])
+  }, [decks, cells])
 
   /**
    * Fetched only while the toggle is on. Zones are empty for every deck until
@@ -817,10 +823,23 @@ export function GsScreen() {
                   <div
                     data-testid="gs-zone-legend"
                     style={{
-                      position: 'absolute',
+                      /*
+                        Fixed to the viewport, not to the drawing.
+
+                        The drawing is as tall as its own sheet -- often twice
+                        the height of a tablet -- so a panel pinned to the
+                        bottom of the CANVAS sits below the fold, and the key to
+                        the colours the foreman is looking at is the one thing
+                        he cannot see. Fixed keeps it in the corner of the glass
+                        wherever he has scrolled to.
+                      */
+                      position: 'fixed',
                       zIndex: 4,
-                      left: 12,
-                      bottom: 12,
+                      left: 24,
+                      bottom: 24,
+                      // Never in the way of a bay underneath it: this is a
+                      // legend, and every tap belongs to the drawing.
+                      pointerEvents: 'none',
                       background: '#FFFFFFF5',
                       border: `1px solid ${palette.borderCard}`,
                       borderRadius: 12,
@@ -829,7 +848,7 @@ export function GsScreen() {
                       flexDirection: 'column',
                       gap: 9,
                       boxShadow: shadowCard,
-                      maxWidth: 'calc(100% - 24px)',
+                      maxWidth: 'calc(100vw - 48px)',
                     }}
                   >
                     {planZones.map((z) => (

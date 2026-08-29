@@ -9,7 +9,7 @@ import { GsScreen } from './GsScreen'
 
 const loadGsProject = vi.hoisted(() => vi.fn())
 const listDeckCells = vi.hoisted(() => vi.fn())
-const listProjectCellStages = vi.hoisted(() => vi.fn())
+const listProjectStageIndex = vi.hoisted(() => vi.fn())
 const listDeckZones = vi.hoisted(() => vi.fn())
 const setCellStage = vi.hoisted(() => vi.fn())
 const subscribeDeckCells = vi.hoisted(() => vi.fn())
@@ -20,7 +20,7 @@ const signOut = vi.hoisted(() => vi.fn())
 vi.mock('../../lib/gsApi', () => ({
   loadGsProject: (projectId: string) => loadGsProject(projectId),
   listDeckCells: (deckId: string) => listDeckCells(deckId),
-  listProjectCellStages: (ids: string[]) => listProjectCellStages(ids),
+  listProjectStageIndex: (ids: string[]) => listProjectStageIndex(ids),
   setCellStage: (cellId: string, stageId: string | null) => setCellStage(cellId, stageId),
   subscribeDeckCells: (deckId: string, handlers: Handlers) =>
     subscribeDeckCells(deckId, handlers),
@@ -151,8 +151,8 @@ const unsubscribe = vi.fn()
 beforeEach(() => {
   loadGsProject.mockReset()
   listDeckCells.mockReset()
-  listProjectCellStages.mockReset()
-  listProjectCellStages.mockResolvedValue({})
+  listProjectStageIndex.mockReset()
+  listProjectStageIndex.mockResolvedValue({})
   listDeckZones.mockReset()
   listDeckZones.mockResolvedValue([])
   setCellStage.mockReset()
@@ -331,6 +331,38 @@ describe('GsScreen', () => {
     await screen.findByTestId('canvas')
     const body = screen.getByTestId('canvas').closest('.ant-layout-content') as HTMLElement
     expect(body).toHaveStyle({ gridTemplateColumns: 'minmax(0,1fr)' })
+  })
+
+  it('scores each tab against its own deck\'s coats, not the open deck\'s', async () => {
+    // Every deck declares its own stage list with its own ids (spec §3.1).
+    // Reading deck 2's bays against deck 1's stages counts every bay as not
+    // started, and a deck well along reads 0,00% on the control the foreman
+    // picks a deck by -- which is worse than no figure, because he believes it.
+    listProjectStageIndex.mockResolvedValue({
+      d1: {
+        cells: [{ areaM2: 1000, stageId: 'own-1' }],
+        stages: [{ id: 'own-1', seq: 1, name: 'Coat 1', color: '#111111', weight: 1 }],
+      },
+      d2: {
+        cells: [{ areaM2: 500, stageId: 'other-1' }],
+        stages: [{ id: 'other-1', seq: 1, name: 'Lót', color: '#222222', weight: 1 }],
+      },
+    })
+    renderScreen()
+
+    // d1 is Cellar Deck: 1000 m² declared, 1000 m² of bays at its OWN Coat 1.
+    // d2 is Main Deck: 500 m² declared, 500 m² of bays at ITS own Coat 1, whose
+    // id shares nothing with d1's. Against one shared stage list one of the two
+    // reads 0,00%; against their own, both read 100,00%.
+    expect(await screen.findByRole('tab', { name: /^Cellar Deck100,00%/ })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: /^Main Deck100,00%/ })).toBeInTheDocument()
+  })
+
+  it('shows an em dash on a tab whose figure has not arrived', async () => {
+    // A wrong figure on the control you are choosing by is worse than none.
+    listProjectStageIndex.mockReturnValue(new Promise(() => {}))
+    renderScreen()
+    expect(await screen.findByRole('tab', { name: /^Cellar Deck—/ })).toBeInTheDocument()
   })
 
   it('offers logout and nothing else about the account', async () => {
