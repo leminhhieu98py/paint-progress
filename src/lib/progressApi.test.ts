@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { latestProgressEvent, loadDeckProgress, loadProjectProgress } from './progressApi'
+import {
+  latestProgressEvent, listCellNotes, loadDeckProgress, loadProjectProgress,
+} from './progressApi'
 
 const from = vi.hoisted(() => vi.fn())
 vi.mock('./supabase', () => ({ supabase: { from } }))
@@ -221,5 +223,69 @@ describe('latestProgressEvent', () => {
   it('throws when the read fails', async () => {
     from.mockImplementationOnce(() => builder({ error: { message: 'permission denied' } }))
     await expect(latestProgressEvent()).rejects.toThrow('permission denied')
+  })
+})
+
+describe('listCellNotes', () => {
+  const event = (over: Record<string, unknown>) => ({
+    id: 1,
+    at: '2026-08-29T11:47:00Z',
+    to_stage_name: 'Coat 2',
+    note: 'Bề mặt còn ẩm',
+    by: { username: 'gs.hieu', full_name: 'Lê Trung Hiếu' },
+    ...over,
+  })
+
+  it('reads one bay\'s whole history, newest first', async () => {
+    // cells.note holds only the latest -- each stage change overwrites it,
+    // because the drawing needs one flag per bay. A bay that went Blast →
+    // Coat 2 → Coat 3 with a remark at each step has all three only here.
+    const b = builder({
+      data: [
+        event({ id: 3, at: '2026-08-29T11:47:00Z', to_stage_name: 'Coat 3', note: 'Xong' }),
+        event({ id: 1, at: '2026-08-27T08:00:00Z', to_stage_name: 'Blast + Coat 1', note: 'Bắt đầu' }),
+      ],
+    })
+    from.mockImplementation(() => b)
+
+    const notes = await listCellNotes('c1')
+
+    expect(from).toHaveBeenCalledWith('cell_events')
+    expect(b.eq).toHaveBeenCalledWith('cell_id', 'c1')
+    expect(b.order).toHaveBeenCalledWith('at', { ascending: false })
+    expect(notes.map((n) => n.note)).toEqual(['Xong', 'Bắt đầu'])
+    expect(notes[0]).toMatchObject({
+      id: 3, stageName: 'Coat 3', byName: 'Lê Trung Hiếu', byUsername: 'gs.hieu',
+    })
+  })
+
+  it('drops the stage changes nobody wrote anything on', async () => {
+    // A coat recorded without a remark is not a message. On a bay ticked five
+    // times, four blank rows would bury the one that says something.
+    from.mockImplementation(() => builder({
+      data: [event({ id: 2, note: '   ' }), event({ id: 1, note: null }), event({ id: 3 })],
+    }))
+
+    const notes = await listCellNotes('c1')
+
+    expect(notes.map((n) => n.id)).toEqual([3])
+  })
+
+  it('keeps a note whose author is no longer readable', async () => {
+    // profiles is behind RLS and an account can be switched off. The note is
+    // the point; the name is attribution, and losing it must not lose the note.
+    from.mockImplementation(() => builder({ data: [event({ by: null })] }))
+
+    const notes = await listCellNotes('c1')
+
+    expect(notes[0].note).toBe('Bề mặt còn ẩm')
+    expect(notes[0].byName).toBeNull()
+  })
+
+  it('reports a failed read rather than showing an empty history', async () => {
+    // An empty list and a failed read look identical on screen, and one of them
+    // means "this bay has no notes" -- which is a thing the admin acts on.
+    from.mockImplementation(() => builder({ error: { message: 'mất kết nối' } }))
+    await expect(listCellNotes('c1')).rejects.toThrow('mất kết nối')
   })
 })

@@ -15,20 +15,22 @@ import type { Stage, Zone } from '../../domain/types'
 import { getDrawingUrl } from '../../lib/decksApi'
 import { formatAreaM2, formatPercent } from '../../lib/format'
 import { subscribeDeckCells } from '../../lib/gsApi'
-import { loadDeckProgress, type DeckProgressEntry } from '../../lib/progressApi'
+import {
+  listCellNotes, loadDeckProgress, type CellNote, type DeckProgressEntry,
+} from '../../lib/progressApi'
 import {
   createZone, deleteZone, listDeckZones, setZoneActual, updateZone,
 } from '../../lib/zonesApi'
 import { ConsequenceModal } from '../../components/ConsequenceModal'
 import { Donut } from '../../components/Donut'
 import { EmptyState } from '../../components/EmptyState'
+import { NoteThread } from '../../components/NoteThread'
 import { ProgressBar } from '../../components/ProgressBar'
 import { RulesDisclosure } from '../../components/RulesDisclosure'
 import { SectionCard } from '../../components/SectionCard'
 import { StageSpecTable } from '../../components/StageSpecTable'
 import { modalProps } from '../../components/modalChrome'
 import { palette, shadowCard } from '../../theme'
-import { listGsUsers } from '../../lib/adminApi'
 import type { Cell } from '../../domain/types'
 
 
@@ -139,7 +141,10 @@ export function DeckProgressPanel({
   const [windows, setWindows] = useState<Record<string, StageWindow>>({})
   /** The bay whose note is open, and the names to attribute it to. */
   const [noteCell, setNoteCell] = useState<Cell | null>(null)
-  const [userNames, setUserNames] = useState<Record<string, string>>({})
+  /** Every note ever left on the open bay, newest first. */
+  const [notes, setNotes] = useState<CellNote[]>([])
+  const [noteLoading, setNoteLoading] = useState(false)
+  const [noteError, setNoteError] = useState<string | null>(null)
   const { message } = App.useApp()
   const [form] = Form.useForm()
 
@@ -330,18 +335,27 @@ export function DeckProgressPanel({
     already makes the heaviest read on the screen; the admin who never taps a
     flagged bay should not pay for a user list as well.
   */
+  /*
+    The history is fetched on open, not on mount. This panel already makes the
+    heaviest read on the screen; an admin who never taps a flagged bay should
+    not pay for a per-bay event query as well.
+  */
   const openNote = (code: string) => {
     const cell = entry?.deck.cells.find((c) => c.code === code)
     if (!cell || (cell.note ?? '').trim() === '') return
     setNoteCell(cell)
-    if (Object.keys(userNames).length === 0) {
-      void listGsUsers()
-        .then((us) => setUserNames(Object.fromEntries(us.map((u) => [u.id, u.fullName]))))
-        .catch(() => {
-          // The note is the point; the name is an attribution. A failed user
-          // list must not keep the sentence off screen.
-        })
-    }
+    setNotes([])
+    setNoteError(null)
+    setNoteLoading(true)
+    listCellNotes(cell.id)
+      .then((rows) => setNotes(rows))
+      .catch((e) => {
+        // The dialog falls back to `cells.note`, which is already in hand and
+        // is the note the drawing's flag is showing. Losing the history must
+        // not lose the sentence the admin tapped the bay to read.
+        setNoteError((e as Error).message)
+      })
+      .finally(() => setNoteLoading(false))
   }
 
   const toggleCell = (code: string) => {
@@ -952,6 +966,7 @@ export function DeckProgressPanel({
         open={noteCell !== null}
         title={noteCell ? `Ghi chú · ô ${noteCell.code}` : ''}
         onCancel={() => setNoteCell(null)}
+        width={560}
         footer={[
           <Button key="close" onClick={() => setNoteCell(null)}>
             Đóng
@@ -959,25 +974,23 @@ export function DeckProgressPanel({
         ]}
         {...modalProps}
       >
-        {noteCell && (
-          <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-            <Typography.Paragraph style={{ margin: 0, whiteSpace: 'pre-wrap' }}>
-              {noteCell.note}
-            </Typography.Paragraph>
-            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-              {[
-                stageName(noteCell.stageId ?? '') === '—'
-                  ? 'Chưa bắt đầu'
-                  : stageName(noteCell.stageId ?? ''),
-                userNames[entry?.audit[noteCell.id]?.updatedBy ?? ''] ?? 'không rõ người ghi',
-                entry?.audit[noteCell.id]?.updatedAt
-                  ? dayjs(entry.audit[noteCell.id].updatedAt).format('DD.MM.YYYY HH:mm')
-                  : '',
-              ]
-                .filter(Boolean)
-                .join(' · ')}
-            </Typography.Text>
-          </Space>
+        {noteLoading && <Spin style={{ display: 'block', margin: '32px auto' }} />}
+        {!noteLoading && noteError !== null && (
+          <Alert
+            type="warning"
+            showIcon
+            message="Không tải được lịch sử ghi chú"
+            description={`${noteError} — ghi chú mới nhất bên dưới vẫn đúng.`}
+            style={{ marginBottom: 14 }}
+          />
+        )}
+        {!noteLoading && noteError !== null && noteCell && (
+          <Typography.Paragraph style={{ margin: 0, whiteSpace: 'pre-wrap' }}>
+            {noteCell.note}
+          </Typography.Paragraph>
+        )}
+        {!noteLoading && noteError === null && (
+          <NoteThread notes={notes} current={noteCell?.note} />
         )}
       </Modal>
 

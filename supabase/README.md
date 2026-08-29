@@ -153,4 +153,26 @@ See spec §12. In short:
 4. Edge Functions → `admin-users` → Secrets: `CRED_ENC_KEY`.
    `SERVICE_ROLE_KEY` is injected by the platform as `SUPABASE_SERVICE_ROLE_KEY`.
 
+### Adding an admin
+
+There is no in-app way, on purpose: `admin-users` hardcodes `role: 'gs'`, so an
+admin can only be minted by someone holding the database. An admin reads every
+project, reveals every GS password and deletes every deck; a path to one from
+inside the app would be the most valuable thing here to compromise.
+
+1. Dashboard → Authentication → Users → Add user → Create new user.
+   Email `<username>@app.local`, a password, and tick **Auto Confirm User**.
+   An unconfirmed user is refused at login with the same message as a wrong
+   password, which is a bad thing to work out over a phone call.
+2. Edit the two literals at the top of the DO block in
+   `supabase/create_admin.sql`, then
+   `npx supabase db query --linked -f supabase/create_admin.sql`.
+3. It prints every admin account and whether each can sign in. Hand the
+   credentials over in person or by a channel the recipient already trusts --
+   never through a repo, a ticket or a chat log.
+
+The dev bootstrap admin and a customer's admin should not be the same account:
+the dev one is in `.env.test.local`, its password is known to whoever set the
+project up, and the integration suite signs in as it.
+
 Never commit any of these values.

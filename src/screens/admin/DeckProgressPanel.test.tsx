@@ -11,10 +11,12 @@ const createZone = vi.hoisted(() => vi.fn())
 const updateZone = vi.hoisted(() => vi.fn())
 const deleteZone = vi.hoisted(() => vi.fn())
 const setZoneActual = vi.hoisted(() => vi.fn())
+const listCellNotes = vi.hoisted(() => vi.fn())
 const subscribeDeckCells = vi.hoisted(() => vi.fn())
 
 vi.mock('../../lib/progressApi', () => ({
   loadDeckProgress: (id: string) => loadDeckProgress(id),
+  listCellNotes: (cellId: string) => listCellNotes(cellId),
 }))
 vi.mock('../../lib/decksApi', () => ({
   getDrawingUrl: (p: string) => getDrawingUrl(p),
@@ -114,6 +116,8 @@ beforeEach(() => {
   setZoneActual.mockResolvedValue(2)
   subscribeDeckCells.mockReset()
   subscribeDeckCells.mockReturnValue(() => {})
+  listCellNotes.mockReset()
+  listCellNotes.mockResolvedValue([])
 })
 
 // Wrapped in antd's App because src/App.tsx wraps the whole tree in it, and
@@ -510,17 +514,50 @@ describe('DeckProgressPanel — the foreman\'s note', () => {
     expect(screen.getByTestId('cell-R1C2')).toHaveAttribute('data-marked', 'false')
   })
 
-  it('shows what the foreman wrote, with who wrote it and when', async () => {
+  it('shows every note the bay has carried, newest first', async () => {
+    // A bay is ticked once per coat and can carry a remark each time, so "the
+    // note" was never one thing: cells.note is whichever was written last, and
+    // the admin had no way to know it was the third of three.
     loadDeckProgress.mockResolvedValue(NOTED)
+    listCellNotes.mockResolvedValue([
+      {
+        id: 3, at: '2026-08-29T11:47:00Z', stageName: 'Tháo giáo',
+        note: 'Bề mặt còn ẩm, hoãn sơn sang mai',
+        byName: 'Lê Trung Hiếu', byUsername: 'gs.hieu',
+      },
+      {
+        id: 1, at: '2026-08-27T08:00:00Z', stageName: 'Blast + Coat 1',
+        note: 'Có vết rỗ ở góc', byName: 'Lê Trung Hiếu', byUsername: 'gs.hieu',
+      },
+    ])
+    renderPanel(false)
+    await userEvent.click(await screen.findByTestId('cell-R1C1'))
+
+    await waitFor(() => expect(listCellNotes).toHaveBeenCalledWith('c1'))
+    const dialog = await screen.findByRole('dialog')
+    expect(await within(dialog).findByText('Bề mặt còn ẩm, hoãn sơn sang mai'))
+      .toBeInTheDocument()
+    expect(within(dialog).getByText('Có vết rỗ ở góc')).toBeInTheDocument()
+    // Each against the coat it belongs to: the same sentence means different
+    // things at Blast + Coat 1 and at Tháo giáo.
+    expect(within(dialog).getByText('Tháo giáo')).toBeInTheDocument()
+    expect(within(dialog).getByText('Blast + Coat 1')).toBeInTheDocument()
+    expect(within(dialog).getByText(/29\.08\.2026/)).toBeInTheDocument()
+    // And which of them the drawing's flag is showing.
+    expect(within(dialog).getByText('Đang hiện trên bản vẽ')).toBeInTheDocument()
+  })
+
+  it('still shows the latest note when the history cannot be read', async () => {
+    // The sentence the admin tapped the bay for is already in hand, on
+    // cells.note. Losing the history must not lose it.
+    loadDeckProgress.mockResolvedValue(NOTED)
+    listCellNotes.mockRejectedValue(new Error('mất kết nối'))
     renderPanel(false)
     await userEvent.click(await screen.findByTestId('cell-R1C1'))
 
     const dialog = await screen.findByRole('dialog')
+    expect(await within(dialog).findByText('Không tải được lịch sử ghi chú')).toBeInTheDocument()
     expect(within(dialog).getByText('Bề mặt còn ẩm, hoãn sơn sang mai')).toBeInTheDocument()
-    // The coat it was recorded at, who recorded it, and when -- a note with no
-    // attribution is a sentence the admin cannot follow up on.
-    expect(await within(dialog).findByText(/Tháo giáo · Lê Trung Hiếu · 29\.08\.2026/))
-      .toBeInTheDocument()
   })
 
   it('opens nothing for a bay with no note', async () => {

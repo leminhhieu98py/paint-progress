@@ -140,6 +140,67 @@ export interface ProgressEvent {
   byUsername: string | null
 }
 
+/** One note a foreman left on a bay, with the coat it was recorded against. */
+export interface CellNote {
+  /** cell_events.id -- stable, and the only key a list of notes can use: two
+   *  notes on one bay can share a coat, a person and even a minute. */
+  id: number
+  at: string
+  /** The coat the bay moved TO. Null for a move back to "not started". */
+  stageName: string | null
+  note: string
+  byName: string | null
+  byUsername: string | null
+}
+
+/**
+ * Every note ever left on one bay, newest first.
+ *
+ * `cells.note` holds only the latest one -- it is overwritten by each stage
+ * change, because the drawing needs one flag per bay and the tablet writes the
+ * note in the same statement as the coat. The history is in `cell_events`,
+ * where 0019 copies each note as it was written, so a bay that went Blast →
+ * Coat 2 → Coat 3 with a remark at each step has all three here and one on
+ * `cells`.
+ *
+ * That is the whole reason this exists: the admin was reading a single line and
+ * had no way to know it was the third of three, or what the first two said
+ * about the bay they are being asked to pay for.
+ *
+ * Newest first, unlike a chat thread. Each note belongs to a different coat and
+ * the current one is the one being acted on; making the reader scroll a
+ * five-coat history to reach it would be the wrong way round.
+ *
+ * Events with no note are dropped rather than rendered blank: a stage change
+ * without a remark is not a message, and 184 empty rows would bury the ones
+ * that are.
+ */
+export async function listCellNotes(cellId: string): Promise<CellNote[]> {
+  const { data, error } = await supabase
+    .from('cell_events')
+    .select('id, at, to_stage_name, note, by:profiles(username, full_name)')
+    .eq('cell_id', cellId)
+    .order('at', { ascending: false })
+  if (error) throw new Error(error.message)
+
+  return (data ?? [])
+    .map((r) => {
+      const row = r as Record<string, unknown>
+      const by = row.by as { username?: string; full_name?: string } | null
+      return {
+        id: Number(row.id),
+        at: row.at as string,
+        stageName: (row.to_stage_name as string | null) ?? null,
+        // Null on events recorded before 0019, empty on a change with no
+        // remark. Both mean "nothing was written".
+        note: ((row.note as string | null) ?? '').trim(),
+        byName: by?.full_name ?? null,
+        byUsername: by?.username ?? null,
+      }
+    })
+    .filter((n) => n.note !== '')
+}
+
 /**
  * The single newest row of `cell_events`.
  *
