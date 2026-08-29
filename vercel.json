@@ -1,0 +1,47 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+
+  "//rewrites": [
+    "React Router owns every path after the origin, and the build emits one",
+    "index.html. Without this, /admin/decks/<id> is a request for a file that",
+    "does not exist: it works when reached by clicking through the app and 404s",
+    "the moment anyone refreshes it or opens a link someone sent them.",
+    "",
+    "assets/ is excluded rather than left to Vercel's filesystem-first ordering.",
+    "That ordering is documented and would make the exclusion unnecessary, but",
+    "the failure it guards against is the whole app rendering blank -- a hashed",
+    "bundle served index.html instead of JavaScript -- and that is not something",
+    "to find out on the morning it is handed over."
+  ],
+  "rewrites": [
+    {
+      "source": "/((?!assets/).*)",
+      "destination": "/index.html"
+    }
+  ],
+
+  "//headers": [
+    "DENY on framing because nothing has any business embedding this: the admin",
+    "screens carry the destructive actions, and a framed admin session is what",
+    "makes clickjacking one of them possible.",
+    "",
+    "No Content-Security-Policy here on purpose. This app opens a websocket to",
+    "Supabase Realtime, renders PDFs through a worker and draws to canvas, so a",
+    "policy written without measuring each of those is a policy that breaks the",
+    "field screen in a way nobody notices until a foreman cannot record a bay."
+  ],
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        { "key": "X-Frame-Options", "value": "DENY" },
+        { "key": "X-Content-Type-Options", "value": "nosniff" },
+        { "key": "Referrer-Policy", "value": "same-origin" },
+        {
+          "key": "Permissions-Policy",
+          "value": "camera=(), microphone=(), geolocation=()"
+        }
+      ]
+    }
+  ]
+}
