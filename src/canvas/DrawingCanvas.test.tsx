@@ -904,3 +904,50 @@ describe('DrawingCanvas hatching', () => {
     }
   })
 })
+
+describe('DrawingCanvas note markers', () => {
+  const CELLS = [
+    { code: 'R1C1', x: 0, y: 0, w: 0.5, h: 1, areaM2: 10 },
+    { code: 'R1C2', x: 0.5, y: 0, w: 0.5, h: 1, areaM2: 10 },
+  ]
+
+  it('flags only the bays that carry a note', () => {
+    render(
+      <DrawingCanvas
+        imageUrl="x.png"
+        imageW={1000}
+        imageH={800}
+        cells={CELLS}
+        selectedCodes={[]}
+        markedCodes={['R1C2']}
+      />,
+    )
+    expect(screen.getByTestId('line:note-R1C2')).toBeInTheDocument()
+    expect(screen.queryByTestId('line:note-R1C1')).toBeNull()
+  })
+
+  it('keeps the flag out of the way of the tap that opens it', () => {
+    // The flag sits over the corner of a bay a foreman or an admin is about to
+    // click. A listening layer here would eat that click on exactly the bays
+    // that have something to say.
+    render(
+      <DrawingCanvas
+        imageUrl="x.png"
+        imageW={1000}
+        imageH={800}
+        cells={CELLS}
+        selectedCodes={[]}
+        markedCodes={['R1C2']}
+      />,
+    )
+    expect(screen.getByTestId('layer:markers')).toHaveAttribute('data-listening', 'false')
+  })
+
+  it('draws no marker layer content when nothing is flagged', () => {
+    render(
+      <DrawingCanvas imageUrl="x.png" imageW={1000} imageH={800} cells={CELLS} selectedCodes={[]} />,
+    )
+    expect(screen.queryByTestId('line:note-R1C1')).toBeNull()
+    expect(screen.queryByTestId('line:note-R1C2')).toBeNull()
+  })
+})

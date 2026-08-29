@@ -18,6 +18,9 @@ vi.mock('../../lib/progressApi', () => ({
 vi.mock('../../lib/decksApi', () => ({
   getDrawingUrl: (p: string) => getDrawingUrl(p),
 }))
+vi.mock('../../lib/adminApi', () => ({
+  listGsUsers: () => Promise.resolve([{ id: 'u1', fullName: 'Lê Trung Hiếu' }]),
+}))
 vi.mock('../../lib/zonesApi', () => ({
   listDeckZones: (d: string) => listDeckZones(d),
   createZone: (d: string, draft: unknown, ids: string[]) => createZone(d, draft, ids),
@@ -31,13 +34,14 @@ vi.mock('../../lib/zonesApi', () => ({
 // each bay came out, what is selected, and what the plan says.
 vi.mock('../../canvas/DrawingCanvas', () => ({
   DrawingCanvas: ({
-    imageUrl, cells, cellColors, hatchedCodes, planLabels, selectedCodes,
+    imageUrl, cells, cellColors, hatchedCodes, markedCodes, planLabels, selectedCodes,
     onCellClick, onSelectDraw,
   }: {
     imageUrl: string
     cells: { code: string }[]
     cellColors?: Record<string, string>
     hatchedCodes?: string[]
+    markedCodes?: string[]
     planLabels?: Record<string, string>
     selectedCodes?: string[]
     onCellClick?: (code: string, additive: boolean) => void
@@ -50,6 +54,7 @@ vi.mock('../../canvas/DrawingCanvas', () => ({
           data-testid={`cell-${c.code}`}
           data-color={cellColors?.[c.code] ?? ''}
           data-hatched={String(Boolean(hatchedCodes?.includes(c.code)))}
+          data-marked={String(Boolean(markedCodes?.includes(c.code)))}
           data-plan={planLabels?.[c.code] ?? ''}
           data-selected={String(Boolean(selectedCodes?.includes(c.code)))}
           onClick={() => onCellClick?.(c.code, false)}
@@ -551,5 +556,64 @@ describe('DeckProgressPanel — hatching the bays a coat has not reached', () =>
     await userEvent.click(await screen.findByTitle('Tháo giáo'))
 
     expect(screen.getByText(/gạch chéo là chưa đạt lớp sơn đang lọc/)).toBeInTheDocument()
+  })
+})
+
+describe('DeckProgressPanel — the foreman\'s note', () => {
+  const WITH_NOTE = {
+    ...ENTRY,
+    deck: {
+      ...ENTRY.deck,
+      cells: [
+        { ...ENTRY.deck.cells[0], note: 'Giàn giáo chắn mất một góc' },
+        ENTRY.deck.cells[1],
+      ],
+    },
+    audit: { c1: { updatedAt: '2026-08-29T04:47:56.000Z', updatedBy: 'u1' } },
+  }
+
+  it('flags the bay that carries a note, and only that one', async () => {
+    loadDeckProgress.mockResolvedValue(WITH_NOTE)
+    renderPanel()
+    const paint = await screen.findByTestId('paint-lens')
+    expect(within(paint).getByTestId('cell-R1C1')).toHaveAttribute('data-marked', 'true')
+    expect(within(paint).getByTestId('cell-R1C2')).toHaveAttribute('data-marked', 'false')
+  })
+
+  it('shows what the foreman wrote, with who wrote it and when', async () => {
+    loadDeckProgress.mockResolvedValue(WITH_NOTE)
+    renderPanel(false)
+    const paint = await screen.findByTestId('paint-lens')
+
+    await userEvent.click(within(paint).getByTestId('cell-R1C1'))
+
+    expect(await screen.findByText('Giàn giáo chắn mất một góc')).toBeInTheDocument()
+    // The attribution is the reason the note is worth storing at all: a
+    // sentence with nobody's name on it is a rumour.
+    expect(await screen.findByText(/Lê Trung Hiếu/)).toBeInTheDocument()
+  })
+
+  it('opens nothing for a bay with no note', async () => {
+    loadDeckProgress.mockResolvedValue(WITH_NOTE)
+    renderPanel(false)
+    const paint = await screen.findByTestId('paint-lens')
+
+    await userEvent.click(within(paint).getByTestId('cell-R1C2'))
+
+    expect(screen.queryByText(/Ghi chú · ô/)).toBeNull()
+  })
+
+  it('still selects bays while editing, rather than opening the note', async () => {
+    // Editing is when the admin is building a zone out of bays. A dialog in
+    // the middle of that would make a flagged bay the one bay that cannot be
+    // added to a zone by clicking.
+    loadDeckProgress.mockResolvedValue(WITH_NOTE)
+    renderPanel(true)
+    const paint = await screen.findByTestId('paint-lens')
+
+    await userEvent.click(within(paint).getByTestId('cell-R1C1'))
+
+    expect(screen.queryByText('Giàn giáo chắn mất một góc')).toBeNull()
+    expect(within(paint).getByTestId('cell-R1C1')).toHaveAttribute('data-selected', 'true')
   })
 })

@@ -21,6 +21,8 @@ import {
   createZone, deleteZone, listDeckZones, setZoneActual, updateZone,
 } from '../../lib/zonesApi'
 import { StageSpecTable } from '../../components/StageSpecTable'
+import { listGsUsers } from '../../lib/adminApi'
+import type { Cell } from '../../domain/types'
 
 /**
  * What each fill on the canvas above means.
@@ -130,6 +132,9 @@ export function DeckProgressPanel({
    */
   const [stageFilter, setStageFilter] = useState<string | null>(null)
   const [windows, setWindows] = useState<Record<string, StageWindow>>({})
+  /** The bay whose note is open, and the names to attribute it to. */
+  const [noteCell, setNoteCell] = useState<Cell | null>(null)
+  const [userNames, setUserNames] = useState<Record<string, string>>({})
   const { message } = App.useApp()
   const [form] = Form.useForm()
 
@@ -256,6 +261,37 @@ export function DeckProgressPanel({
   const zoneColors = useMemo(() => Object.fromEntries(
     filteredZones.map((z, i) => [z.id, ZONE_PALETTE[i % ZONE_PALETTE.length]]),
   ), [filteredZones])
+
+  /**
+   * Bays carrying a note, by code.
+   *
+   * The foreman's half of this feature has been live since the note column
+   * landed; this is the half that lets anyone read what they wrote. Without it
+   * a note is a string in a table nobody opens.
+   */
+  const notedCodes = useMemo(
+    () => (entry?.deck.cells ?? []).filter((c) => (c.note ?? '').trim() !== '').map((c) => c.code),
+    [entry],
+  )
+
+  /*
+    Names are fetched the first time a note is opened, not on mount. This panel
+    already makes the heaviest read on the screen; the admin who never taps a
+    flagged bay should not pay for a user list as well.
+  */
+  const openNote = (code: string) => {
+    const cell = entry?.deck.cells.find((c) => c.code === code)
+    if (!cell || (cell.note ?? '').trim() === '') return
+    setNoteCell(cell)
+    if (Object.keys(userNames).length === 0) {
+      void listGsUsers()
+        .then((us) => setUserNames(Object.fromEntries(us.map((u) => [u.id, u.fullName]))))
+        .catch(() => {
+          // The note is the point; the name is an attribution. A failed user
+          // list must not keep the sentence off screen.
+        })
+    }
+  }
 
   const toggleCell = (code: string) => {
     setSelectedCodes((prev) => (
@@ -394,6 +430,41 @@ export function DeckProgressPanel({
         <Typography.Text type="secondary">Sàn này chưa có bản vẽ</Typography.Text>
       )}
 
+      {/*
+        A dialog rather than a popover anchored to the bay. The bay is a shape
+        inside a canvas that pans and zooms, so an anchored bubble has to track
+        a moving target -- and the note is prose, which wants room to be read
+        rather than a tooltip's width.
+      */}
+      <Modal
+        open={noteCell !== null}
+        title={noteCell ? `Ghi chú · ô ${noteCell.code}` : ''}
+        onCancel={() => setNoteCell(null)}
+        footer={null}
+        destroyOnHidden
+      >
+        {noteCell && (
+          <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+            <Typography.Paragraph style={{ margin: 0, whiteSpace: 'pre-wrap' }}>
+              {noteCell.note}
+            </Typography.Paragraph>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              {[
+                stageName(noteCell.stageId ?? '') === '—'
+                  ? 'Chưa bắt đầu'
+                  : stageName(noteCell.stageId ?? ''),
+                userNames[entry?.audit[noteCell.id]?.updatedBy ?? ''] ?? 'không rõ người ghi',
+                entry?.audit[noteCell.id]?.updatedAt
+                  ? dayjs(entry.audit[noteCell.id].updatedAt).format('DD.MM.YYYY HH:mm')
+                  : '',
+              ]
+                .filter(Boolean)
+                .join(' · ')}
+            </Typography.Text>
+          </Space>
+        )}
+      </Modal>
+
       {entry && entry.imagePath && imageUrl && (
         <Row gutter={16}>
           <Col xs={24} lg={12}>
@@ -423,8 +494,11 @@ export function DeckProgressPanel({
                   selectedCodes={editable ? selectedCodes : []}
                   cellColors={paintColors}
                   hatchedCodes={pendingCodes}
+                  markedCodes={notedCodes}
                   panZoom
-                  onCellClick={editable ? ((code) => toggleCell(code)) : undefined}
+                  // Selecting bays is what a click means while editing; reading
+                  // what the foreman wrote is what it means while looking.
+                  onCellClick={editable ? ((code) => toggleCell(code)) : ((code) => openNote(code))}
                   onSelectDraw={editable ? sweep : undefined}
                 />
               </div>

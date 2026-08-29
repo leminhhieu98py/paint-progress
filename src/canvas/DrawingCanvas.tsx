@@ -2,7 +2,7 @@ import { ExpandOutlined, MinusOutlined, PlusOutlined } from '@ant-design/icons'
 import { Button, Space } from 'antd'
 import Konva from 'konva'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Image as KonvaImage, Layer, Rect, Stage, Text } from 'react-konva'
+import { Image as KonvaImage, Layer, Line, Rect, Stage, Text } from 'react-konva'
 import useImage from 'use-image'
 import type { MeshCell } from '../domain/types'
 import {
@@ -53,6 +53,15 @@ const CROP_STROKE = '#08979c'
 const MIN_DRAWN_FRACTION = 0.004
 
 /**
+ * The corner flag on a bay that carries a note.
+ *
+ * antd's orange-6, and the only place it appears on a drawing. The five stage
+ * colours, the zone palette, the red bay border and the magenta selection cue
+ * all sit elsewhere in the wheel, so a flag cannot be mistaken for a coat.
+ */
+const NOTE_MARKER_FILL = '#F97316'
+
+/**
  * Width used until the container has been measured.
  *
  * The stage used to be a hard 900 px, which overflowed a 636 px container in the
@@ -72,6 +81,7 @@ export function DrawingCanvas({
   selectedCodes,
   cellColors,
   hatchedCodes,
+  markedCodes,
   planLabels,
   panZoom = false,
   onCellClick,
@@ -98,6 +108,16 @@ export function DrawingCanvas({
    * merged them would need a colour per (zone × state) pair.
    */
   hatchedCodes?: string[]
+  /**
+   * Cell codes that get a small corner flag.
+   *
+   * One meaning only, and it is "there is something written here": a bay whose
+   * foreman left a note. Deliberately not a second colour channel -- the fill
+   * is already carrying the coat or the zone, and the hatch is carrying done
+   * versus not -- so this is a shape, in the one colour nothing else on the
+   * drawing uses.
+   */
+  markedCodes?: string[]
   /**
    * Planned date range per cell CODE. A code present here gets a dashed outline
    * and its label drawn over the cell; a code absent gets nothing. Spec §8.1's
@@ -183,6 +203,7 @@ export function DrawingCanvas({
   */
   const hatchPattern = useMemo(() => createHatchPattern(), [])
   const hatched = useMemo(() => new Set(hatchedCodes ?? []), [hatchedCodes])
+  const marked = useMemo(() => new Set(markedCodes ?? []), [markedCodes])
 
   const swallowClickRef = useRef(false)
   const [drag, setDrag] = useState<
@@ -484,6 +505,29 @@ export function DrawingCanvas({
                   fillPatternRepeat="repeat"
                 />
               ))}
+        </Layer>
+
+        {/* Its own layer, above the hatch and below the selection overlay, and
+            non-listening so the flag never swallows the tap that opens it. */}
+        <Layer name="markers" listening={false}>
+          {cells
+            .filter((cell) => marked.has(cell.code))
+            .map((cell) => {
+              const right = (cell.x + cell.w) * width
+              const top = cell.y * height
+              // Sized against the bay, not fixed: a 7px flag is invisible on a
+              // large bay and covers a small one.
+              const size = Math.max(5, Math.min(10, cell.w * width * 0.28))
+              return (
+                <Line
+                  key={cell.code}
+                  name={`note-${cell.code}`}
+                  points={[right - size, top, right, top, right, top + size]}
+                  closed
+                  fill={NOTE_MARKER_FILL}
+                />
+              )
+            })}
         </Layer>
 
         <Layer name="selection" listening={false}>
