@@ -50,7 +50,7 @@ function ColorKey({
               height: 12,
               borderRadius: 2,
               background: item.color,
-              border: '1px solid rgba(0,0,0,0.15)',
+              border: '1px solid #00000026',
             }}
           />
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
@@ -626,7 +626,7 @@ export function DeckProgressPanel({
                           height: 14,
                           borderRadius: 2,
                           background: zoneColors[z.id],
-                          border: '1px solid rgba(0,0,0,0.15)',
+                          border: '1px solid #00000026',
                         }}
                       />
                     ) : null),

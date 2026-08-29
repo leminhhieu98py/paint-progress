@@ -1,7 +1,6 @@
 import { DownOutlined } from '@ant-design/icons'
 import { useState, type ReactNode } from 'react'
 import { palette, shadowCard } from '../theme'
-import { Mono } from './Mono'
 
 /**
  * The one card shape this app has: white, hairline border, soft shadow, an
@@ -92,7 +91,7 @@ export function SectionCard({
             </button>
           )}
           {code !== undefined && (
-            <Mono
+            <span
               style={{
                 fontSize: 10,
                 fontWeight: 600,
@@ -105,7 +104,7 @@ export function SectionCard({
               }}
             >
               {code}
-            </Mono>
+            </span>
           )}
           {title !== undefined && (
             <h2

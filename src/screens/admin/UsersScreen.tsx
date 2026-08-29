@@ -4,7 +4,6 @@ import dayjs from 'dayjs'
 import { useCallback, useEffect, useState } from 'react'
 import { useAuth } from '../../auth/AuthProvider'
 import { ConsequenceModal } from '../../components/ConsequenceModal'
-import { Mono } from '../../components/Mono'
 import { PageBody, PageHeader } from '../../components/PageHeader'
 import { RulesDisclosure } from '../../components/RulesDisclosure'
 import { SectionCard } from '../../components/SectionCard'
@@ -150,6 +149,7 @@ export function UsersScreen() {
 
         <SectionCard bodyPadding={0} footer={<RulesDisclosure rules={RULES} />}>
           <Table<GsUser>
+            className="pp-table"
             rowKey="id"
             loading={loading}
             dataSource={users}
@@ -179,9 +179,9 @@ export function UsersScreen() {
                     </span>
                     <div style={{ minWidth: 0 }}>
                       <div style={{ fontWeight: 600, lineHeight: 1.35 }}>{user.fullName}</div>
-                      <Mono style={{ fontSize: 11, color: palette.textTertiary }}>
+                      <span style={{ fontSize: 11, color: palette.textTertiary }}>
                         {user.username}
-                      </Mono>
+                      </span>
                     </div>
                   </div>
                 ),
@@ -288,14 +288,14 @@ export function UsersScreen() {
           }}
         >
           <Typography.Text copyable style={{ fontFamily: 'inherit' }}>
-            <Mono style={{ fontSize: 16, fontWeight: 600, letterSpacing: '0.06em' }}>
+            <span style={{ fontSize: 16, fontWeight: 600, letterSpacing: '0.06em' }}>
               {revealed.password}
-            </Mono>
+            </span>
           </Typography.Text>
         </div>
-        <Mono style={{ display: 'block', marginTop: 9, fontSize: 11, color: palette.textTertiary }}>
+        <span style={{ display: 'block', marginTop: 9, fontSize: 11, color: palette.textTertiary }}>
           {`Đã ghi log · ${revealed.at} · ${profile?.fullName ?? ''} → ${revealed.user.username}`}
-        </Mono>
+        </span>
       </Modal>
       )}
 

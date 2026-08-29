@@ -14,7 +14,6 @@ import { pdfPageCount, renderPdfPage } from '../../lib/pdfToPng'
 import { DeckEditor } from './DeckEditor'
 import { StageConfigPanel } from './StageConfigPanel'
 import { DeckProgressPanel } from './DeckProgressPanel'
-import { Mono } from '../../components/Mono'
 import { PageBody, PageHeader } from '../../components/PageHeader'
 import { RulesDisclosure } from '../../components/RulesDisclosure'
 import { SectionCard } from '../../components/SectionCard'
@@ -37,12 +36,12 @@ function IdentityCard({
   label,
   value,
   sub,
-  mono = false,
+  dense = false,
 }: {
   label: string
   value: string
   sub?: string
-  mono?: boolean
+  dense?: boolean
 }) {
   return (
     <div
@@ -54,8 +53,8 @@ function IdentityCard({
       }}
     >
       <div style={{ fontSize: 12, fontWeight: 600, color: palette.textTertiary }}>{label}</div>
-      <div style={{ marginTop: 9, fontSize: mono ? 13 : 16, fontWeight: 600, lineHeight: 1.25, wordBreak: mono ? 'break-all' : 'normal' }}>
-        {mono ? <Mono>{value}</Mono> : value}
+      <div style={{ marginTop: 9, fontSize: dense ? 13 : 16, fontWeight: 600, lineHeight: 1.25, wordBreak: dense ? 'break-all' : 'normal' }}>
+        {value}
       </div>
       {sub !== undefined && (
         <div style={{ marginTop: 4, fontSize: 11, lineHeight: 1.4, color: palette.textTertiary }}>
@@ -329,7 +328,7 @@ export function DeckDetailScreen() {
             }}
           >
             <FilePdfOutlined style={{ color: palette.textTertiary, flex: 'none' }} />
-            <Mono
+            <span
               style={{
                 fontSize: 12,
                 fontWeight: 600,
@@ -339,7 +338,7 @@ export function DeckDetailScreen() {
               }}
             >
               {`Đang dùng: ${drawingLabel}`}
-            </Mono>
+            </span>
           </div>
         )}
         {/*
@@ -479,7 +478,7 @@ export function DeckDetailScreen() {
               }}
             >
               <IdentityCard label="Tên sàn" value={deck?.name ?? ''} />
-              <IdentityCard label="Mã sàn" value={deck?.code ?? ''} mono />
+              <IdentityCard label="Mã sàn" value={deck?.code ?? ''} dense />
               <IdentityCard
                 label="Diện tích sàn (m²)"
                 value={formatAreaM2(deck?.totalAreaM2 ?? 0)}
@@ -489,7 +488,7 @@ export function DeckDetailScreen() {
               <IdentityCard
                 label="Bản vẽ (PDF)"
                 value={drawingLabel}
-                mono
+                dense
                 sub={deck?.imagePath ? undefined : 'Cần tải PDF trước khi dựng ô'}
               />
             </div>

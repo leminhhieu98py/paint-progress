@@ -21,7 +21,7 @@ export const palette = {
   /** Tinted background behind a selected nav item, a badge, an accent chip. */
   accentTint: '#E8F6F3',
   /** Focus ring. Rendered as a 3px spread, never as a border. */
-  accentRing: 'rgba(10, 129, 117, 0.18)',
+  accentRing: '#0A81752E',
 
   /** Reserved for "something happened just now" — a live dot, a note marker. */
   flame: '#F97316',
@@ -69,18 +69,10 @@ export const fieldError = '#A50F0F'
 export const fontFamily =
   "'Be Vietnam Pro', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Helvetica, Arial, sans-serif"
 
-/**
- * Codes, timestamps and per-cell fractions only — never prose, and never a
- * number in a column that gets compared vertically (the UI font is already
- * tabular). Bay codes like R3C7 are read character by character off a drawing,
- * which is what this font is for.
- */
-export const monoFamily = "'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace"
-
 /** Cards and panels. */
-export const shadowCard = '0 1px 2px rgba(22, 32, 43, 0.04), 0 6px 18px -8px rgba(22, 32, 43, 0.08)'
+export const shadowCard = '0 1px 2px #16202B0A, 0 6px 18px -8px #16202B14'
 /** Modals, popovers, toasts — anything that floats over the page. */
-export const shadowPop = '0 28px 56px -18px rgba(22, 32, 43, 0.22), 0 4px 12px rgba(22, 32, 43, 0.05)'
+export const shadowPop = '0 28px 56px -18px #16202B38, 0 4px 12px #16202B0D'
 
 const sharedTokens = {
   colorPrimary: palette.accent,

@@ -13,7 +13,7 @@
  */
 const TILE = 8
 const BAND = 3
-const INK = 'rgba(255, 255, 255, 0.78)'
+const INK = '#FFFFFFC7'
 
 /**
  * Returns null where there is no 2D context to draw into.

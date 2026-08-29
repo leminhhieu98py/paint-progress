@@ -16,9 +16,17 @@ import {
   listStages, roundStageWeight, saveStages, stagesRemovedBy, STAGE_WEIGHT_EPSILON,
 } from '../../lib/decksApi'
 import { randomUUID } from '../../lib/uuid'
-import { Mono } from '../../components/Mono'
 import { RulesDisclosure } from '../../components/RulesDisclosure'
 import { palette } from '../../theme'
+
+/**
+ * Six digits with the hash, which is the only form the native swatch and the
+ * `stages.color` column both accept. Three-digit shorthand is deliberately not
+ * allowed: `#abc` would have to be expanded before storage, and two stages
+ * whose colours differ only by that expansion would read as a clash to the
+ * duplicate check but not to the admin typing them.
+ */
+const HEX_COLOR = /^#[0-9a-fA-F]{6}$/
 
 /**
  * saveStages' own guard errors, in the admin's language.
@@ -97,6 +105,16 @@ export function StageConfigPanel({
   const [busy, setBusy] = useState(false)
   const [confirming, setConfirming] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  /**
+   * What the admin has typed into a hex field, keyed by stage id, for as long
+   * as it is not yet a colour.
+   *
+   * Kept beside `draft` rather than inside it because `draft[i].color` feeds
+   * the swatch, the weight bar and the save payload, all of which need a real
+   * colour at every keystroke. Keyed by id, not index, so a reorder or a
+   * removal does not move a half-typed value onto a different stage.
+   */
+  const [hexDraft, setHexDraft] = useState<Record<string, string>>({})
   const generation = useRef(0)
   // Whether the admin has made a local edit that no refresh has accounted
   // for yet. The generation token alone only orders *overlapping refreshes*
@@ -151,6 +169,18 @@ export function StageConfigPanel({
    */
   const clashes = useMemo(() => duplicateStageFields(draft), [draft])
   const hasClash = clashes.names.length > 0 || clashes.colors.length > 0
+  /**
+   * A hex field mid-keystroke. Blocks the save rather than quietly falling back
+   * to the stored colour: an admin who types a colour, saves, and is shown no
+   * error will believe the drawing changed.
+   *
+   * Read off `draft` so an entry left behind by a removed stage cannot lock the
+   * save shut with no field on screen to fix.
+   */
+  const hexPending = draft.some((st) => {
+    const typed = hexDraft[st.id]
+    return typed !== undefined && !HEX_COLOR.test(typed)
+  })
 
   const patch = (index: number, change: Partial<Stage>) => {
     dirty.current = true
@@ -269,6 +299,7 @@ export function StageConfigPanel({
       )}
 
       <Table<Stage>
+        className="pp-table"
         // By id, not seq: seq is renumbered under the rows on every reorder and
         // removal, so keying React's reconciliation on it makes a row's identity
         // change out from under it -- the same mistake at the UI level that
@@ -324,6 +355,11 @@ export function StageConfigPanel({
             dataIndex: 'name',
             render: (v: string, _r, i) => (
               <Input
+                // Stable across a rename, unlike the colour fields beside it:
+                // this IS the field the name is typed into, so labelling it
+                // with the name would rename the control under the cursor.
+                // The row's own name cell gives a screen reader the context.
+                aria-label="Tên lớp sơn"
                 value={v}
                 // Only `busy` (an active write) locks this down, not `loading`.
                 // `loading` is also true for the background reconciliation
@@ -341,22 +377,44 @@ export function StageConfigPanel({
             title: 'Màu',
             dataIndex: 'color',
             width: 180,
-            render: (v: string, _r, i) => (
+            render: (v: string, row, i) => (
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 <Input
+                  aria-label={`Chọn màu · ${row.name}`}
                   type="color"
                   value={v}
                   disabled={busy}
                   style={{ width: 44, padding: 2 }}
-                  onChange={(e) => patch(i, { color: e.target.value })}
+                  onChange={(e) => {
+                    patch(i, { color: e.target.value })
+                    setHexDraft((d) => ({ ...d, [row.id]: e.target.value }))
+                  }}
                 />
                 {/*
-                  The hex beside the swatch, not instead of it. A foreman reads
-                  the colour off a drawing; an admin comparing this deck's
-                  config against another one reads the code. A 26px square is
-                  not something two people can agree about over the phone.
+                  The hex beside the swatch, not instead of it, and typable.
+                  A foreman reads the colour off a drawing; an admin comparing
+                  this deck's config against another one reads the code, and a
+                  colour that arrives as text -- off a paint spec, over the
+                  phone -- has nowhere else to go: the native swatch takes no
+                  keyboard and no paste.
                 */}
-                <Mono style={{ fontSize: 12, color: palette.textSecondary }}>{v}</Mono>
+                <Input
+                  aria-label={`Mã màu · ${row.name}`}
+                  aria-invalid={HEX_COLOR.test(hexDraft[row.id] ?? v) ? undefined : true}
+                  placeholder="#RRGGBB"
+                  maxLength={7}
+                  status={HEX_COLOR.test(hexDraft[row.id] ?? v) ? undefined : 'error'}
+                  value={hexDraft[row.id] ?? v}
+                  disabled={busy}
+                  style={{ width: 104 }}
+                  onChange={(e) => {
+                    const typed = e.target.value
+                    setHexDraft((d) => ({ ...d, [row.id]: typed }))
+                    // Only a complete colour reaches the draft. Everything
+                    // else stays visible in the field and holds the save.
+                    if (HEX_COLOR.test(typed)) patch(i, { color: typed.toLowerCase() })
+                  }}
+                />
               </div>
             ),
           },
@@ -495,7 +553,7 @@ export function StageConfigPanel({
               style={{
                 width: `${(Math.max(0, Math.min(1, stage.weight)) * 100).toFixed(4)}%`,
                 background: stage.color,
-                boxShadow: 'inset 0 0 0 1px rgba(22, 32, 43, 0.20)',
+                boxShadow: 'inset 0 0 0 1px #16202B33',
                 transition: 'width .16s ease',
               }}
             />
@@ -525,7 +583,7 @@ export function StageConfigPanel({
       <Space style={{ padding: '0 20px' }}>
         <Button
           type="primary"
-          disabled={!balanced || hasClash}
+          disabled={!balanced || hasClash || hexPending}
           loading={busy}
           // A rename, a reweight and a reorder all keep every stage row, id,
           // zone and tick, so there is genuinely nothing to disclose and the

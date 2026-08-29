@@ -10,9 +10,8 @@ import {
   MIN_LABEL_FONT_SIZE, MIN_ZOOM, WHEEL_ZOOM_STEP, ZOOM_STEP,
 } from './canvasView'
 import { createHatchPattern } from './hatchPattern'
-import { monoFamily } from '../theme'
 
-const PLAIN_FILL = 'rgba(0, 0, 0, 0.04)'
+const PLAIN_FILL = '#0000000A'
 /**
  * Cells are filled at this opacity so the beams and grid labels underneath stay
  * readable — the drawing is what the operator recognises, not our overlay.
@@ -27,21 +26,21 @@ const STAGE_FILL_OPACITY = 0.45
  * always-on red border, so a selection stroke would compete with the grid's
  * own boundary on a dense mesh; a large-area fill cue reads faster.
  *
- * Magenta (antd's magenta-6) is picked because it sits outside the stage
- * palette entirely — yellow #fadb14, grey #bfbfbf, green #52c41a, blue
- * #1677ff, purple #722ed1 (src/domain/stageTemplate.ts) — and is far enough
- * from the cell grid's own red border (rgba(255, 0, 0, 0.6) below) to read
- * as a distinct, unmistakable "selected" cue against any stage colour or none.
+ * The cue is the app's accent teal at 14% over a solid accent stroke. Selection
+ * only ever happens in the geometry editor, where cells carry no stage colour
+ * at all, so it has nothing to compete with; a saturated out-of-palette colour
+ * was louder than the job needs. The stroke is what identifies the selection —
+ * the fill only groups a run of cells so a band reads as one shape.
  */
-const SELECTION_OVERLAY_FILL = 'rgba(235, 47, 150, 0.28)'
-const SELECTION_STROKE = '#eb2f96'
+const SELECTION_OVERLAY_FILL = '#0A817524'
+const SELECTION_STROKE = '#0A8175'
 
 /**
- * The crop box's stroke — antd cyan-7, chosen the same way SELECTION_STROKE was:
- * it is outside the stage palette (yellow #fadb14, grey #bfbfbf, green #52c41a,
- * blue #1677ff, purple #722ed1), away from the cell grid's red border and the
- * magenta selection cue. The crop is drawn over a sheet that may already carry
- * all of those at once.
+ * The crop box's stroke — antd cyan-7. It is outside the stage palette (yellow
+ * #fadb14, grey #bfbfbf, green #52c41a, blue #1677ff, purple #722ed1), away
+ * from the cell grid's red border, and cool enough against the accent-teal
+ * selection to stay distinct from it. The crop is drawn over a sheet that may
+ * already carry all of those at once.
  */
 const CROP_STROKE = '#08979c'
 
@@ -383,7 +382,7 @@ export function DrawingCanvas({
             top: 12,
             right: 12,
             zIndex: 1,
-            background: 'rgba(255, 255, 255, 0.94)',
+            background: '#FFFFFFF0',
             border: '1px solid #F0F4F8',
             borderRadius: 12,
             padding: 5,
@@ -396,7 +395,6 @@ export function DrawingCanvas({
               alignItems: 'center',
               justifyContent: 'center',
               minWidth: 52,
-              fontFamily: monoFamily,
               fontSize: 12,
               fontWeight: 600,
               color: '#4A5A6B',
@@ -454,7 +452,7 @@ export function DrawingCanvas({
               height={cell.h * height}
               fill={cellColors?.[cell.code] ?? PLAIN_FILL}
               opacity={cellColors?.[cell.code] ? STAGE_FILL_OPACITY : 1}
-              stroke="rgba(255, 0, 0, 0.6)"
+              stroke="#FF000099"
               strokeWidth={1}
               onClick={(e: Konva.KonvaEventObject<MouseEvent>) => {
                 if (drawingCell || swallowClickRef.current) return

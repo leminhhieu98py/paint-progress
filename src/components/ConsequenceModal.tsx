@@ -161,7 +161,7 @@ export function ConsequenceModal({
                     borderRadius: 6,
                     flex: 'none',
                     background: it.color,
-                    boxShadow: 'inset 0 0 0 1px rgba(22, 32, 43, 0.28)',
+                    boxShadow: 'inset 0 0 0 1px #16202B47',
                   }}
                 />
               )}

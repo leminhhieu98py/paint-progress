@@ -1,7 +1,6 @@
 import { ArrowLeftOutlined, RightOutlined } from '@ant-design/icons'
 import { Fragment, type ReactNode } from 'react'
 import { palette } from '../theme'
-import { Mono } from './Mono'
 
 export interface Crumb {
   label: string
@@ -127,7 +126,7 @@ export function PageHeader({
               {title}
             </h1>
             {badge !== undefined && (
-              <Mono
+              <span
                 style={{
                   fontSize: 11,
                   fontWeight: 600,
@@ -139,7 +138,7 @@ export function PageHeader({
                 }}
               >
                 {badge}
-              </Mono>
+              </span>
             )}
           </div>
           {subtitle !== undefined && (

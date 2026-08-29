@@ -1,7 +1,6 @@
 import { DownOutlined, InfoCircleOutlined } from '@ant-design/icons'
 import { useState } from 'react'
 import { palette } from '../theme'
-import { Mono } from './Mono'
 
 export interface Rule {
   /** The spec's own id, e.g. STG-R1. Same name on screen and in the spec. */
@@ -87,7 +86,7 @@ export function RulesDisclosure({ rules }: { rules: Rule[] }) {
                 borderTop: `1px solid ${palette.borderSplit}`,
               }}
             >
-              <Mono
+              <span
                 style={{
                   fontSize: 10,
                   fontWeight: 600,
@@ -102,7 +101,7 @@ export function RulesDisclosure({ rules }: { rules: Rule[] }) {
                 }}
               >
                 {r.id}
-              </Mono>
+              </span>
               <span style={{ fontSize: 13, lineHeight: 1.5, color: palette.textSecondary }}>
                 {r.text}
               </span>

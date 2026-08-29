@@ -72,7 +72,7 @@ export function Donut({
           inset: 0,
           borderRadius: '50%',
           background: `conic-gradient(${conicStops(slices, remainderColor)})`,
-          boxShadow: 'inset 0 0 0 1px rgba(22, 32, 43, 0.08)',
+          boxShadow: 'inset 0 0 0 1px #16202B14',
         }}
       />
       <div
@@ -81,7 +81,7 @@ export function Donut({
           inset: thickness,
           borderRadius: '50%',
           background: palette.bgContainer,
-          boxShadow: '0 2px 9px -4px rgba(22, 32, 43, 0.18)',
+          boxShadow: '0 2px 9px -4px #16202B2E',
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',

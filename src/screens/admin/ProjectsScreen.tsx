@@ -3,7 +3,6 @@ import { Alert, Button, Form, Input, Modal, Table, Tooltip } from 'antd'
 import dayjs from 'dayjs'
 import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Mono } from '../../components/Mono'
 import { PageBody, PageHeader } from '../../components/PageHeader'
 import { ProgressBar } from '../../components/ProgressBar'
 import { SectionCard } from '../../components/SectionCard'
@@ -179,6 +178,7 @@ export function ProjectsScreen() {
 
         <SectionCard bodyPadding={0}>
           <Table<ProjectRow>
+            className="pp-table"
             rowKey="id"
             loading={loading}
             dataSource={rows}
@@ -199,7 +199,7 @@ export function ProjectsScreen() {
                 dataIndex: 'name',
                 render: (_v, row) => (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                    <Mono
+                    <span
                       style={{
                         width: 32,
                         height: 32,
@@ -214,10 +214,10 @@ export function ProjectsScreen() {
                       }}
                     >
                       {row.code.slice(0, 2).toUpperCase()}
-                    </Mono>
+                    </span>
                     <div style={{ minWidth: 0 }}>
                       <div style={{ fontWeight: 600, lineHeight: 1.35 }}>{row.name}</div>
-                      <Mono style={{ fontSize: 11, color: palette.textTertiary }}>{row.code}</Mono>
+                      <span style={{ fontSize: 11, color: palette.textTertiary }}>{row.code}</span>
                     </div>
                   </div>
                 ),

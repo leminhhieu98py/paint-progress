@@ -34,3 +34,45 @@ body {
   letter-spacing: -0.006em;
   -webkit-font-smoothing: antialiased;
 }
+
+/*
+  The live dot on the "Ghi nhận gần nhất" card. A static orange dot reads as a
+  decorative bullet; the ring expanding out of it is what says the number above
+  is still moving. Colour is palette.flame with the alpha in the hex, so every
+  colour in this app is written one way.
+*/
+@keyframes pp-pulse {
+  0% {
+    box-shadow: 0 0 0 0 #f9731680;
+  }
+  70% {
+    box-shadow: 0 0 0 7px #f9731600;
+  }
+  100% {
+    box-shadow: 0 0 0 0 #f9731600;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  @keyframes pp-pulse {
+    0%,
+    100% {
+      box-shadow: 0 0 0 0 #f9731600;
+    }
+  }
+}
+
+/*
+  Table cells sit flush against the SectionCard edge -- every list on this app
+  is a bodyPadding={0} card -- so the first and last columns carry the card's
+  own 20px gutter. antd's uniform 16px left the first column a few pixels
+  inboard of the card title above it, which reads as a misalignment rather
+  than as a choice.
+*/
+.pp-table .ant-table-cell:first-child {
+  padding-left: 20px;
+}
+
+.pp-table .ant-table-cell:last-child {
+  padding-right: 20px;
+}

@@ -24,4 +24,12 @@ describe('StatCard', () => {
     render(<StatCard label="Số sàn" value="11" />)
     expect(screen.queryByTestId('stat-live-dot')).not.toBeInTheDocument()
   })
+
+  it('keeps the live dot pulsing, so "live" reads as still-happening', () => {
+    // A static orange dot is indistinguishable from a decorative bullet. The
+    // admin looks at this card to answer "is anyone on the platform working
+    // right now?", and only motion answers that without a second glance.
+    render(<StatCard label="Ghi nhận gần nhất" value="09:42" tone="accent" live />)
+    expect(screen.getByTestId('stat-live-dot').style.animation).toContain('pp-pulse')
+  })
 })

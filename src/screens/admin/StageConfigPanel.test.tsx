@@ -402,7 +402,7 @@ describe('StageConfigPanel', () => {
     render(<StageConfigPanel deckId="d1" />)
     await screen.findByDisplayValue('Coat 2')
     await userEvent.click(screen.getByRole('button', { name: 'Thêm lớp' }))
-    expect(screen.getAllByRole('textbox')).toHaveLength(3)
+    expect(screen.getAllByLabelText('Tên lớp sơn')).toHaveLength(3)
     // Cumulative progress reads stages by seq, so the new row must land at 3,
     // not stay at the placeholder 0 a dropped renumber() would leave it at.
     expect(screen.getByTestId('seq-2')).toHaveTextContent('3')
@@ -537,7 +537,7 @@ describe('StageConfigPanel', () => {
     await screen.findByDisplayValue('Coat 2')
     await userEvent.click(screen.getAllByRole('button', { name: 'Lên' })[1])
 
-    const names = screen.getAllByRole('textbox').map((i) => (i as HTMLInputElement).value)
+    const names = screen.getAllByLabelText('Tên lớp sơn').map((i) => (i as HTMLInputElement).value)
     expect(names).toEqual(['Coat 2', 'Blast + Coat 1'])
     // Cumulative progress reads stages by seq, so gaps or ties would corrupt it.
     expect(screen.getAllByText(/^[12]$/).map((n) => n.textContent)).toEqual(['1', '2'])
@@ -556,7 +556,7 @@ describe('StageConfigPanel', () => {
     render(<StageConfigPanel deckId="d1" />)
     await screen.findByDisplayValue('Coat 1')
 
-    const second = screen.getAllByRole('textbox')[1]
+    const second = screen.getAllByLabelText('Tên lớp sơn')[1]
     await userEvent.clear(second)
     await userEvent.type(second, 'coat 1 ')
 
@@ -585,6 +585,53 @@ describe('StageConfigPanel', () => {
     await waitFor(() => expect(screen.getAllByRole('textbox')[0]).toHaveValue('Coat 2'))
     expect(screen.getByTestId('seq-0')).toHaveTextContent('1')
     expect(screen.getByTestId('seq-1')).toHaveTextContent('2')
+  })
+})
+
+describe('StageConfigPanel hex field', () => {
+  it('saves a colour typed as hex, so the swatch is not the only way in', async () => {
+    // The native swatch cannot be driven by keyboard, cannot be read back over
+    // the phone, and cannot be pasted out of a paint spec. The hex beside it is
+    // the field an admin actually uses when the colour arrives as text.
+    saveStages.mockResolvedValue(undefined)
+    const user = userEvent.setup()
+    render(<StageConfigPanel deckId="d1" />)
+    const hex = await screen.findByLabelText('Mã màu · Blast + Coat 1')
+    await user.clear(hex)
+    await user.type(hex, '#123ABC')
+    await user.click(screen.getByRole('button', { name: 'Lưu' }))
+
+    await waitFor(() => expect(saveStages).toHaveBeenCalledTimes(1))
+    expect(saveStages.mock.calls[0][1][0].color).toBe('#123abc')
+  })
+
+  it('holds the save shut on a half-typed hex rather than storing the old colour', async () => {
+    // Storing the previous colour on an unfinished keystroke is the failure
+    // that costs an afternoon: the admin types, saves, sees no error, and the
+    // drawing keeps the colour they thought they had just replaced.
+    const user = userEvent.setup()
+    render(<StageConfigPanel deckId="d1" />)
+    const hex = await screen.findByLabelText('Mã màu · Blast + Coat 1')
+    await user.clear(hex)
+    await user.type(hex, '#12')
+
+    // The keystrokes stay on screen -- a field that erases what you type reads
+    // as broken -- but they are marked invalid and the save is locked.
+    expect(hex).toHaveValue('#12')
+    expect(hex).toHaveAttribute('aria-invalid', 'true')
+    expect(screen.getByRole('button', { name: 'Lưu' })).toBeDisabled()
+    expect(saveStages).not.toHaveBeenCalled()
+  })
+
+  it('reopens the save once the hex is complete again', async () => {
+    const user = userEvent.setup()
+    render(<StageConfigPanel deckId="d1" />)
+    const hex = await screen.findByLabelText('Mã màu · Blast + Coat 1')
+    await user.clear(hex)
+    await user.type(hex, '#12')
+    expect(screen.getByRole('button', { name: 'Lưu' })).toBeDisabled()
+    await user.type(hex, '3abc')
+    expect(screen.getByRole('button', { name: 'Lưu' })).toBeEnabled()
   })
 })
 

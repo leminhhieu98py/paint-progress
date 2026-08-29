@@ -15,7 +15,6 @@ import { buildReportWorkbook, reportFileName, type DeckImages } from '../../lib/
 import { NEW_DECK } from '../../config'
 import { Donut, type DonutSlice } from '../../components/Donut'
 import { EmptyState } from '../../components/EmptyState'
-import { Mono } from '../../components/Mono'
 import { PageBody, PageHeader } from '../../components/PageHeader'
 import { ProgressBar } from '../../components/ProgressBar'
 import { RulesDisclosure } from '../../components/RulesDisclosure'
@@ -294,6 +293,7 @@ export function DecksScreen() {
 
         <SectionCard bodyPadding={0}>
           <Table<DeckRow>
+            className="pp-table"
             rowKey="id"
             loading={loading}
             dataSource={decks}
@@ -316,7 +316,6 @@ export function DecksScreen() {
                 title: 'Mã',
                 dataIndex: 'code',
                 width: 120,
-                render: (v: string) => <Mono style={{ fontSize: 12 }}>{v}</Mono>,
               },
               { title: 'Số ô', dataIndex: 'cellCount', width: 90, align: 'right' },
               {
@@ -392,6 +391,7 @@ export function DecksScreen() {
                 style={{ borderRight: `1px solid ${palette.borderCard}`, minWidth: 0 }}
               >
                 <Table<RollupRow>
+                  className="pp-table"
                   size="small"
                   pagination={false}
                   dataSource={rollupRows}
@@ -402,7 +402,6 @@ export function DecksScreen() {
                       dataIndex: 'code',
                       key: 'code',
                       width: 100,
-                      render: (v: string) => <Mono style={{ fontSize: 12 }}>{v}</Mono>,
                     },
                     { title: 'Tỉ trọng', dataIndex: 'share', key: 'share', width: 110, align: 'right' },
                     {
@@ -452,9 +451,9 @@ export function DecksScreen() {
                     <span style={{ fontSize: 21, fontWeight: 700, letterSpacing: '-0.028em' }}>
                       {formatPercent(rollup.progress)}
                     </span>
-                    <Mono style={{ fontSize: 10, color: palette.textTertiary, marginTop: 3 }}>
+                    <span style={{ fontSize: 10, color: palette.textTertiary, marginTop: 3 }}>
                       toàn dự án
-                    </Mono>
+                    </span>
                   </Donut>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0, flex: 1 }}>
                     {slices.map((sl) => (

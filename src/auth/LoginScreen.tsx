@@ -57,7 +57,7 @@ export function Hero() {
           width: 540,
           height: 540,
           borderRadius: '50%',
-          background: 'rgba(10, 129, 117, 0.09)',
+          background: '#0A817517',
         }}
       />
       <div style={{ position: 'relative', display: 'flex', gap: 7, alignItems: 'flex-end' }}>

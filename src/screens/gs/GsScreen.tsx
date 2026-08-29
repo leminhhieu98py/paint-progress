@@ -26,7 +26,6 @@ import { CellStageModal } from './CellStageModal'
 import { StagePie } from './StagePie'
 import { StageSpecTable } from '../../components/StageSpecTable'
 import { LogoutOutlined } from '@ant-design/icons'
-import { Mono } from '../../components/Mono'
 import { fieldError, palette } from '../../theme'
 import { EmptyState } from '../../components/EmptyState'
 import { SectionCard } from '../../components/SectionCard'
@@ -609,7 +608,7 @@ export function GsScreen() {
         />
         <div style={{ textAlign: 'right', flex: 'none' }}>
           <div style={{ fontWeight: 600, lineHeight: 1.25 }}>{profile?.fullName}</div>
-          <Mono style={{ fontSize: 11, color: palette.textTertiary }}>{profile?.username}</Mono>
+          <span style={{ fontSize: 11, color: palette.textTertiary }}>{profile?.username}</span>
         </div>
         {/* Spec §8.1: no account UI. Logout only. */}
         <Button

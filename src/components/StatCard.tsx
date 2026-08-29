@@ -55,6 +55,9 @@ export function StatCard({
               borderRadius: '50%',
               background: palette.flame,
               flex: 'none',
+              // Keyframes live in index.css -- inline styles cannot declare
+              // them. Reduced-motion flattens the ring there too.
+              animation: 'pp-pulse 1.9s ease-out infinite',
             }}
           />
         )}
