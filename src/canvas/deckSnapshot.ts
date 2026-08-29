@@ -9,7 +9,7 @@ import type { Cell, Stage } from '../domain/types'
  * runs over EVERY deck of a project while at most one is on screen, so both are
  * drawn straight onto a detached `<canvas>` with the 2D context.
  *
- * Deliberately not Konva or recharts rendered offscreen. Both would mean
+ * Deliberately not Konva rendered offscreen. That would mean
  * mounting a React tree into a hidden node, waiting for a paint, and reading it
  * back -- three things that can hang, for pictures that are two flat fills and a
  * ring of arcs. The colours come from the same `paintLensColors` and
@@ -131,7 +131,7 @@ export function renderDeckPie(
   const cy = PIE_SIZE / 2
   const outer = PIE_SIZE * 0.42
   const inner = outer * 0.6
-  // From twelve o'clock, clockwise -- the direction recharts draws it, so the
+  // From twelve o'clock, clockwise -- the direction the on-screen ring draws it, so the
   // workbook and the screen read the same way round.
   let angle = -Math.PI / 2
 

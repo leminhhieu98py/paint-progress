@@ -1,14 +1,13 @@
 import {
-  Alert, App, Button, Col, Layout, Row, Space, Spin, Switch, Tabs, Typography,
+  Alert, App, Button, Grid, Layout, Spin, Tabs,
 } from 'antd'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useAuth } from '../../auth/AuthProvider'
 
 import { DrawingCanvas } from '../../canvas/DrawingCanvas'
-import { buildPlanLabels } from '../../domain/plan'
-import { buildStageSlices } from '../../domain/pieSlices'
-import { paintLensColors } from '../../domain/lens'
+import { formatPlanRange } from '../../domain/plan'
+import { paintLensColors, zoneLensColors, ZONE_PALETTE } from '../../domain/lens'
 import { computeDeckProgress } from '../../domain/progress'
 import type { Cell, Deck, Stage, Zone } from '../../domain/types'
 // One signed-URL helper for both roles: the bucket name and the 3600-second
@@ -16,19 +15,19 @@ import type { Cell, Deck, Stage, Zone } from '../../domain/types'
 // one. Screens still never touch `supabase` directly.
 import { LOGIN_PATH } from '../../config'
 import { getDrawingUrl, listStages } from '../../lib/decksApi'
-import { formatAreaM2 } from '../../lib/format'
+import { formatAreaM2, formatPercent } from '../../lib/format'
 import {
-  listDeckCells, loadGsProject, setCellStage, subscribeDeckCells,
+  listDeckCells, listProjectCellStages, loadGsProject, setCellStage, subscribeDeckCells,
   type GsDeck, type GsRealtimeStatus,
 } from '../../lib/gsApi'
 import { listDeckZones } from '../../lib/zonesApi'
 import { CellStageModal } from './CellStageModal'
-import { StagePie } from './StagePie'
 import { ConsequenceModal } from '../../components/ConsequenceModal'
-import { StageSpecTable } from '../../components/StageSpecTable'
 import { LogoutOutlined } from '@ant-design/icons'
-import { fieldError, palette } from '../../theme'
+import { fieldError, palette, shadowCard } from '../../theme'
+import { CalendarOutlined } from '@ant-design/icons'
 import { EmptyState } from '../../components/EmptyState'
+import { DeckProgressCard, StageRollupCard } from './DeckStatsCards'
 import { SectionCard } from '../../components/SectionCard'
 
 /**
@@ -401,6 +400,8 @@ export function GsScreen() {
   }, [deck?.imagePath])
 
   /**
+   * prog(D) and each coat's cumulative share, for this deck.
+   *
    * computeDeckProgress takes a domain Deck, which carries its cells; GsDeck
    * carries the drawing instead, because the cells are fetched per deck. The
    * denominator is deck.totalAreaM2 and never the cells' own sum (spec §3.2).
@@ -417,27 +418,20 @@ export function GsScreen() {
     return computeDeckProgress(asDomainDeck, stages)
   }, [deck, cells, stages])
 
-  const slices = useMemo(
-    () => buildStageSlices(deck?.totalAreaM2 ?? 0, cells, stages),
-    [deck?.totalAreaM2, cells, stages],
-  )
-
   /**
-   * Whether the cells cover more than the deck declares -- the one state in which
-   * the pie's picture contradicts its own legend.
+   * Whether the cells cover more than the deck declares.
    *
-   * recharts derives each wedge's angle from the sum of the array it is handed,
-   * and buildStageSlices omits the unmapped slice when it would be negative
-   * (there is no negative wedge to draw). So on a deck declaring 500 m² whose
-   * cells cover 700, a stage holding 300 m² occupies 300/700 = 42,86% of the ring
-   * while its own legend row an inch away reads 300/500 = 60,00%. The printed
-   * numbers are the right ones and are tested; the picture is the thing lying.
+   * The ring is drawn from bay COUNTS, not areas, so it no longer contradicts
+   * its own legend the way the recharts pie did -- but the disclosure stays,
+   * because the condition it describes is still real and still the admin's to
+   * fix: a deck declaring 500 m² whose bays cover 700 is a deck whose area or
+   * whose mesh is wrong.
    *
-   * Disclosed, NOT renormalised. Dividing the legend by Σ cell area instead would
-   * make it agree with a wedge whose denominator is not the deck -- and spec §3.2
-   * makes total_area_m2 the denominator of every percentage in this product,
-   * including the one the customer is billed against. Non-blocking, matching how
-   * spec §11 treats divergence in the admin's deck editor.
+   * Disclosed, NOT renormalised. Dividing by Σ cell area instead would make
+   * every figure on the screen agree with each other and with nothing else --
+   * spec §3.2 makes total_area_m2 the denominator of every percentage in this
+   * product, including the one the customer is billed against. Non-blocking,
+   * matching how spec §11 treats divergence in the admin's deck editor.
    */
   const mappedAreaM2 = useMemo(
     () => cells.reduce((sum, c) => sum + c.areaM2, 0),
@@ -453,6 +447,58 @@ export function GsScreen() {
 
   const [showPlan, setShowPlan] = useState(false)
   const [zones, setZones] = useState<Zone[]>([])
+  /**
+   * prog(D) per deck, for the tabs.
+   *
+   * Empty until the batched read lands, and the tab shows an em dash rather
+   * than a 0,00% it does not know yet -- a wrong figure on the tab the foreman
+   * is choosing by is worse than no figure.
+   */
+  const [deckPercents, setDeckPercents] = useState<Record<string, number>>({})
+
+  useEffect(() => {
+    const ids = decks.map((d) => d.id)
+    if (ids.length === 0 || stages.length === 0) return
+    let cancelled = false
+    listProjectCellStages(ids)
+      .then((byDeck) => {
+        if (cancelled) return
+        setDeckPercents(
+          Object.fromEntries(
+            decks.map((d) => [
+              d.id,
+              computeDeckProgress(
+                {
+                  id: d.id,
+                  code: d.code,
+                  name: d.name,
+                  totalAreaM2: d.totalAreaM2,
+                  // Only area and stage are read; computeDeckProgress touches
+                  // nothing else on a cell.
+                  cells: (byDeck[d.id] ?? []).map((c, i) => ({
+                    id: `${d.id}-${i}`,
+                    code: '',
+                    x: 0,
+                    y: 0,
+                    w: 0,
+                    h: 0,
+                    areaM2: c.areaM2,
+                    stageId: c.stageId,
+                  })),
+                },
+                stages,
+              ).progress,
+            ]),
+          ),
+        )
+      })
+      .catch(() => {
+        // The tabs fall back to an em dash. Nothing else on the screen depends
+        // on this, and an error banner for a decoration on a tab would push the
+        // drawing down the page on a tablet.
+      })
+    return () => { cancelled = true }
+  }, [decks, stages, cells])
 
   /**
    * Fetched only while the toggle is on. Zones are empty for every deck until
@@ -477,14 +523,42 @@ export function GsScreen() {
     }
   }, [showPlan, activeDeckId])
 
-  const planLabels = useMemo(
-    () => (showPlan ? buildPlanLabels(zones, cells) : undefined),
-    [showPlan, zones, cells],
+  /**
+   * With the plan on, bays wear their ZONE's colour and the zones are named
+   * once, in a panel over the corner of the drawing.
+   *
+   * It used to write each zone's date range onto every bay of it. On a
+   * 184-bay deck that is 184 copies of three answers, at a size nobody reads
+   * through a glove -- and it buried the drawing the foreman is matching
+   * against the paper one in his hand.
+   */
+  const planZones = useMemo(
+    () => zones.filter((z) => z.startDate || z.finishDate),
+    [zones],
+  )
+  const planColors = useMemo(
+    () => Object.fromEntries(planZones.map((z, i) => [z.id, ZONE_PALETTE[i % ZONE_PALETTE.length]])),
+    [planZones],
+  )
+  const planCellColors = useMemo(
+    () => (showPlan ? zoneLensColors(planZones, cells) : undefined),
+    [showPlan, planZones, cells],
   )
 
   const [selectedCell, setSelectedCell] = useState<Cell | null>(null)
   const { message } = App.useApp()
   const [confirmingOut, setConfirmingOut] = useState(false)
+  /**
+   * Which of the three shapes this screen is in.
+   *
+   * `lg` is where a drawing and a 372px rail both fit without the drawing
+   * losing the width its tap targets need; `sm` is where a phone stops being a
+   * phone. antd's own breakpoints, so this agrees with every Grid on the admin
+   * side rather than inventing a second set.
+   */
+  const screens = Grid.useBreakpoint()
+  const wide = Boolean(screens.lg)
+  const phone = !screens.sm
 
   /**
    * Spec §11 row 1: optimistic local update so the chart moves with no
@@ -599,13 +673,20 @@ export function GsScreen() {
           items={decks.map((d) => ({
             key: d.id,
             /*
-              Name only. The prototype puts a percentage on every tab, which
-              would mean loading every deck's cells to compute it -- the
-              heaviest read in the app, done once per deck on a site tether,
-              for numbers the foreman is not looking at. The open deck's
-              percentage is already the largest thing on the screen below.
+              Name AND percentage. The foreman picks a deck to work on, and
+              "which one is behind" is the question he picks by -- without a
+              figure the tabs are three names in an order nobody chose. The
+              numbers come from one batched three-column read of the project
+              (listProjectCellStages), not from loading each deck in full.
             */
-            label: d.name,
+            label: (
+              <span style={{ display: 'inline-flex', flexDirection: 'column', gap: 3 }}>
+                <span style={{ fontWeight: 600, lineHeight: 1.2 }}>{d.name}</span>
+                <span style={{ fontSize: 11, fontWeight: 500, opacity: 0.75 }}>
+                  {deckPercents[d.id] === undefined ? '—' : formatPercent(deckPercents[d.id])}
+                </span>
+              </span>
+            ),
           }))}
         />
         <div style={{ textAlign: 'right', flex: 'none' }}>
@@ -650,63 +731,139 @@ export function GsScreen() {
         </div>
       )}
 
-      <Layout.Content style={{ padding: 12 }}>
+      <Layout.Content
+        style={{
+          flex: 1,
+          minHeight: 0,
+          overflowY: 'auto',
+          display: 'grid',
+          /*
+            Two columns on a laptop, one on anything narrower. The drawing is
+            the work; the rail is what the drawing is worth. On a tablet held
+            portrait there is no width for both, and squeezing them side by side
+            costs the drawing exactly the pixels the foreman taps through a
+            glove -- so the rail goes underneath instead.
+          */
+          gridTemplateColumns: wide ? 'minmax(0,1fr) minmax(320px,372px)' : 'minmax(0,1fr)',
+          gap: wide ? 16 : 12,
+          alignItems: 'start',
+          padding: phone ? 12 : 16,
+        }}
+      >
+        <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {stagesError && (
+            <Alert
+              type="warning"
+              showIcon
+              message="Không tải được lớp sơn của sàn"
+              description="Phần trăm bên dưới đang tính thiếu. Thử lại sau khi có mạng."
+            />
+          )}
 
-        {stagesError && (
-          <Alert
-            type="warning"
-            showIcon
-            style={{ marginBottom: 12 }}
-            message="Không tải được lớp sơn của sàn"
-            description="Phần trăm bên dưới đang tính thiếu. Thử lại sau khi có mạng."
-          />
-        )}
+          {drawingError && (
+            <Alert
+              type="warning"
+              showIcon
+              message="Không tải được bản vẽ"
+              description="Số liệu bên dưới vẫn đúng. Thử lại sau khi có mạng."
+            />
+          )}
 
-        {drawingError && (
-          <Alert
-            type="warning"
-            showIcon
-            style={{ marginBottom: 12 }}
-            message="Không tải được bản vẽ"
-            description="Số liệu bên dưới vẫn đúng. Thử lại sau khi có mạng."
-          />
-        )}
-
-        <Row gutter={12}>
-          <Col xs={24} md={14}>
-            <SectionCard
-              title={deck?.name}
-              summary={
-                deck ? `${cells.length} ô · ${formatAreaM2(deck.totalAreaM2)} m²` : undefined
-              }
-              bodyPadding={0}
-              extra={
-                /* aria-label on the Switch rather than a <label htmlFor>: antd
-                   renders a <button>, which is not a labelable element, so a
-                   label would associate with nothing and leave the control
-                   with no accessible name. */
-                <Space>
-                  <Switch checked={showPlan} onChange={setShowPlan} aria-label="Hiện kế hoạch" />
-                  <Typography.Text>Hiện kế hoạch</Typography.Text>
-                </Space>
-              }
-            >
+          <SectionCard
+            title={deck?.name}
+            summary={deck ? `${cells.length} ô · ${formatAreaM2(deck.totalAreaM2)} m²` : undefined}
+            bodyPadding={0}
+            extra={
+              /*
+                A button, not a switch. It is pressed through a glove, so it
+                carries the field theme's full 48px height and its own label --
+                a 20px switch beside separate text is two targets for one
+                decision. The label drops on a phone, where the calendar icon
+                and the pressed state carry it.
+              */
+              <Button
+                type={showPlan ? 'primary' : 'default'}
+                icon={<CalendarOutlined aria-hidden />}
+                aria-label="Hiện kế hoạch"
+                aria-pressed={showPlan}
+                onClick={() => setShowPlan((on) => !on)}
+              >
+                {phone ? null : 'Hiện kế hoạch'}
+              </Button>
+            }
+          >
             {deck && deck.imagePath && deck.imageW && deck.imageH && imageUrl ? (
-              <DrawingCanvas
-                key={deck.id}
-                imageUrl={imageUrl}
-                imageW={deck.imageW}
-                imageH={deck.imageH}
-
-                cells={cells}
-                selectedCodes={[]}
-                cellColors={cellColors}
-                planLabels={planLabels}
-                panZoom
-                onCellClick={(code) => {
-                  setSelectedCell(cells.find((c) => c.code === code) ?? null)
-                }}
-              />
+              <div style={{ position: 'relative' }}>
+                <DrawingCanvas
+                  key={deck.id}
+                  imageUrl={imageUrl}
+                  imageW={deck.imageW}
+                  imageH={deck.imageH}
+                  cells={cells}
+                  selectedCodes={[]}
+                  cellColors={showPlan ? (planCellColors ?? {}) : cellColors}
+                  panZoom
+                  onCellClick={(code) => {
+                    setSelectedCell(cells.find((c) => c.code === code) ?? null)
+                  }}
+                />
+                {/*
+                  The plan's key, once, over the corner of the drawing rather
+                  than written onto all 184 bays. Three zones and their windows
+                  is what the foreman actually needs off this: which block he is
+                  on, and whether it is due.
+                */}
+                {showPlan && planZones.length > 0 && (
+                  <div
+                    data-testid="gs-zone-legend"
+                    style={{
+                      position: 'absolute',
+                      zIndex: 4,
+                      left: 12,
+                      bottom: 12,
+                      background: '#FFFFFFF5',
+                      border: `1px solid ${palette.borderCard}`,
+                      borderRadius: 12,
+                      padding: '12px 13px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 9,
+                      boxShadow: shadowCard,
+                      maxWidth: 'calc(100% - 24px)',
+                    }}
+                  >
+                    {planZones.map((z) => (
+                      <div
+                        key={z.id}
+                        style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}
+                      >
+                        <span
+                          aria-hidden
+                          style={{
+                            width: 15,
+                            height: 15,
+                            flex: 'none',
+                            borderRadius: 5,
+                            background: planColors[z.id],
+                            boxShadow: 'inset 0 0 0 1px #16202B47',
+                          }}
+                        />
+                        <span style={{ fontSize: 13, fontWeight: 600, flex: 'none' }}>{z.name}</span>
+                        <span
+                          style={{
+                            marginLeft: 'auto',
+                            fontSize: 12,
+                            color: palette.textSecondary,
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          {formatPlanRange(z.startDate, z.finishDate)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             ) : (
               !drawingError && (
                 <EmptyState
@@ -715,69 +872,47 @@ export function GsScreen() {
                 />
               )
             )}
-            </SectionCard>
-          </Col>
-          <Col xs={24} md={10}>
-            {/*
-              No separate "Tiến độ sàn" card here, though the prototype has
-              one. StagePie already prints this deck's percentage and its total
-              area, and a second copy a few pixels away is not emphasis -- it
-              is two numbers to keep in step, and one of them will eventually
-              be the stale one.
-            */}
-            <div data-testid="gs-chart-region">
-              {overCovered && deck && (
-                <Alert
-                  type="warning"
-                  showIcon
-                  style={{ marginBottom: 8 }}
-                  message="Diện tích các ô vượt diện tích sàn khai báo"
-                  description={`Các ô cộng lại ${formatAreaM2(mappedAreaM2)} m², sàn khai báo ${formatAreaM2(deck.totalAreaM2)} m². Hình vẽ chia theo tổng diện tích các ô nên không khớp với tỷ lệ ghi bên cạnh, và các tỷ lệ cộng lại vượt 100%. Các con số vẫn tính theo diện tích sàn khai báo. Nhờ quản trị viên kiểm tra lại diện tích sàn hoặc lưới ô.`}
-                />
-              )}
-              <StagePie
-                slices={slices}
-                totalAreaM2={deck?.totalAreaM2 ?? 0}
-                progress={deckProgress?.progress ?? 0}
-              />
-            </div>
-          </Col>
-        </Row>
-      </Layout.Content>
-
-      {/*
-        Sticky, and now inset to match the cards above it rather than running
-        to both edges of the glass. It stays pinned because it is the answer
-        the foreman is asked for on the radio, and scrolling a drawing to find
-        it is not something to do one-handed on a scaffold.
-      */}
-      <div
-        data-testid="gs-spec-region"
-        style={{
-          position: 'sticky',
-          bottom: 0,
-          background: palette.bgContainer,
-          borderTop: `1px solid ${palette.borderCard}`,
-          padding: '12px 16px 16px',
-        }}
-      >
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'baseline',
-            gap: 8,
-            marginBottom: 10,
-          }}
-        >
-          <Typography.Text type="secondary" style={{ fontSize: 12, fontWeight: 600 }}>
-            Tổng diện tích sàn
-          </Typography.Text>
-          <Typography.Text style={{ fontWeight: 600 }}>
-            {`${formatAreaM2(deck?.totalAreaM2 ?? 0)} m²`}
-          </Typography.Text>
+          </SectionCard>
         </div>
-        <StageSpecTable stages={deckProgress?.stages ?? []} />
-      </div>
+
+        {/*
+          Stacked on a laptop, side by side on a tablet, stacked again on a
+          phone -- the rail follows the width it is given rather than the
+          breakpoint it was born in.
+        */}
+        <div
+          data-testid="gs-chart-region"
+          style={
+            wide
+              ? { display: 'flex', flexDirection: 'column', gap: 14, minWidth: 0 }
+              : {
+                display: 'grid',
+                gridTemplateColumns: phone ? 'minmax(0,1fr)' : 'repeat(auto-fit,minmax(300px,1fr))',
+                gap: 12,
+              }
+          }
+        >
+          {overCovered && deck && (
+            <Alert
+              type="warning"
+              showIcon
+              message="Diện tích các ô vượt diện tích sàn khai báo"
+              description={`Các ô cộng lại ${formatAreaM2(mappedAreaM2)} m², sàn khai báo ${formatAreaM2(deck.totalAreaM2)} m². Các con số vẫn tính theo diện tích sàn khai báo. Nhờ quản trị viên kiểm tra lại diện tích sàn hoặc lưới ô.`}
+            />
+          )}
+          <DeckProgressCard
+            progress={deckProgress?.progress ?? 0}
+            totalAreaM2={deck?.totalAreaM2 ?? 0}
+          />
+          {cells.length > 0 && (
+            <StageRollupCard
+              stages={stages}
+              stageProgress={deckProgress?.stages ?? []}
+              cells={cells}
+            />
+          )}
+        </div>
+      </Layout.Content>
 
       <CellStageModal
         cell={selectedCell}

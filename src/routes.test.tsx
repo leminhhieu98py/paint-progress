@@ -58,7 +58,7 @@ vi.mock('./screens/admin/DecksScreen', () => ({
 vi.mock('./screens/admin/UsersScreen', () => ({
   UsersScreen: () => <div>USERS SCREEN</div>,
 }))
-// Konva and recharts, and its own data fetching. This file is about which route
+// Konva, and its own data fetching. This file is about which route
 // a signed-in profile lands on, not what the destination renders. The projectId
 // is rendered so the assertion below can prove the redirect landed on THIS
 // project's screen and not merely "some" GS route.

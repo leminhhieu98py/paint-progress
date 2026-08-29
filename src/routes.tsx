@@ -10,7 +10,7 @@ import { fieldTheme } from './theme'
 
 // Every screen behind a role gate is React.lazy, and for two different reasons.
 // The admin screens pull in pdf.js and Konva (and, from Phase 4, ExcelJS), which
-// a foreman must never download. The GS screen pulls in Konva and recharts,
+// a foreman must never download. The GS screen pulls in Konva,
 // which nobody should download to look at the LOGIN form -- and login is the
 // one screen everybody loads first, on a site tether. Only the login screen
 // (reached through RequireRole) and IndexRedirect stay eager: they are the

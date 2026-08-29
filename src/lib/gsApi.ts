@@ -137,6 +137,49 @@ export async function listDeckCells(deckId: string): Promise<Cell[]> {
 }
 
 /**
+ * Just enough of every deck's bays to put a percentage on its tab.
+ *
+ * Area and stage only, for every deck at once. The tabs used to carry the name
+ * alone, on the reasoning that a per-deck figure would mean the heaviest read
+ * in the app once per deck on a site tether -- true of `listDeckCells`, which
+ * pulls geometry and notes as well, and false of this: three small columns in
+ * one round trip, lighter than the single full read the open deck already
+ * makes.
+ *
+ * It matters on the tablet because the foreman picks a deck to work on, and
+ * "which one is behind" is the question he picks by. Without a figure the tabs
+ * are three names in an order nobody chose.
+ *
+ * Grouped by deck here rather than in SQL: PostgREST has no GROUP BY, and the
+ * weighted percentage is computeDeckProgress's to work out anyway -- doing half
+ * of it in the database would put the spec §3.2 denominator rule in two places.
+ */
+export async function listProjectCellStages(
+  deckIds: string[],
+): Promise<Record<string, { areaM2: number; stageId: string | null }[]>> {
+  if (deckIds.length === 0) return {}
+  const { data, error } = await supabase
+    .from('cells')
+    .select('deck_id, area_m2, stage_id')
+    .in('deck_id', deckIds)
+  if (error) throw new Error(error.message)
+
+  const byDeck: Record<string, { areaM2: number; stageId: string | null }[]> = {}
+  for (const id of deckIds) byDeck[id] = []
+  for (const row of (data ?? []) as Record<string, unknown>[]) {
+    const deckId = row.deck_id as string
+    // A deck id the caller did not ask about cannot appear -- the filter is on
+    // the same list -- but a missing bucket would throw rather than be ignored.
+    if (!byDeck[deckId]) byDeck[deckId] = []
+    byDeck[deckId].push({
+      areaM2: Number(row.area_m2),
+      stageId: (row.stage_id as string | null) ?? null,
+    })
+  }
+  return byDeck
+}
+
+/**
  * Record which coat a bay has reached. The only write the GS screen makes.
  *
  * The payload is stage_id and note and nothing else, and that is a hard

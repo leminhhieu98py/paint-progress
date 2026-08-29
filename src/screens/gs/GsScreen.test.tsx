@@ -9,6 +9,7 @@ import { GsScreen } from './GsScreen'
 
 const loadGsProject = vi.hoisted(() => vi.fn())
 const listDeckCells = vi.hoisted(() => vi.fn())
+const listProjectCellStages = vi.hoisted(() => vi.fn())
 const listDeckZones = vi.hoisted(() => vi.fn())
 const setCellStage = vi.hoisted(() => vi.fn())
 const subscribeDeckCells = vi.hoisted(() => vi.fn())
@@ -19,6 +20,7 @@ const signOut = vi.hoisted(() => vi.fn())
 vi.mock('../../lib/gsApi', () => ({
   loadGsProject: (projectId: string) => loadGsProject(projectId),
   listDeckCells: (deckId: string) => listDeckCells(deckId),
+  listProjectCellStages: (ids: string[]) => listProjectCellStages(ids),
   setCellStage: (cellId: string, stageId: string | null) => setCellStage(cellId, stageId),
   subscribeDeckCells: (deckId: string, handlers: Handlers) =>
     subscribeDeckCells(deckId, handlers),
@@ -149,6 +151,8 @@ const unsubscribe = vi.fn()
 beforeEach(() => {
   loadGsProject.mockReset()
   listDeckCells.mockReset()
+  listProjectCellStages.mockReset()
+  listProjectCellStages.mockResolvedValue({})
   listDeckZones.mockReset()
   listDeckZones.mockResolvedValue([])
   setCellStage.mockReset()
@@ -198,16 +202,16 @@ describe('GsScreen', () => {
     renderScreen()
 
     expect(await screen.findByRole('tab', { name: /^Cellar Deck/ })).toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: 'Main Deck' })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: new RegExp(`^Main Deck`) })).toBeInTheDocument()
     // The first deck's cells, not the second's: c3 exists only on d1.
     await waitFor(() => expect(screen.getByRole('button', { name: 'ô R2C1' })).toBeInTheDocument())
   })
 
   it('loads the selected deck\'s cells and drawing when the tab changes', async () => {
     renderScreen()
-    await screen.findByRole('tab', { name: 'Main Deck' })
+    await screen.findByRole('tab', { name: new RegExp(`^Main Deck`) })
 
-    await userEvent.click(screen.getByRole('tab', { name: 'Main Deck' }))
+    await userEvent.click(screen.getByRole('tab', { name: new RegExp(`^Main Deck`) }))
 
     await waitFor(() => expect(listDeckCells).toHaveBeenCalledWith('d2'))
     // The drawing has to change with the tab. Asserting the URL, not just that
@@ -234,7 +238,7 @@ describe('GsScreen', () => {
     // table, so the singular query is ambiguous here rather than absent.
     expect(await screen.findAllByText('Blast + Coat 1')).not.toHaveLength(0)
 
-    await userEvent.click(screen.getByRole('tab', { name: 'Main Deck' }))
+    await userEvent.click(screen.getByRole('tab', { name: new RegExp(`^Main Deck`) }))
 
     expect(await screen.findAllByText('Sơn sàn chính')).not.toHaveLength(0)
     expect(screen.queryAllByText('Blast + Coat 1')).toHaveLength(0)
@@ -266,7 +270,7 @@ describe('GsScreen', () => {
         : Promise.resolve(D2_CELLS))
 
     renderScreen()
-    await userEvent.click(await screen.findByRole('tab', { name: 'Main Deck' }))
+    await userEvent.click(await screen.findByRole('tab', { name: new RegExp(`^Main Deck`) }))
     await waitFor(() => expect(listDeckCells).toHaveBeenCalledWith('d2'))
 
     resolveD1(D1_CELLS)
@@ -304,26 +308,29 @@ describe('GsScreen', () => {
     expect(await screen.findByText('15,50%')).toBeInTheDocument()
   })
 
-  it('shows the deck\'s declared area in the bottom strip', async () => {
+  it('shows the deck\'s declared area beside the figure it is the denominator of', async () => {
+    // It used to live in a sticky strip along the bottom, away from the
+    // percentage it explains. The two belong in one card: the area is what the
+    // percentage is OF, and reading one without the other says nothing.
     renderScreen()
-    const strip = await screen.findByTestId('gs-spec-region')
-    expect(strip).toHaveTextContent('1.000,00')
+    // Waits on the CONTENT, not the card. The card renders immediately, at
+    // 0,00% of 0,00 m², and only fills in once the cells and stages land --
+    // so awaiting the container and asserting on its text is a race that
+    // passes or fails on how busy the machine is.
+    const card = await screen.findByTestId('gs-deck-progress')
+    await waitFor(() => expect(card).toHaveTextContent('15,50%'))
+    expect(card).toHaveTextContent('1.000,00')
   })
 
-  it('sticks the bottom strip to the viewport', async () => {
-    renderScreen()
-    expect(await screen.findByTestId('gs-spec-region')).toHaveStyle({ position: 'sticky' })
-  })
-
-  it('lays the two regions out at roughly 60/40 on a tablet and stacks them below it', async () => {
+  it('stacks the drawing and the numbers on anything narrower than a laptop', async () => {
+    // jsdom reports no width, so antd's breakpoints all read false -- which is
+    // the narrow case, and the one that matters: squeezing a rail beside the
+    // drawing on a tablet costs the drawing exactly the pixels the foreman taps
+    // through a glove.
     renderScreen()
     await screen.findByTestId('canvas')
-    // 14/24 and 10/24 of an antd Row = 58.3% / 41.7%. xs=24 stacks them on a
-    // phone; spec §13 excludes a phone design but must not produce two
-    // unreadable half-width columns on one.
-    expect(document.querySelector('.ant-col-md-14')).not.toBeNull()
-    expect(document.querySelector('.ant-col-md-10')).not.toBeNull()
-    expect(document.querySelectorAll('.ant-col-xs-24')).toHaveLength(2)
+    const body = screen.getByTestId('canvas').closest('.ant-layout-content') as HTMLElement
+    expect(body).toHaveStyle({ gridTemplateColumns: 'minmax(0,1fr)' })
   })
 
   it('offers logout and nothing else about the account', async () => {
@@ -384,7 +391,6 @@ describe('GsScreen', () => {
     ).toBeInTheDocument()
     expect(screen.queryByText('Sàn này chưa có bản vẽ')).toBeNull()
     // And none of the plausible-empty-deck furniture: no 0,00 m² total, no pie.
-    expect(screen.queryByTestId('gs-spec-region')).toBeNull()
     expect(screen.queryByTestId('gs-chart-region')).toBeNull()
   })
 
@@ -703,8 +709,8 @@ describe('GsScreen: realtime', () => {
 
   it('closes the old subscription before opening the new one on a tab change', async () => {
     renderScreen()
-    await screen.findByRole('tab', { name: 'Main Deck' })
-    await userEvent.click(screen.getByRole('tab', { name: 'Main Deck' }))
+    await screen.findByRole('tab', { name: new RegExp(`^Main Deck`) })
+    await userEvent.click(screen.getByRole('tab', { name: new RegExp(`^Main Deck`) }))
 
     await waitFor(() => expect(subscribedDecks).toEqual(['d1', 'd2']))
     // Without this every visited tab leaves a live socket subscription behind,
@@ -891,8 +897,8 @@ describe('GsScreen: realtime', () => {
 
   it('does not report a disconnect just because a deck tab was left', async () => {
     renderScreen()
-    await screen.findByRole('tab', { name: 'Main Deck' })
-    await userEvent.click(screen.getByRole('tab', { name: 'Main Deck' }))
+    await screen.findByRole('tab', { name: new RegExp(`^Main Deck`) })
+    await userEvent.click(screen.getByRole('tab', { name: new RegExp(`^Main Deck`) }))
     await waitFor(() => expect(subscribedDecks).toEqual(['d1', 'd2']))
 
     const readsOfD2 = () => listDeckCells.mock.calls.filter(([id]) => id === 'd2').length
@@ -916,8 +922,8 @@ describe('GsScreen: realtime', () => {
 
   it('ignores a payload from a channel it has already left', async () => {
     renderScreen()
-    await screen.findByRole('tab', { name: 'Main Deck' })
-    await userEvent.click(screen.getByRole('tab', { name: 'Main Deck' }))
+    await screen.findByRole('tab', { name: new RegExp(`^Main Deck`) })
+    await userEvent.click(screen.getByRole('tab', { name: new RegExp(`^Main Deck`) }))
     await waitFor(() => expect(subscribedDecks).toEqual(['d1', 'd2']))
     // getByTestId, not getByText: the Main Deck's one cell sits at the last
     // stage, so 100,00% is also every legend row and every spec-table cell.
@@ -945,11 +951,11 @@ describe('GsScreen: realtime', () => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
     try {
       renderScreen()
-      await screen.findByRole('tab', { name: 'Main Deck' })
+      await screen.findByRole('tab', { name: new RegExp(`^Main Deck`) })
       act(() => { liveHandlers?.onStatus('disconnected') })
       expect(await screen.findByText('Mất kết nối, đang kết nối lại…')).toBeInTheDocument()
 
-      await userEvent.click(screen.getByRole('tab', { name: 'Main Deck' }))
+      await userEvent.click(screen.getByRole('tab', { name: new RegExp(`^Main Deck`) }))
       await waitFor(() => expect(subscribedDecks).toEqual(['d1', 'd2']))
 
       // The socket is shared across decks and its health does not change because
@@ -998,15 +1004,12 @@ describe('GsScreen: realtime', () => {
 })
 
 describe('GsScreen: a deck its cells over-cover', () => {
-  it('discloses that the pie\'s shares add past 100%', async () => {
-    // recharts derives each wedge's angle from the sum of the array it is handed,
-    // and buildStageSlices omits the unmapped slice when it would be negative
-    // (there is no negative wedge to draw). So on a deck declaring 500 m² whose
-    // cells cover 700, the Coat 3 wedge fills 300/700 = 42,86% of the ring while
-    // its own legend row an inch away reads 300/500 = 60,00%. The printed numbers
-    // are the right ones and are tested; the picture is what is lying, and the
-    // GS screen said nothing -- the divergence banner lives only in the admin's
-    // deck editor.
+  it('discloses a deck whose bays cover more than it declares', async () => {
+    // On a deck declaring 500 m² whose bays cover 700, every share on this
+    // screen still divides by the 500 -- so Coat 3 reads 300/500 = 60,00% and
+    // the shares add past 100%. That is correct and deliberate, and it is the
+    // deck that is wrong; the screen has to say so rather than quietly
+    // renormalising to 300/700 = 42,86% and looking consistent.
     loadGsProject.mockResolvedValue({ decks: [DECKS[1]], isMember: true })
     listDeckCells.mockResolvedValue([
       { id: 'x1', code: 'R1C1', x: 0, y: 0, w: 0.5, h: 1, areaM2: 300, stageId: 's3' },
@@ -1018,15 +1021,17 @@ describe('GsScreen: a deck its cells over-cover', () => {
       await screen.findByText('Diện tích các ô vượt diện tích sàn khai báo'),
     ).toBeInTheDocument()
     // Both numbers, so the foreman can see which way and by how much. Scoped to
-    // the chart region: the bottom strip also prints 500,00 m².
+    // the rail: the deck card beside it also prints 500,00 m².
     expect(
       within(screen.getByTestId('gs-chart-region'))
         .getByText(/Các ô cộng lại 700,00 m², sàn khai báo 500,00 m²/),
     ).toBeInTheDocument()
-    // Disclosed, NOT renormalised: the legend still divides by the deck's own
+    // Disclosed, NOT renormalised: every share still divides by the deck's own
     // declared area, which is the denominator of every percentage in this
     // product (spec §3.2) including the one the customer is billed against.
-    expect(within(screen.getByTestId('legend-s3')).getByText('60,00%')).toBeInTheDocument()
+    const rollup = within(screen.getByTestId('gs-stage-rollup'))
+    expect(rollup.getAllByText('1/2 ô · 60,00%').length).toBeGreaterThan(0)
+    expect(rollup.queryByText(/42,86%/)).toBeNull()
   })
 
   it('does not warn when the cells fit the deck, exactly or with room to spare', async () => {
@@ -1037,7 +1042,7 @@ describe('GsScreen: a deck its cells over-cover', () => {
     // honest there, so there is nothing to disclose.
     expect(screen.queryByText('Diện tích các ô vượt diện tích sàn khai báo')).toBeNull()
 
-    await userEvent.click(screen.getByRole('tab', { name: 'Main Deck' }))
+    await userEvent.click(screen.getByRole('tab', { name: new RegExp(`^Main Deck`) }))
     // getByTestId, not getByText: the Main Deck's one cell sits at the last
     // stage, so 100,00% is also every legend row and every spec-table cell.
     await waitFor(() =>
@@ -1059,7 +1064,11 @@ describe('GsScreen: the plan overlay', () => {
     expect(listDeckZones).not.toHaveBeenCalled()
   })
 
-  it('draws the planned date range on the zone\'s cells when switched on', async () => {
+  it('colours the zone\'s bays and names the window once, when switched on', async () => {
+    // It used to write the date range onto every bay of the zone. On a 184-bay
+    // deck that is 184 copies of one answer, at a size nobody reads through a
+    // glove -- and it buried the drawing the foreman is matching against the
+    // paper one in his hand.
     listDeckZones.mockResolvedValue([{
       id: 'z1', name: 'Zone 1', stageId: 's5',
       startDate: '2026-08-13', finishDate: '2026-08-19',
@@ -1067,28 +1076,32 @@ describe('GsScreen: the plan overlay', () => {
     }])
 
     renderScreen()
-    await userEvent.click(await screen.findByRole('switch'))
+    await userEvent.click(await screen.findByRole('button', { name: 'Hiện kế hoạch' }))
 
     await waitFor(() => expect(listDeckZones).toHaveBeenCalledWith('d1'))
+    const legend = await screen.findByTestId('gs-zone-legend')
+    expect(within(legend).getByText('Zone 1')).toBeInTheDocument()
+    expect(within(legend).getByText('13/08 – 19/08')).toBeInTheDocument()
+
+    // Only the zone's own bays are coloured: a deck with one zone must not
+    // read as fully planned.
     await waitFor(() =>
-      expect(screen.getByRole('button', { name: 'ô R1C1' }))
-        .toHaveAttribute('data-plan', '13/08 – 19/08'))
-    // Only the zone's own cells: a deck with one zone must not read as fully
-    // planned.
-    expect(screen.getByRole('button', { name: 'ô R1C2' })).toHaveAttribute('data-plan', '')
+      expect(screen.getByRole('button', { name: 'ô R1C1' })).toHaveAttribute('data-color', '#eb2f96'))
+    expect(screen.getByRole('button', { name: 'ô R1C2' })).toHaveAttribute('data-color', '')
   })
 
   it('shows nothing when the deck has no zones yet', async () => {
-    // The state this ships in. It must be a quiet no-op, not an error or an
-    // empty dashed outline on every cell.
+    // The state this ships in. It must be a quiet no-op, not an error and not
+    // an empty legend box over the corner of the drawing.
     renderScreen()
-    await userEvent.click(await screen.findByRole('switch'))
+    await userEvent.click(await screen.findByRole('button', { name: 'Hiện kế hoạch' }))
 
     await waitFor(() => expect(listDeckZones).toHaveBeenCalledWith('d1'))
-    expect(screen.getByRole('button', { name: 'ô R1C1' })).toHaveAttribute('data-plan', '')
+    expect(screen.queryByTestId('gs-zone-legend')).toBeNull()
+    expect(screen.getByRole('button', { name: 'ô R1C1' })).toHaveAttribute('data-color', '')
   })
 
-  it('clears the overlay when switched off again', async () => {
+  it('puts the coats back when switched off again', async () => {
     listDeckZones.mockResolvedValue([{
       id: 'z1', name: 'Zone 1', stageId: 's5',
       startDate: '2026-08-13', finishDate: '2026-08-19',
@@ -1096,15 +1109,12 @@ describe('GsScreen: the plan overlay', () => {
     }])
 
     renderScreen()
-    await userEvent.click(await screen.findByRole('switch'))
-    await waitFor(() =>
-      expect(screen.getByRole('button', { name: 'ô R1C1' }))
-        .toHaveAttribute('data-plan', '13/08 – 19/08'))
+    await userEvent.click(await screen.findByRole('button', { name: 'Hiện kế hoạch' }))
+    expect(await screen.findByTestId('gs-zone-legend')).toBeInTheDocument()
 
-    await userEvent.click(screen.getByRole('switch'))
+    await userEvent.click(screen.getByRole('button', { name: 'Hiện kế hoạch' }))
 
-    await waitFor(() =>
-      expect(screen.getByRole('button', { name: 'ô R1C1' })).toHaveAttribute('data-plan', ''))
+    await waitFor(() => expect(screen.queryByTestId('gs-zone-legend')).toBeNull())
   })
 })
 
