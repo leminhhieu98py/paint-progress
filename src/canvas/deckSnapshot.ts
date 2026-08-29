@@ -25,6 +25,16 @@ import type { Cell, Stage } from '../domain/types'
  *  ten-deck workbook stays a few megabytes. */
 const DRAWING_WIDTH = 1400
 const PIE_SIZE = 520
+/*
+  The ring is only half the picture. Without a key it is five wedges of colour
+  and no way to tell which coat is which -- the workbook goes to someone who has
+  never opened the app and has no palette to compare against, so the legend has
+  to travel inside the PNG. Drawn here rather than laid into Excel cells because
+  a picture cannot drift out of alignment with itself.
+*/
+const PIE_LEGEND_ROW = 40
+const PIE_LEGEND_TOP = 24
+const PIE_WIDTH = PIE_SIZE + 360
 
 /** Matches DrawingCanvas, so a bay is the same shade in the workbook as on the
  *  screen the admin approved. */
@@ -119,13 +129,13 @@ export function renderDeckPie(
   if (total <= 0) return null
 
   const canvas = document.createElement('canvas')
-  canvas.width = PIE_SIZE
+  canvas.width = PIE_WIDTH
   canvas.height = PIE_SIZE
   const ctx = canvas.getContext('2d')
   if (!ctx) return null
 
   ctx.fillStyle = '#ffffff'
-  ctx.fillRect(0, 0, PIE_SIZE, PIE_SIZE)
+  ctx.fillRect(0, 0, PIE_WIDTH, PIE_SIZE)
 
   const cx = PIE_SIZE / 2
   const cy = PIE_SIZE / 2
@@ -146,6 +156,39 @@ export function renderDeckPie(
     ctx.fill()
     angle += sweep
   }
+
+  /*
+    The key, beside the ring: swatch, coat name, area and share.
+
+    Every slice is listed, including one at zero -- a coat nobody has started is
+    a fact about the deck, and dropping it would make a five-coat spec look like
+    a four-coat one. The share divides by the ring's own total, so the printed
+    percentages add to 100 and match the wedge they sit beside.
+  */
+  ctx.textBaseline = 'middle'
+  const legendX = PIE_SIZE + 12
+  slices.forEach((slice, i) => {
+    const y = PIE_LEGEND_TOP + i * PIE_LEGEND_ROW + PIE_LEGEND_ROW / 2
+
+    ctx.fillStyle = slice.color
+    ctx.fillRect(legendX, y - 9, 18, 18)
+    ctx.strokeStyle = '#16202b33'
+    ctx.lineWidth = 1
+    ctx.strokeRect(legendX + 0.5, y - 8.5, 17, 17)
+
+    ctx.fillStyle = '#16202b'
+    ctx.font = '600 15px sans-serif'
+    ctx.fillText(slice.label, legendX + 28, y)
+
+    ctx.fillStyle = '#4a5a6b'
+    ctx.font = '400 14px sans-serif'
+    const share = total > 0 ? (slice.areaM2 / total) * 100 : 0
+    ctx.fillText(
+      `${slice.areaM2.toFixed(2)} m² · ${share.toFixed(2)}%`,
+      legendX + 28,
+      y + 17,
+    )
+  })
 
   return toDataUrlBase64(canvas)
 }

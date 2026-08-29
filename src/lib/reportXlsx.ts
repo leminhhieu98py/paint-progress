@@ -4,6 +4,7 @@ import {
 } from '../domain/report'
 import type { Worksheet } from 'exceljs'
 import { computeDeckProgress } from '../domain/progress'
+import { toVNExcelDate } from './format'
 
 /**
  * The XLSX the client already reads, generated in the browser (spec §9).
@@ -26,6 +27,13 @@ import { computeDeckProgress } from '../domain/progress'
 const PERCENT_FORMAT = '0.00%'
 const AREA_FORMAT = '#,##0.00'
 const DATE_FORMAT = 'dd/mm/yyyy'
+/*
+  Time first, then date, matching the paperwork: on a deck the question is
+  almost always "when today", and the date is the part that repeats down the
+  column. The cell holds a real date (see toVNExcelDate) rather than a
+  preformatted string, so sorting and filtering the column still work.
+*/
+const DATETIME_FORMAT = 'hh:mm:ss dd/mm/yyyy'
 
 /** The header tint on the customer's own Dashboard sheet. Matched so the export
  *  drops into a folder of their workbooks without announcing itself. */
@@ -75,6 +83,18 @@ function dateCell(iso: string | null): Date | null {
 export interface DeckImages {
   drawingPng: string | null
   piePng: string | null
+  /**
+   * The drawing's height divided by its width.
+   *
+   * Excel sizes a picture from the box it is given, so a fixed box stretches
+   * every sheet that is not that shape -- the old 520x380 squashed a portrait
+   * deck and stretched a landscape one, on the image someone matches against
+   * the paper drawing in their hand. The caller knows the real dimensions
+   * (`decks.image_w` / `image_h`); this carries them the one number the sizing
+   * needs. Absent falls back to a fixed box, so a caller that cannot work it
+   * out still gets a picture.
+   */
+  drawingAspect?: number | null
 }
 
 export interface ReportInput {
@@ -232,16 +252,6 @@ export async function buildReportWorkbook(input: ReportInput): Promise<Blob> {
     sheet.addRow(['% Progress', progress.progress]).getCell(2).numFmt = PERCENT_FORMAT
     sheet.addRow([])
 
-    const pictures = input.images?.[entry.deck.id]
-    if (pictures?.drawingPng) {
-      const id = wb.addImage({ base64: pictures.drawingPng, extension: 'png' })
-      sheet.addImage(id, { tl: { col: 7, row: 1 }, ext: { width: 520, height: 380 } })
-    }
-    if (pictures?.piePng) {
-      const id = wb.addImage({ base64: pictures.piePng, extension: 'png' })
-      sheet.addImage(id, { tl: { col: 15, row: 1 }, ext: { width: 260, height: 260 } })
-    }
-
     const listHeader = sheet.addRow(['Mã ô', 'Diện tích (m²)', 'Công đoạn', 'Cập nhật lúc', 'Bởi'])
     listHeader.font = { bold: true }
     sheet.getColumn(1).width = 12
@@ -251,15 +261,52 @@ export async function buildReportWorkbook(input: ReportInput): Promise<Blob> {
     sheet.getColumn(5).width = 20
     for (const cell of buildCellListRows(entry)) {
       const row = sheet.addRow([
-        cell.code, cell.areaM2, cell.stageName, cell.updatedAt ?? '', cell.updatedBy ?? '',
+        cell.code, cell.areaM2, cell.stageName,
+        toVNExcelDate(cell.updatedAt) ?? '', cell.updatedBy ?? '',
       ])
       row.getCell(2).numFmt = AREA_FORMAT
+      row.getCell(4).numFmt = DATETIME_FORMAT
     }
 
     // Frozen at the listing header, and filterable: two hundred bays is a list
     // somebody scrolls looking for one code, and a header that scrolls away
     // leaves five unlabelled columns.
     sheet.views = [{ state: 'frozen', ySplit: listHeader.number }]
+
+    /*
+      Anchored BELOW the freeze line, not above it.
+
+      They used to sit at row 1, inside the frozen band -- and a 380px image in
+      a band a few rows tall is clipped at the split, so scrolling tore the
+      drawing in half and left the ring floating over the data. Excel does not
+      grow a frozen pane to fit a picture.
+
+      Below the split and to the right of the five data columns they scroll with
+      the list, are never clipped, and have the whole width of the sheet to be
+      legible in: at 520px the drawing was something you had to zoom into to
+      read a bay code off.
+    */
+    const pictures = input.images?.[entry.deck.id]
+    if (pictures?.drawingPng) {
+      const id = wb.addImage({ base64: pictures.drawingPng, extension: 'png' })
+      const w = 900
+      const aspect = pictures.drawingAspect
+      sheet.addImage(id, {
+        tl: { col: 6, row: listHeader.number },
+        ext: { width: w, height: aspect && aspect > 0 ? Math.round(w * aspect) : 660 },
+      })
+    }
+    if (pictures?.piePng) {
+      const id = wb.addImage({ base64: pictures.piePng, extension: 'png' })
+      sheet.addImage(id, {
+        // Clear of the drawing's 900px, so the two cannot overlap however wide
+        // the reader's columns are.
+        tl: { col: 20, row: listHeader.number },
+        // 880x520 on the canvas -- the ring plus its key. Sized to that ratio
+        // so the key does not come out squashed against the wedges it names.
+        ext: { width: 748, height: 442 },
+      })
+    }
     sheet.autoFilter = {
       from: { row: listHeader.number, column: 1 },
       to: { row: sheet.rowCount, column: 5 },

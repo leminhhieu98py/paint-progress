@@ -222,6 +222,11 @@ export function DecksScreen() {
             )
             : null,
           piePng: renderDeckPie(entry.deck.totalAreaM2, entry.deck.cells, entry.stages),
+          // The sheet sizes the picture from this. Excel stretches whatever box
+          // it is given, and a fixed one squashed every deck that was not the
+          // shape the box assumed.
+          drawingAspect:
+            entry.imageW && entry.imageH ? entry.imageH / entry.imageW : null,
         }
       }
 

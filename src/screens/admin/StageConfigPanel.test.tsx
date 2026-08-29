@@ -72,18 +72,17 @@ describe('StageConfigPanel', () => {
 
   it('shows the running weight total', async () => {
     renderApp(<StageConfigPanel deckId="d1" />)
-    // Wait for the real stages to load first: before they do, `total` is 0
-    // and the balance warning renders too (now also reading "phải bằng
-    // 1,0000" -- B14's fix for its own hardcoded "1.00" -- so a bare
-    // `findByText(/1,0000/)` can resolve against THAT transient node and then
+    // Wait for the real stages to load first: before they do, `total` is 0 and
+    // the balance warning renders too, carrying its own "1,00" -- so a bare
+    // `findByText(/1,00/)` can resolve against THAT transient node and then
     // fail `toBeInTheDocument()` a tick later when it unmounts, racing the
     // mocked listStages promise rather than testing the settled total.
     await screen.findByDisplayValue('Blast + Coat 1')
     // vi-VN formatting: comma decimal separator, matching the paperwork the
     // operators already read from. Twice on purpose: the section summary
     // survives the panel being collapsed, the chip beside Lưu does not.
-    expect(await screen.findByText('2 lớp · tổng 1,0000')).toBeInTheDocument()
-    expect(screen.getByText('1,0000')).toBeInTheDocument()
+    expect(await screen.findByText('2 lớp · tổng 1,00')).toBeInTheDocument()
+    expect(screen.getByText('1,00')).toBeInTheDocument()
   })
 
   it('blocks save when the weights do not sum to 1', async () => {
@@ -452,7 +451,7 @@ describe('StageConfigPanel', () => {
     await waitFor(() => expect(screen.getByDisplayValue('0,33333')).toBeInTheDocument())
     expect(screen.queryByDisplayValue('0,333333')).toBeNull()
     // 0.4 + 0.33333, not 0.4 + 0.333333.
-    expect(screen.getByText('0,7333')).toBeInTheDocument()
+    expect(screen.getByText('0,73')).toBeInTheDocument()
   })
 
   it('saves the three-way split that used to disable its own Save button', async () => {
@@ -485,11 +484,11 @@ describe('StageConfigPanel', () => {
 
     // Every field holds the value the database will hold.
     await waitFor(() => expect(screen.getAllByDisplayValue('0,33333')).toHaveLength(3))
-    // The total row formats to 4 decimals, so the 1e-5 the clamp leaves behind
-    // rounds away and it reads 1,0000. That is precisely why the epsilon has to
+    // The total is shown to 2 decimals, so the 1e-5 the clamp leaves behind
+    // rounds away and it reads 1,00. That is precisely why the epsilon has to
     // forgive it: at 1e-6 the banner appeared next to a total the admin reads as
-    // exactly 1,0000, saying "Tổng trọng số phải bằng 1.00 — hiện tại 1,0000".
-    expect(screen.getByText('1,0000')).toBeInTheDocument()
+    // exactly 1,00, saying "Tổng trọng số phải bằng 1 — hiện tại 1,00".
+    expect(screen.getByText('1,00')).toBeInTheDocument()
     expect(screen.queryByText(/Tổng trọng số phải bằng/)).toBeNull()
 
     expect(screen.getByRole('button', { name: 'Lưu cấu hình lớp sơn' })).toBeEnabled()
@@ -706,7 +705,7 @@ describe('StageConfigPanel weight bar', () => {
     // "0,7000" has to be read and compared against a number that is not there.
     expect(screen.getByTestId('weight-bar-s1')).toHaveStyle({ width: '60.0000%' })
     expect(screen.getByTestId('weight-bar-s2')).toHaveStyle({ width: '10.0000%' })
-    expect(screen.getByText('0,7000')).toBeInTheDocument()
+    expect(screen.getByText('0,70')).toBeInTheDocument()
   })
 
   it('clamps a band to the track rather than letting it overflow', async () => {
