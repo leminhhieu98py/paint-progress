@@ -27,3 +27,12 @@ dist-ssr
 .env.local
 .env.test
 .env.test.local
+
+# Security scan output. Kept out of the repository on purpose: these reports
+# enumerate the system's remaining weaknesses in the order an attacker would
+# want them, and this repository is public.
+vbsec-reports/
+
+# Claude Design prototypes. Reference material for the UI work, not source --
+# the screens are built from them, they are not built from the screens.
+claude-design/
