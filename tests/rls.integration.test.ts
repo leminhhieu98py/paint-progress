@@ -227,20 +227,20 @@ describe.skipIf(!configured)('RLS as a GS session', () => {
     expect(updated?.stage_id).toBe(stage!.id)
   })
 
-  // SKIPPED UNTIL migrations/0019_cell_notes.sql IS APPLIED to the project these
-  // tests run against. They fail with PGRST204 "Could not find the 'note'
-  // column" until then, which is the schema being behind the code rather than a
-  // policy being wrong. Unskip in the same change that applies the migration --
-  // these three are the only proof that a GS may write a note, may not write
-  // one alone, and cannot forge its author.
-  it.skip('can attach a note to the bay it is recording, and the note lands', async () => {
+  it('can attach a note to the bay it is recording, and the note lands', async () => {
     const { data: stage } = await gs.from('deck_stages').select('id').single()
     const { data: cell } = await gs.from('cells').select('id, stage_id').single()
+    // The target is whichever stage this cell is NOT on, read at the moment of
+    // the write. An earlier test in this file leaves the cell at the deck's one
+    // stage, and re-sending that same value is a note-only update, which 0019
+    // refuses -- so a hardcoded target here would make this test's result
+    // depend on the order the file happens to run in.
+    const target = cell!.stage_id === null ? stage!.id : null
     // Written in ONE statement with the stage, which is both what the app does
     // and, since 0019, the only shape the guard accepts.
     const { data: updated, error } = await gs
       .from('cells')
-      .update({ stage_id: stage!.id, note: 'Bề mặt còn ẩm, hoãn sơn sang mai' })
+      .update({ stage_id: target, note: 'Bề mặt còn ẩm, hoãn sơn sang mai' })
       .eq('id', cell!.id)
       .select('note')
       .single()
@@ -248,7 +248,7 @@ describe.skipIf(!configured)('RLS as a GS session', () => {
     expect(updated?.note).toBe('Bề mặt còn ẩm, hoãn sơn sang mai')
   })
 
-  it.skip('cannot change a note without changing the stage', async () => {
+  it('cannot change a note without changing the stage', async () => {
     // The audit trigger fires on a stage change only, so a note-only write
     // would move cells.note with nothing in cell_events naming who wrote it.
     const { data: cell } = await gs.from('cells').select('id').single()
@@ -260,15 +260,15 @@ describe.skipIf(!configured)('RLS as a GS session', () => {
     expect(error!.message).toContain('a note may only be changed together with the stage')
   })
 
-  it.skip('cannot forge the author of a note it writes', async () => {
+  it('cannot forge the author of a note it writes', async () => {
     // The same escalation the geometry test guards, in the shape the new
     // column opens: a legitimate note carrying a forged updated_by.
     const { data: stage } = await gs.from('deck_stages').select('id').single()
-    const { data: cell } = await gs.from('cells').select('id').single()
+    const { data: cell } = await gs.from('cells').select('id, stage_id').single()
     const { error } = await gs
       .from('cells')
       .update({
-        stage_id: stage!.id,
+        stage_id: cell!.stage_id === null ? stage!.id : null,
         note: 'x',
         updated_by: '00000000-0000-0000-0000-000000000000',
       })
