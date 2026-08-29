@@ -149,7 +149,9 @@ See spec §12. In short:
 1. Authentication → Providers → Email: disable **Allow new users to sign up**.
 2. Create the bootstrap admin `linhdeptrai123@app.local`, then insert its
    `profiles` row with `username = 'linhdeptrai123'`, `role = 'admin'`.
-3. Storage: create the private bucket `drawings`.
+3. Storage: nothing to do. `0009` creates the private `drawings` bucket as
+   part of `db push` -- this step used to say "create the bucket by hand" and
+   was left behind when the insert moved into the migration.
 4. Edge Functions → `admin-users` → Secrets: `CRED_ENC_KEY`.
    `SERVICE_ROLE_KEY` is injected by the platform as `SUPABASE_SERVICE_ROLE_KEY`.
 
