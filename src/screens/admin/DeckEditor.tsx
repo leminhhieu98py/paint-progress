@@ -2,9 +2,9 @@ import {
   ClearOutlined, ControlOutlined, SaveOutlined, ThunderboltOutlined,
 } from '@ant-design/icons'
 import {
-  Alert, App, Button, Descriptions, Modal, Space, Tooltip, Typography,
+  Alert, App, Button, Descriptions, Space, Tooltip,
 } from 'antd'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   AREA_DIVERGENCE_THRESHOLD, areaDivergence, cellReshaped,
   cellsInBox, divergesBeyondThreshold, drawnCell, hasUndeclaredArea, mergeCells, prorateCellAreas,
@@ -13,57 +13,25 @@ import { nameBays, type BayOptions } from '../../domain/bayDetect'
 import type { MeshCell, Stage } from '../../domain/types'
 import {
   getDrawingUrl, listCells, listStages, syncCells,
-  updateDeckArea, zoneImpactOf, type DeckRow, type ZoneImpact,
+  updateDeckArea, zoneImpactOf, type DeckRow,
 } from '../../lib/decksApi'
 import { formatAreaM2, formatPercent } from '../../lib/format'
-import { modalStyles } from '../../components/modalChrome'
+import { MeshEditDialog, type EditKind, type PendingEdit } from './MeshEditDialog'
 import { SectionCard } from '../../components/SectionCard'
 import { palette } from '../../theme'
 import { DrawingCanvas } from '../../canvas/DrawingCanvas'
 import { detectBaysFromImage } from '../../canvas/rgbFromImage'
+import { useMeshHistory } from './useMeshHistory'
+import {
+  drawErrorInVietnamese, mergeErrorInVietnamese, saveErrorInVietnamese,
+} from './meshErrors'
 
-
-/** An edit that replaces the deck's cell set, held while the warning is on screen. */
-interface PendingEdit {
-  kind: EditKind
-  cells: MeshCell[]
-  impact: ZoneImpact[]
-  inheritFrom: Record<string, string[]>
-  /** Cells whose recorded progress this edit discards, with the stage name. */
-  progressLoss: { code: string; stageName: string }[]
-  /**
-   * Cells whose code survives this edit, and whose recorded stage therefore
-   * survives with it, but whose area moves by more than
-   * CELL_RESHAPE_THRESHOLD -- so the stage's "completed" area quietly
-   * grows or shrinks onto a different extent than whoever ticked it signed
-   * off on.
-   */
-  reshaped: { code: string; stageName: string; fromAreaM2: number; toAreaM2: number }[]
-  /**
-   * How many persisted cells this edit removes when it leaves the deck with no
-   * cells at all. Zero unless the result set is empty.
-   *
-   * Wiping a deck's whole geometry is categorically different from editing it,
-   * and it is reachable without any of the disclosures above ever firing: a deck
-   * with no progress and no zones has nothing for them to report, so "Chọn tất
-   * cả" then "Xoá ô đã chọn" used to delete every row with no confirmation at
-   * all.
-   */
-  wipes: number
-}
 
 /**
  * The three ways the cell set can change. 'mesh' is a regenerated grid being
  * saved wholesale; it has no selection and no survivor, but it can still drop
  * a zoned or ticked cell, so it goes through the same gate as the other two.
  */
-type EditKind = 'delete' | 'merge' | 'mesh'
-
-const EDIT_CONFIRM: Record<EditKind, string> = {
-  delete: 'Vẫn xoá',
-  merge: 'Vẫn gộp',
-  mesh: 'Vẫn lưu',
-}
 
 /**
  * The Main Deck's real across-chain, shown as the paste box's placeholder on
@@ -77,72 +45,6 @@ const EDIT_CONFIRM: Record<EditKind, string> = {
  * Main Deck's own chains, so an admin holding that drawing recognises them.
  */
 
-/**
- * Domain merge errors, in the admin's language.
- *
- * geometry.ts throws in English and stays that way -- it has no business
- * knowing the UI language -- but all four of mergeCells' own errors are
- * routine validation an admin hits by selecting an L-shape or the same cell
- * twice, not infrastructure failures, so they cannot be surfaced raw. Matched
- * on a stable marker rather than the whole sentence so a reworded domain
- * message still translates, and anything unrecognised falls through unchanged
- * so a new domain error is never swallowed.
- *
- * Exported so its one hard-to-reach branch (a duplicate cell in the
- * selection) can be unit tested directly: `cells` and `selected` both hold
- * unique codes by construction under every UI path that reaches mergeCells,
- * so there is no way to drive that branch through the rendered screen.
- */
-export function mergeErrorInVietnamese(message: string): string {
-  if (message.includes('solid rectangle')) {
-    return 'Các ô đã chọn phải ghép thành một hình chữ nhật kín. Bỏ chọn ô lẻ, hoặc chọn thêm ô để bù chỗ trống.'
-  }
-  if (message.includes('overlapping cells')) {
-    return 'Các ô đã chọn bị trùng nhau nên không gộp được. Sinh lại lưới ô rồi chọn lại.'
-  }
-  if (message.includes('at least two cells')) {
-    return 'Cần chọn ít nhất hai ô để gộp.'
-  }
-  if (message.includes('same cell more than once')) {
-    return 'Danh sách ô chọn có ô bị lặp lại. Bỏ chọn rồi chọn lại.'
-  }
-  return message
-}
-
-/**
- * A failed round trip, in the admin's language.
- *
- * A dropped connection reaches here as a TypeError carrying the browser's own
- * English -- "Failed to fetch" in Chrome, "Load failed" in Safari,
- * "NetworkError when attempting to fetch resource" in Firefox. Rendering that
- * verbatim told a Vietnamese admin nothing and hid the only thing they can act
- * on: the network, not the deck. Matched on the browsers' markers rather than
- * on the error's type, because postgrest-js and supabase-js both re-wrap the
- * failure before it gets here. Anything unrecognised falls through unchanged
- * rather than being flattened into a generic apology that loses the detail.
- */
-function saveErrorInVietnamese(message: string): string {
-  if (/failed to fetch|load failed|networkerror|network request failed/i.test(message)) {
-    return 'Mất kết nối tới máy chủ. Kiểm tra mạng rồi thử lại.'
-  }
-  return message
-}
-
-/**
- * Refusals from `drawnCell`, in the admin's language. Same rule as
- * mergeErrorInVietnamese: the domain throws in English and stays that way, and
- * both of these are things an admin hits by drawing, not infrastructure
- * failures, so neither may reach them raw.
- */
-function drawErrorInVietnamese(message: string): string {
-  if (message.includes('too small')) {
-    return 'Ô vừa vẽ quá nhỏ. Kéo một khung lớn hơn.'
-  }
-  if (message.includes('overlaps')) {
-    return 'Chỗ đó đã có ô rồi. Chỉ vẽ được vào chỗ còn trống.'
-  }
-  return message
-}
 
 export function DeckEditor({
   deck,
@@ -161,7 +63,7 @@ export function DeckEditor({
   onSaved?: () => void
 }) {
   const [stages, setStages] = useState<Stage[]>([])
-  const [cells, setCells] = useState<MeshCell[]>([])
+  const { cells, commit: commitCells, reset: resetCells, undo, redo, clearHistory } = useMeshHistory()
   /**
    * Recorded stage id per cell code, as last read from the database --
    * `MeshCell` itself carries no stage, so this is the only place that
@@ -236,19 +138,6 @@ export function DeckEditor({
    * would be taking them from an admin who never asked.
    */
   const [shortcuts, setShortcuts] = useState(false)
-  /**
-   * Cell sets this screen has moved away from, and moved back from.
-   *
-   * Refs, not state: nothing renders from them, and the key handler has to read
-   * the newest values rather than whichever ones its closure captured.
-   *
-   * Local edits only. A successful save empties both -- see `apply`. Undoing
-   * past a write would offer to restore a cell set the database no longer
-   * holds, and the admin would have no way to tell that is what they were
-   * looking at.
-   */
-  const past = useRef<MeshCell[][]>([])
-  const future = useRef<MeshCell[][]>([])
 
   const load = useCallback(async () => {
     try {
@@ -257,7 +146,7 @@ export function DeckEditor({
         listStages(deck.id),
       ])
       setStages(s)
-      setCells(c.map(({ code, x, y, w, h, areaM2 }) => ({ code, x, y, w, h, areaM2 })))
+      resetCells(c.map(({ code, x, y, w, h, areaM2 }) => ({ code, x, y, w, h, areaM2 })))
       setCellStages(Object.fromEntries(c.map((p) => [p.code, p.stageId])))
       if (deck.imagePath) setImageUrl(await getDrawingUrl(deck.imagePath))
       setLoadFailed(false)
@@ -307,31 +196,6 @@ export function DeckEditor({
    * taken back. Every local edit goes through here; the ones that come back
    * from the server do not.
    */
-  const commitCells = (next: MeshCell[]) => {
-    past.current = [...past.current, cells]
-    future.current = []
-    setCells(next)
-  }
-
-  const undo = () => {
-    const previous = past.current.at(-1)
-    if (!previous) return
-    past.current = past.current.slice(0, -1)
-    future.current = [cells, ...future.current]
-    setCells(previous)
-    // The selection named bays that may not exist in the set being restored.
-    setSelected([])
-  }
-
-  const redo = () => {
-    const next = future.current[0]
-    if (!next) return
-    future.current = future.current.slice(1)
-    past.current = [...past.current, cells]
-    setCells(next)
-    setSelected([])
-  }
-
   /**
    * Takes the selected bays off the screen, and re-shares the deck's area over
    * what is left.
@@ -575,11 +439,10 @@ export function DeckEditor({
     try {
       await updateDeckArea(deck.id, totalArea, 'prorated')
       await syncCells(deck.id, next, inheritFrom)
-      setCells(next)
-      // The written set is the new floor: see `past` for why undoing past a
-      // write is not offered.
-      past.current = []
-      future.current = []
+      resetCells(next)
+      // The written set is the new floor: see useMeshHistory for why undoing
+      // past a write is not offered.
+      clearHistory()
       setSelected([])
       onSaved?.()
       setPending(null)
@@ -604,7 +467,7 @@ export function DeckEditor({
       // admin has typed and not yet managed to save.
       try {
         const fresh = await listCells(deck.id)
-        setCells(fresh.map(({ code, x, y, w, h, areaM2 }) => ({ code, x, y, w, h, areaM2 })))
+        resetCells(fresh.map(({ code, x, y, w, h, areaM2 }) => ({ code, x, y, w, h, areaM2 })))
         setCellStages(Object.fromEntries(fresh.map((p) => [p.code, p.stageId])))
       } catch {
         // Now the screen matches neither the database nor a successful read.
@@ -658,8 +521,9 @@ export function DeckEditor({
       } else if (mod && key === 'a') {
         setSelected(cells.map((c) => c.code))
       } else if (mod && key === 'z') {
-        if (e.shiftKey) redo()
-        else undo()
+        // The selection named bays that may not exist in the set being
+        // restored, so it goes with the step.
+        if (e.shiftKey ? redo() : undo()) setSelected([])
       } else if (!mod && key === 'm') {
         // Guarded like the button it replaces: merging awaits two round trips
         // before it can open its dialog, and a second M in that gap starts a
@@ -898,132 +762,12 @@ export function DeckEditor({
       )}
 
 
-      {/*
-        The dialog can open for any of three independent reasons -- zone
-        impact, progress loss, or a reshape -- in any combination, so no
-        sentence anywhere in this dialog may make a claim about a list it does
-        not own. The title only ever distinguishes zone impact (the one that
-        also affects a zone's progress plan) from everything else; the lead
-        paragraph states nothing about specific cells; and each section below
-        carries its own sentence immediately above its own list, rendering
-        only when that list is non-empty. A merge whose survivor's area moves
-        by more than AREA_DIVERGENCE_THRESHOLD lands in BOTH the progress-loss
-        section (for its discarded sources) and the reshape section (for
-        itself) at once -- see R6 in task-8-fix-3 -- so this is not a
-        theoretical case to design for.
-      */}
-      <Modal
-        open={pending !== null}
-        destroyOnHidden
-        styles={modalStyles}
-        title={
-          pending &&
-          (pending.impact.length > 0
-            ? 'Thao tác này ảnh hưởng đến zone'
-            // Zone impact still wins the title when both apply: it is the one
-            // that reaches outside this deck's geometry into a zone's plan. The
-            // wipe still gets its own sentence below either way -- every claim
-            // in this dialog is owned by the section that renders it.
-            : pending.wipes > 0
-              ? 'Xoá toàn bộ lưới ô của sàn'
-              : 'Xác nhận thay đổi lưới ô')
-        }
-        okText={pending ? EDIT_CONFIRM[pending.kind] : undefined}
-        cancelText="Huỷ"
-        confirmLoading={busy}
+      <MeshEditDialog
+        pending={pending}
+        busy={busy}
         onCancel={() => setPending(null)}
-        onOk={() => pending && void apply(pending.cells, pending.inheritFrom)}
-      >
-        <Typography.Paragraph>
-          Kiểm tra các mục dưới đây trước khi xác nhận.
-        </Typography.Paragraph>
-
-        {/*
-          Unconditional, because it is always true: `apply` writes saveGuides and
-          updateDeckArea on every path through this dialog, not only on a mesh
-          save. Since A1 collapsed the two save buttons into one, confirming a
-          delete or a merge also commits whatever the admin has done to the guide
-          table and to the deck-area field -- a guide nudged by accident, or an
-          area typed while thinking it over -- with nothing here saying so.
-
-          A conditional version (only when the guides or the area actually
-          differ from what was loaded) was rejected: it would need a second
-          baseline to diff against, kept in step with the one `cells` already
-          has, and a disclosure that is sometimes absent is one more thing to get
-          wrong on the dialog whose whole job is to be trusted.
-        */}
-        <Typography.Paragraph>
-          Thao tác này cũng lưu luôn bảng guide và diện tích sàn đang nhập trên
-          màn hình — kể cả khi bạn chỉ định xoá hoặc gộp ô.
-        </Typography.Paragraph>
-
-        {pending && pending.wipes > 0 && (
-          <Typography.Paragraph strong>
-            Sau thao tác này sàn sẽ không còn ô nào: {pending.wipes} ô hiện có sẽ bị
-            xoá khỏi cơ sở dữ liệu. Muốn kẻ lại lưới thì phải sinh lưới ô mới.
-          </Typography.Paragraph>
-        )}
-
-        {pending && pending.impact.length > 0 && (
-          <>
-            <Typography.Paragraph strong>
-              Các ô này đang thuộc zone. Xoá hoặc gộp sẽ làm chúng rời khỏi zone:
-            </Typography.Paragraph>
-            <ul>
-              {pending.impact.map((z) => (
-                <li key={z.zoneId}>
-                  <strong>{z.zoneName}</strong>: {z.cellCodes.join(', ')}
-                </li>
-              ))}
-            </ul>
-          </>
-        )}
-
-        {pending && pending.progressLoss.length > 0 && (
-          <>
-            <Typography.Paragraph strong>
-              Các ô này sẽ mất tiến độ đã ghi:
-            </Typography.Paragraph>
-            <ul>
-              {pending.progressLoss.map((p) => (
-                <li key={p.code}>
-                  <strong>{p.code}</strong> — {p.stageName}
-                </li>
-              ))}
-            </ul>
-            {pending.kind === 'merge' && (
-              <Typography.Paragraph type="secondary">
-                Ô sống sót giữ tiến độ của chính nó. Không có cách gộp nào trung
-                thực cho phần còn lại: lấy lớp cao nhất thì báo vượt, lấy lớp thấp
-                nhất thì bỏ mất công đã làm.
-              </Typography.Paragraph>
-            )}
-          </>
-        )}
-
-        {pending && pending.reshaped.length > 0 && (
-          <>
-            {/*
-              R9: structurally unreachable when kind === 'delete' -- a delete
-              never changes a surviving cell's geometry (it only removes
-              cells), so `reshaped` is always empty on that path and this
-              section can never render there. It is reachable, and covered by
-              tests, for 'merge' and 'mesh'. Not dead code: kept intentionally.
-            */}
-            <Typography.Paragraph strong>
-              Các ô này giữ tiến độ đã ghi nhưng diện tích thay đổi, nên phần trăm
-              hoàn thành sẽ thay đổi theo:
-            </Typography.Paragraph>
-            <ul>
-              {pending.reshaped.map((r) => (
-                <li key={r.code}>
-                  <strong>{r.code}</strong> — {r.stageName}: {formatAreaM2(r.fromAreaM2)} → {formatAreaM2(r.toAreaM2)} m²
-                </li>
-              ))}
-            </ul>
-          </>
-        )}
-      </Modal>
+        onConfirm={() => pending && void apply(pending.cells, pending.inheritFrom)}
+      />
     </Space>
     </SectionCard>
   )

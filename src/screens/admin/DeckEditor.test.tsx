@@ -3,7 +3,8 @@ import type { ComponentProps } from 'react'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { DeckEditor, mergeErrorInVietnamese } from './DeckEditor'
+import { DeckEditor } from './DeckEditor'
+import { mergeErrorInVietnamese } from './meshErrors'
 
 const listCells = vi.hoisted(() => vi.fn())
 const syncCells = vi.hoisted(() => vi.fn())
