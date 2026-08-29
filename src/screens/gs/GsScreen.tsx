@@ -493,15 +493,18 @@ export function GsScreen() {
    * overtaken is dropped rather than applied over the newer truth. See
    * PendingWrite for the two reproduced scenarios that needs.
    */
-  const commitStage = (cellId: string, stageId: string | null) => {
+  const commitStage = (cellId: string, stageId: string | null, note = '') => {
     const superseded = pendingWrites.current.get(cellId)
     const generation = (superseded?.generation ?? 0) + 1
     const baselineStageId = superseded
       ? superseded.baselineStageId
       : cells.find((c) => c.id === cellId)?.stageId ?? null
     pendingWrites.current.set(cellId, { generation, baselineStageId })
-    setCells((prev) => prev.map((c) => (c.id === cellId ? { ...c, stageId } : c)))
-    void setCellStage(cellId, stageId)
+    // The optimistic update carries the note as well as the stage, so
+    // reopening the bay before the write settles shows what was just typed
+    // rather than the note it is replacing.
+    setCells((prev) => prev.map((c) => (c.id === cellId ? { ...c, stageId, note } : c)))
+    void setCellStage(cellId, stageId, note)
       .catch(() => {
         // Only the newest attempt for this cell may roll it back. An older one
         // finishing late would otherwise undo a later tap, or overwrite a value

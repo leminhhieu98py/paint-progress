@@ -1,4 +1,4 @@
-import { Alert, Button, Modal, Select, Space, Typography } from 'antd'
+import { Alert, Button, Input, Modal, Select, Space, Typography } from 'antd'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { isBackwards, nextStage } from '../../domain/stageFlow'
 import type { Cell, Stage } from '../../domain/types'
@@ -38,9 +38,10 @@ export function CellStageModal({
    * must not reject: spec §11 row 1 wants the chart to move with no perceptible
    * delay, so this modal closes immediately rather than awaiting the write.
    */
-  onCommit: (cellId: string, stageId: string | null) => void
+  onCommit: (cellId: string, stageId: string | null, note: string) => void
 }) {
   const [choice, setChoice] = useState<string>(NOT_STARTED_VALUE)
+  const [note, setNote] = useState('')
 
   // Keyed on the cell's ID only, deliberately. A realtime update to the cell
   // being edited must not silently rewrite the foreman's pending selection --
@@ -48,6 +49,12 @@ export function CellStageModal({
   // straight after this modal's own optimistic update.
   useEffect(() => {
     setChoice(cell?.stageId ?? NOT_STARTED_VALUE)
+    // Reset with the bay, for the same reason and with the same key. This is
+    // one component reused for every bay on the deck; left alone, the note
+    // typed on R1C1 would be sent as R1C2's, attributing one bay's problem to
+    // another. Seeded from the cell so the foreman can read what is already
+    // there before deciding whether to change it.
+    setNote(cell?.note ?? '')
   }, [cell?.id])
 
   const ordered = useMemo(() => [...stages].sort((a, b) => a.seq - b.seq), [stages])
@@ -64,7 +71,7 @@ export function CellStageModal({
       onCancel={onClose}
       onOk={() => {
         if (!cell || unchanged) return
-        onCommit(cell.id, chosenStageId)
+        onCommit(cell.id, chosenStageId, note)
         onClose()
       }}
       okText="Xác nhận"
@@ -107,7 +114,7 @@ export function CellStageModal({
               size="large"
               block
               onClick={() => {
-                onCommit(cell.id, next.id)
+                onCommit(cell.id, next.id, note)
                 onClose()
               }}
             >
@@ -130,6 +137,41 @@ export function CellStageModal({
                 ...ordered.map((s) => ({ value: s.id, label: s.name })),
               ]}
             />
+          </div>
+
+          <div>
+            {/*
+              Optional, and said so. The note explains a delay to somebody who
+              is not on the deck -- "bề mặt còn ẩm", "giàn giáo chắn mất một
+              góc" -- and a required field on the one write a foreman makes all
+              day would be answered with a full stop.
+
+              An id by hand rather than an antd Form field, matching the rest
+              of this modal: without one the label is text beside a box, and
+              neither a screen reader nor a test can tell which box it belongs
+              to.
+            */}
+            <label
+              htmlFor="cell-note"
+              style={{ display: 'block', marginBottom: 6, fontWeight: 600 }}
+            >
+              Ghi chú cho quản trị viên{' '}
+              <Typography.Text type="secondary" style={{ fontWeight: 400 }}>
+                không bắt buộc
+              </Typography.Text>
+            </label>
+            <Input.TextArea
+              id="cell-note"
+              rows={2}
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="Ví dụ: bề mặt còn ẩm, hoãn sơn sang mai"
+            />
+            {note.trim() !== '' && (
+              <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+                {`Ghi chú đi kèm ô ${cell.code} trong lịch sử; quản trị viên thấy ngay trên bản vẽ.`}
+              </Typography.Text>
+            )}
           </div>
 
           {backwards && (

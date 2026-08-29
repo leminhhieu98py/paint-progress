@@ -883,10 +883,17 @@ create or replace function _verify_gs_audit_guard() returns setof text language 
 declare
   p uuid; d uuid; s1 uuid; s2 uuid; cid uuid;
   sentinel timestamptz := timestamptz '2000-01-01 00:00:00+00';
-  guard_msg text := 'only stage_id may be changed by a non-admin';
+  -- 0019 widened this message when `note` became writable by a GS. Matching
+  -- on the old string here would have kept passing against a guard that no
+  -- longer raises it, so the two move together.
+  guard_msg text := 'only stage_id and note may be changed by a non-admin';
+  note_msg  text := 'a note may only be changed together with the stage';
   at_rejected boolean := false; at_err text := 'accepted';
   by_rejected boolean := false; by_err text := 'accepted';
   stage_ok boolean := false; stage_err text := 'none';
+  note_ok boolean := false; note_err text := 'none'; note_val text := '';
+  note_logged text := '(no event)';
+  note_alone_rejected boolean := false; note_alone_err text := 'accepted';
   stamped timestamptz;
 begin
   begin
@@ -920,6 +927,16 @@ begin
       by_err := sqlerrm;
     end;
 
+    -- A forged author carried alongside a legitimate NOTE, which is the shape
+    -- the same attack takes now that a second column is writable.
+    begin
+      update cells set stage_id = s2, note = 'x', updated_by = gen_random_uuid()
+       where id = cid;
+    exception when others then
+      by_rejected := by_rejected and sqlerrm like '%' || guard_msg || '%';
+      by_err := by_err || ' / with note: ' || sqlerrm;
+    end;
+
     -- What a GS is actually for, which must still work -- and must still be
     -- stamped by set_cell_audit_columns afterwards.
     begin
@@ -930,6 +947,31 @@ begin
     end;
     select updated_at into stamped from cells where id = cid;
 
+    -- 0019: a note travelling with its stage change is accepted, and lands.
+    begin
+      update cells set stage_id = s1, note = 'Bề mặt còn ẩm' where id = cid;
+      note_ok := true;
+    exception when others then
+      note_err := sqlerrm;
+    end;
+    select note into note_val from cells where id = cid;
+    -- And the history has it too: cells.note is the current note, cell_events
+    -- .note is the record. A column that only ever holds the latest value is
+    -- not an audit trail.
+    select e.note into note_logged
+      from cell_events e where e.cell_id = cid order by e.at desc, e.id desc limit 1;
+
+    -- 0019: a note on its own is refused. The audit trigger fires only on a
+    -- stage change, so a note-only update would move cells.note with nothing
+    -- in cell_events to say who wrote it. This is what keeps that history
+    -- complete rather than merely usually complete.
+    begin
+      update cells set note = 'không đi kèm công đoạn' where id = cid;
+    exception when others then
+      note_alone_rejected := sqlerrm like '%' || note_msg || '%';
+      note_alone_err := sqlerrm;
+    end;
+
     delete from projects where id = p;
 
     return next format(
@@ -938,6 +980,13 @@ begin
            then 'PASS' else 'FAIL' end,
       at_rejected, at_err, by_rejected, by_err, stage_ok, stage_err,
       stamped <> sentinel);
+
+    return next format(
+      '%s non-admin may write a note with a stage change (%s, %s), it reaches cell_events (%s), and it is refused on its own (rejected %s: %s)',
+      case when note_ok and note_val = 'Bề mặt còn ẩm'
+                and note_logged = 'Bề mặt còn ẩm' and note_alone_rejected
+           then 'PASS' else 'FAIL' end,
+      note_ok, note_err, note_logged, note_alone_rejected, note_alone_err);
   exception when others then
     return next 'FAIL non-admin cannot forge the audit columns: ' || sqlerrm;
   end;

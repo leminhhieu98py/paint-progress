@@ -74,6 +74,7 @@ function mapCellRow(row: Record<string, unknown>): Cell {
     h: Number(row.h),
     areaM2: Number(row.area_m2),
     stageId: (row.stage_id as string | null) ?? null,
+    note: (row.note as string | null) ?? '',
   }
 }
 
@@ -128,7 +129,7 @@ export async function loadGsProject(projectId: string): Promise<GsProject> {
 export async function listDeckCells(deckId: string): Promise<Cell[]> {
   const { data, error } = await supabase
     .from('cells')
-    .select('id, code, x, y, w, h, area_m2, stage_id')
+    .select('id, code, x, y, w, h, area_m2, stage_id, note')
     .eq('deck_id', deckId)
     .order('code')
   if (error) throw new Error(error.message)
@@ -138,15 +139,28 @@ export async function listDeckCells(deckId: string): Promise<Cell[]> {
 /**
  * Record which coat a bay has reached. The only write the GS screen makes.
  *
- * The payload is stage_id and nothing else, and that is a hard requirement, not
- * tidiness: cells_assert_gs_stage_only (0006/0007/0008/0013) rejects the entire
- * UPDATE if id, deck_id, code, x, y, w, h, area_m2, updated_at or updated_by
- * differs from the stored row, with `only stage_id may be changed by a
- * non-admin`. updated_at and updated_by are stamped by
- * set_cell_audit_columns from now() and auth.uid(); a client that sends its own
- * is refused, by design (0013).
+ * The payload is stage_id and note and nothing else, and that is a hard
+ * requirement, not tidiness: cells_assert_gs_stage_only (0006/0007/0008/0013,
+ * widened by 0019) rejects the entire UPDATE if id, deck_id, code, x, y, w, h,
+ * area_m2, updated_at or updated_by differs from the stored row, with `only
+ * stage_id and note may be changed by a non-admin`. updated_at and updated_by
+ * are stamped by set_cell_audit_columns from now() and auth.uid(); a client
+ * that sends its own is refused, by design (0013).
+ *
+ * The note goes in the SAME statement as the stage, and 0019's guard refuses a
+ * note that arrives without one. That is what makes cell_events a complete
+ * record of every note: its trigger fires on a stage change, so a note written
+ * separately would land on the cell with nothing in the history naming who
+ * wrote it.
+ *
+ * It is always sent, empty included. A bay that gets a new coat and no comment
+ * must not keep the note that explained the coat before it.
  */
-export async function setCellStage(cellId: string, stageId: string | null): Promise<void> {
+export async function setCellStage(
+  cellId: string,
+  stageId: string | null,
+  note = '',
+): Promise<void> {
   // `.select('id')` is load-bearing, not decoration. PostgREST answers an
   // UPDATE that matches ZERO rows with 204 and no error, so without asking for
   // the affected rows back this function cannot tell "written" from "matched
@@ -165,7 +179,7 @@ export async function setCellStage(cellId: string, stageId: string | null): Prom
   // foreman sees instead of a phantom write.
   const { data, error } = await supabase
     .from('cells')
-    .update({ stage_id: stageId })
+    .update({ stage_id: stageId, note })
     .eq('id', cellId)
     .select('id')
   if (error) throw new Error(error.message)

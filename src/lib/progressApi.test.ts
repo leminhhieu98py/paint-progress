@@ -52,7 +52,7 @@ describe('loadProjectProgress', () => {
       id: 'd1', code: 'CD', name: 'Cellar Deck', totalAreaM2: 6139,
       cells: [{
         id: 'c1', code: 'R1C1', x: 0.1, y: 0.2, w: 0.3, h: 0.4,
-        areaM2: 60, stageId: 's1',
+        areaM2: 60, stageId: 's1', note: '',
       }],
     })
     expect(entry.imagePath).toBe('p1/d1.png')

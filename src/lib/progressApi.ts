@@ -47,7 +47,7 @@ export interface DeckProgressEntry {
 const DECK_SELECT =
   'id, seq, code, name, total_area_m2, area_source, image_path, image_w, image_h,'
   + ' deck_stages(id, seq, name, color, weight),'
-  + ' cells(id, code, x, y, w, h, area_m2, stage_id, updated_at, updated_by)'
+  + ' cells(id, code, x, y, w, h, area_m2, stage_id, note, updated_at, updated_by)'
 
 /**
  * One deck, for the panel inside its own detail screen.
@@ -123,6 +123,7 @@ function mapDeckRow(row: unknown): DeckProgressEntry {
           h: Number(c.h),
           areaM2: Number(c.area_m2),
           stageId: (c.stage_id as string | null) ?? null,
+          note: (c.note as string | null) ?? '',
         })),
       } satisfies Deck,
   }

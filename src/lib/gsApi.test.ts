@@ -208,7 +208,7 @@ describe('listDeckCells', () => {
     }))
 
     expect(await listDeckCells('d1')).toEqual([{
-      id: 'c1', code: 'R1C1', x: 0, y: 0, w: 0.25, h: 0.5, areaM2: 148, stageId: 's2',
+      id: 'c1', code: 'R1C1', x: 0, y: 0, w: 0.25, h: 0.5, areaM2: 148, stageId: 's2', note: '',
     }])
   })
 
@@ -236,7 +236,7 @@ describe('listDeckCells', () => {
 })
 
 describe('setCellStage', () => {
-  it('sends stage_id and nothing else', async () => {
+  it('sends stage_id and note and nothing else', async () => {
     const stub = builder({ data: [{ id: 'c1' }] })
     from.mockImplementationOnce(() => stub)
 
@@ -245,13 +245,39 @@ describe('setCellStage', () => {
     // The load-bearing assertion of this module. cells_assert_gs_stage_only
     // rejects the WHOLE update if any other column differs, so a payload that
     // also carries updated_at (or the whole cell row) fails in production with
-    // "only stage_id may be changed by a non-admin" -- which reads like a
-    // permissions bug and is not one. The key count is asserted, not just the
-    // value, because toHaveBeenCalledWith on a superset object would pass.
-    expect(stub.update).toHaveBeenCalledWith({ stage_id: 's3' })
+    // "only stage_id and note may be changed by a non-admin" -- which reads
+    // like a permissions bug and is not one. The key count is asserted, not
+    // just the value, because toHaveBeenCalledWith on a superset object would
+    // pass.
+    expect(stub.update).toHaveBeenCalledWith({ stage_id: 's3', note: '' })
     const payload = (stub.update as ReturnType<typeof vi.fn>).mock.calls[0][0] as object
-    expect(Object.keys(payload)).toEqual(['stage_id'])
+    expect(Object.keys(payload).sort()).toEqual(['note', 'stage_id'])
     expect(stub.eq).toHaveBeenCalledWith('id', 'c1')
+  })
+
+  it('carries the note in the same statement as the stage', async () => {
+    // Two statements would be two failure points on the one write a foreman
+    // makes, and 0019's guard refuses a note that arrives without a stage
+    // change -- which is what keeps cell_events a complete record of notes.
+    const stub = builder({ data: [{ id: 'c1' }] })
+    from.mockImplementationOnce(() => stub)
+
+    await setCellStage('c1', 's3', 'Bề mặt còn ẩm')
+
+    expect(stub.update).toHaveBeenCalledWith({ stage_id: 's3', note: 'Bề mặt còn ẩm' })
+    expect(from).toHaveBeenCalledTimes(1)
+  })
+
+  it('clears the note when a stage change carries none', async () => {
+    // A bay that gets a new coat and no comment must not keep the note that
+    // explained the coat before it -- the note describes ONE change, and
+    // cells.note only ever holds the latest.
+    const stub = builder({ data: [{ id: 'c1' }] })
+    from.mockImplementationOnce(() => stub)
+
+    await setCellStage('c1', null)
+
+    expect(stub.update).toHaveBeenCalledWith({ stage_id: null, note: '' })
   })
 
   it('throws when the update matched no row at all', async () => {
@@ -276,7 +302,7 @@ describe('setCellStage', () => {
 
     await setCellStage('c1', null)
 
-    expect(stub.update).toHaveBeenCalledWith({ stage_id: null })
+    expect(stub.update).toHaveBeenCalledWith({ stage_id: null, note: '' })
   })
 
   it('throws when the update is refused', async () => {
@@ -331,7 +357,7 @@ describe('subscribeDeckCells', () => {
     // has changed across versions, so every numeric field is coerced here. An
     // areaM2 of "148.000" would make the pie's sums string-concatenate.
     expect(onCellChange).toHaveBeenCalledWith({
-      id: 'c1', code: 'R1C1', x: 0.1, y: 0.2, w: 0.3, h: 0.4, areaM2: 148, stageId: 's4',
+      id: 'c1', code: 'R1C1', x: 0.1, y: 0.2, w: 0.3, h: 0.4, areaM2: 148, stageId: 's4', note: '',
     })
   })
 
@@ -346,7 +372,7 @@ describe('subscribeDeckCells', () => {
     })
 
     expect(onCellChange).toHaveBeenCalledWith(
-      { id: 'c9', code: 'R9C9', x: 0, y: 0, w: 1, h: 1, areaM2: 5, stageId: null },
+      { id: 'c9', code: 'R9C9', x: 0, y: 0, w: 1, h: 1, areaM2: 5, stageId: null, note: '' },
     )
   })
 

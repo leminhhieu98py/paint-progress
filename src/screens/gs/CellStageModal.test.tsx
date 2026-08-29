@@ -125,7 +125,7 @@ describe('CellStageModal', () => {
     // Exactly one stage on from the cell's CURRENT stage (s2) -- not to the last
     // stage, and not two along. Catches a button wired to the last stage or to
     // whatever the Select happens to be showing.
-    expect(onCommit).toHaveBeenCalledWith('c1', 's3')
+    expect(onCommit).toHaveBeenCalledWith('c1', 's3', '')
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 
@@ -143,7 +143,7 @@ describe('CellStageModal', () => {
     await chooseStage('Coat 3')
     await userEvent.click(screen.getByRole('button', { name: 'Xác nhận' }))
 
-    expect(onCommit).toHaveBeenCalledWith('c1', 's3')
+    expect(onCommit).toHaveBeenCalledWith('c1', 's3', '')
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 
@@ -154,7 +154,7 @@ describe('CellStageModal', () => {
 
     // The sentinel must never escape the modal: setCellStage sends stage_id
     // straight to PostgREST, and '__not-started__' is not a uuid.
-    expect(onCommit).toHaveBeenCalledWith('c1', null)
+    expect(onCommit).toHaveBeenCalledWith('c1', null, '')
   })
 
   it('refuses to write when nothing was changed', async () => {
@@ -187,5 +187,76 @@ describe('CellStageModal', () => {
     )
 
     expect(screen.getByRole('button', { name: 'Xác nhận' })).toBeDisabled()
+  })
+})
+
+describe('CellStageModal notes', () => {
+  it('sends the typed note along with the stage', async () => {
+    const user = userEvent.setup()
+    const onCommit = vi.fn()
+    render(
+      <CellStageModal cell={CELL} stages={STAGES} open onClose={() => {}} onCommit={onCommit} />,
+    )
+
+    await user.type(
+      screen.getByLabelText(/Ghi chú/),
+      'Bề mặt còn ẩm, hoãn sơn sang mai',
+    )
+    await user.click(screen.getByRole('button', { name: /Xong công đoạn tiếp theo/ }))
+
+    expect(onCommit).toHaveBeenCalledWith(CELL.id, 's3', 'Bề mặt còn ẩm, hoãn sơn sang mai')
+  })
+
+  it('sends an empty note when the foreman typed nothing', async () => {
+    // Empty, not undefined and not "leave it alone": the note describes ONE
+    // change, so a new coat with no comment must not inherit the comment that
+    // explained the coat before it.
+    const user = userEvent.setup()
+    const onCommit = vi.fn()
+    render(
+      <CellStageModal cell={CELL} stages={STAGES} open onClose={() => {}} onCommit={onCommit} />,
+    )
+
+    await user.click(screen.getByRole('button', { name: /Xong công đoạn tiếp theo/ }))
+
+    expect(onCommit).toHaveBeenCalledWith(CELL.id, 's3', '')
+  })
+
+  it('shows the note already on the bay, so the foreman can see what it says', () => {
+    render(
+      <CellStageModal
+        cell={{ ...CELL, note: 'Giàn giáo chắn mất một góc' }}
+        stages={STAGES}
+        open
+        onClose={() => {}}
+        onCommit={() => {}}
+      />,
+    )
+    expect(screen.getByLabelText(/Ghi chú/)).toHaveValue('Giàn giáo chắn mất một góc')
+  })
+
+  it('starts each bay with its own note rather than the previous one', () => {
+    // The modal is one component reused for every bay. Left un-keyed, the note
+    // typed on R1C1 would be sent as R1C2's -- attributing one bay's problem
+    // to another.
+    const { rerender } = render(
+      <CellStageModal
+        cell={{ ...CELL, id: 'c1', code: 'R1C1', note: 'ẩm' }}
+        stages={STAGES}
+        open
+        onClose={() => {}}
+        onCommit={() => {}}
+      />,
+    )
+    rerender(
+      <CellStageModal
+        cell={{ ...CELL, id: 'c2', code: 'R1C2', note: '' }}
+        stages={STAGES}
+        open
+        onClose={() => {}}
+        onCommit={() => {}}
+      />,
+    )
+    expect(screen.getByLabelText(/Ghi chú/)).toHaveValue('')
   })
 })

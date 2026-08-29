@@ -20,6 +20,17 @@ export interface Cell {
   areaM2: number
   /** null means not started. */
   stageId: string | null
+  /**
+   * What the foreman wrote when they last moved this bay's stage. Empty or
+   * absent means none.
+   *
+   * Optional rather than required, deliberately. Every screen that draws a bay
+   * builds one of these, and most of them -- the geometry editor, the report,
+   * the pie -- have no business knowing about notes; making it required would
+   * put an empty string in a hundred and sixty places to satisfy a field none
+   * of them read. Treat undefined and '' as the same thing.
+   */
+  note?: string
 }
 
 export interface Deck {
