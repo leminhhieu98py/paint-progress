@@ -7,7 +7,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { DrawingCanvas } from '../../canvas/DrawingCanvas'
 import { cellsInBox } from '../../domain/geometry'
 import {
-  paintLensColors, scaffoldLensColors, zoneLensColors,
+  codesNotReaching, paintLensColors, scaffoldLensColors, zoneLensColors,
   SCAFFOLD_PENDING_COLOR, ZONE_PALETTE,
 } from '../../domain/lens'
 import { NOT_STARTED_COLOR, NOT_STARTED_LABEL } from '../../domain/pieSlices'
@@ -211,6 +211,37 @@ export function DeckProgressPanel({
     [entry],
   )
   /**
+   * The bays the zone lens has to hatch.
+   *
+   * Only when a coat is being filtered on. Unfiltered, each bay already wears
+   * the colour of the coat it has reached, so "done" and "not done" are
+   * different fills and a hatch would say nothing the colour does not. Filtered,
+   * every bay of a zone wears the same zone colour, and without a second
+   * channel the drawing cannot say which of them have actually had that coat --
+   * which is the whole question the filtered lens is asked.
+   */
+  const pendingCodes = useMemo(
+    () => (entry && stageFilter ? codesNotReaching(entry.deck.cells, entry.stages, stageFilter) : []),
+    [entry, stageFilter],
+  )
+  /**
+   * Per-zone: how many of its bays have reached the filtered coat.
+   *
+   * The legend used to be a swatch and a name. On a plan whose whole purpose is
+   * "is Zone A going to make its date", a colour key that cannot say 32/56 is
+   * a colour key nobody has a reason to read.
+   */
+  const zoneProgress = useMemo(() => {
+    if (!entry || !stageFilter) return {}
+    const pending = new Set(pendingCodes)
+    const codeById = new Map(entry.deck.cells.map((c) => [c.id, c.code]))
+    return Object.fromEntries(filteredZones.map((z) => {
+      const codes = z.cellIds.map((id) => codeById.get(id)).filter((c): c is string => !!c)
+      const done = codes.filter((c) => !pending.has(c)).length
+      return [z.id, { done, total: codes.length }]
+    }))
+  }, [entry, stageFilter, filteredZones, pendingCodes])
+  /**
    * Zone id -> colour, from the same list in the same order `zoneLensColors`
    * hands them out, so the swatch in the table and the fill on the drawing are
    * always the same zone.
@@ -391,6 +422,7 @@ export function DeckProgressPanel({
                   cells={entry.deck.cells}
                   selectedCodes={editable ? selectedCodes : []}
                   cellColors={paintColors}
+                  hatchedCodes={pendingCodes}
                   panZoom
                   onCellClick={editable ? ((code) => toggleCell(code)) : undefined}
                   onSelectDraw={editable ? sweep : undefined}
@@ -401,12 +433,26 @@ export function DeckProgressPanel({
               <ColorKey
                 testId="paint-legend"
                 items={stageFilter
-                  ? filteredZones.map((z) => ({ color: zoneColors[z.id], label: z.name }))
+                  ? filteredZones.map((z) => {
+                    const p = zoneProgress[z.id] ?? { done: 0, total: 0 }
+                    return {
+                      color: zoneColors[z.id],
+                      // The count travels IN the legend label rather than in a
+                      // table below it, so the swatch, the name and the number
+                      // are one thing to read.
+                      label: `${z.name} · ${p.done}/${p.total}`,
+                    }
+                  })
                   : [
                     ...entry.stages.map((st) => ({ color: st.color, label: st.name })),
                     { color: NOT_STARTED_COLOR, label: NOT_STARTED_LABEL },
                   ]}
               />
+              {stageFilter && (
+                <Typography.Text type="secondary" style={{ fontSize: 12, display: 'block' }}>
+                  Ô tô theo màu zone · ô có gạch chéo là chưa đạt lớp sơn đang lọc.
+                </Typography.Text>
+              )}
               {stageFilter && filteredZones.length === 0 && (
                 <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                   Lớp sơn này chưa có zone nào được lên kế hoạch.

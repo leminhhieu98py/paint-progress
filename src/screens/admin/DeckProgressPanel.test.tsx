@@ -31,11 +31,13 @@ vi.mock('../../lib/zonesApi', () => ({
 // each bay came out, what is selected, and what the plan says.
 vi.mock('../../canvas/DrawingCanvas', () => ({
   DrawingCanvas: ({
-    imageUrl, cells, cellColors, planLabels, selectedCodes, onCellClick, onSelectDraw,
+    imageUrl, cells, cellColors, hatchedCodes, planLabels, selectedCodes,
+    onCellClick, onSelectDraw,
   }: {
     imageUrl: string
     cells: { code: string }[]
     cellColors?: Record<string, string>
+    hatchedCodes?: string[]
     planLabels?: Record<string, string>
     selectedCodes?: string[]
     onCellClick?: (code: string, additive: boolean) => void
@@ -47,6 +49,7 @@ vi.mock('../../canvas/DrawingCanvas', () => ({
           key={c.code}
           data-testid={`cell-${c.code}`}
           data-color={cellColors?.[c.code] ?? ''}
+          data-hatched={String(Boolean(hatchedCodes?.includes(c.code)))}
           data-plan={planLabels?.[c.code] ?? ''}
           data-selected={String(Boolean(selectedCodes?.includes(c.code)))}
           onClick={() => onCellClick?.(c.code, false)}
@@ -379,8 +382,8 @@ describe('DeckProgressPanel — filtering to one coat', () => {
     await userEvent.click(await screen.findByTitle('Coat 2'))
 
     const key = screen.getByTestId('paint-legend')
-    expect(within(key).getByText('Khu A — Coat 2')).toBeInTheDocument()
-    expect(within(key).queryByText('Khu C — Tháo giáo')).toBeNull()
+    expect(within(key).getByText(/^Khu A — Coat 2 · /)).toBeInTheDocument()
+    expect(within(key).queryByText(/Khu C — Tháo giáo/)).toBeNull()
     const table = screen.getByTestId('zone-table')
     // Every zone stays listed -- the filter is about the drawing, not the plan.
     expect(within(table).getByText('Khu C — Tháo giáo')).toBeInTheDocument()
@@ -399,8 +402,12 @@ describe('DeckProgressPanel — filtering to one coat', () => {
     await userEvent.click(await screen.findByTitle('Coat 2'))
 
     const key = screen.getByTestId('paint-legend')
-    expect(within(key).getByText('Khu A — Coat 2')).toBeInTheDocument()
-    expect(within(key).getByText('Khu B — Coat 2')).toBeInTheDocument()
+    // The name now carries how many of the zone's bays have actually reached
+    // this coat. A key that can only say which colour is which is a key with
+    // no reason to be read on a plan whose question is "will Khu A make its
+    // date".
+    expect(within(key).getByText(/^Khu A — Coat 2 · \d+\/\d+$/)).toBeInTheDocument()
+    expect(within(key).getByText(/^Khu B — Coat 2 · \d+\/\d+$/)).toBeInTheDocument()
     expect(within(key).queryByText('Chưa bắt đầu')).toBeNull()
   })
 
@@ -490,5 +497,59 @@ describe('DeckProgressPanel — read-only', () => {
     expect(screen.getByRole('button', { name: /Gộp thành zone/ })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Ghi thực tế' })).toBeInTheDocument()
     expect(screen.getByLabelText('Ngày bắt đầu của Khu A — Tháo giáo')).toBeInTheDocument()
+  })
+})
+
+describe('DeckProgressPanel — hatching the bays a coat has not reached', () => {
+  it('hatches nothing while every coat is shown', async () => {
+    // Unfiltered, each bay already wears the colour of the coat it reached, so
+    // done and not-done are different fills and a hatch would add a channel
+    // that says nothing.
+    renderPanel()
+    const paint = await screen.findByTestId('paint-lens')
+    expect(within(paint).getByTestId('cell-R1C1')).toHaveAttribute('data-hatched', 'false')
+    expect(within(paint).getByTestId('cell-R1C2')).toHaveAttribute('data-hatched', 'false')
+  })
+
+  it('hatches only the bays behind the filtered coat', async () => {
+    // R1C1 is at Tháo giáo (seq 3) and R1C2 at Coat 2 (seq 2). Filtering to
+    // Tháo giáo leaves R1C2 short of it; R1C1 has arrived.
+    renderPanel()
+    await screen.findByTestId('paint-lens')
+
+    await userEvent.click(screen.getByRole('combobox', { name: 'Lọc theo lớp sơn' }))
+    await userEvent.click(await screen.findByTitle('Tháo giáo'))
+
+    const paint = screen.getByTestId('paint-lens')
+    expect(within(paint).getByTestId('cell-R1C1')).toHaveAttribute('data-hatched', 'false')
+    expect(within(paint).getByTestId('cell-R1C2')).toHaveAttribute('data-hatched', 'true')
+  })
+
+  it('counts each zone against the filtered coat in the key', async () => {
+    // The zone covers BOTH bays, so the fraction it reports is not the same
+    // number as its bay count -- a mapper that counted the deck's bays rather
+    // than the zone's would pass on a one-bay fixture.
+    listDeckZones.mockResolvedValue([{ ...ZONE, cellIds: ['c1', 'c2'] }])
+    renderPanel()
+    await screen.findByTestId('paint-lens')
+
+    await userEvent.click(screen.getByRole('combobox', { name: 'Lọc theo lớp sơn' }))
+    await userEvent.click(await screen.findByTitle('Tháo giáo'))
+
+    const key = screen.getByTestId('paint-legend')
+    // Khu A covers both bays of this deck and one of them has reached Tháo
+    // giáo, so the plan is half done -- which is the number the admin is
+    // actually asking this screen for.
+    expect(within(key).getByText('Khu A — Tháo giáo · 1/2')).toBeInTheDocument()
+  })
+
+  it('says what the hatch means, rather than leaving it to be inferred', async () => {
+    renderPanel()
+    await screen.findByTestId('paint-lens')
+
+    await userEvent.click(screen.getByRole('combobox', { name: 'Lọc theo lớp sơn' }))
+    await userEvent.click(await screen.findByTitle('Tháo giáo'))
+
+    expect(screen.getByText(/gạch chéo là chưa đạt lớp sơn đang lọc/)).toBeInTheDocument()
   })
 })
