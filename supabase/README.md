@@ -53,6 +53,16 @@ npx supabase db query --linked -f supabase/verify_schema.sql
 Every returned row must begin with `PASS` — 32 rows in a passing run, one
 per numbered check in the file's header comment.
 
+The `0019` note check reports `FAIL` until that migration is applied, and the
+three note tests in `tests/rls.integration.test.ts` are `it.skip`ped for the
+same reason -- unskip them in the change that applies it.
+
+**`0019` is written but NOT applied.** Until `npx supabase db push` runs it,
+`setCellStage` fails against the hosted project with PGRST204 (`Could not find
+the 'note' column`), because the client now sends `note` on every stage write.
+That is the whole GS write path, so the branch is not usable against the
+database until the migration lands.
+
 Checks 29-31 arrived with `0014` and report `FAIL` until that migration is
 applied — check 29 with `from_stage_name NULL`, which is the defect it fixes,
 reproduced. Check 32 arrived with `0015` and reports `FAIL` with `0 membership
