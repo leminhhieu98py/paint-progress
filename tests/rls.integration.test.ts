@@ -1049,7 +1049,13 @@ describe.skipIf(!adminConfigured)('admin-users Edge Function', () => {
       projectId: ABSENT_PROJECT_ID,
     })
     expect(result.status).toBe(400)
-    expect(String(result.body.error)).toContain('project_members')
+    // The message names what failed in the admin's terms and NOT the table it
+    // failed on. This assertion used to require the string 'project_members',
+    // which pinned the schema leak in place: the function returned Postgres's
+    // own text -- table and constraint names -- to the client on nine branches.
+    // What the test is actually for is below: that the rollback ran.
+    expect(String(result.body.error)).toContain('Không gán được dự án')
+    expect(String(result.body.error)).not.toContain('project_members')
 
     // Two independent proofs that nothing survived. The profile is gone --
     // and since nothing in the function deletes a profile, its absence can
