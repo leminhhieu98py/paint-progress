@@ -1,6 +1,6 @@
 import { FilePdfOutlined, UploadOutlined, WarningOutlined } from '@ant-design/icons'
 import {
-  Alert, Button, Form, Input, InputNumber, Segmented, Space, Spin, Typography, Upload,
+  Alert, App, Button, Form, Input, InputNumber, Segmented, Space, Spin, Typography, Upload,
 } from 'antd'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
@@ -14,6 +14,7 @@ import { pdfPageCount, renderPdfPage } from '../../lib/pdfToPng'
 import { DeckEditor } from './DeckEditor'
 import { StageConfigPanel } from './StageConfigPanel'
 import { DeckProgressPanel } from './DeckProgressPanel'
+import { ConsequenceModal } from '../../components/ConsequenceModal'
 import { PageBody, PageHeader } from '../../components/PageHeader'
 import { RulesDisclosure } from '../../components/RulesDisclosure'
 import { SectionCard } from '../../components/SectionCard'
@@ -88,6 +89,17 @@ export function DeckDetailScreen() {
   const [error, setError] = useState<string | null>(null)
   const [editing, setEditing] = useState(creating)
   const [saving, setSaving] = useState(false)
+  /**
+   * True while the save is waiting to be read back.
+   *
+   * Only raised when the write would do something the form does not show: swap
+   * the sheet the bays are traced against, or move the denominator every
+   * percentage on the deck is divided by. A rename goes straight through --
+   * asking about a rename is what teaches an admin to click through the two
+   * above.
+   */
+  const [confirmingSave, setConfirmingSave] = useState(false)
+  const { message } = App.useApp()
 
   const [name, setName] = useState('')
   const [code, setCode] = useState('')
@@ -203,16 +215,38 @@ export function DeckDetailScreen() {
       // is nested differently here than in any test that renders this screen on
       // its own -- and the deck's address is a path, not a route depth.
       // `replace` so Back does not offer to create the deck a second time.
+      setConfirmingSave(false)
       if (creating) navigate(`../${id}`, { replace: true, relative: 'path' })
       else {
         setEditing(false)
         await load()
+        message.success('Đã lưu thông tin sàn')
       }
     } catch (e) {
+      setConfirmingSave(false)
       setError((e as Error).message)
     } finally {
       setSaving(false)
     }
+  }
+
+  /**
+   * What this save would do beyond writing the two text fields.
+   *
+   * Empty is the ordinary case, and an empty list means no dialog at all.
+   */
+  const saveConsequences: { label: string; meta?: string }[] = []
+  if (!creating && pdf) {
+    saveConsequences.push({
+      label: `Thay bản vẽ bằng ${pdf.name}`,
+      meta: deck?.drawingName ?? 'bản vẽ hiện tại',
+    })
+  }
+  if (!creating && deck && area !== deck.totalAreaM2) {
+    saveConsequences.push({
+      label: `Diện tích sàn ${formatAreaM2(deck.totalAreaM2)} → ${formatAreaM2(area)} m²`,
+      meta: deck.cellCount ? `${deck.cellCount} ô` : 'chưa dựng ô',
+    })
   }
 
   if (loading) return <Spin style={{ display: 'block', margin: '25vh auto' }} />
@@ -378,7 +412,12 @@ export function DeckDetailScreen() {
         )}
       </Form.Item>
       <Space style={{ flex: '1 1 100%' }}>
-        <Button type="primary" loading={saving} disabled={!name || !code} onClick={() => void save()}>
+        <Button
+          type="primary"
+          loading={saving}
+          disabled={!name || !code}
+          onClick={() => (saveConsequences.length > 0 ? setConfirmingSave(true) : void save())}
+        >
           {creating ? 'Tạo sàn' : 'Lưu thông tin sàn'}
         </Button>
         <Button
@@ -538,6 +577,31 @@ export function DeckDetailScreen() {
           </SectionCard>
         )}
       </PageBody>
+
+      <ConsequenceModal
+        open={confirmingSave}
+        tone="warn"
+        tag="Cần đọc trước khi lưu"
+        title="Lưu thay đổi cho sàn này?"
+        description="Ngoài tên và mã, lần lưu này còn:"
+        items={saveConsequences}
+        consequence={
+          [
+            pdf
+              ? 'Ô đã dựng vẫn giữ nguyên vị trí theo tỉ lệ trên khung bản vẽ, nên nếu bản vẽ mới lệch khung so với bản cũ thì lưới ô sẽ nằm sai chỗ. Kiểm tra lại ở A3.3 và dò lại ô nếu cần.'
+              : '',
+            deck && area !== deck.totalAreaM2
+              ? 'Diện tích từng ô được chia lại theo tỉ lệ pixel từ con số mới. Mọi phần trăm của sàn — và số tiền tính theo nó — đều lấy con số này làm mẫu số.'
+              : '',
+          ]
+            .filter(Boolean)
+            .join(' ')
+        }
+        okText="Lưu"
+        confirmLoading={saving}
+        onCancel={() => setConfirmingSave(false)}
+        onOk={() => void save()}
+      />
     </>
   )
 }

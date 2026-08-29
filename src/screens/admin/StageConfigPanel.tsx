@@ -7,7 +7,7 @@ import {
   HolderOutlined,
   PlusOutlined,
 } from '@ant-design/icons'
-import { Alert, Button, Input, InputNumber, Modal, Space, Table, Tooltip, Typography } from 'antd'
+import { Alert, App, Button, Input, InputNumber, Space, Table, Tooltip } from 'antd'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { duplicateStageFields } from '../../domain/stageFlow'
 import type { Stage } from '../../domain/types'
@@ -16,6 +16,7 @@ import {
   listStages, roundStageWeight, saveStages, stagesRemovedBy, STAGE_WEIGHT_EPSILON,
 } from '../../lib/decksApi'
 import { randomUUID } from '../../lib/uuid'
+import { ConsequenceModal } from '../../components/ConsequenceModal'
 import { RulesDisclosure } from '../../components/RulesDisclosure'
 import { palette } from '../../theme'
 
@@ -115,6 +116,7 @@ export function StageConfigPanel({
    * removal does not move a half-typed value onto a different stage.
    */
   const [hexDraft, setHexDraft] = useState<Record<string, string>>({})
+  const { message } = App.useApp()
   const generation = useRef(0)
   // Whether the admin has made a local edit that no refresh has accounted
   // for yet. The generation token alone only orders *overlapping refreshes*
@@ -279,6 +281,9 @@ export function StageConfigPanel({
       // asked to wait for.
       void refresh()
       onSaved?.()
+      // Last, after the state transition and the parent's callback. A toast is
+      // presentation; raising it mid-transition once left `onSaved` unreached.
+      message.success('Đã lưu cấu hình lớp sơn')
     } catch (e) {
       // Close the dialog before surfacing the error. The Alert lives outside the
       // modal, so leaving it open hides the message behind the mask -- the admin
@@ -585,14 +590,14 @@ export function StageConfigPanel({
           type="primary"
           disabled={!balanced || hasClash || hexPending}
           loading={busy}
-          // A rename, a reweight and a reorder all keep every stage row, id,
-          // zone and tick, so there is genuinely nothing to disclose and the
-          // save goes straight through: a dialog on a save that costs nothing is
-          // a dialog the admin learns to click through, which is how the one
-          // that does matter gets skimmed. A removal is the one that matters.
-          onClick={() => (removed.length > 0 ? setConfirming(true) : void onSave())}
+          // Both paths ask, but they ask different questions. A removal
+          // destroys recorded progress and is titled as such. An ordinary save
+          // destroys nothing -- it re-bases every percentage on this deck on
+          // new weights, which is the number the customer is billed against,
+          // so it still gets read back before it lands.
+          onClick={() => setConfirming(true)}
         >
-          Lưu
+          Lưu cấu hình lớp sơn
         </Button>
         <Button icon={<PlusOutlined aria-hidden />} disabled={busy} onClick={addStage}>
           Thêm lớp
@@ -628,50 +633,44 @@ export function StageConfigPanel({
        * animation on this one dialog, which is negligible against a save
        * confirmation whose closed state needs to be trustworthy. */}
       {confirming && (
-        <Modal
+        <ConsequenceModal
           open
-          title="Xoá lớp sơn khỏi cấu hình?"
-          okText="Vẫn lưu"
-          cancelText="Huỷ"
+          tone={removed.length > 0 ? 'danger' : 'accent'}
+          tag={removed.length > 0 ? 'Thao tác phá huỷ' : 'Xác nhận'}
+          title={
+            removed.length > 0 ? 'Xoá lớp sơn khỏi cấu hình?' : 'Lưu cấu hình lớp sơn?'
+          }
+          description={
+            removed.length > 0
+              ? 'Các lớp sơn sau sẽ bị xoá khỏi cấu hình:'
+              : `Cấu hình này chỉ áp cho sàn đang mở:`
+          }
+          /*
+            On a removal: the stages being deleted, by the name the DATABASE
+            holds for them -- `removed` comes from the persisted snapshot, and
+            these rows are no longer in the draft at all, so there is no edited
+            name left to show. On an ordinary save: the configuration about to
+            be written, in the order it will be written in.
+          */
+          items={
+            removed.length > 0
+              ? removed.map((st) => ({ label: st.name, color: st.color }))
+              : draft.map((st) => ({
+                  label: `${st.seq}. ${st.name}`,
+                  meta: `trọng số ${formatWeight(st.weight)}`,
+                  color: st.color,
+                }))
+          }
+          consequence={
+            removed.length > 0
+              ? 'Xoá một lớp sẽ xoá tiến độ đã ghi của mọi ô đang ở lớp đó — các ô đó trở về trạng thái chưa bắt đầu — và xoá luôn các zone đã lên kế hoạch cho lớp đó. Đổi tên, đổi trọng số hay đổi thứ tự thì không mất gì: mỗi lớp giữ nguyên danh tính của nó. Nhưng các lớp bị xoá ở trên thì mất vĩnh viễn.'
+              : 'Mọi phần trăm tiến độ của sàn này tính lại từ các trọng số trên. Sàn khác trong dự án không bị ảnh hưởng, và không ô nào mất tiến độ đã ghi.'
+          }
+          okText={removed.length > 0 ? 'Vẫn lưu' : 'Lưu'}
           confirmLoading={busy}
           onCancel={() => setConfirming(false)}
           onOk={() => void onSave()}
-        >
-          {/*
-            The stages being deleted, by the name the DATABASE holds for them --
-            `removed` comes from the persisted snapshot, and these rows are no
-            longer in the draft at all, so there is no edited name left to show.
-
-            This list used to be the whole write laid out seq by seq, because a
-            seq-keyed upsert really did rewrite each position in place and the
-            consequences landed per position rather than per stage. With identity
-            on the id that framing would now be a lie: a reorder rewrites nothing
-            but display order, and the only thing a save can destroy is the rows
-            named here. An earlier wording claimed a stage save wiped all recorded
-            progress in the project (true of the delete-and-reinsert write it
-            described) and never mentioned zones, which were the part being
-            destroyed silently.
-          */}
-          <Typography.Paragraph>Các lớp sơn sẽ bị xoá khỏi cấu hình:</Typography.Paragraph>
-          <ul>
-            {removed.map((s) => (
-              <li key={s.id}>
-                <strong>{s.name}</strong>
-              </li>
-            ))}
-          </ul>
-          <Typography.Paragraph>
-            Xoá một lớp sẽ xoá tiến độ đã ghi của mọi ô đang ở lớp đó — các ô đó
-            trở về trạng thái chưa bắt đầu — và xoá luôn các zone đã lên kế hoạch
-            cho lớp đó.
-          </Typography.Paragraph>
-          <Typography.Paragraph type="secondary">
-            Đổi tên, đổi trọng số hay đổi thứ tự thì không mất gì: mỗi lớp giữ
-            nguyên danh tính của nó, nên tiến độ đã ghi và zone vẫn đi theo đúng
-            lớp. Nhưng các lớp bị xoá ở trên thì mất vĩnh viễn và không thể khôi
-            phục.
-          </Typography.Paragraph>
-        </Modal>
+        />
       )}
     </Space>
   )

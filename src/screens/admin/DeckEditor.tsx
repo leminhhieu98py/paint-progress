@@ -13,6 +13,7 @@ import {
   updateDeckArea, zoneImpactOf, type DeckRow, type ZoneImpact,
 } from '../../lib/decksApi'
 import { formatAreaM2, formatPercent } from '../../lib/format'
+import { modalStyles } from '../../components/modalChrome'
 import { DrawingCanvas } from '../../canvas/DrawingCanvas'
 import { detectBaysFromImage } from '../../canvas/rgbFromImage'
 
@@ -563,6 +564,10 @@ export function DeckEditor({ deck, onSaved }: { deck: DeckRow; onSaved?: () => v
       onSaved?.()
       setPending(null)
       setError(null)
+      // The only signal the write landed. The canvas looks identical before and
+      // after a save -- the admin drew the change, so seeing it proves nothing --
+      // and the dialog closes on failure too.
+      message.success(`Đã lưu hình học ô · ${next.length} ô`)
     } catch (e) {
       fail(saveErrorInVietnamese((e as Error).message))
       setPending(null)
@@ -804,6 +809,7 @@ export function DeckEditor({ deck, onSaved }: { deck: DeckRow; onSaved?: () => v
       <Modal
         open={pending !== null}
         destroyOnHidden
+        styles={modalStyles}
         title={
           pending &&
           (pending.impact.length > 0

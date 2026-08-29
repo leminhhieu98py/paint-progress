@@ -1,7 +1,8 @@
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { renderApp } from '../../test/renderApp'
 import { DecksScreen } from './DecksScreen'
 
 const listProjectNames = vi.hoisted(() => vi.fn())
@@ -98,7 +99,7 @@ function UrlEcho() {
 }
 
 const renderScreen = (entry = '/decks') =>
-  render(
+  renderApp(
     <MemoryRouter initialEntries={[entry]}>
       <UrlEcho />
       <Routes>
@@ -223,6 +224,7 @@ describe('DecksScreen — the project-wide half of progress', () => {
     await screen.findByTestId('project-rollup')
 
     await userEvent.click(screen.getByRole('button', { name: /Xuất báo cáo/ }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Xuất' }))
 
     await waitFor(() => expect(buildReportWorkbook).toHaveBeenCalledTimes(1))
     const [input] = buildReportWorkbook.mock.calls[0]
@@ -243,6 +245,7 @@ describe('DecksScreen — the project-wide half of progress', () => {
     await screen.findByTestId('project-rollup')
 
     await userEvent.click(screen.getByRole('button', { name: /Xuất báo cáo/ }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Xuất' }))
 
     await waitFor(() => expect(buildReportWorkbook).toHaveBeenCalled())
     expect(buildReportWorkbook.mock.calls[0][0].decks[0].userNames).toEqual({})
@@ -254,6 +257,7 @@ describe('DecksScreen — the project-wide half of progress', () => {
     await screen.findByTestId('project-rollup')
 
     await userEvent.click(screen.getByRole('button', { name: /Xuất báo cáo/ }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Xuất' }))
 
     expect(await screen.findByText(/out of memory/)).toBeInTheDocument()
   })

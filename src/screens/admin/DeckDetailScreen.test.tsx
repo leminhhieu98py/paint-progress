@@ -1,8 +1,9 @@
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useEffect } from 'react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { renderApp } from '../../test/renderApp'
 import { DeckDetailScreen } from './DeckDetailScreen'
 
 const getDeck = vi.hoisted(() => vi.fn())
@@ -77,7 +78,7 @@ beforeEach(() => {
 })
 
 const renderAt = (path: string) =>
-  render(
+  renderApp(
     <MemoryRouter initialEntries={[path]}>
       <Routes>
         <Route path="/decks" element={<div>deck list</div>} />
@@ -215,6 +216,55 @@ describe('DeckDetailScreen', () => {
 
     await waitFor(() => expect(updateDeckIdentity).toHaveBeenCalledWith('d1', 'Cellar Deck', 'MD'))
     expect(updateDeckArea).toHaveBeenCalledWith('d1', 5258.5, 'prorated')
+  })
+
+  it('asks before replacing a drawing that already has bays on it', async () => {
+    // uploadDrawing swaps the image and leaves cells.x/y untouched, so a mesh
+    // traced against the old sheet lands wherever those fractions fall on the
+    // new one. Nothing afterwards says the bays moved; the drawing simply looks
+    // subtly wrong, and every area under it is already being billed.
+    renderAt('/decks/d1')
+    await screen.findByRole('heading', { level: 1, name: 'Main Deck' })
+    await userEvent.click(screen.getByText('Sửa'))
+    await userEvent.upload(await screen.findByLabelText('Bản vẽ (PDF)'), pdfFile())
+    await userEvent.click(screen.getByRole('button', { name: 'Lưu thông tin sàn' }))
+
+    expect(await screen.findByText('Lưu thay đổi cho sàn này?')).toBeInTheDocument()
+    expect(screen.getByText(/Ô đã dựng vẫn giữ nguyên vị trí/)).toBeInTheDocument()
+    expect(uploadDrawing).not.toHaveBeenCalled()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Lưu' }))
+    await waitFor(() => expect(uploadDrawing).toHaveBeenCalled())
+  })
+
+  it('asks before an area change re-prorates every bay under it', async () => {
+    renderAt('/decks/d1')
+    await screen.findByRole('heading', { level: 1, name: 'Main Deck' })
+    await userEvent.click(screen.getByText('Sửa'))
+    const area = await screen.findByLabelText('Diện tích sàn (m²)')
+    await userEvent.clear(area)
+    await userEvent.type(area, '6000')
+    await userEvent.click(screen.getByRole('button', { name: 'Lưu thông tin sàn' }))
+
+    expect(await screen.findByText('Lưu thay đổi cho sàn này?')).toBeInTheDocument()
+    expect(screen.getByText(/chia lại theo tỉ lệ pixel/)).toBeInTheDocument()
+    expect(updateDeckArea).not.toHaveBeenCalled()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Lưu' }))
+    await waitFor(() => expect(updateDeckArea).toHaveBeenCalledWith('d1', 6000, 'prorated'))
+  })
+
+  it('says the deck was saved, because the form looks the same afterwards', async () => {
+    renderAt('/decks/d1')
+    await screen.findByRole('heading', { level: 1, name: 'Main Deck' })
+    await userEvent.click(screen.getByText('Sửa'))
+    const name = await screen.findByLabelText('Tên sàn')
+    await userEvent.clear(name)
+    await userEvent.type(name, 'Cellar Deck')
+    await userEvent.click(screen.getByRole('button', { name: 'Lưu thông tin sàn' }))
+
+    await waitFor(() => expect(updateDeckIdentity).toHaveBeenCalled())
+    expect(await screen.findByText('Đã lưu thông tin sàn')).toBeInTheDocument()
   })
 
   it('creates a deck from the form and goes to its own address', async () => {

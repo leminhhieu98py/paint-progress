@@ -1,5 +1,5 @@
 import { ArrowRightOutlined, DownloadOutlined, PlusOutlined } from '@ant-design/icons'
-import { Alert, Button, Select, Table, Tooltip } from 'antd'
+import { Alert, App, Button, Select, Table, Tooltip } from 'antd'
 import dayjs from 'dayjs'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
@@ -13,6 +13,7 @@ import { listDeckZones } from '../../lib/zonesApi'
 import { listProjectNames } from '../../lib/projectsApi'
 import { buildReportWorkbook, reportFileName, type DeckImages } from '../../lib/reportXlsx'
 import { NEW_DECK } from '../../config'
+import { ConsequenceModal } from '../../components/ConsequenceModal'
 import { Donut, type DonutSlice } from '../../components/Donut'
 import { EmptyState } from '../../components/EmptyState'
 import { PageBody, PageHeader } from '../../components/PageHeader'
@@ -83,6 +84,8 @@ export function DecksScreen() {
    */
   const [entries, setEntries] = useState<Awaited<ReturnType<typeof loadProjectProgress>>>([])
   const [exporting, setExporting] = useState(false)
+  const [confirmingExport, setConfirmingExport] = useState(false)
+  const { message } = App.useApp()
 
   useEffect(() => {
     void (async () => {
@@ -192,6 +195,7 @@ export function DecksScreen() {
    */
   const exportReport = async () => {
     if (entries.length === 0) return
+    setConfirmingExport(false)
     setExporting(true)
     try {
       const profiles = await listGsUsers().catch(() => [])
@@ -236,6 +240,7 @@ export function DecksScreen() {
       // Revoked on the next tick: Safari has not started the download when
       // click() returns, and a revoked URL gives a silent zero-byte file.
       setTimeout(() => URL.revokeObjectURL(url), 0)
+      message.success('Đã xuất báo cáo')
     } catch (e) {
       setError((e as Error).message)
     } finally {
@@ -364,7 +369,7 @@ export function DecksScreen() {
             <Tooltip title={entries.length === 0 ? 'Cần ít nhất một sàn' : 'Xuất báo cáo · .xlsx'}>
               <Button
                 icon={<DownloadOutlined aria-hidden />}
-                onClick={() => void exportReport()}
+                onClick={() => setConfirmingExport(true)}
                 loading={exporting}
                 disabled={entries.length === 0}
               >
@@ -509,6 +514,22 @@ export function DecksScreen() {
           )}
         </SectionCard>
       </PageBody>
+
+      <ConsequenceModal
+        open={confirmingExport}
+        tag="Xác nhận"
+        title="Xuất báo cáo dự án?"
+        description="Bản vẽ được dựng lại lần lượt từng sàn:"
+        items={entries.map((e) => ({
+          label: e.deck.name,
+          meta: `${e.deck.cells.length} ô`,
+        }))}
+        consequence="Dựng tuần tự, không song song, nên với dự án nhiều sàn việc này mất một lúc. Trong lúc chạy nút không bấm lại được, và nếu hỏng giữa chừng thì không có tệp một phần nào được đưa ra."
+        okText="Xuất"
+        confirmLoading={exporting}
+        onCancel={() => setConfirmingExport(false)}
+        onOk={() => void exportReport()}
+      />
     </>
   )
 }

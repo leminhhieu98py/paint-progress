@@ -18,9 +18,9 @@ export interface ConsequenceItem {
 export type ConsequenceTone = 'accent' | 'warn' | 'danger'
 
 const TONES: Record<ConsequenceTone, { fg: string; bg: string; icon: ReactNode }> = {
-  accent: { fg: palette.accent, bg: palette.accentTint, icon: <InfoCircleFilled /> },
-  warn: { fg: palette.warning, bg: '#FDF0D5', icon: <WarningFilled /> },
-  danger: { fg: palette.error, bg: '#FEE4E2', icon: <DeleteOutlined /> },
+  accent: { fg: palette.accent, bg: palette.accentTint, icon: <InfoCircleFilled aria-hidden /> },
+  warn: { fg: palette.warning, bg: '#FDF0D5', icon: <WarningFilled aria-hidden /> },
+  danger: { fg: palette.error, bg: '#FEE4E2', icon: <DeleteOutlined aria-hidden /> },
 }
 
 /**
@@ -196,7 +196,7 @@ export function ConsequenceModal({
           danger={tone === 'danger'}
           loading={confirmLoading}
           onClick={onOk}
-          icon={tone === 'danger' ? <ExclamationCircleFilled /> : undefined}
+          icon={tone === 'danger' ? <ExclamationCircleFilled aria-hidden /> : undefined}
         >
           {okText}
         </Button>

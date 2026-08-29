@@ -1,6 +1,7 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { renderApp } from '../../test/renderApp'
 import { StageConfigPanel } from './StageConfigPanel'
 
 const listStages = vi.hoisted(() => vi.fn())
@@ -26,14 +27,18 @@ vi.mock('../../lib/decksApi', async (importOriginal) => {
 })
 
 /**
- * Matches a list item by its whole rendered text. The removal list puts each
- * stage name in a <strong>, which splits the text across elements and makes the
- * default string matcher (direct text nodes only) miss it. Comparing the item's
- * full textContent also pins that the item is EXACTLY that stage, rather than
- * merely containing its name.
+ * Presses the panel's save and answers the dialog behind it.
+ *
+ * Every save asks now: a removal because it destroys recorded progress, an
+ * ordinary save because it re-bases every percentage on the deck. The dialog
+ * names itself differently for the two, which is the point -- so this reads
+ * whichever is on screen rather than assuming.
  */
-const listItem = (text: string) => (_content: string, el: Element | null) =>
-  el?.tagName === 'LI' && el.textContent === text
+const saveConfig = async () => {
+  await userEvent.click(screen.getByRole('button', { name: 'Lưu cấu hình lớp sơn' }))
+  const removal = screen.queryByRole('button', { name: 'Vẫn lưu' })
+  await userEvent.click(removal ?? (await screen.findByRole('button', { name: 'Lưu' })))
+}
 
 beforeEach(() => {
   listStages.mockReset()
@@ -46,13 +51,13 @@ beforeEach(() => {
 
 describe('StageConfigPanel', () => {
   it('lists the project stages in seq order', async () => {
-    render(<StageConfigPanel deckId="d1" />)
+    renderApp(<StageConfigPanel deckId="d1" />)
     expect(await screen.findByDisplayValue('Blast + Coat 1')).toBeInTheDocument()
     expect(screen.getByDisplayValue('Coat 2')).toBeInTheDocument()
   })
 
   it('shows the running weight total', async () => {
-    render(<StageConfigPanel deckId="d1" />)
+    renderApp(<StageConfigPanel deckId="d1" />)
     // Wait for the real stages to load first: before they do, `total` is 0
     // and the balance warning renders too (now also reading "phải bằng
     // 1,0000" -- B14's fix for its own hardcoded "1.00" -- so a bare
@@ -66,34 +71,34 @@ describe('StageConfigPanel', () => {
   })
 
   it('blocks save when the weights do not sum to 1', async () => {
-    render(<StageConfigPanel deckId="d1" />)
+    renderApp(<StageConfigPanel deckId="d1" />)
     // vi-VN comma decimal, matching decimalSeparator="," on the field.
     const weight = await screen.findByDisplayValue('0,6')
     await userEvent.clear(weight)
     await userEvent.type(weight, '0,5')
 
-    const save = screen.getByRole('button', { name: 'Lưu' })
+    const save = screen.getByRole('button', { name: 'Lưu cấu hình lớp sơn' })
     await waitFor(() => expect(save).toBeDisabled())
     expect(saveStages).not.toHaveBeenCalled()
   })
 
   it('enables save once the weights sum to 1 again', async () => {
-    render(<StageConfigPanel deckId="d1" />)
+    renderApp(<StageConfigPanel deckId="d1" />)
     const weight = await screen.findByDisplayValue('0,4')
     await userEvent.clear(weight)
     await userEvent.type(weight, '0,4')
     await waitFor(() =>
-      expect(screen.getByRole('button', { name: 'Lưu' })).toBeEnabled(),
+      expect(screen.getByRole('button', { name: 'Lưu cấu hình lớp sơn' })).toBeEnabled(),
     )
   })
 
   it('saves each stage with the id it was loaded under', async () => {
     saveStages.mockResolvedValue(undefined)
-    render(<StageConfigPanel deckId="d1" />)
+    renderApp(<StageConfigPanel deckId="d1" />)
     await screen.findByDisplayValue('Blast + Coat 1')
     // Nothing is being removed here, so Lưu saves directly -- see the
     // no-dialog test below.
-    await userEvent.click(screen.getByRole('button', { name: 'Lưu' }))
+    await saveConfig()
 
     await waitFor(() => expect(saveStages).toHaveBeenCalledTimes(1))
     const [, stages] = saveStages.mock.calls[0]
@@ -119,11 +124,11 @@ describe('StageConfigPanel', () => {
     })
     try {
       saveStages.mockResolvedValue(undefined)
-      render(<StageConfigPanel deckId="d1" />)
+      renderApp(<StageConfigPanel deckId="d1" />)
       await screen.findByDisplayValue('Blast + Coat 1')
 
       await userEvent.click(screen.getByRole('button', { name: 'Thêm lớp' }))
-      await userEvent.click(screen.getByRole('button', { name: 'Lưu' }))
+      await saveConfig()
 
       await waitFor(() => expect(saveStages).toHaveBeenCalledTimes(1))
       const saved = saveStages.mock.calls[0][1] as { id: string }[]
@@ -142,10 +147,10 @@ describe('StageConfigPanel', () => {
     // database to invent: the upsert keys on it. It is generated here, client
     // side, the moment the row appears.
     saveStages.mockResolvedValue(undefined)
-    render(<StageConfigPanel deckId="d1" />)
+    renderApp(<StageConfigPanel deckId="d1" />)
     await screen.findByDisplayValue('Blast + Coat 1')
     await userEvent.click(screen.getByRole('button', { name: 'Thêm lớp' }))
-    await userEvent.click(screen.getByRole('button', { name: 'Lưu' }))
+    await saveConfig()
 
     await waitFor(() => expect(saveStages).toHaveBeenCalledTimes(1))
     const saved = saveStages.mock.calls[0][1] as { id: string; seq: number }[]
@@ -166,12 +171,12 @@ describe('StageConfigPanel', () => {
     // save that costs nothing is a dialog the admin learns to click through --
     // which is how the one that matters gets skimmed.
     saveStages.mockResolvedValue(undefined)
-    render(<StageConfigPanel deckId="d1" />)
+    renderApp(<StageConfigPanel deckId="d1" />)
     const name = await screen.findByDisplayValue('Blast + Coat 1')
     await userEvent.clear(name)
     await userEvent.type(name, 'Blast + Coat 1 (renamed)')
 
-    await userEvent.click(screen.getByRole('button', { name: 'Lưu' }))
+    await saveConfig()
 
     await waitFor(() => expect(saveStages).toHaveBeenCalledTimes(1))
     expect(screen.queryByRole('dialog')).toBeNull()
@@ -199,7 +204,7 @@ describe('StageConfigPanel', () => {
       { id: 's3', seq: 3, name: 'Tháo giáo', color: '#722ed1', weight: 0.2 },
     ])
     saveStages.mockResolvedValue(undefined)
-    render(<StageConfigPanel deckId="d1" />)
+    renderApp(<StageConfigPanel deckId="d1" />)
     await screen.findByDisplayValue('Tháo giáo')
 
     await userEvent.click(screen.getAllByRole('button', { name: 'Xoá' })[1])
@@ -207,18 +212,19 @@ describe('StageConfigPanel', () => {
     const weight = screen.getByDisplayValue('0,5')
     await userEvent.clear(weight)
     await userEvent.type(weight, '0,8')
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Lưu' })).toBeEnabled())
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Lưu cấu hình lớp sơn' })).toBeEnabled())
 
-    await userEvent.click(screen.getByRole('button', { name: 'Lưu' }))
+    // Not saveConfig(): this test reads the dialog before answering it.
+    await userEvent.click(screen.getByRole('button', { name: 'Lưu cấu hình lớp sơn' }))
 
     const dialog = await screen.findByRole('dialog')
     expect(within(dialog).getByText('Xoá lớp sơn khỏi cấu hình?')).toBeInTheDocument()
-    expect(within(dialog).getByText(listItem('Coat 2'))).toBeInTheDocument()
+    expect(within(dialog).getByText('Coat 2')).toBeInTheDocument()
     // The survivors are not named, because nothing happens to them: Tháo giáo
     // keeps its row, its id and its cells' recorded progress even though its seq
     // is renumbered from 3 to 2. Naming it here is precisely the old defect.
-    expect(within(dialog).queryByText(listItem('Tháo giáo'))).toBeNull()
-    expect(within(dialog).queryByText(listItem('Blast + Coat 1'))).toBeNull()
+    expect(within(dialog).queryByText('Tháo giáo')).toBeNull()
+    expect(within(dialog).queryByText('Blast + Coat 1')).toBeNull()
     // Both consequences of the delete, named: the cells at that stage are reset,
     // and the zones planned against it go with it.
     expect(within(dialog).getByText(/trở về trạng thái chưa bắt đầu/)).toBeInTheDocument()
@@ -249,12 +255,12 @@ describe('StageConfigPanel', () => {
       { id: 's3', seq: 3, name: 'Coat 3', color: '#52c41a', weight: 0.2 },
     ])
     saveStages.mockResolvedValue(undefined)
-    render(<StageConfigPanel deckId="d1" />)
+    renderApp(<StageConfigPanel deckId="d1" />)
     await screen.findByDisplayValue('Coat 3')
 
     // Move Coat 3 up one: it takes seq 2 and Coat 2 takes seq 3.
     await userEvent.click(screen.getAllByRole('button', { name: 'Lên' })[2])
-    await userEvent.click(screen.getByRole('button', { name: 'Lưu' }))
+    await saveConfig()
 
     await waitFor(() => expect(saveStages).toHaveBeenCalledTimes(1))
     expect(screen.queryByRole('dialog')).toBeNull()
@@ -271,10 +277,10 @@ describe('StageConfigPanel', () => {
   it('calls onSaved after a save actually persists, so the parent can refresh its own rollup', async () => {
     saveStages.mockResolvedValue(undefined)
     const onSaved = vi.fn()
-    render(<StageConfigPanel deckId="d1" onSaved={onSaved} />)
+    renderApp(<StageConfigPanel deckId="d1" onSaved={onSaved} />)
     await screen.findByDisplayValue('Blast + Coat 1')
 
-    await userEvent.click(screen.getByRole('button', { name: 'Lưu' }))
+    await saveConfig()
 
     await waitFor(() => expect(saveStages).toHaveBeenCalledTimes(1))
     expect(onSaved).toHaveBeenCalledTimes(1)
@@ -283,10 +289,10 @@ describe('StageConfigPanel', () => {
   it('does not call onSaved when the save fails', async () => {
     saveStages.mockRejectedValue(new Error('permission denied'))
     const onSaved = vi.fn()
-    render(<StageConfigPanel deckId="d1" onSaved={onSaved} />)
+    renderApp(<StageConfigPanel deckId="d1" onSaved={onSaved} />)
     await screen.findByDisplayValue('Blast + Coat 1')
 
-    await userEvent.click(screen.getByRole('button', { name: 'Lưu' }))
+    await saveConfig()
 
     await screen.findByText(/permission denied/)
     expect(onSaved).not.toHaveBeenCalled()
@@ -300,11 +306,10 @@ describe('StageConfigPanel', () => {
       { id: 's2', seq: 2, name: 'Coat 2', color: '#bfbfbf', weight: 0 },
     ])
     saveStages.mockRejectedValue(new Error('Stage weights must sum to 1, got 0.9000'))
-    render(<StageConfigPanel deckId="d1" />)
+    renderApp(<StageConfigPanel deckId="d1" />)
     await screen.findByDisplayValue('Coat 2')
     await userEvent.click(screen.getAllByRole('button', { name: 'Xoá' })[1])
-    await userEvent.click(screen.getByRole('button', { name: 'Lưu' }))
-    await userEvent.click(screen.getByRole('button', { name: 'Vẫn lưu' }))
+    await saveConfig()
     // Translated, not the raw domain wording: an admin cannot act on
     // "Stage weights must sum to 1, got 0.9000" in an otherwise Vietnamese UI.
     expect(await screen.findByText(/Tổng trọng số các lớp phải bằng 1/)).toBeInTheDocument()
@@ -332,10 +337,10 @@ describe('StageConfigPanel', () => {
     saveStages.mockRejectedValue(new Error(
       'duplicate key value violates unique constraint "deck_stages_deck_id_seq_key"',
     ))
-    render(<StageConfigPanel deckId="d1" />)
+    renderApp(<StageConfigPanel deckId="d1" />)
     await screen.findByDisplayValue('Coat 2')
 
-    await userEvent.click(screen.getByRole('button', { name: 'Lưu' }))
+    await saveConfig()
 
     expect(await screen.findByText(/thứ tự các lớp bị trùng/)).toBeInTheDocument()
     expect(screen.queryByText(/duplicate key/i)).toBeNull()
@@ -346,10 +351,10 @@ describe('StageConfigPanel', () => {
     // Anything unmatched must fall through unchanged, or a new domain error
     // could be silently swallowed instead of reaching the admin.
     saveStages.mockRejectedValue(new Error('permission denied for table deck_stages'))
-    render(<StageConfigPanel deckId="d1" />)
+    renderApp(<StageConfigPanel deckId="d1" />)
     await screen.findByDisplayValue('Coat 2')
 
-    await userEvent.click(screen.getByRole('button', { name: 'Lưu' }))
+    await saveConfig()
 
     expect(await screen.findByText('permission denied for table deck_stages')).toBeInTheDocument()
   })
@@ -372,11 +377,11 @@ describe('StageConfigPanel', () => {
     listStages.mockResolvedValueOnce(initialStages).mockReturnValueOnce(staleLoad)
     saveStages.mockResolvedValue(undefined)
 
-    render(<StageConfigPanel deckId="d1" />)
+    renderApp(<StageConfigPanel deckId="d1" />)
     await screen.findByDisplayValue('Blast + Coat 1')
 
     // No removal here, so Lưu saves directly with no dialog in the way.
-    await userEvent.click(screen.getByRole('button', { name: 'Lưu' }))
+    await saveConfig()
     await waitFor(() => expect(saveStages).toHaveBeenCalledTimes(1))
 
     // The background refresh's `listStages` call is now pending on
@@ -399,7 +404,7 @@ describe('StageConfigPanel', () => {
   })
 
   it('adds a stage at the end with the next seq', async () => {
-    render(<StageConfigPanel deckId="d1" />)
+    renderApp(<StageConfigPanel deckId="d1" />)
     await screen.findByDisplayValue('Coat 2')
     await userEvent.click(screen.getByRole('button', { name: 'Thêm lớp' }))
     expect(screen.getAllByLabelText('Tên lớp sơn')).toHaveLength(3)
@@ -410,7 +415,7 @@ describe('StageConfigPanel', () => {
     // 0.6 + 0.4 + 0 is exactly 1 in IEEE754, not an approximation -- so Lưu
     // stays enabled. The row still needs a real weight assigned before the
     // project is usable, but that is a separate concern from this gate.
-    expect(screen.getByRole('button', { name: 'Lưu' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Lưu cấu hình lớp sơn' })).toBeEnabled()
   })
 
   it('clamps a typed weight to the five decimals the column can store', async () => {
@@ -418,7 +423,7 @@ describe('StageConfigPanel', () => {
     // away by Postgres. Clamping as it is typed means the admin sees the value
     // that will actually be stored, instead of discovering on reload that the
     // total no longer sums to 1.
-    render(<StageConfigPanel deckId="d1" />)
+    renderApp(<StageConfigPanel deckId="d1" />)
     const weight = await screen.findByDisplayValue('0,6')
     await userEvent.clear(weight)
     await userEvent.type(weight, '0,333333')
@@ -449,7 +454,7 @@ describe('StageConfigPanel', () => {
       { id: 's3', seq: 3, name: 'C', color: '#333333', weight: 0.3 },
     ])
     saveStages.mockResolvedValue(undefined)
-    render(<StageConfigPanel deckId="d1" />)
+    renderApp(<StageConfigPanel deckId="d1" />)
     await screen.findByDisplayValue('0,4')
 
     // By row, not by display value: two rows start at 0,3, and after the first
@@ -471,9 +476,8 @@ describe('StageConfigPanel', () => {
     expect(screen.getByText('1,0000')).toBeInTheDocument()
     expect(screen.queryByText(/Tổng trọng số phải bằng/)).toBeNull()
 
-    const save = screen.getByRole('button', { name: 'Lưu' })
-    expect(save).toBeEnabled()
-    await userEvent.click(save)
+    expect(screen.getByRole('button', { name: 'Lưu cấu hình lớp sơn' })).toBeEnabled()
+    await saveConfig()
 
     await waitFor(() => expect(saveStages).toHaveBeenCalledTimes(1))
     expect((saveStages.mock.calls[0][1] as { weight: number }[]).map((s) => s.weight)).toEqual([
@@ -485,17 +489,17 @@ describe('StageConfigPanel', () => {
     // 0.6 + 0.39998 is 0.99998: two units at scale 5, comfortably past
     // STAGE_WEIGHT_EPSILON. Widening the epsilon to absorb the clamp's own
     // residual must not have turned the Σ = 1 rule into a suggestion.
-    render(<StageConfigPanel deckId="d1" />)
+    renderApp(<StageConfigPanel deckId="d1" />)
     const weight = await screen.findByDisplayValue('0,4')
     await userEvent.clear(weight)
     await userEvent.type(weight, '0,39998')
     await waitFor(() =>
-      expect(screen.getByRole('button', { name: 'Lưu' })).toBeDisabled(),
+      expect(screen.getByRole('button', { name: 'Lưu cấu hình lớp sơn' })).toBeDisabled(),
     )
   })
 
   it('removes a stage', async () => {
-    render(<StageConfigPanel deckId="d1" />)
+    renderApp(<StageConfigPanel deckId="d1" />)
     await screen.findByDisplayValue('Coat 2')
     await userEvent.click(screen.getAllByRole('button', { name: 'Xoá' })[1])
     expect(screen.queryByDisplayValue('Coat 2')).toBeNull()
@@ -510,7 +514,7 @@ describe('StageConfigPanel', () => {
       { id: 's2', seq: 2, name: 'Middle', color: '#222222', weight: 0.3 },
       { id: 's3', seq: 3, name: 'Last', color: '#333333', weight: 0.2 },
     ])
-    render(<StageConfigPanel deckId="d1" />)
+    renderApp(<StageConfigPanel deckId="d1" />)
     await screen.findByDisplayValue('Middle')
 
     await userEvent.click(screen.getAllByRole('button', { name: 'Xoá' })[1])
@@ -526,14 +530,14 @@ describe('StageConfigPanel', () => {
     listStages.mockResolvedValue([
       { id: 's1', seq: 1, name: 'Only', color: '#000000', weight: 1 },
     ])
-    render(<StageConfigPanel deckId="d1" />)
+    renderApp(<StageConfigPanel deckId="d1" />)
     await screen.findByDisplayValue('Only')
     // A project with no stages has no defined progress at all.
     expect(screen.getByRole('button', { name: 'Xoá' })).toBeDisabled()
   })
 
   it('moves a stage up and renumbers seq contiguously', async () => {
-    render(<StageConfigPanel deckId="d1" />)
+    renderApp(<StageConfigPanel deckId="d1" />)
     await screen.findByDisplayValue('Coat 2')
     await userEvent.click(screen.getAllByRole('button', { name: 'Lên' })[1])
 
@@ -553,7 +557,7 @@ describe('StageConfigPanel', () => {
       { id: 's1', seq: 1, name: 'Coat 1', color: '#1677ff', weight: 0.5 },
       { id: 's2', seq: 2, name: 'Coat 2', color: '#52c41a', weight: 0.5 },
     ])
-    render(<StageConfigPanel deckId="d1" />)
+    renderApp(<StageConfigPanel deckId="d1" />)
     await screen.findByDisplayValue('Coat 1')
 
     const second = screen.getAllByLabelText('Tên lớp sơn')[1]
@@ -561,7 +565,7 @@ describe('StageConfigPanel', () => {
     await userEvent.type(second, 'coat 1 ')
 
     expect(await screen.findByText('Hai lớp sơn đang trùng nhau')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Lưu' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Lưu cấu hình lớp sơn' })).toBeDisabled()
     expect(saveStages).not.toHaveBeenCalled()
   })
 
@@ -573,7 +577,7 @@ describe('StageConfigPanel', () => {
       { id: 's1', seq: 1, name: 'Coat 1', color: '#1677ff', weight: 0.5 },
       { id: 's2', seq: 2, name: 'Coat 2', color: '#52c41a', weight: 0.5 },
     ])
-    render(<StageConfigPanel deckId="d1" />)
+    renderApp(<StageConfigPanel deckId="d1" />)
     await screen.findByDisplayValue('Coat 1')
 
     const rows = document.querySelectorAll('.ant-table-tbody .ant-table-row')
@@ -595,11 +599,11 @@ describe('StageConfigPanel hex field', () => {
     // the field an admin actually uses when the colour arrives as text.
     saveStages.mockResolvedValue(undefined)
     const user = userEvent.setup()
-    render(<StageConfigPanel deckId="d1" />)
+    renderApp(<StageConfigPanel deckId="d1" />)
     const hex = await screen.findByLabelText('Mã màu · Blast + Coat 1')
     await user.clear(hex)
     await user.type(hex, '#123ABC')
-    await user.click(screen.getByRole('button', { name: 'Lưu' }))
+    await saveConfig()
 
     await waitFor(() => expect(saveStages).toHaveBeenCalledTimes(1))
     expect(saveStages.mock.calls[0][1][0].color).toBe('#123abc')
@@ -610,7 +614,7 @@ describe('StageConfigPanel hex field', () => {
     // that costs an afternoon: the admin types, saves, sees no error, and the
     // drawing keeps the colour they thought they had just replaced.
     const user = userEvent.setup()
-    render(<StageConfigPanel deckId="d1" />)
+    renderApp(<StageConfigPanel deckId="d1" />)
     const hex = await screen.findByLabelText('Mã màu · Blast + Coat 1')
     await user.clear(hex)
     await user.type(hex, '#12')
@@ -619,25 +623,25 @@ describe('StageConfigPanel hex field', () => {
     // as broken -- but they are marked invalid and the save is locked.
     expect(hex).toHaveValue('#12')
     expect(hex).toHaveAttribute('aria-invalid', 'true')
-    expect(screen.getByRole('button', { name: 'Lưu' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Lưu cấu hình lớp sơn' })).toBeDisabled()
     expect(saveStages).not.toHaveBeenCalled()
   })
 
   it('reopens the save once the hex is complete again', async () => {
     const user = userEvent.setup()
-    render(<StageConfigPanel deckId="d1" />)
+    renderApp(<StageConfigPanel deckId="d1" />)
     const hex = await screen.findByLabelText('Mã màu · Blast + Coat 1')
     await user.clear(hex)
     await user.type(hex, '#12')
-    expect(screen.getByRole('button', { name: 'Lưu' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Lưu cấu hình lớp sơn' })).toBeDisabled()
     await user.type(hex, '3abc')
-    expect(screen.getByRole('button', { name: 'Lưu' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Lưu cấu hình lớp sơn' })).toBeEnabled()
   })
 })
 
 describe('StageConfigPanel weight bar', () => {
   it('gives each stage a band as wide as its own weight, in its own colour', async () => {
-    render(<StageConfigPanel deckId="d1" />)
+    renderApp(<StageConfigPanel deckId="d1" />)
     await screen.findByDisplayValue('Blast + Coat 1')
 
     expect(screen.getByTestId('weight-bar-s1')).toHaveStyle({
@@ -652,7 +656,7 @@ describe('StageConfigPanel weight bar', () => {
       { id: 's1', seq: 1, name: 'Blast + Coat 1', color: '#fadb14', weight: 0.6 },
       { id: 's2', seq: 2, name: 'Coat 2', color: '#bfbfbf', weight: 0.1 },
     ])
-    render(<StageConfigPanel deckId="d1" />)
+    renderApp(<StageConfigPanel deckId="d1" />)
     await screen.findByDisplayValue('Blast + Coat 1')
 
     // 70% of a track that is 1 by construction. This is the whole reason the
@@ -671,7 +675,7 @@ describe('StageConfigPanel weight bar', () => {
       { id: 's1', seq: 1, name: 'Blast + Coat 1', color: '#fadb14', weight: 1 },
       { id: 's2', seq: 2, name: 'Coat 2', color: '#bfbfbf', weight: 0.4 },
     ])
-    render(<StageConfigPanel deckId="d1" />)
+    renderApp(<StageConfigPanel deckId="d1" />)
     await screen.findByDisplayValue('Blast + Coat 1')
 
     expect(screen.getByTestId('weight-bar-s1')).toHaveStyle({ width: '100.0000%' })

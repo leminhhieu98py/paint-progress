@@ -11,6 +11,7 @@ import { useState } from 'react'
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { APP_BASE_PATH, LOGIN_PATH } from '../../config'
 import { useAuth } from '../../auth/AuthProvider'
+import { ConsequenceModal } from '../../components/ConsequenceModal'
 import { initialsOf } from '../../lib/initials'
 import { palette } from '../../theme'
 
@@ -25,6 +26,7 @@ const COLLAPSED_WIDTH = 66
 
 export function AdminLayout() {
   const { profile, signOut } = useAuth()
+  const [confirmingOut, setConfirmingOut] = useState(false)
   const navigate = useNavigate()
   const { pathname } = useLocation()
   const [collapsed, setCollapsed] = useState(false)
@@ -174,7 +176,7 @@ export function AdminLayout() {
                 aria-label="Đăng xuất"
                 icon={<LogoutOutlined />}
                 onClick={() =>
-                  void signOut().then(() => navigate(LOGIN_PATH, { replace: true }))
+                  setConfirmingOut(true)
                 }
               />
             </Tooltip>
@@ -191,6 +193,18 @@ export function AdminLayout() {
       <Layout.Content style={{ minWidth: 0, background: palette.bgApp }}>
         <Outlet />
       </Layout.Content>
+
+      <ConsequenceModal
+        open={confirmingOut}
+        tag="Xác nhận"
+        title="Đăng xuất?"
+        description="Phiên làm việc hiện tại sẽ kết thúc:"
+        items={[{ label: profile?.fullName ?? '', meta: 'Quản trị viên' }]}
+        consequence="Thay đổi chưa lưu ở màn đang mở sẽ mất. Cấu hình lớp sơn và lưới ô chỉ nằm trên máy cho tới khi bấm Lưu."
+        okText="Vẫn đăng xuất"
+        onCancel={() => setConfirmingOut(false)}
+        onOk={() => void signOut().then(() => navigate(LOGIN_PATH, { replace: true }))}
+      />
     </Layout>
   )
 }

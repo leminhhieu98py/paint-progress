@@ -24,6 +24,7 @@ import {
 import { listDeckZones } from '../../lib/zonesApi'
 import { CellStageModal } from './CellStageModal'
 import { StagePie } from './StagePie'
+import { ConsequenceModal } from '../../components/ConsequenceModal'
 import { StageSpecTable } from '../../components/StageSpecTable'
 import { LogoutOutlined } from '@ant-design/icons'
 import { fieldError, palette } from '../../theme'
@@ -483,6 +484,7 @@ export function GsScreen() {
 
   const [selectedCell, setSelectedCell] = useState<Cell | null>(null)
   const { message } = App.useApp()
+  const [confirmingOut, setConfirmingOut] = useState(false)
 
   /**
    * Spec §11 row 1: optimistic local update so the chart moves with no
@@ -614,7 +616,7 @@ export function GsScreen() {
         <Button
           aria-label="Đăng xuất"
           icon={<LogoutOutlined />}
-          onClick={() => void signOut().then(() => navigate(LOGIN_PATH, { replace: true }))}
+          onClick={() => setConfirmingOut(true)}
         />
       </Layout.Header>
 
@@ -783,6 +785,23 @@ export function GsScreen() {
         open={selectedCell !== null}
         onClose={() => setSelectedCell(null)}
         onCommit={commitStage}
+      />
+
+      {/*
+        A foreman in gloves, on a tablet, one button away from the drawing he is
+        working off. Signing out costs him a walk back to whoever holds the
+        password, so it asks first.
+      */}
+      <ConsequenceModal
+        open={confirmingOut}
+        tag="Xác nhận"
+        title="Đăng xuất?"
+        description="Phiên làm việc hiện tại sẽ kết thúc:"
+        items={[{ label: profile?.fullName ?? '', meta: profile?.username ?? '' }]}
+        consequence="Muốn ghi tiếp tiến độ thì phải đăng nhập lại bằng mật khẩu quản trị viên đã giao."
+        okText="Vẫn đăng xuất"
+        onCancel={() => setConfirmingOut(false)}
+        onOk={() => void signOut().then(() => navigate(LOGIN_PATH, { replace: true }))}
       />
     </Layout>
   )

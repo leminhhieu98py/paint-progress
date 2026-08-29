@@ -1,6 +1,7 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { renderApp } from '../../test/renderApp'
 import { UsersScreen } from './UsersScreen'
 
 const listGsUsers = vi.fn()
@@ -56,7 +57,7 @@ beforeEach(() => {
 
 describe('UsersScreen', () => {
   it('lists GS accounts', async () => {
-    render(<UsersScreen />)
+    renderApp(<UsersScreen />)
     expect(await screen.findByText('gs1')).toBeInTheDocument()
     expect(screen.getByText('GS Một')).toBeInTheDocument()
     expect(screen.getByText('BB1')).toBeInTheDocument()
@@ -73,7 +74,7 @@ describe('UsersScreen', () => {
         ],
       },
     ])
-    render(<UsersScreen />)
+    renderApp(<UsersScreen />)
     expect(await screen.findByText('Bạch Hổ BH-7')).toBeInTheDocument()
     expect(screen.getByText('Rạng Đông RD-2')).toBeInTheDocument()
     expect(screen.getByText('+1')).toBeInTheDocument()
@@ -83,14 +84,14 @@ describe('UsersScreen', () => {
     listGsUsers.mockResolvedValue([
       { id: 'u7', username: 'gs1', fullName: 'GS Một', active: true, projects: [] },
     ])
-    render(<UsersScreen />)
+    renderApp(<UsersScreen />)
     await screen.findByText('gs1')
     expect(screen.getByText('—')).toBeInTheDocument()
   })
 
   it('does not render any password before it is requested', async () => {
     revealPassword.mockResolvedValue('s3cret')
-    render(<UsersScreen />)
+    renderApp(<UsersScreen />)
     await screen.findByText('gs1')
     expect(screen.queryByText('s3cret')).toBeNull()
     expect(revealPassword).not.toHaveBeenCalled()
@@ -100,7 +101,7 @@ describe('UsersScreen', () => {
     revealPassword.mockImplementation((id: string) =>
       Promise.resolve(id === 'u7' ? 's3cret' : 'other-secret'),
     )
-    render(<UsersScreen />)
+    renderApp(<UsersScreen />)
     await screen.findByText('gs1')
 
     await userEvent.click(screen.getAllByRole('button', { name: 'Xem mật khẩu' })[0])
@@ -115,7 +116,7 @@ describe('UsersScreen', () => {
     // The screen claims the reveal was logged. It has to show the same facts
     // the log row holds, or the claim is decoration.
     revealPassword.mockResolvedValue('s3cret')
-    render(<UsersScreen />)
+    renderApp(<UsersScreen />)
     await screen.findByText('gs1')
     await userEvent.click(screen.getAllByRole('button', { name: 'Xem mật khẩu' })[0])
 
@@ -129,7 +130,7 @@ describe('UsersScreen', () => {
     // Asserted with no waitFor on purpose: the point is that the secret leaves
     // the DOM on the same tick, not once a fade-out has finished.
     revealPassword.mockResolvedValue('s3cret')
-    render(<UsersScreen />)
+    renderApp(<UsersScreen />)
     await screen.findByText('gs1')
 
     await userEvent.click(screen.getAllByRole('button', { name: 'Xem mật khẩu' })[0])
@@ -143,7 +144,7 @@ describe('UsersScreen', () => {
 
   it('shows an error when reveal fails', async () => {
     revealPassword.mockRejectedValue(new Error('No stored credential'))
-    render(<UsersScreen />)
+    renderApp(<UsersScreen />)
     await screen.findByText('gs1')
 
     await userEvent.click(screen.getAllByRole('button', { name: 'Xem mật khẩu' })[0])
@@ -155,7 +156,7 @@ describe('UsersScreen', () => {
     // Pressing the row action must not call the API. Someone "simplifying" the
     // dialog away would skip the only step that tells the admin the account
     // cannot be switched back on in this version.
-    render(<UsersScreen />)
+    renderApp(<UsersScreen />)
     await screen.findByText('gs1')
 
     await userEvent.click(screen.getAllByRole('button', { name: 'Tắt tài khoản' })[0])
@@ -170,7 +171,7 @@ describe('UsersScreen', () => {
     listGsUsers.mockResolvedValue([
       { id: 'u9', username: 'gs2', fullName: 'GS Hai', active: false, projects: [] },
     ])
-    render(<UsersScreen />)
+    renderApp(<UsersScreen />)
     await screen.findByText('gs2')
     expect(screen.getByText('Đã tắt')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Tắt tài khoản' })).toBeNull()
@@ -179,14 +180,54 @@ describe('UsersScreen', () => {
   it('hands the new password straight to the reveal dialog after a reset', async () => {
     // The admin has to read the value out to the foreman. Setting it and then
     // showing nothing leaves them with a password nobody knows.
-    render(<UsersScreen />)
+    renderApp(<UsersScreen />)
+    await screen.findByText('gs1')
+
+    await userEvent.click(screen.getAllByRole('button', { name: 'Đổi mật khẩu' })[0])
+    await userEvent.type(screen.getByLabelText('Mật khẩu mới'), 'Bh7@Deck2026')
+    await userEvent.click(screen.getByRole('button', { name: 'Lưu' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Vẫn đổi' }))
+
+    await waitFor(() => expect(setPassword).toHaveBeenCalledWith('u7', 'Bh7@Deck2026'))
+    expect(await screen.findByText('Bh7@Deck2026')).toBeInTheDocument()
+  })
+
+  it('warns that a reset locks the GS out before it writes the new password', async () => {
+    // The foreman is on a platform with the old password in his pocket. The
+    // reset takes effect the instant it is written, and nothing tells him --
+    // so the admin has to be told, before the write, not after.
+    renderApp(<UsersScreen />)
     await screen.findByText('gs1')
 
     await userEvent.click(screen.getAllByRole('button', { name: 'Đổi mật khẩu' })[0])
     await userEvent.type(screen.getByLabelText('Mật khẩu mới'), 'Bh7@Deck2026')
     await userEvent.click(screen.getByRole('button', { name: 'Lưu' }))
 
+    expect(await screen.findByText('Đổi mật khẩu cho gs1?')).toBeInTheDocument()
+    expect(setPassword).not.toHaveBeenCalled()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Vẫn đổi' }))
     await waitFor(() => expect(setPassword).toHaveBeenCalledWith('u7', 'Bh7@Deck2026'))
-    expect(await screen.findByText('Bh7@Deck2026')).toBeInTheDocument()
+  })
+
+  it('says the reset landed, not only that a password appeared', async () => {
+    renderApp(<UsersScreen />)
+    await screen.findByText('gs1')
+    await userEvent.click(screen.getAllByRole('button', { name: 'Đổi mật khẩu' })[0])
+    await userEvent.type(screen.getByLabelText('Mật khẩu mới'), 'Bh7@Deck2026')
+    await userEvent.click(screen.getByRole('button', { name: 'Lưu' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Vẫn đổi' }))
+
+    expect(await screen.findByText('Đã đặt lại mật khẩu')).toBeInTheDocument()
+  })
+
+  it('says the account was switched off, so the row going grey is not the only signal', async () => {
+    renderApp(<UsersScreen />)
+    await screen.findByText('gs1')
+    await userEvent.click(screen.getAllByRole('button', { name: 'Tắt tài khoản' })[0])
+    await userEvent.click(await screen.findByRole('button', { name: 'Vẫn tắt' }))
+
+    await waitFor(() => expect(deactivateGsUser).toHaveBeenCalled())
+    expect(await screen.findByText('Đã tắt tài khoản')).toBeInTheDocument()
   })
 })

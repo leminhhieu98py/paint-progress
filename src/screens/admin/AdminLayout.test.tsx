@@ -65,6 +65,7 @@ describe('AdminLayout', () => {
     const user = userEvent.setup()
     renderAt('/admin/projects')
     await user.click(screen.getByRole('button', { name: 'Đăng xuất' }))
+    await user.click(await screen.findByRole('button', { name: 'Vẫn đăng xuất' }))
     expect(signOut).toHaveBeenCalledOnce()
     // Navigating is the point: without it the session goes but the URL stays
     // on an admin route, so the login form renders under a path this person is

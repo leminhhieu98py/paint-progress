@@ -1,8 +1,9 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { screen, waitFor } from '@testing-library/react'
 import dayjs from 'dayjs'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { renderApp } from '../../test/renderApp'
 import { ProjectsScreen } from './ProjectsScreen'
 
 const latestProgressEvent = vi.hoisted(() => vi.fn())
@@ -51,7 +52,7 @@ function UrlEcho() {
  * hands its own id to the decks screen through the query string.
  */
 function renderScreen() {
-  return render(
+  return renderApp(
     <MemoryRouter initialEntries={['/admin/projects']}>
       <UrlEcho />
       <Routes>
@@ -177,6 +178,9 @@ describe('ProjectsScreen', () => {
       expect(createProject).toHaveBeenCalledWith({ name: 'Lạc Đà Vàng', code: 'LDV' }),
     )
     expect(listProjects).toHaveBeenCalledTimes(2)
+    // The list re-sorts on refresh, so a new row does not reliably appear where
+    // the admin was looking. The toast is what confirms the write landed.
+    expect(await screen.findByText('Đã tạo dự án')).toBeInTheDocument()
   })
 
   it('surfaces a create failure without closing the form', async () => {

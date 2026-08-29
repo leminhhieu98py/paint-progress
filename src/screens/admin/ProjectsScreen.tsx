@@ -1,11 +1,12 @@
 import { EditOutlined, PlusOutlined } from '@ant-design/icons'
-import { Alert, Button, Form, Input, Modal, Table, Tooltip } from 'antd'
+import { Alert, App, Button, Form, Input, Modal, Table, Tooltip } from 'antd'
 import dayjs from 'dayjs'
 import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { PageBody, PageHeader } from '../../components/PageHeader'
 import { ProgressBar } from '../../components/ProgressBar'
 import { SectionCard } from '../../components/SectionCard'
+import { modalStyles } from '../../components/modalChrome'
 import { StatCard } from '../../components/StatCard'
 import { formatAreaM2 } from '../../lib/format'
 import { latestProgressEvent, type ProgressEvent } from '../../lib/progressApi'
@@ -85,12 +86,17 @@ export function ProjectsScreen() {
     }
   }, [])
 
+  const { message } = App.useApp()
+  // The dialog's actions live in its footer strip, outside the <Form>.
+  const [form] = Form.useForm<CreateValues>()
+
   const onCreate = async (values: CreateValues) => {
     try {
       await createProject(values)
       setCreateOpen(false)
       setError(null)
       await refresh()
+      message.success('Đã tạo dự án')
     } catch (e) {
       // Deliberately leaves the modal open so the typed values survive.
       setError((e as Error).message)
@@ -103,6 +109,7 @@ export function ProjectsScreen() {
       setEditing(null)
       setError(null)
       await refresh()
+      message.success('Đã lưu dự án')
     } catch (e) {
       setError((e as Error).message)
     }
@@ -270,10 +277,25 @@ export function ProjectsScreen() {
           setCreateOpen(false)
           setEditing(null)
         }}
-        footer={null}
+        styles={modalStyles}
         destroyOnHidden
+        footer={[
+          <Button
+            key="cancel"
+            onClick={() => {
+              setCreateOpen(false)
+              setEditing(null)
+            }}
+          >
+            Huỷ
+          </Button>,
+          <Button key="ok" type="primary" onClick={() => form.submit()}>
+            {editing ? 'Lưu' : 'Tạo'}
+          </Button>,
+        ]}
       >
         <Form<CreateValues>
+          form={form}
           layout="vertical"
           initialValues={editing ? { name: editing.name, code: editing.code } : undefined}
           onFinish={(v) => void (editing ? onUpdate(editing.id, v) : onCreate(v))}
@@ -289,9 +311,6 @@ export function ProjectsScreen() {
           >
             <Input placeholder="Ví dụ: BH7-RPT" />
           </Form.Item>
-          <Button type="primary" htmlType="submit" block>
-            {editing ? 'Lưu' : 'Tạo'}
-          </Button>
         </Form>
       </Modal>
     </>

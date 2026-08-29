@@ -1,5 +1,5 @@
 import { EyeOutlined, KeyOutlined, UserAddOutlined, UserDeleteOutlined } from '@ant-design/icons'
-import { Alert, Button, Form, Input, Modal, Select, Table, Tooltip, Typography } from 'antd'
+import { Alert, App, Button, Form, Input, Modal, Select, Table, Tooltip, Typography } from 'antd'
 import dayjs from 'dayjs'
 import { useCallback, useEffect, useState } from 'react'
 import { useAuth } from '../../auth/AuthProvider'
@@ -7,6 +7,7 @@ import { ConsequenceModal } from '../../components/ConsequenceModal'
 import { PageBody, PageHeader } from '../../components/PageHeader'
 import { RulesDisclosure } from '../../components/RulesDisclosure'
 import { SectionCard } from '../../components/SectionCard'
+import { modalStyles } from '../../components/modalChrome'
 import { StatusPill } from '../../components/StatusPill'
 import {
   createGsUser,
@@ -93,6 +94,19 @@ export function UsersScreen() {
   const [createOpen, setCreateOpen] = useState(false)
   const [pwTarget, setPwTarget] = useState<GsUser | null>(null)
   const [offTarget, setOffTarget] = useState<GsUser | null>(null)
+  /**
+   * A reset the admin has typed but not yet confirmed.
+   *
+   * The password sits here for the length of one dialog, and the dialog never
+   * prints it -- it names the account being locked out, which is the fact the
+   * admin has to weigh. Cleared on both exits.
+   */
+  const [pwPending, setPwPending] = useState<{ user: GsUser; password: string } | null>(null)
+  const { message } = App.useApp()
+  // Held here rather than submitted from inside the sheet: the actions moved to
+  // the dialog's footer strip, which is outside the <Form>.
+  const [createForm] = Form.useForm<CreateValues>()
+  const [pwForm] = Form.useForm<{ password: string }>()
 
   const refresh = useCallback(async () => {
     setLoading(true)
@@ -270,6 +284,7 @@ export function UsersScreen() {
         onOk={() => setRevealed(null)}
         okText="Đã ghi nhận"
         cancelButtonProps={{ style: { display: 'none' } }}
+        styles={modalStyles}
         destroyOnHidden
       >
         <p style={{ marginTop: 0, fontSize: 13, lineHeight: 1.5, color: palette.textSecondary }}>
@@ -323,6 +338,7 @@ export function UsersScreen() {
             await deactivateGsUser(offTarget!.id)
             setOffTarget(null)
             await refresh()
+            message.success('Đã tắt tài khoản')
           })
         }
       />
@@ -331,16 +347,26 @@ export function UsersScreen() {
         open={createOpen}
         title="Tạo tài khoản GS"
         onCancel={() => setCreateOpen(false)}
-        footer={null}
+        styles={modalStyles}
         destroyOnHidden
+        footer={[
+          <Button key="cancel" onClick={() => setCreateOpen(false)}>
+            Huỷ
+          </Button>,
+          <Button key="ok" type="primary" onClick={() => createForm.submit()}>
+            Tạo
+          </Button>,
+        ]}
       >
         <Form<CreateValues>
+          form={createForm}
           layout="vertical"
           onFinish={(values) =>
             void run(async () => {
               await createGsUser(values)
               setCreateOpen(false)
               await refresh()
+              message.success('Đã tạo tài khoản GS')
             })
           }
         >
@@ -365,9 +391,6 @@ export function UsersScreen() {
           <Form.Item name="projectId" label="Dự án" rules={[{ required: true, message: 'Chọn dự án' }]}>
             <Select options={projects} placeholder="Chọn dự án" />
           </Form.Item>
-          <Button type="primary" htmlType="submit" block>
-            Tạo
-          </Button>
         </Form>
       </Modal>
 
@@ -375,22 +398,27 @@ export function UsersScreen() {
         open={pwTarget !== null}
         title={`Đổi mật khẩu — ${pwTarget?.username ?? ''}`}
         onCancel={() => setPwTarget(null)}
-        footer={null}
+        styles={modalStyles}
         destroyOnHidden
+        footer={[
+          <Button key="cancel" onClick={() => setPwTarget(null)}>
+            Huỷ
+          </Button>,
+          <Button key="ok" type="primary" onClick={() => pwForm.submit()}>
+            Lưu
+          </Button>,
+        ]}
       >
         <Form<{ password: string }>
+          form={pwForm}
           layout="vertical"
-          onFinish={({ password }) =>
-            void run(async () => {
-              const target = pwTarget!
-              await setPassword(target.id, password)
-              // Straight into the reveal modal: the admin has to read this
-              // value out to the foreman, and the old inline cell was the only
-              // place it appeared.
-              setRevealed({ user: target, password, at: dayjs().format('DD.MM.YYYY HH:mm') })
-              setPwTarget(null)
-            })
-          }
+          // Submitting the form asks; it does not write. The write is behind
+          // the dialog below, because the moment it lands the foreman on the
+          // platform is locked out with no way to know why.
+          onFinish={({ password }) => {
+            setPwPending({ user: pwTarget!, password })
+            setPwTarget(null)
+          }}
         >
           <Form.Item
             name="password"
@@ -400,11 +428,40 @@ export function UsersScreen() {
           >
             <Input placeholder="Nhập mật khẩu mới" />
           </Form.Item>
-          <Button type="primary" htmlType="submit" block>
-            Lưu
-          </Button>
         </Form>
       </Modal>
+
+      <ConsequenceModal
+        open={pwPending !== null}
+        tone="danger"
+        tag="Thao tác phá huỷ"
+        title={`Đổi mật khẩu cho ${pwPending?.user.username ?? ''}?`}
+        description="Mật khẩu cũ ngừng hiệu lực ngay khi bạn xác nhận:"
+        items={
+          pwPending
+            ? [
+                {
+                  label: pwPending.user.fullName,
+                  meta: pwPending.user.projects.map((p) => p.name).join(' · ') || 'chưa gán dự án',
+                },
+              ]
+            : []
+        }
+        consequence="GS đang cầm mật khẩu cũ sẽ không đăng nhập được và không nhận được thông báo nào. Anh phải giao mật khẩu mới cho họ. Mật khẩu mới hiện ra ngay sau bước này."
+        okText="Vẫn đổi"
+        onCancel={() => setPwPending(null)}
+        onOk={() =>
+          void run(async () => {
+            const { user, password } = pwPending!
+            await setPassword(user.id, password)
+            setPwPending(null)
+            // Straight into the reveal modal: the admin has to read this value
+            // out to the foreman, and it appears nowhere else.
+            setRevealed({ user, password, at: dayjs().format('DD.MM.YYYY HH:mm') })
+            message.success('Đã đặt lại mật khẩu')
+          })
+        }
+      />
     </>
   )
 }

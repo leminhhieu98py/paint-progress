@@ -330,6 +330,7 @@ describe('GsScreen', () => {
     renderScreen()
 
     await userEvent.click(await screen.findByRole('button', { name: 'Đăng xuất' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Vẫn đăng xuất' }))
 
     expect(signOut).toHaveBeenCalledTimes(1)
     // Spec §8.1: "No account UI. Logout only." GS accounts have no
@@ -1116,6 +1117,7 @@ describe('signing out', () => {
     await screen.findByRole('tab', { name: /^Cellar Deck/ })
 
     await userEvent.click(screen.getByRole('button', { name: 'Đăng xuất' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Vẫn đăng xuất' }))
 
     await waitFor(() => expect(signOut).toHaveBeenCalled())
     await waitFor(() => expect(navigate).toHaveBeenCalledWith('/login', { replace: true }))
@@ -1125,6 +1127,7 @@ describe('signing out', () => {
     renderScreen()
     await screen.findByRole('tab', { name: /^Cellar Deck/ })
     await userEvent.click(screen.getByRole('button', { name: 'Đăng xuất' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Vẫn đăng xuất' }))
     await waitFor(() => expect(navigate).toHaveBeenCalled())
     expect(navigate.mock.calls[0][1]).toEqual({ replace: true })
   })
