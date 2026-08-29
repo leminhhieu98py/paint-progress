@@ -1,6 +1,4 @@
 import {
-  ArrowDownOutlined,
-  ArrowUpOutlined,
   CheckCircleFilled,
   CloseCircleFilled,
   DeleteOutlined,
@@ -18,6 +16,7 @@ import {
 } from '../../lib/decksApi'
 import { randomUUID } from '../../lib/uuid'
 import { ConsequenceModal } from '../../components/ConsequenceModal'
+import { EmptyState } from '../../components/EmptyState'
 import { RulesDisclosure } from '../../components/RulesDisclosure'
 import { SectionCard } from '../../components/SectionCard'
 import { palette } from '../../theme'
@@ -279,16 +278,6 @@ export function StageConfigPanel({
     setDraft((prev) => renumber(prev.filter((_s, i) => i !== index)))
   }
 
-  const move = (index: number, delta: number) => {
-    dirty.current = true
-    setDraft((prev) => {
-      const next = [...prev]
-      const target = index + delta
-      if (target < 0 || target >= next.length) return prev
-      ;[next[index], next[target]] = [next[target], next[index]]
-      return renumber(next)
-    })
-  }
 
   const onSave = async () => {
     setBusy(true)
@@ -375,7 +364,7 @@ export function StageConfigPanel({
                   type="primary"
                   aria-label="Lưu cấu hình lớp sơn"
                   icon={<SaveOutlined aria-hidden />}
-                  disabled={!balanced || hasClash || hexPending}
+                  disabled={draft.length === 0 || !balanced || hasClash || hexPending}
                   loading={busy}
                   onClick={() => setConfirming(true)}
                 />
@@ -409,6 +398,14 @@ export function StageConfigPanel({
         // always has at least one stage once loaded, so `draft.length === 0`
         // is true only before that first load ever completes.
         loading={loading && draft.length === 0}
+        locale={{
+          emptyText: (
+            <EmptyState
+              title="Sàn này chưa có lớp sơn nào"
+              description="Mỗi sàn khai báo lớp sơn của riêng nó. Thêm lớp, đặt màu và trọng số — tổng trọng số phải bằng 1 thì mới lưu được."
+            />
+          ),
+        }}
         dataSource={draft}
         pagination={false}
         onRow={(_row, index) => ({
@@ -571,45 +568,21 @@ export function StageConfigPanel({
           {
             title: '',
             key: 'actions',
-            width: 200,
+            width: 72,
             render: (_v, _r, i) => (!editable ? null : (
-              <Space size="small">
-                {/*
-                  Icons with their labels kept as accessible names. The row is
-                  already draggable, and three text buttons per row on a
-                  five-stage table was more chrome than the table it sat in --
-                  but the buttons stay, because drag is not reachable from a
-                  keyboard and is awkward on a trackpad.
-                */}
-                <Tooltip title="Lên">
-                  <Button
-                    size="small"
-                    aria-label="Lên"
-                    icon={<ArrowUpOutlined />}
-                    disabled={busy || i === 0}
-                    onClick={() => move(i, -1)}
-                  />
-                </Tooltip>
-                <Tooltip title="Xuống">
-                  <Button
-                    size="small"
-                    aria-label="Xuống"
-                    icon={<ArrowDownOutlined />}
-                    disabled={busy || i === draft.length - 1}
-                    onClick={() => move(i, 1)}
-                  />
-                </Tooltip>
-                <Tooltip title="Xoá">
+              <Tooltip title="Xoá lớp sơn">
+                {/* A span, because antd Tooltip cannot anchor a disabled button. */}
+                <span>
                   <Button
                     size="small"
                     danger
                     aria-label="Xoá"
-                    icon={<DeleteOutlined />}
+                    icon={<DeleteOutlined aria-hidden />}
                     disabled={busy || draft.length === 1}
                     onClick={() => removeStage(i)}
                   />
-                </Tooltip>
-              </Space>
+                </span>
+              </Tooltip>
             )),
           },
         ]}
@@ -657,9 +630,11 @@ export function StageConfigPanel({
           ))}
         </div>
         <div style={{ marginTop: 8, fontSize: 11, color: palette.textTertiary }}>
-          {balanced
-            ? 'Dải lấp đầy khung — tổng bằng 1, lưu được.'
-            : `Tổng trọng số các lớp phải bằng 1; hiện tại ${formatWeight(total)}. Mọi phần trăm tiến độ đều tính từ các trọng số này, nên nút Lưu khoá tới khi đúng.`}
+          {draft.length === 0
+            ? 'Thêm ít nhất một lớp sơn. Sàn không có lớp sơn nào thì mọi phần trăm tiến độ của nó vĩnh viễn bằng 0, và không có gì báo cho ai biết.'
+            : balanced
+              ? 'Dải lấp đầy khung — tổng bằng 1, lưu được.'
+              : `Tổng trọng số các lớp phải bằng 1; hiện tại ${formatWeight(total)}. Mọi phần trăm tiến độ đều tính từ các trọng số này, nên nút Lưu khoá tới khi đúng.`}
         </div>
       </div>
 

@@ -69,7 +69,9 @@ export function ConsequenceModal({
       onCancel={onCancel}
       title={null}
       footer={null}
+      centered
       destroyOnHidden
+      styles={{ content: { overflow: 'hidden' } }}
       width={items?.length || consequence ? 520 : 480}
     >
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14 }}>

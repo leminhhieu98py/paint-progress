@@ -324,10 +324,15 @@ describe('DeckProgressPanel — colouring one coat', () => {
 })
 
 describe('DeckProgressPanel — zones', () => {
-  it('will not offer to group when nothing is selected', async () => {
+  it('shows the way to make a zone before any bay is picked, but will not run it', async () => {
+    // Hiding the button until bays are selected takes away the only thing on
+    // the panel that says zones can be made here at all -- the admin would have
+    // to already know the gesture to discover the control for it.
     renderPanel()
     await screen.findByTestId('lens-A')
-    expect(screen.queryByRole('button', { name: /Gộp thành zone/ })).not.toBeInTheDocument()
+    const group = screen.getByRole('button', { name: /Gộp thành zone/ })
+    expect(group).toBeDisabled()
+    expect(screen.queryByRole('button', { name: 'Bỏ chọn' })).not.toBeInTheDocument()
   })
 
   it('creates one zone per coat that was given dates, from one dialog', async () => {
@@ -372,7 +377,7 @@ describe('DeckProgressPanel — zones', () => {
 
     await waitFor(() => expect(listDeckZones).toHaveBeenCalledTimes(2))
     await waitFor(() =>
-      expect(screen.queryByRole('button', { name: /Gộp thành zone/ })).not.toBeInTheDocument())
+      expect(screen.getByRole('button', { name: /Gộp thành zone/ })).toBeDisabled())
   })
 
   it('edits a zone date in place, without remaking the zone', async () => {

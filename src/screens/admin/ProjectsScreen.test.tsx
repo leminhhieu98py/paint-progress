@@ -208,6 +208,33 @@ describe('ProjectsScreen', () => {
     expect(screen.getByRole('button', { name: 'Lưu' })).toBeInTheDocument()
   })
 
+  it('empties the form when the dialog is dismissed, however it was dismissed', async () => {
+    // A dialog that reopens holding the last attempt is how a project ends up
+    // created under the name of the one before it. antd keeps the Form store
+    // alive across destroyOnHidden when the instance is held outside, so this
+    // does not come for free.
+    renderScreen()
+    await screen.findByText('BB1 - CPPTS')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Tạo dự án' }))
+    await userEvent.type(screen.getByLabelText('Tên dự án'), 'Bỏ dở giữa chừng')
+    await userEvent.click(screen.getByRole('button', { name: 'Huỷ' }))
+
+    await userEvent.click(screen.getByRole('button', { name: 'Tạo dự án' }))
+    expect(await screen.findByLabelText('Tên dự án')).toHaveValue('')
+  })
+
+  it('does not carry an edited project\'s values into the next dialog', async () => {
+    renderScreen()
+    await screen.findByText('BB1 - CPPTS')
+    await userEvent.click(screen.getAllByRole('button', { name: 'Sửa' })[0])
+    expect(await screen.findByLabelText('Tên dự án')).toHaveValue('BB1 - CPPTS')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Huỷ' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Tạo dự án' }))
+    expect(await screen.findByLabelText('Tên dự án')).toHaveValue('')
+  })
+
   it('surfaces a list failure', async () => {
     listProjects.mockRejectedValue(new Error('permission denied for table projects'))
     renderScreen()

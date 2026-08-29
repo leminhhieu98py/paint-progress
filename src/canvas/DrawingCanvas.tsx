@@ -477,11 +477,20 @@ export function DrawingCanvas({
         */
         onWheel={(e: Konva.KonvaEventObject<WheelEvent>) => {
           if (!panZoom) return
-          e.evt.preventDefault()
+          // A pinch always belongs to the drawing, at any zoom -- including at
+          // fit, which is where zooming in starts.
           if (e.evt.ctrlKey || e.evt.metaKey) {
+            e.evt.preventDefault()
             applyZoom(zoom + (e.evt.deltaY < 0 ? WHEEL_ZOOM_STEP : -WHEEL_ZOOM_STEP))
             return
           }
+          // At fit there is nowhere to pan to, so the wheel is not ours to
+          // take. Swallowing it stranded the reader: the pointer crosses the
+          // drawing on the way down a long deck screen and the page simply
+          // stops moving, with nothing on screen saying why. Let it through and
+          // the page keeps scrolling under the cursor.
+          if (zoom <= MIN_ZOOM) return
+          e.evt.preventDefault()
           const stage = stageRef.current
           if (!stage) return
           stage.position(

@@ -15,7 +15,13 @@ import { palette } from '../theme'
  * their own padding, and leaving antd's on as well would double it.
  */
 export const modalStyles = {
-  content: { padding: 0 },
+  /*
+    `overflow: hidden` is what keeps the tinted footer inside the sheet's
+    rounded corners. antd rounds `.ant-modal-content` but does not clip it, so a
+    footer with a background of its own painted square over the bottom two
+    corners -- the sheet read as rounded on top and cut off underneath.
+  */
+  content: { padding: 0, overflow: 'hidden' },
   header: { padding: '20px 24px 0', margin: 0 },
   body: { padding: '16px 24px 20px' },
   footer: {
@@ -30,6 +36,19 @@ export const modalStyles = {
 } as const
 
 /**
+ * Every dialog in this app, spread on the antd `<Modal>` that renders it.
+ *
+ * `centered` is here rather than left to antd's default top offset: a dialog
+ * pinned 100px from the top of a tall admin screen sits well above where the
+ * reader is looking, and the taller the viewport the further off it is.
+ */
+export const modalProps = {
+  centered: true,
+  styles: modalStyles,
+  destroyOnHidden: true,
+} as const
+
+/**
  * Help text under a field, in the dialog's own measure.
  *
  * antd's `extra` renders at the ambient 13px with no leading of its own, which
@@ -37,8 +56,8 @@ export const modalStyles = {
  * against the input above it and made the sentence read as part of the field.
  */
 export const fieldHelpStyle = {
-  marginTop: 6,
+  marginTop: 8,
   fontSize: 12,
-  lineHeight: 1.5,
+  lineHeight: 1.55,
   color: palette.textTertiary,
 } as const

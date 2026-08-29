@@ -7,7 +7,7 @@ import { ConsequenceModal } from '../../components/ConsequenceModal'
 import { PageBody, PageHeader } from '../../components/PageHeader'
 import { RulesDisclosure } from '../../components/RulesDisclosure'
 import { SectionCard } from '../../components/SectionCard'
-import { modalStyles } from '../../components/modalChrome'
+import { modalProps } from '../../components/modalChrome'
 import { StatusPill } from '../../components/StatusPill'
 import {
   createGsUser,
@@ -108,6 +108,17 @@ export function UsersScreen() {
   const [createForm] = Form.useForm<CreateValues>()
   const [pwForm] = Form.useForm<{ password: string }>()
 
+  /** Every dismissal path of the create dialog -- X, mask, Escape, Huỷ. */
+  const closeCreate = () => {
+    setCreateOpen(false)
+    createForm.resetFields()
+  }
+  /** Same for the reset dialog, and it clears a password out of memory. */
+  const closePw = () => {
+    setPwTarget(null)
+    pwForm.resetFields()
+  }
+
   const refresh = useCallback(async () => {
     setLoading(true)
     try {
@@ -151,7 +162,7 @@ export function UsersScreen() {
           <Button
             type="primary"
             icon={<UserAddOutlined aria-hidden />}
-            onClick={() => setCreateOpen(true)}
+            onClick={() => { createForm.resetFields(); setCreateOpen(true) }}
           >
             Tạo tài khoản GS
           </Button>
@@ -227,7 +238,7 @@ export function UsersScreen() {
                         size="small"
                         aria-label="Đổi mật khẩu"
                         icon={<KeyOutlined />}
-                        onClick={() => setPwTarget(user)}
+                        onClick={() => { pwForm.resetFields(); setPwTarget(user) }}
                       />
                     </Tooltip>
                     <Tooltip title="Xem mật khẩu · được ghi log">
@@ -284,8 +295,7 @@ export function UsersScreen() {
         onOk={() => setRevealed(null)}
         okText="Đã ghi nhận"
         cancelButtonProps={{ style: { display: 'none' } }}
-        styles={modalStyles}
-        destroyOnHidden
+        {...modalProps}
       >
         <p style={{ marginTop: 0, fontSize: 13, lineHeight: 1.5, color: palette.textSecondary }}>
           Mỗi lần xem đều được ghi log kèm tên bạn, tài khoản đích và thời điểm. Log chỉ ghi thêm.
@@ -302,7 +312,16 @@ export function UsersScreen() {
             background: palette.bgSubtle,
           }}
         >
-          <Typography.Text copyable style={{ fontFamily: 'inherit' }}>
+          {/*
+            `copyable={{ text }}`, not a bare `copyable`. antd copies its own
+            children when no text is given, and children here is a React
+            element -- so the clipboard got "[object Object]" and the admin
+            pasted that into the message they were sending the foreman.
+          */}
+          <Typography.Text
+            copyable={{ text: revealed.password, tooltips: ['Sao chép', 'Đã sao chép'] }}
+            style={{ fontFamily: 'inherit' }}
+          >
             <span style={{ fontSize: 16, fontWeight: 600, letterSpacing: '0.06em' }}>
               {revealed.password}
             </span>
@@ -346,11 +365,10 @@ export function UsersScreen() {
       <Modal
         open={createOpen}
         title="Tạo tài khoản GS"
-        onCancel={() => setCreateOpen(false)}
-        styles={modalStyles}
-        destroyOnHidden
+        onCancel={closeCreate}
+        {...modalProps}
         footer={[
-          <Button key="cancel" onClick={() => setCreateOpen(false)}>
+          <Button key="cancel" onClick={closeCreate}>
             Huỷ
           </Button>,
           <Button key="ok" type="primary" onClick={() => createForm.submit()}>
@@ -397,11 +415,10 @@ export function UsersScreen() {
       <Modal
         open={pwTarget !== null}
         title={`Đổi mật khẩu — ${pwTarget?.username ?? ''}`}
-        onCancel={() => setPwTarget(null)}
-        styles={modalStyles}
-        destroyOnHidden
+        onCancel={closePw}
+        {...modalProps}
         footer={[
-          <Button key="cancel" onClick={() => setPwTarget(null)}>
+          <Button key="cancel" onClick={closePw}>
             Huỷ
           </Button>,
           <Button key="ok" type="primary" onClick={() => pwForm.submit()}>
@@ -418,6 +435,11 @@ export function UsersScreen() {
           onFinish={({ password }) => {
             setPwPending({ user: pwTarget!, password })
             setPwTarget(null)
+            // The typed password does not outlive the dialog it was typed in.
+            // It is already held in `pwPending` for the length of the
+            // confirmation; a second copy sitting in a Form store the admin
+            // cannot see is a credential with nothing watching it.
+            pwForm.resetFields()
           }}
         >
           <Form.Item

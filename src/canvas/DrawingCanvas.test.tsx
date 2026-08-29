@@ -128,9 +128,31 @@ vi.mock('react-konva', () => {
       onMouseMove={(domEvt: React.MouseEvent) =>
         (props.onMouseMove as ((e: unknown) => void) | undefined)?.(konvaPointer(domEvt))
       }
-      onWheel={(domEvt: React.WheelEvent) =>
-        (props.onWheel as ((e: unknown) => void) | undefined)?.({ evt: domEvt })
-      }
+      /*
+        Konva attaches its own listener and hands the handler a real WheelEvent
+        as `e.evt`, so the double hands over the same shape -- and records the
+        one decision the component makes about it.
+
+        Recorded rather than read off the DOM event, because React registers
+        `onWheel` passively: preventDefault on a React-dispatched wheel is a
+        no-op in the browser AND in jsdom, so `defaultPrevented` would read
+        false however the component behaved. Whether the canvas CLAIMS the
+        gesture is the whole contract here -- at fit it must let the page scroll
+        past it -- so the double reports it directly.
+      */
+      onWheel={(domEvt: React.WheelEvent) => {
+        const el = domEvt.currentTarget as HTMLElement
+        el.setAttribute('data-wheel-claimed', 'false')
+        ;(props.onWheel as ((e: unknown) => void) | undefined)?.({
+          evt: {
+            deltaX: domEvt.deltaX,
+            deltaY: domEvt.deltaY,
+            ctrlKey: domEvt.ctrlKey,
+            metaKey: domEvt.metaKey,
+            preventDefault: () => el.setAttribute('data-wheel-claimed', 'true'),
+          },
+        })
+      }}
       onMouseUp={(domEvt: React.MouseEvent) => {
         const nodeName = String(props.name ?? '')
         const leftover = dragOffsets.get(nodeName) ?? { x: 0, y: 0 }
@@ -448,6 +470,35 @@ describe('DrawingCanvas', () => {
       fireEvent.wheel(stage, { deltaY: 120, deltaX: 0 })
       // Still 150%: the gesture moved the viewport, it did not rescale it.
       expect(screen.getByText('150%')).toBeInTheDocument()
+    })
+
+    it('lets the page scroll past a drawing that is already fit to its frame', async () => {
+      // At fit there is nowhere for the drawing to pan to, so swallowing the
+      // wheel strands the reader: the pointer crosses the canvas on the way
+      // down a long deck screen and the page simply stops moving, with nothing
+      // on screen saying why.
+      render(
+        <DrawingCanvas
+          imageUrl="u" imageW={2000} imageH={1600} cells={cells}
+          selectedCodes={[]} panZoom
+        />,
+      )
+      const stage = screen.getByTestId('stage:drawing')
+      fireEvent.wheel(stage, { deltaY: 120 })
+      expect(stage).toHaveAttribute('data-wheel-claimed', 'false')
+    })
+
+    it('keeps the wheel once the drawing has somewhere to pan to', async () => {
+      render(
+        <DrawingCanvas
+          imageUrl="u" imageW={2000} imageH={1600} cells={cells}
+          selectedCodes={[]} panZoom
+        />,
+      )
+      fireEvent.click(screen.getByRole('button', { name: 'Phóng to' }))
+      const stage = screen.getByTestId('stage:drawing')
+      fireEvent.wheel(stage, { deltaY: 120 })
+      expect(stage).toHaveAttribute('data-wheel-claimed', 'true')
     })
 
     it('zooms on a pinch, which is a wheel event carrying ctrlKey', async () => {

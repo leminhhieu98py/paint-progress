@@ -1,5 +1,4 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { DEFAULT_STAGE_TEMPLATE } from '../domain/stageTemplate'
 import type { Stage } from '../domain/types'
 import {
   createDeck, getDrawingUrl, listCells, listDecks, listStages,
@@ -97,37 +96,17 @@ describe('createDeck', () => {
     })
   })
 
-  it('seeds the new deck with the default stage template', async () => {
-    // A deck with no stages reports 0% for ever: computeDeckProgress reduces
-    // over an empty list and returns a number, so nothing raises the alarm.
+  it('leaves the new deck with no stages, so nobody inherits another deck\'s spec', async () => {
+    // The seed used to write five coats named after one project's paint spec.
+    // A deck whose real spec is three coats then had to have two DELETED --
+    // a destructive edit, on a list the admin never asked for, before they had
+    // declared anything. The empty list is caught in A3.2 instead, where it is
+    // visible and where the save refuses it.
     from.mockImplementationOnce(() => builder({ data: { id: 'd9' } }))
-    const stages = builder({})
-    from.mockImplementationOnce(() => stages)
 
     await createDeck({ projectId: 'p1', seq: 3, name: 'Roof', code: 'RF' })
 
-    expect(from).toHaveBeenCalledWith('deck_stages')
-    expect(stages.insert).toHaveBeenCalledWith(
-      DEFAULT_STAGE_TEMPLATE.map((t) => ({
-        deck_id: 'd9', seq: t.seq, name: t.name, color: t.color, weight: t.weight,
-      })),
-    )
-  })
-
-  it('deletes the deck again when seeding its stages fails', async () => {
-    // Two statements, no transaction. Leaving the deck behind strands it at a
-    // permanent 0% that no one is prompted to fix.
-    from.mockImplementationOnce(() => builder({ data: { id: 'd9' } }))
-    from.mockImplementationOnce(() => builder({ error: { message: 'deadlock detected' } }))
-    const rollback = builder({})
-    from.mockImplementationOnce(() => rollback)
-
-    await expect(
-      createDeck({ projectId: 'p1', seq: 3, name: 'Roof', code: 'RF' }),
-    ).rejects.toThrow('deadlock detected')
-
-    expect(rollback.delete).toHaveBeenCalled()
-    expect(rollback.eq).toHaveBeenCalledWith('id', 'd9')
+    expect(from).not.toHaveBeenCalledWith('deck_stages')
   })
 
   it('throws when the insert fails', async () => {

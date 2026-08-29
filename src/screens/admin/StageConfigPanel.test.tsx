@@ -34,6 +34,20 @@ vi.mock('../../lib/decksApi', async (importOriginal) => {
  * names itself differently for the two, which is the point -- so this reads
  * whichever is on screen rather than assuming.
  */
+/**
+ * Drags the row at `from` onto the row at `to`.
+ *
+ * The only way to reorder now: the up/down buttons are gone, because the row
+ * has been draggable all along and two ways to do one thing on a five-row table
+ * was more chrome than the table it sat in.
+ */
+const dragRow = (from: number, to: number) => {
+  const rows = document.querySelectorAll('.ant-table-tbody .ant-table-row')
+  fireEvent.dragStart(rows[from])
+  fireEvent.dragOver(rows[to])
+  fireEvent.drop(rows[to])
+}
+
 const saveConfig = async () => {
   await userEvent.click(screen.getByRole('button', { name: 'Lưu cấu hình lớp sơn' }))
   const removal = screen.queryByRole('button', { name: 'Vẫn lưu' })
@@ -260,8 +274,8 @@ describe('StageConfigPanel', () => {
     renderApp(<StageConfigPanel deckId="d1" />)
     await screen.findByDisplayValue('Coat 3')
 
-    // Move Coat 3 up one: it takes seq 2 and Coat 2 takes seq 3.
-    await userEvent.click(screen.getAllByRole('button', { name: 'Lên' })[2])
+    // Drag Coat 3 onto Coat 2: it takes seq 2 and Coat 2 takes seq 3.
+    dragRow(2, 1)
     await saveConfig()
 
     await waitFor(() => expect(saveStages).toHaveBeenCalledTimes(1))
@@ -538,10 +552,10 @@ describe('StageConfigPanel', () => {
     expect(screen.getByRole('button', { name: 'Xoá' })).toBeDisabled()
   })
 
-  it('moves a stage up and renumbers seq contiguously', async () => {
+  it('renumbers seq contiguously after a drag', async () => {
     renderApp(<StageConfigPanel deckId="d1" />)
     await screen.findByDisplayValue('Coat 2')
-    await userEvent.click(screen.getAllByRole('button', { name: 'Lên' })[1])
+    dragRow(1, 0)
 
     const names = screen.getAllByLabelText('Tên lớp sơn').map((i) => (i as HTMLInputElement).value)
     expect(names).toEqual(['Coat 2', 'Blast + Coat 1'])
@@ -591,6 +605,32 @@ describe('StageConfigPanel', () => {
     await waitFor(() => expect(screen.getAllByRole('textbox')[0]).toHaveValue('Coat 2'))
     expect(screen.getByTestId('seq-0')).toHaveTextContent('1')
     expect(screen.getByTestId('seq-1')).toHaveTextContent('2')
+  })
+})
+
+describe('StageConfigPanel with no coats declared yet', () => {
+  beforeEach(() => {
+    listStages.mockResolvedValue([])
+  })
+
+  it('says the deck has no coats, rather than showing an empty table', async () => {
+    renderApp(<StageConfigPanel deckId="d1" />)
+    expect(await screen.findByText('Sàn này chưa có lớp sơn nào')).toBeInTheDocument()
+  })
+
+  it('holds the save shut, because a deck with no coats reports 0% for ever', async () => {
+    renderApp(<StageConfigPanel deckId="d1" />)
+    await screen.findByText('Sàn này chưa có lớp sơn nào')
+    expect(screen.getByRole('button', { name: 'Lưu cấu hình lớp sơn' })).toBeDisabled()
+    // And it says why, in the words of what to do about it.
+    expect(screen.getByText(/Thêm ít nhất một lớp sơn/)).toBeInTheDocument()
+  })
+
+  it('opens the way in, so an empty deck is not a dead end', async () => {
+    renderApp(<StageConfigPanel deckId="d1" />)
+    await screen.findByText('Sàn này chưa có lớp sơn nào')
+    await userEvent.click(screen.getByRole('button', { name: 'Thêm lớp' }))
+    expect(await screen.findByLabelText('Tên lớp sơn')).toBeInTheDocument()
   })
 })
 

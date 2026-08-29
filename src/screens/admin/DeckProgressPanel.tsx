@@ -1,7 +1,7 @@
 import { ExpandOutlined, MinusOutlined, PlusOutlined } from '@ant-design/icons'
 import {
   Alert, App, Button, DatePicker, Form, Input, Modal, Segmented,
-  Select, Space, Spin, Table, Typography,
+  Select, Space, Spin, Table, Tooltip, Typography,
 } from 'antd'
 import dayjs from 'dayjs'
 import { useCallback, useEffect, useMemo, useState } from 'react'
@@ -26,7 +26,7 @@ import { ProgressBar } from '../../components/ProgressBar'
 import { RulesDisclosure } from '../../components/RulesDisclosure'
 import { SectionCard } from '../../components/SectionCard'
 import { StageSpecTable } from '../../components/StageSpecTable'
-import { modalStyles } from '../../components/modalChrome'
+import { modalProps } from '../../components/modalChrome'
 import { palette, shadowCard } from '../../theme'
 import { listGsUsers } from '../../lib/adminApi'
 import type { Cell } from '../../domain/types'
@@ -786,12 +786,40 @@ export function DeckProgressPanel({
                     />
                   </div>
                 )}
-                {editable && selectedCodes.length > 0 && (
+                {/*
+                  Always on screen in Sửa, disabled rather than hidden. Hiding
+                  it until bays are picked takes away the only thing on the
+                  panel that says zones can be made here at all -- the admin has
+                  to already know the gesture to discover the button for it.
+                */}
+                {editable && (
                   <Space style={{ marginLeft: 'auto' }}>
-                    <Button onClick={() => setSelectedCodes([])}>Bỏ chọn</Button>
-                    <Button type="primary" onClick={() => setZoneFormOpen(true)}>
-                      {`Gộp thành zone (${selectedCodes.length})`}
-                    </Button>
+                    {selectedCodes.length > 0 && (
+                      <Button onClick={() => setSelectedCodes([])}>Bỏ chọn</Button>
+                    )}
+                    <Tooltip
+                      title={
+                        selectedCodes.length > 0
+                          ? 'Gộp các ô đang chọn thành một zone'
+                          : 'Chọn ô trên bản vẽ trước — bấm từng ô, hoặc giữ Shift rồi kéo'
+                      }
+                    >
+                      {/* A span, because antd Tooltip cannot anchor a disabled button. */}
+                      <span>
+                        <Button
+                          type="primary"
+                          icon={<PlusOutlined aria-hidden />}
+                          disabled={selectedCodes.length === 0}
+                          onClick={() => {
+                            setWindows({})
+                            form.resetFields()
+                            setZoneFormOpen(true)
+                          }}
+                        >
+                          {`Gộp thành zone (${selectedCodes.length})`}
+                        </Button>
+                      </span>
+                    </Tooltip>
                   </Space>
                 )}
               </div>
@@ -924,13 +952,12 @@ export function DeckProgressPanel({
         open={noteCell !== null}
         title={noteCell ? `Ghi chú · ô ${noteCell.code}` : ''}
         onCancel={() => setNoteCell(null)}
-        styles={modalStyles}
         footer={[
           <Button key="close" onClick={() => setNoteCell(null)}>
             Đóng
           </Button>,
         ]}
-        destroyOnHidden
+        {...modalProps}
       >
         {noteCell && (
           <Space direction="vertical" size="middle" style={{ width: '100%' }}>
@@ -965,13 +992,12 @@ export function DeckProgressPanel({
         open={datesFor !== null}
         title={datesFor ? `Mốc ngày · ${datesFor.name}` : ''}
         onCancel={() => setDatesFor(null)}
-        styles={modalStyles}
         footer={[
           <Button key="done" type="primary" onClick={() => setDatesFor(null)}>
             Xong
           </Button>,
         ]}
-        destroyOnHidden
+        {...modalProps}
       >
         {datesFor && (
           <Space direction="vertical" size="middle" style={{ width: '100%' }}>
@@ -1046,9 +1072,8 @@ export function DeckProgressPanel({
         okText="Tạo zone"
         cancelText="Huỷ"
         onOk={() => void submitZones()}
-        styles={modalStyles}
         width={640}
-        destroyOnHidden
+        {...modalProps}
       >
         <Form form={form} layout="vertical">
           <Form.Item

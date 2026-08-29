@@ -6,7 +6,7 @@ import { useNavigate } from 'react-router-dom'
 import { PageBody, PageHeader } from '../../components/PageHeader'
 import { ProgressBar } from '../../components/ProgressBar'
 import { SectionCard } from '../../components/SectionCard'
-import { modalStyles } from '../../components/modalChrome'
+import { modalProps } from '../../components/modalChrome'
 import { StatCard } from '../../components/StatCard'
 import { formatAreaM2 } from '../../lib/format'
 import { latestProgressEvent, type ProgressEvent } from '../../lib/progressApi'
@@ -90,6 +90,28 @@ export function ProjectsScreen() {
   // The dialog's actions live in its footer strip, outside the <Form>.
   const [form] = Form.useForm<CreateValues>()
 
+  /**
+   * Opens the one dialog, on a project or on nothing.
+   *
+   * The fields are written here rather than through `initialValues`: the Form
+   * instance is held outside the tree so the footer's buttons can submit it,
+   * and antd keeps that store alive across destroyOnHidden -- so initialValues
+   * loses to whatever the last open left behind, and the dialog reopens
+   * holding a project the admin has already walked away from.
+   */
+  const openDialog = (project: ProjectRow | null) => {
+    form.setFieldsValue({ name: project?.name ?? '', code: project?.code ?? '' })
+    setEditing(project)
+    setCreateOpen(project === null)
+  }
+
+  /** Every dismissal path -- the X, the mask, Escape, Huỷ -- ends here. */
+  const closeDialog = () => {
+    setCreateOpen(false)
+    setEditing(null)
+    form.resetFields()
+  }
+
   const onCreate = async (values: CreateValues) => {
     try {
       await createProject(values)
@@ -142,7 +164,7 @@ export function ProjectsScreen() {
           <Button
             type="primary"
             icon={<PlusOutlined aria-hidden />}
-            onClick={() => setCreateOpen(true)}
+            onClick={() => openDialog(null)}
           >
             Tạo dự án
           </Button>
@@ -259,7 +281,7 @@ export function ProjectsScreen() {
                         // this, editing also opens the project's decks behind
                         // the modal, and closing it strands the admin there.
                         e.stopPropagation()
-                        setEditing(row)
+                        openDialog(row)
                       }}
                     />
                   </Tooltip>
@@ -273,20 +295,10 @@ export function ProjectsScreen() {
       <Modal
         open={createOpen || editing !== null}
         title={editing ? 'Sửa dự án' : 'Tạo dự án'}
-        onCancel={() => {
-          setCreateOpen(false)
-          setEditing(null)
-        }}
-        styles={modalStyles}
-        destroyOnHidden
+        onCancel={closeDialog}
+        {...modalProps}
         footer={[
-          <Button
-            key="cancel"
-            onClick={() => {
-              setCreateOpen(false)
-              setEditing(null)
-            }}
-          >
+          <Button key="cancel" onClick={closeDialog}>
             Huỷ
           </Button>,
           <Button key="ok" type="primary" onClick={() => form.submit()}>
@@ -297,7 +309,6 @@ export function ProjectsScreen() {
         <Form<CreateValues>
           form={form}
           layout="vertical"
-          initialValues={editing ? { name: editing.name, code: editing.code } : undefined}
           onFinish={(v) => void (editing ? onUpdate(editing.id, v) : onCreate(v))}
         >
           <Form.Item name="name" label="Tên dự án" rules={[{ required: true, message: 'Nhập tên dự án' }]}>

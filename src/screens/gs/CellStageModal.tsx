@@ -1,4 +1,5 @@
 import { Alert, Button, Input, Modal, Select, Space, Typography } from 'antd'
+import { modalProps } from '../../components/modalChrome'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { isBackwards, nextStage } from '../../domain/stageFlow'
 import type { Cell, Stage } from '../../domain/types'
@@ -78,7 +79,7 @@ export function CellStageModal({
       cancelText="Huỷ"
       okButtonProps={{ disabled: unchanged, size: 'large' }}
       cancelButtonProps={{ size: 'large' }}
-      destroyOnHidden
+      {...modalProps}
     >
       {cell && (
         <Space direction="vertical" size="middle" style={{ width: '100%' }}>

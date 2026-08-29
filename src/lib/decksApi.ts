@@ -1,4 +1,3 @@
-import { DEFAULT_STAGE_TEMPLATE } from '../domain/stageTemplate'
 import type { MeshCell, Stage } from '../domain/types'
 import { supabase } from './supabase'
 
@@ -114,26 +113,20 @@ export async function createDeck(input: {
   if (error) throw new Error(error.message)
   const deckId = (data as { id: string }).id
 
-  // Seed the template so a deck is never left with an empty stage list:
-  // reducing over zero stages yields a silent, permanent 0% rather than a
-  // crash, which is harder to notice than a failed create. Stages are per deck,
-  // so this is where the seeding belongs -- it used to be on the project.
-  const { error: stageError } = await supabase.from('deck_stages').insert(
-    DEFAULT_STAGE_TEMPLATE.map((s) => ({
-      deck_id: deckId,
-      seq: s.seq,
-      name: s.name,
-      color: s.color,
-      weight: s.weight,
-    })),
-  )
-  if (stageError) {
-    // Not in a transaction. A deck with no stages reports 0% for ever and
-    // nothing prompts anyone to retry, so roll it back rather than strand it.
-    await supabase.from('decks').delete().eq('id', deckId)
-    throw new Error(stageError.message)
-  }
+  /*
+    Deliberately NOT seeded with a stage template.
 
+    It used to be, on the reasoning that a deck with no stages reports 0% for
+    ever and nothing raises the alarm. In practice the seed was the louder
+    failure: every deck arrived carrying five coats named after one project's
+    paint spec, at that project's weights, and a deck whose real spec is three
+    coats had to have two deleted -- a destructive edit, on a list the admin
+    never asked for, before they had declared anything.
+
+    The empty list is now visible and blocked instead of silent: A3.2 says the
+    deck has no coats yet, and its save refuses an empty list outright, so a
+    deck cannot reach the foreman's tablet without a spec someone declared.
+  */
   return deckId
 }
 

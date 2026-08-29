@@ -76,3 +76,26 @@ body {
 .pp-table .ant-table-cell:last-child {
   padding-right: 20px;
 }
+
+/*
+  Help text under a form field.
+
+  antd renders `extra` at the ambient size in the ambient colour, which put a
+  two-line consequence ("Mật khẩu cũ ngừng hiệu lực ngay...") hard against the
+  input above it, at the same weight as the label -- so the sentence read as
+  part of the field rather than as a note about it.
+*/
+/*
+  Two class names, not one. antd injects its own `.ant-form-item-extra` rule at
+  runtime, after this stylesheet, so a single-class selector of equal
+  specificity loses the cascade on every property antd also sets -- font-size
+  came out at antd's 13px while colour and margin (which antd leaves alone)
+  took. `.ant-form-item` on the front outranks it.
+*/
+.ant-form-item .ant-form-item-extra {
+  margin-top: 8px;
+  font-size: 12px;
+  line-height: 1.55;
+  color: #5f7183;
+  text-wrap: pretty;
+}

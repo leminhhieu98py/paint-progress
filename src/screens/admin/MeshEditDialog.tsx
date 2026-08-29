@@ -2,7 +2,7 @@ import { Modal, Typography } from 'antd'
 import { formatAreaM2 } from '../../lib/format'
 import type { MeshCell } from '../../domain/types'
 import type { ZoneImpact } from '../../lib/decksApi'
-import { modalStyles } from '../../components/modalChrome'
+import { modalProps } from '../../components/modalChrome'
 
 export type EditKind = 'delete' | 'merge' | 'mesh'
 
@@ -68,8 +68,7 @@ export function MeshEditDialog({
   return (
     <Modal
       open={pending !== null}
-      destroyOnHidden
-      styles={modalStyles}
+      {...modalProps}
       title={
         pending &&
         (pending.impact.length > 0
