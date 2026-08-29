@@ -192,6 +192,34 @@ describe('UsersScreen', () => {
     expect(await screen.findByText('Bh7@Deck2026')).toBeInTheDocument()
   })
 
+  it('refuses a password too short to survive being guessed', async () => {
+    // The admin types this by hand to hand to a foreman, and with nothing but
+    // "required" in front of them what actually appears is 123456 or the site
+    // name. A GS account that is guessed can write cells.stage_id -- the
+    // numbers the customer is billed against.
+    renderApp(<UsersScreen />)
+    await screen.findByText('gs1')
+    await userEvent.click(screen.getAllByRole('button', { name: 'Đổi mật khẩu' })[0])
+    await userEvent.type(screen.getByLabelText('Mật khẩu mới'), 'gs2024')
+    await userEvent.click(screen.getByRole('button', { name: 'Lưu' }))
+
+    expect(await screen.findByText(/Tối thiểu 12 ký tự/)).toBeInTheDocument()
+    expect(setPassword).not.toHaveBeenCalled()
+  })
+
+  it('offers a generated password, so nobody has to invent one', async () => {
+    // The real fix for weak passwords is not a rule the admin fights -- it is
+    // not asking them to think of one. Four random words are long, typo-proof
+    // over a radio, and nothing like the site name.
+    renderApp(<UsersScreen />)
+    await screen.findByText('gs1')
+    await userEvent.click(screen.getAllByRole('button', { name: 'Đổi mật khẩu' })[0])
+    await userEvent.click(screen.getByRole('button', { name: 'Sinh mật khẩu' }))
+
+    const field = screen.getByLabelText('Mật khẩu mới') as HTMLInputElement
+    expect(field.value.length).toBeGreaterThanOrEqual(12)
+  })
+
   it('warns that a reset locks the GS out before it writes the new password', async () => {
     // The foreman is on a platform with the old password in his pocket. The
     // reset takes effect the instant it is written, and nothing tells him --

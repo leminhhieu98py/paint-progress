@@ -1,4 +1,19 @@
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+/*
+  Pinned to an exact patch, not `@2`.
+
+  `@2` is not a version -- it is "whichever 2.x is newest at cold start", so the
+  code running in this function could change with no commit in this repo. That
+  matters more here than anywhere else in the product: this is the only surface
+  holding SUPABASE_SERVICE_ROLE_KEY (which bypasses every RLS policy) and
+  CRED_ENC_KEY (which decrypts every stored GS password). A compromised publish
+  upstream, or a compromised esm.sh, would execute with both and leave nothing
+  in `git log`.
+
+  Kept in step with package.json's @supabase/supabase-js by hand -- the frontend
+  and this function talk to the same PostgREST, and a silent split between them
+  is its own class of bug.
+*/
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.112.3'
 import { decryptSecret, encryptSecret, importKey } from './crypto.ts'
 
 const AUTH_EMAIL_SUFFIX = '@app.local'
@@ -60,6 +75,74 @@ async function callerAdminId(req: Request): Promise<string | null> {
 }
 
 /**
+ * Refuses an action aimed at anyone but a GS account.
+ *
+ * `set-password` and `deactivate` used to take any user id at all, so one admin
+ * could reset another admin's password -- locking them out of an account that
+ * reads every project -- or switch them off entirely. Neither writes to
+ * `credential_access_log`; only `reveal` does. So the one operation in this
+ * system that is genuinely an escalation between peers was also the only one
+ * leaving no trace.
+ *
+ * A missing profile is refused too, not treated as "not an admin, therefore
+ * fine": an id with no profile is either a deleted account or a typo, and
+ * neither is something to act on.
+ *
+ * Returns null when the target is a GS and the caller may proceed.
+ */
+async function refuseNonGsTarget(userId: string): Promise<Response | null> {
+  const { data, error } = await admin
+    .from('profiles')
+    .select('role')
+    .eq('id', userId)
+    .maybeSingle()
+  if (error) return json({ error: 'Could not read the target account' }, 500)
+  if (!data) return json({ error: 'No such account' }, 404)
+  if (data.role !== 'gs') {
+    return json({ error: 'This action is only available for GS accounts' }, 403)
+  }
+  return null
+}
+
+/**
+ * How many reveals one admin may make in an hour.
+ *
+ * A stolen admin token could otherwise loop `reveal` across the whole GS list
+ * and drain every stored password in seconds; `credential_access_log` would
+ * record it perfectly and stop none of it. The limit is deliberately well above
+ * a working day's legitimate use -- an admin handing out passwords one at a
+ * time on the radio never approaches it -- so this costs nobody anything until
+ * something is wrong.
+ *
+ * Counted from the log rather than kept in memory: Edge Functions are
+ * per-invocation, so in-memory state would reset on every cold start, which is
+ * exactly what an attacker's burst would trigger.
+ */
+const REVEAL_LIMIT_PER_HOUR = 20
+
+/**
+ * What the caller is told when a database or auth call fails.
+ *
+ * The raw message carries table names, constraint names and schema detail, and
+ * every branch here used to return it verbatim -- the final catch block was the
+ * only one that did not. This surface is admin-only, so it is not an open door;
+ * it is free reconnaissance for anyone who reaches it, and it is unreadable for
+ * the admin who does belong here.
+ *
+ * The one case worth translating is a duplicate username, because that is a
+ * thing the admin can fix by typing something else. Everything else becomes a
+ * fixed sentence, with the detail written to the function log where an operator
+ * can read it and an attacker cannot.
+ */
+function safeError(context: string, raw: string | undefined): string {
+  console.error(`admin-users: ${context}: ${raw ?? '(no message)'}`)
+  if (raw && /duplicate key|already (been )?registered|unique constraint/i.test(raw)) {
+    return 'Tên đăng nhập này đã có người dùng'
+  }
+  return `${context}. Chi tiết đã được ghi vào log máy chủ.`
+}
+
+/**
  * Deletes the just-created auth user after a downstream insert fails, so a
  * partial account never lingers. If the delete itself fails, the account is
  * stuck with a confirmed email and a working password but no profile -- and
@@ -113,7 +196,7 @@ Deno.serve(async (req) => {
           email_confirm: true,
         })
         if (createError || !created.user) {
-          return json({ error: createError?.message ?? 'Could not create user' }, 400)
+          return json({ error: safeError('Không tạo được tài khoản', createError?.message) }, 400)
         }
         const userId = created.user.id
 
@@ -121,7 +204,7 @@ Deno.serve(async (req) => {
           .from('profiles')
           .insert({ id: userId, username: username.trim().toLowerCase(), full_name: fullName, role: 'gs' })
         if (profileError) {
-          return await rollbackCreatedUser(userId, profileError.message)
+          return await rollbackCreatedUser(userId, safeError('Không tạo được hồ sơ người dùng', profileError.message))
         }
 
         // gs_credentials before project_members: it is the irreplaceable row --
@@ -132,14 +215,14 @@ Deno.serve(async (req) => {
           .from('gs_credentials')
           .insert({ user_id: userId, secret: await encryptSecret(key, password) })
         if (credError) {
-          return await rollbackCreatedUser(userId, credError.message)
+          return await rollbackCreatedUser(userId, safeError('Không lưu được thông tin đăng nhập', credError.message))
         }
 
         const { error: memberError } = await admin
           .from('project_members')
           .insert({ project_id: projectId, user_id: userId })
         if (memberError) {
-          return await rollbackCreatedUser(userId, memberError.message)
+          return await rollbackCreatedUser(userId, safeError('Không gán được dự án cho tài khoản', memberError.message))
         }
 
         return json({ userId })
@@ -147,6 +230,25 @@ Deno.serve(async (req) => {
 
       case 'reveal': {
         if (!body.userId) return json({ error: 'userId is required' }, 400)
+        const wrongTarget = await refuseNonGsTarget(body.userId)
+        if (wrongTarget) return wrongTarget
+
+        const since = new Date(Date.now() - 60 * 60 * 1000).toISOString()
+        const { count, error: countError } = await admin
+          .from('credential_access_log')
+          .select('id', { count: 'exact', head: true })
+          .eq('admin_id', adminId)
+          .gte('at', since)
+        // Fail closed, for the same reason the log write below does: an
+        // unreadable log means the throttle cannot be enforced, and an
+        // unenforceable throttle on this action is no throttle at all.
+        if (countError) return json({ error: 'Could not check the access log; reveal aborted' }, 500)
+        if ((count ?? 0) >= REVEAL_LIMIT_PER_HOUR) {
+          return json(
+            { error: 'Too many password reveals in the last hour. Try again later.' },
+            429,
+          )
+        }
 
         const { data } = await admin
           .from('gs_credentials')
@@ -170,6 +272,8 @@ Deno.serve(async (req) => {
       case 'set-password': {
         const { userId, password } = body
         if (!userId || !password) return json({ error: 'userId and password are required' }, 400)
+        const wrongTarget = await refuseNonGsTarget(userId)
+        if (wrongTarget) return wrongTarget
 
         // Ciphertext first, deliberately. If the ciphertext write fails,
         // nothing has changed yet and the supervisor keeps working with
@@ -187,13 +291,13 @@ Deno.serve(async (req) => {
         // error has to be checked to tell them apart. Guessing "no prior row" here
         // would leave nothing to restore if the auth update below fails, which is
         // the exact divergence this ordering exists to prevent.
-        if (readError) return json({ error: readError.message }, 500)
+        if (readError) return json({ error: safeError('Không đọc được thông tin đăng nhập hiện tại', readError.message) }, 500)
         const previousSecret = existing?.secret ?? null
 
         const { error: credError } = await admin
           .from('gs_credentials')
           .upsert({ user_id: userId, secret: await encryptSecret(key, password) })
-        if (credError) return json({ error: credError.message }, 500)
+        if (credError) return json({ error: safeError('Không lưu được mật khẩu mới', credError.message) }, 500)
 
         const { error: authError } = await admin.auth.admin.updateUserById(userId, { password })
         if (authError) {
@@ -202,7 +306,7 @@ Deno.serve(async (req) => {
           }
           // else: no prior row (account created before credentials existed,
           // or `create` half-failed) -- nothing to restore to.
-          return json({ error: authError.message }, 500)
+          return json({ error: safeError('Không đổi được mật khẩu', authError.message) }, 500)
         }
 
         return json({ ok: true })
@@ -211,12 +315,14 @@ Deno.serve(async (req) => {
       case 'deactivate': {
         if (!body.userId) return json({ error: 'userId is required' }, 400)
         const userId = body.userId
+        const wrongTarget = await refuseNonGsTarget(userId)
+        if (wrongTarget) return wrongTarget
 
         const { error: banError } = await admin.auth.admin.updateUserById(userId, {
           ban_duration: '876000h',
         })
         if (banError) {
-          return json({ error: `Could not ban account: ${banError.message}` }, 500)
+          return json({ error: safeError('Không tắt được tài khoản', banError.message) }, 500)
         }
 
         // No session revocation here on purpose. my_projects() requires
@@ -228,7 +334,7 @@ Deno.serve(async (req) => {
 
         const { error: memberError } = await admin.from('project_members').delete().eq('user_id', userId)
         if (memberError) {
-          return json({ error: `Could not remove project membership: ${memberError.message}` }, 500)
+          return json({ error: safeError('Không gỡ được quyền truy cập dự án', memberError.message) }, 500)
         }
 
         const { error: profileError } = await admin
@@ -236,7 +342,7 @@ Deno.serve(async (req) => {
           .update({ active: false })
           .eq('id', userId)
         if (profileError) {
-          return json({ error: `Could not mark profile inactive: ${profileError.message}` }, 500)
+          return json({ error: safeError('Không đánh dấu được tài khoản là đã tắt', profileError.message) }, 500)
         }
 
         return json({ ok: true })

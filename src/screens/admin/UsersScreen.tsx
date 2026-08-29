@@ -1,4 +1,6 @@
-import { EyeOutlined, KeyOutlined, UserAddOutlined, UserDeleteOutlined } from '@ant-design/icons'
+import {
+  EyeOutlined, KeyOutlined, ReloadOutlined, UserAddOutlined, UserDeleteOutlined,
+} from '@ant-design/icons'
 import { Alert, App, Button, Form, Input, Modal, Select, Table, Tooltip, Typography } from 'antd'
 import dayjs from 'dayjs'
 import { useCallback, useEffect, useState } from 'react'
@@ -18,6 +20,7 @@ import {
   type GsUser,
 } from '../../lib/adminApi'
 import { initialsOf } from '../../lib/initials'
+import { MIN_PASSWORD_LENGTH, generatePassword } from '../../lib/passwordGen'
 import { listProjectNames } from '../../lib/projectsApi'
 import { palette } from '../../theme'
 
@@ -401,10 +404,31 @@ export function UsersScreen() {
           <Form.Item
             name="password"
             label="Mật khẩu"
-            rules={[{ required: true, message: 'Nhập mật khẩu' }]}
+            rules={[
+              { required: true, message: 'Nhập mật khẩu' },
+              { min: MIN_PASSWORD_LENGTH, message: `Tối thiểu ${MIN_PASSWORD_LENGTH} ký tự` },
+            ]}
             extra="Bạn giao mật khẩu này cho GS. Xem lại được, nhưng mỗi lần xem đều ghi log."
           >
-            <Input placeholder="Nhập mật khẩu" />
+            <Input
+              placeholder="Nhập mật khẩu"
+              addonAfter={
+                /*
+                  A rule the admin has to satisfy is a rule the admin works
+                  around -- they find the shortest string that passes and reuse
+                  it. Not asking them to invent one is the actual fix.
+                */
+                <Tooltip title="Sinh mật khẩu ngẫu nhiên, dễ đọc qua bộ đàm">
+                  <Button
+                    type="text"
+                    size="small"
+                    aria-label="Sinh mật khẩu"
+                    icon={<ReloadOutlined aria-hidden />}
+                    onClick={() => createForm.setFieldsValue({ password: generatePassword() })}
+                  />
+                </Tooltip>
+              }
+            />
           </Form.Item>
           <Form.Item name="projectId" label="Dự án" rules={[{ required: true, message: 'Chọn dự án' }]}>
             <Select options={projects} placeholder="Chọn dự án" />
@@ -445,10 +469,26 @@ export function UsersScreen() {
           <Form.Item
             name="password"
             label="Mật khẩu mới"
-            rules={[{ required: true, message: 'Nhập mật khẩu mới' }]}
+            rules={[
+              { required: true, message: 'Nhập mật khẩu mới' },
+              { min: MIN_PASSWORD_LENGTH, message: `Tối thiểu ${MIN_PASSWORD_LENGTH} ký tự` },
+            ]}
             extra="Mật khẩu cũ ngừng hiệu lực ngay. GS không đăng nhập được cho tới khi bạn giao mật khẩu mới."
           >
-            <Input placeholder="Nhập mật khẩu mới" />
+            <Input
+              placeholder="Nhập mật khẩu mới"
+              addonAfter={
+                <Tooltip title="Sinh mật khẩu ngẫu nhiên, dễ đọc qua bộ đàm">
+                  <Button
+                    type="text"
+                    size="small"
+                    aria-label="Sinh mật khẩu"
+                    icon={<ReloadOutlined aria-hidden />}
+                    onClick={() => pwForm.setFieldsValue({ password: generatePassword() })}
+                  />
+                </Tooltip>
+              }
+            />
           </Form.Item>
         </Form>
       </Modal>
