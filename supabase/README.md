@@ -57,11 +57,14 @@ The `0019` note check reports `FAIL` until that migration is applied, and the
 three note tests in `tests/rls.integration.test.ts` are `it.skip`ped for the
 same reason -- unskip them in the change that applies it.
 
-**`0019` is written but NOT applied.** Until `npx supabase db push` runs it,
-`setCellStage` fails against the hosted project with PGRST204 (`Could not find
-the 'note' column`), because the client now sends `note` on every stage write.
-That is the whole GS write path, so the branch is not usable against the
-database until the migration lands.
+The teardown also RESETS the fixture bay on deck `AD` -- stage back to null,
+note back to empty -- and prunes the `cell_events` it accumulates. It does not
+touch deck `DD`: that bay and its one event are read-only evidence two tests
+look for. Fixtures are seeded by hand and inserted `on conflict do nothing`, so
+without this reset every run starts on whatever the last one left, and a test
+that asserts on a CHANGE quietly becomes an assertion about nothing.
+
+`0019` and `0020` are applied.
 
 Checks 29-31 arrived with `0014` and report `FAIL` until that migration is
 applied — check 29 with `from_stage_name NULL`, which is the defect it fixes,

@@ -80,6 +80,66 @@ update profiles set active = true where username = 'rlstest-admin';
 -- rather than repair it. This makes it self-healing instead of self-detecting.
 update profiles set role = 'gs', active = true where username = 'rlstest-gs';
 
+-- 7. The bay the suite writes to must be an untouched bay again.
+--
+-- AD ONLY, deliberately. The denied deck's bay and the single cell_events row
+-- it carries are read-only evidence: rls-fixtures.sql advances DD's cell once,
+-- through the app's real mechanism, so that a distinctively-named event exists
+-- for the cross-project reads at lines 204 and 792 to find. Resetting it, or
+-- pruning its event below, deletes the thing those tests are looking for --
+-- which is exactly what the first version of this statement did, and it turned
+-- an intermittent failure into a permanent one.
+--
+-- rls-fixtures.sql inserts them `on conflict (deck_id, code) do nothing`, so
+-- they are seeded ONCE and then carry whatever the last run left behind. That
+-- is fine for a row nobody writes; these two are written by four tests every
+-- run.
+--
+-- It matters because several of those tests assert on a CHANGE -- a stage that
+-- moves, a note that appears, a geometry column the guard refuses -- and an
+-- assertion about a change silently becomes a no-op when the stored value
+-- already equals the one being written. That is not hypothetical: it is what
+-- made `can attach a note to the bay it is recording` fail on a run where the
+-- previous run had left the bay already sitting on the stage the test was
+-- about to write to it.
+--
+-- Done here rather than in rls-fixtures.sql because the fixtures are seeded by
+-- hand, once, and this file runs after every suite. It joins statements 5 and
+-- 6 above, which exist for the same reason: a run killed mid-test leaves state
+-- that breaks the next one.
+--
+-- TWO statements, and no trigger is disabled to do it. 0019's guard refuses a
+-- note that changes without its stage, so the note is cleared in the same
+-- statement as a stage flip that is guaranteed to be a real change (null goes
+-- to the deck's stage, anything else goes to null). The second statement then
+-- settles the stage at null, which is either a legal stage-only change or a
+-- no-op. Disabling cells_assert_gs_stage_only would have been one statement,
+-- and would have left the guard off on the customer's database for as long as
+-- it took this script to crash.
+update cells c
+set stage_id = case when c.stage_id is null then s.id else null end,
+    note = ''
+from decks d
+join deck_stages s on s.deck_id = d.id
+where d.id = c.deck_id and d.code = 'AD';
+
+update cells c
+set stage_id = null
+from decks d
+where d.id = c.deck_id and d.code = 'AD' and c.stage_id is not null;
+
+-- 8. And the history that bay accumulates.
+--
+-- Every run appends three or four cell_events rows to the same cell, for ever:
+-- 68 of them by the time anyone counted, growing on a customer's database.
+-- They record the audit trail of a fixture, not of any real deck, and nothing
+-- reads them after the run that wrote them.
+--
+-- AD only, for the reason given in 7: DD's one event is what two tests read.
+delete from cell_events e
+using cells c, decks d
+where e.cell_id = c.id and c.deck_id = d.id and d.code = 'AD';
+
 create or replace function _verify_teardown() returns setof text language plpgsql as $$
 declare
   n int;
@@ -114,6 +174,31 @@ begin
 
   select count(*) into n from profiles where username = 'rlstest-admin' and active;
   return next format('%s rlstest-admin is active again: %s found',
+                     case when n = 1 then 'PASS' else 'FAIL' end, n);
+
+  -- The reset the next run depends on. A fixture bay that starts a run already
+  -- carrying a note, or already on the stage a test is about to write, turns
+  -- that test into an assertion about nothing.
+  select count(*) into n
+  from cells c join decks d on d.id = c.deck_id
+  where d.code = 'AD' and (c.stage_id is not null or coalesce(c.note, '') <> '');
+  return next format('%s the written fixture bay is reset to not-started with no note: %s still dirty, expected 0',
+                     case when n = 0 then 'PASS' else 'FAIL' end, n);
+
+  select count(*) into n
+  from cell_events e join cells c on c.id = e.cell_id join decks d on d.id = c.deck_id
+  where d.code = 'AD';
+  return next format('%s no accumulated cell_events survive on the written bay: %s found, expected 0',
+                     case when n = 0 then 'PASS' else 'FAIL' end, n);
+
+  -- The other half of the same rule: the read-only evidence on DD must still
+  -- be there. A prune that is one deck code too wide deletes it silently, and
+  -- the suite then fails on the NEXT run, in a different file, for a reason
+  -- that looks nothing like a teardown bug.
+  select count(*) into n
+  from cell_events e join cells c on c.id = e.cell_id join decks d on d.id = c.deck_id
+  where d.code = 'DD' and e.to_stage_name = 'RLS Denied Coat';
+  return next format('%s the denied deck''s seeded event is intact: %s found, expected 1',
                      case when n = 1 then 'PASS' else 'FAIL' end, n);
 
   -- Fixtures this script must NOT have touched ---------------------------
