@@ -32,7 +32,7 @@ do $$
 declare
   -- ─── EDIT THESE TWO ───────────────────────────────────────────────────────
   v_username  text := 'linh.admin';
-  v_full_name text := 'Nguyễn Thị Linh';
+  v_full_name text := 'Đoàn Công Linh';
   -- ──────────────────────────────────────────────────────────────────────────
 
   v_email    text;
