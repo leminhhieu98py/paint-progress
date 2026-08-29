@@ -1,4 +1,13 @@
-import { Alert, Button, Input, InputNumber, Modal, Space, Table, Typography } from 'antd'
+import {
+  ArrowDownOutlined,
+  ArrowUpOutlined,
+  CheckCircleFilled,
+  CloseCircleFilled,
+  DeleteOutlined,
+  HolderOutlined,
+  PlusOutlined,
+} from '@ant-design/icons'
+import { Alert, Button, Input, InputNumber, Modal, Space, Table, Tooltip, Typography } from 'antd'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { duplicateStageFields } from '../../domain/stageFlow'
 import type { Stage } from '../../domain/types'
@@ -7,6 +16,9 @@ import {
   listStages, roundStageWeight, saveStages, stagesRemovedBy, STAGE_WEIGHT_EPSILON,
 } from '../../lib/decksApi'
 import { randomUUID } from '../../lib/uuid'
+import { Mono } from '../../components/Mono'
+import { RulesDisclosure } from '../../components/RulesDisclosure'
+import { palette } from '../../theme'
 
 /**
  * saveStages' own guard errors, in the admin's language.
@@ -251,16 +263,6 @@ export function StageConfigPanel({
   return (
     <Space direction="vertical" style={{ width: '100%' }}>
       {error && <Alert type="error" message={error} closable onClose={() => setError(null)} />}
-      {!balanced && (
-        <Alert
-          type="warning"
-          // formatWeight(1), not a hardcoded "1.00": a literal dot decimal in
-          // the same sentence as a correctly formatted "1,0000" read as two
-          // different number formats stitched together.
-          message={`Tổng trọng số phải bằng ${formatWeight(1)} — hiện tại ${formatWeight(total)}`}
-          description="Mọi phần trăm tiến độ đều tính từ các trọng số này, nên không lưu được khi tổng lệch."
-        />
-      )}
 
       <Table<Stage>
         // By id, not seq: seq is renumbered under the rows on every reorder and
@@ -290,6 +292,18 @@ export function StageConfigPanel({
           onDrop: () => dropOn(index ?? 0),
         })}
         columns={[
+          {
+            // The row has been draggable all along with nothing on screen to
+            // say so. A handle is not a control here -- the whole row is the
+            // drag target -- it is the affordance that makes the gesture
+            // discoverable at all.
+            title: '',
+            key: 'handle',
+            width: 34,
+            render: () => (
+              <HolderOutlined style={{ color: '#647688', cursor: busy ? 'not-allowed' : 'grab' }} />
+            ),
+          },
           {
             title: 'Thứ tự',
             dataIndex: 'seq',
@@ -322,14 +336,24 @@ export function StageConfigPanel({
           {
             title: 'Màu',
             dataIndex: 'color',
-            width: 110,
+            width: 180,
             render: (v: string, _r, i) => (
-              <Input
-                type="color"
-                value={v}
-                disabled={busy}
-                onChange={(e) => patch(i, { color: e.target.value })}
-              />
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <Input
+                  type="color"
+                  value={v}
+                  disabled={busy}
+                  style={{ width: 44, padding: 2 }}
+                  onChange={(e) => patch(i, { color: e.target.value })}
+                />
+                {/*
+                  The hex beside the swatch, not instead of it. A foreman reads
+                  the colour off a drawing; an admin comparing this deck's
+                  config against another one reads the code. A 26px square is
+                  not something two people can agree about over the phone.
+                */}
+                <Mono style={{ fontSize: 12, color: palette.textSecondary }}>{v}</Mono>
+              </div>
             ),
           },
           {
@@ -368,41 +392,114 @@ export function StageConfigPanel({
             width: 200,
             render: (_v, _r, i) => (
               <Space size="small">
-                <Button size="small" disabled={busy || i === 0} onClick={() => move(i, -1)}>
-                  Lên
-                </Button>
-                <Button
-                  size="small"
-                  disabled={busy || i === draft.length - 1}
-                  onClick={() => move(i, 1)}
-                >
-                  Xuống
-                </Button>
-                <Button
-                  size="small"
-                  danger
-                  disabled={busy || draft.length === 1}
-                  onClick={() => removeStage(i)}
-                >
-                  Xoá
-                </Button>
+                {/*
+                  Icons with their labels kept as accessible names. The row is
+                  already draggable, and three text buttons per row on a
+                  five-stage table was more chrome than the table it sat in --
+                  but the buttons stay, because drag is not reachable from a
+                  keyboard and is awkward on a trackpad.
+                */}
+                <Tooltip title="Lên">
+                  <Button
+                    size="small"
+                    aria-label="Lên"
+                    icon={<ArrowUpOutlined />}
+                    disabled={busy || i === 0}
+                    onClick={() => move(i, -1)}
+                  />
+                </Tooltip>
+                <Tooltip title="Xuống">
+                  <Button
+                    size="small"
+                    aria-label="Xuống"
+                    icon={<ArrowDownOutlined />}
+                    disabled={busy || i === draft.length - 1}
+                    onClick={() => move(i, 1)}
+                  />
+                </Tooltip>
+                <Tooltip title="Xoá">
+                  <Button
+                    size="small"
+                    danger
+                    aria-label="Xoá"
+                    icon={<DeleteOutlined />}
+                    disabled={busy || draft.length === 1}
+                    onClick={() => removeStage(i)}
+                  />
+                </Tooltip>
               </Space>
             ),
           },
         ]}
-        summary={() => (
-          <Table.Summary.Row>
-            <Table.Summary.Cell index={0} colSpan={3}>
-              <Typography.Text strong>Tổng</Typography.Text>
-            </Table.Summary.Cell>
-            <Table.Summary.Cell index={3}>
-              <Typography.Text type={balanced ? 'success' : 'danger'} strong>
-                {formatWeight(total)}
-              </Typography.Text>
-            </Table.Summary.Cell>
-          </Table.Summary.Row>
-        )}
       />
+
+      {/*
+        The weights as one bar, in the stage colours, filling a track that is
+        exactly 1.
+
+        It replaces the table's own summary row as well as the warning. Three
+        renderings of one number -- a summary cell, an alert and a chip -- is
+        how a test ends up asserting the wrong one, and how an admin ends up
+        reading a stale one.
+        
+        This replaces a warning that said the same thing in words. A number is
+        read; a bar that visibly falls short of its own track is seen, and it
+        says WHICH stage is carrying too much at the same time. The wording
+        stays underneath, because the bar alone cannot say what to do about it.
+      */}
+      <div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
+          <span
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 9,
+              padding: '7px 13px',
+              borderRadius: 999,
+              background: balanced ? palette.successBg : palette.errorBg,
+              color: balanced ? palette.success : palette.error,
+            }}
+          >
+            {balanced ? <CheckCircleFilled /> : <CloseCircleFilled />}
+            <span style={{ fontSize: 14, fontWeight: 600 }}>{formatWeight(total)}</span>
+            {/*
+              The target is written as a bare 1, not formatWeight(1). Four
+              zeros on a constant add nothing, and repeating the same string
+              the chip's own total prints when balanced makes the two
+              indistinguishable to read -- and ambiguous to query.
+            */}
+            <span style={{ fontSize: 12, opacity: 0.7 }}>/ 1</span>
+          </span>
+        </div>
+        <div
+          style={{
+            display: 'flex',
+            height: 14,
+            borderRadius: 999,
+            overflow: 'hidden',
+            background: palette.track,
+            boxShadow: `inset 0 0 0 1px ${palette.borderCard}`,
+          }}
+        >
+          {draft.map((stage) => (
+            <div
+              key={stage.id}
+              data-testid={`weight-bar-${stage.id}`}
+              style={{
+                width: `${(Math.max(0, Math.min(1, stage.weight)) * 100).toFixed(4)}%`,
+                background: stage.color,
+                boxShadow: 'inset 0 0 0 1px rgba(22, 32, 43, 0.20)',
+                transition: 'width .16s ease',
+              }}
+            />
+          ))}
+        </div>
+        <div style={{ marginTop: 8, fontSize: 11, color: palette.textTertiary }}>
+          {balanced
+            ? 'Dải lấp đầy khung — tổng bằng 1, lưu được.'
+            : `Tổng trọng số các lớp phải bằng 1; hiện tại ${formatWeight(total)}. Mọi phần trăm tiến độ đều tính từ các trọng số này, nên nút Lưu khoá tới khi đúng.`}
+        </div>
+      </div>
 
       {hasClash && (
         <Alert
@@ -430,10 +527,31 @@ export function StageConfigPanel({
         >
           Lưu
         </Button>
-        <Button disabled={busy} onClick={addStage}>
+        <Button icon={<PlusOutlined aria-hidden />} disabled={busy} onClick={addStage}>
           Thêm lớp
         </Button>
       </Space>
+
+      <RulesDisclosure
+        rules={[
+          {
+            id: 'STG-R1',
+            text: 'Tổng trọng số phải đúng bằng 1; chưa đúng thì nút Lưu bị khoá.',
+          },
+          {
+            id: 'STG-R2',
+            text: 'Không hai lớp trùng tên hoặc trùng màu — GS nhận ra lớp bằng màu trên bản vẽ, báo cáo nhận ra bằng tên.',
+          },
+          {
+            id: 'STG-R3',
+            text: 'Cấu hình này chỉ áp cho sàn đang mở. Sàn khác trong cùng dự án không bị ảnh hưởng.',
+          },
+          {
+            id: 'STG-R4',
+            text: 'Xoá một lớp sẽ đưa mọi ô đang ở lớp đó về “Chưa bắt đầu”; lịch sử ghi nhận vẫn giữ nguyên.',
+          },
+        ]}
+      />
 
       {/* Conditionally rendered rather than toggled via `open`, so that the
        * dialog's presence in the DOM is a direct, immediate reflection of

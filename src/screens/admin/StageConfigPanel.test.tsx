@@ -587,3 +587,46 @@ describe('StageConfigPanel', () => {
     expect(screen.getByTestId('seq-1')).toHaveTextContent('2')
   })
 })
+
+describe('StageConfigPanel weight bar', () => {
+  it('gives each stage a band as wide as its own weight, in its own colour', async () => {
+    render(<StageConfigPanel deckId="d1" />)
+    await screen.findByDisplayValue('Blast + Coat 1')
+
+    expect(screen.getByTestId('weight-bar-s1')).toHaveStyle({
+      width: '60.0000%',
+      background: '#fadb14',
+    })
+    expect(screen.getByTestId('weight-bar-s2')).toHaveStyle({ width: '40.0000%' })
+  })
+
+  it('leaves the track visibly short when the weights do not reach 1', async () => {
+    listStages.mockResolvedValue([
+      { id: 's1', seq: 1, name: 'Blast + Coat 1', color: '#fadb14', weight: 0.6 },
+      { id: 's2', seq: 2, name: 'Coat 2', color: '#bfbfbf', weight: 0.1 },
+    ])
+    render(<StageConfigPanel deckId="d1" />)
+    await screen.findByDisplayValue('Blast + Coat 1')
+
+    // 70% of a track that is 1 by construction. This is the whole reason the
+    // bar replaced a sentence: a gap at the end of the track is seen, where
+    // "0,7000" has to be read and compared against a number that is not there.
+    expect(screen.getByTestId('weight-bar-s1')).toHaveStyle({ width: '60.0000%' })
+    expect(screen.getByTestId('weight-bar-s2')).toHaveStyle({ width: '10.0000%' })
+    expect(screen.getByText('0,7000')).toBeInTheDocument()
+  })
+
+  it('clamps a band to the track rather than letting it overflow', async () => {
+    // A weight above 1 is reachable by typing. An unclamped band pushes the
+    // bands beside it out of the track, so the one stage that is wrong makes
+    // every other stage look wrong too.
+    listStages.mockResolvedValue([
+      { id: 's1', seq: 1, name: 'Blast + Coat 1', color: '#fadb14', weight: 1 },
+      { id: 's2', seq: 2, name: 'Coat 2', color: '#bfbfbf', weight: 0.4 },
+    ])
+    render(<StageConfigPanel deckId="d1" />)
+    await screen.findByDisplayValue('Blast + Coat 1')
+
+    expect(screen.getByTestId('weight-bar-s1')).toHaveStyle({ width: '100.0000%' })
+  })
+})
