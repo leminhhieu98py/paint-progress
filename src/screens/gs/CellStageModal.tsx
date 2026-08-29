@@ -1,5 +1,6 @@
 import { Alert, Button, Input, Modal, Select, Space, Typography } from 'antd'
 import { modalProps } from '../../components/modalChrome'
+import { palette } from '../../theme'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { isBackwards, nextStage } from '../../domain/stageFlow'
 import type { Cell, Stage } from '../../domain/types'
@@ -53,9 +54,15 @@ export function CellStageModal({
     // Reset with the bay, for the same reason and with the same key. This is
     // one component reused for every bay on the deck; left alone, the note
     // typed on R1C1 would be sent as R1C2's, attributing one bay's problem to
-    // another. Seeded from the cell so the foreman can read what is already
-    // there before deciding whether to change it.
-    setNote(cell?.note ?? '')
+    // another.
+    //
+    // EMPTY, not the bay's existing note. A note belongs to the stage change
+    // being recorded: seeding the field meant the foreman recording Coat 2
+    // submitted a sentence written about Blast + Coat 1, and the history then
+    // showed one problem reported twice against two coats by someone who only
+    // meant to tick a box. What is already on the bay is shown above the field
+    // instead -- readable, and not the thing being sent.
+    setNote('')
   }, [cell?.id])
 
   const ordered = useMemo(() => [...stages].sort((a, b) => a.seq - b.seq), [stages])
@@ -152,6 +159,25 @@ export function CellStageModal({
               neither a screen reader nor a test can tell which box it belongs
               to.
             */}
+            {(cell.note ?? '').trim() !== '' && (
+              <div
+                data-testid="cell-previous-note"
+                style={{
+                  marginBottom: 12,
+                  padding: '11px 13px',
+                  borderRadius: 10,
+                  background: palette.bgSubtle,
+                  border: `1px solid ${palette.borderSplit}`,
+                }}
+              >
+                <div style={{ fontSize: 12, fontWeight: 600, color: palette.textTertiary }}>
+                  {`Ghi chú lần trước · ${currentStage?.name ?? 'chưa bắt đầu'}`}
+                </div>
+                <div style={{ marginTop: 6, lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>
+                  {cell.note}
+                </div>
+              </div>
+            )}
             <label
               htmlFor="cell-note"
               style={{ display: 'block', marginBottom: 6, fontWeight: 600 }}

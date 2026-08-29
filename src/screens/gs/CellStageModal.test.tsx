@@ -222,7 +222,10 @@ describe('CellStageModal notes', () => {
     expect(onCommit).toHaveBeenCalledWith(CELL.id, 's3', '')
   })
 
-  it('shows the note already on the bay, so the foreman can see what it says', () => {
+  it('shows the note already on the bay above the field, not inside it', () => {
+    // Readable, because it may be the reason the foreman is standing here --
+    // and not in the field, because a note belongs to the stage change being
+    // recorded, not to the one before it.
     render(
       <CellStageModal
         cell={{ ...CELL, note: 'Giàn giáo chắn mất một góc' }}
@@ -232,31 +235,96 @@ describe('CellStageModal notes', () => {
         onCommit={() => {}}
       />,
     )
-    expect(screen.getByLabelText(/Ghi chú/)).toHaveValue('Giàn giáo chắn mất một góc')
+    expect(screen.getByTestId('cell-previous-note'))
+      .toHaveTextContent('Giàn giáo chắn mất một góc')
+    expect(screen.getByLabelText(/Ghi chú cho quản trị viên/)).toHaveValue('')
   })
 
-  it('starts each bay with its own note rather than the previous one', () => {
+  it('clears a half-typed note when the foreman moves to another bay', async () => {
     // The modal is one component reused for every bay. Left un-keyed, the note
     // typed on R1C1 would be sent as R1C2's -- attributing one bay's problem
     // to another.
     const { rerender } = render(
       <CellStageModal
-        cell={{ ...CELL, id: 'c1', code: 'R1C1', note: 'ẩm' }}
+        cell={{ ...CELL, id: 'c1', code: 'R1C1' }}
         stages={STAGES}
         open
         onClose={() => {}}
         onCommit={() => {}}
       />,
     )
+    await userEvent.type(screen.getByLabelText(/Ghi chú cho quản trị viên/), 'ẩm')
     rerender(
       <CellStageModal
-        cell={{ ...CELL, id: 'c2', code: 'R1C2', note: '' }}
+        cell={{ ...CELL, id: 'c2', code: 'R1C2' }}
         stages={STAGES}
         open
         onClose={() => {}}
         onCommit={() => {}}
       />,
     )
-    expect(screen.getByLabelText(/Ghi chú/)).toHaveValue('')
+    expect(screen.getByLabelText(/Ghi chú cho quản trị viên/)).toHaveValue('')
+  })
+})
+
+describe('CellStageModal — the previous note', () => {
+  it('opens on an empty field, whatever the bay already says', async () => {
+    // A note belongs to the stage change being recorded. Pre-filling the last
+    // coat's remark means the foreman recording Coat 2 submits a sentence
+    // written about Blast + Coat 1 -- and the history then shows the same
+    // problem reported twice, against two coats, by someone who only meant to
+    // tick a box.
+    render(
+      <CellStageModal
+        cell={{ ...CELL, stageId: 's1', note: 'Bề mặt còn ẩm, hoãn sơn sang mai' }}
+        stages={STAGES}
+        open
+        onClose={() => {}}
+        onCommit={() => {}}
+      />,
+    )
+    expect(screen.getByLabelText(/Ghi chú cho quản trị viên/)).toHaveValue('')
+  })
+
+  it('still shows what the bay says, as something to read rather than to send', async () => {
+    // The foreman needs to know a remark is already on this bay -- it may be
+    // the reason he is standing here. He just must not send it again.
+    render(
+      <CellStageModal
+        cell={{ ...CELL, stageId: 's1', note: 'Bề mặt còn ẩm, hoãn sơn sang mai' }}
+        stages={STAGES}
+        open
+        onClose={() => {}}
+        onCommit={() => {}}
+      />,
+    )
+    const previous = screen.getByTestId('cell-previous-note')
+    expect(previous).toHaveTextContent('Bề mặt còn ẩm, hoãn sơn sang mai')
+    expect(previous).toHaveTextContent('Blast + Coat 1')
+  })
+
+  it('shows nothing about a previous note on a bay that has none', async () => {
+    render(
+      <CellStageModal cell={CELL} stages={STAGES} open onClose={() => {}} onCommit={() => {}} />,
+    )
+    expect(screen.queryByTestId('cell-previous-note')).toBeNull()
+  })
+
+  it('sends an empty note when the foreman writes nothing, clearing the old one', async () => {
+    // 0019 sends the note on every stage change, empty included: a bay that
+    // gets a new coat and no comment must not keep the note that explained the
+    // coat before it.
+    const onCommit = vi.fn()
+    render(
+      <CellStageModal
+        cell={{ ...CELL, stageId: 's1', note: 'Bề mặt còn ẩm' }}
+        stages={STAGES}
+        open
+        onClose={() => {}}
+        onCommit={onCommit}
+      />,
+    )
+    await userEvent.click(screen.getByRole('button', { name: /Xong công đoạn tiếp theo/ }))
+    expect(onCommit).toHaveBeenCalledWith(CELL.id, 's2', '')
   })
 })
