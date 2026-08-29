@@ -19,6 +19,15 @@ body {
   proportional figures would be better.
 */
 body {
+  /*
+    Set here as well as on the antd theme. antd applies its font through its
+    own component classes, so `document.body` itself resolved to the UA default
+    -- measured as Times in Chrome -- and anything rendered outside an antd
+    component was one stylesheet away from falling back to it.
+  */
+  font-family: 'Be Vietnam Pro', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Helvetica,
+    Arial, sans-serif;
+  font-size: 13px;
   background: #f8fafc;
   color: #16202b;
   font-variant-numeric: tabular-nums;

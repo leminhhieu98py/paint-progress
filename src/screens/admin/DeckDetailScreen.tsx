@@ -1,6 +1,6 @@
-import { WarningOutlined } from '@ant-design/icons'
+import { FilePdfOutlined, UploadOutlined, WarningOutlined } from '@ant-design/icons'
 import { Alert, Button, Form, Input, InputNumber, Segmented, Space, Spin, Typography } from 'antd'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { NEW_DECK } from '../../config'
 import {
@@ -101,6 +101,8 @@ export function DeckDetailScreen() {
   const [pdf, setPdf] = useState<File | null>(null)
   const [pages, setPages] = useState(1)
   const [page, setPage] = useState(1)
+  /** The real file input, hidden behind the row that describes the drawing. */
+  const pdfInputRef = useRef<HTMLInputElement>(null)
   /**
    * The deck's own percentage, for the header.
    *
@@ -225,20 +227,36 @@ export function DeckDetailScreen() {
       : 'Đã có (không rõ tên tệp)'
 
   const identity = (
-    <Form layout="vertical">
+    /*
+      Three fields across, wrapping, rather than three full-width rows. Name,
+      code and area are all short values, and stacking them puts the PDF picker
+      -- the one destructive control on this panel -- below the fold on a
+      laptop. The drawing block takes the full width because its filename and
+      its warning need the room.
+    */
+    <Form
+      layout="vertical"
+      style={{ display: 'flex', flexWrap: 'wrap', gap: '0 18px', alignItems: 'flex-start' }}
+    >
       {/*
         Ids by hand: these are controlled inputs rather than antd Form fields,
         and without one the label is text sitting next to a box -- no screen
         reader, and no test, can tell which box it belongs to.
       */}
-      <Form.Item label="Tên sàn" htmlFor="deck-name" required>
+      <Form.Item label="Tên sàn" htmlFor="deck-name" required style={{ flex: '1 1 210px', minWidth: 0 }}>
         <Input id="deck-name" value={name} onChange={(e) => setName(e.target.value)} />
       </Form.Item>
-      <Form.Item label="Mã sàn" htmlFor="deck-code" required>
+      <Form.Item label="Mã sàn" htmlFor="deck-code" required style={{ flex: '1 1 210px', minWidth: 0 }}>
         <Input id="deck-code" value={code} onChange={(e) => setCode(e.target.value)} />
       </Form.Item>
-      <Form.Item label="Diện tích sàn (m²)" htmlFor="deck-area" required>
+      <Form.Item
+        label="Diện tích sàn (m²)"
+        htmlFor="deck-area"
+        required
+        style={{ flex: '1 1 210px', minWidth: 0 }}
+      >
         <InputNumber
+          style={{ width: '100%' }}
           id="deck-area"
           value={area}
           min={0}
@@ -250,23 +268,77 @@ export function DeckDetailScreen() {
           onChange={(n) => setArea(n ?? 0)}
         />
       </Form.Item>
-      <Form.Item label="Bản vẽ (PDF)">
+      <Form.Item label="Bản vẽ (PDF)" style={{ flex: '1 1 100%', minWidth: 0 }}>
         {/*
           What is on the deck right now, above the picker that would replace it:
           choosing a file is a destructive act on a deck that already has one,
           and the admin should be able to see what they are about to lose.
         */}
-        {!creating && (
-          <Typography.Paragraph type="secondary" style={{ marginBottom: 8 }}>
-            {`Đang dùng: ${drawingLabel}`}
-          </Typography.Paragraph>
-        )}
-        <input
-          type="file"
-          accept="application/pdf"
-          aria-label="Bản vẽ (PDF)"
-          onChange={(e) => void takePdf(e.target.files?.[0] ?? null)}
-        />
+        {/*
+          The native control is kept -- it is what the browser's file dialog,
+          the tests and the accessibility tree all address -- but moved out of
+          sight behind a row that can say which file is on the deck right now.
+          Not display:none: a file input that is display:none is skipped by
+          some assistive tech, and `visibility` here would take the label with
+          it.
+        */}
+        <div
+          style={{
+            maxWidth: 520,
+            border: `1px solid ${palette.border}`,
+            background: palette.bgContainer,
+            borderRadius: 10,
+            padding: '9px 11px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+            position: 'relative',
+          }}
+        >
+          <FilePdfOutlined style={{ color: palette.textTertiary, flex: 'none', fontSize: 17 }} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <Mono
+              style={{
+                display: 'block',
+                fontSize: 12,
+                fontWeight: 600,
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+              }}
+            >
+              {creating ? (pdf?.name ?? 'Chưa chọn tệp') : `Đang dùng: ${drawingLabel}`}
+            </Mono>
+            <span style={{ fontSize: 11, color: palette.textTertiary }}>
+              {/* Not the page count: the page selector below says that, next
+                  to the control it belongs to. */}
+              {pdf && !creating ? `Sẽ thay bằng: ${pdf.name}` : 'Chỉ nhận tệp PDF'}
+            </span>
+          </div>
+          <Button
+            icon={<UploadOutlined aria-hidden />}
+            onClick={() => pdfInputRef.current?.click()}
+            style={{ flex: 'none' }}
+          >
+            Chọn tệp
+          </Button>
+          <input
+            ref={pdfInputRef}
+            type="file"
+            accept="application/pdf"
+            aria-label="Bản vẽ (PDF)"
+            /*
+              Shrunk and transparent rather than display:none or
+              pointer-events:none. Both of those make the input unreachable to
+              a pointer -- which is not only a test failing, it is anything
+              that drives the page by clicking, assistive tech included. The
+              visible affordance is the button beside it; this stays
+              addressable.
+            */
+            style={{ position: 'absolute', left: 0, top: 0, width: 1, height: 1, opacity: 0 }}
+            onChange={(e) => void takePdf(e.target.files?.[0] ?? null)}
+          />
+        </div>
         {/*
           Said before the picker is used, not after. Replacing the drawing
           drops every bay on the deck, which takes the recorded progress with
@@ -303,7 +375,7 @@ export function DeckDetailScreen() {
           </Space>
         )}
       </Form.Item>
-      <Space>
+      <Space style={{ flex: '1 1 100%' }}>
         <Button type="primary" loading={saving} disabled={!name || !code} onClick={() => void save()}>
           {creating ? 'Tạo sàn' : 'Lưu thông tin sàn'}
         </Button>

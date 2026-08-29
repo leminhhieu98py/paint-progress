@@ -262,7 +262,11 @@ export function StageConfigPanel({
 
   return (
     <Space direction="vertical" style={{ width: '100%' }}>
-      {error && <Alert type="error" message={error} closable onClose={() => setError(null)} />}
+      {error && (
+        <div style={{ padding: '0 20px' }}>
+          <Alert type="error" message={error} closable onClose={() => setError(null)} />
+        </div>
+      )}
 
       <Table<Stage>
         // By id, not seq: seq is renumbered under the rows on every reorder and
@@ -447,7 +451,10 @@ export function StageConfigPanel({
         says WHICH stage is carrying too much at the same time. The wording
         stays underneath, because the bar alone cannot say what to do about it.
       */}
-      <div>
+      {/* Inset. The table above is full-bleed inside its card, as tables are,
+          but a chip and a bar flush against the card's own border read as
+          overflow rather than as content. */}
+      <div style={{ padding: '0 20px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
           <span
             style={{
@@ -502,6 +509,7 @@ export function StageConfigPanel({
       </div>
 
       {hasClash && (
+        <div style={{ padding: '0 20px' }}>
         <Alert
           type="error"
           message="Hai lớp sơn đang trùng nhau"
@@ -511,9 +519,10 @@ export function StageConfigPanel({
             'GS nhận ra lớp sơn bằng màu trên bản vẽ, báo cáo nhận ra bằng tên — trùng thì không đọc lại được.',
           ].filter(Boolean).join(' ')}
         />
+        </div>
       )}
 
-      <Space>
+      <Space style={{ padding: '0 20px' }}>
         <Button
           type="primary"
           disabled={!balanced || hasClash}

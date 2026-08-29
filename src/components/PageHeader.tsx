@@ -62,7 +62,7 @@ export function PageHeader({
             marginBottom: 10,
           }}
         >
-          {breadcrumbs.map((c) => (
+          {breadcrumbs.map((c, i) => (
             <Fragment key={c.label}>
               <button
                 type="button"
@@ -79,7 +79,11 @@ export function PageHeader({
               >
                 {c.label}
               </button>
-              <RightOutlined style={{ fontSize: 10, color: '#647688' }} />
+              {/* Between crumbs, not after the last one: a trailing chevron
+                  points at nothing and reads as a label that failed to load. */}
+              {i < breadcrumbs.length - 1 && (
+                <RightOutlined style={{ fontSize: 10, color: '#647688' }} />
+              )}
             </Fragment>
           ))}
         </div>

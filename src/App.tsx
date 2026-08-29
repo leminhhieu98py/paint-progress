@@ -4,7 +4,7 @@ import { BrowserRouter } from 'react-router-dom'
 import { AuthProvider } from './auth/AuthProvider'
 import { ErrorBoundary } from './ErrorBoundary'
 import { AppRoutes } from './routes'
-import { adminTheme } from './theme'
+import { adminTheme, palette } from './theme'
 
 /**
  * The admin theme is the base for the whole app -- the login form and the error
@@ -14,7 +14,21 @@ import { adminTheme } from './theme'
  */
 export default function App() {
   return (
-    <ConfigProvider locale={viVN} theme={adminTheme}>
+    <ConfigProvider
+      locale={viVN}
+      theme={adminTheme}
+      // antd puts the asterisk BEFORE the label; every screen in the approved
+      // prototypes puts it after ("Tên sàn *"), which is also how the label
+      // reads aloud. Set once here so no form has to remember.
+      form={{
+        requiredMark: (label, { required }) => (
+          <>
+            {label}
+            {required && <span style={{ color: palette.error, marginLeft: 4 }}>*</span>}
+          </>
+        ),
+      }}
+    >
       <AntApp>
         <BrowserRouter>
           <AuthProvider>

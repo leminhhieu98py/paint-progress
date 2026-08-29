@@ -1,3 +1,4 @@
+import { ExpandOutlined, MinusOutlined, PlusOutlined } from '@ant-design/icons'
 import { Button, Space } from 'antd'
 import Konva from 'konva'
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -9,6 +10,7 @@ import {
   MIN_LABEL_FONT_SIZE, MIN_ZOOM, WHEEL_ZOOM_STEP, ZOOM_STEP,
 } from './canvasView'
 import { createHatchPattern } from './hatchPattern'
+import { monoFamily } from '../theme'
 
 const PLAIN_FILL = 'rgba(0, 0, 0, 0.04)'
 /**
@@ -341,16 +343,48 @@ export function DrawingCanvas({
       }}
     >
       {panZoom && (
-        <Space size={4} style={{ position: 'absolute', top: 8, right: 8, zIndex: 1 }}>
-          <Button size="large" onClick={() => applyZoom(zoom + ZOOM_STEP)}>
-            Phóng to
-          </Button>
-          <Button size="large" onClick={() => applyZoom(zoom - ZOOM_STEP)}>
-            Thu nhỏ
-          </Button>
-          <Button size="large" onClick={() => applyZoom(MIN_ZOOM)}>
-            Vừa khung
-          </Button>
+        /*
+          A compact floating group, as the prototypes have it, rather than three
+          full-width text buttons sitting over the drawing they are meant to
+          serve. The buttons carry no `size`: they inherit controlHeight from
+          whichever theme is above them, which is 38px on the admin's laptop and
+          48px on the foreman's tablet -- the one component, sized correctly for
+          both surfaces without knowing which it is on.
+
+          The labels move to aria-label. They are still the accessible names, so
+          nothing that reaches these by name -- a screen reader or a test -- can
+          tell the difference.
+        */
+        <Space
+          size={4}
+          style={{
+            position: 'absolute',
+            top: 12,
+            right: 12,
+            zIndex: 1,
+            background: 'rgba(255, 255, 255, 0.94)',
+            border: '1px solid #F0F4F8',
+            borderRadius: 12,
+            padding: 5,
+          }}
+        >
+          <Button aria-label="Thu nhỏ" icon={<MinusOutlined />} onClick={() => applyZoom(zoom - ZOOM_STEP)} />
+          <span
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              minWidth: 52,
+              fontFamily: monoFamily,
+              fontSize: 12,
+              fontWeight: 600,
+              color: '#4A5A6B',
+            }}
+          >
+            {`${Math.round(zoom * 100)}%`}
+          </span>
+          <Button aria-label="Phóng to" icon={<PlusOutlined />} onClick={() => applyZoom(zoom + ZOOM_STEP)} />
+          <Button aria-label="Vừa khung" icon={<ExpandOutlined />} onClick={() => applyZoom(MIN_ZOOM)} />
         </Space>
       )}
       <Stage
