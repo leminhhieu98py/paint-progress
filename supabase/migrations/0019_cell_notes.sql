@@ -31,11 +31,16 @@ comment on column cells.note is
 comment on column cell_events.note is
   'The note as it was at this event. Null on events recorded before 0019.';
 
--- The audit trigger carries the note into the history.
+-- !! BROKEN. REPAIRED BY 0020. DO NOT COPY THE FUNCTION BODY BELOW. !!
 --
--- Unchanged otherwise, including the existence check 0004 added because this
--- AFTER trigger can fire for a cell the same statement has already deleted,
--- and the denormalised stage names 0005 added.
+-- This version was written from 0005's text and therefore reverted everything
+-- the function had gained since: 0007's security definer, 0014's
+-- stage-deletion guard, and 0018's rename of project_stages to deck_stages.
+-- The last of those took the field app down -- every stage change failed with
+-- `relation "project_stages" does not exist`. 0020 restores 0018's definition
+-- with the note line added. Left here unedited because it is what actually ran.
+--
+-- The audit trigger carries the note into the history.
 create or replace function log_cell_stage_change()
 returns trigger
 language plpgsql
