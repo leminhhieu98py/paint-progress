@@ -11,6 +11,7 @@ const createZone = vi.hoisted(() => vi.fn())
 const updateZone = vi.hoisted(() => vi.fn())
 const deleteZone = vi.hoisted(() => vi.fn())
 const setZoneActual = vi.hoisted(() => vi.fn())
+const subscribeDeckCells = vi.hoisted(() => vi.fn())
 
 vi.mock('../../lib/progressApi', () => ({
   loadDeckProgress: (id: string) => loadDeckProgress(id),
@@ -20,6 +21,9 @@ vi.mock('../../lib/decksApi', () => ({
 }))
 vi.mock('../../lib/adminApi', () => ({
   listGsUsers: () => Promise.resolve([{ id: 'u1', fullName: 'Lê Trung Hiếu' }]),
+}))
+vi.mock('../../lib/gsApi', () => ({
+  subscribeDeckCells: (id: string, h: unknown) => subscribeDeckCells(id, h),
 }))
 vi.mock('../../lib/zonesApi', () => ({
   listDeckZones: (d: string) => listDeckZones(d),
@@ -108,6 +112,8 @@ beforeEach(() => {
   deleteZone.mockResolvedValue(undefined)
   setZoneActual.mockReset()
   setZoneActual.mockResolvedValue(2)
+  subscribeDeckCells.mockReset()
+  subscribeDeckCells.mockReturnValue(() => {})
 })
 
 // Wrapped in antd's App because src/App.tsx wraps the whole tree in it, and
@@ -190,6 +196,60 @@ describe('DeckProgressPanel', () => {
     loadDeckProgress.mockRejectedValue(new Error('mạng hỏng'))
     renderPanel()
     expect(await screen.findByText('mạng hỏng')).toBeInTheDocument()
+  })
+})
+
+describe('DeckProgressPanel — keeping up with the deck', () => {
+  it('re-reads the deck when a foreman records a bay, without waiting for a reload', async () => {
+    // GAP-01. The admin sits on this panel while a crew works, and every number
+    // on it is what someone is being paid against. A figure that silently
+    // stopped being true an hour ago is worse than one that is obviously stale.
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      renderPanel(false)
+      await screen.findByTestId('lens-A')
+      await waitFor(() => expect(subscribeDeckCells).toHaveBeenCalledWith('d1', expect.anything()))
+      expect(loadDeckProgress).toHaveBeenCalledTimes(1)
+
+      const handlers = subscribeDeckCells.mock.calls[0][1] as {
+        onCellChange: (c: unknown) => void
+      }
+      handlers.onCellChange(ENTRY.deck.cells[0])
+      await vi.advanceTimersByTimeAsync(600)
+
+      await waitFor(() => expect(loadDeckProgress).toHaveBeenCalledTimes(2))
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('collapses a burst of writes into one read', async () => {
+    // A foreman ticking a row of bays fires an event each. One re-read per bay
+    // is a query storm for a picture that would be identical either way.
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      renderPanel(false)
+      await screen.findByTestId('lens-A')
+      await waitFor(() => expect(subscribeDeckCells).toHaveBeenCalled())
+      const handlers = subscribeDeckCells.mock.calls[0][1] as {
+        onCellChange: (c: unknown) => void
+      }
+      for (let i = 0; i < 5; i += 1) handlers.onCellChange(ENTRY.deck.cells[0])
+      await vi.advanceTimersByTimeAsync(600)
+
+      await waitFor(() => expect(loadDeckProgress).toHaveBeenCalledTimes(2))
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('drops the subscription when the deck changes, so two decks cannot cross', async () => {
+    const stop = vi.fn()
+    subscribeDeckCells.mockReturnValue(stop)
+    const { unmount } = renderPanel(false)
+    await screen.findByTestId('lens-A')
+    unmount()
+    expect(stop).toHaveBeenCalled()
   })
 })
 

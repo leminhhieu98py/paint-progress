@@ -14,6 +14,7 @@ import { computeDeckProgress } from '../../domain/progress'
 import type { Stage, Zone } from '../../domain/types'
 import { getDrawingUrl } from '../../lib/decksApi'
 import { formatAreaM2, formatPercent } from '../../lib/format'
+import { subscribeDeckCells } from '../../lib/gsApi'
 import { loadDeckProgress, type DeckProgressEntry } from '../../lib/progressApi'
 import {
   createZone, deleteZone, listDeckZones, setZoneActual, updateZone,
@@ -56,6 +57,14 @@ interface StageWindow {
  * Every number comes from `computeDeckProgress`, asserted against the customer's
  * own spreadsheet to 1e-9 (spec §3.3). Nothing is recomputed here.
  */
+/**
+ * How long the realtime re-read waits for a burst to settle.
+ *
+ * Long enough that a foreman working across a row of bays produces one read,
+ * short enough that the admin never notices the delay.
+ */
+const REFRESH_DEBOUNCE_MS = 400
+
 const PROGRESS_RULES = [
   {
     id: 'ZON-R5',
@@ -66,8 +75,8 @@ const PROGRESS_RULES = [
     text: 'Ô tô theo màu zone của lớp đang xem, hoặc màu lớp đó nếu chưa có zone. Ô gạch chéo là chưa đạt lớp đang xem; ô tô đặc là đã đạt.',
   },
   {
-    id: 'GAP-01',
-    text: 'Panel chưa tự làm mới — số liệu chụp lúc mở màn, GS ghi sau đó phải tải lại.',
+    id: 'LNS-R2',
+    text: 'Panel tự làm mới khi GS ghi tiến độ: số liệu ở đây bám theo dữ liệu thật, không cần tải lại trang.',
   },
 ]
 
@@ -161,6 +170,43 @@ export function DeckProgressPanel({
     void refresh()
     void refreshZones()
   }, [refresh, refreshZones])
+
+  /**
+   * GAP-01, closed: the panel follows the deck while the crew works on it.
+   *
+   * A re-read rather than patching the row into local state. The realtime
+   * payload carries the cell, but this panel also renders who recorded it and
+   * when (`entry.audit`), the zone counts and the weighted deck figure -- and a
+   * hand-merged cell that leaves the audit stale attributes a foreman's note to
+   * whoever happened to be there before. One extra query per burst is cheap
+   * against a screen that quietly disagrees with the database.
+   *
+   * Debounced because a foreman ticking a row of bays fires an event each, and
+   * one re-read per bay is a query storm for a picture that would be identical
+   * either way. Trailing edge, so the read happens after the burst settles.
+   */
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const nudge = () => {
+      clearTimeout(timer)
+      timer = setTimeout(() => {
+        void refresh()
+        void refreshZones()
+      }, REFRESH_DEBOUNCE_MS)
+    }
+    const stop = subscribeDeckCells(deckId, {
+      onCellChange: nudge,
+      onCellDelete: nudge,
+      // Nothing on this screen depends on the socket being up: the admin is on
+      // a laptop and can reload. The banner belongs on the tablet, where the
+      // foreman is writing and needs to know a write may not have landed.
+      onStatus: () => {},
+    })
+    return () => {
+      clearTimeout(timer)
+      stop()
+    }
+  }, [deckId, refresh, refreshZones])
 
   /**
    * The signed drawing URL. Cleared before each fetch, so a deck change can
