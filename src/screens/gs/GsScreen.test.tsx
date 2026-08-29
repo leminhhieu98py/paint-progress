@@ -197,7 +197,7 @@ describe('GsScreen', () => {
   it('shows one tab per deck and opens the first one', async () => {
     renderScreen()
 
-    expect(await screen.findByRole('tab', { name: 'Cellar Deck' })).toBeInTheDocument()
+    expect(await screen.findByRole('tab', { name: /^Cellar Deck/ })).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: 'Main Deck' })).toBeInTheDocument()
     // The first deck's cells, not the second's: c3 exists only on d1.
     await waitFor(() => expect(screen.getByRole('button', { name: 'ô R2C1' })).toBeInTheDocument())
@@ -798,11 +798,11 @@ describe('GsScreen: realtime', () => {
   it('shows a banner while the connection is down', async () => {
     renderScreen()
     await screen.findByRole('button', { name: 'ô R1C1' })
-    expect(screen.queryByText('Mất kết nối, đang kết nối lại...')).toBeNull()
+    expect(screen.queryByText('Mất kết nối, đang kết nối lại…')).toBeNull()
 
     act(() => { liveHandlers?.onStatus('disconnected') })
 
-    expect(await screen.findByText('Mất kết nối, đang kết nối lại...')).toBeInTheDocument()
+    expect(await screen.findByText('Mất kết nối, đang kết nối lại…')).toBeInTheDocument()
   })
 
   it('re-reads the deck shortly after subscribing, to cover the registration lag', async () => {
@@ -838,13 +838,13 @@ describe('GsScreen: realtime', () => {
     try {
       renderScreen()
       await screen.findByRole('button', { name: 'ô R1C1' })
-      expect(screen.queryByText('Mất kết nối, đang kết nối lại...')).toBeNull()
+      expect(screen.queryByText('Mất kết nối, đang kết nối lại…')).toBeNull()
 
       await act(async () => {
         vi.advanceTimersByTime(10_000)
       })
 
-      expect(screen.getByText('Mất kết nối, đang kết nối lại...')).toBeInTheDocument()
+      expect(screen.getByText('Mất kết nối, đang kết nối lại…')).toBeInTheDocument()
     } finally {
       vi.useRealTimers()
     }
@@ -863,7 +863,7 @@ describe('GsScreen: realtime', () => {
         vi.advanceTimersByTime(30_000)
       })
 
-      expect(screen.queryByText('Mất kết nối, đang kết nối lại...')).toBeNull()
+      expect(screen.queryByText('Mất kết nối, đang kết nối lại…')).toBeNull()
     } finally {
       vi.useRealTimers()
     }
@@ -885,7 +885,7 @@ describe('GsScreen: realtime', () => {
     // safe recovery is a full re-read of the deck (spec §11 row 2).
     await waitFor(() => expect(listDeckCells).toHaveBeenCalledTimes(2))
     expect(listDeckCells).toHaveBeenLastCalledWith('d1')
-    expect(screen.queryByText('Mất kết nối, đang kết nối lại...')).toBeNull()
+    expect(screen.queryByText('Mất kết nối, đang kết nối lại…')).toBeNull()
   })
 
   it('does not report a disconnect just because a deck tab was left', async () => {
@@ -905,7 +905,7 @@ describe('GsScreen: realtime', () => {
     // "Mất kết nối" banner when nothing was wrong. A banner that appears on every
     // tab change is one a foreman learns to ignore, which is how a real outage
     // gets missed.
-    expect(screen.queryByText('Mất kết nối, đang kết nối lại...')).toBeNull()
+    expect(screen.queryByText('Mất kết nối, đang kết nối lại…')).toBeNull()
 
     // And the new channel connecting must not trigger a recovery re-read either,
     // because there was nothing to recover from.
@@ -946,7 +946,7 @@ describe('GsScreen: realtime', () => {
       renderScreen()
       await screen.findByRole('tab', { name: 'Main Deck' })
       act(() => { liveHandlers?.onStatus('disconnected') })
-      expect(await screen.findByText('Mất kết nối, đang kết nối lại...')).toBeInTheDocument()
+      expect(await screen.findByText('Mất kết nối, đang kết nối lại…')).toBeInTheDocument()
 
       await userEvent.click(screen.getByRole('tab', { name: 'Main Deck' }))
       await waitFor(() => expect(subscribedDecks).toEqual(['d1', 'd2']))
@@ -957,11 +957,11 @@ describe('GsScreen: realtime', () => {
       // as shown, tab changed, absent at +9 s, back at +10,5 s -- during which
       // the screen looked healthy while showing whatever the last successful read
       // had left on it.
-      expect(screen.getByText('Mất kết nối, đang kết nối lại...')).toBeInTheDocument()
+      expect(screen.getByText('Mất kết nối, đang kết nối lại…')).toBeInTheDocument()
       await act(async () => {
         vi.advanceTimersByTime(9_000)
       })
-      expect(screen.getByText('Mất kết nối, đang kết nối lại...')).toBeInTheDocument()
+      expect(screen.getByText('Mất kết nối, đang kết nối lại…')).toBeInTheDocument()
     } finally {
       vi.useRealTimers()
     }
@@ -1113,7 +1113,7 @@ describe('signing out', () => {
     // the login form appears under a path they are no longer allowed on -- and
     // a refresh puts them straight back there.
     renderScreen()
-    await screen.findByRole('tab', { name: 'Cellar Deck' })
+    await screen.findByRole('tab', { name: /^Cellar Deck/ })
 
     await userEvent.click(screen.getByRole('button', { name: 'Đăng xuất' }))
 
@@ -1123,7 +1123,7 @@ describe('signing out', () => {
 
   it('replaces the entry rather than pushing one, so Back cannot return', async () => {
     renderScreen()
-    await screen.findByRole('tab', { name: 'Cellar Deck' })
+    await screen.findByRole('tab', { name: /^Cellar Deck/ })
     await userEvent.click(screen.getByRole('button', { name: 'Đăng xuất' }))
     await waitFor(() => expect(navigate).toHaveBeenCalled())
     expect(navigate.mock.calls[0][1]).toEqual({ replace: true })

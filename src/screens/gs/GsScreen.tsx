@@ -25,6 +25,11 @@ import { listDeckZones } from '../../lib/zonesApi'
 import { CellStageModal } from './CellStageModal'
 import { StagePie } from './StagePie'
 import { StageSpecTable } from '../../components/StageSpecTable'
+import { LogoutOutlined } from '@ant-design/icons'
+import { Mono } from '../../components/Mono'
+import { fieldError, palette } from '../../theme'
+import { EmptyState } from '../../components/EmptyState'
+import { SectionCard } from '../../components/SectionCard'
 
 /**
  * How long to wait for the realtime channel to reach SUBSCRIBED before telling
@@ -569,39 +574,82 @@ export function GsScreen() {
 
   return (
     <Layout style={{ minHeight: '100vh' }}>
+      {/*
+        Deck tabs and who is signed in, in one 48px bar. The drawing is the
+        screen; everything else has to earn its height on a tablet held at
+        arm's length.
+      */}
       <Layout.Header
         style={{
-          background: '#fff', display: 'flex', alignItems: 'center',
-          gap: 12, paddingInline: 16,
+          background: palette.bgContainer,
+          borderBottom: `1px solid ${palette.borderCard}`,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 12,
+          paddingInline: 16,
+          height: 'auto',
+          lineHeight: 'normal',
         }}
       >
-        <Typography.Text strong>{profile?.fullName}</Typography.Text>
-        <span style={{ flex: 1 }} />
-        {/* Spec §8.1: no account UI. Logout only. */}
-        <Button
-          size="large"
-          onClick={() => void signOut().then(() => navigate(LOGIN_PATH, { replace: true }))}
-        >
-          Đăng xuất
-        </Button>
-      </Layout.Header>
-
-      <Layout.Content style={{ padding: 12 }}>
         <Tabs
+          style={{ flex: 1, minWidth: 0 }}
           activeKey={activeDeckId ?? undefined}
           onChange={(key) => setActiveDeckId(key)}
-          items={decks.map((d) => ({ key: d.id, label: d.name }))}
+          items={decks.map((d) => ({
+            key: d.id,
+            /*
+              Name only. The prototype puts a percentage on every tab, which
+              would mean loading every deck's cells to compute it -- the
+              heaviest read in the app, done once per deck on a site tether,
+              for numbers the foreman is not looking at. The open deck's
+              percentage is already the largest thing on the screen below.
+            */
+            label: d.name,
+          }))}
         />
+        <div style={{ textAlign: 'right', flex: 'none' }}>
+          <div style={{ fontWeight: 600, lineHeight: 1.25 }}>{profile?.fullName}</div>
+          <Mono style={{ fontSize: 11, color: palette.textTertiary }}>{profile?.username}</Mono>
+        </div>
+        {/* Spec §8.1: no account UI. Logout only. */}
+        <Button
+          aria-label="Đăng xuất"
+          icon={<LogoutOutlined />}
+          onClick={() => void signOut().then(() => navigate(LOGIN_PATH, { replace: true }))}
+        />
+      </Layout.Header>
 
-        {realtimeStatus === 'disconnected' && (
-          <Alert
-            type="warning"
-            showIcon
-            style={{ marginBottom: 12 }}
-            message="Mất kết nối, đang kết nối lại..."
-            description="Số liệu trên màn hình có thể chưa cập nhật. Ghi tiến độ vẫn được lưu khi có mạng trở lại."
+      {/*
+        Full-bleed and dark red, not an inset warning box. This banner means
+        every number below it is a snapshot, and it has to survive being read
+        at arm's length in sun -- which is exactly the condition that produces
+        the dropped socket in the first place.
+      */}
+      {realtimeStatus === 'disconnected' && (
+        <div
+          role="alert"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 13,
+            background: fieldError,
+            color: '#fff',
+            padding: '14px 20px',
+          }}
+        >
+          <span
+            style={{ width: 10, height: 10, borderRadius: '50%', background: '#fff', flex: 'none' }}
           />
-        )}
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontWeight: 600, lineHeight: 1.3 }}>Mất kết nối, đang kết nối lại…</div>
+            <div style={{ fontSize: 12, lineHeight: 1.3, opacity: 0.85, marginTop: 2 }}>
+              Số liệu trên màn hình có thể chưa cập nhật. Ghi tiến độ vẫn được lưu khi có mạng trở lại.
+            </div>
+          </div>
+        </div>
+      )}
+
+      <Layout.Content style={{ padding: 12 }}>
 
         {stagesError && (
           <Alert
@@ -623,16 +671,25 @@ export function GsScreen() {
           />
         )}
 
-        {/* aria-label on the Switch rather than a <label htmlFor>: antd renders
-            a <button>, which is not a labelable element, so a label would
-            associate with nothing and leave the control with no accessible name. */}
-        <Space style={{ marginBottom: 8 }}>
-          <Switch checked={showPlan} onChange={setShowPlan} aria-label="Hiện kế hoạch" />
-          <Typography.Text>Hiện kế hoạch</Typography.Text>
-        </Space>
-
         <Row gutter={12}>
           <Col xs={24} md={14}>
+            <SectionCard
+              title={deck?.name}
+              summary={
+                deck ? `${cells.length} ô · ${formatAreaM2(deck.totalAreaM2)} m²` : undefined
+              }
+              bodyPadding={0}
+              extra={
+                /* aria-label on the Switch rather than a <label htmlFor>: antd
+                   renders a <button>, which is not a labelable element, so a
+                   label would associate with nothing and leave the control
+                   with no accessible name. */
+                <Space>
+                  <Switch checked={showPlan} onChange={setShowPlan} aria-label="Hiện kế hoạch" />
+                  <Typography.Text>Hiện kế hoạch</Typography.Text>
+                </Space>
+              }
+            >
             {deck && deck.imagePath && deck.imageW && deck.imageH && imageUrl ? (
               <DrawingCanvas
                 key={deck.id}
@@ -651,16 +708,22 @@ export function GsScreen() {
               />
             ) : (
               !drawingError && (
-                <Alert
-                  type="info"
-                  showIcon
-                  message="Sàn này chưa có bản vẽ"
-                  description="Quản trị viên cần tải bản vẽ lên trước khi ghi tiến độ."
+                <EmptyState
+                  title="Sàn này chưa có bản vẽ"
+                  description="Quản trị viên cần tải bản vẽ lên trước khi ghi tiến độ. Không có bản vẽ thì không có ô để chạm."
                 />
               )
             )}
+            </SectionCard>
           </Col>
           <Col xs={24} md={10}>
+            {/*
+              No separate "Tiến độ sàn" card here, though the prototype has
+              one. StagePie already prints this deck's percentage and its total
+              area, and a second copy a few pixels away is not emphasis -- it
+              is two numbers to keep in step, and one of them will eventually
+              be the stale one.
+            */}
             <div data-testid="gs-chart-region">
               {overCovered && deck && (
                 <Alert
