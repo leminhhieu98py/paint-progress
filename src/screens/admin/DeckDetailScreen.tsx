@@ -1,5 +1,7 @@
 import { FilePdfOutlined, UploadOutlined, WarningOutlined } from '@ant-design/icons'
-import { Alert, Button, Form, Input, InputNumber, Segmented, Space, Spin, Typography } from 'antd'
+import {
+  Alert, Button, Form, Input, InputNumber, Segmented, Space, Spin, Typography, Upload,
+} from 'antd'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { NEW_DECK } from '../../config'
@@ -101,8 +103,22 @@ export function DeckDetailScreen() {
   const [pdf, setPdf] = useState<File | null>(null)
   const [pages, setPages] = useState(1)
   const [page, setPage] = useState(1)
-  /** The real file input, hidden behind the row that describes the drawing. */
-  const pdfInputRef = useRef<HTMLInputElement>(null)
+  const uploadWrapRef = useRef<HTMLDivElement>(null)
+
+  /*
+    antd deletes `id` from the props it hands rc-upload (upload/Upload.js:331)
+    and puts it on the wrapper instead, so the real <input type=file> ends up
+    with no id and no label pointing at it -- no accessible name at all. On the
+    one control that attaches a deck's drawing, and whose replacement wipes
+    every bay on it, that is not a name worth losing.
+
+    Set here rather than worked around in the tests, because a test that
+    reaches the input by tag name would be agreeing that it has no name.
+  */
+  useEffect(() => {
+    const input = uploadWrapRef.current?.querySelector('input[type="file"]')
+    input?.setAttribute('aria-label', 'Bản vẽ (PDF)')
+  })
   /**
    * The deck's own percentage, for the header.
    *
@@ -275,31 +291,46 @@ export function DeckDetailScreen() {
           and the admin should be able to see what they are about to lose.
         */}
         {/*
-          The native control is kept -- it is what the browser's file dialog,
-          the tests and the accessibility tree all address -- but moved out of
-          sight behind a row that can say which file is on the deck right now.
-          Not display:none: a file input that is display:none is skipped by
-          some assistive tech, and `visibility` here would take the label with
-          it.
+          antd's Upload rather than a bare file input. `beforeUpload` returns
+          false so nothing is sent anywhere: this deck's PDF is rendered to a
+          PNG in the browser and uploaded by `save`, not by the picker.
+
+          `id` is forwarded to the real <input>, which is what the Form.Item's
+          label points at -- so the control keeps an accessible name, and
+          keeps being addressable by it.
         */}
-        <div
-          style={{
-            maxWidth: 520,
-            border: `1px solid ${palette.border}`,
-            background: palette.bgContainer,
-            borderRadius: 10,
-            padding: '9px 11px',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 10,
-            position: 'relative',
+        <div ref={uploadWrapRef}>
+        <Upload
+          accept="application/pdf"
+          maxCount={1}
+          beforeUpload={(file) => {
+            void takePdf(file)
+            return false
           }}
+          onRemove={() => {
+            void takePdf(null)
+            return true
+          }}
+          fileList={
+            pdf ? [{ uid: 'pending', name: pdf.name, status: 'done' as const }] : []
+          }
         >
-          <FilePdfOutlined style={{ color: palette.textTertiary, flex: 'none', fontSize: 17 }} />
-          <div style={{ flex: 1, minWidth: 0 }}>
+          <Button icon={<UploadOutlined aria-hidden />}>Chọn tệp PDF</Button>
+        </Upload>
+        </div>
+        {!creating && (
+          <div
+            style={{
+              marginTop: 8,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              maxWidth: 520,
+            }}
+          >
+            <FilePdfOutlined style={{ color: palette.textTertiary, flex: 'none' }} />
             <Mono
               style={{
-                display: 'block',
                 fontSize: 12,
                 fontWeight: 600,
                 whiteSpace: 'nowrap',
@@ -307,38 +338,10 @@ export function DeckDetailScreen() {
                 textOverflow: 'ellipsis',
               }}
             >
-              {creating ? (pdf?.name ?? 'Chưa chọn tệp') : `Đang dùng: ${drawingLabel}`}
+              {`Đang dùng: ${drawingLabel}`}
             </Mono>
-            <span style={{ fontSize: 11, color: palette.textTertiary }}>
-              {/* Not the page count: the page selector below says that, next
-                  to the control it belongs to. */}
-              {pdf && !creating ? `Sẽ thay bằng: ${pdf.name}` : 'Chỉ nhận tệp PDF'}
-            </span>
           </div>
-          <Button
-            icon={<UploadOutlined aria-hidden />}
-            onClick={() => pdfInputRef.current?.click()}
-            style={{ flex: 'none' }}
-          >
-            Chọn tệp
-          </Button>
-          <input
-            ref={pdfInputRef}
-            type="file"
-            accept="application/pdf"
-            aria-label="Bản vẽ (PDF)"
-            /*
-              Shrunk and transparent rather than display:none or
-              pointer-events:none. Both of those make the input unreachable to
-              a pointer -- which is not only a test failing, it is anything
-              that drives the page by clicking, assistive tech included. The
-              visible affordance is the button beside it; this stays
-              addressable.
-            */
-            style={{ position: 'absolute', left: 0, top: 0, width: 1, height: 1, opacity: 0 }}
-            onChange={(e) => void takePdf(e.target.files?.[0] ?? null)}
-          />
-        </div>
+        )}
         {/*
           Said before the picker is used, not after. Replacing the drawing
           drops every bay on the deck, which takes the recorded progress with

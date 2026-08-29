@@ -744,16 +744,37 @@ export function GsScreen() {
         </Row>
       </Layout.Content>
 
+      {/*
+        Sticky, and now inset to match the cards above it rather than running
+        to both edges of the glass. It stays pinned because it is the answer
+        the foreman is asked for on the radio, and scrolling a drawing to find
+        it is not something to do one-handed on a scaffold.
+      */}
       <div
         data-testid="gs-spec-region"
         style={{
-          position: 'sticky', bottom: 0, background: '#fff',
-          borderTop: '1px solid #f0f0f0', padding: 8,
+          position: 'sticky',
+          bottom: 0,
+          background: palette.bgContainer,
+          borderTop: `1px solid ${palette.borderCard}`,
+          padding: '12px 16px 16px',
         }}
       >
-        <Typography.Text>
-          Tổng diện tích sàn: {formatAreaM2(deck?.totalAreaM2 ?? 0)} m²
-        </Typography.Text>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'baseline',
+            gap: 8,
+            marginBottom: 10,
+          }}
+        >
+          <Typography.Text type="secondary" style={{ fontSize: 12, fontWeight: 600 }}>
+            Tổng diện tích sàn
+          </Typography.Text>
+          <Typography.Text style={{ fontWeight: 600 }}>
+            {`${formatAreaM2(deck?.totalAreaM2 ?? 0)} m²`}
+          </Typography.Text>
+        </div>
         <StageSpecTable stages={deckProgress?.stages ?? []} />
       </div>
 
