@@ -267,9 +267,22 @@
 -- from them). It is meant to run against a disposable or pre-production
 -- database only. Never run it against a database holding real project data.
 
+-- Every fixture below hangs off a work: since 0024 a stage belongs to a
+-- (work, deck) and a bay's progress lives in cell_states, one row per (bay,
+-- work). One helper, so the seven fixture sets cannot drift from each other.
+create or replace function _verify_seed_work(p uuid, d uuid) returns uuid language plpgsql as $$
+declare
+  w uuid;
+begin
+  insert into works (project_id, seq, name, kind, weight, counts)
+    values (p, 1, 'Verify Work', 'bays', 1, true) returning id into w;
+  insert into work_decks (work_id, deck_id, weight) values (w, d, 1);
+  return w;
+end $$;
+
 create or replace function _verify_triggers() returns setof text language plpgsql as $$
 declare
-  p1 uuid; p2 uuid; d1 uuid; d2 uuid; s1 uuid; s2 uuid; s3 uuid; c1 uuid; c2 uuid;
+  p1 uuid; p2 uuid; d1 uuid; d2 uuid; w1 uuid; w2 uuid; s1 uuid; s2 uuid; s3 uuid; c1 uuid; c2 uuid;
   ev_count int; upd timestamptz; ev1_id bigint; ev2_id bigint;
   nm text; tsid uuid; n int;
 begin
@@ -277,39 +290,42 @@ begin
   insert into projects (name, code) values ('VERIFY B','VERIFYB') returning id into p2;
   insert into decks (project_id, seq, name, code, total_area_m2)
     values (p1, 1, 'Deck', 'VD', 100) returning id into d1;
-  -- A deck of its own for p2: since 0018 a stage hangs off a deck, so the
-  -- foreign stage this check offers cell c1 has to live on a foreign deck.
+  -- A deck of its own for p2: a stage hangs off a (work, deck), so the foreign
+  -- stage this check offers bay c1 has to live on a foreign work and deck.
   insert into decks (project_id, seq, name, code, total_area_m2)
     values (p2, 1, 'Other Deck', 'VD2', 100) returning id into d2;
-  insert into deck_stages (deck_id, seq, name, color, weight)
-    values (d1, 1, 'Coat 1', '#fadb14', 1) returning id into s1;
-  insert into deck_stages (deck_id, seq, name, color, weight)
-    values (d2, 1, 'Coat 1', '#fadb14', 1) returning id into s2;
+  w1 := _verify_seed_work(p1, d1);
+  w2 := _verify_seed_work(p2, d2);
+  insert into deck_stages (work_id, deck_id, seq, name, color, weight)
+    values (w1, d1, 1, 'Coat 1', '#fadb14', 1) returning id into s1;
+  insert into deck_stages (work_id, deck_id, seq, name, color, weight)
+    values (w2, d2, 1, 'Coat 1', '#fadb14', 1) returning id into s2;
   insert into cells (deck_id, code, x, y, w, h, area_m2)
     values (d1, 'R1C1', 0, 0, 1, 1, 100) returning id into c1;
 
-  -- A third stage and second cell, both under d1, dedicated to the hard-delete
-  -- durability check (check 6). seq = 2 so it does not collide with s1's
-  -- unique (deck_id, seq). Named distinctly so a failure message is
-  -- unambiguous about which stage it refers to.
-  insert into deck_stages (deck_id, seq, name, color, weight)
-    values (d1, 2, 'Doomed Stage', '#ff4d4f', 0) returning id into s3;
+  -- A third stage and second bay, both under (w1, d1), dedicated to the
+  -- hard-delete durability check (check 7). seq = 2 so it does not collide
+  -- with s1's unique (work_id, deck_id, seq).
+  insert into deck_stages (work_id, deck_id, seq, name, color, weight)
+    values (w1, d1, 2, 'Doomed Stage', '#ff4d4f', 0) returning id into s3;
   insert into cells (deck_id, code, x, y, w, h, area_m2)
     values (d1, 'R1C2', 0, 0.5, 1, 0.5, 50) returning id into c2;
-  update cells set stage_id = s3 where id = c2;
+  -- Since 0024 a bay's position is a cell_states row per work, and creating
+  -- one at a stage logs the move from "not started".
+  insert into cell_states (cell_id, work_id, deck_id, stage_id) values (c2, w1, d1, s3);
   select id into ev2_id from cell_events where cell_id = c2 order by id limit 1;
 
-  -- 1. a stage from another deck must be rejected
+  -- 1. a stage from another (work, deck) must be rejected
   begin
-    update cells set stage_id = s2 where id = c1;
+    insert into cell_states (cell_id, work_id, deck_id, stage_id) values (c1, w1, d1, s2);
     return next 'FAIL cross-deck: the foreign stage was accepted';
   exception when others then
     return next 'PASS cross-deck: ' || sqlerrm;
   end;
 
-  -- 2. a stage from the cell's own deck must be accepted
+  -- 2. a stage from the bay's own (work, deck) must be accepted
   begin
-    update cells set stage_id = s1 where id = c1;
+    insert into cell_states (cell_id, work_id, deck_id, stage_id) values (c1, w1, d1, s1);
     return next 'PASS same-deck: accepted';
   exception when others then
     return next 'FAIL same-deck: ' || sqlerrm;
@@ -317,8 +333,7 @@ begin
 
   -- capture the event row check 2 created; the rename-durability check below
   -- reads this exact row back after mutating its stage's name. s1 itself is
-  -- deliberately never deleted in this script (see check 7) so c1 keeps
-  -- pointing at a live stage all the way to cleanup.
+  -- deliberately never deleted in this script (see check 8).
   select id into ev1_id from cell_events where cell_id = c1 order by id limit 1;
 
   -- 3. that accepted change must have written exactly one cell_events row
@@ -326,25 +341,19 @@ begin
   return next format('%s cell_events: %s row(s), expected 1',
                      case when ev_count = 1 then 'PASS' else 'FAIL' end, ev_count);
 
-  -- 4. the audit trigger must have stamped updated_at for the stage change
-  -- above. Weak on its own -- updated_at is `not null default now()`, so it is
-  -- never null -- and it says nothing about updates that are NOT progress:
-  -- that is check 25 (0011), which asserts both directions against a sentinel.
-  select updated_at into upd from cells where id = c1;
+  -- 4. the audit trigger must have stamped updated_at on the state row.
+  -- Weak on its own -- check 25 asserts both directions against a sentinel.
+  select updated_at into upd from cell_states where cell_id = c1 and work_id = w1;
   return next format('%s updated_at: %s',
                      case when upd is not null then 'PASS' else 'FAIL' end, upd);
 
   -- 5. setting the same stage again must NOT log a second event
-  update cells set stage_id = s1 where id = c1;
+  update cell_states set stage_id = s1 where cell_id = c1 and work_id = w1;
   select count(*) into ev_count from cell_events where cell_id = c1;
   return next format('%s no-op update: %s event(s), expected 1',
                      case when ev_count = 1 then 'PASS' else 'FAIL' end, ev_count);
 
   -- 6. durability against a RENAME (c1 / s1, which stays alive afterwards).
-  -- The reason 0005 exists: history must not be rewritten when configuration
-  -- changes. Rename the stage, then confirm the already-recorded event still
-  -- carries the old name. A live join would fail this. Renaming does not
-  -- remove the row, so unlike a delete this cannot disarm check 7.
   update deck_stages set name = 'Coat 3 RENAMED' where id = s1;
   select to_stage_name into nm from cell_events where id = ev1_id;
   return next format('%s snapshot survives a rename: recorded %L, stage is now %L',
@@ -353,14 +362,6 @@ begin
                      (select name from deck_stages where id = s1));
 
   -- 7. durability against a hard DELETE, on a SEPARATE fixture (c2 / s3).
-  -- This must not be s1/c1: deleting the only stage a project's cells point
-  -- at removes the very cascade that the final cleanup delete below needs to
-  -- exercise (see check 8's comment), silently disarming the regression test
-  -- while still reporting all-PASS. cell_events no longer holds a foreign
-  -- key to deck_stages (0005), so to_stage_id is left pointing at a row
-  -- that no longer exists ("dangling") instead of being nulled or cascading
-  -- away. Wrapped like checks 1-2 so an unexpected failure here reports a
-  -- readable FAIL row instead of aborting the function.
   begin
     delete from deck_stages where id = s3;
     select to_stage_name, to_stage_id into nm, tsid from cell_events where id = ev2_id;
@@ -377,27 +378,19 @@ begin
   end;
 
   -- 8. Assert the race is actually armed before relying on the cleanup to
-  -- test it. This check exists because a previous edit to this script
-  -- silently removed the race by deleting the stage a cell still pointed
-  -- at, leaving the cleanup passing for the wrong reason. A test that
-  -- verifies its own arming cannot be disarmed quietly.
+  -- test it: at least one state row still points at a live stage of p1.
   select count(*) into n
-  from cells c
-  join decks d on d.id = c.deck_id
-  join deck_stages ps on ps.id = c.stage_id
+  from cell_states cs
+  join decks d on d.id = cs.deck_id
+  join deck_stages ps on ps.id = cs.stage_id
   where d.project_id = p1;
-  return next format('%s race armed: %s cell(s) still point at a live stage of p1, need >= 1',
+  return next format('%s race armed: %s bay state(s) still point at a live stage of p1, need >= 1',
                      case when n >= 1 then 'PASS' else 'FAIL' end, n);
 
   -- 9. cleanup: deleting the projects (and everything cascading from them)
-  -- must succeed. Because check 8 just confirmed c1 still points at the
-  -- live stage s1, this delete genuinely fans out into the two
-  -- simultaneous, different-depth cascades that 0004/0005 exist to fix:
-  -- projects -> decks -> cells (CASCADE, depth 2 from decks) racing against
-  -- projects -> decks -> deck_stages -> cells.stage_id (SET NULL, depth 2 from
-  -- decks). Wrapped like checks 1-2 and 7 so a regression here
-  -- reports a readable FAIL row instead of aborting the function with zero
-  -- rows, which is what happened on the first two attempts at this task.
+  -- must succeed. projects -> decks -> cells -> cell_states (CASCADE) races
+  -- projects -> works -> deck_stages -> cell_states.stage_id (SET NULL) at
+  -- different depths, which is the 0004/0005 class of defect.
   begin
     delete from projects where id in (p1, p2);
     return next 'PASS cleanup: done';
@@ -432,10 +425,11 @@ begin
     and relname in (
       'profiles', 'gs_credentials', 'credential_access_log', 'projects',
       'deck_stages', 'project_members', 'decks', 'deck_guides',
-      'cells', 'zones', 'zone_cells', 'cell_events'
+      'cells', 'zones', 'zone_cells', 'cell_events',
+      'works', 'work_decks', 'cell_states'
     );
-  return next format('%s rls enabled on all 12 tables: %s of 12 found, offenders: %s',
-                     case when n = 12 and bad_tables is null then 'PASS' else 'FAIL' end,
+  return next format('%s rls enabled on all 15 tables: %s of 15 found, offenders: %s',
+                     case when n = 15 and bad_tables is null then 'PASS' else 'FAIL' end,
                      n, coalesce(bad_tables, 'none'));
 
   -- 11. gs_credentials must carry no policy at all (default-deny via absence,
@@ -488,8 +482,8 @@ begin
   select (not p.prosecdef) and 'search_path=public, pg_temp' = any (p.proconfig)
     into assert_ok
   from pg_proc p
-  where p.pronamespace = 'public'::regnamespace and p.proname = 'assert_gs_updates_stage_only';
-  return next format('%s assert_gs_updates_stage_only() is security invoker with search_path=public, pg_temp: %s',
+  where p.pronamespace = 'public'::regnamespace and p.proname = 'assert_gs_state_write';
+  return next format('%s assert_gs_state_write() is security invoker with search_path=public, pg_temp: %s',
                      case when assert_ok then 'PASS' else 'FAIL' end,
                      coalesce(assert_ok::text, 'function not found'));
 
@@ -500,18 +494,23 @@ begin
   select p.prosecdef and 'search_path=public, pg_temp' = any (p.proconfig)
     into log_ok
   from pg_proc p
-  where p.pronamespace = 'public'::regnamespace and p.proname = 'log_cell_stage_change';
-  return next format('%s log_cell_stage_change() is security definer with search_path=public, pg_temp: %s',
+  where p.pronamespace = 'public'::regnamespace and p.proname = 'log_cell_state_change';
+  return next format('%s log_cell_state_change() is security definer with search_path=public, pg_temp: %s',
                      case when log_ok then 'PASS' else 'FAIL' end,
                      coalesce(log_ok::text, 'function not found'));
 
-  -- 17. cells carries exactly four triggers (three from 0002, one from 0006).
+  -- 17. Since 0024 the four progress triggers live on cell_states, and cells
+  -- -- geometry only now -- carries none.
   select count(*) into trig_count
   from pg_trigger t
   join pg_class c on c.oid = t.tgrelid
+  where c.relname = 'cell_states' and not t.tgisinternal;
+  select count(*) into n
+  from pg_trigger t
+  join pg_class c on c.oid = t.tgrelid
   where c.relname = 'cells' and not t.tgisinternal;
-  return next format('%s cells has four triggers: %s found',
-                     case when trig_count = 4 then 'PASS' else 'FAIL' end, trig_count);
+  return next format('%s cell_states has four triggers and cells has none: %s and %s found',
+                     case when trig_count = 4 and n = 0 then 'PASS' else 'FAIL' end, trig_count, n);
 
   -- 18. cells_assert_gs_stage_only must sort alphabetically before
   -- cells_set_audit_columns by name. Necessary for Postgres's same-timing
@@ -520,10 +519,10 @@ begin
   select string_agg(tgname, ',' order by tgname) into trig_order
   from pg_trigger t
   join pg_class c on c.oid = t.tgrelid
-  where c.relname = 'cells' and not t.tgisinternal
-    and t.tgname in ('cells_assert_gs_stage_only', 'cells_set_audit_columns');
-  return next format('%s cells_assert_gs_stage_only sorts before cells_set_audit_columns: order is %s',
-                     case when trig_order = 'cells_assert_gs_stage_only,cells_set_audit_columns'
+  where c.relname = 'cell_states' and not t.tgisinternal
+    and t.tgname in ('cell_states_assert_gs_write', 'cell_states_set_audit_columns');
+  return next format('%s cell_states_assert_gs_write sorts before cell_states_set_audit_columns: order is %s',
+                     case when trig_order = 'cell_states_assert_gs_write,cell_states_set_audit_columns'
                           then 'PASS' else 'FAIL' end,
                      coalesce(trig_order, 'not found'));
 
@@ -542,14 +541,15 @@ begin
   select count(*) into trig_count
   from pg_trigger t
   join pg_class c on c.oid = t.tgrelid
-  where c.relname = 'cells' and not t.tgisinternal
-    and t.tgname in ('cells_assert_gs_stage_only', 'cells_set_audit_columns')
+  where c.relname = 'cell_states' and not t.tgisinternal
+    and t.tgname in ('cell_states_assert_gs_write', 'cell_states_set_audit_columns')
     and (t.tgtype & 1) = 1
     and (t.tgtype & 2) = 2
+    and (t.tgtype & 4) > 0
     and (t.tgtype & 16) > 0
     and coalesce(array_length(t.tgattr::int2[], 1), 0) = 0
     and t.tgqual is null;
-  return next format('%s cells_assert_gs_stage_only and cells_set_audit_columns are both row-level BEFORE UPDATE with no column list or WHEN clause: %s of 2 qualify',
+  return next format('%s cell_states_assert_gs_write and cell_states_set_audit_columns are both row-level BEFORE INSERT OR UPDATE with no column list or WHEN clause: %s of 2 qualify',
                      case when trig_count = 2 then 'PASS' else 'FAIL' end, trig_count);
 
   -- 20. anon and authenticated hold no INSERT/UPDATE/DELETE grant on
@@ -601,7 +601,7 @@ begin
 
   -- 24. The last two definer/invoker functions (0009) now pin search_path.
   select count(*) into n from pg_proc
-   where proname in ('assert_stage_belongs_to_project', 'set_cell_audit_columns')
+   where proname in ('assert_cell_state_consistent', 'set_cell_state_audit_columns')
      and proconfig @> array['search_path=public, pg_temp'];
   return next format('%s remaining functions pin search_path: %s of 2',
                      case when n = 2 then 'PASS' else 'FAIL' end, n);
@@ -638,7 +638,7 @@ end $$;
 -- either way -- guarding updated_at guards both.
 create or replace function _verify_audit_columns() returns setof text language plpgsql as $$
 declare
-  p uuid; d uuid; s1 uuid; s2 uuid; cid uuid;
+  p uuid; d uuid; w uuid; s1 uuid; s2 uuid; cid uuid;
   sentinel timestamptz := timestamptz '2000-01-01 00:00:00+00';
   after_geometry timestamptz; after_stage timestamptz;
 begin
@@ -646,36 +646,34 @@ begin
     insert into projects (name, code) values ('VERIFY C','VERIFYC') returning id into p;
     insert into decks (project_id, seq, name, code, total_area_m2)
       values (p, 1, 'Deck', 'VC', 100) returning id into d;
-    insert into deck_stages (deck_id, seq, name, color, weight)
-      values (d, 1, 'Coat 1', '#fadb14', 1) returning id into s1;
-    insert into deck_stages (deck_id, seq, name, color, weight)
-      values (d, 2, 'Coat 2', '#bfbfbf', 0) returning id into s2;
-    -- The sentinel and the recorded stage both go in with the row. Both
-    -- triggers involved here are UPDATE-only, so an INSERT keeps what is
-    -- supplied -- which is what makes 0013's new rejected columns irrelevant to
-    -- planting it.
-    insert into cells (deck_id, code, x, y, w, h, area_m2, stage_id, updated_at)
-      values (d, 'R1C1', 0, 0, 1, 1, 100, s1, sentinel) returning id into cid;
+    w := _verify_seed_work(p, d);
+    insert into deck_stages (work_id, deck_id, seq, name, color, weight)
+      values (w, d, 1, 'Coat 1', '#fadb14', 1) returning id into s1;
+    insert into deck_stages (work_id, deck_id, seq, name, color, weight)
+      values (w, d, 2, 'Coat 2', '#bfbfbf', 0) returning id into s2;
+    insert into cells (deck_id, code, x, y, w, h, area_m2)
+      values (d, 'R1C1', 0, 0, 1, 1, 100) returning id into cid;
+    insert into cell_states (cell_id, work_id, deck_id, stage_id) values (cid, w, d, s1);
 
-    -- Stage unchanged, twice: stage_id set to the value it already holds. A real
-    -- UPDATE -- the row version is rewritten and every trigger on the table
-    -- fires -- that changes no column the non-admin guard rejects, so it reaches
-    -- set_cell_audit_columns as exactly the case a geometry save presents. The
-    -- old trigger would have answered it by overwriting the sentinel with now().
-    -- Twice, because the second leaves updated_at at the value the row already
-    -- holds, as PostgREST's geometry-only UPDATE does, and must not disturb it
-    -- either.
-    update cells set stage_id = s1 where id = cid;
-    update cells set stage_id = s1 where id = cid;
-    select updated_at into after_geometry from cells where id = cid;
+    -- Plant the sentinel. Since 0024 the stamper writes updated_at on the
+    -- insert too, and the non-admin guard refuses a client-supplied updated_at
+    -- (this session has no auth.uid(), so it IS the non-admin case) -- so the
+    -- sentinel goes in with that one guard held. A script running as postgres
+    -- is the one place that is legitimate.
+    alter table cell_states disable trigger cell_states_assert_gs_write;
+    update cell_states set updated_at = sentinel where cell_id = cid and work_id = w;
+    alter table cell_states enable trigger cell_states_assert_gs_write;
 
-    -- Real progress: the stamp must land. Without this half, a trigger body that
-    -- skipped the stamp unconditionally would report PASS -- and the audit trail
-    -- would simply stop recording anything. It is also what proves 0013's guard
-    -- does not block the trigger's own write: the guard runs first and sees an
-    -- updated_at the client did not touch, then the audit trigger stamps it.
-    update cells set stage_id = s2 where id = cid;
-    select updated_at into after_stage from cells where id = cid;
+    -- Stage unchanged, twice: a real UPDATE that changes no guarded column,
+    -- which is the case a geometry-free re-save presents. The old trigger
+    -- would have overwritten the sentinel with now().
+    update cell_states set stage_id = s1 where cell_id = cid and work_id = w;
+    update cell_states set stage_id = s1 where cell_id = cid and work_id = w;
+    select updated_at into after_geometry from cell_states where cell_id = cid and work_id = w;
+
+    -- Real progress: the stamp must land.
+    update cell_states set stage_id = s2 where cell_id = cid and work_id = w;
+    select updated_at into after_stage from cell_states where cell_id = cid and work_id = w;
 
     delete from projects where id = p;
 
@@ -710,7 +708,7 @@ end $$;
 -- there, and `deferred` changes only WHEN it is checked, never whether.
 create or replace function _verify_stage_seq_deferrable() returns setof text language plpgsql as $$
 declare
-  p uuid; d uuid;
+  p uuid; d uuid; w uuid;
   shape_ok boolean;
   swap_ok boolean := false;
   swap_err text := 'none';
@@ -721,21 +719,22 @@ begin
       into shape_ok
     from pg_constraint c
     where c.conrelid = 'public.deck_stages'::regclass
-      and c.conname = 'deck_stages_deck_id_seq_key'
+      and c.conname = 'deck_stages_work_id_deck_id_seq_key'
       -- attname is `name`, not `text`, and there is no name[] = text[] operator
       -- -- so the cast is load-bearing, not decoration.
       and (select array_agg(a.attname::text order by k.ord)
              from unnest(c.conkey) with ordinality as k(attnum, ord)
              join pg_attribute a on a.attrelid = c.conrelid and a.attnum = k.attnum)
-          = array['deck_id', 'seq'];
+          = array['work_id', 'deck_id', 'seq'];
 
     insert into projects (name, code) values ('VERIFY D','VERIFYD') returning id into p;
     insert into decks (project_id, seq, name, code, total_area_m2)
       values (p, 1, 'Deck', 'VD3', 100) returning id into d;
-    insert into deck_stages (deck_id, seq, name, color, weight)
-      values (d, 1, 'Coat 1', '#fadb14', 0.5);
-    insert into deck_stages (deck_id, seq, name, color, weight)
-      values (d, 2, 'Coat 2', '#bfbfbf', 0.5);
+    w := _verify_seed_work(p, d);
+    insert into deck_stages (work_id, deck_id, seq, name, color, weight)
+      values (w, d, 1, 'Coat 1', '#fadb14', 0.5);
+    insert into deck_stages (work_id, deck_id, seq, name, color, weight)
+      values (w, d, 2, 'Coat 2', '#bfbfbf', 0.5);
 
     begin
       -- One statement, both rows: after the first row is rewritten two rows hold
@@ -753,7 +752,7 @@ begin
     delete from projects where id = p;
 
     return next format(
-      '%s stage seq uniqueness is deferred and a reorder is accepted: shape %s, swap %s (%s), after swap: %s',
+      '%s stage seq uniqueness over (work_id, deck_id, seq) is deferred and a reorder is accepted: shape %s, swap %s (%s), after swap: %s',
       case when coalesce(shape_ok, false) and swap_ok and seqs = '1=Coat 2, 2=Coat 1'
            then 'PASS' else 'FAIL' end,
       coalesce(shape_ok::text, 'constraint missing'), swap_ok, swap_err, coalesce(seqs, 'none'));
@@ -796,7 +795,7 @@ end $$;
 -- actually accepts.
 create or replace function _verify_stage_removal() returns setof text language plpgsql as $$
 declare
-  p uuid; d uuid;
+  p uuid; d uuid; w uuid;
   s1 uuid; s2 uuid; s3 uuid; s4 uuid; s5 uuid;
   survivor_cell uuid; orphan_cell uuid;
   write_ok boolean := false;
@@ -808,40 +807,40 @@ begin
     insert into projects (name, code) values ('VERIFY E','VERIFYE') returning id into p;
     insert into decks (project_id, seq, name, code, total_area_m2)
       values (p, 1, 'Deck', 'VE', 500) returning id into d;
-    -- The five-stage template a new project is seeded with, which is the shape
-    -- every real removal starts from.
-    insert into deck_stages (deck_id, seq, name, color, weight)
-      values (d, 1, 'Coat 1', '#fadb14', 0.2) returning id into s1;
-    insert into deck_stages (deck_id, seq, name, color, weight)
-      values (d, 2, 'Coat 2', '#bfbfbf', 0.2) returning id into s2;
-    insert into deck_stages (deck_id, seq, name, color, weight)
-      values (d, 3, 'Coat 3', '#52c41a', 0.2) returning id into s3;
-    insert into deck_stages (deck_id, seq, name, color, weight)
-      values (d, 4, 'Coat 4', '#1677ff', 0.2) returning id into s4;
-    insert into deck_stages (deck_id, seq, name, color, weight)
-      values (d, 5, 'Coat 5', '#722ed1', 0.2) returning id into s5;
+    w := _verify_seed_work(p, d);
+    insert into deck_stages (work_id, deck_id, seq, name, color, weight)
+      values (w, d, 1, 'Coat 1', '#fadb14', 0.2) returning id into s1;
+    insert into deck_stages (work_id, deck_id, seq, name, color, weight)
+      values (w, d, 2, 'Coat 2', '#bfbfbf', 0.2) returning id into s2;
+    insert into deck_stages (work_id, deck_id, seq, name, color, weight)
+      values (w, d, 3, 'Coat 3', '#52c41a', 0.2) returning id into s3;
+    insert into deck_stages (work_id, deck_id, seq, name, color, weight)
+      values (w, d, 4, 'Coat 4', '#1677ff', 0.2) returning id into s4;
+    insert into deck_stages (work_id, deck_id, seq, name, color, weight)
+      values (w, d, 5, 'Coat 5', '#722ed1', 0.2) returning id into s5;
 
-    -- One cell recorded at a stage that survives, one at the stage being
+    -- One bay recorded at a stage that survives, one at the stage being
     -- removed. Without both, the check could pass while doing the wrong thing to
     -- either.
-    insert into cells (deck_id, code, x, y, w, h, area_m2, stage_id)
-      values (d, 'R1C1', 0, 0, 0.5, 1, 250, s4) returning id into survivor_cell;
-    insert into cells (deck_id, code, x, y, w, h, area_m2, stage_id)
-      values (d, 'R1C2', 0.5, 0, 0.5, 1, 250, s2) returning id into orphan_cell;
+    insert into cells (deck_id, code, x, y, w, h, area_m2)
+      values (d, 'R1C1', 0, 0, 0.5, 1, 250) returning id into survivor_cell;
+    insert into cells (deck_id, code, x, y, w, h, area_m2)
+      values (d, 'R1C2', 0.5, 0, 0.5, 1, 250) returning id into orphan_cell;
+    insert into cell_states (cell_id, work_id, deck_id, stage_id) values (survivor_cell, w, d, s4);
+    insert into cell_states (cell_id, work_id, deck_id, stage_id) values (orphan_cell, w, d, s2);
 
     begin
       -- The delete goes first: it frees seq 2 so the renumbering below has
-      -- somewhere to land. Reverse these two statements against a live PostgREST
-      -- and the upsert fails on its own commit -- see the comment above.
+      -- somewhere to land.
       delete from deck_stages where id = s2;
 
       -- The survivors, renumbered 1..4, in the statement shape PostgREST builds
       -- for an upsert keyed on the primary key.
-      insert into deck_stages (id, deck_id, seq, name, color, weight) values
-        (s1, p, 1, 'Coat 1', '#fadb14', 0.25),
-        (s3, p, 2, 'Coat 3', '#52c41a', 0.25),
-        (s4, p, 3, 'Coat 4', '#1677ff', 0.25),
-        (s5, p, 4, 'Coat 5', '#722ed1', 0.25)
+      insert into deck_stages (id, work_id, deck_id, seq, name, color, weight) values
+        (s1, w, d, 1, 'Coat 1', '#fadb14', 0.25),
+        (s3, w, d, 2, 'Coat 3', '#52c41a', 0.25),
+        (s4, w, d, 3, 'Coat 4', '#1677ff', 0.25),
+        (s5, w, d, 4, 'Coat 5', '#722ed1', 0.25)
       on conflict (id) do update set
         seq = excluded.seq, name = excluded.name,
         color = excluded.color, weight = excluded.weight;
@@ -852,14 +851,14 @@ begin
 
     select string_agg(seq::text || '=' || name, ', ' order by seq) into seqs
     from deck_stages where deck_id = d;
-    select stage_id into survivor_stage from cells where id = survivor_cell;
+    select stage_id into survivor_stage from cell_states where cell_id = survivor_cell and work_id = w;
     select seq into survivor_seq from deck_stages where id = survivor_stage;
-    select stage_id into orphan_stage from cells where id = orphan_cell;
+    select stage_id into orphan_stage from cell_states where cell_id = orphan_cell and work_id = w;
 
     delete from projects where id = p;
 
     return next format(
-      '%s a middle stage can be removed and the survivors renumbered: write %s (%s), after: %s, cell at a surviving stage still on Coat 4 (now seq %s): %s, cell at the removed stage nulled: %s',
+      '%s a middle stage can be removed and the survivors renumbered: write %s (%s), after: %s, bay at a surviving stage still on Coat 4 (now seq %s): %s, bay at the removed stage nulled: %s',
       case when write_ok
             and seqs = '1=Coat 1, 2=Coat 3, 3=Coat 4, 4=Coat 5'
             and survivor_stage = s4
@@ -895,11 +894,8 @@ end $$;
 -- check would pass on a schema where 0013 was never applied.
 create or replace function _verify_gs_audit_guard() returns setof text language plpgsql as $$
 declare
-  p uuid; d uuid; s1 uuid; s2 uuid; cid uuid;
+  p uuid; d uuid; w uuid; s1 uuid; s2 uuid; cid uuid;
   sentinel timestamptz := timestamptz '2000-01-01 00:00:00+00';
-  -- 0019 widened this message when `note` became writable by a GS. Matching
-  -- on the old string here would have kept passing against a guard that no
-  -- longer raises it, so the two move together.
   guard_msg text := 'only stage_id and note may be changed by a non-admin';
   note_msg  text := 'a note may only be changed together with the stage';
   at_rejected boolean := false; at_err text := 'accepted';
@@ -914,73 +910,68 @@ begin
     insert into projects (name, code) values ('VERIFY F','VERIFYF') returning id into p;
     insert into decks (project_id, seq, name, code, total_area_m2)
       values (p, 1, 'Deck', 'VF', 100) returning id into d;
-    insert into deck_stages (deck_id, seq, name, color, weight)
-      values (d, 1, 'Coat 1', '#fadb14', 1) returning id into s1;
-    insert into deck_stages (deck_id, seq, name, color, weight)
-      values (d, 2, 'Coat 2', '#bfbfbf', 0) returning id into s2;
-    -- Recorded at Coat 1 with a sentinel timestamp, planted on the INSERT
-    -- because both triggers are UPDATE-only.
-    insert into cells (deck_id, code, x, y, w, h, area_m2, stage_id, updated_at)
-      values (d, 'R1C1', 0, 0, 1, 1, 100, s1, sentinel) returning id into cid;
+    w := _verify_seed_work(p, d);
+    insert into deck_stages (work_id, deck_id, seq, name, color, weight)
+      values (w, d, 1, 'Coat 1', '#fadb14', 1) returning id into s1;
+    insert into deck_stages (work_id, deck_id, seq, name, color, weight)
+      values (w, d, 2, 'Coat 2', '#bfbfbf', 0) returning id into s2;
+    insert into cells (deck_id, code, x, y, w, h, area_m2)
+      values (d, 'R1C1', 0, 0, 1, 1, 100) returning id into cid;
+    insert into cell_states (cell_id, work_id, deck_id, stage_id) values (cid, w, d, s1);
+    -- The sentinel, planted with the guard held -- see check 25 for why.
+    alter table cell_states disable trigger cell_states_assert_gs_write;
+    update cell_states set updated_at = sentinel where cell_id = cid and work_id = w;
+    alter table cell_states enable trigger cell_states_assert_gs_write;
 
-    -- A forged date, carried alongside a legitimate stage change -- the shape a
-    -- crafted PATCH would take, since a GS is allowed to move the stage.
+    -- A forged date, carried alongside a legitimate stage change.
     begin
-      update cells set stage_id = s2, updated_at = timestamptz '2030-06-01 00:00:00+00'
-       where id = cid;
+      update cell_states set stage_id = s2, updated_at = timestamptz '2030-06-01 00:00:00+00'
+       where cell_id = cid and work_id = w;
     exception when others then
       at_rejected := sqlerrm like '%' || guard_msg || '%';
       at_err := sqlerrm;
     end;
 
-    -- A forged author: attributing a coat to somebody who never recorded it.
+    -- A forged author.
     begin
-      update cells set stage_id = s2, updated_by = gen_random_uuid() where id = cid;
+      update cell_states set stage_id = s2, updated_by = gen_random_uuid() where cell_id = cid and work_id = w;
     exception when others then
       by_rejected := sqlerrm like '%' || guard_msg || '%';
       by_err := sqlerrm;
     end;
 
-    -- A forged author carried alongside a legitimate NOTE, which is the shape
-    -- the same attack takes now that a second column is writable.
+    -- A forged author carried alongside a legitimate NOTE.
     begin
-      update cells set stage_id = s2, note = 'x', updated_by = gen_random_uuid()
-       where id = cid;
+      update cell_states set stage_id = s2, note = 'x', updated_by = gen_random_uuid()
+       where cell_id = cid and work_id = w;
     exception when others then
       by_rejected := by_rejected and sqlerrm like '%' || guard_msg || '%';
       by_err := by_err || ' / with note: ' || sqlerrm;
     end;
 
-    -- What a GS is actually for, which must still work -- and must still be
-    -- stamped by set_cell_audit_columns afterwards.
+    -- What a GS is actually for, which must still work -- and be stamped.
     begin
-      update cells set stage_id = s2 where id = cid;
+      update cell_states set stage_id = s2 where cell_id = cid and work_id = w;
       stage_ok := true;
     exception when others then
       stage_err := sqlerrm;
     end;
-    select updated_at into stamped from cells where id = cid;
+    select updated_at into stamped from cell_states where cell_id = cid and work_id = w;
 
     -- 0019: a note travelling with its stage change is accepted, and lands.
     begin
-      update cells set stage_id = s1, note = 'Bề mặt còn ẩm' where id = cid;
+      update cell_states set stage_id = s1, note = 'Bề mặt còn ẩm' where cell_id = cid and work_id = w;
       note_ok := true;
     exception when others then
       note_err := sqlerrm;
     end;
-    select note into note_val from cells where id = cid;
-    -- And the history has it too: cells.note is the current note, cell_events
-    -- .note is the record. A column that only ever holds the latest value is
-    -- not an audit trail.
+    select note into note_val from cell_states where cell_id = cid and work_id = w;
     select e.note into note_logged
       from cell_events e where e.cell_id = cid order by e.at desc, e.id desc limit 1;
 
-    -- 0019: a note on its own is refused. The audit trigger fires only on a
-    -- stage change, so a note-only update would move cells.note with nothing
-    -- in cell_events to say who wrote it. This is what keeps that history
-    -- complete rather than merely usually complete.
+    -- 0019: a note on its own is refused.
     begin
-      update cells set note = 'không đi kèm công đoạn' where id = cid;
+      update cell_states set note = 'không đi kèm công đoạn' where cell_id = cid and work_id = w;
     exception when others then
       note_alone_rejected := sqlerrm like '%' || note_msg || '%';
       note_alone_err := sqlerrm;
@@ -1019,10 +1010,10 @@ end $$;
 -- setup happened to create".
 create or replace function _verify_stage_deletion_audit() returns setof text language plpgsql as $$
 declare
-  p uuid; d uuid; s_doomed uuid; s_live uuid; c_doomed uuid; c_live uuid;
+  p uuid; d uuid; w uuid; s_doomed uuid; s_live uuid; c_doomed uuid; c_live uuid;
   fn_ok boolean;
-  del_count int; del_name text; del_from uuid;
-  live_count int; live_name text;
+  before_count int; del_count int; del_name text; del_from uuid;
+  live_before int; live_count int; live_name text;
   project_deleted boolean := false; project_err text := 'none';
 begin
   select p2.prosecdef and 'search_path=public, pg_temp' = any (p2.proconfig)
@@ -1035,14 +1026,21 @@ begin
     insert into projects (name, code) values ('VERIFY G','VERIFYG') returning id into p;
     insert into decks (project_id, seq, name, code, total_area_m2)
       values (p, 1, 'Deck', 'VG', 100) returning id into d;
-    insert into deck_stages (deck_id, seq, name, color, weight)
-      values (d, 1, 'Doomed Coat', '#ff4d4f', 0.5) returning id into s_doomed;
-    insert into deck_stages (deck_id, seq, name, color, weight)
-      values (d, 2, 'Living Coat', '#52c41a', 0.5) returning id into s_live;
-    insert into cells (deck_id, code, x, y, w, h, area_m2, stage_id)
-      values (d, 'R1C1', 0, 0, 1, 0.5, 60, s_doomed) returning id into c_doomed;
-    insert into cells (deck_id, code, x, y, w, h, area_m2, stage_id)
-      values (d, 'R2C1', 0, 0.5, 1, 0.5, 40, s_live) returning id into c_live;
+    w := _verify_seed_work(p, d);
+    insert into deck_stages (work_id, deck_id, seq, name, color, weight)
+      values (w, d, 1, 'Doomed Coat', '#ff4d4f', 0.5) returning id into s_doomed;
+    insert into deck_stages (work_id, deck_id, seq, name, color, weight)
+      values (w, d, 2, 'Living Coat', '#52c41a', 0.5) returning id into s_live;
+    insert into cells (deck_id, code, x, y, w, h, area_m2)
+      values (d, 'R1C1', 0, 0, 1, 0.5, 60) returning id into c_doomed;
+    insert into cells (deck_id, code, x, y, w, h, area_m2)
+      values (d, 'R2C1', 0, 0.5, 1, 0.5, 40) returning id into c_live;
+    -- Since 0024 creating a state at a stage logs the move from "not started",
+    -- so the counts below are deltas against what the setup wrote.
+    insert into cell_states (cell_id, work_id, deck_id, stage_id) values (c_doomed, w, d, s_doomed);
+    insert into cell_states (cell_id, work_id, deck_id, stage_id) values (c_live, w, d, s_live);
+    select count(*) into before_count from cell_events where cell_id = c_doomed;
+    select count(*) into live_before from cell_events where cell_id = c_live;
 
     -- 29. the removal itself
     delete from deck_stages where id = s_doomed;
@@ -1052,27 +1050,27 @@ begin
       from cell_events where cell_id = c_doomed order by id desc limit 1;
 
     return next format(
-      '%s stage deletion is logged once, with the name: %s row(s) (expected 1), from_stage_name %L (expected %L), from_stage_id retained %s, log_stage_deletion_on_cells definer+search_path %s',
-      case when del_count = 1
+      '%s stage deletion is logged once, with the name: %s new row(s) (expected 1), from_stage_name %L (expected %L), from_stage_id retained %s, log_stage_deletion_on_cells definer+search_path %s',
+      case when del_count - before_count = 1
              and del_name = 'Doomed Coat'
              and del_from = s_doomed
              and coalesce(fn_ok, false)
            then 'PASS' else 'FAIL' end,
-      del_count, del_name, 'Doomed Coat', del_from = s_doomed,
+      del_count - before_count, del_name, 'Doomed Coat', del_from = s_doomed,
       coalesce(fn_ok::text, 'function not found'));
 
     -- 30. negative control: an ordinary return to "not started", stage alive
-    update cells set stage_id = null where id = c_live;
+    update cell_states set stage_id = null where cell_id = c_live and work_id = w;
     select count(*) into live_count from cell_events where cell_id = c_live;
     select from_stage_name into live_name
       from cell_events where cell_id = c_live order by id desc limit 1;
 
     return next format(
-      '%s clearing a cell whose stage is still alive is still logged with its name: %s row(s) (expected 1), from_stage_name %L (expected %L)',
-      case when live_count = 1 and live_name = 'Living Coat' then 'PASS' else 'FAIL' end,
-      live_count, live_name, 'Living Coat');
+      '%s clearing a bay whose stage is still alive is still logged with its name: %s new row(s) (expected 1), from_stage_name %L (expected %L)',
+      case when live_count - live_before = 1 and live_name = 'Living Coat' then 'PASS' else 'FAIL' end,
+      live_count - live_before, live_name, 'Living Coat');
 
-    -- 31. the project delete, with the new BEFORE DELETE trigger inside it
+    -- 31. the project delete, with the BEFORE DELETE trigger inside it
     begin
       delete from projects where id = p;
       project_deleted := true;
@@ -1166,6 +1164,43 @@ begin
     cols, fk_ok, coalesce(setfn_ok, false), setanon_ok, upd_held);
 end $$;
 
+create or replace function _verify_work_items() returns setof text language plpgsql as $$
+declare
+  published int; ident "char"; leftover int; pol_works int; pol_decks int; pol_states int; pinned int;
+begin
+  select count(*) into published
+  from pg_publication_tables
+  where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'cell_states';
+  select relreplident into ident from pg_class where oid = 'public.cell_states'::regclass;
+  return next format(
+    '%s cell_states is published for realtime with REPLICA IDENTITY FULL: %s membership row(s) (need 1), relreplident %L (need f)',
+    case when published = 1 and ident = 'f' then 'PASS' else 'FAIL' end, published, ident);
+
+  select count(*) into leftover
+  from information_schema.columns
+  where table_schema = 'public' and table_name = 'cells'
+    and column_name in ('stage_id', 'note', 'updated_at', 'updated_by');
+  return next format(
+    '%s cells is geometry only: %s of the four progress columns remain (need 0)',
+    case when leftover = 0 then 'PASS' else 'FAIL' end, leftover);
+
+  select count(*) into pol_works from pg_policies where schemaname = 'public' and tablename = 'works';
+  select count(*) into pol_decks from pg_policies where schemaname = 'public' and tablename = 'work_decks';
+  select count(*) into pol_states from pg_policies where schemaname = 'public' and tablename = 'cell_states';
+  return next format(
+    '%s work item policies: works %s (need 2), work_decks %s (need 2), cell_states %s (need 4: admin all, member read/insert/update)',
+    case when pol_works = 2 and pol_decks = 2 and pol_states = 4 then 'PASS' else 'FAIL' end,
+    pol_works, pol_decks, pol_states);
+
+  select count(*) into pinned from pg_proc
+   where pronamespace = 'public'::regnamespace
+     and proname in ('assert_cell_state_consistent', 'assert_gs_state_write',
+                     'set_cell_state_audit_columns', 'log_cell_state_change')
+     and proconfig @> array['search_path=public, pg_temp'];
+  return next format('%s the four cell_states trigger functions pin search_path: %s of 4',
+                     case when pinned = 4 then 'PASS' else 'FAIL' end, pinned);
+end $$;
+
 -- A single top-level SELECT: `supabase db query -f` surfaces only the last
 -- result set a multi-statement file produces, so the checks are combined
 -- here with UNION ALL rather than issued as separate SELECTs.
@@ -1187,7 +1222,9 @@ select * from _verify_realtime_publication()
 union all
 select * from _verify_cells_replica_identity()
 union all
-select * from _verify_report_notes();
+select * from _verify_report_notes()
+union all
+select * from _verify_work_items();
 
 drop function _verify_triggers();
 drop function _verify_rls();
@@ -1199,3 +1236,5 @@ drop function _verify_stage_deletion_audit();
 drop function _verify_realtime_publication();
 drop function _verify_cells_replica_identity();
 drop function _verify_report_notes();
+drop function _verify_work_items();
+drop function _verify_seed_work(uuid, uuid);

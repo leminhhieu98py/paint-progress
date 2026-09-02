@@ -49,6 +49,14 @@ columns and the named `cell_events_report_edited_by_fkey`, and that
 `authenticated` still holds no UPDATE on `cell_events` -- `set_report_note()`
 is meant to be the only client-reachable write onto the audit table. Both
 report `FAIL` until their migrations are applied.
+Since 0024/0025 (work items) every fixture in the script hangs off a `works`
+row via `_verify_seed_work`, the progress checks read and write `cell_states`
+instead of `cells.stage_id`, and four rows were added: `cell_states` is
+published with `REPLICA IDENTITY FULL`, `cells` carries none of the four
+progress columns, the three new tables carry their policies, and the four
+`cell_states` trigger functions pin `search_path`. Two checks plant their
+sentinel with `cell_states_assert_gs_write` held for one statement, because
+the stamper now writes `updated_at` on insert too.
 Run it after any change to these
 migrations:
 
@@ -57,9 +65,8 @@ nvm use 22
 npx supabase db query --linked -f supabase/verify_schema.sql
 ```
 
-Every returned row must begin with `PASS` — 36 rows in a passing run against
-a project with `0001`–`0023` applied (measured 2026-09-02 on dev; the header
-numbers 35 checks because one of them emits two rows).
+Every returned row must begin with `PASS` — 40 rows in a passing run against
+a project with `0001`–`0025` applied (measured 2026-09-02 on dev).
 
 The `0019` note check reports `FAIL` until that migration is applied, and the
 three note tests in `tests/rls.integration.test.ts` are `it.skip`ped for the
@@ -72,10 +79,12 @@ look for. Fixtures are seeded by hand and inserted `on conflict do nothing`, so
 without this reset every run starts on whatever the last one left, and a test
 that asserts on a CHANGE quietly becomes an assertion about nothing.
 
-`0019`, `0020`, `0022` and `0023` are applied to the dev project; the two RPC
-tests in `tests/rls.integration.test.ts` run unskipped against it. `0022` and
-`0023` still have to be pushed to the production project before the next
-deploy of this branch.
+`0019`–`0025` are applied to the dev project. `0022`–`0025` still have to be
+pushed to the production project before the next deploy of this branch --
+`0024` drops `cells.stage_id`, so push it and deploy the app in the same
+sitting (migration first, then the app, minutes apart). The dev backfill was
+checked: every project's percentage was identical before and after `0025`,
+to ten decimals.
 
 Checks 29-31 arrived with `0014` and report `FAIL` until that migration is
 applied — check 29 with `from_stage_name NULL`, which is the defect it fixes,

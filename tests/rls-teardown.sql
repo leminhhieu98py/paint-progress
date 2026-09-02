@@ -113,20 +113,21 @@ update profiles set role = 'gs', active = true where username = 'rlstest-gs';
 -- statement as a stage flip that is guaranteed to be a real change (null goes
 -- to the deck's stage, anything else goes to null). The second statement then
 -- settles the stage at null, which is either a legal stage-only change or a
--- no-op. Disabling cells_assert_gs_stage_only would have been one statement,
+-- no-op. Disabling cell_states_assert_gs_write would have been one statement,
 -- and would have left the guard off on the customer's database for as long as
 -- it took this script to crash.
-update cells c
-set stage_id = case when c.stage_id is null then s.id else null end,
+-- Since 0024 the bay's progress is its cell_states row, one per work.
+update cell_states cs
+set stage_id = case when cs.stage_id is null then s.id else null end,
     note = ''
 from decks d
 join deck_stages s on s.deck_id = d.id
-where d.id = c.deck_id and d.code = 'AD';
+where d.id = cs.deck_id and d.code = 'AD' and s.work_id = cs.work_id;
 
-update cells c
+update cell_states cs
 set stage_id = null
 from decks d
-where d.id = c.deck_id and d.code = 'AD' and c.stage_id is not null;
+where d.id = cs.deck_id and d.code = 'AD' and cs.stage_id is not null;
 
 -- 8. And the history that bay accumulates.
 --
@@ -180,8 +181,8 @@ begin
   -- carrying a note, or already on the stage a test is about to write, turns
   -- that test into an assertion about nothing.
   select count(*) into n
-  from cells c join decks d on d.id = c.deck_id
-  where d.code = 'AD' and (c.stage_id is not null or coalesce(c.note, '') <> '');
+  from cell_states cs join decks d on d.id = cs.deck_id
+  where d.code = 'AD' and (cs.stage_id is not null or coalesce(cs.note, '') <> '');
   return next format('%s the written fixture bay is reset to not-started with no note: %s still dirty, expected 0',
                      case when n = 0 then 'PASS' else 'FAIL' end, n);
 

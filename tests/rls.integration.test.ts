@@ -243,35 +243,47 @@ describe.skipIf(!configured)('RLS as a GS session', () => {
   })
 
   it('can advance the stage of a cell in its own project, and the write lands', async () => {
-    const { data: stage } = await gs.from('deck_stages').select('id').single()
+    // Since 0024 the write is an upsert on cell_states keyed by (cell, work):
+    // the first tick on a bay for a work creates the row.
+    const { data: stage } = await gs.from('deck_stages').select('id, work_id, deck_id').single()
     const { data: cell } = await gs.from('cells').select('id').single()
     const { data: updated, error } = await gs
-      .from('cells')
-      .update({ stage_id: stage!.id })
-      .eq('id', cell!.id)
+      .from('cell_states')
+      .upsert(
+        { cell_id: cell!.id, work_id: stage!.work_id, deck_id: stage!.deck_id, stage_id: stage!.id },
+        { onConflict: 'cell_id,work_id' },
+      )
       .select('stage_id')
       .single()
-    // An update matching zero rows also returns error === null, so the
+    // A write matching zero rows also returns error === null, so the
     // read-back of the actual value is what proves the write landed.
     expect(error).toBeNull()
     expect(updated?.stage_id).toBe(stage!.id)
   })
 
   it('can attach a note to the bay it is recording, and the note lands', async () => {
-    const { data: stage } = await gs.from('deck_stages').select('id').single()
-    const { data: cell } = await gs.from('cells').select('id, stage_id').single()
-    // The target is whichever stage this cell is NOT on, read at the moment of
-    // the write. An earlier test in this file leaves the cell at the deck's one
+    const { data: stage } = await gs.from('deck_stages').select('id, work_id, deck_id').single()
+    const { data: cell } = await gs.from('cells').select('id').single()
+    const { data: state } = await gs
+      .from('cell_states')
+      .select('stage_id')
+      .eq('cell_id', cell!.id)
+      .eq('work_id', stage!.work_id)
+      .maybeSingle()
+    // The target is whichever stage this bay is NOT on, read at the moment of
+    // the write. An earlier test in this file leaves the bay at the deck's one
     // stage, and re-sending that same value is a note-only update, which 0019
     // refuses -- so a hardcoded target here would make this test's result
     // depend on the order the file happens to run in.
-    const target = cell!.stage_id === null ? stage!.id : null
+    const target = (state?.stage_id ?? null) === null ? stage!.id : null
     // Written in ONE statement with the stage, which is both what the app does
     // and, since 0019, the only shape the guard accepts.
     const { data: updated, error } = await gs
-      .from('cells')
-      .update({ stage_id: target, note: 'Bề mặt còn ẩm, hoãn sơn sang mai' })
-      .eq('id', cell!.id)
+      .from('cell_states')
+      .upsert(
+        { cell_id: cell!.id, work_id: stage!.work_id, deck_id: stage!.deck_id, stage_id: target, note: 'Bề mặt còn ẩm, hoãn sơn sang mai' },
+        { onConflict: 'cell_id,work_id' },
+      )
       .select('note')
       .single()
     expect(error).toBeNull()
@@ -280,40 +292,77 @@ describe.skipIf(!configured)('RLS as a GS session', () => {
 
   it('cannot change a note without changing the stage', async () => {
     // The audit trigger fires on a stage change only, so a note-only write
-    // would move cells.note with nothing in cell_events naming who wrote it.
+    // would move the note with nothing in cell_events naming who wrote it.
+    const { data: stage } = await gs.from('deck_stages').select('work_id').single()
     const { data: cell } = await gs.from('cells').select('id').single()
     const { error } = await gs
-      .from('cells')
+      .from('cell_states')
       .update({ note: 'không đi kèm công đoạn' })
-      .eq('id', cell!.id)
+      .eq('cell_id', cell!.id)
+      .eq('work_id', stage!.work_id)
     expect(error).not.toBeNull()
     expect(error!.message).toContain('a note may only be changed together with the stage')
   })
 
   it('cannot forge the author of a note it writes', async () => {
-    // The same escalation the geometry test guards, in the shape the new
-    // column opens: a legitimate note carrying a forged updated_by.
-    const { data: stage } = await gs.from('deck_stages').select('id').single()
-    const { data: cell } = await gs.from('cells').select('id, stage_id').single()
+    // A legitimate note carrying a forged updated_by. The row exists by now
+    // (the tests above create it), so this reaches the UPDATE half of the
+    // guard, which is the half that inspects the audit columns.
+    const { data: stage } = await gs.from('deck_stages').select('id, work_id').single()
+    const { data: cell } = await gs.from('cells').select('id').single()
+    const { data: state } = await gs
+      .from('cell_states')
+      .select('stage_id')
+      .eq('cell_id', cell!.id)
+      .eq('work_id', stage!.work_id)
+      .maybeSingle()
     const { error } = await gs
-      .from('cells')
+      .from('cell_states')
       .update({
-        stage_id: cell!.stage_id === null ? stage!.id : null,
+        stage_id: (state?.stage_id ?? null) === null ? stage!.id : null,
         note: 'x',
         updated_by: '00000000-0000-0000-0000-000000000000',
       })
-      .eq('id', cell!.id)
+      .eq('cell_id', cell!.id)
+      .eq('work_id', stage!.work_id)
     expect(error).not.toBeNull()
     expect(error!.message).toContain('may be changed by a non-admin')
   })
 
   it('cannot change a cell geometry column', async () => {
+    // Since 0024 cells is geometry only and carries no member write policy at
+    // all, so the refusal is RLS filtering the row out: zero rows, no error.
+    // The value is checked through the read policy, which the GS does hold.
+    const { data: cell } = await gs.from('cells').select('id, area_m2').single()
+    const { data, error } = await gs.from('cells').update({ area_m2: 1 }).eq('id', cell!.id).select('area_m2')
+    expect(error).toBeNull()
+    expect(data ?? []).toEqual([])
+    const { data: after } = await gs.from('cells').select('area_m2').eq('id', cell!.id).single()
+    expect(Number(after?.area_m2)).toBe(Number(cell!.area_m2))
+  })
+
+  it('cannot write a bay state on another project, and cannot delete its own', async () => {
+    // The insert half of cell_states_member_insert: a state row whose deck
+    // is not in my_projects() fails WITH CHECK, which PostgREST reports as an
+    // error rather than as zero rows. The fixture ids are read as the admin
+    // would see them -- through the seeded DD event, whose cell id a GS can
+    // read from cell_events (its own project's rows only, so this is the one
+    // DD id it can reach).
+    const { data: stage } = await gs.from('deck_stages').select('id, work_id, deck_id').single()
     const { data: cell } = await gs.from('cells').select('id').single()
-    const { error } = await gs.from('cells').update({ area_m2: 1 }).eq('id', cell!.id)
-    expect(error).not.toBeNull()
-    // Matched on the half of the message 0019 did not change, so this passes
-    // both before and after that migration is applied.
-    expect(error!.message).toContain('may be changed by a non-admin')
+    const foreign = await gs
+      .from('cell_states')
+      .insert({ cell_id: cell!.id, work_id: stage!.work_id, deck_id: RLSD_PROJECT_ID, stage_id: stage!.id })
+    expect(foreign.error).not.toBeNull()
+
+    const deleted = await gs
+      .from('cell_states')
+      .delete()
+      .eq('cell_id', cell!.id)
+      .eq('work_id', stage!.work_id)
+      .select('cell_id')
+    expect(deleted.error).toBeNull()
+    expect(deleted.data ?? []).toEqual([])
   })
 
   it('cannot create a project', async () => {
@@ -391,6 +440,7 @@ describe.skipIf(!adminConfigured)('RLS as an admin session', () => {
   let gsUserId: string
   let projectId: string
   let stageId: string
+  let workId: string
   let deckId: string
   let cellId: string
   let zoneId: string
@@ -439,9 +489,21 @@ describe.skipIf(!adminConfigured)('RLS as an admin session', () => {
     expect(deck.error).toBeNull()
     deckId = deck.data!.id
 
+    // Since 0024 a stage belongs to a (work, deck): one bays work at weight 1,
+    // the deck in it at weight 1.
+    const work = await admin
+      .from('works')
+      .insert({ project_id: projectId, seq: 1, name: 'Admin Work', kind: 'bays', weight: 1, counts: true })
+      .select('id')
+      .single()
+    expect(work.error).toBeNull()
+    workId = work.data!.id
+    const workDeck = await admin.from('work_decks').insert({ work_id: workId, deck_id: deckId, weight: 1 })
+    expect(workDeck.error).toBeNull()
+
     const stage = await admin
       .from('deck_stages')
-      .insert({ deck_id: deckId, seq: 1, name: 'Admin Coat 1', color: '#1677ff', weight: 1 })
+      .insert({ work_id: workId, deck_id: deckId, seq: 1, name: 'Admin Coat 1', color: '#1677ff', weight: 1 })
       .select('id')
       .single()
     expect(stage.error).toBeNull()
@@ -526,7 +588,7 @@ describe.skipIf(!adminConfigured)('RLS as an admin session', () => {
   it('deck_stages_admin_all: creates, reads, reweights and deletes a stage no GS can see', async () => {
     const created = await admin
       .from('deck_stages')
-      .insert({ deck_id: deckId, seq: 2, name: 'Admin Coat 2', color: '#52c41a', weight: 0.5 })
+      .insert({ work_id: workId, deck_id: deckId, seq: 2, name: 'Admin Coat 2', color: '#52c41a', weight: 0.5 })
       .select('id')
       .single()
     expect(created.error).toBeNull()

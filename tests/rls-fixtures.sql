@@ -119,18 +119,34 @@ select id, 1, 'Denied Deck', 'DD', 100 from projects where code = 'RLSD'
 -- reported. 0012's own migration comment predicted exactly this. A NOT EXISTS
 -- guard keys on the same pair without naming the constraint, and matches the
 -- deck_guides insert further down.
-insert into deck_stages (deck_id, seq, name, color, weight)
-select d.id, 1, 'Coat 1', '#fadb14', 1
+-- Since 0024 a stage belongs to a (work, deck) and a bay's progress lives in
+-- cell_states. One bays work per fixture project, weight 1, the deck in it at
+-- weight 1 -- the same shape 0024's backfill gives every real project.
+insert into works (project_id, seq, name, kind, weight, counts)
+select p.id, 1, 'Công việc chính', 'bays', 1, true
+from projects p
+where p.code in ('RLSA', 'RLSD')
+  and not exists (select 1 from works where project_id = p.id and seq = 1);
+insert into work_decks (work_id, deck_id, weight)
+select w.id, d.id, 1
 from decks d
+join works w on w.project_id = d.project_id and w.seq = 1
+where d.code in ('AD', 'DD')
+  on conflict (work_id, deck_id) do nothing;
+insert into deck_stages (work_id, deck_id, seq, name, color, weight)
+select w.id, d.id, 1, 'Coat 1', '#fadb14', 1
+from decks d
+join works w on w.project_id = d.project_id and w.seq = 1
 where d.code = 'AD'
   and not exists (
     select 1 from deck_stages where deck_id = d.id and seq = 1
   );
 -- Distinctively named so a leaked cell_events row is unambiguous in the
 -- suite's cross-project cell_events assertion.
-insert into deck_stages (deck_id, seq, name, color, weight)
-select d.id, 1, 'RLS Denied Coat', '#ff4d4f', 1
+insert into deck_stages (work_id, deck_id, seq, name, color, weight)
+select w.id, d.id, 1, 'RLS Denied Coat', '#ff4d4f', 1
 from decks d
+join works w on w.project_id = d.project_id and w.seq = 1
 where d.code = 'DD'
   and not exists (
     select 1 from deck_stages where deck_id = d.id and seq = 1
@@ -174,9 +190,15 @@ where z.name = 'RLS Denied Zone' and d.code = 'DD' and c.deck_id = d.id
 -- allowed by assert_gs_updates_stage_only regardless of who runs it, and
 -- the trigger's own no-op guard (0004/0005) makes re-running this safe: a
 -- second run sets the same value, so no second event is logged.
-update cells set stage_id = (
-  select id from deck_stages where name = 'RLS Denied Coat'
-) where deck_id = (select id from decks where code = 'DD');
+-- Creating the state row at the stage logs the move from "not started", which
+-- is the single distinctively-named cell_events row the suite looks for.
+insert into cell_states (cell_id, work_id, deck_id, stage_id)
+select c.id, s.work_id, c.deck_id, s.id
+from cells c
+join decks d on d.id = c.deck_id
+join deck_stages s on s.deck_id = d.id and s.name = 'RLS Denied Coat'
+where d.code = 'DD'
+  on conflict (cell_id, work_id) do nothing;
 
 -- Account-dependent fixtures. Each is written as `insert ... select ...
 -- from profiles where ...`, so if the account it depends on does not exist
