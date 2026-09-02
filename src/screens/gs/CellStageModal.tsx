@@ -105,12 +105,18 @@ export function CellStageModal({
   const notes = useMemo(() => {
     if (thread === null || thread.cellId !== cellId) return []
     // The author embed is null on a tablet (profiles is behind RLS); the
-    // screen's name map fills it. Nothing report-facing is passed on: the
-    // thread only renders those when handed the admin's handlers, and it is
-    // not handed them here.
+    // screen's name map fills it. The report copy and the hidden flag (0023)
+    // are STRIPPED, not merely left without their buttons: the thread shows
+    // them to whoever hands it a note that carries them, and on the tablet the
+    // note is what was written, full stop. Caught by the full suite, not by
+    // this file's own tests, when the thread learned to render them.
     return thread.notes.map((n) => ({
       ...n,
       byName: n.byName ?? (n.byId !== null ? authorNames[n.byId] ?? null : null),
+      reportNote: null,
+      reportHidden: false,
+      reportEditedByName: null,
+      reportEditedAt: null,
     }))
   }, [thread, cellId, authorNames])
   const notesFailed = threadFailedFor !== null && threadFailedFor === cellId
