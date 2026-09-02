@@ -1,61 +1,81 @@
 import { describe, expect, it } from 'vitest'
-import { buildEventRows, buildOverviewRows, buildPlanRows, reportStageColumns } from './report'
-import type { DeckReportInput } from './report'
+import {
+  buildEventRows, buildOverview, buildPlanRows, reportStageColumns, type DeckReportInput,
+} from './report'
 import type { DeckEvent } from '../lib/progressApi'
+import type { Cell, Work, WorkModel } from './types'
 
 const STAGES = [
   { id: 's1', seq: 1, name: 'Blast + Coat 1', color: '#fadb14', weight: 0.25 },
   { id: 's2', seq: 2, name: 'Coat 2', color: '#bfbfbf', weight: 0.15 },
   { id: 's3', seq: 3, name: 'Tháo giáo', color: '#722ed1', weight: 0.6 },
 ]
+const TG_STAGES = [{ id: 't1', seq: 1, name: 'Tháo giáo lửng', color: '#8B5CF6', weight: 1 }]
 
-/** CD: 500 m² at Tháo giáo, 500 at Coat 2, of 1000 declared. */
+const bay = (id: string, code: string, areaM2: number, stageId: string | null): Cell => ({
+  id, code, x: 0, y: 0, w: 0, h: 0, areaM2, stageId, note: '',
+})
+const CD_META = { id: 'd1', code: 'CD', name: 'Cellar Deck', totalAreaM2: 1000 }
+const MD_META = { id: 'd2', code: 'MD', name: 'Main Deck', totalAreaM2: 1000 }
+const work = (
+  id: string, seq: number, name: string, kind: Work['kind'], weight: number, over: Partial<Work> = {},
+): Work => ({ id, projectId: 'p1', seq, name, kind, weight, counts: true, manualProgress: 0, ...over })
+
+/**
+ * Sơn (W .5): CD has 500 m² at Tháo giáo and 500 at Coat 2 of 1000 -> 70%;
+ * MD has 250 at Blast of 1000 -> 6,25%. D .5 each -> P_w = 38,125%.
+ */
+const SON: WorkModel = {
+  work: work('w1', 1, 'Sơn', 'bays', 0.5),
+  decks: [
+    { deck: { ...CD_META, cells: [bay('c1', 'R1C1', 500, 's3'), bay('c2', 'R1C2', 500, 's2')] }, stages: STAGES, weight: 0.5 },
+    { deck: { ...MD_META, cells: [bay('c9', 'R1C1', 250, 's1')] }, stages: STAGES, weight: 0.5 },
+  ],
+}
+/** Tháo giáo (W .3): CD only, 500 of 1000 at its one coat -> 50%. */
+const TG: WorkModel = {
+  work: work('w2', 2, 'Tháo giáo', 'bays', 0.3),
+  decks: [
+    { deck: { ...CD_META, cells: [bay('c1', 'R1C1', 500, 't1'), bay('c2', 'R1C2', 500, null)] }, stages: TG_STAGES, weight: 1 },
+  ],
+}
+/** Chứng từ (W .2): a manual figure, 50%. */
+const PAPER: WorkModel = {
+  work: work('w3', 3, 'Chứng từ', 'manual', 0.2, { manualProgress: 0.5 }),
+  decks: [],
+}
+/** P = .5·.38125 + .3·.5 + .2·.5 = 44,0625%. */
+const MODELS = [SON, TG, PAPER]
+
 const CD: DeckReportInput = {
-  deck: {
-    id: 'd1', code: 'CD', name: 'Cellar Deck', totalAreaM2: 1000,
-    cells: [
-      { id: 'c1', code: 'R1C1', x: 0, y: 0, w: 0, h: 0, areaM2: 500, stageId: 's3' },
-      { id: 'c2', code: 'R1C2', x: 0, y: 0, w: 0, h: 0, areaM2: 500, stageId: 's2' },
-    ],
-  },
-  stages: STAGES,
+  deck: { ...CD_META, cells: [bay('c1', 'R1C1', 500, null), bay('c2', 'R1C2', 500, null)] },
   zones: [],
   events: [],
 }
-
-/** MD: 250 m² at Blast + Coat 1, of 1000 declared. */
 const MD: DeckReportInput = {
-  deck: {
-    id: 'd2', code: 'MD', name: 'Main Deck', totalAreaM2: 1000,
-    cells: [
-      { id: 'c9', code: 'R1C1', x: 0, y: 0, w: 0, h: 0, areaM2: 250, stageId: 's1' },
-    ],
-  },
-  stages: STAGES,
+  deck: { ...MD_META, cells: [bay('c9', 'R1C1', 250, null)] },
   zones: [],
   events: [],
 }
 
 describe('reportStageColumns', () => {
   it('lists the stages once, in sequence', () => {
-    expect(reportStageColumns([CD, MD])).toEqual(['Blast + Coat 1', 'Coat 2', 'Tháo giáo'])
+    expect(reportStageColumns(SON.decks)).toEqual(['Blast + Coat 1', 'Coat 2', 'Tháo giáo'])
   })
 
-  it('unions stages across decks that no longer share one spec', () => {
-    // Stages belong to a deck since 0018, so two decks of one project can carry
-    // different coat systems. The sheet keeps ONE row per deck -- that is the
-    // habit the client already reads -- so the columns are the union, by name.
-    // Keying on id would give near-duplicate columns for stages that are the
-    // same coat under two ids.
-    const helideck: DeckReportInput = {
-      ...MD,
+  it('unions stages across decks that do not share one spec', () => {
+    // A coat list belongs to a (work, deck), so two decks of one work can
+    // carry different coat systems. The block keeps ONE row per deck -- that is
+    // the habit the client already reads -- so the columns are the union, by
+    // name. Keying on id would give near-duplicate columns for the same coat.
+    const helideck = {
+      ...SON.decks[1],
       stages: [
         { id: 'h1', seq: 1, name: 'Blast + Coat 1', color: '#fadb14', weight: 0.5 },
         { id: 'h2', seq: 2, name: 'Sơn chống trượt', color: '#eb2f96', weight: 0.5 },
       ],
     }
-
-    expect(reportStageColumns([CD, helideck])).toEqual([
+    expect(reportStageColumns([SON.decks[0], helideck])).toEqual([
       'Blast + Coat 1', 'Coat 2', 'Sơn chống trượt', 'Tháo giáo',
     ])
   })
@@ -63,73 +83,102 @@ describe('reportStageColumns', () => {
   it('orders a stage by the earliest seq any deck gives it', () => {
     // Two decks can number the same coat differently. Sorting by name would put
     // "Tháo giáo" before "Blast", which is the reverse of the work.
-    const odd: DeckReportInput = {
-      ...MD,
+    const odd = {
+      ...SON.decks[1],
       stages: [{ id: 'x', seq: 1, name: 'Tháo giáo', color: '#722ed1', weight: 1 }],
     }
-    expect(reportStageColumns([CD, odd])[0]).toBe('Blast + Coat 1')
+    expect(reportStageColumns([SON.decks[0], odd])[0]).toBe('Blast + Coat 1')
   })
 
-  it('returns nothing for a project with no decks', () => {
+  it('returns nothing for a work with no decks', () => {
     expect(reportStageColumns([])).toEqual([])
   })
 })
 
-describe('buildOverviewRows', () => {
-  it('gives each deck its share, area, per-stage figures and progress', () => {
-    const [cd] = buildOverviewRows([CD, MD])
+describe('buildOverview', () => {
+  it('makes one block per bays work, in seq order, and none for a manual work', () => {
+    const { blocks } = buildOverview(MODELS)
+    expect(blocks.map((b) => b.work.name)).toEqual(['Sơn', 'Tháo giáo'])
+  })
+
+  it('gives each participating deck its D, area, per-stage figures and P_wd', () => {
+    const [son, tg] = buildOverview(MODELS).blocks
+    const [cd, md] = son.rows
 
     expect(cd.name).toBe('Cellar Deck')
     expect(cd.code).toBe('CD')
     expect(cd.share).toBeCloseTo(0.5, 12)
     expect(cd.totalAreaM2).toBe(1000)
     // 500 at Tháo giáo has had all three; 500 at Coat 2 has had the first two.
-    expect(cd.stageAreaM2).toEqual({
-      'Blast + Coat 1': 1000, 'Coat 2': 1000, 'Tháo giáo': 500,
-    })
+    expect(cd.stageAreaM2).toEqual({ 'Blast + Coat 1': 1000, 'Coat 2': 1000, 'Tháo giáo': 500 })
     expect(cd.stageRatio['Tháo giáo']).toBeCloseTo(0.5, 12)
     // .25 + .15 + .6*.5 = .70
     expect(cd.progress).toBeCloseTo(0.7, 12)
     expect(cd.remain).toBeCloseTo(0.3, 12)
+    expect(md.progress).toBeCloseTo(0.0625, 12)
+    // Only the decks in the work: Tháo giáo has no Main Deck row.
+    expect(tg.rows.map((r) => r.code)).toEqual(['CD'])
+    expect(tg.rows[0].progress).toBeCloseTo(0.5, 12)
   })
 
-  it('leaves a stage this deck does not declare blank, not zero', () => {
+  it('carries each block\'s own stage columns and weights', () => {
+    const [son, tg] = buildOverview(MODELS).blocks
+    expect(son.stageNames).toEqual(['Blast + Coat 1', 'Coat 2', 'Tháo giáo'])
+    expect(son.weights['Tháo giáo']).toBe(0.6)
+    expect(tg.stageNames).toEqual(['Tháo giáo lửng'])
+    expect(tg.weights['Tháo giáo lửng']).toBe(1)
+  })
+
+  it('leaves a stage a deck does not declare blank, not zero', () => {
     // Blank and zero mean different things to somebody pricing the work: zero
     // says "declared and none done", blank says "not in this deck's spec".
-    const helideck: DeckReportInput = {
-      deck: {
-        ...MD.deck,
-        cells: [{ ...MD.deck.cells[0], stageId: 'h1' }],
-      },
+    const helideck = {
+      deck: { ...MD_META, cells: [bay('c9', 'R1C1', 250, 'h1')] },
       stages: [{ id: 'h1', seq: 1, name: 'Blast + Coat 1', color: '#fadb14', weight: 1 }],
-      zones: [],
-      events: [],
+      weight: 0.5,
     }
-    const [, hd] = buildOverviewRows([CD, helideck])
+    const [block] = buildOverview([{ ...SON, decks: [SON.decks[0], helideck] }]).blocks
+    const hd = block.rows[1]
 
     expect(hd.stageAreaM2['Blast + Coat 1']).toBe(250)
     expect('Coat 2' in hd.stageAreaM2).toBe(false)
     expect('Tháo giáo' in hd.stageAreaM2).toBe(false)
   })
 
-  it('closes with the project rollup, weighted by area', () => {
-    const rows = buildOverviewRows([CD, MD])
-    const total = rows[rows.length - 1]
+  it('closes each block with the work subtotal P_w, weighted by D', () => {
+    const [son, tg] = buildOverview(MODELS).blocks
 
-    expect(total.isTotal).toBe(true)
-    expect(total.totalAreaM2).toBe(2000)
-    expect(total.share).toBe(1)
-    // Equal areas: (70% + 6,25%) / 2.
-    expect(total.progress).toBeCloseTo(0.38125, 12)
-    // The rollup's stage areas are the plain sums across decks.
-    expect(total.stageAreaM2['Blast + Coat 1']).toBe(1250)
+    expect(son.subtotal.isTotal).toBe(true)
+    expect(son.subtotal.share).toBeCloseTo(1, 12)         // Σ D
+    expect(son.subtotal.totalAreaM2).toBe(2000)
+    // .5·70% + .5·6,25%
+    expect(son.subtotal.progress).toBeCloseTo(0.38125, 12)
+    expect(son.subtotal.remain).toBeCloseTo(0.61875, 12)
+    // The subtotal's stage areas are plain sums across the block's decks.
+    expect(son.subtotal.stageAreaM2['Blast + Coat 1']).toBe(1250)
+    expect(tg.subtotal.progress).toBeCloseTo(0.5, 12)
   })
 
-  it('returns only the rollup for a project with no decks, rather than throwing', () => {
-    const rows = buildOverviewRows([])
-    expect(rows).toHaveLength(1)
-    expect(rows[0].isTotal).toBe(true)
-    expect(rows[0].progress).toBe(0)
+  it('lists the manual works with their figure, then the project total P', () => {
+    const { manual, total } = buildOverview(MODELS)
+    expect(manual.map((m) => [m.work.name, m.progress])).toEqual([['Chứng từ', 0.5]])
+    expect(total.progress).toBeCloseTo(0.440625, 12)
+    expect(total.remain).toBeCloseTo(0.559375, 12)
+  })
+
+  it('keeps a work that does not count on the sheet, and out of P', () => {
+    const { blocks, total } = buildOverview([SON, { ...TG, work: { ...TG.work, counts: false } }, PAPER])
+    expect(blocks[1].work.counts).toBe(false)
+    expect(blocks[1].subtotal.progress).toBeCloseTo(0.5, 12)
+    // .5·.38125 + .2·.5, Tháo giáo left out.
+    expect(total.progress).toBeCloseTo(0.290625, 12)
+  })
+
+  it('returns no blocks and a zero total for a project with no works, rather than throwing', () => {
+    const { blocks, manual, total } = buildOverview([])
+    expect(blocks).toEqual([])
+    expect(manual).toEqual([])
+    expect(total.progress).toBe(0)
   })
 })
 
@@ -145,12 +194,13 @@ describe('buildPlanRows', () => {
     ],
   }
 
-  it('gives each zone its deck, stage, area, dates and day count', () => {
-    const [row] = buildPlanRows([planned])
+  it('gives each zone its deck, work, stage, area, dates and day count', () => {
+    const [row] = buildPlanRows([planned], MODELS)
 
     expect(row).toMatchObject({
       deckName: 'Cellar Deck',
       zoneName: 'Khu A',
+      workName: 'Sơn',
       stageName: 'Tháo giáo',
       areaM2: 500,
       startDate: '2026-09-01',
@@ -162,11 +212,17 @@ describe('buildPlanRows', () => {
     expect(row.days).toBe(7)
   })
 
+  it('finds the work through the coat the zone plans', () => {
+    // A zone is planned against a coat, and a coat belongs to a (work, deck).
+    const rows = buildPlanRows([{ ...planned, zones: [{ ...planned.zones[0], stageId: 't1' }] }], MODELS)
+    expect(rows[0]).toMatchObject({ workName: 'Tháo giáo', stageName: 'Tháo giáo lửng' })
+  })
+
   it('leaves the day count blank when either end is unknown', () => {
     const rows = buildPlanRows([{
       ...planned,
       zones: [{ ...planned.zones[0], finishDate: null }],
-    }])
+    }], MODELS)
     expect(rows[0].days).toBeNull()
   })
 
@@ -174,7 +230,7 @@ describe('buildPlanRows', () => {
     const rows = buildPlanRows([{
       ...planned,
       zones: [{ ...planned.zones[0], finishDate: '2026-09-01' }],
-    }])
+    }], MODELS)
     expect(rows[0].days).toBe(1)
   })
 
@@ -185,30 +241,31 @@ describe('buildPlanRows', () => {
     const rows = buildPlanRows([{
       ...planned,
       zones: [{ ...planned.zones[0], cellIds: ['c1', 'c2', 'not-here'] }],
-    }])
+    }], MODELS)
     expect(rows[0].areaM2).toBe(1000)
   })
 
-  it('names a stage the deck no longer declares rather than crashing', () => {
+  it('names a stage no work declares rather than crashing', () => {
     // zones.stage_id is ON DELETE CASCADE, so this should not arise -- but a
     // report that throws takes the whole export with it.
     const rows = buildPlanRows([{
       ...planned,
       zones: [{ ...planned.zones[0], stageId: 'gone' }],
-    }])
+    }], MODELS)
     expect(rows[0].stageName).toBe('—')
+    expect(rows[0].workName).toBe('—')
   })
 
   it('walks every deck, in the order given', () => {
     const rows = buildPlanRows([
-      { ...MD, zones: [{ ...planned.zones[0], id: 'z9', name: 'Khu B' }] },
+      { ...MD, zones: [{ ...planned.zones[0], id: 'z9', name: 'Khu B', stageId: 's1' }] },
       planned,
-    ])
+    ], MODELS)
     expect(rows.map((r) => r.zoneName)).toEqual(['Khu B', 'Khu A'])
   })
 
   it('returns nothing when no deck has a plan', () => {
-    expect(buildPlanRows([CD, MD])).toEqual([])
+    expect(buildPlanRows([CD, MD], MODELS)).toEqual([])
   })
 })
 
@@ -217,7 +274,7 @@ describe('buildEventRows', () => {
     id: 1,
     cellCode: 'R1C1',
     cellAreaM2: 500,
-    workName: 'Công việc chính',
+    workName: 'Sơn',
     toStageName: 'Blast + Coat 1',
     at: '2026-08-20T10:00:00+00:00',
     byId: 'u1',
@@ -238,9 +295,17 @@ describe('buildEventRows', () => {
       ev({ id: 2, toStageName: 'Coat 2', at: '2026-08-21T10:00:00+00:00' }),
     ]))
     expect(rows).toEqual([
-      { code: 'R1C1', areaM2: 500, stageName: 'Blast + Coat 1', at: '2026-08-20T10:00:00+00:00', byName: 'Nguyễn Văn A', note: '' },
-      { code: 'R1C1', areaM2: 500, stageName: 'Coat 2', at: '2026-08-21T10:00:00+00:00', byName: 'Nguyễn Văn A', note: '' },
+      { code: 'R1C1', areaM2: 500, workName: 'Sơn', stageName: 'Blast + Coat 1', at: '2026-08-20T10:00:00+00:00', byName: 'Nguyễn Văn A', note: '' },
+      { code: 'R1C1', areaM2: 500, workName: 'Sơn', stageName: 'Coat 2', at: '2026-08-21T10:00:00+00:00', byName: 'Nguyễn Văn A', note: '' },
     ])
+  })
+
+  it('names the work each change belongs to, since one bay moves in several', () => {
+    const rows = buildEventRows(withEvents([
+      ev({ id: 1, workName: 'Tháo giáo', toStageName: 'Tháo giáo lửng' }),
+      ev({ id: 2, at: '2026-08-21T10:00:00+00:00', workName: null }),
+    ]))
+    expect(rows.map((r) => r.workName)).toEqual(['Tháo giáo', ''])
   })
 
   it('orders by bay code, then by time, so a bay reads top to bottom', () => {

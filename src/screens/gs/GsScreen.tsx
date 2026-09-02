@@ -23,7 +23,7 @@ import {
   type CellStateView, type DeckWork, type GsDeck, type GsRealtimeStatus,
 } from '../../lib/gsApi'
 import { listDeckZones } from '../../lib/zonesApi'
-import { listDeckEvents, loadDeckProgress } from '../../lib/progressApi'
+import { listDeckEvents, loadDeckWorks } from '../../lib/progressApi'
 import { buildReportWorkbook, reportFileName, type DeckImages } from '../../lib/reportXlsx'
 import { renderDeckDrawing, renderDeckPie } from '../../canvas/deckSnapshot'
 import { CellStageModal } from './CellStageModal'
@@ -657,34 +657,42 @@ export function GsScreen() {
     if (!projectId || !deck) return
     setExporting(true)
     try {
-      const [project, entry, events, zones, userNames] = await Promise.all([
+      const [project, dw, events, zones, userNames] = await Promise.all([
         loadGsProjectIdentity(projectId),
-        loadDeckProgress(deck.id),
+        loadDeckWorks(deck.id),
         listDeckEvents(deck.id),
         listDeckZones(deck.id),
         // Attribution only; a failed names read must not fail the file.
         listCoworkerNames().catch(() => ({})),
       ])
-      if (!entry) throw new Error('Sàn này không còn tồn tại.')
-      const url = entry.imagePath ? await getDrawingUrl(entry.imagePath).catch(() => null) : null
+      if (!dw) throw new Error('Sàn này không còn tồn tại.')
+      // The pictures are coloured by the deck's first work; the sheet's
+      // figures come from every work through the model below.
+      const first = dw.works[0] ?? null
+      const cells = first?.cells ?? dw.deck.cells
+      const stages = first?.stages ?? []
+      const url = dw.imagePath ? await getDrawingUrl(dw.imagePath).catch(() => null) : null
       const images: Record<string, DeckImages> = {
-        [entry.deck.id]: {
+        [dw.deck.id]: {
           drawingPng: url
-            ? await renderDeckDrawing(
-              url, entry.imageW ?? 0, entry.imageH ?? 0, entry.deck.cells, entry.stages,
-            )
+            ? await renderDeckDrawing(url, dw.imageW ?? 0, dw.imageH ?? 0, cells, stages)
             : null,
-          piePng: renderDeckPie(entry.deck.totalAreaM2, entry.deck.cells, entry.stages),
-          drawingAspect: entry.imageW && entry.imageH ? entry.imageH / entry.imageW : null,
+          piePng: renderDeckPie(dw.deck.totalAreaM2, cells, stages),
+          drawingAspect: dw.imageW && dw.imageH ? dw.imageH / dw.imageW : null,
         },
       }
       const blob = await buildReportWorkbook({
         projectName: project.name,
         projectCode: project.code,
+        // Each work with this one deck inside it: what the Overview would see,
+        // and what the deck sheet's per-work blocks read.
+        works: dw.works.map((v) => ({
+          work: v.work,
+          decks: [{ deck: { ...dw.deck, cells: v.cells }, stages: v.stages, weight: v.weight }],
+        })),
         decks: [{
-          deck: entry.deck,
-          stages: entry.stages,
-          areaSource: entry.areaSource,
+          deck: { ...dw.deck, cells },
+          areaSource: dw.areaSource,
           userNames,
           zones,
           events,
@@ -696,7 +704,7 @@ export function GsScreen() {
       const a = document.createElement('a')
       a.href = href
       a.download = reportFileName(
-        `${project.code}-${entry.deck.code}`, dayjs().format('YYYY-MM-DD'),
+        `${project.code}-${dw.deck.code}`, dayjs().format('YYYY-MM-DD'),
       )
       a.click()
       // Revoked on the next tick: Safari has not started the download when

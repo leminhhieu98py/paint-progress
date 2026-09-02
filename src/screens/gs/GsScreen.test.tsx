@@ -20,7 +20,7 @@ const signOut = vi.hoisted(() => vi.fn())
 const listCoworkerNames = vi.hoisted(() => vi.fn())
 const listCellNotes = vi.hoisted(() => vi.fn())
 const loadGsProjectIdentity = vi.hoisted(() => vi.fn())
-const loadDeckProgress = vi.hoisted(() => vi.fn())
+const loadDeckWorks = vi.hoisted(() => vi.fn())
 const listDeckEvents = vi.hoisted(() => vi.fn())
 const buildReportWorkbook = vi.hoisted(() => vi.fn())
 const renderDeckDrawing = vi.hoisted(() => vi.fn())
@@ -42,7 +42,7 @@ vi.mock('../../lib/gsApi', () => ({
 }))
 vi.mock('../../lib/progressApi', () => ({
   listCellNotes: (cellId: string) => listCellNotes(cellId),
-  loadDeckProgress: (deckId: string) => loadDeckProgress(deckId),
+  loadDeckWorks: (deckId: string) => loadDeckWorks(deckId),
   listDeckEvents: (deckId: string) => listDeckEvents(deckId),
 }))
 vi.mock('../../lib/reportXlsx', () => ({
@@ -215,16 +215,15 @@ beforeEach(() => {
   listCellNotes.mockReturnValue(new Promise(() => {}))
   loadGsProjectIdentity.mockReset()
   loadGsProjectIdentity.mockResolvedValue({ code: 'BB1', name: 'BlockB1_CPPTS' })
-  loadDeckProgress.mockReset()
-  loadDeckProgress.mockImplementation((deckId: string) => Promise.resolve({
+  loadDeckWorks.mockReset()
+  loadDeckWorks.mockImplementation((deckId: string) => Promise.resolve({
     seq: 1,
     deck: {
       id: deckId, code: deckId === 'd1' ? 'CD' : 'MD', name: 'Cellar Deck', totalAreaM2: 1000,
       cells: D1_CELLS,
     },
-    stages: STAGES,
-    imagePath: 'p1/d1.png', imageW: 2000, imageH: 1600,
-    areaSource: 'guides', audit: {},
+    imagePath: 'p1/d1.png', imageW: 2000, imageH: 1600, areaSource: 'guides',
+    works: [{ work: WORK, weight: 1, stages: STAGES, cells: D1_CELLS, audit: {} }],
   }))
   listDeckEvents.mockReset()
   listDeckEvents.mockResolvedValue([])
@@ -1434,11 +1433,14 @@ describe('GsScreen: exporting the open deck', () => {
     expect(input.projectCode).toBe('BB1')
     expect(input.decks).toHaveLength(1)
     expect(input.decks[0].deck.id).toBe('d1')
+    // The deck's works, as the Overview would see them -- one deck each.
+    expect(input.works.map((w: { work: { id: string } }) => w.work.id)).toEqual(['w1'])
+    expect(input.works[0].decks[0].deck.id).toBe('d1')
     expect(input.decks[0].events).toEqual([EVENT])
     expect(input.decks[0].userNames).toEqual({ u1: 'Nguyễn Văn A' })
     expect(input.images.d1.drawingPng).toBe('PNGDATA')
     expect(input.images.d1.piePng).toBe('PIEDATA')
-    expect(loadDeckProgress).toHaveBeenCalledWith('d1')
+    expect(loadDeckWorks).toHaveBeenCalledWith('d1')
     expect(listDeckEvents).toHaveBeenCalledWith('d1')
     // Named after the project AND the deck: two tabs exported the same day
     // must not overwrite each other in the downloads folder.

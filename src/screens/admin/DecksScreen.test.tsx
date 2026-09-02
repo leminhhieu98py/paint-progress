@@ -8,7 +8,6 @@ import { DecksScreen } from './DecksScreen'
 const listProjectNames = vi.hoisted(() => vi.fn())
 const listDecks = vi.hoisted(() => vi.fn())
 const loadProjectModel = vi.hoisted(() => vi.fn())
-const loadProjectProgress = vi.hoisted(() => vi.fn())
 const listDeckZones = vi.hoisted(() => vi.fn())
 const listGsUsers = vi.hoisted(() => vi.fn())
 const buildReportWorkbook = vi.hoisted(() => vi.fn())
@@ -26,7 +25,6 @@ vi.mock('../../lib/decksApi', () => ({
 const listDeckEvents = vi.hoisted(() => vi.fn())
 vi.mock('../../lib/progressApi', () => ({
   loadProjectModel: (id: string) => loadProjectModel(id),
-  loadProjectProgress: (id: string) => loadProjectProgress(id),
   listDeckEvents: (deckId: string) => listDeckEvents(deckId),
 }))
 vi.mock('../../lib/zonesApi', () => ({ listDeckZones: (d: string) => listDeckZones(d) }))
@@ -44,30 +42,6 @@ vi.mock('../../canvas/deckSnapshot', () => ({
 const STAGES = [
   { id: 's1', seq: 1, name: 'Blast + Coat 1', color: '#fadb14', weight: 0.4 },
   { id: 's2', seq: 2, name: 'Tháo giáo', color: '#722ed1', weight: 0.6 },
-]
-
-/**
- * CD is 1000 m² and half-way to the last stage; WD is 3000 m² and untouched.
- * Deliberately unequal, and named apart from the deck-list fixture above: with
- * equal areas every share would read 50,00% and collide with CD's progress, and
- * the assertions would pass on the wrong cell.
- */
-const ENTRIES = [
-  {
-    seq: 1,
-    deck: {
-      id: 'd1', code: 'CD', name: 'Cellar Deck', totalAreaM2: 1000,
-      cells: [{ id: 'c1', code: 'R1C1', x: 0, y: 0, w: 1, h: 1, areaM2: 500, stageId: 's2' }],
-    },
-    stages: STAGES, imagePath: 'p1/d1.png', imageW: 2000, imageH: 1600,
-    areaSource: 'guides' as const, audit: {},
-  },
-  {
-    seq: 2,
-    deck: { id: 'd2', code: 'WD', name: 'Weather Deck', totalAreaM2: 3000, cells: [] },
-    stages: STAGES, imagePath: null, imageW: null, imageH: null,
-    areaSource: 'guides' as const, audit: {},
-  },
 ]
 
 /**
@@ -119,11 +93,10 @@ const MODEL = {
 
 beforeEach(() => {
   for (const m of [
-    listProjectNames, listDecks, loadProjectModel, loadProjectProgress, listDeckZones, listGsUsers,
+    listProjectNames, listDecks, loadProjectModel, listDeckZones, listGsUsers,
     buildReportWorkbook, renderDeckDrawing, renderDeckPie, getDrawingUrl,
   ]) m.mockReset()
   loadProjectModel.mockResolvedValue(MODEL)
-  loadProjectProgress.mockResolvedValue(ENTRIES)
   listDeckEvents.mockReset()
   listDeckEvents.mockResolvedValue([])
   listDeckZones.mockResolvedValue([])
@@ -312,8 +285,14 @@ describe('DecksScreen — the project-wide half of progress', () => {
 
     await waitFor(() => expect(buildReportWorkbook).toHaveBeenCalledTimes(1))
     const [input] = buildReportWorkbook.mock.calls[0]
+    // The model the screen already holds: every work with its decks, coats
+    // and states, so the Overview blocks are the same figures as the rollup.
+    expect(input.works).toBe(MODEL.models)
     expect(input.decks.map((d: { deck: { code: string } }) => d.deck.code)).toEqual(['CD', 'WD'])
     expect(input.decks[0].userNames).toEqual({ u1: 'Nguyễn Văn A' })
+    // The deck sheet's mesh, from the first work that carries the deck.
+    expect(input.decks[0].deck.cells.map((c: { id: string }) => c.id)).toEqual(['c1'])
+    expect(input.decks[0]).not.toHaveProperty('stages')
     // The deck sheet lists stage changes now, each deck's own, read here.
     expect(listDeckEvents).toHaveBeenCalledWith('d1')
     expect(listDeckEvents).toHaveBeenCalledWith('d2')
@@ -353,7 +332,6 @@ describe('DecksScreen — the project-wide half of progress', () => {
 
   it('says so, and offers no export, when the project has no decks', async () => {
     loadProjectModel.mockResolvedValue({ models: [], decks: [], audit: {} })
-    loadProjectProgress.mockResolvedValue([])
     renderScreen()
 
     expect(await screen.findByText('Dự án này chưa có sàn nào')).toBeInTheDocument()

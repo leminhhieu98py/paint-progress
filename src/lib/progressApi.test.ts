@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
-  latestProgressEvent, listCellNotes, listDeckEvents, loadDeckProgress, loadDeckWorks,
-  loadProjectModel, loadProjectProgress, setReportNote,
+  latestProgressEvent, listCellNotes, listDeckEvents, loadDeckWorks,
+  loadProjectModel, setReportNote,
 } from './progressApi'
 
 const from = vi.hoisted(() => vi.fn())
@@ -152,43 +152,6 @@ describe('loadDeckWorks', () => {
   it('throws when the deck read fails', async () => {
     from.mockImplementation(() => builder({ error: { message: 'permission denied' } }))
     await expect(loadDeckWorks('d1')).rejects.toThrow('permission denied')
-  })
-})
-
-describe('loadProjectProgress (transitional, first bays work)', () => {
-  it('projects every deck for the first bays work, the shape the old screens still read', async () => {
-    mockProject()
-    const [entry] = await loadProjectProgress('p1')
-    expect(entry.deck.cells[0]).toMatchObject({ stageId: 's1', note: 'ẩm' })
-    expect(entry.stages.map((s) => s.seq)).toEqual([1, 2])
-    expect(entry.imagePath).toBe('p1/d1.png')
-    expect(entry.areaSource).toBe('prorated')
-    expect(entry.audit.c1?.updatedBy).toBe('u1')
-  })
-
-  it('returns no entries for a project with no bays work', async () => {
-    mockProject([WORK_ROWS[1]], [DECK_ROW], [])
-    expect(await loadProjectProgress('p1')).toEqual([])
-  })
-})
-
-describe('loadDeckProgress (transitional, first bays work)', () => {
-  it('returns one deck through the first work it is part of', async () => {
-    from.mockImplementation((table: string) => {
-      if (table === 'decks') return builder({ data: [DECK_ROW] })
-      if (table === 'work_decks') return builder({ data: WORK_DECK_ROWS })
-      if (table === 'cell_states') return builder({ data: STATE_ROWS })
-      throw new Error(`unexpected table ${table}`)
-    })
-    const entry = (await loadDeckProgress('d1'))!
-    expect(entry.deck.code).toBe('CD')
-    expect(entry.stages.map((s) => s.seq)).toEqual([1, 2])
-    expect(entry.deck.cells[0].stageId).toBe('s1')
-  })
-
-  it('returns null for a deck that is not there', async () => {
-    from.mockImplementation(() => builder({ data: [] }))
-    expect(await loadDeckProgress('gone')).toBeNull()
   })
 })
 

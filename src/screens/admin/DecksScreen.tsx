@@ -11,7 +11,7 @@ import type { WorkKind } from '../../domain/types'
 import { listGsUsers } from '../../lib/adminApi'
 import { deleteDeck, getDrawingUrl, listDecks, type DeckRow } from '../../lib/decksApi'
 import { formatAreaM2, formatPercent, formatWeight } from '../../lib/format'
-import { listDeckEvents, loadProjectModel, loadProjectProgress } from '../../lib/progressApi'
+import { listDeckEvents, loadProjectModel } from '../../lib/progressApi'
 import type { ProjectModel } from '../../lib/workModel'
 import { listDeckZones } from '../../lib/zonesApi'
 import { listProjectNames } from '../../lib/projectsApi'
@@ -267,26 +267,36 @@ export function DecksScreen() {
    * pressed once a week is cheaper than paying for them on every screen open.
    */
   const exportReport = async () => {
-    if (!projectId || modelDecks.length === 0) return
+    if (!projectId || !model || modelDecks.length === 0) return
     setConfirmingExport(false)
     setExporting(true)
     try {
-      // Transitional: the workbook still reads the first bays work's view of
-      // each deck, so it is fetched in that shape here until the report is
-      // built from the model (work-items Task 8).
-      const entries = await loadProjectProgress(projectId)
       const profiles = await listGsUsers().catch(() => [])
       const userNames = Object.fromEntries(profiles.map((u) => [u.id, u.fullName]))
 
-      const reportDecks = await Promise.all(entries.map(async (entry) => {
+      // The deck as the first bays work that carries it sees it: the mesh for
+      // the plan sheet, and the coats and states the pictures are coloured by.
+      // The figures on the sheets come from the whole model, not from this.
+      const viewOf = (deckId: string) => {
+        for (const m of model.models) {
+          if (m.work.kind !== 'bays') continue
+          const view = m.decks.find((d) => d.deck.id === deckId)
+          if (view) return view
+        }
+        return null
+      }
+
+      const reportDecks = await Promise.all(model.decks.map(async (meta) => {
         const [zones, events] = await Promise.all([
-          listDeckZones(entry.deck.id),
-          listDeckEvents(entry.deck.id),
+          listDeckZones(meta.id),
+          listDeckEvents(meta.id),
         ])
         return {
-          deck: entry.deck,
-          stages: entry.stages,
-          areaSource: entry.areaSource,
+          deck: {
+            id: meta.id, code: meta.code, name: meta.name, totalAreaM2: meta.totalAreaM2,
+            cells: viewOf(meta.id)?.deck.cells ?? [],
+          },
+          areaSource: meta.areaSource,
           userNames,
           zones,
           events,
@@ -296,20 +306,21 @@ export function DecksScreen() {
       // Sequential: each render decodes a full-size drawing into a canvas, and
       // ten at once on an admin laptop is a spike for no gain.
       const images: Record<string, DeckImages> = {}
-      for (const entry of entries) {
-        const url = entry.imagePath ? await getDrawingUrl(entry.imagePath).catch(() => null) : null
-        images[entry.deck.id] = {
+      for (const meta of model.decks) {
+        const view = viewOf(meta.id)
+        const cells = view?.deck.cells ?? []
+        const stages = view?.stages ?? []
+        const url = meta.imagePath ? await getDrawingUrl(meta.imagePath).catch(() => null) : null
+        images[meta.id] = {
           drawingPng: url
-            ? await renderDeckDrawing(
-              url, entry.imageW ?? 0, entry.imageH ?? 0, entry.deck.cells, entry.stages,
-            )
+            ? await renderDeckDrawing(url, meta.imageW ?? 0, meta.imageH ?? 0, cells, stages)
             : null,
-          piePng: renderDeckPie(entry.deck.totalAreaM2, entry.deck.cells, entry.stages),
+          piePng: renderDeckPie(meta.totalAreaM2, cells, stages),
           // The sheet sizes the picture from this. Excel stretches whatever box
           // it is given, and a fixed one squashed every deck that was not the
           // shape the box assumed.
           drawingAspect:
-            entry.imageW && entry.imageH ? entry.imageH / entry.imageW : null,
+            meta.imageW && meta.imageH ? meta.imageH / meta.imageW : null,
         }
       }
 
@@ -317,6 +328,7 @@ export function DecksScreen() {
       const blob = await buildReportWorkbook({
         projectName: project?.name ?? '',
         projectCode: project?.code ?? '',
+        works: model.models,
         decks: reportDecks,
         images,
       })

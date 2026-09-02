@@ -51,7 +51,7 @@ const WORK1 = {
 }
 const WORK2 = { ...WORK1, id: 'w2', seq: 2, name: 'Tháo giáo', weight: 0.4 }
 // Stubbed like the other two, and for one more reason: left real it calls
-// loadDeckProgress against the live client, so every test in this file paid a
+// loadDeckWorks against the live client, so every test in this file paid a
 // network round trip for a panel none of them are about. The stub reports a
 // fixed percentage upward, which is the contract this screen depends on.
 vi.mock('./DeckProgressPanel', () => ({

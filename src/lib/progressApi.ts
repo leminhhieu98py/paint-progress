@@ -177,50 +177,6 @@ export async function loadDeckWorks(deckId: string): Promise<DeckWorks | null> {
   }
 }
 
-/**
- * @deprecated Transitional (removed when the deck list moves to the work model,
- * Task 6): the project's decks projected for the FIRST bays work, in the shape
- * the pre-work-items screens read. Decks outside that work are omitted.
- */
-export async function loadProjectProgress(projectId: string): Promise<DeckProgressEntry[]> {
-  const model = await loadProjectModel(projectId)
-  const first = model.models.find((m) => m.work.kind === 'bays')
-  if (!first) return []
-  return first.decks.map((entry) => {
-    const meta = model.decks.find((d) => d.id === entry.deck.id)!
-    return {
-      seq: meta.seq,
-      deck: entry.deck,
-      stages: entry.stages,
-      imagePath: meta.imagePath,
-      imageW: meta.imageW,
-      imageH: meta.imageH,
-      areaSource: meta.areaSource,
-      audit: model.audit[first.work.id] ?? {},
-    }
-  })
-}
-
-/**
- * @deprecated Transitional (removed when the deck screen moves to the work
- * model, Task 5): one deck projected for the first bays work it is part of.
- */
-export async function loadDeckProgress(deckId: string): Promise<DeckProgressEntry | null> {
-  const dw = await loadDeckWorks(deckId)
-  if (!dw) return null
-  const view = dw.works[0]
-  return {
-    seq: dw.seq,
-    deck: view ? { ...dw.deck, cells: view.cells } : dw.deck,
-    stages: view?.stages ?? [],
-    imagePath: dw.imagePath,
-    imageW: dw.imageW,
-    imageH: dw.imageH,
-    areaSource: dw.areaSource,
-    audit: view?.audit ?? {},
-  }
-}
-
 /** The most recent stage change anyone made, anywhere the reader can see. */
 export interface ProgressEvent {
   /** ISO timestamp, as `timestamptz` comes back from PostgREST. */
