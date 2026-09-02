@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { buildCellListRows, buildOverviewRows, buildPlanRows, reportStageColumns } from './report'
+import { buildEventRows, buildOverviewRows, buildPlanRows, reportStageColumns } from './report'
 import type { DeckReportInput } from './report'
+import type { DeckEvent } from '../lib/progressApi'
 
 const STAGES = [
   { id: 's1', seq: 1, name: 'Blast + Coat 1', color: '#fadb14', weight: 0.25 },
@@ -19,6 +20,7 @@ const CD: DeckReportInput = {
   },
   stages: STAGES,
   zones: [],
+  events: [],
 }
 
 /** MD: 250 m² at Blast + Coat 1, of 1000 declared. */
@@ -31,6 +33,7 @@ const MD: DeckReportInput = {
   },
   stages: STAGES,
   zones: [],
+  events: [],
 }
 
 describe('reportStageColumns', () => {
@@ -100,6 +103,7 @@ describe('buildOverviewRows', () => {
       },
       stages: [{ id: 'h1', seq: 1, name: 'Blast + Coat 1', color: '#fadb14', weight: 1 }],
       zones: [],
+      events: [],
     }
     const [, hd] = buildOverviewRows([CD, helideck])
 
@@ -208,62 +212,77 @@ describe('buildPlanRows', () => {
   })
 })
 
-describe('buildCellListRows', () => {
-  const withAudit: DeckReportInput = {
-    ...CD,
-    audit: {
-      c1: { updatedAt: '2026-08-20T10:00:00+00:00', updatedBy: 'u1' },
-      c2: { updatedAt: null, updatedBy: null },
-    },
-    userNames: { u1: 'Nguyễn Văn A' },
-  }
-
-  it('lists every bay with its area, stage and who last moved it', () => {
-    const [first] = buildCellListRows(withAudit)
-    expect(first).toEqual({
-      code: 'R1C1',
-      areaM2: 500,
-      stageName: 'Tháo giáo',
-      updatedAt: '2026-08-20T10:00:00+00:00',
-      updatedBy: 'Nguyễn Văn A',
-    })
+describe('buildEventRows', () => {
+  const ev = (over: Partial<DeckEvent> = {}): DeckEvent => ({
+    id: 1,
+    cellCode: 'R1C1',
+    cellAreaM2: 500,
+    toStageName: 'Blast + Coat 1',
+    at: '2026-08-20T10:00:00+00:00',
+    byId: 'u1',
+    note: '',
+    reportNote: null,
+    reportHidden: false,
+    ...over,
+  })
+  const withEvents = (events: DeckEvent[]): DeckReportInput => ({
+    ...CD, events, userNames: { u1: 'Nguyễn Văn A' },
   })
 
-  it('names an untouched bay rather than leaving the stage blank', () => {
-    const rows = buildCellListRows({
-      ...CD,
-      deck: { ...CD.deck, cells: [{ ...CD.deck.cells[0], stageId: null }] },
-    })
-    expect(rows[0].stageName).toBe('Chưa bắt đầu')
+  it('lists one row per stage change, and none for a bay never touched', () => {
+    // Linh, on the report: "GS cập nhật ô nào thì report có thêm 1 hàng. Không
+    // thì thôi." R1C2 has been through nothing, so it is not here.
+    const rows = buildEventRows(withEvents([
+      ev({ id: 1, toStageName: 'Blast + Coat 1', at: '2026-08-20T10:00:00+00:00' }),
+      ev({ id: 2, toStageName: 'Coat 2', at: '2026-08-21T10:00:00+00:00' }),
+    ]))
+    expect(rows).toEqual([
+      { code: 'R1C1', areaM2: 500, stageName: 'Blast + Coat 1', at: '2026-08-20T10:00:00+00:00', byName: 'Nguyễn Văn A', note: '' },
+      { code: 'R1C1', areaM2: 500, stageName: 'Coat 2', at: '2026-08-21T10:00:00+00:00', byName: 'Nguyễn Văn A', note: '' },
+    ])
   })
 
-  it('falls back to the raw id when the user is not in the name map', () => {
+  it('orders by bay code, then by time, so a bay reads top to bottom', () => {
+    const rows = buildEventRows(withEvents([
+      ev({ id: 1, cellCode: 'R2C1', at: '2026-08-20T10:00:00+00:00' }),
+      ev({ id: 3, cellCode: 'R1C1', at: '2026-08-22T10:00:00+00:00', toStageName: 'Coat 2' }),
+      ev({ id: 2, cellCode: 'R1C1', at: '2026-08-21T10:00:00+00:00' }),
+    ]))
+    expect(rows.map((r) => [r.code, r.stageName])).toEqual([
+      ['R1C1', 'Blast + Coat 1'],
+      ['R1C1', 'Coat 2'],
+      ['R2C1', 'Blast + Coat 1'],
+    ])
+  })
+
+  it('names a move back to not started', () => {
+    const [row] = buildEventRows(withEvents([ev({ toStageName: null })]))
+    expect(row.stageName).toBe('Chưa bắt đầu')
+  })
+
+  it('prints the note as written, the report version when there is one, and nothing when hidden', () => {
+    // 0023: the admin's report copy and hide flag land here and nowhere else.
+    const rows = buildEventRows(withEvents([
+      ev({ id: 1, note: 'Bề mặt còn ẩm' }),
+      ev({ id: 2, at: '2026-08-21T10:00:00+00:00', note: 'Bề mặt còn ẩm', reportNote: 'Bề mặt ẩm, đã sơn lại ngày sau' }),
+      ev({ id: 3, at: '2026-08-22T10:00:00+00:00', note: 'Nói xấu sếp', reportHidden: true }),
+    ]))
+    expect(rows.map((r) => r.note)).toEqual(['Bề mặt còn ẩm', 'Bề mặt ẩm, đã sơn lại ngày sau', ''])
+  })
+
+  it('names the author through the map, falls back to the id, and leaves nobody as null', () => {
     // The id is still traceable through cell_events; a blank would read as
     // "nobody did this", which is a different and wrong claim.
-    const rows = buildCellListRows({
-      ...withAudit,
-      userNames: {},
-    })
-    expect(rows[0].updatedBy).toBe('u1')
+    const rows = buildEventRows(withEvents([
+      ev({ id: 1, byId: 'u1' }),
+      ev({ id: 2, at: '2026-08-21T10:00:00+00:00', byId: 'u9' }),
+      ev({ id: 3, at: '2026-08-22T10:00:00+00:00', byId: null }),
+    ]))
+    expect(rows.map((r) => r.byName)).toEqual(['Nguyễn Văn A', 'u9', null])
   })
 
-  it('sorts by code, so two exports of an unchanged deck are the same file', () => {
-    const rows = buildCellListRows({
-      ...CD,
-      deck: {
-        ...CD.deck,
-        cells: [
-          { ...CD.deck.cells[0], code: 'R2C1' },
-          { ...CD.deck.cells[1], code: 'R1C9' },
-        ],
-      },
-    })
-    expect(rows.map((r) => r.code)).toEqual(['R1C9', 'R2C1'])
-  })
-
-  it('works with no audit map at all', () => {
-    const rows = buildCellListRows(CD)
-    expect(rows[0].updatedAt).toBeNull()
-    expect(rows[0].updatedBy).toBeNull()
+  it('works with no name map at all', () => {
+    const [row] = buildEventRows({ ...CD, events: [ev()] })
+    expect(row.byName).toBe('u1')
   })
 })

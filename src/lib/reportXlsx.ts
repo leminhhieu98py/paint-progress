@@ -1,5 +1,5 @@
 import {
-  buildCellListRows, buildOverviewRows, buildPlanRows, reportStageColumns,
+  buildEventRows, buildOverviewRows, buildPlanRows, reportStageColumns,
   type DeckReportInput,
 } from '../domain/report'
 import type { Worksheet } from 'exceljs'
@@ -103,6 +103,13 @@ export interface ReportInput {
   decks: DeckReportInput[]
   /** Keyed by deck id. Absent entries simply mean no pictures on that sheet. */
   images?: Record<string, DeckImages>
+  /**
+   * 'deck' is the tablet's export of the one deck tab it has open (Feedback
+   * Rv1, item 6) and carries no Overview sheet: one row at 100% weight headed
+   * "TỔNG DỰ ÁN" would be a project total that does not exist. Default
+   * 'project' -- the admin's, every deck, with the Overview.
+   */
+  scope?: 'project' | 'deck'
 }
 
 /**
@@ -218,6 +225,10 @@ export async function buildReportWorkbook(input: ReportInput): Promise<Blob> {
   }
 
   dressSheet(overview, 3)
+  // Built and then dropped for a single-deck export, rather than skipped: the
+  // stage columns and the rollup rows are computed above either way, and one
+  // path through this function is worth an Overview that is never written out.
+  if (input.scope === 'deck') wb.removeWorksheet(overview.id)
 
   // One sheet per deck, between Overview and Plan: the row-level evidence
   // behind the figures above, in the order the decks are laid out on the
@@ -252,25 +263,31 @@ export async function buildReportWorkbook(input: ReportInput): Promise<Blob> {
     sheet.addRow(['% Progress', progress.progress]).getCell(2).numFmt = PERCENT_FORMAT
     sheet.addRow([])
 
-    const listHeader = sheet.addRow(['Mã ô', 'Diện tích (m²)', 'Công đoạn', 'Cập nhật lúc', 'Bởi'])
+    // One row per stage change, not per bay (Feedback Rv1, item 8): "100 ô,
+    // full 4 lớp = 400 hàng". The note rides on the row of the change it
+    // explains, which is the whole reason it can be a single column.
+    const listHeader = sheet.addRow([
+      'Mã ô', 'Diện tích (m²)', 'Công đoạn', 'Cập nhật lúc', 'Bởi', 'Ghi chú',
+    ])
     listHeader.font = { bold: true }
     sheet.getColumn(1).width = 12
     sheet.getColumn(2).width = 15
     sheet.getColumn(3).width = 18
     sheet.getColumn(4).width = 22
     sheet.getColumn(5).width = 20
-    for (const cell of buildCellListRows(entry)) {
+    sheet.getColumn(6).width = 40
+    for (const ev of buildEventRows(entry)) {
       const row = sheet.addRow([
-        cell.code, cell.areaM2, cell.stageName,
-        toVNExcelDate(cell.updatedAt) ?? '', cell.updatedBy ?? '',
+        ev.code, ev.areaM2, ev.stageName, toVNExcelDate(ev.at) ?? '', ev.byName ?? '', ev.note,
       ])
       row.getCell(2).numFmt = AREA_FORMAT
       row.getCell(4).numFmt = DATETIME_FORMAT
+      row.getCell(6).alignment = { wrapText: true, vertical: 'top' }
     }
 
-    // Frozen at the listing header, and filterable: two hundred bays is a list
-    // somebody scrolls looking for one code, and a header that scrolls away
-    // leaves five unlabelled columns.
+    // Frozen at the listing header, and filterable: four hundred updates is a
+    // list somebody scrolls looking for one bay, and a header that scrolls
+    // away leaves six unlabelled columns.
     sheet.views = [{ state: 'frozen', ySplit: listHeader.number }]
 
     /*
@@ -281,7 +298,7 @@ export async function buildReportWorkbook(input: ReportInput): Promise<Blob> {
       drawing in half and left the ring floating over the data. Excel does not
       grow a frozen pane to fit a picture.
 
-      Below the split and to the right of the five data columns they scroll with
+      Below the split and to the right of the six data columns they scroll with
       the list, are never clipped, and have the whole width of the sheet to be
       legible in: at 520px the drawing was something you had to zoom into to
       read a bay code off.
@@ -292,7 +309,9 @@ export async function buildReportWorkbook(input: ReportInput): Promise<Blob> {
       const w = 900
       const aspect = pictures.drawingAspect
       sheet.addImage(id, {
-        tl: { col: 6, row: listHeader.number },
+        // Column G: F is the note now, and a picture over a data column hides
+        // whatever is written there.
+        tl: { col: 7, row: listHeader.number },
         ext: { width: w, height: aspect && aspect > 0 ? Math.round(w * aspect) : 660 },
       })
     }
@@ -309,7 +328,7 @@ export async function buildReportWorkbook(input: ReportInput): Promise<Blob> {
     }
     sheet.autoFilter = {
       from: { row: listHeader.number, column: 1 },
-      to: { row: sheet.rowCount, column: 5 },
+      to: { row: sheet.rowCount, column: 6 },
     }
     listHeader.eachCell({ includeEmpty: true }, (c) => {
       c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: HEADER_FILL } }

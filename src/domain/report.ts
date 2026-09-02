@@ -1,6 +1,6 @@
 import dayjs from 'dayjs'
 import { computeDeckProgress, computeProjectProgress } from './progress'
-import type { Deck, Stage, Zone } from './types'
+import type { Deck, DeckEvent, Stage, Zone } from './types'
 
 /**
  * The report's data model, and nothing about spreadsheets.
@@ -15,21 +15,25 @@ export interface DeckReportInput {
   deck: Deck
   stages: Stage[]
   zones: Zone[]
-  /** Optional: only the per-deck sheet reads these. Keyed by cell id. */
-  audit?: Record<string, { updatedAt: string | null; updatedBy: string | null }>
+  /** Every stage change on the deck; the per-deck sheet lists them one per row. */
+  events: DeckEvent[]
   /** Optional; defaults to 'guides'. 'prorated' is disclosed on the sheet. */
   areaSource?: 'guides' | 'prorated'
-  /** Optional: user id -> display name, for the "updated by" column. */
+  /** Optional: user id -> display name, for the "Bởi" column. */
   userNames?: Record<string, string>
 }
 
-export interface CellListRow {
+/** One stage change, as the deck sheet prints it. */
+export interface EventRow {
   code: string
   areaM2: number
-  /** The stage the bay currently sits at, or "Chưa bắt đầu". */
+  /** The coat the bay moved to, or "Chưa bắt đầu". */
   stageName: string
-  updatedAt: string | null
-  updatedBy: string | null
+  at: string
+  byName: string | null
+  /** What the XLSX prints: the report copy if the admin wrote one, nothing if
+   *  she hid it, the foreman's words otherwise. */
+  note: string
 }
 
 export interface OverviewRow {
@@ -204,19 +208,27 @@ export function buildPlanRows(inputs: DeckReportInput[]): PlanRow[] {
  * An unknown `updated_by` renders as the raw id rather than blank: the id is
  * still traceable in `cell_events`, and a blank would read as "nobody".
  */
-export function buildCellListRows(input: DeckReportInput): CellListRow[] {
-  const stageName = new Map(input.stages.map((s) => [s.id, s.name]))
-  return [...input.deck.cells]
-    .sort((a, b) => a.code.localeCompare(b.code))
-    .map((cell) => {
-      const audit = input.audit?.[cell.id]
-      const by = audit?.updatedBy ?? null
-      return {
-        code: cell.code,
-        areaM2: cell.areaM2,
-        stageName: cell.stageId ? stageName.get(cell.stageId) ?? '—' : 'Chưa bắt đầu',
-        updatedAt: audit?.updatedAt ?? null,
-        updatedBy: by === null ? null : input.userNames?.[by] ?? by,
-      }
-    })
+/**
+ * The deck sheet's list: one row per stage change, in bay order and then in
+ * the order they happened, so reading down a bay shows the steps it went
+ * through. A bay nobody has touched has no row -- Linh, on the report: "GS
+ * cập nhật ô nào thì report có thêm 1 hàng. Không thì thôi."
+ *
+ * The note column is where 0023's decisions land and nowhere else: the
+ * admin's report copy if she wrote one, nothing if she hid the note, the
+ * foreman's words otherwise. The screens never apply either.
+ */
+export function buildEventRows(input: DeckReportInput): EventRow[] {
+  return [...input.events]
+    .sort((a, b) => a.cellCode.localeCompare(b.cellCode) || a.at.localeCompare(b.at))
+    .map((ev) => ({
+      code: ev.cellCode,
+      areaM2: ev.cellAreaM2,
+      stageName: ev.toStageName ?? 'Chưa bắt đầu',
+      at: ev.at,
+      // The id is still traceable through cell_events; a blank would read as
+      // "nobody did this", which is a different and wrong claim.
+      byName: ev.byId === null ? null : input.userNames?.[ev.byId] ?? ev.byId,
+      note: ev.reportHidden ? '' : ev.reportNote ?? ev.note,
+    }))
 }

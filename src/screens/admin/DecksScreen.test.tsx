@@ -20,8 +20,10 @@ vi.mock('../../lib/decksApi', () => ({
   listDecks: (p: string) => listDecks(p),
   getDrawingUrl: (p: string) => getDrawingUrl(p),
 }))
+const listDeckEvents = vi.hoisted(() => vi.fn())
 vi.mock('../../lib/progressApi', () => ({
   loadProjectProgress: (id: string) => loadProjectProgress(id),
+  listDeckEvents: (deckId: string) => listDeckEvents(deckId),
 }))
 vi.mock('../../lib/zonesApi', () => ({ listDeckZones: (d: string) => listDeckZones(d) }))
 vi.mock('../../lib/adminApi', () => ({ listGsUsers: () => listGsUsers() }))
@@ -70,6 +72,8 @@ beforeEach(() => {
     buildReportWorkbook, renderDeckDrawing, renderDeckPie, getDrawingUrl,
   ]) m.mockReset()
   loadProjectProgress.mockResolvedValue(ENTRIES)
+  listDeckEvents.mockReset()
+  listDeckEvents.mockResolvedValue([])
   listDeckZones.mockResolvedValue([])
   listGsUsers.mockResolvedValue([{ id: 'u1', fullName: 'Nguyễn Văn A' }])
   buildReportWorkbook.mockResolvedValue(new Blob(['x']))
@@ -230,6 +234,11 @@ describe('DecksScreen — the project-wide half of progress', () => {
     const [input] = buildReportWorkbook.mock.calls[0]
     expect(input.decks.map((d: { deck: { code: string } }) => d.deck.code)).toEqual(['CD', 'WD'])
     expect(input.decks[0].userNames).toEqual({ u1: 'Nguyễn Văn A' })
+    // The deck sheet lists stage changes now, each deck's own, read here.
+    expect(listDeckEvents).toHaveBeenCalledWith('d1')
+    expect(listDeckEvents).toHaveBeenCalledWith('d2')
+    expect(input.decks[0].events).toEqual([])
+    expect(input.decks[0]).not.toHaveProperty('audit')
     expect(input.images.d1.drawingPng).toBe('PNGDATA')
     // A deck with no drawing has no snapshot to take, and must not block the
     // rest of the export.

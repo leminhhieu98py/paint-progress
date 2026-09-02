@@ -8,7 +8,7 @@ import { computeProjectProgress } from '../../domain/progress'
 import { listGsUsers } from '../../lib/adminApi'
 import { getDrawingUrl, listDecks, type DeckRow } from '../../lib/decksApi'
 import { formatAreaM2, formatPercent } from '../../lib/format'
-import { loadProjectProgress } from '../../lib/progressApi'
+import { listDeckEvents, loadProjectProgress } from '../../lib/progressApi'
 import { listDeckZones } from '../../lib/zonesApi'
 import { listProjectNames } from '../../lib/projectsApi'
 import { buildReportWorkbook, reportFileName, type DeckImages } from '../../lib/reportXlsx'
@@ -201,14 +201,20 @@ export function DecksScreen() {
       const profiles = await listGsUsers().catch(() => [])
       const userNames = Object.fromEntries(profiles.map((u) => [u.id, u.fullName]))
 
-      const reportDecks = await Promise.all(entries.map(async (entry) => ({
-        deck: entry.deck,
-        stages: entry.stages,
-        audit: entry.audit,
-        areaSource: entry.areaSource,
-        userNames,
-        zones: await listDeckZones(entry.deck.id),
-      })))
+      const reportDecks = await Promise.all(entries.map(async (entry) => {
+        const [zones, events] = await Promise.all([
+          listDeckZones(entry.deck.id),
+          listDeckEvents(entry.deck.id),
+        ])
+        return {
+          deck: entry.deck,
+          stages: entry.stages,
+          areaSource: entry.areaSource,
+          userNames,
+          zones,
+          events,
+        }
+      }))
 
       // Sequential: each render decodes a full-size drawing into a canvas, and
       // ten at once on an admin laptop is a spike for no gain.

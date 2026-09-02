@@ -17,6 +17,13 @@ const DECK: DeckReportInput = {
     id: 'z1', name: 'Khu A', stageId: 's2',
     startDate: '2026-09-01', finishDate: '2026-09-07', cellIds: ['c1'],
   }],
+  events: [],
+}
+
+const EVENT = {
+  id: 1, cellCode: 'R1C1', cellAreaM2: 500, toStageName: 'Blast + Coat 1',
+  at: '2026-08-20T10:00:00+00:00', byId: 'u1', note: 'Bắt đầu',
+  reportNote: null, reportHidden: false,
 }
 
 /** Reads the produced file back through ExcelJS, so the assertions are about a
@@ -215,21 +222,50 @@ describe('per-deck sheets', () => {
     expect(sheet.getRow(7).getCell(2).value as number).toBeCloseTo(0.5, 12)
   })
 
-  it('lists every bay with its area, stage and who touched it last', async () => {
-    const withAudit = {
+  it('lists every stage change with its bay, area, coat, time, author and note', async () => {
+    // One row per update, not per bay (Feedback Rv1, item 8): "100 ô, full 4
+    // lớp = 400 hàng". The note rides on the row of the change it explains.
+    const sheet = await sheetOf([{
       ...DECK,
-      audit: { c1: { updatedAt: '2026-08-20T10:00:00+00:00', updatedBy: 'u1' } },
+      events: [
+        EVENT,
+        { ...EVENT, id: 2, toStageName: 'Tháo giáo', at: '2026-08-21T10:00:00+00:00', note: '' },
+      ],
       userNames: { u1: 'Nguyễn Văn A' },
-    }
-    const sheet = await sheetOf([withAudit])
+    }])
     // The listing header follows a blank row after the spec block.
     const headerRow = sheet.getRow(9)
-    expect(headerRow.values).toContain('Mã ô')
-    expect(headerRow.values).toContain('Bởi')
+    expect(headerRow.values).toEqual(
+      expect.arrayContaining(['Mã ô', 'Diện tích (m²)', 'Công đoạn', 'Cập nhật lúc', 'Bởi', 'Ghi chú']),
+    )
+    expect(headerRow.getCell(6).value).toBe('Ghi chú')
     const first = sheet.getRow(10)
     expect(first.getCell(1).value).toBe('R1C1')
-    expect(first.getCell(3).value).toBe('Tháo giáo')
+    expect(first.getCell(2).value).toBe(500)
+    expect(first.getCell(3).value).toBe('Blast + Coat 1')
+    expect(first.getCell(4).value).toBeInstanceOf(Date)
     expect(first.getCell(5).value).toBe('Nguyễn Văn A')
+    expect(first.getCell(6).value).toBe('Bắt đầu')
+    const second = sheet.getRow(11)
+    expect(second.getCell(3).value).toBe('Tháo giáo')
+    expect(String(second.getCell(6).value ?? '')).toBe('')
+    expect(sheet.getRow(12).getCell(1).value).toBeNull()
+  })
+
+  it('filters over all six columns and anchors the drawing clear of them', async () => {
+    const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
+    const sheet = await sheetOf(
+      [{ ...DECK, events: [EVENT] }],
+      { d1: { drawingPng: png, piePng: null } },
+    )
+    // ExcelJS reads the filter back as a range string.
+    const filter = sheet.autoFilter as unknown
+    if (typeof filter === 'string') expect(filter).toMatch(/^A9:F\d+$/)
+    else expect((filter as { to: { column: number } }).to.column).toBe(6)
+    // Column F is data now; the picture starts at G (0-based 6 -> tl.col 6 is
+    // G in ExcelJS's zero-based anchor). One column further right than before.
+    const [drawing] = sheet.getImages()
+    expect(drawing.range.tl.nativeCol).toBe(7)
   })
 
   it('discloses a prorated area, and says nothing when it was measured', async () => {
@@ -257,5 +293,24 @@ describe('per-deck sheets', () => {
     const sheet = await sheetOf([DECK], { d1: { drawingPng: null, piePng: null } })
     expect(sheet.getRow(1).getCell(1).value).toBe('Cellar Deck')
     expect(sheet.getImages()).toHaveLength(0)
+  })
+})
+
+describe('a single-deck export', () => {
+  it('omits the Overview sheet, keeping the deck and its plan', async () => {
+    // The tablet exports the deck tab that is open (Feedback Rv1, item 6). A
+    // one-row Overview would print that deck at 100% weight and call it the
+    // project total, which is a number nobody should be handed.
+    const wb = await readBack(await buildReportWorkbook({
+      projectName: 'BB1', projectCode: 'BB1', decks: [DECK], scope: 'deck',
+    }))
+    expect(wb.worksheets.map((w) => w.name)).toEqual(['CD', 'Plan'])
+  })
+
+  it('keeps the Overview when the scope is the project, or unstated', async () => {
+    const wb = await readBack(await buildReportWorkbook({
+      projectName: 'BB1', projectCode: 'BB1', decks: [DECK], scope: 'project',
+    }))
+    expect(wb.worksheets.map((w) => w.name)).toEqual(['Overview', 'CD', 'Plan'])
   })
 })

@@ -93,3 +93,23 @@ export interface Zone {
   /** cells.id, not code. */
   cellIds: string[]
 }
+
+/**
+ * One stage change on one bay, as `cell_events` records it and as the XLSX
+ * deck sheet lists it -- one row per update (Feedback Rv1, item 8).
+ */
+export interface DeckEvent {
+  id: number
+  cellCode: string
+  cellAreaM2: number
+  /** The coat the bay moved TO. Null for a move back to "not started". */
+  toStageName: string | null
+  at: string
+  byId: string | null
+  /** Empty when the foreman wrote nothing. */
+  note: string
+  /** The admin's version for the XLSX (0023). Null: print `note` as written. */
+  reportNote: string | null
+  /** True keeps the note out of the XLSX. */
+  reportHidden: boolean
+}

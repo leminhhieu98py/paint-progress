@@ -1,5 +1,7 @@
-import type { Cell, Deck, Stage } from '../domain/types'
+import type { Cell, Deck, DeckEvent, Stage } from '../domain/types'
 import { supabase } from './supabase'
+
+export type { DeckEvent } from '../domain/types'
 
 /**
  * One deck as `/admin/progress` needs it: the whole deck, its own paint spec,
@@ -250,21 +252,6 @@ export async function setReportNote(
     p_hidden: hidden,
   })
   if (error) throw new Error(error.message)
-}
-
-/** One stage change on one bay, as the XLSX deck sheet lists it. */
-export interface DeckEvent {
-  id: number
-  cellCode: string
-  cellAreaM2: number
-  /** The coat the bay moved TO. Null for a move back to "not started". */
-  toStageName: string | null
-  at: string
-  byId: string | null
-  /** Empty when the foreman wrote nothing. */
-  note: string
-  reportNote: string | null
-  reportHidden: boolean
 }
 
 /**
