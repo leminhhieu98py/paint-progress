@@ -66,7 +66,7 @@ npx supabase db query --linked -f supabase/verify_schema.sql
 ```
 
 Every returned row must begin with `PASS` — 40 rows in a passing run against
-a project with `0001`–`0025` applied (measured 2026-09-02 on dev).
+a project with `0001`–`0026` applied (measured 2026-09-02 on dev).
 
 The `0019` note check reports `FAIL` until that migration is applied, and the
 three note tests in `tests/rls.integration.test.ts` are `it.skip`ped for the
@@ -79,7 +79,7 @@ look for. Fixtures are seeded by hand and inserted `on conflict do nothing`, so
 without this reset every run starts on whatever the last one left, and a test
 that asserts on a CHANGE quietly becomes an assertion about nothing.
 
-`0019`–`0025` are applied to the dev project. `0022`–`0025` still have to be
+`0019`–`0026` are applied to the dev project. `0022`–`0026` still have to be
 pushed to the production project before the next deploy of this branch --
 `0024` drops `cells.stage_id`, so push it and deploy the app in the same
 sitting (migration first, then the app, minutes apart). The dev backfill was

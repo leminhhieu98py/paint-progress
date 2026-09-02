@@ -622,6 +622,50 @@ describe.skipIf(!adminConfigured)('RLS as an admin session', () => {
     expect((deleted.data ?? []).length).toBe(1)
   })
 
+  it('works_admin_all: deletes a work whose bays carry states, and the log keeps no orphan', async () => {
+    // Found on dev: the cascade works -> deck_stages fires
+    // log_stage_deletion_on_cells while the work row is already gone, and the
+    // "back to not started" event it wrote carried a work_id no longer in
+    // works -- the delete failed on the FK, so no work with recorded bays
+    // could ever be removed. 0026 logs only while the work still exists.
+    const work = await admin
+      .from('works')
+      .insert({ project_id: projectId, seq: 2, name: 'Admin Side Work', kind: 'bays', weight: 0, counts: false })
+      .select('id')
+      .single()
+    expect(work.error).toBeNull()
+    const sideWorkId = work.data!.id
+    expect((await admin.from('work_decks').insert({ work_id: sideWorkId, deck_id: deckId, weight: 1 })).error).toBeNull()
+    const stage = await admin
+      .from('deck_stages')
+      .insert({ work_id: sideWorkId, deck_id: deckId, seq: 1, name: 'Side Coat', color: '#8b5cf6', weight: 1 })
+      .select('id')
+      .single()
+    expect(stage.error).toBeNull()
+    const recorded = await admin
+      .from('cell_states')
+      .insert({ cell_id: cellId, work_id: sideWorkId, deck_id: deckId, stage_id: stage.data!.id })
+    expect(recorded.error).toBeNull()
+
+    const deleted = await admin.from('works').delete().eq('id', sideWorkId).select('id')
+    expect(deleted.error).toBeNull()
+    expect((deleted.data ?? []).length).toBe(1)
+
+    // The states went with the work. Its history stays: the one event the
+    // recording wrote keeps the work's name with work_id set null by the FK,
+    // and the deletion itself wrote nothing -- a "back to not started" for a
+    // work that no longer exists is not a move anybody made.
+    const states = await admin.from('cell_states').select('cell_id').eq('work_id', sideWorkId)
+    expect(states.data ?? []).toEqual([])
+    const history = await admin
+      .from('cell_events')
+      .select('work_name, to_stage_name')
+      .eq('cell_id', cellId)
+      .eq('work_name', 'Admin Side Work')
+    expect(history.error).toBeNull()
+    expect(history.data).toEqual([{ work_name: 'Admin Side Work', to_stage_name: 'Side Coat' }])
+  })
+
   it("project_members_admin_all: reads another user's membership and manages its own", async () => {
     // The discriminating read: rlstest-gs's RLSA membership is somebody
     // else's row, so project_members_self_read (user_id = auth.uid()) cannot
