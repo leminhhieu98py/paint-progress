@@ -10,13 +10,13 @@ import { cellsInBox } from '../../domain/geometry'
 import { codesNotReaching, zoneLensColors, ZONE_PALETTE } from '../../domain/lens'
 import { buildStageSlices } from '../../domain/pieSlices'
 import { formatPlanRange } from '../../domain/plan'
-import { computeDeckProgress } from '../../domain/progress'
-import type { Stage, Zone } from '../../domain/types'
+import { computeDeckProgress, summariseDeck } from '../../domain/progress'
+import type { Stage, WorkModel, Zone } from '../../domain/types'
 import { getDrawingUrl } from '../../lib/decksApi'
-import { formatAreaM2, formatPercent } from '../../lib/format'
-import { subscribeDeckCells } from '../../lib/gsApi'
+import { formatAreaM2, formatPercent, formatWeight } from '../../lib/format'
+import { subscribeDeckStates } from '../../lib/gsApi'
 import {
-  listCellNotes, loadDeckProgress, setReportNote, type CellNote, type DeckProgressEntry,
+  listCellNotes, loadDeckWorks, setReportNote, type CellNote, type DeckProgressEntry, type DeckWorks,
 } from '../../lib/progressApi'
 import {
   createZone, deleteZone, listDeckZones, setZoneActual, updateZone,
@@ -106,7 +106,10 @@ export function DeckProgressPanel({
    */
   editable?: boolean
 }) {
-  const [entry, setEntry] = useState<DeckProgressEntry | null>(null)
+  /** The deck with one view per bays work it is part of (0024). */
+  const [deckWorks, setDeckWorks] = useState<DeckWorks | null>(null)
+  /** The work the lens, ring, zones and notes are scoped to. */
+  const [workId, setWorkId] = useState<string | null>(null)
   const [imageUrl, setImageUrl] = useState<string | null>(null)
   const [zones, setZones] = useState<Zone[]>([])
   const [loading, setLoading] = useState(true)
@@ -154,10 +157,33 @@ export function DeckProgressPanel({
   const { message } = App.useApp()
   const [form] = Form.useForm()
 
+  /**
+   * The work on screen, and the deck seen through it. Everything below reads
+   * `entry` -- the shape this panel always read -- projected for that work:
+   * the bays carry the stages and notes of this work and nothing else, so the
+   * lens, the zones, the ring and the note dialog stay exactly as they were.
+   */
+  const activeWork = deckWorks
+    ? deckWorks.works.find((w) => w.work.id === workId) ?? deckWorks.works[0] ?? null
+    : null
+  const entry = useMemo<DeckProgressEntry | null>(() => {
+    if (!deckWorks) return null
+    return {
+      seq: deckWorks.seq,
+      deck: { ...deckWorks.deck, cells: activeWork?.cells ?? deckWorks.deck.cells },
+      stages: activeWork?.stages ?? [],
+      imagePath: deckWorks.imagePath,
+      imageW: deckWorks.imageW,
+      imageH: deckWorks.imageH,
+      areaSource: deckWorks.areaSource,
+      audit: activeWork?.audit ?? {},
+    }
+  }, [deckWorks, activeWork])
+
   const refresh = useCallback(async () => {
     setLoading(true)
     try {
-      setEntry(await loadDeckProgress(deckId))
+      setDeckWorks(await loadDeckWorks(deckId))
       setError(null)
     } catch (e) {
       // The deck is NOT cleared. A failed refresh on a flaky connection is the
@@ -205,8 +231,8 @@ export function DeckProgressPanel({
         void refreshZones()
       }, REFRESH_DEBOUNCE_MS)
     }
-    const stop = subscribeDeckCells(deckId, {
-      onCellChange: nudge,
+    const stop = subscribeDeckStates(deckId, {
+      onStateChange: nudge,
       onCellDelete: nudge,
       // Nothing on this screen depends on the socket being up: the admin is on
       // a laptop and can reload. The banner belongs on the tablet, where the
@@ -238,16 +264,34 @@ export function DeckProgressPanel({
     return () => { cancelled = true }
   }, [entry?.imagePath])
 
+
   const progress = useMemo(
     () => (entry ? computeDeckProgress(entry.deck, entry.stages) : null),
     [entry],
   )
 
+  /**
+   * The deck across its works: P_wd per work with the admin's deck weight, and
+   * the tổng hợp the header shows. Built as the work model so the domain does
+   * the averaging -- one formula, tested there.
+   */
+  const workModels = useMemo<WorkModel[]>(() => (deckWorks
+    ? deckWorks.works.map((v) => ({
+      work: v.work,
+      decks: [{ deck: { ...deckWorks.deck, cells: v.cells }, stages: v.stages, weight: v.weight }],
+    }))
+    : []), [deckWorks])
+  const deckSummary = useMemo(
+    () => (deckWorks ? summariseDeck(deckWorks.deck.id, workModels) : null),
+    [deckWorks, workModels],
+  )
+
   // Reported in an effect rather than during render: this sets state on the
-  // parent, and doing that while rendering a child is a React error.
+  // parent, and doing that while rendering a child is a React error. The
+  // figure is the deck's tổng hợp, not the open work's.
   useEffect(() => {
-    onProgress?.(progress ? progress.progress : null)
-  }, [progress, onProgress])
+    onProgress?.(deckSummary ? deckSummary.progress : null)
+  }, [deckSummary, onProgress])
   /**
    * The coats each lens is showing, resolved.
    *
@@ -857,9 +901,43 @@ export function DeckProgressPanel({
             />
           )}
 
-          {entry && entry.imagePath && imageUrl && (
+          {deckWorks && deckWorks.works.length === 0 && entry?.imagePath && (
+            <EmptyState
+              title="Sàn này chưa thuộc công việc nào"
+              description="Tiến độ được ghi theo từng công việc. Gán sàn vào một công việc ở mục Công việc, rồi cấu hình lớp sơn cho nó."
+            />
+          )}
+
+          {entry && entry.imagePath && imageUrl && activeWork && (
             <>
               <div style={{ display: 'flex', gap: 14, alignItems: 'flex-end', marginBottom: 16 }}>
+                {deckWorks && deckWorks.works.length > 1 ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+                    <label
+                      htmlFor="lens-work"
+                      style={{ fontSize: 11, fontWeight: 600, color: palette.textTertiary }}
+                    >
+                      Công việc
+                    </label>
+                    <Select
+                      id="lens-work"
+                      style={{ minWidth: 170 }}
+                      value={activeWork.work.id}
+                      onChange={(id) => {
+                        setWorkId(id)
+                        // Coat ids belong to a (work, deck); the last work's
+                        // selection would name a coat this one does not have.
+                        setViewA(null)
+                        setViewB(null)
+                      }}
+                      options={deckWorks.works.map((w) => ({ value: w.work.id, label: w.work.name }))}
+                    />
+                  </div>
+                ) : (
+                  <span style={{ fontSize: 12, color: palette.textTertiary, alignSelf: 'center' }}>
+                    {`Công việc: ${activeWork.work.name}`}
+                  </span>
+                )}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
                   <label
                     htmlFor="lens-a-stage"
@@ -1060,6 +1138,53 @@ export function DeckProgressPanel({
                     </div>
                   )}
               </div>
+
+              {deckSummary && (
+                <div
+                  data-testid="deck-works-table"
+                  style={{
+                    marginTop: 18,
+                    border: `1px solid ${palette.borderCard}`,
+                    borderRadius: 14,
+                    background: palette.bgContainer,
+                    boxShadow: shadowCard,
+                    overflow: 'hidden',
+                  }}
+                >
+                  <div style={{ padding: '13px 15px 12px', borderBottom: `1px solid ${palette.borderSplit}` }}>
+                    <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600, letterSpacing: '-0.015em' }}>
+                      Sàn này theo từng công việc
+                    </h3>
+                    <div style={{ fontSize: 12, lineHeight: 1.4, color: palette.textTertiary, marginTop: 4 }}>
+                      Trọng số sàn trong công việc · tiến độ của sàn ở công việc đó
+                    </div>
+                  </div>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                    <tbody>
+                      {deckSummary.perWork.map((row) => (
+                        <tr key={row.work.id} style={{ borderBottom: `1px solid ${palette.borderSplit}` }}>
+                          <td style={{ padding: '9px 15px', fontWeight: 600 }}>{row.work.name}</td>
+                          <td style={{ padding: '9px 8px', color: palette.textTertiary, textAlign: 'right' }}>
+                            {formatWeight(row.weight)}
+                          </td>
+                          <td style={{ padding: '9px 15px', textAlign: 'right', fontWeight: 600, minWidth: 72 }}>
+                            {formatPercent(row.progress)}
+                          </td>
+                        </tr>
+                      ))}
+                      <tr style={{ background: palette.bgSubtle }}>
+                        <td style={{ padding: '10px 15px', fontWeight: 600 }}>Tổng hợp</td>
+                        {/* Σ W·D is a project-level share, not a deck weight; it
+                            belongs on the decks list, not in this column. */}
+                        <td />
+                        <td style={{ padding: '10px 15px', textAlign: 'right', fontWeight: 700 }}>
+                          {formatPercent(deckSummary.progress)}
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              )}
 
               <div data-testid="deck-spec" style={{ marginTop: 18 }}>
                 <StageSpecTable stages={progress?.stages ?? []} />

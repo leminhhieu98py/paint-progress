@@ -1,10 +1,12 @@
 import { FilePdfOutlined, UploadOutlined, WarningOutlined } from '@ant-design/icons'
 import {
-  Alert, App, Button, Form, Input, InputNumber, Segmented, Space, Spin, Typography, Upload,
+  Alert, App, Button, Form, Input, InputNumber, Segmented, Space, Spin, Tabs, Typography, Upload,
 } from 'antd'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { NEW_DECK } from '../../config'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { APP_BASE_PATH, NEW_DECK } from '../../config'
+import { listDeckWorks, type DeckWork } from '../../lib/gsApi'
+import { EmptyState } from '../../components/EmptyState'
 import {
   createDeck, getDeck, listDecks, updateDeckArea, updateDeckIdentity, uploadDrawing,
   type DeckRow,
@@ -139,6 +141,13 @@ export function DeckDetailScreen() {
    * on the screen run twice.
    */
   const [progress, setProgress] = useState<number | null>(null)
+  /**
+   * The bays works this deck is part of. Since 0024 a coat list belongs to a
+   * (work, deck), so A3.2 shows one panel per work; a deck in no work has no
+   * coats to configure and is sent to the Công việc screen instead.
+   */
+  const [works, setWorks] = useState<DeckWork[] | null>(null)
+  const [worksError, setWorksError] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     if (creating || !deckId) return
@@ -162,6 +171,19 @@ export function DeckDetailScreen() {
   useEffect(() => {
     void load()
   }, [load])
+
+  // Loaded alongside the deck, and again after every save: the works a deck is
+  // in are edited on the Công việc screen, so a stale list here would offer a
+  // coat panel for a work this deck has just left.
+  const deckRowId = deck?.id ?? null
+  useEffect(() => {
+    if (!deckRowId) return
+    let cancelled = false
+    listDeckWorks(deckRowId)
+      .then((rows) => { if (!cancelled) { setWorks(rows); setWorksError(null) } })
+      .catch((e: Error) => { if (!cancelled) setWorksError(e.message) })
+    return () => { cancelled = true }
+  }, [deckRowId, deck])
 
   const takePdf = async (file: File | null) => {
     setPdf(file)
@@ -475,6 +497,9 @@ export function DeckDetailScreen() {
                   <div style={{ marginTop: 7, fontSize: 23, fontWeight: 700, letterSpacing: '-0.032em' }}>
                     {formatPercent(progress)}
                   </div>
+                  <div style={{ marginTop: 3, fontSize: 11, color: palette.textTertiary }}>
+                    tổng hợp các công việc
+                  </div>
                 </div>
               )}
               {/*
@@ -559,7 +584,38 @@ export function DeckDetailScreen() {
           attach them to: in create mode there is no deck id, no drawing and no
           cells for them to work on.
         */}
-        {deck && <StageConfigPanel deckId={deck.id} editable={editing} onSaved={() => void load()} />}
+        {deck && works !== null && works.length === 0 && (
+          <SectionCard code="A3.2" title="Cấu hình lớp sơn" summary="Sàn chưa thuộc công việc nào">
+            <EmptyState
+              title="Sàn này chưa thuộc công việc nào"
+              description="Lớp sơn thuộc về từng công việc trên sàn. Gán sàn vào một công việc trước, rồi quay lại đây cấu hình lớp sơn."
+            />
+            <div style={{ textAlign: 'center', marginTop: 12 }}>
+              <Link to={`${APP_BASE_PATH}/admin/works?project=${deck.projectId}`}>Mở Công việc</Link>
+            </div>
+          </SectionCard>
+        )}
+        {worksError && <Alert type="error" showIcon message={worksError} />}
+        {deck && works !== null && works.length === 1 && (
+          <StageConfigPanel workId={works[0].work.id} deckId={deck.id} editable={editing} onSaved={() => void load()} />
+        )}
+        {deck && works !== null && works.length > 1 && (
+          <Tabs
+            items={works.map((w) => ({
+              key: w.work.id,
+              label: w.work.name,
+              children: (
+                <StageConfigPanel
+                  key={w.work.id}
+                  workId={w.work.id}
+                  deckId={deck.id}
+                  editable={editing}
+                  onSaved={() => void load()}
+                />
+              ),
+            }))}
+          />
+        )}
 
         {deck && <DeckEditor deck={deck} editable={editing} onSaved={() => void load()} />}
 

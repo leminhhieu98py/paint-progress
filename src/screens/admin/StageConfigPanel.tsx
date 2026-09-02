@@ -12,7 +12,7 @@ import { duplicateStageFields } from '../../domain/stageFlow'
 import type { Stage } from '../../domain/types'
 import { formatWeight } from '../../lib/format'
 import {
-  listStages, roundStageWeight, saveStages, stagesRemovedBy, STAGE_WEIGHT_EPSILON,
+  listWorkStages, roundStageWeight, saveWorkStages, stagesRemovedBy, STAGE_WEIGHT_EPSILON,
 } from '../../lib/decksApi'
 import { randomUUID } from '../../lib/uuid'
 import { ConsequenceModal } from '../../components/ConsequenceModal'
@@ -50,7 +50,7 @@ const STAGE_RULES = [
         ]
 
 /**
- * saveStages' own guard errors, in the admin's language.
+ * saveWorkStages' own guard errors, in the admin's language.
  *
  * projectsApi.ts throws in English and stays that way -- same reasoning as
  * DeckEditor's mergeErrorInVietnamese: the domain layer has no business
@@ -75,7 +75,7 @@ function saveStagesErrorInVietnamese(message: string): string {
     return 'Có lỗi dữ liệu khi lưu cấu hình lớp sơn. Tải lại trang rồi thử lại.'
   }
   // Postgres, not projectsApi: `duplicate key value violates unique constraint
-  // "deck_stages_deck_id_seq_key"`. saveStages now deletes before it
+  // "deck_stages_deck_id_seq_key"`. saveWorkStages now deletes before it
   // upserts, so nothing on this screen should be able to produce it -- but a raw
   // Postgres constraint message in an otherwise Vietnamese-only Alert is a
   // defect in its own right, and this is the last line of defence if those two
@@ -87,10 +87,13 @@ function saveStagesErrorInVietnamese(message: string): string {
 }
 
 export function StageConfigPanel({
+  workId,
   deckId,
   editable = true,
   onSaved,
 }: {
+  /** The work whose coats these are: since 0024 a coat list belongs to a (work, deck). */
+  workId: string
   deckId: string
   /**
    * Whether the deck screen is in Sửa.
@@ -116,7 +119,7 @@ export function StageConfigPanel({
    * The rows being edited, each carrying the id it is identified by.
    *
    * A draft row is a full `Stage`, ids included, because the id IS the identity
-   * saveStages keys its upsert on: a rename, a reweight and a reorder all have
+   * saveWorkStages keys its upsert on: a rename, a reweight and a reorder all have
    * to arrive at the database attached to the row they belong to, or the write
    * relabels progress recorded against some other stage. Rows are only ever
    * replaced, never mutated in place -- `persisted` below shares these objects
@@ -162,7 +165,7 @@ export function StageConfigPanel({
     const mine = ++generation.current
     setLoading(true)
     try {
-      const stages = await listStages(deckId)
+      const stages = await listWorkStages(workId, deckId)
       // Discard a load a newer refresh has superseded, and discard one that
       // resolves after the admin has resumed editing -- either way, applying
       // it would silently discard something more current than the fetch.
@@ -175,7 +178,7 @@ export function StageConfigPanel({
     } finally {
       if (mine === generation.current) setLoading(false)
     }
-  }, [deckId])
+  }, [workId, deckId])
 
   useEffect(() => {
     void refresh()
@@ -225,7 +228,7 @@ export function StageConfigPanel({
    *  computeDeckProgress compares `stageSeqOf(...) >= stage.seq` over a sorted
    *  copy, so only relative order matters. Do not restate that as "a gap or a
    *  tie would corrupt every percentage": overstating the gap half is what made
-   *  saveStages upsert the renumbered survivors before deleting the removed row,
+   *  saveWorkStages upsert the renumbered survivors before deleting the removed row,
    *  which put two rows at one seq and made removing any stage but the last fail
    *  outright. Renumbering itself is free of consequences -- it rewrites display
    *  order and touches no row's id, so no cell's recorded stage moves with it. */
@@ -264,7 +267,7 @@ export function StageConfigPanel({
       renumber([
         ...prev,
         // The id is minted here, not by the database, so the row carries its
-        // identity from the moment it exists: saveStages' upsert keys on the id,
+        // identity from the moment it exists: saveWorkStages' upsert keys on the id,
         // which turns a new stage into an INSERT of a known row rather than a
         // match to be worked out afterwards. See lib/uuid.ts for why this is
         // not a bare crypto.randomUUID() call.
@@ -282,7 +285,7 @@ export function StageConfigPanel({
   const onSave = async () => {
     setBusy(true)
     try {
-      await saveStages(deckId, draft)
+      await saveWorkStages(workId, deckId, draft)
       setError(null)
       setConfirming(false)
       // The draft just persisted is the new clean baseline: the background

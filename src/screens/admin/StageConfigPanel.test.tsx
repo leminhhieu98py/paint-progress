@@ -4,8 +4,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderApp } from '../../test/renderApp'
 import { StageConfigPanel } from './StageConfigPanel'
 
-const listStages = vi.hoisted(() => vi.fn())
-const saveStages = vi.hoisted(() => vi.fn())
+const listWorkStages = vi.hoisted(() => vi.fn())
+const saveWorkStages = vi.hoisted(() => vi.fn())
 // stagesRemovedBy and roundStageWeight are pure, and the panel's behaviour IS
 // what they compute -- which stages the dialog names, and what value a keystroke
 // stores. Stubbing them would leave the dialog and the clamp asserted against a
@@ -18,8 +18,8 @@ vi.mock('../../lib/supabase', () => ({ supabase: { from: vi.fn() } }))
 vi.mock('../../lib/decksApi', async (importOriginal) => {
   const real = await importOriginal<typeof import('../../lib/decksApi')>()
   return {
-    listStages: (id: string) => listStages(id),
-    saveStages: (id: string, s: unknown) => saveStages(id, s),
+    listWorkStages: (w: string, d: string) => listWorkStages(w, d),
+    saveWorkStages: (w: string, d: string, s: unknown) => saveWorkStages(w, d, s),
     stagesRemovedBy: real.stagesRemovedBy,
     roundStageWeight: real.roundStageWeight,
     STAGE_WEIGHT_EPSILON: real.STAGE_WEIGHT_EPSILON,
@@ -55,9 +55,9 @@ const saveConfig = async () => {
 }
 
 beforeEach(() => {
-  listStages.mockReset()
-  saveStages.mockReset()
-  listStages.mockResolvedValue([
+  listWorkStages.mockReset()
+  saveWorkStages.mockReset()
+  listWorkStages.mockResolvedValue([
     { id: 's1', seq: 1, name: 'Blast + Coat 1', color: '#fadb14', weight: 0.6 },
     { id: 's2', seq: 2, name: 'Coat 2', color: '#bfbfbf', weight: 0.4 },
   ])
@@ -65,18 +65,18 @@ beforeEach(() => {
 
 describe('StageConfigPanel', () => {
   it('lists the project stages in seq order', async () => {
-    renderApp(<StageConfigPanel deckId="d1" />)
+    renderApp(<StageConfigPanel workId="w1" deckId="d1" />)
     expect(await screen.findByDisplayValue('Blast + Coat 1')).toBeInTheDocument()
     expect(screen.getByDisplayValue('Coat 2')).toBeInTheDocument()
   })
 
   it('shows the running weight total', async () => {
-    renderApp(<StageConfigPanel deckId="d1" />)
+    renderApp(<StageConfigPanel workId="w1" deckId="d1" />)
     // Wait for the real stages to load first: before they do, `total` is 0 and
     // the balance warning renders too, carrying its own "1,00" -- so a bare
     // `findByText(/1,00/)` can resolve against THAT transient node and then
     // fail `toBeInTheDocument()` a tick later when it unmounts, racing the
-    // mocked listStages promise rather than testing the settled total.
+    // mocked listWorkStages promise rather than testing the settled total.
     await screen.findByDisplayValue('Blast + Coat 1')
     // vi-VN formatting: comma decimal separator, matching the paperwork the
     // operators already read from. Twice on purpose: the section summary
@@ -86,7 +86,7 @@ describe('StageConfigPanel', () => {
   })
 
   it('blocks save when the weights do not sum to 1', async () => {
-    renderApp(<StageConfigPanel deckId="d1" />)
+    renderApp(<StageConfigPanel workId="w1" deckId="d1" />)
     // vi-VN comma decimal, matching decimalSeparator="," on the field.
     const weight = await screen.findByDisplayValue('0,6')
     await userEvent.clear(weight)
@@ -94,11 +94,11 @@ describe('StageConfigPanel', () => {
 
     const save = screen.getByRole('button', { name: 'Lưu cấu hình lớp sơn' })
     await waitFor(() => expect(save).toBeDisabled())
-    expect(saveStages).not.toHaveBeenCalled()
+    expect(saveWorkStages).not.toHaveBeenCalled()
   })
 
   it('enables save once the weights sum to 1 again', async () => {
-    renderApp(<StageConfigPanel deckId="d1" />)
+    renderApp(<StageConfigPanel workId="w1" deckId="d1" />)
     const weight = await screen.findByDisplayValue('0,4')
     await userEvent.clear(weight)
     await userEvent.type(weight, '0,4')
@@ -108,16 +108,16 @@ describe('StageConfigPanel', () => {
   })
 
   it('saves each stage with the id it was loaded under', async () => {
-    saveStages.mockResolvedValue(undefined)
-    renderApp(<StageConfigPanel deckId="d1" />)
+    saveWorkStages.mockResolvedValue(undefined)
+    renderApp(<StageConfigPanel workId="w1" deckId="d1" />)
     await screen.findByDisplayValue('Blast + Coat 1')
     // Nothing is being removed here, so Lưu saves directly -- see the
     // no-dialog test below.
     await saveConfig()
 
-    await waitFor(() => expect(saveStages).toHaveBeenCalledTimes(1))
-    const [, stages] = saveStages.mock.calls[0]
-    // saveStages keys its upsert on the id, so the id is the payload's most
+    await waitFor(() => expect(saveWorkStages).toHaveBeenCalledTimes(1))
+    const [, , stages] = saveWorkStages.mock.calls[0]
+    // saveWorkStages keys its upsert on the id, so the id is the payload's most
     // important field: it is what makes the write land on the row whose progress
     // the admin was looking at. Dropping it would send an anonymous row set that
     // could only be matched by its mutable seq again.
@@ -138,15 +138,15 @@ describe('StageConfigPanel', () => {
       randomUUID: undefined,
     })
     try {
-      saveStages.mockResolvedValue(undefined)
-      renderApp(<StageConfigPanel deckId="d1" />)
+      saveWorkStages.mockResolvedValue(undefined)
+      renderApp(<StageConfigPanel workId="w1" deckId="d1" />)
       await screen.findByDisplayValue('Blast + Coat 1')
 
       await userEvent.click(screen.getByRole('button', { name: 'Thêm lớp' }))
       await saveConfig()
 
-      await waitFor(() => expect(saveStages).toHaveBeenCalledTimes(1))
-      const saved = saveStages.mock.calls[0][1] as { id: string }[]
+      await waitFor(() => expect(saveWorkStages).toHaveBeenCalledTimes(1))
+      const saved = saveWorkStages.mock.calls[0][2] as { id: string }[]
       // A real v4 uuid, from the fallback path, not a reused or empty one:
       // deck_stages.id is a uuid primary key.
       expect(saved[2].id).toMatch(
@@ -161,14 +161,14 @@ describe('StageConfigPanel', () => {
     // A new row has no database id yet, and the id cannot be left for the
     // database to invent: the upsert keys on it. It is generated here, client
     // side, the moment the row appears.
-    saveStages.mockResolvedValue(undefined)
-    renderApp(<StageConfigPanel deckId="d1" />)
+    saveWorkStages.mockResolvedValue(undefined)
+    renderApp(<StageConfigPanel workId="w1" deckId="d1" />)
     await screen.findByDisplayValue('Blast + Coat 1')
     await userEvent.click(screen.getByRole('button', { name: 'Thêm lớp' }))
     await saveConfig()
 
-    await waitFor(() => expect(saveStages).toHaveBeenCalledTimes(1))
-    const saved = saveStages.mock.calls[0][1] as { id: string; seq: number }[]
+    await waitFor(() => expect(saveWorkStages).toHaveBeenCalledTimes(1))
+    const saved = saveWorkStages.mock.calls[0][2] as { id: string; seq: number }[]
     expect(saved).toHaveLength(3)
     expect(saved[2].id).toMatch(
       /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
@@ -181,21 +181,21 @@ describe('StageConfigPanel', () => {
 
   it('saves a rename without any confirmation, keeping the row it renames', async () => {
     // A rename keeps every stage row, its id, its zones and every cell's
-    // recorded progress: saveStages upserts on the id and deletes only the ids
+    // recorded progress: saveWorkStages upserts on the id and deletes only the ids
     // that genuinely disappear. There is nothing to disclose, and a dialog on a
     // save that costs nothing is a dialog the admin learns to click through --
     // which is how the one that matters gets skimmed.
-    saveStages.mockResolvedValue(undefined)
-    renderApp(<StageConfigPanel deckId="d1" />)
+    saveWorkStages.mockResolvedValue(undefined)
+    renderApp(<StageConfigPanel workId="w1" deckId="d1" />)
     const name = await screen.findByDisplayValue('Blast + Coat 1')
     await userEvent.clear(name)
     await userEvent.type(name, 'Blast + Coat 1 (renamed)')
 
     await saveConfig()
 
-    await waitFor(() => expect(saveStages).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(saveWorkStages).toHaveBeenCalledTimes(1))
     expect(screen.queryByRole('dialog')).toBeNull()
-    const saved = saveStages.mock.calls[0][1] as Record<string, unknown>[]
+    const saved = saveWorkStages.mock.calls[0][2] as Record<string, unknown>[]
     // The new name arrives attached to the id it was typed on, so the write
     // renames that stage rather than relabelling whatever sits at its seq.
     expect(saved[0]).toEqual({
@@ -213,13 +213,13 @@ describe('StageConfigPanel', () => {
     // cells.stage_id ON DELETE SET NULL, so a removal nulls the cells sitting at
     // that stage and deletes the zones planned against it. Both consequences are
     // named; the wording this replaced mentioned neither zones nor which stage.
-    listStages.mockResolvedValue([
+    listWorkStages.mockResolvedValue([
       { id: 's1', seq: 1, name: 'Blast + Coat 1', color: '#fadb14', weight: 0.5 },
       { id: 's2', seq: 2, name: 'Coat 2', color: '#bfbfbf', weight: 0.3 },
       { id: 's3', seq: 3, name: 'Tháo giáo', color: '#722ed1', weight: 0.2 },
     ])
-    saveStages.mockResolvedValue(undefined)
-    renderApp(<StageConfigPanel deckId="d1" />)
+    saveWorkStages.mockResolvedValue(undefined)
+    renderApp(<StageConfigPanel workId="w1" deckId="d1" />)
     await screen.findByDisplayValue('Tháo giáo')
 
     await userEvent.click(screen.getAllByRole('button', { name: 'Xoá' })[1])
@@ -244,12 +244,12 @@ describe('StageConfigPanel', () => {
     // and the zones planned against it go with it.
     expect(within(dialog).getByText(/trở về trạng thái chưa bắt đầu/)).toBeInTheDocument()
     expect(within(dialog).getByText(/xoá luôn các zone đã lên kế hoạch/)).toBeInTheDocument()
-    expect(saveStages).not.toHaveBeenCalled()
+    expect(saveWorkStages).not.toHaveBeenCalled()
 
     await userEvent.click(screen.getByRole('button', { name: 'Vẫn lưu' }))
-    await waitFor(() => expect(saveStages).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(saveWorkStages).toHaveBeenCalledTimes(1))
     // s2 is gone; s1 and s3 survive with their own ids, s3 renumbered to seq 2.
-    const saved = saveStages.mock.calls[0][1] as { id: string; seq: number }[]
+    const saved = saveWorkStages.mock.calls[0][2] as { id: string; seq: number }[]
     expect(saved.map((s) => [s.id, s.seq])).toEqual([
       ['s1', 1],
       ['s3', 2],
@@ -264,24 +264,24 @@ describe('StageConfigPanel', () => {
     // reported percentage rose with nothing deleted. Keyed on the id, a reorder
     // rewrites display order and nothing else: there is nothing to disclose, and
     // a dialog claiming otherwise would be teaching the admin something false.
-    listStages.mockResolvedValue([
+    listWorkStages.mockResolvedValue([
       { id: 's1', seq: 1, name: 'Blast + Coat 1', color: '#fadb14', weight: 0.5 },
       { id: 's2', seq: 2, name: 'Coat 2', color: '#bfbfbf', weight: 0.3 },
       { id: 's3', seq: 3, name: 'Coat 3', color: '#52c41a', weight: 0.2 },
     ])
-    saveStages.mockResolvedValue(undefined)
-    renderApp(<StageConfigPanel deckId="d1" />)
+    saveWorkStages.mockResolvedValue(undefined)
+    renderApp(<StageConfigPanel workId="w1" deckId="d1" />)
     await screen.findByDisplayValue('Coat 3')
 
     // Drag Coat 3 onto Coat 2: it takes seq 2 and Coat 2 takes seq 3.
     dragRow(2, 1)
     await saveConfig()
 
-    await waitFor(() => expect(saveStages).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(saveWorkStages).toHaveBeenCalledTimes(1))
     expect(screen.queryByRole('dialog')).toBeNull()
     // Each stage arrives under its own id, with only seq changed -- so every
     // cells.stage_id and zones.stage_id still points at the stage it always did.
-    const saved = saveStages.mock.calls[0][1] as { id: string; name: string; seq: number }[]
+    const saved = saveWorkStages.mock.calls[0][2] as { id: string; name: string; seq: number }[]
     expect(saved.map((s) => [s.id, s.name, s.seq])).toEqual([
       ['s1', 'Blast + Coat 1', 1],
       ['s3', 'Coat 3', 2],
@@ -290,21 +290,21 @@ describe('StageConfigPanel', () => {
   })
 
   it('calls onSaved after a save actually persists, so the parent can refresh its own rollup', async () => {
-    saveStages.mockResolvedValue(undefined)
+    saveWorkStages.mockResolvedValue(undefined)
     const onSaved = vi.fn()
-    renderApp(<StageConfigPanel deckId="d1" onSaved={onSaved} />)
+    renderApp(<StageConfigPanel workId="w1" deckId="d1" onSaved={onSaved} />)
     await screen.findByDisplayValue('Blast + Coat 1')
 
     await saveConfig()
 
-    await waitFor(() => expect(saveStages).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(saveWorkStages).toHaveBeenCalledTimes(1))
     expect(onSaved).toHaveBeenCalledTimes(1)
   })
 
   it('does not call onSaved when the save fails', async () => {
-    saveStages.mockRejectedValue(new Error('permission denied'))
+    saveWorkStages.mockRejectedValue(new Error('permission denied'))
     const onSaved = vi.fn()
-    renderApp(<StageConfigPanel deckId="d1" onSaved={onSaved} />)
+    renderApp(<StageConfigPanel workId="w1" deckId="d1" onSaved={onSaved} />)
     await screen.findByDisplayValue('Blast + Coat 1')
 
     await saveConfig()
@@ -316,12 +316,12 @@ describe('StageConfigPanel', () => {
   it('surfaces a save failure and closes the confirmation modal', async () => {
     // Driven through the removal path so there is a modal to close in the first
     // place.
-    listStages.mockResolvedValue([
+    listWorkStages.mockResolvedValue([
       { id: 's1', seq: 1, name: 'Blast + Coat 1', color: '#fadb14', weight: 1 },
       { id: 's2', seq: 2, name: 'Coat 2', color: '#bfbfbf', weight: 0 },
     ])
-    saveStages.mockRejectedValue(new Error('Stage weights must sum to 1, got 0.9000'))
-    renderApp(<StageConfigPanel deckId="d1" />)
+    saveWorkStages.mockRejectedValue(new Error('Stage weights must sum to 1, got 0.9000'))
+    renderApp(<StageConfigPanel workId="w1" deckId="d1" />)
     await screen.findByDisplayValue('Coat 2')
     await userEvent.click(screen.getAllByRole('button', { name: 'Xoá' })[1])
     await saveConfig()
@@ -342,17 +342,17 @@ describe('StageConfigPanel', () => {
   })
 
   it('translates a raw Postgres duplicate-key error instead of showing it', async () => {
-    // C1's last line of defence. saveStages deletes before it upserts now, so
+    // C1's last line of defence. saveWorkStages deletes before it upserts now, so
     // nothing this panel can do should provoke this -- but the two statements
     // were the other way round once, and while they were, removing any stage but
     // the last put `duplicate key value violates unique constraint
     // "deck_stages_deck_id_seq_key"` verbatim into an otherwise
     // Vietnamese-only Alert. If that order is ever restored, the admin at least
     // gets a sentence they can act on.
-    saveStages.mockRejectedValue(new Error(
+    saveWorkStages.mockRejectedValue(new Error(
       'duplicate key value violates unique constraint "deck_stages_deck_id_seq_key"',
     ))
-    renderApp(<StageConfigPanel deckId="d1" />)
+    renderApp(<StageConfigPanel workId="w1" deckId="d1" />)
     await screen.findByDisplayValue('Coat 2')
 
     await saveConfig()
@@ -365,8 +365,8 @@ describe('StageConfigPanel', () => {
   it('does not touch an infrastructure error the translator does not recognise', async () => {
     // Anything unmatched must fall through unchanged, or a new domain error
     // could be silently swallowed instead of reaching the admin.
-    saveStages.mockRejectedValue(new Error('permission denied for table deck_stages'))
-    renderApp(<StageConfigPanel deckId="d1" />)
+    saveWorkStages.mockRejectedValue(new Error('permission denied for table deck_stages'))
+    renderApp(<StageConfigPanel workId="w1" deckId="d1" />)
     await screen.findByDisplayValue('Coat 2')
 
     await saveConfig()
@@ -389,17 +389,17 @@ describe('StageConfigPanel', () => {
     // Call 1 (mount) resolves immediately; call 2 (the background refresh a
     // successful save kicks off) returns a promise this test controls and
     // leaves pending.
-    listStages.mockResolvedValueOnce(initialStages).mockReturnValueOnce(staleLoad)
-    saveStages.mockResolvedValue(undefined)
+    listWorkStages.mockResolvedValueOnce(initialStages).mockReturnValueOnce(staleLoad)
+    saveWorkStages.mockResolvedValue(undefined)
 
-    renderApp(<StageConfigPanel deckId="d1" />)
+    renderApp(<StageConfigPanel workId="w1" deckId="d1" />)
     await screen.findByDisplayValue('Blast + Coat 1')
 
     // No removal here, so Lưu saves directly with no dialog in the way.
     await saveConfig()
-    await waitFor(() => expect(saveStages).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(saveWorkStages).toHaveBeenCalledTimes(1))
 
-    // The background refresh's `listStages` call is now pending on
+    // The background refresh's `listWorkStages` call is now pending on
     // `staleLoad`. The row is no longer disabled (the save itself finished;
     // only the reconciliation fetch is still in flight), so the admin
     // resumes editing -- this is the edit the guard must protect.
@@ -419,7 +419,7 @@ describe('StageConfigPanel', () => {
   })
 
   it('adds a stage at the end with the next seq', async () => {
-    renderApp(<StageConfigPanel deckId="d1" />)
+    renderApp(<StageConfigPanel workId="w1" deckId="d1" />)
     await screen.findByDisplayValue('Coat 2')
     await userEvent.click(screen.getByRole('button', { name: 'Thêm lớp' }))
     expect(screen.getAllByLabelText('Tên lớp sơn')).toHaveLength(3)
@@ -438,7 +438,7 @@ describe('StageConfigPanel', () => {
     // away by Postgres. Clamping as it is typed means the admin sees the value
     // that will actually be stored, instead of discovering on reload that the
     // total no longer sums to 1.
-    renderApp(<StageConfigPanel deckId="d1" />)
+    renderApp(<StageConfigPanel workId="w1" deckId="d1" />)
     const weight = await screen.findByDisplayValue('0,6')
     await userEvent.clear(weight)
     await userEvent.type(weight, '0,333333')
@@ -463,13 +463,13 @@ describe('StageConfigPanel', () => {
     // limit. Both halves are needed here: the clamp makes the typed values the
     // stored ones, and the widened epsilon accepts the 1e-5 the clamp leaves
     // behind.
-    listStages.mockResolvedValue([
+    listWorkStages.mockResolvedValue([
       { id: 's1', seq: 1, name: 'A', color: '#111111', weight: 0.4 },
       { id: 's2', seq: 2, name: 'B', color: '#222222', weight: 0.3 },
       { id: 's3', seq: 3, name: 'C', color: '#333333', weight: 0.3 },
     ])
-    saveStages.mockResolvedValue(undefined)
-    renderApp(<StageConfigPanel deckId="d1" />)
+    saveWorkStages.mockResolvedValue(undefined)
+    renderApp(<StageConfigPanel workId="w1" deckId="d1" />)
     await screen.findByDisplayValue('0,4')
 
     // By row, not by display value: two rows start at 0,3, and after the first
@@ -494,8 +494,8 @@ describe('StageConfigPanel', () => {
     expect(screen.getByRole('button', { name: 'Lưu cấu hình lớp sơn' })).toBeEnabled()
     await saveConfig()
 
-    await waitFor(() => expect(saveStages).toHaveBeenCalledTimes(1))
-    expect((saveStages.mock.calls[0][1] as { weight: number }[]).map((s) => s.weight)).toEqual([
+    await waitFor(() => expect(saveWorkStages).toHaveBeenCalledTimes(1))
+    expect((saveWorkStages.mock.calls[0][2] as { weight: number }[]).map((s) => s.weight)).toEqual([
       0.33333, 0.33333, 0.33333,
     ])
   })
@@ -504,7 +504,7 @@ describe('StageConfigPanel', () => {
     // 0.6 + 0.39998 is 0.99998: two units at scale 5, comfortably past
     // STAGE_WEIGHT_EPSILON. Widening the epsilon to absorb the clamp's own
     // residual must not have turned the Σ = 1 rule into a suggestion.
-    renderApp(<StageConfigPanel deckId="d1" />)
+    renderApp(<StageConfigPanel workId="w1" deckId="d1" />)
     const weight = await screen.findByDisplayValue('0,4')
     await userEvent.clear(weight)
     await userEvent.type(weight, '0,39998')
@@ -514,7 +514,7 @@ describe('StageConfigPanel', () => {
   })
 
   it('removes a stage', async () => {
-    renderApp(<StageConfigPanel deckId="d1" />)
+    renderApp(<StageConfigPanel workId="w1" deckId="d1" />)
     await screen.findByDisplayValue('Coat 2')
     await userEvent.click(screen.getAllByRole('button', { name: 'Xoá' })[1])
     expect(screen.queryByDisplayValue('Coat 2')).toBeNull()
@@ -524,12 +524,12 @@ describe('StageConfigPanel', () => {
     // A 2-row fixture can't expose a broken renumber(): its sole survivor is
     // already seq 1 whether or not renumber ran. Only removing the middle of
     // three rows leaves a detectable gap (1, 3) if renumber were dropped.
-    listStages.mockResolvedValue([
+    listWorkStages.mockResolvedValue([
       { id: 's1', seq: 1, name: 'First', color: '#111111', weight: 0.5 },
       { id: 's2', seq: 2, name: 'Middle', color: '#222222', weight: 0.3 },
       { id: 's3', seq: 3, name: 'Last', color: '#333333', weight: 0.2 },
     ])
-    renderApp(<StageConfigPanel deckId="d1" />)
+    renderApp(<StageConfigPanel workId="w1" deckId="d1" />)
     await screen.findByDisplayValue('Middle')
 
     await userEvent.click(screen.getAllByRole('button', { name: 'Xoá' })[1])
@@ -542,17 +542,17 @@ describe('StageConfigPanel', () => {
   })
 
   it('refuses to remove the last remaining stage', async () => {
-    listStages.mockResolvedValue([
+    listWorkStages.mockResolvedValue([
       { id: 's1', seq: 1, name: 'Only', color: '#000000', weight: 1 },
     ])
-    renderApp(<StageConfigPanel deckId="d1" />)
+    renderApp(<StageConfigPanel workId="w1" deckId="d1" />)
     await screen.findByDisplayValue('Only')
     // A project with no stages has no defined progress at all.
     expect(screen.getByRole('button', { name: 'Xoá' })).toBeDisabled()
   })
 
   it('renumbers seq contiguously after a drag', async () => {
-    renderApp(<StageConfigPanel deckId="d1" />)
+    renderApp(<StageConfigPanel workId="w1" deckId="d1" />)
     await screen.findByDisplayValue('Coat 2')
     dragRow(1, 0)
 
@@ -568,11 +568,11 @@ describe('StageConfigPanel', () => {
     // off the drawing and nothing else. Two stages sharing either make a deck
     // that cannot be read back, and no error afterwards would say which of the
     // two a given bay is at.
-    listStages.mockResolvedValue([
+    listWorkStages.mockResolvedValue([
       { id: 's1', seq: 1, name: 'Coat 1', color: '#1677ff', weight: 0.5 },
       { id: 's2', seq: 2, name: 'Coat 2', color: '#52c41a', weight: 0.5 },
     ])
-    renderApp(<StageConfigPanel deckId="d1" />)
+    renderApp(<StageConfigPanel workId="w1" deckId="d1" />)
     await screen.findByDisplayValue('Coat 1')
 
     const second = screen.getAllByLabelText('Tên lớp sơn')[1]
@@ -581,18 +581,18 @@ describe('StageConfigPanel', () => {
 
     expect(await screen.findByText('Hai lớp sơn đang trùng nhau')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Lưu cấu hình lớp sơn' })).toBeDisabled()
-    expect(saveStages).not.toHaveBeenCalled()
+    expect(saveWorkStages).not.toHaveBeenCalled()
   })
 
   it('reorders the stages when one is dragged onto another', async () => {
     // Top to bottom is innermost to outermost: the order the GS ticks them in
     // and the order cumulative progress reads them in. Renumbering seq from the
     // list's own order is what makes the drag mean anything.
-    listStages.mockResolvedValue([
+    listWorkStages.mockResolvedValue([
       { id: 's1', seq: 1, name: 'Coat 1', color: '#1677ff', weight: 0.5 },
       { id: 's2', seq: 2, name: 'Coat 2', color: '#52c41a', weight: 0.5 },
     ])
-    renderApp(<StageConfigPanel deckId="d1" />)
+    renderApp(<StageConfigPanel workId="w1" deckId="d1" />)
     await screen.findByDisplayValue('Coat 1')
 
     const rows = document.querySelectorAll('.ant-table-tbody .ant-table-row')
@@ -609,16 +609,16 @@ describe('StageConfigPanel', () => {
 
 describe('StageConfigPanel with no coats declared yet', () => {
   beforeEach(() => {
-    listStages.mockResolvedValue([])
+    listWorkStages.mockResolvedValue([])
   })
 
   it('says the deck has no coats, rather than showing an empty table', async () => {
-    renderApp(<StageConfigPanel deckId="d1" />)
+    renderApp(<StageConfigPanel workId="w1" deckId="d1" />)
     expect(await screen.findByText('Sàn này chưa có lớp sơn nào')).toBeInTheDocument()
   })
 
   it('holds the save shut, because a deck with no coats reports 0% for ever', async () => {
-    renderApp(<StageConfigPanel deckId="d1" />)
+    renderApp(<StageConfigPanel workId="w1" deckId="d1" />)
     await screen.findByText('Sàn này chưa có lớp sơn nào')
     expect(screen.getByRole('button', { name: 'Lưu cấu hình lớp sơn' })).toBeDisabled()
     // And it says why, in the words of what to do about it.
@@ -626,7 +626,7 @@ describe('StageConfigPanel with no coats declared yet', () => {
   })
 
   it('opens the way in, so an empty deck is not a dead end', async () => {
-    renderApp(<StageConfigPanel deckId="d1" />)
+    renderApp(<StageConfigPanel workId="w1" deckId="d1" />)
     await screen.findByText('Sàn này chưa có lớp sơn nào')
     await userEvent.click(screen.getByRole('button', { name: 'Thêm lớp' }))
     expect(await screen.findByLabelText('Tên lớp sơn')).toBeInTheDocument()
@@ -638,16 +638,16 @@ describe('StageConfigPanel hex field', () => {
     // The native swatch cannot be driven by keyboard, cannot be read back over
     // the phone, and cannot be pasted out of a paint spec. The hex beside it is
     // the field an admin actually uses when the colour arrives as text.
-    saveStages.mockResolvedValue(undefined)
+    saveWorkStages.mockResolvedValue(undefined)
     const user = userEvent.setup()
-    renderApp(<StageConfigPanel deckId="d1" />)
+    renderApp(<StageConfigPanel workId="w1" deckId="d1" />)
     const hex = await screen.findByLabelText('Mã màu · Blast + Coat 1')
     await user.clear(hex)
     await user.type(hex, '#123ABC')
     await saveConfig()
 
-    await waitFor(() => expect(saveStages).toHaveBeenCalledTimes(1))
-    expect(saveStages.mock.calls[0][1][0].color).toBe('#123abc')
+    await waitFor(() => expect(saveWorkStages).toHaveBeenCalledTimes(1))
+    expect(saveWorkStages.mock.calls[0][2][0].color).toBe('#123abc')
   })
 
   it('holds the save shut on a half-typed hex rather than storing the old colour', async () => {
@@ -655,7 +655,7 @@ describe('StageConfigPanel hex field', () => {
     // that costs an afternoon: the admin types, saves, sees no error, and the
     // drawing keeps the colour they thought they had just replaced.
     const user = userEvent.setup()
-    renderApp(<StageConfigPanel deckId="d1" />)
+    renderApp(<StageConfigPanel workId="w1" deckId="d1" />)
     const hex = await screen.findByLabelText('Mã màu · Blast + Coat 1')
     await user.clear(hex)
     await user.type(hex, '#12')
@@ -665,12 +665,12 @@ describe('StageConfigPanel hex field', () => {
     expect(hex).toHaveValue('#12')
     expect(hex).toHaveAttribute('aria-invalid', 'true')
     expect(screen.getByRole('button', { name: 'Lưu cấu hình lớp sơn' })).toBeDisabled()
-    expect(saveStages).not.toHaveBeenCalled()
+    expect(saveWorkStages).not.toHaveBeenCalled()
   })
 
   it('reopens the save once the hex is complete again', async () => {
     const user = userEvent.setup()
-    renderApp(<StageConfigPanel deckId="d1" />)
+    renderApp(<StageConfigPanel workId="w1" deckId="d1" />)
     const hex = await screen.findByLabelText('Mã màu · Blast + Coat 1')
     await user.clear(hex)
     await user.type(hex, '#12')
@@ -682,7 +682,7 @@ describe('StageConfigPanel hex field', () => {
 
 describe('StageConfigPanel weight bar', () => {
   it('gives each stage a band as wide as its own weight, in its own colour', async () => {
-    renderApp(<StageConfigPanel deckId="d1" />)
+    renderApp(<StageConfigPanel workId="w1" deckId="d1" />)
     await screen.findByDisplayValue('Blast + Coat 1')
 
     expect(screen.getByTestId('weight-bar-s1')).toHaveStyle({
@@ -693,11 +693,11 @@ describe('StageConfigPanel weight bar', () => {
   })
 
   it('leaves the track visibly short when the weights do not reach 1', async () => {
-    listStages.mockResolvedValue([
+    listWorkStages.mockResolvedValue([
       { id: 's1', seq: 1, name: 'Blast + Coat 1', color: '#fadb14', weight: 0.6 },
       { id: 's2', seq: 2, name: 'Coat 2', color: '#bfbfbf', weight: 0.1 },
     ])
-    renderApp(<StageConfigPanel deckId="d1" />)
+    renderApp(<StageConfigPanel workId="w1" deckId="d1" />)
     await screen.findByDisplayValue('Blast + Coat 1')
 
     // 70% of a track that is 1 by construction. This is the whole reason the
@@ -712,11 +712,11 @@ describe('StageConfigPanel weight bar', () => {
     // A weight above 1 is reachable by typing. An unclamped band pushes the
     // bands beside it out of the track, so the one stage that is wrong makes
     // every other stage look wrong too.
-    listStages.mockResolvedValue([
+    listWorkStages.mockResolvedValue([
       { id: 's1', seq: 1, name: 'Blast + Coat 1', color: '#fadb14', weight: 1 },
       { id: 's2', seq: 2, name: 'Coat 2', color: '#bfbfbf', weight: 0.4 },
     ])
-    renderApp(<StageConfigPanel deckId="d1" />)
+    renderApp(<StageConfigPanel workId="w1" deckId="d1" />)
     await screen.findByDisplayValue('Blast + Coat 1')
 
     expect(screen.getByTestId('weight-bar-s1')).toHaveStyle({ width: '100.0000%' })

@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { DeckProgressPanel } from './DeckProgressPanel'
 
-const loadDeckProgress = vi.hoisted(() => vi.fn())
+const loadDeckWorks = vi.hoisted(() => vi.fn())
 const getDrawingUrl = vi.hoisted(() => vi.fn())
 const listDeckZones = vi.hoisted(() => vi.fn())
 const createZone = vi.hoisted(() => vi.fn())
@@ -13,10 +13,10 @@ const deleteZone = vi.hoisted(() => vi.fn())
 const setZoneActual = vi.hoisted(() => vi.fn())
 const listCellNotes = vi.hoisted(() => vi.fn())
 const setReportNote = vi.hoisted(() => vi.fn())
-const subscribeDeckCells = vi.hoisted(() => vi.fn())
+const subscribeDeckStates = vi.hoisted(() => vi.fn())
 
 vi.mock('../../lib/progressApi', () => ({
-  loadDeckProgress: (id: string) => loadDeckProgress(id),
+  loadDeckWorks: (id: string) => loadDeckWorks(id),
   listCellNotes: (cellId: string) => listCellNotes(cellId),
   setReportNote: (id: number, note: string | null, hidden: boolean) => setReportNote(id, note, hidden),
 }))
@@ -27,7 +27,7 @@ vi.mock('../../lib/adminApi', () => ({
   listGsUsers: () => Promise.resolve([{ id: 'u1', fullName: 'Lê Trung Hiếu' }]),
 }))
 vi.mock('../../lib/gsApi', () => ({
-  subscribeDeckCells: (id: string, h: unknown) => subscribeDeckCells(id, h),
+  subscribeDeckStates: (id: string, h: unknown) => subscribeDeckStates(id, h),
 }))
 vi.mock('../../lib/zonesApi', () => ({
   listDeckZones: (d: string) => listDeckZones(d),
@@ -80,20 +80,25 @@ const STAGES = [
   { id: 's3', seq: 3, name: 'Tháo giáo', color: '#722ed1', weight: 0.6 },
 ]
 
-/** 1000 m² deck: one 500 m² bay at Tháo giáo, one at Coat 2. */
+const WORK = {
+  id: 'w1', projectId: 'p1', seq: 1, name: 'Công việc chính', kind: 'bays' as const,
+  weight: 1, counts: true, manualProgress: 0,
+}
+/** The bays as the deck's one work sees them: 500 m² at Tháo giáo, 500 at Coat 2. */
+const CELLS = [
+  { id: 'c1', code: 'R1C1', x: 0, y: 0, w: 0.5, h: 1, areaM2: 500, stageId: 's3' },
+  { id: 'c2', code: 'R1C2', x: 0.5, y: 0, w: 0.5, h: 1, areaM2: 500, stageId: 's2' },
+]
+/** 1000 m² deck in one work at weight 1 -- the shape 0024's backfill leaves. */
 const ENTRY = {
   seq: 1,
   deck: {
     id: 'd1', code: 'CD', name: 'Cellar Deck', totalAreaM2: 1000,
-    cells: [
-      { id: 'c1', code: 'R1C1', x: 0, y: 0, w: 0.5, h: 1, areaM2: 500, stageId: 's3' },
-      { id: 'c2', code: 'R1C2', x: 0.5, y: 0, w: 0.5, h: 1, areaM2: 500, stageId: 's2' },
-    ],
+    cells: CELLS.map((c) => ({ ...c, stageId: null })),
   },
-  stages: STAGES,
   imagePath: 'p1/d1.png', imageW: 2000, imageH: 1600,
   areaSource: 'guides' as const,
-  audit: {},
+  works: [{ work: WORK, weight: 1, stages: STAGES, cells: CELLS, audit: {} }],
 }
 
 const ZONE = {
@@ -102,8 +107,8 @@ const ZONE = {
 }
 
 beforeEach(() => {
-  loadDeckProgress.mockReset()
-  loadDeckProgress.mockResolvedValue(ENTRY)
+  loadDeckWorks.mockReset()
+  loadDeckWorks.mockResolvedValue(ENTRY)
   getDrawingUrl.mockReset()
   getDrawingUrl.mockImplementation((p: string) => Promise.resolve(`https://signed/${p}`))
   listDeckZones.mockReset()
@@ -116,8 +121,8 @@ beforeEach(() => {
   deleteZone.mockResolvedValue(undefined)
   setZoneActual.mockReset()
   setZoneActual.mockResolvedValue(2)
-  subscribeDeckCells.mockReset()
-  subscribeDeckCells.mockReturnValue(() => {})
+  subscribeDeckStates.mockReset()
+  subscribeDeckStates.mockReturnValue(() => {})
   listCellNotes.mockReset()
   listCellNotes.mockResolvedValue([])
   setReportNote.mockReset()
@@ -140,7 +145,7 @@ const pickLens = async (label: string, name: string) => {
 describe('DeckProgressPanel', () => {
   it('loads the deck it was given', async () => {
     renderPanel()
-    await waitFor(() => expect(loadDeckProgress).toHaveBeenCalledWith('d1'))
+    await waitFor(() => expect(loadDeckWorks).toHaveBeenCalledWith('d1'))
   })
 
   it('opens on one coat, over the deck\'s own drawing', async () => {
@@ -206,14 +211,14 @@ describe('DeckProgressPanel', () => {
   })
 
   it('tells the admin when a deck has no drawing, instead of an empty frame', async () => {
-    loadDeckProgress.mockResolvedValue({ ...ENTRY, imagePath: null })
+    loadDeckWorks.mockResolvedValue({ ...ENTRY, imagePath: null })
     renderPanel()
     expect(await screen.findByText('Chưa có gì để hiển thị')).toBeInTheDocument()
     expect(screen.queryByTestId('lens-A')).not.toBeInTheDocument()
   })
 
   it('surfaces a load failure rather than rendering nothing', async () => {
-    loadDeckProgress.mockRejectedValue(new Error('mạng hỏng'))
+    loadDeckWorks.mockRejectedValue(new Error('mạng hỏng'))
     renderPanel()
     expect(await screen.findByText('mạng hỏng')).toBeInTheDocument()
   })
@@ -228,16 +233,16 @@ describe('DeckProgressPanel — keeping up with the deck', () => {
     try {
       renderPanel(false)
       await screen.findByTestId('lens-A')
-      await waitFor(() => expect(subscribeDeckCells).toHaveBeenCalledWith('d1', expect.anything()))
-      expect(loadDeckProgress).toHaveBeenCalledTimes(1)
+      await waitFor(() => expect(subscribeDeckStates).toHaveBeenCalledWith('d1', expect.anything()))
+      expect(loadDeckWorks).toHaveBeenCalledTimes(1)
 
-      const handlers = subscribeDeckCells.mock.calls[0][1] as {
-        onCellChange: (c: unknown) => void
+      const handlers = subscribeDeckStates.mock.calls[0][1] as {
+        onStateChange: (c: unknown) => void
       }
-      handlers.onCellChange(ENTRY.deck.cells[0])
+      handlers.onStateChange(ENTRY.deck.cells[0])
       await vi.advanceTimersByTimeAsync(600)
 
-      await waitFor(() => expect(loadDeckProgress).toHaveBeenCalledTimes(2))
+      await waitFor(() => expect(loadDeckWorks).toHaveBeenCalledTimes(2))
     } finally {
       vi.useRealTimers()
     }
@@ -250,14 +255,14 @@ describe('DeckProgressPanel — keeping up with the deck', () => {
     try {
       renderPanel(false)
       await screen.findByTestId('lens-A')
-      await waitFor(() => expect(subscribeDeckCells).toHaveBeenCalled())
-      const handlers = subscribeDeckCells.mock.calls[0][1] as {
-        onCellChange: (c: unknown) => void
+      await waitFor(() => expect(subscribeDeckStates).toHaveBeenCalled())
+      const handlers = subscribeDeckStates.mock.calls[0][1] as {
+        onStateChange: (c: unknown) => void
       }
-      for (let i = 0; i < 5; i += 1) handlers.onCellChange(ENTRY.deck.cells[0])
+      for (let i = 0; i < 5; i += 1) handlers.onStateChange(ENTRY.deck.cells[0])
       await vi.advanceTimersByTimeAsync(600)
 
-      await waitFor(() => expect(loadDeckProgress).toHaveBeenCalledTimes(2))
+      await waitFor(() => expect(loadDeckWorks).toHaveBeenCalledTimes(2))
     } finally {
       vi.useRealTimers()
     }
@@ -265,7 +270,7 @@ describe('DeckProgressPanel — keeping up with the deck', () => {
 
   it('drops the subscription when the deck changes, so two decks cannot cross', async () => {
     const stop = vi.fn()
-    subscribeDeckCells.mockReturnValue(stop)
+    subscribeDeckStates.mockReturnValue(stop)
     const { unmount } = renderPanel(false)
     await screen.findByTestId('lens-A')
     unmount()
@@ -433,7 +438,7 @@ describe('DeckProgressPanel — zones', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Ghi thực tế' }))
 
     await waitFor(() => expect(setZoneActual).toHaveBeenCalledWith('z1', 's3'))
-    await waitFor(() => expect(loadDeckProgress).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(loadDeckWorks).toHaveBeenCalledTimes(2))
   })
 
   it('names what a zone deletion does and does not destroy, before doing it', async () => {
@@ -520,18 +525,14 @@ describe('DeckProgressPanel — read-only', () => {
 describe('DeckProgressPanel — the foreman\'s note', () => {
   const NOTED = {
     ...ENTRY,
-    deck: {
-      ...ENTRY.deck,
-      cells: [
-        { ...ENTRY.deck.cells[0], note: 'Bề mặt còn ẩm, hoãn sơn sang mai' },
-        ENTRY.deck.cells[1],
-      ],
-    },
-    audit: { c1: { updatedBy: 'u1', updatedAt: '2026-08-29T11:47:00Z' } },
+    works: [{
+      ...ENTRY.works[0],
+      cells: [{ ...CELLS[0], note: 'Bề mặt còn ẩm, hoãn sơn sang mai' }, CELLS[1]],
+    }],
   }
 
   it('flags the bay that carries a note, and only that one', async () => {
-    loadDeckProgress.mockResolvedValue(NOTED)
+    loadDeckWorks.mockResolvedValue(NOTED)
     renderPanel(false)
     await waitFor(() => expect(screen.getByTestId('cell-R1C1')).toHaveAttribute('data-marked', 'true'))
     expect(screen.getByTestId('cell-R1C2')).toHaveAttribute('data-marked', 'false')
@@ -541,7 +542,7 @@ describe('DeckProgressPanel — the foreman\'s note', () => {
     // A bay is ticked once per coat and can carry a remark each time, so "the
     // note" was never one thing: cells.note is whichever was written last, and
     // the admin had no way to know it was the third of three.
-    loadDeckProgress.mockResolvedValue(NOTED)
+    loadDeckWorks.mockResolvedValue(NOTED)
     listCellNotes.mockResolvedValue([
       {
         id: 3, at: '2026-08-29T11:47:00Z', stageName: 'Tháo giáo',
@@ -573,7 +574,7 @@ describe('DeckProgressPanel — the foreman\'s note', () => {
   it('still shows the latest note when the history cannot be read', async () => {
     // The sentence the admin tapped the bay for is already in hand, on
     // cells.note. Losing the history must not lose it.
-    loadDeckProgress.mockResolvedValue(NOTED)
+    loadDeckWorks.mockResolvedValue(NOTED)
     listCellNotes.mockRejectedValue(new Error('mất kết nối'))
     renderPanel(false)
     await userEvent.click(await screen.findByTestId('cell-R1C1'))
@@ -584,14 +585,14 @@ describe('DeckProgressPanel — the foreman\'s note', () => {
   })
 
   it('opens nothing for a bay with no note', async () => {
-    loadDeckProgress.mockResolvedValue(NOTED)
+    loadDeckWorks.mockResolvedValue(NOTED)
     renderPanel(false)
     await userEvent.click(await screen.findByTestId('cell-R1C2'))
     expect(screen.queryByText(/Ghi chú · ô/)).not.toBeInTheDocument()
   })
 
   it('still selects bays while editing, rather than opening the note', async () => {
-    loadDeckProgress.mockResolvedValue(NOTED)
+    loadDeckWorks.mockResolvedValue(NOTED)
     renderPanel(true)
     await userEvent.click(await screen.findByTestId('cell-R1C1'))
     expect(screen.getByTestId('cell-R1C1')).toHaveAttribute('data-selected', 'true')
@@ -602,13 +603,10 @@ describe('DeckProgressPanel — the foreman\'s note', () => {
 describe('DeckProgressPanel — the report copy of a note (0023)', () => {
   const NOTED = {
     ...ENTRY,
-    deck: {
-      ...ENTRY.deck,
-      cells: [
-        { ...ENTRY.deck.cells[0], note: 'Bề mặt còn ẩm, hoãn sơn sang mai' },
-        ENTRY.deck.cells[1],
-      ],
-    },
+    works: [{
+      ...ENTRY.works[0],
+      cells: [{ ...CELLS[0], note: 'Bề mặt còn ẩm, hoãn sơn sang mai' }, CELLS[1]],
+    }],
   }
   const NOTE_ROW = {
     id: 3, at: '2026-08-29T11:47:00Z', stageName: 'Tháo giáo',
@@ -618,7 +616,7 @@ describe('DeckProgressPanel — the report copy of a note (0023)', () => {
   }
 
   beforeEach(() => {
-    loadDeckProgress.mockResolvedValue(NOTED)
+    loadDeckWorks.mockResolvedValue(NOTED)
     listCellNotes.mockResolvedValue([NOTE_ROW])
   })
 
@@ -712,5 +710,76 @@ describe('DeckProgressPanel — the report copy of a note (0023)', () => {
 
     expect(await screen.findByText(/admin only/)).toBeInTheDocument()
     expect(listCellNotes).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('DeckProgressPanel — công việc', () => {
+  const GG = {
+    id: 'w2', projectId: 'p1', seq: 2, name: 'Tháo giáo', kind: 'bays' as const,
+    weight: 0.4, counts: true, manualProgress: 0,
+  }
+  const GG_STAGES = [{ id: 't1', seq: 1, name: 'Tháo giáo lửng', color: '#333333', weight: 1 }]
+  /** The same deck in two works: Sơn (W .6, D 1, at 70%) and Tháo giáo (W .4, D 1, untouched). */
+  const TWO_WORKS = {
+    ...ENTRY,
+    works: [
+      { work: { ...WORK, name: 'Sơn', weight: 0.6 }, weight: 1, stages: STAGES, cells: CELLS, audit: {} },
+      { work: GG, weight: 1, stages: GG_STAGES, cells: CELLS.map((c) => ({ ...c, stageId: null })), audit: {} },
+    ],
+  }
+
+  beforeEach(() => {
+    loadDeckWorks.mockResolvedValue(TWO_WORKS)
+  })
+
+  it('offers the works the deck is part of, opening on the first', async () => {
+    renderPanel(false)
+    await screen.findByTestId('lens-A')
+    expect(screen.getByLabelText('Công việc')).toBeInTheDocument()
+    expect(within(screen.getByTestId('lens-A')).getByText('Tiến độ · Blast + Coat 1')).toBeInTheDocument()
+  })
+
+  it('switching the work switches the coats on offer, and the lens with them', async () => {
+    renderPanel(false)
+    await screen.findByTestId('lens-A')
+    await pickLens('Công việc', 'Tháo giáo')
+    expect(await within(screen.getByTestId('lens-A')).findByText('Tiến độ · Tháo giáo lửng')).toBeInTheDocument()
+    await userEvent.click(screen.getByLabelText('Lớp sơn đang xem'))
+    expect(screen.queryByTitle('Coat 2')).toBeNull()
+  })
+
+  it('reports the deck\'s tổng hợp upward, not one work\'s figure', async () => {
+    // (0.6·1)·0.7 + (0.4·1)·0 over 0.6 + 0.4 = 0.42. The header shows the
+    // deck across its works, not the coat list that happens to be open.
+    const onProgress = vi.fn()
+    render(<AntApp><DeckProgressPanel deckId="d1" editable={false} onProgress={onProgress} /></AntApp>)
+    await screen.findByTestId('lens-A')
+    await waitFor(() => {
+      const last = onProgress.mock.calls.at(-1)?.[0] as number
+      expect(last).toBeCloseTo(0.42, 12)
+    })
+  })
+
+  it('lists each work\'s weight and progress for this deck, then the tổng hợp', async () => {
+    renderPanel(false)
+    const table = await screen.findByTestId('deck-works-table')
+    expect(within(table).getByText('70,00%')).toBeInTheDocument()
+    expect(within(table).getAllByText('1,00')).toHaveLength(2)
+    expect(within(table).getByText('Tổng hợp')).toBeInTheDocument()
+    expect(within(table).getByText('42,00%')).toBeInTheDocument()
+  })
+
+  it('shows one work without a selector, and says which it is', async () => {
+    loadDeckWorks.mockResolvedValue(ENTRY)
+    renderPanel(false)
+    await screen.findByTestId('lens-A')
+    expect(screen.queryByLabelText('Công việc')).toBeNull()
+    expect(screen.getByText('Công việc: Công việc chính')).toBeInTheDocument()
+  })
+
+  it('tells the admin when the deck is in no work yet', async () => {
+    loadDeckWorks.mockResolvedValue({ ...ENTRY, works: [] })
+    renderPanel(false)
+    expect(await screen.findByText('Sàn này chưa thuộc công việc nào')).toBeInTheDocument()
   })
 })

@@ -39,10 +39,17 @@ vi.mock('./DeckEditor', () => ({
 // form, and the panel has its own test file. Left real it would pull decksApi's
 // stage exports through a mock that does not carry them.
 vi.mock('./StageConfigPanel', () => ({
-  StageConfigPanel: ({ deckId, editable }: { deckId: string; editable?: boolean }) => (
-    <div>{`stages ${deckId} ${editable ? 'sửa' : 'xem'}`}</div>
+  StageConfigPanel: ({ workId, deckId, editable }: { workId: string; deckId: string; editable?: boolean }) => (
+    <div>{`stages ${workId} ${deckId} ${editable ? 'sửa' : 'xem'}`}</div>
   ),
 }))
+// The works the deck is part of, which is what A3.2 tabs over since 0024.
+const listDeckWorks = vi.hoisted(() => vi.fn())
+vi.mock('../../lib/gsApi', () => ({ listDeckWorks: (id: string) => listDeckWorks(id) }))
+const WORK1 = {
+  id: 'w1', projectId: 'p1', seq: 1, name: 'Sơn', kind: 'bays' as const, weight: 0.6, counts: true, manualProgress: 0,
+}
+const WORK2 = { ...WORK1, id: 'w2', seq: 2, name: 'Tháo giáo', weight: 0.4 }
 // Stubbed like the other two, and for one more reason: left real it calls
 // loadDeckProgress against the live client, so every test in this file paid a
 // network round trip for a panel none of them are about. The stub reports a
@@ -79,6 +86,8 @@ beforeEach(() => {
   uploadDrawing.mockResolvedValue(undefined)
   pdfPageCount.mockResolvedValue(1)
   renderPdfPage.mockResolvedValue({ blob: new Blob(['x']), width: 2000, height: 1414 })
+  listDeckWorks.mockReset()
+  listDeckWorks.mockResolvedValue([{ work: WORK1, weight: 1, stages: [] }])
 })
 
 const renderAt = (path: string) =>
@@ -119,7 +128,7 @@ describe('DeckDetailScreen', () => {
     // the writing: no file picker, and both panels told they are read-only.
     expect(screen.queryByLabelText('Bản vẽ (PDF)')).not.toBeInTheDocument()
     expect(screen.getByText('editor MD xem')).toBeInTheDocument()
-    expect(screen.getByText('stages d1 xem')).toBeInTheDocument()
+    expect(await screen.findByText('stages w1 d1 xem')).toBeInTheDocument()
 
     // The Segmented's radio input carries pointer-events:none -- its visible
     // label is what a person clicks, so that is what the test clicks.
@@ -127,7 +136,7 @@ describe('DeckDetailScreen', () => {
 
     expect(await screen.findByLabelText('Bản vẽ (PDF)')).toBeInTheDocument()
     expect(screen.getByText('editor MD sửa')).toBeInTheDocument()
-    expect(screen.getByText('stages d1 sửa')).toBeInTheDocument()
+    expect(await screen.findByText('stages w1 d1 sửa')).toBeInTheDocument()
   })
 
   it('names the file the drawing came from', async () => {
@@ -378,5 +387,37 @@ describe('DeckDetailScreen', () => {
     renderAt('/decks/d1')
 
     expect(await screen.findByText('JWT expired')).toBeInTheDocument()
+  })
+})
+
+describe('DeckDetailScreen — công việc', () => {
+  it('shows one work\'s coats without tabs', async () => {
+    renderAt('/decks/d1')
+    expect(await screen.findByText('stages w1 d1 xem')).toBeInTheDocument()
+    expect(screen.queryByRole('tab')).toBeNull()
+  })
+
+  it('tabs the coat configuration by work when the deck is in several', async () => {
+    listDeckWorks.mockResolvedValue([{ work: WORK1, weight: 1, stages: [] }, { work: WORK2, weight: 1, stages: [] }])
+    renderAt('/decks/d1')
+    expect(await screen.findByText('stages w1 d1 xem')).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'Sơn' })).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('tab', { name: 'Tháo giáo' }))
+    expect(await screen.findByText('stages w2 d1 xem')).toBeInTheDocument()
+  })
+
+  it('points at the Công việc screen when the deck is in no work', async () => {
+    listDeckWorks.mockResolvedValue([])
+    renderAt('/decks/d1')
+    expect(await screen.findByText('Sàn này chưa thuộc công việc nào')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /Công việc/ })).toHaveAttribute('href', expect.stringContaining('/admin/works?project=p1'))
+  })
+
+  it('labels the header figure as the deck\'s tổng hợp across works', async () => {
+    renderAt('/decks/d1')
+    await screen.findByRole('heading', { level: 1, name: 'Main Deck' })
+    // The figure arrives one effect after the panel mounts, so wait for it.
+    expect(await screen.findByText('44,38%')).toBeInTheDocument()
+    expect(screen.getByText(/tổng hợp các công việc/)).toBeInTheDocument()
   })
 })
