@@ -1,12 +1,14 @@
-import { ArrowRightOutlined, DownloadOutlined, PlusOutlined } from '@ant-design/icons'
-import { Alert, App, Button, Select, Table, Tooltip } from 'antd'
+import {
+  ArrowRightOutlined, DeleteOutlined, DownloadOutlined, PlusOutlined,
+} from '@ant-design/icons'
+import { Alert, App, Button, Select, Space, Table, Tooltip } from 'antd'
 import dayjs from 'dayjs'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { renderDeckDrawing, renderDeckPie } from '../../canvas/deckSnapshot'
 import { computeProjectProgress } from '../../domain/progress'
 import { listGsUsers } from '../../lib/adminApi'
-import { getDrawingUrl, listDecks, type DeckRow } from '../../lib/decksApi'
+import { deleteDeck, getDrawingUrl, listDecks, type DeckRow } from '../../lib/decksApi'
 import { formatAreaM2, formatPercent } from '../../lib/format'
 import { listDeckEvents, loadProjectProgress } from '../../lib/progressApi'
 import { listDeckZones } from '../../lib/zonesApi'
@@ -84,6 +86,9 @@ export function DecksScreen() {
    */
   const [entries, setEntries] = useState<Awaited<ReturnType<typeof loadProjectProgress>>>([])
   const [exporting, setExporting] = useState(false)
+  /** The deck whose deletion is being confirmed, and the write in flight. */
+  const [removingDeck, setRemovingDeck] = useState<DeckRow | null>(null)
+  const [removing, setRemoving] = useState(false)
   const [confirmingExport, setConfirmingExport] = useState(false)
   const { message } = App.useApp()
 
@@ -185,6 +190,35 @@ export function DecksScreen() {
   })
   const totalArea = entries.reduce((sum, e) => sum + e.deck.totalAreaM2, 0)
   const projectName = projects.find((p) => p.id === projectId)?.name ?? ''
+
+  /**
+   * Hard delete, behind the typed name (Feedback Rv1, item 1). The row goes
+   * with everything under it; the drawing file is cleaned up after, and a
+   * file that would not go is reported rather than treated as a failed delete
+   * -- see decksApi.deleteDeck for the order and why.
+   */
+  const removeDeck = async () => {
+    if (!removingDeck) return
+    setRemoving(true)
+    try {
+      const { drawingRemoved } = await deleteDeck({
+        id: removingDeck.id, imagePath: removingDeck.imagePath,
+      })
+      setRemovingDeck(null)
+      message.success(`Đã xóa sàn ${removingDeck.name}`)
+      if (!drawingRemoved) {
+        message.warning('Đã xóa, nhưng chưa dọn được file bản vẽ trên kho lưu trữ')
+      }
+      // Re-read rather than patch: what is shown is what is there. Both
+      // lists, because the rollup below the table names the deck too.
+      await refreshDecks()
+      if (projectId) setEntries(await loadProjectProgress(projectId))
+    } catch (e) {
+      message.error((e as Error).message)
+    } finally {
+      setRemoving(false)
+    }
+  }
 
   /**
    * The XLSX (spec §9), built from EVERY deck of the project.
@@ -354,17 +388,28 @@ export function DecksScreen() {
               {
                 title: 'Thao tác',
                 key: 'actions',
-                width: 100,
+                width: 140,
                 align: 'right',
                 render: (_v, deck) => (
-                  <Tooltip title="Mở sàn">
-                    <Button
-                      size="small"
-                      aria-label="Mở"
-                      icon={<ArrowRightOutlined />}
-                      onClick={() => navigate(deck.id)}
-                    />
-                  </Tooltip>
+                  <Space size={6}>
+                    <Tooltip title="Mở sàn">
+                      <Button
+                        size="small"
+                        aria-label="Mở"
+                        icon={<ArrowRightOutlined />}
+                        onClick={() => navigate(deck.id)}
+                      />
+                    </Tooltip>
+                    <Tooltip title="Xóa sàn">
+                      <Button
+                        size="small"
+                        danger
+                        aria-label="Xóa sàn"
+                        icon={<DeleteOutlined />}
+                        onClick={() => setRemovingDeck(deck)}
+                      />
+                    </Tooltip>
+                  </Space>
                 ),
               },
             ]}
@@ -540,6 +585,26 @@ export function DecksScreen() {
         confirmLoading={exporting}
         onCancel={() => setConfirmingExport(false)}
         onOk={() => void exportReport()}
+      />
+
+      <ConsequenceModal
+        open={removingDeck !== null}
+        tone="danger"
+        tag="Thao tác phá huỷ"
+        title={`Xóa sàn ${removingDeck?.name ?? ''}?`}
+        description="Xóa vĩnh viễn, không khôi phục được. Mất theo sàn:"
+        items={[
+          { label: 'Toàn bộ ô và lịch sử công đoạn', meta: removingDeck ? `${removingDeck.cellCount} ô` : undefined },
+          { label: 'Zone và kế hoạch' },
+          { label: 'Ghi chú của GS' },
+          { label: 'Bản vẽ đã tải lên', meta: removingDeck?.imagePath ? 'Đã có' : 'Chưa có' },
+        ]}
+        consequence="Máy tính bảng đang mở sàn này sẽ không ghi được nữa cho tới khi tải lại."
+        okText="Xóa sàn"
+        confirmText={removingDeck?.name}
+        confirmLoading={removing}
+        onCancel={() => setRemovingDeck(null)}
+        onOk={() => void removeDeck()}
       />
     </>
   )

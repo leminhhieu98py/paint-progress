@@ -1,6 +1,7 @@
 import type { Cell, Deck } from '../domain/types'
 import { computeProjectProgress } from '../domain/progress'
 import { supabase } from './supabase'
+import { DRAWINGS_BUCKET } from './decksApi'
 
 export interface ProjectRow {
   id: string
@@ -139,4 +140,34 @@ export async function listProjects(): Promise<ProjectRow[]> {
       progress: computeProjectProgress(entries).progress,
     }
   })
+}
+
+/**
+ * Removes a project and everything under it. The decks' drawing paths are read
+ * FIRST: the cascade takes the decks with the project row, and with them the
+ * only record of which files in the bucket are this project's. Then the row,
+ * then one storage call for every path.
+ *
+ * Same failure policy as decksApi.deleteDeck, for the same reason: a refused
+ * delete throws before storage is touched; files that could not be removed
+ * after a delete that has happened are counted and returned, never thrown.
+ */
+export async function deleteProject(
+  projectId: string,
+): Promise<{ drawingsRemoved: number; drawingsTotal: number }> {
+  const { data: decks, error: listError } = await supabase
+    .from('decks')
+    .select('image_path')
+    .eq('project_id', projectId)
+  if (listError) throw new Error(listError.message)
+  const paths = ((decks ?? []) as { image_path: string | null }[])
+    .map((d) => d.image_path)
+    .filter((p): p is string => p !== null)
+
+  const { error } = await supabase.from('projects').delete().eq('id', projectId)
+  if (error) throw new Error(error.message)
+
+  if (paths.length === 0) return { drawingsRemoved: 0, drawingsTotal: 0 }
+  const { error: storageError } = await supabase.storage.from(DRAWINGS_BUCKET).remove(paths)
+  return { drawingsRemoved: storageError ? 0 : paths.length, drawingsTotal: paths.length }
 }

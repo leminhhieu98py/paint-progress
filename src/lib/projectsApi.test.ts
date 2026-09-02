@@ -1,15 +1,20 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   createProject,
+  deleteProject,
   listProjects,
   myFirstProjectId,
   updateProject,
 } from './projectsApi'
 
 const from = vi.hoisted(() => vi.fn())
-vi.mock('./supabase', () => ({ supabase: { from } }))
+const remove = vi.hoisted(() => vi.fn())
+vi.mock('./supabase', () => ({ supabase: { from, storage: { from: () => ({ remove }) } } }))
 
-beforeEach(() => from.mockReset())
+beforeEach(() => {
+  from.mockReset()
+  remove.mockReset()
+})
 
 /** Minimal PostgREST builder stub: every method chains, `then` resolves. */
 function builder(result: { data?: unknown; error?: unknown }) {
@@ -196,5 +201,51 @@ describe('listProjects', () => {
     expect(row.deckCount).toBe(1)
     expect(row.totalAreaM2).toBe(6139)
     expect(row.progress).toBeCloseTo(0.599552044306890, 9)
+  })
+})
+
+describe('deleteProject', () => {
+  it('lists the drawings, deletes the project, then removes them in one call', async () => {
+    // The paths have to be read BEFORE the row goes: the cascade takes the
+    // decks with it, and with them the only record of which files are ours.
+    const list = builder({ data: [{ image_path: 'p1/d1.png' }, { image_path: null }, { image_path: 'p1/d3.png' }] })
+    const del = builder({ data: null })
+    from.mockImplementationOnce(() => list)
+    from.mockImplementationOnce(() => del)
+    remove.mockResolvedValue({ data: [{ name: 'p1/d1.png' }, { name: 'p1/d3.png' }], error: null })
+
+    const result = await deleteProject('p1')
+
+    expect(from.mock.calls.map((c) => c[0])).toEqual(['decks', 'projects'])
+    expect(list.eq).toHaveBeenCalledWith('project_id', 'p1')
+    expect(del.delete).toHaveBeenCalled()
+    expect(del.eq).toHaveBeenCalledWith('id', 'p1')
+    expect(remove).toHaveBeenCalledWith(['p1/d1.png', 'p1/d3.png'])
+    const deleteOrder = (del.delete as ReturnType<typeof vi.fn>).mock.invocationCallOrder[0]
+    expect(remove.mock.invocationCallOrder[0]).toBeGreaterThan(deleteOrder)
+    expect(result).toEqual({ drawingsRemoved: 2, drawingsTotal: 2 })
+  })
+
+  it('never touches storage when the project delete is refused', async () => {
+    from.mockImplementationOnce(() => builder({ data: [{ image_path: 'p1/d1.png' }] }))
+    from.mockImplementationOnce(() => builder({ error: { message: 'permission denied' } }))
+    await expect(deleteProject('p1')).rejects.toThrow('permission denied')
+    expect(remove).not.toHaveBeenCalled()
+  })
+
+  it('reports drawings it could not remove instead of failing a delete that has happened', async () => {
+    from.mockImplementationOnce(() => builder({ data: [{ image_path: 'p1/d1.png' }, { image_path: 'p1/d2.png' }] }))
+    from.mockImplementationOnce(() => builder({ data: null }))
+    remove.mockResolvedValue({ data: null, error: { message: 'storage down' } })
+
+    await expect(deleteProject('p1')).resolves.toEqual({ drawingsRemoved: 0, drawingsTotal: 2 })
+  })
+
+  it('removes nothing when no deck ever had a drawing', async () => {
+    from.mockImplementationOnce(() => builder({ data: [{ image_path: null }] }))
+    from.mockImplementationOnce(() => builder({ data: null }))
+
+    await expect(deleteProject('p1')).resolves.toEqual({ drawingsRemoved: 0, drawingsTotal: 0 })
+    expect(remove).not.toHaveBeenCalled()
   })
 })

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Stage } from '../domain/types'
 import {
-  createDeck, getDrawingUrl, listCells, listDecks, listStages,
+  createDeck, deleteDeck, getDrawingUrl, listCells, listDecks, listStages,
   roundStageWeight, saveStages, STAGE_WEIGHT_EPSILON, stagesRemovedBy,
   syncCells, updateDeckArea, uploadDrawing, zoneImpactOf,
 } from './decksApi'
@@ -9,8 +9,9 @@ import {
 const from = vi.hoisted(() => vi.fn())
 const upload = vi.hoisted(() => vi.fn())
 const createSignedUrl = vi.hoisted(() => vi.fn())
+const remove = vi.hoisted(() => vi.fn())
 vi.mock('./supabase', () => ({
-  supabase: { from, storage: { from: () => ({ upload, createSignedUrl }) } },
+  supabase: { from, storage: { from: () => ({ upload, createSignedUrl, remove }) } },
 }))
 
 function builder(result: { data?: unknown; error?: unknown }) {
@@ -27,6 +28,7 @@ beforeEach(() => {
   from.mockReset()
   upload.mockReset()
   createSignedUrl.mockReset()
+  remove.mockReset()
 })
 
 describe('listDecks', () => {
@@ -1088,5 +1090,47 @@ describe('roundStageWeight', () => {
     expect(roundStageWeight(0.33333)).toBe(0.33333)
     expect(roundStageWeight(1)).toBe(1)
     expect(roundStageWeight(0)).toBe(0)
+  })
+})
+
+describe('deleteDeck', () => {
+  it('deletes the row first, then the drawing it pointed at', async () => {
+    // This order, and not the other: a row that outlives its PNG is a deck
+    // with a broken drawing on every screen; a PNG that outlives its row is a
+    // few megabytes nobody can reach. The cascade (0001/0003/0018) takes the
+    // cells, zones, guides, stages and events with the row.
+    const b = builder({ data: null })
+    from.mockImplementationOnce(() => b)
+    remove.mockResolvedValue({ data: [{ name: 'p1/d1.png' }], error: null })
+
+    const result = await deleteDeck({ id: 'd1', imagePath: 'p1/d1.png' })
+
+    expect(from).toHaveBeenCalledWith('decks')
+    expect((b.delete as ReturnType<typeof vi.fn>)).toHaveBeenCalled()
+    expect(b.eq).toHaveBeenCalledWith('id', 'd1')
+    expect(remove).toHaveBeenCalledWith(['p1/d1.png'])
+    const deleteOrder = (b.delete as ReturnType<typeof vi.fn>).mock.invocationCallOrder[0]
+    expect(remove.mock.invocationCallOrder[0]).toBeGreaterThan(deleteOrder)
+    expect(result).toEqual({ drawingRemoved: true })
+  })
+
+  it('never touches storage when the row delete is refused', async () => {
+    from.mockImplementationOnce(() => builder({ error: { message: 'permission denied' } }))
+    await expect(deleteDeck({ id: 'd1', imagePath: 'p1/d1.png' })).rejects.toThrow('permission denied')
+    expect(remove).not.toHaveBeenCalled()
+  })
+
+  it('reports a drawing it could not remove instead of failing a delete that has happened', async () => {
+    from.mockImplementationOnce(() => builder({ data: null }))
+    remove.mockResolvedValue({ data: null, error: { message: 'storage down' } })
+
+    await expect(deleteDeck({ id: 'd1', imagePath: 'p1/d1.png' }))
+      .resolves.toEqual({ drawingRemoved: false })
+  })
+
+  it('has nothing to remove for a deck that never had a drawing', async () => {
+    from.mockImplementationOnce(() => builder({ data: null }))
+    await expect(deleteDeck({ id: 'd1', imagePath: null })).resolves.toEqual({ drawingRemoved: true })
+    expect(remove).not.toHaveBeenCalled()
   })
 })

@@ -27,6 +27,8 @@ export interface ZoneImpact {
 }
 
 const BUCKET = 'drawings'
+/** The same bucket, for the one other module that deletes from it (projectsApi). */
+export const DRAWINGS_BUCKET = BUCKET
 
 export async function listDecks(projectId: string): Promise<DeckRow[]> {
   const { data, error } = await supabase
@@ -550,4 +552,30 @@ export async function saveStages(deckId: string, stages: Stage[]): Promise<void>
     { onConflict: 'id' },
   )
   if (upsertError) throw new Error(upsertError.message)
+}
+
+/**
+ * Removes a deck and everything under it: the row goes first, and the
+ * cascade declared in 0001/0003/0018 takes its cells, zones, guides, stages
+ * and events with it. Only then is the drawing removed from storage.
+ *
+ * This order, and not the other. A row that outlives its PNG is a deck with a
+ * broken drawing on every screen; a PNG that outlives its row is a few
+ * megabytes nobody can reach. So a refused delete throws before storage is
+ * touched, and a refused storage removal after a delete that has happened is
+ * RETURNED, not thrown: the admin is told the file was not cleaned up, and is
+ * not told that a delete which has already happened failed.
+ *
+ * Hard delete, typed-name confirmed in the UI, by the owner's decision
+ * (Feedback Rv1, item 1). There is no soft delete to fall back on.
+ */
+export async function deleteDeck(
+  deck: { id: string; imagePath: string | null },
+): Promise<{ drawingRemoved: boolean }> {
+  const { error } = await supabase.from('decks').delete().eq('id', deck.id)
+  if (error) throw new Error(error.message)
+
+  if (deck.imagePath === null) return { drawingRemoved: true }
+  const { error: storageError } = await supabase.storage.from(BUCKET).remove([deck.imagePath])
+  return { drawingRemoved: !storageError }
 }

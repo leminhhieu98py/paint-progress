@@ -1,8 +1,9 @@
-import { EditOutlined, PlusOutlined } from '@ant-design/icons'
-import { Alert, App, Button, Form, Input, Modal, Table, Tooltip } from 'antd'
+import { DeleteOutlined, EditOutlined, PlusOutlined } from '@ant-design/icons'
+import { Alert, App, Button, Form, Input, Modal, Space, Table, Tooltip } from 'antd'
 import dayjs from 'dayjs'
 import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { ConsequenceModal } from '../../components/ConsequenceModal'
 import { PageBody, PageHeader } from '../../components/PageHeader'
 import { ProgressBar } from '../../components/ProgressBar'
 import { SectionCard } from '../../components/SectionCard'
@@ -10,7 +11,9 @@ import { modalProps } from '../../components/modalChrome'
 import { StatCard } from '../../components/StatCard'
 import { formatAreaM2 } from '../../lib/format'
 import { latestProgressEvent, type ProgressEvent } from '../../lib/progressApi'
-import { createProject, listProjects, updateProject, type ProjectRow } from '../../lib/projectsApi'
+import {
+  createProject, deleteProject, listProjects, updateProject, type ProjectRow,
+} from '../../lib/projectsApi'
 import { APP_BASE_PATH } from '../../config'
 import { palette } from '../../theme'
 
@@ -49,6 +52,9 @@ export function ProjectsScreen() {
   const [error, setError] = useState<string | null>(null)
   const [createOpen, setCreateOpen] = useState(false)
   const [editing, setEditing] = useState<ProjectRow | null>(null)
+  /** The project whose deletion is being confirmed, and the write in flight. */
+  const [removingProject, setRemovingProject] = useState<ProjectRow | null>(null)
+  const [removing, setRemoving] = useState(false)
 
   const refresh = useCallback(async () => {
     setLoading(true)
@@ -87,6 +93,30 @@ export function ProjectsScreen() {
   }, [])
 
   const { message } = App.useApp()
+
+  /**
+   * Hard delete behind the typed name (Feedback Rv1, item 1): every deck,
+   * bay, zone, note, membership and event under the project goes with the
+   * row. Drawing files are cleaned up after; ones that would not go are
+   * reported, not treated as a failed delete -- see projectsApi.deleteProject.
+   */
+  const removeProject = async () => {
+    if (!removingProject) return
+    setRemoving(true)
+    try {
+      const { drawingsRemoved, drawingsTotal } = await deleteProject(removingProject.id)
+      setRemovingProject(null)
+      message.success(`Đã xóa dự án ${removingProject.name}`)
+      if (drawingsRemoved < drawingsTotal) {
+        message.warning('Đã xóa, nhưng chưa dọn được file bản vẽ trên kho lưu trữ')
+      }
+      await refresh()
+    } catch (e) {
+      message.error((e as Error).message)
+    } finally {
+      setRemoving(false)
+    }
+  }
   // The dialog's actions live in its footer strip, outside the <Form>.
   const [form] = Form.useForm<CreateValues>()
 
@@ -268,29 +298,65 @@ export function ProjectsScreen() {
               {
                 title: 'Thao tác',
                 key: 'actions',
-                width: 100,
+                width: 140,
                 align: 'right',
                 render: (_v, row) => (
-                  <Tooltip title="Sửa dự án">
-                    <Button
-                      size="small"
-                      aria-label="Sửa"
-                      icon={<EditOutlined />}
-                      onClick={(e) => {
-                        // The button sits inside a row that navigates. Without
-                        // this, editing also opens the project's decks behind
-                        // the modal, and closing it strands the admin there.
-                        e.stopPropagation()
-                        openDialog(row)
-                      }}
-                    />
-                  </Tooltip>
+                  <Space size={6}>
+                    <Tooltip title="Sửa dự án">
+                      <Button
+                        size="small"
+                        aria-label="Sửa"
+                        icon={<EditOutlined />}
+                        onClick={(e) => {
+                          // The button sits inside a row that navigates. Without
+                          // this, editing also opens the project's decks behind
+                          // the modal, and closing it strands the admin there.
+                          e.stopPropagation()
+                          openDialog(row)
+                        }}
+                      />
+                    </Tooltip>
+                    <Tooltip title="Xóa dự án">
+                      <Button
+                        size="small"
+                        danger
+                        aria-label="Xóa dự án"
+                        icon={<DeleteOutlined />}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setRemovingProject(row)
+                        }}
+                      />
+                    </Tooltip>
+                  </Space>
                 ),
               },
             ]}
           />
         </SectionCard>
       </PageBody>
+
+      <ConsequenceModal
+        open={removingProject !== null}
+        tone="danger"
+        tag="Thao tác phá huỷ"
+        title={`Xóa dự án ${removingProject?.name ?? ''}?`}
+        description="Xóa vĩnh viễn, không khôi phục được. Mất theo dự án:"
+        items={[
+          { label: `${removingProject?.deckCount ?? 0} sàn`, meta: removingProject ? `${formatAreaM2(removingProject.totalAreaM2)} m²` : undefined },
+          { label: 'Toàn bộ ô và lịch sử công đoạn', meta: removingProject ? `${removingProject.cellCount} ô` : undefined },
+          { label: 'Zone và kế hoạch' },
+          { label: 'Ghi chú của GS' },
+          { label: 'Bản vẽ đã tải lên' },
+          { label: 'Phân quyền GS vào dự án' },
+        ]}
+        consequence="GS đang mở dự án này trên máy tính bảng sẽ không ghi được nữa cho tới khi tải lại."
+        okText="Xóa dự án"
+        confirmText={removingProject?.name}
+        confirmLoading={removing}
+        onCancel={() => setRemovingProject(null)}
+        onOk={() => void removeProject()}
+      />
 
       <Modal
         open={createOpen || editing !== null}

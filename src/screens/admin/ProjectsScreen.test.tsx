@@ -1,4 +1,4 @@
-import { screen, waitFor } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import dayjs from 'dayjs'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import userEvent from '@testing-library/user-event'
@@ -14,15 +14,19 @@ vi.mock('../../lib/progressApi', () => ({
 const listProjects = vi.hoisted(() => vi.fn())
 const createProject = vi.hoisted(() => vi.fn())
 const updateProject = vi.hoisted(() => vi.fn())
+const deleteProject = vi.hoisted(() => vi.fn())
 vi.mock('../../lib/projectsApi', () => ({
   listProjects: () => listProjects(),
   createProject: (i: unknown) => createProject(i),
   updateProject: (id: string, i: unknown) => updateProject(id, i),
+  deleteProject: (id: string) => deleteProject(id),
 }))
 
 beforeEach(() => {
   listProjects.mockReset()
   createProject.mockReset()
+  deleteProject.mockReset()
+  deleteProject.mockResolvedValue({ drawingsRemoved: 4, drawingsTotal: 4 })
   latestProgressEvent.mockReset()
   latestProgressEvent.mockResolvedValue(null)
   // Two projects, and every counter deliberately distinct from every other
@@ -239,5 +243,44 @@ describe('ProjectsScreen', () => {
     listProjects.mockRejectedValue(new Error('permission denied for table projects'))
     renderScreen()
     expect(await screen.findByText(/permission denied/)).toBeInTheDocument()
+  })
+})
+
+describe('ProjectsScreen — deleting a project', () => {
+  it('deletes a project only once its exact name has been typed, without navigating', async () => {
+    // The button sits inside a row that navigates, like the edit button. And
+    // a project takes every deck, membership and history with it, so the name
+    // is typed, not clicked past.
+    renderScreen()
+    await screen.findByText('BB1 - CPPTS')
+    await userEvent.click(screen.getAllByRole('button', { name: 'Xóa dự án' })[0])
+    expect(screen.getByTestId('url')).toHaveTextContent('/admin/projects')
+
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText('Xóa dự án BB1 - CPPTS?')).toBeInTheDocument()
+    expect(within(dialog).getByText('5 sàn')).toBeInTheDocument()
+    expect(within(dialog).getByText('Phân quyền GS vào dự án')).toBeInTheDocument()
+    const ok = within(dialog).getByRole('button', { name: /Xóa dự án/ })
+    expect(ok).toBeDisabled()
+
+    await userEvent.type(within(dialog).getByLabelText('Gõ đúng tên để xác nhận'), 'BB1 - CPPTS')
+    await userEvent.click(ok)
+
+    await waitFor(() => expect(deleteProject).toHaveBeenCalledWith('p1'))
+    expect(await screen.findByText('Đã xóa dự án BB1 - CPPTS')).toBeInTheDocument()
+    await waitFor(() => expect(listProjects).toHaveBeenCalledTimes(2))
+  })
+
+  it('says so when some drawings could not be cleaned up', async () => {
+    deleteProject.mockResolvedValue({ drawingsRemoved: 1, drawingsTotal: 4 })
+    renderScreen()
+    await screen.findByText('BB1 - CPPTS')
+    await userEvent.click(screen.getAllByRole('button', { name: 'Xóa dự án' })[0])
+    const dialog = await screen.findByRole('dialog')
+    await userEvent.type(within(dialog).getByLabelText('Gõ đúng tên để xác nhận'), 'BB1 - CPPTS')
+    await userEvent.click(within(dialog).getByRole('button', { name: /Xóa dự án/ }))
+
+    expect(await screen.findByText('Đã xóa, nhưng chưa dọn được file bản vẽ trên kho lưu trữ'))
+      .toBeInTheDocument()
   })
 })

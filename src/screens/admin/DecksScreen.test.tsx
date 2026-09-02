@@ -16,9 +16,11 @@ const renderDeckPie = vi.hoisted(() => vi.fn())
 const getDrawingUrl = vi.hoisted(() => vi.fn())
 
 vi.mock('../../lib/projectsApi', () => ({ listProjectNames: () => listProjectNames() }))
+const deleteDeck = vi.hoisted(() => vi.fn())
 vi.mock('../../lib/decksApi', () => ({
   listDecks: (p: string) => listDecks(p),
   getDrawingUrl: (p: string) => getDrawingUrl(p),
+  deleteDeck: (d: unknown) => deleteDeck(d),
 }))
 const listDeckEvents = vi.hoisted(() => vi.fn())
 vi.mock('../../lib/progressApi', () => ({
@@ -81,6 +83,8 @@ beforeEach(() => {
   renderDeckPie.mockReturnValue('PIEDATA')
   getDrawingUrl.mockImplementation((p: string) => Promise.resolve(`https://signed/${p}`))
   listProjectNames.mockResolvedValue([{ id: 'p1', name: 'BB1', code: 'BB1' }])
+  deleteDeck.mockReset()
+  deleteDeck.mockResolvedValue({ drawingRemoved: true })
   listDecks.mockResolvedValue([
     {
       id: 'd1', projectId: 'p1', seq: 1, name: 'Main Deck', code: 'MD',
@@ -277,5 +281,53 @@ describe('DecksScreen — the project-wide half of progress', () => {
 
     expect(await screen.findByText('Dự án này chưa có sàn nào')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Xuất báo cáo/ })).toBeDisabled()
+  })
+})
+
+describe('DecksScreen — deleting a deck', () => {
+  const openDelete = async () => {
+    renderScreen()
+    await userEvent.click(await screen.findByRole('button', { name: 'Xóa sàn' }))
+    return screen.findByRole('dialog')
+  }
+
+  it('deletes a deck only once its exact name has been typed', async () => {
+    // Feedback Rv1, item 1, as the owner decided it: a hard delete behind the
+    // name. The dialog says what goes with the deck, and the typed name is
+    // what stands between a misclick and 184 bays of history.
+    const dialog = await openDelete()
+    expect(within(dialog).getByText('Xóa sàn Main Deck?')).toBeInTheDocument()
+    for (const item of [
+      'Toàn bộ ô và lịch sử công đoạn', 'Zone và kế hoạch', 'Ghi chú của GS', 'Bản vẽ đã tải lên',
+    ]) expect(within(dialog).getByText(item)).toBeInTheDocument()
+    const ok = within(dialog).getByRole('button', { name: /Xóa sàn/ })
+    expect(ok).toBeDisabled()
+
+    await userEvent.type(within(dialog).getByLabelText('Gõ đúng tên để xác nhận'), 'Main Deck')
+    await userEvent.click(ok)
+
+    await waitFor(() => expect(deleteDeck).toHaveBeenCalledWith({ id: 'd1', imagePath: null }))
+    expect(await screen.findByText('Đã xóa sàn Main Deck')).toBeInTheDocument()
+    // The list is re-read rather than patched, so what is shown is what is there.
+    await waitFor(() => expect(listDecks).toHaveBeenCalledTimes(2))
+  })
+
+  it('says so when the drawing could not be cleaned up, without undoing the delete', async () => {
+    deleteDeck.mockResolvedValue({ drawingRemoved: false })
+    const dialog = await openDelete()
+    await userEvent.type(within(dialog).getByLabelText('Gõ đúng tên để xác nhận'), 'Main Deck')
+    await userEvent.click(within(dialog).getByRole('button', { name: /Xóa sàn/ }))
+
+    expect(await screen.findByText('Đã xóa, nhưng chưa dọn được file bản vẽ trên kho lưu trữ'))
+      .toBeInTheDocument()
+  })
+
+  it('surfaces a refused delete', async () => {
+    deleteDeck.mockRejectedValue(new Error('permission denied'))
+    const dialog = await openDelete()
+    await userEvent.type(within(dialog).getByLabelText('Gõ đúng tên để xác nhận'), 'Main Deck')
+    await userEvent.click(within(dialog).getByRole('button', { name: /Xóa sàn/ }))
+
+    expect(await screen.findByText(/permission denied/)).toBeInTheDocument()
   })
 })

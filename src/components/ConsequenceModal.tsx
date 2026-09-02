@@ -4,8 +4,8 @@ import {
   InfoCircleFilled,
   WarningFilled,
 } from '@ant-design/icons'
-import { Button, Modal } from 'antd'
-import type { ReactNode } from 'react'
+import { Button, Input, Modal } from 'antd'
+import { useState, type ReactNode } from 'react'
 import { palette } from '../theme'
 
 export interface ConsequenceItem {
@@ -48,6 +48,7 @@ export function ConsequenceModal({
   confirmLoading = false,
   onOk,
   onCancel,
+  confirmText,
 }: {
   open: boolean
   tone?: ConsequenceTone
@@ -61,12 +62,31 @@ export function ConsequenceModal({
   confirmLoading?: boolean
   onOk: () => void
   onCancel: () => void
+  /**
+   * When set, the confirm button stays disabled until this exact text has
+   * been typed (surrounding whitespace forgiven, nothing else). For the
+   * deletes that take a deck's or a project's whole history with them:
+   * "are you sure?" is answered by reflex, a name is not. The field is
+   * cleared on every close so the next delete is never one click.
+   */
+  confirmText?: string
 }) {
   const t = TONES[tone]
+  const [typed, setTyped] = useState('')
+  const armed = confirmText === undefined || typed.trim() === confirmText
+  const cancel = () => {
+    setTyped('')
+    onCancel()
+  }
+  const confirm = () => {
+    if (!armed) return
+    setTyped('')
+    onOk()
+  }
   return (
     <Modal
       open={open}
-      onCancel={onCancel}
+      onCancel={cancel}
       title={null}
       footer={null}
       centered
@@ -191,13 +211,33 @@ export function ConsequenceModal({
         </div>
       )}
 
+      {confirmText !== undefined && (
+        <div style={{ marginTop: 16 }}>
+          <label
+            htmlFor="consequence-confirm"
+            style={{ display: 'block', marginBottom: 6, fontSize: 13, fontWeight: 600 }}
+          >
+            Gõ đúng tên để xác nhận
+          </label>
+          <Input
+            id="consequence-confirm"
+            value={typed}
+            placeholder={confirmText}
+            autoComplete="off"
+            onChange={(e) => setTyped(e.target.value)}
+            onPressEnter={confirm}
+          />
+        </div>
+      )}
+
       <div style={{ display: 'flex', gap: 9, justifyContent: 'flex-end', marginTop: 20 }}>
-        <Button onClick={onCancel}>{cancelText}</Button>
+        <Button onClick={cancel}>{cancelText}</Button>
         <Button
           type="primary"
           danger={tone === 'danger'}
           loading={confirmLoading}
-          onClick={onOk}
+          disabled={!armed}
+          onClick={confirm}
           icon={tone === 'danger' ? <ExclamationCircleFilled aria-hidden /> : undefined}
         >
           {okText}

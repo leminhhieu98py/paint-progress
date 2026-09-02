@@ -74,3 +74,65 @@ describe('ConsequenceModal', () => {
     expect(screen.queryByText('Xoá toàn bộ lưới ô của sàn?')).not.toBeInTheDocument()
   })
 })
+
+describe('ConsequenceModal — typed confirmation', () => {
+  const typed = {
+    ...base,
+    tone: 'danger' as const,
+    okText: 'Xóa sàn',
+    confirmText: 'Cellar Deck',
+  }
+
+  it('keeps the confirm disabled until the exact name is typed', async () => {
+    // A hard delete of a deck takes its bays, zones, history and notes with
+    // it. "Are you sure?" is answered by reflex; typing the name is not.
+    const user = userEvent.setup()
+    const onOk = vi.fn()
+    render(<ConsequenceModal {...typed} onOk={onOk} />)
+
+    const ok = screen.getByRole('button', { name: /Xóa sàn/ })
+    expect(ok).toBeDisabled()
+    const box = screen.getByLabelText('Gõ đúng tên để xác nhận')
+    expect(box).toHaveAttribute('placeholder', 'Cellar Deck')
+    await user.type(box, 'Cellar')
+    expect(ok).toBeDisabled()
+    await user.type(box, ' Deck')
+    expect(ok).toBeEnabled()
+    await user.click(ok)
+    expect(onOk).toHaveBeenCalledOnce()
+  })
+
+  it('forgives surrounding spaces but nothing else', async () => {
+    const user = userEvent.setup()
+    render(<ConsequenceModal {...typed} />)
+    const ok = screen.getByRole('button', { name: /Xóa sàn/ })
+    const box = screen.getByLabelText('Gõ đúng tên để xác nhận')
+    await user.type(box, ' Cellar Deck ')
+    expect(ok).toBeEnabled()
+    await user.clear(box)
+    await user.type(box, 'cellar deck')
+    expect(ok).toBeDisabled()
+  })
+
+  it('starts empty again after it has been cancelled', async () => {
+    // The app-wide rule: a dialog closed by any path comes back clean. A name
+    // left typed from last time would make the next delete one click.
+    const user = userEvent.setup()
+    const onCancel = vi.fn()
+    const { rerender } = render(<ConsequenceModal {...typed} onCancel={onCancel} />)
+    await user.type(screen.getByLabelText('Gõ đúng tên để xác nhận'), 'Cellar Deck')
+    await user.click(screen.getByRole('button', { name: 'Huỷ' }))
+    expect(onCancel).toHaveBeenCalledOnce()
+
+    rerender(<ConsequenceModal {...typed} onCancel={onCancel} open={false} />)
+    rerender(<ConsequenceModal {...typed} onCancel={onCancel} open />)
+    expect(screen.getByLabelText('Gõ đúng tên để xác nhận')).toHaveValue('')
+    expect(screen.getByRole('button', { name: /Xóa sàn/ })).toBeDisabled()
+  })
+
+  it('asks for nothing when no confirmText is given', () => {
+    render(<ConsequenceModal {...base} okText="Vẫn xoá" />)
+    expect(screen.queryByLabelText('Gõ đúng tên để xác nhận')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Vẫn xoá' })).toBeEnabled()
+  })
+})
