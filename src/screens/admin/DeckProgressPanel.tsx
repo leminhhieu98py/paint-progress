@@ -16,7 +16,7 @@ import { getDrawingUrl } from '../../lib/decksApi'
 import { formatAreaM2, formatPercent } from '../../lib/format'
 import { subscribeDeckCells } from '../../lib/gsApi'
 import {
-  listCellNotes, loadDeckProgress, type CellNote, type DeckProgressEntry,
+  listCellNotes, loadDeckProgress, setReportNote, type CellNote, type DeckProgressEntry,
 } from '../../lib/progressApi'
 import {
   createZone, deleteZone, listDeckZones, setZoneActual, updateZone,
@@ -145,6 +145,12 @@ export function DeckProgressPanel({
   const [notes, setNotes] = useState<CellNote[]>([])
   const [noteLoading, setNoteLoading] = useState(false)
   const [noteError, setNoteError] = useState<string | null>(null)
+  /** The notes-on-this-deck list, which is how Sửa mode reaches a note. */
+  const [notesListOpen, setNotesListOpen] = useState(false)
+  /** The note whose report copy is being written, and the draft (0023). */
+  const [reportEdit, setReportEdit] = useState<CellNote | null>(null)
+  const [reportDraft, setReportDraft] = useState('')
+  const [reportSaving, setReportSaving] = useState(false)
   const { message } = App.useApp()
   const [form] = Form.useForm()
 
@@ -345,14 +351,11 @@ export function DeckProgressPanel({
     heaviest read on the screen; an admin who never taps a flagged bay should
     not pay for a per-bay event query as well.
   */
-  const openNote = (code: string) => {
-    const cell = entry?.deck.cells.find((c) => c.code === code)
-    if (!cell || (cell.note ?? '').trim() === '') return
-    setNoteCell(cell)
+  const loadNotes = (cellId: string) => {
     setNotes([])
     setNoteError(null)
     setNoteLoading(true)
-    listCellNotes(cell.id)
+    listCellNotes(cellId)
       .then((rows) => setNotes(rows))
       .catch((e) => {
         // The dialog falls back to `cells.note`, which is already in hand and
@@ -361,6 +364,72 @@ export function DeckProgressPanel({
         setNoteError((e as Error).message)
       })
       .finally(() => setNoteLoading(false))
+  }
+
+  const openNote = (code: string) => {
+    const cell = entry?.deck.cells.find((c) => c.code === code)
+    if (!cell || (cell.note ?? '').trim() === '') return
+    setNoteCell(cell)
+    loadNotes(cell.id)
+  }
+
+  /**
+   * The admin's report-facing decisions about a note (0023): a version for
+   * the XLSX, or keeping it out of the XLSX. Neither touches what the foreman
+   * wrote, and both are reversible through the same call.
+   *
+   * Offered in Sửa mode only -- the thread gets the handlers below only when
+   * `editable` -- because Xem carries no write on this screen. The draft is
+   * seeded when the box opens and dropped when it closes by any path, so a
+   * half-typed version never survives a cancel.
+   */
+  const openReportEdit = (n: CellNote) => {
+    setReportEdit(n)
+    setReportDraft(n.reportNote ?? n.note)
+  }
+  const closeReportEdit = () => {
+    setReportEdit(null)
+    setReportDraft('')
+  }
+  const writeReportNote = async (
+    n: CellNote, reportNote: string | null, hidden: boolean, done: string,
+  ) => {
+    if (!noteCell) return
+    setReportSaving(true)
+    try {
+      await setReportNote(n.id, reportNote, hidden)
+      message.success(done)
+      closeReportEdit()
+      // The thread is what the admin is looking at; it has to show the stamp.
+      loadNotes(noteCell.id)
+    } catch (e) {
+      message.error((e as Error).message)
+    } finally {
+      setReportSaving(false)
+    }
+  }
+  const saveReportNote = () => {
+    if (!reportEdit) return
+    const trimmed = reportDraft.trim()
+    // An emptied box is "print the original again", and says so.
+    void writeReportNote(
+      reportEdit,
+      trimmed === '' ? null : trimmed,
+      reportEdit.reportHidden,
+      trimmed === '' ? 'Đã khôi phục bản gốc' : 'Đã lưu bản cho báo cáo',
+    )
+  }
+  const restoreReportNote = () => {
+    if (!reportEdit) return
+    void writeReportNote(reportEdit, null, reportEdit.reportHidden, 'Đã khôi phục bản gốc')
+  }
+  const toggleHidden = (n: CellNote) => {
+    void writeReportNote(
+      n,
+      n.reportNote,
+      !n.reportHidden,
+      n.reportHidden ? 'Đã hiện lại trong báo cáo' : 'Đã ẩn khỏi báo cáo',
+    )
   }
 
   const toggleCell = (code: string) => {
@@ -512,15 +581,32 @@ export function DeckProgressPanel({
           minWidth: 0,
         }}
       >
-        <div style={{ padding: '13px 14px' }}>
-          <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600, letterSpacing: '-0.015em' }}>
-            {`Tiến độ · ${lens.stage.name}`}
-          </h3>
-          <div style={{ fontSize: 12, lineHeight: 1.35, color: palette.textTertiary, marginTop: 4 }}>
-            {splitView
-              ? (side === 'A' ? 'Lớp bên trái' : 'Lớp bên phải · cùng mức zoom để so sánh')
-              : 'Ô đã đạt lớp này tô màu zone (chưa có zone thì màu lớp) · ô chưa đạt để trắng'}
+        <div style={{ padding: '13px 14px', display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600, letterSpacing: '-0.015em' }}>
+              {`Tiến độ · ${lens.stage.name}`}
+            </h3>
+            <div style={{ fontSize: 12, lineHeight: 1.35, color: palette.textTertiary, marginTop: 4 }}>
+              {splitView
+                ? (side === 'A' ? 'Lớp bên trái' : 'Lớp bên phải · cùng mức zoom để so sánh')
+                : 'Ô đã đạt lớp này tô màu zone (chưa có zone thì màu lớp) · ô chưa đạt để trắng'}
+            </div>
           </div>
+          {/*
+            The other way to a bay's notes. A tap on the drawing opens them
+            while looking, but while editing a tap SELECTS -- and the report
+            copy (0023) is written while editing. Once per panel, on the left
+            lens, so the split view does not grow two of them.
+          */}
+          {side === 'A' && (
+            <Button
+              size="small"
+              disabled={notedCodes.length === 0}
+              onClick={() => setNotesListOpen(true)}
+            >
+              {`Ghi chú (${notedCodes.length})`}
+            </Button>
+          )}
         </div>
 
         <div
@@ -1007,7 +1093,104 @@ export function DeckProgressPanel({
           </Typography.Paragraph>
         )}
         {!noteLoading && noteError === null && (
-          <NoteThread notes={notes} current={noteCell?.note} />
+          <NoteThread
+            notes={notes}
+            current={noteCell?.note}
+            // Xem carries no write on this screen: the handlers, and with them
+            // the buttons, exist only while editing.
+            onEditReport={editable ? openReportEdit : undefined}
+            onToggleHidden={editable ? toggleHidden : undefined}
+          />
+        )}
+      </Modal>
+
+      <Modal
+        open={notesListOpen}
+        title="Ghi chú trên sàn"
+        onCancel={() => setNotesListOpen(false)}
+        width={520}
+        footer={[
+          <Button key="close" onClick={() => setNotesListOpen(false)}>
+            Đóng
+          </Button>,
+        ]}
+        {...modalProps}
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+          {(entry?.deck.cells ?? [])
+            .filter((c) => notedCodes.includes(c.code))
+            .sort((a, b) => a.code.localeCompare(b.code))
+            .map((c) => (
+              <Button
+                key={c.id}
+                type="text"
+                block
+                style={{ justifyContent: 'flex-start', height: 'auto', padding: '8px 10px', textAlign: 'left' }}
+                onClick={() => {
+                  setNotesListOpen(false)
+                  openNote(c.code)
+                }}
+              >
+                <span style={{ fontWeight: 600, marginRight: 8 }}>{c.code}</span>
+                <span style={{ color: palette.textSecondary, whiteSpace: 'normal' }}>
+                  {(c.note ?? '').trim()}
+                </span>
+              </Button>
+            ))}
+        </div>
+      </Modal>
+
+      <Modal
+        open={reportEdit !== null}
+        title={reportEdit ? `Bản cho báo cáo · ô ${noteCell?.code ?? ''}` : ''}
+        onCancel={closeReportEdit}
+        width={520}
+        footer={[
+          <Button key="cancel" onClick={closeReportEdit} disabled={reportSaving}>
+            Huỷ
+          </Button>,
+          ...(reportEdit?.reportNote !== null && reportEdit?.reportNote !== undefined
+            ? [
+              <Button key="restore" onClick={restoreReportNote} disabled={reportSaving}>
+                Khôi phục bản gốc
+              </Button>,
+            ]
+            : []),
+          <Button key="save" type="primary" onClick={saveReportNote} loading={reportSaving}>
+            Lưu bản cho báo cáo
+          </Button>,
+        ]}
+        {...modalProps}
+      >
+        {reportEdit && (
+          <>
+            <div style={{ fontSize: 12, color: palette.textTertiary, marginBottom: 10 }}>
+              {`Ghi chú gốc của GS · ${reportEdit.stageName ?? 'Trả về chưa bắt đầu'}`}
+            </div>
+            <Typography.Paragraph
+              style={{
+                margin: '0 0 14px',
+                padding: '10px 12px',
+                borderRadius: 8,
+                background: palette.bgSubtle,
+                whiteSpace: 'pre-wrap',
+              }}
+            >
+              {reportEdit.note}
+            </Typography.Paragraph>
+            <label htmlFor="report-note" style={{ display: 'block', marginBottom: 6, fontWeight: 600 }}>
+              Bản cho báo cáo
+            </label>
+            <Input.TextArea
+              id="report-note"
+              rows={3}
+              value={reportDraft}
+              onChange={(e) => setReportDraft(e.target.value)}
+            />
+            <Typography.Text type="secondary" style={{ display: 'block', marginTop: 8, fontSize: 12 }}>
+              Chỉ file Excel in bản này. GS và màn hình này vẫn thấy ghi chú gốc. Để trống rồi lưu để in lại bản gốc.
+            </Typography.Text>
+          </>
         )}
       </Modal>
 

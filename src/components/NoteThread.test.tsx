@@ -1,5 +1,6 @@
 import { render, screen, within } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import userEvent from '@testing-library/user-event'
+import { describe, expect, it, vi } from 'vitest'
 import { NoteThread } from './NoteThread'
 import type { CellNote } from '../lib/progressApi'
 
@@ -78,5 +79,70 @@ describe('NoteThread', () => {
   it('says so when a bay was put back to not started', () => {
     render(<NoteThread notes={[note({ stageName: null, note: 'Sơn hỏng, làm lại' })]} />)
     expect(screen.getByText('Trả về chưa bắt đầu')).toBeInTheDocument()
+  })
+})
+
+describe('NoteThread — the report copy (0023)', () => {
+  const edited = {
+    reportEditedByName: 'Đoàn Công Linh',
+    reportEditedAt: '2026-09-02T03:00:00Z',
+  }
+  const STAMP = /Đoàn Công Linh · \d{2}\.\d{2}\.\d{4} \d{2}:\d{2}/
+
+  it('shows the report version beside the original, with who set it and when', () => {
+    // The foreman's sentence is never replaced on screen. The admin's version
+    // is a second thing, labelled as the one the XLSX will print.
+    render(
+      <NoteThread
+        notes={[note({ reportNote: 'Bề mặt ẩm, đã sơn lại ngày sau', ...edited })]}
+      />,
+    )
+    expect(screen.getByText('Bề mặt còn ẩm')).toBeInTheDocument()
+    expect(screen.getByText('Bản cho báo cáo')).toBeInTheDocument()
+    expect(screen.getByText('Bề mặt ẩm, đã sơn lại ngày sau')).toBeInTheDocument()
+    expect(screen.getByText(STAMP)).toHaveTextContent(/^Sửa bởi /)
+  })
+
+  it('flags a note kept out of the report, and still shows it', () => {
+    render(<NoteThread notes={[note({ reportHidden: true, ...edited })]} />)
+    expect(screen.getByText('Bề mặt còn ẩm')).toBeInTheDocument()
+    expect(screen.getByText(STAMP)).toHaveTextContent(/^Ẩn khỏi báo cáo · /)
+  })
+
+  it('shows neither block nor flag on a note nobody has touched', () => {
+    render(<NoteThread notes={[note()]} />)
+    expect(screen.queryByText('Bản cho báo cáo')).toBeNull()
+    expect(screen.queryByText(/Ẩn khỏi báo cáo/)).toBeNull()
+  })
+
+  it('offers no report actions unless handed the handlers', () => {
+    // The GS modal and the admin's Xem mode render this without them, and
+    // neither may write anything.
+    render(<NoteThread notes={[note()]} />)
+    expect(screen.queryByRole('button', { name: /báo cáo/ })).toBeNull()
+  })
+
+  it('offers the two report actions per note when handed the handlers', async () => {
+    const onEditReport = vi.fn()
+    const onToggleHidden = vi.fn()
+    const n = note({ id: 7 })
+    render(<NoteThread notes={[n]} onEditReport={onEditReport} onToggleHidden={onToggleHidden} />)
+
+    await userEvent.click(screen.getByRole('button', { name: 'Sửa cho báo cáo' }))
+    expect(onEditReport).toHaveBeenCalledWith(n)
+    await userEvent.click(screen.getByRole('button', { name: 'Ẩn khỏi báo cáo' }))
+    expect(onToggleHidden).toHaveBeenCalledWith(n)
+  })
+
+  it('offers to bring a hidden note back, since hiding is reversible', () => {
+    render(
+      <NoteThread
+        notes={[note({ reportHidden: true, ...edited })]}
+        onEditReport={vi.fn()}
+        onToggleHidden={vi.fn()}
+      />,
+    )
+    expect(screen.getByRole('button', { name: 'Hiện lại trong báo cáo' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Ẩn khỏi báo cáo' })).toBeNull()
   })
 })

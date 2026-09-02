@@ -1,3 +1,4 @@
+import { Button } from 'antd'
 import dayjs from 'dayjs'
 import { EmptyState } from './EmptyState'
 import { initialsOf } from '../lib/initials'
@@ -21,8 +22,30 @@ import { palette } from '../theme'
  *   - Every entry names its coat. In a spreadsheet a comment thread is about
  *     one cell in one state; here the state is the subject -- "Bề mặt còn ẩm"
  *     against Blast + Coat 1 and against Tháo giáo are different problems.
+ *
+ * The report copy (0023) is shown as a second thing under the original, never
+ * in its place: the foreman's sentence is the record, the admin's version is
+ * what the XLSX prints, and both carry who set them. The two actions render
+ * only when their handlers are passed -- the GS modal and the admin's Xem
+ * mode call this without them, and neither may write.
  */
-export function NoteThread({ notes, current }: { notes: CellNote[]; current?: string }) {
+export function NoteThread({
+  notes,
+  current,
+  onEditReport,
+  onToggleHidden,
+}: {
+  notes: CellNote[]
+  current?: string
+  onEditReport?: (note: CellNote) => void
+  onToggleHidden?: (note: CellNote) => void
+}) {
+  /** "Đoàn Công Linh · 02.09.2026 10:00" -- who last touched the report copy. */
+  const stamp = (n: CellNote) =>
+    [
+      n.reportEditedByName ?? 'Không rõ',
+      n.reportEditedAt ? dayjs(n.reportEditedAt).format('DD.MM.YYYY HH:mm') : null,
+    ].filter(Boolean).join(' · ')
   if (notes.length === 0) {
     return (
       <EmptyState
@@ -108,6 +131,8 @@ export function NoteThread({ notes, current }: { notes: CellNote[]; current?: st
                   lineHeight: 1.6,
                   whiteSpace: 'pre-wrap',
                   textWrap: 'pretty',
+                  // Dimmed, not removed: the note is still what was said.
+                  color: n.reportHidden ? palette.textTertiary : undefined,
                 }}
               >
                 {n.note}
@@ -133,7 +158,68 @@ export function NoteThread({ notes, current }: { notes: CellNote[]; current?: st
                       "not started", which is itself worth saying. */}
                   {n.stageName ?? 'Trả về chưa bắt đầu'}
                 </span>
+                {n.reportHidden && (
+                  <span
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      marginLeft: 8,
+                      fontSize: 12,
+                      fontWeight: 600,
+                      lineHeight: 1,
+                      padding: '6px 10px',
+                      borderRadius: 8,
+                      background: palette.warningBg,
+                      color: palette.warning,
+                    }}
+                  >
+                    {`Ẩn khỏi báo cáo · ${stamp(n)}`}
+                  </span>
+                )}
               </div>
+              {n.reportNote !== null && (
+                <div
+                  style={{
+                    marginTop: 10,
+                    padding: '10px 12px',
+                    borderRadius: 8,
+                    background: palette.accentTint,
+                    borderLeft: `3px solid ${palette.accent}`,
+                  }}
+                >
+                  <div style={{ fontSize: 11, fontWeight: 600, color: palette.accent }}>
+                    Bản cho báo cáo
+                  </div>
+                  <div
+                    style={{
+                      marginTop: 4,
+                      fontSize: 13,
+                      lineHeight: 1.6,
+                      whiteSpace: 'pre-wrap',
+                      textWrap: 'pretty',
+                    }}
+                  >
+                    {n.reportNote}
+                  </div>
+                  <div style={{ marginTop: 4, fontSize: 11, color: palette.textTertiary }}>
+                    {`Sửa bởi ${stamp(n)}`}
+                  </div>
+                </div>
+              )}
+              {(onEditReport || onToggleHidden) && (
+                <div style={{ marginTop: 8, display: 'flex', gap: 4, marginLeft: -8 }}>
+                  {onEditReport && (
+                    <Button type="link" size="small" onClick={() => onEditReport(n)}>
+                      Sửa cho báo cáo
+                    </Button>
+                  )}
+                  {onToggleHidden && (
+                    <Button type="link" size="small" onClick={() => onToggleHidden(n)}>
+                      {n.reportHidden ? 'Hiện lại trong báo cáo' : 'Ẩn khỏi báo cáo'}
+                    </Button>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         )

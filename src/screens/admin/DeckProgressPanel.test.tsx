@@ -12,11 +12,13 @@ const updateZone = vi.hoisted(() => vi.fn())
 const deleteZone = vi.hoisted(() => vi.fn())
 const setZoneActual = vi.hoisted(() => vi.fn())
 const listCellNotes = vi.hoisted(() => vi.fn())
+const setReportNote = vi.hoisted(() => vi.fn())
 const subscribeDeckCells = vi.hoisted(() => vi.fn())
 
 vi.mock('../../lib/progressApi', () => ({
   loadDeckProgress: (id: string) => loadDeckProgress(id),
   listCellNotes: (cellId: string) => listCellNotes(cellId),
+  setReportNote: (id: number, note: string | null, hidden: boolean) => setReportNote(id, note, hidden),
 }))
 vi.mock('../../lib/decksApi', () => ({
   getDrawingUrl: (p: string) => getDrawingUrl(p),
@@ -118,6 +120,8 @@ beforeEach(() => {
   subscribeDeckCells.mockReturnValue(() => {})
   listCellNotes.mockReset()
   listCellNotes.mockResolvedValue([])
+  setReportNote.mockReset()
+  setReportNote.mockResolvedValue(undefined)
 })
 
 // Wrapped in antd's App because src/App.tsx wraps the whole tree in it, and
@@ -592,5 +596,121 @@ describe('DeckProgressPanel — the foreman\'s note', () => {
     await userEvent.click(await screen.findByTestId('cell-R1C1'))
     expect(screen.getByTestId('cell-R1C1')).toHaveAttribute('data-selected', 'true')
     expect(screen.queryByText('Bề mặt còn ẩm, hoãn sơn sang mai')).not.toBeInTheDocument()
+  })
+})
+
+describe('DeckProgressPanel — the report copy of a note (0023)', () => {
+  const NOTED = {
+    ...ENTRY,
+    deck: {
+      ...ENTRY.deck,
+      cells: [
+        { ...ENTRY.deck.cells[0], note: 'Bề mặt còn ẩm, hoãn sơn sang mai' },
+        ENTRY.deck.cells[1],
+      ],
+    },
+  }
+  const NOTE_ROW = {
+    id: 3, at: '2026-08-29T11:47:00Z', stageName: 'Tháo giáo',
+    note: 'Bề mặt còn ẩm, hoãn sơn sang mai',
+    byName: 'Lê Trung Hiếu', byUsername: 'gs.hieu', byId: 'u1',
+    reportNote: null, reportHidden: false, reportEditedByName: null, reportEditedAt: null,
+  }
+
+  beforeEach(() => {
+    loadDeckProgress.mockResolvedValue(NOTED)
+    listCellNotes.mockResolvedValue([NOTE_ROW])
+  })
+
+  /** Sửa mode: a bay click selects, so the notes are reached through the list. */
+  const openNoteWhileEditing = async () => {
+    renderPanel(true)
+    await userEvent.click(await screen.findByRole('button', { name: 'Ghi chú (1)' }))
+    await userEvent.click(await screen.findByRole('button', { name: /^R1C1/ }))
+    // By title, then up to the dialog: the list's own dialog is still
+    // unmounting while this one opens, so "the dialog" is briefly two.
+    const title = await screen.findByText('Ghi chú · ô R1C1')
+    const dialog = title.closest('[role="dialog"]') as HTMLElement
+    await within(dialog).findByText('Bề mặt còn ẩm, hoãn sơn sang mai')
+    return dialog
+  }
+
+  it('offers no report actions on a note while only looking', async () => {
+    // Xem carries no write, by the owner's rule for this screen. The thread is
+    // read here exactly as the tablet reads it.
+    renderPanel(false)
+    await userEvent.click(await screen.findByTestId('cell-R1C1'))
+    const dialog = await screen.findByRole('dialog')
+    await within(dialog).findByText('Bề mặt còn ẩm, hoãn sơn sang mai')
+    expect(within(dialog).queryByRole('button', { name: /báo cáo/ })).toBeNull()
+  })
+
+  it('reaches a bay\'s notes in Sửa mode through the notes list, since a click there selects', async () => {
+    const dialog = await openNoteWhileEditing()
+    expect(within(dialog).getByRole('button', { name: 'Sửa cho báo cáo' })).toBeInTheDocument()
+    expect(within(dialog).getByRole('button', { name: 'Ẩn khỏi báo cáo' })).toBeInTheDocument()
+  })
+
+  it('writes a report version through the rpc and re-reads the thread', async () => {
+    const dialog = await openNoteWhileEditing()
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Sửa cho báo cáo' }))
+
+    const box = await screen.findByLabelText('Bản cho báo cáo')
+    // Prefilled with what will otherwise print, so the admin edits rather
+    // than retypes.
+    expect(box).toHaveValue('Bề mặt còn ẩm, hoãn sơn sang mai')
+    await userEvent.clear(box)
+    await userEvent.type(box, 'Bề mặt ẩm, đã sơn lại ngày sau')
+    await userEvent.click(screen.getByRole('button', { name: 'Lưu bản cho báo cáo' }))
+
+    await waitFor(() =>
+      expect(setReportNote).toHaveBeenCalledWith(3, 'Bề mặt ẩm, đã sơn lại ngày sau', false))
+    expect(await screen.findByText('Đã lưu bản cho báo cáo')).toBeInTheDocument()
+    // The thread is what the admin is looking at; it must show the stamp.
+    await waitFor(() => expect(listCellNotes).toHaveBeenCalledTimes(2))
+  })
+
+  it('treats an emptied box as "print the original again"', async () => {
+    const dialog = await openNoteWhileEditing()
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Sửa cho báo cáo' }))
+    await userEvent.clear(await screen.findByLabelText('Bản cho báo cáo'))
+    await userEvent.click(screen.getByRole('button', { name: 'Lưu bản cho báo cáo' }))
+
+    await waitFor(() => expect(setReportNote).toHaveBeenCalledWith(3, null, false))
+    expect(await screen.findByText('Đã khôi phục bản gốc')).toBeInTheDocument()
+  })
+
+  it('hides a note from the report with one press, keeping any report version', async () => {
+    listCellNotes.mockResolvedValue([{ ...NOTE_ROW, reportNote: 'Bản báo cáo' }])
+    const dialog = await openNoteWhileEditing()
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Ẩn khỏi báo cáo' }))
+
+    await waitFor(() => expect(setReportNote).toHaveBeenCalledWith(3, 'Bản báo cáo', true))
+    expect(await screen.findByText('Đã ẩn khỏi báo cáo')).toBeInTheDocument()
+  })
+
+  it('forgets a half-typed report version when the box is closed without saving', async () => {
+    // The app-wide rule: a dialog closed by any path comes back clean.
+    const dialog = await openNoteWhileEditing()
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Sửa cho báo cáo' }))
+    await userEvent.type(await screen.findByLabelText('Bản cho báo cáo'), ' thêm')
+    await userEvent.click(screen.getByRole('button', { name: 'Huỷ' }))
+    // No assertion on the closed dialog itself: jsdom never finishes antd's
+    // leave motion, so a closed modal lingers in the tree with its last
+    // content frozen. What is observable, and what matters, is what the box
+    // holds when it is opened again.
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Sửa cho báo cáo' }))
+    expect(await screen.findByLabelText('Bản cho báo cáo'))
+      .toHaveValue('Bề mặt còn ẩm, hoãn sơn sang mai')
+    expect(setReportNote).not.toHaveBeenCalled()
+  })
+
+  it('reports a refused write and leaves the thread as it was', async () => {
+    setReportNote.mockRejectedValue(new Error('set_report_note: admin only'))
+    const dialog = await openNoteWhileEditing()
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Ẩn khỏi báo cáo' }))
+
+    expect(await screen.findByText(/admin only/)).toBeInTheDocument()
+    expect(listCellNotes).toHaveBeenCalledTimes(1)
   })
 })
