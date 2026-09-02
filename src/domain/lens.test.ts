@@ -84,7 +84,7 @@ describe('scaffoldLensColors', () => {
   })
 
   it('reads the last stage by seq, not by array position', () => {
-    // listStages sorts, but a caller assembling stages by hand need not, and
+    // listWorkStages sorts, but a caller assembling stages by hand need not, and
     // "the last element" would then call the wrong stage scaffolding removal.
     const unsorted = [STAGES[2], STAGES[0], STAGES[1]]
     expect(scaffoldLensColors([cell('R1C1', 's3')], unsorted).R1C1).toBe('#722ed1')

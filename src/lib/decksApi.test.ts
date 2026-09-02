@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Stage } from '../domain/types'
 import {
-  createDeck, deleteDeck, getDrawingUrl, listCells, listDecks, listStages, listWorkStages, saveWorkStages,
-  roundStageWeight, saveStages, STAGE_WEIGHT_EPSILON, stagesRemovedBy,
+  createDeck, deleteDeck, getDrawingUrl, listCells, listDecks, listWorkStages, saveWorkStages,
+  roundStageWeight, STAGE_WEIGHT_EPSILON, stagesRemovedBy,
   syncCells, updateDeckArea, uploadDrawing, zoneImpactOf,
 } from './decksApi'
 
@@ -137,29 +137,19 @@ describe('updateDeckArea', () => {
 })
 
 describe('listCells', () => {
-  it('maps a cell\'s numeric fields and its recorded stage', async () => {
+  it('maps a cell\'s numeric fields, and carries no stage: that is per work now', async () => {
     from.mockImplementationOnce(() => builder({
       data: [{
         id: 'c1', code: 'R1C1', x: '0.000000', y: '0.000000',
-        w: '0.500000', h: '1.000000', area_m2: '100.00', stage_id: 's1',
+        w: '0.500000', h: '1.000000', area_m2: '100.00',
       }],
     }))
 
     const cells = await listCells('d1')
 
     expect(cells).toEqual([
-      { id: 'c1', code: 'R1C1', x: 0, y: 0, w: 0.5, h: 1, areaM2: 100, stageId: 's1' },
+      { id: 'c1', code: 'R1C1', x: 0, y: 0, w: 0.5, h: 1, areaM2: 100 },
     ])
-  })
-
-  it('reports null, not undefined, for a cell with no recorded stage', async () => {
-    from.mockImplementationOnce(() => builder({
-      data: [{ id: 'c1', code: 'R1C1', x: 0, y: 0, w: 1, h: 1, area_m2: 10, stage_id: null }],
-    }))
-
-    const [cell] = await listCells('d1')
-
-    expect(cell.stageId).toBeNull()
   })
 
   it('scopes to the deck and orders by code', async () => {
@@ -448,29 +438,13 @@ describe('getDrawingUrl', () => {
 // the assertions are unchanged.
 // ---------------------------------------------------------------------------
 
-describe('listStages', () => {
-  it('parses a string-typed numeric weight into a number', async () => {
-    from.mockImplementationOnce(() =>
-      builder({
-        data: [{ id: 's1', seq: 1, name: 'Blast + Coat 1', color: '#fadb14', weight: '0.25' }],
-      }),
-    )
-
-    const stages = await listStages('d1')
-
-    expect(stages).toEqual([
-      { id: 's1', seq: 1, name: 'Blast + Coat 1', color: '#fadb14', weight: 0.25 },
-    ])
-  })
-})
-
-describe('saveStages', () => {
+describe('saveWorkStages: weights, identity and write order', () => {
   const stage = (seq: number, weight: number) => ({
     id: `s${seq}`, seq, name: `S${seq}`, color: '#000000', weight,
   })
 
   it('rejects a weight set that does not sum to 1', async () => {
-    await expect(saveStages('d1', [stage(1, 0.5), stage(2, 0.4)])).rejects.toThrow(
+    await expect(saveWorkStages('w1', 'd1', [stage(1, 0.5), stage(2, 0.4)])).rejects.toThrow(
       /must sum to 1/,
     )
     expect(from).not.toHaveBeenCalled()
@@ -480,20 +454,20 @@ describe('saveStages', () => {
     from.mockImplementation(() => builder({}))
     // 0.1 * 3 + 0.7 is 0.9999999999999999 in IEEE754, not 1.
     await expect(
-      saveStages('d1', [stage(1, 0.1), stage(2, 0.1), stage(3, 0.1), stage(4, 0.7)]),
+      saveWorkStages('w1', 'd1', [stage(1, 0.1), stage(2, 0.1), stage(3, 0.1), stage(4, 0.7)]),
     ).resolves.toBeUndefined()
   })
 
   it('accepts a sum just inside the epsilon', async () => {
     from.mockImplementation(() => builder({}))
     // 1 - 9e-6 is inside 1e-5, so this must be accepted.
-    await expect(saveStages('d1', [stage(1, 0.5), stage(2, 0.5 - 9e-6)])).resolves.toBeUndefined()
+    await expect(saveWorkStages('w1', 'd1', [stage(1, 0.5), stage(2, 0.5 - 9e-6)])).resolves.toBeUndefined()
   })
 
   it('rejects a sum just outside the epsilon', async () => {
     // 1 - 1.1e-5 is outside, so this must be rejected. Pinned because an
     // off-by-one in the epsilon or a flipped operator would otherwise pass.
-    await expect(saveStages('d1', [stage(1, 0.5), stage(2, 0.5 - 1.1e-5)])).rejects.toThrow(
+    await expect(saveWorkStages('w1', 'd1', [stage(1, 0.5), stage(2, 0.5 - 1.1e-5)])).rejects.toThrow(
       /must sum to 1/,
     )
     expect(from).not.toHaveBeenCalled()
@@ -511,7 +485,7 @@ describe('saveStages', () => {
     expect(third).toBe(0.33333)
     expect(Math.abs(1 - third * 3)).toBeGreaterThan(1e-6)
     await expect(
-      saveStages('d1', [stage(1, third), stage(2, third), stage(3, third)]),
+      saveWorkStages('w1', 'd1', [stage(1, third), stage(2, third), stage(3, third)]),
     ).resolves.toBeUndefined()
   })
 
@@ -521,7 +495,7 @@ describe('saveStages', () => {
 
   it('rejects duplicate seq values', async () => {
     await expect(
-      saveStages('d1', [stage(1, 0.5), { ...stage(1, 0.5), id: 's2' }]),
+      saveWorkStages('w1', 'd1', [stage(1, 0.5), { ...stage(1, 0.5), id: 's2' }]),
     ).rejects.toThrow(/seq/)
     expect(from).not.toHaveBeenCalled()
   })
@@ -532,17 +506,17 @@ describe('saveStages', () => {
     // time"), and would mean two stages sharing one set of recorded cells.
     // Rejected before any write, with a message about ids rather than seqs.
     await expect(
-      saveStages('d1', [stage(1, 0.5), { ...stage(2, 0.5), id: 's1' }]),
+      saveWorkStages('w1', 'd1', [stage(1, 0.5), { ...stage(2, 0.5), id: 's1' }]),
     ).rejects.toThrow(/ids must be unique/)
     expect(from).not.toHaveBeenCalled()
   })
 
   it('rejects an empty stage list', async () => {
-    await expect(saveStages('d1', [])).rejects.toThrow(/at least one stage/)
+    await expect(saveWorkStages('w1', 'd1', [])).rejects.toThrow(/at least one stage/)
     expect(from).not.toHaveBeenCalled()
   })
 
-  /** The persisted rows saveStages reads back before diffing, PostgREST-shaped. */
+  /** The persisted rows saveWorkStages reads back before diffing, PostgREST-shaped. */
   const persisted = (rows: { id: string; seq: number; weight: number; name?: string }[]) =>
     builder({
       data: rows.map((r) => ({
@@ -556,10 +530,11 @@ describe('saveStages', () => {
 
   /** The exact text Postgres raises for (deck_id, seq) -- see 0001 and 0012. */
   const DUPLICATE_SEQ =
-    'duplicate key value violates unique constraint "deck_stages_deck_id_seq_key"'
+    'duplicate key value violates unique constraint "deck_stages_work_id_deck_id_seq_key"'
 
   type StageRow = {
     id: string
+    work_id: string
     deck_id: string
     seq: number
     name: string
@@ -568,7 +543,7 @@ describe('saveStages', () => {
   }
 
   /**
-   * A stand-in for `deck_stages` that ENFORCES `unique (deck_id, seq)`.
+   * A stand-in for `deck_stages` that ENFORCES `unique (work_id, deck_id, seq)`.
    *
    * This exists because three separate layers of evidence -- a payload
    * assertion, a stand-in that applied the upsert, and a verify_schema check --
@@ -596,7 +571,7 @@ describe('saveStages', () => {
    *     delete really does wipe the project here instead of quietly passing.
    *
    * Not modelled: two payload rows sharing one id ("ON CONFLICT DO UPDATE
-   * command cannot affect row a second time"). saveStages rejects that before
+   * command cannot affect row a second time"). saveWorkStages rejects that before
    * any write, and 'rejects duplicate ids' above covers it, so modelling it here
    * would only add an unreachable branch.
    */
@@ -608,7 +583,7 @@ describe('saveStages', () => {
     const duplicateSeq = (candidate: StageRow[]): boolean => {
       const seen = new Set<string>()
       for (const r of candidate) {
-        const key = `${r.deck_id}|${r.seq}`
+        const key = `${r.work_id}|${r.deck_id}|${r.seq}`
         if (seen.has(key)) return true
         seen.add(key)
       }
@@ -679,13 +654,13 @@ describe('saveStages', () => {
     return { rows: () => rows, statements, from }
   }
 
-  /** Five stages seq 1..5 under d1, the shape createProject seeds. */
+  /** Five stages seq 1..5 under (w1, d1), the shape the default work seeds. */
   const fiveStages = (): StageRow[] => [
-    { id: 'coat1', deck_id: 'd1', seq: 1, name: 'Blast + Coat 1', color: '#fadb14', weight: 0.2 },
-    { id: 'coat2', deck_id: 'd1', seq: 2, name: 'Coat 2', color: '#bfbfbf', weight: 0.2 },
-    { id: 'coat3', deck_id: 'd1', seq: 3, name: 'Coat 3', color: '#52c41a', weight: 0.2 },
-    { id: 'coat4', deck_id: 'd1', seq: 4, name: 'Coat 4', color: '#1677ff', weight: 0.2 },
-    { id: 'coat5', deck_id: 'd1', seq: 5, name: 'Coat 5', color: '#722ed1', weight: 0.2 },
+    { id: 'coat1', work_id: 'w1', deck_id: 'd1', seq: 1, name: 'Blast + Coat 1', color: '#fadb14', weight: 0.2 },
+    { id: 'coat2', work_id: 'w1', deck_id: 'd1', seq: 2, name: 'Coat 2', color: '#bfbfbf', weight: 0.2 },
+    { id: 'coat3', work_id: 'w1', deck_id: 'd1', seq: 3, name: 'Coat 3', color: '#52c41a', weight: 0.2 },
+    { id: 'coat4', work_id: 'w1', deck_id: 'd1', seq: 4, name: 'Coat 4', color: '#1677ff', weight: 0.2 },
+    { id: 'coat5', work_id: 'w1', deck_id: 'd1', seq: 5, name: 'Coat 5', color: '#722ed1', weight: 0.2 },
   ]
 
   it('removes a middle stage and renumbers the survivors past the seq it vacated', async () => {
@@ -699,7 +674,7 @@ describe('saveStages', () => {
     const table = stageTable(fiveStages())
     from.mockImplementation(table.from)
 
-    await saveStages('d1', [
+    await saveWorkStages('w1', 'd1', [
       { id: 'coat1', seq: 1, name: 'Blast + Coat 1', color: '#fadb14', weight: 0.25 },
       { id: 'coat3', seq: 2, name: 'Coat 3', color: '#52c41a', weight: 0.25 },
       { id: 'coat4', seq: 3, name: 'Coat 4', color: '#1677ff', weight: 0.25 },
@@ -730,7 +705,7 @@ describe('saveStages', () => {
     from.mockImplementation(table.from)
     const cell = { code: 'R1C1', stage_id: 'coat3' }
 
-    await saveStages('d1', [
+    await saveWorkStages('w1', 'd1', [
       { id: 'coat1', seq: 1, name: 'Blast + Coat 1', color: '#fadb14', weight: 0.25 },
       { id: 'coat3', seq: 2, name: 'Coat 3', color: '#52c41a', weight: 0.25 },
       { id: 'coat4', seq: 3, name: 'Coat 4', color: '#1677ff', weight: 0.25 },
@@ -749,7 +724,7 @@ describe('saveStages', () => {
     const table = stageTable(fiveStages())
     from.mockImplementation(table.from)
 
-    await saveStages('d1', [
+    await saveWorkStages('w1', 'd1', [
       { id: 'coat1', seq: 1, name: 'Blast + Coat 1', color: '#fadb14', weight: 0.25 },
       { id: 'coat2', seq: 2, name: 'Coat 2', color: '#bfbfbf', weight: 0.25 },
       { id: 'coat3', seq: 3, name: 'Coat 3', color: '#52c41a', weight: 0.25 },
@@ -766,13 +741,13 @@ describe('saveStages', () => {
     // whose final state is perfectly unique. Nothing is removed, so this is the
     // half of the write order that must survive the C1 fix untouched.
     const table = stageTable([
-      { id: 'coat1', deck_id: 'd1', seq: 1, name: 'Coat 1', color: '#fadb14', weight: 0.5 },
-      { id: 'coat2', deck_id: 'd1', seq: 2, name: 'Coat 2', color: '#bfbfbf', weight: 0.5 },
+      { id: 'coat1', work_id: 'w1', deck_id: 'd1', seq: 1, name: 'Coat 1', color: '#fadb14', weight: 0.5 },
+      { id: 'coat2', work_id: 'w1', deck_id: 'd1', seq: 2, name: 'Coat 2', color: '#bfbfbf', weight: 0.5 },
     ])
     from.mockImplementation(table.from)
     const cell = { code: 'R1C1', stage_id: 'coat1' }
 
-    await saveStages('d1', [
+    await saveWorkStages('w1', 'd1', [
       { id: 'coat2', seq: 1, name: 'Coat 2', color: '#bfbfbf', weight: 0.5 },
       { id: 'coat1', seq: 2, name: 'Coat 1', color: '#fadb14', weight: 0.5 },
     ])
@@ -791,22 +766,22 @@ describe('saveStages', () => {
 
   it('has a stand-in that really does reject a colliding write, and roll it back', async () => {
     // A self-check on the helper above, driven directly rather than through
-    // saveStages, and it is not ceremony: the reason C1 shipped is that every
+    // saveWorkStages, and it is not ceremony: the reason C1 shipped is that every
     // layer of evidence stood in for Postgres with something that accepts
     // anything. If the enforcement here is ever weakened, the four tests above
     // go on passing while meaning nothing -- so the enforcement itself is
     // pinned, in the two ways it has to behave.
     //
     // Driven directly for a second reason: once the delete goes first,
-    // saveStages CANNOT construct a colliding write. Everything absent from the
+    // saveWorkStages CANNOT construct a colliding write. Everything absent from the
     // draft is removed before the survivors are renumbered, and the draft's own
     // seqs are checked for uniqueness before any statement is issued. There is
-    // deliberately no test claiming saveStages produces a duplicate key, because
+    // deliberately no test claiming saveWorkStages produces a duplicate key, because
     // it no longer can -- which is also why StageConfigPanel's translation of
     // that message is a last line of defence rather than a routine path.
     const table = stageTable([
-      { id: 'coat1', deck_id: 'd1', seq: 1, name: 'Coat 1', color: '#fadb14', weight: 0.5 },
-      { id: 'coat2', deck_id: 'd1', seq: 2, name: 'Coat 2', color: '#bfbfbf', weight: 0.5 },
+      { id: 'coat1', work_id: 'w1', deck_id: 'd1', seq: 1, name: 'Coat 1', color: '#fadb14', weight: 0.5 },
+      { id: 'coat2', work_id: 'w1', deck_id: 'd1', seq: 2, name: 'Coat 2', color: '#bfbfbf', weight: 0.5 },
     ])
 
     /** One upsert statement against the stand-in, as PostgREST would answer it. */
@@ -819,9 +794,9 @@ describe('saveStages', () => {
       }).upsert(payload, { onConflict: 'id' })
 
     // Moving coat1 onto the seq coat2 still holds: the exact shape of the write
-    // saveStages issued when it upserted before deleting.
+    // saveWorkStages issued when it upserted before deleting.
     const collide = await upsert([
-      { id: 'coat1', deck_id: 'd1', seq: 2, name: 'Coat 1', color: '#fadb14', weight: 0.5 },
+      { id: 'coat1', work_id: 'w1', deck_id: 'd1', seq: 2, name: 'Coat 1', color: '#fadb14', weight: 0.5 },
     ])
     expect(collide.error?.message).toBe(DUPLICATE_SEQ)
     // Rolled back whole, the way a rejected statement is.
@@ -831,8 +806,8 @@ describe('saveStages', () => {
     // a swap that passes through a momentary tie is accepted. A row-by-row
     // check here would reject the reorder 0012 exists to allow.
     const swap = await upsert([
-      { id: 'coat1', deck_id: 'd1', seq: 2, name: 'Coat 1', color: '#fadb14', weight: 0.5 },
-      { id: 'coat2', deck_id: 'd1', seq: 1, name: 'Coat 2', color: '#bfbfbf', weight: 0.5 },
+      { id: 'coat1', work_id: 'w1', deck_id: 'd1', seq: 2, name: 'Coat 1', color: '#fadb14', weight: 0.5 },
+      { id: 'coat2', work_id: 'w1', deck_id: 'd1', seq: 1, name: 'Coat 2', color: '#bfbfbf', weight: 0.5 },
     ])
     expect(swap.error).toBeNull()
     expect(table.rows().map((r) => [r.id, r.seq])).toEqual([['coat1', 2], ['coat2', 1]])
@@ -846,15 +821,15 @@ describe('saveStages', () => {
     const up = builder({})
     from.mockImplementationOnce(() => read).mockImplementationOnce(() => up)
 
-    await saveStages('d1', [
+    await saveWorkStages('w1', 'd1', [
       { id: 's1', seq: 1, name: 'Renamed', color: '#111111', weight: 0.5 },
       { id: 's2', seq: 2, name: 'S2', color: '#000000', weight: 0.5 },
     ])
 
     expect(up.upsert).toHaveBeenCalledWith(
       [
-        { id: 's1', deck_id: 'd1', seq: 1, name: 'Renamed', color: '#111111', weight: 0.5 },
-        { id: 's2', deck_id: 'd1', seq: 2, name: 'S2', color: '#000000', weight: 0.5 },
+        { id: 's1', work_id: 'w1', deck_id: 'd1', seq: 1, name: 'Renamed', color: '#111111', weight: 0.5 },
+        { id: 's2', work_id: 'w1', deck_id: 'd1', seq: 2, name: 'S2', color: '#000000', weight: 0.5 },
       ],
       { onConflict: 'id' },
     )
@@ -872,7 +847,7 @@ describe('saveStages', () => {
       .mockImplementationOnce(() => up)
       .mockImplementationOnce(() => del)
 
-    await saveStages('d1', [
+    await saveWorkStages('w1', 'd1', [
       { id: 's1', seq: 1, name: 'Renamed', color: '#111111', weight: 0.5 },
       { id: 's2', seq: 2, name: 'S2', color: '#000000', weight: 0.5 },
     ])
@@ -894,7 +869,7 @@ describe('saveStages', () => {
       .mockImplementationOnce(() => up)
       .mockImplementationOnce(() => del)
 
-    await saveStages('d1', [
+    await saveWorkStages('w1', 'd1', [
       { id: 's1', seq: 1, name: 'S1', color: '#000000', weight: 0.7 },
       { id: 's2', seq: 2, name: 'S2', color: '#000000', weight: 0.3 },
     ])
@@ -922,7 +897,7 @@ describe('saveStages', () => {
       .mockImplementationOnce(() => del)
 
     // Coat 3 moves up one, exactly as the panel's "Lên" produces it.
-    await saveStages('d1', [
+    await saveWorkStages('w1', 'd1', [
       { id: 's1', seq: 1, name: 'Blast + Coat 1', color: '#000000', weight: 0.4 },
       { id: 's3', seq: 2, name: 'Coat 3', color: '#000000', weight: 0.3 },
       { id: 's2', seq: 3, name: 'Coat 2', color: '#000000', weight: 0.3 },
@@ -956,7 +931,7 @@ describe('saveStages', () => {
       { id: 's2', seq: 2, weight: 0.3 },
       { id: 's3', seq: 3, weight: 0.3 },
     ])
-    // Read, then DELETE, then upsert -- the order saveStages issues them in, and
+    // Read, then DELETE, then upsert -- the order saveWorkStages issues them in, and
     // the reason it does: see the write-order paragraph in projectsApi.ts.
     const del = builder({})
     const up = builder({})
@@ -965,7 +940,7 @@ describe('saveStages', () => {
       .mockImplementationOnce(() => del)
       .mockImplementationOnce(() => up)
 
-    await saveStages('d1', [
+    await saveWorkStages('w1', 'd1', [
       { id: 's1', seq: 1, name: 'S1', color: '#000000', weight: 0.5 },
       { id: 's3', seq: 2, name: 'S3', color: '#000000', weight: 0.5 },
     ])
@@ -997,7 +972,7 @@ describe('saveStages', () => {
       .mockImplementationOnce(() => up)
 
     await expect(
-      saveStages('d1', [{ id: 's1', seq: 1, name: 'S1', color: '#000000', weight: 1 }]),
+      saveWorkStages('w1', 'd1', [{ id: 's1', seq: 1, name: 'S1', color: '#000000', weight: 1 }]),
     ).rejects.toThrow('delete blocked')
 
     expect(from).toHaveBeenCalledTimes(2)
@@ -1020,7 +995,7 @@ describe('saveStages', () => {
       .mockImplementationOnce(() => builder({ error: { message: 'upsert refused' } }))
 
     await expect(
-      saveStages('d1', [{ id: 's1', seq: 1, name: 'S1', color: '#000000', weight: 1 }]),
+      saveWorkStages('w1', 'd1', [{ id: 's1', seq: 1, name: 'S1', color: '#000000', weight: 1 }]),
     ).rejects.toThrow('upsert refused')
 
     expect(from).toHaveBeenCalledTimes(3)
@@ -1031,7 +1006,7 @@ describe('saveStages', () => {
     from.mockImplementationOnce(() => builder({ error: { message: 'network down' } }))
 
     await expect(
-      saveStages('d1', [{ id: 's1', seq: 1, name: 'S1', color: '#000000', weight: 1 }]),
+      saveWorkStages('w1', 'd1', [{ id: 's1', seq: 1, name: 'S1', color: '#000000', weight: 1 }]),
     ).rejects.toThrow('network down')
 
     expect(from).toHaveBeenCalledTimes(1)

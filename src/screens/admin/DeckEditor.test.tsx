@@ -11,14 +11,20 @@ const syncCells = vi.hoisted(() => vi.fn())
 const zoneImpactOf = vi.hoisted(() => vi.fn())
 const updateDeckArea = vi.hoisted(() => vi.fn())
 const getDrawingUrl = vi.hoisted(() => vi.fn())
-// The brief's original test omitted this mock even though one of its own
-// tests (below) calls `listStages.mockResolvedValue(...)`. DeckEditor loads
-// stages via decksApi.listStages to resolve a stage id to a human name for
-// the progress-loss warning -- without mocking the module the real
-// implementation would run (hitting supabase) and `listStages` would not even
-// be a defined identifier in this file, so the test referencing it could not
-// have run as written.
-const listStages = vi.hoisted(() => vi.fn())
+/**
+ * The coats of the one work every fixture deck is in. Since 0024 DeckEditor
+ * reads the deck's works (with their coats) and its per-work bay states, not a
+ * stage list and a stage on each cell; the fixtures below still write a
+ * `stageId` on each cell, and beforeEach turns that into the states the screen
+ * actually reads, against this work.
+ */
+const stagesOfTheWork = vi.hoisted(() => vi.fn())
+const listDeckWorks = vi.hoisted(() => vi.fn())
+const listDeckStates = vi.hoisted(() => vi.fn())
+const WORK = {
+  id: 'w1', projectId: 'p1', seq: 1, name: 'Sơn', kind: 'bays' as const, weight: 1, counts: true,
+  manualProgress: 0,
+}
 const detectBaysFromImage = vi.hoisted(() => vi.fn())
 
 vi.mock('../../canvas/rgbFromImage', () => ({
@@ -37,7 +43,10 @@ vi.mock('../../lib/decksApi', () => ({
   updateDeckArea: (d: string, a: number, s: string) => updateDeckArea(d, a, s),
   getDrawingUrl: (p: string) => getDrawingUrl(p),
   uploadDrawing: vi.fn(),
-  listStages: (id: string) => listStages(id),
+}))
+vi.mock('../../lib/gsApi', () => ({
+  listDeckWorks: (id: string) => listDeckWorks(id),
+  listDeckStates: (id: string) => listDeckStates(id),
 }))
 // One button per cell so a test can select a SUBSET, which "Chọn tất cả"
 // cannot: a merge of some-but-not-all cells is the only shape in which the
@@ -172,13 +181,30 @@ const saveDeck = async () => {
 
 beforeEach(() => {
   for (const m of [
-    listCells, syncCells, zoneImpactOf, updateDeckArea, getDrawingUrl, listStages,
-    detectBaysFromImage,
+    listCells, syncCells, zoneImpactOf, updateDeckArea, getDrawingUrl, stagesOfTheWork,
+    listDeckWorks, listDeckStates, detectBaysFromImage,
   ]) m.mockReset()
   getDrawingUrl.mockResolvedValue('blob:drawing')
   listCells.mockResolvedValue([])
   zoneImpactOf.mockResolvedValue([])
-  listStages.mockResolvedValue([])
+  stagesOfTheWork.mockResolvedValue([])
+  listDeckWorks.mockImplementation(async (id: string) => [
+    { work: WORK, weight: 1, stages: await stagesOfTheWork(id) },
+  ])
+  // The states the screen reads, derived from the `stageId` each fixture cell
+  // carries -- one work, so every recorded stage is in it. Read off the very
+  // listCells call the screen just made (the screen issues it first), so this
+  // neither counts as another read nor consumes a once-value meant for it.
+  listDeckStates.mockImplementation(async () => {
+    const pending = listCells.mock.results.at(-1)?.value as
+      Promise<{ id: string; stageId: string | null }[]> | undefined
+    const cells = (await pending?.catch(() => [])) ?? []
+    return {
+      w1: Object.fromEntries(
+        cells.filter((c) => c.stageId).map((c) => [c.id, { stageId: c.stageId, note: '' }]),
+      ),
+    }
+  })
 })
 
 describe('DeckEditor', () => {
@@ -193,7 +219,7 @@ describe('DeckEditor', () => {
       { id: 'c1', code: 'R1C1', x: 0, y: 0, w: 0.5, h: 1, areaM2: 100, stageId: 'coat1' },
       { id: 'c2', code: 'R1C2', x: 0.5, y: 0, w: 0.5, h: 1, areaM2: 100, stageId: null },
     ])
-    listStages.mockResolvedValue([
+    stagesOfTheWork.mockResolvedValue([
       { id: 'coat1', seq: 1, name: 'Coat 1', color: '#1677ff', weight: 0.2 },
     ])
     renderInApp(deck)
@@ -295,7 +321,7 @@ describe('DeckEditor', () => {
     listCells.mockResolvedValue([
       { id: 'c9', code: 'R9C9', x: 0, y: 0, w: 1, h: 1, areaM2: 300, stageId: 'coat1' },
     ])
-    listStages.mockResolvedValue([
+    stagesOfTheWork.mockResolvedValue([
       { id: 'coat1', seq: 1, name: 'Coat 1', color: '#1677ff', weight: 0.2 },
     ])
     renderInApp({ ...deck, totalAreaM2: 232 })
@@ -304,7 +330,7 @@ describe('DeckEditor', () => {
     await detectOneBay()
     await saveDeck()
 
-    expect(await screen.findByText(listItem('R9C9 — Coat 1'))).toBeInTheDocument()
+    expect(await screen.findByText(listItem('R9C9 — Sơn · Coat 1'))).toBeInTheDocument()
     // The merge-only caveat is about a merge's missing honest carry rule; a
     // mesh save has no survivor at all, so it must not appear here.
     expect(screen.queryByText(/Ô sống sót giữ tiến độ/)).toBeNull()
@@ -429,7 +455,7 @@ describe('DeckEditor', () => {
       { id: 'c1', code: 'R1C1', x: 0, y: 0, w: 0.5, h: 1, areaM2: 100, stageId: 'coat1' },
       { id: 'c2', code: 'R1C2', x: 0.5, y: 0, w: 0.5, h: 1, areaM2: 100, stageId: 'coat3' },
     ])
-    listStages.mockResolvedValue([
+    stagesOfTheWork.mockResolvedValue([
       { id: 'coat1', seq: 1, name: 'Coat 1', color: '#1677ff', weight: 0.15 },
       { id: 'coat3', seq: 3, name: 'Coat 3', color: '#52c41a', weight: 0.35 },
     ])
@@ -442,11 +468,11 @@ describe('DeckEditor', () => {
     // R1C1 is the top-left source, so mergeCells keeps its code and syncCells
     // keeps its row: it is the survivor and its Coat 1 is NOT lost -- but its
     // area moved from 100 to 200 m², so it must appear here, not below.
-    expect(await screen.findByText(listItem('R1C2 — Coat 3'))).toBeInTheDocument()
-    expect(screen.queryByText(listItem('R1C1 — Coat 1'))).toBeNull()
+    expect(await screen.findByText(listItem('R1C2 — Sơn · Coat 3'))).toBeInTheDocument()
+    expect(screen.queryByText(listItem('R1C1 — Sơn · Coat 1'))).toBeNull()
     // The survivor caveat this decision requires: kept in reshaped, both its
     // areas shown, vi-VN formatted.
-    expect(screen.getByText(listItem('R1C1 — Coat 1: 100,00 → 200,00 m²'))).toBeInTheDocument()
+    expect(screen.getByText(listItem('R1C1 — Sơn · Coat 1: 100,00 → 200,00 m²'))).toBeInTheDocument()
     // Each section owns its own sentence -- both must be present at once here,
     // since both lists are non-empty simultaneously. Folding them back under
     // one umbrella sentence (the round-2 defect) can show at most one of the
@@ -497,7 +523,7 @@ describe('DeckEditor', () => {
     // delete: one ticked cell selected, so there is progress to lose and the
     // dialog opens.
     listCells.mockResolvedValue(twoTickedCells)
-    listStages.mockResolvedValue(stages)
+    stagesOfTheWork.mockResolvedValue(stages)
     let view = renderInApp(deck)
     await arm()
     await userEvent.click(screen.getByRole('button', { name: 'chọn R1C1' }))
@@ -532,7 +558,7 @@ describe('DeckEditor', () => {
     listCells.mockResolvedValue([
       { id: 'c1', code: 'R1C1', x: 0, y: 0, w: 1, h: 1, areaM2: 100, stageId: 'coat1' },
     ])
-    listStages.mockResolvedValue([
+    stagesOfTheWork.mockResolvedValue([
       { id: 'coat1', seq: 1, name: 'Coat 1', color: '#1677ff', weight: 0.2 },
     ])
     renderInApp(deck)
@@ -542,7 +568,7 @@ describe('DeckEditor', () => {
     press('Delete')
     await saveDeck()
 
-    expect(await screen.findByText(listItem('R1C1 — Coat 1'))).toBeInTheDocument()
+    expect(await screen.findByText(listItem('R1C1 — Sơn · Coat 1'))).toBeInTheDocument()
     expect(screen.queryByText(/Ô sống sót giữ tiến độ/)).toBeNull()
     expect(syncCells).not.toHaveBeenCalled()
   })
@@ -555,7 +581,7 @@ describe('DeckEditor', () => {
     listCells.mockResolvedValue([
       { id: 'c1', code: 'R1C1', x: 0, y: 0, w: 1, h: 1, areaM2: 232, stageId: 'coat3' },
     ])
-    listStages.mockResolvedValue([
+    stagesOfTheWork.mockResolvedValue([
       { id: 'coat3', seq: 3, name: 'Coat 3', color: '#52c41a', weight: 0.35 },
     ])
     renderInApp({ ...deck, totalAreaM2: 400 })
@@ -568,7 +594,7 @@ describe('DeckEditor', () => {
     // case (task-8-fix-3 R6) -- it no longer names the operation or the reason.
     expect(await screen.findByText('Xác nhận thay đổi lưới ô')).toBeInTheDocument()
     // vi-VN formatted, in the exact form the review specified.
-    expect(screen.getByText(listItem('R1C1 — Coat 3: 232,00 → 400,00 m²'))).toBeInTheDocument()
+    expect(screen.getByText(listItem('R1C1 — Sơn · Coat 3: 232,00 → 400,00 m²'))).toBeInTheDocument()
     expect(screen.getByText(/Các ô này giữ tiến độ đã ghi nhưng diện tích thay đổi/)).toBeInTheDocument()
     // Neither of the other two sections applies here -- there is no zone
     // impact and nothing is actually being deleted -- so asserting either
@@ -593,7 +619,7 @@ describe('DeckEditor', () => {
     listCells.mockResolvedValue([
       { id: 'c1', code: 'R1C1', x: 0, y: 0, w: 1, h: 1, areaM2: 232, stageId: 'coat3' },
     ])
-    listStages.mockResolvedValue([
+    stagesOfTheWork.mockResolvedValue([
       { id: 'coat3', seq: 3, name: 'Coat 3', color: '#52c41a', weight: 0.35 },
     ])
     syncCells.mockResolvedValue(undefined)
@@ -624,7 +650,7 @@ describe('DeckEditor', () => {
     listCells.mockResolvedValue([
       { id: 'c1', code: 'R1C1', x: 0, y: 0, w: 1, h: 1, areaM2: 200, stageId: 'coat3' },
     ])
-    listStages.mockResolvedValue([
+    stagesOfTheWork.mockResolvedValue([
       { id: 'coat3', seq: 3, name: 'Coat 3', color: '#52c41a', weight: 0.35 },
     ])
     renderInApp({ ...deck, totalAreaM2: 210.4 })
@@ -633,7 +659,7 @@ describe('DeckEditor', () => {
     await detectOneBay()
     await saveDeck()
 
-    expect(await screen.findByText(listItem('R1C1 — Coat 3: 200,00 → 210,40 m²'))).toBeInTheDocument()
+    expect(await screen.findByText(listItem('R1C1 — Sơn · Coat 3: 200,00 → 210,40 m²'))).toBeInTheDocument()
     expect(syncCells).not.toHaveBeenCalled()
   })
 
@@ -646,7 +672,7 @@ describe('DeckEditor', () => {
     listCells.mockResolvedValue([
       { id: 'c1', code: 'R1C1', x: 0, y: 0, w: 1, h: 1, areaM2: 400, stageId: 'coat3' },
     ])
-    listStages.mockResolvedValue([
+    stagesOfTheWork.mockResolvedValue([
       { id: 'coat3', seq: 3, name: 'Coat 3', color: '#52c41a', weight: 0.35 },
     ])
     renderInApp({ ...deck, totalAreaM2: 232 })
@@ -655,7 +681,7 @@ describe('DeckEditor', () => {
     await detectOneBay()
     await saveDeck()
 
-    expect(await screen.findByText(listItem('R1C1 — Coat 3: 400,00 → 232,00 m²'))).toBeInTheDocument()
+    expect(await screen.findByText(listItem('R1C1 — Sơn · Coat 3: 400,00 → 232,00 m²'))).toBeInTheDocument()
     expect(syncCells).not.toHaveBeenCalled()
   })
 
@@ -670,7 +696,7 @@ describe('DeckEditor', () => {
       { id: 'c2', code: 'R1C2', x: 0.25, y: 0, w: 0.25, h: 1, areaM2: 50, stageId: 'coat3' },
       { id: 'c3', code: 'R1C3', x: 0.5, y: 0, w: 0.5, h: 1, areaM2: 100, stageId: 'coat2' },
     ])
-    listStages.mockResolvedValue([
+    stagesOfTheWork.mockResolvedValue([
       { id: 'coat1', seq: 1, name: 'Coat 1', color: '#1677ff', weight: 0.15 },
       { id: 'coat2', seq: 2, name: 'Coat 2', color: '#faad14', weight: 0.2 },
       { id: 'coat3', seq: 3, name: 'Coat 3', color: '#52c41a', weight: 0.35 },
@@ -683,10 +709,10 @@ await userEvent.click(screen.getByRole('button', { name: 'chọn R1C1' }))
     await userEvent.click(screen.getByRole('button', { name: 'chọn R1C2' }))
     press('m')
 
-    expect(await screen.findByText(listItem('R1C2 — Coat 3'))).toBeInTheDocument()
-    expect(screen.queryByText(listItem('R1C1 — Coat 1'))).toBeNull()
+    expect(await screen.findByText(listItem('R1C2 — Sơn · Coat 3'))).toBeInTheDocument()
+    expect(screen.queryByText(listItem('R1C1 — Sơn · Coat 1'))).toBeNull()
     // R1C3 was never selected, so its progress is not at risk at all.
-    expect(screen.queryByText(listItem('R1C3 — Coat 2'))).toBeNull()
+    expect(screen.queryByText(listItem('R1C3 — Sơn · Coat 2'))).toBeNull()
   })
 
   it('does not claim zone impact when the only cost is recorded progress', async () => {
@@ -697,7 +723,7 @@ await userEvent.click(screen.getByRole('button', { name: 'chọn R1C1' }))
       { id: 'c1', code: 'R1C1', x: 0, y: 0, w: 0.5, h: 1, areaM2: 100, stageId: null },
       { id: 'c2', code: 'R1C2', x: 0.5, y: 0, w: 0.5, h: 1, areaM2: 100, stageId: 'coat3' },
     ])
-    listStages.mockResolvedValue([
+    stagesOfTheWork.mockResolvedValue([
       { id: 'coat3', seq: 3, name: 'Coat 3', color: '#52c41a', weight: 0.35 },
     ])
     renderInApp(deck)
@@ -794,7 +820,7 @@ await userEvent.click(screen.getByRole('button', { name: 'chọn R1C1' }))
     listCells.mockResolvedValue([
       { id: 'c1', code: 'R1C1', x: 0, y: 0, w: 1, h: 1, areaM2: 0, stageId: 'coat2' },
     ])
-    listStages.mockResolvedValue([
+    stagesOfTheWork.mockResolvedValue([
       { id: 'coat2', seq: 2, name: 'Coat 2', color: '#faad14', weight: 0.2 },
     ])
     renderInApp({ ...deck, totalAreaM2: 232 })
@@ -803,7 +829,7 @@ await userEvent.click(screen.getByRole('button', { name: 'chọn R1C1' }))
     await detectOneBay()
     await saveDeck()
 
-    expect(await screen.findByText(listItem('R1C1 — Coat 2: 0,00 → 232,00 m²'))).toBeInTheDocument()
+    expect(await screen.findByText(listItem('R1C1 — Sơn · Coat 2: 0,00 → 232,00 m²'))).toBeInTheDocument()
     expect(screen.getByText(/Các ô này giữ tiến độ đã ghi nhưng diện tích thay đổi/)).toBeInTheDocument()
     expect(syncCells).not.toHaveBeenCalled()
   })

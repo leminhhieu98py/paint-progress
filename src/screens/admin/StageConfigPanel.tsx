@@ -75,7 +75,7 @@ function saveStagesErrorInVietnamese(message: string): string {
     return 'Có lỗi dữ liệu khi lưu cấu hình lớp sơn. Tải lại trang rồi thử lại.'
   }
   // Postgres, not projectsApi: `duplicate key value violates unique constraint
-  // "deck_stages_deck_id_seq_key"`. saveWorkStages now deletes before it
+  // "deck_stages_work_id_deck_id_seq_key"`. saveWorkStages now deletes before it
   // upserts, so nothing on this screen should be able to produce it -- but a raw
   // Postgres constraint message in an otherwise Vietnamese-only Alert is a
   // defect in its own right, and this is the last line of defence if those two

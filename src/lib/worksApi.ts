@@ -21,7 +21,7 @@ export async function listWorks(projectId: string): Promise<Work[]> {
  * first, then everything else is upserted by id.
  *
  * The rules are checked here, before any write, as stage weights always have
- * been (saveStages): names and seqs unique, and the weights of the works that
+ * been (saveWorkStages): names and seqs unique, and the weights of the works that
  * COUNT sum to 1 -- unless nothing counts yet, which is a project whose total
  * is simply 0. A work outside the total may carry any weight the admin left
  * on it; it is not in the sum, so it cannot break it.

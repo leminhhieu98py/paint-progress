@@ -346,11 +346,11 @@ describe('StageConfigPanel', () => {
     // nothing this panel can do should provoke this -- but the two statements
     // were the other way round once, and while they were, removing any stage but
     // the last put `duplicate key value violates unique constraint
-    // "deck_stages_deck_id_seq_key"` verbatim into an otherwise
+    // "deck_stages_work_id_deck_id_seq_key"` verbatim into an otherwise
     // Vietnamese-only Alert. If that order is ever restored, the admin at least
     // gets a sentence they can act on.
     saveWorkStages.mockRejectedValue(new Error(
-      'duplicate key value violates unique constraint "deck_stages_deck_id_seq_key"',
+      'duplicate key value violates unique constraint "deck_stages_work_id_deck_id_seq_key"',
     ))
     renderApp(<StageConfigPanel workId="w1" deckId="d1" />)
     await screen.findByDisplayValue('Coat 2')

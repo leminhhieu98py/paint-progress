@@ -6,10 +6,10 @@ import type { Stage } from './types'
  *
  * Ordered by `seq` over a COPY, like computeDeckProgress: a screen holds one
  * stages array and hands it to several functions per render, so sorting in place
- * would reorder somebody else's data. `listStages` already returns them sorted,
+ * would reorder somebody else's data. `listWorkStages` already returns them sorted,
  * which is exactly why an unsorted caller would go unnoticed without the copy.
  *
- * "The next seq PRESENT", never `seq + 1`. Seq gaps are reachable: saveStages is
+ * "The next seq PRESENT", never `seq + 1`. Seq gaps are reachable: saveWorkStages is
  * two round trips, so a removal that renumbers the survivors can commit the
  * delete and lose the renumbering, leaving 1, 2, 4. A `seq + 1` lookup would
  * report "already finished" on a cell sitting at seq 2 of that project.

@@ -10,11 +10,14 @@ import {
   cellsInBox, divergesBeyondThreshold, drawnCell, hasUndeclaredArea, mergeCells, prorateCellAreas,
 } from '../../domain/geometry'
 import { nameBays, type BayOptions } from '../../domain/bayDetect'
-import type { MeshCell, Stage } from '../../domain/types'
+import type { MeshCell } from '../../domain/types'
 import {
-  getDrawingUrl, listCells, listStages, syncCells,
+  getDrawingUrl, listCells, syncCells,
   updateDeckArea, zoneImpactOf, type DeckRow,
 } from '../../lib/decksApi'
+import {
+  listDeckStates, listDeckWorks, type CellStateView, type DeckWork,
+} from '../../lib/gsApi'
 import { formatAreaM2, formatPercent } from '../../lib/format'
 import { MeshEditDialog, type EditKind, type PendingEdit } from './MeshEditDialog'
 import { SectionCard } from '../../components/SectionCard'
@@ -46,6 +49,44 @@ import {
  */
 
 
+/** One work's recorded stage on a bay, as the editor names it. */
+interface RecordedProgress {
+  workName: string
+  stageName: string
+  color: string
+}
+
+/**
+ * Which bays carry recorded progress, per code, in work order. A bay ticked in
+ * two works is listed twice, because both ticks are what an edit here would
+ * discard -- and a stage id no coat list explains is still progress, named as
+ * such rather than dropped.
+ */
+function recordedProgressByCode(
+  cells: { id: string; code: string }[],
+  works: DeckWork[],
+  states: Record<string, Record<string, CellStateView>>,
+): Record<string, RecordedProgress[]> {
+  const byCode: Record<string, RecordedProgress[]> = {}
+  for (const cell of cells) {
+    for (const w of works) {
+      const stageId = states[w.work.id]?.[cell.id]?.stageId
+      if (!stageId) continue
+      const stage = w.stages.find((st) => st.id === stageId)
+      ;(byCode[cell.code] ??= []).push({
+        workName: w.work.name,
+        stageName: stage?.name ?? 'không rõ',
+        color: stage?.color ?? '#8C8C8C',
+      })
+    }
+  }
+  return byCode
+}
+
+/** "Sơn · Coat 1, Tháo giáo · Tháo giáo lửng" -- what a bay would lose. */
+const describeProgress = (entries: RecordedProgress[] | undefined) =>
+  (entries ?? []).map((e) => `${e.workName} · ${e.stageName}`).join(', ')
+
 export function DeckEditor({
   deck,
   editable = true,
@@ -62,12 +103,12 @@ export function DeckEditor({
   editable?: boolean
   onSaved?: () => void
 }) {
-  const [stages, setStages] = useState<Stage[]>([])
   const { cells, commit: commitCells, reset: resetCells, undo, redo, clearHistory } = useMeshHistory()
   /**
-   * Recorded stage id per cell code, as last read from the database --
-   * `MeshCell` itself carries no stage, so this is the only place that
-   * information survives once `cells` is trimmed down to geometry.
+   * Recorded progress per cell code, as last read from the database: one
+   * entry per work the bay holds a stage in (0024). `MeshCell` itself carries
+   * no stage, so this is the only place that information survives once
+   * `cells` is trimmed down to geometry.
    *
    * Not re-derived on every local edit (delete/merge/generateMesh): it is a
    * fact about what is PERSISTED, refreshed only where `cells` is refreshed
@@ -77,7 +118,7 @@ export function DeckEditor({
    * progress this edit is about to discard, and Task 7 / B2 exist so the
    * admin can see it before confirming.
    */
-  const [cellStages, setCellStages] = useState<Record<string, string | null>>({})
+  const [cellStages, setCellStages] = useState<Record<string, RecordedProgress[]>>({})
   const [selected, setSelected] = useState<string[]>([])
   const [imageUrl, setImageUrl] = useState<string | null>(null)
   /**
@@ -141,13 +182,13 @@ export function DeckEditor({
 
   const load = useCallback(async () => {
     try {
-      const [c, s] = await Promise.all([
+      const [c, works, states] = await Promise.all([
         listCells(deck.id),
-        listStages(deck.id),
+        listDeckWorks(deck.id),
+        listDeckStates(deck.id),
       ])
-      setStages(s)
       resetCells(c.map(({ code, x, y, w, h, areaM2 }) => ({ code, x, y, w, h, areaM2 })))
-      setCellStages(Object.fromEntries(c.map((p) => [p.code, p.stageId])))
+      setCellStages(recordedProgressByCode(c, works, states))
       if (deck.imagePath) setImageUrl(await getDrawingUrl(deck.imagePath))
       setLoadFailed(false)
       setError(null)
@@ -181,13 +222,13 @@ export function DeckEditor({
   const cellColors = useMemo(() => {
     const colors: Record<string, string> = {}
     for (const cell of cells) {
-      const stageId = cellStages[cell.code]
-      if (!stageId) continue
-      const stage = stages.find((s) => s.id === stageId)
-      if (stage) colors[cell.code] = stage.color
+      // The first work's coat, in work order: one colour per bay is all the
+      // canvas can show, and the point here is "carries progress", not which.
+      const first = cellStages[cell.code]?.[0]
+      if (first) colors[cell.code] = first.color
     }
     return colors
-  }, [cells, cellStages, stages])
+  }, [cells, cellStages])
 
 
 
@@ -380,11 +421,8 @@ export function DeckEditor({
       // discards. For a delete or a mesh save that is all of them; for a merge
       // the survivor is already out of `touched`, for the same reason.
       const progressLoss = touched
-        .filter((p) => p.stageId)
-        .map((p) => ({
-          code: p.code,
-          stageName: stages.find((s) => s.id === p.stageId)?.name ?? 'không rõ',
-        }))
+        .filter((p) => (cellStages[p.code]?.length ?? 0) > 0)
+        .map((p) => ({ code: p.code, stageName: describeProgress(cellStages[p.code]) }))
 
       // Cells whose code survives this edit -- so their recorded stage
       // survives with it, untouched by syncCells -- but whose area moves by
@@ -392,13 +430,13 @@ export function DeckEditor({
       // then quietly covers a different extent than whoever ticked it
       // inspected, with no other signal that it happened.
       const reshaped = persisted
-        .filter((p) => p.stageId && nextCodes.has(p.code))
+        .filter((p) => (cellStages[p.code]?.length ?? 0) > 0 && nextCodes.has(p.code))
         .flatMap((p) => {
           const match = next.find((n) => n.code === p.code)
           if (!match || !cellReshaped(p.areaM2, match.areaM2)) return []
           return [{
             code: p.code,
-            stageName: stages.find((s) => s.id === p.stageId)?.name ?? 'không rõ',
+            stageName: describeProgress(cellStages[p.code]),
             fromAreaM2: p.areaM2,
             toAreaM2: match.areaM2,
           }]
@@ -466,9 +504,11 @@ export function DeckEditor({
       // not the guides -- reloading those would throw away the mm chain the
       // admin has typed and not yet managed to save.
       try {
-        const fresh = await listCells(deck.id)
+        const [fresh, works, states] = await Promise.all([
+          listCells(deck.id), listDeckWorks(deck.id), listDeckStates(deck.id),
+        ])
         resetCells(fresh.map(({ code, x, y, w, h, areaM2 }) => ({ code, x, y, w, h, areaM2 })))
-        setCellStages(Object.fromEntries(fresh.map((p) => [p.code, p.stageId])))
+        setCellStages(recordedProgressByCode(fresh, works, states))
       } catch {
         // Now the screen matches neither the database nor a successful read.
         // Refuse the next save rather than let it write this over the deck.

@@ -27,12 +27,26 @@ import type { Deck, Stage } from './domain/types'
 export function installDevConsole(): void {
   if (!import.meta.env.DEV) return
 
-  const load = async (deckId: string) => {
-    const { getDeck, listCells, listStages } = await import('./lib/decksApi')
+  /**
+   * One deck through one work (0024): the mesh, that work's coats, and where
+   * each bay stands in it. The first bays work the deck is in unless a name is
+   * given -- the paint work, on every project so far.
+   */
+  const load = async (deckId: string, workName?: string) => {
+    const { getDeck, listCells } = await import('./lib/decksApi')
+    const { listDeckStates, listDeckWorks } = await import('./lib/gsApi')
     const row = await getDeck(deckId)
     if (!row) throw new Error(`Không có sàn nào mang id ${deckId}`)
-    const cells = await listCells(deckId)
-    const stages = await listStages(deckId)
+    const [cells, works, states] = await Promise.all([
+      listCells(deckId), listDeckWorks(deckId), listDeckStates(deckId),
+    ])
+    const view = workName ? works.find((w) => w.work.name === workName) : works[0]
+    if (!view) {
+      throw new Error(workName
+        ? `Sàn ${row.name} không thuộc công việc "${workName}"`
+        : `Sàn ${row.name} chưa thuộc công việc nào`)
+    }
+    const byCell = states[view.work.id] ?? {}
     const deck: Deck = {
       id: row.id,
       code: row.code,
@@ -40,30 +54,30 @@ export function installDevConsole(): void {
       totalAreaM2: row.totalAreaM2,
       cells: cells.map((c) => ({
         id: c.id, code: c.code, x: c.x, y: c.y, w: c.w, h: c.h,
-        areaM2: c.areaM2, stageId: c.stageId,
+        areaM2: c.areaM2, stageId: byCell[c.id]?.stageId ?? null,
       })),
     }
-    return { deck, stages, projectId: row.projectId }
+    return { deck, stages: view.stages, projectId: row.projectId, work: view.work }
   }
 
   const api = {
-    /** One deck, painted to the given mix, reported stage by stage. */
-    async deck(deckId: string, mix: Record<string, number> = {}) {
-      const { deck, stages } = await load(deckId)
+    /** One deck in one work, painted to the given mix, reported stage by stage. */
+    async deck(deckId: string, mix: Record<string, number> = {}, workName?: string) {
+      const { deck, stages } = await load(deckId, workName)
       const report = progressReport(paintDeck(deck, stages, mix), stages)
       console.table(report)
       return report
     },
 
     /** Every deck of a project, each painted to the same mix, plus the rollup. */
-    async project(projectId: string, mix: Record<string, number> = {}) {
+    async project(projectId: string, mix: Record<string, number> = {}, workName?: string) {
       const { listDecks } = await import('./lib/decksApi')
       const rows = await listDecks(projectId)
       // Each deck's own stages: the mix is keyed by name, so a deck whose spec
       // does not carry that name simply reaches none of it.
       const entries: { deck: Deck; stages: Stage[] }[] = []
       for (const row of rows) {
-        const { deck, stages } = await load(row.id)
+        const { deck, stages } = await load(row.id, workName)
         entries.push({ deck: paintDeck(deck, stages, mix), stages })
       }
       const report = projectReport(entries)
@@ -71,18 +85,20 @@ export function installDevConsole(): void {
       return report
     },
 
-    /** The stages of a deck, so the mix can be keyed by the right names. */
+    /** The works of a deck with their coats, so the mix can be keyed by the right names. */
     async stages(deckId: string) {
-      const { listStages } = await import('./lib/decksApi')
-      const stages = await listStages(deckId)
-      console.table(stages.map((s) => ({ seq: s.seq, name: s.name, color: s.color, weight: s.weight })))
-      return stages
+      const { listDeckWorks } = await import('./lib/gsApi')
+      const works = await listDeckWorks(deckId)
+      console.table(works.flatMap((w) => w.stages.map((s) => ({
+        work: w.work.name, seq: s.seq, name: s.name, color: s.color, weight: s.weight,
+      }))))
+      return works
     },
   }
 
   ;(window as unknown as { paint: typeof api }).paint = api
   console.info(
-    'paint.deck(deckId, mix) / paint.project(projectId, mix) / paint.stages(deckId)\n'
+    'paint.deck(deckId, mix, workName?) / paint.project(projectId, mix, workName?) / paint.stages(deckId)\n'
     + "mix ví dụ: { 'Lót': 1, 'Phủ 1': 0.5 } — phần diện tích đạt ÍT NHẤT tới lớp đó. Không ghi gì vào dữ liệu.",
   )
 }

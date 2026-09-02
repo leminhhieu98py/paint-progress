@@ -52,7 +52,7 @@ export function paintLensColors(cells: Cell[], stages: Stage[]): Record<string, 
  *
  * The last stage by seq IS scaffolding removal -- on this project's spec it is
  * literally named "Tháo giáo", and the schema has no separate flag for it. Read
- * by seq rather than by array position: `listStages` sorts, but a caller
+ * by seq rather than by array position: `listWorkStages` sorts, but a caller
  * assembling stages by hand need not, and the wrong element would put the
  * scaffolding answer on a coat.
  *

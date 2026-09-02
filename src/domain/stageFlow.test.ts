@@ -3,7 +3,7 @@ import { WORKBOOK_STAGES } from './fixtures'
 import { duplicateStageFields, isBackwards, nextStage } from './stageFlow'
 import type { Stage } from './types'
 
-/** Seq gaps are reachable: saveStages is not transactional, so a failed removal
+/** Seq gaps are reachable: saveWorkStages is not transactional, so a failed removal
  *  can leave 1, 2, 4. Nothing in the app renumbers them behind the admin. */
 const GAPPED: Stage[] = [
   { id: 'a', seq: 1, name: 'A', color: '#000000', weight: 0.5 },
@@ -90,7 +90,7 @@ describe('isBackwards', () => {
 
   it('compares seq, not array position', () => {
     // Catches `stages.indexOf(to) < stages.indexOf(from)`, which inverts the
-    // answer on any array that is not already sorted by seq -- and listStages
+    // answer on any array that is not already sorted by seq -- and listWorkStages
     // orders by seq, so such a bug would hide in production and surface only
     // after a reorder.
     const reversed = [...WORKBOOK_STAGES].reverse()
