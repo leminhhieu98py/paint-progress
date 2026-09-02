@@ -73,20 +73,25 @@ export function ConsequenceModal({
 }) {
   const t = TONES[tone]
   const [typed, setTyped] = useState('')
-  const armed = confirmText === undefined || typed.trim() === confirmText
-  const cancel = () => {
-    setTyped('')
-    onCancel()
+  // Reset on every OPENING, whichever way the last one closed -- Huỷ, the X,
+  // the mask, Esc, or the parent closing it itself after a successful write.
+  // Seen in Chrome: resetting only from the Huỷ handler left the previous
+  // name in the box the next time round. React's documented "state from the
+  // previous render" pattern: no effect, and a name typed for the last delete
+  // can never arm the next one.
+  const [wasOpen, setWasOpen] = useState(open)
+  if (open !== wasOpen) {
+    setWasOpen(open)
+    if (open) setTyped('')
   }
+  const armed = confirmText === undefined || typed.trim() === confirmText
   const confirm = () => {
-    if (!armed) return
-    setTyped('')
-    onOk()
+    if (armed) onOk()
   }
   return (
     <Modal
       open={open}
-      onCancel={cancel}
+      onCancel={onCancel}
       title={null}
       footer={null}
       centered
@@ -231,7 +236,7 @@ export function ConsequenceModal({
       )}
 
       <div style={{ display: 'flex', gap: 9, justifyContent: 'flex-end', marginTop: 20 }}>
-        <Button onClick={cancel}>{cancelText}</Button>
+        <Button onClick={onCancel}>{cancelText}</Button>
         <Button
           type="primary"
           danger={tone === 'danger'}

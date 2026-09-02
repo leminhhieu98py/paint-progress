@@ -136,3 +136,22 @@ describe('ConsequenceModal — typed confirmation', () => {
     expect(screen.getByRole('button', { name: 'Vẫn xoá' })).toBeEnabled()
   })
 })
+
+describe('ConsequenceModal — typed confirmation, closed by the parent', () => {
+  it('starts empty again however it was closed, not only through Huỷ', async () => {
+    // Seen in Chrome: the parent closes this dialog itself after a successful
+    // delete, and the next one opened with the previous name still typed.
+    // The reset has to hang off `open`, not off which button was pressed.
+    const user = userEvent.setup()
+    const props = { ...base, tone: 'danger' as const, okText: 'Xóa sàn', confirmText: 'Cellar Deck' }
+    const { rerender } = render(<ConsequenceModal {...props} />)
+    await user.type(screen.getByLabelText('Gõ đúng tên để xác nhận'), 'Cellar Deck')
+    expect(screen.getByRole('button', { name: /Xóa sàn/ })).toBeEnabled()
+
+    rerender(<ConsequenceModal {...props} open={false} />)
+    rerender(<ConsequenceModal {...props} open />)
+
+    expect(screen.getByLabelText('Gõ đúng tên để xác nhận')).toHaveValue('')
+    expect(screen.getByRole('button', { name: /Xóa sàn/ })).toBeDisabled()
+  })
+})
