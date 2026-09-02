@@ -1,4 +1,5 @@
 import {
+  ApartmentOutlined,
   BuildOutlined,
   FolderOpenOutlined,
   LogoutOutlined,
@@ -17,6 +18,7 @@ import { palette } from '../../theme'
 
 const items = [
   { key: 'projects', label: 'Dự án', icon: <FolderOpenOutlined /> },
+  { key: 'works', label: 'Công việc', icon: <ApartmentOutlined /> },
   { key: 'decks', label: 'Sàn', icon: <BuildOutlined /> },
   { key: 'users', label: 'Người dùng', icon: <TeamOutlined /> },
 ]

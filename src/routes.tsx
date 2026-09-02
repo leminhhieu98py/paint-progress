@@ -29,6 +29,9 @@ const AdminLayout = lazy(() =>
 const ProjectsScreen = lazy(() =>
   import('./screens/admin/ProjectsScreen').then((m) => ({ default: m.ProjectsScreen })),
 )
+const WorksScreen = lazy(() =>
+  import('./screens/admin/WorksScreen').then((m) => ({ default: m.WorksScreen })),
+)
 const DecksScreen = lazy(() =>
   import('./screens/admin/DecksScreen').then((m) => ({ default: m.DecksScreen })),
 )
@@ -172,6 +175,14 @@ export function AppRoutes() {
             element={
               <LazySuspense>
                 <ProjectsScreen />
+              </LazySuspense>
+            }
+          />
+          <Route
+            path="works"
+            element={
+              <LazySuspense>
+                <WorksScreen />
               </LazySuspense>
             }
           />
