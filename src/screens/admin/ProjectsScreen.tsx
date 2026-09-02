@@ -181,7 +181,7 @@ export function ProjectsScreen() {
     <>
       <PageHeader
         title="Dự án"
-        subtitle={`${rows.length} dự án · ${totals.decks} sàn · tiến độ tính từ diện tích`}
+        subtitle={`${rows.length} dự án · ${totals.decks} sàn · tiến độ theo công việc`}
         extra={
           /*
             aria-hidden on an icon that sits beside its own visible label.

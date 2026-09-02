@@ -324,7 +324,11 @@ export function WorksScreen() {
             dataSource={draft}
             pagination={false}
             locale={{
-              emptyText: (
+              // Nothing to say while the read is in flight: the spinner is the
+              // state, and "no work yet" under it read as a verdict on a project
+              // that had two works -- seen on a slow link, where the empty
+              // state sat on screen for three seconds before the rows landed.
+              emptyText: loading ? ' ' : (
                 <EmptyState
                   title="Dự án chưa có công việc nào"
                   description="Tiến độ dự án bằng 0 cho tới khi có công việc tính vào tổng. Bấm Thêm công việc để bắt đầu."
