@@ -1,5 +1,5 @@
 import type { Cell, Deck } from '../domain/types'
-import { computeProjectProgress } from '../domain/progress'
+import { areaWeightedProjectProgress } from '../domain/progress'
 import { supabase } from './supabase'
 import { DRAWINGS_BUCKET } from './decksApi'
 
@@ -137,7 +137,7 @@ export async function listProjects(): Promise<ProjectRow[]> {
         .length,
       cellCount: entries.reduce((sum, e) => sum + e.deck.cells.length, 0),
       totalAreaM2: entries.reduce((sum, e) => sum + e.deck.totalAreaM2, 0),
-      progress: computeProjectProgress(entries).progress,
+      progress: areaWeightedProjectProgress(entries).progress,
     }
   })
 }

@@ -62,9 +62,80 @@ export type WeightedDeckProgress = DeckProgress & {
   weight: number
 }
 
-export interface ProjectProgress {
+/** The pre-work-items rollup: decks weighted by their share of the project's
+ *  declared area. Kept for the screens that have not moved to works yet. */
+export interface AreaWeightedProjectProgress {
   decks: WeightedDeckProgress[]
   progress: number
+}
+
+/**
+ * A work item (Công việc): one discipline the project is paid for -- sơn, tháo
+ * giáo, dọn dẹp, marking. Linh's workbook puts these above the decks, each
+ * with its own weight, and some of them outside the project total.
+ */
+export type WorkKind = 'bays' | 'manual'
+
+export interface Work {
+  id: string
+  projectId: string
+  /** 1-based, ascending; the order the screens and the report list works in. */
+  seq: number
+  name: string
+  /** 'bays' is tracked bay by bay on the drawings; 'manual' is a percentage
+   *  the admin types (no bays, no coats). */
+  kind: WorkKind
+  /** W_w, 0..1. Across the works that count, these sum to 1. */
+  weight: number
+  /** Tính vào tổng: whether W_w enters the project total. */
+  counts: boolean
+  /** 0..1; read only for kind 'manual'. */
+  manualProgress: number
+}
+
+/** One deck's part in one bays work. */
+export interface WorkDeckEntry {
+  /** The deck with its cells PROJECTED FOR THIS WORK: `stageId` and `note`
+   *  come from cell_states for (cell, work), not from the cell itself. */
+  deck: Deck
+  /** This (work, deck)'s own coats; weights sum to 1. */
+  stages: Stage[]
+  /** D_wd, 0..1. Across the decks in one work these sum to 1. */
+  weight: number
+}
+
+export interface WorkModel {
+  work: Work
+  /** Empty for a manual work. */
+  decks: WorkDeckEntry[]
+}
+
+export interface WorkProgress {
+  work: Work
+  /** P_w: Σ D·P_wd for a bays work, manualProgress for a manual one. */
+  progress: number
+  decks: WeightedDeckProgress[]
+}
+
+export interface ProjectProgress {
+  /** Every work, counted or not, so the screens can show all of them. */
+  works: WorkProgress[]
+  /** P = Σ over counted works of W·P_w. */
+  progress: number
+}
+
+/**
+ * One deck's "tổng hợp" figure: its per-work progress averaged by the weight
+ * each (work, deck) carries in the project total, W·D. A convenience for the
+ * deck header, the GS tab and the deck list -- the billed number is P, above.
+ */
+export interface DeckSummary {
+  deckId: string
+  progress: number
+  /** Σ over counted bays works containing the deck of W·D -- what the deck
+   *  weighs in P. */
+  effectiveWeight: number
+  perWork: Array<{ work: Work; weight: number; progress: number }>
 }
 
 export interface MeshCell {

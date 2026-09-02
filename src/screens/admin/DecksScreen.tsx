@@ -6,7 +6,7 @@ import dayjs from 'dayjs'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { renderDeckDrawing, renderDeckPie } from '../../canvas/deckSnapshot'
-import { computeProjectProgress } from '../../domain/progress'
+import { areaWeightedProjectProgress } from '../../domain/progress'
 import { listGsUsers } from '../../lib/adminApi'
 import { deleteDeck, getDrawingUrl, listDecks, type DeckRow } from '../../lib/decksApi'
 import { formatAreaM2, formatPercent } from '../../lib/format'
@@ -159,7 +159,7 @@ export function DecksScreen() {
     return () => { cancelled = true }
   }, [projectId])
 
-  const rollup = useMemo(() => computeProjectProgress(entries), [entries])
+  const rollup = useMemo(() => areaWeightedProjectProgress(entries), [entries])
 
   const rollupRows: RollupRow[] = entries.map((entry) => {
     const d = rollup.decks.find((x) => x.deckId === entry.deck.id)

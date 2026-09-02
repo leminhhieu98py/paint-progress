@@ -1,4 +1,4 @@
-import { computeDeckProgress, computeProjectProgress } from './progress'
+import { computeDeckProgress, areaWeightedProjectProgress } from './progress'
 import type { Cell, Deck, Stage } from './types'
 
 /**
@@ -58,7 +58,7 @@ export function progressReport(deck: Deck, stages: Stage[]): Record<string, stri
 
 /** The same, across a project's decks, weighted by area the way the rollup is. */
 export function projectReport(entries: { deck: Deck; stages: Stage[] }[]): Record<string, string> {
-  const computed = computeProjectProgress(entries)
+  const computed = areaWeightedProjectProgress(entries)
   const lines: Record<string, string> = {}
   for (const deck of computed.decks) {
     lines[deck.deckId] = `${(deck.progress * 100).toFixed(1)}% × ${(deck.weight * 100).toFixed(1)}%`

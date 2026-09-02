@@ -1,5 +1,5 @@
 import dayjs from 'dayjs'
-import { computeDeckProgress, computeProjectProgress } from './progress'
+import { computeDeckProgress, areaWeightedProjectProgress } from './progress'
 import type { Deck, DeckEvent, Stage, Zone } from './types'
 
 /**
@@ -91,7 +91,7 @@ export function reportStageColumns(inputs: DeckReportInput[]): string[] {
 /**
  * One row per deck, then the project rollup.
  *
- * Every figure comes from `computeDeckProgress` / `computeProjectProgress`, the
+ * Every figure comes from `computeDeckProgress` / `areaWeightedProjectProgress`, the
  * pair asserted against the customer's own spreadsheet to 1e-9 (spec §3.3).
  * Nothing is recomputed: a second implementation of pᵢ is a second thing that
  * can disagree with the screen the admin just approved.
@@ -102,7 +102,7 @@ export function reportStageColumns(inputs: DeckReportInput[]): string[] {
  * the sheet renders the difference as a blank cell.
  */
 export function buildOverviewRows(inputs: DeckReportInput[]): OverviewRow[] {
-  const rollup = computeProjectProgress(inputs.map((i) => ({ deck: i.deck, stages: i.stages })))
+  const rollup = areaWeightedProjectProgress(inputs.map((i) => ({ deck: i.deck, stages: i.stages })))
   const totalArea = inputs.reduce((sum, i) => sum + i.deck.totalAreaM2, 0)
 
   const rows: OverviewRow[] = inputs.map((input) => {
