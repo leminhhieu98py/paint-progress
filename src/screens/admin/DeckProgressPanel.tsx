@@ -258,43 +258,47 @@ export function DeckProgressPanel({
    * Both lenses read the same deck through this, so the split view cannot drift
    * into showing two differently-computed pictures.
    *
-   * Bays are coloured by ZONE where the coat has one planned, and by the coat's
-   * own colour where it does not. A zone-only rule would leave an unplanned
-   * deck blank, which is most decks before the plan is drawn; a coat-only rule
-   * would lose the grouping the plan exists to show. Either way the FILL says
-   * "which group", and the HATCH says "not there yet" -- solid means the bay has
-   * reached this coat.
+   * A bay that has REACHED the coat is filled: by its zone's colour where the
+   * coat has one planned, by the coat's own colour where it does not. A
+   * zone-only rule would leave an unplanned deck blank, which is most decks
+   * before the plan is drawn; a coat-only rule would lose the grouping the
+   * plan exists to show. A bay that has NOT reached the coat gets nothing --
+   * the drawing shows through. It used to wear the fill under a hatch, and the
+   * client's review read that as "done, sort of": white is the honest answer.
    */
   const lensFor = (stage: Stage | null) => {
     if (!entry || !stage) {
-      return { stage: null, colors: {}, pending: [], zones: [], zoneColors: {}, reached: 0, total: 0 }
+      return { stage: null, colors: {}, zones: [], zoneColors: {}, reachedAreaM2: 0 }
     }
     const zonesHere = zones.filter((z) => z.stageId === stage.id)
     const colorById = Object.fromEntries(
       zonesHere.map((z, i) => [z.id, ZONE_PALETTE[i % ZONE_PALETTE.length]]),
     )
-    const pending = codesNotReaching(entry.deck.cells, entry.stages, stage.id)
-    const pendingSet = new Set(pending)
+    const pendingSet = new Set(codesNotReaching(entry.deck.cells, entry.stages, stage.id))
     const zoned = zoneLensColors(zonesHere, entry.deck.cells)
     const colors: Record<string, string> = {}
-    for (const cell of entry.deck.cells) colors[cell.code] = zoned[cell.code] ?? stage.color
+    let reachedAreaM2 = 0
+    for (const cell of entry.deck.cells) {
+      if (pendingSet.has(cell.code)) continue
+      colors[cell.code] = zoned[cell.code] ?? stage.color
+      reachedAreaM2 += cell.areaM2
+    }
 
-    const codeById = new Map(entry.deck.cells.map((c) => [c.id, c.code]))
+    // In m², like everything else on this panel now: a zone of three bays at
+    // "2/3" said nothing about how much of it was done when the bays differ
+    // in size, and they usually do.
+    const cellById = new Map(entry.deck.cells.map((c) => [c.id, c]))
     const zoneRows = zonesHere.map((z) => {
-      const codes = z.cellIds.map((id) => codeById.get(id)).filter((c): c is string => !!c)
-      const done = codes.filter((c) => !pendingSet.has(c)).length
-      return { zone: z, color: colorById[z.id], done, total: codes.length }
+      const cells = z.cellIds.flatMap((id) => {
+        const c = cellById.get(id)
+        return c ? [c] : []
+      })
+      const totalM2 = cells.reduce((sum, c) => sum + c.areaM2, 0)
+      const doneM2 = cells.reduce((sum, c) => (pendingSet.has(c.code) ? sum : sum + c.areaM2), 0)
+      return { zone: z, color: colorById[z.id], doneM2, totalM2 }
     })
 
-    return {
-      stage,
-      colors,
-      pending,
-      zones: zoneRows,
-      zoneColors: colorById,
-      reached: entry.deck.cells.length - pending.length,
-      total: entry.deck.cells.length,
-    }
+    return { stage, colors, zones: zoneRows, zoneColors: colorById, reachedAreaM2 }
   }
 
   const lensA = lensFor(stageA)
@@ -313,6 +317,7 @@ export function DeckProgressPanel({
       .filter((sl) => sl.areaM2 > 0)
       .map((sl) => ({
         label: sl.label,
+        areaM2: sl.areaM2,
         value: entry.deck.totalAreaM2 > 0 ? sl.areaM2 / entry.deck.totalAreaM2 : 0,
         color: sl.color,
       }))
@@ -492,7 +497,9 @@ export function DeckProgressPanel({
    */
   const renderLens = (lens: ReturnType<typeof lensFor>, side: 'A' | 'B') => {
     if (!entry || !lens.stage || !imageUrl) return null
-    const pct = lens.total > 0 ? (lens.reached / lens.total) * 100 : 0
+    // Area over the deck's declared area -- the same cumulative ratio the spec
+    // table and the report carry for this coat, not a bay fraction.
+    const reachedRatio = entry.deck.totalAreaM2 > 0 ? lens.reachedAreaM2 / entry.deck.totalAreaM2 : 0
     return (
       <div
         data-testid={`lens-${side}`}
@@ -512,7 +519,7 @@ export function DeckProgressPanel({
           <div style={{ fontSize: 12, lineHeight: 1.35, color: palette.textTertiary, marginTop: 4 }}>
             {splitView
               ? (side === 'A' ? 'Lớp bên trái' : 'Lớp bên phải · cùng mức zoom để so sánh')
-              : 'Ô tô theo màu zone · ô chưa đạt lớp này có gạch chéo mờ'}
+              : 'Ô đã đạt lớp này tô màu zone (chưa có zone thì màu lớp) · ô chưa đạt để trắng'}
           </div>
         </div>
 
@@ -530,7 +537,6 @@ export function DeckProgressPanel({
             cells={entry.deck.cells}
             selectedCodes={editable && side === 'A' ? selectedCodes : []}
             cellColors={lens.colors}
-            hatchedCodes={lens.pending}
             markedCodes={notedCodes}
             panZoom
             zoom={zoom}
@@ -574,7 +580,7 @@ export function DeckProgressPanel({
             />
             <span style={{ fontSize: 12, fontWeight: 600 }}>{lens.stage.name}</span>
             <span style={{ fontSize: 12, fontWeight: 600, color: palette.accent }}>
-              {formatPercent(pct / 100)}
+              {formatPercent(reachedRatio)}
             </span>
           </div>
         </div>
@@ -584,7 +590,7 @@ export function DeckProgressPanel({
             {`Tiến độ từng zone · ${lens.stage.name}`}
           </span>
           <span style={{ marginLeft: 'auto', fontSize: 12, color: palette.textTertiary }}>
-            {`${lens.reached} / ${lens.total} ô`}
+            {`${formatAreaM2(lens.reachedAreaM2)} / ${formatAreaM2(entry.deck.totalAreaM2)} m²`}
           </span>
         </div>
 
@@ -595,7 +601,7 @@ export function DeckProgressPanel({
             </div>
           )}
           {lens.zones.map((row) => {
-            const zonePct = row.total > 0 ? row.done / row.total : 0
+            const zonePct = row.totalM2 > 0 ? row.doneM2 / row.totalM2 : 0
             const planned = formatPlanRange(row.zone.startDate, row.zone.finishDate)
             const line = (
               <>
@@ -612,7 +618,7 @@ export function DeckProgressPanel({
                 />
                 <span style={{ fontSize: 12, fontWeight: 600, flex: 'none' }}>{row.zone.name}</span>
                 <span style={{ fontSize: 11, color: palette.textTertiary, flex: 'none' }}>
-                  {`${String(row.done).padStart(2, '0')}/${row.total}`}
+                  {`${formatAreaM2(row.doneM2)} / ${formatAreaM2(row.totalM2)} m²`}
                 </span>
                 <span style={{ flex: 1, minWidth: 24 }}>
                   <ProgressBar ratio={zonePct} color={row.color} height={5} />
@@ -915,7 +921,18 @@ export function DeckProgressPanel({
                               <span style={{ fontSize: 12, fontWeight: 600, flex: 1, minWidth: 0 }}>
                                 {sl.label}
                               </span>
-                              <span style={{ fontSize: 12, color: palette.textTertiary, flex: 'none' }}>
+                              <span style={{ fontSize: 12, color: palette.textSecondary, flex: 'none' }}>
+                                {`${formatAreaM2(sl.areaM2)} m²`}
+                              </span>
+                              <span
+                                style={{
+                                  fontSize: 12,
+                                  color: palette.textTertiary,
+                                  flex: 'none',
+                                  minWidth: 52,
+                                  textAlign: 'right',
+                                }}
+                              >
                                 {formatPercent(sl.value)}
                               </span>
                             </div>
@@ -938,7 +955,7 @@ export function DeckProgressPanel({
                         <span
                           style={{ marginLeft: 'auto', fontSize: 11, color: palette.textTertiary }}
                         >
-                          {`${entry.deck.cells.length} ô`}
+                          {`${formatAreaM2(entry.deck.totalAreaM2)} m²`}
                         </span>
                         <span style={{ fontSize: 18, fontWeight: 700, letterSpacing: '-0.025em' }}>
                           {formatPercent(progress?.progress ?? 0)}

@@ -189,6 +189,18 @@ describe('DeckProgressPanel', () => {
     expect(within(ring).getAllByText('50,00%')).toHaveLength(2)
   })
 
+  it('gives every ring row its m², and the footer the deck m² instead of a bay count', async () => {
+    // Feedback Rv1: "thêm thông tin m² ... không cần hiển thị số ô". Each of
+    // the two coats holds one 500 m² bay; the footer names the 1.000 m² deck
+    // beside its 70,00%, where it used to say "2 ô".
+    renderPanel()
+    const ring = await screen.findByTestId('stage-ring')
+    expect(within(ring).getAllByText('500,00 m²')).toHaveLength(2)
+    // Once in the ring's centre, once in the footer.
+    expect(within(ring).getAllByText('1.000,00 m²')).toHaveLength(2)
+    expect(within(ring).queryByText(/\d+ ô/)).toBeNull()
+  })
+
   it('tells the admin when a deck has no drawing, instead of an empty frame', async () => {
     loadDeckProgress.mockResolvedValue({ ...ENTRY, imagePath: null })
     renderPanel()
@@ -271,25 +283,30 @@ describe('DeckProgressPanel — colouring one coat', () => {
       expect(screen.getByTestId('cell-R1C1')).toHaveAttribute('data-color', '#eb2f96'))
   })
 
-  it('falls back to the coat\'s own colour for a bay outside every zone', async () => {
+  it('falls back to the coat\'s own colour for a reached bay outside every zone', async () => {
     renderPanel()
     await screen.findByTestId('lens-A')
-    await pickLens('Lớp sơn đang xem', 'Tháo giáo')
-    // A zone-only rule leaves an unplanned deck blank, which is most decks
-    // before the plan is drawn. The fill still says "which group"; the hatch
-    // still says "not there yet".
+    await pickLens('Lớp sơn đang xem', 'Coat 2')
+    // ZONE is planned on Tháo giáo, so Coat 2 has no zones: both bays have
+    // reached it and neither is in a zone for it. A zone-only rule would leave
+    // them blank, which is most decks before the plan is drawn.
     await waitFor(() =>
-      expect(screen.getByTestId('cell-R1C2')).toHaveAttribute('data-color', '#722ed1'))
+      expect(screen.getByTestId('cell-R1C2')).toHaveAttribute('data-color', '#bfbfbf'))
+    expect(screen.getByTestId('cell-R1C1')).toHaveAttribute('data-color', '#bfbfbf')
   })
 
-  it('hatches exactly the bays that have not reached the coat being viewed', async () => {
+  it('leaves a bay that has not reached the coat white, with no hatch', async () => {
     renderPanel()
     await screen.findByTestId('lens-A')
     await pickLens('Lớp sơn đang xem', 'Tháo giáo')
-    // c1 is AT Tháo giáo, c2 is at Coat 2 and has not got there.
+    // c1 is AT Tháo giáo and in its zone; c2 is at Coat 2 and has not got
+    // there. Feedback Rv1: an unreached bay shows the bare drawing -- it used
+    // to wear the coat's colour under a hatch, which read as "done, sort of".
     await waitFor(() =>
-      expect(screen.getByTestId('cell-R1C1')).toHaveAttribute('data-hatched', 'false'))
-    expect(screen.getByTestId('cell-R1C2')).toHaveAttribute('data-hatched', 'true')
+      expect(screen.getByTestId('cell-R1C1')).toHaveAttribute('data-color', '#eb2f96'))
+    expect(screen.getByTestId('cell-R1C1')).toHaveAttribute('data-hatched', 'false')
+    expect(screen.getByTestId('cell-R1C2')).toHaveAttribute('data-color', '')
+    expect(screen.getByTestId('cell-R1C2')).toHaveAttribute('data-hatched', 'false')
   })
 
   it('hatches nothing at a coat both bays are already past', async () => {
@@ -301,9 +318,9 @@ describe('DeckProgressPanel — colouring one coat', () => {
     expect(screen.getByTestId('cell-R1C2')).toHaveAttribute('data-hatched', 'false')
   })
 
-  it('says what the hatch means, rather than leaving it to be inferred', async () => {
+  it('says what white means, rather than leaving it to be inferred', async () => {
     renderPanel()
-    expect(await screen.findByText(/ô chưa đạt lớp này có gạch chéo mờ/)).toBeInTheDocument()
+    expect(await screen.findByText(/ô chưa đạt để trắng/)).toBeInTheDocument()
   })
 
   it('counts each zone against the coat being viewed', async () => {
@@ -313,10 +330,12 @@ describe('DeckProgressPanel — colouring one coat', () => {
 
     const lens = await screen.findByTestId('lens-A')
     expect(within(lens).getByText('Khu A — Tháo giáo')).toBeInTheDocument()
-    // One bay in the zone, and it has reached the coat.
-    expect(within(lens).getByText('01/1')).toBeInTheDocument()
+    // One 500 m² bay in the zone, and it has reached the coat. In m², not
+    // bays: Feedback Rv1 struck every bay count from this panel.
+    expect(within(lens).getByText('500,00 / 500,00 m²')).toBeInTheDocument()
     expect(within(lens).getByText('Tiến độ từng zone · Tháo giáo')).toBeInTheDocument()
-    expect(within(lens).getByText('1 / 2 ô')).toBeInTheDocument()
+    // Of the deck's 1.000 m², the 500 at Tháo giáo have reached this coat.
+    expect(within(lens).getByText('500,00 / 1.000,00 m²')).toBeInTheDocument()
   })
 
   it('hides the zones of every other coat', async () => {
