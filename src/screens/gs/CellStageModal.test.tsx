@@ -310,8 +310,9 @@ describe('CellStageModal — the previous note', () => {
     expect(listCellNotes).toHaveBeenCalledWith('c1')
     const texts = within(thread).getAllByText(/Chờ cẩu|Bề mặt còn ẩm/).map((el) => el.textContent)
     expect(texts).toEqual(['Chờ cẩu', 'Bề mặt còn ẩm'])
-    expect(within(thread).getByText('Tháo giáo')).toBeInTheDocument()
-    expect(within(thread).getByText('Blast + Coat 1')).toBeInTheDocument()
+    // Each chip names the work too (0024): two works can note one bay.
+    expect(within(thread).getByText('Công việc chính · Tháo giáo')).toBeInTheDocument()
+    expect(within(thread).getByText('Công việc chính · Blast + Coat 1')).toBeInTheDocument()
     // The newest one is what the drawing's flag shows.
     expect(within(thread).getByText('Đang hiện trên bản vẽ')).toBeInTheDocument()
   })
@@ -393,5 +394,25 @@ describe('CellStageModal — the previous note', () => {
     )
     await userEvent.click(screen.getByRole('button', { name: /Xong công đoạn tiếp theo/ }))
     expect(onCommit).toHaveBeenCalledWith(CELL.id, 's2', '')
+  })
+})
+
+describe('CellStageModal — công việc', () => {
+  it('names the work the stage is recorded for, in the title', () => {
+    // Since 0024 a bay holds one stage per work, so "Ô R3C7" alone no longer
+    // says what is being recorded.
+    render(
+      <AntApp>
+        <CellStageModal
+          cell={CELL}
+          stages={STAGES}
+          open
+          onClose={onClose}
+          onCommit={onCommit}
+          workName="Tháo giáo"
+        />
+      </AntApp>,
+    )
+    expect(screen.getByText('Ô R3C7 · Tháo giáo')).toBeInTheDocument()
   })
 })

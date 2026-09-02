@@ -23,10 +23,19 @@ const cardStyle = {
 export function DeckProgressCard({
   progress,
   totalAreaM2,
+  perWork = [],
 }: {
+  /** P_d: the deck across its works, weighted by W·D (0024). */
   progress: number
   totalAreaM2: number
+  /**
+   * P_wd per bays work the deck is in. Shown only when there are several:
+   * with one work the deck figure IS the work's, and a row repeating it is a
+   * second number to keep in step for nothing.
+   */
+  perWork?: { id: string; name: string; progress: number }[]
 }) {
+  const several = perWork.length > 1
   return (
     <div data-testid="gs-deck-progress" style={cardStyle}>
       <div style={{ fontSize: 12, fontWeight: 600, color: palette.textTertiary }}>Tiến độ sàn</div>
@@ -34,12 +43,34 @@ export function DeckProgressCard({
         <span style={{ fontSize: 30, fontWeight: 700, lineHeight: 1, letterSpacing: '-0.032em' }}>
           {formatPercent(progress)}
         </span>
+        {several && (
+          <span style={{ fontSize: 12, color: palette.textTertiary }}>tổng hợp</span>
+        )}
       </div>
       <div style={{ marginTop: 14 }}>
         {/* No label of its own: the figure is already above it, in the
             largest type on the screen. */}
         <ProgressBar ratio={progress} color={palette.accent} height={8} showLabel={false} />
       </div>
+      {several && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 14, fontSize: 13 }}>
+          {perWork.map((row) => (
+            <div key={row.id} style={{ display: 'flex', alignItems: 'baseline', gap: 8, minWidth: 0 }}>
+              <span
+                style={{
+                  color: palette.textSecondary, minWidth: 0,
+                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                }}
+              >
+                {row.name}
+              </span>
+              <span style={{ marginLeft: 'auto', fontWeight: 600, flex: 'none' }}>
+                {formatPercent(row.progress)}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
       <div
         style={{
           display: 'flex',

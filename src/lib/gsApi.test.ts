@@ -1,9 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { Cell } from '../domain/types'
 import {
   listCoworkerNames, listDeckCells, listDeckStates, listDeckWorks, listProjectIndex,
-  listProjectStageIndex, loadGsProject, loadGsProjectIdentity, setCellStage, setCellState,
-  subscribeDeckCells, subscribeDeckStates, type GsRealtimeStatus,
+  loadGsProject, loadGsProjectIdentity, setCellState, subscribeDeckStates,
+  type GsRealtimeStatus,
 } from './gsApi'
 
 const from = vi.hoisted(() => vi.fn())
@@ -234,268 +233,6 @@ describe('listDeckCells', () => {
   })
 })
 
-describe('listProjectStageIndex', () => {
-  it('keeps each deck\'s bays with that deck\'s own coats', async () => {
-    // Every deck declares its own stage list, with its own ids. Reading one
-    // deck's cells against another's stages counts every bay as not started,
-    // which is how a deck that is 37% along reported 0% on the tab a foreman
-    // was choosing by.
-    from.mockImplementationOnce(() => builder({
-      data: [
-        { deck_id: 'd1', area_m2: 100, stage_id: 'a1' },
-        { deck_id: 'd2', area_m2: 200, stage_id: 'b1' },
-      ],
-    }))
-    from.mockImplementationOnce(() => builder({
-      data: [
-        { deck_id: 'd1', id: 'a1', seq: 1, name: 'Coat 1', color: '#111111', weight: 1 },
-        { deck_id: 'd2', id: 'b1', seq: 1, name: 'Lót', color: '#222222', weight: 1 },
-      ],
-    }))
-
-    const index = await listProjectStageIndex(['d1', 'd2'])
-
-    expect(index.d1.stages.map((st) => st.id)).toEqual(['a1'])
-    expect(index.d2.stages.map((st) => st.id)).toEqual(['b1'])
-    expect(index.d1.cells).toEqual([{ areaM2: 100, stageId: 'a1' }])
-    expect(index.d2.cells).toEqual([{ areaM2: 200, stageId: 'b1' }])
-  })
-
-  it('gives a deck with no bays and no coats an entry, not a hole', async () => {
-    // The caller divides by these. A missing key would throw on the tab rather
-    // than read 0%.
-    from.mockImplementationOnce(() => builder({ data: [] }))
-    from.mockImplementationOnce(() => builder({ data: [] }))
-
-    const index = await listProjectStageIndex(['d9'])
-
-    expect(index.d9).toEqual({ cells: [], stages: [] })
-  })
-
-  it('orders each deck\'s coats by seq, because cumulative progress reads them in order', async () => {
-    from.mockImplementationOnce(() => builder({ data: [] }))
-    from.mockImplementationOnce(() => builder({
-      data: [
-        { deck_id: 'd1', id: 's2', seq: 2, name: 'Coat 2', color: '#222222', weight: 0.5 },
-        { deck_id: 'd1', id: 's1', seq: 1, name: 'Coat 1', color: '#111111', weight: 0.5 },
-      ],
-    }))
-
-    const index = await listProjectStageIndex(['d1'])
-
-    expect(index.d1.stages.map((st) => st.seq)).toEqual([1, 2])
-  })
-
-  it('asks for nothing when there are no decks', async () => {
-    expect(await listProjectStageIndex([])).toEqual({})
-    expect(from).not.toHaveBeenCalled()
-  })
-})
-
-describe('setCellStage', () => {
-  it('sends stage_id and note and nothing else', async () => {
-    const stub = builder({ data: [{ id: 'c1' }] })
-    from.mockImplementationOnce(() => stub)
-
-    await setCellStage('c1', 's3')
-
-    // The load-bearing assertion of this module. cells_assert_gs_stage_only
-    // rejects the WHOLE update if any other column differs, so a payload that
-    // also carries updated_at (or the whole cell row) fails in production with
-    // "only stage_id and note may be changed by a non-admin" -- which reads
-    // like a permissions bug and is not one. The key count is asserted, not
-    // just the value, because toHaveBeenCalledWith on a superset object would
-    // pass.
-    expect(stub.update).toHaveBeenCalledWith({ stage_id: 's3', note: '' })
-    const payload = (stub.update as ReturnType<typeof vi.fn>).mock.calls[0][0] as object
-    expect(Object.keys(payload).sort()).toEqual(['note', 'stage_id'])
-    expect(stub.eq).toHaveBeenCalledWith('id', 'c1')
-  })
-
-  it('carries the note in the same statement as the stage', async () => {
-    // Two statements would be two failure points on the one write a foreman
-    // makes, and 0019's guard refuses a note that arrives without a stage
-    // change -- which is what keeps cell_events a complete record of notes.
-    const stub = builder({ data: [{ id: 'c1' }] })
-    from.mockImplementationOnce(() => stub)
-
-    await setCellStage('c1', 's3', 'Bề mặt còn ẩm')
-
-    expect(stub.update).toHaveBeenCalledWith({ stage_id: 's3', note: 'Bề mặt còn ẩm' })
-    expect(from).toHaveBeenCalledTimes(1)
-  })
-
-  it('clears the note when a stage change carries none', async () => {
-    // A bay that gets a new coat and no comment must not keep the note that
-    // explained the coat before it -- the note describes ONE change, and
-    // cells.note only ever holds the latest.
-    const stub = builder({ data: [{ id: 'c1' }] })
-    from.mockImplementationOnce(() => stub)
-
-    await setCellStage('c1', null)
-
-    expect(stub.update).toHaveBeenCalledWith({ stage_id: null, note: '' })
-  })
-
-  it('throws when the update matched no row at all', async () => {
-    // PostgREST answers a zero-row UPDATE with 204 and NO error, so without
-    // asking for the affected rows back this function would report success
-    // while the database was never touched. Reachable from a tablet: the admin
-    // deleted or merged the cell (DELETE is unsubscribed, so it is still on the
-    // foreman's drawing and still tappable), or their project_members row was
-    // removed and the RLS USING clause now filters the row out -- a zero-row
-    // update, not an error. Verified against the live project: status 204,
-    // error null, data null.
-    const stub = builder({ data: [] })
-    from.mockImplementationOnce(() => stub)
-
-    await expect(setCellStage('c1', 's3')).rejects.toThrow(/was not updated/)
-    expect(stub.select).toHaveBeenCalledWith('id')
-  })
-
-  it('can clear a cell back to not started', async () => {
-    const stub = builder({ data: [{ id: 'c1' }] })
-    from.mockImplementationOnce(() => stub)
-
-    await setCellStage('c1', null)
-
-    expect(stub.update).toHaveBeenCalledWith({ stage_id: null, note: '' })
-  })
-
-  it('throws when the update is refused', async () => {
-    from.mockImplementationOnce(() => builder({
-      error: { message: 'only stage_id may be changed by a non-admin' },
-    }))
-    await expect(setCellStage('c1', 's3'))
-      .rejects.toThrow('only stage_id may be changed by a non-admin')
-  })
-})
-
-describe('subscribeDeckCells', () => {
-  it('subscribes to one deck\'s cells, on its own channel', () => {
-    const ch = fakeChannel()
-    channel.mockReturnValue(ch)
-
-    subscribeDeckCells('d1', {
-      onCellChange: vi.fn(), onCellDelete: vi.fn(), onStatus: vi.fn(),
-    })
-
-    expect(channel).toHaveBeenCalledWith('gs-cells-d1')
-    // Every binding is scoped to this deck. Without the filter a foreman
-    // watching the Cellar Deck would fold the Main Deck's cells into the
-    // Cellar's cell list -- and its percentages.
-    //
-    // DELETE is in the list, and its absence was a real defect: a merge in the
-    // deck editor is one UPDATE of the survivor plus a DELETE of each absorbed
-    // cell, so without it the absorbed cells stayed on the foreman's drawing
-    // with their area counted twice. The deck_id filter on it only works because
-    // migration 0016 sets replica identity full -- under the default identity the
-    // old record carries the primary key alone, and Realtime drops the event
-    // rather than deliver it, filter or no filter.
-    expect(ch.bindings.map((b) => b.event)).toEqual(['INSERT', 'UPDATE', 'DELETE'])
-    for (const binding of ch.bindings) {
-      expect(binding.table).toBe('cells')
-      expect(binding.filter).toBe('deck_id=eq.d1')
-    }
-  })
-
-  it('reports an updated cell as a domain cell', () => {
-    const ch = fakeChannel()
-    channel.mockReturnValue(ch)
-    const onCellChange = vi.fn<(cell: Cell) => void>()
-
-    subscribeDeckCells('d1', { onCellChange, onCellDelete: vi.fn(), onStatus: vi.fn() })
-    ch.deliver('UPDATE', 'cells', {
-      id: 'c1', code: 'R1C1', x: '0.1', y: '0.2', w: '0.3', h: '0.4',
-      area_m2: '148.000', stage_id: 's4', deck_id: 'd1',
-    })
-
-    // Realtime serialises numeric columns as JSON and its own type conversion
-    // has changed across versions, so every numeric field is coerced here. An
-    // areaM2 of "148.000" would make the pie's sums string-concatenate.
-    expect(onCellChange).toHaveBeenCalledWith({
-      id: 'c1', code: 'R1C1', x: 0.1, y: 0.2, w: 0.3, h: 0.4, areaM2: 148, stageId: 's4', note: '',
-    })
-  })
-
-  it('reports an inserted cell too', () => {
-    const ch = fakeChannel()
-    channel.mockReturnValue(ch)
-    const onCellChange = vi.fn<(cell: Cell) => void>()
-
-    subscribeDeckCells('d1', { onCellChange, onCellDelete: vi.fn(), onStatus: vi.fn() })
-    ch.deliver('INSERT', 'cells', {
-      id: 'c9', code: 'R9C9', x: 0, y: 0, w: 1, h: 1, area_m2: '5', stage_id: null,
-    })
-
-    expect(onCellChange).toHaveBeenCalledWith(
-      { id: 'c9', code: 'R9C9', x: 0, y: 0, w: 1, h: 1, areaM2: 5, stageId: null, note: '' },
-    )
-  })
-
-  it('reports a deleted cell by id, off the OLD record', () => {
-    const ch = fakeChannel()
-    channel.mockReturnValue(ch)
-    const onCellChange = vi.fn<(cell: Cell) => void>()
-    const onCellDelete = vi.fn<(cellId: string) => void>()
-
-    subscribeDeckCells('d1', { onCellChange, onCellDelete, onStatus: vi.fn() })
-    ch.deliver('DELETE', 'cells', {
-      id: 'c2', code: 'R1C2', x: 0.5, y: 0, w: 0.5, h: 0.5,
-      area_m2: '200.000', stage_id: 's2', deck_id: 'd1',
-    })
-
-    // The id, not a mapped Cell: there is nothing left to render, and a delete
-    // handler that went through mapCellRow on `payload.new` would read an empty
-    // object and hand the screen `undefined` as an id -- which removes nothing
-    // and reports no error.
-    expect(onCellDelete).toHaveBeenCalledWith('c2')
-    // And it must NOT arrive as a change: folding a deleted row back into the
-    // cell list is the same phantom area, by a different route.
-    expect(onCellChange).not.toHaveBeenCalled()
-  })
-
-  it('reports the channel state as connected or not', () => {
-    const ch = fakeChannel()
-    channel.mockReturnValue(ch)
-    const seen: GsRealtimeStatus[] = []
-
-    subscribeDeckCells('d1', {
-      onCellChange: vi.fn(), onCellDelete: vi.fn(), onStatus: (s) => seen.push(s),
-    })
-
-    ch.setStatus('SUBSCRIBED')
-    ch.setStatus('CHANNEL_ERROR')
-    ch.setStatus('TIMED_OUT')
-    ch.setStatus('CLOSED')
-    ch.setStatus('SUBSCRIBED')
-
-    // All three failure states must map to 'disconnected'. A check for
-    // CHANNEL_ERROR alone leaves a tethered tablet showing stale data with no
-    // banner, which is exactly what spec §11 row 2 forbids.
-    expect(seen).toEqual([
-      'subscribed', 'disconnected', 'disconnected', 'disconnected', 'subscribed',
-    ])
-  })
-
-  it('removes the channel it created when unsubscribed', () => {
-    const ch = fakeChannel()
-    channel.mockReturnValue(ch)
-
-    const unsubscribe = subscribeDeckCells('d1', {
-      onCellChange: vi.fn(), onCellDelete: vi.fn(), onStatus: vi.fn(),
-    })
-    expect(removeChannel).not.toHaveBeenCalled()
-
-    unsubscribe()
-
-    // By identity: a leaked channel keeps delivering into an unmounted
-    // component's setState, and switching decks would accumulate one live
-    // socket subscription per tab visited.
-    expect(removeChannel).toHaveBeenCalledWith(ch)
-  })
-})
-
 describe('listCoworkerNames', () => {
   beforeEach(() => {
     rpc.mockReset()
@@ -716,11 +453,16 @@ describe('subscribeDeckStates', () => {
     const ch = fakeChannel()
     channel.mockReturnValue(ch)
 
-    subscribeDeckStates('d1', { onStateChange: vi.fn(), onCellDelete: vi.fn(), onStatus: vi.fn() })
+    subscribeDeckStates('d1', { onStateChange: vi.fn(), onCellChange: vi.fn(), onCellDelete: vi.fn(), onStatus: vi.fn() })
 
     expect(channel).toHaveBeenCalledWith('gs-states-d1')
+    // States from cell_states; the mesh under them still from cells, because a
+    // merge in the deck editor reshapes the survivor (UPDATE) and removes the
+    // absorbed bays (DELETE), and a new bay (INSERT) has to be there before its
+    // first state can land on it.
     expect(ch.bindings.map((b) => [b.event, b.table])).toEqual([
-      ['INSERT', 'cell_states'], ['UPDATE', 'cell_states'], ['DELETE', 'cells'],
+      ['INSERT', 'cell_states'], ['UPDATE', 'cell_states'],
+      ['INSERT', 'cells'], ['UPDATE', 'cells'], ['DELETE', 'cells'],
     ])
     for (const binding of ch.bindings) expect(binding.filter).toBe('deck_id=eq.d1')
   })
@@ -730,7 +472,7 @@ describe('subscribeDeckStates', () => {
     channel.mockReturnValue(ch)
     const onStateChange = vi.fn()
 
-    subscribeDeckStates('d1', { onStateChange, onCellDelete: vi.fn(), onStatus: vi.fn() })
+    subscribeDeckStates('d1', { onStateChange, onCellChange: vi.fn(), onCellDelete: vi.fn(), onStatus: vi.fn() })
     ch.deliver('UPDATE', 'cell_states', {
       cell_id: 'c1', work_id: 'wA', deck_id: 'd1', stage_id: 's4', note: 'x',
       updated_at: '2026-09-02T00:00:00Z', updated_by: 'u1',
@@ -741,12 +483,29 @@ describe('subscribeDeckStates', () => {
     expect(onStateChange).toHaveBeenNthCalledWith(2, { cellId: 'c2', workId: 'wA', stageId: null, note: '' })
   })
 
+  it('reports a bay added or reshaped as geometry only, never as a state', () => {
+    const ch = fakeChannel()
+    channel.mockReturnValue(ch)
+    const onCellChange = vi.fn()
+    const onStateChange = vi.fn()
+
+    subscribeDeckStates('d1', { onStateChange, onCellChange, onCellDelete: vi.fn(), onStatus: vi.fn() })
+    ch.deliver('UPDATE', 'cells', {
+      id: 'c1', deck_id: 'd1', code: 'R1C1', x: '0', y: '0', w: '1', h: '0.5', area_m2: '500.000',
+    })
+
+    expect(onCellChange).toHaveBeenCalledWith({
+      id: 'c1', code: 'R1C1', x: 0, y: 0, w: 1, h: 0.5, areaM2: 500, stageId: null, note: '',
+    })
+    expect(onStateChange).not.toHaveBeenCalled()
+  })
+
   it('reports a deleted cell by id, from the old record', () => {
     const ch = fakeChannel()
     channel.mockReturnValue(ch)
     const onCellDelete = vi.fn()
 
-    subscribeDeckStates('d1', { onStateChange: vi.fn(), onCellDelete, onStatus: vi.fn() })
+    subscribeDeckStates('d1', { onStateChange: vi.fn(), onCellChange: vi.fn(), onCellDelete, onStatus: vi.fn() })
     ch.deliver('DELETE', 'cells', { id: 'c7', deck_id: 'd1' })
 
     expect(onCellDelete).toHaveBeenCalledWith('c7')
@@ -757,7 +516,7 @@ describe('subscribeDeckStates', () => {
     channel.mockReturnValue(ch)
     const onStatus = vi.fn<(s: GsRealtimeStatus) => void>()
 
-    const unsubscribe = subscribeDeckStates('d1', { onStateChange: vi.fn(), onCellDelete: vi.fn(), onStatus })
+    const unsubscribe = subscribeDeckStates('d1', { onStateChange: vi.fn(), onCellChange: vi.fn(), onCellDelete: vi.fn(), onStatus })
     ch.setStatus('SUBSCRIBED')
     ch.setStatus('CHANNEL_ERROR')
     expect(onStatus.mock.calls.map((c) => c[0])).toEqual(['subscribed', 'disconnected'])

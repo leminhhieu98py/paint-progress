@@ -37,8 +37,8 @@ describe('NoteThread', () => {
         ]}
       />,
     )
-    expect(screen.getByText('Tháo giáo')).toBeInTheDocument()
-    expect(screen.getByText('Blast + Coat 1')).toBeInTheDocument()
+    expect(screen.getByText('Công việc chính · Tháo giáo')).toBeInTheDocument()
+    expect(screen.getByText('Công việc chính · Blast + Coat 1')).toBeInTheDocument()
   })
 
   it('keeps the order it was given, newest first', () => {
@@ -77,9 +77,14 @@ describe('NoteThread', () => {
     expect(screen.getByText('Không rõ người ghi')).toBeInTheDocument()
   })
 
+  it('names the work beside the coat, since two works can note one bay', () => {
+    render(<NoteThread notes={[note({ workName: 'Tháo giáo', stageName: 'Tháo giáo lửng' })]} />)
+    expect(screen.getByText('Tháo giáo · Tháo giáo lửng')).toBeInTheDocument()
+  })
+
   it('says so when a bay was put back to not started', () => {
     render(<NoteThread notes={[note({ stageName: null, note: 'Sơn hỏng, làm lại' })]} />)
-    expect(screen.getByText('Trả về chưa bắt đầu')).toBeInTheDocument()
+    expect(screen.getByText('Công việc chính · Trả về chưa bắt đầu')).toBeInTheDocument()
   })
 })
 

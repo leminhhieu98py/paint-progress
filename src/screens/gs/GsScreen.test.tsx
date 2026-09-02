@@ -9,12 +9,13 @@ import { GsScreen } from './GsScreen'
 
 const loadGsProject = vi.hoisted(() => vi.fn())
 const listDeckCells = vi.hoisted(() => vi.fn())
-const listProjectStageIndex = vi.hoisted(() => vi.fn())
+const listProjectIndex = vi.hoisted(() => vi.fn())
+const listDeckStates = vi.hoisted(() => vi.fn())
+const listDeckWorks = vi.hoisted(() => vi.fn())
 const listDeckZones = vi.hoisted(() => vi.fn())
-const setCellStage = vi.hoisted(() => vi.fn())
-const subscribeDeckCells = vi.hoisted(() => vi.fn())
+const setCellState = vi.hoisted(() => vi.fn())
+const subscribeDeckStates = vi.hoisted(() => vi.fn())
 const getDrawingUrl = vi.hoisted(() => vi.fn())
-const listStages = vi.hoisted(() => vi.fn())
 const signOut = vi.hoisted(() => vi.fn())
 const listCoworkerNames = vi.hoisted(() => vi.fn())
 const listCellNotes = vi.hoisted(() => vi.fn())
@@ -28,10 +29,14 @@ const renderDeckPie = vi.hoisted(() => vi.fn())
 vi.mock('../../lib/gsApi', () => ({
   loadGsProject: (projectId: string) => loadGsProject(projectId),
   listDeckCells: (deckId: string) => listDeckCells(deckId),
-  listProjectStageIndex: (ids: string[]) => listProjectStageIndex(ids),
-  setCellStage: (cellId: string, stageId: string | null) => setCellStage(cellId, stageId),
-  subscribeDeckCells: (deckId: string, handlers: Handlers) =>
-    subscribeDeckCells(deckId, handlers),
+  listDeckStates: (deckId: string) => listDeckStates(deckId),
+  listDeckWorks: (deckId: string) => listDeckWorks(deckId),
+  listProjectIndex: (projectId: string, ids: string[]) => listProjectIndex(projectId, ids),
+  setCellState: (
+    cellId: string, workId: string, deckId: string, stageId: string | null, note: string,
+  ) => setCellState(cellId, workId, deckId, stageId, note),
+  subscribeDeckStates: (deckId: string, handlers: Handlers) =>
+    subscribeDeckStates(deckId, handlers),
   listCoworkerNames: () => listCoworkerNames(),
   loadGsProjectIdentity: (projectId: string) => loadGsProjectIdentity(projectId),
 }))
@@ -54,7 +59,6 @@ vi.mock('../../lib/zonesApi', () => ({
 }))
 vi.mock('../../lib/decksApi', () => ({
   getDrawingUrl: (path: string) => getDrawingUrl(path),
-  listStages: (deckId: string) => listStages(deckId),
 }))
 // react-router's navigate, so the test can see WHERE signing out sends the
 // foreman -- not merely that signOut was called.
@@ -106,6 +110,14 @@ const STAGES = [
   { id: 's5', seq: 5, name: 'Tháo giáo', color: '#722ed1', weight: 0.1 },
 ]
 
+/** The one bays work both decks are in by default; a second one appears where a test needs it. */
+const WORK = {
+  id: 'w1', projectId: 'p1', seq: 1, name: 'Sơn', kind: 'bays' as const, weight: 1, counts: true,
+  manualProgress: null,
+}
+const WORK2 = { ...WORK, id: 'w2', seq: 2, name: 'Tháo giáo' }
+const TG_STAGES = [{ id: 't1', seq: 1, name: 'Tháo giáo lửng', color: '#8B5CF6', weight: 1 }]
+
 const DECKS = [
   {
     id: 'd1', seq: 1, name: 'Cellar Deck', code: 'CD',
@@ -119,15 +131,20 @@ const DECKS = [
   },
 ]
 
+// Geometry only (0024): where a bay stands is in D1_STATES, per work.
 const D1_CELLS = [
-  { id: 'c1', code: 'R1C1', x: 0, y: 0, w: 0.5, h: 0.5, areaM2: 300, stageId: 's1' },
-  { id: 'c2', code: 'R1C2', x: 0.5, y: 0, w: 0.5, h: 0.5, areaM2: 200, stageId: 's2' },
-  { id: 'c3', code: 'R2C1', x: 0, y: 0.5, w: 0.5, h: 0.5, areaM2: 100, stageId: null },
+  { id: 'c1', code: 'R1C1', x: 0, y: 0, w: 0.5, h: 0.5, areaM2: 300, stageId: null, note: '' },
+  { id: 'c2', code: 'R1C2', x: 0.5, y: 0, w: 0.5, h: 0.5, areaM2: 200, stageId: null, note: '' },
+  { id: 'c3', code: 'R2C1', x: 0, y: 0.5, w: 0.5, h: 0.5, areaM2: 100, stageId: null, note: '' },
 ]
+const D1_STATES = {
+  w1: { c1: { stageId: 's1', note: '' }, c2: { stageId: 's2', note: '' } },
+}
 
 const D2_CELLS = [
-  { id: 'c9', code: 'R1C1', x: 0, y: 0, w: 1, h: 1, areaM2: 500, stageId: 's5' },
+  { id: 'c9', code: 'R1C1', x: 0, y: 0, w: 1, h: 1, areaM2: 500, stageId: null, note: '' },
 ]
+const D2_STATES = { w1: { c9: { stageId: 's5', note: '' } } }
 
 // Wrapped in antd's App because src/App.tsx wraps the whole tree in it, and
 // because App.useApp()'s `message` is how the screen reports a failed write:
@@ -145,6 +162,7 @@ const renderScreen = () =>
   )
 
 interface Handlers {
+  onStateChange: (change: unknown) => void
   onCellChange: (cell: unknown) => void
   onCellDelete: (cellId: string) => void
   onStatus: (status: string) => void
@@ -175,16 +193,19 @@ const unsubscribe = vi.fn()
 beforeEach(() => {
   loadGsProject.mockReset()
   listDeckCells.mockReset()
-  listProjectStageIndex.mockReset()
-  listProjectStageIndex.mockResolvedValue({})
+  listProjectIndex.mockReset()
+  listProjectIndex.mockResolvedValue({})
+  listDeckStates.mockReset()
+  listDeckStates.mockImplementation((deckId: string) =>
+    Promise.resolve(deckId === 'd1' ? D1_STATES : D2_STATES))
   listDeckZones.mockReset()
   listDeckZones.mockResolvedValue([])
-  setCellStage.mockReset()
+  setCellState.mockReset()
   getDrawingUrl.mockReset()
-  listStages.mockReset()
-  // Both decks in the fixture declare the same coat system. Per-deck stage
-  // lists are covered by their own test below.
-  listStages.mockResolvedValue(STAGES)
+  listDeckWorks.mockReset()
+  // Both decks are in the one work, with the same coat system. Per-deck coat
+  // lists and a deck in several works are covered by their own tests below.
+  listDeckWorks.mockResolvedValue([{ work: WORK, weight: 1, stages: STAGES }])
   signOut.mockReset()
   listCoworkerNames.mockReset()
   listCoworkerNames.mockResolvedValue({})
@@ -215,12 +236,12 @@ beforeEach(() => {
   renderDeckPie.mockReturnValue('PIEDATA')
   signOut.mockResolvedValue(undefined)
   navigate.mockReset()
-  subscribeDeckCells.mockReset()
+  subscribeDeckStates.mockReset()
   unsubscribe.mockReset()
   subscribedDecks.length = 0
   allHandlers.length = 0
   liveHandlers = null
-  subscribeDeckCells.mockImplementation((deckId: string, handlers: Handlers) => {
+  subscribeDeckStates.mockImplementation((deckId: string, handlers: Handlers) => {
     subscribedDecks.push(deckId)
     allHandlers.push(handlers)
     liveHandlers = handlers
@@ -236,7 +257,7 @@ beforeEach(() => {
       handlers.onStatus('disconnected')
     }
   })
-  setCellStage.mockResolvedValue(undefined)
+  setCellState.mockResolvedValue(undefined)
   loadGsProject.mockResolvedValue({ decks: DECKS, isMember: true })
   listDeckCells.mockImplementation((deckId: string) =>
     Promise.resolve(deckId === 'd1' ? D1_CELLS : D2_CELLS))
@@ -279,10 +300,14 @@ describe('GsScreen', () => {
     // wrong legend, the wrong colours and the wrong weights on whichever deck
     // did not match it -- and the percentage those weights produce is what the
     // money is paid against.
-    listStages.mockImplementation((deckId: string) =>
-      Promise.resolve(deckId === 'd1'
-        ? STAGES
-        : [{ id: 'm1', seq: 1, name: 'Sơn sàn chính', color: '#eb2f96', weight: 1 }]))
+    listDeckWorks.mockImplementation((deckId: string) =>
+      Promise.resolve([{
+        work: WORK,
+        weight: 1,
+        stages: deckId === 'd1'
+          ? STAGES
+          : [{ id: 'm1', seq: 1, name: 'Sơn sàn chính', color: '#eb2f96', weight: 1 }],
+      }]))
 
     renderScreen()
     // findAllByText: a stage name appears both in the legend and in the spec
@@ -293,7 +318,7 @@ describe('GsScreen', () => {
 
     expect(await screen.findAllByText('Sơn sàn chính')).not.toHaveLength(0)
     expect(screen.queryAllByText('Blast + Coat 1')).toHaveLength(0)
-    expect(listStages).toHaveBeenCalledWith('d2')
+    expect(listDeckWorks).toHaveBeenCalledWith('d2')
   })
 
   it('says so when a deck\'s stages cannot be read, instead of showing 0%', async () => {
@@ -301,7 +326,7 @@ describe('GsScreen', () => {
     // reduces over it and comes out 0%, which reads as "nothing has been
     // painted" -- the same "a refusal must never render as missing data" rule
     // the not-a-member banner exists for.
-    listStages.mockRejectedValue(new Error('Failed to fetch'))
+    listDeckWorks.mockRejectedValue(new Error('Failed to fetch'))
 
     renderScreen()
 
@@ -389,15 +414,26 @@ describe('GsScreen', () => {
     // Reading deck 2's bays against deck 1's stages counts every bay as not
     // started, and a deck well along reads 0,00% on the control the foreman
     // picks a deck by -- which is worse than no figure, because he believes it.
-    listProjectStageIndex.mockResolvedValue({
-      d1: {
-        cells: [{ areaM2: 1000, stageId: 'own-1' }],
-        stages: [{ id: 'own-1', seq: 1, name: 'Coat 1', color: '#111111', weight: 1 }],
-      },
-      d2: {
-        cells: [{ areaM2: 500, stageId: 'other-1' }],
-        stages: [{ id: 'other-1', seq: 1, name: 'Lót', color: '#222222', weight: 1 }],
-      },
+    const bay = (id: string, areaM2: number, stageId: string) => ({
+      id, code: id, x: 0, y: 0, w: 1, h: 1, areaM2, stageId, note: '',
+    })
+    listProjectIndex.mockResolvedValue({
+      d1: [{
+        work: WORK,
+        decks: [{
+          deck: { id: 'd1', code: 'CD', name: 'Cellar Deck', totalAreaM2: 1000, cells: [bay('a', 1000, 'own-1')] },
+          stages: [{ id: 'own-1', seq: 1, name: 'Coat 1', color: '#111111', weight: 1 }],
+          weight: 1,
+        }],
+      }],
+      d2: [{
+        work: WORK,
+        decks: [{
+          deck: { id: 'd2', code: 'MD', name: 'Main Deck', totalAreaM2: 500, cells: [bay('b', 500, 'other-1')] },
+          stages: [{ id: 'other-1', seq: 1, name: 'Lót', color: '#222222', weight: 1 }],
+          weight: 1,
+        }],
+      }],
     })
     renderScreen()
 
@@ -411,7 +447,7 @@ describe('GsScreen', () => {
 
   it('shows an em dash on a tab whose figure has not arrived', async () => {
     // A wrong figure on the control you are choosing by is worse than none.
-    listProjectStageIndex.mockReturnValue(new Promise(() => {}))
+    listProjectIndex.mockReturnValue(new Promise(() => {}))
     renderScreen()
     expect(await screen.findByRole('tab', { name: /^Cellar Deck—/ })).toBeInTheDocument()
   })
@@ -515,7 +551,7 @@ describe('GsScreen: recording a stage', () => {
     renderScreen()
     await userEvent.click(await screen.findByRole('button', { name: 'ô R1C2' }))
 
-    expect(await screen.findByText('Ô R1C2')).toBeInTheDocument()
+    expect(await screen.findByText('Ô R1C2 · Sơn')).toBeInTheDocument()
     // Its own area and its own current stage, not the first cell's. Scoped to
     // the modal's info rows: Task 7's pie legend also shows "200,00 m²" for the
     // Coat 2 slice, which happens to hold exactly this one cell -- an unscoped
@@ -525,16 +561,16 @@ describe('GsScreen: recording a stage', () => {
     ).toBeInTheDocument()
   })
 
-  it('writes only the cell\'s stage id', async () => {
+  it('writes the bay\'s stage for the work on screen, and nothing else', async () => {
     renderScreen()
     await tapCellAndChoose('R2C1', 'Coat 3')
 
-    expect(setCellStage).toHaveBeenCalledWith('c3', 's3')
+    expect(setCellState).toHaveBeenCalledWith('c3', 'w1', 'd1', 's3', '')
   })
 
   it('moves the reported progress before the write comes back', async () => {
     const pending = deferred()
-    setCellStage.mockReturnValue(pending.promise)
+    setCellState.mockReturnValue(pending.promise)
 
     renderScreen()
     expect(await screen.findByText('15,50%')).toBeInTheDocument()
@@ -586,7 +622,7 @@ describe('GsScreen: recording a stage', () => {
     // the write did not fail. The foreman watches their own tap get undone with
     // nothing explaining it. This is the guard on the fix for that.
     const pending = deferred()
-    setCellStage.mockReturnValue(pending.promise)
+    setCellState.mockReturnValue(pending.promise)
     vi.useFakeTimers({ shouldAdvanceTime: true })
     try {
       renderScreen()
@@ -614,7 +650,7 @@ describe('GsScreen: recording a stage', () => {
 
   it('rolls the cell back and says so when the write fails', async () => {
     const pending = deferred()
-    setCellStage.mockReturnValue(pending.promise)
+    setCellState.mockReturnValue(pending.promise)
 
     renderScreen()
     await tapCellAndChoose('R2C1', 'Tháo giáo')
@@ -636,7 +672,7 @@ describe('GsScreen: recording a stage', () => {
 
   it('leaves the other cells alone when it rolls back', async () => {
     const pending = deferred()
-    setCellStage.mockReturnValue(pending.promise)
+    setCellState.mockReturnValue(pending.promise)
 
     renderScreen()
     await tapCellAndChoose('R2C1', 'Tháo giáo')
@@ -659,7 +695,7 @@ describe('GsScreen: recording a stage', () => {
     // the socket rather than from this tablet, and nothing on screen says it went.
     const failing = deferred()
     const stillInFlight = deferred()
-    setCellStage.mockImplementation((cellId: string) =>
+    setCellState.mockImplementation((cellId: string) =>
       cellId === 'c3' ? failing.promise : stillInFlight.promise)
 
     renderScreen()
@@ -690,16 +726,14 @@ describe('GsScreen: recording a stage', () => {
     // notification of that cell it is going to send, and the next full re-read is
     // a reconnect or a deck change away.
     const pending = deferred()
-    setCellStage.mockReturnValue(pending.promise)
+    setCellState.mockReturnValue(pending.promise)
 
     renderScreen()
     await tapCellAndChoose('R2C1', 'Tháo giáo')
     expect(await screen.findByText('25,50%')).toBeInTheDocument()
 
     act(() => {
-      liveHandlers?.onCellChange({
-        id: 'c3', code: 'R2C1', x: 0, y: 0.5, w: 0.5, h: 0.5, areaM2: 100, stageId: 's3',
-      })
+      liveHandlers?.onStateChange({ cellId: 'c3', workId: 'w1', stageId: 's3', note: '' })
     })
     // A_1 = 600, A_2 = 300, A_3 = 100: 0.15 + 0.045 + 0.035 = 0.23.
     expect(await screen.findByText('23,00%')).toBeInTheDocument()
@@ -725,7 +759,7 @@ describe('GsScreen: recording a stage', () => {
     // in the direction that under-reports paid work.
     const first = deferred()
     const second = deferred()
-    setCellStage.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise)
+    setCellState.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise)
 
     renderScreen()
     await tapCellAndChoose('R2C1', 'Coat 2')
@@ -751,7 +785,7 @@ describe('GsScreen: recording a stage', () => {
     // nothing else on this path ever re-reads that cell.
     const first = deferred()
     const second = deferred()
-    setCellStage.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise)
+    setCellState.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise)
 
     renderScreen()
     await tapCellAndChoose('R2C1', 'Coat 2')
@@ -777,8 +811,8 @@ describe('GsScreen: recording a stage', () => {
 
     // R1C1 sits at s1, so one tap writes s2 -- one stage on from the cell's own
     // current stage, with no dropdown in between and nothing else in the payload.
-    expect(setCellStage).toHaveBeenCalledWith('c1', 's2')
-    expect(setCellStage).toHaveBeenCalledTimes(1)
+    expect(setCellState).toHaveBeenCalledWith('c1', 'w1', 'd1', 's2', '')
+    expect(setCellState).toHaveBeenCalledTimes(1)
     // And the colour moves with it, straight away.
     expect(screen.getByRole('button', { name: 'ô R1C1' })).toHaveAttribute('data-color', '#bfbfbf')
   })
@@ -806,9 +840,7 @@ describe('GsScreen: realtime', () => {
     expect(await screen.findByText('15,50%')).toBeInTheDocument()
 
     act(() => {
-      liveHandlers?.onCellChange({
-        id: 'c1', code: 'R1C1', x: 0, y: 0, w: 0.5, h: 0.5, areaM2: 300, stageId: 's3',
-      })
+      liveHandlers?.onStateChange({ cellId: 'c1', workId: 'w1', stageId: 's3', note: '' })
     })
 
     // R1C1 moves from Blast + Coat 1 to Coat 3: A_1 = 500, A_2 = 500, A_3 = 300,
@@ -1059,7 +1091,7 @@ describe('GsScreen: realtime', () => {
 
   it('keeps another client\'s write when its own write is rolled back', async () => {
     let reject: (e: Error) => void = () => {}
-    setCellStage.mockReturnValue(new Promise<void>((_res, rej) => { reject = rej }))
+    setCellState.mockReturnValue(new Promise<void>((_res, rej) => { reject = rej }))
 
     renderScreen()
     await userEvent.click(await screen.findByRole('button', { name: 'ô R2C1' }))
@@ -1069,9 +1101,7 @@ describe('GsScreen: realtime', () => {
 
     // Another foreman's tick lands while this write is still in flight.
     act(() => {
-      liveHandlers?.onCellChange({
-        id: 'c1', code: 'R1C1', x: 0, y: 0, w: 0.5, h: 0.5, areaM2: 300, stageId: 's3',
-      })
+      liveHandlers?.onStateChange({ cellId: 'c1', workId: 'w1', stageId: 's3', note: '' })
     })
 
     reject(new Error('Failed to fetch'))
@@ -1086,6 +1116,106 @@ describe('GsScreen: realtime', () => {
   })
 })
 
+describe('GsScreen: công việc', () => {
+  const TWO_WORKS = [
+    { work: WORK, weight: 1, stages: STAGES },
+    { work: WORK2, weight: 1, stages: TG_STAGES },
+  ]
+  /** Sơn as in D1_STATES; Tháo giáo has only R1C1, at its one coat. */
+  const TWO_WORK_STATES = {
+    w1: { c1: { stageId: 's1', note: '' }, c2: { stageId: 's2', note: '' } },
+    w2: { c1: { stageId: 't1', note: '' } },
+  }
+  // The Segmented's radio input carries pointer-events:none -- its visible
+  // label is what the foreman presses. Scoped: 'Tháo giáo' is also a coat.
+  const pickWork = async (name: string) => {
+    await userEvent.click(within(screen.getByTestId('gs-work-picker')).getByText(name))
+  }
+
+  it('offers no work picker when the deck is in one work', async () => {
+    renderScreen()
+    await screen.findByRole('button', { name: 'ô R1C1' })
+    expect(screen.queryByTestId('gs-work-picker')).toBeNull()
+  })
+
+  it('colours the bays and the coat list by the chosen work', async () => {
+    listDeckWorks.mockResolvedValue(TWO_WORKS)
+    listDeckStates.mockResolvedValue(TWO_WORK_STATES)
+    renderScreen()
+    expect(await screen.findByRole('button', { name: 'ô R1C1' })).toHaveAttribute('data-color', '#fadb14')
+
+    await pickWork('Tháo giáo')
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'ô R1C1' })).toHaveAttribute('data-color', '#8B5CF6'))
+    // R1C2 is at Coat 2 in Sơn and untouched in Tháo giáo: one bay, two answers.
+    expect(screen.getByRole('button', { name: 'ô R1C2' })).toHaveAttribute('data-color', '')
+    const rollup = screen.getByTestId('gs-stage-rollup')
+    expect(within(rollup).getByText('Tháo giáo lửng')).toBeInTheDocument()
+    expect(within(rollup).queryByText('Coat 2')).toBeNull()
+  })
+
+  it('records the stage for the chosen work, and names it in the modal', async () => {
+    listDeckWorks.mockResolvedValue(TWO_WORKS)
+    listDeckStates.mockResolvedValue(TWO_WORK_STATES)
+    renderScreen()
+    await screen.findByRole('button', { name: 'ô R1C2' })
+    await pickWork('Tháo giáo')
+
+    await userEvent.click(screen.getByRole('button', { name: 'ô R1C2' }))
+    expect(await screen.findByText('Ô R1C2 · Tháo giáo')).toBeInTheDocument()
+    await userEvent.click(await screen.findByRole('combobox', { name: 'Công đoạn' }))
+    await userEvent.click(await screen.findByTitle('Tháo giáo lửng'))
+    await userEvent.click(screen.getByRole('button', { name: 'Xác nhận' }))
+
+    expect(setCellState).toHaveBeenCalledWith('c2', 'w2', 'd1', 't1', '')
+  })
+
+  it('heads the card with the deck tổng hợp, then a row per work', async () => {
+    listDeckWorks.mockResolvedValue([
+      { work: { ...WORK, weight: 0.6 }, weight: 1, stages: STAGES },
+      { work: { ...WORK2, weight: 0.4 }, weight: 1, stages: TG_STAGES },
+    ])
+    listDeckStates.mockResolvedValue(TWO_WORK_STATES)
+    renderScreen()
+
+    // Sơn: .25·.5 + .15·.2 = 15,50%. Tháo giáo: 300 of 1000 m² at its one coat
+    // = 30,00%. Tổng hợp with W .6/.4 and D 1/1: .6·.155 + .4·.3 = 21,30%.
+    const card = await screen.findByTestId('gs-deck-progress')
+    await waitFor(() => expect(within(card).getByText('21,30%')).toBeInTheDocument())
+    expect(within(card).getByText('tổng hợp')).toBeInTheDocument()
+    expect(within(card).getByText('15,50%')).toBeInTheDocument()
+    expect(within(card).getByText('30,00%')).toBeInTheDocument()
+  })
+
+  it('says so when the deck is in no work, and takes no tap', async () => {
+    listDeckWorks.mockResolvedValue([])
+    listDeckStates.mockResolvedValue({})
+    renderScreen()
+
+    expect(await screen.findByText('Sàn này chưa được gán công việc nào')).toBeInTheDocument()
+    await userEvent.click(await screen.findByRole('button', { name: 'ô R1C1' }))
+    expect(screen.queryByRole('combobox', { name: 'Công đoạn' })).toBeNull()
+  })
+
+  it('folds another work\'s state in without touching the one on screen', async () => {
+    listDeckWorks.mockResolvedValue(TWO_WORKS)
+    listDeckStates.mockResolvedValue(TWO_WORK_STATES)
+    renderScreen()
+    expect(await screen.findByRole('button', { name: 'ô R1C1' })).toHaveAttribute('data-color', '#fadb14')
+
+    act(() => {
+      liveHandlers?.onStateChange({ cellId: 'c1', workId: 'w2', stageId: null, note: '' })
+    })
+
+    // Sơn's R1C1 is still at Blast + Coat 1; only Tháo giáo's copy moved.
+    expect(screen.getByRole('button', { name: 'ô R1C1' })).toHaveAttribute('data-color', '#fadb14')
+    await pickWork('Tháo giáo')
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'ô R1C1' })).toHaveAttribute('data-color', ''))
+  })
+})
+
 describe('GsScreen: a deck its cells over-cover', () => {
   it('discloses a deck whose bays cover more than it declares', async () => {
     // On a deck declaring 500 m² whose bays cover 700, every share on this
@@ -1095,9 +1225,10 @@ describe('GsScreen: a deck its cells over-cover', () => {
     // renormalising to 300/700 = 42,86% and looking consistent.
     loadGsProject.mockResolvedValue({ decks: [DECKS[1]], isMember: true })
     listDeckCells.mockResolvedValue([
-      { id: 'x1', code: 'R1C1', x: 0, y: 0, w: 0.5, h: 1, areaM2: 300, stageId: 's3' },
-      { id: 'x2', code: 'R1C2', x: 0.5, y: 0, w: 0.5, h: 1, areaM2: 400, stageId: null },
+      { id: 'x1', code: 'R1C1', x: 0, y: 0, w: 0.5, h: 1, areaM2: 300, stageId: null, note: '' },
+      { id: 'x2', code: 'R1C2', x: 0.5, y: 0, w: 0.5, h: 1, areaM2: 400, stageId: null, note: '' },
     ])
+    listDeckStates.mockResolvedValue({ w1: { x1: { stageId: 's3', note: '' } } })
     renderScreen()
 
     expect(

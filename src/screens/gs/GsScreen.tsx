@@ -1,5 +1,5 @@
 import {
-  Alert, App, Button, Grid, Layout, Space, Spin, Tabs,
+  Alert, App, Button, Grid, Layout, Segmented, Space, Spin, Tabs,
 } from 'antd'
 import dayjs from 'dayjs'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -9,18 +9,18 @@ import { useAuth } from '../../auth/AuthProvider'
 import { DrawingCanvas } from '../../canvas/DrawingCanvas'
 import { formatPlanRange } from '../../domain/plan'
 import { paintLensColors, zoneLensColors, ZONE_PALETTE } from '../../domain/lens'
-import { computeDeckProgress } from '../../domain/progress'
-import type { Cell, Deck, Stage, Zone } from '../../domain/types'
+import { computeDeckProgress, summariseDeck } from '../../domain/progress'
+import type { Cell, Deck, Stage, WorkModel, Zone } from '../../domain/types'
 // One signed-URL helper for both roles: the bucket name and the 3600-second
 // expiry belong in one place, and decksApi is a lib module rather than an admin
 // one. Screens still never touch `supabase` directly.
 import { LOGIN_PATH } from '../../config'
-import { getDrawingUrl, listStages } from '../../lib/decksApi'
+import { getDrawingUrl } from '../../lib/decksApi'
 import { formatAreaM2, formatPercent } from '../../lib/format'
 import {
-  listCoworkerNames, listDeckCells, listProjectStageIndex, loadGsProject, loadGsProjectIdentity,
-  setCellStage, subscribeDeckCells,
-  type GsDeck, type GsRealtimeStatus,
+  listCoworkerNames, listDeckCells, listDeckStates, listDeckWorks, listProjectIndex,
+  loadGsProject, loadGsProjectIdentity, setCellState, subscribeDeckStates,
+  type CellStateView, type DeckWork, type GsDeck, type GsRealtimeStatus,
 } from '../../lib/gsApi'
 import { listDeckZones } from '../../lib/zonesApi'
 import { listDeckEvents, loadDeckProgress } from '../../lib/progressApi'
@@ -74,7 +74,7 @@ const REALTIME_REGISTRATION_GRACE_MS = 6_000
  */
 const OVER_COVERAGE_EPSILON_M2 = 1e-3
 
-/** One in-flight `setCellStage` for one cell. See `pendingWrites`. */
+/** One in-flight `setCellState` for one (work, bay). See `pendingWrites`. */
 interface PendingWrite {
   /**
    * Bumped by every later tap on the same cell. A rollback whose generation is
@@ -93,15 +93,39 @@ interface PendingWrite {
   baselineStageId: string | null
 }
 
+const EMPTY_STAGES: Stage[] = []
+const EMPTY_WORKS: DeckWork[] = []
+
+/** The mesh with one work's states laid over it: what every lens reads. */
+function projectCells(geometry: Cell[], byCell: Record<string, CellStateView> | undefined): Cell[] {
+  return geometry.map((c) => ({
+    ...c,
+    stageId: byCell?.[c.id]?.stageId ?? null,
+    note: byCell?.[c.id]?.note ?? '',
+  }))
+}
+
+/** pendingWrites key: one write is about one bay in one work. Ids are uuids, never slashed. */
+const stateKey = (workId: string, cellId: string) => `${workId}/${cellId}`
+
 export function GsScreen() {
   const { projectId } = useParams()
   const navigate = useNavigate()
   const { profile, signOut } = useAuth()
 
-  const [stages, setStages] = useState<Stage[]>([])
+  /**
+   * The bays works the open deck is in, each with its coats here (0024). Null
+   * while the read is in flight, so "no work" is never shown for "not yet".
+   */
+  const [works, setWorks] = useState<DeckWork[] | null>(null)
+  /** The work the drawing, the cards and the bay modal are scoped to. */
+  const [activeWorkId, setActiveWorkId] = useState<string | null>(null)
   const [decks, setDecks] = useState<GsDeck[]>([])
   const [activeDeckId, setActiveDeckId] = useState<string | null>(null)
-  const [cells, setCells] = useState<Cell[]>([])
+  /** The deck's mesh, geometry only. Where each bay stands is in `states`. */
+  const [geometry, setGeometry] = useState<Cell[]>([])
+  /** states[workId][cellId]; a bay with no entry for a work is not started there. */
+  const [states, setStates] = useState<Record<string, Record<string, CellStateView>>>({})
   const [imageUrl, setImageUrl] = useState<string | null>(null)
   /** Who may be named beside a note, by user id. See listCoworkerNames. */
   const [authorNames, setAuthorNames] = useState<Record<string, string>>({})
@@ -158,31 +182,45 @@ export function GsScreen() {
   }, [projectId])
 
   /**
-   * The open deck's own paint stages.
+   * The open deck's works, each with its own coats here.
    *
    * Loaded per deck, not once per project: a main deck, a cellar deck and a
-   * helideck carry different coat systems, so the legend, the pie and the
+   * helideck carry different coat systems, so the legend, the ring and the
    * percentage all belong to the deck on screen. Cleared while the next deck's
    * load is in flight, so the legend can never show one deck's colours over
    * another's bays.
    */
   useEffect(() => {
     if (!activeDeckId) {
-      setStages([])
+      setWorks(null)
       return
     }
     let cancelled = false
-    setStages([])
+    setWorks(null)
+    setActiveWorkId(null)
     setStagesError(false)
-    listStages(activeDeckId)
-      .then((rows: Stage[]) => { if (!cancelled) setStages(rows) })
+    listDeckWorks(activeDeckId)
+      .then((rows) => { if (!cancelled) setWorks(rows) })
       .catch(() => { if (!cancelled) setStagesError(true) })
     return () => { cancelled = true }
   }, [activeDeckId])
 
   const deck = decks.find((d) => d.id === activeDeckId) ?? null
+  const workList = works ?? EMPTY_WORKS
+  /** The chosen work, or the first until the foreman chooses (GSW-R1). */
+  const activeWork = workList.find((w) => w.work.id === activeWorkId) ?? workList[0] ?? null
+  const stages = activeWork?.stages ?? EMPTY_STAGES
+  /**
+   * The deck as seen through the active work: the mesh with each bay's stage
+   * and note for that work. Everything below -- colours, progress, the modal --
+   * reads this, so a work change is one projection and nothing else moves.
+   */
+  const cells = useMemo(
+    () => projectCells(geometry, activeWork ? states[activeWork.work.id] : undefined),
+    [geometry, states, activeWork],
+  )
 
-  /** The deck whose answer is still wanted. See refetchCells. */
+  /** The deck whose answer is still wanted. See refetchDeck. */
   const wantedDeckId = useRef<string | null>(null)
 
   /**
@@ -219,20 +257,25 @@ export function GsScreen() {
    */
   const pendingWrites = useRef<Map<string, PendingWrite>>(new Map())
 
-  const refetchCells = useCallback(async (deckId: string) => {
+  const refetchDeck = useCallback(async (deckId: string) => {
     try {
-      const next = await listDeckCells(deckId)
+      const [nextCells, nextStates] = await Promise.all([
+        listDeckCells(deckId), listDeckStates(deckId),
+      ])
       if (wantedDeckId.current !== deckId) return
-      setCells((prev) => {
-        if (pendingWrites.current.size === 0) return next
-        // Keep the optimistic stage for any cell still being written. Geometry
-        // and everything else comes from the server as normal.
-        const local = new Map(prev.map((c) => [c.id, c]))
-        return next.map((c) =>
-          pendingWrites.current.has(c.id) && local.has(c.id)
-            ? { ...c, stageId: local.get(c.id)!.stageId }
-            : c,
-        )
+      setGeometry(nextCells)
+      setStates((prev) => {
+        if (pendingWrites.current.size === 0) return nextStates
+        // Keep the optimistic state for any (work, bay) still being written.
+        // Everything else comes from the server as normal.
+        const merged: Record<string, Record<string, CellStateView>> = {}
+        for (const [workId, byCell] of Object.entries(nextStates)) merged[workId] = { ...byCell }
+        for (const key of pendingWrites.current.keys()) {
+          const [workId, cellId] = key.split('/')
+          const local = prev[workId]?.[cellId]
+          if (local) (merged[workId] ??= {})[cellId] = local
+        }
+        return merged
       })
     } catch {
       // Deliberately does NOT clear the cells. A re-read failing on a site
@@ -245,11 +288,11 @@ export function GsScreen() {
   useEffect(() => {
     wantedDeckId.current = activeDeckId
     if (!activeDeckId) return
-    void refetchCells(activeDeckId)
+    void refetchDeck(activeDeckId)
     return () => {
       wantedDeckId.current = null
     }
-  }, [activeDeckId, refetchCells])
+  }, [activeDeckId, refetchDeck])
 
   const [realtimeStatus, setRealtimeStatus] = useState<GsRealtimeStatus>('subscribed')
   /**
@@ -299,19 +342,33 @@ export function GsScreen() {
       // that has already missed an unknown number of writes.
       wasDisconnected.current = true
     }, REALTIME_CONNECT_TIMEOUT_MS)
-    const unsubscribe = subscribeDeckCells(activeDeckId, {
-      onCellChange: (next) => {
+    const unsubscribe = subscribeDeckStates(activeDeckId, {
+      onStateChange: (change) => {
         if (disposed) return
         // Last write wins on stage_id (spec §11 row 3): whatever arrives is the
-        // newer truth. Merged by id, and appended when the id is unknown -- the
-        // admin can add a cell to a deck a foreman is already looking at.
+        // newer truth for that (work, bay). Kept for every work, not only the
+        // one on screen, so switching work shows what the other foreman did.
         //
-        // Server truth for this cell also retires any pending rollback for it:
-        // what arrived is newer than the value this tablet remembered before its
-        // own write went out, so restoring that value would contradict the
-        // database with no further event coming to correct it.
-        pendingWrites.current.delete(next.id)
-        setCells((prev) =>
+        // Server truth for this (work, bay) also retires any pending rollback
+        // for it: what arrived is newer than the value this tablet remembered
+        // before its own write went out, so restoring that value would
+        // contradict the database with no further event coming to correct it.
+        pendingWrites.current.delete(stateKey(change.workId, change.cellId))
+        setStates((prev) => ({
+          ...prev,
+          [change.workId]: {
+            ...(prev[change.workId] ?? {}),
+            [change.cellId]: { stageId: change.stageId, note: change.note },
+          },
+        }))
+      },
+      onCellChange: (next) => {
+        if (disposed) return
+        // The mesh moved under the states: a bay reshaped by a merge, or one the
+        // admin has just added to a deck a foreman is already looking at. Merged
+        // by id, appended when unknown; its states, if any, are keyed by the
+        // same id and simply apply.
+        setGeometry((prev) =>
           prev.some((c) => c.id === next.id)
             ? prev.map((c) => (c.id === next.id ? next : c))
             : [...prev, next],
@@ -327,8 +384,19 @@ export function GsScreen() {
         // can push Σ cell area past total_area_m2, which is the over-coverage
         // the pie has to disclose. Unknown ids fall out as a no-op: filter finds
         // nothing, which is what a delete on another client's stale row means.
-        pendingWrites.current.delete(cellId)
-        setCells((prev) => prev.filter((c) => c.id !== cellId))
+        for (const key of [...pendingWrites.current.keys()]) {
+          if (key.endsWith(`/${cellId}`)) pendingWrites.current.delete(key)
+        }
+        setGeometry((prev) => prev.filter((c) => c.id !== cellId))
+        setStates((prev) => {
+          const next: Record<string, Record<string, CellStateView>> = {}
+          for (const [workId, byCell] of Object.entries(prev)) {
+            const rest = { ...byCell }
+            delete rest[cellId]
+            next[workId] = rest
+          }
+          return next
+        })
       },
       onStatus: (status) => {
         if (disposed) return
@@ -347,7 +415,7 @@ export function GsScreen() {
         // screen we have already told them is stale.
         if (wasDisconnected.current) {
           wasDisconnected.current = false
-          void refetchCells(activeDeckId)
+          void refetchDeck(activeDeckId)
         }
         // And once more shortly after every SUBSCRIBED, reconnect or not: the
         // server registers the subscription some time AFTER reporting
@@ -355,7 +423,7 @@ export function GsScreen() {
         if (registrationRefetch.current) clearTimeout(registrationRefetch.current)
         registrationRefetch.current = setTimeout(() => {
           registrationRefetch.current = null
-          void refetchCells(activeDeckId)
+          void refetchDeck(activeDeckId)
         }, REALTIME_REGISTRATION_GRACE_MS)
       },
     })
@@ -384,7 +452,7 @@ export function GsScreen() {
       // the last known state is carried across instead.
       unsubscribe()
     }
-  }, [activeDeckId, refetchCells])
+  }, [activeDeckId, refetchDeck])
 
   /**
    * Re-signed on every deck change rather than cached per deck: the URL is good
@@ -434,6 +502,29 @@ export function GsScreen() {
   }, [deck, cells, stages])
 
   /**
+   * The deck across ALL its works (GSW-R3): P_wd per work and the tổng hợp the
+   * card leads with. Built locally from the same mesh and states the drawing
+   * uses, so the headline moves with a tap as fast as the colours do.
+   */
+  const deckModels = useMemo<WorkModel[]>(() => (deck
+    ? workList.map((w) => ({
+      work: w.work,
+      decks: [{
+        deck: {
+          id: deck.id, code: deck.code, name: deck.name, totalAreaM2: deck.totalAreaM2,
+          cells: projectCells(geometry, states[w.work.id]),
+        },
+        stages: w.stages,
+        weight: w.weight,
+      }],
+    }))
+    : []), [deck, workList, geometry, states])
+  const deckSummary = useMemo(
+    () => (deck ? summariseDeck(deck.id, deckModels) : null),
+    [deck, deckModels],
+  )
+
+  /**
    * Whether the cells cover more than the deck declares.
    *
    * The ring is drawn from bay COUNTS, not areas, so it no longer contradicts
@@ -474,45 +565,17 @@ export function GsScreen() {
 
   useEffect(() => {
     const ids = decks.map((d) => d.id)
-    if (ids.length === 0) return
+    if (!projectId || ids.length === 0) return
     let cancelled = false
-    listProjectStageIndex(ids)
+    listProjectIndex(projectId, ids)
       .then((index) => {
         if (cancelled) return
-        setDeckPercents(
-          Object.fromEntries(
-            decks.map((d) => {
-              // Each deck's own coats, never the open deck's. Scoring one
-              // deck's bays against another's stage ids counts every bay as
-              // not started -- a deck 37% along read 0,00% on the tab.
-              const entry = index[d.id] ?? { cells: [], stages: [] }
-              return [
-                d.id,
-                computeDeckProgress(
-                  {
-                    id: d.id,
-                    code: d.code,
-                    name: d.name,
-                    totalAreaM2: d.totalAreaM2,
-                    // Only area and stage are read; computeDeckProgress touches
-                    // nothing else on a cell.
-                    cells: entry.cells.map((c, i) => ({
-                      id: `${d.id}-${i}`,
-                      code: '',
-                      x: 0,
-                      y: 0,
-                      w: 0,
-                      h: 0,
-                      areaM2: c.areaM2,
-                      stageId: c.stageId,
-                    })),
-                  },
-                  entry.stages,
-                ).progress,
-              ]
-            }),
-          ),
-        )
+        // Each deck's own works and coats, never the open deck's: the tab
+        // carries P_d, the deck across its works (GSW-R3). A deck in no work
+        // reads 0, which is what it contributes.
+        setDeckPercents(Object.fromEntries(
+          decks.map((d) => [d.id, summariseDeck(d.id, index[d.id] ?? []).progress]),
+        ))
       })
       .catch(() => {
         // The tabs fall back to an em dash. Nothing else on the screen depends
@@ -520,7 +583,7 @@ export function GsScreen() {
         // drawing down the page on a tablet.
       })
     return () => { cancelled = true }
-  }, [decks, cells])
+  }, [projectId, decks, states])
 
   /**
    * Fetched only while the toggle is on. Zones are empty for every deck until
@@ -661,35 +724,42 @@ export function GsScreen() {
    * PendingWrite for the two reproduced scenarios that needs.
    */
   const commitStage = (cellId: string, stageId: string | null, note = '') => {
-    const superseded = pendingWrites.current.get(cellId)
+    if (!activeWork || !activeDeckId) return
+    const workId = activeWork.work.id
+    const key = stateKey(workId, cellId)
+    const superseded = pendingWrites.current.get(key)
     const generation = (superseded?.generation ?? 0) + 1
     const baselineStageId = superseded
       ? superseded.baselineStageId
-      : cells.find((c) => c.id === cellId)?.stageId ?? null
-    pendingWrites.current.set(cellId, { generation, baselineStageId })
+      : states[workId]?.[cellId]?.stageId ?? null
+    pendingWrites.current.set(key, { generation, baselineStageId })
     // The optimistic update carries the note as well as the stage, so
     // reopening the bay before the write settles shows what was just typed
     // rather than the note it is replacing.
-    setCells((prev) => prev.map((c) => (c.id === cellId ? { ...c, stageId, note } : c)))
-    void setCellStage(cellId, stageId, note)
+    const put = (state: CellStateView) => (prev: typeof states) => ({
+      ...prev,
+      [workId]: { ...(prev[workId] ?? {}), [cellId]: state },
+    })
+    setStates(put({ stageId, note }))
+    void setCellState(cellId, workId, activeDeckId, stageId, note)
       .catch(() => {
-        // Only the newest attempt for this cell may roll it back. An older one
-        // finishing late would otherwise undo a later tap, or overwrite a value
-        // another foreman's write has since delivered over realtime.
-        if (pendingWrites.current.get(cellId)?.generation === generation) {
-          setCells((prev) =>
-            prev.map((c) => (c.id === cellId ? { ...c, stageId: baselineStageId } : c)),
-          )
+        // Only the newest attempt for this (work, bay) may roll it back. An
+        // older one finishing late would otherwise undo a later tap, or
+        // overwrite a value another foreman's write has since delivered.
+        if (pendingWrites.current.get(key)?.generation === generation) {
+          setStates((prev) => put({
+            stageId: baselineStageId, note: prev[workId]?.[cellId]?.note ?? '',
+          })(prev))
         }
         // Raised either way. This tablet's write did not land, and that is true
-        // whether or not the cell on screen still shows what was tapped.
+        // whether or not the bay on screen still shows what was tapped.
         message.error('Không lưu được tiến độ. Kiểm tra kết nối rồi thử lại.')
       })
       .finally(() => {
         // Guarded, so an earlier attempt settling late does not strip the
         // re-read protection from a write that is still in flight.
-        if (pendingWrites.current.get(cellId)?.generation === generation) {
-          pendingWrites.current.delete(cellId)
+        if (pendingWrites.current.get(key)?.generation === generation) {
+          pendingWrites.current.delete(key)
         }
       })
   }
@@ -764,7 +834,7 @@ export function GsScreen() {
               "which one is behind" is the question he picks by -- without a
               figure the tabs are three names in an order nobody chose. The
               numbers come from one batched three-column read of the project
-              (listProjectCellStages), not from loading each deck in full.
+              (listProjectIndex), not from loading each deck in full.
             */
             label: (
               <span style={{ display: 'inline-flex', flexDirection: 'column', gap: 3 }}>
@@ -838,6 +908,36 @@ export function GsScreen() {
         }}
       >
         <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {/*
+            GSW-R1: the work the drawing is showing. Hidden with one work, since
+            a control with one position is a label pretending to be a choice.
+            Everything below -- colours, cards, plan, the bay modal -- follows it.
+          */}
+          {activeWork && workList.length > 1 && (
+            <div
+              data-testid="gs-work-picker"
+              style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}
+            >
+              <span style={{ fontSize: 12, fontWeight: 600, color: palette.textTertiary }}>
+                Công việc
+              </span>
+              <Segmented
+                value={activeWork.work.id}
+                onChange={(id) => setActiveWorkId(String(id))}
+                options={workList.map((w) => ({ label: w.work.name, value: w.work.id }))}
+              />
+            </div>
+          )}
+
+          {works !== null && workList.length === 0 && !stagesError && (
+            <Alert
+              type="info"
+              showIcon
+              message="Sàn này chưa được gán công việc nào"
+              description="Tiến độ được ghi theo từng công việc. Nhờ quản trị viên gán sàn vào một công việc ở mục Công việc; tới lúc đó bản vẽ chỉ để xem."
+            />
+          )}
+
           {stagesError && (
             <Alert
               type="warning"
@@ -901,6 +1001,9 @@ export function GsScreen() {
                   cellColors={showPlan ? (planCellColors ?? {}) : cellColors}
                   panZoom
                   onCellClick={(code) => {
+                    // No work, nothing to record against: the drawing is a
+                    // drawing until the admin assigns the deck.
+                    if (!activeWork) return
                     setSelectedCell(cells.find((c) => c.code === code) ?? null)
                   }}
                 />
@@ -1011,8 +1114,11 @@ export function GsScreen() {
             />
           )}
           <DeckProgressCard
-            progress={deckProgress?.progress ?? 0}
+            progress={deckSummary?.progress ?? 0}
             totalAreaM2={deck?.totalAreaM2 ?? 0}
+            perWork={deckSummary?.perWork.map((row) => ({
+              id: row.work.id, name: row.work.name, progress: row.progress,
+            }))}
           />
           {cells.length > 0 && (
             <StageRollupCard
@@ -1032,6 +1138,7 @@ export function GsScreen() {
         onClose={() => setSelectedCell(null)}
         onCommit={commitStage}
         authorNames={authorNames}
+        workName={activeWork?.work.name}
       />
 
       {/*

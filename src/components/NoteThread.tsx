@@ -153,10 +153,11 @@ export function NoteThread({
                     color: palette.textSecondary,
                   }}
                 >
-                  {/* The coat this note was recorded against, which is the
-                      subject of it. A null to_stage_name is a bay put back to
+                  {/* The work and the coat this note was recorded against,
+                      which together are the subject of it: two works can note
+                      one bay (0024). A null to_stage_name is a bay put back to
                       "not started", which is itself worth saying. */}
-                  {n.stageName ?? 'Trả về chưa bắt đầu'}
+                  {[n.workName, n.stageName ?? 'Trả về chưa bắt đầu'].filter(Boolean).join(' · ')}
                 </span>
                 {n.reportHidden && (
                   <span

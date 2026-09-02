@@ -33,6 +33,7 @@ export function CellStageModal({
   onClose,
   onCommit,
   authorNames = {},
+  workName,
 }: {
   cell: Cell | null
   stages: Stage[]
@@ -50,6 +51,11 @@ export function CellStageModal({
    * `coworker_names()`; empty when that failed, and the thread says so per note.
    */
   authorNames?: Record<string, string>
+  /**
+   * The work this stage is recorded for (0024). In the title, because a bay
+   * now holds one stage per work and "Ô R1C1" alone no longer says which.
+   */
+  workName?: string
 }) {
   const [choice, setChoice] = useState<string>(NOT_STARTED_VALUE)
   const [note, setNote] = useState('')
@@ -131,7 +137,7 @@ export function CellStageModal({
   return (
     <Modal
       open={open}
-      title={cell ? `Ô ${cell.code}` : ''}
+      title={cell ? `Ô ${cell.code}${workName ? ` · ${workName}` : ''}` : ''}
       onCancel={onClose}
       onOk={() => {
         if (!cell || unchanged) return

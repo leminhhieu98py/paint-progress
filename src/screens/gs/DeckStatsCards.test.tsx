@@ -51,6 +51,39 @@ describe('DeckProgressCard', () => {
     expect(screen.getByText('44,38%')).toBeInTheDocument()
     expect(screen.getByText('5.258,50 m²')).toBeInTheDocument()
   })
+
+  it('heads a deck in several works with its tổng hợp, then a row per work', () => {
+    render(
+      <DeckProgressCard
+        progress={0.213}
+        totalAreaM2={1000}
+        perWork={[
+          { id: 'w1', name: 'Sơn', progress: 0.155 },
+          { id: 'w2', name: 'Tháo giáo', progress: 0.3 },
+        ]}
+      />,
+    )
+    const card = screen.getByTestId('gs-deck-progress')
+    expect(within(card).getByText('21,30%')).toBeInTheDocument()
+    expect(within(card).getByText('tổng hợp')).toBeInTheDocument()
+    expect(within(card).getByText('Sơn')).toBeInTheDocument()
+    expect(within(card).getByText('15,50%')).toBeInTheDocument()
+    expect(within(card).getByText('Tháo giáo')).toBeInTheDocument()
+    expect(within(card).getByText('30,00%')).toBeInTheDocument()
+  })
+
+  it('shows neither caption nor rows for a deck in one work, whose figure IS the work\'s', () => {
+    render(
+      <DeckProgressCard
+        progress={0.4438}
+        totalAreaM2={5258.5}
+        perWork={[{ id: 'w1', name: 'Sơn', progress: 0.4438 }]}
+      />,
+    )
+    expect(screen.getByText('44,38%')).toBeInTheDocument()
+    expect(screen.queryByText('tổng hợp')).toBeNull()
+    expect(screen.queryByText('Sơn')).toBeNull()
+  })
 })
 
 describe('StageRollupCard', () => {

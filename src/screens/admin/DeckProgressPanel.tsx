@@ -233,6 +233,7 @@ export function DeckProgressPanel({
     }
     const stop = subscribeDeckStates(deckId, {
       onStateChange: nudge,
+      onCellChange: nudge,
       onCellDelete: nudge,
       // Nothing on this screen depends on the socket being up: the admin is on
       // a laptop and can reload. The banner belongs on the tablet, where the
