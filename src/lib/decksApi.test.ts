@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Stage } from '../domain/types'
 import {
-  createDeck, deleteDeck, getDrawingUrl, listCells, listDecks, listStages,
+  createDeck, deleteDeck, getDrawingUrl, listCells, listDecks, listStages, listWorkStages, saveWorkStages,
   roundStageWeight, saveStages, STAGE_WEIGHT_EPSILON, stagesRemovedBy,
   syncCells, updateDeckArea, uploadDrawing, zoneImpactOf,
 } from './decksApi'
@@ -1132,5 +1132,67 @@ describe('deleteDeck', () => {
     from.mockImplementationOnce(() => builder({ data: null }))
     await expect(deleteDeck({ id: 'd1', imagePath: null })).resolves.toEqual({ drawingRemoved: true })
     expect(remove).not.toHaveBeenCalled()
+  })
+})
+
+describe('listWorkStages / saveWorkStages', () => {
+  const stage = (seq: number, weight: number) => ({
+    id: `s${seq}`, seq, name: `S${seq}`, color: '#000000', weight,
+  })
+
+  it('reads the coats of one (work, deck) in seq order', async () => {
+    const b = builder({
+      data: [{ id: 's1', seq: 1, name: 'Blast + Coat 1', color: '#fadb14', weight: '0.25' }],
+    })
+    from.mockImplementationOnce(() => b)
+
+    const stages = await listWorkStages('w1', 'd1')
+
+    expect(from).toHaveBeenCalledWith('deck_stages')
+    expect(b.eq).toHaveBeenCalledWith('work_id', 'w1')
+    expect(b.eq).toHaveBeenCalledWith('deck_id', 'd1')
+    expect(b.order).toHaveBeenCalledWith('seq')
+    expect(stages).toEqual([{ id: 's1', seq: 1, name: 'Blast + Coat 1', color: '#fadb14', weight: 0.25 }])
+  })
+
+  it('upserts every coat with both keys of the (work, deck) it belongs to', async () => {
+    // Since 0024 a stage row needs its work_id; without it the insert fails on
+    // NOT NULL, and with the wrong one the coat lands in another discipline.
+    from.mockImplementationOnce(() => builder({ data: [] }))
+    const up = builder({ data: null })
+    from.mockImplementationOnce(() => up)
+
+    await saveWorkStages('w1', 'd1', [stage(1, 0.5), stage(2, 0.5)])
+
+    expect(up.upsert).toHaveBeenCalledWith(
+      [
+        { id: 's1', work_id: 'w1', deck_id: 'd1', seq: 1, name: 'S1', color: '#000000', weight: 0.5 },
+        { id: 's2', work_id: 'w1', deck_id: 'd1', seq: 2, name: 'S2', color: '#000000', weight: 0.5 },
+      ],
+      { onConflict: 'id' },
+    )
+  })
+
+  it('deletes the coats removed from this (work, deck) before upserting, and only those', async () => {
+    from.mockImplementationOnce(() => builder({
+      data: [
+        { id: 's1', seq: 1, name: 'S1', color: '#000000', weight: '0.5' },
+        { id: 's9', seq: 2, name: 'Old', color: '#000000', weight: '0.5' },
+      ],
+    }))
+    const del = builder({ data: null })
+    const up = builder({ data: null })
+    from.mockImplementationOnce(() => del).mockImplementationOnce(() => up)
+
+    await saveWorkStages('w1', 'd1', [stage(1, 1)])
+
+    expect(del.delete).toHaveBeenCalled()
+    expect(del.in).toHaveBeenCalledWith('id', ['s9'])
+  })
+
+  it('applies the same weight, seq and id rules as before', async () => {
+    await expect(saveWorkStages('w1', 'd1', [stage(1, 0.5), stage(2, 0.4)])).rejects.toThrow(/must sum to 1/)
+    await expect(saveWorkStages('w1', 'd1', [])).rejects.toThrow(/at least one stage/)
+    expect(from).not.toHaveBeenCalled()
   })
 })

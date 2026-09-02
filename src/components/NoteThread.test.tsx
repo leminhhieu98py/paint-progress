@@ -12,6 +12,7 @@ const note = (over: Partial<CellNote> = {}): CellNote => ({
   byName: 'Lê Trung Hiếu',
   byUsername: 'gs.hieu',
   byId: 'u1',
+  workName: 'Công việc chính',
   reportNote: null,
   reportHidden: false,
   reportEditedByName: null,

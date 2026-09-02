@@ -393,6 +393,11 @@ export function roundStageWeight(weight: number): number {
   return Math.round(weight * 1e5) / 1e5
 }
 
+/**
+ * @deprecated Transitional (removed when the deck screen and the GS screen move
+ * to works, Tasks 5 and 7): every coat on the deck across ALL works, which no
+ * screen should read as one list. `listWorkStages` is the replacement.
+ */
 export async function listStages(deckId: string): Promise<Stage[]> {
   const { data, error } = await supabase
     .from('deck_stages')
@@ -501,6 +506,11 @@ export function stagesRemovedBy(persisted: Stage[], next: Stage[]): Stage[] {
  * the panel is already refusing to save. Closing the window entirely needs an
  * RPC.
  */
+/**
+ * @deprecated Transitional (removed with the stage panel's move to works, Task
+ * 5). Since 0024 a stage row needs a work_id, so this write fails on NOT NULL
+ * against a live database. `saveWorkStages` is the replacement.
+ */
 export async function saveStages(deckId: string, stages: Stage[]): Promise<void> {
   if (stages.length === 0) {
     throw new Error('A deck needs at least one stage')
@@ -578,4 +588,70 @@ export async function deleteDeck(
   if (deck.imagePath === null) return { drawingRemoved: true }
   const { error: storageError } = await supabase.storage.from(BUCKET).remove([deck.imagePath])
   return { drawingRemoved: !storageError }
+}
+
+/** The coats of one (work, deck), innermost first. */
+export async function listWorkStages(workId: string, deckId: string): Promise<Stage[]> {
+  const { data, error } = await supabase
+    .from('deck_stages')
+    .select('id, seq, name, color, weight')
+    .eq('work_id', workId)
+    .eq('deck_id', deckId)
+    .order('seq')
+  if (error) throw new Error(error.message)
+  return (data ?? []).map((r) => ({
+    id: r.id as string,
+    seq: r.seq as number,
+    name: r.name as string,
+    color: r.color as string,
+    weight: Number(r.weight),
+  }))
+}
+
+/**
+ * Writes the coats of one (work, deck): the same rules and the same two-step
+ * write as saveStages (delete the removed ids, then upsert by id -- see its
+ * comment for why that order), with both keys on every row. A coat with the
+ * wrong work_id would land in another discipline and count towards a
+ * percentage it has nothing to do with.
+ */
+export async function saveWorkStages(workId: string, deckId: string, stages: Stage[]): Promise<void> {
+  if (stages.length === 0) {
+    throw new Error('A deck needs at least one stage')
+  }
+  const seqs = new Set(stages.map((s) => s.seq))
+  if (seqs.size !== stages.length) {
+    throw new Error('Stage seq values must be unique')
+  }
+  const ids = new Set(stages.map((s) => s.id))
+  if (ids.size !== stages.length) {
+    throw new Error('Stage ids must be unique')
+  }
+  const total = stages.reduce((sum, s) => sum + s.weight, 0)
+  if (Math.abs(total - 1) > STAGE_WEIGHT_EPSILON) {
+    throw new Error(`Stage weights must sum to 1, got ${total.toFixed(4)}`)
+  }
+
+  const removed = stagesRemovedBy(await listWorkStages(workId, deckId), stages)
+  if (removed.length > 0) {
+    const { error: deleteError } = await supabase
+      .from('deck_stages')
+      .delete()
+      .in('id', removed.map((r) => r.id))
+    if (deleteError) throw new Error(deleteError.message)
+  }
+
+  const { error: upsertError } = await supabase.from('deck_stages').upsert(
+    stages.map((s) => ({
+      id: s.id,
+      work_id: workId,
+      deck_id: deckId,
+      seq: s.seq,
+      name: s.name,
+      color: s.color,
+      weight: s.weight,
+    })),
+    { onConflict: 'id' },
+  )
+  if (upsertError) throw new Error(upsertError.message)
 }

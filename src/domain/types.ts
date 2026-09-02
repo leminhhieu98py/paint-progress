@@ -173,6 +173,9 @@ export interface DeckEvent {
   id: number
   cellCode: string
   cellAreaM2: number
+  /** The work the change belongs to, denormalised on the event (0024). Null on
+   *  rows older than the work model whose cell is gone. */
+  workName: string | null
   /** The coat the bay moved TO. Null for a move back to "not started". */
   toStageName: string | null
   at: string

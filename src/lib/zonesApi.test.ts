@@ -10,7 +10,7 @@ vi.mock('./supabase', () => ({ supabase: { from } }))
  *  `{ data, error }` -- postgrest-js reports failure as a value, never a throw. */
 function builder(result: { data?: unknown; error?: unknown }) {
   const b: Record<string, unknown> = {}
-  for (const m of ['select', 'insert', 'update', 'delete', 'eq', 'in', 'order', 'limit', 'single']) {
+  for (const m of ['select', 'insert', 'upsert', 'update', 'delete', 'eq', 'in', 'order', 'limit', 'single']) {
     b[m] = vi.fn(() => b)
   }
   b.then = (resolve: (v: unknown) => unknown) =>
@@ -171,48 +171,54 @@ describe('deleteZone', () => {
 })
 
 describe('setZoneActual', () => {
-  it('stamps the stage across every cell of the zone, and reports how many', async () => {
-    from
-      .mockImplementationOnce(() => builder({ data: [{ cell_id: 'c1' }, { cell_id: 'c2' }] }))
-      .mockImplementationOnce(() => builder({ data: [{ id: 'c1' }, { id: 'c2' }] }))
+  const stage = { id: 's5', work_id: 'w1', deck_id: 'd1' }
+
+  it('stamps the stage on every bay of the zone for the stage\'s own work, and reports how many', async () => {
+    // Since 0024 a bay's position lives in cell_states per (bay, work). The
+    // stage names its (work, deck), so nothing else has to be passed in.
+    const stageRead = builder({ data: [stage] })
+    const members = builder({ data: [{ cell_id: 'c1' }, { cell_id: 'c2' }] })
+    const write = builder({ data: [{ cell_id: 'c1' }, { cell_id: 'c2' }] })
+    from.mockImplementationOnce(() => stageRead).mockImplementationOnce(() => members).mockImplementationOnce(() => write)
 
     expect(await setZoneActual('z1', 's5')).toBe(2)
 
-    const update = (from.mock.results[1].value as { update: ReturnType<typeof vi.fn> }).update
-    expect(update).toHaveBeenCalledWith({ stage_id: 's5' })
-  })
-
-  it('scopes the write to this zone\'s cells by id', async () => {
-    from.mockImplementationOnce(() => builder({ data: [{ cell_id: 'c1' }] }))
-    const write = builder({ data: [{ id: 'c1' }] })
-    from.mockImplementationOnce(() => write)
-
-    await setZoneActual('z1', 's5')
-
-    // `.in('id', ...)`, never `.eq('deck_id', ...)`. A deck-scoped write would
-    // stamp every bay on the deck from a button labelled with one zone's name.
-    expect(write.in).toHaveBeenCalledWith('id', ['c1'])
+    expect(from.mock.calls.map((c) => c[0])).toEqual(['deck_stages', 'zone_cells', 'cell_states'])
+    expect(stageRead.eq).toHaveBeenCalledWith('id', 's5')
+    expect(members.eq).toHaveBeenCalledWith('zone_id', 'z1')
+    expect(write.upsert).toHaveBeenCalledWith(
+      [
+        { cell_id: 'c1', work_id: 'w1', deck_id: 'd1', stage_id: 's5' },
+        { cell_id: 'c2', work_id: 'w1', deck_id: 'd1', stage_id: 's5' },
+      ],
+      { onConflict: 'cell_id,work_id' },
+    )
   })
 
   it('writes nothing when the zone has no cells', async () => {
-    from.mockImplementationOnce(() => builder({ data: [] }))
-
+    from.mockImplementationOnce(() => builder({ data: [stage] })).mockImplementationOnce(() => builder({ data: [] }))
     expect(await setZoneActual('z1', 's5')).toBe(0)
+    expect(from).toHaveBeenCalledTimes(2)
+  })
+
+  it('throws when the stage cannot be read, before touching anything', async () => {
+    from.mockImplementationOnce(() => builder({ data: [] }))
+    await expect(setZoneActual('z1', 'gone')).rejects.toThrow(/stage/i)
     expect(from).toHaveBeenCalledTimes(1)
   })
 
   it('throws when the membership read fails, before writing', async () => {
-    from.mockImplementationOnce(() => builder({ error: { message: 'permission denied' } }))
+    from.mockImplementationOnce(() => builder({ data: [stage] }))
+      .mockImplementationOnce(() => builder({ error: { message: 'permission denied' } }))
     await expect(setZoneActual('z1', 's5')).rejects.toThrow('permission denied')
-    expect(from).toHaveBeenCalledTimes(1)
+    expect(from).toHaveBeenCalledTimes(2)
   })
 
-  it('throws when the stage write fails', async () => {
-    from
+  it('throws when the state write fails', async () => {
+    from.mockImplementationOnce(() => builder({ data: [stage] }))
       .mockImplementationOnce(() => builder({ data: [{ cell_id: 'c1' }] }))
-      .mockImplementationOnce(() => builder({ error: { message: 'stage does not belong to deck' } }))
-
-    await expect(setZoneActual('z1', 's5')).rejects.toThrow('stage does not belong to deck')
+      .mockImplementationOnce(() => builder({ error: { message: 'deck is not part of work' } }))
+    await expect(setZoneActual('z1', 's5')).rejects.toThrow('deck is not part of work')
   })
 })
 

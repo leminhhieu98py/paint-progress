@@ -217,6 +217,7 @@ describe('buildEventRows', () => {
     id: 1,
     cellCode: 'R1C1',
     cellAreaM2: 500,
+    workName: 'Công việc chính',
     toStageName: 'Blast + Coat 1',
     at: '2026-08-20T10:00:00+00:00',
     byId: 'u1',

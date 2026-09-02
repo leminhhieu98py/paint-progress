@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
-  latestProgressEvent, listCellNotes, listDeckEvents, loadDeckProgress, loadProjectProgress,
-  setReportNote,
+  latestProgressEvent, listCellNotes, listDeckEvents, loadDeckProgress, loadDeckWorks,
+  loadProjectModel, loadProjectProgress, setReportNote,
 } from './progressApi'
 
 const from = vi.hoisted(() => vi.fn())
@@ -12,14 +12,24 @@ vi.mock('./supabase', () => ({ supabase: { from, rpc } }))
  *  `{ data, error }` -- postgrest-js reports failure as a value, never a throw. */
 function builder(result: { data?: unknown; error?: unknown }) {
   const b: Record<string, unknown> = {}
-  for (const m of ['select', 'eq', 'order', 'limit']) b[m] = vi.fn(() => b)
+  for (const m of ['select', 'eq', 'in', 'order', 'limit']) b[m] = vi.fn(() => b)
   b.then = (resolve: (v: unknown) => unknown) =>
     Promise.resolve({ data: result.data ?? null, error: result.error ?? null }).then(resolve)
   return b
 }
 
-/** One deck, PostgREST-shaped: numeric columns come back as strings. */
-const ROW = {
+/**
+ * PostgREST-shaped rows, numeric columns as strings. One project, one bays
+ * work at weight 1 holding one deck at weight 1 -- the shape 0024's backfill
+ * creates -- plus a manual work outside the total.
+ */
+const WORK_ROWS = [
+  { id: 'w1', project_id: 'p1', seq: 1, name: 'Công việc chính', kind: 'bays', weight: '1', counts: true, manual_progress: '0',
+    work_decks: [{ deck_id: 'd1', weight: '1' }] },
+  { id: 'wm', project_id: 'p1', seq: 2, name: 'Marking', kind: 'manual', weight: '0', counts: false, manual_progress: '0.12',
+    work_decks: [] },
+]
+const DECK_ROW = {
   id: 'd1',
   seq: 1,
   code: 'CD',
@@ -30,16 +40,32 @@ const ROW = {
   image_w: 2000,
   image_h: 1600,
   deck_stages: [
-    { id: 's2', seq: 2, name: 'Coat 2', color: '#bfbfbf', weight: '0.15' },
-    { id: 's1', seq: 1, name: 'Blast + Coat 1', color: '#fadb14', weight: '0.85' },
+    { id: 's2', work_id: 'w1', deck_id: 'd1', seq: 2, name: 'Coat 2', color: '#bfbfbf', weight: '0.15' },
+    { id: 's1', work_id: 'w1', deck_id: 'd1', seq: 1, name: 'Blast + Coat 1', color: '#fadb14', weight: '0.85' },
   ],
   cells: [
-    {
-      id: 'c1', code: 'R1C1', x: '0.1', y: '0.2', w: '0.3', h: '0.4',
-      area_m2: '60.00', stage_id: 's1',
-      updated_at: '2026-08-20T10:00:00+00:00', updated_by: 'u1',
-    },
+    { id: 'c1', code: 'R1C1', x: '0.1', y: '0.2', w: '0.3', h: '0.4', area_m2: '60.00' },
   ],
+}
+const STATE_ROWS = [
+  { cell_id: 'c1', work_id: 'w1', deck_id: 'd1', stage_id: 's1', note: 'ẩm',
+    updated_at: '2026-08-20T10:00:00+00:00', updated_by: 'u1' },
+]
+const WORK_DECK_ROWS = [
+  { work_id: 'w1', deck_id: 'd1', weight: '1',
+    works: { id: 'w1', project_id: 'p1', seq: 1, name: 'Công việc chính', kind: 'bays', weight: '1', counts: true, manual_progress: '0' } },
+]
+
+/** The three reads loadProjectModel makes, in order: works, decks, cell_states. */
+function mockProject(works = WORK_ROWS, decks: unknown[] = [DECK_ROW], states: unknown[] = STATE_ROWS) {
+  const b = { works: builder({ data: works }), decks: builder({ data: decks }), states: builder({ data: states }) }
+  from.mockImplementation((table: string) => {
+    if (table === 'works') return b.works
+    if (table === 'decks') return b.decks
+    if (table === 'cell_states') return b.states
+    throw new Error(`unexpected table ${table}`)
+  })
+  return b
 }
 
 beforeEach(() => {
@@ -47,124 +73,122 @@ beforeEach(() => {
   rpc.mockReset()
 })
 
-describe('loadProjectProgress', () => {
-  it('returns each deck with its own stages, cells and drawing', async () => {
-    from.mockImplementation(() => builder({ data: [ROW] }))
+describe('loadProjectModel', () => {
+  it('reads works, decks and states, and assembles the model', async () => {
+    const b = mockProject()
 
-    const [entry] = await loadProjectProgress('p1')
+    const model = await loadProjectModel('p1')
 
-    expect(entry.deck).toEqual({
-      id: 'd1', code: 'CD', name: 'Cellar Deck', totalAreaM2: 6139,
-      cells: [{
-        id: 'c1', code: 'R1C1', x: 0.1, y: 0.2, w: 0.3, h: 0.4,
-        areaM2: 60, stageId: 's1', note: '',
-      }],
-    })
-    expect(entry.imagePath).toBe('p1/d1.png')
-    expect(entry.imageW).toBe(2000)
-    expect(entry.imageH).toBe(1600)
-    expect(entry.seq).toBe(1)
+    expect(b.works.eq).toHaveBeenCalledWith('project_id', 'p1')
+    expect(b.decks.eq).toHaveBeenCalledWith('project_id', 'p1')
+    expect(b.states.in).toHaveBeenCalledWith('deck_id', ['d1'])
+    expect(model.models.map((m) => m.work.id)).toEqual(['w1', 'wm'])
+    const cd = model.models[0].decks[0]
+    expect(cd.weight).toBe(1)
+    expect(cd.stages.map((s) => s.seq)).toEqual([1, 2])
+    expect(cd.deck.cells).toEqual([{
+      id: 'c1', code: 'R1C1', x: 0.1, y: 0.2, w: 0.3, h: 0.4, areaM2: 60, stageId: 's1', note: 'ẩm',
+    }])
+    expect(model.decks[0]).toMatchObject({ code: 'CD', imagePath: 'p1/d1.png', imageW: 2000, areaSource: 'prorated', cellCount: 1 })
+    expect(model.audit.w1.c1).toEqual({ updatedAt: '2026-08-20T10:00:00+00:00', updatedBy: 'u1' })
   })
 
-  it('sorts each deck\'s stages by seq', async () => {
-    // The embed returns them in whatever order the planner picked. Every
-    // consumer -- nextStage, the spec table, scaffoldLensColors -- reads the
-    // sequence, and an unsorted list silently reorders the paint system.
-    from.mockImplementation(() => builder({ data: [ROW] }))
-
-    const [entry] = await loadProjectProgress('p1')
-
-    expect(entry.stages.map((s) => s.seq)).toEqual([1, 2])
-    expect(entry.stages.map((s) => s.name)).toEqual(['Blast + Coat 1', 'Coat 2'])
+  it('skips the state read for a project with no decks', async () => {
+    const b = mockProject(WORK_ROWS, [], [])
+    const model = await loadProjectModel('p1')
+    expect(b.states.in).not.toHaveBeenCalled()
+    expect(model.models[0].decks).toEqual([])
   })
 
-  it('coerces every numeric column, so a weight is a number and not a string', async () => {
-    // PostgREST serialises `numeric` as a string. An uncoerced weight makes
-    // `Σ wᵢ·pᵢ` concatenate, which renders as a plausible-looking percentage
-    // rather than throwing.
-    from.mockImplementation(() => builder({ data: [ROW] }))
-
-    const [entry] = await loadProjectProgress('p1')
-
-    expect(entry.stages.map((s) => s.weight)).toEqual([0.85, 0.15])
-    expect(entry.deck.totalAreaM2).toBe(6139)
-    expect(entry.deck.cells[0].areaM2).toBe(60)
-  })
-
-  it('scopes the query to the project and orders the decks by seq', async () => {
-    const b = builder({ data: [] })
-    from.mockImplementation(() => b)
-
-    await loadProjectProgress('p1')
-
-    expect(from).toHaveBeenCalledWith('decks')
-    expect(b.eq).toHaveBeenCalledWith('project_id', 'p1')
-    expect(b.order).toHaveBeenCalledWith('seq')
-  })
-
-  it('carries the audit columns and the area provenance for the report', async () => {
-    // Spec §9's per-deck sheet lists who last moved each bay and when, and has
-    // to disclose when the areas were prorated rather than measured.
-    from.mockImplementation(() => builder({ data: [ROW] }))
-
-    const [entry] = await loadProjectProgress('p1')
-
-    expect(entry.areaSource).toBe('prorated')
-    expect(entry.audit.c1).toEqual({
-      updatedAt: '2026-08-20T10:00:00+00:00',
-      updatedBy: 'u1',
-    })
-  })
-
-  it('defaults a deck with no drawing, no stages and no cells rather than throwing', async () => {
-    // Every one of these is reachable: a deck created a minute ago has no
-    // drawing, and PostgREST omits an embed that matched nothing.
-    from.mockImplementation(() => builder({
-      data: [{ id: 'd9', seq: 3, code: 'RF', name: 'Roof', total_area_m2: '0' }],
-    }))
-
-    const [entry] = await loadProjectProgress('p1')
-
-    expect(entry.imagePath).toBeNull()
-    expect(entry.imageW).toBeNull()
-    expect(entry.imageH).toBeNull()
-    expect(entry.stages).toEqual([])
-    expect(entry.deck.cells).toEqual([])
-    // A deck created a minute ago has never had its areas measured, and
-    // 'guides' is the column's own default.
-    expect(entry.areaSource).toBe('guides')
-    expect(entry.audit).toEqual({})
-  })
-
-  it('throws when the query fails', async () => {
+  it('throws when any read fails', async () => {
     from.mockImplementation(() => builder({ error: { message: 'permission denied' } }))
-    await expect(loadProjectProgress('p1')).rejects.toThrow('permission denied')
+    await expect(loadProjectModel('p1')).rejects.toThrow('permission denied')
   })
 })
 
-describe('loadDeckProgress', () => {
-  it('returns one deck through the same mapper the project read uses', async () => {
-    const b = builder({ data: [ROW] })
-    from.mockImplementation(() => b)
+describe('loadDeckWorks', () => {
+  function mockDeck(decks: unknown[] = [DECK_ROW], workDecks: unknown[] = WORK_DECK_ROWS, states: unknown[] = STATE_ROWS) {
+    const b = { decks: builder({ data: decks }), wd: builder({ data: workDecks }), states: builder({ data: states }) }
+    from.mockImplementation((table: string) => {
+      if (table === 'decks') return b.decks
+      if (table === 'work_decks') return b.wd
+      if (table === 'cell_states') return b.states
+      throw new Error(`unexpected table ${table}`)
+    })
+    return b
+  }
 
-    const entry = (await loadDeckProgress('d1'))!
+  it('returns the deck with one view per bays work it is part of', async () => {
+    const b = mockDeck()
 
-    expect(b.eq).toHaveBeenCalledWith('id', 'd1')
-    expect(entry.deck.code).toBe('CD')
+    const dw = (await loadDeckWorks('d1'))!
+
+    expect(b.decks.eq).toHaveBeenCalledWith('id', 'd1')
+    expect(b.wd.eq).toHaveBeenCalledWith('deck_id', 'd1')
+    expect(b.states.eq).toHaveBeenCalledWith('deck_id', 'd1')
+    expect(dw.deck).toMatchObject({ id: 'd1', code: 'CD', totalAreaM2: 6139 })
+    expect(dw.imagePath).toBe('p1/d1.png')
+    expect(dw.areaSource).toBe('prorated')
+    expect(dw.works).toHaveLength(1)
+    expect(dw.works[0].work.name).toBe('Công việc chính')
+    expect(dw.works[0].weight).toBe(1)
+    expect(dw.works[0].stages.map((s) => s.name)).toEqual(['Blast + Coat 1', 'Coat 2'])
+    expect(dw.works[0].cells[0]).toMatchObject({ id: 'c1', stageId: 's1', note: 'ẩm' })
+    expect(dw.works[0].audit.c1?.updatedBy).toBe('u1')
+  })
+
+  it('returns null for a deck that is not there, rather than throwing', async () => {
+    mockDeck([], [], [])
+    expect(await loadDeckWorks('gone')).toBeNull()
+  })
+
+  it('gives a deck in no work an empty list of views, with its geometry intact', async () => {
+    mockDeck([DECK_ROW], [], [])
+    const dw = (await loadDeckWorks('d1'))!
+    expect(dw.works).toEqual([])
+    expect(dw.deck.cells).toHaveLength(1)
+  })
+
+  it('throws when the deck read fails', async () => {
+    from.mockImplementation(() => builder({ error: { message: 'permission denied' } }))
+    await expect(loadDeckWorks('d1')).rejects.toThrow('permission denied')
+  })
+})
+
+describe('loadProjectProgress (transitional, first bays work)', () => {
+  it('projects every deck for the first bays work, the shape the old screens still read', async () => {
+    mockProject()
+    const [entry] = await loadProjectProgress('p1')
+    expect(entry.deck.cells[0]).toMatchObject({ stageId: 's1', note: 'ẩm' })
     expect(entry.stages.map((s) => s.seq)).toEqual([1, 2])
+    expect(entry.imagePath).toBe('p1/d1.png')
     expect(entry.areaSource).toBe('prorated')
     expect(entry.audit.c1?.updatedBy).toBe('u1')
   })
 
-  it('returns null for a deck that is not there, rather than throwing', async () => {
-    // Reachable from a stale URL, and from a deck another admin has deleted.
-    from.mockImplementation(() => builder({ data: [] }))
-    expect(await loadDeckProgress('gone')).toBeNull()
+  it('returns no entries for a project with no bays work', async () => {
+    mockProject([WORK_ROWS[1]], [DECK_ROW], [])
+    expect(await loadProjectProgress('p1')).toEqual([])
+  })
+})
+
+describe('loadDeckProgress (transitional, first bays work)', () => {
+  it('returns one deck through the first work it is part of', async () => {
+    from.mockImplementation((table: string) => {
+      if (table === 'decks') return builder({ data: [DECK_ROW] })
+      if (table === 'work_decks') return builder({ data: WORK_DECK_ROWS })
+      if (table === 'cell_states') return builder({ data: STATE_ROWS })
+      throw new Error(`unexpected table ${table}`)
+    })
+    const entry = (await loadDeckProgress('d1'))!
+    expect(entry.deck.code).toBe('CD')
+    expect(entry.stages.map((s) => s.seq)).toEqual([1, 2])
+    expect(entry.deck.cells[0].stageId).toBe('s1')
   })
 
-  it('throws when the query fails', async () => {
-    from.mockImplementation(() => builder({ error: { message: 'permission denied' } }))
-    await expect(loadDeckProgress('d1')).rejects.toThrow('permission denied')
+  it('returns null for a deck that is not there', async () => {
+    from.mockImplementation(() => builder({ data: [] }))
+    expect(await loadDeckProgress('gone')).toBeNull()
   })
 })
 
@@ -234,6 +258,7 @@ describe('listCellNotes', () => {
     id: 1,
     at: '2026-08-29T11:47:00Z',
     to_stage_name: 'Coat 2',
+    work_name: 'Sơn',
     note: 'Bề mặt còn ẩm',
     by: 'u1',
     author: { username: 'gs.hieu', full_name: 'Lê Trung Hiếu' },
@@ -313,8 +338,9 @@ describe('listCellNotes', () => {
     expect(b.order).toHaveBeenCalledWith('at', { ascending: false })
     expect(notes.map((n) => n.note)).toEqual(['Xong', 'Bắt đầu'])
     expect(notes[0]).toMatchObject({
-      id: 3, stageName: 'Coat 3', byName: 'Lê Trung Hiếu', byUsername: 'gs.hieu',
+      id: 3, stageName: 'Coat 3', byName: 'Lê Trung Hiếu', byUsername: 'gs.hieu', workName: 'Sơn',
     })
+    expect(b.select).toHaveBeenCalledWith(expect.stringContaining('work_name'))
   })
 
   it('drops the stage changes nobody wrote anything on', async () => {
@@ -386,6 +412,7 @@ describe('listDeckEvents', () => {
     id: 5,
     at: '2026-08-29T11:47:00Z',
     to_stage_name: 'Coat 2',
+    work_name: 'Sơn',
     by: 'u1',
     note: 'Bề mặt còn ẩm',
     report_note: null,
@@ -405,10 +432,11 @@ describe('listDeckEvents', () => {
 
     expect(from).toHaveBeenCalledWith('cell_events')
     expect(b.select).toHaveBeenCalledWith(expect.stringContaining('cells!inner(deck_id, code, area_m2)'))
+    expect(b.select).toHaveBeenCalledWith(expect.stringContaining('work_name'))
     expect(b.eq).toHaveBeenCalledWith('cells.deck_id', 'd1')
     expect(b.order).toHaveBeenCalledWith('at', { ascending: true })
     expect(events).toEqual([{
-      id: 5, cellCode: 'R1C1', cellAreaM2: 60, toStageName: 'Coat 2',
+      id: 5, cellCode: 'R1C1', cellAreaM2: 60, workName: 'Sơn', toStageName: 'Coat 2',
       at: '2026-08-29T11:47:00Z', byId: 'u1', note: 'Bề mặt còn ẩm',
       reportNote: null, reportHidden: false,
     }])

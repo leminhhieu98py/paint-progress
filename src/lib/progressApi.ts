@@ -1,7 +1,12 @@
-import type { Cell, Deck, DeckEvent, Stage } from '../domain/types'
+import type { Cell, Deck, DeckEvent, Stage, Work } from '../domain/types'
 import { supabase } from './supabase'
+import {
+  assembleProjectModel, type DeckRowIn, type ProjectModel, type StateRowIn, type WorkDeckRow,
+  type WorkRow,
+} from './workModel'
 
 export type { DeckEvent } from '../domain/types'
+export type { DeckMeta, ProjectModel } from './workModel'
 
 /**
  * One deck as `/admin/progress` needs it: the whole deck, its own paint spec,
@@ -35,99 +40,184 @@ export interface DeckProgressEntry {
   audit: Record<string, CellAudit>
 }
 
-/**
- * Every deck of a project, each with its own stages and cells, in one query.
- *
- * One round trip rather than one per deck: the screen's deck selector switches
- * instantly, and `computeProjectProgress` needs every deck at once anyway to
- * weight them against each other. A project has a handful of decks and a few
- * hundred cells, so the payload is small enough to hold.
- *
- * Full geometry, unlike `listProjects` -- this screen draws the cells, it does
- * not only count them.
- */
 const DECK_SELECT =
   'id, seq, code, name, total_area_m2, area_source, image_path, image_w, image_h,'
-  + ' deck_stages(id, seq, name, color, weight),'
-  + ' cells(id, code, x, y, w, h, area_m2, stage_id, note, updated_at, updated_by)'
+  + ' cells(id, code, x, y, w, h, area_m2),'
+  + ' deck_stages(id, work_id, deck_id, seq, name, color, weight)'
+const WORK_SELECT = 'id, project_id, seq, name, kind, weight, counts, manual_progress'
+const STATE_SELECT = 'cell_id, work_id, deck_id, stage_id, note, updated_at, updated_by'
 
 /**
- * One deck, for the panel inside its own detail screen.
+ * The whole project as the work model: every work with its decks, each deck's
+ * bays projected for that work, plus the deck list and the per-work audit.
  *
- * The same select and the same mapper as the project read, so the deck's own
- * screen and the project rollup cannot disagree about what a deck is.
+ * Three reads -- works (with their deck weights), decks (with geometry and
+ * coats), states -- assembled by `assembleProjectModel`, which is where the
+ * decisions live and are tested. The state read is skipped when there are no
+ * decks: `.in('deck_id', [])` is a round trip for nothing.
  */
-export async function loadDeckProgress(deckId: string): Promise<DeckProgressEntry | null> {
-  const { data, error } = await supabase.from('decks').select(DECK_SELECT).eq('id', deckId)
-  if (error) throw new Error(error.message)
-  const row = (data ?? [])[0]
-  return row ? mapDeckRow(row) : null
-}
-
-export async function loadProjectProgress(projectId: string): Promise<DeckProgressEntry[]> {
-  const { data, error } = await supabase
+export async function loadProjectModel(projectId: string): Promise<ProjectModel> {
+  const worksQuery = await supabase
+    .from('works')
+    .select(`${WORK_SELECT}, work_decks(deck_id, weight)`)
+    .eq('project_id', projectId)
+    .order('seq')
+  if (worksQuery.error) throw new Error(worksQuery.error.message)
+  const decksQuery = await supabase
     .from('decks')
     .select(DECK_SELECT)
     .eq('project_id', projectId)
     .order('seq')
-  if (error) throw new Error(error.message)
+  if (decksQuery.error) throw new Error(decksQuery.error.message)
 
-  return (data ?? []).map(mapDeckRow)
+  const works = (worksQuery.data ?? []) as unknown as (WorkRow & { work_decks?: WorkDeckRow[] })[]
+  const decks = (decksQuery.data ?? []) as unknown as DeckRowIn[]
+  const deckIds = decks.map((d) => d.id)
+
+  let states: StateRowIn[] = []
+  if (deckIds.length > 0) {
+    const statesQuery = await supabase.from('cell_states').select(STATE_SELECT).in('deck_id', deckIds)
+    if (statesQuery.error) throw new Error(statesQuery.error.message)
+    states = (statesQuery.data ?? []) as unknown as StateRowIn[]
+  }
+
+  return assembleProjectModel({
+    works,
+    workDecks: works.flatMap((w) => (w.work_decks ?? []).map((wd) => ({ ...wd, work_id: w.id }))),
+    decks,
+    states,
+  })
 }
 
-function mapDeckRow(row: unknown): DeckProgressEntry {
-    // Through `unknown`: postgrest-js types an embedded relation as a union
-    // with its own error shape, which does not overlap an index signature.
-    // Every field below is read defensively anyway.
-  const r = row as unknown as Record<string, unknown>
+/** One deck seen through one bays work: its coats and its bays' states for that work. */
+export interface DeckWorkView {
+  work: Work
+  /** D_wd. */
+  weight: number
+  stages: Stage[]
+  /** The deck's bays projected for this work. */
+  cells: Cell[]
+  /** Keyed by cell id. */
+  audit: Record<string, CellAudit>
+}
+
+/** A deck with one view per bays work it is part of. */
+export interface DeckWorks {
+  seq: number
+  /** Geometry; every bay reads not-started here. The views carry the states. */
+  deck: Deck
+  imagePath: string | null
+  imageW: number | null
+  imageH: number | null
+  areaSource: 'guides' | 'prorated'
+  works: DeckWorkView[]
+}
+
+/**
+ * One deck for its own screen: geometry once, and a view per bays work the
+ * deck is part of. Reads the deck, its work memberships (with each work
+ * embedded), and its states; assembles through the same function the project
+ * loader uses, so the two screens cannot disagree about a bay.
+ */
+export async function loadDeckWorks(deckId: string): Promise<DeckWorks | null> {
+  const deckQuery = await supabase.from('decks').select(DECK_SELECT).eq('id', deckId)
+  if (deckQuery.error) throw new Error(deckQuery.error.message)
+  const deckRow = ((deckQuery.data ?? []) as unknown as DeckRowIn[])[0]
+  if (!deckRow) return null
+
+  const membershipQuery = await supabase
+    .from('work_decks')
+    .select(`work_id, deck_id, weight, works!inner(${WORK_SELECT})`)
+    .eq('deck_id', deckId)
+  if (membershipQuery.error) throw new Error(membershipQuery.error.message)
+  const statesQuery = await supabase.from('cell_states').select(STATE_SELECT).eq('deck_id', deckId)
+  if (statesQuery.error) throw new Error(statesQuery.error.message)
+
+  const memberships = (membershipQuery.data ?? []) as unknown as (WorkDeckRow & { works: WorkRow })[]
+  const model = assembleProjectModel({
+    works: memberships.map((m) => m.works),
+    workDecks: memberships,
+    decks: [deckRow],
+    states: (statesQuery.data ?? []) as unknown as StateRowIn[],
+  })
+
+  const meta = model.decks[0]
+  return {
+    seq: meta.seq,
+    deck: {
+      id: meta.id,
+      code: meta.code,
+      name: meta.name,
+      totalAreaM2: meta.totalAreaM2,
+      cells: (deckRow.cells ?? []).map((c): Cell => ({
+        id: c.id,
+        code: c.code,
+        x: Number(c.x ?? 0),
+        y: Number(c.y ?? 0),
+        w: Number(c.w ?? 0),
+        h: Number(c.h ?? 0),
+        areaM2: Number(c.area_m2),
+        stageId: null,
+        note: '',
+      })),
+    },
+    imagePath: meta.imagePath,
+    imageW: meta.imageW,
+    imageH: meta.imageH,
+    areaSource: meta.areaSource,
+    works: model.models
+      .filter((m) => m.work.kind === 'bays' && m.decks.length > 0)
+      .map((m) => ({
+        work: m.work,
+        weight: m.decks[0].weight,
+        stages: m.decks[0].stages,
+        cells: m.decks[0].deck.cells,
+        audit: model.audit[m.work.id] ?? {},
+      })),
+  }
+}
+
+/**
+ * @deprecated Transitional (removed when the deck list moves to the work model,
+ * Task 6): the project's decks projected for the FIRST bays work, in the shape
+ * the pre-work-items screens read. Decks outside that work are omitted.
+ */
+export async function loadProjectProgress(projectId: string): Promise<DeckProgressEntry[]> {
+  const model = await loadProjectModel(projectId)
+  const first = model.models.find((m) => m.work.kind === 'bays')
+  if (!first) return []
+  return first.decks.map((entry) => {
+    const meta = model.decks.find((d) => d.id === entry.deck.id)!
     return {
-      seq: r.seq as number,
-      // Sorted here rather than trusted from the embed: PostgREST returns an
-      // embedded set in whatever order the planner chose, and every consumer of
-      // this list -- nextStage, the spec table, scaffoldLensColors -- reads the
-      // sequence. An unsorted list silently reorders the paint system.
-      stages: ((r.deck_stages ?? []) as Record<string, unknown>[])
-        .map((s): Stage => ({
-          id: s.id as string,
-          seq: s.seq as number,
-          name: s.name as string,
-          color: s.color as string,
-          weight: Number(s.weight),
-        }))
-        .sort((a, b) => a.seq - b.seq),
-      areaSource: ((r.area_source as string | null) ?? 'guides') as 'guides' | 'prorated',
-      audit: Object.fromEntries(
-        ((r.cells ?? []) as Record<string, unknown>[]).map((c) => [
-          c.id as string,
-          {
-            updatedAt: (c.updated_at as string | null) ?? null,
-            updatedBy: (c.updated_by as string | null) ?? null,
-          },
-        ]),
-      ),
-      imagePath: (r.image_path as string | null) ?? null,
-      imageW: (r.image_w as number | null) ?? null,
-      imageH: (r.image_h as number | null) ?? null,
-      deck: {
-        id: r.id as string,
-        code: r.code as string,
-        name: r.name as string,
-        totalAreaM2: Number(r.total_area_m2),
-        // Every numeric column coerced. PostgREST serialises `numeric` as a
-        // string, and an uncoerced area makes `sum + cell.areaM2` concatenate,
-        // which renders as a plausible-looking number rather than throwing.
-        cells: ((r.cells ?? []) as Record<string, unknown>[]).map((c): Cell => ({
-          id: c.id as string,
-          code: c.code as string,
-          x: Number(c.x),
-          y: Number(c.y),
-          w: Number(c.w),
-          h: Number(c.h),
-          areaM2: Number(c.area_m2),
-          stageId: (c.stage_id as string | null) ?? null,
-          note: (c.note as string | null) ?? '',
-        })),
-      } satisfies Deck,
+      seq: meta.seq,
+      deck: entry.deck,
+      stages: entry.stages,
+      imagePath: meta.imagePath,
+      imageW: meta.imageW,
+      imageH: meta.imageH,
+      areaSource: meta.areaSource,
+      audit: model.audit[first.work.id] ?? {},
+    }
+  })
+}
+
+/**
+ * @deprecated Transitional (removed when the deck screen moves to the work
+ * model, Task 5): one deck projected for the first bays work it is part of.
+ */
+export async function loadDeckProgress(deckId: string): Promise<DeckProgressEntry | null> {
+  const dw = await loadDeckWorks(deckId)
+  if (!dw) return null
+  const view = dw.works[0]
+  return {
+    seq: dw.seq,
+    deck: view ? { ...dw.deck, cells: view.cells } : dw.deck,
+    stages: view?.stages ?? [],
+    imagePath: dw.imagePath,
+    imageW: dw.imageW,
+    imageH: dw.imageH,
+    areaSource: dw.areaSource,
+    audit: view?.audit ?? {},
   }
 }
 
@@ -153,6 +243,8 @@ export interface CellNote {
   note: string
   byName: string | null
   byUsername: string | null
+  /** The work the note's stage change belongs to (0024). */
+  workName: string | null
   /** cell_events.by. Present even when `profiles` refuses the join: a tablet
    *  cannot read other people's profiles and resolves the name elsewhere. */
   byId: string | null
@@ -197,7 +289,7 @@ export async function listCellNotes(cellId: string): Promise<CellNote[]> {
   const { data, error } = await supabase
     .from('cell_events')
     .select(
-      'id, at, to_stage_name, note, by, author:profiles!cell_events_by_fkey(username, full_name),'
+      'id, at, to_stage_name, work_name, note, by, author:profiles!cell_events_by_fkey(username, full_name),'
       + ' report_note, report_hidden, report_edited_at,'
       + ' report_editor:profiles!cell_events_report_edited_by_fkey(full_name)',
     )
@@ -214,6 +306,7 @@ export async function listCellNotes(cellId: string): Promise<CellNote[]> {
         id: Number(row.id),
         at: row.at as string,
         stageName: (row.to_stage_name as string | null) ?? null,
+        workName: (row.work_name as string | null) ?? null,
         // Null on events recorded before 0019, empty on a change with no
         // remark. Both mean "nothing was written".
         note: ((row.note as string | null) ?? '').trim(),
@@ -275,7 +368,7 @@ export async function listDeckEvents(deckId: string): Promise<DeckEvent[]> {
   const { data, error } = await supabase
     .from('cell_events')
     .select(
-      'id, at, to_stage_name, by, note, report_note, report_hidden,'
+      'id, at, to_stage_name, work_name, by, note, report_note, report_hidden,'
       + ' cells!inner(deck_id, code, area_m2)',
     )
     .eq('cells.deck_id', deckId)
@@ -291,6 +384,7 @@ export async function listDeckEvents(deckId: string): Promise<DeckEvent[]> {
       id: Number(row.id),
       cellCode: cell.code,
       cellAreaM2: Number(cell.area_m2),
+      workName: (row.work_name as string | null) ?? null,
       toStageName: (row.to_stage_name as string | null) ?? null,
       at: row.at as string,
       byId: (row.by as string | null) ?? null,

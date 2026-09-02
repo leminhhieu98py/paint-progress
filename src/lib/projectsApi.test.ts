@@ -30,34 +30,43 @@ function builder(result: { data?: unknown; error?: unknown }) {
 }
 
 describe('listProjects', () => {
-  /** Two decks: one drawn with three cells, one with no drawing and no cells. */
+  /** Two decks under one bays work: one drawn with three bays (one at Coat 1),
+   *  one with no drawing and no bays. Weights as the 0024 backfill writes them. */
   const twoDecks = [
     {
       id: 'p1',
       name: 'BB1 - CPPTS',
       code: 'BB1',
+      works: [{
+        id: 'w1', project_id: 'p1', seq: 1, name: 'Công việc chính', kind: 'bays', weight: '1', counts: true, manual_progress: '0',
+        work_decks: [{ deck_id: 'd1', weight: '0.5' }, { deck_id: 'd2', weight: '0.5' }],
+      }],
       decks: [
         {
           id: 'd1',
+          seq: 1,
           code: 'MD',
           name: 'Main Deck',
           total_area_m2: 100,
           image_path: 'drawings/d1.png',
-          deck_stages: [{ id: 's1', seq: 1, name: 'Coat 1', color: '#fadb14', weight: 1 }],
+          deck_stages: [{ id: 's1', work_id: 'w1', deck_id: 'd1', seq: 1, name: 'Coat 1', color: '#fadb14', weight: 1 }],
           cells: [
-            { id: 'c1', code: 'R1C1', area_m2: 40, stage_id: 's1' },
-            { id: 'c2', code: 'R1C2', area_m2: 30, stage_id: null },
-            { id: 'c3', code: 'R1C3', area_m2: 30, stage_id: null },
+            { id: 'c1', code: 'R1C1', area_m2: 40 },
+            { id: 'c2', code: 'R1C2', area_m2: 30 },
+            { id: 'c3', code: 'R1C3', area_m2: 30 },
           ],
+          cell_states: [{ cell_id: 'c1', work_id: 'w1', stage_id: 's1' }],
         },
         {
           id: 'd2',
+          seq: 2,
           code: 'CD',
           name: 'Cellar Deck',
           total_area_m2: 100,
           image_path: null,
           deck_stages: [],
           cells: [],
+          cell_states: [],
         },
       ],
     },
@@ -66,24 +75,26 @@ describe('listProjects', () => {
   it('counts every bay across the project', async () => {
     from.mockImplementationOnce(() => builder({ data: twoDecks }))
     const [row] = await listProjects()
-    // Free: listProjects already pulls every cell to compute the rollup. A
-    // separate count query for the same number would be a second round trip
-    // over the same rows.
     expect(row.cellCount).toBe(3)
   })
 
   it('counts only the decks that actually have a drawing attached', async () => {
     from.mockImplementationOnce(() => builder({ data: twoDecks }))
     const [row] = await listProjects()
-    // A deck with no drawing has no bays for a foreman to tap, so this is the
-    // number that says how much of the project is actually recordable.
     expect(row.decksWithDrawing).toBe(1)
     expect(row.deckCount).toBe(2)
   })
 
-  it('reports zeroes for a project with no decks at all', async () => {
+  it('rolls progress up by work: one work at weight 1, decks at 0.5 each, MD 40% done', async () => {
+    from.mockImplementationOnce(() => builder({ data: twoDecks }))
+    const [row] = await listProjects()
+    // MD: 40 of 100 m² at the only coat -> 0.4; CD: nothing -> 0. Work: 0.5*0.4 + 0.5*0 = 0.2.
+    expect(row.progress).toBeCloseTo(0.2, 12)
+  })
+
+  it('reports zeroes for a project with no decks and no works at all', async () => {
     from.mockImplementationOnce(() =>
-      builder({ data: [{ id: 'p9', name: 'Trống', code: 'T', decks: [] }] }),
+      builder({ data: [{ id: 'p9', name: 'Trống', code: 'T', works: [], decks: [] }] }),
     )
     const [row] = await listProjects()
     expect(row).toMatchObject({ deckCount: 0, cellCount: 0, decksWithDrawing: 0, progress: 0 })
@@ -155,8 +166,9 @@ describe('listProjects', () => {
     // Cumulative-by-stage areas [5571, 5511, 2922.5, 2922.5, 0] and totalAreaM2
     // 6139 are the golden Cellar Deck fixture from domain/progress.test.ts,
     // where computeDeckProgress on this exact shape yields 0.599552044306890.
-    // With a single deck in the project, computeProjectProgress collapses to
-    // that same per-deck value, so it is ground truth here too, not invented.
+    // With one work at weight 1 holding the one deck at weight 1, the work
+    // model collapses to that same per-deck value, so it is ground truth here
+    // too, not invented.
     // Cell areas are the adjacent differences of the cumulative sequence: a
     // cell at stage 1 for 60 (5571-5511), one at stage 2 for 2588.5
     // (5511-2922.5), and one at stage 4 for 2922.5 (2922.5-0); no cell sits at
@@ -171,23 +183,34 @@ describe('listProjects', () => {
             id: 'proj1',
             name: 'BB1',
             code: 'BB1',
+            works: [{
+              id: 'w1', project_id: 'proj1', seq: 1, name: 'Công việc chính', kind: 'bays',
+              weight: '1', counts: true, manual_progress: '0',
+              work_decks: [{ deck_id: 'd1', weight: '1' }],
+            }],
             decks: [
               {
                 id: 'd1',
+                seq: 1,
                 code: 'CD',
                 name: 'Cellar Deck',
                 total_area_m2: '6139',
                 deck_stages: [
-                  { id: 's1', seq: 1, name: 'Blast + Coat 1', color: '#fadb14', weight: '0.25' },
-                  { id: 's2', seq: 2, name: 'Coat 2', color: '#bfbfbf', weight: '0.15' },
-                  { id: 's3', seq: 3, name: 'Coat 3', color: '#52c41a', weight: '0.35' },
-                  { id: 's4', seq: 4, name: 'Coat 4', color: '#1677ff', weight: '0.15' },
-                  { id: 's5', seq: 5, name: 'Tháo giáo', color: '#722ed1', weight: '0.1' },
+                  { id: 's1', work_id: 'w1', deck_id: 'd1', seq: 1, name: 'Blast + Coat 1', color: '#fadb14', weight: '0.25' },
+                  { id: 's2', work_id: 'w1', deck_id: 'd1', seq: 2, name: 'Coat 2', color: '#bfbfbf', weight: '0.15' },
+                  { id: 's3', work_id: 'w1', deck_id: 'd1', seq: 3, name: 'Coat 3', color: '#52c41a', weight: '0.35' },
+                  { id: 's4', work_id: 'w1', deck_id: 'd1', seq: 4, name: 'Coat 4', color: '#1677ff', weight: '0.15' },
+                  { id: 's5', work_id: 'w1', deck_id: 'd1', seq: 5, name: 'Tháo giáo', color: '#722ed1', weight: '0.1' },
                 ],
                 cells: [
-                  { id: 'c1', code: 'C1', area_m2: '60', stage_id: 's1' },
-                  { id: 'c2', code: 'C2', area_m2: '2588.5', stage_id: 's2' },
-                  { id: 'c3', code: 'C3', area_m2: '2922.5', stage_id: 's4' },
+                  { id: 'c1', code: 'C1', area_m2: '60' },
+                  { id: 'c2', code: 'C2', area_m2: '2588.5' },
+                  { id: 'c3', code: 'C3', area_m2: '2922.5' },
+                ],
+                cell_states: [
+                  { cell_id: 'c1', work_id: 'w1', stage_id: 's1' },
+                  { cell_id: 'c2', work_id: 'w1', stage_id: 's2' },
+                  { cell_id: 'c3', work_id: 'w1', stage_id: 's4' },
                 ],
               },
             ],

@@ -1,5 +1,7 @@
-import type { Cell, Deck } from '../domain/types'
-import { areaWeightedProjectProgress } from '../domain/progress'
+import { computeProjectProgress } from '../domain/progress'
+import {
+  assembleProjectModel, type DeckRowIn, type StateRowIn, type WorkDeckRow, type WorkRow,
+} from './workModel'
 import { supabase } from './supabase'
 import { DRAWINGS_BUCKET } from './decksApi'
 
@@ -79,65 +81,40 @@ export async function listProjectNames(): Promise<Array<{ id: string; name: stri
 }
 
 export async function listProjects(): Promise<ProjectRow[]> {
+  // One query: works with their deck weights, decks with geometry, coats and
+  // states. Assembled by the same function every other loader uses.
   const { data, error } = await supabase
     .from('projects')
     .select(
-      'id, name, code, decks(id, code, name, total_area_m2, image_path, deck_stages(id, seq, name, color, weight), cells(id, code, area_m2, stage_id))',
+      'id, name, code,'
+      + ' works(id, project_id, seq, name, kind, weight, counts, manual_progress, work_decks(deck_id, weight)),'
+      + ' decks(id, seq, code, name, total_area_m2, image_path,'
+      + ' deck_stages(id, work_id, deck_id, seq, name, color, weight),'
+      + ' cells(id, code, area_m2), cell_states(cell_id, work_id, stage_id))',
     )
     .order('name')
   if (error) throw new Error(error.message)
 
   return (data ?? []).map((row) => {
-    // Each deck carries its own stages: their weights sum to 1 within the deck,
-    // so a project percentage is a weighted average of per-deck percentages,
-    // not one sum over one stage list.
-    const deckRows = (row.decks ?? []) as Record<string, unknown>[]
-    const entries = deckRows.map((d) => ({
-      stages: ((d.deck_stages ?? []) as Record<string, unknown>[]).map((s2) => ({
-        id: s2.id as string,
-        seq: s2.seq as number,
-        name: s2.name as string,
-        color: s2.color as string,
-        weight: Number(s2.weight),
-      })),
-      deck: {
-        id: d.id as string,
-        code: d.code as string,
-        name: d.name as string,
-        totalAreaM2: Number(d.total_area_m2),
-        // The rollup only needs areaM2 and stageId to compute one percentage per
-        // project; fetching normalized x/y/w/h for every cell of every deck here
-        // would move a lot of data for nothing. The deck editor loads real
-        // geometry separately when it actually needs to draw the cells.
-        cells: ((d.cells ?? []) as Record<string, unknown>[]).map(
-          (c): Cell => ({
-            id: c.id as string,
-            code: c.code as string,
-            x: 0,
-            y: 0,
-            w: 0,
-            h: 0,
-            areaM2: Number(c.area_m2),
-            stageId: (c.stage_id as string | null) ?? null,
-          }),
-        ),
-      } satisfies Deck,
-    }))
+    const r = row as unknown as Record<string, unknown>
+    const works = (r.works ?? []) as (WorkRow & { work_decks?: WorkDeckRow[] })[]
+    const deckRows = (r.decks ?? []) as (DeckRowIn & { cell_states?: StateRowIn[] })[]
+    const model = assembleProjectModel({
+      works,
+      workDecks: works.flatMap((w) => (w.work_decks ?? []).map((wd) => ({ ...wd, work_id: w.id }))),
+      decks: deckRows,
+      states: deckRows.flatMap((d) => (d.cell_states ?? []).map((st) => ({ ...st, deck_id: d.id }))),
+    })
 
     return {
-      id: row.id as string,
-      name: row.name as string,
-      code: row.code as string,
-      deckCount: entries.length,
-      // `image_path` is the one column added to this select for the header
-      // counters. Everything else they need -- bays, area, progress -- was
-      // already being fetched to compute the rollup, so counting it here costs
-      // nothing where a second query would cost a round trip over the same rows.
-      decksWithDrawing: deckRows.filter((d) => d.image_path !== null && d.image_path !== undefined)
-        .length,
-      cellCount: entries.reduce((sum, e) => sum + e.deck.cells.length, 0),
-      totalAreaM2: entries.reduce((sum, e) => sum + e.deck.totalAreaM2, 0),
-      progress: areaWeightedProjectProgress(entries).progress,
+      id: r.id as string,
+      name: r.name as string,
+      code: r.code as string,
+      deckCount: model.decks.length,
+      decksWithDrawing: model.decks.filter((d) => d.imagePath !== null).length,
+      cellCount: model.decks.reduce((sum, d) => sum + d.cellCount, 0),
+      totalAreaM2: model.decks.reduce((sum, d) => sum + d.totalAreaM2, 0),
+      progress: computeProjectProgress(model.models).progress,
     }
   })
 }

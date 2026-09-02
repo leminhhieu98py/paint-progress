@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Cell } from '../domain/types'
 import {
-  listCoworkerNames, listDeckCells, listProjectStageIndex, loadGsProject, loadGsProjectIdentity,
-  setCellStage,
-  subscribeDeckCells, type GsRealtimeStatus,
+  listCoworkerNames, listDeckCells, listDeckStates, listDeckWorks, listProjectIndex,
+  listProjectStageIndex, loadGsProject, loadGsProjectIdentity, setCellStage, setCellState,
+  subscribeDeckCells, subscribeDeckStates, type GsRealtimeStatus,
 } from './gsApi'
 
 const from = vi.hoisted(() => vi.fn())
@@ -201,24 +201,21 @@ describe('loadGsProject', () => {
 })
 
 describe('listDeckCells', () => {
-  it('returns a deck\'s cells as domain cells', async () => {
-    from.mockImplementationOnce(() => builder({
+  it('returns a deck\'s cells as domain cells, geometry only', async () => {
+    // Since 0024 a bay's position lives in cell_states, per work. Geometry
+    // comes back not started; the screen lays the selected work's states over it.
+    const stub = builder({
       data: [{
         id: 'c1', code: 'R1C1', x: '0.000000', y: '0.000000',
-        w: '0.250000', h: '0.500000', area_m2: '148.000', stage_id: 's2',
+        w: '0.250000', h: '0.500000', area_m2: '148.000',
       }],
-    }))
+    })
+    from.mockImplementationOnce(() => stub)
 
     expect(await listDeckCells('d1')).toEqual([{
-      id: 'c1', code: 'R1C1', x: 0, y: 0, w: 0.25, h: 0.5, areaM2: 148, stageId: 's2', note: '',
+      id: 'c1', code: 'R1C1', x: 0, y: 0, w: 0.25, h: 0.5, areaM2: 148, stageId: null, note: '',
     }])
-  })
-
-  it('reads a null stage as not started', async () => {
-    from.mockImplementationOnce(() => builder({
-      data: [{ id: 'c1', code: 'R1C1', x: 0, y: 0, w: 1, h: 1, area_m2: '10', stage_id: null }],
-    }))
-    expect((await listDeckCells('d1'))[0].stageId).toBeNull()
+    expect(stub.select).toHaveBeenCalledWith(expect.not.stringContaining('stage_id'))
   })
 
   it('scopes the query to the deck and orders by code', async () => {
@@ -561,5 +558,211 @@ describe('loadGsProjectIdentity', () => {
   it('throws when the read fails', async () => {
     from.mockImplementation(() => builder({ error: { message: 'mất kết nối' } }))
     await expect(loadGsProjectIdentity('p1')).rejects.toThrow('mất kết nối')
+  })
+})
+
+describe('listDeckStates', () => {
+  it('indexes a deck\'s states by work, then by bay', async () => {
+    const stub = builder({
+      data: [
+        { cell_id: 'c1', work_id: 'wA', stage_id: 'a1', note: 'ẩm' },
+        { cell_id: 'c1', work_id: 'wB', stage_id: null, note: '' },
+        { cell_id: 'c2', work_id: 'wA', stage_id: null, note: null },
+      ],
+    })
+    from.mockImplementationOnce(() => stub)
+
+    const states = await listDeckStates('d1')
+
+    expect(from).toHaveBeenCalledWith('cell_states')
+    expect(stub.eq).toHaveBeenCalledWith('deck_id', 'd1')
+    expect(states).toEqual({
+      wA: { c1: { stageId: 'a1', note: 'ẩm' }, c2: { stageId: null, note: '' } },
+      wB: { c1: { stageId: null, note: '' } },
+    })
+  })
+
+  it('throws when the read fails', async () => {
+    from.mockImplementationOnce(() => builder({ error: { message: 'permission denied' } }))
+    await expect(listDeckStates('d1')).rejects.toThrow('permission denied')
+  })
+})
+
+describe('listDeckWorks', () => {
+  it('lists the bays works a deck is part of, in seq order, each with its coats for this deck', async () => {
+    const wd = builder({
+      data: [
+        { work_id: 'wB', weight: '1', works: { id: 'wB', project_id: 'p1', seq: 2, name: 'Tháo giáo', kind: 'bays', weight: '0.35', counts: true, manual_progress: '0' } },
+        { work_id: 'wA', weight: '0.6', works: { id: 'wA', project_id: 'p1', seq: 1, name: 'Sơn', kind: 'bays', weight: '0.35', counts: true, manual_progress: '0' } },
+      ],
+    })
+    const stages = builder({
+      data: [
+        { id: 'a2', work_id: 'wA', seq: 2, name: 'Coat 2', color: '#222222', weight: '0.5' },
+        { id: 'b1', work_id: 'wB', seq: 1, name: 'Tháo giáo lửng', color: '#333333', weight: '1' },
+        { id: 'a1', work_id: 'wA', seq: 1, name: 'Coat 1', color: '#111111', weight: '0.5' },
+      ],
+    })
+    from.mockImplementationOnce(() => wd).mockImplementationOnce(() => stages)
+
+    const works = await listDeckWorks('d1')
+
+    expect(from.mock.calls.map((c) => c[0])).toEqual(['work_decks', 'deck_stages'])
+    expect(wd.eq).toHaveBeenCalledWith('deck_id', 'd1')
+    expect(stages.eq).toHaveBeenCalledWith('deck_id', 'd1')
+    expect(works.map((w) => [w.work.id, w.weight, w.stages.map((s) => s.id)])).toEqual([
+      ['wA', 0.6, ['a1', 'a2']],
+      ['wB', 1, ['b1']],
+    ])
+    expect(works[0].work).toMatchObject({ name: 'Sơn', kind: 'bays', weight: 0.35, counts: true })
+  })
+
+  it('is empty for a deck in no work', async () => {
+    from.mockImplementationOnce(() => builder({ data: [] })).mockImplementationOnce(() => builder({ data: [] }))
+    expect(await listDeckWorks('d1')).toEqual([])
+  })
+})
+
+describe('listProjectIndex', () => {
+  it('builds each deck\'s work models from three reads, scoped to that deck', async () => {
+    // works (+work_decks), decks (+cells, +deck_stages), cell_states: what the
+    // tab labels need to read P_d for every deck of the project.
+    const works = builder({
+      data: [{ id: 'wA', project_id: 'p1', seq: 1, name: 'Sơn', kind: 'bays', weight: '1', counts: true, manual_progress: '0',
+        work_decks: [{ deck_id: 'd1', weight: '0.5' }, { deck_id: 'd2', weight: '0.5' }] }],
+    })
+    const decks = builder({
+      data: [
+        { id: 'd1', seq: 1, code: 'CD', name: 'Cellar', total_area_m2: '100', cells: [{ id: 'c1', code: 'R1C1', area_m2: '100' }],
+          deck_stages: [{ id: 'a1', work_id: 'wA', deck_id: 'd1', seq: 1, name: 'Coat 1', color: '#111111', weight: '1' }] },
+        { id: 'd2', seq: 2, code: 'MD', name: 'Main', total_area_m2: '100', cells: [], deck_stages: [] },
+      ],
+    })
+    const states = builder({ data: [{ cell_id: 'c1', work_id: 'wA', deck_id: 'd1', stage_id: 'a1', note: '' }] })
+    from.mockImplementationOnce(() => works).mockImplementationOnce(() => decks).mockImplementationOnce(() => states)
+
+    const index = await listProjectIndex('p1', ['d1', 'd2'])
+
+    expect(from.mock.calls.map((c) => c[0])).toEqual(['works', 'decks', 'cell_states'])
+    expect(works.eq).toHaveBeenCalledWith('project_id', 'p1')
+    expect(decks.in).toHaveBeenCalledWith('id', ['d1', 'd2'])
+    expect(states.in).toHaveBeenCalledWith('deck_id', ['d1', 'd2'])
+    // Each deck sees only itself inside every work, so summariseDeck reads the
+    // right D and the right cells.
+    expect(index.d1[0].decks.map((d) => d.deck.id)).toEqual(['d1'])
+    expect(index.d1[0].decks[0].deck.cells[0]).toMatchObject({ id: 'c1', stageId: 'a1' })
+    expect(index.d2[0].decks.map((d) => d.deck.id)).toEqual(['d2'])
+    expect(index.d1[0].work.weight).toBe(1)
+  })
+
+  it('gives a deck with no works an entry, not a hole', async () => {
+    from.mockImplementationOnce(() => builder({ data: [] }))
+      .mockImplementationOnce(() => builder({ data: [{ id: 'd9', seq: 1, code: 'X', name: 'X', total_area_m2: '0', cells: [], deck_stages: [] }] }))
+      .mockImplementationOnce(() => builder({ data: [] }))
+    expect(await listProjectIndex('p1', ['d9'])).toEqual({ d9: [] })
+  })
+
+  it('asks for nothing when there are no decks', async () => {
+    expect(await listProjectIndex('p1', [])).toEqual({})
+    expect(from).not.toHaveBeenCalled()
+  })
+})
+
+describe('setCellState', () => {
+  it('upserts stage_id and note for the (bay, work), naming the deck, and nothing else', async () => {
+    // The load-bearing assertion: cell_states_assert_gs_write rejects the
+    // WHOLE write if any other column differs, and deck_id is what the RLS
+    // policies and the realtime filter read. The key set is asserted, not
+    // just the values.
+    const stub = builder({ data: [{ cell_id: 'c1' }] })
+    from.mockImplementationOnce(() => stub)
+
+    await setCellState('c1', 'wA', 'd1', 's3', 'Bề mặt còn ẩm')
+
+    expect(from).toHaveBeenCalledWith('cell_states')
+    expect(stub.upsert).toHaveBeenCalledWith(
+      { cell_id: 'c1', work_id: 'wA', deck_id: 'd1', stage_id: 's3', note: 'Bề mặt còn ẩm' },
+      { onConflict: 'cell_id,work_id' },
+    )
+    const payload = (stub.upsert as ReturnType<typeof vi.fn>).mock.calls[0][0] as object
+    expect(Object.keys(payload).sort()).toEqual(['cell_id', 'deck_id', 'note', 'stage_id', 'work_id'])
+    expect(stub.select).toHaveBeenCalledWith('cell_id')
+  })
+
+  it('sends an empty note by default, so a stage change clears the last one', async () => {
+    const stub = builder({ data: [{ cell_id: 'c1' }] })
+    from.mockImplementationOnce(() => stub)
+    await setCellState('c1', 'wA', 'd1', null)
+    expect(stub.upsert).toHaveBeenCalledWith(
+      { cell_id: 'c1', work_id: 'wA', deck_id: 'd1', stage_id: null, note: '' },
+      { onConflict: 'cell_id,work_id' },
+    )
+  })
+
+  it('throws when the write matched nothing, rather than reporting a phantom success', async () => {
+    // PostgREST answers a filtered-out upsert with no error and no rows.
+    from.mockImplementationOnce(() => builder({ data: [] }))
+    await expect(setCellState('c1', 'wA', 'd1', 's3')).rejects.toThrow(/not updated/)
+  })
+
+  it('throws on a refused write', async () => {
+    from.mockImplementationOnce(() => builder({ error: { message: 'only stage_id and note may be changed by a non-admin' } }))
+    await expect(setCellState('c1', 'wA', 'd1', 's3')).rejects.toThrow('non-admin')
+  })
+})
+
+describe('subscribeDeckStates', () => {
+  it('subscribes to one deck\'s states, plus the deck\'s cell deletions, on its own channel', () => {
+    const ch = fakeChannel()
+    channel.mockReturnValue(ch)
+
+    subscribeDeckStates('d1', { onStateChange: vi.fn(), onCellDelete: vi.fn(), onStatus: vi.fn() })
+
+    expect(channel).toHaveBeenCalledWith('gs-states-d1')
+    expect(ch.bindings.map((b) => [b.event, b.table])).toEqual([
+      ['INSERT', 'cell_states'], ['UPDATE', 'cell_states'], ['DELETE', 'cells'],
+    ])
+    for (const binding of ch.bindings) expect(binding.filter).toBe('deck_id=eq.d1')
+  })
+
+  it('reports a state change as the (bay, work) it is about', () => {
+    const ch = fakeChannel()
+    channel.mockReturnValue(ch)
+    const onStateChange = vi.fn()
+
+    subscribeDeckStates('d1', { onStateChange, onCellDelete: vi.fn(), onStatus: vi.fn() })
+    ch.deliver('UPDATE', 'cell_states', {
+      cell_id: 'c1', work_id: 'wA', deck_id: 'd1', stage_id: 's4', note: 'x',
+      updated_at: '2026-09-02T00:00:00Z', updated_by: 'u1',
+    })
+    ch.deliver('INSERT', 'cell_states', { cell_id: 'c2', work_id: 'wA', deck_id: 'd1', stage_id: null, note: null })
+
+    expect(onStateChange).toHaveBeenNthCalledWith(1, { cellId: 'c1', workId: 'wA', stageId: 's4', note: 'x' })
+    expect(onStateChange).toHaveBeenNthCalledWith(2, { cellId: 'c2', workId: 'wA', stageId: null, note: '' })
+  })
+
+  it('reports a deleted cell by id, from the old record', () => {
+    const ch = fakeChannel()
+    channel.mockReturnValue(ch)
+    const onCellDelete = vi.fn()
+
+    subscribeDeckStates('d1', { onStateChange: vi.fn(), onCellDelete, onStatus: vi.fn() })
+    ch.deliver('DELETE', 'cells', { id: 'c7', deck_id: 'd1' })
+
+    expect(onCellDelete).toHaveBeenCalledWith('c7')
+  })
+
+  it('maps the subscribe status and removes its own channel on unsubscribe', () => {
+    const ch = fakeChannel()
+    channel.mockReturnValue(ch)
+    const onStatus = vi.fn<(s: GsRealtimeStatus) => void>()
+
+    const unsubscribe = subscribeDeckStates('d1', { onStateChange: vi.fn(), onCellDelete: vi.fn(), onStatus })
+    ch.setStatus('SUBSCRIBED')
+    ch.setStatus('CHANNEL_ERROR')
+    expect(onStatus.mock.calls.map((c) => c[0])).toEqual(['subscribed', 'disconnected'])
+
+    unsubscribe()
+    expect(removeChannel).toHaveBeenCalledWith(ch)
   })
 })

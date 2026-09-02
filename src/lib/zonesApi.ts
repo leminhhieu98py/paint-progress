@@ -130,6 +130,16 @@ export async function deleteZone(zoneId: string): Promise<void> {
  * from another deck is refused by the database rather than trusted from here.
  */
 export async function setZoneActual(zoneId: string, stageId: string): Promise<number> {
+  // The stage names its (work, deck), so the caller passes nothing else -- and
+  // a stage row that is gone is refused before any bay is touched.
+  const { data: stages, error: stageError } = await supabase
+    .from('deck_stages')
+    .select('id, work_id, deck_id')
+    .eq('id', stageId)
+  if (stageError) throw new Error(stageError.message)
+  const stage = ((stages ?? []) as { id: string; work_id: string; deck_id: string }[])[0]
+  if (!stage) throw new Error(`Stage ${stageId} was not found`)
+
   const { data: members, error: readError } = await supabase
     .from('zone_cells')
     .select('cell_id')
@@ -139,11 +149,18 @@ export async function setZoneActual(zoneId: string, stageId: string): Promise<nu
   const cellIds = (members ?? []).map((m) => (m as { cell_id: string }).cell_id)
   if (cellIds.length === 0) return 0
 
+  // Since 0024 a bay's position is its cell_states row per work: an upsert on
+  // (cell, work), never a deck-wide write -- a deck-scoped statement would
+  // stamp every bay on the deck from a button labelled with one zone's name.
   const { data, error } = await supabase
-    .from('cells')
-    .update({ stage_id: stageId })
-    .in('id', cellIds)
-    .select('id')
+    .from('cell_states')
+    .upsert(
+      cellIds.map((cellId) => ({
+        cell_id: cellId, work_id: stage.work_id, deck_id: stage.deck_id, stage_id: stageId,
+      })),
+      { onConflict: 'cell_id,work_id' },
+    )
+    .select('cell_id')
   if (error) throw new Error(error.message)
   return (data ?? []).length
 }

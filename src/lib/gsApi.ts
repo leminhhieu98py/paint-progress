@@ -1,5 +1,9 @@
 import { REALTIME_SUBSCRIBE_STATES } from '@supabase/supabase-js'
-import type { Cell, Stage } from '../domain/types'
+import type { Cell, Stage, Work, WorkModel } from '../domain/types'
+import {
+  assembleProjectModel, mapStage, mapWork, type DeckRowIn, type StageRowIn, type StateRowIn,
+  type WorkDeckRow, type WorkRow,
+} from './workModel'
 import { supabase } from './supabase'
 
 /**
@@ -126,10 +130,15 @@ export async function loadGsProject(projectId: string): Promise<GsProject> {
 }
 
 /** One deck's cells. Ordered by code so the cell list is stable across reloads. */
+/**
+ * A deck's bays, geometry only. Since 0024 a bay's position lives in
+ * cell_states, one row per work; the screen lays the selected work's states
+ * (listDeckStates) over these, so every bay comes back not started here.
+ */
 export async function listDeckCells(deckId: string): Promise<Cell[]> {
   const { data, error } = await supabase
     .from('cells')
-    .select('id, code, x, y, w, h, area_m2, stage_id, note')
+    .select('id, code, x, y, w, h, area_m2')
     .eq('deck_id', deckId)
     .order('code')
   if (error) throw new Error(error.message)
@@ -165,6 +174,11 @@ export interface DeckProgressInput {
  * Grouped here rather than in SQL: PostgREST has no GROUP BY, and the weighted
  * percentage is computeDeckProgress's to work out anyway -- doing half of it in
  * the database would put spec §3.2's denominator rule in two places.
+ */
+/**
+ * @deprecated Transitional (removed with the GS screen's move to works, Task 7).
+ * Reads `cells.stage_id`, which 0024 dropped, so it returns every bay as not
+ * started against a live database. `listProjectIndex` is the replacement.
  */
 export async function listProjectStageIndex(
   deckIds: string[],
@@ -236,6 +250,10 @@ export async function listProjectStageIndex(
  * It is always sent, empty included. A bay that gets a new coat and no comment
  * must not keep the note that explained the coat before it.
  */
+/**
+ * @deprecated Transitional (removed with the GS screen's move to works, Task 7).
+ * Writes `cells.stage_id`, which 0024 dropped; `setCellState` is the replacement.
+ */
 export async function setCellStage(
   cellId: string,
   stageId: string | null,
@@ -289,6 +307,10 @@ export async function setCellStage(
  *
  * The DELETE callback reads `payload.old`, not `payload.new`: Realtime sends the
  * removed row as the old record and leaves `new` an empty object.
+ */
+/**
+ * @deprecated Transitional (removed with the GS screen's move to works, Task 7):
+ * a `cells` change no longer carries progress. `subscribeDeckStates` replaces it.
  */
 export function subscribeDeckCells(
   deckId: string,
@@ -374,4 +396,206 @@ export async function loadGsProjectIdentity(
   const row = (data ?? [])[0] as { code: string; name: string } | undefined
   if (!row) throw new Error('Không đọc được dự án để đặt tên báo cáo.')
   return { code: row.code, name: row.name }
+}
+
+/** One bay's position in one work, as the tablet keeps it in memory. */
+export interface CellStateView {
+  stageId: string | null
+  note: string
+}
+
+/**
+ * A deck's bay states, indexed by work then by bay: states[workId][cellId].
+ * A bay with no row for a work is simply absent, and reads as not started.
+ */
+export async function listDeckStates(
+  deckId: string,
+): Promise<Record<string, Record<string, CellStateView>>> {
+  const { data, error } = await supabase
+    .from('cell_states')
+    .select('cell_id, work_id, stage_id, note')
+    .eq('deck_id', deckId)
+  if (error) throw new Error(error.message)
+  const index: Record<string, Record<string, CellStateView>> = {}
+  for (const r of (data ?? []) as { cell_id: string; work_id: string; stage_id: string | null; note: string | null }[]) {
+    ;(index[r.work_id] ??= {})[r.cell_id] = { stageId: r.stage_id ?? null, note: r.note ?? '' }
+  }
+  return index
+}
+
+/** One bays work as the deck screen sees it: the work, its weight for this deck, its coats here. */
+export interface DeckWork {
+  work: Work
+  /** D_wd. */
+  weight: number
+  stages: Stage[]
+}
+
+/**
+ * The bays works a deck is part of, in seq order, each with its coats for
+ * this deck. What the work selector above the drawing lists.
+ */
+export async function listDeckWorks(deckId: string): Promise<DeckWork[]> {
+  const membershipQuery = await supabase
+    .from('work_decks')
+    .select('work_id, weight, works!inner(id, project_id, seq, name, kind, weight, counts, manual_progress)')
+    .eq('deck_id', deckId)
+  if (membershipQuery.error) throw new Error(membershipQuery.error.message)
+  const stagesQuery = await supabase
+    .from('deck_stages')
+    .select('id, work_id, seq, name, color, weight')
+    .eq('deck_id', deckId)
+    .order('seq')
+  if (stagesQuery.error) throw new Error(stagesQuery.error.message)
+
+  const stagesByWork = new Map<string, Stage[]>()
+  for (const row of (stagesQuery.data ?? []) as unknown as StageRowIn[]) {
+    const list = stagesByWork.get(row.work_id) ?? []
+    list.push(mapStage(row))
+    stagesByWork.set(row.work_id, list)
+  }
+  return ((membershipQuery.data ?? []) as unknown as { work_id: string; weight: string | number; works: WorkRow }[])
+    .map((m) => ({
+      work: mapWork(m.works),
+      weight: Number(m.weight),
+      stages: (stagesByWork.get(m.work_id) ?? []).sort((a, b) => a.seq - b.seq),
+    }))
+    .filter((m) => m.work.kind === 'bays')
+    .sort((a, b) => a.work.seq - b.work.seq)
+}
+
+/**
+ * The work models the deck tabs need: for each requested deck, every work of
+ * the project with that deck alone inside it, so `summariseDeck` reads the
+ * right weight and the right bays. Three reads for any number of decks --
+ * works (with weights), decks (with bays and coats), states.
+ *
+ * Every requested deck gets an entry, including one in no work at all; the
+ * caller divides by these, and a missing key would throw on the tab rather
+ * than read 0%.
+ */
+export async function listProjectIndex(
+  projectId: string,
+  deckIds: string[],
+): Promise<Record<string, WorkModel[]>> {
+  if (deckIds.length === 0) return {}
+  const worksQuery = await supabase
+    .from('works')
+    .select('id, project_id, seq, name, kind, weight, counts, manual_progress, work_decks(deck_id, weight)')
+    .eq('project_id', projectId)
+    .order('seq')
+  if (worksQuery.error) throw new Error(worksQuery.error.message)
+  const decksQuery = await supabase
+    .from('decks')
+    .select('id, seq, code, name, total_area_m2, cells(id, code, area_m2), deck_stages(id, work_id, deck_id, seq, name, color, weight)')
+    .in('id', deckIds)
+  if (decksQuery.error) throw new Error(decksQuery.error.message)
+  const statesQuery = await supabase
+    .from('cell_states')
+    .select('cell_id, work_id, deck_id, stage_id, note')
+    .in('deck_id', deckIds)
+  if (statesQuery.error) throw new Error(statesQuery.error.message)
+
+  const works = (worksQuery.data ?? []) as unknown as (WorkRow & { work_decks?: WorkDeckRow[] })[]
+  const { models } = assembleProjectModel({
+    works,
+    workDecks: works.flatMap((w) => (w.work_decks ?? []).map((wd) => ({ ...wd, work_id: w.id }))),
+    decks: (decksQuery.data ?? []) as unknown as DeckRowIn[],
+    states: (statesQuery.data ?? []) as unknown as StateRowIn[],
+  })
+  const index: Record<string, WorkModel[]> = {}
+  for (const id of deckIds) {
+    index[id] = models.map((m) => ({ ...m, decks: m.decks.filter((d) => d.deck.id === id) }))
+  }
+  return index
+}
+
+/**
+ * The foreman's write: where this bay stands in this work, with the note that
+ * goes with the change. An upsert on (cell, work) -- the first tick on a bay
+ * for a work creates the row -- carrying exactly the columns a non-admin may
+ * set plus deck_id, which the RLS policies and the realtime filter read;
+ * cell_states_assert_gs_write rejects the whole write if anything else differs.
+ *
+ * `.select('cell_id')` is load-bearing: PostgREST answers a write RLS filtered
+ * out with 204 and no rows, and without asking for them back this function
+ * would report success for a write that never happened -- see setCellStage's
+ * history for the two ways a tablet reaches that.
+ */
+export async function setCellState(
+  cellId: string,
+  workId: string,
+  deckId: string,
+  stageId: string | null,
+  note = '',
+): Promise<void> {
+  const { data, error } = await supabase
+    .from('cell_states')
+    .upsert(
+      { cell_id: cellId, work_id: workId, deck_id: deckId, stage_id: stageId, note },
+      { onConflict: 'cell_id,work_id' },
+    )
+    .select('cell_id')
+  if (error) throw new Error(error.message)
+  if (!data || data.length === 0) {
+    throw new Error(`Cell ${cellId} was not updated: it no longer exists, or is no longer writable`)
+  }
+}
+
+/** A state change as delivered by realtime. */
+export interface CellStateChange {
+  cellId: string
+  workId: string
+  stageId: string | null
+  note: string
+}
+
+/**
+ * Keep every tablet on this deck converged on bay states, and on bay deletions.
+ *
+ * States come from `cell_states` (published with REPLICA IDENTITY FULL by 0024,
+ * filtered server side by deck_id); deletions still come from `cells`, because
+ * a merge in the deck editor removes the absorbed bays and their states go
+ * with them by cascade -- the cell DELETE is the one event that names the bay.
+ */
+export function subscribeDeckStates(
+  deckId: string,
+  handlers: {
+    onStateChange: (change: CellStateChange) => void
+    onCellDelete: (cellId: string) => void
+    onStatus: (status: GsRealtimeStatus) => void
+  },
+): () => void {
+  const toChange = (row: Record<string, unknown>): CellStateChange => ({
+    cellId: row.cell_id as string,
+    workId: row.work_id as string,
+    stageId: (row.stage_id as string | null) ?? null,
+    note: (row.note as string | null) ?? '',
+  })
+  const channel = supabase
+    .channel(`gs-states-${deckId}`)
+    .on(
+      'postgres_changes',
+      { event: 'INSERT', schema: 'public', table: 'cell_states', filter: `deck_id=eq.${deckId}` },
+      (payload) => handlers.onStateChange(toChange(payload.new as Record<string, unknown>)),
+    )
+    .on(
+      'postgres_changes',
+      { event: 'UPDATE', schema: 'public', table: 'cell_states', filter: `deck_id=eq.${deckId}` },
+      (payload) => handlers.onStateChange(toChange(payload.new as Record<string, unknown>)),
+    )
+    .on(
+      'postgres_changes',
+      { event: 'DELETE', schema: 'public', table: 'cells', filter: `deck_id=eq.${deckId}` },
+      (payload) => handlers.onCellDelete((payload.old as { id: string }).id),
+    )
+    .subscribe((status) => {
+      handlers.onStatus(
+        status === REALTIME_SUBSCRIBE_STATES.SUBSCRIBED ? 'subscribed' : 'disconnected',
+      )
+    })
+
+  return () => {
+    void supabase.removeChannel(channel)
+  }
 }
