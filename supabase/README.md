@@ -57,8 +57,9 @@ nvm use 22
 npx supabase db query --linked -f supabase/verify_schema.sql
 ```
 
-Every returned row must begin with `PASS` — 35 rows in a passing run, one
-per numbered check in the file's header comment.
+Every returned row must begin with `PASS` — 36 rows in a passing run against
+a project with `0001`–`0023` applied (measured 2026-09-02 on dev; the header
+numbers 35 checks because one of them emits two rows).
 
 The `0019` note check reports `FAIL` until that migration is applied, and the
 three note tests in `tests/rls.integration.test.ts` are `it.skip`ped for the

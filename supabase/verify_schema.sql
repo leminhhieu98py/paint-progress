@@ -233,8 +233,9 @@
 --   nvm use 22
 --   npx supabase db query --linked -f supabase/verify_schema.sql
 --
--- Every returned row must begin with PASS (35 rows in total, one per
--- numbered check above, 1-35 with no gaps). A row beginning with FAIL means
+-- Every returned row must begin with PASS: 36 rows in total on a linked
+-- project with 0001-0023 applied (measured 2026-09-02; the numbering above
+-- runs 1-35 because one earlier check emits two rows). A row beginning with FAIL means
 -- a regression in the trigger/FK/RLS behaviour set up across migrations
 -- 0001-0023; re-read those migrations' comments before changing this file.
 --
