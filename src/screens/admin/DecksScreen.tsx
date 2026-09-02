@@ -6,11 +6,13 @@ import dayjs from 'dayjs'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { renderDeckDrawing, renderDeckPie } from '../../canvas/deckSnapshot'
-import { areaWeightedProjectProgress } from '../../domain/progress'
+import { computeProjectProgress, summariseDeck } from '../../domain/progress'
+import type { WorkKind } from '../../domain/types'
 import { listGsUsers } from '../../lib/adminApi'
 import { deleteDeck, getDrawingUrl, listDecks, type DeckRow } from '../../lib/decksApi'
-import { formatAreaM2, formatPercent } from '../../lib/format'
-import { listDeckEvents, loadProjectProgress } from '../../lib/progressApi'
+import { formatAreaM2, formatPercent, formatWeight } from '../../lib/format'
+import { listDeckEvents, loadProjectModel, loadProjectProgress } from '../../lib/progressApi'
+import type { ProjectModel } from '../../lib/workModel'
 import { listDeckZones } from '../../lib/zonesApi'
 import { listProjectNames } from '../../lib/projectsApi'
 import { buildReportWorkbook, reportFileName, type DeckImages } from '../../lib/reportXlsx'
@@ -34,6 +36,18 @@ interface RollupRow {
   progress: number
 }
 
+/** One work of the project in the table under the decks (DCK-R7). */
+interface WorkRow {
+  key: string
+  name: string
+  kind: WorkKind
+  weight: string
+  counts: boolean
+  progress: number
+}
+
+const WORK_KIND_LABEL: Record<WorkKind, string> = { bays: 'Theo ô', manual: 'Nhập tay' }
+
 /**
  * Three shades of the one accent, cycled.
  *
@@ -47,7 +61,7 @@ const DECK_SHADES = ['#0A8175', '#3AA396', '#6FC2B7']
 const RULES = [
   {
     id: 'DCK-R2',
-    text: 'Tỉ trọng là phần diện tích của sàn trong dự án — tính ra từ diện tích, không nhập tay.',
+    text: 'Tỉ trọng của sàn là trọng số hiệu dụng: tổng (trọng số công việc × trọng số sàn trong công việc) qua các công việc có tính vào tổng. Cả hai trọng số đặt ở mục Công việc, không nhập ở đây.',
   },
   {
     id: 'DCK-R3',
@@ -77,14 +91,14 @@ export function DecksScreen() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   /**
-   * Every deck of the project with its stages and cells.
+   * Every work of the project with its decks, stages and bay states (0024).
    *
    * This is the project-wide half of what used to be `/admin/progress`. The
    * per-deck half moved into the deck's own screen; the rollup and the export
    * are about the PROJECT, and this list is the only screen that has one
    * selected.
    */
-  const [entries, setEntries] = useState<Awaited<ReturnType<typeof loadProjectProgress>>>([])
+  const [model, setModel] = useState<ProjectModel | null>(null)
   const [exporting, setExporting] = useState(false)
   /** The deck whose deletion is being confirmed, and the write in flight. */
   const [removingDeck, setRemovingDeck] = useState<DeckRow | null>(null)
@@ -147,48 +161,73 @@ export function DecksScreen() {
 
   useEffect(() => {
     if (!projectId) {
-      setEntries([])
+      setModel(null)
       return
     }
     let cancelled = false
     // Not cleared first, deliberately: a failed reload leaves the last good
     // rollup on screen rather than blanking a number the admin was reading.
-    loadProjectProgress(projectId)
-      .then((rows) => { if (!cancelled) setEntries(rows) })
+    loadProjectModel(projectId)
+      .then((m) => { if (!cancelled) setModel(m) })
       .catch((e) => { if (!cancelled) setError((e as Error).message) })
     return () => { cancelled = true }
   }, [projectId])
 
-  const rollup = useMemo(() => areaWeightedProjectProgress(entries), [entries])
+  const modelDecks = model?.decks ?? []
+  const rollup = useMemo(() => computeProjectProgress(model?.models ?? []), [model])
+  /**
+   * Each deck across its works: P_d, and the weight it carries in P, which is
+   * Σ W·D over the counted bays works it is in -- no longer its m² share. A
+   * deck in no work is still listed, at zero, so nothing the project has goes
+   * missing from the one screen that lists it.
+   */
+  const summaries = useMemo(
+    () => (model ? model.decks.map((d) => summariseDeck(d.id, model.models)) : []),
+    [model],
+  )
 
-  const rollupRows: RollupRow[] = entries.map((entry) => {
-    const d = rollup.decks.find((x) => x.deckId === entry.deck.id)
-    return {
-      key: entry.deck.id,
-      name: entry.deck.name,
-      code: entry.deck.code,
-      share: formatPercent(d?.weight ?? 0),
-      totalAreaM2: formatAreaM2(entry.deck.totalAreaM2),
-      progress: d?.progress ?? 0,
-    }
-  })
+  const rollupRows: RollupRow[] = modelDecks.map((deck, i) => ({
+    key: deck.id,
+    name: deck.name,
+    code: deck.code,
+    share: formatPercent(summaries[i]?.effectiveWeight ?? 0),
+    totalAreaM2: formatAreaM2(deck.totalAreaM2),
+    progress: summaries[i]?.progress ?? 0,
+  }))
+  const workRows: WorkRow[] = rollup.works.map((w) => ({
+    key: w.work.id,
+    name: w.work.name,
+    kind: w.work.kind,
+    weight: formatWeight(w.work.weight),
+    counts: w.work.counts,
+    progress: w.progress,
+  }))
+  /** What the decks carry of P; the rest sits in manual works. */
+  const effectiveTotal = summaries.reduce((sum, d) => sum + d.effectiveWeight, 0)
 
   /*
-    Each deck's slice is its area share TIMES its own progress -- what it
-    actually contributes to the project number -- not its progress alone. The
-    slices therefore sum to exactly the project percentage, and the ring's
-    empty part is the work left. A ring of raw per-deck percentages would sum
-    to something meaningless and read as though the project were further along.
+    Each slice is a weight TIMES a progress -- what it actually contributes to
+    the project number -- not a progress alone: a deck's effective weight times
+    its tổng hợp, then a counted manual work's weight times its figure. The
+    slices therefore sum to exactly P, and the ring's empty part is the work
+    left. A ring of raw percentages would sum to something meaningless and
+    read as though the project were further along.
   */
-  const slices: DonutSlice[] = entries.map((entry, i) => {
-    const d = rollup.decks.find((x) => x.deckId === entry.deck.id)
-    return {
-      label: entry.deck.name,
-      value: (d?.weight ?? 0) * (d?.progress ?? 0),
+  const slices: DonutSlice[] = [
+    ...modelDecks.map((deck, i) => ({
+      label: deck.name,
+      value: (summaries[i]?.effectiveWeight ?? 0) * (summaries[i]?.progress ?? 0),
       color: DECK_SHADES[i % DECK_SHADES.length],
-    }
-  })
-  const totalArea = entries.reduce((sum, e) => sum + e.deck.totalAreaM2, 0)
+    })),
+    ...rollup.works
+      .filter((w) => w.work.kind === 'manual' && w.work.counts)
+      .map((w, i) => ({
+        label: w.work.name,
+        value: w.work.weight * w.progress,
+        color: DECK_SHADES[(modelDecks.length + i) % DECK_SHADES.length],
+      })),
+  ]
+  const totalArea = modelDecks.reduce((sum, d) => sum + d.totalAreaM2, 0)
   const projectName = projects.find((p) => p.id === projectId)?.name ?? ''
 
   /**
@@ -212,7 +251,7 @@ export function DecksScreen() {
       // Re-read rather than patch: what is shown is what is there. Both
       // lists, because the rollup below the table names the deck too.
       await refreshDecks()
-      if (projectId) setEntries(await loadProjectProgress(projectId))
+      if (projectId) setModel(await loadProjectModel(projectId))
     } catch (e) {
       message.error((e as Error).message)
     } finally {
@@ -228,10 +267,14 @@ export function DecksScreen() {
    * pressed once a week is cheaper than paying for them on every screen open.
    */
   const exportReport = async () => {
-    if (entries.length === 0) return
+    if (!projectId || modelDecks.length === 0) return
     setConfirmingExport(false)
     setExporting(true)
     try {
+      // Transitional: the workbook still reads the first bays work's view of
+      // each deck, so it is fetched in that shape here until the report is
+      // built from the model (work-items Task 8).
+      const entries = await loadProjectProgress(projectId)
       const profiles = await listGsUsers().catch(() => [])
       const userNames = Object.fromEntries(profiles.map((u) => [u.id, u.fullName]))
 
@@ -418,23 +461,23 @@ export function DecksScreen() {
 
         <SectionCard
           title="Tiến độ toàn dự án"
-          summary="Trung bình có trọng số của phần trăm từng sàn"
+          summary="Tổng theo công việc; mỗi công việc theo các sàn của nó"
           bodyPadding={0}
           footer={<RulesDisclosure rules={RULES} />}
           extra={
-            <Tooltip title={entries.length === 0 ? 'Cần ít nhất một sàn' : 'Xuất báo cáo · .xlsx'}>
+            <Tooltip title={modelDecks.length === 0 ? 'Cần ít nhất một sàn' : 'Xuất báo cáo · .xlsx'}>
               <Button
                 icon={<DownloadOutlined aria-hidden />}
                 onClick={() => setConfirmingExport(true)}
                 loading={exporting}
-                disabled={entries.length === 0}
+                disabled={modelDecks.length === 0}
               >
                 Xuất báo cáo
               </Button>
             </Tooltip>
           }
         >
-          {entries.length === 0 ? (
+          {modelDecks.length === 0 ? (
             <EmptyState
               title="Dự án này chưa có sàn nào"
               description="Rollup và báo cáo đều tính từ các sàn, nên cả hai chờ sàn đầu tiên."
@@ -447,10 +490,8 @@ export function DecksScreen() {
                 -- and a test that cannot say which half it is reading is a test
                 that passes when one half is empty.
               */}
-              <div
-                data-testid="project-rollup"
-                style={{ borderRight: `1px solid ${palette.borderCard}`, minWidth: 0 }}
-              >
+              <div style={{ borderRight: `1px solid ${palette.borderCard}`, minWidth: 0 }}>
+                <div data-testid="project-rollup">
                 <Table<RollupRow>
                   className="pp-table"
                   size="small"
@@ -487,7 +528,7 @@ export function DecksScreen() {
                       </Table.Summary.Cell>
                       <Table.Summary.Cell index={1} />
                       <Table.Summary.Cell index={2} align="right">
-                        <strong>100,00%</strong>
+                        <strong>{formatPercent(effectiveTotal)}</strong>
                       </Table.Summary.Cell>
                       <Table.Summary.Cell index={3} align="right">
                         <strong>{formatAreaM2(totalArea)}</strong>
@@ -498,6 +539,71 @@ export function DecksScreen() {
                     </Table.Summary.Row>
                   )}
                 />
+                </div>
+
+                {/*
+                  The works, because the deck weights above are a product of
+                  theirs and P is a sum over them: a manual work (giấy tờ, xà
+                  lan) shows up nowhere else on this screen, yet it is in P.
+                */}
+                <div
+                  data-testid="project-works"
+                  style={{ borderTop: `1px solid ${palette.borderCard}` }}
+                >
+                  <div style={{ padding: '12px 15px 2px', fontSize: 12, fontWeight: 600, color: palette.textTertiary }}>
+                    Công việc
+                  </div>
+                  <Table<WorkRow>
+                    className="pp-table"
+                    size="small"
+                    pagination={false}
+                    dataSource={workRows}
+                    columns={[
+                      { title: 'Công việc', dataIndex: 'name', key: 'name' },
+                      {
+                        title: 'Loại',
+                        dataIndex: 'kind',
+                        key: 'kind',
+                        width: 100,
+                        render: (k: WorkKind) => WORK_KIND_LABEL[k],
+                      },
+                      { title: 'Trọng số', dataIndex: 'weight', key: 'weight', width: 110, align: 'right' },
+                      {
+                        title: 'Tính vào tổng',
+                        dataIndex: 'counts',
+                        key: 'counts',
+                        width: 150,
+                        render: (c: boolean) => (c ? 'Có' : 'Không'),
+                      },
+                      {
+                        title: 'Tiến độ',
+                        dataIndex: 'progress',
+                        key: 'progress',
+                        width: 220,
+                        render: (v: number) => <ProgressBar ratio={v} />,
+                      },
+                    ]}
+                    summary={() => (
+                      <Table.Summary.Row>
+                        <Table.Summary.Cell index={0}>
+                          <strong>Tổng dự án</strong>
+                        </Table.Summary.Cell>
+                        <Table.Summary.Cell index={1} />
+                        <Table.Summary.Cell index={2} align="right">
+                          <strong>
+                            {formatWeight(rollup.works
+                              .filter((w) => w.work.counts)
+                              .reduce((sum, w) => sum + w.work.weight, 0))}
+                          </strong>
+                        </Table.Summary.Cell>
+                        <Table.Summary.Cell index={3} />
+                        <Table.Summary.Cell index={4}>
+                          <ProgressBar ratio={rollup.progress} height={8} />
+                        </Table.Summary.Cell>
+                      </Table.Summary.Row>
+                    )}
+                  />
+                </div>
               </div>
 
               <div
@@ -562,8 +668,8 @@ export function DecksScreen() {
                   </div>
                 </div>
                 <div style={{ marginTop: 14, fontSize: 11, lineHeight: 1.5, color: palette.textTertiary }}>
-                  Mỗi phần là tỉ trọng diện tích × tiến độ sàn — cộng lại đúng bằng{' '}
-                  {formatPercent(rollup.progress)}.
+                  Mỗi phần là trọng số × tiến độ: sàn theo trọng số hiệu dụng, công việc nhập
+                  tay theo trọng số của nó — cộng lại đúng bằng {formatPercent(rollup.progress)}.
                 </div>
               </div>
             </div>
@@ -576,9 +682,9 @@ export function DecksScreen() {
         tag="Xác nhận"
         title="Xuất báo cáo dự án?"
         description="Bản vẽ được dựng lại lần lượt từng sàn:"
-        items={entries.map((e) => ({
-          label: e.deck.name,
-          meta: `${e.deck.cells.length} ô`,
+        items={modelDecks.map((d) => ({
+          label: d.name,
+          meta: `${d.cellCount} ô`,
         }))}
         consequence="Dựng tuần tự, không song song, nên với dự án nhiều sàn việc này mất một lúc. Trong lúc chạy nút không bấm lại được, và nếu hỏng giữa chừng thì không có tệp một phần nào được đưa ra."
         okText="Xuất"

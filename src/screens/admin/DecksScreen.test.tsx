@@ -7,6 +7,7 @@ import { DecksScreen } from './DecksScreen'
 
 const listProjectNames = vi.hoisted(() => vi.fn())
 const listDecks = vi.hoisted(() => vi.fn())
+const loadProjectModel = vi.hoisted(() => vi.fn())
 const loadProjectProgress = vi.hoisted(() => vi.fn())
 const listDeckZones = vi.hoisted(() => vi.fn())
 const listGsUsers = vi.hoisted(() => vi.fn())
@@ -24,6 +25,7 @@ vi.mock('../../lib/decksApi', () => ({
 }))
 const listDeckEvents = vi.hoisted(() => vi.fn())
 vi.mock('../../lib/progressApi', () => ({
+  loadProjectModel: (id: string) => loadProjectModel(id),
   loadProjectProgress: (id: string) => loadProjectProgress(id),
   listDeckEvents: (deckId: string) => listDeckEvents(deckId),
 }))
@@ -68,11 +70,59 @@ const ENTRIES = [
   },
 ]
 
+/**
+ * The same two decks seen through three works (0024). Sơn covers both decks
+ * with the m² shares; Tháo giáo covers only CD; Chứng từ is a manual figure
+ * with no deck at all. CD is half-way in both bays works, WD untouched.
+ *
+ *   P_Sơn = .25·.5 + .75·0 = 12,50%   P_Tháo giáo = 1·.5 = 50,00%   Chứng từ = 50,00%
+ *   P = .5·.125 + .3·.5 + .2·.5 = 31,25%
+ *   CD weighs .5·.25 + .3·1 = 42,50% of P and sits at 50,00%; WD weighs 37,50% at 0.
+ */
+const TG_STAGES = [{ id: 't1', seq: 1, name: 'Tháo giáo lửng', color: '#722ed1', weight: 1 }]
+const CD = { id: 'd1', code: 'CD', name: 'Cellar Deck', totalAreaM2: 1000 }
+const WD = { id: 'd2', code: 'WD', name: 'Weather Deck', totalAreaM2: 3000 }
+const bay = (stageId: string) => ({
+  id: 'c1', code: 'R1C1', x: 0, y: 0, w: 1, h: 1, areaM2: 500, stageId, note: '',
+})
+const work = (
+  id: string, seq: number, name: string, kind: 'bays' | 'manual', weight: number,
+  manualProgress: number | null = null,
+) => ({ id, projectId: 'p1', seq, name, kind, weight, counts: true, manualProgress })
+const MODEL = {
+  models: [
+    {
+      work: work('w1', 1, 'Sơn', 'bays', 0.5),
+      decks: [
+        { deck: { ...CD, cells: [bay('s2')] }, stages: STAGES, weight: 0.25 },
+        { deck: { ...WD, cells: [] }, stages: STAGES, weight: 0.75 },
+      ],
+    },
+    {
+      work: work('w2', 2, 'Tháo giáo', 'bays', 0.3),
+      decks: [{ deck: { ...CD, cells: [bay('t1')] }, stages: TG_STAGES, weight: 1 }],
+    },
+    { work: work('w3', 3, 'Chứng từ', 'manual', 0.2, 0.5), decks: [] },
+  ],
+  decks: [
+    {
+      ...CD, seq: 1, imagePath: 'p1/d1.png', imageW: 2000, imageH: 1600,
+      areaSource: 'guides' as const, cellCount: 1,
+    },
+    {
+      ...WD, seq: 2, imagePath: null, imageW: null, imageH: null,
+      areaSource: 'guides' as const, cellCount: 0,
+    },
+  ],
+  audit: {},
+}
+
 beforeEach(() => {
   for (const m of [
-    listProjectNames, listDecks, loadProjectProgress, listDeckZones, listGsUsers,
+    listProjectNames, listDecks, loadProjectModel, loadProjectProgress, listDeckZones, listGsUsers,
     buildReportWorkbook, renderDeckDrawing, renderDeckPie, getDrawingUrl,
   ]) m.mockReset()
+  loadProjectModel.mockResolvedValue(MODEL)
   loadProjectProgress.mockResolvedValue(ENTRIES)
   listDeckEvents.mockReset()
   listDeckEvents.mockResolvedValue([])
@@ -210,19 +260,45 @@ describe('DecksScreen', () => {
 })
 
 describe('DecksScreen — the project-wide half of progress', () => {
-  it('rolls the project up, one row per deck plus a total', async () => {
-    // CD: 500 m² of 1000 at the last of two stages -> .4*.5 + .6*.5 = 50,00%.
-    // WD: nothing -> 0,00%. Weighted by area (1000 vs 3000) the project is
-    // 0,25*50% = 12,50%.
+  it('weighs each deck by Σ W·D across the works it is in, and shows its tổng hợp', async () => {
     renderScreen()
 
     const rollup = await screen.findByTestId('project-rollup')
     expect(within(rollup).getByText('Cellar Deck')).toBeInTheDocument()
     expect(within(rollup).getByText('Weather Deck')).toBeInTheDocument()
-    expect(within(rollup).getByText('25,00%')).toBeInTheDocument()   // CD's share
-    expect(within(rollup).getByText('75,00%')).toBeInTheDocument()   // WD's share
-    expect(within(rollup).getByText('50,00%')).toBeInTheDocument()   // CD's progress
-    expect(within(rollup).getByText('12,50%')).toBeInTheDocument()   // the project
+    expect(within(rollup).getByText('42,50%')).toBeInTheDocument()   // CD's effective weight
+    expect(within(rollup).getByText('37,50%')).toBeInTheDocument()   // WD's
+    expect(within(rollup).getByText('50,00%')).toBeInTheDocument()   // CD's tổng hợp
+    expect(within(rollup).getByText('80,00%')).toBeInTheDocument()   // what the decks carry
+    expect(within(rollup).getByText('31,25%')).toBeInTheDocument()   // the project, P
+    // Not the m² share any more: CD is 1000 of 4000 m², which would read 25,00%.
+    expect(within(rollup).queryByText('25,00%')).toBeNull()
+  })
+
+  it('lists every work with its kind, weight and P_w under the deck table, then P', async () => {
+    renderScreen()
+
+    const works = await screen.findByTestId('project-works')
+    expect(within(works).getByText('Sơn')).toBeInTheDocument()
+    expect(within(works).getByText('Tháo giáo')).toBeInTheDocument()
+    expect(within(works).getByText('Chứng từ')).toBeInTheDocument()
+    expect(within(works).getAllByText('Theo ô')).toHaveLength(2)
+    expect(within(works).getByText('Nhập tay')).toBeInTheDocument()
+    expect(within(works).getByText('0,50')).toBeInTheDocument()      // W of Sơn
+    expect(within(works).getByText('0,20')).toBeInTheDocument()      // W of Chứng từ
+    expect(within(works).getByText('12,50%')).toBeInTheDocument()    // P_Sơn
+    expect(within(works).getAllByText('50,00%')).toHaveLength(2)     // Tháo giáo and Chứng từ
+    expect(within(works).getByText('31,25%')).toBeInTheDocument()    // P
+  })
+
+  it('adds the manual works to the ring, so the parts still sum to P', async () => {
+    renderScreen()
+
+    const donut = await screen.findByTestId('rollup-donut')
+    expect(within(donut).getByText('Chứng từ')).toBeInTheDocument()
+    expect(within(donut).getByText('10,00%')).toBeInTheDocument()    // .2 × 50%
+    expect(within(donut).getByText('21,25%')).toBeInTheDocument()    // CD: .425 × 50%
+    expect(within(donut).getAllByText('31,25%').length).toBeGreaterThan(0)
   })
 
   it('exports every deck of the project, with its own stages, plan and pictures', async () => {
@@ -276,6 +352,7 @@ describe('DecksScreen — the project-wide half of progress', () => {
   })
 
   it('says so, and offers no export, when the project has no decks', async () => {
+    loadProjectModel.mockResolvedValue({ models: [], decks: [], audit: {} })
     loadProjectProgress.mockResolvedValue([])
     renderScreen()
 
