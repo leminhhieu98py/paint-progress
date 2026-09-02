@@ -1,6 +1,7 @@
 import {
-  Alert, App, Button, Grid, Layout, Spin, Tabs,
+  Alert, App, Button, Grid, Layout, Space, Spin, Tabs,
 } from 'antd'
+import dayjs from 'dayjs'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useAuth } from '../../auth/AuthProvider'
@@ -17,16 +18,19 @@ import { LOGIN_PATH } from '../../config'
 import { getDrawingUrl, listStages } from '../../lib/decksApi'
 import { formatAreaM2, formatPercent } from '../../lib/format'
 import {
-  listCoworkerNames, listDeckCells, listProjectStageIndex, loadGsProject, setCellStage,
-  subscribeDeckCells,
+  listCoworkerNames, listDeckCells, listProjectStageIndex, loadGsProject, loadGsProjectIdentity,
+  setCellStage, subscribeDeckCells,
   type GsDeck, type GsRealtimeStatus,
 } from '../../lib/gsApi'
 import { listDeckZones } from '../../lib/zonesApi'
+import { listDeckEvents, loadDeckProgress } from '../../lib/progressApi'
+import { buildReportWorkbook, reportFileName, type DeckImages } from '../../lib/reportXlsx'
+import { renderDeckDrawing, renderDeckPie } from '../../canvas/deckSnapshot'
 import { CellStageModal } from './CellStageModal'
 import { ConsequenceModal } from '../../components/ConsequenceModal'
 import { LogoutOutlined } from '@ant-design/icons'
 import { fieldError, palette, shadowCard } from '../../theme'
-import { CalendarOutlined } from '@ant-design/icons'
+import { CalendarOutlined, DownloadOutlined } from '@ant-design/icons'
 import { EmptyState } from '../../components/EmptyState'
 import { DeckProgressCard, StageRollupCard } from './DeckStatsCards'
 import { SectionCard } from '../../components/SectionCard'
@@ -457,6 +461,7 @@ export function GsScreen() {
   const cellColors = useMemo(() => paintLensColors(cells, stages), [cells, stages])
 
   const [showPlan, setShowPlan] = useState(false)
+  const [exporting, setExporting] = useState(false)
   const [zones, setZones] = useState<Zone[]>([])
   /**
    * prog(D) per deck, for the tabs.
@@ -576,6 +581,71 @@ export function GsScreen() {
   const screens = Grid.useBreakpoint()
   const wide = Boolean(screens.lg)
   const phone = !screens.sm
+
+  /**
+   * The XLSX for THIS deck (Feedback Rv1, item 6), through the same loaders
+   * and renderers as the admin's project export, so the two files cannot
+   * describe one deck differently. Scoped to the deck -- no Overview sheet --
+   * and named with the deck code, so two tabs exported on one day do not
+   * overwrite each other in a downloads folder. No confirm step: one deck, one
+   * download, nothing on the server changes.
+   */
+  const exportDeck = async () => {
+    if (!projectId || !deck) return
+    setExporting(true)
+    try {
+      const [project, entry, events, zones, userNames] = await Promise.all([
+        loadGsProjectIdentity(projectId),
+        loadDeckProgress(deck.id),
+        listDeckEvents(deck.id),
+        listDeckZones(deck.id),
+        // Attribution only; a failed names read must not fail the file.
+        listCoworkerNames().catch(() => ({})),
+      ])
+      if (!entry) throw new Error('Sàn này không còn tồn tại.')
+      const url = entry.imagePath ? await getDrawingUrl(entry.imagePath).catch(() => null) : null
+      const images: Record<string, DeckImages> = {
+        [entry.deck.id]: {
+          drawingPng: url
+            ? await renderDeckDrawing(
+              url, entry.imageW ?? 0, entry.imageH ?? 0, entry.deck.cells, entry.stages,
+            )
+            : null,
+          piePng: renderDeckPie(entry.deck.totalAreaM2, entry.deck.cells, entry.stages),
+          drawingAspect: entry.imageW && entry.imageH ? entry.imageH / entry.imageW : null,
+        },
+      }
+      const blob = await buildReportWorkbook({
+        projectName: project.name,
+        projectCode: project.code,
+        decks: [{
+          deck: entry.deck,
+          stages: entry.stages,
+          areaSource: entry.areaSource,
+          userNames,
+          zones,
+          events,
+        }],
+        images,
+        scope: 'deck',
+      })
+      const href = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = href
+      a.download = reportFileName(
+        `${project.code}-${entry.deck.code}`, dayjs().format('YYYY-MM-DD'),
+      )
+      a.click()
+      // Revoked on the next tick: Safari has not started the download when
+      // click() returns, and a revoked URL gives a silent zero-byte file.
+      setTimeout(() => URL.revokeObjectURL(href), 0)
+      message.success('Đã xuất báo cáo')
+    } catch (e) {
+      message.error((e as Error).message)
+    } finally {
+      setExporting(false)
+    }
+  }
 
   /**
    * Spec §11 row 1: optimistic local update so the chart moves with no
@@ -798,15 +868,25 @@ export function GsScreen() {
                 decision. The label drops on a phone, where the calendar icon
                 and the pressed state carry it.
               */
-              <Button
-                type={showPlan ? 'primary' : 'default'}
-                icon={<CalendarOutlined aria-hidden />}
-                aria-label="Hiện kế hoạch"
-                aria-pressed={showPlan}
-                onClick={() => setShowPlan((on) => !on)}
-              >
-                {phone ? null : 'Hiện kế hoạch'}
-              </Button>
+              <Space size={8}>
+                <Button
+                  type={showPlan ? 'primary' : 'default'}
+                  icon={<CalendarOutlined aria-hidden />}
+                  aria-label="Hiện kế hoạch"
+                  aria-pressed={showPlan}
+                  onClick={() => setShowPlan((on) => !on)}
+                >
+                  {phone ? null : 'Hiện kế hoạch'}
+                </Button>
+                <Button
+                  icon={<DownloadOutlined aria-hidden />}
+                  aria-label="Xuất báo cáo"
+                  loading={exporting}
+                  onClick={() => { void exportDeck() }}
+                >
+                  {phone ? null : 'Xuất báo cáo'}
+                </Button>
+              </Space>
             }
           >
             {deck && deck.imagePath && deck.imageW && deck.imageH && imageUrl ? (

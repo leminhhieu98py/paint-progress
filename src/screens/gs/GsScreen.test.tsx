@@ -18,6 +18,12 @@ const listStages = vi.hoisted(() => vi.fn())
 const signOut = vi.hoisted(() => vi.fn())
 const listCoworkerNames = vi.hoisted(() => vi.fn())
 const listCellNotes = vi.hoisted(() => vi.fn())
+const loadGsProjectIdentity = vi.hoisted(() => vi.fn())
+const loadDeckProgress = vi.hoisted(() => vi.fn())
+const listDeckEvents = vi.hoisted(() => vi.fn())
+const buildReportWorkbook = vi.hoisted(() => vi.fn())
+const renderDeckDrawing = vi.hoisted(() => vi.fn())
+const renderDeckPie = vi.hoisted(() => vi.fn())
 
 vi.mock('../../lib/gsApi', () => ({
   loadGsProject: (projectId: string) => loadGsProject(projectId),
@@ -27,9 +33,21 @@ vi.mock('../../lib/gsApi', () => ({
   subscribeDeckCells: (deckId: string, handlers: Handlers) =>
     subscribeDeckCells(deckId, handlers),
   listCoworkerNames: () => listCoworkerNames(),
+  loadGsProjectIdentity: (projectId: string) => loadGsProjectIdentity(projectId),
 }))
 vi.mock('../../lib/progressApi', () => ({
   listCellNotes: (cellId: string) => listCellNotes(cellId),
+  loadDeckProgress: (deckId: string) => loadDeckProgress(deckId),
+  listDeckEvents: (deckId: string) => listDeckEvents(deckId),
+}))
+vi.mock('../../lib/reportXlsx', () => ({
+  buildReportWorkbook: (i: unknown) => buildReportWorkbook(i),
+  reportFileName: (c: string, d: string) => `tien-do-${c}-${d}.xlsx`,
+}))
+// jsdom implements no canvas, so the snapshot module cannot run here.
+vi.mock('../../canvas/deckSnapshot', () => ({
+  renderDeckDrawing: (...a: unknown[]) => renderDeckDrawing(...a),
+  renderDeckPie: (...a: unknown[]) => renderDeckPie(...a),
 }))
 vi.mock('../../lib/zonesApi', () => ({
   listDeckZones: (deckId: string) => listDeckZones(deckId),
@@ -174,6 +192,27 @@ beforeEach(() => {
   // Pending by default, so a modal opened by an unrelated test never lands a
   // state update after that test has finished.
   listCellNotes.mockReturnValue(new Promise(() => {}))
+  loadGsProjectIdentity.mockReset()
+  loadGsProjectIdentity.mockResolvedValue({ code: 'BB1', name: 'BlockB1_CPPTS' })
+  loadDeckProgress.mockReset()
+  loadDeckProgress.mockImplementation((deckId: string) => Promise.resolve({
+    seq: 1,
+    deck: {
+      id: deckId, code: deckId === 'd1' ? 'CD' : 'MD', name: 'Cellar Deck', totalAreaM2: 1000,
+      cells: D1_CELLS,
+    },
+    stages: STAGES,
+    imagePath: 'p1/d1.png', imageW: 2000, imageH: 1600,
+    areaSource: 'guides', audit: {},
+  }))
+  listDeckEvents.mockReset()
+  listDeckEvents.mockResolvedValue([])
+  buildReportWorkbook.mockReset()
+  buildReportWorkbook.mockResolvedValue(new Blob(['x']))
+  renderDeckDrawing.mockReset()
+  renderDeckDrawing.mockResolvedValue('PNGDATA')
+  renderDeckPie.mockReset()
+  renderDeckPie.mockReturnValue('PIEDATA')
   signOut.mockResolvedValue(undefined)
   navigate.mockReset()
   subscribeDeckCells.mockReset()
@@ -1227,5 +1266,63 @@ describe('GsScreen: note authors', () => {
     renderScreen()
     expect(await screen.findByRole('button', { name: 'ô R1C1' })).toBeInTheDocument()
     expect(screen.queryByText(/Không tải được dự án/)).toBeNull()
+  })
+})
+
+describe('GsScreen: exporting the open deck', () => {
+  const EVENT = {
+    id: 1, cellCode: 'R1C1', cellAreaM2: 300, toStageName: 'Blast + Coat 1',
+    at: '2026-08-20T10:00:00+00:00', byId: 'u1', note: 'Bắt đầu',
+    reportNote: null, reportHidden: false,
+  }
+  /** jsdom has no object URLs and no navigation; capture the download instead. */
+  const downloads: string[] = []
+  beforeEach(() => {
+    downloads.length = 0
+    Object.defineProperty(URL, 'createObjectURL', { value: () => 'blob:x', configurable: true })
+    Object.defineProperty(URL, 'revokeObjectURL', { value: () => {}, configurable: true })
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+      downloads.push(this.download)
+    })
+  })
+
+  it('exports the deck tab that is open, and only it, without the project overview', async () => {
+    // Feedback Rv1, item 6. The same loaders and renderers the admin's export
+    // uses, so the two files cannot describe one deck differently -- and
+    // scoped to the deck, so no one-row "project total" is printed.
+    listDeckEvents.mockResolvedValue([EVENT])
+    listCoworkerNames.mockResolvedValue({ u1: 'Nguyễn Văn A' })
+    renderScreen()
+    await screen.findByRole('button', { name: 'ô R1C1' })
+
+    await userEvent.click(screen.getByRole('button', { name: 'Xuất báo cáo' }))
+
+    await waitFor(() => expect(buildReportWorkbook).toHaveBeenCalledTimes(1))
+    const [input] = buildReportWorkbook.mock.calls[0]
+    expect(input.scope).toBe('deck')
+    expect(input.projectCode).toBe('BB1')
+    expect(input.decks).toHaveLength(1)
+    expect(input.decks[0].deck.id).toBe('d1')
+    expect(input.decks[0].events).toEqual([EVENT])
+    expect(input.decks[0].userNames).toEqual({ u1: 'Nguyễn Văn A' })
+    expect(input.images.d1.drawingPng).toBe('PNGDATA')
+    expect(input.images.d1.piePng).toBe('PIEDATA')
+    expect(loadDeckProgress).toHaveBeenCalledWith('d1')
+    expect(listDeckEvents).toHaveBeenCalledWith('d1')
+    // Named after the project AND the deck: two tabs exported the same day
+    // must not overwrite each other in the downloads folder.
+    expect(downloads).toHaveLength(1)
+    expect(downloads[0]).toMatch(/^tien-do-BB1-CD-\d{4}-\d{2}-\d{2}\.xlsx$/)
+    expect(await screen.findByText('Đã xuất báo cáo')).toBeInTheDocument()
+  })
+
+  it('surfaces a failed export instead of failing silently', async () => {
+    buildReportWorkbook.mockRejectedValue(new Error('out of memory'))
+    renderScreen()
+    await screen.findByRole('button', { name: 'ô R1C1' })
+
+    await userEvent.click(screen.getByRole('button', { name: 'Xuất báo cáo' }))
+
+    expect(await screen.findByText(/out of memory/)).toBeInTheDocument()
   })
 })

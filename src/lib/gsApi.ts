@@ -351,3 +351,27 @@ export async function listCoworkerNames(): Promise<Record<string, string>> {
   for (const r of (data ?? []) as { id: string; full_name: string }[]) names[r.id] = r.full_name
   return names
 }
+
+/**
+ * The project's code and name, for the export a tablet makes of the deck tab
+ * it has open (Feedback Rv1, item 6): the file is named `tien-do-<code>-<deck>`
+ * and the workbook is headed with both.
+ *
+ * Its own read, made at export time, rather than a third query inside
+ * loadGsProject: the screen never shows either field, and an export is a rare
+ * action. RLS (`projects_member_read`) answers a non-member with zero rows,
+ * which is refused here rather than turned into a file called
+ * `tien-do--CD-...`: a nameless report is not a report.
+ */
+export async function loadGsProjectIdentity(
+  projectId: string,
+): Promise<{ code: string; name: string }> {
+  const { data, error } = await supabase
+    .from('projects')
+    .select('code, name')
+    .eq('id', projectId)
+  if (error) throw new Error(error.message)
+  const row = (data ?? [])[0] as { code: string; name: string } | undefined
+  if (!row) throw new Error('Không đọc được dự án để đặt tên báo cáo.')
+  return { code: row.code, name: row.name }
+}

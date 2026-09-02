@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Cell } from '../domain/types'
 import {
-  listCoworkerNames, listDeckCells, listProjectStageIndex, loadGsProject, setCellStage,
+  listCoworkerNames, listDeckCells, listProjectStageIndex, loadGsProject, loadGsProjectIdentity,
+  setCellStage,
   subscribeDeckCells, type GsRealtimeStatus,
 } from './gsApi'
 
@@ -533,5 +534,32 @@ describe('listCoworkerNames', () => {
     // on every note. The caller decides to swallow that, not this function.
     rpc.mockResolvedValue({ data: null, error: { message: 'mất kết nối' } })
     await expect(listCoworkerNames()).rejects.toThrow('mất kết nối')
+  })
+})
+
+describe('loadGsProjectIdentity', () => {
+  beforeEach(() => {
+    from.mockReset()
+  })
+
+  it('reads the project code and name the export file is named after', async () => {
+    const b = builder({ data: [{ code: 'BB1', name: 'BlockB1_CPPTS' }] })
+    from.mockImplementation(() => b)
+
+    const project = await loadGsProjectIdentity('p1')
+
+    expect(from).toHaveBeenCalledWith('projects')
+    expect(b.eq).toHaveBeenCalledWith('id', 'p1')
+    expect(project).toEqual({ code: 'BB1', name: 'BlockB1_CPPTS' })
+  })
+
+  it('throws when RLS returns nothing, since a nameless file is not a report', async () => {
+    from.mockImplementation(() => builder({ data: [] }))
+    await expect(loadGsProjectIdentity('p9')).rejects.toThrow(/dự án/i)
+  })
+
+  it('throws when the read fails', async () => {
+    from.mockImplementation(() => builder({ error: { message: 'mất kết nối' } }))
+    await expect(loadGsProjectIdentity('p1')).rejects.toThrow('mất kết nối')
   })
 })
