@@ -196,6 +196,20 @@ describe('latestProgressEvent', () => {
     expect(e?.toStageName).toBeNull()
   })
 
+  it('names the author through its own foreign key, since 0023 gave cell_events two', async () => {
+    // `by:profiles(...)` was unambiguous until report_edited_by also pointed at
+    // profiles; from then on PostgREST refused the embed and the Dự án screen's
+    // "Ghi nhận gần nhất" card read "—" over a table full of events.
+    const b = builder({ data: [EVENT] })
+    from.mockImplementationOnce(() => b)
+
+    await latestProgressEvent()
+
+    expect(b.select).toHaveBeenCalledWith(
+      expect.stringContaining('by:profiles!cell_events_by_fkey(username, full_name)'),
+    )
+  })
+
   it('survives an author whose profile row is gone', async () => {
     // cell_events.by is a nullable FK and the trigger writes auth.uid(); a
     // deleted profile leaves the embed null. The event still happened and its

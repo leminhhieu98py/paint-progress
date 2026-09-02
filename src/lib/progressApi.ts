@@ -370,7 +370,11 @@ export async function listDeckEvents(deckId: string): Promise<DeckEvent[]> {
 export async function latestProgressEvent(): Promise<ProgressEvent | null> {
   const { data, error } = await supabase
     .from('cell_events')
-    .select('at, to_stage_name, cells(code), by:profiles(username, full_name)')
+    // The constraint hint is load-bearing: cell_events has had two foreign
+    // keys onto profiles since 0023 (by, report_edited_by), and an unhinted
+    // embed is refused as ambiguous -- which this screen swallowed as "no
+    // event yet".
+    .select('at, to_stage_name, cells(code), by:profiles!cell_events_by_fkey(username, full_name)')
     .order('at', { ascending: false })
     .limit(1)
   if (error) throw new Error(error.message)
