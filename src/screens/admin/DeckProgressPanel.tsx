@@ -1004,23 +1004,33 @@ export function DeckProgressPanel({
                                   boxShadow: 'inset 0 0 0 1px #16202B47',
                                 }}
                               />
-                              <span style={{ fontSize: 12, fontWeight: 600, flex: 1, minWidth: 0 }}>
-                                {sl.label}
-                              </span>
-                              <span style={{ fontSize: 12, color: palette.textSecondary, flex: 'none' }}>
-                                {`${formatAreaM2(sl.areaM2)} m²`}
-                              </span>
-                              <span
-                                style={{
-                                  fontSize: 12,
-                                  color: palette.textTertiary,
-                                  flex: 'none',
-                                  minWidth: 52,
-                                  textAlign: 'right',
-                                }}
-                              >
-                                {formatPercent(sl.value)}
-                              </span>
+                              {/*
+                                Two lines, not three columns: the rail is ~300px
+                                and "Blast + Coat 1" beside an area and a percent
+                                wrapped word by word over the numbers (seen in
+                                Chrome). Name on top, figures beneath it.
+                              */}
+                              <div style={{ minWidth: 0, flex: 1 }}>
+                                <div style={{ fontSize: 12, fontWeight: 600, lineHeight: 1.3 }}>
+                                  {sl.label}
+                                </div>
+                                <div
+                                  style={{
+                                    display: 'flex',
+                                    gap: 6,
+                                    fontSize: 12,
+                                    color: palette.textTertiary,
+                                    lineHeight: 1.3,
+                                    marginTop: 1,
+                                  }}
+                                >
+                                  <span style={{ color: palette.textSecondary, whiteSpace: 'nowrap' }}>
+                                    {`${formatAreaM2(sl.areaM2)} m²`}
+                                  </span>
+                                  <span aria-hidden>·</span>
+                                  <span>{formatPercent(sl.value)}</span>
+                                </div>
+                              </div>
                             </div>
                           ))}
                         </div>
