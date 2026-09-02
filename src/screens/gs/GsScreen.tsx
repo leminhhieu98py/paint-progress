@@ -777,7 +777,7 @@ export function GsScreen() {
 
           <SectionCard
             title={deck?.name}
-            summary={deck ? `${cells.length} ô · ${formatAreaM2(deck.totalAreaM2)} m²` : undefined}
+            summary={deck ? `${formatAreaM2(deck.totalAreaM2)} m²` : undefined}
             bodyPadding={0}
             extra={
               /*
@@ -928,6 +928,7 @@ export function GsScreen() {
               stages={stages}
               stageProgress={deckProgress?.stages ?? []}
               cells={cells}
+              totalAreaM2={deck?.totalAreaM2 ?? 0}
             />
           )}
         </div>

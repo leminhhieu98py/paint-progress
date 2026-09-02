@@ -1062,8 +1062,16 @@ describe('GsScreen: a deck its cells over-cover', () => {
     // declared area, which is the denominator of every percentage in this
     // product (spec §3.2) including the one the customer is billed against.
     const rollup = within(screen.getByTestId('gs-stage-rollup'))
-    expect(rollup.getAllByText('1/2 ô · 60,00%').length).toBeGreaterThan(0)
+    expect(rollup.getAllByText('300,00 / 500,00 m² · 60,00%').length).toBeGreaterThan(0)
     expect(rollup.queryByText(/42,86%/)).toBeNull()
+  })
+
+  it('names the deck by its area alone, with no bay count beside it', async () => {
+    // Feedback Rv1: the count of bays "không mang nhiều ý nghĩa". The header
+    // used to read "3 ô · 1.000,00 m²"; the office reads the m².
+    renderScreen()
+    await screen.findByRole('button', { name: 'ô R1C1' })
+    expect(screen.queryByText(/\d+ ô · /)).toBeNull()
   })
 
   it('does not warn when the cells fit the deck, exactly or with room to spare', async () => {

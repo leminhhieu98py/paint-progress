@@ -1,6 +1,6 @@
 import { Donut } from '../../components/Donut'
 import { ProgressBar } from '../../components/ProgressBar'
-import { stageSeqOf } from '../../domain/progress'
+import { buildStageSlices, NOT_STARTED_KEY, UNMAPPED_KEY } from '../../domain/pieSlices'
 import type { Cell, Stage, StageProgress } from '../../domain/types'
 import { formatAreaM2, formatPercent } from '../../lib/format'
 import { palette, shadowCard } from '../../theme'
@@ -61,34 +61,39 @@ export function DeckProgressCard({
 /**
  * How far each coat has got across the deck, cumulatively.
  *
- * Two figures per row, because the foreman and the office read different ones.
- * The bay count is what he can check against the drawing in front of him --
- * "158 of 184" is countable. The percentage is the one that leaves this screen:
- * it is area-weighted, the same figure the report bills against, so it is
- * deliberately NOT the bay fraction rounded. On a deck whose bays differ in
- * size the two do not agree, and the area one is the true one.
+ * Each row reads "m² done / deck m² · percent", and all three come from the
+ * same place: `cumulativeAreaM2` over `totalAreaM2` IS the ratio, so the row
+ * cannot disagree with itself. It used to lead with a bay count -- "158 of
+ * 184" -- which the client's review struck: bays differ in size, so a count
+ * says nothing the office can bill from, and the percentage stood beside a
+ * fraction it visibly did not match.
  *
- * The ring beside them is the non-cumulative view: which coat each bay is
- * sitting at right now. Cumulative bars and a non-cumulative ring answer
- * different questions, and both are asked.
+ * The ring beside them is the non-cumulative view: how much AREA is sitting at
+ * each coat right now, from the same slice builder the admin's ring uses.
+ * Cumulative rows and a non-cumulative ring answer different questions, and
+ * both are asked.
  */
 export function StageRollupCard({
   stages,
   stageProgress,
   cells,
+  totalAreaM2,
 }: {
   stages: Stage[]
   stageProgress: StageProgress[]
   cells: Cell[]
+  totalAreaM2: number
 }) {
   const ordered = [...stages].sort((a, b) => a.seq - b.seq)
-  const total = cells.length
 
-  const ringSlices = ordered
-    .map((stage) => ({
-      label: stage.name,
-      color: stage.color,
-      value: total > 0 ? cells.filter((c) => c.stageId === stage.id).length / total : 0,
+  // Coats only. The not-started and unmapped slices keep the admin's pie on
+  // the deck's denominator; here the ring's own remainder plays that part.
+  const ringSlices = buildStageSlices(totalAreaM2, cells, stages)
+    .filter((s) => s.key !== NOT_STARTED_KEY && s.key !== UNMAPPED_KEY)
+    .map((s) => ({
+      label: s.label,
+      color: s.color,
+      value: totalAreaM2 > 0 ? s.areaM2 / totalAreaM2 : 0,
     }))
     .filter((s) => s.value > 0)
 
@@ -99,27 +104,27 @@ export function StageRollupCard({
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 18, flexWrap: 'wrap' }}>
         {/*
-          The bay count in the middle, not the deck percentage.
+          The deck area in the middle, not the deck percentage.
 
           The design puts the percentage there, and it is already the largest
           thing on the screen one card above. Two copies of one number is not
           emphasis -- it is two things to keep in step, and one of them will
-          eventually be the stale one. The count is what the ring is actually
-          dividing up, and it is the number the foreman checks his own tally
-          against.
+          eventually be the stale one. The area is what the ring is actually
+          dividing up.
         */}
         <Donut slices={ringSlices} size={132} thickness={24}>
-          <span style={{ fontSize: 19, fontWeight: 700, letterSpacing: '-0.028em' }}>{total}</span>
+          <span style={{ fontSize: 17, fontWeight: 700, letterSpacing: '-0.028em' }}>
+            {formatAreaM2(totalAreaM2)}
+          </span>
           <span style={{ fontSize: 10, color: palette.textTertiary, marginTop: 2 }}>
-            ô trên sàn
+            m² sàn
           </span>
         </Donut>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 11, flex: 1, minWidth: 168 }}>
           {ordered.map((stage, i) => {
-            const reached = cells.filter(
-              (c) => stageSeqOf(stages, c.stageId) >= stage.seq,
-            ).length
-            const ratio = stageProgress.find((sp) => sp.stage.id === stage.id)?.ratio ?? 0
+            const sp = stageProgress.find((x) => x.stage.id === stage.id)
+            const doneM2 = sp?.cumulativeAreaM2 ?? 0
+            const ratio = sp?.ratio ?? 0
             return (
               <div
                 key={stage.id}
@@ -149,7 +154,7 @@ export function StageRollupCard({
                     {stage.name}
                   </div>
                   <div style={{ fontSize: 12, color: palette.textTertiary, marginTop: 2 }}>
-                    {`${reached}/${total} ô · ${formatPercent(ratio)}`}
+                    {`${formatAreaM2(doneM2)} / ${formatAreaM2(totalAreaM2)} m² · ${formatPercent(ratio)}`}
                   </div>
                 </div>
               </div>
