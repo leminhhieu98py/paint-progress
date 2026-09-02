@@ -139,10 +139,7 @@ describe.skipIf(!configured)('RLS as a GS session', () => {
     expect(data?.map((p) => p.code)).toEqual(['RLSA'])
   })
 
-  // Skipped until 0022 is pushed to the linked project: until then the call
-  // fails with PGRST202 (no such function), which is not the refusal this
-  // asserts. Unskip in the change that applies it, as with the 0019 note tests.
-  it.skip('can name its co-workers through coworker_names(), but an anonymous client cannot', async () => {
+  it('can name its co-workers through coworker_names(), but an anonymous client cannot', async () => {
     // 0022. profiles stays admin-plus-self; this definer function is the one
     // narrow window a tablet has onto other people's names, and it is granted
     // to `authenticated` only. Anonymous gets the grant refusal (42501), not
@@ -161,8 +158,7 @@ describe.skipIf(!configured)('RLS as a GS session', () => {
     expect(refused.error?.code).toBe('42501')
   })
 
-  // Skipped until 0023 is pushed, for the same reason as the test above.
-  it.skip('cannot set a report note on a cell event', async () => {
+  it('cannot set a report note on a cell event', async () => {
     // 0023. The function is the only write path onto cell_events besides the
     // audit trigger, and it refuses anyone is_admin() does not vouch for. A
     // GS must be told no, not handed a silent no-op.

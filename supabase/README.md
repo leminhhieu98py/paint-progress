@@ -71,10 +71,10 @@ look for. Fixtures are seeded by hand and inserted `on conflict do nothing`, so
 without this reset every run starts on whatever the last one left, and a test
 that asserts on a CHANGE quietly becomes an assertion about nothing.
 
-`0019` and `0020` are applied. `0022` and `0023` are **not yet pushed** to
-either hosted project; the two RPC tests in `tests/rls.integration.test.ts`
-are `it.skip`ped until they are -- unskip them in the change that applies
-them, the way the `0019` note tests were.
+`0019`, `0020`, `0022` and `0023` are applied to the dev project; the two RPC
+tests in `tests/rls.integration.test.ts` run unskipped against it. `0022` and
+`0023` still have to be pushed to the production project before the next
+deploy of this branch.
 
 Checks 29-31 arrived with `0014` and report `FAIL` until that migration is
 applied — check 29 with `from_stage_name NULL`, which is the defect it fixes,
