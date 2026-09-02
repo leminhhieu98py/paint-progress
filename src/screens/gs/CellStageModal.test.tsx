@@ -1,9 +1,30 @@
 import { App as AntApp } from 'antd'
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Cell } from '../../domain/types'
+import type { CellNote } from '../../lib/progressApi'
 import { CellStageModal } from './CellStageModal'
+
+const listCellNotes = vi.hoisted(() => vi.fn())
+vi.mock('../../lib/progressApi', () => ({
+  listCellNotes: (cellId: string) => listCellNotes(cellId),
+}))
+
+const NOTE = (over: Partial<CellNote> = {}): CellNote => ({
+  id: 1,
+  at: '2026-08-29T11:47:00Z',
+  stageName: 'Coat 2',
+  note: 'Bề mặt còn ẩm',
+  byName: 'Lê Trung Hiếu',
+  byUsername: 'gs.hieu',
+  byId: 'u1',
+  reportNote: null,
+  reportHidden: false,
+  reportEditedByName: null,
+  reportEditedAt: null,
+  ...over,
+})
 
 const STAGES = [
   { id: 's1', seq: 1, name: 'Blast + Coat 1', color: '#fadb14', weight: 0.25 },
@@ -63,6 +84,11 @@ const info = () => within(screen.getByTestId('cell-stage-info'))
 beforeEach(() => {
   onCommit.mockReset()
   onClose.mockReset()
+  listCellNotes.mockReset()
+  // Pending, not resolved: the tests that are not about the thread must not
+  // have a state update land after they have finished and warn about act().
+  // The ones that are about it resolve it themselves.
+  listCellNotes.mockReturnValue(new Promise(() => {}))
 })
 
 describe('CellStageModal', () => {
@@ -222,24 +248,6 @@ describe('CellStageModal notes', () => {
     expect(onCommit).toHaveBeenCalledWith(CELL.id, 's3', '')
   })
 
-  it('shows the note already on the bay above the field, not inside it', () => {
-    // Readable, because it may be the reason the foreman is standing here --
-    // and not in the field, because a note belongs to the stage change being
-    // recorded, not to the one before it.
-    render(
-      <CellStageModal
-        cell={{ ...CELL, note: 'Giàn giáo chắn mất một góc' }}
-        stages={STAGES}
-        open
-        onClose={() => {}}
-        onCommit={() => {}}
-      />,
-    )
-    expect(screen.getByTestId('cell-previous-note'))
-      .toHaveTextContent('Giàn giáo chắn mất một góc')
-    expect(screen.getByLabelText(/Ghi chú cho quản trị viên/)).toHaveValue('')
-  })
-
   it('clears a half-typed note when the foreman moves to another bay', async () => {
     // The modal is one component reused for every bay. Left un-keyed, the note
     // typed on R1C1 would be sent as R1C2's -- attributing one bay's problem
@@ -286,28 +294,86 @@ describe('CellStageModal — the previous note', () => {
     expect(screen.getByLabelText(/Ghi chú cho quản trị viên/)).toHaveValue('')
   })
 
-  it('still shows what the bay says, as something to read rather than to send', async () => {
-    // The foreman needs to know a remark is already on this bay -- it may be
-    // the reason he is standing here. He just must not send it again.
-    render(
-      <CellStageModal
-        cell={{ ...CELL, stageId: 's1', note: 'Bề mặt còn ẩm, hoãn sơn sang mai' }}
-        stages={STAGES}
-        open
-        onClose={() => {}}
-        onCommit={() => {}}
-      />,
-    )
-    const previous = screen.getByTestId('cell-previous-note')
-    expect(previous).toHaveTextContent('Bề mặt còn ẩm, hoãn sơn sang mai')
-    expect(previous).toHaveTextContent('Blast + Coat 1')
+  it('shows every earlier note on the bay, newest first, each against its coat', async () => {
+    // Feedback Rv1, item 7. The foreman used to see only the latest remark;
+    // "Bề mặt còn ẩm" against Blast + Coat 1 and "Chờ cẩu" against Tháo giáo
+    // are different problems, and the one he is standing in front of may be
+    // the older one.
+    listCellNotes.mockResolvedValue([
+      NOTE({ id: 2, stageName: 'Tháo giáo', note: 'Chờ cẩu', at: '2026-08-30T08:00:00Z' }),
+      NOTE({ id: 1, stageName: 'Blast + Coat 1' }),
+    ])
+    renderModal({ ...CELL, note: 'Chờ cẩu' })
+
+    const thread = await screen.findByTestId('note-thread')
+    expect(listCellNotes).toHaveBeenCalledWith('c1')
+    const texts = within(thread).getAllByText(/Chờ cẩu|Bề mặt còn ẩm/).map((el) => el.textContent)
+    expect(texts).toEqual(['Chờ cẩu', 'Bề mặt còn ẩm'])
+    expect(within(thread).getByText('Tháo giáo')).toBeInTheDocument()
+    expect(within(thread).getByText('Blast + Coat 1')).toBeInTheDocument()
+    // The newest one is what the drawing's flag shows.
+    expect(within(thread).getByText('Đang hiện trên bản vẽ')).toBeInTheDocument()
   })
 
-  it('shows nothing about a previous note on a bay that has none', async () => {
+  it('names an author the tablet cannot read from profiles, through authorNames', async () => {
+    // profiles is admin-plus-self behind RLS, so the embed comes back null on
+    // a tablet. The screen hands the modal the names coworker_names() allows.
+    listCellNotes.mockResolvedValue([NOTE({ byName: null, byUsername: null, byId: 'u2' })])
     render(
-      <CellStageModal cell={CELL} stages={STAGES} open onClose={() => {}} onCommit={() => {}} />,
+      <AntApp>
+        <CellStageModal
+          cell={CELL}
+          stages={STAGES}
+          open
+          onClose={onClose}
+          onCommit={onCommit}
+          authorNames={{ u2: 'Nguyễn Văn B' }}
+        />
+      </AntApp>,
     )
+    expect(await screen.findByText('Nguyễn Văn B')).toBeInTheDocument()
+    expect(screen.queryByText('Không rõ người ghi')).toBeNull()
+  })
+
+  it('shows no thread and no empty-state copy on a bay with no notes', async () => {
+    // The admin's empty state explains where notes come from. On a tablet the
+    // foreman IS where they come from, and the modal has one job.
+    listCellNotes.mockResolvedValue([])
+    renderModal()
+
+    await waitFor(() => expect(listCellNotes).toHaveBeenCalledWith('c1'))
+    expect(screen.queryByTestId('note-thread')).toBeNull()
+    expect(screen.queryByText('Ô này chưa có ghi chú nào')).toBeNull()
     expect(screen.queryByTestId('cell-previous-note')).toBeNull()
+  })
+
+  it('keeps the write available when the history cannot be loaded', async () => {
+    // The thread is context; the stage change is the job. A tether that drops
+    // the history read must not take the foreman's only write with it.
+    listCellNotes.mockRejectedValue(new Error('mất kết nối'))
+    renderModal()
+
+    expect(await screen.findByText('Không tải được ghi chú cũ')).toBeInTheDocument()
+    const next = screen.getByRole('button', { name: 'Xong công đoạn tiếp theo: Coat 3' })
+    expect(next).toBeEnabled()
+    await userEvent.click(next)
+    expect(onCommit).toHaveBeenCalledWith(CELL.id, 's3', '')
+  })
+
+  it('never shows the foreman the report-facing version or the hidden flag', async () => {
+    // Those are the admin's decisions about the XLSX (0023). On the tablet the
+    // note is what was written, full stop.
+    listCellNotes.mockResolvedValue([
+      NOTE({ reportNote: 'Bản dành cho báo cáo', reportHidden: true, reportEditedByName: 'Đoàn Công Linh' }),
+    ])
+    renderModal()
+
+    const thread = await screen.findByTestId('note-thread')
+    expect(within(thread).getByText('Bề mặt còn ẩm')).toBeInTheDocument()
+    expect(screen.queryByText('Bản dành cho báo cáo')).toBeNull()
+    expect(screen.queryByText(/Bản cho báo cáo/)).toBeNull()
+    expect(screen.queryByText(/Ẩn khỏi báo cáo/)).toBeNull()
+    expect(screen.queryByRole('button', { name: /báo cáo/ })).toBeNull()
   })
 
   it('sends an empty note when the foreman writes nothing, clearing the old one', async () => {

@@ -16,6 +16,8 @@ const subscribeDeckCells = vi.hoisted(() => vi.fn())
 const getDrawingUrl = vi.hoisted(() => vi.fn())
 const listStages = vi.hoisted(() => vi.fn())
 const signOut = vi.hoisted(() => vi.fn())
+const listCoworkerNames = vi.hoisted(() => vi.fn())
+const listCellNotes = vi.hoisted(() => vi.fn())
 
 vi.mock('../../lib/gsApi', () => ({
   loadGsProject: (projectId: string) => loadGsProject(projectId),
@@ -24,6 +26,10 @@ vi.mock('../../lib/gsApi', () => ({
   setCellStage: (cellId: string, stageId: string | null) => setCellStage(cellId, stageId),
   subscribeDeckCells: (deckId: string, handlers: Handlers) =>
     subscribeDeckCells(deckId, handlers),
+  listCoworkerNames: () => listCoworkerNames(),
+}))
+vi.mock('../../lib/progressApi', () => ({
+  listCellNotes: (cellId: string) => listCellNotes(cellId),
 }))
 vi.mock('../../lib/zonesApi', () => ({
   listDeckZones: (deckId: string) => listDeckZones(deckId),
@@ -162,6 +168,12 @@ beforeEach(() => {
   // lists are covered by their own test below.
   listStages.mockResolvedValue(STAGES)
   signOut.mockReset()
+  listCoworkerNames.mockReset()
+  listCoworkerNames.mockResolvedValue({})
+  listCellNotes.mockReset()
+  // Pending by default, so a modal opened by an unrelated test never lands a
+  // state update after that test has finished.
+  listCellNotes.mockReturnValue(new Promise(() => {}))
   signOut.mockResolvedValue(undefined)
   navigate.mockReset()
   subscribeDeckCells.mockReset()
@@ -1180,5 +1192,40 @@ describe('signing out', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Vẫn đăng xuất' }))
     await waitFor(() => expect(navigate).toHaveBeenCalled())
     expect(navigate.mock.calls[0][1]).toEqual({ replace: true })
+  })
+})
+
+describe('GsScreen: note authors', () => {
+  it('loads the names a tablet may show once per project, not per bay', async () => {
+    // One round trip on open. Per bay would be one more request on a site
+    // tether for every tap, for a list that does not change during a shift.
+    renderScreen()
+    await screen.findByRole('button', { name: 'ô R1C1' })
+    expect(listCoworkerNames).toHaveBeenCalledTimes(1)
+    await userEvent.click(screen.getByRole('button', { name: 'ô R1C1' }))
+    await screen.findByRole('dialog')
+    expect(listCoworkerNames).toHaveBeenCalledTimes(1)
+  })
+
+  it('hands those names to the bay modal, so a note by someone else is signed', async () => {
+    listCoworkerNames.mockResolvedValue({ u2: 'Nguyễn Văn B' })
+    listCellNotes.mockResolvedValue([{
+      id: 1, at: '2026-08-29T11:47:00Z', stageName: 'Coat 2', note: 'Bề mặt còn ẩm',
+      byName: null, byUsername: null, byId: 'u2',
+      reportNote: null, reportHidden: false, reportEditedByName: null, reportEditedAt: null,
+    }])
+    renderScreen()
+    await userEvent.click(await screen.findByRole('button', { name: 'ô R1C1' }))
+
+    expect(await screen.findByText('Nguyễn Văn B')).toBeInTheDocument()
+  })
+
+  it('carries on with unsigned notes when the names cannot be loaded', async () => {
+    // Attribution is context. A failed names read must not take the deck, the
+    // drawing or the write with it -- the foreman still has to record a coat.
+    listCoworkerNames.mockRejectedValue(new Error('mất kết nối'))
+    renderScreen()
+    expect(await screen.findByRole('button', { name: 'ô R1C1' })).toBeInTheDocument()
+    expect(screen.queryByText(/Không tải được dự án/)).toBeNull()
   })
 })

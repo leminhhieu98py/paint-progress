@@ -5,6 +5,8 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { isBackwards, nextStage } from '../../domain/stageFlow'
 import type { Cell, Stage } from '../../domain/types'
 import { formatAreaM2 } from '../../lib/format'
+import { listCellNotes, type CellNote } from '../../lib/progressApi'
+import { NoteThread } from '../../components/NoteThread'
 
 /**
  * antd's Select cannot carry `null` as an option value (it is indistinguishable
@@ -30,6 +32,7 @@ export function CellStageModal({
   open,
   onClose,
   onCommit,
+  authorNames = {},
 }: {
   cell: Cell | null
   stages: Stage[]
@@ -41,6 +44,12 @@ export function CellStageModal({
    * delay, so this modal closes immediately rather than awaiting the write.
    */
   onCommit: (cellId: string, stageId: string | null, note: string) => void
+  /**
+   * Full names by user id, for signing notes whose author the tablet cannot
+   * read from `profiles`. The screen loads it once per project through
+   * `coworker_names()`; empty when that failed, and the thread says so per note.
+   */
+  authorNames?: Record<string, string>
 }) {
   const [choice, setChoice] = useState<string>(NOT_STARTED_VALUE)
   const [note, setNote] = useState('')
@@ -64,6 +73,47 @@ export function CellStageModal({
     // instead -- readable, and not the thing being sent.
     setNote('')
   }, [cell?.id])
+
+  /**
+   * Every earlier note on this bay (Feedback Rv1, item 7). The foreman used to
+   * see only `cell.note` -- the latest -- and the remark that explains why he
+   * is standing here may be two coats old.
+   *
+   * Keyed by the bay id and matched on render rather than reset in the effect:
+   * a thread fetched for R1C1 is never shown against R1C2 during the gap
+   * before R1C2's own arrives, and there is no synchronous setState to fire a
+   * render nobody asked for. Failure is kept apart from "no notes": on screen
+   * they look the same, and one of them is a bay with nothing to say.
+   */
+  const [thread, setThread] = useState<{ cellId: string; notes: CellNote[] } | null>(null)
+  const [threadFailedFor, setThreadFailedFor] = useState<string | null>(null)
+  const cellId = cell?.id ?? null
+  useEffect(() => {
+    if (cellId === null) return
+    let cancelled = false
+    listCellNotes(cellId)
+      .then((notes) => {
+        if (!cancelled) setThread({ cellId, notes })
+      })
+      .catch(() => {
+        if (!cancelled) setThreadFailedFor(cellId)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [cellId])
+  const notes = useMemo(() => {
+    if (thread === null || thread.cellId !== cellId) return []
+    // The author embed is null on a tablet (profiles is behind RLS); the
+    // screen's name map fills it. Nothing report-facing is passed on: the
+    // thread only renders those when handed the admin's handlers, and it is
+    // not handed them here.
+    return thread.notes.map((n) => ({
+      ...n,
+      byName: n.byName ?? (n.byId !== null ? authorNames[n.byId] ?? null : null),
+    }))
+  }, [thread, cellId, authorNames])
+  const notesFailed = threadFailedFor !== null && threadFailedFor === cellId
 
   const ordered = useMemo(() => [...stages].sort((a, b) => a.seq - b.seq), [stages])
   const chosenStageId = choice === NOT_STARTED_VALUE ? null : choice
@@ -159,24 +209,31 @@ export function CellStageModal({
               neither a screen reader nor a test can tell which box it belongs
               to.
             */}
-            {(cell.note ?? '').trim() !== '' && (
+            {notes.length > 0 && (
               <div
-                data-testid="cell-previous-note"
+                data-testid="cell-note-history"
                 style={{
                   marginBottom: 12,
-                  padding: '11px 13px',
+                  // Scrolls inside the modal: a five-coat history on a phone
+                  // must not push the confirm button off the screen.
+                  maxHeight: 240,
+                  overflowY: 'auto',
+                  padding: '0 13px',
                   borderRadius: 10,
                   background: palette.bgSubtle,
                   border: `1px solid ${palette.borderSplit}`,
                 }}
               >
-                <div style={{ fontSize: 12, fontWeight: 600, color: palette.textTertiary }}>
-                  {`Ghi chú lần trước · ${currentStage?.name ?? 'chưa bắt đầu'}`}
-                </div>
-                <div style={{ marginTop: 6, lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>
-                  {cell.note}
-                </div>
+                <NoteThread notes={notes} current={cell.note} />
               </div>
+            )}
+            {notesFailed && (
+              <Typography.Text
+                type="secondary"
+                style={{ display: 'block', marginBottom: 12, fontSize: 12 }}
+              >
+                Không tải được ghi chú cũ
+              </Typography.Text>
             )}
             <label
               htmlFor="cell-note"

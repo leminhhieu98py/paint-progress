@@ -17,7 +17,8 @@ import { LOGIN_PATH } from '../../config'
 import { getDrawingUrl, listStages } from '../../lib/decksApi'
 import { formatAreaM2, formatPercent } from '../../lib/format'
 import {
-  listDeckCells, listProjectStageIndex, loadGsProject, setCellStage, subscribeDeckCells,
+  listCoworkerNames, listDeckCells, listProjectStageIndex, loadGsProject, setCellStage,
+  subscribeDeckCells,
   type GsDeck, type GsRealtimeStatus,
 } from '../../lib/gsApi'
 import { listDeckZones } from '../../lib/zonesApi'
@@ -98,6 +99,8 @@ export function GsScreen() {
   const [activeDeckId, setActiveDeckId] = useState<string | null>(null)
   const [cells, setCells] = useState<Cell[]>([])
   const [imageUrl, setImageUrl] = useState<string | null>(null)
+  /** Who may be named beside a note, by user id. See listCoworkerNames. */
+  const [authorNames, setAuthorNames] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(true)
   const [projectError, setProjectError] = useState(false)
   const [drawingError, setDrawingError] = useState(false)
@@ -124,6 +127,14 @@ export function GsScreen() {
     setLoading(true)
     setProjectError(false)
     setNotMember(false)
+    // Names for the note thread, once per project rather than per bay. Its
+    // failure is not the project's: the deck, the drawing and the write carry
+    // on, and the thread signs its notes "Không rõ người ghi".
+    listCoworkerNames()
+      .then((names) => {
+        if (!cancelled) setAuthorNames(names)
+      })
+      .catch(() => {})
     loadGsProject(projectId)
       .then((project) => {
         if (cancelled) return
@@ -940,6 +951,7 @@ export function GsScreen() {
         open={selectedCell !== null}
         onClose={() => setSelectedCell(null)}
         onCommit={commitStage}
+        authorNames={authorNames}
       />
 
       {/*
