@@ -216,14 +216,27 @@
 --       stay on the foreman's drawing with their area counted twice in every
 --       reported percentage.
 --
+-- Checks 34-35 are added by 0022 and 0023. Catalog-only, no fixtures.
+--   34. coworker_names() exists, is security definer with a pinned
+--       search_path, and is executable by `authenticated` but NOT by `anon`.
+--       It is a tablet's only window onto other people's names; a PUBLIC
+--       grant left in place would hand every anonymous client the full name
+--       of every admin.
+--   35. cell_events carries the four report columns from 0023 and the named
+--       foreign key progressApi embeds through; set_report_note() exists, is
+--       security definer with a pinned search_path, is not executable by
+--       `anon`; and `authenticated` still holds no UPDATE on cell_events --
+--       the function is meant to be the only client-reachable write onto the
+--       audit table, and a stray UPDATE grant would make it not so.
+--
 -- How to run:
 --   nvm use 22
 --   npx supabase db query --linked -f supabase/verify_schema.sql
 --
--- Every returned row must begin with PASS (33 rows in total, one per
--- numbered check above, 1-33 with no gaps). A row beginning with FAIL means
+-- Every returned row must begin with PASS (35 rows in total, one per
+-- numbered check above, 1-35 with no gaps). A row beginning with FAIL means
 -- a regression in the trigger/FK/RLS behaviour set up across migrations
--- 0001-0016; re-read those migrations' comments before changing this file.
+-- 0001-0023; re-read those migrations' comments before changing this file.
 --
 -- One standing exception while a migration is outstanding: checks 29-31 test
 -- migration 0014, so against a database where 0014 has not been applied yet
@@ -1112,6 +1125,46 @@ begin
     case when ident = 'f' then 'PASS' else 'FAIL' end, ident, 'f');
 end $$;
 
+create or replace function _verify_report_notes() returns setof text language plpgsql as $$
+declare
+  fn_ok      boolean;
+  anon_ok    boolean;
+  auth_ok    boolean;
+  cols       int;
+  fk_ok      boolean;
+  setfn_ok   boolean;
+  setanon_ok boolean;
+  upd_held   boolean;
+begin
+  -- 34. coworker_names: definer, pinned search_path, authenticated-only.
+  select prosecdef and coalesce(array_to_string(proconfig, ',') like '%search_path=%', false)
+    into fn_ok
+  from pg_proc where proname = 'coworker_names' and pronamespace = 'public'::regnamespace;
+  anon_ok := not has_function_privilege('anon', 'public.coworker_names()', 'execute');
+  auth_ok := has_function_privilege('authenticated', 'public.coworker_names()', 'execute');
+  return next format(
+    '%s coworker_names() is definer with pinned search_path (%s), anon refused (%s), authenticated granted (%s)',
+    case when coalesce(fn_ok, false) and anon_ok and auth_ok then 'PASS' else 'FAIL' end,
+    coalesce(fn_ok, false), anon_ok, auth_ok);
+
+  -- 35. 0023's columns, its named FK, set_report_note, and 0008's revoke intact.
+  select count(*) into cols
+  from information_schema.columns
+  where table_schema = 'public' and table_name = 'cell_events'
+    and column_name in ('report_note', 'report_hidden', 'report_edited_by', 'report_edited_at');
+  fk_ok := exists (select 1 from pg_constraint where conname = 'cell_events_report_edited_by_fkey');
+  select prosecdef and coalesce(array_to_string(proconfig, ',') like '%search_path=%', false)
+    into setfn_ok
+  from pg_proc where proname = 'set_report_note' and pronamespace = 'public'::regnamespace;
+  setanon_ok := not has_function_privilege('anon', 'public.set_report_note(bigint, text, boolean)', 'execute');
+  upd_held := has_table_privilege('authenticated', 'public.cell_events', 'update');
+  return next format(
+    '%s cell_events report notes: %s/4 columns, fk %s, set_report_note definer+pinned %s, anon refused %s, authenticated UPDATE on cell_events %s (need false)',
+    case when cols = 4 and fk_ok and coalesce(setfn_ok, false) and setanon_ok and not upd_held
+         then 'PASS' else 'FAIL' end,
+    cols, fk_ok, coalesce(setfn_ok, false), setanon_ok, upd_held);
+end $$;
+
 -- A single top-level SELECT: `supabase db query -f` surfaces only the last
 -- result set a multi-statement file produces, so the checks are combined
 -- here with UNION ALL rather than issued as separate SELECTs.
@@ -1131,7 +1184,9 @@ select * from _verify_stage_deletion_audit()
 union all
 select * from _verify_realtime_publication()
 union all
-select * from _verify_cells_replica_identity();
+select * from _verify_cells_replica_identity()
+union all
+select * from _verify_report_notes();
 
 drop function _verify_triggers();
 drop function _verify_rls();
@@ -1142,3 +1197,4 @@ drop function _verify_gs_audit_guard();
 drop function _verify_stage_deletion_audit();
 drop function _verify_realtime_publication();
 drop function _verify_cells_replica_identity();
+drop function _verify_report_notes();

@@ -151,6 +151,15 @@ export interface CellNote {
   note: string
   byName: string | null
   byUsername: string | null
+  /** cell_events.by. Present even when `profiles` refuses the join: a tablet
+   *  cannot read other people's profiles and resolves the name elsewhere. */
+  byId: string | null
+  /** The admin's version for the XLSX (0023). Null: print `note` as written. */
+  reportNote: string | null
+  /** True keeps the note out of the XLSX. The screens still show it. */
+  reportHidden: boolean
+  reportEditedByName: string | null
+  reportEditedAt: string | null
 }
 
 /**
@@ -174,19 +183,31 @@ export interface CellNote {
  * Events with no note are dropped rather than rendered blank: a stage change
  * without a remark is not a message, and 184 empty rows would bury the ones
  * that are.
+ *
+ * Two joins onto `profiles` -- the author and, since 0023, whoever last
+ * touched the report copy -- so each names its foreign key; PostgREST cannot
+ * pick between two paths to one table on its own. The raw `by` id travels
+ * beside the author embed because the embed is behind profiles' RLS: on a
+ * tablet it comes back null, and the GS screen resolves the name through
+ * `coworker_names()` instead.
  */
 export async function listCellNotes(cellId: string): Promise<CellNote[]> {
   const { data, error } = await supabase
     .from('cell_events')
-    .select('id, at, to_stage_name, note, by:profiles(username, full_name)')
+    .select(
+      'id, at, to_stage_name, note, by, author:profiles!cell_events_by_fkey(username, full_name),'
+      + ' report_note, report_hidden, report_edited_at,'
+      + ' report_editor:profiles!cell_events_report_edited_by_fkey(full_name)',
+    )
     .eq('cell_id', cellId)
     .order('at', { ascending: false })
   if (error) throw new Error(error.message)
 
   return (data ?? [])
     .map((r) => {
-      const row = r as Record<string, unknown>
-      const by = row.by as { username?: string; full_name?: string } | null
+      const row = r as unknown as Record<string, unknown>
+      const author = row.author as { username?: string; full_name?: string } | null
+      const editor = row.report_editor as { full_name?: string } | null
       return {
         id: Number(row.id),
         at: row.at as string,
@@ -194,11 +215,103 @@ export async function listCellNotes(cellId: string): Promise<CellNote[]> {
         // Null on events recorded before 0019, empty on a change with no
         // remark. Both mean "nothing was written".
         note: ((row.note as string | null) ?? '').trim(),
-        byName: by?.full_name ?? null,
-        byUsername: by?.username ?? null,
+        byName: author?.full_name ?? null,
+        byUsername: author?.username ?? null,
+        byId: (row.by as string | null) ?? null,
+        reportNote: (row.report_note as string | null) ?? null,
+        reportHidden: Boolean(row.report_hidden),
+        reportEditedByName: editor?.full_name ?? null,
+        reportEditedAt: (row.report_edited_at as string | null) ?? null,
       }
     })
     .filter((n) => n.note !== '')
+}
+
+/**
+ * The admin's report-facing decision about one note (0023).
+ *
+ * Through the definer function, never the table: 0008 revoked every client
+ * write on `cell_events` and nothing here re-grants one. The function checks
+ * `is_admin()` itself and stamps who and when.
+ *
+ * Whitespace is sent as null. The dialog prefills the box with the current
+ * text, so "clear it and save" is how the admin says "print the original
+ * again" -- storing '' would print an empty cell instead.
+ */
+export async function setReportNote(
+  eventId: number,
+  reportNote: string | null,
+  hidden: boolean,
+): Promise<void> {
+  const trimmed = (reportNote ?? '').trim()
+  const { error } = await supabase.rpc('set_report_note', {
+    p_event_id: eventId,
+    p_report_note: trimmed === '' ? null : trimmed,
+    p_hidden: hidden,
+  })
+  if (error) throw new Error(error.message)
+}
+
+/** One stage change on one bay, as the XLSX deck sheet lists it. */
+export interface DeckEvent {
+  id: number
+  cellCode: string
+  cellAreaM2: number
+  /** The coat the bay moved TO. Null for a move back to "not started". */
+  toStageName: string | null
+  at: string
+  byId: string | null
+  /** Empty when the foreman wrote nothing. */
+  note: string
+  reportNote: string | null
+  reportHidden: boolean
+}
+
+/**
+ * Every stage change on one deck, oldest first.
+ *
+ * The report's per-deck sheet lists these one per row -- the client asked for
+ * the history of what was done, not a snapshot of where each bay stands
+ * (Feedback Rv1: "100 ô, full 4 lớp = 400 hàng").
+ *
+ * `cell_events` carries no deck id; the deck is reached through the cell.
+ * `!inner` matters: without it PostgREST treats the embedded filter as a
+ * condition on the EMBED and returns every event on every deck with `cells`
+ * nulled where it did not match -- a report of the whole project under one
+ * deck's name.
+ *
+ * Unlike `listCellNotes`, events with no note are KEPT. There the note is the
+ * point; here the change is, and a coat recorded without a remark is still a
+ * coat recorded.
+ */
+export async function listDeckEvents(deckId: string): Promise<DeckEvent[]> {
+  const { data, error } = await supabase
+    .from('cell_events')
+    .select(
+      'id, at, to_stage_name, by, note, report_note, report_hidden,'
+      + ' cells!inner(deck_id, code, area_m2)',
+    )
+    .eq('cells.deck_id', deckId)
+    .order('at', { ascending: true })
+  if (error) throw new Error(error.message)
+
+  return (data ?? []).map((r) => {
+    const row = r as unknown as Record<string, unknown>
+    // A many-to-one embed: PostgREST returns one object, whatever supabase-js
+    // infers without a generated Database type (see adminApi.listGsUsers).
+    const cell = row.cells as unknown as { code: string; area_m2: string | number }
+    return {
+      id: Number(row.id),
+      cellCode: cell.code,
+      cellAreaM2: Number(cell.area_m2),
+      toStageName: (row.to_stage_name as string | null) ?? null,
+      at: row.at as string,
+      byId: (row.by as string | null) ?? null,
+      note: ((row.note as string | null) ?? '').trim(),
+      reportNote: (row.report_note as string | null) ?? null,
+      reportHidden: Boolean(row.report_hidden),
+    }
+  })
 }
 
 /**

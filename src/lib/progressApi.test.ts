@@ -1,10 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
-  latestProgressEvent, listCellNotes, loadDeckProgress, loadProjectProgress,
+  latestProgressEvent, listCellNotes, listDeckEvents, loadDeckProgress, loadProjectProgress,
+  setReportNote,
 } from './progressApi'
 
 const from = vi.hoisted(() => vi.fn())
-vi.mock('./supabase', () => ({ supabase: { from } }))
+const rpc = vi.hoisted(() => vi.fn())
+vi.mock('./supabase', () => ({ supabase: { from, rpc } }))
 
 /** The PostgREST builder shape: every method chains, and awaiting resolves to
  *  `{ data, error }` -- postgrest-js reports failure as a value, never a throw. */
@@ -42,6 +44,7 @@ const ROW = {
 
 beforeEach(() => {
   from.mockReset()
+  rpc.mockReset()
 })
 
 describe('loadProjectProgress', () => {
@@ -232,8 +235,63 @@ describe('listCellNotes', () => {
     at: '2026-08-29T11:47:00Z',
     to_stage_name: 'Coat 2',
     note: 'Bề mặt còn ẩm',
-    by: { username: 'gs.hieu', full_name: 'Lê Trung Hiếu' },
+    by: 'u1',
+    author: { username: 'gs.hieu', full_name: 'Lê Trung Hiếu' },
+    report_note: null,
+    report_hidden: false,
+    report_edited_at: null,
+    report_editor: null,
     ...over,
+  })
+
+  it('names the author and the report editor by their own foreign keys, and keeps the raw author id', async () => {
+    // Two embeds on one table: without the constraint hint PostgREST cannot
+    // tell which profiles join is which. The raw `by` id travels too, so a
+    // tablet -- which cannot read profiles -- can still resolve a name.
+    const b = builder({ data: [event({})] })
+    from.mockImplementation(() => b)
+
+    const [note] = await listCellNotes('c1')
+
+    expect(b.select).toHaveBeenCalledWith(expect.stringContaining(' by, '))
+    expect(b.select).toHaveBeenCalledWith(
+      expect.stringContaining('author:profiles!cell_events_by_fkey(username, full_name)'),
+    )
+    expect(b.select).toHaveBeenCalledWith(
+      expect.stringContaining('report_editor:profiles!cell_events_report_edited_by_fkey(full_name)'),
+    )
+    expect(note.byId).toBe('u1')
+  })
+
+  it('carries the report-facing version, its hidden flag and who set them', async () => {
+    from.mockImplementation(() => builder({
+      data: [event({
+        report_note: 'Bề mặt ẩm, đã sơn lại ngày sau',
+        report_hidden: true,
+        report_edited_at: '2026-09-02T03:00:00Z',
+        report_editor: { full_name: 'Đoàn Công Linh' },
+      })],
+    }))
+
+    const [note] = await listCellNotes('c1')
+
+    expect(note).toMatchObject({
+      note: 'Bề mặt còn ẩm',
+      reportNote: 'Bề mặt ẩm, đã sơn lại ngày sau',
+      reportHidden: true,
+      reportEditedAt: '2026-09-02T03:00:00Z',
+      reportEditedByName: 'Đoàn Công Linh',
+    })
+  })
+
+  it('reads a note nobody has touched for the report as plain', async () => {
+    from.mockImplementation(() => builder({ data: [event({})] }))
+
+    const [note] = await listCellNotes('c1')
+
+    expect(note).toMatchObject({
+      reportNote: null, reportHidden: false, reportEditedAt: null, reportEditedByName: null,
+    })
   })
 
   it('reads one bay\'s whole history, newest first', async () => {
@@ -274,12 +332,14 @@ describe('listCellNotes', () => {
   it('keeps a note whose author is no longer readable', async () => {
     // profiles is behind RLS and an account can be switched off. The note is
     // the point; the name is attribution, and losing it must not lose the note.
-    from.mockImplementation(() => builder({ data: [event({ by: null })] }))
+    from.mockImplementation(() => builder({ data: [event({ author: null })] }))
 
     const notes = await listCellNotes('c1')
 
     expect(notes[0].note).toBe('Bề mặt còn ẩm')
     expect(notes[0].byName).toBeNull()
+    // The id is on the event itself, not behind profiles' RLS.
+    expect(notes[0].byId).toBe('u1')
   })
 
   it('reports a failed read rather than showing an empty history', async () => {
@@ -287,5 +347,88 @@ describe('listCellNotes', () => {
     // means "this bay has no notes" -- which is a thing the admin acts on.
     from.mockImplementation(() => builder({ error: { message: 'mất kết nối' } }))
     await expect(listCellNotes('c1')).rejects.toThrow('mất kết nối')
+  })
+})
+
+describe('setReportNote', () => {
+  it('writes through the admin-only rpc, never the table', async () => {
+    // 0008 revoked every client write on cell_events and 0023 adds no UPDATE
+    // policy: the audit table is reachable only through its trigger and this
+    // function, which checks is_admin() itself.
+    rpc.mockResolvedValue({ data: null, error: null })
+
+    await setReportNote(7, 'Bề mặt ẩm, đã sơn lại ngày sau', false)
+
+    expect(rpc).toHaveBeenCalledWith('set_report_note', {
+      p_event_id: 7, p_report_note: 'Bề mặt ẩm, đã sơn lại ngày sau', p_hidden: false,
+    })
+    expect(from).not.toHaveBeenCalled()
+  })
+
+  it('stores whitespace as no override, so clearing the box restores the original', async () => {
+    rpc.mockResolvedValue({ data: null, error: null })
+
+    await setReportNote(7, '   ', true)
+
+    expect(rpc).toHaveBeenCalledWith('set_report_note', {
+      p_event_id: 7, p_report_note: null, p_hidden: true,
+    })
+  })
+
+  it('reports a refused write', async () => {
+    rpc.mockResolvedValue({ data: null, error: { message: 'set_report_note: admin only' } })
+    await expect(setReportNote(7, 'x', false)).rejects.toThrow('admin only')
+  })
+})
+
+describe('listDeckEvents', () => {
+  const row = (over: Record<string, unknown>) => ({
+    id: 5,
+    at: '2026-08-29T11:47:00Z',
+    to_stage_name: 'Coat 2',
+    by: 'u1',
+    note: 'Bề mặt còn ẩm',
+    report_note: null,
+    report_hidden: false,
+    cells: { deck_id: 'd1', code: 'R1C1', area_m2: '60.00' },
+    ...over,
+  })
+
+  it('reads every stage change on one deck, oldest first, through the cell it belongs to', async () => {
+    // cell_events has no deck_id; the deck is reached through cells. `!inner`
+    // so the filter on the embedded column actually filters rows rather than
+    // nulling the embed.
+    const b = builder({ data: [row({})] })
+    from.mockImplementation(() => b)
+
+    const events = await listDeckEvents('d1')
+
+    expect(from).toHaveBeenCalledWith('cell_events')
+    expect(b.select).toHaveBeenCalledWith(expect.stringContaining('cells!inner(deck_id, code, area_m2)'))
+    expect(b.eq).toHaveBeenCalledWith('cells.deck_id', 'd1')
+    expect(b.order).toHaveBeenCalledWith('at', { ascending: true })
+    expect(events).toEqual([{
+      id: 5, cellCode: 'R1C1', cellAreaM2: 60, toStageName: 'Coat 2',
+      at: '2026-08-29T11:47:00Z', byId: 'u1', note: 'Bề mặt còn ẩm',
+      reportNote: null, reportHidden: false,
+    }])
+  })
+
+  it('keeps a stage change that carried no note, as an empty note', async () => {
+    // Unlike the note thread, this list IS the history: a coat recorded
+    // without a remark is still a row on the report.
+    from.mockImplementation(() => builder({
+      data: [row({ note: null, to_stage_name: null })],
+    }))
+
+    const [event] = await listDeckEvents('d1')
+
+    expect(event.note).toBe('')
+    expect(event.toStageName).toBeNull()
+  })
+
+  it('reports a failed read rather than an empty history', async () => {
+    from.mockImplementation(() => builder({ error: { message: 'mất kết nối' } }))
+    await expect(listDeckEvents('d1')).rejects.toThrow('mất kết nối')
   })
 })

@@ -1,15 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Cell } from '../domain/types'
 import {
-  listDeckCells, listProjectStageIndex, loadGsProject, setCellStage, subscribeDeckCells,
-  type GsRealtimeStatus,
+  listCoworkerNames, listDeckCells, listProjectStageIndex, loadGsProject, setCellStage,
+  subscribeDeckCells, type GsRealtimeStatus,
 } from './gsApi'
 
 const from = vi.hoisted(() => vi.fn())
+const rpc = vi.hoisted(() => vi.fn())
 const channel = vi.hoisted(() => vi.fn())
 const removeChannel = vi.hoisted(() => vi.fn())
 vi.mock('./supabase', () => ({
-  supabase: { from, channel, removeChannel },
+  supabase: { from, rpc, channel, removeChannel },
 }))
 
 /** The PostgREST builder shape: every method chains, and awaiting resolves to
@@ -494,5 +495,43 @@ describe('subscribeDeckCells', () => {
     // component's setState, and switching decks would accumulate one live
     // socket subscription per tab visited.
     expect(removeChannel).toHaveBeenCalledWith(ch)
+  })
+})
+
+describe('listCoworkerNames', () => {
+  beforeEach(() => {
+    rpc.mockReset()
+    from.mockReset()
+  })
+
+  it('asks the database for the names a tablet may see, not the profiles table', async () => {
+    // profiles is admin-only plus the caller's own row. A GS reading it
+    // directly gets nobody; the definer function hands back id and full name
+    // for co-members and admins, and nothing else about them.
+    rpc.mockResolvedValue({
+      data: [
+        { id: 'u1', full_name: 'Lê Trung Hiếu' },
+        { id: 'a1', full_name: 'Đoàn Công Linh' },
+      ],
+      error: null,
+    })
+
+    const names = await listCoworkerNames()
+
+    expect(rpc).toHaveBeenCalledWith('coworker_names')
+    expect(from).not.toHaveBeenCalled()
+    expect(names).toEqual({ u1: 'Lê Trung Hiếu', a1: 'Đoàn Công Linh' })
+  })
+
+  it('returns an empty map when the database returns nothing', async () => {
+    rpc.mockResolvedValue({ data: null, error: null })
+    expect(await listCoworkerNames()).toEqual({})
+  })
+
+  it('reports a failed read rather than an empty map', async () => {
+    // An empty map and a failed read render the same -- "Không rõ người ghi"
+    // on every note. The caller decides to swallow that, not this function.
+    rpc.mockResolvedValue({ data: null, error: { message: 'mất kết nối' } })
+    await expect(listCoworkerNames()).rejects.toThrow('mất kết nối')
   })
 })

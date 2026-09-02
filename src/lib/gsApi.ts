@@ -329,3 +329,25 @@ export function subscribeDeckCells(
     void supabase.removeChannel(channel)
   }
 }
+
+/**
+ * Who a tablet may name: every admin, and everyone sharing a project with the
+ * signed-in GS. Keyed by user id.
+ *
+ * `profiles` is admin-plus-self behind RLS, so a GS asking it directly learns
+ * nobody's name but their own -- and the note thread would print "Không rõ
+ * người ghi" on every remark. `coworker_names()` (0022) is a definer function
+ * that decides the audience itself and returns two columns, which is the
+ * narrowest window that answers the question.
+ *
+ * Throws on failure rather than returning `{}`: an empty map and a failed
+ * read render identically, and it is the screen's decision to carry on with
+ * anonymous notes, not this function's.
+ */
+export async function listCoworkerNames(): Promise<Record<string, string>> {
+  const { data, error } = await supabase.rpc('coworker_names')
+  if (error) throw new Error(error.message)
+  const names: Record<string, string> = {}
+  for (const r of (data ?? []) as { id: string; full_name: string }[]) names[r.id] = r.full_name
+  return names
+}

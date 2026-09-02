@@ -42,6 +42,13 @@ Since 0015 it also checks that `public.cells` is a member of the
 nothing else, so without the membership the GS screen's channel subscribes
 successfully and then receives nothing at all. Like checks 29-31, check 32
 reports `FAIL` until its migration is applied.
+Since 0022/0023 it also checks (34, 35) that `coworker_names()` and
+`set_report_note()` are security definer with a pinned `search_path`, that
+`anon` cannot execute either, that `cell_events` carries the four report-note
+columns and the named `cell_events_report_edited_by_fkey`, and that
+`authenticated` still holds no UPDATE on `cell_events` -- `set_report_note()`
+is meant to be the only client-reachable write onto the audit table. Both
+report `FAIL` until their migrations are applied.
 Run it after any change to these
 migrations:
 
@@ -50,7 +57,7 @@ nvm use 22
 npx supabase db query --linked -f supabase/verify_schema.sql
 ```
 
-Every returned row must begin with `PASS` — 32 rows in a passing run, one
+Every returned row must begin with `PASS` — 35 rows in a passing run, one
 per numbered check in the file's header comment.
 
 The `0019` note check reports `FAIL` until that migration is applied, and the
@@ -64,7 +71,10 @@ look for. Fixtures are seeded by hand and inserted `on conflict do nothing`, so
 without this reset every run starts on whatever the last one left, and a test
 that asserts on a CHANGE quietly becomes an assertion about nothing.
 
-`0019` and `0020` are applied.
+`0019` and `0020` are applied. `0022` and `0023` are **not yet pushed** to
+either hosted project; the two RPC tests in `tests/rls.integration.test.ts`
+are `it.skip`ped until they are -- unskip them in the change that applies
+them, the way the `0019` note tests were.
 
 Checks 29-31 arrived with `0014` and report `FAIL` until that migration is
 applied — check 29 with `from_stage_name NULL`, which is the defect it fixes,
