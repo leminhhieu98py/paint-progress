@@ -104,6 +104,16 @@ export interface DeckImages {
   drawingAspect?: number | null
 }
 
+export interface PlanImage {
+  deckName: string
+  workName: string
+  lastStageName: string
+  /** Base64 PNG without the data-URL prefix. */
+  png: string
+  /** Height over width, so the sheet keeps the drawing's shape. */
+  aspect: number
+}
+
 export interface ReportInput {
   projectName: string
   projectCode: string
@@ -117,6 +127,13 @@ export interface ReportInput {
   decks: DeckReportInput[]
   /** Keyed by deck id. Absent entries simply mean no pictures on that sheet. */
   images?: Record<string, DeckImages>
+  /**
+   * Layout pictures under the Plan table (Feedback Rv2, item 10), one per
+   * (deck, work) with a plan, in the order the caller wants them listed.
+   * Rendered by the caller like `images`; a pair whose render failed is simply
+   * left out of this list.
+   */
+  planImages?: PlanImage[]
   /**
    * 'deck' is the tablet's export of the one deck tab it has open (Feedback
    * Rv1, item 6) and carries no Overview sheet: one row at 100% weight headed
@@ -455,6 +472,27 @@ export async function buildReportWorkbook(input: ReportInput): Promise<Blob> {
   }
 
   dressSheet(plan, 1)
+
+  /*
+    The layouts, under the table: a title row naming the deck, the work and
+    the coat the picture reports, then the picture across the sheet's width.
+    Row height is 20px at Excel's default, so the rows the picture covers are
+    skipped by height, not guessed -- a second picture landing on the first is
+    the failure this arithmetic prevents.
+  */
+  if (input.planImages && input.planImages.length > 0) {
+    let row = plan.rowCount + 3
+    const width = 900
+    for (const image of input.planImages) {
+      const title = plan.getRow(row)
+      title.getCell(1).value = `${image.deckName} · ${image.workName} · lớp cuối: ${image.lastStageName}`
+      title.getCell(1).font = { bold: true }
+      const height = Math.round(width * image.aspect)
+      const id = wb.addImage({ base64: image.png, extension: 'png' })
+      plan.addImage(id, { tl: { col: 0, row }, ext: { width, height } })
+      row += Math.ceil(height / 20) + 3
+    }
+  }
 
   const buffer = await wb.xlsx.writeBuffer()
   return new Blob([buffer], {

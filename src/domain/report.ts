@@ -1,6 +1,7 @@
 import dayjs from 'dayjs'
+import { zoneColorMap } from './lens'
 import { computeDeckProgress, computeProjectProgress, computeWorkProgress } from './progress'
-import type { Deck, DeckEvent, Stage, Work, WorkModel, Zone } from './types'
+import type { Cell, Deck, DeckEvent, Stage, Work, WorkModel, Zone } from './types'
 
 /**
  * The report's data model, and nothing about spreadsheets.
@@ -295,4 +296,58 @@ export function buildEventRows(input: DeckReportInput): EventRow[] {
       byName: ev.byId === null ? null : input.userNames?.[ev.byId] ?? ev.byId,
       note: ev.reportHidden ? '' : ev.reportNote ?? ev.note,
     }))
+}
+
+/**
+ * One layout picture for the Plan sheet (Feedback Rv2, item 10): a deck as one
+ * of its works sees it, with the work's zones on top.
+ */
+export interface PlanImagePair {
+  deckId: string
+  workId: string
+  deckName: string
+  workName: string
+  /** The last row of A3.2 for this (work, deck): the coat the picture reports. */
+  lastStage: Stage
+  stages: Stage[]
+  /** The bays with THIS work's states. */
+  cells: Cell[]
+  /** The zones of this deck planned on this work's coats, in seq order. */
+  zones: Zone[]
+  /** Same colours as A3.4 and the GS screen: chosen, else palette off the coats. */
+  zoneColors: Record<string, string>
+}
+
+/**
+ * Which (deck, work) pairs get a picture: every bays work on the deck that has
+ * at least one zone planned on one of its coats. A deck with a plan on Sơn
+ * and none on Tháo giáo gets one picture, not two, and a deck with no plan
+ * gets none -- the Plan sheet is the plan, and a picture of nothing planned
+ * would only pad it. Order: decks as given, works in model order.
+ */
+export function planImagePairs(decks: DeckReportInput[], models: WorkModel[]): PlanImagePair[] {
+  const pairs: PlanImagePair[] = []
+  for (const input of decks) {
+    for (const model of models) {
+      if (model.work.kind !== 'bays') continue
+      const entry = model.decks.find((d) => d.deck.id === input.deck.id)
+      if (!entry || entry.stages.length === 0) continue
+      const stageIds = new Set(entry.stages.map((st) => st.id))
+      const zones = input.zones.filter((z) => stageIds.has(z.stageId))
+      if (zones.length === 0) continue
+      const lastStage = entry.stages.reduce((a, b) => (b.seq > a.seq ? b : a))
+      pairs.push({
+        deckId: input.deck.id,
+        workId: model.work.id,
+        deckName: input.deck.name,
+        workName: model.work.name,
+        lastStage,
+        stages: entry.stages,
+        cells: entry.deck.cells,
+        zones,
+        zoneColors: zoneColorMap(zones, entry.stages.map((st) => st.color)),
+      })
+    }
+  }
+  return pairs
 }

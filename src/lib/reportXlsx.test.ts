@@ -186,6 +186,32 @@ describe('buildReportWorkbook', () => {
     expect(ov.getRow(total).getCell(5).value as number).toBeCloseTo(0.5, 12)
   })
 
+  it('lays the plan pictures under the table, each under a title naming deck, work and coat', async () => {
+    // Feedback Rv2 item 10: Linh wants the layout in the sheet she prints.
+    const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
+    const wb = await readBack(await buildReportWorkbook({
+      ...BASE,
+      planImages: [
+        { deckName: 'Cellar Deck', workName: 'Sơn', lastStageName: 'Tháo giáo', png, aspect: 0.5 },
+        { deckName: 'Cellar Deck', workName: 'Tháo giáo', lastStageName: 'Tháo giáo lửng', png, aspect: 0.5 },
+      ],
+    }))
+    const plan = wb.getWorksheet('Plan')!
+    expect(plan.getImages()).toHaveLength(2)
+    const first = rowWhere(plan, 1, 'Cellar Deck · Sơn · lớp cuối: Tháo giáo')
+    const second = rowWhere(plan, 1, 'Cellar Deck · Tháo giáo · lớp cuối: Tháo giáo lửng')
+    expect(first).toBeGreaterThan(2)
+    // The second title sits below the first picture: 900 x 0.5 = 450px, 23 rows.
+    expect(second - first).toBeGreaterThanOrEqual(24)
+    const anchors = plan.getImages().map((i) => i.range.tl.nativeRow).sort((a, b) => a - b)
+    expect(anchors[0]).toBe(first)
+  })
+
+  it('writes no picture rows when no plan picture was supplied', async () => {
+    const wb = await readBack(await buildReportWorkbook(BASE))
+    expect(wb.getWorksheet('Plan')!.getImages()).toHaveLength(0)
+  })
+
   it('mirrors the customer\'s Kế hoạch tháo GG columns, plus the work', async () => {
     const wb = await readBack(await buildReportWorkbook(BASE))
     const plan = wb.getWorksheet('Plan')!

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  buildEventRows, buildOverview, buildPlanRows, reportStageColumns, type DeckReportInput,
+  buildEventRows, buildOverview, buildPlanRows, planImagePairs, reportStageColumns, type DeckReportInput,
 } from './report'
 import type { DeckEvent } from '../lib/progressApi'
 import type { Cell, Work, WorkModel } from './types'
@@ -350,5 +350,39 @@ describe('buildEventRows', () => {
   it('works with no name map at all', () => {
     const [row] = buildEventRows({ ...CD, events: [ev()] })
     expect(row.byName).toBe('u1')
+  })
+})
+
+describe('planImagePairs', () => {
+  const zone = (id: string, stageId: string, cellIds: string[], color: string | null = null) => ({
+    id, name: `Zone ${id}`, stageId, color, startDate: '2026-09-01', finishDate: '2026-09-07', cellIds,
+  })
+
+  it('gives one picture per (deck, work) that has a plan, coloured off that work\'s coats', () => {
+    // CD has a zone on Sơn's Tháo giáo and one on Tháo giáo's own coat: two
+    // pictures. MD has no plan: none.
+    const planned: DeckReportInput = { ...CD, zones: [zone('z1', 's3', ['c1']), zone('z2', 't1', ['c2'])] }
+    const pairs = planImagePairs([planned, MD], MODELS)
+
+    expect(pairs.map((p) => [p.deckName, p.workName, p.lastStage.name])).toEqual([
+      ['Cellar Deck', 'Sơn', 'Tháo giáo'],
+      ['Cellar Deck', 'Tháo giáo', 'Tháo giáo lửng'],
+    ])
+    // Each picture carries only its own work's zones and that work's states.
+    expect(pairs[0].zones.map((z) => z.id)).toEqual(['z1'])
+    expect(pairs[0].cells.find((c) => c.code === 'R1C1')?.stageId).toBe('s3')
+    expect(pairs[1].zones.map((z) => z.id)).toEqual(['z2'])
+    expect(pairs[1].cells.find((c) => c.code === 'R1C1')?.stageId).toBe('t1')
+    // Palette colour off the coats: magenta is free on both works.
+    expect(pairs[0].zoneColors.z1).toBe('#eb2f96')
+  })
+
+  it('keeps a chosen zone colour', () => {
+    const planned: DeckReportInput = { ...CD, zones: [zone('z1', 's3', ['c1'], '#13c2c2')] }
+    expect(planImagePairs([planned], MODELS)[0].zoneColors.z1).toBe('#13c2c2')
+  })
+
+  it('gives a deck with no plan no picture, and ignores manual works', () => {
+    expect(planImagePairs([CD, MD], MODELS)).toEqual([])
   })
 })

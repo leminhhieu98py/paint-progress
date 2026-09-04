@@ -1,6 +1,8 @@
-import { paintLensColors } from '../domain/lens'
+import { paintLensColors, zoneLensColors } from '../domain/lens'
 import { buildStageSlices } from '../domain/pieSlices'
-import type { Cell, Stage } from '../domain/types'
+import { formatPlanRange } from '../domain/plan'
+import { stageSeqOf } from '../domain/progress'
+import type { Cell, Stage, Zone } from '../domain/types'
 
 /**
  * Pictures of a deck for the report, taken without mounting anything.
@@ -188,6 +190,110 @@ export function renderDeckPie(
       legendX + 28,
       y + 17,
     )
+  })
+
+  return toDataUrlBase64(canvas)
+}
+
+/** Zone tint over the drawing on the plan picture: stronger than the coat
+ *  fill under it, so a planned bay reads as planned first and done second. */
+const PLAN_ZONE_OPACITY = 0.35
+const PLAN_LEGEND_ROW = 44
+const PLAN_LEGEND_PAD = 16
+
+/**
+ * The layout picture for the Plan sheet (Feedback Rv2, item 10): one deck as
+ * one work sees it.
+ *
+ * Bays at or past the work's LAST coat (the last row of A3.2 for this deck)
+ * are filled in that coat's colour -- "done with this work" is the only state
+ * the plan picture reports, because the plan is about when each block is
+ * finished, not which coat it is on. Every zone of the work is tinted in its
+ * colour on top, with a frame, so a zone drawn on untouched bays is as visible
+ * here as on A3.4. A key under the drawing names the zones with their windows
+ * and the done colour, because the workbook goes to someone with no app to
+ * compare against.
+ */
+export async function renderPlanDrawing(
+  imageUrl: string,
+  imageW: number,
+  imageH: number,
+  cells: Cell[],
+  stages: Stage[],
+  lastStage: Stage,
+  zones: Zone[],
+  zoneColors: Record<string, string>,
+): Promise<string | null> {
+  if (!imageW || !imageH) return null
+  const img = await loadImage(imageUrl)
+  if (!img) return null
+
+  const scale = DRAWING_WIDTH / imageW
+  const drawingH = Math.round(imageH * scale)
+  const legendRows = zones.length + 1
+  const canvas = document.createElement('canvas')
+  canvas.width = DRAWING_WIDTH
+  canvas.height = drawingH + PLAN_LEGEND_PAD * 2 + legendRows * PLAN_LEGEND_ROW
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return null
+
+  ctx.fillStyle = '#ffffff'
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+  ctx.drawImage(img, 0, 0, DRAWING_WIDTH, drawingH)
+
+  const rectOf = (cell: Cell) =>
+    [cell.x * DRAWING_WIDTH, cell.y * drawingH, cell.w * DRAWING_WIDTH, cell.h * drawingH] as const
+
+  // Done with the work: at or past its last coat, cumulative like every other
+  // progress reading here.
+  ctx.globalAlpha = STAGE_FILL_OPACITY
+  ctx.fillStyle = lastStage.color
+  for (const cell of cells) {
+    if (stageSeqOf(stages, cell.stageId) >= lastStage.seq) ctx.fillRect(...rectOf(cell))
+  }
+
+  const zoned = zoneLensColors(zones, cells, zoneColors)
+  ctx.globalAlpha = PLAN_ZONE_OPACITY
+  for (const cell of cells) {
+    const color = zoned[cell.code]
+    if (!color) continue
+    ctx.fillStyle = color
+    ctx.fillRect(...rectOf(cell))
+  }
+  ctx.globalAlpha = 1
+  ctx.lineWidth = 3
+  for (const cell of cells) {
+    const color = zoned[cell.code]
+    if (!color) continue
+    ctx.strokeStyle = color
+    const [x, y, w, h] = rectOf(cell)
+    ctx.strokeRect(x + 1.5, y + 1.5, w - 3, h - 3)
+  }
+
+  // The key: one row per zone, then the done colour.
+  ctx.textBaseline = 'middle'
+  const legendTop = drawingH + PLAN_LEGEND_PAD
+  const rows: { color: string; label: string; meta: string }[] = [
+    ...zones.map((z) => ({
+      color: zoneColors[z.id],
+      label: z.name,
+      meta: formatPlanRange(z.startDate, z.finishDate),
+    })),
+    { color: lastStage.color, label: `Đã đạt ${lastStage.name}`, meta: 'ô tô đặc' },
+  ]
+  rows.forEach((row, i) => {
+    const y = legendTop + i * PLAN_LEGEND_ROW + PLAN_LEGEND_ROW / 2
+    ctx.fillStyle = row.color
+    ctx.fillRect(PLAN_LEGEND_PAD, y - 10, 20, 20)
+    ctx.strokeStyle = '#16202b33'
+    ctx.lineWidth = 1
+    ctx.strokeRect(PLAN_LEGEND_PAD + 0.5, y - 9.5, 19, 19)
+    ctx.fillStyle = '#16202b'
+    ctx.font = '600 17px sans-serif'
+    ctx.fillText(row.label, PLAN_LEGEND_PAD + 32, y)
+    ctx.fillStyle = '#4a5a6b'
+    ctx.font = '400 15px sans-serif'
+    ctx.fillText(row.meta, PLAN_LEGEND_PAD + 32 + ctx.measureText(row.label).width * 1.15 + 24, y)
   })
 
   return toDataUrlBase64(canvas)
