@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process'
+import { readFile } from 'node:fs/promises'
 import { promisify } from 'node:util'
 
 const run = promisify(execFile)
@@ -28,6 +29,22 @@ export async function teardown() {
   // Nothing ran against the live project, so there is nothing to purge -- and
   // shelling out to the CLI on an ordinary unit-test run would be a surprise.
   if (!configured) return
+
+  // The CLI runs this against whatever project `supabase link` last pointed at,
+  // and that is not always the test project: the owner links PROD to push
+  // migrations. On 2026-09-04 a unit-test run purged the "fixtures" on the
+  // customer's database that way. So the linked ref must equal the one the
+  // test env names, or nothing runs -- a leaked fixture is recoverable, a
+  // reset customer bay is not.
+  const expected = process.env.RLS_TEST_PROJECT_REF
+  const linked = (await readFile('supabase/.temp/project-ref', 'utf8').catch(() => '')).trim()
+  if (!expected || linked !== expected) {
+    throw new Error(
+      `rls-teardown refused: the CLI is linked to "${linked || '(nothing)'}" but ` +
+        `RLS_TEST_PROJECT_REF is "${expected ?? '(unset)'}". Relink with ` +
+        '`npx supabase link --project-ref <dev ref>` before running the suite.',
+    )
+  }
 
   const { stdout } = await run(
     'npx',
