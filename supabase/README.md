@@ -65,9 +65,8 @@ nvm use 22
 npx supabase db query --linked -f supabase/verify_schema.sql
 ```
 
-Every returned row must begin with `PASS` — 40 rows in a passing run against
-a project with `0001`–`0027` applied (measured 2026-09-04 on dev; `0027` adds
-a column and no check).
+Every returned row must begin with `PASS` — 41 rows in a passing run against
+a project with `0001`–`0028` applied (measured 2026-09-04 on dev).
 
 The `0019` note check reports `FAIL` until that migration is applied, and the
 three note tests in `tests/rls.integration.test.ts` are `it.skip`ped for the
@@ -80,10 +79,21 @@ look for. Fixtures are seeded by hand and inserted `on conflict do nothing`, so
 without this reset every run starts on whatever the last one left, and a test
 that asserts on a CHANGE quietly becomes an assertion about nothing.
 
-`0019`–`0027` are applied to the dev project. Production holds `0001`–`0026`
-(pushed by the owner on 2026-09-04). `0027` (`zones.color`, additive) still
-has to be pushed to production before the app from `feat/feedback-rv2-a` is
-deployed there; the deployed app is unaffected by the column arriving early.
+`0019`–`0028` are applied to the dev project. Production holds `0001`–`0026`
+(pushed by the owner on 2026-09-04). `0027` (`zones.color`) and `0028`
+(viewer role, `profiles.hidden`, `project_members.all_works`, `work_members`,
+`is_gs()` / `my_works()`, narrowed member policies) still have to be pushed to
+production before the app from `feat/feedback-rv2-a` / `-b` is deployed
+there. Both are additive and every existing membership keeps `all_works =
+true`, so the deployed app is unaffected by them arriving early. `0028` also
+needs the Edge Function redeployed with the app
+(`npx supabase functions deploy admin-users --project-ref <prod ref>`): the
+new actions (`rename`, `reactivate`, `hide`, `unhide`, `create` with `role`)
+live there, and `deactivate` no longer removes memberships.
+
+`supabase/scripts/purge_user.sql` removes one test account together with the
+bays it ticked (owner request, 2026-09-04). It is a dry run until its
+`v_confirm` literal is set; read its header before running it anywhere.
 The `0025` dev backfill was checked: every project's percentage was identical
 before and after it, to ten decimals.
 
