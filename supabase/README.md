@@ -65,8 +65,8 @@ nvm use 22
 npx supabase db query --linked -f supabase/verify_schema.sql
 ```
 
-Every returned row must begin with `PASS` — 42 rows in a passing run against
-a project with `0001`–`0029` applied (measured 2026-09-04 on dev).
+Every returned row must begin with `PASS` — 43 rows in a passing run against
+a project with `0001`–`0030` applied (measured 2026-09-05 on dev).
 
 The `0019` note check reports `FAIL` until that migration is applied, and the
 three note tests in `tests/rls.integration.test.ts` are `it.skip`ped for the
@@ -79,17 +79,16 @@ look for. Fixtures are seeded by hand and inserted `on conflict do nothing`, so
 without this reset every run starts on whatever the last one left, and a test
 that asserts on a CHANGE quietly becomes an assertion about nothing.
 
-`0019`–`0029` are applied to the dev project. Production holds `0001`–`0026`
-(pushed by the owner on 2026-09-04). `0027` (`zones.color`), `0028`
-(viewer role, `profiles.hidden`, `project_members.all_works`, `work_members`,
-`is_gs()` / `my_works()`, narrowed member policies) and `0029`
-(`duplicate_deck`) still have to be pushed to production before the app from
-`feat/feedback-rv2-a` / `-b` / `-c` is deployed there. Both are additive and every existing membership keeps `all_works =
-true`, so the deployed app is unaffected by them arriving early. `0028` also
-needs the Edge Function redeployed with the app
-(`npx supabase functions deploy admin-users --project-ref <prod ref>`): the
-new actions (`rename`, `reactivate`, `hide`, `unhide`, `create` with `role`)
-live there, and `deactivate` no longer removes memberships.
+`0019`–`0030` are applied to the dev project. Production holds `0001`–`0029`
+and the current Edge Function (pushed and deployed by the owner on
+2026-09-04). `0030` (effort columns on `cell_states` / `cell_events`, the
+`set_cell_event_effort` backfill RPC, the effort rule in the GS write guard)
+still has to be pushed to production before the app from
+`feat/effort-dashboard` is deployed there. It is additive -- every new column
+is nullable or defaulted, no row is rewritten -- so the deployed app is
+unaffected by it arriving early; the app from that branch, however, writes
+the new columns on every bay update and FAILS against a database without
+them, so the migration goes first. No Edge Function change.
 
 `supabase/scripts/purge_user.sql` removes one test account together with the
 bays it ticked (owner request, 2026-09-04). It is a dry run until its

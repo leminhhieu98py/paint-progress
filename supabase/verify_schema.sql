@@ -233,8 +233,8 @@
 --   nvm use 22
 --   npx supabase db query --linked -f supabase/verify_schema.sql
 --
--- Every returned row must begin with PASS: 42 rows in total on a linked
--- project with 0001-0029 applied (measured 2026-09-04; the numbering above
+-- Every returned row must begin with PASS: 43 rows in total on a linked
+-- project with 0001-0030 applied (measured 2026-09-05; the numbering above
 -- runs 1-41 because one earlier check emits two rows and some later ones
 -- several). A row beginning with FAIL means
 -- a regression in the trigger/FK/RLS behaviour set up across migrations
@@ -1242,6 +1242,34 @@ begin
                      case when definers = 1 then 'PASS' else 'FAIL' end, definers);
 end $$;
 
+create or replace function _verify_effort() returns setof text language plpgsql as $$
+declare
+  ev_cols int; st_cols int; fk_ok boolean; fn_ok boolean; anon_ok boolean; upd_held boolean; guard_ok boolean;
+begin
+  -- 43. 0030: the effort columns on both tables, the named FK for the backfill
+  -- stamp, set_cell_event_effort as a pinned definer anon cannot execute,
+  -- 0008's revoke still intact, and the GS guard carrying the effort rule.
+  select count(*) into ev_cols from information_schema.columns
+   where table_schema = 'public' and table_name = 'cell_events'
+     and column_name in ('lead_name', 'painter_name', 'work_hours', 'waste_hours', 'waste_reason',
+                         'effort_edited_by', 'effort_edited_at');
+  select count(*) into st_cols from information_schema.columns
+   where table_schema = 'public' and table_name = 'cell_states'
+     and column_name in ('lead_name', 'painter_name', 'work_hours', 'waste_hours', 'waste_reason');
+  fk_ok := exists (select 1 from pg_constraint where conname = 'cell_events_effort_edited_by_fkey');
+  select prosecdef and proconfig @> array['search_path=public, pg_temp'] into fn_ok
+   from pg_proc where proname = 'set_cell_event_effort' and pronamespace = 'public'::regnamespace;
+  anon_ok := not has_function_privilege('anon', 'public.set_cell_event_effort(bigint, text, text, numeric, numeric, text)', 'execute');
+  upd_held := has_table_privilege('authenticated', 'cell_events', 'update');
+  select prosrc like '%effort may only be changed together with the stage%' into guard_ok
+   from pg_proc where proname = 'assert_gs_state_write' and pronamespace = 'public'::regnamespace;
+  return next format(
+    '%s 0030 effort: event columns %s (need 7), state columns %s (need 5), stamp FK %s, pinned definer %s, anon refused %s, authenticated UPDATE on cell_events %s (need false), guard carries the effort rule %s',
+    case when ev_cols = 7 and st_cols = 5 and fk_ok and coalesce(fn_ok, false) and anon_ok and not upd_held and coalesce(guard_ok, false)
+         then 'PASS' else 'FAIL' end,
+    ev_cols, st_cols, fk_ok, coalesce(fn_ok, false), anon_ok, upd_held, coalesce(guard_ok, false));
+end $$;
+
 -- A single top-level SELECT: `supabase db query -f` surfaces only the last
 -- result set a multi-statement file produces, so the checks are combined
 -- here with UNION ALL rather than issued as separate SELECTs.
@@ -1267,7 +1295,9 @@ select * from _verify_report_notes()
 union all
 select * from _verify_work_items()
 union all
-select * from _verify_roles_and_work_members();
+select * from _verify_roles_and_work_members()
+union all
+select * from _verify_effort();
 
 drop function _verify_triggers();
 drop function _verify_rls();
