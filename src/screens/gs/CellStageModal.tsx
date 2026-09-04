@@ -161,10 +161,13 @@ export function CellStageModal({
         onClose()
       }}
       okText="Xác nhận"
-      cancelText={readOnly ? 'Đóng' : 'Huỷ'}
-      okButtonProps={{ disabled: unchanged, size: 'large', style: readOnly ? { display: 'none' } : undefined }}
+      cancelText="Huỷ"
+      okButtonProps={{ disabled: unchanged, size: 'large' }}
       cancelButtonProps={{ size: 'large' }}
       {...modalProps}
+      // A viewer gets one button, not a hidden confirm: nothing in the DOM
+      // says "write" on a dialog that cannot.
+      footer={readOnly ? <Button size="large" onClick={onClose}>Đóng</Button> : undefined}
     >
       {cell && (
         <Space direction="vertical" size="middle" style={{ width: '100%' }}>
