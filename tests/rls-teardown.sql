@@ -61,7 +61,7 @@ delete from auth.users where email like 'rlstest-ef-%@app.local';
 delete from profiles where username like 'rlstest-ef-%';
 
 -- 4. The scratch projects, in case a run was killed before afterAll.
-delete from projects where code in ('RLSX', 'RLSY', 'RLSE', 'RLSW');
+delete from projects where code in ('RLSX', 'RLSY', 'RLSE', 'RLSW', 'RLSH');
 
 -- 5. The admin fixture must be able to act as an admin on the next run. The
 -- inactive-admin test flips this flag and restores it in a `finally`, and
@@ -161,7 +161,7 @@ begin
   return next format('%s no Edge Function credential rows survive: %s found, expected 0',
                      case when n = 0 then 'PASS' else 'FAIL' end, n);
 
-  select count(*) into n from projects where code in ('RLSX', 'RLSY', 'RLSE');
+  select count(*) into n from projects where code in ('RLSX', 'RLSY', 'RLSE', 'RLSW', 'RLSH');
   return next format('%s no scratch projects survive: %s found, expected 0',
                      case when n = 0 then 'PASS' else 'FAIL' end, n);
 

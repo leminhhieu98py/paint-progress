@@ -33,6 +33,8 @@ const ADMIN_SCRATCH_CODE = 'RLSY'
 const EF_PROJECT_CODE = 'RLSE'
 // The per-work permission suite (0028) builds its own project with two works.
 const SCOPE_PROJECT_CODE = 'RLSW'
+// The effort suite (0030) builds its own project with one work and two stages.
+const EFFORT_PROJECT_CODE = 'RLSH'
 
 // Accounts the Edge Function's `create` action makes. Every one of them is a
 // real auth user, so the prefix is what `tests/rls-teardown.sql` matches on.
@@ -1619,5 +1621,179 @@ describe.skipIf(!adminConfigured)('0028: roles and permission per work', () => {
     const anonClient = createClient(url!, anon!, { auth: { persistSession: false } })
     expect((await anonClient.rpc('my_works')).error?.code).toBe('42501')
     expect((await anonClient.rpc('is_gs')).error?.code).toBe('42501')
+  })
+})
+
+describe.skipIf(!adminConfigured)('0030: effort on bay updates', () => {
+  let admin: SupabaseClient
+  let gs: SupabaseClient
+  let adminId: string
+  let projectId: string
+  let deckId: string
+  let cellId: string
+  let workId: string
+  let stage1: string
+  let stage2: string
+  let gsUserId: string
+  let eventId: number
+
+  const EFFORT = {
+    lead_name: 'Tổ 1', painter_name: 'Nam', work_hours: 3.5, waste_hours: 0.5, waste_reason: 'Chờ vật tư',
+  }
+
+  beforeAll(async () => {
+    admin = createClient(url!, anon!, { auth: { persistSession: false } })
+    const adminSignIn = await admin.auth.signInWithPassword({
+      email: toAuthEmail(adminUsername!),
+      password: adminPassword!,
+    })
+    expect(adminSignIn.error).toBeNull()
+    adminId = adminSignIn.data.user!.id
+
+    expect((await admin.from('projects').delete().eq('code', EFFORT_PROJECT_CODE)).error).toBeNull()
+    const project = await admin
+      .from('projects')
+      .insert({ name: 'RLS Effort', code: EFFORT_PROJECT_CODE })
+      .select('id')
+      .single()
+    expect(project.error).toBeNull()
+    projectId = project.data!.id
+
+    const deck = await admin
+      .from('decks')
+      .insert({ project_id: projectId, seq: 1, name: 'Effort Deck', code: 'HD', total_area_m2: 100 })
+      .select('id')
+      .single()
+    expect(deck.error).toBeNull()
+    deckId = deck.data!.id
+    const cell = await admin
+      .from('cells')
+      .insert({ deck_id: deckId, code: 'R1C1', x: 0, y: 0, w: 1, h: 1, area_m2: 100 })
+      .select('id')
+      .single()
+    expect(cell.error).toBeNull()
+    cellId = cell.data!.id
+
+    const work = await admin
+      .from('works')
+      .insert({ project_id: projectId, seq: 1, name: 'Sơn', kind: 'bays', weight: 1, counts: true })
+      .select('id')
+      .single()
+    expect(work.error).toBeNull()
+    workId = work.data!.id
+    expect((await admin.from('work_decks').insert({ work_id: workId, deck_id: deckId, weight: 1 })).error).toBeNull()
+    const stages = await admin
+      .from('deck_stages')
+      .insert([
+        { work_id: workId, deck_id: deckId, seq: 1, name: 'Lớp 1', color: '#fadb14', weight: 0.5 },
+        { work_id: workId, deck_id: deckId, seq: 2, name: 'Lớp 2', color: '#bfbfbf', weight: 0.5 },
+      ])
+      .select('id, seq')
+    expect(stages.error).toBeNull()
+    const bySeq = (seq: number) => (stages.data as { id: string; seq: number }[]).find((s) => s.seq === seq)!.id
+    stage1 = bySeq(1)
+    stage2 = bySeq(2)
+
+    const gsUsername = throwawayUsername('effort')
+    const gsPassword = throwawayPassword()
+    const created = await invokeAdminUsers(admin, {
+      action: 'create', username: gsUsername, fullName: 'RLS Effort Throwaway',
+      password: gsPassword, projectId,
+    })
+    expect(created.status).toBe(200)
+    gsUserId = created.body.userId as string
+
+    gs = createClient(url!, anon!, { auth: { persistSession: false } })
+    const signIn = await gs.auth.signInWithPassword({ email: toAuthEmail(gsUsername), password: gsPassword })
+    expect(signIn.error).toBeNull()
+  })
+
+  afterAll(async () => {
+    if (!admin) return
+    expect((await admin.from('projects').delete().eq('code', EFFORT_PROJECT_CODE)).error).toBeNull()
+  })
+
+  const newestEvent = async () => {
+    const { data, error } = await admin
+      .from('cell_events')
+      .select('id, to_stage_id, lead_name, painter_name, work_hours, waste_hours, waste_reason, effort_edited_by, effort_edited_at')
+      .eq('cell_id', cellId)
+      .order('at', { ascending: false })
+      .limit(1)
+      .single()
+    expect(error).toBeNull()
+    return data as unknown as Record<string, unknown>
+  }
+
+  it('a GS records effort in the same statement as the stage, and the event carries it', async () => {
+    const write = await gs
+      .from('cell_states')
+      .upsert({ cell_id: cellId, work_id: workId, deck_id: deckId, stage_id: stage1, note: '', ...EFFORT },
+              { onConflict: 'cell_id,work_id' })
+      .select('cell_id')
+    expect(write.error).toBeNull()
+    expect(write.data).toHaveLength(1)
+
+    const ev = await newestEvent()
+    eventId = Number(ev.id)
+    expect(ev.to_stage_id).toBe(stage1)
+    expect(ev.lead_name).toBe('Tổ 1')
+    expect(ev.painter_name).toBe('Nam')
+    expect(Number(ev.work_hours)).toBe(3.5)
+    expect(Number(ev.waste_hours)).toBe(0.5)
+    expect(ev.waste_reason).toBe('Chờ vật tư')
+    expect(ev.effort_edited_by).toBeNull()
+  })
+
+  it('a GS cannot change effort without moving the stage', async () => {
+    const write = await gs
+      .from('cell_states')
+      .upsert({ cell_id: cellId, work_id: workId, deck_id: deckId, stage_id: stage1, note: '', ...EFFORT, work_hours: 9 },
+              { onConflict: 'cell_id,work_id' })
+      .select('cell_id')
+    expect(write.error).not.toBeNull()
+    expect(write.error!.message).toContain('effort may only be changed together with the stage')
+  })
+
+  it('a GS cannot backfill effort on an event', async () => {
+    const { error } = await gs.rpc('set_cell_event_effort', {
+      p_event_id: eventId, p_lead_name: 'x', p_painter_name: 'y',
+      p_work_hours: 1, p_waste_hours: null, p_waste_reason: '',
+    })
+    expect(error?.code).toBe('42501')
+  })
+
+  it('an admin backfills effort on an event, stamped, without touching the stage', async () => {
+    const { error } = await admin.rpc('set_cell_event_effort', {
+      p_event_id: eventId, p_lead_name: '  Tổ 2 ', p_painter_name: null,
+      p_work_hours: 4, p_waste_hours: null, p_waste_reason: '   ',
+    })
+    expect(error).toBeNull()
+
+    const ev = await newestEvent()
+    expect(Number(ev.id)).toBe(eventId)
+    expect(ev.to_stage_id).toBe(stage1)
+    expect(ev.lead_name).toBe('Tổ 2')
+    expect(ev.painter_name).toBe('')
+    expect(Number(ev.work_hours)).toBe(4)
+    expect(ev.waste_hours).toBeNull()
+    expect(ev.waste_reason).toBe('')
+    expect(ev.effort_edited_by).toBe(adminId)
+    expect(ev.effort_edited_at).not.toBeNull()
+  })
+
+  it('a viewer cannot record effort either, and no event is written', async () => {
+    const promote = await admin.from('profiles').update({ role: 'viewer' }).eq('id', gsUserId)
+    expect(promote.error).toBeNull()
+
+    const write = await gs
+      .from('cell_states')
+      .upsert({ cell_id: cellId, work_id: workId, deck_id: deckId, stage_id: stage2, note: '', ...EFFORT },
+              { onConflict: 'cell_id,work_id' })
+    expect(write.error).not.toBeNull()
+
+    const count = await admin.from('cell_events').select('id', { count: 'exact', head: true }).eq('cell_id', cellId)
+    expect(count.error).toBeNull()
+    expect(count.count).toBe(1)
   })
 })
