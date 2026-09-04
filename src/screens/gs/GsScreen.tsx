@@ -1,5 +1,5 @@
 import {
-  Alert, App, Button, Grid, Layout, Segmented, Space, Spin, Tabs,
+  Alert, App, Button, Grid, Layout, Segmented, Select, Space, Spin, Tabs,
 } from 'antd'
 import dayjs from 'dayjs'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -8,7 +8,7 @@ import { useAuth } from '../../auth/AuthProvider'
 
 import { DrawingCanvas } from '../../canvas/DrawingCanvas'
 import { formatPlanRange } from '../../domain/plan'
-import { paintLensColors, zoneLensColors, ZONE_PALETTE } from '../../domain/lens'
+import { paintLensColors, zoneColorMap, zoneLensColors } from '../../domain/lens'
 import { computeDeckProgress, summariseDeck } from '../../domain/progress'
 import type { Cell, Deck, Stage, WorkModel, Zone } from '../../domain/types'
 // One signed-URL helper for both roles: the bucket name and the 3600-second
@@ -586,12 +586,19 @@ export function GsScreen() {
   }, [projectId, decks, states])
 
   /**
-   * Fetched only while the toggle is on. Zones are empty for every deck until
-   * Phase 4 ships the zone editor, so fetching them on every deck open would be
-   * a round trip per tab, on a site tether, for nothing.
+   * Read once per deck, toggle or not (Feedback Rv2, item 7). It used to be
+   * fetched only while "Hiện kế hoạch" was on, but the bay dialog now names the
+   * bay's zones whether the overlay is drawn or not, so the plan is part of
+   * opening a deck. One read per tab; the toggle only decides what is drawn.
+   *
+   * The stage filter resets with the deck: a stage id belongs to one (work,
+   * deck), and carrying it across would filter the next deck's plan to
+   * nothing while looking like a choice the foreman made.
    */
+  const [planStageId, setPlanStageId] = useState<string | null>(null)
   useEffect(() => {
-    if (!showPlan || !activeDeckId) {
+    setPlanStageId(null)
+    if (!activeDeckId) {
       setZones([])
       return
     }
@@ -606,7 +613,7 @@ export function GsScreen() {
     return () => {
       cancelled = true
     }
-  }, [showPlan, activeDeckId])
+  }, [activeDeckId])
 
   /**
    * With the plan on, bays wear their ZONE's colour and the zones are named
@@ -621,14 +628,47 @@ export function GsScreen() {
     () => zones.filter((z) => z.startDate || z.finishDate),
     [zones],
   )
+  /**
+   * Item 8: one coat's plan at a time when the foreman asks for it. Only the
+   * ACTIVE work's stages are offered, because the zones' stage ids belong to
+   * that work's stage rows; a zone of another work on this deck is filtered
+   * out with the rest once a stage is chosen, and drawn with everything else
+   * under "Tất cả".
+   */
+  const visibleZones = useMemo(
+    () => (planStageId ? planZones.filter((z) => z.stageId === planStageId) : planZones),
+    [planZones, planStageId],
+  )
+  /** Same colours as A3.4 and the report: chosen colour, else the first
+   *  palette entry no coat of this work wears (item 6). Over ALL the deck's
+   *  dated zones, not the filtered ones, so a zone keeps its colour when the
+   *  filter changes. */
   const planColors = useMemo(
-    () => Object.fromEntries(planZones.map((z, i) => [z.id, ZONE_PALETTE[i % ZONE_PALETTE.length]])),
-    [planZones],
+    () => zoneColorMap(planZones, stages.map((st) => st.color)),
+    [planZones, stages],
   )
   const planCellColors = useMemo(
-    () => (showPlan ? zoneLensColors(planZones, cells) : undefined),
-    [showPlan, planZones, cells],
+    () => (showPlan ? zoneLensColors(visibleZones, cells, planColors) : undefined),
+    [showPlan, visibleZones, cells, planColors],
   )
+  /**
+   * Item 7, laptop side: the zone under the pointer, named once in a corner
+   * card. Mouse only -- DrawingCanvas fires no hover for a touch -- so the
+   * tablet gets the same lines in the bay dialog instead.
+   */
+  const [hoverCode, setHoverCode] = useState<string | null>(null)
+  const stageNameOf = (id: string) => stages.find((st) => st.id === id)?.name ?? ''
+  const hoverZones = useMemo(() => {
+    if (!showPlan || !hoverCode) return []
+    const cellId = cells.find((c) => c.code === hoverCode)?.id
+    return cellId ? visibleZones.filter((z) => z.cellIds.includes(cellId)) : []
+  }, [showPlan, hoverCode, cells, visibleZones])
+  const zonesOfCell = (cell: Cell | null) =>
+    (cell ? zones.filter((z) => z.cellIds.includes(cell.id)) : []).map((z) => ({
+      name: z.name,
+      stageName: stageNameOf(z.stageId),
+      range: formatPlanRange(z.startDate, z.finishDate),
+    }))
 
   const [selectedCell, setSelectedCell] = useState<Cell | null>(null)
   const { message } = App.useApp()
@@ -986,6 +1026,19 @@ export function GsScreen() {
                 >
                   {phone ? null : 'Hiện kế hoạch'}
                 </Button>
+                {showPlan && stages.length > 0 && (
+                  <Select
+                    id="gs-plan-stage"
+                    aria-label="Công đoạn kế hoạch"
+                    value={planStageId ?? 'all'}
+                    onChange={(v) => setPlanStageId(v === 'all' ? null : v)}
+                    style={{ width: phone ? 120 : 180 }}
+                    options={[
+                      { value: 'all', label: 'Tất cả' },
+                      ...stages.map((st) => ({ value: st.id, label: st.name })),
+                    ]}
+                  />
+                )}
                 <Button
                   icon={<DownloadOutlined aria-hidden />}
                   aria-label="Xuất báo cáo"
@@ -1008,6 +1061,7 @@ export function GsScreen() {
                   selectedCodes={[]}
                   cellColors={showPlan ? (planCellColors ?? {}) : cellColors}
                   panZoom
+                  onCellHover={showPlan ? setHoverCode : undefined}
                   onCellClick={(code) => {
                     // No work, nothing to record against: the drawing is a
                     // drawing until the admin assigns the deck.
@@ -1021,7 +1075,51 @@ export function GsScreen() {
                   is what the foreman actually needs off this: which block he is
                   on, and whether it is due.
                 */}
-                {showPlan && planZones.length > 0 && (
+                {hoverZones.length > 0 && (
+                  <div
+                    data-testid="gs-zone-hint"
+                    style={{
+                      position: 'fixed',
+                      zIndex: 4,
+                      right: 24,
+                      bottom: 24,
+                      pointerEvents: 'none',
+                      background: '#FFFFFFF5',
+                      border: `1px solid ${palette.borderCard}`,
+                      borderRadius: 12,
+                      padding: '10px 13px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 4,
+                      boxShadow: shadowCard,
+                      maxWidth: 'calc(100vw - 48px)',
+                    }}
+                  >
+                    {hoverZones.map((z) => (
+                      <div key={z.id} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <span
+                          aria-hidden
+                          style={{
+                            width: 12,
+                            height: 12,
+                            flex: 'none',
+                            borderRadius: 4,
+                            background: planColors[z.id],
+                            boxShadow: 'inset 0 0 0 1px #16202B47',
+                          }}
+                        />
+                        <span style={{ fontSize: 13, fontWeight: 600 }}>{z.name}</span>
+                        <span style={{ fontSize: 12, color: palette.textSecondary }}>
+                          {stageNameOf(z.stageId)}
+                        </span>
+                        <span style={{ fontSize: 12, color: palette.textSecondary, whiteSpace: 'nowrap' }}>
+                          {formatPlanRange(z.startDate, z.finishDate)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {showPlan && visibleZones.length > 0 && (
                   <div
                     data-testid="gs-zone-legend"
                     style={{
@@ -1053,7 +1151,7 @@ export function GsScreen() {
                       maxWidth: 'calc(100vw - 48px)',
                     }}
                   >
-                    {planZones.map((z) => (
+                    {visibleZones.map((z) => (
                       <div
                         key={z.id}
                         style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}
@@ -1147,6 +1245,7 @@ export function GsScreen() {
         onCommit={commitStage}
         authorNames={authorNames}
         workName={activeWork?.work.name}
+        zones={zonesOfCell(selectedCell)}
       />
 
       {/*

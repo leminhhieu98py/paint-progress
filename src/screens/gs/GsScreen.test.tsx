@@ -78,7 +78,7 @@ vi.mock('../../auth/AuthProvider', () => ({
 // here; what it renders for real was established by driving it in Chrome.
 vi.mock('../../canvas/DrawingCanvas', () => ({
   DrawingCanvas: ({
-    imageUrl, cells, cellColors, planLabels, panZoom, onCellClick,
+    imageUrl, cells, cellColors, planLabels, panZoom, onCellClick, onCellHover,
   }: {
     imageUrl: string
     cells: { code: string }[]
@@ -86,6 +86,7 @@ vi.mock('../../canvas/DrawingCanvas', () => ({
     planLabels?: Record<string, string>
     panZoom?: boolean
     onCellClick?: (code: string, additive: boolean) => void
+    onCellHover?: (code: string | null) => void
   }) => (
     <div data-testid="canvas" data-image={imageUrl} data-panzoom={String(Boolean(panZoom))}>
       {cells.map((c) => (
@@ -94,6 +95,8 @@ vi.mock('../../canvas/DrawingCanvas', () => ({
           data-color={cellColors?.[c.code] ?? ''}
           data-plan={planLabels?.[c.code] ?? ''}
           onClick={() => onCellClick?.(c.code, false)}
+          onMouseEnter={() => onCellHover?.(c.code)}
+          onMouseLeave={() => onCellHover?.(null)}
         >
           ô {c.code}
         </button>
@@ -1277,12 +1280,95 @@ describe('GsScreen: a deck its cells over-cover', () => {
 })
 
 describe('GsScreen: the plan overlay', () => {
-  it('fetches no zones while the toggle is off', async () => {
+  it('reads the plan once per deck, toggle or not', async () => {
+    // Feedback Rv2 item 7: the bay dialog names the bay's zones whether the
+    // overlay is on or off, so the zones are part of opening a deck. One read
+    // per deck, not one per toggle press.
     renderScreen()
     await screen.findByRole('button', { name: 'ô R1C1' })
-    // Zero zones exist until Phase 4, so this round trip would buy nothing on
-    // a site tether -- and it must not be made per deck tab either.
-    expect(listDeckZones).not.toHaveBeenCalled()
+    await waitFor(() => expect(listDeckZones).toHaveBeenCalledWith('d1'))
+    expect(listDeckZones).toHaveBeenCalledTimes(1)
+    expect(screen.queryByTestId('gs-zone-legend')).toBeNull()
+  })
+
+  it('filters the plan to one coat from the stage select', async () => {
+    // Feedback Rv2 item 8: with zones on every coat, "Hiện kế hoạch" drew all
+    // of them at once and the foreman could not tell which window was whose.
+    listDeckZones.mockResolvedValue([
+      {
+        id: 'z1', name: 'Khu A — Coat 4', stageId: 's4', color: null,
+        startDate: '2026-08-13', finishDate: '2026-08-19', cellIds: ['c1'],
+      },
+      {
+        id: 'z2', name: 'Khu A — Tháo giáo', stageId: 's5', color: null,
+        startDate: '2026-08-20', finishDate: '2026-08-26', cellIds: ['c1'],
+      },
+    ])
+    renderScreen()
+    await userEvent.click(await screen.findByRole('button', { name: 'Hiện kế hoạch' }))
+    const legend = await screen.findByTestId('gs-zone-legend')
+    expect(within(legend).getByText('Khu A — Coat 4')).toBeInTheDocument()
+    expect(within(legend).getByText('Khu A — Tháo giáo')).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('combobox', { name: 'Công đoạn kế hoạch' }))
+    await userEvent.click(await screen.findByTitle('Coat 4'))
+
+    await waitFor(() =>
+      expect(within(screen.getByTestId('gs-zone-legend')).queryByText('Khu A — Tháo giáo')).toBeNull())
+    expect(within(screen.getByTestId('gs-zone-legend')).getByText('Khu A — Coat 4')).toBeInTheDocument()
+    // The bay wears the Coat 4 zone's colour, not the later zone's.
+    expect(screen.getByRole('button', { name: 'ô R1C1' })).toHaveAttribute('data-color', '#eb2f96')
+  })
+
+  it('keeps a zone off the coats\' own colours', async () => {
+    // Feedback Rv2 item 6: the first palette entry is magenta; make Coat 4 wear
+    // it and the zone must step to the next one, on the GS screen as on A3.4.
+    listDeckZones.mockResolvedValue([{
+      id: 'z1', name: 'Khu A', stageId: 's5', color: null,
+      startDate: '2026-08-13', finishDate: '2026-08-19', cellIds: ['c1'],
+    }])
+    listDeckWorks.mockResolvedValue([{
+      work: WORK, weight: 1,
+      stages: STAGES.map((st) => (st.id === 's4' ? { ...st, color: '#eb2f96' } : st)),
+    }])
+    renderScreen()
+    await userEvent.click(await screen.findByRole('button', { name: 'Hiện kế hoạch' }))
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'ô R1C1' })).toHaveAttribute('data-color', '#13c2c2'))
+  })
+
+  it('names the zone under the mouse while the plan is on', async () => {
+    // Feedback Rv2 item 7, laptop side. Nothing for a bay outside every zone,
+    // and nothing at all once the pointer leaves.
+    listDeckZones.mockResolvedValue([{
+      id: 'z1', name: 'Khu A — Tháo giáo', stageId: 's5', color: null,
+      startDate: '2026-08-13', finishDate: '2026-08-19', cellIds: ['c1'],
+    }])
+    renderScreen()
+    await userEvent.click(await screen.findByRole('button', { name: 'Hiện kế hoạch' }))
+    await screen.findByTestId('gs-zone-legend')
+
+    await userEvent.hover(screen.getByRole('button', { name: 'ô R1C1' }))
+    const hint = await screen.findByTestId('gs-zone-hint')
+    expect(hint).toHaveTextContent('Khu A — Tháo giáo')
+    expect(hint).toHaveTextContent('Tháo giáo')
+    expect(hint).toHaveTextContent('13/08 – 19/08')
+
+    await userEvent.hover(screen.getByRole('button', { name: 'ô R1C2' }))
+    await waitFor(() => expect(screen.queryByTestId('gs-zone-hint')).toBeNull())
+  })
+
+  it('lists the bay\'s zones in its dialog, even with the plan hidden', async () => {
+    listDeckZones.mockResolvedValue([{
+      id: 'z1', name: 'Khu A — Tháo giáo', stageId: 's5', color: null,
+      startDate: '2026-08-13', finishDate: '2026-08-19', cellIds: ['c1'],
+    }])
+    renderScreen()
+    await waitFor(() => expect(listDeckZones).toHaveBeenCalledWith('d1'))
+    await userEvent.click(await screen.findByRole('button', { name: 'ô R1C1' }))
+
+    const info = await screen.findByTestId('cell-stage-info')
+    expect(within(info).getByText('Khu A — Tháo giáo · Tháo giáo · 13/08 – 19/08')).toBeInTheDocument()
   })
 
   it('colours the zone\'s bays and names the window once, when switched on', async () => {

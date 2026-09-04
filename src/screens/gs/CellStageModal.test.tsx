@@ -416,3 +416,35 @@ describe('CellStageModal — công việc', () => {
     expect(screen.getByText('Ô R3C7 · Tháo giáo')).toBeInTheDocument()
   })
 })
+
+describe('CellStageModal — kế hoạch', () => {
+  it('lists the zones this bay is planned in, under Kế hoạch', () => {
+    // Feedback Rv2 item 7, tablet side: no hover on a touch screen, so the bay
+    // dialog carries the plan. Shown whether or not the plan overlay is on --
+    // the plan is a fact about the bay.
+    render(
+      <AntApp>
+        <CellStageModal
+          cell={CELL}
+          stages={STAGES}
+          open
+          onClose={onClose}
+          onCommit={onCommit}
+          zones={[
+            { name: 'Khu A — Coat 3', stageName: 'Coat 3', range: '06/10 – 17/10' },
+            { name: 'Khu A — Tháo giáo', stageName: 'Tháo giáo', range: '20/10 – 24/10' },
+          ]}
+        />
+      </AntApp>,
+    )
+    const info = screen.getByTestId('cell-stage-info')
+    expect(within(info).getByText('Kế hoạch')).toBeInTheDocument()
+    expect(within(info).getByText('Khu A — Coat 3 · Coat 3 · 06/10 – 17/10')).toBeInTheDocument()
+    expect(within(info).getByText('Khu A — Tháo giáo · Tháo giáo · 20/10 – 24/10')).toBeInTheDocument()
+  })
+
+  it('shows no Kế hoạch row for a bay in no zone', () => {
+    renderModal()
+    expect(within(screen.getByTestId('cell-stage-info')).queryByText('Kế hoạch')).toBeNull()
+  })
+})

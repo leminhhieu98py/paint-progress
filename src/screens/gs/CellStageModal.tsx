@@ -34,6 +34,7 @@ export function CellStageModal({
   onCommit,
   authorNames = {},
   workName,
+  zones = [],
 }: {
   cell: Cell | null
   stages: Stage[]
@@ -56,6 +57,13 @@ export function CellStageModal({
    * now holds one stage per work and "Ô R1C1" alone no longer says which.
    */
   workName?: string
+  /**
+   * The zones this bay is planned in, one line each (Feedback Rv2, item 7).
+   * The tablet has no hover, so the plan the laptop shows on mouse-over is
+   * carried here instead -- and shown whether or not the overlay is on,
+   * because the plan is a fact about the bay, not a view of it.
+   */
+  zones?: { name: string; stageName: string; range: string }[]
 }) {
   const [choice, setChoice] = useState<string>(NOT_STARTED_VALUE)
   const [note, setNote] = useState('')
@@ -167,6 +175,17 @@ export function CellStageModal({
             <Field label="Diện tích">{formatAreaM2(cell.areaM2)} m²</Field>
             <Field label="Công đoạn hiện tại">{currentStage?.name ?? NOT_STARTED_LABEL}</Field>
             <Field label="Công đoạn tiếp theo">{next?.name ?? 'Đã xong công đoạn cuối'}</Field>
+            {zones.length > 0 && (
+              <Field label="Kế hoạch">
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                  {zones.map((z) => (
+                    <span key={`${z.name}-${z.stageName}`}>
+                      {[z.name, z.stageName, z.range].filter(Boolean).join(' · ')}
+                    </span>
+                  ))}
+                </div>
+              </Field>
+            )}
           </div>
 
           {/*
