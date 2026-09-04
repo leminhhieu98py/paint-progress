@@ -591,13 +591,17 @@ export function GsScreen() {
    * bay's zones whether the overlay is drawn or not, so the plan is part of
    * opening a deck. One read per tab; the toggle only decides what is drawn.
    *
-   * The stage filter resets with the deck: a stage id belongs to one (work,
+   * The stage filter is keyed to the deck it was chosen on, so it reads as
+   * "Tất cả" the moment another deck opens: a stage id belongs to one (work,
    * deck), and carrying it across would filter the next deck's plan to
-   * nothing while looking like a choice the foreman made.
+   * nothing while looking like a choice the foreman made. Derived, not reset
+   * in the effect, so no render is spent on the reset.
    */
-  const [planStageId, setPlanStageId] = useState<string | null>(null)
+  const [planStage, setPlanStage] = useState<{ deckId: string | null; stageId: string | null }>(
+    { deckId: null, stageId: null },
+  )
+  const planStageId = planStage.deckId === activeDeckId ? planStage.stageId : null
   useEffect(() => {
-    setPlanStageId(null)
     if (!activeDeckId) {
       setZones([])
       return
@@ -1031,7 +1035,7 @@ export function GsScreen() {
                     id="gs-plan-stage"
                     aria-label="Công đoạn kế hoạch"
                     value={planStageId ?? 'all'}
-                    onChange={(v) => setPlanStageId(v === 'all' ? null : v)}
+                    onChange={(v) => setPlanStage({ deckId: activeDeckId, stageId: v === 'all' ? null : v })}
                     style={{ width: phone ? 120 : 180 }}
                     options={[
                       { value: 'all', label: 'Tất cả' },
