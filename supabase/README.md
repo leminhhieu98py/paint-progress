@@ -66,7 +66,8 @@ npx supabase db query --linked -f supabase/verify_schema.sql
 ```
 
 Every returned row must begin with `PASS` — 40 rows in a passing run against
-a project with `0001`–`0026` applied (measured 2026-09-02 on dev).
+a project with `0001`–`0027` applied (measured 2026-09-04 on dev; `0027` adds
+a column and no check).
 
 The `0019` note check reports `FAIL` until that migration is applied, and the
 three note tests in `tests/rls.integration.test.ts` are `it.skip`ped for the
@@ -79,12 +80,20 @@ look for. Fixtures are seeded by hand and inserted `on conflict do nothing`, so
 without this reset every run starts on whatever the last one left, and a test
 that asserts on a CHANGE quietly becomes an assertion about nothing.
 
-`0019`–`0026` are applied to the dev project. `0022`–`0026` still have to be
-pushed to the production project before the next deploy of this branch --
-`0024` drops `cells.stage_id`, so push it and deploy the app in the same
-sitting (migration first, then the app, minutes apart). The dev backfill was
-checked: every project's percentage was identical before and after `0025`,
-to ten decimals.
+`0019`–`0027` are applied to the dev project. Production holds `0001`–`0026`
+(pushed by the owner on 2026-09-04). `0027` (`zones.color`, additive) still
+has to be pushed to production before the app from `feat/feedback-rv2-a` is
+deployed there; the deployed app is unaffected by the column arriving early.
+The `0025` dev backfill was checked: every project's percentage was identical
+before and after it, to ten decimals.
+
+The Vitest global teardown runs `tests/rls-teardown.sql` through
+`supabase db query --linked`, i.e. against whatever project the CLI is linked
+to. Since 2026-09-04 it refuses to run unless that ref equals
+`RLS_TEST_PROJECT_REF` in `.env.test.local`, because a unit-test run right
+after a production migration push (CLI still linked to PROD) executed the
+teardown there once. Relink to dev (`npx supabase link --project-ref <dev>`)
+after every production push.
 
 Checks 29-31 arrived with `0014` and report `FAIL` until that migration is
 applied — check 29 with `from_stage_name NULL`, which is the defect it fixes,
