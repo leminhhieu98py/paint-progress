@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { buildPlanLabels, formatPlanRange } from './plan'
-import type { Zone } from './types'
+import { buildPlanLabels, formatPlanRange, zoneColorConflict } from './plan'
+import type { Stage, Zone } from './types'
 
 const CELLS = [
   { id: 'c1', code: 'R1C1' },
@@ -87,5 +87,25 @@ describe('buildPlanLabels', () => {
     // The state this ships in: Phase 4 builds the zone editor, so until then
     // every deck has zero zones and the toggle must draw nothing at all.
     expect(buildPlanLabels([], CELLS)).toEqual({})
+  })
+})
+
+describe('zoneColorConflict', () => {
+  const stages: Stage[] = [
+    { id: 's1', seq: 1, name: 'Coat 1', color: '#fadb14', weight: 0.4 },
+    { id: 's2', seq: 2, name: 'Coat 2', color: '#bfbfbf', weight: 0.6 },
+  ]
+
+  it('names the stage whose colour the zone would borrow', () => {
+    // Item 6: a zone in a stage colour reads as that stage on the drawing.
+    expect(zoneColorConflict('#bfbfbf', stages)?.name).toBe('Coat 2')
+  })
+
+  it('is case-insensitive, because the picker and the database differ in case', () => {
+    expect(zoneColorConflict('#BFBFBF', stages)?.name).toBe('Coat 2')
+  })
+
+  it('returns null for a colour no stage wears', () => {
+    expect(zoneColorConflict('#eb2f96', stages)).toBeNull()
   })
 })

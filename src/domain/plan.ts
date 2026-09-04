@@ -1,5 +1,5 @@
 import dayjs from 'dayjs'
-import type { Zone } from './types'
+import type { Stage, Zone } from './types'
 
 /**
  * A zone's planned dates in the form the source drawings use: `13/08 – 19/08`,
@@ -48,4 +48,17 @@ export function buildPlanLabels(
     }
   }
   return labels
+}
+
+/**
+ * The stage whose colour a zone would borrow, or null (Feedback Rv2, item 6).
+ *
+ * Linh's rule is exactly "not one of the A3.2 colours": a zone painted in
+ * Coat 2's colour reads as Coat 2 on the drawing. Exact hex, case-insensitive
+ * -- two similar colours are allowed, because "similar" is a judgement the
+ * picker's presets already make for the admin.
+ */
+export function zoneColorConflict(color: string, stages: Stage[]): Stage | null {
+  const wanted = color.toLowerCase()
+  return stages.find((s) => s.color.toLowerCase() === wanted) ?? null
 }

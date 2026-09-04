@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
-  codesNotReaching, paintLensColors, scaffoldLensColors, zoneLensColors,
-  SCAFFOLD_PENDING_COLOR, ZONE_PALETTE,
+  codesNotReaching, paintLensColors, scaffoldLensColors, zoneColorMap, zoneColorOf,
+  zoneLensColors, zoneLensLayers, PLANNED_FILL_OPACITY, SCAFFOLD_PENDING_COLOR, ZONE_PALETTE,
 } from './lens'
 import type { Cell, Stage } from './types'
 
@@ -178,5 +178,84 @@ describe('codesNotReaching', () => {
   it('treats a bay pointing at a stage this deck does not declare as not started', () => {
     // The same window a stage deletion opens, seen from the cell side.
     expect(codesNotReaching([cell('R1C1', 'gone')], stages, 's1')).toEqual(['R1C1'])
+  })
+})
+
+describe('zoneColorOf', () => {
+  it('uses the colour the admin chose, whatever the palette says', () => {
+    expect(zoneColorOf({ color: '#123456' }, 0, ['#eb2f96'])).toBe('#123456')
+  })
+
+  it('skips palette entries a stage on this deck already wears', () => {
+    // Item 6: a zone drawn in Coat 2's colour reads as Coat 2. The first
+    // palette entry is taken, so the second is handed out.
+    expect(zoneColorOf({ color: null }, 0, ['#eb2f96'])).toBe('#13c2c2')
+  })
+
+  it('compares colours case-insensitively', () => {
+    expect(zoneColorOf({ color: null }, 0, ['#EB2F96'])).toBe('#13c2c2')
+    expect(zoneColorOf({ color: '#ABCDEF' }, 0, [])).toBe('#abcdef')
+  })
+
+  it('falls back to the palette entry at the index when everything is taken', () => {
+    expect(zoneColorOf({ color: null }, 3, ZONE_PALETTE)).toBe(ZONE_PALETTE[3])
+  })
+})
+
+describe('zoneColorMap', () => {
+  it('never gives two unset zones on one coat the same colour', () => {
+    const map = zoneColorMap([{ id: 'z1', color: null }, { id: 'z2', color: null }], [])
+    expect(map.z1).toBe('#eb2f96')
+    expect(map.z2).toBe('#13c2c2')
+  })
+
+  it('keeps an unset zone off a colour a chosen zone already holds', () => {
+    const map = zoneColorMap([{ id: 'z1', color: '#13c2c2' }, { id: 'z2', color: null }], ['#eb2f96'])
+    expect(map.z1).toBe('#13c2c2')
+    expect(map.z2).toBe('#fa8c16')
+  })
+})
+
+describe('zoneLensLayers', () => {
+  const stages: Stage[] = [
+    { id: 's1', seq: 1, name: 'Coat 1', color: '#fadb14', weight: 0.4 },
+    { id: 's2', seq: 2, name: 'Coat 2', color: '#bfbfbf', weight: 0.6 },
+  ]
+  const cells = [cell('A', 's2'), cell('B', 's2'), cell('C', 's1'), cell('D', null)]
+  const zones = [{ id: 'z1', cellIds: ['id-A', 'id-C'] }]
+  const colors = { z1: '#eb2f96' }
+
+  it('fills a reached bay in its zone colour, solid', () => {
+    const layers = zoneLensLayers(cells, stages, stages[1], zones, colors)
+    expect(layers.colors.A).toBe('#eb2f96')
+    expect(layers.opacities.A).toBeUndefined()
+    expect(layers.outlines.A).toBeUndefined()
+  })
+
+  it('fills a reached bay outside every zone in the coat colour', () => {
+    const layers = zoneLensLayers(cells, stages, stages[1], zones, colors)
+    expect(layers.colors.B).toBe('#bfbfbf')
+    expect(layers.outlines.B).toBeUndefined()
+  })
+
+  it('tints and outlines a planned bay that has not reached the coat', () => {
+    // Item 5: this is the bay that used to vanish. Linh drew four zones on
+    // Topcoat and saw a white deck because nothing had reached Topcoat yet.
+    const layers = zoneLensLayers(cells, stages, stages[1], zones, colors)
+    expect(layers.colors.C).toBe('#eb2f96')
+    expect(layers.opacities.C).toBe(PLANNED_FILL_OPACITY)
+    expect(layers.outlines.C).toBe('#eb2f96')
+  })
+
+  it('leaves an unplanned, unreached bay alone', () => {
+    const layers = zoneLensLayers(cells, stages, stages[1], zones, colors)
+    expect(layers.colors.D).toBeUndefined()
+    expect(layers.opacities.D).toBeUndefined()
+    expect(layers.outlines.D).toBeUndefined()
+  })
+
+  it('names the reached bays so the panel can sum their area', () => {
+    const layers = zoneLensLayers(cells, stages, stages[1], zones, colors)
+    expect(layers.reachedCodes).toEqual(['A', 'B'])
   })
 })

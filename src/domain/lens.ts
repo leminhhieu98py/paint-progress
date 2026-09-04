@@ -114,15 +114,19 @@ export const ZONE_PALETTE = [
  *
  * A bay in no zone is left OUT of the map, so the drawing shows through: on this
  * lens "not planned" is the common case and filling it would hide the plan.
+ *
+ * `zoneColors` (Feedback Rv2, item 6) overrides the positional palette with the
+ * colours `zoneColorMap` settled on; without it the palette order stands.
  */
 export function zoneLensColors(
   zones: { id: string; cellIds: string[] }[],
   cells: { id: string; code: string }[],
+  zoneColors?: Record<string, string>,
 ): Record<string, string> {
   const codeById = new Map(cells.map((c) => [c.id, c.code]))
   const colors: Record<string, string> = {}
   zones.forEach((zone, i) => {
-    const color = ZONE_PALETTE[i % ZONE_PALETTE.length]
+    const color = zoneColors?.[zone.id] ?? ZONE_PALETTE[i % ZONE_PALETTE.length]
     for (const cellId of zone.cellIds) {
       const code = codeById.get(cellId)
       if (code) colors[code] = color
@@ -156,4 +160,113 @@ export function codesNotReaching(cells: Cell[], stages: Stage[], stageId: string
   return cells
     .filter((cell) => stageSeqOf(stages, cell.stageId) < target.seq)
     .map((cell) => cell.code)
+}
+
+/**
+ * Fill opacity for a bay that is PLANNED for the coat being looked at but has
+ * not reached it. Faint enough that the drawing underneath still reads, dark
+ * enough that four zones drawn on an untouched Topcoat are four visible
+ * blocks rather than a white deck -- which is what Linh saw (Feedback Rv2,
+ * item 5) and the reason this constant exists.
+ */
+export const PLANNED_FILL_OPACITY = 0.18
+
+/**
+ * The colour one zone is drawn in (Feedback Rv2, item 6).
+ *
+ * The admin's own choice wins. Otherwise the first palette entry not in
+ * `taken`, which the caller fills with this deck's stage colours (and the
+ * colours already handed to earlier zones): a zone that wears Coat 2's colour
+ * reads as Coat 2 on the drawing, and that is the confusion Linh reported.
+ * Everything taken, the palette entry at `index` -- a repeated colour beats no
+ * colour, and ten zones on one coat is already more than the plans carry.
+ *
+ * Lower-cased throughout: antd's picker emits upper-case hex, the check
+ * constraint on `zones.color` and the stage colours are lower-case, and a
+ * comparison that misses on case would hand out the conflict it exists to
+ * avoid.
+ */
+export function zoneColorOf(
+  zone: { color?: string | null },
+  index: number,
+  taken: Iterable<string>,
+): string {
+  if (zone.color) return zone.color.toLowerCase()
+  const used = new Set(Array.from(taken, (c) => c.toLowerCase()))
+  return ZONE_PALETTE.find((c) => !used.has(c)) ?? ZONE_PALETTE[index % ZONE_PALETTE.length]
+}
+
+/**
+ * Colour per zone id for one list of zones. Chosen colours are reserved first,
+ * so an unset zone never lands on a colour a chosen zone already holds; then
+ * each unset zone takes the next free entry and reserves it for the ones after.
+ * Admin, GS and report all colour a zone through this, so the same zone is the
+ * same colour on every screen.
+ */
+export function zoneColorMap(
+  zones: { id: string; color?: string | null }[],
+  taken: Iterable<string>,
+): Record<string, string> {
+  const used = new Set(Array.from(taken, (c) => c.toLowerCase()))
+  for (const z of zones) if (z.color) used.add(z.color.toLowerCase())
+  const colors: Record<string, string> = {}
+  zones.forEach((z, i) => {
+    const color = zoneColorOf(z, i, used)
+    colors[z.id] = color
+    used.add(color)
+  })
+  return colors
+}
+
+export interface ZoneLensLayers {
+  /** Fill per cell code. Absent = the drawing shows through. */
+  colors: Record<string, string>
+  /** Fill opacity overrides per code; only planned-not-reached bays appear. */
+  opacities: Record<string, number>
+  /** Dashed outline colour per code; only planned-not-reached bays appear. */
+  outlines: Record<string, string>
+  /** Codes at or past `stage`, for the area the panel sums. */
+  reachedCodes: string[]
+}
+
+/**
+ * One coat, seen through its plan (Feedback Rv2, items 5 and 6).
+ *
+ *   reached, in a zone      -> zone colour, solid
+ *   reached, no zone        -> the coat's own colour, solid
+ *   not reached, in a zone  -> zone colour, faint, dashed outline
+ *   not reached, no zone    -> nothing
+ *
+ * The third row is the one that was missing. A planned bay that had not
+ * reached the coat drew nothing, so a plan drawn before the work started was
+ * invisible on the very screen it was drawn on. The faint fill says "this bay
+ * belongs to that zone"; the solid fill still says "and it is done", so the
+ * two states cannot be confused at a glance.
+ *
+ * `zones` must already be filtered to this coat. `zoneColors` comes from
+ * `zoneColorMap`, so the row in the zone table and the bays on the drawing
+ * are the same colour.
+ */
+export function zoneLensLayers(
+  cells: Cell[],
+  stages: Stage[],
+  stage: Stage,
+  zones: { id: string; cellIds: string[] }[],
+  zoneColors: Record<string, string>,
+): ZoneLensLayers {
+  const pending = new Set(codesNotReaching(cells, stages, stage.id))
+  const zoned = zoneLensColors(zones, cells, zoneColors)
+  const layers: ZoneLensLayers = { colors: {}, opacities: {}, outlines: {}, reachedCodes: [] }
+  for (const cell of cells) {
+    const zoneColor = zoned[cell.code]
+    if (!pending.has(cell.code)) {
+      layers.colors[cell.code] = zoneColor ?? stage.color
+      layers.reachedCodes.push(cell.code)
+    } else if (zoneColor) {
+      layers.colors[cell.code] = zoneColor
+      layers.opacities[cell.code] = PLANNED_FILL_OPACITY
+      layers.outlines[cell.code] = zoneColor
+    }
+  }
+  return layers
 }
