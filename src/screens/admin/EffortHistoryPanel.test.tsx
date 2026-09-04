@@ -15,6 +15,10 @@ vi.mock('../../lib/progressApi', () => ({
 vi.mock('../../lib/adminApi', () => ({
   listGsUsers: (includeHidden: boolean) => listGsUsers(includeHidden),
 }))
+const listCoworkerNames = vi.hoisted(() => vi.fn())
+vi.mock('../../lib/gsApi', () => ({
+  listCoworkerNames: () => listCoworkerNames(),
+}))
 
 const ev = (over: Partial<DeckEvent> = {}): DeckEvent => ({
   id: 1, deckName: 'Cellar Deck', cellCode: 'R1C1', cellAreaM2: 100, workName: 'Sơn', toStageName: 'Lớp 1',
@@ -47,9 +51,10 @@ beforeEach(() => {
   setCellEventEffort.mockReset()
   listGsUsers.mockReset()
   listDeckEvents.mockResolvedValue(EVENTS)
-  listGsUsers.mockResolvedValue([
-    { id: 'u1', fullName: 'Lê Văn A' }, { id: 'u2', fullName: 'Trần Thị B' },
-  ])
+  listGsUsers.mockResolvedValue([{ id: 'u2', fullName: 'Trần Thị B' }])
+  // u1 is an admin: not on the GS list, named through coworker_names.
+  listCoworkerNames.mockReset()
+  listCoworkerNames.mockResolvedValue({ u1: 'Lê Văn A' })
 })
 
 describe('EffortHistoryPanel', () => {

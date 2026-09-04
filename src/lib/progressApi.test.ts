@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
-  latestProgressEvent, listCellNotes, listDeckEvents, listProjectEvents, loadDeckWorks,
+  EVENT_PAGE, latestProgressEvent, listCellNotes, listDeckEvents, listProjectEvents, loadDeckWorks,
   loadProjectModel, setCellEventEffort, setReportNote,
 } from './progressApi'
 
@@ -12,7 +12,7 @@ vi.mock('./supabase', () => ({ supabase: { from, rpc } }))
  *  `{ data, error }` -- postgrest-js reports failure as a value, never a throw. */
 function builder(result: { data?: unknown; error?: unknown }) {
   const b: Record<string, unknown> = {}
-  for (const m of ['select', 'eq', 'in', 'order', 'limit']) b[m] = vi.fn(() => b)
+  for (const m of ['select', 'eq', 'in', 'order', 'limit', 'range']) b[m] = vi.fn(() => b)
   b.then = (resolve: (v: unknown) => unknown) =>
     Promise.resolve({ data: result.data ?? null, error: result.error ?? null }).then(resolve)
   return b
@@ -431,7 +431,30 @@ describe('listDeckEvents', () => {
     )
     expect(b.eq).toHaveBeenCalledWith('cells.deck_id', 'd1')
     expect(b.order).toHaveBeenCalledWith('at', { ascending: true })
+    // The tiebreak: the 0024 backfill gave hundreds of rows one timestamp.
+    expect(b.order).toHaveBeenCalledWith('id', { ascending: true })
+    expect(b.range).toHaveBeenCalledWith(0, EVENT_PAGE - 1)
     expect(events).toEqual([EXPECTED])
+  })
+
+  it('pages past the 1000-row cap until a short page comes back', async () => {
+    // Main Deck on dev: 1194 events, of which a single read returned 1000.
+    const full = Array.from({ length: EVENT_PAGE }, (_, i) => row({ id: i + 1 }))
+    const rest = [row({ id: EVENT_PAGE + 1 }), row({ id: EVENT_PAGE + 2 })]
+    const pages = [builder({ data: full }), builder({ data: rest })]
+    from.mockImplementation(() => pages.shift())
+
+    const events = await listDeckEvents('d1')
+
+    expect(events).toHaveLength(EVENT_PAGE + 2)
+    expect(events[EVENT_PAGE + 1].id).toBe(EVENT_PAGE + 2)
+    expect(from).toHaveBeenCalledTimes(2)
+  })
+
+  it('stops after one page when it is short', async () => {
+    from.mockImplementation(() => builder({ data: [row({})] }))
+    await listDeckEvents('d1')
+    expect(from).toHaveBeenCalledTimes(1)
   })
 
   it('reads a row written before 0030 as blank effort, and a backfilled one with its stamp', async () => {

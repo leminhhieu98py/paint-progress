@@ -5,6 +5,7 @@ import { modalProps } from '../../components/modalChrome'
 import { effortCoverage } from '../../domain/effort'
 import { type DeckEvent, type Effort } from '../../domain/types'
 import { listGsUsers } from '../../lib/adminApi'
+import { listCoworkerNames } from '../../lib/gsApi'
 import { formatDateTimeVN, formatHours } from '../../lib/format'
 import { listDeckEvents, setCellEventEffort } from '../../lib/progressApi'
 import { palette } from '../../theme'
@@ -41,14 +42,20 @@ export function EffortHistoryPanel({ deckId, editable }: { deckId: string; edita
 
   useEffect(() => {
     let cancelled = false
-    // Hidden accounts included: a bay ticked last month by someone since
-    // hidden still has to be attributed on this list.
-    Promise.all([listDeckEvents(deckId), listGsUsers(true).catch(() => [])])
-      .then(([rows, users]) => {
+    // Two name sources, neither fatal: listGsUsers for the field accounts,
+    // hidden ones included (a bay ticked last month by someone since hidden is
+    // still theirs), and coworker_names for the admins, who tick bays too and
+    // are not in the GS list. An id nobody resolves is printed as is.
+    Promise.all([
+      listDeckEvents(deckId),
+      listGsUsers(true).catch(() => []),
+      listCoworkerNames().catch(() => ({}) as Record<string, string>),
+    ])
+      .then(([rows, users, admins]) => {
         if (cancelled) return
         setError(null)
         setEvents([...rows].reverse())
-        setNames(Object.fromEntries(users.map((u) => [u.id, u.fullName])))
+        setNames({ ...admins, ...Object.fromEntries(users.map((u) => [u.id, u.fullName])) })
       })
       .catch((e: Error) => {
         if (!cancelled) setError(e.message)

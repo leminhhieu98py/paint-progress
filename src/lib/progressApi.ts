@@ -361,14 +361,36 @@ function mapEventRow(r: unknown): DeckEvent {
   }
 }
 
+/**
+ * PostgREST answers at most 1000 rows per request (the project's
+ * `db-max-rows`), silently. Main Deck on dev already holds 1194 events, so a
+ * single read printed 1000 rows on the report and called it the history.
+ * Every event read pages through in steps of EVENT_PAGE until a short page
+ * comes back. Ordered by `at` THEN `id`: the 0024 backfill stamped hundreds
+ * of rows with one timestamp, and without the tiebreak two pages could
+ * overlap or skip.
+ */
+export const EVENT_PAGE = 1000
+
+async function listEvents(filter: (q: EventQuery) => EventQuery): Promise<DeckEvent[]> {
+  const rows: unknown[] = []
+  for (let from = 0; ; from += EVENT_PAGE) {
+    const { data, error } = await filter(supabase.from('cell_events').select(EVENT_SELECT))
+      .order('at', { ascending: true })
+      .order('id', { ascending: true })
+      .range(from, from + EVENT_PAGE - 1)
+    if (error) throw new Error(error.message)
+    const page = data ?? []
+    rows.push(...page)
+    if (page.length < EVENT_PAGE) break
+  }
+  return rows.map(mapEventRow)
+}
+
+type EventQuery = ReturnType<ReturnType<typeof supabase.from>['select']>
+
 export async function listDeckEvents(deckId: string): Promise<DeckEvent[]> {
-  const { data, error } = await supabase
-    .from('cell_events')
-    .select(EVENT_SELECT)
-    .eq('cells.deck_id', deckId)
-    .order('at', { ascending: true })
-  if (error) throw new Error(error.message)
-  return (data ?? []).map(mapEventRow)
+  return listEvents((q) => q.eq('cells.deck_id', deckId))
 }
 
 /**
@@ -378,13 +400,7 @@ export async function listDeckEvents(deckId: string): Promise<DeckEvent[]> {
  * the works they hold (`my_works()`, 0028), so the same call serves every role.
  */
 export async function listProjectEvents(projectId: string): Promise<DeckEvent[]> {
-  const { data, error } = await supabase
-    .from('cell_events')
-    .select(EVENT_SELECT)
-    .eq('cells.decks.project_id', projectId)
-    .order('at', { ascending: true })
-  if (error) throw new Error(error.message)
-  return (data ?? []).map(mapEventRow)
+  return listEvents((q) => q.eq('cells.decks.project_id', projectId))
 }
 
 /**
