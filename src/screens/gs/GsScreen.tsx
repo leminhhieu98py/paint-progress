@@ -15,7 +15,7 @@ import { EMPTY_EFFORT, type Cell, type Deck, type Effort, type Stage, type WorkM
 // One signed-URL helper for both roles: the bucket name and the 3600-second
 // expiry belong in one place, and decksApi is a lib module rather than an admin
 // one. Screens still never touch `supabase` directly.
-import { LOGIN_PATH } from '../../config'
+import { APP_BASE_PATH, LOGIN_PATH } from '../../config'
 import { getDrawingUrl } from '../../lib/decksApi'
 import { formatAreaM2, formatPercent } from '../../lib/format'
 import {
@@ -31,7 +31,7 @@ import { CellStageModal } from './CellStageModal'
 import { ConsequenceModal } from '../../components/ConsequenceModal'
 import { LogoutOutlined } from '@ant-design/icons'
 import { fieldError, palette, shadowCard } from '../../theme'
-import { CalendarOutlined, DownloadOutlined } from '@ant-design/icons'
+import { CalendarOutlined, DownloadOutlined, LineChartOutlined } from '@ant-design/icons'
 import { EmptyState } from '../../components/EmptyState'
 import { DeckProgressCard, StageRollupCard } from './DeckStatsCards'
 import { SectionCard } from '../../components/SectionCard'
@@ -936,6 +936,18 @@ export function GsScreen() {
           <span style={{ fontSize: 11, color: palette.textTertiary }}>{profile?.username}</span>
         </div>
         {readOnly && <StatusPill tone="off">Chỉ xem</StatusPill>}
+        {/*
+          The productivity dashboard (Feedback Rv2, item 12), one tap from the
+          drawing and one tap back. Icon only on a phone: the header is already
+          carrying the deck tabs and the name.
+        */}
+        <Button
+          aria-label="Năng suất"
+          icon={<LineChartOutlined aria-hidden />}
+          onClick={() => navigate(`${APP_BASE_PATH}/gs/${projectId}/dashboard`)}
+        >
+          {phone ? null : 'Năng suất'}
+        </Button>
         {/* Spec §8.1: no account UI. Logout only. */}
         <Button
           aria-label="Đăng xuất"

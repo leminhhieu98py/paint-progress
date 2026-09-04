@@ -1,7 +1,7 @@
 import { Alert, Button, Input, InputNumber, Modal, Select, Space, Typography } from 'antd'
 import { modalProps } from '../../components/modalChrome'
 import { palette } from '../../theme'
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { isBackwards, nextStage } from '../../domain/stageFlow'
 import { EMPTY_EFFORT, type Cell, type Effort, type Stage } from '../../domain/types'
 import { formatAreaM2 } from '../../lib/format'
@@ -86,12 +86,17 @@ export function CellStageModal({
 }) {
   const [choice, setChoice] = useState<string>(NOT_STARTED_VALUE)
   const [note, setNote] = useState('')
-  const [effort, setEffort] = useState<Effort>(EMPTY_EFFORT)
-  // Read through a ref inside the reset effect below: the seed is taken once
-  // per bay, and a default that changes while the foreman is typing must not
-  // re-run the reset over what they typed.
-  const defaultNames = useRef(defaultEffortNames)
-  defaultNames.current = defaultEffortNames
+  /**
+   * The effort typed for THIS bay, keyed by the bay id and matched on render
+   * (as the note thread is): a bay the foreman has not touched shows the seed
+   * -- blank hours, the crew names from the last update -- and typing on R1C1
+   * is never sent as R1C2's. No effect and no synchronous setState.
+   */
+  const [effortFor, setEffortFor] = useState<{ cellId: string | null; effort: Effort } | null>(null)
+  const effort: Effort = effortFor !== null && effortFor.cellId === (cell?.id ?? null)
+    ? effortFor.effort
+    : { ...EMPTY_EFFORT, leadName: defaultEffortNames.leadName, painterName: defaultEffortNames.painterName }
+  const setEffort = (next: Effort) => setEffortFor({ cellId: cell?.id ?? null, effort: next })
 
   // Keyed on the cell's ID only, deliberately. A realtime update to the cell
   // being edited must not silently rewrite the foreman's pending selection --
@@ -111,9 +116,6 @@ export function CellStageModal({
     // meant to tick a box. What is already on the bay is shown above the field
     // instead -- readable, and not the thing being sent.
     setNote('')
-    // Hours reset with the bay for the same reason as the note; the crew names
-    // carry over (see defaultEffortNames).
-    setEffort({ ...EMPTY_EFFORT, ...defaultNames.current })
   }, [cell?.id])
 
   /**

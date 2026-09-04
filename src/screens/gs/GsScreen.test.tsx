@@ -557,6 +557,13 @@ describe('GsScreen: recording a stage', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Xác nhận' }))
   }
 
+  it('opens the productivity dashboard of this project from the header (Feedback Rv2, item 12)', async () => {
+    renderScreen()
+    await screen.findByRole('button', { name: 'ô R1C2' })
+    await userEvent.click(screen.getByRole('button', { name: 'Năng suất' }))
+    expect(navigate).toHaveBeenCalledWith('/gs/p1/dashboard')
+  })
+
   it('opens the modal for the tapped cell', async () => {
     renderScreen()
     await userEvent.click(await screen.findByRole('button', { name: 'ô R1C2' }))

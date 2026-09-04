@@ -1,11 +1,11 @@
 import { Alert, App, Button, Input, InputNumber, Modal, Space, Switch, Table, Tooltip, Typography } from 'antd'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { SectionCard } from '../../components/SectionCard'
 import { modalProps } from '../../components/modalChrome'
 import { effortCoverage } from '../../domain/effort'
 import { type DeckEvent, type Effort } from '../../domain/types'
 import { listGsUsers } from '../../lib/adminApi'
-import { formatDateTimeVN } from '../../lib/format'
+import { formatDateTimeVN, formatHours } from '../../lib/format'
 import { listDeckEvents, setCellEventEffort } from '../../lib/progressApi'
 import { palette } from '../../theme'
 
@@ -21,8 +21,7 @@ import { palette } from '../../theme'
  * comes here to fix are the ones from this week.
  */
 
-const HOURS = new Intl.NumberFormat('vi-VN', { minimumFractionDigits: 1, maximumFractionDigits: 2 })
-const hours = (n: number | null) => (n === null ? '' : HOURS.format(n))
+const hours = (n: number | null) => (n === null ? '' : formatHours(n))
 
 const fieldLabel = { display: 'block', marginBottom: 4, fontSize: 12, fontWeight: 600 } as const
 
@@ -36,22 +35,28 @@ export function EffortHistoryPanel({ deckId, editable }: { deckId: string; edita
   const [draft, setDraft] = useState<Effort | null>(null)
   const [saving, setSaving] = useState(false)
 
-  const load = useCallback(async () => {
-    setError(null)
-    try {
-      // Hidden accounts included: a bay ticked last month by someone since
-      // hidden still has to be attributed on this list.
-      const [rows, users] = await Promise.all([listDeckEvents(deckId), listGsUsers(true).catch(() => [])])
-      setEvents([...rows].reverse())
-      setNames(Object.fromEntries(users.map((u) => [u.id, u.fullName])))
-    } catch (e) {
-      setError((e as Error).message)
-    }
-  }, [deckId])
+  // Bumped to re-read: after a backfill, and from the retry button.
+  const [attempt, setAttempt] = useState(0)
+  const reload = () => setAttempt((n) => n + 1)
 
   useEffect(() => {
-    void load()
-  }, [load])
+    let cancelled = false
+    // Hidden accounts included: a bay ticked last month by someone since
+    // hidden still has to be attributed on this list.
+    Promise.all([listDeckEvents(deckId), listGsUsers(true).catch(() => [])])
+      .then(([rows, users]) => {
+        if (cancelled) return
+        setError(null)
+        setEvents([...rows].reverse())
+        setNames(Object.fromEntries(users.map((u) => [u.id, u.fullName])))
+      })
+      .catch((e: Error) => {
+        if (!cancelled) setError(e.message)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [deckId, attempt])
 
   const shown = useMemo(() => {
     if (events === null) return []
@@ -75,7 +80,7 @@ export function EffortHistoryPanel({ deckId, editable }: { deckId: string; edita
       await setCellEventEffort(editing.id, (draft.wasteHours ?? 0) > 0 ? draft : { ...draft, wasteReason: '' })
       message.success('Đã lưu giờ công')
       closeEdit()
-      await load()
+      reload()
     } catch (e) {
       message.error((e as Error).message)
     } finally {
@@ -101,7 +106,7 @@ export function EffortHistoryPanel({ deckId, editable }: { deckId: string; edita
           showIcon
           message="Không tải được lịch sử cập nhật"
           description={error}
-          action={<Button size="small" onClick={() => void load()}>Thử lại</Button>}
+          action={<Button size="small" onClick={reload}>Thử lại</Button>}
           style={{ marginBottom: 12 }}
         />
       )}

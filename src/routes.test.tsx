@@ -62,6 +62,12 @@ vi.mock('./screens/admin/UsersScreen', () => ({
 // a signed-in profile lands on, not what the destination renders. The projectId
 // is rendered so the assertion below can prove the redirect landed on THIS
 // project's screen and not merely "some" GS route.
+vi.mock('./screens/dashboard/DashboardScreen', () => ({
+  DashboardScreen: ({ variant }: { variant: string }) => {
+    const { projectId } = useParams()
+    return <div>DASHBOARD {variant}{projectId ? ` (dự án ${projectId})` : ''}</div>
+  },
+}))
 vi.mock('./screens/gs/GsScreen', () => ({
   GsScreen: () => {
     const { projectId } = useParams()
@@ -162,7 +168,7 @@ describe('AppRoutes: landing at the base path by role', () => {
 })
 
 describe('AppRoutes: /login is the entry point', () => {
-  const asRole = (role: 'admin' | 'gs') => maybeSingle.mockResolvedValue({
+  const asRole = (role: 'admin' | 'gs' | 'viewer') => maybeSingle.mockResolvedValue({
     data: { id: 'user-1', username: 'u', full_name: 'U', role, active: true },
     error: null,
   })
@@ -193,6 +199,19 @@ describe('AppRoutes: /login is the entry point', () => {
     asRole('admin')
     renderAt(APP_BASE_PATH || '/')
     expect(await screen.findByText('PROJECTS SCREEN')).toBeInTheDocument()
+  })
+
+  it('gives an admin the productivity dashboard under the admin frame (Feedback Rv2, item 12)', async () => {
+    asRole('admin')
+    renderAt(`${APP_BASE_PATH}/admin/dashboard`)
+    expect(await screen.findByText('DASHBOARD admin')).toBeInTheDocument()
+    expect(screen.getByText(/ADMIN LAYOUT/)).toBeInTheDocument()
+  })
+
+  it('gives a viewer the field dashboard of their project, and not the admin one', async () => {
+    asRole('viewer')
+    renderAt(`${APP_BASE_PATH}/gs/proj-4/dashboard`)
+    expect(await screen.findByText('DASHBOARD gs (dự án proj-4)')).toBeInTheDocument()
   })
 
   it('gives a path that is not a route the bare 404, as spec §7.3 asks', async () => {

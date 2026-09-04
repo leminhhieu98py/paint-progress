@@ -38,9 +38,16 @@ const PERCENT = new Intl.NumberFormat('vi-VN', {
 */
 const WEIGHT = new Intl.NumberFormat('vi-VN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
+/** Man-hours: one decimal always ("3,0"), a second when it carries information ("0,25"). */
+const HOURS = new Intl.NumberFormat('vi-VN', { minimumFractionDigits: 1, maximumFractionDigits: 2 })
+/** Mhr/m²: three places, since the customer's workbook compares 1,149 with 1,161. */
+const MHR_PER_M2 = new Intl.NumberFormat('vi-VN', { minimumFractionDigits: 3, maximumFractionDigits: 3 })
+
 export const formatAreaM2 = (n: number): string => AREA_M2.format(n)
 export const formatPercent = (n: number): string => PERCENT.format(n)
 export const formatWeight = (n: number): string => WEIGHT.format(n)
+export const formatHours = (n: number): string => HOURS.format(n)
+export const formatMhrPerM2 = (n: number): string => MHR_PER_M2.format(n)
 
 /**
  * Vietnam is UTC+7 all year and has been since 1975 -- no daylight saving, no

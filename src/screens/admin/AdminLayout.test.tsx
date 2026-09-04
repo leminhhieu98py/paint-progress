@@ -20,6 +20,7 @@ function renderAt(path: string) {
           <Route path="decks" element={<div>nội dung sàn</div>} />
         <Route path="decks/:deckId" element={<div>nội dung một sàn</div>} />
           <Route path="users" element={<div>nội dung người dùng</div>} />
+          <Route path="dashboard" element={<div>nội dung năng suất</div>} />
         </Route>
         <Route path="/login" element={<div>màn đăng nhập</div>} />
       </Routes>
@@ -39,10 +40,11 @@ describe('AdminLayout', () => {
     expect(screen.getByText('nội dung sàn')).toBeInTheDocument()
   })
 
-  it('offers the three admin destinations', () => {
+  it('offers the admin destinations, the dashboard among them', () => {
     renderAt('/admin/projects')
     expect(screen.getByRole('link', { name: /Dự án/ })).toHaveAttribute('href', '/admin/projects')
     expect(screen.getByRole('link', { name: /Sàn/ })).toHaveAttribute('href', '/admin/decks')
+    expect(screen.getByRole('link', { name: /Năng suất/ })).toHaveAttribute('href', '/admin/dashboard')
     expect(screen.getByRole('link', { name: /Người dùng/ })).toHaveAttribute('href', '/admin/users')
   })
 

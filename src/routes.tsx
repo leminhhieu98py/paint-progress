@@ -44,6 +44,11 @@ const UsersScreen = lazy(() =>
 const GsScreen = lazy(() =>
   import('./screens/gs/GsScreen').then((m) => ({ default: m.GsScreen })),
 )
+// Recharts rides in this chunk and nowhere else: the login form and the
+// drawing never download it.
+const DashboardScreen = lazy(() =>
+  import('./screens/dashboard/DashboardScreen').then((m) => ({ default: m.DashboardScreen })),
+)
 
 function LazySuspense({ children }: { children: ReactNode }) {
   return (
@@ -210,6 +215,14 @@ export function AppRoutes() {
               </LazySuspense>
             }
           />
+          <Route
+            path="dashboard"
+            element={
+              <LazySuspense>
+                <DashboardScreen variant="admin" />
+              </LazySuspense>
+            }
+          />
         </Route>
         <Route
           path="gs/:projectId"
@@ -226,6 +239,23 @@ export function AppRoutes() {
               <ConfigProvider theme={fieldTheme}>
                 <LazySuspense>
                   <GsScreen />
+                </LazySuspense>
+              </ConfigProvider>
+            </RequireRole>
+          }
+        />
+        {/*
+          The field dashboard (Feedback Rv2, item 12): the same roles, the same
+          field theme, its own chunk. A sibling rather than a child route so the
+          GS screen keeps owning its whole viewport.
+        */}
+        <Route
+          path="gs/:projectId/dashboard"
+          element={
+            <RequireRole roles={['gs', 'viewer']}>
+              <ConfigProvider theme={fieldTheme}>
+                <LazySuspense>
+                  <DashboardScreen variant="gs" />
                 </LazySuspense>
               </ConfigProvider>
             </RequireRole>
