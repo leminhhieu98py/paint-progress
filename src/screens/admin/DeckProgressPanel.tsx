@@ -566,16 +566,12 @@ export function DeckProgressPanel({
     setSelectedCodes((prev) => [...new Set([...prev, ...swept])])
   }
 
-  const setWindow = (stageId: string, field: keyof StageWindow, value: dayjs.Dayjs | null) => {
+  /** One RangePicker per coat writes both ends at once; either may be empty. */
+  const setWindowRange = (stageId: string, range: [dayjs.Dayjs | null, dayjs.Dayjs | null] | null) =>
     setWindows((prev) => ({
       ...prev,
-      [stageId]: {
-        startDate: prev[stageId]?.startDate ?? null,
-        finishDate: prev[stageId]?.finishDate ?? null,
-        [field]: value,
-      },
+      [stageId]: { startDate: range?.[0] ?? null, finishDate: range?.[1] ?? null },
     }))
-  }
 
   const iso = (d: dayjs.Dayjs | null | undefined) => (d ? d.format('YYYY-MM-DD') : null)
 
@@ -639,15 +635,18 @@ export function DeckProgressPanel({
    * A patch, never a delete-and-remake: rebuilding a zone loses its cell
    * membership and takes its plan off the foreman's drawing in between.
    */
-  const patchZoneDate = async (
+  const patchZoneDates = async (
     zone: Zone,
-    field: 'startDate' | 'finishDate',
-    value: dayjs.Dayjs | null,
+    range: [dayjs.Dayjs | null, dayjs.Dayjs | null] | null,
   ) => {
     try {
       // null is a value, not "leave alone": it says the date is no longer
-      // known, which is how a slipped zone is expressed.
-      await updateZone(zone.id, { [field]: value ? value.format('YYYY-MM-DD') : null })
+      // known, which is how a slipped zone is expressed. Both ends travel
+      // together because one picker now holds them (owner request).
+      await updateZone(zone.id, {
+        startDate: range?.[0] ? range[0].format('YYYY-MM-DD') : null,
+        finishDate: range?.[1] ? range[1].format('YYYY-MM-DD') : null,
+      })
       await refreshZones()
     } catch (e) {
       setError((e as Error).message)
@@ -1445,33 +1444,25 @@ export function DeckProgressPanel({
             <Typography.Text type="secondary" style={{ fontSize: 12 }}>
               {`${stageName(datesFor.stageId)} · ${datesFor.cellIds.length} ô. Để trống nghĩa là chưa lên kế hoạch.`}
             </Typography.Text>
-            <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-                <label htmlFor="zone-start" style={{ fontSize: 12, fontWeight: 600, color: palette.textSecondary }}>
-                  Bắt đầu
-                </label>
-                <DatePicker
-                  id="zone-start"
-                  format="DD/MM/YYYY"
-                  placeholder="Chọn ngày"
-                  aria-label={`Ngày bắt đầu của ${datesFor.name}`}
-                  value={datesFor.startDate ? dayjs(datesFor.startDate) : null}
-                  onChange={(v) => void patchZoneDate(datesFor, 'startDate', v)}
-                />
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-                <label htmlFor="zone-finish" style={{ fontSize: 12, fontWeight: 600, color: palette.textSecondary }}>
-                  Kết thúc
-                </label>
-                <DatePicker
-                  id="zone-finish"
-                  format="DD/MM/YYYY"
-                  placeholder="Chọn ngày"
-                  aria-label={`Ngày kết thúc của ${datesFor.name}`}
-                  value={datesFor.finishDate ? dayjs(datesFor.finishDate) : null}
-                  onChange={(v) => void patchZoneDate(datesFor, 'finishDate', v)}
-                />
-              </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+              <span style={{ fontSize: 12, fontWeight: 600, color: palette.textSecondary }}>Thời gian</span>
+              {/*
+                One range, not two dates (owner request, 2026-09-05). Either
+                end may be empty -- a zone whose finish has slipped keeps its
+                start -- and every partial pick is written, so nothing typed
+                is lost when the popup closes.
+              */}
+              <DatePicker.RangePicker
+                data-testid={`zone-range-${datesFor.id}`}
+                format="DD/MM/YYYY"
+                allowEmpty={[true, true]}
+                placeholder={['Bắt đầu', 'Kết thúc']}
+                value={[
+                  datesFor.startDate ? dayjs(datesFor.startDate) : null,
+                  datesFor.finishDate ? dayjs(datesFor.finishDate) : null,
+                ]}
+                onCalendarChange={(v) => void patchZoneDates(datesFor, v as [dayjs.Dayjs | null, dayjs.Dayjs | null] | null)}
+              />
             </div>
             <ZoneColorSwatches
               colors={freeColors}
@@ -1551,28 +1542,16 @@ export function DeckProgressPanel({
             columns={[
               { title: 'Công đoạn', dataIndex: 'name', key: 'name' },
               {
-                title: 'Bắt đầu',
-                key: 'start',
+                title: 'Thời gian',
+                key: 'window',
                 render: (_, st: Stage) => (
-                  <DatePicker
+                  <DatePicker.RangePicker
                     size="small"
                     format="DD/MM/YYYY"
-                    aria-label={`Bắt đầu ${st.name}`}
-                    value={windows[st.id]?.startDate ?? null}
-                    onChange={(v) => setWindow(st.id, 'startDate', v)}
-                  />
-                ),
-              },
-              {
-                title: 'Kết thúc',
-                key: 'finish',
-                render: (_, st: Stage) => (
-                  <DatePicker
-                    size="small"
-                    format="DD/MM/YYYY"
-                    aria-label={`Kết thúc ${st.name}`}
-                    value={windows[st.id]?.finishDate ?? null}
-                    onChange={(v) => setWindow(st.id, 'finishDate', v)}
+                    allowEmpty={[true, true]}
+                    placeholder={['Bắt đầu', 'Kết thúc']}
+                    value={[windows[st.id]?.startDate ?? null, windows[st.id]?.finishDate ?? null]}
+                    onCalendarChange={(v) => setWindowRange(st.id, v as [dayjs.Dayjs | null, dayjs.Dayjs | null] | null)}
                   />
                 ),
               },

@@ -141,6 +141,12 @@ const renderPanel = (editable = true) => render(
   <AntApp><DeckProgressPanel deckId="d1" editable={editable} /></AntApp>,
 )
 
+/** The start input of one coat's RangePicker in the create-zone dialog. */
+const startInputOf = (stageName: string) =>
+  within(
+    within(screen.getByTestId('stage-windows')).getByRole('row', { name: new RegExp(stageName) }),
+  ).getByPlaceholderText('Bắt đầu')
+
 /** The stage the left lens is showing, by name. */
 const pickLens = async (label: string, name: string) => {
   await userEvent.click(screen.getByLabelText(label))
@@ -427,7 +433,7 @@ describe('DeckProgressPanel — zones', () => {
     await userEvent.click(await screen.findByRole('button', { name: /Gộp thành zone/ }))
 
     await userEvent.type(screen.getByLabelText('Tên zone'), 'Khu A')
-    await userEvent.type(screen.getByLabelText('Bắt đầu Coat 2'), '01/09/2026')
+    await userEvent.type(startInputOf('Coat 2'), '01/09/2026')
     await userEvent.keyboard('{Enter}')
     await userEvent.click(screen.getByRole('button', { name: 'Tạo zone' }))
 
@@ -447,7 +453,7 @@ describe('DeckProgressPanel — zones', () => {
     await userEvent.click(screen.getByTestId('band-all'))
     await userEvent.click(await screen.findByRole('button', { name: /Gộp thành zone/ }))
     await userEvent.type(screen.getByLabelText('Tên zone'), 'Khu A')
-    await userEvent.type(screen.getByLabelText('Bắt đầu Coat 2'), '01/09/2026')
+    await userEvent.type(startInputOf('Coat 2'), '01/09/2026')
     await userEvent.keyboard('{Enter}')
 
     // Every swatch offered is outside the stage palette.
@@ -469,7 +475,7 @@ describe('DeckProgressPanel — zones', () => {
     await userEvent.click(screen.getByTestId('band-all'))
     await userEvent.click(await screen.findByRole('button', { name: /Gộp thành zone/ }))
     await userEvent.type(screen.getByLabelText('Tên zone'), 'Khu A')
-    await userEvent.type(screen.getByLabelText('Bắt đầu Coat 2'), '01/09/2026')
+    await userEvent.type(startInputOf('Coat 2'), '01/09/2026')
     await userEvent.keyboard('{Enter}')
     await userEvent.click(screen.getByRole('button', { name: 'Tạo zone' }))
 
@@ -508,7 +514,7 @@ describe('DeckProgressPanel — zones', () => {
     await userEvent.click(screen.getByTestId('band-all'))
     await userEvent.click(await screen.findByRole('button', { name: /Gộp thành zone/ }))
     await userEvent.type(screen.getByLabelText('Tên zone'), 'Khu A')
-    await userEvent.type(screen.getByLabelText('Bắt đầu Coat 2'), '01/09/2026')
+    await userEvent.type(startInputOf('Coat 2'), '01/09/2026')
     await userEvent.keyboard('{Enter}')
     await userEvent.click(screen.getByRole('button', { name: 'Tạo zone' }))
 
@@ -524,12 +530,15 @@ describe('DeckProgressPanel — zones', () => {
     await pickLens('Lớp sơn đang xem', 'Tháo giáo')
 
     await userEvent.click(await screen.findByRole('button', { name: 'Mốc ngày của Khu A — Tháo giáo' }))
-    const finish = await screen.findByLabelText('Ngày kết thúc của Khu A — Tháo giáo')
+    // One RangePicker holds both ends (owner request): the finish is retyped,
+    // the start rides along unchanged in the same patch.
+    const dialog = await screen.findByRole('dialog')
+    const finish = within(dialog).getByPlaceholderText('Kết thúc')
     await userEvent.clear(finish)
     await userEvent.type(finish, '20/09/2026')
     await userEvent.keyboard('{Enter}')
 
-    await waitFor(() => expect(updateZone).toHaveBeenCalledWith('z1', { finishDate: '2026-09-20' }))
+    await waitFor(() => expect(updateZone).toHaveBeenCalledWith('z1', { startDate: '2026-09-01', finishDate: '2026-09-20' }))
     expect(createZone).not.toHaveBeenCalled()
     expect(deleteZone).not.toHaveBeenCalled()
   })
