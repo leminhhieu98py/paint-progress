@@ -538,6 +538,45 @@ describe.skipIf(!adminConfigured)('RLS as an admin session', () => {
     expect(survivors.data ?? []).toEqual([])
   })
 
+  it('duplicate_deck (0029): copies the row, guides and cells for an admin, and refuses a GS', async () => {
+    // A guide on the source first, so the copy has one to carry.
+    const guide = await admin
+      .from('deck_guides')
+      .insert({ deck_id: deckId, axis: 'x', pos: 0.5, offset_mm: 1200, label: 'B' })
+    expect(guide.error).toBeNull()
+
+    const copied = await admin.rpc('duplicate_deck', { src: deckId, new_name: 'Admin Deck (bản sao)', new_code: 'XD-2' })
+    expect(copied.error).toBeNull()
+    const newId = copied.data as string
+    expect(typeof newId).toBe('string')
+    expect(newId).not.toBe(deckId)
+
+    const row = await admin
+      .from('decks')
+      .select('project_id, seq, name, code, total_area_m2, image_path')
+      .eq('id', newId)
+      .single()
+    expect(row.data).toMatchObject({
+      project_id: projectId, seq: 2, name: 'Admin Deck (bản sao)', code: 'XD-2', image_path: null,
+    })
+    expect(Number(row.data?.total_area_m2)).toBe(100)
+
+    const guides = await admin.from('deck_guides').select('axis, pos, label').eq('deck_id', newId)
+    expect(guides.data).toEqual([{ axis: 'x', pos: 0.5, label: 'B' }])
+    const cells = await admin.from('cells').select('id, code, area_m2').eq('deck_id', newId)
+    expect(cells.data?.map((c) => c.code)).toEqual(['R1C1'])
+    expect(cells.data?.[0].id).not.toBe(cellId)
+    // Nothing recorded on the copy: no stages, no states, no zones.
+    expect((await admin.from('deck_stages').select('id').eq('deck_id', newId)).data).toEqual([])
+    expect((await admin.from('cell_states').select('cell_id').eq('deck_id', newId)).data).toEqual([])
+    expect((await admin.from('zones').select('id').eq('deck_id', newId)).data).toEqual([])
+
+    const refused = await gs.rpc('duplicate_deck', { src: deckId, new_name: 'x', new_code: 'XD-3' })
+    expect(refused.error).not.toBeNull()
+    expect(refused.error?.message).toMatch(/admin/i)
+    expect((await admin.from('decks').select('id').eq('code', 'XD-3')).data).toEqual([])
+  })
+
   it('projects_admin_all: creates, reads, renames and deletes a project no GS can see', async () => {
     const created = await admin
       .from('projects')

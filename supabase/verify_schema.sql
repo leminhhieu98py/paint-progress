@@ -233,8 +233,8 @@
 --   nvm use 22
 --   npx supabase db query --linked -f supabase/verify_schema.sql
 --
--- Every returned row must begin with PASS: 41 rows in total on a linked
--- project with 0001-0028 applied (measured 2026-09-04; the numbering above
+-- Every returned row must begin with PASS: 42 rows in total on a linked
+-- project with 0001-0029 applied (measured 2026-09-04; the numbering above
 -- runs 1-41 because one earlier check emits two rows and some later ones
 -- several). A row beginning with FAIL means
 -- a regression in the trigger/FK/RLS behaviour set up across migrations
@@ -1230,6 +1230,16 @@ begin
     case when coalesce(viewer_ok, false) and pol_wm = 2 and definers = 2 and narrowed = 6 and gs_gated = 2
          then 'PASS' else 'FAIL' end,
     coalesce(viewer_ok, false), pol_wm, definers, narrowed, gs_gated);
+
+  -- 42. 0029: duplicate_deck is a definer with a pinned search_path, and anon
+  -- holds no execute on it (the function checks is_admin() itself; the grant
+  -- is the second wall).
+  select count(*) into definers from pg_proc
+   where pronamespace = 'public'::regnamespace and proname = 'duplicate_deck'
+     and prosecdef and proconfig @> array['search_path=public, pg_temp']
+     and not has_function_privilege('anon', oid, 'execute');
+  return next format('%s 0029 duplicate_deck is a pinned definer that anon cannot execute: %s (need 1)',
+                     case when definers = 1 then 'PASS' else 'FAIL' end, definers);
 end $$;
 
 -- A single top-level SELECT: `supabase db query -f` surfaces only the last
