@@ -373,8 +373,11 @@ describe('UsersScreen — Feedback Rv2 (0028)', () => {
 
     // gs1 is in BB1 with every work: restrict it to Sơn, and add BB2 whole.
     await userEvent.click(await screen.findByRole('switch', { name: 'Tất cả công việc BB1' }))
-    await userEvent.click(screen.getByRole('combobox', { name: 'Công việc BB1' }))
-    await userEvent.click(await screen.findByTitle('Sơn'))
+    // Typed, then picked: the search must match the work's name, not its id.
+    await userEvent.type(screen.getByRole('combobox', { name: 'Công việc BB1' }), 'Sơ')
+    await screen.findByTitle('Sơn')
+    expect(screen.queryByTitle('Tháo giáo')).toBeNull()
+    await userEvent.click(screen.getByTitle('Sơn'))
     await userEvent.click(screen.getByRole('checkbox', { name: 'Thành viên BB2' }))
     await userEvent.click(screen.getByRole('button', { name: 'Lưu quyền' }))
 

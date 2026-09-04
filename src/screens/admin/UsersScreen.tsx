@@ -238,6 +238,10 @@ function PermissionsDialog({
                       mode="multiple"
                       aria-label={`Công việc ${p.label}`}
                       placeholder="Chọn công việc"
+                      // Typing filters by the work's NAME. antd's default
+                      // filters by value, which here is a uuid: every
+                      // keystroke produced "No data" in Chrome.
+                      optionFilterProp="label"
                       style={{ minWidth: 260 }}
                       value={row.workIds}
                       onChange={(ids) => patch(p.value, { workIds: ids })}
