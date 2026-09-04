@@ -440,6 +440,38 @@ export async function deleteDeck(
   return { drawingRemoved: !storageError }
 }
 
+/**
+ * A copy of a deck: row, guides and cells through `duplicate_deck` (0029), then
+ * the drawing FILE copied to the new deck's own path (Feedback Rv2, item 3).
+ *
+ * Three steps, and the first is the one that matters. If the function fails
+ * nothing exists. If the file copy fails the deck stands without a picture --
+ * whole in every other respect -- and the caller is told, so the admin can
+ * upload the drawing the ordinary way; failing the duplicate at that point
+ * would leave the row behind regardless. Copied rather than shared because
+ * deleteDeck removes the file its row names, and two rows on one file would
+ * make deleting either deck blank the other.
+ */
+export async function duplicateDeck(
+  src: { id: string; projectId: string; imagePath: string | null },
+  input: { name: string; code: string },
+): Promise<{ deckId: string; drawingCopied: boolean }> {
+  const { data, error } = await supabase.rpc('duplicate_deck', {
+    src: src.id, new_name: input.name, new_code: input.code,
+  })
+  if (error) throw new Error(error.message)
+  const deckId = data as string
+
+  if (src.imagePath === null) return { deckId, drawingCopied: true }
+  const path = `${src.projectId}/${deckId}.png`
+  const { error: copyError } = await supabase.storage.from(BUCKET).copy(src.imagePath, path)
+  if (copyError) return { deckId, drawingCopied: false }
+
+  const { error: updateError } = await supabase.from('decks').update({ image_path: path }).eq('id', deckId)
+  if (updateError) return { deckId, drawingCopied: false }
+  return { deckId, drawingCopied: true }
+}
+
 /** The coats of one (work, deck), innermost first. */
 export async function listWorkStages(workId: string, deckId: string): Promise<Stage[]> {
   const { data, error } = await supabase

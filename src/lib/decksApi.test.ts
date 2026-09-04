@@ -1,17 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Stage } from '../domain/types'
 import {
-  createDeck, deleteDeck, getDrawingUrl, listCells, listDecks, listWorkStages, saveWorkStages,
-  roundStageWeight, STAGE_WEIGHT_EPSILON, stagesRemovedBy,
+  createDeck, deleteDeck, duplicateDeck, getDrawingUrl, listCells, listDecks, listWorkStages,
+  saveWorkStages, roundStageWeight, STAGE_WEIGHT_EPSILON, stagesRemovedBy,
   syncCells, updateDeckArea, uploadDrawing, zoneImpactOf,
 } from './decksApi'
 
 const from = vi.hoisted(() => vi.fn())
+const rpc = vi.hoisted(() => vi.fn())
 const upload = vi.hoisted(() => vi.fn())
 const createSignedUrl = vi.hoisted(() => vi.fn())
 const remove = vi.hoisted(() => vi.fn())
+const copy = vi.hoisted(() => vi.fn())
 vi.mock('./supabase', () => ({
-  supabase: { from, storage: { from: () => ({ upload, createSignedUrl, remove }) } },
+  supabase: { from, rpc, storage: { from: () => ({ upload, createSignedUrl, remove, copy }) } },
 }))
 
 function builder(result: { data?: unknown; error?: unknown }) {
@@ -26,9 +28,11 @@ function builder(result: { data?: unknown; error?: unknown }) {
 
 beforeEach(() => {
   from.mockReset()
+  rpc.mockReset()
   upload.mockReset()
   createSignedUrl.mockReset()
   remove.mockReset()
+  copy.mockReset()
 })
 
 describe('listDecks', () => {
@@ -1169,5 +1173,53 @@ describe('listWorkStages / saveWorkStages', () => {
     await expect(saveWorkStages('w1', 'd1', [stage(1, 0.5), stage(2, 0.4)])).rejects.toThrow(/must sum to 1/)
     await expect(saveWorkStages('w1', 'd1', [])).rejects.toThrow(/at least one stage/)
     expect(from).not.toHaveBeenCalled()
+  })
+})
+
+describe('duplicateDeck (0029)', () => {
+  const SRC = { id: 'd1', projectId: 'p1', imagePath: 'p1/d1.png' }
+
+  it('copies the row through the function, then the drawing file, then points the copy at it', async () => {
+    rpc.mockResolvedValue({ data: 'd9', error: null })
+    copy.mockResolvedValue({ data: { path: 'p1/d9.png' }, error: null })
+    const update = builder({})
+    from.mockImplementationOnce(() => update)
+
+    const result = await duplicateDeck(SRC, { name: 'Cellar Deck (bản sao)', code: 'CD-2' })
+
+    expect(rpc).toHaveBeenCalledWith('duplicate_deck', {
+      src: 'd1', new_name: 'Cellar Deck (bản sao)', new_code: 'CD-2',
+    })
+    // A copy, never the same path: deleteDeck removes the file its row names.
+    expect(copy).toHaveBeenCalledWith('p1/d1.png', 'p1/d9.png')
+    expect(from).toHaveBeenCalledWith('decks')
+    expect(update.update).toHaveBeenCalledWith({ image_path: 'p1/d9.png' })
+    expect(update.eq).toHaveBeenCalledWith('id', 'd9')
+    expect(result).toEqual({ deckId: 'd9', drawingCopied: true })
+  })
+
+  it('skips the file when the source has no drawing', async () => {
+    rpc.mockResolvedValue({ data: 'd9', error: null })
+    const result = await duplicateDeck({ ...SRC, imagePath: null }, { name: 'x', code: 'X' })
+    expect(copy).not.toHaveBeenCalled()
+    expect(from).not.toHaveBeenCalled()
+    expect(result).toEqual({ deckId: 'd9', drawingCopied: true })
+  })
+
+  it('keeps the copied deck and says so when the file copy fails', async () => {
+    // The deck is whole without its picture (guides, cells, area all landed);
+    // the admin uploads the drawing the ordinary way. Failing the whole
+    // duplicate here would leave a deck row behind anyway.
+    rpc.mockResolvedValue({ data: 'd9', error: null })
+    copy.mockResolvedValue({ data: null, error: { message: 'storage down' } })
+    const result = await duplicateDeck(SRC, { name: 'x', code: 'X' })
+    expect(from).not.toHaveBeenCalled()
+    expect(result).toEqual({ deckId: 'd9', drawingCopied: false })
+  })
+
+  it('surfaces a refused copy', async () => {
+    rpc.mockResolvedValue({ data: null, error: { message: 'only an admin may duplicate a deck' } })
+    await expect(duplicateDeck(SRC, { name: 'x', code: 'X' })).rejects.toThrow(/admin/)
+    expect(copy).not.toHaveBeenCalled()
   })
 })
