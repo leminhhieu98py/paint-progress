@@ -190,7 +190,7 @@ describe('buildReportWorkbook', () => {
     const wb = await readBack(await buildReportWorkbook(BASE))
     const plan = wb.getWorksheet('Plan')!
     expect((plan.getRow(1).values as string[]).filter(Boolean)).toEqual([
-      'Sàn', 'Vị trí tháo GG', 'Công việc', 'Công đoạn', 'Đơn vị', 'Khối lượng',
+      'Sàn', 'Khu vực', 'Công việc', 'Công đoạn', 'Đơn vị', 'Khối lượng',
       'Số ngày', 'Bắt đầu', 'Kết thúc', 'Ghi chú',
     ])
 

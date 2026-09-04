@@ -425,7 +425,7 @@ export async function buildReportWorkbook(input: ReportInput): Promise<Blob> {
   const plan = wb.addWorksheet('Plan')
   plan.columns = [
     { header: 'Sàn', key: 'deck', width: 24 },
-    { header: 'Vị trí tháo GG', key: 'zone', width: 22 },
+    { header: 'Khu vực', key: 'zone', width: 22 },
     { header: 'Công việc', key: 'work', width: 18 },
     { header: 'Công đoạn', key: 'stage', width: 20 },
     { header: 'Đơn vị', key: 'unit', width: 9 },
