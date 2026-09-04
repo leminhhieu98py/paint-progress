@@ -418,20 +418,45 @@ describe('setCellState', () => {
 
     expect(from).toHaveBeenCalledWith('cell_states')
     expect(stub.upsert).toHaveBeenCalledWith(
-      { cell_id: 'c1', work_id: 'wA', deck_id: 'd1', stage_id: 's3', note: 'Bề mặt còn ẩm' },
+      {
+        cell_id: 'c1', work_id: 'wA', deck_id: 'd1', stage_id: 's3', note: 'Bề mặt còn ẩm',
+        lead_name: '', painter_name: '', work_hours: null, waste_hours: null, waste_reason: '',
+      },
       { onConflict: 'cell_id,work_id' },
     )
     const payload = (stub.upsert as ReturnType<typeof vi.fn>).mock.calls[0][0] as object
-    expect(Object.keys(payload).sort()).toEqual(['cell_id', 'deck_id', 'note', 'stage_id', 'work_id'])
+    expect(Object.keys(payload).sort()).toEqual([
+      'cell_id', 'deck_id', 'lead_name', 'note', 'painter_name', 'stage_id',
+      'waste_hours', 'waste_reason', 'work_hours', 'work_id',
+    ])
     expect(stub.select).toHaveBeenCalledWith('cell_id')
   })
 
-  it('sends an empty note by default, so a stage change clears the last one', async () => {
+  it('sends an empty note and no effort by default, so a stage change clears the last ones', async () => {
     const stub = builder({ data: [{ cell_id: 'c1' }] })
     from.mockImplementationOnce(() => stub)
     await setCellState('c1', 'wA', 'd1', null)
     expect(stub.upsert).toHaveBeenCalledWith(
-      { cell_id: 'c1', work_id: 'wA', deck_id: 'd1', stage_id: null, note: '' },
+      {
+        cell_id: 'c1', work_id: 'wA', deck_id: 'd1', stage_id: null, note: '',
+        lead_name: '', painter_name: '', work_hours: null, waste_hours: null, waste_reason: '',
+      },
+      { onConflict: 'cell_id,work_id' },
+    )
+  })
+
+  it('carries the effort in the same statement as the stage (0030)', async () => {
+    // The guard refuses effort that moves without the stage, so it has to
+    // travel in this one upsert; the trigger copies it onto the event.
+    const stub = builder({ data: [{ cell_id: 'c1' }] })
+    from.mockImplementationOnce(() => stub)
+    await setCellState('c1', 'wA', 'd1', 's3', '', {
+      leadName: 'Tổ 1', painterName: 'Nam', workHours: 3.5, wasteHours: 0.5, wasteReason: 'Chờ vật tư',
+    })
+    expect(stub.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        stage_id: 's3', lead_name: 'Tổ 1', painter_name: 'Nam', work_hours: 3.5, waste_hours: 0.5, waste_reason: 'Chờ vật tư',
+      }),
       { onConflict: 'cell_id,work_id' },
     )
   })

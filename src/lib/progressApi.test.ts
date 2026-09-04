@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
-  latestProgressEvent, listCellNotes, listDeckEvents, loadDeckWorks,
-  loadProjectModel, setReportNote,
+  latestProgressEvent, listCellNotes, listDeckEvents, listProjectEvents, loadDeckWorks,
+  loadProjectModel, setCellEventEffort, setReportNote,
 } from './progressApi'
 
 const from = vi.hoisted(() => vi.fn())
@@ -394,9 +394,23 @@ describe('listDeckEvents', () => {
     note: 'Bề mặt còn ẩm',
     report_note: null,
     report_hidden: false,
-    cells: { deck_id: 'd1', code: 'R1C1', area_m2: '60.00' },
+    lead_name: 'Tổ 1',
+    painter_name: 'Nam',
+    work_hours: '3.50',
+    waste_hours: null,
+    waste_reason: '',
+    effort_edited_at: null,
+    effort_editor: null,
+    cells: { deck_id: 'd1', code: 'R1C1', area_m2: '60.00', decks: { name: 'Cellar Deck', project_id: 'p1' } },
     ...over,
   })
+  const EXPECTED = {
+    id: 5, deckName: 'Cellar Deck', cellCode: 'R1C1', cellAreaM2: 60, workName: 'Sơn', toStageName: 'Coat 2',
+    at: '2026-08-29T11:47:00Z', byId: 'u1', note: 'Bề mặt còn ẩm',
+    reportNote: null, reportHidden: false,
+    effort: { leadName: 'Tổ 1', painterName: 'Nam', workHours: 3.5, wasteHours: null, wasteReason: '' },
+    effortEditedAt: null, effortEditedByName: null,
+  }
 
   it('reads every stage change on one deck, oldest first, through the cell it belongs to', async () => {
     // cell_events has no deck_id; the deck is reached through cells. `!inner`
@@ -408,15 +422,35 @@ describe('listDeckEvents', () => {
     const events = await listDeckEvents('d1')
 
     expect(from).toHaveBeenCalledWith('cell_events')
-    expect(b.select).toHaveBeenCalledWith(expect.stringContaining('cells!inner(deck_id, code, area_m2)'))
+    expect(b.select).toHaveBeenCalledWith(
+      expect.stringContaining('cells!inner(deck_id, code, area_m2, decks!inner(name, project_id))'),
+    )
     expect(b.select).toHaveBeenCalledWith(expect.stringContaining('work_name'))
+    expect(b.select).toHaveBeenCalledWith(
+      expect.stringContaining('effort_editor:profiles!cell_events_effort_edited_by_fkey(full_name)'),
+    )
     expect(b.eq).toHaveBeenCalledWith('cells.deck_id', 'd1')
     expect(b.order).toHaveBeenCalledWith('at', { ascending: true })
-    expect(events).toEqual([{
-      id: 5, cellCode: 'R1C1', cellAreaM2: 60, workName: 'Sơn', toStageName: 'Coat 2',
-      at: '2026-08-29T11:47:00Z', byId: 'u1', note: 'Bề mặt còn ẩm',
-      reportNote: null, reportHidden: false,
-    }])
+    expect(events).toEqual([EXPECTED])
+  })
+
+  it('reads a row written before 0030 as blank effort, and a backfilled one with its stamp', async () => {
+    from.mockImplementation(() => builder({
+      data: [
+        row({ lead_name: null, painter_name: null, work_hours: null, waste_hours: null, waste_reason: null }),
+        row({ id: 6, work_hours: '4.00', waste_hours: '0.50', waste_reason: 'Chờ vật tư',
+              effort_edited_at: '2026-09-05T02:00:00Z', effort_editor: { full_name: 'Đoàn Công Linh' } }),
+      ],
+    }))
+
+    const [legacy, backfilled] = await listDeckEvents('d1')
+
+    expect(legacy.effort).toEqual({ leadName: '', painterName: '', workHours: null, wasteHours: null, wasteReason: '' })
+    expect(backfilled.effort).toEqual({
+      leadName: 'Tổ 1', painterName: 'Nam', workHours: 4, wasteHours: 0.5, wasteReason: 'Chờ vật tư',
+    })
+    expect(backfilled.effortEditedAt).toBe('2026-09-05T02:00:00Z')
+    expect(backfilled.effortEditedByName).toBe('Đoàn Công Linh')
   })
 
   it('keeps a stage change that carried no note, as an empty note', async () => {
@@ -435,5 +469,57 @@ describe('listDeckEvents', () => {
   it('reports a failed read rather than an empty history', async () => {
     from.mockImplementation(() => builder({ error: { message: 'mất kết nối' } }))
     await expect(listDeckEvents('d1')).rejects.toThrow('mất kết nối')
+  })
+})
+
+describe('listProjectEvents', () => {
+  it('reads every stage change in a project through cell -> deck, naming each deck', async () => {
+    const b = builder({
+      data: [{
+        id: 9, at: '2026-08-29T11:47:00Z', to_stage_name: 'Coat 2', work_name: 'Sơn', by: 'u1', note: '',
+        report_note: null, report_hidden: false,
+        lead_name: '', painter_name: '', work_hours: '2.00', waste_hours: null, waste_reason: '',
+        effort_edited_at: null, effort_editor: null,
+        cells: { deck_id: 'd2', code: 'R2C1', area_m2: '40.00', decks: { name: 'Main Deck', project_id: 'p1' } },
+      }],
+    })
+    from.mockImplementation(() => b)
+
+    const events = await listProjectEvents('p1')
+
+    expect(from).toHaveBeenCalledWith('cell_events')
+    expect(b.select).toHaveBeenCalledWith(
+      expect.stringContaining('cells!inner(deck_id, code, area_m2, decks!inner(name, project_id))'),
+    )
+    expect(b.eq).toHaveBeenCalledWith('cells.decks.project_id', 'p1')
+    expect(b.order).toHaveBeenCalledWith('at', { ascending: true })
+    expect(events).toHaveLength(1)
+    expect(events[0]).toMatchObject({ id: 9, deckName: 'Main Deck', cellCode: 'R2C1', cellAreaM2: 40 })
+    expect(events[0].effort.workHours).toBe(2)
+  })
+
+  it('reports a failed read', async () => {
+    from.mockImplementation(() => builder({ error: { message: 'mất kết nối' } }))
+    await expect(listProjectEvents('p1')).rejects.toThrow('mất kết nối')
+  })
+})
+
+describe('setCellEventEffort', () => {
+  it('calls the definer RPC with every field, trimming names to empty', async () => {
+    rpc.mockResolvedValue({ error: null })
+    await setCellEventEffort(7, {
+      leadName: '  Tổ 2 ', painterName: '   ', workHours: 4, wasteHours: null, wasteReason: ' ',
+    })
+    expect(rpc).toHaveBeenCalledWith('set_cell_event_effort', {
+      p_event_id: 7, p_lead_name: 'Tổ 2', p_painter_name: '',
+      p_work_hours: 4, p_waste_hours: null, p_waste_reason: '',
+    })
+  })
+
+  it('throws on a refused call', async () => {
+    rpc.mockResolvedValue({ error: { message: 'set_cell_event_effort: admin only' } })
+    await expect(setCellEventEffort(7, {
+      leadName: '', painterName: '', workHours: 1, wasteHours: null, wasteReason: '',
+    })).rejects.toThrow('admin only')
   })
 })

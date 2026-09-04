@@ -1,4 +1,4 @@
-import type { Cell, Deck, DeckEvent, Stage, Work } from '../domain/types'
+import type { Cell, Deck, DeckEvent, Effort, Stage, Work } from '../domain/types'
 import { supabase } from './supabase'
 import {
   assembleProjectModel, type DeckRowIn, type ProjectModel, type StateRowIn, type WorkDeckRow,
@@ -320,35 +320,90 @@ export async function setReportNote(
  * point; here the change is, and a coat recorded without a remark is still a
  * coat recorded.
  */
+const EVENT_SELECT =
+  'id, at, to_stage_name, work_name, by, note, report_note, report_hidden,'
+  + ' lead_name, painter_name, work_hours, waste_hours, waste_reason, effort_edited_at,'
+  + ' effort_editor:profiles!cell_events_effort_edited_by_fkey(full_name),'
+  + ' cells!inner(deck_id, code, area_m2, decks!inner(name, project_id))'
+
+const numberOrNull = (v: unknown): number | null => (v === null || v === undefined ? null : Number(v))
+
+/** One `cell_events` row with the embeds EVENT_SELECT asks for. */
+function mapEventRow(r: unknown): DeckEvent {
+  const row = r as Record<string, unknown>
+  // A many-to-one embed: PostgREST returns one object, whatever supabase-js
+  // infers without a generated Database type (see adminApi.listGsUsers).
+  const cell = row.cells as unknown as { code: string; area_m2: string | number; decks: { name: string } }
+  const editor = row.effort_editor as { full_name?: string } | null
+  return {
+    id: Number(row.id),
+    deckName: cell.decks?.name ?? '',
+    cellCode: cell.code,
+    cellAreaM2: Number(cell.area_m2),
+    workName: (row.work_name as string | null) ?? null,
+    toStageName: (row.to_stage_name as string | null) ?? null,
+    at: row.at as string,
+    byId: (row.by as string | null) ?? null,
+    note: ((row.note as string | null) ?? '').trim(),
+    reportNote: (row.report_note as string | null) ?? null,
+    reportHidden: Boolean(row.report_hidden),
+    // Rows before 0030 hold null in every effort column; the domain reads ''
+    // and null, never undefined, so the blanks are normalised here.
+    effort: {
+      leadName: (row.lead_name as string | null) ?? '',
+      painterName: (row.painter_name as string | null) ?? '',
+      workHours: numberOrNull(row.work_hours),
+      wasteHours: numberOrNull(row.waste_hours),
+      wasteReason: (row.waste_reason as string | null) ?? '',
+    },
+    effortEditedAt: (row.effort_edited_at as string | null) ?? null,
+    effortEditedByName: editor?.full_name ?? null,
+  }
+}
+
 export async function listDeckEvents(deckId: string): Promise<DeckEvent[]> {
   const { data, error } = await supabase
     .from('cell_events')
-    .select(
-      'id, at, to_stage_name, work_name, by, note, report_note, report_hidden,'
-      + ' cells!inner(deck_id, code, area_m2)',
-    )
+    .select(EVENT_SELECT)
     .eq('cells.deck_id', deckId)
     .order('at', { ascending: true })
   if (error) throw new Error(error.message)
+  return (data ?? []).map(mapEventRow)
+}
 
-  return (data ?? []).map((r) => {
-    const row = r as unknown as Record<string, unknown>
-    // A many-to-one embed: PostgREST returns one object, whatever supabase-js
-    // infers without a generated Database type (see adminApi.listGsUsers).
-    const cell = row.cells as unknown as { code: string; area_m2: string | number }
-    return {
-      id: Number(row.id),
-      cellCode: cell.code,
-      cellAreaM2: Number(cell.area_m2),
-      workName: (row.work_name as string | null) ?? null,
-      toStageName: (row.to_stage_name as string | null) ?? null,
-      at: row.at as string,
-      byId: (row.by as string | null) ?? null,
-      note: ((row.note as string | null) ?? '').trim(),
-      reportNote: (row.report_note as string | null) ?? null,
-      reportHidden: Boolean(row.report_hidden),
-    }
+/**
+ * Every stage change in one project, oldest first, for the productivity
+ * dashboard (Feedback Rv2, item 12). Reached through cell -> deck, both
+ * `!inner` so the project filter filters rows. RLS scopes a GS or viewer to
+ * the works they hold (`my_works()`, 0028), so the same call serves every role.
+ */
+export async function listProjectEvents(projectId: string): Promise<DeckEvent[]> {
+  const { data, error } = await supabase
+    .from('cell_events')
+    .select(EVENT_SELECT)
+    .eq('cells.decks.project_id', projectId)
+    .order('at', { ascending: true })
+  if (error) throw new Error(error.message)
+  return (data ?? []).map(mapEventRow)
+}
+
+/**
+ * Admin backfill of the effort on one event (0030): Linh's answer to the rows
+ * written before hours existed. Like `setReportNote`, a definer function that
+ * checks `is_admin()` itself and stamps who and when; nothing here re-grants a
+ * write on `cell_events`. Names are trimmed here and again in the function,
+ * so whitespace never reaches the dashboard as a "lead".
+ */
+export async function setCellEventEffort(eventId: number, effort: Effort): Promise<void> {
+  const { error } = await supabase.rpc('set_cell_event_effort', {
+    p_event_id: eventId,
+    p_lead_name: effort.leadName.trim(),
+    p_painter_name: effort.painterName.trim(),
+    p_work_hours: effort.workHours,
+    p_waste_hours: effort.wasteHours,
+    p_waste_reason: effort.wasteReason.trim(),
   })
+  if (error) throw new Error(error.message)
 }
 
 /**

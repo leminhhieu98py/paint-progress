@@ -1,5 +1,5 @@
 import { REALTIME_SUBSCRIBE_STATES } from '@supabase/supabase-js'
-import type { Cell, Stage, Work, WorkModel } from '../domain/types'
+import { EMPTY_EFFORT, type Cell, type Effort, type Stage, type Work, type WorkModel } from '../domain/types'
 import {
   assembleProjectModel, mapStage, mapWork, type DeckRowIn, type StageRowIn, type StateRowIn,
   type WorkDeckRow, type WorkRow,
@@ -321,11 +321,19 @@ export async function setCellState(
   deckId: string,
   stageId: string | null,
   note = '',
+  effort: Effort = EMPTY_EFFORT,
 ): Promise<void> {
+  // The effort (0030) travels in the same statement as the stage, like the
+  // note: the guard refuses either moving on its own, and the audit trigger
+  // copies both onto the event this write produces.
   const { data, error } = await supabase
     .from('cell_states')
     .upsert(
-      { cell_id: cellId, work_id: workId, deck_id: deckId, stage_id: stageId, note },
+      {
+        cell_id: cellId, work_id: workId, deck_id: deckId, stage_id: stageId, note,
+        lead_name: effort.leadName, painter_name: effort.painterName,
+        work_hours: effort.workHours, waste_hours: effort.wasteHours, waste_reason: effort.wasteReason,
+      },
       { onConflict: 'cell_id,work_id' },
     )
     .select('cell_id')
