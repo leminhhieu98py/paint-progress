@@ -35,6 +35,7 @@ export function CellStageModal({
   authorNames = {},
   workName,
   zones = [],
+  readOnly = false,
 }: {
   cell: Cell | null
   stages: Stage[]
@@ -64,6 +65,13 @@ export function CellStageModal({
    * because the plan is a fact about the bay, not a view of it.
    */
   zones?: { name: string; stageName: string; range: string }[]
+  /**
+   * A viewer (0028) opens a bay to read it: the facts, the plan and the
+   * notes, and one button to close. No stage control and no note box -- the
+   * database refuses the write anyway, and a control that fails is worse than
+   * none.
+   */
+  readOnly?: boolean
 }) {
   const [choice, setChoice] = useState<string>(NOT_STARTED_VALUE)
   const [note, setNote] = useState('')
@@ -153,8 +161,8 @@ export function CellStageModal({
         onClose()
       }}
       okText="Xác nhận"
-      cancelText="Huỷ"
-      okButtonProps={{ disabled: unchanged, size: 'large' }}
+      cancelText={readOnly ? 'Đóng' : 'Huỷ'}
+      okButtonProps={{ disabled: unchanged, size: 'large', style: readOnly ? { display: 'none' } : undefined }}
       cancelButtonProps={{ size: 'large' }}
       {...modalProps}
     >
@@ -197,7 +205,7 @@ export function CellStageModal({
             so isBackwards is false on this path and the red warning below
             belongs to the Select.
           */}
-          {next && (
+          {!readOnly && next && (
             <Button
               type="primary"
               size="large"
@@ -211,6 +219,7 @@ export function CellStageModal({
             </Button>
           )}
 
+          {!readOnly && (
           <div>
             <Typography.Text type="secondary">
               {next ? 'Hoặc chọn công đoạn khác' : 'Chọn công đoạn'}
@@ -227,6 +236,7 @@ export function CellStageModal({
               ]}
             />
           </div>
+          )}
 
           <div>
             {/*
@@ -266,6 +276,8 @@ export function CellStageModal({
                 Không tải được ghi chú cũ
               </Typography.Text>
             )}
+            {!readOnly && (
+            <>
             <label
               htmlFor="cell-note"
               style={{ display: 'block', marginBottom: 6, fontWeight: 600 }}
@@ -286,6 +298,8 @@ export function CellStageModal({
               <Typography.Text type="secondary" style={{ fontSize: 11 }}>
                 {`Ghi chú đi kèm ô ${cell.code} trong lịch sử; quản trị viên thấy ngay trên bản vẽ.`}
               </Typography.Text>
+            )}
+            </>
             )}
           </div>
 

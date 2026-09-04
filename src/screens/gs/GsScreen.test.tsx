@@ -67,9 +67,11 @@ vi.mock('react-router-dom', async (importOriginal) => ({
   ...await importOriginal<typeof import('react-router-dom')>(),
   useNavigate: () => navigate,
 }))
+// Mutable so one test can sign in as a viewer (0028); reset to gs before each.
+const authRole = vi.hoisted(() => ({ value: 'gs' as 'gs' | 'viewer' }))
 vi.mock('../../auth/AuthProvider', () => ({
   useAuth: () => ({
-    profile: { id: 'u1', username: 'gs1', fullName: 'Nguyễn Văn A', role: 'gs', active: true },
+    profile: { id: 'u1', username: 'gs1', fullName: 'Nguyễn Văn A', role: authRole.value, active: true },
     signOut,
   }),
 }))
@@ -203,6 +205,7 @@ beforeEach(() => {
     Promise.resolve(deckId === 'd1' ? D1_STATES : D2_STATES))
   listDeckZones.mockReset()
   listDeckZones.mockResolvedValue([])
+  authRole.value = 'gs'
   setCellState.mockReset()
   getDrawingUrl.mockReset()
   listDeckWorks.mockReset()
@@ -1422,6 +1425,28 @@ describe('GsScreen: the plan overlay', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Hiện kế hoạch' }))
 
     await waitFor(() => expect(screen.queryByTestId('gs-zone-legend')).toBeNull())
+  })
+})
+
+describe('GsScreen: a viewer (0028)', () => {
+  it('says it is read-only, opens bays without a write, and still exports', async () => {
+    authRole.value = 'viewer'
+    renderScreen()
+    await screen.findByRole('tab', { name: /^Cellar Deck/ })
+    expect(screen.getByText('Chỉ xem')).toBeInTheDocument()
+
+    await userEvent.click(await screen.findByRole('button', { name: 'ô R1C2' }))
+    expect(await screen.findByText('Ô R1C2 · Sơn')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Xác nhận' })).toBeNull()
+    expect(screen.queryByRole('combobox', { name: 'Công đoạn' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Đóng' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Xuất báo cáo' })).toBeEnabled()
+  })
+
+  it('shows no read-only mark to a foreman', async () => {
+    renderScreen()
+    await screen.findByRole('tab', { name: /^Cellar Deck/ })
+    expect(screen.queryByText('Chỉ xem')).toBeNull()
   })
 })
 

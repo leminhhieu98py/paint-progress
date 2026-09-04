@@ -34,6 +34,7 @@ import { CalendarOutlined, DownloadOutlined } from '@ant-design/icons'
 import { EmptyState } from '../../components/EmptyState'
 import { DeckProgressCard, StageRollupCard } from './DeckStatsCards'
 import { SectionCard } from '../../components/SectionCard'
+import { StatusPill } from '../../components/StatusPill'
 
 /**
  * How long to wait for the realtime channel to reach SUBSCRIBED before telling
@@ -112,6 +113,9 @@ export function GsScreen() {
   const { projectId } = useParams()
   const navigate = useNavigate()
   const { profile, signOut } = useAuth()
+  /** A viewer (0028) reads this screen and writes nothing; the database
+   *  enforces it, the screen says so and offers no write control. */
+  const readOnly = profile?.role === 'viewer'
 
   /**
    * The bays works the open deck is in, each with its coats here (0024). Null
@@ -902,6 +906,7 @@ export function GsScreen() {
           <div style={{ fontWeight: 600, lineHeight: 1.25 }}>{profile?.fullName}</div>
           <span style={{ fontSize: 11, color: palette.textTertiary }}>{profile?.username}</span>
         </div>
+        {readOnly && <StatusPill tone="off">Chỉ xem</StatusPill>}
         {/* Spec §8.1: no account UI. Logout only. */}
         <Button
           aria-label="Đăng xuất"
@@ -1250,6 +1255,7 @@ export function GsScreen() {
         authorNames={authorNames}
         workName={activeWork?.work.name}
         zones={zonesOfCell(selectedCell)}
+        readOnly={readOnly}
       />
 
       {/*

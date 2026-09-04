@@ -448,3 +448,28 @@ describe('CellStageModal — kế hoạch', () => {
     expect(within(screen.getByTestId('cell-stage-info')).queryByText('Kế hoạch')).toBeNull()
   })
 })
+
+describe('CellStageModal — chỉ xem', () => {
+  it('shows the facts and no way to change them for a viewer', () => {
+    // Feedback Rv2 item 2: the bosses' account. The database refuses the write
+    // anyway; the dialog must not offer one and then fail.
+    render(
+      <AntApp>
+        <CellStageModal
+          cell={CELL}
+          stages={STAGES}
+          open
+          onClose={onClose}
+          onCommit={onCommit}
+          readOnly
+        />
+      </AntApp>,
+    )
+    expect(screen.getByTestId('cell-stage-info')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Xong công đoạn tiếp theo/ })).toBeNull()
+    expect(screen.queryByRole('combobox', { name: 'Công đoạn' })).toBeNull()
+    expect(screen.queryByRole('textbox')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Xác nhận' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Đóng' })).toBeInTheDocument()
+  })
+})
