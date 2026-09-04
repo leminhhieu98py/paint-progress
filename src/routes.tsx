@@ -71,8 +71,11 @@ function RoleHome() {
   const { profile } = useAuth()
   const [membership, setMembership] = useState<'loading' | 'error' | string | null>('loading')
 
+  // A viewer (0028) lands where a foreman lands: the GS screen of their first
+  // project, in read-only mode. Membership is the same table for both.
+  const fieldRole = profile?.role === 'gs' || profile?.role === 'viewer'
   useEffect(() => {
-    if (profile?.role !== 'gs') return
+    if (!fieldRole) return
     let cancelled = false
     myFirstProjectId()
       .then((id) => {
@@ -84,13 +87,13 @@ function RoleHome() {
     return () => {
       cancelled = true
     }
-  }, [profile])
+  }, [profile, fieldRole])
 
   if (profile?.role === 'admin') {
     return <Navigate to={`${APP_BASE_PATH}/admin/projects`} replace />
   }
 
-  if (profile?.role === 'gs') {
+  if (fieldRole) {
     if (membership === 'loading') {
       return <Spin style={{ display: 'block', margin: '25vh auto' }} />
     }
@@ -211,7 +214,7 @@ export function AppRoutes() {
         <Route
           path="gs/:projectId"
           element={
-            <RequireRole role="gs">
+            <RequireRole roles={['gs', 'viewer']}>
               {/*
                 Nested over the app-wide admin theme, and only here: 48px
                 controls and a larger base font are right on a tablet held at

@@ -120,6 +120,19 @@ describe('AppRoutes: landing at the base path by role', () => {
     expect(screen.queryByText('404')).toBeNull()
   })
 
+  it('sends a viewer to the GS route of its project, like a foreman (0028)', async () => {
+    maybeSingle.mockResolvedValue({
+      data: { id: 'user-1', username: 'boss1', full_name: 'Sếp Một', role: 'viewer', active: true },
+      error: null,
+    })
+    myFirstProjectId.mockResolvedValue('proj-4')
+
+    renderAtBasePath()
+
+    expect(await screen.findByText('GS SCREEN (dự án proj-4)')).toBeInTheDocument()
+    expect(screen.queryByText('404')).toBeNull()
+  })
+
   it('tells a membership-less gs to contact the admin, not the bare 404', async () => {
     maybeSingle.mockResolvedValue({
       data: { id: 'user-1', username: 'gs2', full_name: 'GS Hai', role: 'gs', active: true },

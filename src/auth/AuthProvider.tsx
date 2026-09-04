@@ -3,11 +3,18 @@ import { createContext, useContext, useEffect, useMemo, useState, type ReactNode
 import { toAuthEmail } from '../config'
 import { supabase } from '../lib/supabase'
 
+/**
+ * admin runs the app; gs records progress on the tablet; viewer (0028, the
+ * bosses' account) reads exactly what a gs on the same projects reads and
+ * writes nothing -- enforced by the database, mirrored by the screens.
+ */
+export type Role = 'admin' | 'gs' | 'viewer'
+
 export interface Profile {
   id: string
   username: string
   fullName: string
-  role: 'admin' | 'gs'
+  role: Role
   active: boolean
 }
 

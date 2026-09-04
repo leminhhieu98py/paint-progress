@@ -1508,7 +1508,7 @@ describe.skipIf(!adminConfigured)('0028: roles and permission per work', () => {
   const names = async (client: SupabaseClient, table: string, column: string) => {
     const { data, error } = await client.from(table).select(column)
     expect(error).toBeNull()
-    return ((data ?? []) as Record<string, unknown>[]).map((r) => r[column]).sort()
+    return ((data ?? []) as unknown as Record<string, unknown>[]).map((r) => r[column]).sort()
   }
 
   it('a plain membership sees every work of the project, as before 0028', async () => {

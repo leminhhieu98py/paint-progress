@@ -384,7 +384,7 @@ export function UsersScreen() {
           layout="vertical"
           onFinish={(values) =>
             void run(async () => {
-              await createGsUser(values)
+              await createGsUser({ ...values, role: 'gs' })
               setCreateOpen(false)
               await refresh()
               message.success('Đã tạo tài khoản GS')

@@ -1,21 +1,25 @@
 import { Alert, Button, Spin } from 'antd'
 import type { ReactNode } from 'react'
 import { NotFound } from '../screens/NotFound'
-import { useAuth } from './AuthProvider'
+import { useAuth, type Role } from './AuthProvider'
 import { LoginScreen } from './LoginScreen'
 
 export function RequireRole({
   role,
+  roles,
   children,
 }: {
   /**
-   * Omit to require only an active, signed-in profile of any role -- used by
-   * the base-path index route, which reads the role itself to decide where
-   * to send the admin or the GS rather than gating on one fixed role.
+   * Omit both to require only an active, signed-in profile of any role -- used
+   * by the base-path index route, which reads the role itself to decide where
+   * to send each account rather than gating on one fixed role.
    */
-  role?: 'admin' | 'gs'
+  role?: Role
+  /** Several roles share a screen: the GS route admits gs and viewer (0028). */
+  roles?: Role[]
   children: ReactNode
 }) {
+  const allowed = roles ?? (role ? [role] : null)
   const { session, profile, loading, profileError } = useAuth()
 
   if (loading) {
@@ -47,7 +51,7 @@ export function RequireRole({
   // profile gets the same bare 404 as a stranger — no information leak about
   // which paths exist. When `role` is omitted, any active profile passes:
   // the caller (the base-path index route) reads profile.role itself.
-  if (!profile || !profile.active || (role && profile.role !== role)) {
+  if (!profile || !profile.active || (allowed && !allowed.includes(profile.role))) {
     return <NotFound />
   }
   return <>{children}</>
