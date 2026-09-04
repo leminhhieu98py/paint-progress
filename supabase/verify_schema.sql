@@ -233,9 +233,10 @@
 --   nvm use 22
 --   npx supabase db query --linked -f supabase/verify_schema.sql
 --
--- Every returned row must begin with PASS: 36 rows in total on a linked
--- project with 0001-0023 applied (measured 2026-09-02; the numbering above
--- runs 1-35 because one earlier check emits two rows). A row beginning with FAIL means
+-- Every returned row must begin with PASS: 41 rows in total on a linked
+-- project with 0001-0028 applied (measured 2026-09-04; the numbering above
+-- runs 1-41 because one earlier check emits two rows and some later ones
+-- several). A row beginning with FAIL means
 -- a regression in the trigger/FK/RLS behaviour set up across migrations
 -- 0001-0023; re-read those migrations' comments before changing this file.
 --
@@ -1201,6 +1202,36 @@ begin
                      case when pinned = 4 then 'PASS' else 'FAIL' end, pinned);
 end $$;
 
+create or replace function _verify_roles_and_work_members() returns setof text language plpgsql as $$
+declare
+  viewer_ok boolean; pol_wm int; definers int; narrowed int; gs_gated int;
+begin
+  -- 41. 0028: the role check admits 'viewer', work_members has its two
+  -- policies, both predicate functions are definer with a pinned search_path,
+  -- the six member read policies go through my_works(), and both member write
+  -- policies on cell_states are gated on is_gs().
+  select pg_get_constraintdef(oid) like '%viewer%' into viewer_ok
+  from pg_constraint where conname = 'profiles_role_check' and conrelid = 'public.profiles'::regclass;
+  select count(*) into pol_wm from pg_policies where schemaname = 'public' and tablename = 'work_members';
+  select count(*) into definers from pg_proc
+   where pronamespace = 'public'::regnamespace and proname in ('is_gs', 'my_works')
+     and prosecdef and proconfig @> array['search_path=public, pg_temp'];
+  select count(*) into narrowed from pg_policies
+   where schemaname = 'public'
+     and policyname in ('works_member_read', 'work_decks_member_read', 'deck_stages_member_read',
+                        'cell_states_member_read', 'zones_member_read', 'cell_events_member_read')
+     and qual like '%my_works()%';
+  select count(*) into gs_gated from pg_policies
+   where schemaname = 'public' and tablename = 'cell_states'
+     and policyname in ('cell_states_member_insert', 'cell_states_member_update')
+     and with_check like '%is_gs()%';
+  return next format(
+    '%s 0028 roles and work members: viewer allowed %s, work_members policies %s (need 2), definer functions %s (need 2), member reads via my_works %s (need 6), gs-gated writes %s (need 2)',
+    case when coalesce(viewer_ok, false) and pol_wm = 2 and definers = 2 and narrowed = 6 and gs_gated = 2
+         then 'PASS' else 'FAIL' end,
+    coalesce(viewer_ok, false), pol_wm, definers, narrowed, gs_gated);
+end $$;
+
 -- A single top-level SELECT: `supabase db query -f` surfaces only the last
 -- result set a multi-statement file produces, so the checks are combined
 -- here with UNION ALL rather than issued as separate SELECTs.
@@ -1224,7 +1255,9 @@ select * from _verify_cells_replica_identity()
 union all
 select * from _verify_report_notes()
 union all
-select * from _verify_work_items();
+select * from _verify_work_items()
+union all
+select * from _verify_roles_and_work_members();
 
 drop function _verify_triggers();
 drop function _verify_rls();
@@ -1237,4 +1270,5 @@ drop function _verify_realtime_publication();
 drop function _verify_cells_replica_identity();
 drop function _verify_report_notes();
 drop function _verify_work_items();
+drop function _verify_roles_and_work_members();
 drop function _verify_seed_work(uuid, uuid);

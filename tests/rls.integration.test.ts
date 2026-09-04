@@ -31,6 +31,8 @@ const RLSD_PROJECT_ID = '00000000-0000-4000-8000-0000000000d1'
 const ADMIN_SPINE_CODE = 'RLSX'
 const ADMIN_SCRATCH_CODE = 'RLSY'
 const EF_PROJECT_CODE = 'RLSE'
+// The per-work permission suite (0028) builds its own project with two works.
+const SCOPE_PROJECT_CODE = 'RLSW'
 
 // Accounts the Edge Function's `create` action makes. Every one of them is a
 // real auth user, so the prefix is what `tests/rls-teardown.sql` matches on.
@@ -1304,4 +1306,181 @@ describe.skipIf(!adminConfigured)('admin-users Edge Function', () => {
       expect(restored.data?.active).toBe(true)
     }
   }, 20_000)
+})
+
+describe.skipIf(!adminConfigured)('0028: roles and permission per work', () => {
+  let admin: SupabaseClient
+  let scoped: SupabaseClient
+  let projectId: string
+  let deckId: string
+  let cellId: string
+  let work1: string
+  let work2: string
+  let stage1: string
+  let stage2: string
+  let scopedUserId: string
+
+  beforeAll(async () => {
+    admin = createClient(url!, anon!, { auth: { persistSession: false } })
+    const adminSignIn = await admin.auth.signInWithPassword({
+      email: toAuthEmail(adminUsername!),
+      password: adminPassword!,
+    })
+    expect(adminSignIn.error).toBeNull()
+
+    const cleared = await admin.from('projects').delete().eq('code', SCOPE_PROJECT_CODE)
+    expect(cleared.error).toBeNull()
+    const project = await admin
+      .from('projects')
+      .insert({ name: 'RLS Work Scope', code: SCOPE_PROJECT_CODE })
+      .select('id')
+      .single()
+    expect(project.error).toBeNull()
+    projectId = project.data!.id
+
+    const deck = await admin
+      .from('decks')
+      .insert({ project_id: projectId, seq: 1, name: 'Scope Deck', code: 'WD', total_area_m2: 100 })
+      .select('id')
+      .single()
+    expect(deck.error).toBeNull()
+    deckId = deck.data!.id
+    const cell = await admin
+      .from('cells')
+      .insert({ deck_id: deckId, code: 'R1C1', x: 0, y: 0, w: 1, h: 1, area_m2: 100 })
+      .select('id')
+      .single()
+    expect(cell.error).toBeNull()
+    cellId = cell.data!.id
+
+    // Two works over the same deck, each with one stage, one zone and one tick
+    // on the bay -- so every table the member policies narrow has a row on
+    // each side of the line.
+    const makeWork = async (seq: number, name: string) => {
+      const work = await admin
+        .from('works')
+        .insert({ project_id: projectId, seq, name, kind: 'bays', weight: 0.5, counts: true })
+        .select('id')
+        .single()
+      expect(work.error).toBeNull()
+      const workId = work.data!.id as string
+      expect((await admin.from('work_decks').insert({ work_id: workId, deck_id: deckId, weight: 1 })).error).toBeNull()
+      const stage = await admin
+        .from('deck_stages')
+        .insert({ work_id: workId, deck_id: deckId, seq: 1, name: `${name} Coat`, color: '#1677ff', weight: 1 })
+        .select('id')
+        .single()
+      expect(stage.error).toBeNull()
+      const stageId = stage.data!.id as string
+      expect((await admin.from('zones').insert({ deck_id: deckId, seq: 1, name: `${name} Zone`, stage_id: stageId })).error).toBeNull()
+      expect((await admin.from('cell_states').upsert(
+        { cell_id: cellId, work_id: workId, deck_id: deckId, stage_id: stageId },
+        { onConflict: 'cell_id,work_id' },
+      )).error).toBeNull()
+      return { workId, stageId }
+    }
+    ;({ workId: work1, stageId: stage1 } = await makeWork(1, 'Scope A'))
+    ;({ workId: work2, stageId: stage2 } = await makeWork(2, 'Scope B'))
+
+    // A throwaway GS in this project, through the real create action so it is
+    // a real auth user that can sign in. rlstest-ef-% is what the teardown
+    // purges.
+    const scopedUsername = throwawayUsername('scope')
+    const scopedPassword = throwawayPassword()
+    const created = await invokeAdminUsers(admin, {
+      action: 'create', username: scopedUsername, fullName: 'RLS Scope Throwaway',
+      password: scopedPassword, projectId,
+    })
+    expect(created.status).toBe(200)
+    scopedUserId = created.body.userId as string
+
+    scoped = createClient(url!, anon!, { auth: { persistSession: false } })
+    const signIn = await scoped.auth.signInWithPassword({
+      email: toAuthEmail(scopedUsername), password: scopedPassword,
+    })
+    expect(signIn.error).toBeNull()
+  })
+
+  afterAll(async () => {
+    if (!admin) return
+    const removed = await admin.from('projects').delete().eq('code', SCOPE_PROJECT_CODE)
+    expect(removed.error).toBeNull()
+  })
+
+  const names = async (client: SupabaseClient, table: string, column: string) => {
+    const { data, error } = await client.from(table).select(column)
+    expect(error).toBeNull()
+    return ((data ?? []) as Record<string, unknown>[]).map((r) => r[column]).sort()
+  }
+
+  it('a plain membership sees every work of the project, as before 0028', async () => {
+    expect(await names(scoped, 'works', 'name')).toEqual(['Scope A', 'Scope B'])
+    expect(await names(scoped, 'deck_stages', 'name')).toEqual(['Scope A Coat', 'Scope B Coat'])
+  })
+
+  it('a membership restricted to one work sees only that work\'s rows, everywhere', async () => {
+    const restrict = await admin
+      .from('project_members')
+      .update({ all_works: false })
+      .eq('project_id', projectId)
+      .eq('user_id', scopedUserId)
+    expect(restrict.error).toBeNull()
+    const grant = await admin.from('work_members').insert({ work_id: work1, user_id: scopedUserId })
+    expect(grant.error).toBeNull()
+
+    expect(await names(scoped, 'works', 'name')).toEqual(['Scope A'])
+    expect(await names(scoped, 'work_decks', 'work_id')).toEqual([work1])
+    expect(await names(scoped, 'deck_stages', 'name')).toEqual(['Scope A Coat'])
+    expect(await names(scoped, 'zones', 'name')).toEqual(['Scope A Zone'])
+    expect(await names(scoped, 'cell_states', 'work_id')).toEqual([work1])
+    expect(await names(scoped, 'cell_events', 'work_id')).toEqual([work1])
+    // The deck itself stays visible: a deck is the project's, not the work's.
+    expect(await names(scoped, 'decks', 'code')).toEqual(['WD'])
+    // And its own grant row is readable, so the screen can explain itself.
+    expect(await names(scoped, 'work_members', 'work_id')).toEqual([work1])
+  })
+
+  it('a restricted GS writes to its own work and is refused on the other', async () => {
+    const own = await scoped
+      .from('cell_states')
+      .upsert({ cell_id: cellId, work_id: work1, deck_id: deckId, stage_id: stage1 }, { onConflict: 'cell_id,work_id' })
+    expect(own.error).toBeNull()
+
+    // The row exists (the admin ticked it), so this is an UPDATE the policy
+    // must refuse; PostgREST reports a refused upsert as an error, not a
+    // silent zero-row success, because the insert path is refused too.
+    const other = await scoped
+      .from('cell_states')
+      .upsert({ cell_id: cellId, work_id: work2, deck_id: deckId, stage_id: stage2 }, { onConflict: 'cell_id,work_id' })
+    expect(other.error).not.toBeNull()
+  })
+
+  it('a viewer reads what a GS reads and writes nothing', async () => {
+    const promote = await admin.from('profiles').update({ role: 'viewer' }).eq('id', scopedUserId)
+    expect(promote.error).toBeNull()
+
+    expect(await names(scoped, 'cell_states', 'work_id')).toEqual([work1])
+    const write = await scoped
+      .from('cell_states')
+      .update({ stage_id: null })
+      .eq('cell_id', cellId)
+      .eq('work_id', work1)
+      .select('cell_id')
+    // RLS hides the row from the UPDATE rather than erroring: zero rows.
+    expect(write.error).toBeNull()
+    expect(write.data ?? []).toEqual([])
+    const insert = await scoped
+      .from('cell_states')
+      .insert({ cell_id: cellId, work_id: work2, deck_id: deckId, stage_id: stage2 })
+    expect(insert.error).not.toBeNull()
+
+    const stillThere = await admin.from('cell_states').select('stage_id').eq('cell_id', cellId).eq('work_id', work1).single()
+    expect(stillThere.data?.stage_id).toBe(stage1)
+  })
+
+  it('anonymous cannot call my_works() or is_gs()', async () => {
+    const anonClient = createClient(url!, anon!, { auth: { persistSession: false } })
+    expect((await anonClient.rpc('my_works')).error?.code).toBe('42501')
+    expect((await anonClient.rpc('is_gs')).error?.code).toBe('42501')
+  })
 })

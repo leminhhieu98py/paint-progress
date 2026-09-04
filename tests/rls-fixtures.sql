@@ -72,7 +72,7 @@ delete from credential_access_log
 where target_user_id in (select id from profiles where username like 'rlstest-ef-%');
 delete from auth.users where email like 'rlstest-ef-%@app.local';
 delete from profiles where username like 'rlstest-ef-%';
-delete from projects where code in ('RLSX', 'RLSY', 'RLSE');
+delete from projects where code in ('RLSX', 'RLSY', 'RLSE', 'RLSW');
 
 -- The admin fixture must be able to act as an admin, unconditionally. Nothing
 -- in the current suite deliberately sets rlstest-admin.active to false any
