@@ -1,9 +1,9 @@
-import { Alert, Button, Input, Modal, Select, Space, Typography } from 'antd'
+import { Alert, Button, Input, InputNumber, Modal, Select, Space, Typography } from 'antd'
 import { modalProps } from '../../components/modalChrome'
 import { palette } from '../../theme'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { isBackwards, nextStage } from '../../domain/stageFlow'
-import type { Cell, Stage } from '../../domain/types'
+import { EMPTY_EFFORT, type Cell, type Effort, type Stage } from '../../domain/types'
 import { formatAreaM2 } from '../../lib/format'
 import { listCellNotes, type CellNote } from '../../lib/progressApi'
 import { NoteThread } from '../../components/NoteThread'
@@ -16,6 +16,9 @@ import { NoteThread } from '../../components/NoteThread'
 export const NOT_STARTED_VALUE = '__not-started__'
 
 const NOT_STARTED_LABEL = 'Chưa bắt đầu'
+
+const EMPTY_NAMES = { leadName: '', painterName: '' }
+const effortLabel = { display: 'block', marginBottom: 4, fontSize: 12, fontWeight: 600 } as const
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -36,6 +39,7 @@ export function CellStageModal({
   workName,
   zones = [],
   readOnly = false,
+  defaultEffortNames = EMPTY_NAMES,
 }: {
   cell: Cell | null
   stages: Stage[]
@@ -46,7 +50,7 @@ export function CellStageModal({
    * must not reject: spec §11 row 1 wants the chart to move with no perceptible
    * delay, so this modal closes immediately rather than awaiting the write.
    */
-  onCommit: (cellId: string, stageId: string | null, note: string) => void
+  onCommit: (cellId: string, stageId: string | null, note: string, effort: Effort) => void
   /**
    * Full names by user id, for signing notes whose author the tablet cannot
    * read from `profiles`. The screen loads it once per project through
@@ -72,9 +76,17 @@ export function CellStageModal({
    * none.
    */
   readOnly?: boolean
+  /**
+   * The crew names from the last update this session (Feedback Rv2, item 11).
+   * The same nhóm trưởng ticks fifty bays a day; seeding the two name fields
+   * from the previous commit means typing them once. Hours are never seeded:
+   * they are about THIS bay.
+   */
+  defaultEffortNames?: { leadName: string; painterName: string }
 }) {
   const [choice, setChoice] = useState<string>(NOT_STARTED_VALUE)
   const [note, setNote] = useState('')
+  const [effort, setEffort] = useState<Effort>(EMPTY_EFFORT)
 
   // Keyed on the cell's ID only, deliberately. A realtime update to the cell
   // being edited must not silently rewrite the foreman's pending selection --
@@ -94,7 +106,19 @@ export function CellStageModal({
     // meant to tick a box. What is already on the bay is shown above the field
     // instead -- readable, and not the thing being sent.
     setNote('')
+    // Hours reset with the bay for the same reason as the note; the crew names
+    // carry over (see defaultEffortNames). The prop is read once here, not
+    // tracked: a name the foreman is editing must not be overwritten because a
+    // write elsewhere changed the default.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    setEffort({ ...EMPTY_EFFORT, leadName: defaultEffortNames.leadName, painterName: defaultEffortNames.painterName })
   }, [cell?.id])
+
+  /**
+   * What is sent: a reason is dropped when no hours were lost, so a sentence
+   * typed for lost hours the foreman then cleared does not travel alone.
+   */
+  const effortToSend: Effort = (effort.wasteHours ?? 0) > 0 ? effort : { ...effort, wasteReason: '' }
 
   /**
    * Every earlier note on this bay (Feedback Rv1, item 7). The foreman used to
@@ -157,7 +181,7 @@ export function CellStageModal({
       onCancel={onClose}
       onOk={() => {
         if (!cell || unchanged) return
-        onCommit(cell.id, chosenStageId, note)
+        onCommit(cell.id, chosenStageId, note, effortToSend)
         onClose()
       }}
       okText="Xác nhận"
@@ -214,7 +238,7 @@ export function CellStageModal({
               size="large"
               block
               onClick={() => {
-                onCommit(cell.id, next.id, note)
+                onCommit(cell.id, next.id, note, effortToSend)
                 onClose()
               }}
             >
@@ -239,6 +263,74 @@ export function CellStageModal({
               ]}
             />
           </div>
+          )}
+
+          {/*
+            Giờ công (Feedback Rv2, item 11). Every field optional -- Linh:
+            "nếu có" -- and said so once, at the top, rather than five times.
+            Ids by hand, as for the note: without them the labels are text
+            beside boxes. The block sits between the stage and the note because
+            that is the order the paperwork asks: what was done, what it cost,
+            then remarks.
+          */}
+          {!readOnly && (
+            <div data-testid="cell-effort">
+              <div style={{ marginBottom: 6 }}>
+                <Typography.Text strong>Giờ công</Typography.Text>{' '}
+                <Typography.Text type="secondary">không bắt buộc</Typography.Text>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 12px' }}>
+                <div>
+                  <label htmlFor="cell-lead" style={effortLabel}>Nhóm trưởng</label>
+                  <Input
+                    id="cell-lead"
+                    value={effort.leadName}
+                    onChange={(e) => setEffort({ ...effort, leadName: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label htmlFor="cell-painter" style={effortLabel}>Thợ chính</label>
+                  <Input
+                    id="cell-painter"
+                    value={effort.painterName}
+                    onChange={(e) => setEffort({ ...effort, painterName: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label htmlFor="cell-work-hours" style={effortLabel}>Số giờ công (Mhr)</label>
+                  <InputNumber
+                    id="cell-work-hours"
+                    min={0}
+                    step={0.5}
+                    style={{ width: '100%' }}
+                    value={effort.workHours}
+                    onChange={(v) => setEffort({ ...effort, workHours: v === null || v === undefined ? null : Number(v) })}
+                  />
+                </div>
+                <div>
+                  <label htmlFor="cell-waste-hours" style={effortLabel}>Giờ hao phí (Mhr)</label>
+                  <InputNumber
+                    id="cell-waste-hours"
+                    min={0}
+                    step={0.5}
+                    style={{ width: '100%' }}
+                    value={effort.wasteHours}
+                    onChange={(v) => setEffort({ ...effort, wasteHours: v === null || v === undefined ? null : Number(v) })}
+                  />
+                </div>
+              </div>
+              {(effort.wasteHours ?? 0) > 0 && (
+                <div style={{ marginTop: 8 }}>
+                  <label htmlFor="cell-waste-reason" style={effortLabel}>Lý do hao phí</label>
+                  <Input
+                    id="cell-waste-reason"
+                    value={effort.wasteReason}
+                    onChange={(e) => setEffort({ ...effort, wasteReason: e.target.value })}
+                    placeholder="Ví dụ: chờ vật tư, mưa"
+                  />
+                </div>
+              )}
+            </div>
           )}
 
           <div>

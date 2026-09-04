@@ -11,7 +11,7 @@ import { formatPlanRange } from '../../domain/plan'
 import { paintLensColors, zoneColorMap, zoneLensColors } from '../../domain/lens'
 import { computeDeckProgress, summariseDeck } from '../../domain/progress'
 import { planImagePairs } from '../../domain/report'
-import type { Cell, Deck, Stage, WorkModel, Zone } from '../../domain/types'
+import { EMPTY_EFFORT, type Cell, type Deck, type Effort, type Stage, type WorkModel, type Zone } from '../../domain/types'
 // One signed-URL helper for both roles: the bucket name and the 3600-second
 // expiry belong in one place, and decksApi is a lib module rather than an admin
 // one. Screens still never touch `supabase` directly.
@@ -680,6 +680,12 @@ export function GsScreen() {
     }))
 
   const [selectedCell, setSelectedCell] = useState<Cell | null>(null)
+  /**
+   * The crew named on the last update this session (Feedback Rv2, item 11),
+   * seeded into the next bay's dialog. In memory only: a reload starts blank,
+   * which is right for a tablet that changes hands between shifts.
+   */
+  const [lastNames, setLastNames] = useState({ leadName: '', painterName: '' })
   const { message } = App.useApp()
   const [confirmingOut, setConfirmingOut] = useState(false)
   /**
@@ -799,8 +805,11 @@ export function GsScreen() {
    * overtaken is dropped rather than applied over the newer truth. See
    * PendingWrite for the two reproduced scenarios that needs.
    */
-  const commitStage = (cellId: string, stageId: string | null, note = '') => {
+  const commitStage = (cellId: string, stageId: string | null, note = '', effort: Effort = EMPTY_EFFORT) => {
     if (!activeWork || !activeDeckId) return
+    if (effort.leadName.trim() !== '' || effort.painterName.trim() !== '') {
+      setLastNames({ leadName: effort.leadName, painterName: effort.painterName })
+    }
     const workId = activeWork.work.id
     const key = stateKey(workId, cellId)
     const superseded = pendingWrites.current.get(key)
@@ -817,7 +826,7 @@ export function GsScreen() {
       [workId]: { ...(prev[workId] ?? {}), [cellId]: state },
     })
     setStates(put({ stageId, note }))
-    void setCellState(cellId, workId, activeDeckId, stageId, note)
+    void setCellState(cellId, workId, activeDeckId, stageId, note, effort)
       .catch(() => {
         // Only the newest attempt for this (work, bay) may roll it back. An
         // older one finishing late would otherwise undo a later tap, or
@@ -1276,6 +1285,7 @@ export function GsScreen() {
         workName={activeWork?.work.name}
         zones={zonesOfCell(selectedCell)}
         readOnly={readOnly}
+        defaultEffortNames={lastNames}
       />
 
       {/*

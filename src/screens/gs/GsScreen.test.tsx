@@ -1,4 +1,5 @@
 import { App as AntApp } from 'antd'
+import { EMPTY_EFFORT } from '../../domain/types'
 import {
   act, render, screen, waitFor, within,
 } from '@testing-library/react'
@@ -33,8 +34,8 @@ vi.mock('../../lib/gsApi', () => ({
   listDeckWorks: (deckId: string) => listDeckWorks(deckId),
   listProjectIndex: (projectId: string, ids: string[]) => listProjectIndex(projectId, ids),
   setCellState: (
-    cellId: string, workId: string, deckId: string, stageId: string | null, note: string,
-  ) => setCellState(cellId, workId, deckId, stageId, note),
+    cellId: string, workId: string, deckId: string, stageId: string | null, note: string, effort: unknown,
+  ) => setCellState(cellId, workId, deckId, stageId, note, effort),
   subscribeDeckStates: (deckId: string, handlers: Handlers) =>
     subscribeDeckStates(deckId, handlers),
   listCoworkerNames: () => listCoworkerNames(),
@@ -570,11 +571,30 @@ describe('GsScreen: recording a stage', () => {
     ).toBeInTheDocument()
   })
 
+  it('sends the typed effort with the stage, and remembers the crew for the next bay', async () => {
+    renderScreen()
+    await userEvent.click(await screen.findByRole('button', { name: 'ô R2C1' }))
+    await userEvent.type(await screen.findByLabelText('Nhóm trưởng'), 'Tổ 1')
+    await userEvent.type(screen.getByLabelText('Số giờ công (Mhr)'), '2.5')
+    await userEvent.click(screen.getByRole('combobox', { name: 'Công đoạn' }))
+    await userEvent.click(await screen.findByTitle('Coat 3'))
+    await userEvent.click(screen.getByRole('button', { name: 'Xác nhận' }))
+
+    expect(setCellState).toHaveBeenCalledWith('c3', 'w1', 'd1', 's3', '', {
+      leadName: 'Tổ 1', painterName: '', workHours: 2.5, wasteHours: null, wasteReason: '',
+    })
+
+    await userEvent.click(screen.getByRole('button', { name: 'ô R1C2' }))
+    expect(await screen.findByText('Ô R1C2 · Sơn')).toBeInTheDocument()
+    expect(screen.getByLabelText('Nhóm trưởng')).toHaveValue('Tổ 1')
+    expect(screen.getByLabelText('Số giờ công (Mhr)')).toHaveValue('')
+  })
+
   it('writes the bay\'s stage for the work on screen, and nothing else', async () => {
     renderScreen()
     await tapCellAndChoose('R2C1', 'Coat 3')
 
-    expect(setCellState).toHaveBeenCalledWith('c3', 'w1', 'd1', 's3', '')
+    expect(setCellState).toHaveBeenCalledWith('c3', 'w1', 'd1', 's3', '', EMPTY_EFFORT)
   })
 
   it('moves the reported progress before the write comes back', async () => {
@@ -820,7 +840,7 @@ describe('GsScreen: recording a stage', () => {
 
     // R1C1 sits at s1, so one tap writes s2 -- one stage on from the cell's own
     // current stage, with no dropdown in between and nothing else in the payload.
-    expect(setCellState).toHaveBeenCalledWith('c1', 'w1', 'd1', 's2', '')
+    expect(setCellState).toHaveBeenCalledWith('c1', 'w1', 'd1', 's2', '', EMPTY_EFFORT)
     expect(setCellState).toHaveBeenCalledTimes(1)
     // And the colour moves with it, straight away.
     expect(screen.getByRole('button', { name: 'ô R1C1' })).toHaveAttribute('data-color', '#bfbfbf')
@@ -1177,7 +1197,7 @@ describe('GsScreen: công việc', () => {
     await userEvent.click(await screen.findByTitle('Tháo giáo lửng'))
     await userEvent.click(screen.getByRole('button', { name: 'Xác nhận' }))
 
-    expect(setCellState).toHaveBeenCalledWith('c2', 'w2', 'd1', 't1', '')
+    expect(setCellState).toHaveBeenCalledWith('c2', 'w2', 'd1', 't1', '', EMPTY_EFFORT)
   })
 
   it('heads the card with the deck tổng hợp, then a row per work', async () => {
