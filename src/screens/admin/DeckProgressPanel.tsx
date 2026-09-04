@@ -7,7 +7,7 @@ import dayjs from 'dayjs'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { DrawingCanvas } from '../../canvas/DrawingCanvas'
 import { cellsInBox } from '../../domain/geometry'
-import { codesNotReaching, zoneLensColors, ZONE_PALETTE } from '../../domain/lens'
+import { codesNotReaching, zoneColorMap, zoneColorOf, zoneLensLayers, ZONE_PALETTE } from '../../domain/lens'
 import { buildStageSlices } from '../../domain/pieSlices'
 import { formatPlanRange } from '../../domain/plan'
 import { computeDeckProgress, summariseDeck } from '../../domain/progress'
@@ -33,6 +33,56 @@ import { modalProps } from '../../components/modalChrome'
 import { palette, shadowCard } from '../../theme'
 import type { Cell } from '../../domain/types'
 
+
+/**
+ * The zone colour picker (Feedback Rv2, item 6): one swatch per palette colour
+ * this (work, deck)'s stages do NOT wear, as a radio group.
+ *
+ * Swatches rather than a free colour picker, on purpose. The rule Linh asked
+ * for is "never a coat colour", and a fixed set that already excludes them
+ * makes the rule true by construction -- there is nothing to validate and
+ * nothing to explain when it fails. Ten palette entries minus at most five
+ * coats leaves more zones per coat than any plan sheet has carried.
+ */
+function ZoneColorSwatches({
+  colors, value, onChange,
+}: {
+  colors: string[]
+  value: string
+  onChange: (color: string) => void
+}) {
+  return (
+    <div data-testid="zone-color" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <span style={{ fontSize: 12, fontWeight: 600, color: palette.textSecondary }}>Màu zone</span>
+      <div role="radiogroup" aria-label="Màu zone" style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        {colors.map((c) => {
+          const selected = c === value.toLowerCase()
+          return (
+            <button
+              key={c}
+              type="button"
+              role="radio"
+              aria-checked={selected}
+              aria-label={`Màu ${c}`}
+              data-color={c}
+              onClick={() => onChange(c)}
+              style={{
+                width: 28,
+                height: 28,
+                borderRadius: 8,
+                background: c,
+                cursor: 'pointer',
+                border: selected ? `2px solid ${palette.text}` : '2px solid transparent',
+                boxShadow: 'inset 0 0 0 1px #16202B47',
+                padding: 0,
+              }}
+            />
+          )
+        })}
+      </div>
+    </div>
+  )
+}
 
 /** One row of the create-zone dialog: a stage and the window planned for it. */
 interface StageWindow {
@@ -74,7 +124,11 @@ const PROGRESS_RULES = [
   },
   {
     id: 'LNS-R1',
-    text: 'Ô tô theo màu zone của lớp đang xem, hoặc màu lớp đó nếu chưa có zone. Ô gạch chéo là chưa đạt lớp đang xem; ô tô đặc là đã đạt.',
+    text: 'Ô đã đạt lớp tô đặc theo màu zone (hoặc màu lớp nếu chưa có zone). Ô có kế hoạch nhưng chưa đạt lớp tô nhạt và viền đứt theo màu zone. Ô chưa đạt và chưa có kế hoạch để trống.',
+  },
+  {
+    id: 'ZON-R6',
+    text: 'Màu zone do quản trị viên chọn và không bao giờ trùng màu một lớp sơn ở A3.2 của cùng công việc, sàn.',
   },
   {
     id: 'LNS-R2',
@@ -313,27 +367,29 @@ export function DeckProgressPanel({
    * coat has one planned, by the coat's own colour where it does not. A
    * zone-only rule would leave an unplanned deck blank, which is most decks
    * before the plan is drawn; a coat-only rule would lose the grouping the
-   * plan exists to show. A bay that has NOT reached the coat gets nothing --
-   * the drawing shows through. It used to wear the fill under a hatch, and the
-   * client's review read that as "done, sort of": white is the honest answer.
+   * plan exists to show. A bay that has NOT reached the coat but is planned
+   * for it wears its zone colour faintly, under a dashed frame (Feedback Rv2,
+   * item 5: it used to get nothing, and a plan drawn before the work started
+   * was invisible on the screen it was drawn on). Unplanned and unreached,
+   * the drawing shows through. The table itself is `zoneLensLayers`.
+   *
+   * Zone colours come from `zoneColorMap` over ALL the deck's zones with the
+   * stage colours reserved, so a zone is one colour on every coat's view, in
+   * the GS screen and in the report -- and never a coat's colour (item 6).
    */
   const lensFor = (stage: Stage | null) => {
     if (!entry || !stage) {
-      return { stage: null, colors: {}, zones: [], zoneColors: {}, reachedAreaM2: 0 }
+      return {
+        stage: null, colors: {}, opacities: {}, outlines: {}, zones: [], zoneColors: {}, reachedAreaM2: 0,
+      }
     }
     const zonesHere = zones.filter((z) => z.stageId === stage.id)
-    const colorById = Object.fromEntries(
-      zonesHere.map((z, i) => [z.id, ZONE_PALETTE[i % ZONE_PALETTE.length]]),
-    )
+    const colorById = zoneColorMap(zonesHere, entry.stages.map((st) => st.color))
     const pendingSet = new Set(codesNotReaching(entry.deck.cells, entry.stages, stage.id))
-    const zoned = zoneLensColors(zonesHere, entry.deck.cells)
-    const colors: Record<string, string> = {}
-    let reachedAreaM2 = 0
-    for (const cell of entry.deck.cells) {
-      if (pendingSet.has(cell.code)) continue
-      colors[cell.code] = zoned[cell.code] ?? stage.color
-      reachedAreaM2 += cell.areaM2
-    }
+    const layers = zoneLensLayers(entry.deck.cells, entry.stages, stage, zonesHere, colorById)
+    const reached = new Set(layers.reachedCodes)
+    const reachedAreaM2 = entry.deck.cells
+      .reduce((sum, c) => (reached.has(c.code) ? sum + c.areaM2 : sum), 0)
 
     // In m², like everything else on this panel now: a zone of three bays at
     // "2/3" said nothing about how much of it was done when the bays differ
@@ -349,8 +405,27 @@ export function DeckProgressPanel({
       return { zone: z, color: colorById[z.id], doneM2, totalM2 }
     })
 
-    return { stage, colors, zones: zoneRows, zoneColors: colorById, reachedAreaM2 }
+    return {
+      stage,
+      colors: layers.colors,
+      opacities: layers.opacities,
+      outlines: layers.outlines,
+      zones: zoneRows,
+      zoneColors: colorById,
+      reachedAreaM2,
+    }
   }
+
+  /**
+   * The colours a new zone may take: the palette minus this (work, deck)'s
+   * stage colours. Built here so the dialog cannot offer a conflict at all;
+   * `createZone` still refuses one, for any other caller.
+   */
+  const stageColors = (entry?.stages ?? []).map((st) => st.color.toLowerCase())
+  const freeColors = ZONE_PALETTE.filter((c) => !stageColors.includes(c))
+  const [zoneColor, setZoneColor] = useState<string | null>(null)
+  const defaultZoneColor = zoneColorOf({ color: null }, 0, stageColors)
+  const chosenZoneColor = zoneColor ?? defaultZoneColor
 
   const lensA = lensFor(stageA)
   const lensB = lensFor(stageB)
@@ -543,11 +618,13 @@ export function DeckProgressPanel({
           stageId: st.id,
           startDate: iso(windows[st.id]?.startDate),
           finishDate: iso(windows[st.id]?.finishDate),
-        }, cellIds)
+          color: chosenZoneColor,
+        }, cellIds, entry.stages)
       }
       setZoneFormOpen(false)
       setSelectedCodes([])
       setWindows({})
+      setZoneColor(null)
       form.resetFields()
       await refreshZones()
       message.success(`Đã tạo ${planned.length} zone`)
@@ -572,6 +649,19 @@ export function DeckProgressPanel({
       // known, which is how a slipped zone is expressed.
       await updateZone(zone.id, { [field]: value ? value.format('YYYY-MM-DD') : null })
       await refreshZones()
+    } catch (e) {
+      setError((e as Error).message)
+    }
+  }
+
+  /** One zone's colour, written as it is picked (item 6). The swatches offered
+   *  are already outside the stage palette; the API guards any other path. */
+  const recolorZone = async (zone: Zone, color: string) => {
+    if (!entry) return
+    try {
+      await updateZone(zone.id, { color }, entry.stages)
+      await refreshZones()
+      setDatesFor((current) => (current?.id === zone.id ? { ...current, color } : current))
     } catch (e) {
       setError((e as Error).message)
     }
@@ -634,7 +724,7 @@ export function DeckProgressPanel({
             <div style={{ fontSize: 12, lineHeight: 1.35, color: palette.textTertiary, marginTop: 4 }}>
               {splitView
                 ? (side === 'A' ? 'Lớp bên trái' : 'Lớp bên phải · cùng mức zoom để so sánh')
-                : 'Ô đã đạt lớp này tô màu zone (chưa có zone thì màu lớp) · ô chưa đạt để trắng'}
+                : 'Ô đã đạt lớp tô đặc · ô có kế hoạch chưa đạt tô nhạt, viền đứt · ô chưa đạt, chưa kế hoạch để trắng'}
             </div>
           </div>
           {/*
@@ -668,6 +758,8 @@ export function DeckProgressPanel({
             cells={entry.deck.cells}
             selectedCodes={editable && side === 'A' ? selectedCodes : []}
             cellColors={lens.colors}
+            cellOpacities={lens.opacities}
+            outlineColors={lens.outlines}
             markedCodes={notedCodes}
             panZoom
             zoom={zoom}
@@ -1381,6 +1473,11 @@ export function DeckProgressPanel({
                 />
               </div>
             </div>
+            <ZoneColorSwatches
+              colors={freeColors}
+              value={zoneColorOf(datesFor, 0, stageColors)}
+              onChange={(c) => void recolorZone(datesFor, c)}
+            />
             <Space>
               <Button onClick={() => void applyZone(datesFor)}>Ghi thực tế</Button>
               <Button danger onClick={() => setRemovingZone(datesFor)}>
@@ -1433,6 +1530,12 @@ export function DeckProgressPanel({
             <Input placeholder="Khu A" />
           </Form.Item>
         </Form>
+
+        <ZoneColorSwatches
+          colors={freeColors}
+          value={chosenZoneColor}
+          onChange={setZoneColor}
+        />
 
         <Typography.Text type="secondary" style={{ display: 'block', marginBottom: 8 }}>
           Đặt ngày cho từng công đoạn. Công đoạn để trống nghĩa là chưa lên kế hoạch.

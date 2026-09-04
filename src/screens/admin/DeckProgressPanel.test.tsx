@@ -31,8 +31,9 @@ vi.mock('../../lib/gsApi', () => ({
 }))
 vi.mock('../../lib/zonesApi', () => ({
   listDeckZones: (d: string) => listDeckZones(d),
-  createZone: (d: string, draft: unknown, ids: string[]) => createZone(d, draft, ids),
-  updateZone: (id: string, f: unknown) => updateZone(id, f),
+  createZone: (d: string, draft: unknown, ids: string[], stages: unknown) => createZone(d, draft, ids, stages),
+  updateZone: (id: string, f: unknown, stages?: unknown) =>
+    (stages === undefined ? updateZone(id, f) : updateZone(id, f, stages)),
   deleteZone: (id: string) => deleteZone(id),
   setZoneActual: (id: string, s: string) => setZoneActual(id, s),
 }))
@@ -43,11 +44,13 @@ vi.mock('../../lib/zonesApi', () => ({
 vi.mock('../../canvas/DrawingCanvas', () => ({
   DrawingCanvas: ({
     imageUrl, cells, cellColors, hatchedCodes, markedCodes, planLabels, selectedCodes,
-    onCellClick, onSelectDraw,
+    outlineColors, cellOpacities, onCellClick, onSelectDraw,
   }: {
     imageUrl: string
     cells: { code: string }[]
     cellColors?: Record<string, string>
+    outlineColors?: Record<string, string>
+    cellOpacities?: Record<string, number>
     hatchedCodes?: string[]
     markedCodes?: string[]
     planLabels?: Record<string, string>
@@ -61,6 +64,8 @@ vi.mock('../../canvas/DrawingCanvas', () => ({
           key={c.code}
           data-testid={`cell-${c.code}`}
           data-color={cellColors?.[c.code] ?? ''}
+          data-outline={outlineColors?.[c.code] ?? ''}
+          data-opacity={String(cellOpacities?.[c.code] ?? '')}
           data-hatched={String(Boolean(hatchedCodes?.includes(c.code)))}
           data-marked={String(Boolean(markedCodes?.includes(c.code)))}
           data-plan={planLabels?.[c.code] ?? ''}
@@ -102,7 +107,7 @@ const ENTRY = {
 }
 
 const ZONE = {
-  id: 'z1', name: 'Khu A — Tháo giáo', stageId: 's3',
+  id: 'z1', name: 'Khu A — Tháo giáo', stageId: 's3', color: null,
   startDate: '2026-09-01', finishDate: '2026-09-07', cellIds: ['c1'],
 }
 
@@ -316,6 +321,54 @@ describe('DeckProgressPanel — colouring one coat', () => {
     expect(screen.getByTestId('cell-R1C1')).toHaveAttribute('data-hatched', 'false')
     expect(screen.getByTestId('cell-R1C2')).toHaveAttribute('data-color', '')
     expect(screen.getByTestId('cell-R1C2')).toHaveAttribute('data-hatched', 'false')
+    expect(screen.getByTestId('cell-R1C2')).toHaveAttribute('data-outline', '')
+  })
+
+  it('shows a planned bay that has not reached the coat as a faint, framed zone bay', async () => {
+    // Feedback Rv2 item 5: Linh drew four zones on Topcoat and saw a white deck,
+    // because nothing had reached Topcoat yet. c2 is at Coat 2 and planned for
+    // Tháo giáo: it wears the zone colour faintly, with a dashed frame, and is
+    // NOT counted as reached.
+    listDeckZones.mockResolvedValue([{ ...ZONE, cellIds: ['c1', 'c2'] }])
+    renderPanel()
+    await screen.findByTestId('lens-A')
+    await pickLens('Lớp sơn đang xem', 'Tháo giáo')
+    await waitFor(() =>
+      expect(screen.getByTestId('cell-R1C2')).toHaveAttribute('data-outline', '#eb2f96'))
+    expect(screen.getByTestId('cell-R1C2')).toHaveAttribute('data-color', '#eb2f96')
+    expect(screen.getByTestId('cell-R1C2')).toHaveAttribute('data-opacity', '0.18')
+    // c1 has reached it: solid, unframed.
+    expect(screen.getByTestId('cell-R1C1')).toHaveAttribute('data-outline', '')
+    expect(screen.getByTestId('cell-R1C1')).toHaveAttribute('data-opacity', '')
+    // Half the deck reached, in the lens header and again on the zone's own row.
+    expect(within(screen.getByTestId('lens-A')).getAllByText('500,00 / 1.000,00 m²')).toHaveLength(2)
+  })
+
+  it('draws a zone in the colour the admin chose for it', async () => {
+    listDeckZones.mockResolvedValue([{ ...ZONE, color: '#13c2c2' }])
+    renderPanel()
+    await screen.findByTestId('lens-A')
+    await pickLens('Lớp sơn đang xem', 'Tháo giáo')
+    await waitFor(() =>
+      expect(screen.getByTestId('cell-R1C1')).toHaveAttribute('data-color', '#13c2c2'))
+  })
+
+  it('never hands an unset zone one of the coat colours', async () => {
+    // The palette's first entry is a stage colour on this deck, so the zone
+    // takes the next one. This is item 6 for zones created before 0027.
+    listDeckZones.mockResolvedValue([ZONE])
+    loadDeckWorks.mockResolvedValue({
+      ...ENTRY,
+      works: [{
+        ...ENTRY.works[0],
+        stages: STAGES.map((st, i) => (i === 0 ? { ...st, color: '#eb2f96' } : st)),
+      }],
+    })
+    renderPanel()
+    await screen.findByTestId('lens-A')
+    await pickLens('Lớp sơn đang xem', 'Tháo giáo')
+    await waitFor(() =>
+      expect(screen.getByTestId('cell-R1C1')).toHaveAttribute('data-color', '#13c2c2'))
   })
 
   it('hatches nothing at a coat both bays are already past', async () => {
@@ -329,7 +382,7 @@ describe('DeckProgressPanel — colouring one coat', () => {
 
   it('says what white means, rather than leaving it to be inferred', async () => {
     renderPanel()
-    expect(await screen.findByText(/ô chưa đạt để trắng/)).toBeInTheDocument()
+    expect(await screen.findByText(/ô chưa đạt, chưa kế hoạch để trắng/)).toBeInTheDocument()
   })
 
   it('counts each zone against the coat being viewed', async () => {
@@ -383,6 +436,58 @@ describe('DeckProgressPanel — zones', () => {
       name: 'Khu A — Coat 2', stageId: 's2', startDate: '2026-09-01',
     })
     expect(createZone.mock.calls[0][2]).toEqual(['c1', 'c2'])
+  })
+
+  it('creates the zone in the first palette colour no coat wears, unless another is picked', async () => {
+    // Feedback Rv2 item 6. The picker offers only colours outside this
+    // (work, deck)'s stage palette, so a conflict cannot be built here; the
+    // API still refuses one. The stages travel with the call for that check.
+    renderPanel()
+    await screen.findByTestId('lens-A')
+    await userEvent.click(screen.getByTestId('band-all'))
+    await userEvent.click(await screen.findByRole('button', { name: /Gộp thành zone/ }))
+    await userEvent.type(screen.getByLabelText('Tên zone'), 'Khu A')
+    await userEvent.type(screen.getByLabelText('Bắt đầu Coat 2'), '01/09/2026')
+    await userEvent.keyboard('{Enter}')
+
+    // Every swatch offered is outside the stage palette.
+    const swatches = within(screen.getByTestId('zone-color')).getAllByRole('radio')
+    for (const sw of swatches) {
+      expect(STAGES.map((st) => st.color)).not.toContain(sw.getAttribute('data-color'))
+    }
+    await userEvent.click(within(screen.getByTestId('zone-color')).getByRole('radio', { name: 'Màu #fa8c16' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Tạo zone' }))
+
+    await waitFor(() => expect(createZone).toHaveBeenCalledTimes(1))
+    expect(createZone.mock.calls[0][1]).toMatchObject({ color: '#fa8c16' })
+    expect(createZone.mock.calls[0][3]).toEqual(STAGES)
+  })
+
+  it('defaults the colour to the first free palette entry', async () => {
+    renderPanel()
+    await screen.findByTestId('lens-A')
+    await userEvent.click(screen.getByTestId('band-all'))
+    await userEvent.click(await screen.findByRole('button', { name: /Gộp thành zone/ }))
+    await userEvent.type(screen.getByLabelText('Tên zone'), 'Khu A')
+    await userEvent.type(screen.getByLabelText('Bắt đầu Coat 2'), '01/09/2026')
+    await userEvent.keyboard('{Enter}')
+    await userEvent.click(screen.getByRole('button', { name: 'Tạo zone' }))
+
+    await waitFor(() => expect(createZone).toHaveBeenCalledTimes(1))
+    expect(createZone.mock.calls[0][1]).toMatchObject({ color: '#eb2f96' })
+  })
+
+  it('recolours an existing zone from its dates dialog', async () => {
+    listDeckZones.mockResolvedValue([ZONE])
+    renderPanel()
+    await screen.findByTestId('lens-A')
+    await pickLens('Lớp sơn đang xem', 'Tháo giáo')
+    await userEvent.click(await screen.findByRole('button', { name: 'Mốc ngày của Khu A — Tháo giáo' }))
+    await userEvent.click(await screen.findByRole('radio', { name: 'Màu #13c2c2' }))
+
+    await waitFor(() => expect(updateZone).toHaveBeenCalledWith('z1', { color: '#13c2c2' }, STAGES))
+    // Re-read, so the row swatch and the bays follow the new colour.
+    await waitFor(() => expect(listDeckZones).toHaveBeenCalledTimes(2))
   })
 
   it('refuses a zone with no dates at all, rather than writing five empty ones', async () => {
