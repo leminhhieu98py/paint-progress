@@ -233,6 +233,40 @@ describe('DecksScreen', () => {
 })
 
 describe('DecksScreen — the project-wide half of progress', () => {
+  it('hides a deck that carries no weight from the rollup table, and says so', async () => {
+    // Feedback Rv2 item 4: a "Test data" deck in no counted work sat in the
+    // rollup at 0,00% for ever. It still exists -- the Sàn list above keeps
+    // it, and the works table is untouched -- it just does not count.
+    const TD = { id: 'd3', code: 'TD', name: 'Test data', totalAreaM2: 100 }
+    loadProjectModel.mockResolvedValue({
+      ...MODEL,
+      decks: [
+        ...MODEL.decks,
+        { ...TD, seq: 3, imagePath: null, imageW: null, imageH: null, areaSource: 'guides' as const, cellCount: 0 },
+      ],
+    })
+    listDecks.mockResolvedValue([{
+      id: 'd3', projectId: 'p1', seq: 3, name: 'Test data', code: 'TD',
+      imagePath: null, imageW: null, imageH: null, drawingName: null, drawingPage: null,
+      totalAreaM2: 100, areaSource: 'guides', cellCount: 0,
+    }])
+    renderScreen()
+
+    const rollup = await screen.findByTestId('project-rollup')
+    await waitFor(() => expect(within(rollup).getByText('Cellar Deck')).toBeInTheDocument())
+    expect(within(rollup).queryByText('Test data')).toBeNull()
+    expect(within(rollup).getByText(/Đã ẩn 1 sàn có tỉ trọng 0,00%/)).toBeInTheDocument()
+    // Still a deck of the project, in the list that says what exists.
+    expect(screen.getAllByText('Test data').length).toBeGreaterThan(0)
+  })
+
+  it('says nothing about hidden decks when every deck counts', async () => {
+    renderScreen()
+    const rollup = await screen.findByTestId('project-rollup')
+    await waitFor(() => expect(within(rollup).getByText('Cellar Deck')).toBeInTheDocument())
+    expect(within(rollup).queryByText(/Đã ẩn/)).toBeNull()
+  })
+
   it('weighs each deck by Σ W·D across the works it is in, and shows its tổng hợp', async () => {
     renderScreen()
 

@@ -1,7 +1,7 @@
 import {
   ArrowRightOutlined, DeleteOutlined, DownloadOutlined, PlusOutlined,
 } from '@ant-design/icons'
-import { Alert, App, Button, Select, Space, Table, Tooltip } from 'antd'
+import { Alert, App, Button, Select, Space, Table, Tooltip, Typography } from 'antd'
 import dayjs from 'dayjs'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
@@ -194,6 +194,16 @@ export function DecksScreen() {
     totalAreaM2: formatAreaM2(deck.totalAreaM2),
     progress: summaries[i]?.progress ?? 0,
   }))
+  /**
+   * Feedback Rv2, item 4: a deck in no counted work weighs nothing in P, and a
+   * row that will read 0,00% for ever is noise in the one table that says how
+   * the project is going. It is hidden here, not removed: the Sàn list above
+   * says what exists, the works table says what counts, and one line under
+   * this table says how many rows it is not showing. `totalArea` and the ring
+   * are unchanged -- the ring already gets nothing from a zero weight.
+   */
+  const visibleRollup = rollupRows.filter((_, i) => (summaries[i]?.effectiveWeight ?? 0) > 0)
+  const hiddenDecks = rollupRows.length - visibleRollup.length
   const workRows: WorkRow[] = rollup.works.map((w) => ({
     key: w.work.id,
     name: w.work.name,
@@ -508,7 +518,7 @@ export function DecksScreen() {
                   className="pp-table"
                   size="small"
                   pagination={false}
-                  dataSource={rollupRows}
+                  dataSource={visibleRollup}
                   columns={[
                     { title: 'Sàn', dataIndex: 'name', key: 'name' },
                     {
@@ -551,6 +561,14 @@ export function DecksScreen() {
                     </Table.Summary.Row>
                   )}
                 />
+                {hiddenDecks > 0 && (
+                  <Typography.Text
+                    type="secondary"
+                    style={{ display: 'block', fontSize: 12, padding: '8px 12px 10px' }}
+                  >
+                    {`Đã ẩn ${hiddenDecks} sàn có tỉ trọng 0,00% (không thuộc công việc nào tính vào tổng)`}
+                  </Typography.Text>
+                )}
                 </div>
 
                 {/*
