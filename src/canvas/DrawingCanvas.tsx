@@ -82,11 +82,14 @@ export function DrawingCanvas({
   hatchedCodes,
   markedCodes,
   planLabels,
+  outlineColors,
+  cellOpacities,
   panZoom = false,
   zoom: zoomProp,
   onZoomChange,
   showZoomControls = true,
   onCellClick,
+  onCellHover,
   onCellDraw,
   onSelectDraw,
 }: {
@@ -127,6 +130,24 @@ export function DrawingCanvas({
    */
   planLabels?: Record<string, string>
   /**
+   * Dashed outline colour per cell CODE (Feedback Rv2, item 5).
+   *
+   * The frame a PLANNED bay wears before it reaches the coat being looked at,
+   * in its zone's colour, so a plan drawn on untouched bays is visible on the
+   * screen it was drawn on. Its own layer above the fills and below the
+   * selection: a frame must not hide the fill it explains, and a selected bay
+   * must still read as selected. Absent code, no frame.
+   */
+  outlineColors?: Record<string, string>
+  /**
+   * Fill opacity per cell CODE, overriding `STAGE_FILL_OPACITY` for that bay.
+   *
+   * Used with `outlineColors` to draw the same planned-not-reached bay faint,
+   * so it cannot be confused with a bay that HAS reached the coat and wears the
+   * same zone colour solid. A code absent here keeps the default.
+   */
+  cellOpacities?: Record<string, number>
+  /**
    * Pan by dragging, zoom by the buttons or the wheel. Off by default: the
    * admin editor has never had (or wanted) a viewport of its own. Spec §8.1
    * requires it for the GS screen, where the drawing is bigger than the
@@ -158,6 +179,12 @@ export function DrawingCanvas({
    * smaller floor, because a bay is a fraction of the size of a deck.
    */
   onCellClick?: (code: string, additive: boolean) => void
+  /**
+   * The bay under the mouse, or null once it leaves one (Feedback Rv2, item
+   * 7). Mouse only: Konva emits no mouseenter for a touch, so a tablet never
+   * fires this and its screen falls back to the bay dialog instead.
+   */
+  onCellHover?: (code: string | null) => void
   onCellDraw?: (rect: { x: number; y: number; w: number; h: number }) => void
   /**
    * Present = a drag started with Shift held reports the band it swept, so the
@@ -517,9 +544,13 @@ export function DrawingCanvas({
               width={cell.w * width}
               height={cell.h * height}
               fill={cellColors?.[cell.code] ?? PLAIN_FILL}
-              opacity={cellColors?.[cell.code] ? STAGE_FILL_OPACITY : 1}
+              opacity={
+                cellOpacities?.[cell.code] ?? (cellColors?.[cell.code] ? STAGE_FILL_OPACITY : 1)
+              }
               stroke="#FF000099"
               strokeWidth={1}
+              onMouseEnter={() => onCellHover?.(cell.code)}
+              onMouseLeave={() => onCellHover?.(null)}
               onClick={(e: Konva.KonvaEventObject<MouseEvent>) => {
                 if (drawingCell || swallowClickRef.current) return
                 // Shift belongs to the band, so a click carrying it is the tail
@@ -592,6 +623,30 @@ export function DrawingCanvas({
                 />
               )
             })}
+        </Layer>
+
+        {/*
+          The plan's frames on bays the work has not reached yet. Above the
+          fills so the frame is not painted over, below the selection so a
+          selected planned bay still reads as selected. Out of the hit graph
+          like every other overlay: a tap belongs to the bay underneath.
+        */}
+        <Layer name="outlines" listening={false}>
+          {cells
+            .filter((cell) => outlineColors?.[cell.code] !== undefined)
+            .map((cell) => (
+              <Rect
+                key={`outline-${cell.code}`}
+                name={`outline-${cell.code}`}
+                x={cell.x * width}
+                y={cell.y * height}
+                width={cell.w * width}
+                height={cell.h * height}
+                stroke={outlineColors?.[cell.code]}
+                strokeWidth={2}
+                dash={[6, 4]}
+              />
+            ))}
         </Layer>
 
         <Layer name="selection" listening={false}>

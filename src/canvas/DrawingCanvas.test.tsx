@@ -86,6 +86,7 @@ vi.mock('react-konva', () => {
       data-draggable={String(props.draggable ?? '')}
       data-text={String(props.text ?? '')}
       data-dash={String(props.dash ?? '')}
+      data-stroke={String(props.stroke ?? '')}
       // A guide's drawn extent -- the crop-clipping tests read the endpoints.
       data-points={Array.isArray(props.points) ? props.points.join(',') : ''}
       // `listening` cannot be observed behaviourally here: with react-konva
@@ -128,6 +129,8 @@ vi.mock('react-konva', () => {
       onMouseMove={(domEvt: React.MouseEvent) =>
         (props.onMouseMove as ((e: unknown) => void) | undefined)?.(konvaPointer(domEvt))
       }
+      onMouseEnter={() => (props.onMouseEnter as (() => void) | undefined)?.()}
+      onMouseLeave={() => (props.onMouseLeave as (() => void) | undefined)?.()}
       /*
         Konva attaches its own listener and hands the handler a real WheelEvent
         as `e.evt`, so the double hands over the same shape -- and records the
@@ -702,6 +705,55 @@ describe('DrawingCanvas', () => {
       expect(screen.queryByTestId('rect:plan-R1C1')).toBeNull()
     })
   })
+  describe('zone lens layers (Feedback Rv2)', () => {
+    it('outlines a listed bay in its colour, dashed, and no other', () => {
+      // Item 5: a planned bay that has not reached the coat is drawn as a
+      // dashed frame in the zone colour, so the plan is visible before the
+      // work starts. Unlisted bays get no frame at all.
+      render(
+        <DrawingCanvas
+          imageUrl="u" imageW={2000} imageH={1600} cells={cells}
+          selectedCodes={[]}
+          outlineColors={{ R1C1: '#eb2f96' }}
+        />,
+      )
+      const outline = screen.getByTestId('rect:outline-R1C1')
+      expect(outline).toHaveAttribute('data-stroke', '#eb2f96')
+      expect(outline).toHaveAttribute('data-dash', '6,4')
+      expect(screen.queryByTestId('rect:outline-R1C2')).toBeNull()
+    })
+
+    it('lets a lens override one bay\'s fill opacity and leaves the rest at the default', () => {
+      render(
+        <DrawingCanvas
+          imageUrl="u" imageW={2000} imageH={1600} cells={cells}
+          selectedCodes={[]}
+          cellColors={{ R1C1: '#eb2f96', R1C2: '#eb2f96' }}
+          cellOpacities={{ R1C1: 0.18 }}
+        />,
+      )
+      expect(screen.getByTestId('rect:cell-R1C1')).toHaveAttribute('data-opacity', '0.18')
+      expect(screen.getByTestId('rect:cell-R1C2')).toHaveAttribute('data-opacity', '0.45')
+    })
+
+    it('reports the bay under the mouse, and null when it leaves', () => {
+      // Item 7: the GS screen shows the zone under the pointer. Mouse only --
+      // Konva fires no mouseenter for a touch, so a tablet never sees this.
+      const onCellHover = vi.fn()
+      render(
+        <DrawingCanvas
+          imageUrl="u" imageW={2000} imageH={1600} cells={cells}
+          selectedCodes={[]}
+          onCellHover={onCellHover}
+        />,
+      )
+      fireEvent.mouseEnter(screen.getByTestId('rect:cell-R1C1'))
+      expect(onCellHover).toHaveBeenLastCalledWith('R1C1')
+      fireEvent.mouseLeave(screen.getByTestId('rect:cell-R1C1'))
+      expect(onCellHover).toHaveBeenLastCalledWith(null)
+    })
+  })
+
   it('keeps the selection and plan layers out of the hit graph', () => {
     // The overlays draw on top of every cell. If either one listened, it would
     // absorb the tap that records progress -- and ticking a bay is the only
