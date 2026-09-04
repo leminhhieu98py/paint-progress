@@ -1,7 +1,7 @@
 import { Alert, Button, Input, InputNumber, Modal, Select, Space, Typography } from 'antd'
 import { modalProps } from '../../components/modalChrome'
 import { palette } from '../../theme'
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { isBackwards, nextStage } from '../../domain/stageFlow'
 import { EMPTY_EFFORT, type Cell, type Effort, type Stage } from '../../domain/types'
 import { formatAreaM2 } from '../../lib/format'
@@ -87,6 +87,11 @@ export function CellStageModal({
   const [choice, setChoice] = useState<string>(NOT_STARTED_VALUE)
   const [note, setNote] = useState('')
   const [effort, setEffort] = useState<Effort>(EMPTY_EFFORT)
+  // Read through a ref inside the reset effect below: the seed is taken once
+  // per bay, and a default that changes while the foreman is typing must not
+  // re-run the reset over what they typed.
+  const defaultNames = useRef(defaultEffortNames)
+  defaultNames.current = defaultEffortNames
 
   // Keyed on the cell's ID only, deliberately. A realtime update to the cell
   // being edited must not silently rewrite the foreman's pending selection --
@@ -107,11 +112,8 @@ export function CellStageModal({
     // instead -- readable, and not the thing being sent.
     setNote('')
     // Hours reset with the bay for the same reason as the note; the crew names
-    // carry over (see defaultEffortNames). The prop is read once here, not
-    // tracked: a name the foreman is editing must not be overwritten because a
-    // write elsewhere changed the default.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    setEffort({ ...EMPTY_EFFORT, leadName: defaultEffortNames.leadName, painterName: defaultEffortNames.painterName })
+    // carry over (see defaultEffortNames).
+    setEffort({ ...EMPTY_EFFORT, ...defaultNames.current })
   }, [cell?.id])
 
   /**

@@ -16,6 +16,7 @@ import { pdfPageCount, renderPdfPage } from '../../lib/pdfToPng'
 import { DeckEditor } from './DeckEditor'
 import { StageConfigPanel } from './StageConfigPanel'
 import { DeckProgressPanel } from './DeckProgressPanel'
+import { EffortHistoryPanel } from './EffortHistoryPanel'
 import { ConsequenceModal } from '../../components/ConsequenceModal'
 import { PageBody, PageHeader } from '../../components/PageHeader'
 import { RulesDisclosure } from '../../components/RulesDisclosure'
@@ -632,6 +633,11 @@ export function DeckDetailScreen() {
         {deck && (
           <DeckProgressPanel deckId={deck.id} editable={editing} onProgress={setProgress} />
         )}
+
+        {/* Man-hours per update (Feedback Rv2, item 11), with the admin's
+            backfill for rows written before hours existed. Under the progress
+            panel because it is the same history seen by the hour, not the coat. */}
+        {deck && <EffortHistoryPanel deckId={deck.id} editable={editing} />}
       </PageBody>
 
       <ConsequenceModal

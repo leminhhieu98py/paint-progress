@@ -54,6 +54,9 @@ const WORK2 = { ...WORK1, id: 'w2', seq: 2, name: 'Tháo giáo', weight: 0.4 }
 // loadDeckWorks against the live client, so every test in this file paid a
 // network round trip for a panel none of them are about. The stub reports a
 // fixed percentage upward, which is the contract this screen depends on.
+vi.mock('./EffortHistoryPanel', () => ({
+  EffortHistoryPanel: ({ deckId }: { deckId: string }) => <div>giờ công {deckId}</div>,
+}))
 vi.mock('./DeckProgressPanel', () => ({
   DeckProgressPanel: ({
     deckId,
