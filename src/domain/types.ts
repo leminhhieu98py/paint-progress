@@ -168,11 +168,35 @@ export interface Zone {
 }
 
 /**
+ * The effort recorded with one bay update (Feedback Rv2, item 11; 0030): who
+ * led, who painted, the man-hours spent and the man-hours lost. Every field is
+ * optional for the foreman -- Linh: "nếu có" -- so the names are '' and the
+ * hours null when not given. Hours are Mhr (man-hours), as the customer's
+ * workbook counts them.
+ */
+export interface Effort {
+  leadName: string
+  painterName: string
+  /** Mhr spent on the bay in this update. Null: not recorded. */
+  workHours: number | null
+  /** Mhr lost on the bay in this update. Null: not recorded. Never enters Mhr/m². */
+  wasteHours: number | null
+  /** Why the hours were lost. Empty unless wasteHours > 0. */
+  wasteReason: string
+}
+
+export const EMPTY_EFFORT: Effort = {
+  leadName: '', painterName: '', workHours: null, wasteHours: null, wasteReason: '',
+}
+
+/**
  * One stage change on one bay, as `cell_events` records it and as the XLSX
  * deck sheet lists it -- one row per update (Feedback Rv1, item 8).
  */
 export interface DeckEvent {
   id: number
+  /** The deck the bay belongs to, named so a project-wide list can group by it. */
+  deckName: string
   cellCode: string
   cellAreaM2: number
   /** The work the change belongs to, denormalised on the event (0024). Null on
@@ -188,4 +212,9 @@ export interface DeckEvent {
   reportNote: string | null
   /** True keeps the note out of the XLSX. */
   reportHidden: boolean
+  /** As recorded with the change, or as the admin backfilled it (0030). */
+  effort: Effort
+  /** Stamp of the admin backfill, null when the effort is as the GS wrote it. */
+  effortEditedAt: string | null
+  effortEditedByName: string | null
 }

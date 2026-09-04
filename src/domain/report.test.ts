@@ -3,7 +3,7 @@ import {
   buildEventRows, buildOverview, buildPlanRows, planImagePairs, reportStageColumns, type DeckReportInput,
 } from './report'
 import type { DeckEvent } from '../lib/progressApi'
-import type { Cell, Work, WorkModel } from './types'
+import { EMPTY_EFFORT, type Cell, type Work, type WorkModel } from './types'
 
 const STAGES = [
   { id: 's1', seq: 1, name: 'Blast + Coat 1', color: '#fadb14', weight: 0.25 },
@@ -281,6 +281,10 @@ describe('buildEventRows', () => {
     note: '',
     reportNote: null,
     reportHidden: false,
+    deckName: 'Cellar Deck',
+    effort: EMPTY_EFFORT,
+    effortEditedAt: null,
+    effortEditedByName: null,
     ...over,
   })
   const withEvents = (events: DeckEvent[]): DeckReportInput => ({

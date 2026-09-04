@@ -2,7 +2,7 @@ import type { Worksheet } from 'exceljs'
 import { describe, expect, it } from 'vitest'
 import { buildReportWorkbook, reportFileName, sheetNameFor, type ReportInput } from './reportXlsx'
 import type { DeckReportInput } from '../domain/report'
-import type { Cell, Work, WorkModel } from '../domain/types'
+import { EMPTY_EFFORT, type Cell, type Work, type WorkModel } from '../domain/types'
 
 const STAGES = [
   { id: 's1', seq: 1, name: 'Blast + Coat 1', color: '#fadb14', weight: 0.4 },
@@ -46,6 +46,7 @@ const EVENT = {
   id: 1, cellCode: 'R1C1', cellAreaM2: 500, workName: 'Sơn', toStageName: 'Blast + Coat 1',
   at: '2026-08-20T10:00:00+00:00', byId: 'u1', note: 'Bắt đầu',
   reportNote: null, reportHidden: false,
+  deckName: 'Cellar Deck', effort: EMPTY_EFFORT, effortEditedAt: null, effortEditedByName: null,
 }
 
 /** Reads the produced file back through ExcelJS, so the assertions are about a
