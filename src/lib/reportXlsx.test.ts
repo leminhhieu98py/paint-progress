@@ -71,7 +71,7 @@ function rowWhere(sheet: Worksheet, col: number, text: string | RegExp): number 
 describe('buildReportWorkbook', () => {
   it('writes Overview, one sheet per deck, then Plan', async () => {
     const wb = await readBack(await buildReportWorkbook(BASE))
-    expect(wb.worksheets.map((w) => w.name)).toEqual(['Overview', 'CD', 'Plan'])
+    expect(wb.worksheets.map((w) => w.name)).toEqual(['Overview', 'CD', 'Plan', 'Năng suất'])
   })
 
   it('heads each work block the way the customer\'s own Dashboard does', async () => {
@@ -345,8 +345,9 @@ describe('per-deck sheets', () => {
       }],
     })
     const header = rowWhere(sheet, 1, 'Mã ô')
-    expect((sheet.getRow(header).values as string[]).slice(1, 8)).toEqual([
-      'Mã ô', 'Diện tích (m²)', 'Công việc', 'Công đoạn', 'Cập nhật lúc', 'Bởi', 'Ghi chú',
+    expect((sheet.getRow(header).values as string[]).slice(1, 13)).toEqual([
+      'Mã ô', 'Diện tích (m²)', 'Công việc', 'Công đoạn', 'Cập nhật lúc', 'Bởi',
+      'Nhóm trưởng', 'Thợ chính', 'Giờ công (Mhr)', 'Giờ hao phí (Mhr)', 'Lý do hao phí', 'Ghi chú',
     ])
     const first = sheet.getRow(header + 1)
     expect(first.getCell(1).value).toBe('R1C1')
@@ -355,10 +356,10 @@ describe('per-deck sheets', () => {
     expect(first.getCell(4).value).toBe('Blast + Coat 1')
     expect(first.getCell(5).value).toBeInstanceOf(Date)
     expect(first.getCell(6).value).toBe('Nguyễn Văn A')
-    expect(first.getCell(7).value).toBe('Bắt đầu')
+    expect(first.getCell(12).value).toBe('Bắt đầu')
     const second = sheet.getRow(header + 2)
     expect(second.getCell(4).value).toBe('Tháo giáo')
-    expect(String(second.getCell(7).value ?? '')).toBe('')
+    expect(String(second.getCell(12).value ?? '')).toBe('')
     expect(sheet.getRow(header + 3).getCell(1).value).toBeNull()
   })
 
@@ -408,17 +409,75 @@ describe('per-deck sheets', () => {
   })
 })
 
+describe('effort on the report (Feedback Rv2, item 11)', () => {
+  const EFFORT_EVENT = {
+    ...EVENT,
+    effort: { leadName: 'Tổ 1', painterName: 'Nam', workHours: 3.5, wasteHours: 0.5, wasteReason: 'Chờ vật tư' },
+  }
+
+  it('prints the effort beside each update, hours as numbers and blanks for a legacy row', async () => {
+    const wb = await readBack(await buildReportWorkbook({
+      ...BASE,
+      decks: [{ ...DECK, events: [EFFORT_EVENT, { ...EVENT, id: 2, at: '2026-08-21T10:00:00+00:00' }] }],
+    }))
+    const sheet = wb.getWorksheet('CD')!
+    const header = rowWhere(sheet, 1, 'Mã ô')
+    const first = sheet.getRow(header + 1)
+    expect(first.getCell(7).value).toBe('Tổ 1')
+    expect(first.getCell(8).value).toBe('Nam')
+    expect(first.getCell(9).value).toBe(3.5)
+    expect(first.getCell(9).numFmt).toBe('0.0#')
+    expect(first.getCell(10).value).toBe(0.5)
+    expect(first.getCell(11).value).toBe('Chờ vật tư')
+    const legacy = sheet.getRow(header + 2)
+    expect(String(legacy.getCell(7).value ?? '')).toBe('')
+    expect(legacy.getCell(9).value).toBeNull()
+    expect(legacy.getCell(10).value).toBeNull()
+  })
+
+  it('adds a Năng suất sheet with one row per (deck, work, stage) and the workbook\'s definition', async () => {
+    const wb = await readBack(await buildReportWorkbook({
+      ...BASE,
+      decks: [{ ...DECK, events: [EFFORT_EVENT] }],
+    }))
+    const sheet = wb.getWorksheet('Năng suất')!
+    expect((sheet.getRow(1).values as string[]).slice(1, 10)).toEqual([
+      'Sàn', 'Công việc', 'Công đoạn', 'Số ngày có số liệu', 'Tổng Mhr', 'Tổng m²',
+      'Hiệu suất TB (Mhr/m²)', 'Mhr TB/ngày', 'Giờ hao phí (Mhr)',
+    ])
+    expect(String(sheet.getRow(2).getCell(1).value)).toMatch(/trung bình cộng của hiệu suất từng ngày/)
+    const row = sheet.getRow(3)
+    expect(row.getCell(1).value).toBe('Cellar Deck')
+    expect(row.getCell(2).value).toBe('Sơn')
+    expect(row.getCell(3).value).toBe('Blast + Coat 1')
+    expect(row.getCell(4).value).toBe(1)
+    expect(row.getCell(5).value).toBe(3.5)
+    expect(row.getCell(6).value).toBe(500)
+    expect(row.getCell(7).value).toBeCloseTo(0.007, 6)
+    expect(row.getCell(7).numFmt).toBe('0.000')
+    expect(row.getCell(8).value).toBe(3.5)
+    expect(row.getCell(9).value).toBe(0.5)
+    expect(sheet.views[0]).toMatchObject({ state: 'frozen', ySplit: 1 })
+  })
+
+  it('keeps the Năng suất sheet, with only the header and the note, when nothing was recorded', async () => {
+    const wb = await readBack(await buildReportWorkbook({ ...BASE, decks: [{ ...DECK, events: [] }] }))
+    const sheet = wb.getWorksheet('Năng suất')!
+    expect(sheet.rowCount).toBe(2)
+  })
+})
+
 describe('a single-deck export', () => {
   it('omits the Overview sheet, keeping the deck and its plan', async () => {
     // The tablet exports the deck tab that is open (Feedback Rv1, item 6). A
     // one-row Overview would print that deck at 100% weight and call it the
     // project total, which is a number nobody should be handed.
     const wb = await readBack(await buildReportWorkbook({ ...BASE, scope: 'deck' }))
-    expect(wb.worksheets.map((w) => w.name)).toEqual(['CD', 'Plan'])
+    expect(wb.worksheets.map((w) => w.name)).toEqual(['CD', 'Plan', 'Năng suất'])
   })
 
   it('keeps the Overview when the scope is the project, or unstated', async () => {
     const wb = await readBack(await buildReportWorkbook({ ...BASE, scope: 'project' }))
-    expect(wb.worksheets.map((w) => w.name)).toEqual(['Overview', 'CD', 'Plan'])
+    expect(wb.worksheets.map((w) => w.name)).toEqual(['Overview', 'CD', 'Plan', 'Năng suất'])
   })
 })

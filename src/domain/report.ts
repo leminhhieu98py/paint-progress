@@ -1,4 +1,5 @@
 import dayjs from 'dayjs'
+import { dailyEffort, stageEfficiency, stageOrder } from './effort'
 import { zoneColorMap } from './lens'
 import { computeDeckProgress, computeProjectProgress, computeWorkProgress } from './progress'
 import type { Cell, Deck, DeckEvent, Stage, Work, WorkModel, Zone } from './types'
@@ -45,6 +46,12 @@ export interface EventRow {
   /** What the XLSX prints: the report copy if the admin wrote one, nothing if
    *  she hid it, the foreman's words otherwise. */
   note: string
+  /** The effort recorded with the change (0030); blanks and nulls on rows before it. */
+  leadName: string
+  painterName: string
+  workHours: number | null
+  wasteHours: number | null
+  wasteReason: string
 }
 
 export interface OverviewRow {
@@ -295,7 +302,41 @@ export function buildEventRows(input: DeckReportInput): EventRow[] {
       // "nobody did this", which is a different and wrong claim.
       byName: ev.byId === null ? null : input.userNames?.[ev.byId] ?? ev.byId,
       note: ev.reportHidden ? '' : ev.reportNote ?? ev.note,
+      leadName: ev.effort.leadName,
+      painterName: ev.effort.painterName,
+      workHours: ev.effort.workHours,
+      wasteHours: ev.effort.wasteHours,
+      wasteReason: ev.effort.wasteReason,
     }))
+}
+
+/**
+ * One row of the Năng suất sheet (Feedback Rv2, item 11): a (deck, work,
+ * stage) with the workbook's figures for it. The numbers come from
+ * domain/effort.ts and nowhere else, so this sheet, the dashboard and the
+ * coming forecast cannot disagree.
+ */
+export interface EffortSheetRow {
+  deckName: string
+  workName: string
+  stageName: string
+  days: number
+  totalHours: number
+  totalAreaM2: number
+  avgMhrPerM2: number | null
+  avgHoursPerDay: number | null
+  wasteHours: number
+}
+
+export function buildEffortSheetRows(decks: DeckReportInput[], models: WorkModel[]): EffortSheetRow[] {
+  const order = stageOrder(models)
+  const rows: EffortSheetRow[] = []
+  for (const entry of decks) {
+    for (const stage of stageEfficiency(dailyEffort(entry.events), order)) {
+      rows.push({ deckName: entry.deck.name, ...stage })
+    }
+  }
+  return rows
 }
 
 /**

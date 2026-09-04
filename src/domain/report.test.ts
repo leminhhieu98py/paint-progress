@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
-  buildEventRows, buildOverview, buildPlanRows, planImagePairs, reportStageColumns, type DeckReportInput,
+  buildEffortSheetRows, buildEventRows, buildOverview, buildPlanRows, planImagePairs, reportStageColumns,
+  type DeckReportInput,
 } from './report'
 import type { DeckEvent } from '../lib/progressApi'
 import { EMPTY_EFFORT, type Cell, type Work, type WorkModel } from './types'
@@ -298,10 +299,20 @@ describe('buildEventRows', () => {
       ev({ id: 1, toStageName: 'Blast + Coat 1', at: '2026-08-20T10:00:00+00:00' }),
       ev({ id: 2, toStageName: 'Coat 2', at: '2026-08-21T10:00:00+00:00' }),
     ]))
+    const blank = { leadName: '', painterName: '', workHours: null, wasteHours: null, wasteReason: '' }
     expect(rows).toEqual([
-      { code: 'R1C1', areaM2: 500, workName: 'Sơn', stageName: 'Blast + Coat 1', at: '2026-08-20T10:00:00+00:00', byName: 'Nguyễn Văn A', note: '' },
-      { code: 'R1C1', areaM2: 500, workName: 'Sơn', stageName: 'Coat 2', at: '2026-08-21T10:00:00+00:00', byName: 'Nguyễn Văn A', note: '' },
+      { code: 'R1C1', areaM2: 500, workName: 'Sơn', stageName: 'Blast + Coat 1', at: '2026-08-20T10:00:00+00:00', byName: 'Nguyễn Văn A', note: '', ...blank },
+      { code: 'R1C1', areaM2: 500, workName: 'Sơn', stageName: 'Coat 2', at: '2026-08-21T10:00:00+00:00', byName: 'Nguyễn Văn A', note: '', ...blank },
     ])
+  })
+
+  it('carries the effort recorded with the change (Feedback Rv2, item 11)', () => {
+    const [row] = buildEventRows(withEvents([ev({
+      effort: { leadName: 'Tổ 1', painterName: 'Nam', workHours: 3.5, wasteHours: 0.5, wasteReason: 'Chờ vật tư' },
+    })]))
+    expect(row).toMatchObject({
+      leadName: 'Tổ 1', painterName: 'Nam', workHours: 3.5, wasteHours: 0.5, wasteReason: 'Chờ vật tư',
+    })
   })
 
   it('names the work each change belongs to, since one bay moves in several', () => {
@@ -388,5 +399,56 @@ describe('planImagePairs', () => {
 
   it('gives a deck with no plan no picture, and ignores manual works', () => {
     expect(planImagePairs([CD, MD], MODELS)).toEqual([])
+  })
+})
+
+describe('buildEffortSheetRows', () => {
+  const ev = (over: Partial<DeckEvent> = {}): DeckEvent => ({
+    id: 1, cellCode: 'R1C1', cellAreaM2: 100, workName: 'Sơn', toStageName: 'Blast + Coat 1',
+    at: '2026-08-20T10:00:00+00:00', byId: 'u1', note: '', reportNote: null, reportHidden: false,
+    deckName: 'Cellar Deck', effort: EMPTY_EFFORT, effortEditedAt: null, effortEditedByName: null,
+    ...over,
+  })
+
+  it('makes one row per (deck, work, stage) that has an event, decks in input order, stages by seq', () => {
+    const cd = { ...CD, events: [
+      ev({ id: 1, toStageName: 'Coat 2', effort: { ...EMPTY_EFFORT, workHours: 110 } }),
+      ev({ id: 2, toStageName: 'Blast + Coat 1', effort: { ...EMPTY_EFFORT, workHours: 120, wasteHours: 3, wasteReason: 'Mưa' } }),
+      ev({ id: 3, workName: 'Tháo giáo', toStageName: 'Tháo giáo lửng' }),
+    ] }
+    const md = { ...MD, events: [
+      ev({ id: 4, deckName: 'Main Deck', toStageName: 'Coat 2', effort: { ...EMPTY_EFFORT, workHours: 50 } }),
+    ] }
+    const rows = buildEffortSheetRows([cd, md], MODELS)
+    expect(rows.map((r) => [r.deckName, r.workName, r.stageName])).toEqual([
+      ['Cellar Deck', 'Sơn', 'Blast + Coat 1'],
+      ['Cellar Deck', 'Sơn', 'Coat 2'],
+      ['Cellar Deck', 'Tháo giáo', 'Tháo giáo lửng'],
+      ['Main Deck', 'Sơn', 'Coat 2'],
+    ])
+    expect(rows[0]).toEqual({
+      deckName: 'Cellar Deck', workName: 'Sơn', stageName: 'Blast + Coat 1',
+      days: 1, totalHours: 120, totalAreaM2: 100, avgMhrPerM2: 1.2, avgHoursPerDay: 120, wasteHours: 3,
+    })
+    // A stage with updates but no hours stays on the sheet with blank ratios.
+    expect(rows[2]).toMatchObject({ days: 0, totalHours: 0, avgMhrPerM2: null, avgHoursPerDay: null })
+  })
+
+  it('averages the daily ratios, as Linh\'s workbook does, not total over total', () => {
+    const cd = { ...CD, events: [
+      ev({ id: 1, at: '2026-08-31T03:00:00Z', cellAreaM2: 220, effort: { ...EMPTY_EFFORT, workHours: 277 } }),
+      ev({ id: 2, at: '2026-09-01T03:00:00Z', cellAreaM2: 225, effort: { ...EMPTY_EFFORT, workHours: 287 } }),
+      ev({ id: 3, at: '2026-09-02T03:00:00Z', cellAreaM2: 250, effort: { ...EMPTY_EFFORT, workHours: 291 } }),
+      ev({ id: 4, at: '2026-09-03T03:00:00Z', cellAreaM2: 255, effort: { ...EMPTY_EFFORT, workHours: 293 } }),
+      ev({ id: 5, at: '2026-09-04T03:00:00Z', cellAreaM2: 255, effort: { ...EMPTY_EFFORT, workHours: 296 } }),
+    ] }
+    const [row] = buildEffortSheetRows([cd], MODELS)
+    expect(row.days).toBe(5)
+    expect(row.avgMhrPerM2).toBeCloseTo(1.2016900772430186, 12)
+    expect(row.avgHoursPerDay).toBeCloseTo(288.8, 12)
+  })
+
+  it('returns nothing for decks with no events', () => {
+    expect(buildEffortSheetRows([CD, MD], MODELS)).toEqual([])
   })
 })

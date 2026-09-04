@@ -1,6 +1,8 @@
 import type { Worksheet } from 'exceljs'
 import { computeDeckProgress, summariseDeck } from '../domain/progress'
-import { buildEventRows, buildOverview, buildPlanRows, type DeckReportInput } from '../domain/report'
+import {
+  buildEffortSheetRows, buildEventRows, buildOverview, buildPlanRows, type DeckReportInput,
+} from '../domain/report'
 import type { WorkModel } from '../domain/types'
 import { toVNExcelDate } from './format'
 
@@ -32,6 +34,10 @@ const DATE_FORMAT = 'dd/mm/yyyy'
   preformatted string, so sorting and filtering the column still work.
 */
 const DATETIME_FORMAT = 'hh:mm:ss dd/mm/yyyy'
+/** Man-hours: "3.5", "12", "0.25" -- one decimal always, a second when it carries information. */
+const HOURS_FORMAT = '0.0#'
+/** Mhr/m²: three places, since the customer's workbook compares 1.149 with 1.161. */
+const RATIO_FORMAT = '0.000'
 
 /** The header tint on the customer's own Dashboard sheet. Matched so the export
  *  drops into a folder of their workbooks without announcing itself. */
@@ -364,24 +370,29 @@ export async function buildReportWorkbook(input: ReportInput): Promise<Blob> {
     // full 4 lớp = 400 hàng". The note rides on the row of the change it
     // explains, which is the whole reason it can be a single column. The work
     // sits beside the bay: one bay moves in several works now.
+    //
+    // The effort (Feedback Rv2, item 11) sits between the author and the note:
+    // who led, who painted, hours spent, hours lost and why. Hours are numbers
+    // or genuinely empty cells -- never a zero standing in for "not recorded",
+    // which is what every row before 0030 is.
     const listHeader = sheet.addRow([
-      'Mã ô', 'Diện tích (m²)', 'Công việc', 'Công đoạn', 'Cập nhật lúc', 'Bởi', 'Ghi chú',
+      'Mã ô', 'Diện tích (m²)', 'Công việc', 'Công đoạn', 'Cập nhật lúc', 'Bởi',
+      'Nhóm trưởng', 'Thợ chính', 'Giờ công (Mhr)', 'Giờ hao phí (Mhr)', 'Lý do hao phí', 'Ghi chú',
     ])
     listHeader.font = { bold: true }
-    sheet.getColumn(1).width = 12
-    sheet.getColumn(2).width = 15
-    sheet.getColumn(3).width = 18
-    sheet.getColumn(4).width = 18
-    sheet.getColumn(5).width = 22
-    sheet.getColumn(6).width = 20
-    sheet.getColumn(7).width = 40
+    const listWidths = [12, 15, 18, 18, 22, 20, 14, 14, 14, 14, 24, 40]
+    listWidths.forEach((w, i) => { sheet.getColumn(i + 1).width = w })
     for (const ev of buildEventRows(entry)) {
       const row = sheet.addRow([
-        ev.code, ev.areaM2, ev.workName, ev.stageName, toVNExcelDate(ev.at) ?? '', ev.byName ?? '', ev.note,
+        ev.code, ev.areaM2, ev.workName, ev.stageName, toVNExcelDate(ev.at) ?? '', ev.byName ?? '',
+        ev.leadName, ev.painterName, ev.workHours ?? null, ev.wasteHours ?? null, ev.wasteReason, ev.note,
       ])
       row.getCell(2).numFmt = AREA_FORMAT
       row.getCell(5).numFmt = DATETIME_FORMAT
-      row.getCell(7).alignment = { wrapText: true, vertical: 'top' }
+      row.getCell(9).numFmt = HOURS_FORMAT
+      row.getCell(10).numFmt = HOURS_FORMAT
+      row.getCell(11).alignment = { wrapText: true, vertical: 'top' }
+      row.getCell(12).alignment = { wrapText: true, vertical: 'top' }
     }
 
     // Frozen at the listing header, and filterable: four hundred updates is a
@@ -493,6 +504,48 @@ export async function buildReportWorkbook(input: ReportInput): Promise<Blob> {
       row += Math.ceil(height / 20) + 3
     }
   }
+
+  /*
+    Năng suất (Feedback Rv2, item 11): Mhr/m² per (deck, work, stage), the way
+    Linh's workbook computes it. A sheet of its own rather than a block on each
+    deck sheet, because those sheets freeze at the listing header and a totals
+    block above it would grow the frozen band past a laptop screen -- and
+    because item 13's forecast columns (m² còn lại, Mhr còn cần, số ngày) belong
+    on the same row as these figures when they come. Always present, even
+    empty: a manager who cannot find the sheet reads "not built yet", not
+    "nothing recorded".
+  */
+  const effort = wb.addWorksheet('Năng suất')
+  effort.columns = [
+    { header: 'Sàn', key: 'deck', width: 24 },
+    { header: 'Công việc', key: 'work', width: 18 },
+    { header: 'Công đoạn', key: 'stage', width: 20 },
+    { header: 'Số ngày có số liệu', key: 'days', width: 12 },
+    { header: 'Tổng Mhr', key: 'hours', width: 12, style: { numFmt: HOURS_FORMAT } },
+    { header: 'Tổng m²', key: 'area', width: 12, style: { numFmt: AREA_FORMAT } },
+    { header: 'Hiệu suất TB (Mhr/m²)', key: 'ratio', width: 16, style: { numFmt: RATIO_FORMAT } },
+    { header: 'Mhr TB/ngày', key: 'perDay', width: 12, style: { numFmt: HOURS_FORMAT } },
+    { header: 'Giờ hao phí (Mhr)', key: 'waste', width: 14, style: { numFmt: HOURS_FORMAT } },
+  ]
+  const definition = effort.addRow({
+    deck: 'Hiệu suất TB là trung bình cộng của hiệu suất từng ngày (Mhr trong ngày / m² trong ngày), '
+      + 'theo cách tính trong bảng của Linh. Chỉ tính các lần cập nhật có ghi giờ công.',
+  })
+  definition.getCell(1).font = GREY_FONT
+  for (const row of buildEffortSheetRows(input.decks, input.works)) {
+    effort.addRow({
+      deck: row.deckName,
+      work: row.workName,
+      stage: row.stageName,
+      days: row.days,
+      hours: row.totalHours,
+      area: row.totalAreaM2,
+      ratio: row.avgMhrPerM2 ?? null,
+      perDay: row.avgHoursPerDay ?? null,
+      waste: row.wasteHours,
+    })
+  }
+  dressSheet(effort, 1)
 
   const buffer = await wb.xlsx.writeBuffer()
   return new Blob([buffer], {
