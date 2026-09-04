@@ -1,7 +1,7 @@
 import {
-  ArrowRightOutlined, DeleteOutlined, DownloadOutlined, PlusOutlined,
+  ArrowRightOutlined, CopyOutlined, DeleteOutlined, DownloadOutlined, PlusOutlined,
 } from '@ant-design/icons'
-import { Alert, App, Button, Select, Space, Table, Tooltip, Typography } from 'antd'
+import { Alert, App, Button, Form, Input, Modal, Select, Space, Table, Tooltip, Typography } from 'antd'
 import dayjs from 'dayjs'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
@@ -9,7 +9,7 @@ import { renderDeckDrawing, renderDeckPie } from '../../canvas/deckSnapshot'
 import { computeProjectProgress, summariseDeck } from '../../domain/progress'
 import type { WorkKind } from '../../domain/types'
 import { listGsUsers } from '../../lib/adminApi'
-import { deleteDeck, getDrawingUrl, listDecks, type DeckRow } from '../../lib/decksApi'
+import { deleteDeck, duplicateDeck, getDrawingUrl, listDecks, type DeckRow } from '../../lib/decksApi'
 import { formatAreaM2, formatPercent, formatWeight } from '../../lib/format'
 import { listDeckEvents, loadProjectModel } from '../../lib/progressApi'
 import type { ProjectModel } from '../../lib/workModel'
@@ -18,6 +18,7 @@ import { listProjectNames } from '../../lib/projectsApi'
 import { buildReportWorkbook, reportFileName, type DeckImages } from '../../lib/reportXlsx'
 import { NEW_DECK } from '../../config'
 import { ConsequenceModal } from '../../components/ConsequenceModal'
+import { modalProps } from '../../components/modalChrome'
 import { Donut, type DonutSlice } from '../../components/Donut'
 import { EmptyState } from '../../components/EmptyState'
 import { PageBody, PageHeader } from '../../components/PageHeader'
@@ -102,6 +103,10 @@ export function DecksScreen() {
   const [exporting, setExporting] = useState(false)
   /** The deck whose deletion is being confirmed, and the write in flight. */
   const [removingDeck, setRemovingDeck] = useState<DeckRow | null>(null)
+  /** The deck being duplicated (Feedback Rv2, item 3), while its dialog is open. */
+  const [copyingDeck, setCopyingDeck] = useState<DeckRow | null>(null)
+  const [copying, setCopying] = useState(false)
+  const [copyForm] = Form.useForm<{ name: string; code: string }>()
   const [removing, setRemoving] = useState(false)
   const [confirmingExport, setConfirmingExport] = useState(false)
   const { message } = App.useApp()
@@ -246,6 +251,32 @@ export function DecksScreen() {
    * file that would not go is reported rather than treated as a failed delete
    * -- see decksApi.deleteDeck for the order and why.
    */
+  /**
+   * Row, guides, cells and the drawing file, as one new deck in this project
+   * -- and nothing recorded on it. The copy opens straight away: the next
+   * thing the admin does is add it to a work, and that is on the deck's page.
+   */
+  const copyDeck = async ({ name, code }: { name: string; code: string }) => {
+    if (!copyingDeck) return
+    setCopying(true)
+    try {
+      const { deckId, drawingCopied } = await duplicateDeck(
+        { id: copyingDeck.id, projectId: copyingDeck.projectId, imagePath: copyingDeck.imagePath },
+        { name: name.trim(), code: code.trim() },
+      )
+      setCopyingDeck(null)
+      message.success(`Đã nhân bản sàn ${copyingDeck.name}`)
+      if (!drawingCopied) {
+        message.warning('Đã nhân bản, nhưng chưa sao chép được bản vẽ. Tải bản vẽ lên sàn mới như thường.')
+      }
+      navigate(deckId)
+    } catch (e) {
+      message.error((e as Error).message)
+    } finally {
+      setCopying(false)
+    }
+  }
+
   const removeDeck = async () => {
     if (!removingDeck) return
     setRemoving(true)
@@ -453,7 +484,7 @@ export function DecksScreen() {
               {
                 title: 'Thao tác',
                 key: 'actions',
-                width: 140,
+                width: 170,
                 align: 'right',
                 render: (_v, deck) => (
                   <Space size={6}>
@@ -463,6 +494,17 @@ export function DecksScreen() {
                         aria-label="Mở"
                         icon={<ArrowRightOutlined />}
                         onClick={() => navigate(deck.id)}
+                      />
+                    </Tooltip>
+                    <Tooltip title="Nhân bản sàn · bản vẽ, khung và lưới ô">
+                      <Button
+                        size="small"
+                        aria-label="Nhân bản sàn"
+                        icon={<CopyOutlined />}
+                        onClick={() => {
+                          copyForm.setFieldsValue({ name: `${deck.name} (bản sao)`, code: `${deck.code}-2` })
+                          setCopyingDeck(deck)
+                        }}
                       />
                     </Tooltip>
                     <Tooltip title="Xóa sàn">
@@ -722,6 +764,44 @@ export function DecksScreen() {
         onCancel={() => setConfirmingExport(false)}
         onOk={() => void exportReport()}
       />
+
+      <Modal
+        open={copyingDeck !== null}
+        title={`Nhân bản sàn «${copyingDeck?.name ?? ''}»`}
+        onCancel={() => setCopyingDeck(null)}
+        {...modalProps}
+        footer={[
+          <Button key="cancel" onClick={() => setCopyingDeck(null)}>Huỷ</Button>,
+          <Button key="ok" type="primary" loading={copying} onClick={() => copyForm.submit()}>
+            Nhân bản
+          </Button>,
+        ]}
+      >
+        <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginTop: 0 }}>
+          Sao chép bản vẽ, khung và lưới ô. Không sao chép công việc, lớp sơn, tiến độ hay kế hoạch:
+          sàn mới chưa thuộc công việc nào cho tới khi bạn thêm nó ở mục Công việc.
+        </Typography.Paragraph>
+        <Form form={copyForm} layout="vertical" onFinish={(v) => void copyDeck(v)}>
+          <Form.Item name="name" label="Tên sàn mới" rules={[{ required: true, message: 'Đặt tên sàn' }]}>
+            <Input />
+          </Form.Item>
+          <Form.Item
+            name="code"
+            label="Mã sàn mới"
+            rules={[
+              { required: true, message: 'Đặt mã sàn' },
+              {
+                validator: (_r, value: string) =>
+                  decks.some((d) => d.code.toLowerCase() === (value ?? '').trim().toLowerCase())
+                    ? Promise.reject(new Error('Mã sàn đã dùng trong dự án này'))
+                    : Promise.resolve(),
+              },
+            ]}
+          >
+            <Input />
+          </Form.Item>
+        </Form>
+      </Modal>
 
       <ConsequenceModal
         open={removingDeck !== null}

@@ -17,10 +17,12 @@ const getDrawingUrl = vi.hoisted(() => vi.fn())
 
 vi.mock('../../lib/projectsApi', () => ({ listProjectNames: () => listProjectNames() }))
 const deleteDeck = vi.hoisted(() => vi.fn())
+const duplicateDeck = vi.hoisted(() => vi.fn())
 vi.mock('../../lib/decksApi', () => ({
   listDecks: (p: string) => listDecks(p),
   getDrawingUrl: (p: string) => getDrawingUrl(p),
   deleteDeck: (d: unknown) => deleteDeck(d),
+  duplicateDeck: (src: unknown, input: unknown) => duplicateDeck(src, input),
 }))
 const listDeckEvents = vi.hoisted(() => vi.fn())
 vi.mock('../../lib/progressApi', () => ({
@@ -108,6 +110,8 @@ beforeEach(() => {
   listProjectNames.mockResolvedValue([{ id: 'p1', name: 'BB1', code: 'BB1' }])
   deleteDeck.mockReset()
   deleteDeck.mockResolvedValue({ drawingRemoved: true })
+  duplicateDeck.mockReset()
+  duplicateDeck.mockResolvedValue({ deckId: 'd9', drawingCopied: true })
   listDecks.mockResolvedValue([
     {
       id: 'd1', projectId: 'p1', seq: 1, name: 'Main Deck', code: 'MD',
@@ -418,5 +422,47 @@ describe('DecksScreen — deleting a deck', () => {
     await userEvent.click(within(dialog).getByRole('button', { name: /Xóa sàn/ }))
 
     expect(await screen.findByText(/permission denied/)).toBeInTheDocument()
+  })
+})
+
+describe('DecksScreen — duplicating a deck (Feedback Rv2, item 3)', () => {
+  const openDuplicate = async () => {
+    renderScreen()
+    await userEvent.click(await screen.findByRole('button', { name: 'Nhân bản sàn' }))
+    return screen.findByRole('dialog')
+  }
+
+  it('proposes a name and a code, says what is copied, and opens the copy', async () => {
+    const dialog = await openDuplicate()
+    expect(within(dialog).getByText('Nhân bản sàn «Main Deck»')).toBeInTheDocument()
+    expect(within(dialog).getByText(/Không sao chép công việc, lớp sơn, tiến độ hay kế hoạch/)).toBeInTheDocument()
+    expect(within(dialog).getByLabelText('Tên sàn mới')).toHaveValue('Main Deck (bản sao)')
+    expect(within(dialog).getByLabelText('Mã sàn mới')).toHaveValue('MD-2')
+
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Nhân bản' }))
+
+    await waitFor(() => expect(duplicateDeck).toHaveBeenCalledWith(
+      { id: 'd1', projectId: 'p1', imagePath: null },
+      { name: 'Main Deck (bản sao)', code: 'MD-2' },
+    ))
+    expect(await screen.findByText('deck page')).toBeInTheDocument()
+  })
+
+  it('refuses a code the project already uses', async () => {
+    const dialog = await openDuplicate()
+    const code = within(dialog).getByLabelText('Mã sàn mới')
+    await userEvent.clear(code)
+    await userEvent.type(code, 'MD')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Nhân bản' }))
+
+    expect(await screen.findByText('Mã sàn đã dùng trong dự án này')).toBeInTheDocument()
+    expect(duplicateDeck).not.toHaveBeenCalled()
+  })
+
+  it('says so when the copy landed without its drawing', async () => {
+    duplicateDeck.mockResolvedValue({ deckId: 'd9', drawingCopied: false })
+    const dialog = await openDuplicate()
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Nhân bản' }))
+    expect(await screen.findByText(/chưa sao chép được bản vẽ/)).toBeInTheDocument()
   })
 })
