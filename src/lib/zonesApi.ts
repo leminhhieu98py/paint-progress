@@ -1,4 +1,5 @@
-import type { Zone } from '../domain/types'
+import { zoneColorConflict } from '../domain/plan'
+import type { Stage, Zone } from '../domain/types'
 import { supabase } from './supabase'
 
 /**
@@ -20,6 +21,24 @@ export interface ZoneDraft {
   stageId: string
   startDate: string | null
   finishDate: string | null
+  /** '#rrggbb' in any case; omitted or null = palette colour by position. */
+  color?: string | null
+}
+
+/**
+ * The one rule about a zone's colour (Feedback Rv2, item 6): not a colour a
+ * stage of this (work, deck) wears, or the zone reads as that stage on the
+ * drawing. Checked here rather than only in the dialog so a second caller --
+ * the swatch in the zone table, a future import -- cannot slip one past.
+ * Lower-cased for the check constraint (0027), which is lower-case only.
+ */
+function normaliseColor(color: string | null | undefined, stages: Stage[]): string | null {
+  if (!color) return null
+  const conflict = zoneColorConflict(color, stages)
+  if (conflict) {
+    throw new Error(`Màu này đang dùng cho lớp «${conflict.name}» ở A3.2, chọn màu khác`)
+  }
+  return color.toLowerCase()
 }
 
 /**
@@ -39,10 +58,12 @@ export async function createZone(
   deckId: string,
   draft: ZoneDraft,
   cellIds: string[],
+  stages: Stage[] = [],
 ): Promise<string> {
   if (cellIds.length === 0) {
     throw new Error('A zone needs at least one cell')
   }
+  const color = normaliseColor(draft.color, stages)
 
   const { data: seqRows, error: seqError } = await supabase
     .from('zones')
@@ -63,6 +84,7 @@ export async function createZone(
       stage_id: draft.stageId,
       start_date: draft.startDate,
       finish_date: draft.finishDate,
+      color,
     })
     .select('id')
     .single()
@@ -94,12 +116,16 @@ export async function createZone(
  */
 export async function updateZone(
   zoneId: string,
-  fields: Partial<{ name: string; startDate: string | null; finishDate: string | null }>,
+  fields: Partial<{
+    name: string; startDate: string | null; finishDate: string | null; color: string | null
+  }>,
+  stages: Stage[] = [],
 ): Promise<void> {
   const patch: Record<string, unknown> = {}
   if ('name' in fields) patch.name = fields.name
   if ('startDate' in fields) patch.start_date = fields.startDate
   if ('finishDate' in fields) patch.finish_date = fields.finishDate
+  if ('color' in fields) patch.color = normaliseColor(fields.color, stages)
   if (Object.keys(patch).length === 0) return
 
   const { error } = await supabase.from('zones').update(patch).eq('id', zoneId)
@@ -176,7 +202,7 @@ export async function setZoneActual(zoneId: string, stageId: string): Promise<nu
 export async function listDeckZones(deckId: string): Promise<Zone[]> {
   const { data, error } = await supabase
     .from('zones')
-    .select('id, name, stage_id, start_date, finish_date, zone_cells(cell_id)')
+    .select('id, name, stage_id, start_date, finish_date, color, zone_cells(cell_id)')
     .eq('deck_id', deckId)
     .order('seq')
   if (error) throw new Error(error.message)
@@ -187,6 +213,7 @@ export async function listDeckZones(deckId: string): Promise<Zone[]> {
     stageId: z.stage_id as string,
     startDate: (z.start_date as string | null) ?? null,
     finishDate: (z.finish_date as string | null) ?? null,
+    color: (z.color as string | null) ?? null,
     cellIds: ((z.zone_cells ?? []) as { cell_id: string }[]).map((zc) => zc.cell_id),
   }))
 }

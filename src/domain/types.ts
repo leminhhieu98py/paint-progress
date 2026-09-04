@@ -161,6 +161,8 @@ export interface Zone {
   stageId: string
   startDate: string | null
   finishDate: string | null
+  /** Admin-chosen '#rrggbb' (0027), or null for the palette colour by position. */
+  color: string | null
   /** cells.id, not code. */
   cellIds: string[]
 }

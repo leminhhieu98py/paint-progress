@@ -25,6 +25,11 @@ const DRAFT = {
   finishDate: '2026-09-07',
 }
 
+const STAGES = [
+  { id: 's4', seq: 4, name: 'Coat 4', color: '#1677ff', weight: 0.5 },
+  { id: 's5', seq: 5, name: 'Tháo giáo', color: '#722ed1', weight: 0.5 },
+]
+
 beforeEach(() => {
   from.mockReset()
 })
@@ -44,7 +49,7 @@ describe('createZone', () => {
     expect(id).toBe('z1')
     expect(zoneInsert.insert).toHaveBeenCalledWith({
       deck_id: 'd1', seq: 3, name: 'Khu A', stage_id: 's5',
-      start_date: '2026-09-01', finish_date: '2026-09-07',
+      start_date: '2026-09-01', finish_date: '2026-09-07', color: null,
     })
     expect(linkInsert.insert).toHaveBeenCalledWith([
       { zone_id: 'z1', cell_id: 'c1' },
@@ -234,7 +239,7 @@ describe('listDeckZones', () => {
 
     expect(await listDeckZones('d1')).toEqual([{
       id: 'z1', name: 'Zone 1', stageId: 's5',
-      startDate: '2026-08-13', finishDate: '2026-08-19',
+      startDate: '2026-08-13', finishDate: '2026-08-19', color: null,
       cellIds: ['c1', 'c2'],
     }])
   })
@@ -267,5 +272,67 @@ describe('listDeckZones', () => {
   it('throws when the query fails', async () => {
     from.mockImplementationOnce(() => builder({ error: { message: 'permission denied' } }))
     await expect(listDeckZones('d1')).rejects.toThrow('permission denied')
+  })
+})
+
+describe('zone colour (0027)', () => {
+  it('writes the chosen colour with the zone, lower-cased', async () => {
+    const zoneInsert = builder({ data: { id: 'z1' } })
+    from
+      .mockImplementationOnce(() => builder({ data: [] }))
+      .mockImplementationOnce(() => zoneInsert)
+      .mockImplementationOnce(() => builder({}))
+
+    await createZone('d1', { ...DRAFT, color: '#EB2F96' }, ['c1'], STAGES)
+
+    expect(zoneInsert.insert).toHaveBeenCalledWith(expect.objectContaining({ color: '#eb2f96' }))
+  })
+
+  it('writes null when no colour was chosen, so the palette still applies', async () => {
+    const zoneInsert = builder({ data: { id: 'z1' } })
+    from
+      .mockImplementationOnce(() => builder({ data: [] }))
+      .mockImplementationOnce(() => zoneInsert)
+      .mockImplementationOnce(() => builder({}))
+
+    await createZone('d1', DRAFT, ['c1'], STAGES)
+
+    expect(zoneInsert.insert).toHaveBeenCalledWith(expect.objectContaining({ color: null }))
+  })
+
+  it('refuses a stage colour before touching the database', async () => {
+    // Item 6: a zone in Coat 4's colour reads as Coat 4 on the drawing. The
+    // message names the stage so the admin knows which preset to avoid.
+    await expect(createZone('d1', { ...DRAFT, color: '#1677FF' }, ['c1'], STAGES))
+      .rejects.toThrow('Màu này đang dùng cho lớp «Coat 4» ở A3.2, chọn màu khác')
+    expect(from).not.toHaveBeenCalled()
+  })
+
+  it('patches the colour of an existing zone', async () => {
+    const b = builder({})
+    from.mockImplementationOnce(() => b)
+
+    await updateZone('z1', { color: '#13C2C2' }, STAGES)
+
+    expect(b.update).toHaveBeenCalledWith({ color: '#13c2c2' })
+  })
+
+  it('refuses to recolour a zone into a stage colour', async () => {
+    await expect(updateZone('z1', { color: '#722ed1' }, STAGES))
+      .rejects.toThrow('Tháo giáo')
+    expect(from).not.toHaveBeenCalled()
+  })
+
+  it('reads the colour back with the zone', async () => {
+    from.mockImplementationOnce(() => builder({
+      data: [{
+        id: 'z1', name: 'Khu A', stage_id: 's5', start_date: null, finish_date: null,
+        color: '#eb2f96', zone_cells: [],
+      }],
+    }))
+
+    const zones = await listDeckZones('d1')
+
+    expect(zones[0].color).toBe('#eb2f96')
   })
 })

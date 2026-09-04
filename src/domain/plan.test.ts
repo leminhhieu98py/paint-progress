@@ -40,7 +40,7 @@ describe('formatPlanRange', () => {
 
 describe('buildPlanLabels', () => {
   const zone: Zone = {
-    id: 'z1', name: 'Zone 1', stageId: 's5',
+    id: 'z1', name: 'Zone 1', stageId: 's5', color: null,
     startDate: '2026-08-13', finishDate: '2026-08-19',
     cellIds: ['c1', 'c2'],
   }
@@ -77,7 +77,7 @@ describe('buildPlanLabels', () => {
     // zones are ordered by seq, so "later" is the higher seq -- the more recent
     // plan for that bay.
     const second: Zone = {
-      id: 'z2', name: 'Zone 2', stageId: 's5',
+      id: 'z2', name: 'Zone 2', stageId: 's5', color: null,
       startDate: '2026-09-01', finishDate: '2026-09-05', cellIds: ['c1'],
     }
     expect(buildPlanLabels([zone, second], CELLS).R1C1).toBe('01/09 – 05/09')

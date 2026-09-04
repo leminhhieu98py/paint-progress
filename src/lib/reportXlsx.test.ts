@@ -26,7 +26,7 @@ const SON: WorkModel = {
 const DECK: DeckReportInput = {
   deck: { ...CD_META, cells: [bay('c1', 'R1C1', 500, null)] },
   zones: [{
-    id: 'z1', name: 'Khu A', stageId: 's2',
+    id: 'z1', name: 'Khu A', stageId: 's2', color: null,
     startDate: '2026-09-01', finishDate: '2026-09-07', cellIds: ['c1'],
   }],
   events: [],

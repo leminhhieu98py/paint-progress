@@ -187,7 +187,7 @@ describe('buildPlanRows', () => {
     ...CD,
     zones: [
       {
-        id: 'z1', name: 'Khu A', stageId: 's3',
+        id: 'z1', name: 'Khu A', stageId: 's3', color: null,
         startDate: '2026-09-01', finishDate: '2026-09-07',
         cellIds: ['c1'],
       },
