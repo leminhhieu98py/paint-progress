@@ -10,6 +10,7 @@ import { DrawingCanvas } from '../../canvas/DrawingCanvas'
 import { formatPlanRange } from '../../domain/plan'
 import { paintLensColors, zoneColorMap, zoneLensColors } from '../../domain/lens'
 import { computeDeckProgress, summariseDeck } from '../../domain/progress'
+import { planImagePairs } from '../../domain/report'
 import type { Cell, Deck, Stage, WorkModel, Zone } from '../../domain/types'
 // One signed-URL helper for both roles: the bucket name and the 3600-second
 // expiry belong in one place, and decksApi is a lib module rather than an admin
@@ -24,8 +25,8 @@ import {
 } from '../../lib/gsApi'
 import { listDeckZones } from '../../lib/zonesApi'
 import { listDeckEvents, loadDeckWorks } from '../../lib/progressApi'
-import { buildReportWorkbook, reportFileName, type DeckImages } from '../../lib/reportXlsx'
-import { renderDeckDrawing, renderDeckPie } from '../../canvas/deckSnapshot'
+import { buildReportWorkbook, reportFileName, type DeckImages, type PlanImage } from '../../lib/reportXlsx'
+import { renderDeckDrawing, renderDeckPie, renderPlanDrawing } from '../../canvas/deckSnapshot'
 import { CellStageModal } from './CellStageModal'
 import { ConsequenceModal } from '../../components/ConsequenceModal'
 import { LogoutOutlined } from '@ant-design/icons'
@@ -729,23 +730,42 @@ export function GsScreen() {
           drawingAspect: dw.imageW && dw.imageH ? dw.imageH / dw.imageW : null,
         },
       }
+      // Each work with this one deck inside it: what the Overview would see,
+      // and what the deck sheet's per-work blocks read.
+      const works = dw.works.map((v) => ({
+        work: v.work,
+        decks: [{ deck: { ...dw.deck, cells: v.cells }, stages: v.stages, weight: v.weight }],
+      }))
+      const reportDecks = [{
+        deck: { ...dw.deck, cells },
+        areaSource: dw.areaSource,
+        userNames,
+        zones,
+        events,
+      }]
+      // The Plan sheet's layouts (Feedback Rv2, item 10), same renderer as
+      // the admin's export; a failed picture costs only itself.
+      const planImages: PlanImage[] = []
+      if (url && dw.imageW && dw.imageH) {
+        for (const pair of planImagePairs(reportDecks, works)) {
+          const png = await renderPlanDrawing(
+            url, dw.imageW, dw.imageH, pair.cells, pair.stages, pair.lastStage, pair.zones, pair.zoneColors,
+          )
+          if (png) {
+            planImages.push({
+              deckName: pair.deckName, workName: pair.workName, lastStageName: pair.lastStage.name,
+              png, aspect: dw.imageH / dw.imageW,
+            })
+          }
+        }
+      }
       const blob = await buildReportWorkbook({
         projectName: project.name,
         projectCode: project.code,
-        // Each work with this one deck inside it: what the Overview would see,
-        // and what the deck sheet's per-work blocks read.
-        works: dw.works.map((v) => ({
-          work: v.work,
-          decks: [{ deck: { ...dw.deck, cells: v.cells }, stages: v.stages, weight: v.weight }],
-        })),
-        decks: [{
-          deck: { ...dw.deck, cells },
-          areaSource: dw.areaSource,
-          userNames,
-          zones,
-          events,
-        }],
+        works,
+        decks: reportDecks,
         images,
+        planImages,
         scope: 'deck',
       })
       const href = URL.createObjectURL(blob)

@@ -36,9 +36,11 @@ vi.mock('../../lib/reportXlsx', () => ({
   reportFileName: (c: string, d: string) => `tien-do-${c}-${d}.xlsx`,
 }))
 // jsdom implements no canvas, so the snapshot module cannot run here.
+const renderPlanDrawing = vi.hoisted(() => vi.fn())
 vi.mock('../../canvas/deckSnapshot', () => ({
   renderDeckDrawing: (...a: unknown[]) => renderDeckDrawing(...a),
   renderDeckPie: (...a: unknown[]) => renderDeckPie(...a),
+  renderPlanDrawing: (...a: unknown[]) => renderPlanDrawing(...a),
 }))
 
 const STAGES = [
@@ -96,8 +98,9 @@ const MODEL = {
 beforeEach(() => {
   for (const m of [
     listProjectNames, listDecks, loadProjectModel, listDeckZones, listGsUsers,
-    buildReportWorkbook, renderDeckDrawing, renderDeckPie, getDrawingUrl,
+    buildReportWorkbook, renderDeckDrawing, renderDeckPie, renderPlanDrawing, getDrawingUrl,
   ]) m.mockReset()
+  renderPlanDrawing.mockResolvedValue('PLANPNG')
   loadProjectModel.mockResolvedValue(MODEL)
   listDeckEvents.mockReset()
   listDeckEvents.mockResolvedValue([])
@@ -341,6 +344,30 @@ describe('DecksScreen — the project-wide half of progress', () => {
     // rest of the export.
     expect(input.images.d2.drawingPng).toBeNull()
     expect(input.images.d2.piePng).toBe('PIEDATA')
+  })
+
+  it('puts one layout picture per (deck, work) with a plan under the Plan table', async () => {
+    // Feedback Rv2 item 10. CD has a zone on Sơn's last coat; WD has no plan
+    // and no drawing; Tháo giáo covers CD but has no zone -> exactly one.
+    listDeckZones.mockImplementation((deckId: string) => Promise.resolve(
+      deckId === 'd1'
+        ? [{
+            id: 'z1', name: 'Khu A', stageId: 's2', color: null,
+            startDate: '2026-09-01', finishDate: '2026-09-07', cellIds: ['c1'],
+          }]
+        : [],
+    ))
+    renderScreen()
+    await screen.findByTestId('project-rollup')
+    await userEvent.click(screen.getByRole('button', { name: /Xuất báo cáo/ }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Xuất' }))
+
+    await waitFor(() => expect(buildReportWorkbook).toHaveBeenCalledTimes(1))
+    const [input] = buildReportWorkbook.mock.calls[0]
+    expect(input.planImages).toEqual([{
+      deckName: 'Cellar Deck', workName: 'Sơn', lastStageName: 'Tháo giáo', png: 'PLANPNG', aspect: 0.8,
+    }])
+    expect(renderPlanDrawing).toHaveBeenCalledTimes(1)
   })
 
   it('exports anyway when the profile list cannot be read', async () => {

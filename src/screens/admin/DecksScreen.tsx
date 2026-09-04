@@ -5,8 +5,9 @@ import { Alert, App, Button, Form, Input, Modal, Select, Space, Table, Tooltip, 
 import dayjs from 'dayjs'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { renderDeckDrawing, renderDeckPie } from '../../canvas/deckSnapshot'
+import { renderDeckDrawing, renderDeckPie, renderPlanDrawing } from '../../canvas/deckSnapshot'
 import { computeProjectProgress, summariseDeck } from '../../domain/progress'
+import { planImagePairs } from '../../domain/report'
 import type { WorkKind } from '../../domain/types'
 import { listGsUsers } from '../../lib/adminApi'
 import { deleteDeck, duplicateDeck, getDrawingUrl, listDecks, type DeckRow } from '../../lib/decksApi'
@@ -15,7 +16,7 @@ import { listDeckEvents, loadProjectModel } from '../../lib/progressApi'
 import type { ProjectModel } from '../../lib/workModel'
 import { listDeckZones } from '../../lib/zonesApi'
 import { listProjectNames } from '../../lib/projectsApi'
-import { buildReportWorkbook, reportFileName, type DeckImages } from '../../lib/reportXlsx'
+import { buildReportWorkbook, reportFileName, type DeckImages, type PlanImage } from '../../lib/reportXlsx'
 import { NEW_DECK } from '../../config'
 import { ConsequenceModal } from '../../components/ConsequenceModal'
 import { modalProps } from '../../components/modalChrome'
@@ -365,6 +366,26 @@ export function DecksScreen() {
         }
       }
 
+      // The Plan sheet's layouts (Feedback Rv2, item 10): one per (deck, work)
+      // with a plan, sequential for the same reason as above. A render that
+      // fails is left out; the table above it is complete regardless.
+      const planImages: PlanImage[] = []
+      for (const pair of planImagePairs(reportDecks, model.models)) {
+        const meta = model.decks.find((d) => d.id === pair.deckId)
+        if (!meta?.imagePath || !meta.imageW || !meta.imageH) continue
+        const url = await getDrawingUrl(meta.imagePath).catch(() => null)
+        if (!url) continue
+        const png = await renderPlanDrawing(
+          url, meta.imageW, meta.imageH, pair.cells, pair.stages, pair.lastStage, pair.zones, pair.zoneColors,
+        )
+        if (png) {
+          planImages.push({
+            deckName: pair.deckName, workName: pair.workName, lastStageName: pair.lastStage.name,
+            png, aspect: meta.imageH / meta.imageW,
+          })
+        }
+      }
+
       const project = projects.find((p) => p.id === projectId)
       const blob = await buildReportWorkbook({
         projectName: project?.name ?? '',
@@ -372,6 +393,7 @@ export function DecksScreen() {
         works: model.models,
         decks: reportDecks,
         images,
+        planImages,
       })
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')

@@ -50,9 +50,11 @@ vi.mock('../../lib/reportXlsx', () => ({
   reportFileName: (c: string, d: string) => `tien-do-${c}-${d}.xlsx`,
 }))
 // jsdom implements no canvas, so the snapshot module cannot run here.
+const renderPlanDrawing = vi.hoisted(() => vi.fn())
 vi.mock('../../canvas/deckSnapshot', () => ({
   renderDeckDrawing: (...a: unknown[]) => renderDeckDrawing(...a),
   renderDeckPie: (...a: unknown[]) => renderDeckPie(...a),
+  renderPlanDrawing: (...a: unknown[]) => renderPlanDrawing(...a),
 }))
 vi.mock('../../lib/zonesApi', () => ({
   listDeckZones: (deckId: string) => listDeckZones(deckId),
@@ -239,6 +241,8 @@ beforeEach(() => {
   renderDeckDrawing.mockResolvedValue('PNGDATA')
   renderDeckPie.mockReset()
   renderDeckPie.mockReturnValue('PIEDATA')
+  renderPlanDrawing.mockReset()
+  renderPlanDrawing.mockResolvedValue('PLANPNG')
   signOut.mockResolvedValue(undefined)
   navigate.mockReset()
   subscribeDeckStates.mockReset()
@@ -1558,6 +1562,29 @@ describe('GsScreen: exporting the open deck', () => {
     expect(downloads).toHaveLength(1)
     expect(downloads[0]).toMatch(/^tien-do-BB1-CD-\d{4}-\d{2}-\d{2}\.xlsx$/)
     expect(await screen.findByText('Đã xuất báo cáo')).toBeInTheDocument()
+  })
+
+  it('puts a layout picture of the deck\'s plan under the Plan table (Feedback Rv2, item 10)', async () => {
+    listDeckZones.mockResolvedValue([{
+      id: 'z1', name: 'Khu A — Tháo giáo', stageId: 's5', color: null,
+      startDate: '2026-08-13', finishDate: '2026-08-19', cellIds: ['c1'],
+    }])
+    renderScreen()
+    await screen.findByRole('button', { name: 'ô R1C1' })
+
+    await userEvent.click(screen.getByRole('button', { name: 'Xuất báo cáo' }))
+
+    await waitFor(() => expect(buildReportWorkbook).toHaveBeenCalledTimes(1))
+    const [input] = buildReportWorkbook.mock.calls[0]
+    expect(input.planImages).toEqual([{
+      deckName: 'Cellar Deck', workName: 'Sơn', lastStageName: 'Tháo giáo', png: 'PLANPNG',
+      aspect: expect.any(Number),
+    }])
+    // Rendered for the work's LAST coat, with the work's zones and colours.
+    const [, , , , , lastStage, zones, colors] = renderPlanDrawing.mock.calls[0]
+    expect(lastStage.name).toBe('Tháo giáo')
+    expect(zones.map((z: { id: string }) => z.id)).toEqual(['z1'])
+    expect(colors.z1).toBe('#eb2f96')
   })
 
   it('surfaces a failed export instead of failing silently', async () => {
