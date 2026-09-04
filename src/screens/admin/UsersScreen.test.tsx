@@ -8,19 +8,39 @@ const listGsUsers = vi.fn()
 const revealPassword = vi.fn()
 const setPassword = vi.fn()
 const deactivateGsUser = vi.fn()
+const createGsUser = vi.fn()
+const reactivateUser = vi.fn()
+const renameUser = vi.fn()
+const hideUser = vi.fn()
+const unhideUser = vi.fn()
+const setMemberships = vi.fn()
 const listProjectNames = vi.fn()
+const listWorks = vi.fn()
 
 vi.mock('../../lib/adminApi', () => ({
-  listGsUsers: () => listGsUsers(),
+  listGsUsers: (includeHidden?: boolean) => listGsUsers(includeHidden),
   revealPassword: (id: string) => revealPassword(id),
-  createGsUser: vi.fn(),
+  createGsUser: (input: unknown) => createGsUser(input),
   setPassword: (id: string, pw: string) => setPassword(id, pw),
   deactivateGsUser: (id: string) => deactivateGsUser(id),
+  reactivateUser: (id: string) => reactivateUser(id),
+  renameUser: (id: string, name: string) => renameUser(id, name),
+  hideUser: (id: string) => hideUser(id),
+  unhideUser: (id: string) => unhideUser(id),
+  setMemberships: (id: string, rows: unknown) => setMemberships(id, rows),
 }))
 
 vi.mock('../../lib/projectsApi', () => ({
   listProjectNames: () => listProjectNames(),
 }))
+
+vi.mock('../../lib/worksApi', () => ({
+  listWorks: (projectId: string) => listWorks(projectId),
+}))
+
+/** A membership as listGsUsers returns it since 0028: every work, unless said otherwise. */
+const member = (id: string, name: string, over: Partial<{ allWorks: boolean; workIds: string[]; workCount: number }> = {}) =>
+  ({ id, name, allWorks: true, workIds: [], workCount: 2, ...over })
 
 vi.mock('../../auth/AuthProvider', () => ({
   useAuth: () => ({
@@ -37,6 +57,12 @@ beforeEach(() => {
   listProjectNames.mockReset()
   deactivateGsUser.mockResolvedValue(undefined)
   listProjectNames.mockResolvedValue([])
+  for (const m of [createGsUser, reactivateUser, renameUser, hideUser, unhideUser, setMemberships, listWorks]) {
+    m.mockReset()
+    m.mockResolvedValue(undefined)
+  }
+  createGsUser.mockResolvedValue('u-new')
+  listWorks.mockResolvedValue([])
   // Two rows so a reveal-the-wrong-row bug in the per-row `revealed[user.id]`
   // keying would actually show up in a test, instead of being masked by a
   // fixture with only one row to get right. Ids deliberately do not coincide
@@ -45,12 +71,12 @@ beforeEach(() => {
   // -shaped ids like 'u1'/'u2' would still pass by accident.
   listGsUsers.mockResolvedValue([
     {
-      id: 'u7', username: 'gs1', fullName: 'GS Một', active: true,
-      projects: [{ id: 'p1', name: 'BB1' }],
+      id: 'u7', username: 'gs1', fullName: 'GS Một', active: true, role: 'gs', hidden: false,
+      projects: [member('p1', 'BB1')],
     },
     {
-      id: 'u9', username: 'gs2', fullName: 'GS Hai', active: true,
-      projects: [{ id: 'p2', name: 'BB2' }],
+      id: 'u9', username: 'gs2', fullName: 'GS Hai', active: true, role: 'viewer', hidden: false,
+      projects: [member('p2', 'BB2')],
     },
   ])
 })
@@ -66,11 +92,11 @@ describe('UsersScreen', () => {
   it('shows every project a GS covers, collapsing the tail into a count', async () => {
     listGsUsers.mockResolvedValue([
       {
-        id: 'u7', username: 'gs1', fullName: 'GS Một', active: true,
+        id: 'u7', username: 'gs1', fullName: 'GS Một', active: true, role: 'gs', hidden: false,
         projects: [
-          { id: 'p1', name: 'Bạch Hổ BH-7' },
-          { id: 'p2', name: 'Rạng Đông RD-2' },
-          { id: 'p3', name: 'Đại Hùng DH-1' },
+          member('p1', 'Bạch Hổ BH-7'),
+          member('p2', 'Rạng Đông RD-2'),
+          member('p3', 'Đại Hùng DH-1'),
         ],
       },
     ])
@@ -82,7 +108,7 @@ describe('UsersScreen', () => {
 
   it('says so rather than rendering an empty cell for an unassigned account', async () => {
     listGsUsers.mockResolvedValue([
-      { id: 'u7', username: 'gs1', fullName: 'GS Một', active: true, projects: [] },
+      { id: 'u7', username: 'gs1', fullName: 'GS Một', active: true, role: 'gs', hidden: false, projects: [] },
     ])
     renderApp(<UsersScreen />)
     await screen.findByText('gs1')
@@ -152,29 +178,32 @@ describe('UsersScreen', () => {
     expect(await screen.findByText('No stored credential')).toBeInTheDocument()
   })
 
-  it('deactivates only after the consequences have been confirmed', async () => {
+  it('locks only after the consequences have been confirmed', async () => {
     // Pressing the row action must not call the API. Someone "simplifying" the
-    // dialog away would skip the only step that tells the admin the account
-    // cannot be switched back on in this version.
+    // dialog away would skip the step that tells the admin what a lock does.
     renderApp(<UsersScreen />)
     await screen.findByText('gs1')
 
-    await userEvent.click(screen.getAllByRole('button', { name: 'Tắt tài khoản' })[0])
+    await userEvent.click(screen.getAllByRole('button', { name: 'Khoá tài khoản' })[0])
     expect(deactivateGsUser).not.toHaveBeenCalled()
-    expect(await screen.findByText(/chưa bật lại được/)).toBeInTheDocument()
+    expect(await screen.findByText(/mở khoá là dùng lại được/)).toBeInTheDocument()
 
-    await userEvent.click(screen.getByRole('button', { name: /Vẫn tắt/ }))
+    await userEvent.click(screen.getByRole('button', { name: /Vẫn khoá/ }))
     await waitFor(() => expect(deactivateGsUser).toHaveBeenCalledWith('u7'))
   })
 
-  it('offers no deactivate action on an account that is already off', async () => {
+  it('offers unlock, not lock, on a locked account', async () => {
     listGsUsers.mockResolvedValue([
-      { id: 'u9', username: 'gs2', fullName: 'GS Hai', active: false, projects: [] },
+      { id: 'u9', username: 'gs2', fullName: 'GS Hai', active: false, role: 'gs', hidden: false, projects: [] },
     ])
     renderApp(<UsersScreen />)
     await screen.findByText('gs2')
-    expect(screen.getByText('Đã tắt')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Tắt tài khoản' })).toBeNull()
+    expect(screen.getByText('Đã khoá')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Khoá tài khoản' })).toBeNull()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Mở khoá' }))
+    await waitFor(() => expect(reactivateUser).toHaveBeenCalledWith('u9'))
+    expect(await screen.findByText('Đã mở khoá tài khoản')).toBeInTheDocument()
   })
 
   it('hands the new password straight to the reveal dialog after a reset', async () => {
@@ -249,13 +278,110 @@ describe('UsersScreen', () => {
     expect(await screen.findByText('Đã đặt lại mật khẩu')).toBeInTheDocument()
   })
 
-  it('says the account was switched off, so the row going grey is not the only signal', async () => {
+  it('says the account was locked, so the row going grey is not the only signal', async () => {
     renderApp(<UsersScreen />)
     await screen.findByText('gs1')
-    await userEvent.click(screen.getAllByRole('button', { name: 'Tắt tài khoản' })[0])
-    await userEvent.click(await screen.findByRole('button', { name: 'Vẫn tắt' }))
+    await userEvent.click(screen.getAllByRole('button', { name: 'Khoá tài khoản' })[0])
+    await userEvent.click(await screen.findByRole('button', { name: 'Vẫn khoá' }))
 
     await waitFor(() => expect(deactivateGsUser).toHaveBeenCalled())
-    expect(await screen.findByText('Đã tắt tài khoản')).toBeInTheDocument()
+    expect(await screen.findByText('Đã khoá tài khoản')).toBeInTheDocument()
+  })
+})
+
+describe('UsersScreen — Feedback Rv2 (0028)', () => {
+  it('names each account\'s type, and a restricted membership\'s work count', async () => {
+    listGsUsers.mockResolvedValue([
+      {
+        id: 'u7', username: 'gs1', fullName: 'GS Một', active: true, role: 'gs', hidden: false,
+        projects: [member('p1', 'BB1', { allWorks: false, workIds: ['w1'], workCount: 3 })],
+      },
+      {
+        id: 'u9', username: 'boss', fullName: 'Sếp', active: true, role: 'viewer', hidden: false,
+        projects: [member('p2', 'BB2')],
+      },
+    ])
+    renderApp(<UsersScreen />)
+    await screen.findByText('gs1')
+    expect(screen.getByText('GS')).toBeInTheDocument()
+    expect(screen.getByText('Chỉ xem')).toBeInTheDocument()
+    expect(screen.getByText('BB1 · 1/3 công việc')).toBeInTheDocument()
+    expect(screen.getByText('BB2')).toBeInTheDocument()
+  })
+
+  it('creates a viewer when the admin picks Chỉ xem', async () => {
+    listProjectNames.mockResolvedValue([{ id: 'p1', name: 'BB1', code: 'BB1' }])
+    renderApp(<UsersScreen />)
+    await screen.findByText('gs1')
+    await userEvent.click(screen.getByRole('button', { name: 'Tạo tài khoản' }))
+    await userEvent.click(await screen.findByText('Chỉ xem', { selector: '.ant-segmented-item-label' }))
+    await userEvent.type(screen.getByLabelText('Tên đăng nhập'), 'sep.a')
+    await userEvent.type(screen.getByLabelText('Họ tên'), 'Sếp A')
+    await userEvent.type(screen.getByLabelText('Mật khẩu'), 'Bh7@Deck2026')
+    await userEvent.click(screen.getByRole('combobox', { name: 'Dự án' }))
+    await userEvent.click(await screen.findByTitle('BB1'))
+    await userEvent.click(screen.getByRole('button', { name: 'Tạo' }))
+
+    await waitFor(() => expect(createGsUser).toHaveBeenCalledWith(expect.objectContaining({
+      username: 'sep.a', fullName: 'Sếp A', projectId: 'p1', role: 'viewer',
+    })))
+  })
+
+  it('renames a login from the pencil beside it', async () => {
+    renderApp(<UsersScreen />)
+    await screen.findByText('gs1')
+    await userEvent.click(screen.getAllByRole('button', { name: 'Đổi tên đăng nhập' })[0])
+    const field = await screen.findByLabelText('Tên đăng nhập mới')
+    await userEvent.clear(field)
+    await userEvent.type(field, 'gs.moi')
+    await userEvent.click(screen.getByRole('button', { name: 'Lưu' }))
+
+    await waitFor(() => expect(renameUser).toHaveBeenCalledWith('u7', 'gs.moi'))
+    expect(await screen.findByText('Đã đổi tên đăng nhập')).toBeInTheDocument()
+  })
+
+  it('hides an account after confirming, and shows hidden ones on request', async () => {
+    renderApp(<UsersScreen />)
+    await screen.findByText('gs1')
+    await userEvent.click(screen.getAllByRole('button', { name: 'Ẩn tài khoản' })[0])
+    expect(hideUser).not.toHaveBeenCalled()
+    await userEvent.click(await screen.findByRole('button', { name: 'Vẫn ẩn' }))
+    await waitFor(() => expect(hideUser).toHaveBeenCalledWith('u7'))
+
+    listGsUsers.mockResolvedValue([
+      { id: 'u7', username: 'gs1', fullName: 'GS Một', active: false, role: 'gs', hidden: true, projects: [] },
+    ])
+    await userEvent.click(screen.getByRole('switch', { name: 'Hiện tài khoản đã ẩn' }))
+    await waitFor(() => expect(listGsUsers).toHaveBeenLastCalledWith(true))
+    expect(await screen.findByText('Đã ẩn')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Hiện lại' }))
+    await waitFor(() => expect(unhideUser).toHaveBeenCalledWith('u7'))
+  })
+
+  it('saves project membership and the works within it from one dialog', async () => {
+    listProjectNames.mockResolvedValue([
+      { id: 'p1', name: 'BB1', code: 'BB1' }, { id: 'p2', name: 'BB2', code: 'BB2' },
+    ])
+    listWorks.mockImplementation((projectId: string) => Promise.resolve(
+      projectId === 'p1'
+        ? [{ id: 'w1', name: 'Sơn' }, { id: 'w2', name: 'Tháo giáo' }]
+        : [{ id: 'w3', name: 'Chứng từ' }],
+    ))
+    renderApp(<UsersScreen />)
+    await screen.findByText('gs1')
+    await userEvent.click(screen.getAllByRole('button', { name: 'Phân quyền' })[0])
+
+    // gs1 is in BB1 with every work: restrict it to Sơn, and add BB2 whole.
+    await userEvent.click(await screen.findByRole('switch', { name: 'Tất cả công việc BB1' }))
+    await userEvent.click(screen.getByRole('combobox', { name: 'Công việc BB1' }))
+    await userEvent.click(await screen.findByTitle('Sơn'))
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Thành viên BB2' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Lưu quyền' }))
+
+    await waitFor(() => expect(setMemberships).toHaveBeenCalledWith('u7', [
+      { projectId: 'p1', allWorks: false, workIds: ['w1'] },
+      { projectId: 'p2', allWorks: true, workIds: [] },
+    ]))
+    expect(await screen.findByText('Đã cập nhật quyền')).toBeInTheDocument()
   })
 })
