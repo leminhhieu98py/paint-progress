@@ -1142,7 +1142,43 @@ describe.skipIf(!adminConfigured)('admin-users Edge Function', () => {
     efPassword = nextPassword
   })
 
-  it('deactivate: bans the account, drops its membership and marks the profile inactive', async () => {
+  it('rename: moves the login name on both the auth side and the profile', async () => {
+    // Feedback Rv2 item 1a. The account signs in under the new name with the
+    // password it already had, and the old name is gone.
+    expect(efUserId).toBeTruthy()
+    const nextUsername = throwawayUsername('renamed')
+
+    const bad = await invokeAdminUsers(admin, { action: 'rename', userId: efUserId, username: 'Bad Name!' })
+    expect(bad.status).toBe(400)
+
+    const result = await invokeAdminUsers(admin, { action: 'rename', userId: efUserId, username: nextUsername })
+    expect(result.status).toBe(200)
+
+    const profile = await admin.from('profiles').select('username').eq('id', efUserId).single()
+    expect(profile.data?.username).toBe(nextUsername)
+
+    const asUser = createClient(url!, anon!, { auth: { persistSession: false } })
+    const signIn = await asUser.auth.signInWithPassword({
+      email: toAuthEmail(nextUsername),
+      password: efPassword,
+    })
+    expect(signIn.error).toBeNull()
+    await asUser.auth.signOut()
+    const oldName = createClient(url!, anon!, { auth: { persistSession: false } })
+    const refused = await oldName.auth.signInWithPassword({
+      email: toAuthEmail(efUsername),
+      password: efPassword,
+    })
+    expect(refused.error).not.toBeNull()
+    efUsername = nextUsername
+
+    // Taken by the fixture GS: refused, and the account is untouched.
+    const clash = await invokeAdminUsers(admin, { action: 'rename', userId: efUserId, username: username! })
+    expect(clash.status).toBe(400)
+    expect(String(clash.body.error)).toContain('đã có người dùng')
+  })
+
+  it('deactivate: bans the account and marks the profile inactive, keeping its memberships', async () => {
     expect(efUserId).toBeTruthy()
 
     const result = await invokeAdminUsers(admin, { action: 'deactivate', userId: efUserId })
@@ -1153,9 +1189,10 @@ describe.skipIf(!adminConfigured)('admin-users Edge Function', () => {
     expect(profile.error).toBeNull()
     expect(profile.data?.active).toBe(false)
 
+    // Feedback Rv2 item 1d: a lock is reversible, so the projects stay.
     const membership = await admin.from('project_members').select('project_id').eq('user_id', efUserId)
     expect(membership.error).toBeNull()
-    expect(membership.data ?? []).toEqual([])
+    expect((membership.data ?? []).map((m) => m.project_id)).toEqual([projectId])
 
     // The ban is what stops a new sign-in. Asserted with the password that
     // demonstrably worked in the previous test, so a failure here is the ban
@@ -1167,6 +1204,67 @@ describe.skipIf(!adminConfigured)('admin-users Edge Function', () => {
     })
     expect(signIn.error).not.toBeNull()
     expect(signIn.data.session).toBeNull()
+  })
+
+  it('reactivate: the locked account signs in again with the same memberships', async () => {
+    expect(efUserId).toBeTruthy()
+    const result = await invokeAdminUsers(admin, { action: 'reactivate', userId: efUserId })
+    expect(result.status).toBe(200)
+
+    const profile = await admin.from('profiles').select('active').eq('id', efUserId).single()
+    expect(profile.data?.active).toBe(true)
+    const asUser = createClient(url!, anon!, { auth: { persistSession: false } })
+    const signIn = await asUser.auth.signInWithPassword({
+      email: toAuthEmail(efUsername),
+      password: efPassword,
+    })
+    expect(signIn.error).toBeNull()
+    expect(signIn.data.session).not.toBeNull()
+    await asUser.auth.signOut()
+  })
+
+  it('hide: locks and hides; unhide: shows again but stays locked', async () => {
+    // Feedback Rv2 item 1e: never a delete. The profile row survives with its
+    // id, so every cell_events.by still resolves to a name.
+    expect(efUserId).toBeTruthy()
+    const hidden = await invokeAdminUsers(admin, { action: 'hide', userId: efUserId })
+    expect(hidden.status).toBe(200)
+    let profile = await admin.from('profiles').select('active, hidden').eq('id', efUserId).single()
+    expect(profile.data).toEqual({ active: false, hidden: true })
+
+    const shown = await invokeAdminUsers(admin, { action: 'unhide', userId: efUserId })
+    expect(shown.status).toBe(200)
+    profile = await admin.from('profiles').select('active, hidden').eq('id', efUserId).single()
+    expect(profile.data).toEqual({ active: false, hidden: false })
+  })
+
+  it('create: a viewer account gets the viewer role and a stored credential', async () => {
+    const viewerUsername = throwawayUsername('viewer')
+    const result = await invokeAdminUsers(admin, {
+      action: 'create', username: viewerUsername, fullName: 'RLS Viewer Throwaway',
+      password: throwawayPassword(), projectId, role: 'viewer',
+    })
+    expect(result.status).toBe(200)
+    const viewerId = result.body.userId as string
+    const profile = await admin.from('profiles').select('role').eq('id', viewerId).single()
+    expect(profile.data?.role).toBe('viewer')
+    const cred = await invokeAdminUsers(admin, { action: 'reveal', userId: viewerId })
+    expect(cred.status).toBe(200)
+
+    const bogus = await invokeAdminUsers(admin, {
+      action: 'create', username: throwawayUsername('bogus'), fullName: 'x',
+      password: throwawayPassword(), projectId, role: 'admin',
+    })
+    expect(bogus.status).toBe(400)
+  })
+
+  it('refuses every managed action aimed at an admin account', async () => {
+    for (const action of ['deactivate', 'reactivate', 'hide', 'unhide', 'set-password', 'rename']) {
+      const result = await invokeAdminUsers(admin, {
+        action, userId: adminUserId, password: throwawayPassword(), username: throwawayUsername('x'),
+      })
+      expect([action, result.status]).toEqual([action, 403])
+    }
   })
 
   it('create: rolls the auth user back when a downstream insert fails, leaving no orphan', async () => {

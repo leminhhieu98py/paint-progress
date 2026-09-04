@@ -75,7 +75,7 @@ async function callerAdminId(req: Request): Promise<string | null> {
 }
 
 /**
- * Refuses an action aimed at anyone but a GS account.
+ * Refuses an action aimed at an admin account (or at no account).
  *
  * `set-password` and `deactivate` used to take any user id at all, so one admin
  * could reset another admin's password -- locking them out of an account that
@@ -88,18 +88,58 @@ async function callerAdminId(req: Request): Promise<string | null> {
  * fine": an id with no profile is either a deleted account or a typo, and
  * neither is something to act on.
  *
- * Returns null when the target is a GS and the caller may proceed.
+ * Since 0028 the managed accounts are GS and viewer, so the check is "not an
+ * admin" rather than "is a GS". Returns null when the caller may proceed.
  */
-async function refuseNonGsTarget(userId: string): Promise<Response | null> {
+async function refuseAdminTarget(userId: string): Promise<Response | null> {
   const { data, error } = await admin
     .from('profiles')
-    .select('role')
+    .select('role, active')
     .eq('id', userId)
     .maybeSingle()
   if (error) return json({ error: 'Could not read the target account' }, 500)
   if (!data) return json({ error: 'No such account' }, 404)
-  if (data.role !== 'gs') {
-    return json({ error: 'This action is only available for GS accounts' }, 403)
+  if (data.role === 'admin') {
+    return json({ error: 'This action is only available for GS and viewer accounts' }, 403)
+  }
+  return null
+}
+
+/** The roles `create` may hand out. An admin is never created here. */
+const MANAGED_ROLES = ['gs', 'viewer'] as const
+type ManagedRole = (typeof MANAGED_ROLES)[number]
+
+/**
+ * The login name, as stored: trimmed, lower-cased, and only the characters a
+ * foreman can read out over a radio. It is also the local part of the auth
+ * email, so the set stays inside what an email address accepts.
+ */
+const USERNAME_PATTERN = /^[a-z0-9._-]{3,32}$/
+const USERNAME_RULE = 'Tên đăng nhập chỉ gồm chữ thường, số, dấu chấm, gạch ngang, gạch dưới (3-32 ký tự)'
+
+/**
+ * Locks an account: no new sign-in, and `active = false` so every member
+ * policy (all resolve through my_projects / my_works, which require an active
+ * profile) stops granting on the spot. Shared by `deactivate` and `hide`.
+ *
+ * No session revocation here on purpose -- see the comment in the deactivate
+ * case for why the earlier attempt to call auth.admin.signOut(userId) was
+ * wrong twice over. Memberships are KEPT (Feedback Rv2, item 1d): a lock is
+ * reversible now, and an unlocked foreman must find their projects intact.
+ */
+async function lockAccount(userId: string): Promise<Response | null> {
+  const { error: banError } = await admin.auth.admin.updateUserById(userId, {
+    ban_duration: '876000h',
+  })
+  if (banError) {
+    return json({ error: safeError('Không khoá được tài khoản', banError.message) }, 500)
+  }
+  const { error: profileError } = await admin
+    .from('profiles')
+    .update({ active: false })
+    .eq('id', userId)
+  if (profileError) {
+    return json({ error: safeError('Không đánh dấu được tài khoản là đã khoá', profileError.message) }, 500)
   }
   return null
 }
@@ -185,13 +225,21 @@ Deno.serve(async (req) => {
 
     switch (body.action) {
       case 'create': {
-        const { username, fullName, password, projectId } = body
+        const { fullName, password, projectId } = body
+        const username = (body.username ?? '').trim().toLowerCase()
+        // Default gs: the app before Feedback Rv2 never sent a role, and a
+        // missing field must keep meaning what it always meant.
+        const role = (body.role ?? 'gs') as ManagedRole
         if (!username || !fullName || !password || !projectId) {
           return json({ error: 'username, fullName, password, projectId are required' }, 400)
         }
+        if (!USERNAME_PATTERN.test(username)) return json({ error: USERNAME_RULE }, 400)
+        if (!MANAGED_ROLES.includes(role)) {
+          return json({ error: 'role must be gs or viewer' }, 400)
+        }
 
         const { data: created, error: createError } = await admin.auth.admin.createUser({
-          email: `${username.trim().toLowerCase()}${AUTH_EMAIL_SUFFIX}`,
+          email: `${username}${AUTH_EMAIL_SUFFIX}`,
           password,
           email_confirm: true,
         })
@@ -202,7 +250,7 @@ Deno.serve(async (req) => {
 
         const { error: profileError } = await admin
           .from('profiles')
-          .insert({ id: userId, username: username.trim().toLowerCase(), full_name: fullName, role: 'gs' })
+          .insert({ id: userId, username, full_name: fullName, role })
         if (profileError) {
           return await rollbackCreatedUser(userId, safeError('Không tạo được hồ sơ người dùng', profileError.message))
         }
@@ -230,7 +278,7 @@ Deno.serve(async (req) => {
 
       case 'reveal': {
         if (!body.userId) return json({ error: 'userId is required' }, 400)
-        const wrongTarget = await refuseNonGsTarget(body.userId)
+        const wrongTarget = await refuseAdminTarget(body.userId)
         if (wrongTarget) return wrongTarget
 
         const since = new Date(Date.now() - 60 * 60 * 1000).toISOString()
@@ -272,7 +320,7 @@ Deno.serve(async (req) => {
       case 'set-password': {
         const { userId, password } = body
         if (!userId || !password) return json({ error: 'userId and password are required' }, 400)
-        const wrongTarget = await refuseNonGsTarget(userId)
+        const wrongTarget = await refuseAdminTarget(userId)
         if (wrongTarget) return wrongTarget
 
         // Ciphertext first, deliberately. If the ciphertext write fails,
@@ -313,38 +361,119 @@ Deno.serve(async (req) => {
       }
 
       case 'deactivate': {
+        // "Khoá tài khoản" (Feedback Rv2, item 1d). It used to delete the
+        // project memberships too, which made the lock permanent in practice;
+        // they stay now, and `reactivate` undoes this exactly.
+        //
+        // No session revocation here on purpose. my_projects() and my_works()
+        // require profiles.active, and every member policy resolves through
+        // them, so an unexpired access token grants nothing the moment this
+        // commits. The ban stops new sign-ins. An earlier attempt to call
+        // auth.admin.signOut(userId) was wrong twice over: that API takes a
+        // JWT, not a user id, and it made this whole action fail.
         if (!body.userId) return json({ error: 'userId is required' }, 400)
-        const userId = body.userId
-        const wrongTarget = await refuseNonGsTarget(userId)
+        const wrongTarget = await refuseAdminTarget(body.userId)
+        if (wrongTarget) return wrongTarget
+        const locked = await lockAccount(body.userId)
+        if (locked) return locked
+        return json({ ok: true })
+      }
+
+      case 'reactivate': {
+        if (!body.userId) return json({ error: 'userId is required' }, 400)
+        const wrongTarget = await refuseAdminTarget(body.userId)
         if (wrongTarget) return wrongTarget
 
-        const { error: banError } = await admin.auth.admin.updateUserById(userId, {
-          ban_duration: '876000h',
+        const { error: banError } = await admin.auth.admin.updateUserById(body.userId, {
+          ban_duration: 'none',
         })
         if (banError) {
-          return json({ error: safeError('Không tắt được tài khoản', banError.message) }, 500)
+          return json({ error: safeError('Không mở khoá được tài khoản', banError.message) }, 500)
         }
-
-        // No session revocation here on purpose. my_projects() requires
-        // profiles.active, and every GS read policy plus cells_member_update
-        // resolves through it, so an unexpired access token grants nothing the
-        // moment this commits. The ban stops new sign-ins. An earlier attempt to
-        // call auth.admin.signOut(userId) was wrong twice over: that API takes a
-        // JWT, not a user id, and it made this whole action fail.
-
-        const { error: memberError } = await admin.from('project_members').delete().eq('user_id', userId)
-        if (memberError) {
-          return json({ error: safeError('Không gỡ được quyền truy cập dự án', memberError.message) }, 500)
+        const { error: profileError } = await admin
+          .from('profiles')
+          .update({ active: true })
+          .eq('id', body.userId)
+        if (profileError) {
+          return json({ error: safeError('Không đánh dấu được tài khoản là đang dùng', profileError.message) }, 500)
         }
+        return json({ ok: true })
+      }
+
+      case 'rename': {
+        // Item 1a. The login name is the auth email's local part AND
+        // profiles.username, so both move, auth first: a profile pointing at a
+        // name the auth side does not know would lock the account out, while
+        // the reverse (auth renamed, profile not) is repaired below.
+        const { userId } = body
+        const username = (body.username ?? '').trim().toLowerCase()
+        if (!userId || !username) return json({ error: 'userId and username are required' }, 400)
+        if (!USERNAME_PATTERN.test(username)) return json({ error: USERNAME_RULE }, 400)
+        const wrongTarget = await refuseAdminTarget(userId)
+        if (wrongTarget) return wrongTarget
+
+        const { data: taken, error: takenError } = await admin
+          .from('profiles')
+          .select('id')
+          .eq('username', username)
+          .maybeSingle()
+        if (takenError) return json({ error: safeError('Không kiểm tra được tên đăng nhập', takenError.message) }, 500)
+        if (taken && taken.id !== userId) return json({ error: 'Tên đăng nhập này đã có người dùng' }, 400)
+
+        const { data: current, error: readError } = await admin
+          .from('profiles')
+          .select('username')
+          .eq('id', userId)
+          .single()
+        if (readError || !current) return json({ error: safeError('Không đọc được tài khoản', readError?.message) }, 500)
+        if (current.username === username) return json({ ok: true })
+
+        const { error: authError } = await admin.auth.admin.updateUserById(userId, {
+          email: `${username}${AUTH_EMAIL_SUFFIX}`,
+          email_confirm: true,
+        })
+        if (authError) return json({ error: safeError('Không đổi được tên đăng nhập', authError.message) }, 400)
 
         const { error: profileError } = await admin
           .from('profiles')
-          .update({ active: false })
+          .update({ username })
           .eq('id', userId)
         if (profileError) {
-          return json({ error: safeError('Không đánh dấu được tài khoản là đã tắt', profileError.message) }, 500)
+          // Put the auth side back so the account keeps signing in under the
+          // name the admin still sees. If even that fails, say so plainly.
+          const { error: revertError } = await admin.auth.admin.updateUserById(userId, {
+            email: `${current.username}${AUTH_EMAIL_SUFFIX}`,
+            email_confirm: true,
+          })
+          if (revertError) {
+            return json({ error: `Đổi tên thất bại nửa chừng: tài khoản đăng nhập bằng «${username}» nhưng hồ sơ vẫn ghi «${current.username}». Chi tiết đã được ghi vào log máy chủ.` }, 500)
+          }
+          return json({ error: safeError('Không đổi được tên đăng nhập trên hồ sơ', profileError.message) }, 500)
         }
+        return json({ ok: true })
+      }
 
+      case 'hide': {
+        // Item 1e. Never a delete: cell_events.by and cell_states.updated_by
+        // keep naming the person. Hidden implies locked, so the row cannot
+        // sign in while it is out of sight.
+        if (!body.userId) return json({ error: 'userId is required' }, 400)
+        const wrongTarget = await refuseAdminTarget(body.userId)
+        if (wrongTarget) return wrongTarget
+        const locked = await lockAccount(body.userId)
+        if (locked) return locked
+        const { error } = await admin.from('profiles').update({ hidden: true }).eq('id', body.userId)
+        if (error) return json({ error: safeError('Không ẩn được tài khoản', error.message) }, 500)
+        return json({ ok: true })
+      }
+
+      case 'unhide': {
+        // Back on the list, still locked: unlocking is a separate decision.
+        if (!body.userId) return json({ error: 'userId is required' }, 400)
+        const wrongTarget = await refuseAdminTarget(body.userId)
+        if (wrongTarget) return wrongTarget
+        const { error } = await admin.from('profiles').update({ hidden: false }).eq('id', body.userId)
+        if (error) return json({ error: safeError('Không hiện lại được tài khoản', error.message) }, 500)
         return json({ ok: true })
       }
 
