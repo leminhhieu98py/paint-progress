@@ -84,56 +84,77 @@ export function Hero() {
 function Platform() {
   const ink = palette.text
   const accent = palette.accent
+  // The default coat template's own colours, on the bays of the scaffold: the
+  // picture says what the product is for without a word of copy.
+  const coats = ['#fadb14', '#bfbfbf', '#52c41a', '#1677ff']
   return (
     <svg
-      viewBox="0 0 320 220"
+      viewBox="0 0 360 250"
       width="100%"
-      style={{ position: 'relative', maxWidth: 340, height: 'auto', display: 'block' }}
+      style={{ position: 'relative', maxWidth: 372, height: 'auto', display: 'block' }}
       aria-hidden
       focusable="false"
     >
-      {/* Sea: two flat bands, the near one darker, so the legs read as standing IN something. */}
-      <rect x="0" y="176" width="320" height="44" fill="#CFE7E3" />
-      <rect x="0" y="196" width="320" height="24" fill="#B6DCD6" />
+      {/* Sea, in two bands: the near one darker, so the legs stand IN something. */}
+      <rect x="0" y="196" width="360" height="30" fill="#CFE7E3" />
+      <rect x="0" y="214" width="360" height="36" fill="#B6DCD6" />
 
-      {/* The jacket: four battered legs cross-braced, the way the real ones are. */}
-      <g stroke={ink} strokeOpacity="0.5" strokeWidth="2" fill="none" strokeLinecap="round">
-        <path d="M96 130 L84 194 M150 130 L156 194 M120 130 L112 194 M176 130 L188 194" />
-        <path d="M96 130 L176 130" strokeOpacity="0.28" />
-        <path d="M90 160 L182 160" strokeOpacity="0.28" />
-        <path d="M96 130 L112 160 M120 130 L90 160 M150 130 L182 160 M176 130 L156 160" strokeOpacity="0.28" />
-        <path d="M90 160 L84 194 M112 160 L88 194 M182 160 L188 194 M156 160 L184 194" strokeOpacity="0.28" />
+      {/* Jacket: four battered legs, cross-braced at two levels. */}
+      <g stroke={ink} strokeOpacity="0.42" strokeWidth="1.6" fill="none" strokeLinecap="round">
+        <path d="M74 150 L60 214 M104 150 L98 214 M150 150 L162 214 M180 150 L200 214" />
+        <path d="M67 182 L190 182" strokeOpacity="0.22" />
+        <path d="M74 150 L98 182 M104 150 L67 182 M150 150 L190 182 M180 150 L156 182" strokeOpacity="0.22" />
+        {/* The middle span, so the frame reads as one jacket and not two legs. */}
+        <path d="M104 150 L156 182 M150 150 L98 182" strokeOpacity="0.16" />
       </g>
 
-      {/* Deck levels: the main deck, the cellar deck under it, and the topside block. */}
-      <rect x="70" y="118" width="132" height="13" rx="2" fill={accent} fillOpacity="0.16" stroke={accent} strokeWidth="2" />
-      <rect x="78" y="104" width="116" height="14" rx="2" fill="#FFFFFF" stroke={ink} strokeOpacity="0.35" strokeWidth="2" />
-      <rect x="104" y="74" width="62" height="30" rx="3" fill="#FFFFFF" stroke={ink} strokeOpacity="0.35" strokeWidth="2" />
-      <g fill={ink} fillOpacity="0.22">
-        <rect x="112" y="82" width="10" height="8" rx="1" />
-        <rect x="128" y="82" width="10" height="8" rx="1" />
-        <rect x="144" y="82" width="10" height="8" rx="1" />
+      {/* Main deck slab, then the cellar deck under it. */}
+      <rect x="52" y="136" width="150" height="14" rx="2" fill={accent} fillOpacity="0.18" stroke={accent} strokeWidth="1.8" />
+      <rect x="62" y="124" width="130" height="12" rx="2" fill="#FFFFFF" stroke={ink} strokeOpacity="0.3" strokeWidth="1.6" />
+
+      {/* Topside block and its windows. */}
+      <rect x="84" y="92" width="72" height="32" rx="3" fill="#FFFFFF" stroke={ink} strokeOpacity="0.32" strokeWidth="1.6" />
+      <g fill={ink} fillOpacity="0.2">
+        <rect x="93" y="101" width="12" height="9" rx="1.5" />
+        <rect x="111" y="101" width="12" height="9" rx="1.5" />
+        <rect x="129" y="101" width="12" height="9" rx="1.5" />
       </g>
 
-      {/* Flare boom and crane: the two silhouettes that read as a platform at a glance. */}
-      <g stroke={ink} strokeOpacity="0.45" strokeWidth="2" fill="none" strokeLinecap="round">
-        <path d="M196 118 L232 62" />
-        <path d="M188 112 L226 58" strokeOpacity="0.25" />
-        <path d="M196 118 L188 112 M206 106 L198 100 M216 94 L208 88 M226 82 L218 76" strokeOpacity="0.25" />
-        <path d="M92 104 L92 58 M92 58 L54 88" />
-        <path d="M54 88 L54 104" strokeDasharray="3 4" />
+      {/* Crane: mast, jib, and a load on the hook. */}
+      <g stroke={ink} strokeOpacity="0.42" strokeWidth="1.8" fill="none" strokeLinecap="round">
+        <path d="M74 124 L74 66 M74 66 L34 100" />
+        <path d="M34 100 L34 122" strokeDasharray="3 4" strokeWidth="1.4" />
       </g>
-      <circle cx="54" cy="108" r="4" fill={accent} />
+      <rect x="27" y="122" width="15" height="11" rx="2" fill={accent} fillOpacity="0.75" />
 
-      {/* The scaffold bay the crew paints from: the grid this whole product is about. */}
-      <g stroke={accent} strokeWidth="2" fill="none">
-        <rect x="212" y="128" width="66" height="48" rx="2" fill={accent} fillOpacity="0.1" />
-        <path d="M234 128 L234 176 M256 128 L256 176 M212 144 L278 144 M212 160 L278 160" strokeOpacity="0.45" />
-        {/* Two bays already coated, which is what a foreman would have ticked. */}
-        <rect x="212" y="128" width="22" height="16" fill={accent} fillOpacity="0.55" strokeOpacity="0" />
-        <rect x="234" y="144" width="22" height="16" fill={accent} fillOpacity="0.35" strokeOpacity="0" />
+      {/* Flare boom, out over the water on the far side. */}
+      <g stroke={ink} strokeOpacity="0.3" strokeWidth="1.4" fill="none" strokeLinecap="round">
+        <path d="M196 136 L246 74 M188 130 L240 68" />
+        <path d="M196 136 L188 130 M209 120 L201 114 M222 104 L214 98 M235 88 L227 82" />
       </g>
-      <path d="M245 176 L245 196 M212 196 L278 196" stroke={ink} strokeOpacity="0.3" strokeWidth="2" strokeLinecap="round" />
+      <path d="M246 74 q7 -9 3 -18 q9 8 6 18 z" fill="#F97316" fillOpacity="0.75" />
+
+      {/*
+        The scaffold the paint crew works from, drawn as an OPEN frame -- the
+        standards, the ledgers and one diagonal brace -- with four of its bays
+        already coated. That is the product in one picture: a grid over a
+        structure, filled in as the work is done.
+      */}
+      <g stroke={accent} strokeOpacity="0.55" strokeWidth="1.4" fill="none">
+        <rect x="244" y="128" width="84" height="72" />
+        <path d="M272 128 L272 200 M300 128 L300 200 M244 152 L328 152 M244 176 L328 176" />
+        {/* One brace corner to corner, as a real scaffold face is braced. It
+            runs under the coated bays, so it shows only where work is left. */}
+        <path d="M244 200 L328 128" strokeOpacity="0.28" />
+      </g>
+      <g strokeOpacity="0">
+        <rect x="244.7" y="128.7" width="26.6" height="22.6" fill={coats[0]} fillOpacity="0.8" />
+        <rect x="272.7" y="128.7" width="26.6" height="22.6" fill={coats[2]} fillOpacity="0.75" />
+        <rect x="244.7" y="152.7" width="26.6" height="22.6" fill={coats[3]} fillOpacity="0.55" />
+        <rect x="300.7" y="128.7" width="26.6" height="22.6" fill={coats[1]} fillOpacity="0.7" />
+      </g>
+      {/* Its feet, on the same deck level as the platform's legs. */}
+      <path d="M256 200 L256 214 M316 200 L316 214 M240 214 L332 214" stroke={ink} strokeOpacity="0.28" strokeWidth="1.6" strokeLinecap="round" fill="none" />
     </svg>
   )
 }
