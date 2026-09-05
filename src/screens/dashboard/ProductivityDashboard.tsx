@@ -1,17 +1,19 @@
 import { DatePicker, Segmented, Select, Table, Typography } from 'antd'
-import type { Dayjs } from 'dayjs'
+import dayjs, { type Dayjs } from 'dayjs'
 import { useMemo, useState } from 'react'
 import { EmptyState } from '../../components/EmptyState'
 import { SectionCard } from '../../components/SectionCard'
 import { StatCard } from '../../components/StatCard'
 import {
-  dailyEffort, effortCoverage, effortDayKey, efficiencySeries, hoursSeries, leadEfficiency,
-  stageEfficiency, stageOrder, wasteReasons,
+  dailyEffort, deckEffortTotals, effortCoverage, effortDayKey, efficiencySeries, hoursSeries,
+  leadEfficiency, stageEfficiency, stageOrder, wasteReasons,
   type LeadEfficiency, type StageEfficiency, type WasteReason,
 } from '../../domain/effort'
+import { deckForecast, type DeckForecast } from '../../domain/forecast'
+import { computeDeckProgress } from '../../domain/progress'
 import type { DeckEvent, WorkModel } from '../../domain/types'
 import { formatAreaM2, formatHours, formatMhrPerM2, formatPercent } from '../../lib/format'
-import { palette } from '../../theme'
+import { fieldError, palette } from '../../theme'
 import { EfficiencyLineChart, HoursBarChart } from './charts'
 
 /**
@@ -75,6 +77,10 @@ export function ProductivityDashboard({
     })
   }, [events, workName, deckName, range])
 
+  /** Today, once per mount -- see DeckForecastPanel for why not per render. */
+  const today = useMemo(() => effortDayKey(new Date().toISOString()), [])
+  const todayTotals = deckEffortTotals(filtered, today)
+
   const order = useMemo(() => stageOrder(models), [models])
   const daily = useMemo(() => dailyEffort(filtered), [filtered])
   const stages = useMemo(() => stageEfficiency(daily, order), [daily, order])
@@ -87,6 +93,35 @@ export function ProductivityDashboard({
   const wasteHours = stages.reduce((s, r) => s + r.wasteHours, 0)
   const overall = totalAreaM2 > 0 ? totalHours / totalAreaM2 : null
   const wasteShare = totalHours + wasteHours > 0 ? wasteHours / (totalHours + wasteHours) : null
+
+  /**
+   * What is left on each deck of the chosen work, and whether its deadline
+   * holds (Feedback Rv2, item 13). One row per deck rather than a table per
+   * deck: the question this screen is open for is which deck is in trouble.
+   *
+   * Measured on the work's WHOLE history, not on the date range in the filters:
+   * a rate measured over three days does not become a different rate because
+   * the reader narrowed the view.
+   */
+  const forecasts = useMemo(() => {
+    const model = models.find((m) => m.work.name === workName)
+    if (!model) return [] as Array<{ deckName: string; forecast: DeckForecast }>
+    const ofWork = events.filter((ev) => (ev.workName ?? '') === workName)
+    const efficiency = stageEfficiency(dailyEffort(ofWork), order)
+    return model.decks
+      .filter((entry) => deckName === '' || entry.deck.name === deckName)
+      .map((entry) => ({
+        deckName: entry.deck.name,
+        forecast: deckForecast({
+          totalAreaM2: entry.deck.totalAreaM2,
+          stages: entry.stages,
+          stageProgress: computeDeckProgress(entry.deck, entry.stages).stages,
+          efficiency,
+          deadline: entry.deadline ?? null,
+          today,
+        }),
+      }))
+  }, [models, workName, deckName, events, order, today])
 
   const stageColors = useMemo(() => {
     const colors = new Map<string, string>()
@@ -163,6 +198,10 @@ export function ProductivityDashboard({
           sub="tổng Mhr chia tổng m², khác với hiệu suất trung bình theo ngày"
           tone="accent"
         />
+        {/* Today, beside the totals (Linh, 2026-09-05): the same two figures
+            for the day the reader is standing in. */}
+        <StatCard label="Mhr thực hiện hôm nay" value={formatHours(todayTotals.todayHours)} sub="theo bộ lọc trên" />
+        <StatCard label="Mhr hao phí hôm nay" value={formatHours(todayTotals.todayWasteHours)} sub="theo bộ lọc trên" />
         <StatCard
           label="Giờ hao phí"
           value={formatHours(wasteHours)}
@@ -186,6 +225,55 @@ export function ProductivityDashboard({
             dataSource={stages}
             columns={stageColumns}
             locale={{ emptyText: 'Không có lần cập nhật nào trong khoảng đã chọn' }}
+          />
+        </div>
+      </SectionCard>
+
+      <SectionCard
+        title="Dự báo tiến độ"
+        summary="Còn lại bao nhiêu và có kịp hạn không; số ngày của sàn là ngày lớn nhất trong các công đoạn vì các lớp làm song song"
+        bodyPadding={0}
+      >
+        <div data-testid="forecast-table">
+          <Table<{ deckName: string; forecast: DeckForecast }>
+            size="small"
+            rowKey="deckName"
+            pagination={false}
+            dataSource={forecasts}
+            locale={{ emptyText: 'Chưa có sàn nào trong công việc này' }}
+            columns={[
+              { title: 'Sàn', dataIndex: 'deckName' },
+              {
+                title: 'Mhr còn cần',
+                align: 'right',
+                render: (_, r) => (r.forecast.totalMhrNeeded === null ? dash : formatHours(r.forecast.totalMhrNeeded)),
+              },
+              {
+                title: 'Số ngày cần',
+                align: 'right',
+                render: (_, r) => (r.forecast.daysNeeded === null ? dash : String(r.forecast.daysNeeded)),
+              },
+              {
+                title: 'Hạn hoàn thành',
+                align: 'right',
+                render: (_, r) => (r.forecast.deadline === null ? dash : dayjs(r.forecast.deadline).format('DD/MM/YYYY')),
+              },
+              {
+                title: 'Ngày còn lại',
+                align: 'right',
+                render: (_, r) => (r.forecast.daysRemaining === null ? dash : String(r.forecast.daysRemaining)),
+              },
+              {
+                title: 'Cảnh báo',
+                render: (_, r) => (r.forecast.lateDays === null
+                  ? ''
+                  : (
+                    <span style={{ color: fieldError, fontWeight: 600 }}>
+                      {`Trễ ${r.forecast.lateDays} ngày · thiếu ${formatHours(r.forecast.shortfallMhr ?? 0)} Mhr`}
+                    </span>
+                  )),
+              },
+            ]}
           />
         </div>
       </SectionCard>

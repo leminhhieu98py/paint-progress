@@ -37,7 +37,14 @@ const EVENTS: DeckEvent[] = [
 ]
 
 const stage = (id: string, seq: number, name: string, color: string) => ({ id, seq, name, color, weight: 0.5 })
-const deck = (id: string, name: string) => ({ id, code: id.toUpperCase(), name, totalAreaM2: 1000, cells: [] })
+/** 1.000 m² with one 400 m² bay already at Lớp 1, so Lớp 2 has 1.000 m² left. */
+const deck = (id: string, name: string) => ({
+  id,
+  code: id.toUpperCase(),
+  name,
+  totalAreaM2: 1000,
+  cells: [{ id: `${id}-c1`, code: 'R1C1', x: 0, y: 0, w: 1, h: 1, areaM2: 400, stageId: `${id}-s1`, note: '' }],
+})
 const MODELS: WorkModel[] = [
   {
     work: { id: 'w1', projectId: 'p1', seq: 1, name: 'Sơn', kind: 'bays', weight: 0.8, counts: true, manualProgress: 0 },
@@ -137,5 +144,45 @@ describe('ProductivityDashboard', () => {
     renderDashboard([ev(), ev({ id: 99 })])
     expect(screen.getByText('Chưa có giờ công nào được ghi')).toBeInTheDocument()
     expect(screen.queryByTestId('dashboard-cards')).toBeNull()
+  })
+})
+
+describe('ProductivityDashboard forecast (Feedback Rv2, item 13)', () => {
+  it('shows today\'s hours beside the totals', () => {
+    // The fixture's newest day is 03/09; "today" in the test environment is
+    // whatever the clock says, so today's figures are zero and the totals are
+    // not -- which is the pair Linh asked to see.
+    renderDashboard()
+    expect(cards().getByText('Mhr thực hiện hôm nay')).toBeInTheDocument()
+    expect(cards().getByText('Mhr hao phí hôm nay')).toBeInTheDocument()
+  })
+
+  it('lists what is left on each deck of the chosen work, and its deadline', () => {
+    renderDashboard()
+    const table = within(screen.getByTestId('forecast-table'))
+    const rows = table.getAllByRole('row').slice(1)
+    expect(rows).toHaveLength(2)
+    expect(within(rows[0]).getByText('Sàn A')).toBeInTheDocument()
+    // No deadline on the fixture, so no date and no warning.
+    expect(within(rows[0]).getAllByText('—').length).toBeGreaterThan(0)
+  })
+
+  it('narrows the forecast to the deck in the filter', async () => {
+    renderDashboard()
+    await userEvent.click(screen.getByRole('combobox', { name: 'Sàn' }))
+    await userEvent.click(await screen.findByTitle('Sàn B'))
+    const rows = within(screen.getByTestId('forecast-table')).getAllByRole('row').slice(1)
+    expect(rows).toHaveLength(1)
+    expect(within(rows[0]).getByText('Sàn B')).toBeInTheDocument()
+  })
+
+  it('warns on a deck whose deadline the measured rate cannot meet', () => {
+    const late = MODELS.map((m) => (m.work.name !== 'Sơn' ? m : {
+      ...m,
+      decks: m.decks.map((d) => (d.deck.name === 'Sàn A' ? { ...d, deadline: '2000-01-01' } : d)),
+    }))
+    render(<ProductivityDashboard events={EVENTS} models={late} decks={DECKS} />)
+    const rows = within(screen.getByTestId('forecast-table')).getAllByRole('row').slice(1)
+    expect(within(rows[0]).getByText(/Trễ \d+ ngày · thiếu/)).toBeInTheDocument()
   })
 })
