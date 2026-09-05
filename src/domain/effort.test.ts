@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
-  dailyEffort, effortCoverage, effortDayKey, efficiencySeries, hoursSeries, leadEfficiency,
-  stageEfficiency, stageOrder, wasteReasons, type StageOrder,
+  dailyEffort, deckEffortTotals, effortCoverage, effortDayKey, efficiencySeries, hoursSeries,
+  leadEfficiency, stageEfficiency, stageOrder, wasteReasons, type StageOrder,
 } from './effort'
 import { EMPTY_EFFORT, type DeckEvent, type Effort, type WorkModel } from './types'
 
@@ -206,5 +206,30 @@ describe('series', () => {
       { day: '2026-09-02', hours: 220, wasteHours: 0 },
       { day: '2026-09-03', hours: 0, wasteHours: 4 },
     ])
+  })
+})
+
+describe('deckEffortTotals', () => {
+  it('splits today from the whole history, in hours worked and hours lost', () => {
+    const totals = deckEffortTotals([
+      event({ at: '2026-09-05T02:00:00Z', effort: { workHours: 4, wasteHours: 1 } }),
+      // 17:30Z is 00:30 the next day in Vietnam: tomorrow, not today.
+      event({ at: '2026-09-05T17:30:00Z', effort: { workHours: 2 } }),
+      event({ at: '2026-09-01T02:00:00Z', effort: { workHours: 10, wasteHours: 3 } }),
+      event({ at: '2026-09-05T09:00:00Z', workName: 'Tháo giáo', effort: { workHours: 1.5 } }),
+      // No hours recorded: contributes nothing to either total.
+      event({ at: '2026-09-05T09:00:00Z' }),
+    ], '2026-09-05')
+
+    // Deck-wide: the Tháo giáo update counts too.
+    expect(totals).toEqual({
+      todayHours: 5.5, totalHours: 17.5, todayWasteHours: 1, totalWasteHours: 4,
+    })
+  })
+
+  it('is all zeros for a deck nobody has recorded hours on', () => {
+    expect(deckEffortTotals([event()], '2026-09-05')).toEqual({
+      todayHours: 0, totalHours: 0, todayWasteHours: 0, totalWasteHours: 0,
+    })
   })
 })
