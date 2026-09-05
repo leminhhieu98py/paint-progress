@@ -233,8 +233,8 @@
 --   nvm use 22
 --   npx supabase db query --linked -f supabase/verify_schema.sql
 --
--- Every returned row must begin with PASS: 43 rows in total on a linked
--- project with 0001-0030 applied (measured 2026-09-05; the numbering above
+-- Every returned row must begin with PASS: 44 rows in total on a linked
+-- project with 0001-0031 applied (measured 2026-09-05; the numbering above
 -- runs 1-41 because one earlier check emits two rows and some later ones
 -- several). A row beginning with FAIL means
 -- a regression in the trigger/FK/RLS behaviour set up across migrations
@@ -1270,6 +1270,24 @@ begin
     ev_cols, st_cols, fk_ok, coalesce(fn_ok, false), anon_ok, upd_held, coalesce(guard_ok, false));
 end $$;
 
+create or replace function _verify_deadline() returns setof text language plpgsql as $$
+declare
+  col_ok boolean; pol int;
+begin
+  -- 44. 0031: work_decks.deadline is a nullable date, and the pair of policies
+  -- that decide who may write it is still the pair 0024/0028 left behind.
+  select count(*) = 1 into col_ok from information_schema.columns
+   where table_schema = 'public' and table_name = 'work_decks' and column_name = 'deadline'
+     and data_type = 'date' and is_nullable = 'YES';
+  select count(*) into pol from pg_policies
+   where schemaname = 'public' and tablename = 'work_decks'
+     and policyname in ('work_decks_admin_all', 'work_decks_member_read');
+  return next format(
+    '%s 0031 work_decks.deadline is a nullable date (%s) behind the admin-write / member-read pair %s (need 2)',
+    case when coalesce(col_ok, false) and pol = 2 then 'PASS' else 'FAIL' end,
+    coalesce(col_ok, false), pol);
+end $$;
+
 -- A single top-level SELECT: `supabase db query -f` surfaces only the last
 -- result set a multi-statement file produces, so the checks are combined
 -- here with UNION ALL rather than issued as separate SELECTs.
@@ -1297,7 +1315,9 @@ select * from _verify_work_items()
 union all
 select * from _verify_roles_and_work_members()
 union all
-select * from _verify_effort();
+select * from _verify_effort()
+union all
+select * from _verify_deadline();
 
 drop function _verify_triggers();
 drop function _verify_rls();

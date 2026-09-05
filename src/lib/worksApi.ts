@@ -122,6 +122,31 @@ export async function saveWorkDecks(workId: string, rows: WorkDeckWeight[]): Pro
   if (error) throw new Error(error.message)
 }
 
+/**
+ * The deadline for one (work, deck) — Feedback Rv2, item 13 (0031).
+ *
+ * An UPDATE, not an upsert: the pair already exists (the admin sets a deadline
+ * on a deck the work already covers), and an upsert here would need the weight
+ * as well and could write a row with weight 0 if it were ever called for a
+ * pair that had been removed. Null clears it.
+ */
+export async function setWorkDeckDeadline(
+  workId: string,
+  deckId: string,
+  deadline: string | null,
+): Promise<void> {
+  const { data, error } = await supabase
+    .from('work_decks')
+    .update({ deadline })
+    .eq('work_id', workId)
+    .eq('deck_id', deckId)
+    .select('deck_id')
+  if (error) throw new Error(error.message)
+  if (!data || data.length === 0) {
+    throw new Error('Không lưu được hạn: sàn này không còn thuộc công việc đã chọn.')
+  }
+}
+
 /** The percentage the admin types for a manual work, as a 0..1 fraction. */
 export async function setManualProgress(workId: string, value: number): Promise<void> {
   if (!(value >= 0 && value <= 1)) {

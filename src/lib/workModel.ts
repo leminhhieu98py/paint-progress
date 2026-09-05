@@ -31,6 +31,8 @@ export interface WorkDeckRow {
   work_id: string
   deck_id: string
   weight: string | number
+  /** 0031. ISO date-only, or null/absent when no deadline is set. */
+  deadline?: string | null
 }
 
 export interface CellRowIn {
@@ -214,6 +216,7 @@ export function assembleProjectModel(input: {
               .map(mapStage)
               .sort((a, b) => a.seq - b.seq),
             weight: Number(wd.weight),
+            deadline: wd.deadline ?? null,
           }
         })
       return { work, decks }

@@ -59,7 +59,7 @@ const STATE_SELECT = 'cell_id, work_id, deck_id, stage_id, note, updated_at, upd
 export async function loadProjectModel(projectId: string): Promise<ProjectModel> {
   const worksQuery = await supabase
     .from('works')
-    .select(`${WORK_SELECT}, work_decks(deck_id, weight)`)
+    .select(`${WORK_SELECT}, work_decks(deck_id, weight, deadline)`)
     .eq('project_id', projectId)
     .order('seq')
   if (worksQuery.error) throw new Error(worksQuery.error.message)
@@ -94,6 +94,8 @@ export interface DeckWorkView {
   work: Work
   /** D_wd. */
   weight: number
+  /** Hạn hoàn thành of this (work, deck), ISO date-only, or null (0031). */
+  deadline: string | null
   stages: Stage[]
   /** The deck's bays projected for this work. */
   cells: Cell[]
@@ -127,7 +129,7 @@ export async function loadDeckWorks(deckId: string): Promise<DeckWorks | null> {
 
   const membershipQuery = await supabase
     .from('work_decks')
-    .select(`work_id, deck_id, weight, works!inner(${WORK_SELECT})`)
+    .select(`work_id, deck_id, weight, deadline, works!inner(${WORK_SELECT})`)
     .eq('deck_id', deckId)
   if (membershipQuery.error) throw new Error(membershipQuery.error.message)
   const statesQuery = await supabase.from('cell_states').select(STATE_SELECT).eq('deck_id', deckId)
@@ -170,6 +172,7 @@ export async function loadDeckWorks(deckId: string): Promise<DeckWorks | null> {
       .map((m) => ({
         work: m.work,
         weight: m.decks[0].weight,
+        deadline: m.decks[0].deadline ?? null,
         stages: m.decks[0].stages,
         cells: m.decks[0].deck.cells,
         audit: model.audit[m.work.id] ?? {},

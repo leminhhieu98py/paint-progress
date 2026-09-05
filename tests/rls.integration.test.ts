@@ -1782,6 +1782,50 @@ describe.skipIf(!adminConfigured)('0030: effort on bay updates', () => {
     expect(ev.effort_edited_at).not.toBeNull()
   })
 
+  it('an admin sets a deadline on the (work, deck) and a GS reads it (0031)', async () => {
+    const set = await admin
+      .from('work_decks')
+      .update({ deadline: '2026-10-08' })
+      .eq('work_id', workId)
+      .eq('deck_id', deckId)
+      .select('deadline')
+    expect(set.error).toBeNull()
+    expect(set.data?.[0]?.deadline).toBe('2026-10-08')
+
+    const read = await gs.from('work_decks').select('deadline').eq('work_id', workId).eq('deck_id', deckId)
+    expect(read.error).toBeNull()
+    expect(read.data?.[0]?.deadline).toBe('2026-10-08')
+  })
+
+  it('a GS cannot move the deadline (0031)', async () => {
+    // work_decks carries no member write policy, so RLS hides the row from the
+    // UPDATE rather than erroring: zero rows back, and the date is untouched.
+    const write = await gs
+      .from('work_decks')
+      .update({ deadline: '2027-01-01' })
+      .eq('work_id', workId)
+      .eq('deck_id', deckId)
+      .select('deadline')
+    expect(write.error).toBeNull()
+    expect(write.data ?? []).toEqual([])
+
+    const still = await admin.from('work_decks').select('deadline').eq('work_id', workId).eq('deck_id', deckId)
+    expect(still.data?.[0]?.deadline).toBe('2026-10-08')
+  })
+
+  it('re-saving the work-deck weight leaves the deadline alone (0031)', async () => {
+    // saveWorkDecks upserts {work_id, deck_id, weight}. If PostgREST wrote the
+    // absent columns back to their defaults, an admin re-balancing weights
+    // would silently drop every deadline on the work.
+    const again = await admin
+      .from('work_decks')
+      .upsert({ work_id: workId, deck_id: deckId, weight: 1 }, { onConflict: 'work_id,deck_id' })
+    expect(again.error).toBeNull()
+
+    const still = await admin.from('work_decks').select('deadline').eq('work_id', workId).eq('deck_id', deckId)
+    expect(still.data?.[0]?.deadline).toBe('2026-10-08')
+  })
+
   it('a viewer cannot record effort either, and no event is written', async () => {
     const promote = await admin.from('profiles').update({ role: 'viewer' }).eq('id', gsUserId)
     expect(promote.error).toBeNull()

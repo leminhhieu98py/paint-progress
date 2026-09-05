@@ -102,6 +102,18 @@ export interface WorkDeckEntry {
   stages: Stage[]
   /** D_wd, 0..1. Across the decks in one work these sum to 1. */
   weight: number
+  /**
+   * Hạn hoàn thành for this (work, deck) as an ISO date-only string (0031).
+   * Date-only for the same reason `Zone.startDate` is: a Date would carry a
+   * timezone this value does not have.
+   *
+   * Optional, like `Cell.note`: the screens that build a work model to compute
+   * a percentage -- the pie, the report's overview, the deck tabs -- have no
+   * business knowing about deadlines, and requiring it would put a null in
+   * twenty places to satisfy a field none of them read. Treat undefined and
+   * null as the same thing: no deadline set.
+   */
+  deadline?: string | null
 }
 
 export interface WorkModel {
