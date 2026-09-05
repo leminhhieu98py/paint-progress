@@ -2,6 +2,7 @@ import { Alert, Button, Input, InputNumber, Modal, Select, Space, Typography } f
 import { modalProps } from '../../components/modalChrome'
 import { palette } from '../../theme'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { describeZone } from '../../domain/plan'
 import { isBackwards, nextStage } from '../../domain/stageFlow'
 import { EMPTY_EFFORT, type Cell, type Effort, type Stage } from '../../domain/types'
 import { formatAreaM2 } from '../../lib/format'
@@ -219,7 +220,7 @@ export function CellStageModal({
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                   {zones.map((z) => (
                     <span key={`${z.name}-${z.stageName}`}>
-                      {[z.name, z.stageName, z.range].filter(Boolean).join(' · ')}
+                      {describeZone(z.name, z.stageName, z.range)}
                     </span>
                   ))}
                 </div>

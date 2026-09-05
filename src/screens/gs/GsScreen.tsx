@@ -7,8 +7,8 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { useAuth } from '../../auth/AuthProvider'
 
 import { DrawingCanvas } from '../../canvas/DrawingCanvas'
-import { formatPlanRange } from '../../domain/plan'
-import { paintLensColors, zoneColorMap, zoneLensColors } from '../../domain/lens'
+import { describeZone, formatPlanRange, zoneLabelBoxes } from '../../domain/plan'
+import { paintLensColors, zoneColorMap, zoneLensColors, zoneLensLayers } from '../../domain/lens'
 import { computeDeckProgress, summariseDeck } from '../../domain/progress'
 import { planImagePairs } from '../../domain/report'
 import { EMPTY_EFFORT, type Cell, type Deck, type Effort, type Stage, type WorkModel, type Zone } from '../../domain/types'
@@ -656,9 +656,36 @@ export function GsScreen() {
     () => zoneColorMap(planZones, stages.map((st) => st.color)),
     [planZones, stages],
   )
+  /**
+   * The plan as the admin's A3.4 draws it (Feedback Rv3, item 2).
+   *
+   * A flat zone colour on every bay was the same picture whether the coat had
+   * been done or not, so the foreman could see WHERE the plan was and not
+   * whether he had got through it. With a coat chosen, `zoneLensLayers` gives
+   * the same three states the admin sees: reached is solid, planned-but-not-
+   * reached is faint under a dashed frame in the zone's colour, and the rest
+   * shows the drawing through.
+   *
+   * Under "Tất cả" there is no coat to measure "reached" against -- a bay is
+   * done for one coat and not for the next -- so those zones stay flat, and
+   * the caption under the drawing says which of the two views is on.
+   */
+  const planStageObj = useMemo(
+    () => stages.find((st) => st.id === planStageId) ?? null,
+    [stages, planStageId],
+  )
+  const planLayers = useMemo(() => {
+    if (!showPlan || !planStageObj) return null
+    return zoneLensLayers(cells, stages, planStageObj, visibleZones, planColors)
+  }, [showPlan, planStageObj, cells, stages, visibleZones, planColors])
   const planCellColors = useMemo(
     () => (showPlan ? zoneLensColors(visibleZones, cells, planColors) : undefined),
     [showPlan, visibleZones, cells, planColors],
+  )
+  /** The zones named on the drawing itself (Feedback Rv3, item 4). */
+  const planZoneLabels = useMemo(
+    () => (showPlan ? zoneLabelBoxes(visibleZones, cells) : []),
+    [showPlan, visibleZones, cells],
   )
   /**
    * Item 7, laptop side: the zone under the pointer, named once in a corner
@@ -1109,7 +1136,10 @@ export function GsScreen() {
                   imageH={deck.imageH}
                   cells={cells}
                   selectedCodes={[]}
-                  cellColors={showPlan ? (planCellColors ?? {}) : cellColors}
+                  cellColors={showPlan ? (planLayers?.colors ?? planCellColors ?? {}) : cellColors}
+                  cellOpacities={showPlan ? planLayers?.opacities : undefined}
+                  outlineColors={showPlan ? planLayers?.outlines : undefined}
+                  zoneLabels={showPlan ? planZoneLabels : undefined}
                   panZoom
                   onCellHover={showPlan ? setHoverCode : undefined}
                   onCellClick={(code) => {
@@ -1158,12 +1188,14 @@ export function GsScreen() {
                             boxShadow: 'inset 0 0 0 1px #16202B47',
                           }}
                         />
-                        <span style={{ fontSize: 13, fontWeight: 600 }}>{z.name}</span>
-                        <span style={{ fontSize: 12, color: palette.textSecondary }}>
-                          {stageNameOf(z.stageId)}
-                        </span>
-                        <span style={{ fontSize: 12, color: palette.textSecondary, whiteSpace: 'nowrap' }}>
-                          {formatPlanRange(z.startDate, z.finishDate)}
+                        {/* One line, and the coat dropped when the zone's own
+                            name already carries it (Feedback Rv3, item 3). */}
+                        <span style={{ fontSize: 13, fontWeight: 600 }}>
+                          {describeZone(
+                            z.name,
+                            stageNameOf(z.stageId),
+                            formatPlanRange(z.startDate, z.finishDate),
+                          )}
                         </span>
                       </div>
                     ))}

@@ -439,8 +439,8 @@ describe('CellStageModal — kế hoạch', () => {
     )
     const info = screen.getByTestId('cell-stage-info')
     expect(within(info).getByText('Kế hoạch')).toBeInTheDocument()
-    expect(within(info).getByText('Khu A — Coat 3 · Coat 3 · 06/10 – 17/10')).toBeInTheDocument()
-    expect(within(info).getByText('Khu A — Tháo giáo · Tháo giáo · 20/10 – 24/10')).toBeInTheDocument()
+    expect(within(info).getByText('Khu A — Coat 3 · 06/10 – 17/10')).toBeInTheDocument()
+    expect(within(info).getByText('Khu A — Tháo giáo · 20/10 – 24/10')).toBeInTheDocument()
   })
 
   it('shows no Kế hoạch row for a bay in no zone', () => {

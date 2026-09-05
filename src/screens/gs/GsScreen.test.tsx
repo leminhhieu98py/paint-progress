@@ -83,22 +83,31 @@ vi.mock('../../auth/AuthProvider', () => ({
 // here; what it renders for real was established by driving it in Chrome.
 vi.mock('../../canvas/DrawingCanvas', () => ({
   DrawingCanvas: ({
-    imageUrl, cells, cellColors, planLabels, panZoom, onCellClick, onCellHover,
+    imageUrl, cells, cellColors, cellOpacities, outlineColors, zoneLabels,
+    panZoom, onCellClick, onCellHover,
   }: {
     imageUrl: string
     cells: { code: string }[]
     cellColors?: Record<string, string>
-    planLabels?: Record<string, string>
+    cellOpacities?: Record<string, number>
+    outlineColors?: Record<string, string>
+    zoneLabels?: { id: string; name: string; range: string }[]
     panZoom?: boolean
     onCellClick?: (code: string, additive: boolean) => void
     onCellHover?: (code: string | null) => void
   }) => (
-    <div data-testid="canvas" data-image={imageUrl} data-panzoom={String(Boolean(panZoom))}>
+    <div
+      data-testid="canvas"
+      data-image={imageUrl}
+      data-panzoom={String(Boolean(panZoom))}
+      data-zone-labels={(zoneLabels ?? []).map((z) => `${z.name}|${z.range}`).join(';')}
+    >
       {cells.map((c) => (
         <button
           key={c.code}
           data-color={cellColors?.[c.code] ?? ''}
-          data-plan={planLabels?.[c.code] ?? ''}
+          data-opacity={String(cellOpacities?.[c.code] ?? '')}
+          data-outline={outlineColors?.[c.code] ?? ''}
           onClick={() => onCellClick?.(c.code, false)}
           onMouseEnter={() => onCellHover?.(c.code)}
           onMouseLeave={() => onCellHover?.(null)}
@@ -1371,6 +1380,62 @@ describe('GsScreen: the plan overlay', () => {
       expect(screen.getByRole('button', { name: 'ô R1C1' })).toHaveAttribute('data-color', '#13c2c2'))
   })
 
+  it('marks a planned bay that has not reached the coat, and fills one that has (Feedback Rv3, item 2)', async () => {
+    // The foreman's plan view used to paint every bay of a zone the same flat
+    // colour, so it showed WHERE the plan was and never how much of it was
+    // done. With a coat chosen it now reads exactly as the admin's A3.4: R1C1
+    // is planned for Coat 2 and still on Coat 1, so it is faint under a dashed
+    // frame; R1C2 has reached Coat 2 and is solid; R2C1 is neither.
+    listDeckZones.mockResolvedValue([{
+      id: 'z1', name: 'Khu A', stageId: 's2', color: null,
+      startDate: '2026-08-13', finishDate: '2026-08-19', cellIds: ['c1'],
+    }])
+    renderScreen()
+    await userEvent.click(await screen.findByRole('button', { name: 'Hiện kế hoạch' }))
+    await userEvent.click(await screen.findByRole('combobox', { name: 'Công đoạn kế hoạch' }))
+    await userEvent.click(await screen.findByTitle('Coat 2'))
+
+    const planned = await screen.findByRole('button', { name: 'ô R1C1' })
+    await waitFor(() => expect(planned).toHaveAttribute('data-opacity', '0.18'))
+    expect(planned).toHaveAttribute('data-color', '#eb2f96')
+    expect(planned).toHaveAttribute('data-outline', '#eb2f96')
+
+    const reached = screen.getByRole('button', { name: 'ô R1C2' })
+    expect(reached).toHaveAttribute('data-color', '#bfbfbf')
+    expect(reached).toHaveAttribute('data-opacity', '')
+    expect(reached).toHaveAttribute('data-outline', '')
+
+    const neither = screen.getByRole('button', { name: 'ô R2C1' })
+    expect(neither).toHaveAttribute('data-color', '')
+  })
+
+  it('keeps the plan flat under "Tất cả", where no one coat says what is done', async () => {
+    listDeckZones.mockResolvedValue([{
+      id: 'z1', name: 'Khu A', stageId: 's2', color: null,
+      startDate: '2026-08-13', finishDate: '2026-08-19', cellIds: ['c1'],
+    }])
+    renderScreen()
+    await userEvent.click(await screen.findByRole('button', { name: 'Hiện kế hoạch' }))
+
+    const planned = await screen.findByRole('button', { name: 'ô R1C1' })
+    await waitFor(() => expect(planned).toHaveAttribute('data-color', '#eb2f96'))
+    expect(planned).toHaveAttribute('data-opacity', '')
+    expect(planned).toHaveAttribute('data-outline', '')
+  })
+
+  it('names each zone and its dates on the drawing itself (Feedback Rv3, item 4)', async () => {
+    listDeckZones.mockResolvedValue([{
+      id: 'z1', name: 'Zone (3)', stageId: 's2', color: null,
+      startDate: '2026-10-06', finishDate: '2026-10-17', cellIds: ['c1'],
+    }])
+    renderScreen()
+    expect(await screen.findByTestId('canvas')).toHaveAttribute('data-zone-labels', '')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Hiện kế hoạch' }))
+    await waitFor(() => expect(screen.getByTestId('canvas'))
+      .toHaveAttribute('data-zone-labels', 'Zone (3)|06/10 – 17/10'))
+  })
+
   it('names the zone under the mouse while the plan is on', async () => {
     // Feedback Rv2 item 7, laptop side. Nothing for a bay outside every zone,
     // and nothing at all once the pointer leaves.
@@ -1402,7 +1467,7 @@ describe('GsScreen: the plan overlay', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'ô R1C1' }))
 
     const info = await screen.findByTestId('cell-stage-info')
-    expect(within(info).getByText('Khu A — Tháo giáo · Tháo giáo · 13/08 – 19/08')).toBeInTheDocument()
+    expect(within(info).getByText('Khu A — Tháo giáo · 13/08 – 19/08')).toBeInTheDocument()
   })
 
   it('colours the zone\'s bays and names the window once, when switched on', async () => {

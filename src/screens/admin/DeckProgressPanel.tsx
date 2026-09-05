@@ -8,6 +8,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { DrawingCanvas } from '../../canvas/DrawingCanvas'
 import { cellsInBox } from '../../domain/geometry'
 import { codesNotReaching, zoneColorMap, zoneColorOf, zoneLensLayers, ZONE_PALETTE } from '../../domain/lens'
+import { zoneLabelBoxes } from '../../domain/plan'
 import { buildStageSlices } from '../../domain/pieSlices'
 import { formatPlanRange } from '../../domain/plan'
 import { computeDeckProgress, summariseDeck } from '../../domain/progress'
@@ -380,13 +381,17 @@ export function DeckProgressPanel({
   const lensFor = (stage: Stage | null) => {
     if (!entry || !stage) {
       return {
-        stage: null, colors: {}, opacities: {}, outlines: {}, zones: [], zoneColors: {}, reachedAreaM2: 0,
+        stage: null, colors: {}, opacities: {}, outlines: {}, labels: [],
+        zones: [], zoneColors: {}, reachedAreaM2: 0,
       }
     }
     const zonesHere = zones.filter((z) => z.stageId === stage.id)
     const colorById = zoneColorMap(zonesHere, entry.stages.map((st) => st.color))
     const pendingSet = new Set(codesNotReaching(entry.deck.cells, entry.stages, stage.id))
     const layers = zoneLensLayers(entry.deck.cells, entry.stages, stage, zonesHere, colorById)
+    // The zones named where they are, not only in the list beside the drawing
+    // (Feedback Rv3, item 4) -- the same labels the foreman's screen draws.
+    const labels = zoneLabelBoxes(zonesHere, entry.deck.cells)
     const reached = new Set(layers.reachedCodes)
     const reachedAreaM2 = entry.deck.cells
       .reduce((sum, c) => (reached.has(c.code) ? sum + c.areaM2 : sum), 0)
@@ -410,6 +415,7 @@ export function DeckProgressPanel({
       colors: layers.colors,
       opacities: layers.opacities,
       outlines: layers.outlines,
+      labels,
       zones: zoneRows,
       zoneColors: colorById,
       reachedAreaM2,
@@ -759,6 +765,7 @@ export function DeckProgressPanel({
             cellColors={lens.colors}
             cellOpacities={lens.opacities}
             outlineColors={lens.outlines}
+            zoneLabels={lens.labels}
             markedCodes={notedCodes}
             panZoom
             zoom={zoom}
@@ -1132,13 +1139,14 @@ export function DeckProgressPanel({
                     >
                       <div style={{ padding: '13px 15px 12px', borderBottom: `1px solid ${palette.borderSplit}` }}>
                         <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600, letterSpacing: '-0.015em' }}>
-                          Ô đang ở lớp nào
+                          Tiến độ theo công đoạn · cộng dồn
                         </h3>
                         <div style={{ fontSize: 12, lineHeight: 1.4, color: palette.textTertiary, marginTop: 4 }}>
-                          Phần diện tích đang dừng ở mỗi lớp, không cộng dồn
+                          Ô đã ở lớp sau thì đã qua các lớp trước, nên tính cho cả các lớp đó
                         </div>
                       </div>
                       <div style={{ padding: '18px 15px', display: 'flex', alignItems: 'center', gap: 18 }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 7 }}>
                         <Donut slices={ringSlices} size={168} thickness={30}>
                           <span style={{ fontSize: 10, fontWeight: 600, color: palette.textTertiary }}>
                             Tiến độ sàn
@@ -1157,10 +1165,34 @@ export function DeckProgressPanel({
                             {`${formatAreaM2(entry.deck.totalAreaM2)} m²`}
                           </span>
                         </Donut>
+                        <span
+                          style={{
+                            fontSize: 10,
+                            lineHeight: 1.35,
+                            color: palette.textTertiary,
+                            textAlign: 'center',
+                            maxWidth: 168,
+                          }}
+                        >
+                          Vòng tròn: diện tích đang dừng ở mỗi lớp, không cộng dồn
+                        </span>
+                        </div>
+                        {/*
+                          CUMULATIVE, and the ring beside it is not (Feedback
+                          Rv3, item 1). Linh read "Blast + Coat 1 · 10,05%" off
+                          this list on a deck where 90,54% of the area had been
+                          through Blast + Coat 1, because the list was the
+                          ring's own non-cumulative slices. A bay at Coat 3 has
+                          been through Coat 2, and the customer is billed on
+                          the cumulative figure -- so that is what the rows say,
+                          exactly as the GS screen's rollup card says it. The
+                          ring keeps its own question and now carries a caption
+                          saying which one it answers.
+                        */}
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0 }}>
-                          {ringSlices.map((sl) => (
+                          {(progress?.stages ?? []).map((sp) => (
                             <div
-                              key={sl.label}
+                              key={sp.stage.id}
                               style={{ display: 'flex', alignItems: 'center', gap: 9, minWidth: 0 }}
                             >
                               <span
@@ -1170,7 +1202,7 @@ export function DeckProgressPanel({
                                   height: 15,
                                   borderRadius: 5,
                                   flex: 'none',
-                                  background: sl.color,
+                                  background: sp.stage.color,
                                   boxShadow: 'inset 0 0 0 1px #16202B47',
                                 }}
                               />
@@ -1182,7 +1214,7 @@ export function DeckProgressPanel({
                               */}
                               <div style={{ minWidth: 0, flex: 1 }}>
                                 <div style={{ fontSize: 12, fontWeight: 600, lineHeight: 1.3 }}>
-                                  {sl.label}
+                                  {sp.stage.name}
                                 </div>
                                 <div
                                   style={{
@@ -1195,10 +1227,10 @@ export function DeckProgressPanel({
                                   }}
                                 >
                                   <span style={{ color: palette.textSecondary, whiteSpace: 'nowrap' }}>
-                                    {`${formatAreaM2(sl.areaM2)} m²`}
+                                    {`${formatAreaM2(sp.cumulativeAreaM2)} / ${formatAreaM2(entry.deck.totalAreaM2)} m²`}
                                   </span>
                                   <span aria-hidden>·</span>
-                                  <span>{formatPercent(sl.value)}</span>
+                                  <span>{formatPercent(sp.ratio)}</span>
                                 </div>
                               </div>
                             </div>

@@ -198,27 +198,41 @@ describe('DeckProgressPanel', () => {
     expect(await screen.findByTestId('deck-spec')).toBeInTheDocument()
   })
 
-  it('breaks the deck down by the coat each bay is sitting at', async () => {
+  it('breaks the deck down by coat CUMULATIVELY, since a later coat implies the earlier ones', async () => {
+    // Feedback Rv3, item 1. One 500 m² bay sits at Coat 2 and the other at
+    // Tháo giáo, so the whole deck has been through Blast + Coat 1 and Coat 2
+    // (100% each) and half of it through Tháo giáo (50%). The list used to
+    // read 50% / 50% for the two coats a bay was SITTING on and nothing for
+    // Blast + Coat 1 -- and Linh read that as the deck being half painted when
+    // it is fully on its second coat.
     renderPanel()
     const ring = await screen.findByTestId('stage-ring')
-    // Not cumulative, unlike every percentage elsewhere on the screen: this
-    // answers "where is the work sitting right now", which the weighted deck
-    // figure in the header above cannot.
+    expect(within(ring).getByText('Blast + Coat 1')).toBeInTheDocument()
     expect(within(ring).getByText('Coat 2')).toBeInTheDocument()
     expect(within(ring).getByText('Tháo giáo')).toBeInTheDocument()
-    expect(within(ring).getAllByText('50,00%')).toHaveLength(2)
+    expect(within(ring).getAllByText('100,00%')).toHaveLength(2)
+    expect(within(ring).getByText('50,00%')).toBeInTheDocument()
   })
 
-  it('gives every ring row its m², and the footer the deck m² instead of a bay count', async () => {
-    // Feedback Rv1: "thêm thông tin m² ... không cần hiển thị số ô". Each of
-    // the two coats holds one 500 m² bay; the footer names the 1.000 m² deck
-    // beside its 70,00%, where it used to say "2 ô".
+  it('gives every coat its area out of the deck, and the footer the deck m² instead of a bay count', async () => {
+    // Feedback Rv1: "thêm thông tin m² ... không cần hiển thị số ô". The
+    // denominator travels with the figure so nobody has to hunt for what the
+    // percentage is a percentage of.
     renderPanel()
     const ring = await screen.findByTestId('stage-ring')
-    expect(within(ring).getAllByText('500,00 m²')).toHaveLength(2)
+    expect(within(ring).getAllByText('1.000,00 / 1.000,00 m²')).toHaveLength(2)
+    expect(within(ring).getByText('500,00 / 1.000,00 m²')).toBeInTheDocument()
     // Once in the ring's centre, once in the footer.
     expect(within(ring).getAllByText('1.000,00 m²')).toHaveLength(2)
     expect(within(ring).queryByText(/\d+ ô/)).toBeNull()
+  })
+
+  it('says what the ring itself answers, so it is not read as the cumulative list', async () => {
+    renderPanel()
+    const ring = await screen.findByTestId('stage-ring')
+    expect(
+      within(ring).getByText('Vòng tròn: diện tích đang dừng ở mỗi lớp, không cộng dồn'),
+    ).toBeInTheDocument()
   })
 
   it('tells the admin when a deck has no drawing, instead of an empty frame', async () => {
