@@ -441,9 +441,10 @@ describe('effort on the report (Feedback Rv2, item 11)', () => {
       decks: [{ ...DECK, events: [EFFORT_EVENT] }],
     }))
     const sheet = wb.getWorksheet('Năng suất')!
-    expect((sheet.getRow(1).values as string[]).slice(1, 10)).toEqual([
+    expect((sheet.getRow(1).values as string[]).slice(1, 13)).toEqual([
       'Sàn', 'Công việc', 'Công đoạn', 'Số ngày có số liệu', 'Tổng Mhr', 'Tổng m²',
       'Hiệu suất TB (Mhr/m²)', 'Mhr TB/ngày', 'Giờ hao phí (Mhr)',
+      'm² còn lại', 'Mhr còn cần', 'Số ngày cần',
     ])
     expect(String(sheet.getRow(2).getCell(1).value)).toMatch(/trung bình cộng của hiệu suất từng ngày/)
     const row = sheet.getRow(3)
@@ -457,6 +458,11 @@ describe('effort on the report (Feedback Rv2, item 11)', () => {
     expect(row.getCell(7).numFmt).toBe('0.000')
     expect(row.getCell(8).value).toBe(3.5)
     expect(row.getCell(9).value).toBe(0.5)
+    // 1.000 m² deck with one 500 m² bay at Blast + Coat 1: 500 m² left, at
+    // 0,007 Mhr/m² that is 3,5 Mhr, and at 3,5 Mhr a day, one day.
+    expect(row.getCell(10).value).toBe(500)
+    expect(row.getCell(11).value).toBeCloseTo(3.5, 6)
+    expect(row.getCell(12).value).toBe(1)
     expect(sheet.views[0]).toMatchObject({ state: 'frozen', ySplit: 1 })
   })
 

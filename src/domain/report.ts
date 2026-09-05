@@ -1,5 +1,6 @@
 import dayjs from 'dayjs'
 import { dailyEffort, stageEfficiency, stageOrder } from './effort'
+import { deckForecast, type DeckForecast } from './forecast'
 import { zoneColorMap } from './lens'
 import { computeDeckProgress, computeProjectProgress, computeWorkProgress } from './progress'
 import type { Cell, Deck, DeckEvent, Stage, Work, WorkModel, Zone } from './types'
@@ -326,14 +327,52 @@ export interface EffortSheetRow {
   avgMhrPerM2: number | null
   avgHoursPerDay: number | null
   wasteHours: number
+  /** What is left of this coat on this deck (Feedback Rv2, item 13). */
+  remainingAreaM2: number | null
+  mhrNeeded: number | null
+  daysNeeded: number | null
 }
 
+/**
+ * Measured efficiency and the forecast that follows from it, per (deck, work,
+ * coat) -- columns G through O of Linh's workbook on one row.
+ *
+ * The rows are driven by the EVENTS, not by the current coat list: a coat
+ * renamed since the hours were recorded still has hours against its old name
+ * and still belongs on the sheet. Such a row carries no forecast, because
+ * nothing on the deck answers to that name any more.
+ */
 export function buildEffortSheetRows(decks: DeckReportInput[], models: WorkModel[]): EffortSheetRow[] {
   const order = stageOrder(models)
   const rows: EffortSheetRow[] = []
   for (const entry of decks) {
-    for (const stage of stageEfficiency(dailyEffort(entry.events), order)) {
-      rows.push({ deckName: entry.deck.name, ...stage })
+    const efficiency = stageEfficiency(dailyEffort(entry.events), order)
+    // One forecast per work covering this deck, keyed by work name so an
+    // efficiency row can find its own.
+    const forecasts = new Map<string, DeckForecast>()
+    for (const model of models) {
+      const wd = model.decks.find((d) => d.deck.id === entry.deck.id)
+      if (!wd) continue
+      forecasts.set(model.work.name, deckForecast({
+        totalAreaM2: wd.deck.totalAreaM2,
+        stages: wd.stages,
+        stageProgress: computeDeckProgress(wd.deck, wd.stages).stages,
+        efficiency: efficiency.filter((e) => e.workName === model.work.name),
+        // The sheet reports what is LEFT; whether a date is missed is a
+        // question for a screen, where the reader knows what day it is.
+        deadline: null,
+        today: '1970-01-01',
+      }))
+    }
+    for (const stage of efficiency) {
+      const ahead = forecasts.get(stage.workName)?.stages.find((s) => s.stageName === stage.stageName)
+      rows.push({
+        deckName: entry.deck.name,
+        ...stage,
+        remainingAreaM2: ahead?.remainingAreaM2 ?? null,
+        mhrNeeded: ahead?.mhrNeeded ?? null,
+        daysNeeded: ahead?.daysNeeded ?? null,
+      })
     }
   }
   return rows

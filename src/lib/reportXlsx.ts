@@ -526,10 +526,16 @@ export async function buildReportWorkbook(input: ReportInput): Promise<Blob> {
     { header: 'Hiệu suất TB (Mhr/m²)', key: 'ratio', width: 16, style: { numFmt: RATIO_FORMAT } },
     { header: 'Mhr TB/ngày', key: 'perDay', width: 12, style: { numFmt: HOURS_FORMAT } },
     { header: 'Giờ hao phí (Mhr)', key: 'waste', width: 14, style: { numFmt: HOURS_FORMAT } },
+    // Columns M-O of Linh's workbook: what is left, what it will cost and how
+    // long it takes at the measured rate (Feedback Rv2, item 13).
+    { header: 'm² còn lại', key: 'remaining', width: 12, style: { numFmt: AREA_FORMAT } },
+    { header: 'Mhr còn cần', key: 'needed', width: 13, style: { numFmt: HOURS_FORMAT } },
+    { header: 'Số ngày cần', key: 'daysNeeded', width: 12 },
   ]
   const definition = effort.addRow({
     deck: 'Hiệu suất TB là trung bình cộng của hiệu suất từng ngày (Mhr trong ngày / m² trong ngày), '
-      + 'theo cách tính trong bảng của Linh. Chỉ tính các lần cập nhật có ghi giờ công.',
+      + 'theo cách tính trong bảng của Linh. Chỉ tính các lần cập nhật có ghi giờ công. '
+      + 'Số ngày của sàn là ngày lớn nhất trong các công đoạn, không phải tổng: các lớp thi công song song.',
   })
   definition.getCell(1).font = GREY_FONT
   for (const row of buildEffortSheetRows(input.decks, input.works)) {
@@ -543,6 +549,9 @@ export async function buildReportWorkbook(input: ReportInput): Promise<Blob> {
       ratio: row.avgMhrPerM2 ?? null,
       perDay: row.avgHoursPerDay ?? null,
       waste: row.wasteHours,
+      remaining: row.remainingAreaM2 ?? null,
+      needed: row.mhrNeeded ?? null,
+      daysNeeded: row.daysNeeded ?? null,
     })
   }
   dressSheet(effort, 1)

@@ -426,12 +426,16 @@ describe('buildEffortSheetRows', () => {
       ['Cellar Deck', 'Tháo giáo', 'Tháo giáo lửng'],
       ['Main Deck', 'Sơn', 'Coat 2'],
     ])
-    expect(rows[0]).toEqual({
+    expect(rows[0]).toMatchObject({
       deckName: 'Cellar Deck', workName: 'Sơn', stageName: 'Blast + Coat 1',
       days: 1, totalHours: 120, totalAreaM2: 100, avgMhrPerM2: 1.2, avgHoursPerDay: 120, wasteHours: 3,
     })
-    // A stage with updates but no hours stays on the sheet with blank ratios.
-    expect(rows[2]).toMatchObject({ days: 0, totalHours: 0, avgMhrPerM2: null, avgHoursPerDay: null })
+    // A stage with updates but no hours stays on the sheet with blank ratios,
+    // and nothing can be forecast from it either.
+    expect(rows[2]).toMatchObject({
+      days: 0, totalHours: 0, avgMhrPerM2: null, avgHoursPerDay: null,
+      mhrNeeded: null, daysNeeded: null,
+    })
   })
 
   it('averages the daily ratios, as Linh\'s workbook does, not total over total', () => {
@@ -450,5 +454,39 @@ describe('buildEffortSheetRows', () => {
 
   it('returns nothing for decks with no events', () => {
     expect(buildEffortSheetRows([CD, MD], MODELS)).toEqual([])
+  })
+})
+
+describe('buildEffortSheetRows forecast columns (Feedback Rv2, item 13)', () => {
+  const ev = (over: Partial<DeckEvent> = {}): DeckEvent => ({
+    id: 1, cellCode: 'R1C1', cellAreaM2: 100, workName: 'Sơn', toStageName: 'Blast + Coat 1',
+    at: '2026-08-20T10:00:00+00:00', byId: 'u1', note: '', reportNote: null, reportHidden: false,
+    deckName: 'Cellar Deck', effort: EMPTY_EFFORT, effortEditedAt: null, effortEditedByName: null,
+    ...over,
+  })
+
+  it('carries what is left, what it costs and how long it takes at the measured rate', () => {
+    // CD is 1.000 m² and only one of its two 500 m² bays has reached Tháo giáo
+    // (see SON above), so that coat has 500 m² left. Two days at 100 Mhr for
+    // 100 m² is 1 Mhr/m² and 100 Mhr a day: 500 Mhr and five days.
+    const cd = { ...CD, events: [
+      ev({ id: 1, toStageName: 'Tháo giáo', at: '2026-08-20T03:00:00Z', effort: { ...EMPTY_EFFORT, workHours: 100 } }),
+      ev({ id: 2, toStageName: 'Tháo giáo', at: '2026-08-21T03:00:00Z', effort: { ...EMPTY_EFFORT, workHours: 100 } }),
+    ] }
+    const [row] = buildEffortSheetRows([cd], MODELS)
+    expect(row.remainingAreaM2).toBe(500)
+    expect(row.mhrNeeded).toBeCloseTo(500, 6)
+    expect(row.daysNeeded).toBe(5)
+  })
+
+  it('leaves the forecast blank for a coat the deck no longer declares', () => {
+    const cd = { ...CD, events: [
+      ev({ toStageName: 'Lớp đã đổi tên', effort: { ...EMPTY_EFFORT, workHours: 100 } }),
+    ] }
+    const [row] = buildEffortSheetRows([cd], MODELS)
+    expect(row.stageName).toBe('Lớp đã đổi tên')
+    expect(row.remainingAreaM2).toBeNull()
+    expect(row.mhrNeeded).toBeNull()
+    expect(row.daysNeeded).toBeNull()
   })
 })
