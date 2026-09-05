@@ -2,14 +2,20 @@ import { ExpandOutlined, MinusOutlined, PlusOutlined } from '@ant-design/icons'
 import { Button, Space } from 'antd'
 import Konva from 'konva'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Image as KonvaImage, Layer, Line, Rect, Stage, Text } from 'react-konva'
+import { Group, Image as KonvaImage, Layer, Line, Rect, Stage, Text } from 'react-konva'
 import useImage from 'use-image'
 import type { MeshCell } from '../domain/types'
+import type { ZoneLabel } from '../domain/plan'
 import {
   clampStagePan, clampZoom, boxFromDrag, fitLabelFontSize,
-  MIN_LABEL_FONT_SIZE, MIN_ZOOM, WHEEL_ZOOM_STEP, ZOOM_STEP,
+  MIN_ZOOM, WHEEL_ZOOM_STEP, ZOOM_STEP,
 } from './canvasView'
 import { createHatchPattern } from './hatchPattern'
+
+/** The card behind a zone's name: opaque enough to lift the text off a busy
+ *  drawing, light enough that the bays under it still read. */
+const ZONE_LABEL_FILL = '#FFFFFFE0'
+const ZONE_LABEL_STROKE = '#16202B33'
 
 const PLAIN_FILL = '#0000000A'
 /**
@@ -81,7 +87,7 @@ export function DrawingCanvas({
   cellColors,
   hatchedCodes,
   markedCodes,
-  planLabels,
+  zoneLabels,
   outlineColors,
   cellOpacities,
   panZoom = false,
@@ -124,11 +130,17 @@ export function DrawingCanvas({
    */
   markedCodes?: string[]
   /**
-   * Planned date range per cell CODE. A code present here gets a dashed outline
-   * and its label drawn over the cell; a code absent gets nothing. Spec §8.1's
-   * "Show plan" toggle.
+   * The zones to NAME on the drawing (Feedback Rv3, item 4), each with the box
+   * its bays occupy. Drawn as one card per zone -- the zone's name over its
+   * planned dates -- centred in that box.
+   *
+   * One label per zone, not one per bay: repeating a date range on forty bays
+   * printed the same characters forty times and still left the reader to find
+   * where one zone ended, which is what the source drawings annotate by hand.
+   * A zone whose box is too small to carry the text legibly gets no label; the
+   * zone list beside the drawing still names it.
    */
-  planLabels?: Record<string, string>
+  zoneLabels?: ZoneLabel[]
   /**
    * Dashed outline colour per cell CODE (Feedback Rv2, item 5).
    *
@@ -320,11 +332,28 @@ export function DrawingCanvas({
     e.target.getStage()?.getRelativePointerPosition() ?? null
 
   /** The font a bay's plan label can carry, or null when it can carry none. */
-  const planFont = (cell: MeshCell) => fitLabelFontSize(
-    planLabels?.[cell.code] ?? '',
-    cell.w * width,
-    cell.h * height,
-  )
+  /**
+   * The card drawn for one zone: its size, and the font that fits inside it.
+   *
+   * Two lines of text, so the height each line may take is half the box's, and
+   * the width is measured against the LONGER line. Null when nothing legible
+   * fits -- a 40-bay deck has zones only a few pixels tall at 100%.
+   */
+  const zoneCard = (label: ZoneLabel) => {
+    const boxW = label.w * width
+    const boxH = label.h * height
+    const longest = label.range.length > label.name.length ? label.range : label.name
+    const lines = label.range === '' ? 1 : 2
+    const font = fitLabelFontSize(longest, boxW * 0.9, (boxH * 0.9) / lines)
+    if (font === null) return null
+    const textH = font * 1.25 * lines
+    return {
+      font,
+      textH,
+      cardW: Math.min(boxW, Math.max(font * longest.length * 0.62, font * 4) + font),
+      cardH: textH + font * 0.6,
+    }
+  }
 
   const dragHandlers = banding
     ? {
@@ -667,42 +696,44 @@ export function DrawingCanvas({
             ))}
         </Layer>
 
+        {/*
+          The zones, named where they are. A white card behind the text rather
+          than bare letters: this sits over a scanned drawing full of beam
+          lines and bay numbers, and black text alone was unreadable on half
+          the deck.
+        */}
         <Layer name="plan" listening={false}>
-          {cells
-            .filter((cell) => planLabels?.[cell.code] !== undefined)
-            .map((cell) => (
-              <Rect
-                key={`plan-${cell.code}`}
-                name={`plan-${cell.code}`}
-                x={cell.x * width}
-                y={cell.y * height}
-                width={cell.w * width}
-                height={cell.h * height}
-                stroke="#000000"
-                strokeWidth={2}
-                dash={[6, 4]}
-              />
-            ))}
-          {cells
-            .filter((cell) => planLabels?.[cell.code] !== undefined)
-            .map((cell) => (
-              <Text
-                key={`plan-label-${cell.code}`}
-                name={`plan-label-${cell.code}`}
-                x={cell.x * width}
-                y={cell.y * height + cell.h * height / 2 - (planFont(cell) ?? 0) / 2}
-                width={cell.w * width}
-                align="center"
-                // Sized to the bay. Fixed at 12 before, which is why a date
-                // range spilled across three neighbouring bays on a dense deck.
-                // A bay too small to carry its label legibly gets none: the
-                // zone list beside the drawing still names it, and an
-                // unreadable overlap costs the plan underneath for nothing.
-                text={planFont(cell) === null ? '' : planLabels?.[cell.code] ?? ''}
-                fontSize={planFont(cell) ?? MIN_LABEL_FONT_SIZE}
-                fill="#000000"
-              />
-            ))}
+          {(zoneLabels ?? []).map((label) => {
+            const card = zoneCard(label)
+            if (card === null) return null
+            const cx = (label.x + label.w / 2) * width
+            const cy = (label.y + label.h / 2) * height
+            return (
+              <Group key={`zone-label-${label.id}`} name={`zone-label-${label.id}`}>
+                <Rect
+                  x={cx - card.cardW / 2}
+                  y={cy - card.cardH / 2}
+                  width={card.cardW}
+                  height={card.cardH}
+                  fill={ZONE_LABEL_FILL}
+                  stroke={ZONE_LABEL_STROKE}
+                  strokeWidth={1}
+                  cornerRadius={3}
+                />
+                <Text
+                  x={cx - card.cardW / 2}
+                  y={cy - card.textH / 2}
+                  width={card.cardW}
+                  align="center"
+                  lineHeight={1.25}
+                  text={label.range === '' ? label.name : `${label.name}\n${label.range}`}
+                  fontSize={card.font}
+                  fontStyle="600"
+                  fill="#16202B"
+                />
+              </Group>
+            )
+          })}
         </Layer>
 
 

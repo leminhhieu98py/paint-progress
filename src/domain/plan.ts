@@ -19,35 +19,73 @@ export function formatPlanRange(startDate: string | null, finishDate: string | n
 }
 
 /**
- * The label to draw on each cell that belongs to a zone, keyed by cell CODE.
+ * One zone named on the drawing itself (Feedback Rv3, item 4): the zone's name
+ * and its planned dates, over the box its bays occupy.
  *
- * Code, because that is what DrawingCanvas keys every per-cell map on, while a
- * zone knows only cell ids. A cell id with no matching cell on this deck is
- * skipped rather than labelled: zone_cells cascades on cell_id so it should not
- * arise, but a zone list held across a deck switch would otherwise annotate this
- * drawing with another deck's plan.
+ * This replaces the per-cell labelling this module used to do (`buildPlanLabels`,
+ * removed with the canvas prop it fed). Repeating a date range on every bay of a
+ * zone printed the same eight characters forty times and still left the reader
+ * to work out where one zone ended and the next began; Linh asked for the zone
+ * NAMED, once, where it is -- the way the source drawings annotate them.
  *
- * A zone with no dates falls back to its own name. An empty label would draw a
- * dashed outline with nothing to explain it.
- *
- * Zones arrive in seq order and later ones overwrite earlier ones on a shared
- * cell: the higher seq is the more recent plan for that bay.
+ * The box is the bounding box of the zone's bays in the drawing's own
+ * normalised coordinates, so the canvas can place the label without knowing
+ * anything about zones. A zone whose bays all belong to another deck (a stale
+ * list held across a deck switch) yields nothing rather than a box at the
+ * origin.
  */
-export function buildPlanLabels(
+export interface ZoneLabel {
+  id: string
+  name: string
+  /** `13/08 – 19/08`, or '' when the zone has no dates. */
+  range: string
+  /** Normalised 0..1 against the drawing, like `Cell`. */
+  x: number
+  y: number
+  w: number
+  h: number
+}
+
+export function zoneLabelBoxes(
   zones: Zone[],
-  cells: { id: string; code: string }[],
-): Record<string, string> {
-  const codeById = new Map(cells.map((c) => [c.id, c.code]))
-  const labels: Record<string, string> = {}
+  cells: { id: string; x: number; y: number; w: number; h: number }[],
+): ZoneLabel[] {
+  const byId = new Map(cells.map((c) => [c.id, c]))
+  const labels: ZoneLabel[] = []
   for (const zone of zones) {
-    const range = formatPlanRange(zone.startDate, zone.finishDate)
-    const label = range === '' ? zone.name : range
-    for (const cellId of zone.cellIds) {
-      const code = codeById.get(cellId)
-      if (code) labels[code] = label
-    }
+    const mine = zone.cellIds.map((id) => byId.get(id)).filter((c) => c !== undefined)
+    if (mine.length === 0) continue
+    const left = Math.min(...mine.map((c) => c.x))
+    const top = Math.min(...mine.map((c) => c.y))
+    const right = Math.max(...mine.map((c) => c.x + c.w))
+    const bottom = Math.max(...mine.map((c) => c.y + c.h))
+    labels.push({
+      id: zone.id,
+      name: zone.name,
+      range: formatPlanRange(zone.startDate, zone.finishDate),
+      x: left,
+      y: top,
+      w: right - left,
+      h: bottom - top,
+    })
   }
   return labels
+}
+
+/**
+ * The parts of a zone line, with the coat dropped when the zone's own name
+ * already carries it (Feedback Rv3, item 3).
+ *
+ * The admin names zones after the coat they plan -- "Zone 3 — Coat 2" -- so
+ * printing name, coat and dates gave "Zone 3 — Coat 2 · Coat 2 · 12/09 – 16/09".
+ * Matched on a normalised, case-folded substring rather than on equality: the
+ * name that caused this contains the coat, it does not equal it.
+ */
+export function describeZone(name: string, stageName: string, range: string): string {
+  const normalise = (s: string) => s.toLowerCase().replace(/\s+/g, ' ').trim()
+  const stage = normalise(stageName)
+  const redundant = stage !== '' && normalise(name).includes(stage)
+  return [name, redundant ? '' : stageName, range].filter((part) => part.trim() !== '').join(' · ')
 }
 
 /**

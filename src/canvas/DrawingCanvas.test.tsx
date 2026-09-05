@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DrawingCanvas } from './DrawingCanvas'
@@ -182,7 +182,7 @@ vi.mock('react-konva', () => {
     </div>
   )
   return {
-    Stage: node('stage'), Layer: node('layer'), Rect: node('rect'),
+    Stage: node('stage'), Layer: node('layer'), Rect: node('rect'), Group: node('group'),
     Line: node('line'), Image: node('image'), Text: node('text'),
   }
 })
@@ -669,42 +669,61 @@ describe('DrawingCanvas', () => {
     })
   })
 
-  describe('plan overlay', () => {
-    it('draws a dashed outline and the date range on a planned cell', () => {
+  describe('zone labels on the drawing (Feedback Rv3, item 4)', () => {
+    // R1C1 is x 0..0.5, y 0..0.5 of a 900x720 stage; a box that size carries
+    // the two lines comfortably.
+    const zone = { id: 'z1', name: 'Zone (3)', range: '06/10 – 17/10', x: 0, y: 0, w: 0.5, h: 0.5 }
+
+    it('names the zone and its dates on two lines, once, in its own box', () => {
       render(
         <DrawingCanvas
           imageUrl="u" imageW={2000} imageH={1600} cells={cells}
           selectedCodes={[]}
-          planLabels={{ R1C1: '13/08 – 19/08' }}
+          zoneLabels={[zone]}
         />,
       )
-      expect(screen.getByTestId('rect:plan-R1C1')).toHaveAttribute('data-dash', '6,4')
-      expect(screen.getByTestId('text:plan-label-R1C1')).toHaveAttribute('data-text', '13/08 – 19/08')
+      expect(screen.getByTestId('group:zone-label-z1')).toBeInTheDocument()
+      const text = within(screen.getByTestId('group:zone-label-z1')).getByTestId('text:')
+      expect(text).toHaveAttribute('data-text', 'Zone (3)\n06/10 – 17/10')
     })
 
-    it('leaves an unplanned cell alone', () => {
-      // Catches an overlay drawn over every cell, which on a deck with one zone
-      // would annotate the whole drawing as planned.
+    it('draws the name alone for a zone with no dates', () => {
       render(
         <DrawingCanvas
           imageUrl="u" imageW={2000} imageH={1600} cells={cells}
           selectedCodes={[]}
-          planLabels={{ R1C1: '13/08 – 19/08' }}
+          zoneLabels={[{ ...zone, range: '' }]}
         />,
       )
-      expect(screen.queryByTestId('rect:plan-R1C2')).toBeNull()
+      const text = within(screen.getByTestId('group:zone-label-z1')).getByTestId('text:')
+      expect(text).toHaveAttribute('data-text', 'Zone (3)')
     })
 
-    it('draws no overlay at all when no plan is supplied', () => {
+    it('draws no label for a zone too small to carry one legibly', () => {
+      // A few pixels across: a label here would be an unreadable smear over the
+      // bays it is meant to explain. The zone list beside the drawing still
+      // names it.
+      render(
+        <DrawingCanvas
+          imageUrl="u" imageW={2000} imageH={1600} cells={cells}
+          selectedCodes={[]}
+          zoneLabels={[{ ...zone, w: 0.01, h: 0.005 }]}
+        />,
+      )
+      expect(screen.queryByTestId('group:zone-label-z1')).toBeNull()
+    })
+
+    it('draws nothing at all when no zones are supplied', () => {
       render(
         <DrawingCanvas
           imageUrl="u" imageW={2000} imageH={1600} cells={cells}
           selectedCodes={[]}
         />,
       )
-      expect(screen.queryByTestId('rect:plan-R1C1')).toBeNull()
+      expect(screen.queryByTestId('group:zone-label-z1')).toBeNull()
     })
   })
+
   describe('zone lens layers (Feedback Rv2)', () => {
     it('outlines a listed bay in its colour, dashed, and no other', () => {
       // Item 5: a planned bay that has not reached the coat is drawn as a
@@ -772,7 +791,7 @@ describe('DrawingCanvas', () => {
        
         cells={[{ code: 'R1C1', x: 0, y: 0, w: 1, h: 1, areaM2: 10 }]}
         selectedCodes={['R1C1']}
-        planLabels={{ R1C1: '13/08 – 19/08' }}
+        zoneLabels={[{ id: 'z1', name: 'Zone (1)', range: '', x: 0, y: 0, w: 1, h: 1 }]}
       />,
     )
     expect(screen.getByTestId('layer:selection')).toHaveAttribute('data-listening', 'false')

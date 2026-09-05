@@ -1,12 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { buildPlanLabels, formatPlanRange, zoneColorConflict } from './plan'
+import { describeZone, formatPlanRange, zoneColorConflict, zoneLabelBoxes } from './plan'
 import type { Stage, Zone } from './types'
-
-const CELLS = [
-  { id: 'c1', code: 'R1C1' },
-  { id: 'c2', code: 'R1C2' },
-  { id: 'c3', code: 'R2C1' },
-]
 
 describe('formatPlanRange', () => {
   it('renders a range the way the source drawing does', () => {
@@ -38,58 +32,6 @@ describe('formatPlanRange', () => {
   })
 })
 
-describe('buildPlanLabels', () => {
-  const zone: Zone = {
-    id: 'z1', name: 'Zone 1', stageId: 's5', color: null,
-    startDate: '2026-08-13', finishDate: '2026-08-19',
-    cellIds: ['c1', 'c2'],
-  }
-
-  it('labels every cell in the zone, by code', () => {
-    // Keyed by CODE because that is what DrawingCanvas keys on; the zone knows
-    // only cell ids.
-    expect(buildPlanLabels([zone], CELLS)).toEqual({
-      R1C1: '13/08 – 19/08',
-      R1C2: '13/08 – 19/08',
-    })
-  })
-
-  it('leaves cells outside every zone unlabelled', () => {
-    expect(buildPlanLabels([zone], CELLS).R2C1).toBeUndefined()
-  })
-
-  it('falls back to the zone\'s name when it has no dates', () => {
-    // An unscheduled zone must still be visible as a zone -- an empty label
-    // would draw a dashed outline with nothing to explain it.
-    expect(buildPlanLabels([{ ...zone, startDate: null, finishDate: null }], CELLS))
-      .toEqual({ R1C1: 'Zone 1', R1C2: 'Zone 1' })
-  })
-
-  it('ignores a cell id that is not on this deck', () => {
-    // zone_cells cascades on cell_id, so this should not happen -- but a stale
-    // zone list held across a deck switch would otherwise put another deck's
-    // labels on this drawing.
-    expect(buildPlanLabels([{ ...zone, cellIds: ['c1', 'ghost'] }], CELLS))
-      .toEqual({ R1C1: '13/08 – 19/08' })
-  })
-
-  it('lets a later zone win a cell both claim', () => {
-    // zones are ordered by seq, so "later" is the higher seq -- the more recent
-    // plan for that bay.
-    const second: Zone = {
-      id: 'z2', name: 'Zone 2', stageId: 's5', color: null,
-      startDate: '2026-09-01', finishDate: '2026-09-05', cellIds: ['c1'],
-    }
-    expect(buildPlanLabels([zone, second], CELLS).R1C1).toBe('01/09 – 05/09')
-  })
-
-  it('returns nothing when there are no zones', () => {
-    // The state this ships in: Phase 4 builds the zone editor, so until then
-    // every deck has zero zones and the toggle must draw nothing at all.
-    expect(buildPlanLabels([], CELLS)).toEqual({})
-  })
-})
-
 describe('zoneColorConflict', () => {
   const stages: Stage[] = [
     { id: 's1', seq: 1, name: 'Coat 1', color: '#fadb14', weight: 0.4 },
@@ -107,5 +49,66 @@ describe('zoneColorConflict', () => {
 
   it('returns null for a colour no stage wears', () => {
     expect(zoneColorConflict('#eb2f96', stages)).toBeNull()
+  })
+})
+
+describe('zoneLabelBoxes', () => {
+  const cell = (id: string, x: number, y: number) => ({ id, x, y, w: 0.1, h: 0.1 })
+  const CELLS = [cell('c1', 0.1, 0.1), cell('c2', 0.3, 0.1), cell('c3', 0.3, 0.4), cell('c4', 0.8, 0.8)]
+  const zone = (over: Partial<Zone> = {}): Zone => ({
+    id: 'z1', name: 'Zone (3)', stageId: 's1',
+    startDate: '2026-10-06', finishDate: '2026-10-17', color: null,
+    cellIds: ['c1', 'c2', 'c3'],
+    ...over,
+  })
+
+  it('boxes the zone around its own bays, with the name and the range to draw', () => {
+    expect(zoneLabelBoxes([zone()], CELLS)).toEqual([{
+      id: 'z1', name: 'Zone (3)', range: '06/10 – 17/10',
+      // From 0.1 to 0.4 across, 0.1 to 0.5 down.
+      x: 0.1, y: 0.1, w: 0.30000000000000004, h: 0.4,
+    }])
+  })
+
+  it('boxes a single bay as that bay', () => {
+    const [label] = zoneLabelBoxes([zone({ cellIds: ['c4'] })], CELLS)
+    expect(label.x).toBe(0.8)
+    expect(label.y).toBe(0.8)
+    expect(label.w).toBeCloseTo(0.1, 12)
+    expect(label.h).toBeCloseTo(0.1, 12)
+  })
+
+  it('carries an empty range for a zone with no dates rather than dropping it', () => {
+    const [label] = zoneLabelBoxes([zone({ startDate: null, finishDate: null })], CELLS)
+    expect(label.range).toBe('')
+    expect(label.name).toBe('Zone (3)')
+  })
+
+  it('skips a zone whose bays are not on this drawing', () => {
+    // A zone list held across a deck switch would otherwise put a box at the
+    // origin of the deck the foreman just opened.
+    expect(zoneLabelBoxes([zone({ cellIds: ['gone'] })], CELLS)).toEqual([])
+  })
+})
+
+describe('describeZone', () => {
+  it('drops the coat when the zone name already carries it', () => {
+    // Feedback Rv3, item 3: "Zone 3 — Coat 2 · Coat 2 · 12/09 – 16/09".
+    expect(describeZone('Zone 3 — Coat 2', 'Coat 2', '12/09 – 16/09'))
+      .toBe('Zone 3 — Coat 2 · 12/09 – 16/09')
+  })
+
+  it('matches the coat whatever the case and spacing', () => {
+    expect(describeZone('Zone 3 — COAT  2', 'Coat 2', '12/09'))
+      .toBe('Zone 3 — COAT  2 · 12/09')
+  })
+
+  it('keeps the coat when the name does not carry it', () => {
+    expect(describeZone('Khu A', 'Coat 2', '12/09 – 16/09')).toBe('Khu A · Coat 2 · 12/09 – 16/09')
+  })
+
+  it('drops the empty parts instead of printing bare separators', () => {
+    expect(describeZone('Khu A', '', '')).toBe('Khu A')
+    expect(describeZone('Khu A', 'Coat 2', '')).toBe('Khu A · Coat 2')
   })
 })
