@@ -78,13 +78,13 @@ describe('AdminLayout', () => {
   it('collapses to icons only, and back', async () => {
     const user = userEvent.setup()
     renderAt('/admin/projects')
-    expect(screen.getByText('Paint Progress')).toBeInTheDocument()
+    expect(screen.getByText('Construction Management')).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: 'Thu gọn thanh điều hướng' }))
-    expect(screen.queryByText('Paint Progress')).not.toBeInTheDocument()
+    expect(screen.queryByText('Construction Management')).not.toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: 'Mở rộng thanh điều hướng' }))
-    expect(screen.getByText('Paint Progress')).toBeInTheDocument()
+    expect(screen.getByText('Construction Management')).toBeInTheDocument()
   })
 
   it('renders without a profile rather than crashing on first paint', () => {

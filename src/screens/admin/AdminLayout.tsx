@@ -86,9 +86,13 @@ export function AdminLayout() {
                   minWidth: 0,
                   whiteSpace: 'nowrap',
                   overflow: 'hidden',
+                  // The name is longer than the rail at its narrowest; clipped
+                  // mid-word it reads as a rendering fault, ellipsised as a
+                  // name that did not fit.
+                  textOverflow: 'ellipsis',
                 }}
               >
-                Paint Progress
+                Construction Management
               </span>
             )}
             <Button

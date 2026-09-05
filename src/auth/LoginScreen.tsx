@@ -9,8 +9,7 @@ interface Values {
 }
 
 /**
- * The hero panel beside the form: the five stage colours, and what the product
- * does.
+ * The hero panel beside the form: the trade, drawn, and what the product does.
  *
  * This panel used to be wordless. The login screen is the one thing a stranger
  * who finds the URL can see, and naming the product and the trade here tells
@@ -26,16 +25,6 @@ interface Values {
  * panel with it -- never renders through LoginScreen in a test.
  */
 export function Hero() {
-  // Coat 2's bar carries the prototype's own hairline texture. It is
-  // decoration here, not data -- a flat #bfbfbf between two saturated bars
-  // reads as a gap rather than as a bar.
-  const bars: [string, number][] = [
-    ['#fadb14', 96],
-    ['repeating-linear-gradient(90deg,#bfbfbf 0 5px,#949494 5px 6px)', 70],
-    ['#52c41a', 126],
-    ['#1677ff', 52],
-    ['#722ed1', 34],
-  ]
   return (
     <div
       style={{
@@ -60,11 +49,7 @@ export function Hero() {
           background: '#0A817517',
         }}
       />
-      <div style={{ position: 'relative', display: 'flex', gap: 7, alignItems: 'flex-end' }}>
-        {bars.map(([background, height]) => (
-          <div key={background} style={{ width: 46, height, borderRadius: 8, background }} />
-        ))}
-      </div>
+      <Platform />
       <h2
         style={{
           position: 'relative',
@@ -76,9 +61,80 @@ export function Hero() {
           maxWidth: 300,
         }}
       >
-        Tiến độ sơn theo từng ô, ngay trên bản vẽ.
+        Quản lý tiến độ thi công ngay trên bản vẽ.
       </h2>
     </div>
+  )
+}
+
+/**
+ * The trade, drawn: an offshore jacket platform with its crane, its deck
+ * levels and the scaffold bay the paint crew works from, over a horizon.
+ *
+ * Inline SVG rather than an image file (Feedback Rv3, item 5, owner's choice
+ * 2026-09-05). It costs no request, no cache entry and no decode on the one
+ * screen every user loads first -- often on a site tether -- and it is drawn in
+ * the app's own palette, so it cannot drift from the theme the way a flat
+ * export would. Line work rather than a render: this sits behind a form, and a
+ * photograph would fight it for attention.
+ *
+ * Purely decorative, so `aria-hidden`: everything it says is said by the line
+ * of copy underneath it.
+ */
+function Platform() {
+  const ink = palette.text
+  const accent = palette.accent
+  return (
+    <svg
+      viewBox="0 0 320 220"
+      width="100%"
+      style={{ position: 'relative', maxWidth: 340, height: 'auto', display: 'block' }}
+      aria-hidden
+      focusable="false"
+    >
+      {/* Sea: two flat bands, the near one darker, so the legs read as standing IN something. */}
+      <rect x="0" y="176" width="320" height="44" fill="#CFE7E3" />
+      <rect x="0" y="196" width="320" height="24" fill="#B6DCD6" />
+
+      {/* The jacket: four battered legs cross-braced, the way the real ones are. */}
+      <g stroke={ink} strokeOpacity="0.5" strokeWidth="2" fill="none" strokeLinecap="round">
+        <path d="M96 130 L84 194 M150 130 L156 194 M120 130 L112 194 M176 130 L188 194" />
+        <path d="M96 130 L176 130" strokeOpacity="0.28" />
+        <path d="M90 160 L182 160" strokeOpacity="0.28" />
+        <path d="M96 130 L112 160 M120 130 L90 160 M150 130 L182 160 M176 130 L156 160" strokeOpacity="0.28" />
+        <path d="M90 160 L84 194 M112 160 L88 194 M182 160 L188 194 M156 160 L184 194" strokeOpacity="0.28" />
+      </g>
+
+      {/* Deck levels: the main deck, the cellar deck under it, and the topside block. */}
+      <rect x="70" y="118" width="132" height="13" rx="2" fill={accent} fillOpacity="0.16" stroke={accent} strokeWidth="2" />
+      <rect x="78" y="104" width="116" height="14" rx="2" fill="#FFFFFF" stroke={ink} strokeOpacity="0.35" strokeWidth="2" />
+      <rect x="104" y="74" width="62" height="30" rx="3" fill="#FFFFFF" stroke={ink} strokeOpacity="0.35" strokeWidth="2" />
+      <g fill={ink} fillOpacity="0.22">
+        <rect x="112" y="82" width="10" height="8" rx="1" />
+        <rect x="128" y="82" width="10" height="8" rx="1" />
+        <rect x="144" y="82" width="10" height="8" rx="1" />
+      </g>
+
+      {/* Flare boom and crane: the two silhouettes that read as a platform at a glance. */}
+      <g stroke={ink} strokeOpacity="0.45" strokeWidth="2" fill="none" strokeLinecap="round">
+        <path d="M196 118 L232 62" />
+        <path d="M188 112 L226 58" strokeOpacity="0.25" />
+        <path d="M196 118 L188 112 M206 106 L198 100 M216 94 L208 88 M226 82 L218 76" strokeOpacity="0.25" />
+        <path d="M92 104 L92 58 M92 58 L54 88" />
+        <path d="M54 88 L54 104" strokeDasharray="3 4" />
+      </g>
+      <circle cx="54" cy="108" r="4" fill={accent} />
+
+      {/* The scaffold bay the crew paints from: the grid this whole product is about. */}
+      <g stroke={accent} strokeWidth="2" fill="none">
+        <rect x="212" y="128" width="66" height="48" rx="2" fill={accent} fillOpacity="0.1" />
+        <path d="M234 128 L234 176 M256 128 L256 176 M212 144 L278 144 M212 160 L278 160" strokeOpacity="0.45" />
+        {/* Two bays already coated, which is what a foreman would have ticked. */}
+        <rect x="212" y="128" width="22" height="16" fill={accent} fillOpacity="0.55" strokeOpacity="0" />
+        <rect x="234" y="144" width="22" height="16" fill={accent} fillOpacity="0.35" strokeOpacity="0" />
+      </g>
+      <path d="M245 176 L245 196 M212 196 L278 196" stroke={ink} strokeOpacity="0.3" strokeWidth="2" strokeLinecap="round" />
+    </svg>
   )
 }
 
@@ -142,7 +198,7 @@ export function LoginScreen() {
             flex: 'none',
           }}
         />
-        <span style={{ fontSize: 13, fontWeight: 600 }}>Paint Progress</span>
+        <span style={{ fontSize: 13, fontWeight: 600 }}>Construction Management</span>
       </div>
       <h1
         style={{

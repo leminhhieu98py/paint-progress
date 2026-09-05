@@ -78,7 +78,7 @@ describe('LoginScreen', () => {
 
   it('names the product on the sign-in card', () => {
     render(<LoginScreen />)
-    expect(screen.getByText('Paint Progress')).toBeInTheDocument()
+    expect(screen.getByText('Construction Management')).toBeInTheDocument()
   })
 
   it('carries the approved headline in the wide-screen hero', () => {
@@ -87,7 +87,7 @@ describe('LoginScreen', () => {
     // in a test and this copy would otherwise go unchecked.
     render(<Hero />)
     expect(
-      screen.getByRole('heading', { name: 'Tiến độ sơn theo từng ô, ngay trên bản vẽ.' }),
+      screen.getByRole('heading', { name: 'Quản lý tiến độ thi công ngay trên bản vẽ.' }),
     ).toBeInTheDocument()
   })
 })
