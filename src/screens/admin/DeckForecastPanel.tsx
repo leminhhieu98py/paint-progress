@@ -54,9 +54,6 @@ export function DeckForecastPanel({
         if (cancelled) return
         setError(null)
         setDeckWorks(dw)
-        // Whatever the server says is now the truth; anything this panel was
-        // waiting for has either landed or been overtaken.
-        requested.current = undefined
       })
       .catch((e: Error) => {
         if (!cancelled) setError(e.message)
@@ -77,7 +74,14 @@ export function DeckForecastPanel({
     }))
     : []), [deckWorks])
 
-  const today = effortDayKey(new Date().toISOString())
+  /**
+   * Today, once per mount. Reading the clock during render makes the component
+   * impure -- two renders a millisecond apart could disagree across midnight --
+   * and it is a dependency of the forecast below. A screen left open overnight
+   * keeps yesterday's "hôm nay" until it is reloaded, which is what a screen
+   * left open overnight does with every other figure on it too.
+   */
+  const today = useMemo(() => effortDayKey(new Date().toISOString()), [])
   const totals = deckEffortTotals(events ?? [], today)
 
   const forecast = useMemo(() => {
@@ -100,32 +104,32 @@ export function DeckForecastPanel({
   }, [deckWorks, activeWork, models, events, today])
 
   /**
-   * The date this panel has asked the server for but has not read back yet.
+   * The last date written, and when.
    *
-   * A ref, not state, because it has to be true for the NEXT onChange in the
-   * same tick: antd fires the picker's onChange twice for one keyboard entry
-   * (on the parse and on Enter), and a state flag set in the first has not
-   * re-rendered by the second. Without it the same date is written twice, and
-   * once the reload lands the picker fires again on the value it was handed --
-   * which is a write loop, not a save.
+   * antd fires the picker's onChange TWICE for one keyboard entry -- once when
+   * the text parses and once on Enter -- and the second fires before the write
+   * has come back, so comparing against the loaded deadline alone writes the
+   * same date twice. A ref rather than state because the second call happens in
+   * the same tick, before any re-render could have seen a flag.
    */
-  const requested = useRef<string | null | undefined>(undefined)
+  const lastWrite = useRef<{ value: string | null; at: number } | null>(null)
 
   const saveDeadline = async (value: Dayjs | null) => {
     if (!activeWork) return
     const next = value ? value.format('YYYY-MM-DD') : null
-    const current = requested.current === undefined ? activeWork.deadline ?? null : requested.current
     // A change that changes nothing is not a write.
-    if (next === current) return
-    requested.current = next
+    if (next === (activeWork.deadline ?? null)) return
+    const last = lastWrite.current
+    if (last !== null && last.value === next && Date.now() - last.at < 2000) return
+    lastWrite.current = { value: next, at: Date.now() }
     setSaving(true)
     try {
       await setWorkDeckDeadline(activeWork.work.id, deckId, next)
       message.success(next ? 'Đã lưu hạn hoàn thành' : 'Đã xoá hạn hoàn thành')
       setAttempt((n) => n + 1)
     } catch (e) {
-      // The write did not land, so the panel is not waiting for it either.
-      requested.current = undefined
+      // The write did not land, so a retry with the same date is a real write.
+      lastWrite.current = null
       message.error((e as Error).message)
     } finally {
       setSaving(false)
