@@ -1423,17 +1423,31 @@ describe('GsScreen: the plan overlay', () => {
     expect(planned).toHaveAttribute('data-outline', '')
   })
 
-  it('names each zone and its dates on the drawing itself (Feedback Rv3, item 4)', async () => {
-    listDeckZones.mockResolvedValue([{
-      id: 'z1', name: 'Zone (3)', stageId: 's2', color: null,
-      startDate: '2026-10-06', finishDate: '2026-10-17', cellIds: ['c1'],
-    }])
+  it('names the chosen coat\'s zones on the drawing itself (Feedback Rv3, item 4)', async () => {
+    // Two zones over the SAME bay, one per coat -- which is how the real decks
+    // are planned. Under "Tất cả" their boxes coincide, so nothing is drawn;
+    // pick a coat and that coat's zone is named where it is.
+    listDeckZones.mockResolvedValue([
+      {
+        id: 'z1', name: 'Zone (3) — Coat 2', stageId: 's2', color: null,
+        startDate: '2026-10-06', finishDate: '2026-10-17', cellIds: ['c1'],
+      },
+      {
+        id: 'z2', name: 'Zone (3) — Coat 3', stageId: 's3', color: null,
+        startDate: '2026-10-18', finishDate: '2026-10-24', cellIds: ['c1'],
+      },
+    ])
     renderScreen()
     expect(await screen.findByTestId('canvas')).toHaveAttribute('data-zone-labels', '')
 
     await userEvent.click(screen.getByRole('button', { name: 'Hiện kế hoạch' }))
+    await screen.findByTestId('gs-zone-legend')
+    expect(screen.getByTestId('canvas')).toHaveAttribute('data-zone-labels', '')
+
+    await userEvent.click(screen.getByRole('combobox', { name: 'Công đoạn kế hoạch' }))
+    await userEvent.click(await screen.findByTitle('Coat 2'))
     await waitFor(() => expect(screen.getByTestId('canvas'))
-      .toHaveAttribute('data-zone-labels', 'Zone (3)|06/10 – 17/10'))
+      .toHaveAttribute('data-zone-labels', 'Zone (3) — Coat 2|06/10 – 17/10'))
   })
 
   it('names the zone under the mouse while the plan is on', async () => {

@@ -682,10 +682,19 @@ export function GsScreen() {
     () => (showPlan ? zoneLensColors(visibleZones, cells, planColors) : undefined),
     [showPlan, visibleZones, cells, planColors],
   )
-  /** The zones named on the drawing itself (Feedback Rv3, item 4). */
+  /**
+   * The zones named on the drawing itself (Feedback Rv3, item 4): "tên Zone và
+   * ngày bắt đầu, ngày kết thúc tương ứng kế hoạch của CÔNG ĐOẠN ĐANG XEM".
+   *
+   * One coat at a time, deliberately. A zone is usually planned for every coat
+   * -- the dev project has Zone 1 through Zone 3 each carrying four -- and
+   * those four zones cover exactly the same bays, so under "Tất cả" their four
+   * boxes coincide and the four labels stack into an unreadable pile. The
+   * legend beside the drawing still names all of them.
+   */
   const planZoneLabels = useMemo(
-    () => (showPlan ? zoneLabelBoxes(visibleZones, cells) : []),
-    [showPlan, visibleZones, cells],
+    () => (showPlan && planStageId ? zoneLabelBoxes(visibleZones, cells) : []),
+    [showPlan, planStageId, visibleZones, cells],
   )
   /**
    * Item 7, laptop side: the zone under the pointer, named once in a corner
