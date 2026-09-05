@@ -7,7 +7,7 @@ import { type DeckEvent, type Effort } from '../../domain/types'
 import { listGsUsers } from '../../lib/adminApi'
 import { listCoworkerNames } from '../../lib/gsApi'
 import { formatDateTimeVN, formatHours } from '../../lib/format'
-import { listDeckEvents, setCellEventEffort } from '../../lib/progressApi'
+import { setCellEventEffort } from '../../lib/progressApi'
 import { palette } from '../../theme'
 
 /**
@@ -26,19 +26,32 @@ const hours = (n: number | null) => (n === null ? '' : formatHours(n))
 
 const fieldLabel = { display: 'block', marginBottom: 4, fontSize: 12, fontWeight: 600 } as const
 
-export function EffortHistoryPanel({ deckId, editable }: { deckId: string; editable: boolean }) {
+export function EffortHistoryPanel({
+  editable,
+  events,
+  error,
+  onRetry,
+  onSaved,
+}: {
+  editable: boolean
+  /**
+   * Every stage change on the deck, OLDEST first, as the API returns them.
+   * Null while loading. Handed in by the screen rather than read here: the
+   * forecast panel beside this one needs the same rows, and a deck like Main
+   * Deck carries over a thousand of them.
+   */
+  events: DeckEvent[] | null
+  error: string | null
+  onRetry: () => void
+  /** Re-read the events after a backfill lands. */
+  onSaved: () => void
+}) {
   const { message } = App.useApp()
-  const [events, setEvents] = useState<DeckEvent[] | null>(null)
   const [names, setNames] = useState<Record<string, string>>({})
-  const [error, setError] = useState<string | null>(null)
   const [onlyMissing, setOnlyMissing] = useState(false)
   const [editing, setEditing] = useState<DeckEvent | null>(null)
   const [draft, setDraft] = useState<Effort | null>(null)
   const [saving, setSaving] = useState(false)
-
-  // Bumped to re-read: after a backfill, and from the retry button.
-  const [attempt, setAttempt] = useState(0)
-  const reload = () => setAttempt((n) => n + 1)
 
   useEffect(() => {
     let cancelled = false
@@ -47,27 +60,23 @@ export function EffortHistoryPanel({ deckId, editable }: { deckId: string; edita
     // still theirs), and coworker_names for the admins, who tick bays too and
     // are not in the GS list. An id nobody resolves is printed as is.
     Promise.all([
-      listDeckEvents(deckId),
       listGsUsers(true).catch(() => []),
       listCoworkerNames().catch(() => ({}) as Record<string, string>),
     ])
-      .then(([rows, users, admins]) => {
+      .then(([users, admins]) => {
         if (cancelled) return
-        setError(null)
-        setEvents([...rows].reverse())
         setNames({ ...admins, ...Object.fromEntries(users.map((u) => [u.id, u.fullName])) })
-      })
-      .catch((e: Error) => {
-        if (!cancelled) setError(e.message)
       })
     return () => {
       cancelled = true
     }
-  }, [deckId, attempt])
+  }, [])
 
+  /** Newest first: the rows an admin comes here to fix are this week's. */
   const shown = useMemo(() => {
     if (events === null) return []
-    return onlyMissing ? events.filter((ev) => ev.effort.workHours === null) : events
+    const newestFirst = [...events].reverse()
+    return onlyMissing ? newestFirst.filter((ev) => ev.effort.workHours === null) : newestFirst
   }, [events, onlyMissing])
 
   const coverage = effortCoverage(events ?? [])
@@ -87,7 +96,7 @@ export function EffortHistoryPanel({ deckId, editable }: { deckId: string; edita
       await setCellEventEffort(editing.id, (draft.wasteHours ?? 0) > 0 ? draft : { ...draft, wasteReason: '' })
       message.success('Đã lưu giờ công')
       closeEdit()
-      reload()
+      onSaved()
     } catch (e) {
       message.error((e as Error).message)
     } finally {
@@ -113,7 +122,7 @@ export function EffortHistoryPanel({ deckId, editable }: { deckId: string; edita
           showIcon
           message="Không tải được lịch sử cập nhật"
           description={error}
-          action={<Button size="small" onClick={reload}>Thử lại</Button>}
+          action={<Button size="small" onClick={onRetry}>Thử lại</Button>}
           style={{ marginBottom: 12 }}
         />
       )}

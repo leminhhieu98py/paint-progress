@@ -5,11 +5,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { EMPTY_EFFORT, type DeckEvent } from '../../domain/types'
 import { EffortHistoryPanel } from './EffortHistoryPanel'
 
-const listDeckEvents = vi.hoisted(() => vi.fn())
 const setCellEventEffort = vi.hoisted(() => vi.fn())
 const listGsUsers = vi.hoisted(() => vi.fn())
 vi.mock('../../lib/progressApi', () => ({
-  listDeckEvents: (id: string) => listDeckEvents(id),
   setCellEventEffort: (id: number, effort: unknown) => setCellEventEffort(id, effort),
 }))
 vi.mock('../../lib/adminApi', () => ({
@@ -37,20 +35,29 @@ const EVENTS = [
   }),
 ]
 
-const renderPanel = (editable = true) =>
+const onRetry = vi.fn()
+const onSaved = vi.fn()
+
+const renderPanel = (editable = true, over: { events?: DeckEvent[] | null; error?: string | null } = {}) =>
   render(
     <AntApp>
-      <EffortHistoryPanel deckId="d1" editable={editable} />
+      <EffortHistoryPanel
+        editable={editable}
+        events={over.events === undefined ? EVENTS : over.events}
+        error={over.error ?? null}
+        onRetry={onRetry}
+        onSaved={onSaved}
+      />
     </AntApp>,
   )
 
 const rows = () => screen.getAllByRole('row').slice(1)
 
 beforeEach(() => {
-  listDeckEvents.mockReset()
   setCellEventEffort.mockReset()
   listGsUsers.mockReset()
-  listDeckEvents.mockResolvedValue(EVENTS)
+  onRetry.mockReset()
+  onSaved.mockReset()
   listGsUsers.mockResolvedValue([{ id: 'u2', fullName: 'Trần Thị B' }])
   // u1 is an admin: not on the GS list, named through coworker_names.
   listCoworkerNames.mockReset()
@@ -61,7 +68,6 @@ describe('EffortHistoryPanel', () => {
   it('lists every update newest first, with the author, the crew and the hours', async () => {
     renderPanel()
     expect(await screen.findByText('R1C2')).toBeInTheDocument()
-    expect(listDeckEvents).toHaveBeenCalledWith('d1')
     // Hidden accounts too: a bay ticked by someone since hidden is still theirs.
     expect(listGsUsers).toHaveBeenCalledWith(true)
 
@@ -114,8 +120,9 @@ describe('EffortHistoryPanel', () => {
     await waitFor(() => expect(setCellEventEffort).toHaveBeenCalledWith(1, {
       leadName: 'Tổ 2', painterName: '', workHours: 4, wasteHours: 1, wasteReason: 'Mưa',
     }))
-    expect(await screen.findByText('Đã lưu giờ công')).toBeInTheDocument()
-    await waitFor(() => expect(listDeckEvents).toHaveBeenCalledTimes(2))
+    expect((await screen.findAllByText('Đã lưu giờ công')).length).toBeGreaterThan(0)
+    // The screen owns the read; the panel only says it should happen again.
+    await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1))
   })
 
   it('reports a refused backfill and keeps the dialog open', async () => {
@@ -129,11 +136,11 @@ describe('EffortHistoryPanel', () => {
     expect(screen.getByText('Giờ công · Ô R1C1 · Lớp 1')).toBeInTheDocument()
   })
 
-  it('says so when the history cannot be loaded, and offers a retry', async () => {
-    listDeckEvents.mockRejectedValueOnce(new Error('mất kết nối'))
-    renderPanel()
+  it('says so when the history cannot be loaded, and asks the screen to retry', async () => {
+    renderPanel(true, { events: null, error: 'mất kết nối' })
     expect(await screen.findByText('Không tải được lịch sử cập nhật')).toBeInTheDocument()
+    expect(screen.getByText('mất kết nối')).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Thử lại' }))
-    expect(await screen.findByText('R1C2')).toBeInTheDocument()
+    expect(onRetry).toHaveBeenCalledTimes(1)
   })
 })

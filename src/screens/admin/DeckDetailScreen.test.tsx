@@ -54,8 +54,18 @@ const WORK2 = { ...WORK1, id: 'w2', seq: 2, name: 'Tháo giáo', weight: 0.4 }
 // loadDeckWorks against the live client, so every test in this file paid a
 // network round trip for a panel none of them are about. The stub reports a
 // fixed percentage upward, which is the contract this screen depends on.
+// The deck's history is read here now and handed to the two panels below.
+const listDeckEvents = vi.hoisted(() => vi.fn())
+vi.mock('../../lib/progressApi', () => ({
+  listDeckEvents: (id: string) => listDeckEvents(id),
+}))
 vi.mock('./EffortHistoryPanel', () => ({
-  EffortHistoryPanel: ({ deckId }: { deckId: string }) => <div>giờ công {deckId}</div>,
+  EffortHistoryPanel: ({ events }: { events: unknown[] | null }) => (
+    <div>giờ công {events === null ? 'đang tải' : `${events.length} lần`}</div>
+  ),
+}))
+vi.mock('./DeckForecastPanel', () => ({
+  DeckForecastPanel: ({ deckId }: { deckId: string }) => <div>dự báo {deckId}</div>,
 }))
 vi.mock('./DeckProgressPanel', () => ({
   DeckProgressPanel: ({
@@ -78,6 +88,8 @@ const DECK = {
 }
 
 beforeEach(() => {
+  listDeckEvents.mockReset()
+  listDeckEvents.mockResolvedValue([{ id: 1 }, { id: 2 }])
   for (const m of [getDeck, listDecks, createDeck, updateDeckIdentity, updateDeckArea, uploadDrawing, pdfPageCount, renderPdfPage]) {
     m.mockReset()
   }
@@ -422,5 +434,13 @@ describe('DeckDetailScreen — công việc', () => {
     // The figure arrives one effect after the panel mounts, so wait for it.
     expect(await screen.findByText('44,38%')).toBeInTheDocument()
     expect(screen.getByText(/tổng hợp các công việc/)).toBeInTheDocument()
+  })
+
+  it('reads the deck history once and hands it to both panels (Feedback Rv2, items 11 and 13)', async () => {
+    renderAt('/decks/d1')
+    expect(await screen.findByText('giờ công 2 lần')).toBeInTheDocument()
+    expect(screen.getByText('dự báo d1')).toBeInTheDocument()
+    expect(listDeckEvents).toHaveBeenCalledTimes(1)
+    expect(listDeckEvents).toHaveBeenCalledWith('d1')
   })
 })

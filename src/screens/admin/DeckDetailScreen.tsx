@@ -12,11 +12,14 @@ import {
   type DeckRow,
 } from '../../lib/decksApi'
 import { formatAreaM2 } from '../../lib/format'
+import { listDeckEvents } from '../../lib/progressApi'
+import type { DeckEvent } from '../../domain/types'
 import { pdfPageCount, renderPdfPage } from '../../lib/pdfToPng'
 import { DeckEditor } from './DeckEditor'
 import { StageConfigPanel } from './StageConfigPanel'
 import { DeckProgressPanel } from './DeckProgressPanel'
 import { EffortHistoryPanel } from './EffortHistoryPanel'
+import { DeckForecastPanel } from './DeckForecastPanel'
 import { ConsequenceModal } from '../../components/ConsequenceModal'
 import { PageBody, PageHeader } from '../../components/PageHeader'
 import { RulesDisclosure } from '../../components/RulesDisclosure'
@@ -142,6 +145,34 @@ export function DeckDetailScreen() {
    * on the screen run twice.
    */
   const [progress, setProgress] = useState<number | null>(null)
+  /**
+   * Every stage change on this deck, read ONCE for the two panels that need it
+   * (Feedback Rv2, items 11 and 13). Main Deck on the dev project carries 1.194
+   * of them; each panel reading its own copy is that payload twice on one
+   * screen open. Oldest first, as the API returns them -- each panel orders it
+   * the way it presents it.
+   */
+  const [events, setEvents] = useState<DeckEvent[] | null>(null)
+  const [eventsError, setEventsError] = useState<string | null>(null)
+  const [eventsAttempt, setEventsAttempt] = useState(0)
+  const reloadEvents = useCallback(() => setEventsAttempt((n) => n + 1), [])
+  const loadedDeckId = deck?.id ?? null
+  useEffect(() => {
+    if (loadedDeckId === null) return
+    let cancelled = false
+    listDeckEvents(loadedDeckId)
+      .then((rows) => {
+        if (cancelled) return
+        setEventsError(null)
+        setEvents(rows)
+      })
+      .catch((e: Error) => {
+        if (!cancelled) setEventsError(e.message)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [loadedDeckId, eventsAttempt])
   /**
    * The bays works this deck is part of. Since 0024 a coat list belongs to a
    * (work, deck), so A3.2 shows one panel per work; a deck in no work has no
@@ -636,8 +667,23 @@ export function DeckDetailScreen() {
 
         {/* Man-hours per update (Feedback Rv2, item 11), with the admin's
             backfill for rows written before hours existed. Under the progress
-            panel because it is the same history seen by the hour, not the coat. */}
-        {deck && <EffortHistoryPanel deckId={deck.id} editable={editing} />}
+            panel because it is the same history seen by the hour, not the coat.
+
+            The events are read ONCE here and handed to both panels: the deck's
+            history is over a thousand rows on Main Deck, and reading it twice
+            on one screen is a second of the admin's time for nothing. */}
+        {deck && (
+          <EffortHistoryPanel
+            editable={editing}
+            events={events}
+            error={eventsError}
+            onRetry={reloadEvents}
+            onSaved={reloadEvents}
+          />
+        )}
+
+        {/* What is left, and whether the deadline holds (Feedback Rv2, item 13). */}
+        {deck && <DeckForecastPanel deckId={deck.id} editable={editing} events={events} />}
       </PageBody>
 
       <ConsequenceModal
