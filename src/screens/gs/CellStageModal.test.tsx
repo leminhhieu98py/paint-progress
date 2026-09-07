@@ -2,7 +2,7 @@ import { App as AntApp } from 'antd'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { EMPTY_EFFORT, type Cell } from '../../domain/types'
+import type { Cell } from '../../domain/types'
 import type { CellNote } from '../../lib/progressApi'
 import { CellStageModal } from './CellStageModal'
 
@@ -44,7 +44,10 @@ const CELL: Cell = {
 const onCommit = vi.fn()
 const onClose = vi.fn()
 
-const renderModal = (cell: Cell | null = CELL) =>
+/** The shared roster the two crew pickers offer (Feedback Rv4). */
+const CREW = ['Lê Văn A', 'Nguyễn Văn B', 'Trần Văn C']
+
+const renderModal = (cell: Cell | null = CELL, over: { employees?: string[] } = {}) =>
   render(
     <AntApp>
       <CellStageModal
@@ -53,9 +56,30 @@ const renderModal = (cell: Cell | null = CELL) =>
         open={cell !== null}
         onClose={onClose}
         onCommit={onCommit}
+        employees={over.employees ?? CREW}
       />
     </AntApp>,
   )
+
+/** Picks a name out of one of the two crew selects. */
+const chooseCrew = (label: string, name: string) => chooseIn(label, name)
+
+/**
+ * Everything Rv4 made compulsory apart from the coat, which each test chooses
+ * for itself. Zero waste, so no order and no reason are asked for.
+ */
+const fillRequired = async (hours = '4') => {
+  await chooseCrew('Nhóm trưởng', 'Lê Văn A')
+  await chooseCrew('Thợ chính', 'Nguyễn Văn B')
+  await userEvent.type(screen.getByLabelText(/Số\ giờ\ công\ \(Mhr\)/), hours)
+  await userEvent.type(screen.getByLabelText(/Giờ\ hao\ phí\ \(Mhr\)/), '0')
+}
+
+/** What `fillRequired` produces, for the assertions. */
+const FILLED = {
+  leadName: 'Lê Văn A', painterName: 'Nguyễn Văn B',
+  workHours: 4, wasteHours: 0, wasteReason: '', wasteOrder: '',
+}
 
 /**
  * Opens the stage dropdown and picks an option by its visible label.
@@ -66,10 +90,32 @@ const renderModal = (cell: Cell | null = CELL) =>
  * option div carries its label as `title`. Verified against antd 5.29 in jsdom
  * before this plan was written.
  */
-const chooseStage = async (label: string) => {
-  await userEvent.click(screen.getByRole('combobox', { name: 'Công đoạn' }))
-  await userEvent.click(await screen.findByTitle(label))
+/**
+ * Opens one Select and clicks an option in ITS OWN dropdown.
+ *
+ * antd leaves every dropdown it has opened in the DOM, so once the dialog has
+ * four Selects a plain `findByTitle` finds an option in a closed list as
+ * readily as in the open one -- and a closed one is `pointer-events: none`, so
+ * the click throws rather than picking the wrong thing. Each input names its
+ * own listbox through `aria-controls`; that is the only reliable link between
+ * the two.
+ */
+const chooseIn = async (name: string, option: string, search?: string) => {
+  const box = screen.getByRole('combobox', { name })
+  await userEvent.click(box)
+  // The reason list is 26 long and rc-virtual-list renders only what fits, so
+  // an option near the end is not in the DOM until the search narrows to it --
+  // which is how a foreman reaches it too.
+  if (search !== undefined) await userEvent.type(box, search)
+  const listId = box.getAttribute('aria-controls')
+  const dropdown = listId
+    ? (document.getElementById(listId)?.closest('.ant-select-dropdown') as HTMLElement | null)
+    : null
+  if (!dropdown) throw new Error(`Select "${name}" opened no dropdown`)
+  await userEvent.click(await within(dropdown).findByTitle(option))
 }
+
+const chooseStage = (label: string) => chooseIn('Công đoạn', label)
 
 /**
  * The info rows, scoped.
@@ -93,7 +139,7 @@ beforeEach(() => {
 })
 
 describe('CellStageModal', () => {
-  it('shows the cell code, its area, its current stage and the next one', async () => {
+  it('shows the cell code, its area and the stage it is on', async () => {
     renderModal()
 
     expect(await screen.findByText('R3C7')).toBeInTheDocument()
@@ -101,21 +147,12 @@ describe('CellStageModal', () => {
     // shared formatter, so this fails if someone hand-rolls toFixed(2).
     expect(info().getByText('148,50 m²')).toBeInTheDocument()
     expect(info().getByText('Coat 2')).toBeInTheDocument()
-    expect(info().getByText('Coat 3')).toBeInTheDocument()
   })
 
   it('says so when the cell has not started', async () => {
     renderModal({ ...CELL, stageId: null })
     expect(await screen.findByTestId('cell-stage-info')).toBeInTheDocument()
     expect(info().getByText('Chưa bắt đầu')).toBeInTheDocument()
-    // Next stage for a cell that has not started is the FIRST one, not the
-    // second -- catches a nextStage call that treats null as seq 1.
-    expect(info().getByText('Blast + Coat 1')).toBeInTheDocument()
-  })
-
-  it('says so when the cell is at the last stage', async () => {
-    renderModal({ ...CELL, stageId: 's5' })
-    expect(await screen.findByText('Đã xong công đoạn cuối')).toBeInTheDocument()
   })
 
   it('warns in red when the chosen stage goes backwards', async () => {
@@ -144,23 +181,9 @@ describe('CellStageModal', () => {
     expect(await screen.findByText('Đang chuyển ô về công đoạn trước')).toBeInTheDocument()
   })
 
-  it('advances one stage in a single tap', async () => {
+  it('offers no one-tap advance: the coat is chosen every time (Feedback Rv4)', async () => {
     renderModal()
-    await userEvent.click(
-      screen.getByRole('button', { name: 'Xong công đoạn tiếp theo: Coat 3' }),
-    )
-    // Exactly one stage on from the cell's CURRENT stage (s2) -- not to the last
-    // stage, and not two along. Catches a button wired to the last stage or to
-    // whatever the Select happens to be showing.
-    expect(onCommit).toHaveBeenCalledWith('c1', 's3', '', EMPTY_EFFORT)
-    expect(onClose).toHaveBeenCalledTimes(1)
-  })
-
-  it('offers no advance button on a cell already at the last stage', async () => {
-    renderModal({ ...CELL, stageId: 's5' })
-    expect(await screen.findByText('Đã xong công đoạn cuối')).toBeInTheDocument()
-    // nextStage returns null here, so there is nothing to advance to and a
-    // button would have to commit something. The Select stays, for a correction.
+    expect(await screen.findByTestId('cell-stage-info')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Xong công đoạn tiếp theo/ })).toBeNull()
     expect(screen.getByRole('combobox', { name: 'Công đoạn' })).toBeInTheDocument()
   })
@@ -168,31 +191,36 @@ describe('CellStageModal', () => {
   it('commits the chosen stage and closes, without waiting for the write', async () => {
     renderModal()
     await chooseStage('Coat 3')
+    await fillRequired()
     await userEvent.click(screen.getByRole('button', { name: 'Xác nhận' }))
 
-    expect(onCommit).toHaveBeenCalledWith('c1', 's3', '', EMPTY_EFFORT)
+    expect(onCommit).toHaveBeenCalledWith('c1', 's3', '', FILLED)
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 
   it('commits null when the cell is cleared', async () => {
     renderModal()
     await chooseStage('Chưa bắt đầu')
+    await fillRequired()
     await userEvent.click(screen.getByRole('button', { name: 'Xác nhận' }))
 
     // The sentinel must never escape the modal: setCellStage sends stage_id
     // straight to PostgREST, and '__not-started__' is not a uuid.
-    expect(onCommit).toHaveBeenCalledWith('c1', null, '', EMPTY_EFFORT)
+    expect(onCommit).toHaveBeenCalledWith('c1', null, '', FILLED)
   })
 
-  it('refuses to write when nothing was changed', async () => {
+  it('says which coat is missing rather than writing the one already there', async () => {
+    // Opens defaulted to the CURRENT stage: a mis-tap must not be able to
+    // advance a coat, because the percentage it moves is what the customer is
+    // billed against. Pressing Xác nhận without touching it now explains why
+    // nothing happened, where before the button was simply dead.
     renderModal()
-    // Opens defaulted to the CURRENT stage, not the next one: a mis-tap must
-    // not be able to advance a coat, because the percentage it moves is what
-    // the customer is billed against.
-    expect(screen.getByRole('button', { name: 'Xác nhận' })).toBeDisabled()
-    await userEvent.click(screen.getByRole('button', { name: 'Huỷ' }))
+    await fillRequired()
+    await userEvent.click(screen.getByRole('button', { name: 'Xác nhận' }))
+
+    expect(await screen.findByText('Chọn công đoạn cho ô này.')).toBeInTheDocument()
     expect(onCommit).not.toHaveBeenCalled()
-    expect(onClose).toHaveBeenCalledTimes(1)
+    expect(onClose).not.toHaveBeenCalled()
   })
 
   it('starts each cell from its own stage, not the previously opened cell\'s', async () => {
@@ -209,11 +237,13 @@ describe('CellStageModal', () => {
           open
           onClose={onClose}
           onCommit={onCommit}
+          employees={CREW}
         />
       </AntApp>,
     )
 
-    expect(screen.getByRole('button', { name: 'Xác nhận' })).toBeDisabled()
+    await userEvent.click(screen.getByRole('button', { name: 'Xác nhận' }))
+    expect(await screen.findByText('Chọn công đoạn cho ô này.')).toBeInTheDocument()
   })
 })
 
@@ -222,16 +252,18 @@ describe('CellStageModal notes', () => {
     const user = userEvent.setup()
     const onCommit = vi.fn()
     render(
-      <CellStageModal cell={CELL} stages={STAGES} open onClose={() => {}} onCommit={onCommit} />,
+      <CellStageModal cell={CELL} stages={STAGES} open onClose={() => {}} onCommit={onCommit} employees={CREW} />,
     )
 
     await user.type(
       screen.getByLabelText(/Ghi chú/),
       'Bề mặt còn ẩm, hoãn sơn sang mai',
     )
-    await user.click(screen.getByRole('button', { name: /Xong công đoạn tiếp theo/ }))
+    await chooseStage('Coat 3')
+    await fillRequired()
+    await user.click(screen.getByRole('button', { name: 'Xác nhận' }))
 
-    expect(onCommit).toHaveBeenCalledWith(CELL.id, 's3', 'Bề mặt còn ẩm, hoãn sơn sang mai', EMPTY_EFFORT)
+    expect(onCommit).toHaveBeenCalledWith(CELL.id, 's3', 'Bề mặt còn ẩm, hoãn sơn sang mai', FILLED)
   })
 
   it('sends an empty note when the foreman typed nothing', async () => {
@@ -241,12 +273,14 @@ describe('CellStageModal notes', () => {
     const user = userEvent.setup()
     const onCommit = vi.fn()
     render(
-      <CellStageModal cell={CELL} stages={STAGES} open onClose={() => {}} onCommit={onCommit} />,
+      <CellStageModal cell={CELL} stages={STAGES} open onClose={() => {}} onCommit={onCommit} employees={CREW} />,
     )
 
-    await user.click(screen.getByRole('button', { name: /Xong công đoạn tiếp theo/ }))
+    await chooseStage('Coat 3')
+    await fillRequired()
+    await user.click(screen.getByRole('button', { name: 'Xác nhận' }))
 
-    expect(onCommit).toHaveBeenCalledWith(CELL.id, 's3', '', EMPTY_EFFORT)
+    expect(onCommit).toHaveBeenCalledWith(CELL.id, 's3', '', FILLED)
   })
 
   it('clears a half-typed note when the foreman moves to another bay', async () => {
@@ -356,10 +390,10 @@ describe('CellStageModal — the previous note', () => {
     renderModal()
 
     expect(await screen.findByText('Không tải được ghi chú cũ')).toBeInTheDocument()
-    const next = screen.getByRole('button', { name: 'Xong công đoạn tiếp theo: Coat 3' })
-    expect(next).toBeEnabled()
-    await userEvent.click(next)
-    expect(onCommit).toHaveBeenCalledWith(CELL.id, 's3', '', EMPTY_EFFORT)
+    await chooseStage('Coat 3')
+    await fillRequired()
+    await userEvent.click(screen.getByRole('button', { name: 'Xác nhận' }))
+    expect(onCommit).toHaveBeenCalledWith(CELL.id, 's3', '', FILLED)
   })
 
   it('never shows the foreman the report-facing version or the hidden flag', async () => {
@@ -390,10 +424,13 @@ describe('CellStageModal — the previous note', () => {
         open
         onClose={() => {}}
         onCommit={onCommit}
+        employees={CREW}
       />,
     )
-    await userEvent.click(screen.getByRole('button', { name: /Xong công đoạn tiếp theo/ }))
-    expect(onCommit).toHaveBeenCalledWith(CELL.id, 's2', '', EMPTY_EFFORT)
+    await chooseStage('Coat 2')
+    await fillRequired()
+    await userEvent.click(screen.getByRole('button', { name: 'Xác nhận' }))
+    expect(onCommit).toHaveBeenCalledWith(CELL.id, 's2', '', FILLED)
   })
 })
 
@@ -474,20 +511,38 @@ describe('CellStageModal — chỉ xem', () => {
   })
 })
 
-describe('CellStageModal effort (Feedback Rv2, item 11)', () => {
-  const EFFORT_ONLY_HOURS = { ...EMPTY_EFFORT, workHours: 3.5 }
-
-  it('offers the five effort fields, none of them required', async () => {
+describe('CellStageModal effort (Feedback Rv2 item 11, tightened by Rv4)', () => {
+  it('offers the six effort fields and marks every one compulsory', async () => {
     renderModal()
     const block = within(await screen.findByTestId('cell-effort'))
     expect(block.getByText('Giờ công')).toBeInTheDocument()
-    expect(block.getByText('không bắt buộc')).toBeInTheDocument()
-    expect(block.getByLabelText('Nhóm trưởng')).toBeInTheDocument()
-    expect(block.getByLabelText('Thợ chính')).toBeInTheDocument()
-    expect(block.getByLabelText('Số giờ công (Mhr)')).toBeInTheDocument()
-    expect(block.getByLabelText('Giờ hao phí (Mhr)')).toBeInTheDocument()
-    // The reason waits for lost hours: a reason with nothing lost is noise.
-    expect(block.queryByLabelText('Lý do hao phí')).toBeNull()
+    // Rv2 said "không bắt buộc"; Rv4 made all of it required, so that word
+    // must be gone -- Linh flagged it specifically.
+    expect(block.queryByText('không bắt buộc')).toBeNull()
+    // The two crew fields are Selects, so the accessible name reaches both the
+    // wrapper and its inner input; the role query picks exactly one.
+    expect(block.getByRole('combobox', { name: 'Nhóm trưởng' })).toBeInTheDocument()
+    expect(block.getByRole('combobox', { name: 'Thợ chính' })).toBeInTheDocument()
+    expect(block.getByLabelText(/Số giờ công \(Mhr\)/)).toBeInTheDocument()
+    expect(block.getByLabelText(/Giờ hao phí \(Mhr\)/)).toBeInTheDocument()
+    // The order and the reason wait for lost hours: two more taps for a blank
+    // on every bay that lost nothing.
+    expect(block.queryByLabelText(/Lệnh sản xuất/)).toBeNull()
+    expect(block.queryByLabelText(/Lý do hao phí/)).toBeNull()
+  })
+
+  it('picks the crew from the shared roster instead of taking typed names', async () => {
+    renderModal()
+    await chooseCrew('Nhóm trưởng', 'Trần Văn C')
+    // A Select, not a text box: the whole point of Rv4's roster is that no
+    // foreman can invent a spelling.
+    expect(screen.getByRole('combobox', { name: 'Nhóm trưởng' })).toBeInTheDocument()
+    expect(within(screen.getByTestId('cell-effort')).getByTitle('Trần Văn C')).toBeInTheDocument()
+  })
+
+  it('says so when the roster is empty rather than offering an empty box', async () => {
+    renderModal(CELL, { employees: [] })
+    expect(await screen.findByText('Chưa có nhân viên nào trong danh sách')).toBeInTheDocument()
   })
 
   it('hides the effort block from a viewer', async () => {
@@ -500,68 +555,114 @@ describe('CellStageModal effort (Feedback Rv2, item 11)', () => {
     expect(screen.queryByTestId('cell-effort')).toBeNull()
   })
 
-  it('sends the typed hours with the chosen stage', async () => {
+  it('refuses to commit until every compulsory field is filled, naming each one', async () => {
     renderModal()
-    await userEvent.type(await screen.findByLabelText('Số giờ công (Mhr)'), '3.5')
     await chooseStage('Coat 3')
     await userEvent.click(screen.getByRole('button', { name: 'Xác nhận' }))
-    expect(onCommit).toHaveBeenCalledWith('c1', 's3', '', EFFORT_ONLY_HOURS)
+
+    expect(await screen.findByText('Chọn nhóm trưởng.')).toBeInTheDocument()
+    expect(screen.getByText('Chọn thợ chính.')).toBeInTheDocument()
+    expect(screen.getByText('Nhập số giờ công.')).toBeInTheDocument()
+    expect(screen.getByText('Nhập số giờ hao phí; không hao phí thì nhập 0.')).toBeInTheDocument()
+    expect(onCommit).not.toHaveBeenCalled()
   })
 
-  it('sends the same effort on the one-tap advance', async () => {
+  it('says nothing until the foreman has actually tried', async () => {
+    // A dialog that opens covered in red accuses somebody who has done nothing.
     renderModal()
-    await userEvent.type(await screen.findByLabelText('Nhóm trưởng'), 'Tổ 1')
-    await userEvent.type(screen.getByLabelText('Thợ chính'), 'Nam')
-    await userEvent.type(screen.getByLabelText('Số giờ công (Mhr)'), '2')
-    await userEvent.click(screen.getByRole('button', { name: /Xong công đoạn tiếp theo/ }))
+    expect(await screen.findByTestId('cell-effort')).toBeInTheDocument()
+    expect(screen.queryByText('Chọn nhóm trưởng.')).toBeNull()
+  })
+
+  it('sends the crew and the hours with the chosen stage', async () => {
+    renderModal()
+    await chooseStage('Coat 3')
+    await chooseCrew('Nhóm trưởng', 'Lê Văn A')
+    await chooseCrew('Thợ chính', 'Nguyễn Văn B')
+    await userEvent.type(screen.getByLabelText(/Số giờ công \(Mhr\)/), '3.5')
+    await userEvent.type(screen.getByLabelText(/Giờ hao phí \(Mhr\)/), '0')
+    await userEvent.click(screen.getByRole('button', { name: 'Xác nhận' }))
+
     expect(onCommit).toHaveBeenCalledWith('c1', 's3', '', {
-      leadName: 'Tổ 1', painterName: 'Nam', workHours: 2, wasteHours: null, wasteReason: '',
+      leadName: 'Lê Văn A', painterName: 'Nguyễn Văn B',
+      workHours: 3.5, wasteHours: 0, wasteReason: '', wasteOrder: '',
     })
   })
 
-  it('asks for a reason once hours were lost, and sends it', async () => {
+  it('asks for the production order and a listed reason once hours were lost', async () => {
     renderModal()
-    await userEvent.type(await screen.findByLabelText('Giờ hao phí (Mhr)'), '0.5')
-    await userEvent.type(await screen.findByLabelText('Lý do hao phí'), 'Chờ vật tư')
-    await userEvent.click(screen.getByRole('button', { name: /Xong công đoạn tiếp theo/ }))
+    await chooseStage('Coat 3')
+    await chooseCrew('Nhóm trưởng', 'Lê Văn A')
+    await chooseCrew('Thợ chính', 'Nguyễn Văn B')
+    await userEvent.type(screen.getByLabelText(/Số giờ công \(Mhr\)/), '4')
+    await userEvent.type(screen.getByLabelText(/Giờ hao phí \(Mhr\)/), '0.5')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Xác nhận' }))
+    expect(await screen.findByText('Nhập lệnh sản xuất ghi nhận hao phí.')).toBeInTheDocument()
+    expect(screen.getByText('Chọn lý do hao phí.')).toBeInTheDocument()
+    expect(onCommit).not.toHaveBeenCalled()
+
+    await userEvent.type(screen.getByLabelText(/Lệnh sản xuất/), 'LSX-2026-77')
+    // A list, not free text: "chờ vật tư", "cho vat tu" and "đợi vật tư" were
+    // three rows on the dashboard for one cause.
+    await chooseIn('Lý do hao phí', '2.1 Vật tư về trễ, về không đồng bộ', 'Vật tư về trễ')
+    await userEvent.click(screen.getByRole('button', { name: 'Xác nhận' }))
+
     expect(onCommit).toHaveBeenCalledWith('c1', 's3', '', {
-      leadName: '', painterName: '', workHours: null, wasteHours: 0.5, wasteReason: 'Chờ vật tư',
+      leadName: 'Lê Văn A', painterName: 'Nguyễn Văn B', workHours: 4, wasteHours: 0.5,
+      wasteReason: '2.1 Vật tư về trễ, về không đồng bộ', wasteOrder: 'LSX-2026-77',
     })
   })
 
-  it('drops a reason typed for hours that were then cleared', async () => {
+  it('drops the order and the reason for hours that were then cleared', async () => {
     renderModal()
-    await userEvent.type(await screen.findByLabelText('Giờ hao phí (Mhr)'), '1')
-    await userEvent.type(await screen.findByLabelText('Lý do hao phí'), 'Mưa')
-    await userEvent.clear(screen.getByLabelText('Giờ hao phí (Mhr)'))
-    expect(screen.queryByLabelText('Lý do hao phí')).toBeNull()
-    await userEvent.click(screen.getByRole('button', { name: /Xong công đoạn tiếp theo/ }))
-    expect(onCommit).toHaveBeenCalledWith('c1', 's3', '', EMPTY_EFFORT)
+    await chooseStage('Coat 3')
+    await chooseCrew('Nhóm trưởng', 'Lê Văn A')
+    await chooseCrew('Thợ chính', 'Nguyễn Văn B')
+    await userEvent.type(screen.getByLabelText(/Số giờ công \(Mhr\)/), '4')
+    await userEvent.type(screen.getByLabelText(/Giờ hao phí \(Mhr\)/), '1')
+    await userEvent.type(screen.getByLabelText(/Lệnh sản xuất/), 'LSX-1')
+    await chooseIn('Lý do hao phí', '8.1 Thời tiết', 'Thời tiết')
+
+    await userEvent.clear(screen.getByLabelText(/Giờ hao phí \(Mhr\)/))
+    await userEvent.type(screen.getByLabelText(/Giờ hao phí \(Mhr\)/), '0')
+    expect(screen.queryByLabelText(/Lệnh sản xuất/)).toBeNull()
+    await userEvent.click(screen.getByRole('button', { name: 'Xác nhận' }))
+
+    expect(onCommit).toHaveBeenCalledWith('c1', 's3', '', {
+      leadName: 'Lê Văn A', painterName: 'Nguyễn Văn B',
+      workHours: 4, wasteHours: 0, wasteReason: '', wasteOrder: '',
+    })
   })
 
-  it('seeds the crew names from the last update, since the same crew ticks fifty bays a day', async () => {
+  it('seeds the crew from the last update, since the same crew ticks fifty bays a day', async () => {
     render(
       <AntApp>
         <CellStageModal
           cell={CELL} stages={STAGES} open onClose={onClose} onCommit={onCommit}
-          defaultEffortNames={{ leadName: 'Tổ 1', painterName: 'Nam' }}
+          employees={CREW}
+          defaultEffortNames={{ leadName: 'Lê Văn A', painterName: 'Nguyễn Văn B' }}
         />
       </AntApp>,
     )
-    expect(await screen.findByLabelText('Nhóm trưởng')).toHaveValue('Tổ 1')
-    expect(screen.getByLabelText('Thợ chính')).toHaveValue('Nam')
-    expect(screen.getByLabelText('Số giờ công (Mhr)')).toHaveValue('')
+    const block = within(await screen.findByTestId('cell-effort'))
+    expect(block.getByTitle('Lê Văn A')).toBeInTheDocument()
+    expect(block.getByTitle('Nguyễn Văn B')).toBeInTheDocument()
+    expect(screen.getByLabelText(/Số giờ công \(Mhr\)/)).toHaveValue('')
   })
 
   it('starts each bay with fresh hours, so one bay\'s hours are never sent as another\'s', async () => {
     const view = renderModal()
-    await userEvent.type(await screen.findByLabelText('Số giờ công (Mhr)'), '3')
+    await userEvent.type(await screen.findByLabelText(/Số giờ công \(Mhr\)/), '3')
     view.rerender(
       <AntApp>
-        <CellStageModal cell={{ ...CELL, id: 'c2', code: 'R3C8' }} stages={STAGES} open onClose={onClose} onCommit={onCommit} />
+        <CellStageModal
+          cell={{ ...CELL, id: 'c2', code: 'R3C8' }} stages={STAGES} open
+          onClose={onClose} onCommit={onCommit} employees={CREW}
+        />
       </AntApp>,
     )
     expect(await screen.findByText('Ô R3C8')).toBeInTheDocument()
-    expect(screen.getByLabelText('Số giờ công (Mhr)')).toHaveValue('')
+    expect(screen.getByLabelText(/Số giờ công \(Mhr\)/)).toHaveValue('')
   })
 })

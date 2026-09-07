@@ -24,6 +24,7 @@ import {
   type CellStateView, type DeckWork, type GsDeck, type GsRealtimeStatus,
 } from '../../lib/gsApi'
 import { listDeckZones } from '../../lib/zonesApi'
+import { listEmployees } from '../../lib/employeesApi'
 import { listDeckEvents, loadDeckWorks } from '../../lib/progressApi'
 import { buildReportWorkbook, reportFileName, type DeckImages, type PlanImage } from '../../lib/reportXlsx'
 import { renderDeckDrawing, renderDeckPie, renderPlanDrawing } from '../../canvas/deckSnapshot'
@@ -605,7 +606,19 @@ export function GsScreen() {
   const [planStage, setPlanStage] = useState<{ deckId: string | null; stageId: string | null }>(
     { deckId: null, stageId: null },
   )
-  const planStageId = planStage.deckId === activeDeckId ? planStage.stageId : null
+  /**
+   * The coat whose plan is on screen. Never "all" since Feedback Rv4: Linh
+   * asked for the option to go ("Bỏ tùy chọn Tất cả trong bộ lọc vì không cần
+   * thiết"), and it was already the awkward case -- with every zone of every
+   * coat drawn at once, "done" and "not done" have no meaning and four zones
+   * over one block stack four labels on one spot.
+   *
+   * Falls back to the deck's first coat, which is also what a foreman opening
+   * the plan wants to see first.
+   */
+  const planStageId = (planStage.deckId === activeDeckId ? planStage.stageId : null)
+    ?? stages[0]?.id
+    ?? null
   useEffect(() => {
     if (!activeDeckId) {
       setZones([])
@@ -722,6 +735,28 @@ export function GsScreen() {
    * which is right for a tablet that changes hands between shifts.
    */
   const [lastNames, setLastNames] = useState({ leadName: '', painterName: '' })
+  /**
+   * The shared roster (Feedback Rv4). Read once when the screen opens: it is a
+   * short list that changes when an admin edits it, not while a shift is on,
+   * and the bay dialog cannot let anybody record without it.
+   *
+   * A failed read leaves it empty, and the dialog says so rather than
+   * pretending the roster is empty on purpose.
+   */
+  const [employees, setEmployees] = useState<string[]>([])
+  useEffect(() => {
+    let cancelled = false
+    listEmployees()
+      .then((rows) => {
+        if (!cancelled) setEmployees(rows.map((e) => e.fullName))
+      })
+      .catch(() => {
+        if (!cancelled) setEmployees([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
   const { message } = App.useApp()
   const [confirmingOut, setConfirmingOut] = useState(false)
   /**
@@ -1116,13 +1151,10 @@ export function GsScreen() {
                   <Select
                     id="gs-plan-stage"
                     aria-label="Công đoạn kế hoạch"
-                    value={planStageId ?? 'all'}
-                    onChange={(v) => setPlanStage({ deckId: activeDeckId, stageId: v === 'all' ? null : v })}
+                    value={planStageId ?? undefined}
+                    onChange={(v) => setPlanStage({ deckId: activeDeckId, stageId: v })}
                     style={{ width: phone ? 120 : 180 }}
-                    options={[
-                      { value: 'all', label: 'Tất cả' },
-                      ...stages.map((st) => ({ value: st.id, label: st.name })),
-                    ]}
+                    options={stages.map((st) => ({ value: st.id, label: st.name }))}
                   />
                 )}
                 <Button
@@ -1339,6 +1371,7 @@ export function GsScreen() {
         zones={zonesOfCell(selectedCell)}
         readOnly={readOnly}
         defaultEffortNames={lastNames}
+        employees={employees}
       />
 
       {/*

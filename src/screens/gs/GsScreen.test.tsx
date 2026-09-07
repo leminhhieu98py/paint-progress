@@ -1,5 +1,4 @@
 import { App as AntApp } from 'antd'
-import { EMPTY_EFFORT } from '../../domain/types'
 import {
   act, render, screen, waitFor, within,
 } from '@testing-library/react'
@@ -56,6 +55,10 @@ vi.mock('../../canvas/deckSnapshot', () => ({
   renderDeckDrawing: (...a: unknown[]) => renderDeckDrawing(...a),
   renderDeckPie: (...a: unknown[]) => renderDeckPie(...a),
   renderPlanDrawing: (...a: unknown[]) => renderPlanDrawing(...a),
+}))
+const listEmployees = vi.hoisted(() => vi.fn())
+vi.mock('../../lib/employeesApi', () => ({
+  listEmployees: () => listEmployees(),
 }))
 vi.mock('../../lib/zonesApi', () => ({
   listDeckZones: (deckId: string) => listDeckZones(deckId),
@@ -227,6 +230,11 @@ beforeEach(() => {
   signOut.mockReset()
   listCoworkerNames.mockReset()
   listCoworkerNames.mockResolvedValue({})
+  listEmployees.mockReset()
+  listEmployees.mockResolvedValue([
+    { id: 'e1', fullName: 'Lê Văn A', active: true },
+    { id: 'e2', fullName: 'Nguyễn Văn B', active: true },
+  ])
   listCellNotes.mockReset()
   // Pending by default, so a modal opened by an unrelated test never lands a
   // state update after that test has finished.
@@ -282,6 +290,42 @@ beforeEach(() => {
     Promise.resolve(deckId === 'd1' ? D1_CELLS : D2_CELLS))
   getDrawingUrl.mockImplementation((path: string) => Promise.resolve(`https://signed/${path}`))
 })
+
+/**
+ * Picks an option in the dropdown of ONE named Select.
+ *
+ * antd leaves every dropdown it has opened in the DOM (hidden, and
+ * `pointer-events: none`), so with four Selects in the dialog a plain
+ * `findByTitle` reaches into a closed list. Each input names its own listbox
+ * through `aria-controls`; that is the only reliable link.
+ */
+const chooseIn = async (name: string, option: string) => {
+  // getByRole, not getByLabelText: antd puts the aria-label on both the
+  // wrapper and the inner input, so getByLabelText finds two elements.
+  const box = await screen.findByRole('combobox', { name })
+  await userEvent.click(box)
+  const listId = box.getAttribute('aria-controls')
+  const dropdown = listId
+    ? (document.getElementById(listId)?.closest('.ant-select-dropdown') as HTMLElement | null)
+    : null
+  if (!dropdown) throw new Error(`Select "${name}" opened no dropdown`)
+  await userEvent.click(await within(dropdown).findByTitle(option))
+}
+
+/** Everything Feedback Rv4 made compulsory, apart from the coat. */
+const fillRequired = async () => {
+  await chooseIn('Nhóm trưởng', 'Lê Văn A')
+  await chooseIn('Thợ chính', 'Nguyễn Văn B')
+  await userEvent.type(screen.getByLabelText(/Số giờ công \(Mhr\)/), '4')
+  await userEvent.type(screen.getByLabelText(/Giờ hao phí \(Mhr\)/), '0')
+}
+
+/** What `fillRequired` produces, for the assertions. */
+const FILLED = {
+  leadName: 'Lê Văn A', painterName: 'Nguyễn Văn B',
+  workHours: 4, wasteHours: 0, wasteReason: '', wasteOrder: '',
+}
+
 
 describe('GsScreen', () => {
   it('loads the project named in the route', async () => {
@@ -559,10 +603,8 @@ describe('GsScreen: recording a stage', () => {
 
   const tapCellAndChoose = async (cellCode: string, stageLabel: string) => {
     await userEvent.click(await screen.findByRole('button', { name: `ô ${cellCode}` }))
-    // getByRole, not getByLabelText: antd puts the aria-label on both the
-    // wrapper and the inner input, so getByLabelText finds two elements.
-    await userEvent.click(await screen.findByRole('combobox', { name: 'Công đoạn' }))
-    await userEvent.click(await screen.findByTitle(stageLabel))
+    await chooseIn('Công đoạn', stageLabel)
+    await fillRequired()
     await userEvent.click(screen.getByRole('button', { name: 'Xác nhận' }))
   }
 
@@ -587,30 +629,41 @@ describe('GsScreen: recording a stage', () => {
     ).toBeInTheDocument()
   })
 
-  it('sends the typed effort with the stage, and remembers the crew for the next bay', async () => {
+  it('offers the shared roster in the bay dialog (Feedback Rv4)', async () => {
     renderScreen()
     await userEvent.click(await screen.findByRole('button', { name: 'ô R2C1' }))
-    await userEvent.type(await screen.findByLabelText('Nhóm trưởng'), 'Tổ 1')
-    await userEvent.type(screen.getByLabelText('Số giờ công (Mhr)'), '2.5')
-    await userEvent.click(screen.getByRole('combobox', { name: 'Công đoạn' }))
-    await userEvent.click(await screen.findByTitle('Coat 3'))
+    await waitFor(() => expect(listEmployees).toHaveBeenCalled())
+    await chooseIn('Nhóm trưởng', 'Lê Văn A')
+    expect(within(screen.getByTestId('cell-effort')).getByTitle('Lê Văn A')).toBeInTheDocument()
+  })
+
+  it('sends the crew and the hours with the stage, and remembers the crew for the next bay', async () => {
+    renderScreen()
+    await userEvent.click(await screen.findByRole('button', { name: 'ô R2C1' }))
+    await chooseIn('Công đoạn', 'Coat 3')
+    await chooseIn('Nhóm trưởng', 'Lê Văn A')
+    await chooseIn('Thợ chính', 'Nguyễn Văn B')
+    await userEvent.type(screen.getByLabelText(/Số giờ công \(Mhr\)/), '2.5')
+    await userEvent.type(screen.getByLabelText(/Giờ hao phí \(Mhr\)/), '0')
     await userEvent.click(screen.getByRole('button', { name: 'Xác nhận' }))
 
     expect(setCellState).toHaveBeenCalledWith('c3', 'w1', 'd1', 's3', '', {
-      leadName: 'Tổ 1', painterName: '', workHours: 2.5, wasteHours: null, wasteReason: '',
+      leadName: 'Lê Văn A', painterName: 'Nguyễn Văn B',
+      workHours: 2.5, wasteHours: 0, wasteReason: '', wasteOrder: '',
     })
 
     await userEvent.click(screen.getByRole('button', { name: 'ô R1C2' }))
     expect(await screen.findByText('Ô R1C2 · Sơn')).toBeInTheDocument()
-    expect(screen.getByLabelText('Nhóm trưởng')).toHaveValue('Tổ 1')
-    expect(screen.getByLabelText('Số giờ công (Mhr)')).toHaveValue('')
+    const block = within(screen.getByTestId('cell-effort'))
+    expect(block.getByTitle('Lê Văn A')).toBeInTheDocument()
+    expect(screen.getByLabelText(/Số giờ công \(Mhr\)/)).toHaveValue('')
   })
 
   it('writes the bay\'s stage for the work on screen, and nothing else', async () => {
     renderScreen()
     await tapCellAndChoose('R2C1', 'Coat 3')
 
-    expect(setCellState).toHaveBeenCalledWith('c3', 'w1', 'd1', 's3', '', EMPTY_EFFORT)
+    expect(setCellState).toHaveBeenCalledWith('c3', 'w1', 'd1', 's3', '', FILLED)
   })
 
   it('moves the reported progress before the write comes back', async () => {
@@ -847,23 +900,6 @@ describe('GsScreen: recording a stage', () => {
     expect(screen.getByText('15,50%')).toBeInTheDocument()
   })
 
-  it('advances the tapped cell one stage in a single tap', async () => {
-    renderScreen()
-    await userEvent.click(await screen.findByRole('button', { name: 'ô R1C1' }))
-    await userEvent.click(
-      await screen.findByRole('button', { name: 'Xong công đoạn tiếp theo: Coat 2' }),
-    )
-
-    // R1C1 sits at s1, so one tap writes s2 -- one stage on from the cell's own
-    // current stage, with no dropdown in between and nothing else in the payload.
-    expect(setCellState).toHaveBeenCalledWith('c1', 'w1', 'd1', 's2', '', EMPTY_EFFORT)
-    expect(setCellState).toHaveBeenCalledTimes(1)
-    // And the colour moves with it, straight away.
-    expect(screen.getByRole('button', { name: 'ô R1C1' })).toHaveAttribute('data-color', '#bfbfbf')
-  })
-})
-
-describe('GsScreen: realtime', () => {
   it('subscribes to the deck on screen', async () => {
     renderScreen()
     await waitFor(() => expect(subscribedDecks).toEqual(['d1']))
@@ -1209,11 +1245,11 @@ describe('GsScreen: công việc', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'ô R1C2' }))
     expect(await screen.findByText('Ô R1C2 · Tháo giáo')).toBeInTheDocument()
-    await userEvent.click(await screen.findByRole('combobox', { name: 'Công đoạn' }))
-    await userEvent.click(await screen.findByTitle('Tháo giáo lửng'))
+    await chooseIn('Công đoạn', 'Tháo giáo lửng')
+    await fillRequired()
     await userEvent.click(screen.getByRole('button', { name: 'Xác nhận' }))
 
-    expect(setCellState).toHaveBeenCalledWith('c2', 'w2', 'd1', 't1', '', EMPTY_EFFORT)
+    expect(setCellState).toHaveBeenCalledWith('c2', 'w2', 'd1', 't1', '', FILLED)
   })
 
   it('heads the card with the deck tổng hợp, then a row per work', async () => {
@@ -1334,33 +1370,47 @@ describe('GsScreen: the plan overlay', () => {
     expect(screen.queryByTestId('gs-zone-legend')).toBeNull()
   })
 
-  it('filters the plan to one coat from the stage select', async () => {
-    // Feedback Rv2 item 8: with zones on every coat, "Hiện kế hoạch" drew all
-    // of them at once and the foreman could not tell which window was whose.
+  it('shows one coat at a time and opens on the first (Feedback Rv2 item 8, Rv4)', async () => {
+    // Rv2: with zones on every coat, "Hiện kế hoạch" drew all of them at once
+    // and the foreman could not tell which window was whose. Rv4 removed the
+    // "Tất cả" option that was left, so the plan is always one coat -- opening
+    // on the deck's first, which is where the work starts.
     listDeckZones.mockResolvedValue([
+      {
+        id: 'z0', name: 'Khu A — Blast', stageId: 's1', color: null,
+        startDate: '2026-08-01', finishDate: '2026-08-05', cellIds: ['c1'],
+      },
       {
         id: 'z1', name: 'Khu A — Coat 4', stageId: 's4', color: null,
         startDate: '2026-08-13', finishDate: '2026-08-19', cellIds: ['c1'],
-      },
-      {
-        id: 'z2', name: 'Khu A — Tháo giáo', stageId: 's5', color: null,
-        startDate: '2026-08-20', finishDate: '2026-08-26', cellIds: ['c1'],
       },
     ])
     renderScreen()
     await userEvent.click(await screen.findByRole('button', { name: 'Hiện kế hoạch' }))
     const legend = await screen.findByTestId('gs-zone-legend')
-    expect(within(legend).getByText('Khu A — Coat 4')).toBeInTheDocument()
-    expect(within(legend).getByText('Khu A — Tháo giáo')).toBeInTheDocument()
+    expect(within(legend).getByText('Khu A — Blast')).toBeInTheDocument()
+    expect(within(legend).queryByText('Khu A — Coat 4')).toBeNull()
 
-    await userEvent.click(screen.getByRole('combobox', { name: 'Công đoạn kế hoạch' }))
-    await userEvent.click(await screen.findByTitle('Coat 4'))
+    await chooseIn('Công đoạn kế hoạch', 'Coat 4')
 
     await waitFor(() =>
-      expect(within(screen.getByTestId('gs-zone-legend')).queryByText('Khu A — Tháo giáo')).toBeNull())
+      expect(within(screen.getByTestId('gs-zone-legend')).queryByText('Khu A — Blast')).toBeNull())
     expect(within(screen.getByTestId('gs-zone-legend')).getByText('Khu A — Coat 4')).toBeInTheDocument()
-    // The bay wears the Coat 4 zone's colour, not the later zone's.
-    expect(screen.getByRole('button', { name: 'ô R1C1' })).toHaveAttribute('data-color', '#eb2f96')
+  })
+
+  it('offers no "Tất cả" in the plan filter (Feedback Rv4)', async () => {
+    listDeckZones.mockResolvedValue([{
+      id: 'z1', name: 'Khu A', stageId: 's1', color: null,
+      startDate: '2026-08-13', finishDate: '2026-08-19', cellIds: ['c1'],
+    }])
+    renderScreen()
+    await userEvent.click(await screen.findByRole('button', { name: 'Hiện kế hoạch' }))
+    const box = await screen.findByRole('combobox', { name: 'Công đoạn kế hoạch' })
+    await userEvent.click(box)
+    const listId = box.getAttribute('aria-controls')
+    const dropdown = document.getElementById(listId ?? '')?.closest('.ant-select-dropdown') as HTMLElement
+    expect(within(dropdown).queryByTitle('Tất cả')).toBeNull()
+    expect(within(dropdown).getByTitle('Blast + Coat 1')).toBeInTheDocument()
   })
 
   it('keeps a zone off the coats\' own colours', async () => {
@@ -1376,6 +1426,7 @@ describe('GsScreen: the plan overlay', () => {
     }])
     renderScreen()
     await userEvent.click(await screen.findByRole('button', { name: 'Hiện kế hoạch' }))
+    await chooseIn('Công đoạn kế hoạch', 'Tháo giáo')
     await waitFor(() =>
       expect(screen.getByRole('button', { name: 'ô R1C1' })).toHaveAttribute('data-color', '#13c2c2'))
   })
@@ -1392,8 +1443,7 @@ describe('GsScreen: the plan overlay', () => {
     }])
     renderScreen()
     await userEvent.click(await screen.findByRole('button', { name: 'Hiện kế hoạch' }))
-    await userEvent.click(await screen.findByRole('combobox', { name: 'Công đoạn kế hoạch' }))
-    await userEvent.click(await screen.findByTitle('Coat 2'))
+    await chooseIn('Công đoạn kế hoạch', 'Coat 2')
 
     const planned = await screen.findByRole('button', { name: 'ô R1C1' })
     await waitFor(() => expect(planned).toHaveAttribute('data-opacity', '0.18'))
@@ -1409,24 +1459,10 @@ describe('GsScreen: the plan overlay', () => {
     expect(neither).toHaveAttribute('data-color', '')
   })
 
-  it('keeps the plan flat under "Tất cả", where no one coat says what is done', async () => {
-    listDeckZones.mockResolvedValue([{
-      id: 'z1', name: 'Khu A', stageId: 's2', color: null,
-      startDate: '2026-08-13', finishDate: '2026-08-19', cellIds: ['c1'],
-    }])
-    renderScreen()
-    await userEvent.click(await screen.findByRole('button', { name: 'Hiện kế hoạch' }))
-
-    const planned = await screen.findByRole('button', { name: 'ô R1C1' })
-    await waitFor(() => expect(planned).toHaveAttribute('data-color', '#eb2f96'))
-    expect(planned).toHaveAttribute('data-opacity', '')
-    expect(planned).toHaveAttribute('data-outline', '')
-  })
-
   it('names the chosen coat\'s zones on the drawing itself (Feedback Rv3, item 4)', async () => {
     // Two zones over the SAME bay, one per coat -- which is how the real decks
-    // are planned. Under "Tất cả" their boxes coincide, so nothing is drawn;
-    // pick a coat and that coat's zone is named where it is.
+    // are planned, and why only the coat on screen may be labelled: four zones
+    // over one block would stack four labels on one spot.
     listDeckZones.mockResolvedValue([
       {
         id: 'z1', name: 'Zone (3) — Coat 2', stageId: 's2', color: null,
@@ -1438,16 +1474,17 @@ describe('GsScreen: the plan overlay', () => {
       },
     ])
     renderScreen()
+    // Nothing until the plan is on: the drawing is a drawing.
     expect(await screen.findByTestId('canvas')).toHaveAttribute('data-zone-labels', '')
 
     await userEvent.click(screen.getByRole('button', { name: 'Hiện kế hoạch' }))
-    await screen.findByTestId('gs-zone-legend')
-    expect(screen.getByTestId('canvas')).toHaveAttribute('data-zone-labels', '')
-
-    await userEvent.click(screen.getByRole('combobox', { name: 'Công đoạn kế hoạch' }))
-    await userEvent.click(await screen.findByTitle('Coat 2'))
+    await chooseIn('Công đoạn kế hoạch', 'Coat 2')
     await waitFor(() => expect(screen.getByTestId('canvas'))
       .toHaveAttribute('data-zone-labels', 'Zone (3) — Coat 2|06/10 – 17/10'))
+
+    await chooseIn('Công đoạn kế hoạch', 'Coat 3')
+    await waitFor(() => expect(screen.getByTestId('canvas'))
+      .toHaveAttribute('data-zone-labels', 'Zone (3) — Coat 3|18/10 – 24/10'))
   })
 
   it('names the zone under the mouse while the plan is on', async () => {
@@ -1459,6 +1496,7 @@ describe('GsScreen: the plan overlay', () => {
     }])
     renderScreen()
     await userEvent.click(await screen.findByRole('button', { name: 'Hiện kế hoạch' }))
+    await chooseIn('Công đoạn kế hoạch', 'Tháo giáo')
     await screen.findByTestId('gs-zone-legend')
 
     await userEvent.hover(screen.getByRole('button', { name: 'ô R1C1' }))
@@ -1497,8 +1535,9 @@ describe('GsScreen: the plan overlay', () => {
 
     renderScreen()
     await userEvent.click(await screen.findByRole('button', { name: 'Hiện kế hoạch' }))
-
     await waitFor(() => expect(listDeckZones).toHaveBeenCalledWith('d1'))
+    await chooseIn('Công đoạn kế hoạch', 'Tháo giáo')
+
     const legend = await screen.findByTestId('gs-zone-legend')
     expect(within(legend).getByText('Zone 1')).toBeInTheDocument()
     expect(within(legend).getByText('13/08 – 19/08')).toBeInTheDocument()
@@ -1518,7 +1557,9 @@ describe('GsScreen: the plan overlay', () => {
 
     await waitFor(() => expect(listDeckZones).toHaveBeenCalledWith('d1'))
     expect(screen.queryByTestId('gs-zone-legend')).toBeNull()
-    expect(screen.getByRole('button', { name: 'ô R1C1' })).toHaveAttribute('data-color', '')
+    // Blast + Coat 1 is where the filter opens, and R1C1 has reached it, so it
+    // wears that coat's own colour rather than a zone's.
+    expect(screen.getByRole('button', { name: 'ô R1C1' })).toHaveAttribute('data-color', '#fadb14')
   })
 
   it('puts the coats back when switched off again', async () => {
@@ -1530,6 +1571,7 @@ describe('GsScreen: the plan overlay', () => {
 
     renderScreen()
     await userEvent.click(await screen.findByRole('button', { name: 'Hiện kế hoạch' }))
+    await chooseIn('Công đoạn kế hoạch', 'Tháo giáo')
     expect(await screen.findByTestId('gs-zone-legend')).toBeInTheDocument()
 
     await userEvent.click(screen.getByRole('button', { name: 'Hiện kế hoạch' }))

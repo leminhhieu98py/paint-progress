@@ -1,9 +1,10 @@
 import { Alert, Button, Input, InputNumber, Modal, Select, Space, Typography } from 'antd'
 import { modalProps } from '../../components/modalChrome'
-import { palette } from '../../theme'
+import { fieldError, palette } from '../../theme'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { describeZone } from '../../domain/plan'
-import { isBackwards, nextStage } from '../../domain/stageFlow'
+import { WASTE_REASONS, wasteReasonLabel } from '../../domain/effort'
+import { isBackwards } from '../../domain/stageFlow'
 import { EMPTY_EFFORT, type Cell, type Effort, type Stage } from '../../domain/types'
 import { formatAreaM2 } from '../../lib/format'
 import { listCellNotes, type CellNote } from '../../lib/progressApi'
@@ -20,6 +21,21 @@ const NOT_STARTED_LABEL = 'Chưa bắt đầu'
 
 const EMPTY_NAMES = { leadName: '', painterName: '' }
 const effortLabel = { display: 'block', marginBottom: 4, fontSize: 12, fontWeight: 600 } as const
+
+/** The red star every compulsory field carries (Feedback Rv4). */
+function Required() {
+  return <span aria-label="bắt buộc" style={{ color: fieldError }}>*</span>
+}
+
+/** One field's complaint, under the field it belongs to. */
+function FieldError({ text }: { text?: string }) {
+  if (!text) return null
+  return (
+    <div role="alert" style={{ marginTop: 3, fontSize: 11, lineHeight: 1.35, color: fieldError }}>
+      {text}
+    </div>
+  )
+}
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -41,6 +57,7 @@ export function CellStageModal({
   zones = [],
   readOnly = false,
   defaultEffortNames = EMPTY_NAMES,
+  employees = [],
 }: {
   cell: Cell | null
   stages: Stage[]
@@ -80,10 +97,19 @@ export function CellStageModal({
   /**
    * The crew names from the last update this session (Feedback Rv2, item 11).
    * The same nhóm trưởng ticks fifty bays a day; seeding the two name fields
-   * from the previous commit means typing them once. Hours are never seeded:
+   * from the previous commit means picking them once. Hours are never seeded:
    * they are about THIS bay.
    */
   defaultEffortNames?: { leadName: string; painterName: string }
+  /**
+   * The shared staff roster (Feedback Rv4), active names only. The two crew
+   * fields pick from this and nothing else: typed names gave three spellings
+   * of one team and no way to add up its hours.
+   *
+   * Empty is a real state -- a project whose admin has not filled the roster
+   * yet -- and the dialog says so rather than offering an empty box.
+   */
+  employees?: string[]
 }) {
   const [choice, setChoice] = useState<string>(NOT_STARTED_VALUE)
   const [note, setNote] = useState('')
@@ -94,6 +120,16 @@ export function CellStageModal({
    * is never sent as R1C2's. No effect and no synchronous setState.
    */
   const [effortFor, setEffortFor] = useState<{ cellId: string | null; effort: Effort } | null>(null)
+  /**
+   * Whether the foreman has pressed Xác nhận yet.
+   *
+   * Everything Linh made compulsory in Rv4 is checked on every render, but the
+   * complaints are held back until then: a dialog that opens covered in red
+   * tells a foreman he has done something wrong before he has done anything at
+   * all. The button stays enabled and answers when pressed -- a disabled button
+   * with no explanation is the worst of both.
+   */
+  const [attempted, setAttempted] = useState(false)
   const effort: Effort = effortFor !== null && effortFor.cellId === (cell?.id ?? null)
     ? effortFor.effort
     : { ...EMPTY_EFFORT, leadName: defaultEffortNames.leadName, painterName: defaultEffortNames.painterName }
@@ -117,13 +153,16 @@ export function CellStageModal({
     // meant to tick a box. What is already on the bay is shown above the field
     // instead -- readable, and not the thing being sent.
     setNote('')
+    setAttempted(false)
   }, [cell?.id])
 
   /**
    * What is sent: a reason is dropped when no hours were lost, so a sentence
    * typed for lost hours the foreman then cleared does not travel alone.
    */
-  const effortToSend: Effort = (effort.wasteHours ?? 0) > 0 ? effort : { ...effort, wasteReason: '' }
+  const effortToSend: Effort = (effort.wasteHours ?? 0) > 0
+    ? effort
+    : { ...effort, wasteReason: '', wasteOrder: '' }
 
   /**
    * Every earlier note on this bay (Feedback Rv1, item 7). The foreman used to
@@ -175,23 +214,39 @@ export function CellStageModal({
   const ordered = useMemo(() => [...stages].sort((a, b) => a.seq - b.seq), [stages])
   const chosenStageId = choice === NOT_STARTED_VALUE ? null : choice
   const currentStage = stages.find((s) => s.id === cell?.stageId) ?? null
-  const next = nextStage(stages, cell?.stageId ?? null)
   const backwards = cell !== null && isBackwards(stages, cell.stageId, chosenStageId)
   const unchanged = cell !== null && chosenStageId === cell.stageId
+
+  const wasteHours = effort.wasteHours ?? 0
+  const errors: Record<string, string> = {}
+  if (unchanged) errors.stage = 'Chọn công đoạn cho ô này.'
+  if (effort.leadName.trim() === '') errors.lead = 'Chọn nhóm trưởng.'
+  if (effort.painterName.trim() === '') errors.painter = 'Chọn thợ chính.'
+  if (effort.workHours === null) errors.workHours = 'Nhập số giờ công.'
+  if (effort.wasteHours === null) errors.wasteHours = 'Nhập số giờ hao phí; không hao phí thì nhập 0.'
+  if (wasteHours > 0) {
+    if (effort.wasteOrder.trim() === '') errors.wasteOrder = 'Nhập lệnh sản xuất ghi nhận hao phí.'
+    if (effort.wasteReason.trim() === '') errors.wasteReason = 'Chọn lý do hao phí.'
+  }
+  const errorOf = (key: string) => (attempted ? errors[key] : undefined)
+
+  const submit = () => {
+    if (!cell) return
+    setAttempted(true)
+    if (Object.keys(errors).length > 0) return
+    onCommit(cell.id, chosenStageId, note, effortToSend)
+    onClose()
+  }
 
   return (
     <Modal
       open={open}
       title={cell ? `Ô ${cell.code}${workName ? ` · ${workName}` : ''}` : ''}
       onCancel={onClose}
-      onOk={() => {
-        if (!cell || unchanged) return
-        onCommit(cell.id, chosenStageId, note, effortToSend)
-        onClose()
-      }}
+      onOk={submit}
       okText="Xác nhận"
       cancelText="Huỷ"
-      okButtonProps={{ disabled: unchanged, size: 'large' }}
+      okButtonProps={{ size: 'large' }}
       cancelButtonProps={{ size: 'large' }}
       {...modalProps}
       // A viewer gets one button, not a hidden confirm: nothing in the DOM
@@ -214,7 +269,6 @@ export function CellStageModal({
             <Field label="Mã ô">{cell.code}</Field>
             <Field label="Diện tích">{formatAreaM2(cell.areaM2)} m²</Field>
             <Field label="Công đoạn hiện tại">{currentStage?.name ?? NOT_STARTED_LABEL}</Field>
-            <Field label="Công đoạn tiếp theo">{next?.name ?? 'Đã xong công đoạn cuối'}</Field>
             {zones.length > 0 && (
               <Field label="Kế hoạch">
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -229,37 +283,22 @@ export function CellStageModal({
           </div>
 
           {/*
-            One tap for the case that happens all day: advance this bay by one
-            stage. Always computed from the cell's CURRENT stage, never from the
-            Select -- the two are independent on purpose, so a foreman who opened
-            the dropdown to look and then wanted the ordinary next stage is not
-            committing whatever they left highlighted. Forward by construction,
-            so isBackwards is false on this path and the red warning below
-            belongs to the Select.
+            The coat, chosen deliberately (Feedback Rv4). The one-tap "advance
+            by one" button that used to sit above this is gone: Linh asked for
+            the coat to be picked every time, and with four compulsory fields
+            beside it there was no longer anything one-tap about it.
           */}
-          {!readOnly && next && (
-            <Button
-              type="primary"
-              size="large"
-              block
-              onClick={() => {
-                onCommit(cell.id, next.id, note, effortToSend)
-                onClose()
-              }}
-            >
-              Xong công đoạn tiếp theo: {next.name}
-            </Button>
-          )}
-
           {!readOnly && (
           <div>
-            <Typography.Text type="secondary">
-              {next ? 'Hoặc chọn công đoạn khác' : 'Chọn công đoạn'}
-            </Typography.Text>
+            <label htmlFor="cell-stage" style={effortLabel}>
+              Công đoạn <Required />
+            </label>
             <Select
+              id="cell-stage"
               aria-label="Công đoạn"
               size="large"
-              style={{ width: '100%', marginTop: 4 }}
+              style={{ width: '100%' }}
+              status={errorOf('stage') ? 'error' : undefined}
               value={choice}
               onChange={setChoice}
               options={[
@@ -267,73 +306,145 @@ export function CellStageModal({
                 ...ordered.map((s) => ({ value: s.id, label: s.name })),
               ]}
             />
+            <FieldError text={errorOf('stage')} />
           </div>
           )}
 
           {/*
-            Giờ công (Feedback Rv2, item 11). Every field optional -- Linh:
-            "nếu có" -- and said so once, at the top, rather than five times.
-            Ids by hand, as for the note: without them the labels are text
-            beside boxes. The block sits between the stage and the note because
-            that is the order the paperwork asks: what was done, what it cost,
-            then remarks.
+            Giờ công. Optional in Rv2 ("nếu có"); compulsory in Rv4, because
+            hours that are sometimes recorded cannot be divided by an area to
+            give anything a manager would act on. The two crew fields pick from
+            the shared roster (0032) rather than taking typed text: "Tổ 1",
+            "To 1" and "tổ1" were three crews on the dashboard and one crew on
+            the deck.
           */}
           {!readOnly && (
             <div data-testid="cell-effort">
               <div style={{ marginBottom: 6 }}>
-                <Typography.Text strong>Giờ công</Typography.Text>{' '}
-                <Typography.Text type="secondary">không bắt buộc</Typography.Text>
+                <Typography.Text strong>Giờ công</Typography.Text>
               </div>
+              {employees.length === 0 && (
+                <Alert
+                  type="warning"
+                  showIcon
+                  style={{ marginBottom: 10 }}
+                  message="Chưa có nhân viên nào trong danh sách"
+                  description="Nhờ quản trị viên thêm nhân viên ở mục Nhân viên; chưa có thì không ghi được tiến độ."
+                />
+              )}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 12px' }}>
                 <div>
-                  <label htmlFor="cell-lead" style={effortLabel}>Nhóm trưởng</label>
-                  <Input
+                  <label htmlFor="cell-lead" style={effortLabel}>Nhóm trưởng <Required /></label>
+                  <Select
                     id="cell-lead"
-                    value={effort.leadName}
-                    onChange={(e) => setEffort({ ...effort, leadName: e.target.value })}
+                    aria-label="Nhóm trưởng"
+                    showSearch
+                    allowClear
+                    style={{ width: '100%' }}
+                    status={errorOf('lead') ? 'error' : undefined}
+                    placeholder="Gõ để tìm tên"
+                    // Matched on the label, which is the only thing these
+                    // options carry; without it antd filters on `value` and a
+                    // search for a name finds nothing.
+                    optionFilterProp="label"
+                    value={effort.leadName === '' ? undefined : effort.leadName}
+                    onChange={(v) => setEffort({ ...effort, leadName: v ?? '' })}
+                    options={employees.map((name) => ({ value: name, label: name }))}
                   />
+                  <FieldError text={errorOf('lead')} />
                 </div>
                 <div>
-                  <label htmlFor="cell-painter" style={effortLabel}>Thợ chính</label>
-                  <Input
+                  <label htmlFor="cell-painter" style={effortLabel}>Thợ chính <Required /></label>
+                  <Select
                     id="cell-painter"
-                    value={effort.painterName}
-                    onChange={(e) => setEffort({ ...effort, painterName: e.target.value })}
+                    aria-label="Thợ chính"
+                    showSearch
+                    allowClear
+                    style={{ width: '100%' }}
+                    status={errorOf('painter') ? 'error' : undefined}
+                    placeholder="Gõ để tìm tên"
+                    optionFilterProp="label"
+                    value={effort.painterName === '' ? undefined : effort.painterName}
+                    onChange={(v) => setEffort({ ...effort, painterName: v ?? '' })}
+                    options={employees.map((name) => ({ value: name, label: name }))}
                   />
+                  <FieldError text={errorOf('painter')} />
                 </div>
                 <div>
-                  <label htmlFor="cell-work-hours" style={effortLabel}>Số giờ công (Mhr)</label>
+                  <label htmlFor="cell-work-hours" style={effortLabel}>
+                    Số giờ công (Mhr) <Required />
+                  </label>
                   <InputNumber
                     id="cell-work-hours"
                     min={0}
                     step={0.5}
                     style={{ width: '100%' }}
+                    status={errorOf('workHours') ? 'error' : undefined}
                     value={effort.workHours}
                     onChange={(v) => setEffort({ ...effort, workHours: v === null || v === undefined ? null : Number(v) })}
                   />
+                  <FieldError text={errorOf('workHours')} />
                 </div>
                 <div>
-                  <label htmlFor="cell-waste-hours" style={effortLabel}>Giờ hao phí (Mhr)</label>
+                  <label htmlFor="cell-waste-hours" style={effortLabel}>
+                    Giờ hao phí (Mhr) <Required />
+                  </label>
                   <InputNumber
                     id="cell-waste-hours"
                     min={0}
                     step={0.5}
                     style={{ width: '100%' }}
+                    status={errorOf('wasteHours') ? 'error' : undefined}
                     value={effort.wasteHours}
                     onChange={(v) => setEffort({ ...effort, wasteHours: v === null || v === undefined ? null : Number(v) })}
                   />
+                  <FieldError text={errorOf('wasteHours')} />
+                  {effort.wasteHours === null && errorOf('wasteHours') === undefined && (
+                    <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+                      Không hao phí thì nhập 0
+                    </Typography.Text>
+                  )}
                 </div>
               </div>
-              {(effort.wasteHours ?? 0) > 0 && (
-                <div style={{ marginTop: 8 }}>
-                  <label htmlFor="cell-waste-reason" style={effortLabel}>Lý do hao phí</label>
-                  <Input
-                    id="cell-waste-reason"
-                    value={effort.wasteReason}
-                    onChange={(e) => setEffort({ ...effort, wasteReason: e.target.value })}
-                    placeholder="Ví dụ: chờ vật tư, mưa"
-                  />
-                </div>
+              {/* Only once hours were actually lost: an order number and a
+                  reason on a bay that lost nothing are two more taps for a
+                  blank. */}
+              {wasteHours > 0 && (
+                <>
+                  <div style={{ marginTop: 8 }}>
+                    <label htmlFor="cell-waste-order" style={effortLabel}>
+                      Lệnh sản xuất ghi nhận hao phí <Required />
+                    </label>
+                    <Input
+                      id="cell-waste-order"
+                      status={errorOf('wasteOrder') ? 'error' : undefined}
+                      value={effort.wasteOrder}
+                      onChange={(e) => setEffort({ ...effort, wasteOrder: e.target.value })}
+                      placeholder="Số lệnh sản xuất"
+                    />
+                    <FieldError text={errorOf('wasteOrder')} />
+                  </div>
+                  <div style={{ marginTop: 8 }}>
+                    <label htmlFor="cell-waste-reason" style={effortLabel}>
+                      Lý do hao phí <Required />
+                    </label>
+                    <Select
+                      id="cell-waste-reason"
+                      aria-label="Lý do hao phí"
+                      showSearch
+                      style={{ width: '100%' }}
+                      status={errorOf('wasteReason') ? 'error' : undefined}
+                      placeholder="Chọn lý do"
+                      optionFilterProp="label"
+                      value={effort.wasteReason === '' ? undefined : effort.wasteReason}
+                      onChange={(v) => setEffort({ ...effort, wasteReason: v ?? '' })}
+                      options={WASTE_REASONS.map((r) => ({
+                        value: wasteReasonLabel(r), label: wasteReasonLabel(r),
+                      }))}
+                    />
+                    <FieldError text={errorOf('wasteReason')} />
+                  </div>
+                </>
               )}
             </div>
           )}

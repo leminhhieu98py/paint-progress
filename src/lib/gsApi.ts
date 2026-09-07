@@ -95,7 +95,7 @@ function mapCellRow(row: Record<string, unknown>): Cell {
  * at somebody it is about to refuse.
  */
 export async function loadGsProject(projectId: string): Promise<GsProject> {
-  const [decksResult, membershipResult] = await Promise.all([
+  const [decksResult, membershipResult, coveredResult] = await Promise.all([
     supabase
       .from('decks')
       .select('id, seq, name, code, image_path, image_w, image_h, total_area_m2, area_source')
@@ -106,16 +106,34 @@ export async function loadGsProject(projectId: string): Promise<GsProject> {
       .select('project_id')
       .eq('project_id', projectId)
       .limit(1),
+    // The decks this session may actually work on (Feedback Rv4).
+    //
+    // 0028 narrows works, work_decks, deck_stages and cell_states to
+    // `my_works()`, but NOT decks -- a deck belongs to the project, not to a
+    // work, and the admin's screens need them all. On the foreman's screen
+    // that left a tab for every deck of the project, and opening one he had no
+    // work on showed only "Sàn này chưa được gán công việc nào" (Linh: "vẫn
+    // thấy các tab tương ứng, gây rối và khó sử dụng").
+    //
+    // `work_decks` IS narrowed, so the rows that come back here are exactly
+    // the decks this account is entitled to. An admin reads every row and sees
+    // every deck, which is what the admin should see.
+    supabase.from('work_decks').select('deck_id'),
   ])
   if (decksResult.error) throw new Error(decksResult.error.message)
   // Thrown, not treated as "not a member": a failed membership read is a network
   // or policy fault, and reporting it as a refusal would tell a foreman with a
   // dropped tether to go and find the administrator.
   if (membershipResult.error) throw new Error(membershipResult.error.message)
+  if (coveredResult.error) throw new Error(coveredResult.error.message)
+
+  const covered = new Set(
+    ((coveredResult.data ?? []) as { deck_id: string }[]).map((r) => r.deck_id),
+  )
 
   return {
     isMember: (membershipResult.data ?? []).length > 0,
-    decks: (decksResult.data ?? []).map((d) => ({
+    decks: (decksResult.data ?? []).filter((d) => covered.has(d.id as string)).map((d) => ({
       id: d.id as string,
       seq: d.seq as number,
       name: d.name as string,

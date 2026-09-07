@@ -111,6 +111,7 @@ describe('loadGsProject', () => {
       }],
     }))
     from.mockImplementationOnce(() => builder({ data: MEMBER }))
+    from.mockImplementationOnce(() => builder({ data: [{ deck_id: 'd1' }] }))
 
     const project = await loadGsProject('p1')
 
@@ -134,6 +135,7 @@ describe('loadGsProject', () => {
       }],
     }))
     from.mockImplementationOnce(() => builder({ data: MEMBER }))
+    from.mockImplementationOnce(() => builder({ data: [{ deck_id: 'd2' }] }))
 
     const [deck] = (await loadGsProject('p1')).decks
 
@@ -146,6 +148,7 @@ describe('loadGsProject', () => {
     const decks = builder({ data: [] })
     from.mockImplementationOnce(() => decks)
     from.mockImplementationOnce(() => builder({ data: MEMBER }))
+    from.mockImplementationOnce(() => builder({ data: [] }))
 
     await loadGsProject('p1')
 
@@ -159,6 +162,7 @@ describe('loadGsProject', () => {
     from.mockImplementationOnce(() => builder({ data: [] }))
     const members = builder({ data: MEMBER })
     from.mockImplementationOnce(() => members)
+    from.mockImplementationOnce(() => builder({ data: [] }))
 
     expect((await loadGsProject('p1')).isMember).toBe(true)
 
@@ -176,6 +180,7 @@ describe('loadGsProject', () => {
     // outside -- this flag is the only thing that separates them.
     from.mockImplementationOnce(() => builder({ data: [] }))
     from.mockImplementationOnce(() => builder({ data: [] }))
+    from.mockImplementationOnce(() => builder({ data: [] }))
 
     const project = await loadGsProject('p9')
 
@@ -186,6 +191,7 @@ describe('loadGsProject', () => {
   it('throws when the deck query fails', async () => {
     from.mockImplementationOnce(() => builder({ error: { message: 'permission denied' } }))
     from.mockImplementationOnce(() => builder({ data: MEMBER }))
+    from.mockImplementationOnce(() => builder({ data: [] }))
     await expect(loadGsProject('p1')).rejects.toThrow('permission denied')
   })
 
@@ -195,7 +201,49 @@ describe('loadGsProject', () => {
     // the administrator finds nothing wrong.
     from.mockImplementationOnce(() => builder({ data: [] }))
     from.mockImplementationOnce(() => builder({ error: { message: 'Failed to fetch' } }))
+    from.mockImplementationOnce(() => builder({ data: [] }))
     await expect(loadGsProject('p1')).rejects.toThrow('Failed to fetch')
+  })
+
+  it('keeps only the decks this session may work on (Feedback Rv4)', async () => {
+    // 0028 narrows work_decks to my_works() but leaves `decks` project-wide,
+    // so a foreman held to one work still saw a tab for every deck of the
+    // project -- each opening on "Sàn này chưa được gán công việc nào".
+    from.mockImplementationOnce(() => builder({
+      data: [
+        { id: 'd1', seq: 1, name: 'Mine', code: 'M1', image_path: null, image_w: null, image_h: null, total_area_m2: '10', area_source: 'guides' },
+        { id: 'd2', seq: 2, name: 'Not mine', code: 'M2', image_path: null, image_w: null, image_h: null, total_area_m2: '20', area_source: 'guides' },
+      ],
+    }))
+    from.mockImplementationOnce(() => builder({ data: MEMBER }))
+    const covered = builder({ data: [{ deck_id: 'd1' }] })
+    from.mockImplementationOnce(() => covered)
+
+    const project = await loadGsProject('p1')
+
+    expect(from).toHaveBeenCalledWith('work_decks')
+    expect(covered.select).toHaveBeenCalledWith('deck_id')
+    expect(project.decks.map((d) => d.code)).toEqual(['M1'])
+  })
+
+  it('shows no deck at all when the session holds no work here', async () => {
+    from.mockImplementationOnce(() => builder({
+      data: [{ id: 'd1', seq: 1, name: 'X', code: 'X', image_path: null, image_w: null, image_h: null, total_area_m2: '1', area_source: 'guides' }],
+    }))
+    from.mockImplementationOnce(() => builder({ data: MEMBER }))
+    from.mockImplementationOnce(() => builder({ data: [] }))
+
+    expect((await loadGsProject('p1')).decks).toEqual([])
+  })
+
+  it('throws when the coverage read fails, rather than hiding every deck', async () => {
+    // An empty list and a failed read look the same on screen -- "no decks" --
+    // and one of them is a tether that dropped.
+    from.mockImplementationOnce(() => builder({ data: [] }))
+    from.mockImplementationOnce(() => builder({ data: MEMBER }))
+    from.mockImplementationOnce(() => builder({ error: { message: 'mất kết nối' } }))
+
+    await expect(loadGsProject('p1')).rejects.toThrow('mất kết nối')
   })
 })
 
