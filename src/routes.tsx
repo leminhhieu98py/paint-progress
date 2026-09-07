@@ -41,6 +41,9 @@ const DeckDetailScreen = lazy(() =>
 const UsersScreen = lazy(() =>
   import('./screens/admin/UsersScreen').then((m) => ({ default: m.UsersScreen })),
 )
+const EmployeesScreen = lazy(() =>
+  import('./screens/admin/EmployeesScreen').then((m) => ({ default: m.EmployeesScreen })),
+)
 const GsScreen = lazy(() =>
   import('./screens/gs/GsScreen').then((m) => ({ default: m.GsScreen })),
 )
@@ -220,6 +223,14 @@ export function AppRoutes() {
             element={
               <LazySuspense>
                 <DashboardScreen variant="admin" />
+              </LazySuspense>
+            }
+          />
+          <Route
+            path="employees"
+            element={
+              <LazySuspense>
+                <EmployeesScreen />
               </LazySuspense>
             }
           />

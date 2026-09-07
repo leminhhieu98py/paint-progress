@@ -21,6 +21,7 @@ function renderAt(path: string) {
         <Route path="decks/:deckId" element={<div>nội dung một sàn</div>} />
           <Route path="users" element={<div>nội dung người dùng</div>} />
           <Route path="dashboard" element={<div>nội dung năng suất</div>} />
+          <Route path="employees" element={<div>nội dung nhân viên</div>} />
         </Route>
         <Route path="/login" element={<div>màn đăng nhập</div>} />
       </Routes>
@@ -46,6 +47,7 @@ describe('AdminLayout', () => {
     expect(screen.getByRole('link', { name: /Sàn/ })).toHaveAttribute('href', '/admin/decks')
     expect(screen.getByRole('link', { name: /Năng suất/ })).toHaveAttribute('href', '/admin/dashboard')
     expect(screen.getByRole('link', { name: /Người dùng/ })).toHaveAttribute('href', '/admin/users')
+    expect(screen.getByRole('link', { name: /Nhân viên/ })).toHaveAttribute('href', '/admin/employees')
   })
 
   it('marks the open destination, including from a deck detail route', () => {

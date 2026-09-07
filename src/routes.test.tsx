@@ -58,6 +58,9 @@ vi.mock('./screens/admin/DecksScreen', () => ({
 vi.mock('./screens/admin/UsersScreen', () => ({
   UsersScreen: () => <div>USERS SCREEN</div>,
 }))
+vi.mock('./screens/admin/EmployeesScreen', () => ({
+  EmployeesScreen: () => <div>EMPLOYEES SCREEN</div>,
+}))
 // Konva, and its own data fetching. This file is about which route
 // a signed-in profile lands on, not what the destination renders. The projectId
 // is rendered so the assertion below can prove the redirect landed on THIS
@@ -212,6 +215,12 @@ describe('AppRoutes: /login is the entry point', () => {
     asRole('viewer')
     renderAt(`${APP_BASE_PATH}/gs/proj-4/dashboard`)
     expect(await screen.findByText('DASHBOARD gs (dự án proj-4)')).toBeInTheDocument()
+  })
+
+  it('gives an admin the shared staff roster (Feedback Rv4)', async () => {
+    asRole('admin')
+    renderAt(`${APP_BASE_PATH}/admin/employees`)
+    expect(await screen.findByText('EMPLOYEES SCREEN')).toBeInTheDocument()
   })
 
   it('gives a path that is not a route the bare 404, as spec §7.3 asks', async () => {

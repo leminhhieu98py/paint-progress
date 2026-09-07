@@ -2,6 +2,7 @@ import {
   ApartmentOutlined,
   BuildOutlined,
   FolderOpenOutlined,
+  IdcardOutlined,
   LineChartOutlined,
   LogoutOutlined,
   MenuFoldOutlined,
@@ -23,6 +24,7 @@ const items = [
   { key: 'decks', label: 'Sàn', icon: <BuildOutlined /> },
   { key: 'dashboard', label: 'Năng suất', icon: <LineChartOutlined /> },
   { key: 'users', label: 'Người dùng', icon: <TeamOutlined /> },
+  { key: 'employees', label: 'Nhân viên', icon: <IdcardOutlined /> },
 ]
 
 const OPEN_WIDTH = 240
