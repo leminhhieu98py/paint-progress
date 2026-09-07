@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   createZone, deleteZone, listDeckZones, setZoneActual, updateZone,
+  setZoneCells,
 } from './zonesApi'
 
 const from = vi.hoisted(() => vi.fn())
@@ -334,5 +335,40 @@ describe('zone colour (0027)', () => {
     const zones = await listDeckZones('d1')
 
     expect(zones[0].color).toBe('#eb2f96')
+  })
+})
+
+describe('setZoneCells', () => {
+  it('drops only what left and inserts only what arrived', async () => {
+    // A diff, not a wipe: the plan must never be off the foreman's drawing
+    // between two statements, and this table has no transaction across them.
+    const read = builder({ data: [{ cell_id: 'c1' }, { cell_id: 'c2' }] })
+    const drop = builder({})
+    const add = builder({})
+    from.mockReturnValueOnce(read).mockReturnValueOnce(drop).mockReturnValueOnce(add)
+
+    await setZoneCells('z1', ['c2', 'c3'])
+
+    expect(read.select).toHaveBeenCalledWith('cell_id')
+    expect(drop.delete).toHaveBeenCalled()
+    expect(drop.in).toHaveBeenCalledWith('cell_id', ['c1'])
+    expect(add.insert).toHaveBeenCalledWith([{ zone_id: 'z1', cell_id: 'c3' }])
+  })
+
+  it('writes nothing when the set is already right', async () => {
+    from.mockReturnValueOnce(builder({ data: [{ cell_id: 'c1' }] }))
+    await setZoneCells('z1', ['c1', 'c1'])
+    expect(from).toHaveBeenCalledTimes(1)
+  })
+
+  it('refuses to empty a zone, which is a delete by another name', async () => {
+    await expect(setZoneCells('z1', [])).rejects.toThrow('ít nhất một ô')
+    expect(from).not.toHaveBeenCalled()
+  })
+
+  it('reports a failed read without touching the memberships', async () => {
+    from.mockReturnValueOnce(builder({ error: { message: 'mất kết nối' } }))
+    await expect(setZoneCells('z1', ['c1'])).rejects.toThrow('mất kết nối')
+    expect(from).toHaveBeenCalledTimes(1)
   })
 })

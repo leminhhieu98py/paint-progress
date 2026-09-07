@@ -325,7 +325,7 @@ export async function setReportNote(
  */
 const EVENT_SELECT =
   'id, at, to_stage_name, work_name, by, note, report_note, report_hidden,'
-  + ' lead_name, painter_name, work_hours, waste_hours, waste_reason, effort_edited_at,'
+  + ' lead_name, painter_name, work_hours, waste_hours, waste_reason, waste_order, effort_edited_at,'
   + ' effort_editor:profiles!cell_events_effort_edited_by_fkey(full_name),'
   + ' cells!inner(deck_id, code, area_m2, decks!inner(name, project_id))'
 
@@ -358,6 +358,7 @@ function mapEventRow(r: unknown): DeckEvent {
       workHours: numberOrNull(row.work_hours),
       wasteHours: numberOrNull(row.waste_hours),
       wasteReason: (row.waste_reason as string | null) ?? '',
+      wasteOrder: (row.waste_order as string | null) ?? '',
     },
     effortEditedAt: (row.effort_edited_at as string | null) ?? null,
     effortEditedByName: editor?.full_name ?? null,
@@ -421,6 +422,7 @@ export async function setCellEventEffort(eventId: number, effort: Effort): Promi
     p_work_hours: effort.workHours,
     p_waste_hours: effort.wasteHours,
     p_waste_reason: effort.wasteReason.trim(),
+    p_waste_order: effort.wasteOrder.trim(),
   })
   if (error) throw new Error(error.message)
 }

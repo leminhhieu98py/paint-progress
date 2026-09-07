@@ -308,7 +308,7 @@ describe('buildEventRows', () => {
 
   it('carries the effort recorded with the change (Feedback Rv2, item 11)', () => {
     const [row] = buildEventRows(withEvents([ev({
-      effort: { leadName: 'Tổ 1', painterName: 'Nam', workHours: 3.5, wasteHours: 0.5, wasteReason: 'Chờ vật tư' },
+      effort: { leadName: 'Tổ 1', painterName: 'Nam', workHours: 3.5, wasteHours: 0.5, wasteReason: 'Chờ vật tư', wasteOrder: 'LSX-1' },
     })]))
     expect(row).toMatchObject({
       leadName: 'Tổ 1', painterName: 'Nam', workHours: 3.5, wasteHours: 0.5, wasteReason: 'Chờ vật tư',

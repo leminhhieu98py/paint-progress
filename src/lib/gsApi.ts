@@ -332,7 +332,8 @@ export async function setCellState(
       {
         cell_id: cellId, work_id: workId, deck_id: deckId, stage_id: stageId, note,
         lead_name: effort.leadName, painter_name: effort.painterName,
-        work_hours: effort.workHours, waste_hours: effort.wasteHours, waste_reason: effort.wasteReason,
+        work_hours: effort.workHours, waste_hours: effort.wasteHours,
+        waste_reason: effort.wasteReason, waste_order: effort.wasteOrder,
       },
       { onConflict: 'cell_id,work_id' },
     )

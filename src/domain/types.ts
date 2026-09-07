@@ -193,12 +193,14 @@ export interface Effort {
   workHours: number | null
   /** Mhr lost on the bay in this update. Null: not recorded. Never enters Mhr/m². */
   wasteHours: number | null
-  /** Why the hours were lost. Empty unless wasteHours > 0. */
+  /** Why the hours were lost, as `"2.1 Vật tư về trễ…"`. Empty unless wasteHours > 0. */
   wasteReason: string
+  /** Lệnh sản xuất the lost hours are booked against (Rv4). Empty unless wasteHours > 0. */
+  wasteOrder: string
 }
 
 export const EMPTY_EFFORT: Effort = {
-  leadName: '', painterName: '', workHours: null, wasteHours: null, wasteReason: '',
+  leadName: '', painterName: '', workHours: null, wasteHours: null, wasteReason: '', wasteOrder: '',
 }
 
 /**

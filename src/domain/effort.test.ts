@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   dailyEffort, deckEffortTotals, effortCoverage, effortDayKey, efficiencySeries, hoursSeries,
-  leadEfficiency, stageEfficiency, stageOrder, wasteReasons, type StageOrder,
+  leadEfficiency, stageEfficiency, stageOrder, wasteReasonLabel, wasteReasons, WASTE_REASONS,
+  type StageOrder,
 } from './effort'
 import { EMPTY_EFFORT, type DeckEvent, type Effort, type WorkModel } from './types'
 
@@ -231,5 +232,33 @@ describe('deckEffortTotals', () => {
     expect(deckEffortTotals([event()], '2026-09-05')).toEqual({
       todayHours: 0, totalHours: 0, todayWasteHours: 0, totalWasteHours: 0,
     })
+  })
+})
+
+describe('WASTE_REASONS', () => {
+  it('is Linh\'s list, in her order, with her numbering', () => {
+    // Feedback Rv4: "giữ nguyên số thứ tự và nội dung". The ends and the count
+    // are asserted so a reordering or a dropped line fails here rather than
+    // showing up as a reason nobody can pick.
+    expect(WASTE_REASONS).toHaveLength(26)
+    expect(WASTE_REASONS[0]).toEqual({ code: '1.1', text: 'Vận chuyển/Di chuyển' })
+    expect(WASTE_REASONS[1]).toEqual({ code: '2.1', text: 'Vật tư về trễ, về không đồng bộ' })
+    expect(WASTE_REASONS[WASTE_REASONS.length - 1]).toEqual({ code: '8.5', text: 'Cúp điện' })
+    expect(WASTE_REASONS.map((r) => r.code)).toEqual([
+      '1.1', '2.1', '2.2', '2.3', '2.4', '2.5',
+      '3.1', '3.2', '3.3', '3.4', '3.5', '3.6',
+      '4.1', '4.2', '4.3',
+      '5.1', '5.2', '5.3', '5.4',
+      '6.1', '7.1',
+      '8.1', '8.2', '8.3', '8.4', '8.5',
+    ])
+  })
+
+  it('gives every code exactly once', () => {
+    expect(new Set(WASTE_REASONS.map((r) => r.code)).size).toBe(WASTE_REASONS.length)
+  })
+
+  it('records the code with the words, so the history keeps both', () => {
+    expect(wasteReasonLabel(WASTE_REASONS[1])).toBe('2.1 Vật tư về trễ, về không đồng bộ')
   })
 })

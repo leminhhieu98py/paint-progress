@@ -412,7 +412,7 @@ describe('per-deck sheets', () => {
 describe('effort on the report (Feedback Rv2, item 11)', () => {
   const EFFORT_EVENT = {
     ...EVENT,
-    effort: { leadName: 'Tổ 1', painterName: 'Nam', workHours: 3.5, wasteHours: 0.5, wasteReason: 'Chờ vật tư' },
+    effort: { leadName: 'Tổ 1', painterName: 'Nam', workHours: 3.5, wasteHours: 0.5, wasteReason: 'Chờ vật tư', wasteOrder: 'LSX-1' },
   }
 
   it('prints the effort beside each update, hours as numbers and blanks for a legacy row', async () => {

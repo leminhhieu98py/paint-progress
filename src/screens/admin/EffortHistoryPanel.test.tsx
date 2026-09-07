@@ -30,7 +30,7 @@ const EVENTS = [
   ev({ id: 1, cellCode: 'R1C1', at: '2026-09-01T03:00:00Z' }),
   ev({
     id: 2, cellCode: 'R1C2', toStageName: 'Lớp 2', at: '2026-09-02T03:00:00Z', byId: 'u2',
-    effort: { leadName: 'Tổ 1', painterName: 'Nam', workHours: 3.5, wasteHours: 0.5, wasteReason: 'Chờ vật tư' },
+    effort: { leadName: 'Tổ 1', painterName: 'Nam', workHours: 3.5, wasteHours: 0.5, wasteReason: 'Chờ vật tư', wasteOrder: 'LSX-1' },
     effortEditedAt: '2026-09-05T02:00:00Z', effortEditedByName: 'Đoàn Công Linh',
   }),
 ]

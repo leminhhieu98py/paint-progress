@@ -132,6 +132,49 @@ export async function updateZone(
   if (error) throw new Error(error.message)
 }
 
+/**
+ * The exact set of bays a zone covers (Feedback Rv4): add some, drop some, in
+ * one call.
+ *
+ * A diff, not a wipe-and-rewrite: deleting every membership and re-inserting
+ * would take the plan off the foreman's drawing for as long as the two
+ * statements take, and this table has no transaction across them. Only the
+ * rows that actually change are touched, so a zone that gains one bay loses
+ * nothing in between.
+ *
+ * An empty set is refused. A zone with no bays is not a plan, it is a row
+ * nobody can see or reach -- deleting the zone is what that means, and there
+ * is a button for it.
+ */
+export async function setZoneCells(zoneId: string, cellIds: string[]): Promise<void> {
+  const wanted = [...new Set(cellIds)]
+  if (wanted.length === 0) {
+    throw new Error('Zone phải có ít nhất một ô. Muốn bỏ hết thì xoá zone.')
+  }
+
+  const { data, error } = await supabase.from('zone_cells').select('cell_id').eq('zone_id', zoneId)
+  if (error) throw new Error(error.message)
+  const current = ((data ?? []) as { cell_id: string }[]).map((r) => r.cell_id)
+
+  const gone = current.filter((id) => !wanted.includes(id))
+  if (gone.length > 0) {
+    const { error: dropError } = await supabase
+      .from('zone_cells')
+      .delete()
+      .eq('zone_id', zoneId)
+      .in('cell_id', gone)
+    if (dropError) throw new Error(dropError.message)
+  }
+
+  const added = wanted.filter((id) => !current.includes(id))
+  if (added.length > 0) {
+    const { error: addError } = await supabase
+      .from('zone_cells')
+      .insert(added.map((cellId) => ({ zone_id: zoneId, cell_id: cellId })))
+    if (addError) throw new Error(addError.message)
+  }
+}
+
 /** `zone_cells.zone_id` is ON DELETE CASCADE (0003), so the memberships go with
  *  it. The cells themselves are untouched -- a plan is deleted, not the work. */
 export async function deleteZone(zoneId: string): Promise<void> {
