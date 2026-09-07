@@ -25,8 +25,9 @@ import {
 } from '../../lib/gsApi'
 import { listDeckZones } from '../../lib/zonesApi'
 import { listEmployees } from '../../lib/employeesApi'
-import { listDeckEvents, loadDeckWorks } from '../../lib/progressApi'
+import { listDeckEvents, loadDeckWorks, loadProjectModel } from '../../lib/progressApi'
 import { buildReportWorkbook, reportFileName, type DeckImages, type PlanImage } from '../../lib/reportXlsx'
+import { buildProjectReport, downloadWorkbook } from '../../lib/projectReport'
 import { renderDeckDrawing, renderDeckPie, renderPlanDrawing } from '../../canvas/deckSnapshot'
 import { CellStageModal } from './CellStageModal'
 import { ConsequenceModal } from '../../components/ConsequenceModal'
@@ -779,6 +780,40 @@ export function GsScreen() {
    * overwrite each other in a downloads folder. No confirm step: one deck, one
    * download, nothing on the server changes.
    */
+  /**
+   * The whole project in one workbook, from the foreman's screen (Feedback
+   * Rv4). Same builder as the admin's decks list, so the two files cannot
+   * describe one project differently.
+   */
+  const [exportingProject, setExportingProject] = useState(false)
+  const exportProject = async () => {
+    if (!projectId) return
+    setExportingProject(true)
+    try {
+      const [project, model, userNames] = await Promise.all([
+        loadGsProjectIdentity(projectId),
+        loadProjectModel(projectId),
+        // Attribution only; a failed names read must not fail the file.
+        listCoworkerNames().catch(() => ({})),
+      ])
+      if (model.decks.length === 0) {
+        throw new Error('Chưa có sàn nào bạn được phân quyền trong dự án này.')
+      }
+      const blob = await buildProjectReport({
+        projectName: project.name,
+        projectCode: project.code,
+        model,
+        userNames,
+      })
+      downloadWorkbook(blob, reportFileName(project.code, dayjs().format('YYYY-MM-DD')))
+      message.success('Đã xuất báo cáo cả dự án')
+    } catch (e) {
+      message.error((e as Error).message)
+    } finally {
+      setExportingProject(false)
+    }
+  }
+
   const exportDeck = async () => {
     if (!projectId || !deck) return
     setExporting(true)
@@ -1164,6 +1199,20 @@ export function GsScreen() {
                   onClick={() => { void exportDeck() }}
                 >
                   {phone ? null : 'Xuất báo cáo'}
+                </Button>
+                {/*
+                  Every deck in one file (Feedback Rv4). Linh: the bosses were
+                  asking for the admin build purely to download a report over
+                  all the decks. RLS decides what lands in it, so a foreman
+                  held to one work gets that work's decks and no others.
+                */}
+                <Button
+                  icon={<DownloadOutlined aria-hidden />}
+                  aria-label="Xuất cả dự án"
+                  loading={exportingProject}
+                  onClick={() => { void exportProject() }}
+                >
+                  {phone ? null : 'Xuất cả dự án'}
                 </Button>
               </Space>
             }

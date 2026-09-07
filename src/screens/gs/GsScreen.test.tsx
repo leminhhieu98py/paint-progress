@@ -40,10 +40,18 @@ vi.mock('../../lib/gsApi', () => ({
   listCoworkerNames: () => listCoworkerNames(),
   loadGsProjectIdentity: (projectId: string) => loadGsProjectIdentity(projectId),
 }))
+const loadProjectModel = vi.hoisted(() => vi.fn())
 vi.mock('../../lib/progressApi', () => ({
   listCellNotes: (cellId: string) => listCellNotes(cellId),
   loadDeckWorks: (deckId: string) => loadDeckWorks(deckId),
   listDeckEvents: (deckId: string) => listDeckEvents(deckId),
+  loadProjectModel: (projectId: string) => loadProjectModel(projectId),
+}))
+const buildProjectReport = vi.hoisted(() => vi.fn())
+const downloadWorkbook = vi.hoisted(() => vi.fn())
+vi.mock('../../lib/projectReport', () => ({
+  buildProjectReport: (input: unknown) => buildProjectReport(input),
+  downloadWorkbook: (blob: unknown, name: string) => downloadWorkbook(blob, name),
 }))
 vi.mock('../../lib/reportXlsx', () => ({
   buildReportWorkbook: (i: unknown) => buildReportWorkbook(i),
@@ -230,6 +238,11 @@ beforeEach(() => {
   signOut.mockReset()
   listCoworkerNames.mockReset()
   listCoworkerNames.mockResolvedValue({})
+  loadProjectModel.mockReset()
+  loadProjectModel.mockResolvedValue({ models: [], decks: [{ id: 'd1' }], audit: {} })
+  buildProjectReport.mockReset()
+  buildProjectReport.mockResolvedValue(new Blob(['x']))
+  downloadWorkbook.mockReset()
   listEmployees.mockReset()
   listEmployees.mockResolvedValue([
     { id: 'e1', fullName: 'Lê Văn A', active: true },
@@ -1743,5 +1756,41 @@ describe('GsScreen: exporting the open deck', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Xuất báo cáo' }))
 
     expect(await screen.findByText(/out of memory/)).toBeInTheDocument()
+  })
+})
+
+describe('GsScreen: the whole project in one file (Feedback Rv4)', () => {
+  it('builds the project workbook and hands it over', async () => {
+    // Linh: the bosses were asking for the admin build purely to download a
+    // report over every deck. RLS decides what lands in it.
+    renderScreen()
+    await screen.findByRole('button', { name: 'ô R1C1' })
+    await userEvent.click(screen.getByRole('button', { name: 'Xuất cả dự án' }))
+
+    await waitFor(() => expect(buildProjectReport).toHaveBeenCalled())
+    expect(buildProjectReport.mock.calls[0][0]).toMatchObject({
+      projectCode: 'BB1', projectName: 'BlockB1_CPPTS',
+    })
+    await waitFor(() => expect(downloadWorkbook).toHaveBeenCalled())
+    expect(downloadWorkbook.mock.calls[0][1]).toMatch(/^tien-do-BB1-/)
+  })
+
+  it('says so when the account is on no deck of this project', async () => {
+    loadProjectModel.mockResolvedValue({ models: [], decks: [], audit: {} })
+    renderScreen()
+    await screen.findByRole('button', { name: 'ô R1C1' })
+    await userEvent.click(screen.getByRole('button', { name: 'Xuất cả dự án' }))
+
+    expect(
+      (await screen.findAllByText('Chưa có sàn nào bạn được phân quyền trong dự án này.')).length,
+    ).toBeGreaterThan(0)
+    expect(downloadWorkbook).not.toHaveBeenCalled()
+  })
+
+  it('is there for a viewer too, which is who asked for it', async () => {
+    authRole.value = 'viewer'
+    renderScreen()
+    await screen.findByRole('button', { name: 'ô R1C1' })
+    expect(screen.getByRole('button', { name: 'Xuất cả dự án' })).toBeInTheDocument()
   })
 })

@@ -5,18 +5,16 @@ import { Alert, App, Button, Form, Input, Modal, Select, Space, Table, Tooltip, 
 import dayjs from 'dayjs'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { renderDeckDrawing, renderDeckPie, renderPlanDrawing } from '../../canvas/deckSnapshot'
 import { computeProjectProgress, summariseDeck } from '../../domain/progress'
-import { planImagePairs } from '../../domain/report'
 import type { WorkKind } from '../../domain/types'
 import { listGsUsers } from '../../lib/adminApi'
-import { deleteDeck, duplicateDeck, getDrawingUrl, listDecks, type DeckRow } from '../../lib/decksApi'
+import { deleteDeck, duplicateDeck, listDecks, type DeckRow } from '../../lib/decksApi'
 import { formatAreaM2, formatPercent, formatWeight } from '../../lib/format'
-import { listDeckEvents, loadProjectModel } from '../../lib/progressApi'
+import { loadProjectModel } from '../../lib/progressApi'
 import type { ProjectModel } from '../../lib/workModel'
-import { listDeckZones } from '../../lib/zonesApi'
 import { listProjectNames } from '../../lib/projectsApi'
-import { buildReportWorkbook, reportFileName, type DeckImages, type PlanImage } from '../../lib/reportXlsx'
+import { reportFileName } from '../../lib/reportXlsx'
+import { buildProjectReport, downloadWorkbook } from '../../lib/projectReport'
 import { NEW_DECK } from '../../config'
 import { ConsequenceModal } from '../../components/ConsequenceModal'
 import { modalProps } from '../../components/modalChrome'
@@ -314,95 +312,15 @@ export function DecksScreen() {
     setExporting(true)
     try {
       const profiles = await listGsUsers().catch(() => [])
-      const userNames = Object.fromEntries(profiles.map((u) => [u.id, u.fullName]))
-
-      // The deck as the first bays work that carries it sees it: the mesh for
-      // the plan sheet, and the coats and states the pictures are coloured by.
-      // The figures on the sheets come from the whole model, not from this.
-      const viewOf = (deckId: string) => {
-        for (const m of model.models) {
-          if (m.work.kind !== 'bays') continue
-          const view = m.decks.find((d) => d.deck.id === deckId)
-          if (view) return view
-        }
-        return null
-      }
-
-      const reportDecks = await Promise.all(model.decks.map(async (meta) => {
-        const [zones, events] = await Promise.all([
-          listDeckZones(meta.id),
-          listDeckEvents(meta.id),
-        ])
-        return {
-          deck: {
-            id: meta.id, code: meta.code, name: meta.name, totalAreaM2: meta.totalAreaM2,
-            cells: viewOf(meta.id)?.deck.cells ?? [],
-          },
-          areaSource: meta.areaSource,
-          userNames,
-          zones,
-          events,
-        }
-      }))
-
-      // Sequential: each render decodes a full-size drawing into a canvas, and
-      // ten at once on an admin laptop is a spike for no gain.
-      const images: Record<string, DeckImages> = {}
-      for (const meta of model.decks) {
-        const view = viewOf(meta.id)
-        const cells = view?.deck.cells ?? []
-        const stages = view?.stages ?? []
-        const url = meta.imagePath ? await getDrawingUrl(meta.imagePath).catch(() => null) : null
-        images[meta.id] = {
-          drawingPng: url
-            ? await renderDeckDrawing(url, meta.imageW ?? 0, meta.imageH ?? 0, cells, stages)
-            : null,
-          piePng: renderDeckPie(meta.totalAreaM2, cells, stages),
-          // The sheet sizes the picture from this. Excel stretches whatever box
-          // it is given, and a fixed one squashed every deck that was not the
-          // shape the box assumed.
-          drawingAspect:
-            meta.imageW && meta.imageH ? meta.imageH / meta.imageW : null,
-        }
-      }
-
-      // The Plan sheet's layouts (Feedback Rv2, item 10): one per (deck, work)
-      // with a plan, sequential for the same reason as above. A render that
-      // fails is left out; the table above it is complete regardless.
-      const planImages: PlanImage[] = []
-      for (const pair of planImagePairs(reportDecks, model.models)) {
-        const meta = model.decks.find((d) => d.id === pair.deckId)
-        if (!meta?.imagePath || !meta.imageW || !meta.imageH) continue
-        const url = await getDrawingUrl(meta.imagePath).catch(() => null)
-        if (!url) continue
-        const png = await renderPlanDrawing(
-          url, meta.imageW, meta.imageH, pair.cells, pair.stages, pair.lastStage, pair.zones, pair.zoneColors,
-        )
-        if (png) {
-          planImages.push({
-            deckName: pair.deckName, workName: pair.workName, lastStageName: pair.lastStage.name,
-            png, aspect: meta.imageH / meta.imageW,
-          })
-        }
-      }
-
       const project = projects.find((p) => p.id === projectId)
-      const blob = await buildReportWorkbook({
+      const blob = await buildProjectReport({
         projectName: project?.name ?? '',
         projectCode: project?.code ?? '',
-        works: model.models,
-        decks: reportDecks,
-        images,
-        planImages,
+        model,
+        // Attribution only; a failed names read must not fail the file.
+        userNames: Object.fromEntries(profiles.map((u) => [u.id, u.fullName])),
       })
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = reportFileName(project?.code ?? 'export', dayjs().format('YYYY-MM-DD'))
-      a.click()
-      // Revoked on the next tick: Safari has not started the download when
-      // click() returns, and a revoked URL gives a silent zero-byte file.
-      setTimeout(() => URL.revokeObjectURL(url), 0)
+      downloadWorkbook(blob, reportFileName(project?.code ?? 'export', dayjs().format('YYYY-MM-DD')))
       message.success('Đã xuất báo cáo')
     } catch (e) {
       setError((e as Error).message)
