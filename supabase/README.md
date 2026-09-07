@@ -65,8 +65,8 @@ nvm use 22
 npx supabase db query --linked -f supabase/verify_schema.sql
 ```
 
-Every returned row must begin with `PASS` — 44 rows in a passing run against
-a project with `0001`–`0031` applied (measured 2026-09-05 on dev).
+Every returned row must begin with `PASS` — 45 rows in a passing run against
+a project with `0001`–`0032` applied (measured 2026-09-07 on dev).
 
 The `0019` note check reports `FAIL` until that migration is applied, and the
 three note tests in `tests/rls.integration.test.ts` are `it.skip`ped for the
@@ -79,7 +79,7 @@ look for. Fixtures are seeded by hand and inserted `on conflict do nothing`, so
 without this reset every run starts on whatever the last one left, and a test
 that asserts on a CHANGE quietly becomes an assertion about nothing.
 
-`0019`–`0031` are applied to the dev project. Production holds `0001`–`0029`
+`0019`–`0032` are applied to the dev project. Production holds `0001`–`0029`
 and the current Edge Function (pushed and deployed by the owner on
 2026-09-04). `0030` (effort columns on `cell_states` / `cell_events`, the
 `set_cell_event_effort` backfill RPC, the effort rule in the GS write guard)

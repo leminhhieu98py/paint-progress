@@ -233,8 +233,8 @@
 --   nvm use 22
 --   npx supabase db query --linked -f supabase/verify_schema.sql
 --
--- Every returned row must begin with PASS: 44 rows in total on a linked
--- project with 0001-0031 applied (measured 2026-09-05; the numbering above
+-- Every returned row must begin with PASS: 45 rows in total on a linked
+-- project with 0001-0032 applied (measured 2026-09-07; the numbering above
 -- runs 1-41 because one earlier check emits two rows and some later ones
 -- several). A row beginning with FAIL means
 -- a regression in the trigger/FK/RLS behaviour set up across migrations
@@ -1259,7 +1259,11 @@ begin
   fk_ok := exists (select 1 from pg_constraint where conname = 'cell_events_effort_edited_by_fkey');
   select prosecdef and proconfig @> array['search_path=public, pg_temp'] into fn_ok
    from pg_proc where proname = 'set_cell_event_effort' and pronamespace = 'public'::regnamespace;
-  anon_ok := not has_function_privilege('anon', 'public.set_cell_event_effort(bigint, text, text, numeric, numeric, text)', 'execute');
+  -- The signature is named, so this has to follow the function: 0032 added
+  -- p_waste_order and dropped the six-argument form. A stale signature here
+  -- does not report FAIL, it aborts the whole script with 42883.
+  anon_ok := not has_function_privilege(
+    'anon', 'public.set_cell_event_effort(bigint, text, text, numeric, numeric, text, text)', 'execute');
   upd_held := has_table_privilege('authenticated', 'cell_events', 'update');
   select prosrc like '%effort may only be changed together with the stage%' into guard_ok
    from pg_proc where proname = 'assert_gs_state_write' and pronamespace = 'public'::regnamespace;
@@ -1286,6 +1290,33 @@ begin
     '%s 0031 work_decks.deadline is a nullable date (%s) behind the admin-write / member-read pair %s (need 2)',
     case when coalesce(col_ok, false) and pol = 2 then 'PASS' else 'FAIL' end,
     coalesce(col_ok, false), pol);
+end $$;
+
+create or replace function _verify_employees() returns setof text language plpgsql as $$
+declare
+  pol int; idx_ok boolean; cols int; fn_ok boolean; anon_ok boolean; guard_ok boolean;
+begin
+  -- 45. 0032: the shared staff list behind its two policies and its
+  -- case-folded unique name, waste_order on both tables, the backfill RPC at
+  -- its new arity, and the GS guard carrying waste_order.
+  select count(*) into pol from pg_policies
+   where schemaname = 'public' and tablename = 'employees'
+     and policyname in ('employees_admin_all', 'employees_read');
+  idx_ok := exists (select 1 from pg_indexes where schemaname = 'public' and indexname = 'employees_name_key');
+  select count(*) into cols from information_schema.columns
+   where table_schema = 'public' and column_name = 'waste_order'
+     and table_name in ('cell_states', 'cell_events');
+  select prosecdef and pronargs = 7 and proconfig @> array['search_path=public, pg_temp'] into fn_ok
+   from pg_proc where proname = 'set_cell_event_effort' and pronamespace = 'public'::regnamespace;
+  anon_ok := not has_function_privilege(
+    'anon', 'public.set_cell_event_effort(bigint, text, text, numeric, numeric, text, text)', 'execute');
+  select prosrc like '%waste_order%' into guard_ok
+   from pg_proc where proname = 'assert_gs_state_write' and pronamespace = 'public'::regnamespace;
+  return next format(
+    '%s 0032 employees policies %s (need 2), unique name %s, waste_order columns %s (need 2), 7-arg pinned definer %s, anon refused %s, guard carries waste_order %s',
+    case when pol = 2 and idx_ok and cols = 2 and coalesce(fn_ok, false) and anon_ok and coalesce(guard_ok, false)
+         then 'PASS' else 'FAIL' end,
+    pol, idx_ok, cols, coalesce(fn_ok, false), anon_ok, coalesce(guard_ok, false));
 end $$;
 
 -- A single top-level SELECT: `supabase db query -f` surfaces only the last
@@ -1317,7 +1348,9 @@ select * from _verify_roles_and_work_members()
 union all
 select * from _verify_effort()
 union all
-select * from _verify_deadline();
+select * from _verify_deadline()
+union all
+select * from _verify_employees();
 
 drop function _verify_triggers();
 drop function _verify_rls();
