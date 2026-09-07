@@ -1716,7 +1716,7 @@ describe.skipIf(!adminConfigured)('0030: effort on bay updates', () => {
   const newestEvent = async () => {
     const { data, error } = await admin
       .from('cell_events')
-      .select('id, to_stage_id, lead_name, painter_name, work_hours, waste_hours, waste_reason, effort_edited_by, effort_edited_at')
+      .select('id, to_stage_id, lead_name, painter_name, work_hours, waste_hours, waste_reason, waste_order, effort_edited_by, effort_edited_at')
       .eq('cell_id', cellId)
       .order('at', { ascending: false })
       .limit(1)
@@ -1758,7 +1758,7 @@ describe.skipIf(!adminConfigured)('0030: effort on bay updates', () => {
   it('a GS cannot backfill effort on an event', async () => {
     const { error } = await gs.rpc('set_cell_event_effort', {
       p_event_id: eventId, p_lead_name: 'x', p_painter_name: 'y',
-      p_work_hours: 1, p_waste_hours: null, p_waste_reason: '',
+      p_work_hours: 1, p_waste_hours: null, p_waste_reason: '', p_waste_order: '',
     })
     expect(error?.code).toBe('42501')
   })
@@ -1766,7 +1766,7 @@ describe.skipIf(!adminConfigured)('0030: effort on bay updates', () => {
   it('an admin backfills effort on an event, stamped, without touching the stage', async () => {
     const { error } = await admin.rpc('set_cell_event_effort', {
       p_event_id: eventId, p_lead_name: '  Tổ 2 ', p_painter_name: null,
-      p_work_hours: 4, p_waste_hours: null, p_waste_reason: '   ',
+      p_work_hours: 4, p_waste_hours: null, p_waste_reason: '   ', p_waste_order: ' LSX-9 ',
     })
     expect(error).toBeNull()
 
@@ -1778,6 +1778,7 @@ describe.skipIf(!adminConfigured)('0030: effort on bay updates', () => {
     expect(Number(ev.work_hours)).toBe(4)
     expect(ev.waste_hours).toBeNull()
     expect(ev.waste_reason).toBe('')
+    expect(ev.waste_order).toBe('LSX-9')
     expect(ev.effort_edited_by).toBe(adminId)
     expect(ev.effort_edited_at).not.toBeNull()
   })
@@ -1826,6 +1827,66 @@ describe.skipIf(!adminConfigured)('0030: effort on bay updates', () => {
     expect(still.data?.[0]?.deadline).toBe('2026-10-08')
   })
 
+  it('records the production order with the rest of the effort (0032)', async () => {
+    const write = await gs
+      .from('cell_states')
+      .upsert({
+        cell_id: cellId, work_id: workId, deck_id: deckId, stage_id: stage2, note: '',
+        ...EFFORT, waste_order: 'LSX-2026-77',
+      }, { onConflict: 'cell_id,work_id' })
+      .select('cell_id')
+    expect(write.error).toBeNull()
+
+    const ev = await newestEvent()
+    expect(ev.to_stage_id).toBe(stage2)
+    expect(ev.waste_order).toBe('LSX-2026-77')
+  })
+
+  it('a GS cannot change the production order without moving the stage (0032)', async () => {
+    const write = await gs
+      .from('cell_states')
+      .upsert({
+        cell_id: cellId, work_id: workId, deck_id: deckId, stage_id: stage2, note: '',
+        ...EFFORT, waste_order: 'LSX-CHANGED',
+      }, { onConflict: 'cell_id,work_id' })
+      .select('cell_id')
+    expect(write.error).not.toBeNull()
+    expect(write.error!.message).toContain('effort may only be changed together with the stage')
+  })
+
+  it('every signed-in session reads the staff roster, and only an admin writes it (0032)', async () => {
+    const name = `RLS Nhân viên ${Date.now().toString(36)}`
+    const made = await admin.from('employees').insert({ full_name: name }).select('id').single()
+    expect(made.error).toBeNull()
+    const employeeId = made.data!.id as string
+
+    try {
+      // The foreman has to find his own crew in here, so the read is open to
+      // every session; the table holds names and nothing else.
+      const read = await gs.from('employees').select('full_name').eq('id', employeeId)
+      expect(read.error).toBeNull()
+      expect(read.data?.[0]?.full_name).toBe(name)
+
+      // No member write policy: RLS hides the row from the UPDATE.
+      const renamed = await gs
+        .from('employees')
+        .update({ full_name: 'GS đổi tên' })
+        .eq('id', employeeId)
+        .select('id')
+      expect(renamed.error).toBeNull()
+      expect(renamed.data ?? []).toEqual([])
+
+      const added = await gs.from('employees').insert({ full_name: `${name} (GS)` })
+      expect(added.error).not.toBeNull()
+
+      // And one name is one row, whatever the case and spacing.
+      const twice = await admin.from('employees').insert({ full_name: `  ${name.toUpperCase()} ` })
+      expect(twice.error?.code).toBe('23505')
+    } finally {
+      expect((await admin.from('employees').delete().eq('id', employeeId)).error).toBeNull()
+    }
+  })
+
   it('a viewer cannot record effort either, and no event is written', async () => {
     const promote = await admin.from('profiles').update({ role: 'viewer' }).eq('id', gsUserId)
     expect(promote.error).toBeNull()
@@ -1838,6 +1899,7 @@ describe.skipIf(!adminConfigured)('0030: effort on bay updates', () => {
 
     const count = await admin.from('cell_events').select('id', { count: 'exact', head: true }).eq('cell_id', cellId)
     expect(count.error).toBeNull()
-    expect(count.count).toBe(1)
+    // One from the first test, one from the production-order test above.
+    expect(count.count).toBe(2)
   })
 })
