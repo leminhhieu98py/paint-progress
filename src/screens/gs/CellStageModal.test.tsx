@@ -71,8 +71,8 @@ const chooseCrew = (label: string, name: string) => chooseIn(label, name)
 const fillRequired = async (hours = '4') => {
   await chooseCrew('Nhóm trưởng', 'Lê Văn A')
   await chooseCrew('Thợ chính', 'Nguyễn Văn B')
-  await userEvent.type(screen.getByLabelText(/Số\ giờ\ công\ \(Mhr\)/), hours)
-  await userEvent.type(screen.getByLabelText(/Giờ\ hao\ phí\ \(Mhr\)/), '0')
+  await userEvent.type(screen.getByLabelText(/Số giờ công \(Mhr\)/), hours)
+  await userEvent.type(screen.getByLabelText(/Giờ hao phí \(Mhr\)/), '0')
 }
 
 /** What `fillRequired` produces, for the assertions. */
