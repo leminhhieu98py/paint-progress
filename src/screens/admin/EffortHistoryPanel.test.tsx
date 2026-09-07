@@ -112,13 +112,23 @@ describe('EffortHistoryPanel', () => {
     await userEvent.type(screen.getByLabelText('Nhóm trưởng'), 'Tổ 2')
     await userEvent.type(screen.getByLabelText('Số giờ công (Mhr)'), '4')
     // A reason is asked for only once hours were lost.
-    expect(screen.queryByLabelText('Lý do hao phí')).toBeNull()
+    expect(screen.queryByRole('combobox', { name: 'Lý do hao phí' })).toBeNull()
+    expect(screen.queryByLabelText('Lệnh sản xuất hao phí')).toBeNull()
     await userEvent.type(screen.getByLabelText('Giờ hao phí (Mhr)'), '1')
-    await userEvent.type(await screen.findByLabelText('Lý do hao phí'), 'Mưa')
+    await userEvent.type(await screen.findByLabelText('Lệnh sản xuất hao phí'), 'LSX-5')
+    // The same fixed list the foreman picks from, so a backfilled row groups
+    // with the recorded ones instead of becoming its own category.
+    const reason = screen.getByRole('combobox', { name: 'Lý do hao phí' })
+    await userEvent.click(reason)
+    await userEvent.type(reason, 'Thời tiết')
+    const listId = reason.getAttribute('aria-controls')
+    const dropdown = document.getElementById(listId ?? '')?.closest('.ant-select-dropdown') as HTMLElement
+    await userEvent.click(await within(dropdown).findByTitle('8.1 Thời tiết'))
     await userEvent.click(screen.getByRole('button', { name: 'Lưu' }))
 
     await waitFor(() => expect(setCellEventEffort).toHaveBeenCalledWith(1, {
-      leadName: 'Tổ 2', painterName: '', workHours: 4, wasteHours: 1, wasteReason: 'Mưa',
+      leadName: 'Tổ 2', painterName: '', workHours: 4, wasteHours: 1,
+      wasteReason: '8.1 Thời tiết', wasteOrder: 'LSX-5',
     }))
     expect((await screen.findAllByText('Đã lưu giờ công')).length).toBeGreaterThan(0)
     // The screen owns the read; the panel only says it should happen again.

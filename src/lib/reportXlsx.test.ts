@@ -345,9 +345,10 @@ describe('per-deck sheets', () => {
       }],
     })
     const header = rowWhere(sheet, 1, 'Mã ô')
-    expect((sheet.getRow(header).values as string[]).slice(1, 13)).toEqual([
+    expect((sheet.getRow(header).values as string[]).slice(1, 14)).toEqual([
       'Mã ô', 'Diện tích (m²)', 'Công việc', 'Công đoạn', 'Cập nhật lúc', 'Bởi',
-      'Nhóm trưởng', 'Thợ chính', 'Giờ công (Mhr)', 'Giờ hao phí (Mhr)', 'Lý do hao phí', 'Ghi chú',
+      'Nhóm trưởng', 'Thợ chính', 'Giờ công (Mhr)', 'Giờ hao phí (Mhr)', 'Lý do hao phí',
+      'Lệnh sản xuất hao phí', 'Ghi chú',
     ])
     const first = sheet.getRow(header + 1)
     expect(first.getCell(1).value).toBe('R1C1')
@@ -356,10 +357,10 @@ describe('per-deck sheets', () => {
     expect(first.getCell(4).value).toBe('Blast + Coat 1')
     expect(first.getCell(5).value).toBeInstanceOf(Date)
     expect(first.getCell(6).value).toBe('Nguyễn Văn A')
-    expect(first.getCell(12).value).toBe('Bắt đầu')
+    expect(first.getCell(13).value).toBe('Bắt đầu')
     const second = sheet.getRow(header + 2)
     expect(second.getCell(4).value).toBe('Tháo giáo')
-    expect(String(second.getCell(12).value ?? '')).toBe('')
+    expect(String(second.getCell(13).value ?? '')).toBe('')
     expect(sheet.getRow(header + 3).getCell(1).value).toBeNull()
   })
 
@@ -429,6 +430,7 @@ describe('effort on the report (Feedback Rv2, item 11)', () => {
     expect(first.getCell(9).numFmt).toBe('0.0#')
     expect(first.getCell(10).value).toBe(0.5)
     expect(first.getCell(11).value).toBe('Chờ vật tư')
+    expect(first.getCell(12).value).toBe('LSX-1')
     const legacy = sheet.getRow(header + 2)
     expect(String(legacy.getCell(7).value ?? '')).toBe('')
     expect(legacy.getCell(9).value).toBeNull()

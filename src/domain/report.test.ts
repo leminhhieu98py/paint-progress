@@ -299,7 +299,9 @@ describe('buildEventRows', () => {
       ev({ id: 1, toStageName: 'Blast + Coat 1', at: '2026-08-20T10:00:00+00:00' }),
       ev({ id: 2, toStageName: 'Coat 2', at: '2026-08-21T10:00:00+00:00' }),
     ]))
-    const blank = { leadName: '', painterName: '', workHours: null, wasteHours: null, wasteReason: '' }
+    const blank = {
+      leadName: '', painterName: '', workHours: null, wasteHours: null, wasteReason: '', wasteOrder: '',
+    }
     expect(rows).toEqual([
       { code: 'R1C1', areaM2: 500, workName: 'Sơn', stageName: 'Blast + Coat 1', at: '2026-08-20T10:00:00+00:00', byName: 'Nguyễn Văn A', note: '', ...blank },
       { code: 'R1C1', areaM2: 500, workName: 'Sơn', stageName: 'Coat 2', at: '2026-08-21T10:00:00+00:00', byName: 'Nguyễn Văn A', note: '', ...blank },
@@ -311,7 +313,8 @@ describe('buildEventRows', () => {
       effort: { leadName: 'Tổ 1', painterName: 'Nam', workHours: 3.5, wasteHours: 0.5, wasteReason: 'Chờ vật tư', wasteOrder: 'LSX-1' },
     })]))
     expect(row).toMatchObject({
-      leadName: 'Tổ 1', painterName: 'Nam', workHours: 3.5, wasteHours: 0.5, wasteReason: 'Chờ vật tư',
+      leadName: 'Tổ 1', painterName: 'Nam', workHours: 3.5, wasteHours: 0.5,
+      wasteReason: 'Chờ vật tư', wasteOrder: 'LSX-1',
     })
   })
 

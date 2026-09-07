@@ -53,6 +53,8 @@ export interface EventRow {
   workHours: number | null
   wasteHours: number | null
   wasteReason: string
+  /** Lệnh sản xuất the lost hours were booked against (Feedback Rv4). */
+  wasteOrder: string
 }
 
 export interface OverviewRow {
@@ -308,6 +310,7 @@ export function buildEventRows(input: DeckReportInput): EventRow[] {
       workHours: ev.effort.workHours,
       wasteHours: ev.effort.wasteHours,
       wasteReason: ev.effort.wasteReason,
+      wasteOrder: ev.effort.wasteOrder,
     }))
 }
 

@@ -1,8 +1,10 @@
-import { Alert, App, Button, Input, InputNumber, Modal, Space, Switch, Table, Tooltip, Typography } from 'antd'
+import {
+  Alert, App, Button, Input, InputNumber, Modal, Select, Space, Switch, Table, Tooltip, Typography,
+} from 'antd'
 import { useEffect, useMemo, useState } from 'react'
 import { SectionCard } from '../../components/SectionCard'
 import { modalProps } from '../../components/modalChrome'
-import { effortCoverage } from '../../domain/effort'
+import { effortCoverage, WASTE_REASONS, wasteReasonLabel } from '../../domain/effort'
 import { type DeckEvent, type Effort } from '../../domain/types'
 import { listGsUsers } from '../../lib/adminApi'
 import { listCoworkerNames } from '../../lib/gsApi'
@@ -93,7 +95,10 @@ export function EffortHistoryPanel({
     if (!editing || !draft) return
     setSaving(true)
     try {
-      await setCellEventEffort(editing.id, (draft.wasteHours ?? 0) > 0 ? draft : { ...draft, wasteReason: '' })
+      await setCellEventEffort(
+        editing.id,
+        (draft.wasteHours ?? 0) > 0 ? draft : { ...draft, wasteReason: '', wasteOrder: '' },
+      )
       message.success('Đã lưu giờ công')
       closeEdit()
       onSaved()
@@ -144,6 +149,7 @@ export function EffortHistoryPanel({
           { title: 'Giờ công', align: 'right', width: 90, render: (_, ev) => hours(ev.effort.workHours) },
           { title: 'Giờ hao phí', align: 'right', width: 100, render: (_, ev) => hours(ev.effort.wasteHours) },
           { title: 'Lý do hao phí', render: (_, ev) => ev.effort.wasteReason },
+          { title: 'Lệnh sản xuất', width: 130, render: (_, ev) => ev.effort.wasteOrder },
           {
             title: '',
             width: 90,
@@ -204,15 +210,50 @@ export function EffortHistoryPanel({
               />
             </div>
             {(draft.wasteHours ?? 0) > 0 && (
-              <div style={{ gridColumn: '1 / -1' }}>
-                <label htmlFor="effort-waste-reason" style={fieldLabel}>Lý do hao phí</label>
-                <Input
-                  id="effort-waste-reason"
-                  value={draft.wasteReason}
-                  onChange={(e) => setDraft({ ...draft, wasteReason: e.target.value })}
-                  placeholder="Ví dụ: chờ vật tư, mưa"
-                />
-              </div>
+              <>
+                <div style={{ gridColumn: '1 / -1' }}>
+                  <label htmlFor="effort-waste-order" style={fieldLabel}>Lệnh sản xuất hao phí</label>
+                  <Input
+                    id="effort-waste-order"
+                    value={draft.wasteOrder}
+                    onChange={(e) => setDraft({ ...draft, wasteOrder: e.target.value })}
+                    placeholder="Số lệnh sản xuất"
+                  />
+                </div>
+                <div style={{ gridColumn: '1 / -1' }}>
+                  <label htmlFor="effort-waste-reason" style={fieldLabel}>Lý do hao phí</label>
+                  {/*
+                    The same fixed list the foreman picks from (Feedback Rv4),
+                    so a backfilled row groups with the recorded ones on the
+                    dashboard instead of becoming a category of its own. A row
+                    that already carries free text from before keeps it: the
+                    Select shows it as its current value.
+                  */}
+                  <Select
+                    id="effort-waste-reason"
+                    aria-label="Lý do hao phí"
+                    showSearch
+                    allowClear
+                    style={{ width: '100%' }}
+                    optionFilterProp="label"
+                    placeholder="Chọn lý do"
+                    value={draft.wasteReason === '' ? undefined : draft.wasteReason}
+                    onChange={(v) => setDraft({ ...draft, wasteReason: v ?? '' })}
+                    options={[
+                      ...WASTE_REASONS.map((r) => ({
+                        value: wasteReasonLabel(r), label: wasteReasonLabel(r),
+                      })),
+                      // Whatever this row already says, when it is not on the
+                      // list: a value the Select cannot offer is a value it
+                      // would silently blank on save.
+                      ...(draft.wasteReason !== ''
+                        && !WASTE_REASONS.some((r) => wasteReasonLabel(r) === draft.wasteReason)
+                        ? [{ value: draft.wasteReason, label: `${draft.wasteReason} (ghi tự do cũ)` }]
+                        : []),
+                    ]}
+                  />
+                </div>
+              </>
             )}
           </div>
         )}

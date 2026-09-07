@@ -377,22 +377,24 @@ export async function buildReportWorkbook(input: ReportInput): Promise<Blob> {
     // which is what every row before 0030 is.
     const listHeader = sheet.addRow([
       'Mã ô', 'Diện tích (m²)', 'Công việc', 'Công đoạn', 'Cập nhật lúc', 'Bởi',
-      'Nhóm trưởng', 'Thợ chính', 'Giờ công (Mhr)', 'Giờ hao phí (Mhr)', 'Lý do hao phí', 'Ghi chú',
+      'Nhóm trưởng', 'Thợ chính', 'Giờ công (Mhr)', 'Giờ hao phí (Mhr)', 'Lý do hao phí',
+      'Lệnh sản xuất hao phí', 'Ghi chú',
     ])
     listHeader.font = { bold: true }
-    const listWidths = [12, 15, 18, 18, 22, 20, 14, 14, 14, 14, 24, 40]
+    const listWidths = [12, 15, 18, 18, 22, 20, 14, 14, 14, 14, 24, 20, 40]
     listWidths.forEach((w, i) => { sheet.getColumn(i + 1).width = w })
     for (const ev of buildEventRows(entry)) {
       const row = sheet.addRow([
         ev.code, ev.areaM2, ev.workName, ev.stageName, toVNExcelDate(ev.at) ?? '', ev.byName ?? '',
-        ev.leadName, ev.painterName, ev.workHours ?? null, ev.wasteHours ?? null, ev.wasteReason, ev.note,
+        ev.leadName, ev.painterName, ev.workHours ?? null, ev.wasteHours ?? null,
+        ev.wasteReason, ev.wasteOrder, ev.note,
       ])
       row.getCell(2).numFmt = AREA_FORMAT
       row.getCell(5).numFmt = DATETIME_FORMAT
       row.getCell(9).numFmt = HOURS_FORMAT
       row.getCell(10).numFmt = HOURS_FORMAT
       row.getCell(11).alignment = { wrapText: true, vertical: 'top' }
-      row.getCell(12).alignment = { wrapText: true, vertical: 'top' }
+      row.getCell(13).alignment = { wrapText: true, vertical: 'top' }
     }
 
     // Frozen at the listing header, and filterable: four hundred updates is a
