@@ -11,6 +11,7 @@ const createZone = vi.hoisted(() => vi.fn())
 const updateZone = vi.hoisted(() => vi.fn())
 const deleteZone = vi.hoisted(() => vi.fn())
 const setZoneActual = vi.hoisted(() => vi.fn())
+const setZoneCells = vi.hoisted(() => vi.fn())
 const listCellNotes = vi.hoisted(() => vi.fn())
 const setReportNote = vi.hoisted(() => vi.fn())
 const subscribeDeckStates = vi.hoisted(() => vi.fn())
@@ -36,6 +37,7 @@ vi.mock('../../lib/zonesApi', () => ({
     (stages === undefined ? updateZone(id, f) : updateZone(id, f, stages)),
   deleteZone: (id: string) => deleteZone(id),
   setZoneActual: (id: string, s: string) => setZoneActual(id, s),
+  setZoneCells: (id: string, ids: string[]) => setZoneCells(id, ids),
 }))
 
 // Konva renders to a canvas, which jsdom does not implement. The double exposes
@@ -126,6 +128,8 @@ beforeEach(() => {
   deleteZone.mockResolvedValue(undefined)
   setZoneActual.mockReset()
   setZoneActual.mockResolvedValue(2)
+  setZoneCells.mockReset()
+  setZoneCells.mockResolvedValue(undefined)
   subscribeDeckStates.mockReset()
   subscribeDeckStates.mockReturnValue(() => {})
   listCellNotes.mockReset()
@@ -555,6 +559,71 @@ describe('DeckProgressPanel — zones', () => {
     await waitFor(() => expect(updateZone).toHaveBeenCalledWith('z1', { startDate: '2026-09-01', finishDate: '2026-09-20' }))
     expect(createZone).not.toHaveBeenCalled()
     expect(deleteZone).not.toHaveBeenCalled()
+  })
+
+  it('shows the saved dates back in the dialog, not the ones it opened with', async () => {
+    // Feedback Rv4: "Hiện tại bị lỗi không sửa được". The write landed every
+    // time; the dialog held a copy of the zone taken when it opened, so the
+    // picker went on showing the old dates and the admin read that as a
+    // refusal.
+    listDeckZones.mockResolvedValueOnce([ZONE])
+      .mockResolvedValue([{ ...ZONE, finishDate: '2026-09-20' }])
+    renderPanel()
+    await screen.findByTestId('lens-A')
+    await pickLens('Lớp sơn đang xem', 'Tháo giáo')
+    await userEvent.click(await screen.findByRole('button', { name: 'Mốc ngày của Khu A — Tháo giáo' }))
+
+    const dialog = await screen.findByRole('dialog')
+    const finish = within(dialog).getByPlaceholderText('Kết thúc')
+    await userEvent.clear(finish)
+    await userEvent.type(finish, '20/09/2026')
+    await userEvent.keyboard('{Enter}')
+
+    await waitFor(() => expect(
+      within(screen.getByRole('dialog')).getByPlaceholderText('Kết thúc'),
+    ).toHaveValue('20/09/2026'))
+  })
+
+  it('adds the bays selected on the drawing to an existing zone', async () => {
+    // Feedback Rv4: "Cho phép thêm/bớt ô trong Zone đã gộp". The selection on
+    // the drawing is the input, so growing a zone is the same gesture as
+    // building one.
+    listDeckZones.mockResolvedValue([ZONE])
+    renderPanel()
+    await screen.findByTestId('lens-A')
+    await pickLens('Lớp sơn đang xem', 'Tháo giáo')
+    await userEvent.click(await screen.findByTestId('cell-R1C2'))
+    await userEvent.click(await screen.findByRole('button', { name: 'Mốc ngày của Khu A — Tháo giáo' }))
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Thêm 1 ô đã chọn' }))
+
+    // ZONE already holds c1; c2 is the bay just picked.
+    await waitFor(() => expect(setZoneCells).toHaveBeenCalledWith('z1', ['c1', 'c2']))
+  })
+
+  it('drops the bays selected on the drawing from an existing zone', async () => {
+    listDeckZones.mockResolvedValue([{ ...ZONE, cellIds: ['c1', 'c2'] }])
+    renderPanel()
+    await screen.findByTestId('lens-A')
+    await pickLens('Lớp sơn đang xem', 'Tháo giáo')
+    await userEvent.click(await screen.findByTestId('cell-R1C2'))
+    await userEvent.click(await screen.findByRole('button', { name: 'Mốc ngày của Khu A — Tháo giáo' }))
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Bỏ 1 ô đã chọn' }))
+
+    await waitFor(() => expect(setZoneCells).toHaveBeenCalledWith('z1', ['c1']))
+  })
+
+  it('offers nothing to add or drop until bays are picked', async () => {
+    listDeckZones.mockResolvedValue([ZONE])
+    renderPanel()
+    await screen.findByTestId('lens-A')
+    await pickLens('Lớp sơn đang xem', 'Tháo giáo')
+    await userEvent.click(await screen.findByRole('button', { name: 'Mốc ngày của Khu A — Tháo giáo' }))
+
+    expect(await screen.findByRole('button', { name: 'Thêm 0 ô đã chọn' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Bỏ 0 ô đã chọn' })).toBeDisabled()
+    expect(screen.getByText('Chọn ô trên bản vẽ rồi quay lại đây để thêm hoặc bỏ.')).toBeInTheDocument()
   })
 
   it('writes the zone\'s stage across its bays on Ghi thực tế, and re-reads the deck', async () => {

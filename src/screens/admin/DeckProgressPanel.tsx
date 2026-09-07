@@ -20,7 +20,7 @@ import {
   listCellNotes, loadDeckWorks, setReportNote, type CellNote, type DeckProgressEntry, type DeckWorks,
 } from '../../lib/progressApi'
 import {
-  createZone, deleteZone, listDeckZones, setZoneActual, updateZone,
+  createZone, deleteZone, listDeckZones, setZoneActual, setZoneCells, updateZone,
 } from '../../lib/zonesApi'
 import { ConsequenceModal } from '../../components/ConsequenceModal'
 import { Donut } from '../../components/Donut'
@@ -252,7 +252,14 @@ export function DeckProgressPanel({
 
   const refreshZones = useCallback(async () => {
     try {
-      setZones(await listDeckZones(deckId))
+      const next = await listDeckZones(deckId)
+      setZones(next)
+      // The "Mốc ngày" dialog holds a COPY of the zone, and the picker reads
+      // its value from that copy. Left behind after a write it shows the dates
+      // as they were, which is exactly what Linh reported as "không sửa được"
+      // (Feedback Rv4): the write had landed every time, the dialog just never
+      // said so. Dropped when the zone is gone -- deleted from another tab.
+      setDatesFor((open) => (open === null ? null : next.find((z) => z.id === open.id) ?? null))
     } catch (e) {
       setError((e as Error).message)
     }
@@ -667,6 +674,32 @@ export function DeckProgressPanel({
       await updateZone(zone.id, { color }, entry.stages)
       await refreshZones()
       setDatesFor((current) => (current?.id === zone.id ? { ...current, color } : current))
+    } catch (e) {
+      setError((e as Error).message)
+    }
+  }
+
+  /**
+   * The bays a zone covers, edited after the fact (Feedback Rv4: "Cho phép
+   * thêm/bớt ô trong Zone đã gộp").
+   *
+   * The selection on the drawing is the input, so adding a block to a zone is
+   * the same gesture as building one: pick the bays, then say what to do with
+   * them. Removing everything is refused by the API -- that is a delete, and
+   * it has its own button and its own confirmation.
+   */
+  const changeZoneCells = async (zone: Zone, mode: 'add' | 'remove') => {
+    if (!entry || selectedCodes.length === 0) return
+    const idByCode = new Map(entry.deck.cells.map((c) => [c.code, c.id]))
+    const picked = selectedCodes.map((code) => idByCode.get(code)).filter((id) => id !== undefined)
+    const next = mode === 'add'
+      ? [...new Set([...zone.cellIds, ...picked])]
+      : zone.cellIds.filter((id) => !picked.includes(id))
+    try {
+      await setZoneCells(zone.id, next)
+      setSelectedCodes([])
+      await refreshZones()
+      message.success(mode === 'add' ? 'Đã thêm ô vào zone' : 'Đã bỏ ô khỏi zone')
     } catch (e) {
       setError((e as Error).message)
     }
@@ -1501,6 +1534,31 @@ export function DeckProgressPanel({
               value={zoneColorOf(datesFor, 0, stageColors)}
               onChange={(c) => void recolorZone(datesFor, c)}
             />
+            {/* The bays, changed after the fact (Feedback Rv4). Reads the
+                selection on the drawing behind this dialog, so the count is
+                named rather than left to be guessed at. */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+              <span style={{ fontSize: 12, fontWeight: 600, color: palette.textSecondary }}>Ô trong zone</span>
+              <Space wrap>
+                <Button
+                  disabled={selectedCodes.length === 0}
+                  onClick={() => void changeZoneCells(datesFor, 'add')}
+                >
+                  {`Thêm ${selectedCodes.length} ô đã chọn`}
+                </Button>
+                <Button
+                  disabled={selectedCodes.length === 0}
+                  onClick={() => void changeZoneCells(datesFor, 'remove')}
+                >
+                  {`Bỏ ${selectedCodes.length} ô đã chọn`}
+                </Button>
+              </Space>
+              {selectedCodes.length === 0 && (
+                <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+                  Chọn ô trên bản vẽ rồi quay lại đây để thêm hoặc bỏ.
+                </Typography.Text>
+              )}
+            </div>
             <Space>
               <Button onClick={() => void applyZone(datesFor)}>Ghi thực tế</Button>
               <Button danger onClick={() => setRemovingZone(datesFor)}>
