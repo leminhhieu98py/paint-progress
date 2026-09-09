@@ -77,6 +77,38 @@ describe('StagePlanTable', () => {
     expect((endOf('s1') as HTMLInputElement).value).toBe('12/09/2026')
   })
 
+  it('holds the window in one Khoảng kế hoạch column (Feedback Rv5, RV5-38)', () => {
+    // The app already had a settled answer for a per-coat date range and this
+    // table did not use it: DeckProgressPanel.tsx:582, "One RangePicker per
+    // coat writes both ends at once".
+    renderTable()
+    expect(screen.getByRole('columnheader', { name: 'Khoảng kế hoạch' })).toBeInTheDocument()
+    expect(screen.queryByRole('columnheader', { name: 'Ngày bắt đầu' })).toBeNull()
+    expect(screen.queryByRole('columnheader', { name: 'Ngày kết thúc' })).toBeNull()
+
+    // One control per row, carrying both ends: antd puts the testid on each of
+    // the RangePicker's two inputs, so exactly two is exactly one control.
+    const inputs = row('s1').getAllByTestId('plan-range-s1')
+    expect(inputs).toHaveLength(2)
+    expect(inputs.map((i) => (i as HTMLInputElement).placeholder)).toEqual(['Bắt đầu', 'Kết thúc'])
+  })
+
+  it('leaves Lưu disabled while only one end of the range is set (RV5-39)', async () => {
+    // `stage_plans.start_date` and `end_date` are both NOT NULL, so -- unlike
+    // DeckProgressPanel, where a zone whose finish has slipped keeps its start
+    // -- a half-typed window is not a state this table can store.
+    const { onSave } = renderTable()
+
+    await retype(startOf('s3'), '01/10/2026')
+    expect((endOf('s3') as HTMLInputElement).value).toBe('')
+    expect(saveOf('s3')).toBeDisabled()
+    await userEvent.click(saveOf('s3'))
+    expect(onSave).not.toHaveBeenCalled()
+
+    await retype(endOf('s3'), '10/10/2026')
+    await waitFor(() => expect(saveOf('s3')).toBeEnabled())
+  })
+
   it('counts both ends in Số ngày, and recounts as the dates change', async () => {
     // RV5-22, =D-C+1. 01/09 to 12/09 inclusive is 12 days.
     renderTable()
@@ -90,15 +122,30 @@ describe('StagePlanTable', () => {
     await waitFor(() => expect(row('s1').getByTestId('plan-days-s1')).toHaveTextContent('1'))
   })
 
-  it('refuses an end before the start with a message, and does not save the row', async () => {
+  it('refuses an end before the start with a message, and saves nothing backwards', async () => {
+    // RV5-40 expected one RangePicker to make this branch unenterable. Measured
+    // against antd 5.29 in jsdom, it does not: a date TYPED into the end box is
+    // reported by `onCalendarChange` exactly as typed, and the inverted pair
+    // sits in the draft -- still inverted 50 ms later -- until the control is
+    // blurred, at which point antd silently swaps the two ends. Typing is how
+    // an admin on a laptop uses this control, so the message stays: it is what
+    // says why the row will not save.
     const { onSave } = renderTable()
 
     await retype(endOf('s1'), '01/08/2026')
 
     expect(await row('s1').findByText(/không được trước ngày bắt đầu/i)).toBeInTheDocument()
+    expect(row('s1').getByTestId('plan-days-s1')).toHaveTextContent('—')
     expect(saveOf('s1')).toBeDisabled()
+
+    // Clicking Lưu blurs the picker first, and antd's own swap lands before the
+    // click does. Whichever way it resolves, nothing backwards reaches the
+    // write -- `stage_plans_window` in 0033 is the backstop behind that.
     await userEvent.click(saveOf('s1'))
-    expect(onSave).not.toHaveBeenCalled()
+    for (const call of onSave.mock.calls) {
+      const w = call[1] as { startDate: string; endDate: string }
+      expect(w.endDate >= w.startDate).toBe(true)
+    }
   })
 
   it('shows the computed figure rather than a blank when the area is empty', async () => {

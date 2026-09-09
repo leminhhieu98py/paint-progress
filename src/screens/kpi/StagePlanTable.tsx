@@ -9,10 +9,10 @@ import { formatAreaM2 } from '../../lib/format'
 import { palette } from '../../theme'
 
 /**
- * Kế hoạch KPI — the admin types a start and an end date per coat, and may
- * override the area the system worked out for it.
+ * Kế hoạch KPI — the admin picks one date range per coat, and may override the
+ * area the system worked out for it.
  *
- * Feedback Rv5 item 9, rules RV5-22, RV5-23 and RV5-28. Presentational: the
+ * Feedback Rv5 item 9, rules RV5-22, RV5-23, RV5-28 and RV5-38. Presentational: the
  * rows, the computed areas and the two writes all come in as props, the same
  * contract `ProductivityDashboard` has, so this file holds the entry rules and
  * nothing about where a plan is stored.
@@ -103,7 +103,18 @@ export function StagePlanTable({
   const patch = (row: StagePlanRow, over: Partial<Draft>) =>
     setDrafts((d) => ({ ...d, [row.stageId]: { ...draft(row), ...over } }))
 
-  /** The one message this row is refused for, or null. */
+  /**
+   * The one message this row is refused for, or null.
+   *
+   * The ordering check stays, against RV5-40's expectation that a RangePicker
+   * makes it unreachable. Measured against antd 5.29: the calendar panel does
+   * disable a date that would invert the range, but a date TYPED into the end
+   * box is reported by `onCalendarChange` exactly as typed -- `01/08/2026`
+   * against a start of `01/09/2026` reaches this draft -- and typing is how an
+   * admin on a laptop uses this control. `stage_plans_window` in 0033 is the
+   * real guard; this is what keeps the admin from meeting it as a raw write
+   * failure.
+   */
   const errorOf = (d: Draft): string | null => {
     if (d.startDate !== null && d.endDate !== null && d.endDate < d.startDate) {
       // Date-only 'YYYY-MM-DD' strings compare correctly as strings.
@@ -140,36 +151,51 @@ export function StagePlanTable({
       ),
     },
     {
-      title: 'Ngày bắt đầu',
-      key: 'start',
-      width: 160,
-      render: (_v: unknown, row: StagePlanRow) => (
-        <DatePicker
-          aria-label="Ngày bắt đầu"
-          placeholder="Bắt đầu"
-          format="DD/MM/YYYY"
-          allowClear
-          disabled={saving}
-          value={draft(row).startDate ? dayjs(draft(row).startDate) : null}
-          onChange={(v) => patch(row, { startDate: dateKey(v) })}
-        />
-      ),
-    },
-    {
-      title: 'Ngày kết thúc',
-      key: 'end',
-      width: 160,
-      render: (_v: unknown, row: StagePlanRow) => (
-        <DatePicker
-          aria-label="Ngày kết thúc"
-          placeholder="Kết thúc"
-          format="DD/MM/YYYY"
-          allowClear
-          disabled={saving}
-          value={draft(row).endDate ? dayjs(draft(row).endDate) : null}
-          onChange={(v) => patch(row, { endDate: dateKey(v) })}
-        />
-      ),
+      /*
+        One RangePicker per coat, not two DatePickers (RV5-38). The app already
+        had a settled answer for a per-coat date range and this table did not
+        use it: `DeckProgressPanel.tsx:582` -- "One RangePicker per coat writes
+        both ends at once" -- used for the zone plan dates, which is the closest
+        analogue to a KPI window, and the Năng suất filter uses one too. Plan D
+        said "antd DatePicker" and named the wrong component; the owner asked
+        why this screen had two fields, and it should not have.
+
+        `onCalendarChange` and not `onChange`, matching that precedent: it
+        reports each end as it is picked, so `Số ngày` recounts while the admin
+        is still choosing and a half-typed window is visible rather than
+        swallowed. `onChange` fires only on a complete, valid submit, which
+        would leave the admin editing one end of a stored window with nothing
+        happening at all.
+
+        `allowEmpty` both ways so a half-picked range stays on screen. Storing
+        one is a different matter: `stage_plans.start_date` and `end_date` are
+        NOT NULL, so `Lưu` below stays disabled until both ends are set
+        (RV5-39). Unlike a zone, whose finish may legitimately be unknown, a
+        KPI window with one end is not a plan.
+      */
+      title: 'Khoảng kế hoạch',
+      key: 'window',
+      width: 280,
+      render: (_v: unknown, row: StagePlanRow) => {
+        const d = draft(row)
+        return (
+          <DatePicker.RangePicker
+            data-testid={`plan-range-${row.stageId}`}
+            format="DD/MM/YYYY"
+            allowEmpty={[true, true]}
+            placeholder={['Bắt đầu', 'Kết thúc']}
+            disabled={saving}
+            value={[d.startDate ? dayjs(d.startDate) : null, d.endDate ? dayjs(d.endDate) : null]}
+            onCalendarChange={(v) => {
+              const range = v as [Dayjs | null, Dayjs | null] | null
+              patch(row, {
+                startDate: dateKey(range?.[0] ?? null),
+                endDate: dateKey(range?.[1] ?? null),
+              })
+            }}
+          />
+        )
+      },
     },
     {
       title: 'Số ngày',
