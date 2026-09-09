@@ -35,7 +35,7 @@ import { CellStageModal } from './CellStageModal'
 import { ConsequenceModal } from '../../components/ConsequenceModal'
 import { LogoutOutlined } from '@ant-design/icons'
 import { fieldError, palette, shadowCard } from '../../theme'
-import { CalendarOutlined, DownloadOutlined, LineChartOutlined } from '@ant-design/icons'
+import { AreaChartOutlined, CalendarOutlined, DownloadOutlined, LineChartOutlined } from '@ant-design/icons'
 import { EmptyState } from '../../components/EmptyState'
 import { DeckProgressCard, StageRollupCard } from './DeckStatsCards'
 import { DeckTodayCard } from './DeckTodayCard'
@@ -1101,6 +1101,18 @@ export function GsScreen() {
           onClick={() => navigate(`${APP_BASE_PATH}/gs/${projectId}/dashboard`)}
         >
           {phone ? null : 'Năng suất'}
+        </Button>
+        {/*
+          KPI Plan vs Actual (Feedback Rv5, item 9), beside Năng suất and
+          reached the same way. Read-only for everyone here: the plan dates are
+          the admin's (RV5-28) and the viewer reads the chart too (RV5-29).
+        */}
+        <Button
+          aria-label="KPI"
+          icon={<AreaChartOutlined aria-hidden />}
+          onClick={() => navigate(`${APP_BASE_PATH}/gs/${projectId}/kpi`)}
+        >
+          {phone ? null : 'KPI'}
         </Button>
         {/* Spec §8.1: no account UI. Logout only. */}
         <Button

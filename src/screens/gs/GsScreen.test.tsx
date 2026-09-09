@@ -628,6 +628,15 @@ describe('GsScreen: recording a stage', () => {
     expect(navigate).toHaveBeenCalledWith('/gs/p1/dashboard')
   })
 
+  it('opens the KPI chart of this project from the header (Feedback Rv5, item 9)', async () => {
+    // Beside Năng suất and reached the same way. Read-only for the field: the
+    // plan dates are the admin's (RV5-28).
+    renderScreen()
+    await screen.findByRole('button', { name: 'ô R1C2' })
+    await userEvent.click(screen.getByRole('button', { name: 'KPI' }))
+    expect(navigate).toHaveBeenCalledWith('/gs/p1/kpi')
+  })
+
   it('opens the modal for the tapped cell', async () => {
     renderScreen()
     await userEvent.click(await screen.findByRole('button', { name: 'ô R1C2' }))
