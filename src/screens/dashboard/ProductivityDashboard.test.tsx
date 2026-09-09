@@ -169,15 +169,23 @@ describe('ProductivityDashboard — the placeholder rows (Feedback Rv5, item 5)'
     expect(leadRows()).toHaveLength(2)
   })
 
-  it('keeps a placeholder\'s hours in the totals even though its row is gone', () => {
-    // RV5-10: the exclusion is a display decision, made after the rows are
-    // built. dailyEffort is untouched, because the Năng suất sheet and the
-    // forecast read it too -- so an admin who backfills hours onto a
-    // move-back-to-nothing still sees them in the totals.
+  it('leaves a placeholder\'s hours out of the totals too, so the cards match the columns', () => {
+    // RV5-31, replacing RV5-10. Linh identified hours on this bucket as a
+    // mis-entry ("User cập nhật nhầm. Có công đoạn mới có giờ công."), so the
+    // cards no longer read 500,0 over a table summing to 450,0.
+    //
+    // Concrete figures, not a sum recomputed the way the component does it:
+    // Lớp 1 is 340 Mhr / 300 m² and Lớp 2 is 110 Mhr / 100 m², and the 50 Mhr,
+    // 50 m² and 2 hao phí on the placeholder appear in none of the four.
     renderDashboard([...EVENTS, sentBack({ leadName: 'Tổ 1', workHours: 50, wasteHours: 2 })])
-    expect(cards().getByText('500,0')).toBeInTheDocument()      // 450 + 50 Mhr
-    expect(cards().getByText('450,00')).toBeInTheDocument()     // 400 + 50 m²
-    expect(cards().getByText('6,0')).toBeInTheDocument()        // 4 + 2 hao phí
+    expect(cards().getByText('450,0')).toBeInTheDocument()             // Tổng Mhr, not 500,0
+    expect(cards().getByText('400,00')).toBeInTheDocument()            // Tổng m², not 450,00
+    expect(cards().getByText('1,125')).toBeInTheDocument()             // 450 / 400, not 500 / 450
+    expect(cards().getByText('4,0')).toBeInTheDocument()               // Giờ hao phí, not 6,0
+    expect(cards().getByText('0,88% tổng giờ')).toBeInTheDocument()    // 4 of 454, not 6 of 506
+    expect(cards().queryByText('500,0')).toBeNull()
+    expect(cards().queryByText('450,00')).toBeNull()
+    expect(cards().queryByText('6,0')).toBeNull()
     expect(within(screen.getByTestId('stage-table')).queryByText('Chưa bắt đầu')).toBeNull()
   })
 

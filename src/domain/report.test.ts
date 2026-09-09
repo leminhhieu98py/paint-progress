@@ -4,6 +4,7 @@ import {
   type DeckReportInput,
 } from './report'
 import type { DeckEvent } from '../lib/progressApi'
+import { NOT_STARTED_STAGE } from './effort'
 import { EMPTY_EFFORT, type Cell, type Work, type WorkModel } from './types'
 
 const STAGES = [
@@ -457,6 +458,19 @@ describe('buildEffortSheetRows', () => {
 
   it('returns nothing for decks with no events', () => {
     expect(buildEffortSheetRows([CD, MD], MODELS)).toEqual([])
+  })
+
+  it('leaves the "Chưa bắt đầu" placeholder off the sheet (Feedback Rv5, Q10)', () => {
+    // A move back to nothing is not a công đoạn, and Linh identified the hours
+    // recorded against it as a mis-entry. The workbook must not show a row the
+    // Năng suất screen does not (RV5-32).
+    const cd = { ...CD, events: [
+      ev({ id: 1, toStageName: 'Coat 2', effort: { ...EMPTY_EFFORT, workHours: 110 } }),
+      ev({ id: 2, toStageName: null, effort: { ...EMPTY_EFFORT, workHours: 4, wasteHours: 1 } }),
+    ] }
+    const rows = buildEffortSheetRows([cd], MODELS)
+    expect(rows.map((r) => r.stageName)).toEqual(['Coat 2'])
+    expect(rows.some((r) => r.stageName === NOT_STARTED_STAGE)).toBe(false)
   })
 })
 

@@ -473,6 +473,23 @@ describe('effort on the report (Feedback Rv2, item 11)', () => {
     const sheet = wb.getWorksheet('Năng suất')!
     expect(sheet.rowCount).toBe(2)
   })
+
+  it('writes no "Chưa bắt đầu" row on Năng suất (Feedback Rv5, Q10)', async () => {
+    // Asserted on the workbook read back, not on the rows handed to it: the
+    // customer is handed this file, and a figure in it must not differ from
+    // the Năng suất screen (RV5-32).
+    const wb = await readBack(await buildReportWorkbook({
+      ...BASE,
+      decks: [{ ...DECK, events: [
+        EFFORT_EVENT,
+        { ...EFFORT_EVENT, id: 2, toStageName: null, at: '2026-08-21T10:00:00+00:00' },
+      ] }],
+    }))
+    const sheet = wb.getWorksheet('Năng suất')!
+    // Column 3 is Công đoạn; rowWhere returns 0 when no row matches.
+    expect(rowWhere(sheet, 3, 'Chưa bắt đầu')).toBe(0)
+    expect(rowWhere(sheet, 3, 'Blast + Coat 1')).toBeGreaterThan(0)
+  })
 })
 
 describe('the crew productivity block on Năng suất (Feedback Rv5, item 6)', () => {

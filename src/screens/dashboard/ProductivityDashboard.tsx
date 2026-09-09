@@ -90,32 +90,41 @@ export function ProductivityDashboard({
   const reasons = useMemo(() => wasteReasons(filtered), [filtered])
   const coverage = effortCoverage(filtered)
 
-  // Over the UNFILTERED rows, deliberately -- see visibleStages below.
-  const totalHours = stages.reduce((s, r) => s + r.totalHours, 0)
-  const totalAreaM2 = stages.reduce((s, r) => s + r.totalAreaM2, 0)
-  const wasteHours = stages.reduce((s, r) => s + r.wasteHours, 0)
-  const overall = totalAreaM2 > 0 ? totalHours / totalAreaM2 : null
-  const wasteShare = totalHours + wasteHours > 0 ? wasteHours / (totalHours + wasteHours) : null
-
   /**
-   * Feedback Rv5, item 5. Two buckets exist so that events carrying no real
-   * label do not vanish: `NOT_STARTED_STAGE` collects the moves back to
+   * Feedback Rv5, item 5 and Q10. Two buckets exist so that events carrying no
+   * real label do not vanish: `NOT_STARTED_STAGE` collects the moves back to
    * nothing, and the blank lead name collects the updates where the foreman
    * left the box empty (442 of them in Linh's screenshot, all at 0 Mhr and
    * 0 m²). Neither is a công đoạn or a nhóm trưởng, and neither can carry a
    * Mhr/m² figure -- they are noise on a screen whose subject is efficiency.
    *
-   * Filtered HERE, where the display rows are chosen, and not inside
-   * `dailyEffort`: the Năng suất sheet and the deadline forecast read that
-   * same function, and the totals above are built from the unfiltered rows.
-   * So if a future record ever does put hours on one of these, the row still
-   * stays out of the table while the hours stay in Tổng Mhr -- rather than
-   * quietly leaving the screen's own totals short.
+   * The hours some of these rows DO carry are a mis-entry, not work: asked
+   * about the 4,0 Mhr and 37,42 m² on `Chưa bắt đầu` in dev, Linh answered
+   * "User cập nhật nhầm. Có công đoạn mới có giờ công." The modal used to
+   * compel it by requiring hours for every choice in its coat picker; RV5-30
+   * stopped that, so no new row can be written this way. The rows already
+   * recorded stay in the database untouched (RV5-33) -- they are the
+   * customer's history, and repairing production data is the owner's call --
+   * and simply stop being displayed.
+   *
+   * Filtered HERE, at each consumer, and NOT inside `dailyEffort` or
+   * `stageEfficiency`: `deckForecast` reads `stageEfficiency` output to work
+   * out what is left, and a forecast that quietly loses a bucket is a
+   * different change with different consequences.
    */
   const visibleStages = useMemo(
     () => stages.filter((s) => s.stageName !== NOT_STARTED_STAGE),
     [stages],
   )
+
+  // Over the VISIBLE rows: a header that does not add up to its own columns is
+  // worse than either figure alone (RV5-31, replacing RV5-10).
+  const totalHours = visibleStages.reduce((s, r) => s + r.totalHours, 0)
+  const totalAreaM2 = visibleStages.reduce((s, r) => s + r.totalAreaM2, 0)
+  const wasteHours = visibleStages.reduce((s, r) => s + r.wasteHours, 0)
+  const overall = totalAreaM2 > 0 ? totalHours / totalAreaM2 : null
+  const wasteShare = totalHours + wasteHours > 0 ? wasteHours / (totalHours + wasteHours) : null
+
   const [leadQuery, setLeadQuery] = useState('')
   const visibleLeads = useMemo(
     () => leads.filter((l) => l.leadName !== '' && matchesSearch(l.leadName, leadQuery)),
