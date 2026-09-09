@@ -1346,6 +1346,139 @@ describe('GsScreen: a deck its cells over-cover', () => {
 
 })
 
+describe('GsScreen: Thông tin nhanh — Hôm nay (Feedback Rv5, item 7)', () => {
+  /** Now, so the block's own effortDayKey of `new Date()` agrees with it. */
+  const NOW = () => new Date().toISOString()
+  let nextId = 1
+  const event = (over: Record<string, unknown> = {}) => ({
+    id: nextId++,
+    deckName: 'Cellar Deck',
+    cellCode: 'R1C1',
+    cellAreaM2: 300,
+    workName: 'Sơn',
+    toStageName: 'Blast + Coat 1',
+    at: NOW(),
+    byId: 'u1',
+    note: '',
+    reportNote: null,
+    reportHidden: false,
+    effort: {
+      leadName: 'Tổ 1', painterName: 'Nam', workHours: 4, wasteHours: 1,
+      wasteReason: '', wasteOrder: '',
+    },
+    effortEditedAt: null,
+    effortEditedByName: null,
+    ...over,
+  })
+
+  const card = () => within(screen.getByTestId('gs-deck-today'))
+
+  it('reads the deck\'s coats with today\'s m² and its four man-hour figures', async () => {
+    listDeckEvents.mockResolvedValue([
+      event(),
+      event({
+        cellCode: 'R1C2', cellAreaM2: 200, toStageName: 'Coat 2',
+        effort: {
+          leadName: 'Tổ 1', painterName: 'Nam', workHours: 2, wasteHours: 0,
+          wasteReason: '', wasteOrder: '',
+        },
+      }),
+      // Last year, so the cumulative figures differ from today's (RV5-19).
+      event({
+        cellCode: 'R2C1', cellAreaM2: 100, at: '2026-01-05T03:00:00Z',
+        effort: {
+          leadName: 'Tổ 1', painterName: 'Nam', workHours: 10, wasteHours: 3,
+          wasteReason: '', wasteOrder: '',
+        },
+      }),
+    ])
+    renderScreen()
+    await screen.findByRole('button', { name: 'ô R1C1' })
+    await waitFor(() => expect(listDeckEvents).toHaveBeenCalledWith('d1'))
+
+    // Every coat of the deck, and a 0,00 m² row for the three nobody touched
+    // (RV5-17). Coat 2's row proves it is today's output, not the rollup's
+    // cumulative area.
+    await waitFor(() => expect(card().getByText('300,00 m²')).toBeInTheDocument())
+    expect(card().getByText('200,00 m²')).toBeInTheDocument()
+    expect(card().getAllByText('0,00 m²')).toHaveLength(3)
+    expect(card().getByText('Tháo giáo')).toBeInTheDocument()
+
+    // 4 + 2 today of 16 all told; 1 + 0 lost today of 4 all told.
+    expect(card().getByText('6,0')).toBeInTheDocument()
+    expect(card().getByText('1,0')).toBeInTheDocument()
+    expect(card().getByText('16,0')).toBeInTheDocument()
+    expect(card().getByText('4,0')).toBeInTheDocument()
+  })
+
+  it('is there for a viewer, who is who reads this screen without writing', async () => {
+    // RV5-20: rendered for gs and viewer alike. It writes nothing.
+    authRole.value = 'viewer'
+    listDeckEvents.mockResolvedValue([event()])
+    renderScreen()
+    await screen.findByRole('button', { name: 'ô R1C1' })
+    await waitFor(() => expect(card().getByText('300,00 m²')).toBeInTheDocument())
+  })
+
+  it('does not follow the work picker: both works\' coats, before and after', async () => {
+    // RV5-18, Linh's answer to Q4: "Bảng thông tin nhanh hiển thị theo sàn
+    // không liên quan công việc nào." The drawing and the rollup are scoped to
+    // the chosen work; this block is the deck's.
+    listDeckWorks.mockResolvedValue([
+      { work: WORK, weight: 1, stages: STAGES },
+      { work: WORK2, weight: 1, stages: TG_STAGES },
+    ])
+    listDeckEvents.mockResolvedValue([
+      event(),
+      event({ cellCode: 'R1C2', cellAreaM2: 200, workName: 'Tháo giáo', toStageName: 'Tháo giáo lửng' }),
+    ])
+    renderScreen()
+    await screen.findByRole('button', { name: 'ô R1C1' })
+
+    await waitFor(() => expect(card().getByText('300,00 m²')).toBeInTheDocument())
+    expect(card().getByText('Tháo giáo lửng')).toBeInTheDocument()
+    expect(card().getByText('200,00 m²')).toBeInTheDocument()
+
+    await userEvent.click(within(screen.getByTestId('gs-work-picker')).getByText('Tháo giáo'))
+
+    // Unchanged, and not refetched: the block is keyed on the deck.
+    expect(card().getByText('300,00 m²')).toBeInTheDocument()
+    expect(card().getByText('200,00 m²')).toBeInTheDocument()
+    expect(listDeckEvents).toHaveBeenCalledTimes(1)
+  })
+
+  it('re-reads the day after the foreman records a bay, so the figures move', async () => {
+    // A block whose whole subject is "what did we get done today" cannot sit
+    // still while the foreman records today's work. The tap is optimistic on the
+    // drawing; the day's m² and Mhr come from cell_events, so they need the read.
+    listDeckEvents.mockResolvedValue([])
+    renderScreen()
+    await screen.findByRole('button', { name: 'ô R1C1' })
+    await waitFor(() => expect(listDeckEvents).toHaveBeenCalledTimes(1))
+
+    listDeckEvents.mockResolvedValue([event()])
+    // R2C1, which is at no coat in Sơn: the modal refuses a write that changes
+    // nothing, so a bay already at the chosen coat would never reach the API.
+    await userEvent.click(screen.getByRole('button', { name: 'ô R2C1' }))
+    await chooseIn('Công đoạn', 'Blast + Coat 1')
+    await fillRequired()
+    await userEvent.click(screen.getByRole('button', { name: 'Xác nhận' }))
+
+    await waitFor(() => expect(setCellState).toHaveBeenCalled())
+    await waitFor(() => expect(listDeckEvents).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(card().getByText('300,00 m²')).toBeInTheDocument())
+  })
+
+  it('keeps the block off a project the foreman is not a member of', async () => {
+    // Same rule as the rest of the rail: a refusal must not render as a deck
+    // that simply did nothing today.
+    loadGsProject.mockResolvedValue({ decks: [], isMember: false })
+    renderScreen()
+    expect(await screen.findByText('Không xem được dự án này')).toBeInTheDocument()
+    expect(screen.queryByTestId('gs-deck-today')).toBeNull()
+  })
+})
+
 describe('GsScreen: the plan overlay', () => {
   it('reads the plan once per deck, toggle or not', async () => {
     // Feedback Rv2 item 7: the bay dialog names the bay's zones whether the
@@ -1655,6 +1788,12 @@ describe('GsScreen: exporting the open deck', () => {
     id: 1, cellCode: 'R1C1', cellAreaM2: 300, toStageName: 'Blast + Coat 1',
     at: '2026-08-20T10:00:00+00:00', byId: 'u1', note: 'Bắt đầu',
     reportNote: null, reportHidden: false,
+    // `effort` has been required on DeckEvent since 0030 and this fixture never
+    // carried it. Thông tin nhanh — Hôm nay reads the same events the export
+    // does, so a row without it now reaches deckEffortTotals as well.
+    effort: {
+      leadName: '', painterName: '', workHours: null, wasteHours: null, wasteReason: '', wasteOrder: '',
+    },
   }
   /** jsdom has no object URLs and no navigation; capture the download instead. */
   const downloads: string[] = []

@@ -7,11 +7,13 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { useAuth } from '../../auth/AuthProvider'
 
 import { DrawingCanvas } from '../../canvas/DrawingCanvas'
+import { deckEffortTotals, effortDayKey } from '../../domain/effort'
+import { todayAreaByStage } from '../../domain/today'
 import { describeZone, formatPlanRange, zoneLabelBoxes } from '../../domain/plan'
 import { paintLensColors, zoneColorMap, zoneLensColors, zoneLensLayers } from '../../domain/lens'
 import { computeDeckProgress, summariseDeck } from '../../domain/progress'
 import { planImagePairs } from '../../domain/report'
-import { EMPTY_EFFORT, type Cell, type Deck, type Effort, type Stage, type WorkModel, type Zone } from '../../domain/types'
+import { EMPTY_EFFORT, type Cell, type Deck, type DeckEvent, type Effort, type Stage, type WorkModel, type Zone } from '../../domain/types'
 // One signed-URL helper for both roles: the bucket name and the 3600-second
 // expiry belong in one place, and decksApi is a lib module rather than an admin
 // one. Screens still never touch `supabase` directly.
@@ -36,6 +38,7 @@ import { fieldError, palette, shadowCard } from '../../theme'
 import { CalendarOutlined, DownloadOutlined, LineChartOutlined } from '@ant-design/icons'
 import { EmptyState } from '../../components/EmptyState'
 import { DeckProgressCard, StageRollupCard } from './DeckStatsCards'
+import { DeckTodayCard } from './DeckTodayCard'
 import { SectionCard } from '../../components/SectionCard'
 import { StatusPill } from '../../components/StatusPill'
 
@@ -86,6 +89,7 @@ interface PendingWrite {
 
 const EMPTY_STAGES: Stage[] = []
 const EMPTY_WORKS: DeckWork[] = []
+const EMPTY_EVENTS: DeckEvent[] = []
 
 /** The mesh with one work's states laid over it: what every lens reads. */
 function projectCells(geometry: Cell[], byCell: Record<string, CellStateView> | undefined): Cell[] {
@@ -518,6 +522,79 @@ export function GsScreen() {
     [deck, deckModels],
   )
 
+  /**
+   * The deck's stage changes, for Thông tin nhanh — Hôm nay (Feedback Rv5,
+   * item 7).
+   *
+   * A read of its own, and it has to be one. `cell_states` -- everything the
+   * drawing, the rollup and the deck percentage are built from -- records only
+   * where each bay stands NOW: no timestamp, no man-hours (see CellStateView).
+   * So "what did this deck produce today" and "what did it cost" cannot be
+   * derived from anything already on this screen. `listDeckEvents` is the same
+   * call the deck export makes, and it already pages past PostgREST's 1000-row
+   * cap (progressApi's EVENT_PAGE).
+   *
+   * Keyed on the DECK, not on the work: the block covers every work the deck
+   * belongs to (RV5-18), so changing the work picker must neither refetch nor
+   * change what it shows.
+   *
+   * Deliberately NOT folded into refetchDeck, which also runs on every realtime
+   * reconnect and shortly after every SUBSCRIBED. This is one read per deck
+   * opened plus one per recorded bay, which is what a site tether can afford;
+   * the day's figures do not need re-reading on a socket hiccup. It shares
+   * `wantedDeckId` so a slow answer for the deck the foreman has just left is
+   * dropped rather than shown against the deck they are now looking at.
+   *
+   * A failure keeps the previous answer, like refetchDeck's: the drawing and
+   * every percentage on screen are still valid, and blanking the block would be
+   * the only thing here claiming otherwise.
+   *
+   * Stored WITH the deck it was read for, and read back only when that matches,
+   * rather than cleared on a deck change. A bare array would leave the previous
+   * deck's man-hours on the rail for as long as the new deck's read is in
+   * flight -- a figure quietly describing another deck -- and clearing it from
+   * the effect is the setState React would rather be derived at render.
+   */
+  const [deckEvents, setDeckEvents] = useState<{ deckId: string; rows: DeckEvent[] } | null>(null)
+  const refreshDeckEvents = useCallback((deckId: string) => {
+    listDeckEvents(deckId)
+      .then((rows) => {
+        if (wantedDeckId.current === deckId) setDeckEvents({ deckId, rows })
+      })
+      .catch(() => {
+        // See above: the block keeps the figures it already has.
+      })
+  }, [])
+
+  useEffect(() => {
+    if (activeDeckId) refreshDeckEvents(activeDeckId)
+  }, [activeDeckId, refreshDeckEvents])
+
+  const todayEvents = deckEvents?.deckId === activeDeckId ? deckEvents.rows : EMPTY_EVENTS
+
+  /**
+   * The Vietnam calendar day, settled once per mount -- the same way
+   * ProductivityDashboard and DeckForecastPanel settle theirs, so the three
+   * agree about where a day starts (RV5-20). A tablet left open across midnight
+   * keeps yesterday's key until it is reloaded, which is why the card prints the
+   * date it is reporting rather than only the word "Hôm nay".
+   */
+  const todayKey = useMemo(() => effortDayKey(new Date().toISOString()), [])
+  /**
+   * Every coat the admin configured on this deck: the works in the order the
+   * picker lists them, each work's coats in seq order as listDeckWorks sorts
+   * them. The order is settled HERE and todayAreaByStage keeps it (RV5-17).
+   */
+  const todayStages = useMemo(
+    () => todayAreaByStage(
+      todayEvents,
+      workList.flatMap((w) => w.stages.map((s) => ({ workName: w.work.name, stageName: s.name }))),
+      todayKey,
+    ),
+    [todayEvents, workList, todayKey],
+  )
+  const todayTotals = useMemo(() => deckEffortTotals(todayEvents, todayKey), [todayEvents, todayKey])
+
   /** Stage colour per cell CODE, which is what DrawingCanvas keys on. Shared
    *  with the admin's progress screen so the two cannot drift into colouring
    *  one deck two different ways. */
@@ -898,6 +975,12 @@ export function GsScreen() {
     })
     setStates(put({ stageId, note }))
     void setCellState(cellId, workId, activeDeckId, stageId, note, effort)
+      .then(() => {
+        // Thông tin nhanh — Hôm nay reads cell_events, which the optimistic
+        // update above does not touch. Without this the block sits still while
+        // the foreman records the very work it is reporting on.
+        refreshDeckEvents(activeDeckId)
+      })
       .catch(() => {
         // Only the newest attempt for this (work, bay) may roll it back. An
         // older one finishing late would otherwise undo a later tap, or
@@ -1363,6 +1446,13 @@ export function GsScreen() {
               totalAreaM2={deck?.totalAreaM2 ?? 0}
             />
           )}
+          {/*
+            Under the coat rollup, which is where Linh's arrow points (Feedback
+            Rv5, item 7). Ungated, unlike the rollup above: RV5-17 wants the
+            coats listed at 0,00 m² rather than the block disappearing, and a
+            deck whose drawing has not been uploaded yet still has coats.
+          */}
+          <DeckTodayCard todayKey={todayKey} rows={todayStages} totals={todayTotals} />
         </div>
       </Layout.Content>
 
