@@ -1,7 +1,8 @@
 import { REALTIME_SUBSCRIBE_STATES } from '@supabase/supabase-js'
 import { EMPTY_EFFORT, type Cell, type Effort, type Stage, type Work, type WorkModel } from '../domain/types'
+import { listCellStates } from './progressApi'
 import {
-  assembleProjectModel, mapStage, mapWork, type DeckRowIn, type StageRowIn, type StateRowIn,
+  assembleProjectModel, mapStage, mapWork, type DeckRowIn, type StageRowIn,
   type WorkDeckRow, type WorkRow,
 } from './workModel'
 import { supabase } from './supabase'
@@ -218,17 +219,17 @@ export interface CellStateView {
 /**
  * A deck's bay states, indexed by work then by bay: states[workId][cellId].
  * A bay with no row for a work is simply absent, and reads as not started.
+ *
+ * Through `listCellStates` rather than a read of its own: `cell_states` is one
+ * row per (bay, work), so even one deck can pass PostgREST's 1000-row cap, and
+ * a truncated read here would blank bays the foreman had already ticked.
  */
 export async function listDeckStates(
   deckId: string,
 ): Promise<Record<string, Record<string, CellStateView>>> {
-  const { data, error } = await supabase
-    .from('cell_states')
-    .select('cell_id, work_id, stage_id, note')
-    .eq('deck_id', deckId)
-  if (error) throw new Error(error.message)
+  const rows = await listCellStates('cell_id, work_id, stage_id, note', [deckId])
   const index: Record<string, Record<string, CellStateView>> = {}
-  for (const r of (data ?? []) as { cell_id: string; work_id: string; stage_id: string | null; note: string | null }[]) {
+  for (const r of rows) {
     ;(index[r.work_id] ??= {})[r.cell_id] = { stageId: r.stage_id ?? null, note: r.note ?? '' }
   }
   return index
@@ -278,8 +279,10 @@ export async function listDeckWorks(deckId: string): Promise<DeckWork[]> {
 /**
  * The work models the deck tabs need: for each requested deck, every work of
  * the project with that deck alone inside it, so `summariseDeck` reads the
- * right weight and the right bays. Three reads for any number of decks --
- * works (with weights), decks (with bays and coats), states.
+ * right weight and the right bays. Works (with weights), decks (with bays and
+ * coats) and states, for any number of decks -- the states through
+ * `listCellStates`, so a project past 1000 bay states pages instead of
+ * labelling the truncated decks 0% (Feedback Rv5, item 2).
  *
  * Every requested deck gets an entry, including one in no work at all; the
  * caller divides by these, and a missing key would throw on the tab rather
@@ -301,18 +304,14 @@ export async function listProjectIndex(
     .select('id, seq, code, name, total_area_m2, cells(id, code, area_m2), deck_stages(id, work_id, deck_id, seq, name, color, weight)')
     .in('id', deckIds)
   if (decksQuery.error) throw new Error(decksQuery.error.message)
-  const statesQuery = await supabase
-    .from('cell_states')
-    .select('cell_id, work_id, deck_id, stage_id, note')
-    .in('deck_id', deckIds)
-  if (statesQuery.error) throw new Error(statesQuery.error.message)
+  const states = await listCellStates('cell_id, work_id, deck_id, stage_id, note', deckIds)
 
   const works = (worksQuery.data ?? []) as unknown as (WorkRow & { work_decks?: WorkDeckRow[] })[]
   const { models } = assembleProjectModel({
     works,
     workDecks: works.flatMap((w) => (w.work_decks ?? []).map((wd) => ({ ...wd, work_id: w.id }))),
     decks: (decksQuery.data ?? []) as unknown as DeckRowIn[],
-    states: (statesQuery.data ?? []) as unknown as StateRowIn[],
+    states,
   })
   const index: Record<string, WorkModel[]> = {}
   for (const id of deckIds) {

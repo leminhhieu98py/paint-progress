@@ -48,13 +48,59 @@ const WORK_SELECT = 'id, project_id, seq, name, kind, weight, counts, manual_pro
 const STATE_SELECT = 'cell_id, work_id, deck_id, stage_id, note, updated_at, updated_by'
 
 /**
+ * PostgREST answers at most 1000 rows per request (the project's `db-max-rows`)
+ * and reports no error -- the same cap the event pager further down works
+ * around.
+ *
+ * `cell_states` holds one row per (bay, work), so the row count is bays times
+ * works, not bays. The eleven-deck project in Feedback Rv5 (185-241 bays each)
+ * crossed the cap several times over: an unpaged read came back with the first
+ * 1000 rows, the decks whose rows fell past it assembled with no states at all,
+ * and the rollup printed 0,00% for decks that had been worked for weeks.
+ * Nothing errored, and which decks lost depended on the order Postgres happened
+ * to return -- which is why one screenshot showed a deck at 31,48% and the next
+ * at 0,00%.
+ *
+ * Ordered by `cell_id` THEN `work_id`, which is the whole primary key: the
+ * window is then total and two pages can neither overlap nor skip. `cell_id`
+ * alone leaves the rows of one bay in an arbitrary order across a boundary.
+ *
+ * Every `cell_states` read in the app goes through here, one deck or eleven --
+ * so RV5-03's "assert a short read" case does not arise, because no read is
+ * left unpaged. A single deck is not exempt: 241 bays in five works is already
+ * 1205 rows. Paging costs nothing when the deck is small, since a short first
+ * page ends the loop -- exactly the one request the unpaged version made.
+ */
+export const STATE_PAGE = 1000
+
+export async function listCellStates(columns: string, deckIds: string[]): Promise<StateRowIn[]> {
+  const rows: StateRowIn[] = []
+  for (let from = 0; ; from += STATE_PAGE) {
+    const { data, error } = await supabase
+      .from('cell_states')
+      .select(columns)
+      .in('deck_id', deckIds)
+      .order('cell_id', { ascending: true })
+      .order('work_id', { ascending: true })
+      .range(from, from + STATE_PAGE - 1)
+    if (error) throw new Error(error.message)
+    const page = (data ?? []) as unknown as StateRowIn[]
+    rows.push(...page)
+    if (page.length < STATE_PAGE) break
+  }
+  return rows
+}
+
+/**
  * The whole project as the work model: every work with its decks, each deck's
  * bays projected for that work, plus the deck list and the per-work audit.
  *
- * Three reads -- works (with their deck weights), decks (with geometry and
- * coats), states -- assembled by `assembleProjectModel`, which is where the
- * decisions live and are tested. The state read is skipped when there are no
- * decks: `.in('deck_id', [])` is a round trip for nothing.
+ * Works (with their deck weights), decks (with geometry and coats) and states,
+ * assembled by `assembleProjectModel`, which is where the decisions live and
+ * are tested. The states arrive through `listCellStates`, so they are as many
+ * reads as the project needs rather than one truncated one. The state read is
+ * skipped when there are no decks: `.in('deck_id', [])` is a round trip for
+ * nothing.
  */
 export async function loadProjectModel(projectId: string): Promise<ProjectModel> {
   const worksQuery = await supabase
@@ -75,11 +121,7 @@ export async function loadProjectModel(projectId: string): Promise<ProjectModel>
   const deckIds = decks.map((d) => d.id)
 
   let states: StateRowIn[] = []
-  if (deckIds.length > 0) {
-    const statesQuery = await supabase.from('cell_states').select(STATE_SELECT).in('deck_id', deckIds)
-    if (statesQuery.error) throw new Error(statesQuery.error.message)
-    states = (statesQuery.data ?? []) as unknown as StateRowIn[]
-  }
+  if (deckIds.length > 0) states = await listCellStates(STATE_SELECT, deckIds)
 
   return assembleProjectModel({
     works,
@@ -132,15 +174,14 @@ export async function loadDeckWorks(deckId: string): Promise<DeckWorks | null> {
     .select(`work_id, deck_id, weight, deadline, works!inner(${WORK_SELECT})`)
     .eq('deck_id', deckId)
   if (membershipQuery.error) throw new Error(membershipQuery.error.message)
-  const statesQuery = await supabase.from('cell_states').select(STATE_SELECT).eq('deck_id', deckId)
-  if (statesQuery.error) throw new Error(statesQuery.error.message)
+  const states = await listCellStates(STATE_SELECT, [deckId])
 
   const memberships = (membershipQuery.data ?? []) as unknown as (WorkDeckRow & { works: WorkRow })[]
   const model = assembleProjectModel({
     works: memberships.map((m) => m.works),
     workDecks: memberships,
     decks: [deckRow],
-    states: (statesQuery.data ?? []) as unknown as StateRowIn[],
+    states,
   })
 
   const meta = model.decks[0]
