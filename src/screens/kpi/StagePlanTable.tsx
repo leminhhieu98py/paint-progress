@@ -222,15 +222,26 @@ export function StagePlanTable({
       width: 220,
       render: (_v: unknown, row: StagePlanRow) => {
         const d = draft(row)
-        const computed = computedAreaFor(row, d.startDate)
+        /*
+          Null: there is no figure, as opposed to a figure of zero.
+
+          The computed area is what remains ON the start date (RV5-23), so with
+          no start date there is nothing to compute from -- `computedAreaFor`
+          returns 0 there as a sentinel, and `Tự tính: 0,00` on screen read as
+          though the system had worked the coat out and found nothing left. A
+          coat that genuinely has nothing left still computes 0,00 and still
+          says so, so the branch turns on the DATE and never on the value.
+        */
+        const computed = d.startDate === null ? null : computedAreaFor(row, d.startDate)
         return (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <InputNumber
                 aria-label="Diện tích kế hoạch"
                 // The computed figure as the placeholder, so an empty field
-                // shows what the system will use instead of showing nothing.
-                placeholder={formatAreaM2(computed)}
+                // shows what the system will use instead of showing nothing --
+                // and no placeholder at all while there is no figure to show.
+                placeholder={computed === null ? undefined : formatAreaM2(computed)}
                 value={d.plannedAreaM2}
                 disabled={saving}
                 style={{ width: 130 }}
@@ -259,7 +270,7 @@ export function StagePlanTable({
               data-testid={`plan-computed-${row.stageId}`}
               style={{ fontSize: 12, color: palette.textQuaternary }}
             >
-              {`Tự tính: ${formatAreaM2(computed)}`}
+              {computed === null ? '—' : `Tự tính: ${formatAreaM2(computed)}`}
             </span>
           </div>
         )

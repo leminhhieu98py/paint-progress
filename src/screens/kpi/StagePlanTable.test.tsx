@@ -159,6 +159,45 @@ describe('StagePlanTable', () => {
     expect(row('s2').getByTestId('plan-computed-s2')).toHaveTextContent('8.000,00')
   })
 
+  /** Mirrors `KpiScreen.computedAreaFor`, which short-circuits to 0 with no
+   *  start date because there is no day to replay the deck's events up to. */
+  const asOfStart = (r: StagePlanRow, startDate: string | null) =>
+    (startDate === null ? 0 : COMPUTED[r.stageId] ?? 0)
+
+  it('shows no computed area on a row with no window (Feedback Rv5, RV5-23)', () => {
+    // The computed area is what remains ON the start date. With no start date
+    // there is nothing to compute from, and `Tự tính: 0,00` reads as "the
+    // system worked out zero" -- a different statement.
+    renderTable({ computedAreaFor: asOfStart })
+    const computed = row('s3').getByTestId('plan-computed-s3')
+    expect(computed).toHaveTextContent('—')
+    expect(computed).not.toHaveTextContent('0,00')
+    // And no zero placeholder standing in for a figure that does not exist.
+    const area = row('s3').getByLabelText('Diện tích kế hoạch') as HTMLInputElement
+    expect(area.value).toBe('')
+    expect(area.placeholder).toBe('')
+    // The rows that do have a window are untouched.
+    expect(row('s2').getByTestId('plan-computed-s2')).toHaveTextContent('8.000,00')
+  })
+
+  it('shows the computed figure as soon as a start date is entered', async () => {
+    renderTable({ computedAreaFor: asOfStart })
+    await retype(startOf('s3'), '01/10/2026')
+    await waitFor(() => expect(row('s3').getByTestId('plan-computed-s3')).toHaveTextContent('16.000,00'))
+    expect(row('s3').getByLabelText('Diện tích kế hoạch'))
+      .toHaveAttribute('placeholder', '16.000,00')
+  })
+
+  it('still prints a computed zero, which is not the same as no figure at all', () => {
+    // A coat with genuinely nothing left computes 0,00 and has to say so. Only
+    // the absence of a start date is undefined, so the branch turns on the
+    // DATE and never on the value -- here every figure is zero and the two
+    // rows must still read differently.
+    renderTable({ computedAreaFor: () => 0 })
+    expect(row('s2').getByTestId('plan-computed-s2')).toHaveTextContent('Tự tính: 0,00')
+    expect(row('s3').getByTestId('plan-computed-s3')).toHaveTextContent('—')
+  })
+
   it('sends the computed figure as null so the system keeps computing it', async () => {
     const { onSave } = renderTable()
 
