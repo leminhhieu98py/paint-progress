@@ -203,10 +203,18 @@ export function DecksScreen() {
    * row that will read 0,00% for ever is noise in the one table that says how
    * the project is going. It is hidden here, not removed: the Sàn list above
    * says what exists, the works table says what counts, and one line under
-   * this table says how many rows it is not showing. `totalArea` and the ring
-   * are unchanged -- the ring already gets nothing from a zero weight.
+   * this table says how many rows it is not showing.
+   *
+   * Feedback Rv5, items 1 and 3: the ring and `Tổng dự án` follow the same
+   * predicate. Rv2 left both alone on the reasoning that "the ring already
+   * gets nothing from a zero weight" -- true of the arc, false of the legend,
+   * which went on listing eleven decks with six of them at 0,00%. And the m²
+   * total summed every deck of the project under a table of only the weighted
+   * ones: 194.525,00 over a visible 160.229,00. One predicate, so the three
+   * cannot drift apart again.
    */
-  const visibleRollup = rollupRows.filter((_, i) => (summaries[i]?.effectiveWeight ?? 0) > 0)
+  const carriesWeight = (i: number) => (summaries[i]?.effectiveWeight ?? 0) > 0
+  const visibleRollup = rollupRows.filter((_, i) => carriesWeight(i))
   const hiddenDecks = rollupRows.length - visibleRollup.length
   const workRows: WorkRow[] = rollup.works.map((w) => ({
     key: w.work.id,
@@ -228,11 +236,11 @@ export function DecksScreen() {
     read as though the project were further along.
   */
   const slices: DonutSlice[] = [
-    ...modelDecks.map((deck, i) => ({
+    ...modelDecks.flatMap((deck, i) => (carriesWeight(i) ? [{
       label: deck.name,
       value: (summaries[i]?.effectiveWeight ?? 0) * (summaries[i]?.progress ?? 0),
       color: DECK_SHADES[i % DECK_SHADES.length],
-    })),
+    }] : [])),
     ...rollup.works
       .filter((w) => w.work.kind === 'manual' && w.work.counts)
       .map((w, i) => ({
@@ -241,7 +249,7 @@ export function DecksScreen() {
         color: DECK_SHADES[(modelDecks.length + i) % DECK_SHADES.length],
       })),
   ]
-  const totalArea = modelDecks.reduce((sum, d) => sum + d.totalAreaM2, 0)
+  const totalArea = modelDecks.reduce((sum, d, i) => (carriesWeight(i) ? sum + d.totalAreaM2 : sum), 0)
   const projectName = projects.find((p) => p.id === projectId)?.name ?? ''
 
   /**

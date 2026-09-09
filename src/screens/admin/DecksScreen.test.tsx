@@ -267,6 +267,46 @@ describe('DecksScreen — the project-wide half of progress', () => {
     expect(screen.getAllByText('Test data').length).toBeGreaterThan(0)
   })
 
+  /** MODEL plus a deck in no work at all: 100 m² that weighs nothing in P. */
+  const withZeroWeightDeck = () =>
+    loadProjectModel.mockResolvedValue({
+      ...MODEL,
+      decks: [
+        ...MODEL.decks,
+        {
+          id: 'd3', code: 'TD', name: 'Test data', totalAreaM2: 100, seq: 3,
+          imagePath: null, imageW: null, imageH: null, areaSource: 'guides' as const, cellCount: 0,
+        },
+      ],
+    })
+
+  it('keeps a zero-weight deck out of the ring as well as out of the table', async () => {
+    // Feedback Rv5, item 1: the arc gets nothing from a zero weight, but the
+    // LEGEND listed all eleven decks, six of them at 0,00% -- exactly the
+    // noise that hiding the table rows was meant to remove.
+    withZeroWeightDeck()
+    renderScreen()
+
+    const donut = await screen.findByTestId('rollup-donut')
+    await waitFor(() => expect(within(donut).getByText('Cellar Deck')).toBeInTheDocument())
+    expect(within(donut).queryByText('Test data')).toBeNull()
+    // A counted manual work is not a deck: it carries real weight in P and
+    // keeps its slice.
+    expect(within(donut).getByText('Chứng từ')).toBeInTheDocument()
+  })
+
+  it('totals the m² of the decks the table lists, not of every deck in the project', async () => {
+    // Feedback Rv5, item 3: 194.525,00 printed under a visible sum of
+    // 160.229,00. Here: CD 1000 + WD 3000, with the 100 m² of Test data out.
+    withZeroWeightDeck()
+    renderScreen()
+
+    const rollup = await screen.findByTestId('project-rollup')
+    await waitFor(() => expect(within(rollup).getByText('Cellar Deck')).toBeInTheDocument())
+    expect(within(rollup).getByText('4.000,00')).toBeInTheDocument()
+    expect(within(rollup).queryByText('4.100,00')).toBeNull()
+  })
+
   it('says nothing about hidden decks when every deck counts', async () => {
     renderScreen()
     const rollup = await screen.findByTestId('project-rollup')
