@@ -105,6 +105,15 @@ export interface KpiScopeStage {
   actual: ActualStageDay[]
 }
 
+/**
+ * Just the two dates, for the functions that only measure the window.
+ *
+ * Narrower than `StagePlan` on purpose: an entry screen holding a half-typed
+ * draft can ask how long a window is without fabricating a plan row's names to
+ * satisfy a type that never reads them. Every `StagePlan` satisfies this.
+ */
+export type PlanWindow = Pick<StagePlan, 'startDate' | 'endDate'>
+
 const MS_PER_DAY = 24 * 60 * 60 * 1000
 
 /**
@@ -141,13 +150,13 @@ function dayKeyOf(at: Date): string {
  * negative bar on a chart the customer reads. Failing safe beats failing loudly
  * on a figure nobody can act on.
  */
-export function planDays(plan: StagePlan): number {
+export function planDays(plan: PlanWindow): number {
   const span = (utcNoon(plan.endDate).getTime() - utcNoon(plan.startDate).getTime()) / MS_PER_DAY
   return Math.max(1, Math.round(span) + 1)
 }
 
 /** Every calendar day of the window, inclusive, ascending. */
-export function planWindowDays(plan: StagePlan): string[] {
+export function planWindowDays(plan: PlanWindow): string[] {
   const days: string[] = []
   const start = utcNoon(plan.startDate)
   for (let i = 0; i < planDays(plan); i += 1) {
