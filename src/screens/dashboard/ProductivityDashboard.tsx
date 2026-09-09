@@ -86,32 +86,49 @@ export function ProductivityDashboard({
   const order = useMemo(() => stageOrder(models), [models])
   const daily = useMemo(() => dailyEffort(filtered), [filtered])
   const stages = useMemo(() => stageEfficiency(daily, order), [daily, order])
-  const leads = useMemo(() => leadEfficiency(filtered), [filtered])
-  const reasons = useMemo(() => wasteReasons(filtered), [filtered])
-  const coverage = effortCoverage(filtered)
 
   /**
-   * Feedback Rv5, item 5 and Q10. Two buckets exist so that events carrying no
-   * real label do not vanish: `NOT_STARTED_STAGE` collects the moves back to
-   * nothing, and the blank lead name collects the updates where the foreman
-   * left the box empty (442 of them in Linh's screenshot, all at 0 Mhr and
-   * 0 m²). Neither is a công đoạn or a nhóm trưởng, and neither can carry a
-   * Mhr/m² figure -- they are noise on a screen whose subject is efficiency.
+   * Feedback Rv5, item 5, Q10 and RV5-35. Two buckets exist so that events
+   * carrying no real label do not vanish: `NOT_STARTED_STAGE` collects the
+   * moves back to nothing, and the blank lead name collects the updates where
+   * the foreman left the box empty (442 of them in Linh's screenshot, all at
+   * 0 Mhr and 0 m²). Neither is a công đoạn or a nhóm trưởng, and neither can
+   * carry a Mhr/m² figure -- they are noise on a screen whose subject is
+   * efficiency.
    *
    * The hours some of these rows DO carry are a mis-entry, not work: asked
    * about the 4,0 Mhr and 37,42 m² on `Chưa bắt đầu` in dev, Linh answered
    * "User cập nhật nhầm. Có công đoạn mới có giờ công." The modal used to
    * compel it by requiring hours for every choice in its coat picker; RV5-30
-   * stopped that, so no new row can be written this way. The rows already
-   * recorded stay in the database untouched (RV5-33) -- they are the
+   * and RV5-34 stopped that, so no new row can be written this way. The rows
+   * already recorded stay in the database untouched (RV5-33) -- they are the
    * customer's history, and repairing production data is the owner's call --
    * and simply stop being displayed.
    *
-   * Filtered HERE, at each consumer, and NOT inside `dailyEffort` or
-   * `stageEfficiency`: `deckForecast` reads `stageEfficiency` output to work
-   * out what is left, and a forecast that quietly loses a bucket is a
-   * different change with different consequences.
+   * **The exclusion has to be made twice, because this screen aggregates on
+   * two different dimensions.** RV5-31 dropped the bucket from `stages` only,
+   * which is a filter on the STAGE dimension; `leadEfficiency` groups by crew
+   * and `wasteReasons` groups by reason, and neither has a stage row to drop.
+   * So the owner measured 370,0 Mhr and 280,73 m² in Theo nhóm trưởng and 10,0
+   * giờ in Lý do hao phí against a header reading 366,0, 243,31 and 9,0.
+   * Linh's rule is that hours exist only where a coat does, so the EVENT is
+   * excluded as well as the row: hours attached to no coat belong in no
+   * aggregate, not merely in no stage row.
+   *
+   * `coverage` stays over the unfiltered set on purpose: it counts how much of
+   * the history carries hours at all, and a removal is a real update whether
+   * or not its hours may enter an average.
+   *
+   * Filtered HERE, at each consumer, and NOT inside `domain/effort.ts`:
+   * `deckForecast` reads `stageEfficiency` output to work out what is left, and
+   * the report's history sheets must still list every event that happened.
    */
+  const withCoat = useMemo(() => filtered.filter((ev) => ev.toStageName !== null), [filtered])
+  const leads = useMemo(() => leadEfficiency(withCoat), [withCoat])
+  const reasons = useMemo(() => wasteReasons(withCoat), [withCoat])
+  const coverage = effortCoverage(filtered)
+
+  /** The stage half of the exclusion argued for above. */
   const visibleStages = useMemo(
     () => stages.filter((s) => s.stageName !== NOT_STARTED_STAGE),
     [stages],

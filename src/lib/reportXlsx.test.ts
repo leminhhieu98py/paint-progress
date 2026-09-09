@@ -563,6 +563,37 @@ describe('the crew productivity block on Năng suất (Feedback Rv5, item 6)', (
     expect(sheet.rowCount).toBe(header + 2)
   })
 
+  it('leaves hours booked against no coat out of the block (Feedback Rv5, RV5-35)', async () => {
+    // RV5-32 kept the `Chưa bắt đầu` bucket off the stage table above by
+    // filtering on the STAGE dimension. This block has no stage dimension, so
+    // the same hours came straight back in -- and a figure in the workbook the
+    // customer is handed must not differ from the screen's.
+    const removal = {
+      ...lead(5, 'R1C5', 400, '2026-08-24T10:00:00+00:00', 'Tổ 1', 4, 2),
+      toStageName: null,
+    }
+    const wb = await readBack(await buildReportWorkbook({
+      ...CREW,
+      decks: [
+        { ...CREW.decks[0], events: [...CREW.decks[0].events, removal] },
+        CREW.decks[1],
+      ],
+    }))
+    const sheet = wb.getWorksheet('Năng suất')!
+    const header = rowWhere(sheet, 1, 'Năng suất theo nhóm trưởng') + 1
+
+    const first = sheet.getRow(header + 1)
+    expect(first.getCell(1).value).toBe('Tổ 1')
+    expect(first.getCell(2).value).toBe(2)                        // two updates, not three
+    expect(first.getCell(3).value).toBe(6)                        // Tổng Mhr, not 10
+    expect(first.getCell(4).value).toBe(800)                      // Tổng m², not 1200
+    expect(first.getCell(5).value as number).toBeCloseTo(0.0075, 9)
+    expect(first.getCell(6).value).toBe(0.5)                      // Giờ hao phí, not 2,5
+    // Still the two named crews, and no `Chưa bắt đầu` row above them either.
+    expect(sheet.rowCount).toBe(header + 2)
+    expect(rowWhere(sheet, 3, 'Chưa bắt đầu')).toBe(0)
+  })
+
   it('dresses its own header row and leaves the stage table above untouched', async () => {
     const wb = await readBack(await buildReportWorkbook(CREW))
     const sheet = wb.getWorksheet('Năng suất')!

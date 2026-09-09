@@ -189,6 +189,43 @@ describe('ProductivityDashboard — the placeholder rows (Feedback Rv5, item 5)'
     expect(within(screen.getByTestId('stage-table')).queryByText('Chưa bắt đầu')).toBeNull()
   })
 
+  it('leaves a placeholder\'s hours out of Theo nhóm trưởng too (Feedback Rv5, RV5-35)', () => {
+    // Measured on dev after RV5-31 shipped: the lead table read 370,0 Mhr and
+    // 280,73 m² against a header of 366,0 and 243,31. RV5-31 excluded the
+    // bucket on the STAGE dimension, and this table has no stage dimension, so
+    // the exclusion never reached it.
+    renderDashboard([...EVENTS, sentBack({ leadName: 'Tổ 1', workHours: 50, wasteHours: 2 })])
+    const rows = leadRows()
+    expect(rows).toHaveLength(2)
+    const t1 = within(rows[0])
+    expect(t1.getByText('Tổ 1')).toBeInTheDocument()
+    expect(t1.getByText('2')).toBeInTheDocument()          // two updates, not three
+    expect(t1.getByText('230,0')).toBeInTheDocument()      // Tổng Mhr, not 280,0
+    expect(t1.getByText('200,00')).toBeInTheDocument()     // Tổng m², not 250,00
+    expect(t1.getByText('1,150')).toBeInTheDocument()      // 230 / 200, not 280 / 250
+    expect(t1.getByText('3,0')).toBeInTheDocument()        // Giờ hao phí, not 5,0
+  })
+
+  it('leaves a placeholder\'s lost hours out of Lý do hao phí (Feedback Rv5, RV5-35)', () => {
+    // The other table with no stage dimension: 10,0 giờ on dev against a stage
+    // table summing to 9,0.
+    renderDashboard([...EVENTS, sentBack({ wasteHours: 2, wasteReason: 'Mưa' })])
+    const reasons = within(screen.getByTestId('waste-table')).getAllByRole('row').slice(1)
+    expect(reasons).toHaveLength(2)
+    expect(within(reasons[0]).getByText('Mưa')).toBeInTheDocument()
+    expect(within(reasons[0]).getByText('3,0')).toBeInTheDocument()   // not 5,0
+    expect(within(reasons[0]).getByText('1')).toBeInTheDocument()     // one occurrence, not two
+    // And the cards still agree with the stage rows they sit above.
+    expect(cards().getByText('4,0')).toBeInTheDocument()
+  })
+
+  it('files a reason no coat carries under no reason at all, not under a new row', () => {
+    // A removal whose hao phí reason is one nothing else used: it must not
+    // appear as a row of its own either.
+    renderDashboard([...EVENTS, sentBack({ wasteHours: 2, wasteReason: 'Sửa lại lớp sơn' })])
+    expect(within(screen.getByTestId('waste-table')).queryByText('Sửa lại lớp sơn')).toBeNull()
+  })
+
   it('filters the crew table by name, case- and accent-insensitively, and nothing else', async () => {
     renderDashboard()
     await userEvent.type(screen.getByRole('textbox', { name: 'Tìm nhóm trưởng' }), 'to 2')

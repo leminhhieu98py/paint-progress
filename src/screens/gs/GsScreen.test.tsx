@@ -1423,6 +1423,51 @@ describe('GsScreen: Thông tin nhanh — Hôm nay (Feedback Rv5, item 7)', () =>
     expect(card().getByText('4,0')).toBeInTheDocument()
   })
 
+  it('leaves hours booked against no coat out of its four figures (Feedback Rv5, RV5-35)', async () => {
+    // Measured on dev: this card read `Tổng Mhr đã thực hiện đến hôm nay = 4,0`
+    // on Main Deck while all five of that deck's coats read 0,0. Hours exist
+    // only where a coat does (Q10), so a removal carrying hours belongs in this
+    // aggregate no more than it belongs in a stage row.
+    listDeckEvents.mockResolvedValue([
+      event(),
+      event({
+        cellCode: 'R1C2', cellAreaM2: 200, toStageName: 'Coat 2',
+        effort: {
+          leadName: 'Tổ 1', painterName: 'Nam', workHours: 2, wasteHours: 0,
+          wasteReason: '', wasteOrder: '',
+        },
+      }),
+      // Last year, so the cumulative figures differ from today's (RV5-19).
+      event({
+        cellCode: 'R2C1', cellAreaM2: 100, at: '2026-01-05T03:00:00Z',
+        effort: {
+          leadName: 'Tổ 1', painterName: 'Nam', workHours: 10, wasteHours: 3,
+          wasteReason: '', wasteOrder: '',
+        },
+      }),
+      // The removal: today, with hours, and against no coat.
+      event({
+        cellCode: 'R2C2', cellAreaM2: 50, toStageName: null,
+        effort: {
+          leadName: 'Tổ 1', painterName: 'Nam', workHours: 7, wasteHours: 5,
+          wasteReason: '', wasteOrder: '',
+        },
+      }),
+    ])
+    renderScreen()
+    await screen.findByRole('button', { name: 'ô R1C1' })
+    await waitFor(() => expect(listDeckEvents).toHaveBeenCalledWith('d1'))
+
+    // The same four figures as without the removal: 6,0 and 1,0 today, 16,0 and
+    // 4,0 all told -- not 13,0 / 6,0 / 23,0 / 9,0.
+    await waitFor(() => expect(card().getByText('6,0')).toBeInTheDocument())
+    expect(card().getByText('1,0')).toBeInTheDocument()
+    expect(card().getByText('16,0')).toBeInTheDocument()
+    expect(card().getByText('4,0')).toBeInTheDocument()
+    expect(card().queryByText('13,0')).toBeNull()
+    expect(card().queryByText('23,0')).toBeNull()
+  })
+
   it('is there for a viewer, who is who reads this screen without writing', async () => {
     // RV5-20: rendered for gs and viewer alike. It writes nothing.
     authRole.value = 'viewer'

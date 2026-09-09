@@ -593,7 +593,20 @@ export function GsScreen() {
     ),
     [todayEvents, workList, todayKey],
   )
-  const todayTotals = useMemo(() => deckEffortTotals(todayEvents, todayKey), [todayEvents, todayKey])
+  /**
+   * Hours booked against no coat are left out (RV5-35). This card reported
+   * `Tổng Mhr đã thực hiện đến hôm nay = 4,0` on a dev deck whose five coats
+   * all read 0,0, because the m² rows above it are per coat and these four
+   * figures were over every event. Linh's rule is that hours exist only where
+   * a coat does (Q10), so the removal's hours belong in neither.
+   *
+   * Filtered here rather than in `deckEffortTotals`: the module is shared with
+   * the report, whose history sheets list every event that happened.
+   */
+  const todayTotals = useMemo(
+    () => deckEffortTotals(todayEvents.filter((ev) => ev.toStageName !== null), todayKey),
+    [todayEvents, todayKey],
+  )
 
   /** Stage colour per cell CODE, which is what DrawingCanvas keys on. Shared
    *  with the admin's progress screen so the two cannot drift into colouring

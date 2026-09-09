@@ -577,11 +577,21 @@ export async function buildReportWorkbook(input: ReportInput): Promise<Blob> {
     can carry no Mhr/m². Filtered BEFORE the length test, so a project whose
     only updates named nobody gets no empty block either.
 
+    Events carrying no coat are dropped as well (RV5-35). RV5-32 kept the
+    `Chưa bắt đầu` bucket off the stage table above by filtering on the STAGE
+    dimension; this block groups by crew and has no stage row to drop, so the
+    same hours came straight back in -- 370,0 Mhr against a screen reading
+    366,0. Hours exist only where a coat does (Q10), and a figure in the
+    workbook the customer is handed must not differ from the screen's. The
+    per-deck history sheets still list every event, removals included.
+
     Columns 1-6 of the sheet, deliberately: the widths the stage table needs
     (Sàn 24, Công việc 18, Công đoạn 20) are the widest ones, so the block reads
     without touching them.
   */
-  const leads = leadEfficiency(input.decks.flatMap((d) => d.events)).filter((row) => row.leadName !== '')
+  const leads = leadEfficiency(
+    input.decks.flatMap((d) => d.events).filter((ev) => ev.toStageName !== null),
+  ).filter((row) => row.leadName !== '')
   let leadHeaderRow = 0
   if (leads.length > 0) {
     effort.addRow([])
