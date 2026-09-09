@@ -82,6 +82,15 @@ const FILLED = {
 }
 
 /**
+ * What a removal sends (Feedback Rv5, Q10) -- `EMPTY_EFFORT`, spelled out
+ * field by field rather than imported, so this pins the values a removal
+ * writes to `cell_events` and does not merely follow the constant.
+ */
+const EMPTY = {
+  leadName: '', painterName: '', workHours: null, wasteHours: null, wasteReason: '', wasteOrder: '',
+}
+
+/**
  * Opens the stage dropdown and picks an option by its visible label.
  *
  * `getByRole('combobox', { name })` and not `getByLabelText`: antd puts the
@@ -201,12 +210,13 @@ describe('CellStageModal', () => {
   it('commits null when the cell is cleared', async () => {
     renderModal()
     await chooseStage('Chưa bắt đầu')
-    await fillRequired()
+    // No fillRequired: a removal asks for no crew and no hours (Rv5 Q10), so
+    // those fields are not on screen to fill.
     await userEvent.click(screen.getByRole('button', { name: 'Xác nhận' }))
 
     // The sentinel must never escape the modal: setCellStage sends stage_id
     // straight to PostgREST, and '__not-started__' is not a uuid.
-    expect(onCommit).toHaveBeenCalledWith('c1', null, '', FILLED)
+    expect(onCommit).toHaveBeenCalledWith('c1', null, '', EMPTY)
   })
 
   it('says which coat is missing rather than writing the one already there', async () => {
@@ -664,5 +674,110 @@ describe('CellStageModal effort (Feedback Rv2 item 11, tightened by Rv4)', () =>
     )
     expect(await screen.findByText('Ô R3C8')).toBeInTheDocument()
     expect(screen.getByLabelText(/Số giờ công \(Mhr\)/)).toHaveValue('')
+  })
+})
+
+describe('CellStageModal — a removal asks for nothing (Feedback Rv5, Q10)', () => {
+  it('commits a removal with the crew and hours fields untouched', async () => {
+    renderModal()
+    await chooseStage('Chưa bắt đầu')
+    await userEvent.click(screen.getByRole('button', { name: 'Xác nhận' }))
+
+    // Every complaint Rv4 added, by its exact string: none of them reaches a
+    // bay whose coat is being taken off.
+    expect(screen.queryByText('Chọn nhóm trưởng.')).toBeNull()
+    expect(screen.queryByText('Chọn thợ chính.')).toBeNull()
+    expect(screen.queryByText('Nhập số giờ công.')).toBeNull()
+    expect(screen.queryByText('Nhập số giờ hao phí; không hao phí thì nhập 0.')).toBeNull()
+    expect(onCommit).toHaveBeenCalledTimes(1)
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('sends EMPTY_EFFORT for a removal, field by field', async () => {
+    renderModal()
+    await chooseStage('Chưa bắt đầu')
+    await userEvent.click(screen.getByRole('button', { name: 'Xác nhận' }))
+
+    // Not `expect.anything()`: the point of Q10 is that a removal writes NO
+    // hours, so every field of the effort it sends is asserted.
+    expect(onCommit).toHaveBeenCalledWith('c1', null, '', {
+      leadName: '', painterName: '', workHours: null, wasteHours: null,
+      wasteReason: '', wasteOrder: '',
+    })
+  })
+
+  it('shows no crew and no hours fields once the removal is chosen', async () => {
+    renderModal()
+    await chooseStage('Chưa bắt đầu')
+
+    // Not merely un-required: absent. A foreman asked to name a crew for work
+    // that did not happen types something, and that something is the row Linh
+    // called a mis-entry.
+    expect(screen.queryByTestId('cell-effort')).toBeNull()
+    expect(screen.queryByRole('combobox', { name: 'Nhóm trưởng' })).toBeNull()
+    expect(screen.queryByRole('combobox', { name: 'Thợ chính' })).toBeNull()
+    expect(screen.queryByLabelText(/Số giờ công \(Mhr\)/)).toBeNull()
+    expect(screen.queryByLabelText(/Giờ hao phí \(Mhr\)/)).toBeNull()
+  })
+
+  it('keeps the note field on a removal: why the coat came off is worth having', async () => {
+    renderModal()
+    await chooseStage('Chưa bắt đầu')
+    await userEvent.type(screen.getByLabelText(/Ghi chú cho quản trị viên/), 'Sơn sai lớp, làm lại')
+    await userEvent.click(screen.getByRole('button', { name: 'Xác nhận' }))
+
+    expect(onCommit).toHaveBeenCalledWith('c1', null, 'Sơn sai lớp, làm lại', {
+      leadName: '', painterName: '', workHours: null, wasteHours: null,
+      wasteReason: '', wasteOrder: '',
+    })
+  })
+
+  it('still requires all four fields for a real coat, unchanged', async () => {
+    // The Rv4 rule is untouched where it applies: hours that are sometimes
+    // recorded cannot be divided by an area.
+    renderModal()
+    await chooseStage('Coat 3')
+    await userEvent.click(screen.getByRole('button', { name: 'Xác nhận' }))
+
+    expect(await screen.findByText('Chọn nhóm trưởng.')).toBeInTheDocument()
+    expect(screen.getByText('Chọn thợ chính.')).toBeInTheDocument()
+    expect(screen.getByText('Nhập số giờ công.')).toBeInTheDocument()
+    expect(screen.getByText('Nhập số giờ hao phí; không hao phí thì nhập 0.')).toBeInTheDocument()
+    expect(onCommit).not.toHaveBeenCalled()
+  })
+
+  it('drops hours typed against a real coat when the choice becomes a removal', async () => {
+    // Waste hours as well as work hours, and both dependants filled: this is
+    // the path where a foreman fills the block, realises the coat should come
+    // OFF, and switches the picker. None of it may travel with the removal --
+    // and the waste order and reason must not block the commit either.
+    renderModal()
+    await chooseStage('Coat 3')
+    await chooseCrew('Nhóm trưởng', 'Lê Văn A')
+    await chooseCrew('Thợ chính', 'Nguyễn Văn B')
+    await userEvent.type(screen.getByLabelText(/Số giờ công \(Mhr\)/), '4')
+    await userEvent.type(screen.getByLabelText(/Giờ hao phí \(Mhr\)/), '2')
+    await userEvent.type(screen.getByLabelText(/Lệnh sản xuất/), 'LSX-2026-88')
+    await chooseIn('Lý do hao phí', '8.1 Thời tiết', 'Thời tiết')
+
+    await chooseStage('Chưa bắt đầu')
+    await userEvent.click(screen.getByRole('button', { name: 'Xác nhận' }))
+
+    expect(onCommit).toHaveBeenCalledWith('c1', null, '', {
+      leadName: '', painterName: '', workHours: null, wasteHours: null,
+      wasteReason: '', wasteOrder: '',
+    })
+  })
+
+  it('still refuses a removal on a bay that has not started', async () => {
+    // `unchanged` is not an effort rule and is not relaxed: null -> null is
+    // not a stage change, and writing it would put a meaningless row in the
+    // history.
+    renderModal({ ...CELL, stageId: null })
+    await userEvent.click(screen.getByRole('button', { name: 'Xác nhận' }))
+
+    expect(await screen.findByText('Chọn công đoạn cho ô này.')).toBeInTheDocument()
+    expect(onCommit).not.toHaveBeenCalled()
+    expect(onClose).not.toHaveBeenCalled()
   })
 })

@@ -646,6 +646,10 @@ describe('GsScreen: recording a stage', () => {
     renderScreen()
     await userEvent.click(await screen.findByRole('button', { name: 'ô R2C1' }))
     await waitFor(() => expect(listEmployees).toHaveBeenCalled())
+    // A coat first: R2C1 has not started, so the dialog opens on
+    // `Chưa bắt đầu` and a removal asks for no crew (Feedback Rv5, Q10). The
+    // roster arrives with the coat.
+    await chooseIn('Công đoạn', 'Coat 3')
     await chooseIn('Nhóm trưởng', 'Lê Văn A')
     expect(within(screen.getByTestId('cell-effort')).getByTitle('Lê Văn A')).toBeInTheDocument()
   })
