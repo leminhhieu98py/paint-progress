@@ -575,9 +575,10 @@ describe('kpiSeries', () => {
     expect(series.map((d) => d.planCumShare)).toEqual([0.25, 0.5, 0.75, 1])
   })
 
-  it('includes a day that carries actual but lies outside every window', () => {
-    // Work done before the plan started, or after it ended, is still work
-    // done: dropping the day would take the area off the chart entirely.
+  it('counts a day that carries actual after the window has ended', () => {
+    // Overrun is work done and the chart has to show it: there is no upper
+    // bound (RV5-36). Area recorded BEFORE the window is the opposite case --
+    // it is already netted out of the planned area, and it is asserted below.
     const entries: KpiScopeStage[] = [{
       plan: plan({ startDate: '2026-09-02', endDate: '2026-09-03', plannedAreaM2: 200 }),
       computedAreaM2: 0,
@@ -586,12 +587,11 @@ describe('kpiSeries', () => {
         { stageId: 'coat1', stageName: 'Lớp 1', day: '2026-09-05', areaM2: 30 },
       ],
     }]
-    expect(kpiSeries(entries).map((d) => [d.day, d.planM2, d.actualM2])).toEqual([
-      ['2026-08-31', 0, 50],
-      ['2026-09-02', 100, 0],
-      ['2026-09-03', 100, 0],
-      ['2026-09-05', 0, 30],
-    ])
+    const series = kpiSeries(entries)
+    expect(series.some((d) => d.day === '2026-08-31')).toBe(false)
+    expect(dayOf(series, '2026-09-05').actualM2).toBe(30)
+    expect(dayOf(series, '2026-09-05').planM2).toBe(0)
+    expect(series[series.length - 1].actualCumShare).toBeCloseTo(30 / 200, 12)
   })
 
   it('lets the actual share pass 1 rather than clamping it', () => {
@@ -647,5 +647,122 @@ describe('kpiSeries', () => {
     const series = kpiSeries(entries)
     expect(series.map((d) => d.planM2)).toEqual([300, 300])
     expect(series[1].planCumShare).toBe(1)
+  })
+
+  // -------------------------------------------------------------------------
+  // RV5-36 — Actual belongs to the plan window
+  // -------------------------------------------------------------------------
+
+  it('leaves area recorded before the start date out of every day and every total', () => {
+    const entries: KpiScopeStage[] = [{
+      plan: plan({ startDate: '2026-09-10', endDate: '2026-09-12', plannedAreaM2: 300 }),
+      computedAreaM2: 0,
+      actual: [{ stageId: 'coat1', stageName: 'Lớp 1', day: '2026-09-09', areaM2: 500 }],
+    }]
+    const series = kpiSeries(entries)
+    expect(series.some((d) => d.day === '2026-09-09')).toBe(false)
+    expect(series.map((d) => d.actualM2)).toEqual([0, 0, 0])
+    expect(series.map((d) => d.actualCumShare)).toEqual([0, 0, 0])
+  })
+
+  it('counts area recorded ON the start date', () => {
+    // The boundary is inclusive: `start_date` is the first day of the window,
+    // and the planned area is what remains AT the beginning of it.
+    const entries: KpiScopeStage[] = [{
+      plan: plan({ startDate: '2026-09-10', endDate: '2026-09-12', plannedAreaM2: 300 }),
+      computedAreaM2: 0,
+      actual: [{ stageId: 'coat1', stageName: 'Lớp 1', day: '2026-09-10', areaM2: 150 }],
+    }]
+    const series = kpiSeries(entries)
+    expect(series.map((d) => d.actualM2)).toEqual([150, 0, 0])
+    expect(series.map((d) => d.actualCumShare)).toEqual([0.5, 0.5, 0.5])
+  })
+
+  it('counts area recorded after the end date, with no upper bound at all', () => {
+    const entries: KpiScopeStage[] = [{
+      plan: plan({ startDate: '2026-09-10', endDate: '2026-09-11', plannedAreaM2: 200 }),
+      computedAreaM2: 0,
+      actual: [{ stageId: 'coat1', stageName: 'Lớp 1', day: '2026-09-30', areaM2: 600 }],
+    }]
+    const series = kpiSeries(entries)
+    expect(dayOf(series, '2026-09-30').actualM2).toBe(600)
+    expect(series[series.length - 1].actualCumShare).toBe(3)
+  })
+
+  it('reports a zero actual share when every bay was recorded before the window', () => {
+    // Not 327%. RV5-23 defines the planned area as what REMAINS on the start
+    // date, so earlier work is already netted out of the denominator; counting
+    // it in the numerator too compares two different things.
+    const entries: KpiScopeStage[] = [{
+      plan: plan({ startDate: '2026-09-10', endDate: '2026-09-14', plannedAreaM2: 1000 }),
+      computedAreaM2: 0,
+      actual: [
+        { stageId: 'coat1', stageName: 'Lớp 1', day: '2026-08-26', areaM2: 2300 },
+        { stageId: 'coat1', stageName: 'Lớp 1', day: '2026-08-28', areaM2: 1600 },
+      ],
+    }]
+    const series = kpiSeries(entries)
+    expect(series.every((d) => d.actualM2 === 0)).toBe(true)
+    expect(series.every((d) => d.actualCumShare === 0)).toBe(true)
+  })
+
+  it('clamps each coat against its OWN start date, not the scope\'s earliest', () => {
+    // Two coats, two windows. A single date across the scope would let the
+    // later coat count work done while only the earlier one had started.
+    const entries: KpiScopeStage[] = [
+      {
+        plan: plan({ stageId: 'a', startDate: '2026-09-01', endDate: '2026-09-02', plannedAreaM2: 100 }),
+        computedAreaM2: 0,
+        actual: [{ stageId: 'a', stageName: 'Lớp 1', day: '2026-09-01', areaM2: 40 }],
+      },
+      {
+        plan: plan({ stageId: 'b', startDate: '2026-09-05', endDate: '2026-09-06', plannedAreaM2: 100 }),
+        computedAreaM2: 0,
+        actual: [{ stageId: 'b', stageName: 'Lớp 2', day: '2026-09-01', areaM2: 70 }],
+      },
+    ]
+    const series = kpiSeries(entries)
+    expect(dayOf(series, '2026-09-01').actualM2).toBe(40)
+    expect(series.reduce((sum, d) => sum + d.actualM2, 0)).toBe(40)
+  })
+
+  it('does not read 327% for the dev case: Main Deck · Blast + Coat 1, 10/09-20/09', () => {
+    // The chart the owner saw: planned area 1.230,11 m² (5.258,00 − 4.027,89,
+    // correctly the coat's remaining area), and the whole 4.027,89 m² recorded
+    // in August drawn as Actual bars on 26/08 and 28/08 -- a right axis to
+    // 340% and a cumulative line pegged at the top from 28/08.
+    const dev = (day: string): KpiScopeStage[] => [{
+      plan: plan({
+        stageId: 'coat1', stageName: 'Blast + Coat 1',
+        startDate: '2026-09-10', endDate: '2026-09-20', plannedAreaM2: 1230.11,
+      }),
+      computedAreaM2: 0,
+      actual: [{ stageId: 'coat1', stageName: 'Blast + Coat 1', day, areaM2: 4027.89 }],
+    }]
+
+    const august = kpiSeries(dev('2026-08-28'))
+    expect(august.every((d) => d.actualM2 === 0)).toBe(true)
+    expect(august[august.length - 1].actualCumShare).toBe(0)
+
+    // The same two figures, the work recorded inside the window: 327% is a
+    // real answer here, and only here.
+    const inWindow = kpiSeries(dev('2026-09-12'))
+    expect(dayOf(inWindow, '2026-09-12').actualM2).toBe(4027.89)
+    expect(inWindow[inWindow.length - 1].actualCumShare).toBeCloseTo(4027.89 / 1230.11, 12)
+  })
+
+  it('leaves a coat with no plan row out of both series', () => {
+    // RV5-37's last paragraph: no start date means nothing to measure against.
+    // `KpiScopeStage` requires a plan, so such a coat has no entry at all --
+    // KpiScreen drops it when it assembles the scope, and this pins the
+    // consequence: it is on neither series and it does not widen the axis.
+    const entries: KpiScopeStage[] = [{
+      plan: plan({ stageId: 'a', startDate: '2026-09-10', endDate: '2026-09-11', plannedAreaM2: 100 }),
+      computedAreaM2: 0,
+      actual: [{ stageId: 'a', stageName: 'Lớp 1', day: '2026-09-10', areaM2: 100 }],
+    }]
+    const series = kpiSeries(entries)
+    expect(series.map((d) => d.day)).toEqual(['2026-09-10', '2026-09-11'])
+    expect(series.reduce((sum, d) => sum + d.actualM2, 0)).toBe(100)
   })
 })

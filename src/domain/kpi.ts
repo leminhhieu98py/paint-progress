@@ -404,9 +404,27 @@ export function actualByDay(scope: DeckPlanScope): ActualStageDay[] {
  * the workbook's running sum of already-divided shares (row 9 = `H9+I8`), and
  * loses one rounding step; the difference is at the sixteenth decimal.
  *
- * Nothing is clamped. Actual above plan gives a share above 1, as it does in
- * the workbook -- a clamped curve would hide being ahead, which is the one
- * piece of good news this chart can carry.
+ * **Actual is clamped on the left, and only there (RV5-36).** A coat's actual
+ * counts a day only from that coat's own `start_date` onward. The reason is
+ * the denominator: RV5-23 defines the planned area as what REMAINS on the
+ * start date, so work finished before then has already been subtracted out of
+ * it. Counting that work in the numerator as well compares two different
+ * things, and on dev it did: one plan, Main Deck · Blast + Coat 1, 10/09-20/09,
+ * planned area 1.230,11 m² (correctly 5.258,00 − 4.027,89) against the whole
+ * 4.027,89 m² recorded in August -- a right-hand axis reaching 340%, a
+ * cumulative-actual line pegged at the top from 28/08, and a header reading
+ * 327% against plan. `KPI.xlsx` never had the problem, because its Actual row
+ * carries values only from the first plan day onward; the spec lost that when
+ * it turned the workbook into RV5-25.
+ *
+ * Per coat, not once across the scope: each coat has its own window, and one
+ * date for all of them would let a coat starting on the 20th count work done
+ * while only the coat starting on the 1st had begun.
+ *
+ * There is NO upper bound. Work continuing past `end_date` is overrun and has
+ * to be visible, and nothing is clamped at 1 either: actual above plan gives a
+ * share above 1, as it does in the workbook -- a clamped curve would hide
+ * being ahead, which is the one piece of good news this chart can carry.
  */
 export function kpiSeries(entries: KpiScopeStage[]): KpiDay[] {
   const planByDay = new Map<string, number>()
@@ -421,6 +439,9 @@ export function kpiSeries(entries: KpiScopeStage[]): KpiDay[] {
       planByDay.set(day, (planByDay.get(day) ?? 0) + rate)
     }
     for (const row of entry.actual) {
+      // Skipped, not zeroed: a day that carries nothing else has no business
+      // on the axis, and 'YYYY-MM-DD' compares correctly as a string.
+      if (row.day < entry.plan.startDate) continue
       actualByDayTotal.set(row.day, (actualByDayTotal.get(row.day) ?? 0) + row.areaM2)
     }
   }
