@@ -12,6 +12,15 @@ vi.mock('../../lib/employeesApi', () => ({
   createEmployee: (name: string) => createEmployee(name),
   updateEmployee: (id: string, fields: unknown) => updateEmployee(id, fields),
 }))
+const buildEmployeesXlsx = vi.hoisted(() => vi.fn())
+vi.mock('../../lib/employeesXlsx', () => ({
+  buildEmployeesXlsx: (rows: unknown) => buildEmployeesXlsx(rows),
+  employeesFileName: (today: string) => `nhan-vien-${today}.xlsx`,
+}))
+const downloadWorkbook = vi.hoisted(() => vi.fn())
+vi.mock('../../lib/projectReport', () => ({
+  downloadWorkbook: (blob: unknown, name: string) => downloadWorkbook(blob, name),
+}))
 
 const ROWS = [
   { id: 'e1', fullName: 'Lê Văn A', active: true },
@@ -24,9 +33,12 @@ beforeEach(() => {
   listEmployees.mockReset()
   createEmployee.mockReset()
   updateEmployee.mockReset()
+  buildEmployeesXlsx.mockReset()
+  downloadWorkbook.mockReset()
   listEmployees.mockResolvedValue(ROWS)
   createEmployee.mockResolvedValue('e9')
   updateEmployee.mockResolvedValue(undefined)
+  buildEmployeesXlsx.mockResolvedValue(new Blob(['x']))
 })
 
 describe('EmployeesScreen', () => {
@@ -101,5 +113,85 @@ describe('EmployeesScreen', () => {
     expect(await screen.findByText('mất kết nối')).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Thử lại' }))
     expect(await screen.findByText('Lê Văn A')).toBeInTheDocument()
+  })
+})
+
+describe('EmployeesScreen — search and export (Feedback Rv5, item 4)', () => {
+  /** The roster as the customer keeps it: "<mã> - <họ tên>", and the odd row
+   *  with no code at all. */
+  const ROSTER = [
+    { id: 'e1', fullName: 'MC005593 - Cao Minh Hải', active: true },
+    { id: 'e2', fullName: 'MC005594 - Đoàn Công Linh', active: true },
+    { id: 'e3', fullName: 'GG', active: false },
+  ]
+  const search = () => screen.getByRole('textbox', { name: 'Tìm nhân viên' })
+  const names = () =>
+    screen.getAllByRole('switch').map((s) => s.getAttribute('aria-label')?.replace('Đang làm · ', ''))
+
+  beforeEach(() => listEmployees.mockResolvedValue(ROSTER))
+
+  it('filters by any part of the name, ignoring case and tones', async () => {
+    renderScreen()
+    await screen.findByText('MC005593 - Cao Minh Hải')
+    await userEvent.type(search(), 'hai')
+    expect(names()).toEqual(['MC005593 - Cao Minh Hải'])
+  })
+
+  it('reaches a name behind đ, which no tone-stripping alone would find', async () => {
+    renderScreen()
+    await screen.findByText('MC005593 - Cao Minh Hải')
+    await userEvent.type(search(), 'doan cong')
+    expect(names()).toEqual(['MC005594 - Đoàn Công Linh'])
+  })
+
+  it('matches the code as well as the name, since the roster stores one string', async () => {
+    renderScreen()
+    await screen.findByText('MC005593 - Cao Minh Hải')
+    await userEvent.type(search(), '005594')
+    expect(names()).toEqual(['MC005594 - Đoàn Công Linh'])
+  })
+
+  it('counts the filter in the header, with the whole roster still beside it', async () => {
+    renderScreen()
+    expect(await screen.findByText(/2 đang làm · 3 tên trong danh sách/)).toBeInTheDocument()
+    await userEvent.type(search(), 'hai')
+    expect(screen.getByText(/1 đang làm · 1\/3 tên khớp tìm kiếm/)).toBeInTheDocument()
+  })
+
+  it('exports the whole roster, retired names included, not the filtered view', async () => {
+    // RV5-08. A name taken out of the GS picker is still on every update it
+    // was ever recorded against, so the file has to carry it.
+    renderScreen()
+    await screen.findByText('MC005593 - Cao Minh Hải')
+    await userEvent.type(search(), 'hai')
+    await userEvent.click(screen.getByRole('button', { name: /Xuất danh sách/ }))
+
+    await waitFor(() => expect(buildEmployeesXlsx).toHaveBeenCalledWith(ROSTER))
+    await waitFor(() => expect(downloadWorkbook).toHaveBeenCalledWith(
+      expect.any(Blob),
+      expect.stringMatching(/^nhan-vien-\d{4}-\d{2}-\d{2}\.xlsx$/),
+    ))
+  })
+
+  it('says on the button that the file is everyone, including the retired', async () => {
+    renderScreen()
+    await screen.findByText('MC005593 - Cao Minh Hải')
+    await userEvent.hover(screen.getByRole('button', { name: /Xuất danh sách/ }))
+    expect(await screen.findByText(/cả người đã nghỉ/)).toBeInTheDocument()
+  })
+
+  it('says when a search matches nobody, rather than looking like an empty roster', async () => {
+    renderScreen()
+    await screen.findByText('MC005593 - Cao Minh Hải')
+    await userEvent.type(search(), 'zzz')
+    expect(screen.getByText('Không có tên nào khớp')).toBeInTheDocument()
+  })
+
+  it('surfaces a failed export instead of leaving the button spinning', async () => {
+    buildEmployeesXlsx.mockRejectedValue(new Error('hết bộ nhớ'))
+    renderScreen()
+    await screen.findByText('MC005593 - Cao Minh Hải')
+    await userEvent.click(screen.getByRole('button', { name: /Xuất danh sách/ }))
+    expect((await screen.findAllByText('hết bộ nhớ')).length).toBeGreaterThan(0)
   })
 })
