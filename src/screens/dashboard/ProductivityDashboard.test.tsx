@@ -108,15 +108,13 @@ describe('ProductivityDashboard', () => {
     expect(screen.getByTestId('hours-chart')).toBeInTheDocument()
   })
 
-  it('groups by crew and by reason, naming the blanks', () => {
+  it('groups by crew and by reason, naming the blank reason', () => {
     renderDashboard()
     const leads = within(screen.getByTestId('lead-table')).getAllByRole('row').slice(1)
     expect(within(leads[0]).getByText('Tổ 1')).toBeInTheDocument()
     expect(within(leads[0]).getByText('230,0')).toBeInTheDocument()
     expect(within(leads[0]).getByText('1,150')).toBeInTheDocument()
     expect(within(leads[1]).getByText('Tổ 2')).toBeInTheDocument()
-    expect(within(leads[2]).getByText('Chưa ghi')).toBeInTheDocument()
-    expect(within(leads[2]).getByText('—')).toBeInTheDocument()
 
     const reasons = within(screen.getByTestId('waste-table')).getAllByRole('row').slice(1)
     expect(within(reasons[0]).getByText('Mưa')).toBeInTheDocument()
@@ -144,6 +142,55 @@ describe('ProductivityDashboard', () => {
     renderDashboard([ev(), ev({ id: 99 })])
     expect(screen.getByText('Chưa có giờ công nào được ghi')).toBeInTheDocument()
     expect(screen.queryByTestId('dashboard-cards')).toBeNull()
+  })
+})
+
+describe('ProductivityDashboard — the placeholder rows (Feedback Rv5, item 5)', () => {
+  const leadRows = () => within(screen.getByTestId('lead-table')).getAllByRole('row').slice(1)
+  /** A bay sent back to nothing: no coat, so dailyEffort files it under
+   *  'Chưa bắt đầu'. The fixture already holds an update with no lead name. */
+  const sentBack = (effort: Partial<Effort> = {}) =>
+    ev({ deckName: 'Sàn A', cellCode: 'R3C1', cellAreaM2: 50, toStageName: null,
+         at: '2026-09-04T03:00:00Z', effort })
+
+  it('leaves "Chưa bắt đầu" out of the stage table and the daily chart', () => {
+    // It is a placeholder, not a công đoạn, and this screen's subject is
+    // efficiency per coat.
+    renderDashboard([...EVENTS, sentBack()])
+    expect(within(screen.getByTestId('stage-table')).queryByText('Chưa bắt đầu')).toBeNull()
+    expect(stageRows()).toHaveLength(2)
+    expect(screen.getByTestId('efficiency-chart')).toHaveTextContent('Lớp 1,Lớp 2')
+  })
+
+  it('leaves the unnamed crew out of Theo nhóm trưởng', () => {
+    // 442 updates at 0 Mhr and 0 m² under "Chưa ghi" -- not a nhóm trưởng.
+    renderDashboard()
+    expect(within(screen.getByTestId('lead-table')).queryByText('Chưa ghi')).toBeNull()
+    expect(leadRows()).toHaveLength(2)
+  })
+
+  it('keeps a placeholder\'s hours in the totals even though its row is gone', () => {
+    // RV5-10: the exclusion is a display decision, made after the rows are
+    // built. dailyEffort is untouched, because the Năng suất sheet and the
+    // forecast read it too -- so an admin who backfills hours onto a
+    // move-back-to-nothing still sees them in the totals.
+    renderDashboard([...EVENTS, sentBack({ leadName: 'Tổ 1', workHours: 50, wasteHours: 2 })])
+    expect(cards().getByText('500,0')).toBeInTheDocument()      // 450 + 50 Mhr
+    expect(cards().getByText('450,00')).toBeInTheDocument()     // 400 + 50 m²
+    expect(cards().getByText('6,0')).toBeInTheDocument()        // 4 + 2 hao phí
+    expect(within(screen.getByTestId('stage-table')).queryByText('Chưa bắt đầu')).toBeNull()
+  })
+
+  it('filters the crew table by name, case- and accent-insensitively, and nothing else', async () => {
+    renderDashboard()
+    await userEvent.type(screen.getByRole('textbox', { name: 'Tìm nhóm trưởng' }), 'to 2')
+    expect(leadRows()).toHaveLength(1)
+    expect(within(leadRows()[0]).getByText('Tổ 2')).toBeInTheDocument()
+    // Card only: the screen's Công việc / Sàn / date filters still govern what
+    // everything, this card included, is computed from.
+    expect(stageRows()).toHaveLength(2)
+    expect(cards().getByText('450,0')).toBeInTheDocument()
+    expect(within(screen.getByTestId('waste-table')).getAllByRole('row').slice(1)).toHaveLength(2)
   })
 })
 
