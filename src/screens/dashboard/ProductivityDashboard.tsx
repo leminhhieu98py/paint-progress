@@ -81,7 +81,6 @@ export function ProductivityDashboard({
 
   /** Today, once per mount -- see DeckForecastPanel for why not per render. */
   const today = useMemo(() => effortDayKey(new Date().toISOString()), [])
-  const todayTotals = deckEffortTotals(filtered, today)
 
   const order = useMemo(() => stageOrder(models), [models])
   const daily = useMemo(() => dailyEffort(filtered), [filtered])
@@ -105,10 +104,11 @@ export function ProductivityDashboard({
    * customer's history, and repairing production data is the owner's call --
    * and simply stop being displayed.
    *
-   * **The exclusion has to be made twice, because this screen aggregates on
-   * two different dimensions.** RV5-31 dropped the bucket from `stages` only,
-   * which is a filter on the STAGE dimension; `leadEfficiency` groups by crew
-   * and `wasteReasons` groups by reason, and neither has a stage row to drop.
+   * **The exclusion has to be made on every dimension this screen aggregates
+   * on, not only on the stage.** RV5-31 dropped the bucket from `stages` only,
+   * which is a filter on the STAGE dimension; `leadEfficiency` groups by crew,
+   * `wasteReasons` groups by reason and `deckEffortTotals` groups by day, and
+   * none of the three has a stage row to drop.
    * So the owner measured 370,0 Mhr and 280,73 m² in Theo nhóm trưởng and 10,0
    * giờ in Lý do hao phí against a header reading 366,0, 243,31 and 9,0.
    * Linh's rule is that hours exist only where a coat does, so the EVENT is
@@ -126,6 +126,9 @@ export function ProductivityDashboard({
   const withCoat = useMemo(() => filtered.filter((ev) => ev.toStageName !== null), [filtered])
   const leads = useMemo(() => leadEfficiency(withCoat), [withCoat])
   const reasons = useMemo(() => wasteReasons(withCoat), [withCoat])
+  /** The two `hôm nay` cards aggregate on the DAY, so they are the third
+   *  consumer with no stage row to drop and need the same exclusion. */
+  const todayTotals = deckEffortTotals(withCoat, today)
   const coverage = effortCoverage(filtered)
 
   /** The stage half of the exclusion argued for above. */

@@ -219,6 +219,41 @@ describe('ProductivityDashboard — the placeholder rows (Feedback Rv5, item 5)'
     expect(cards().getByText('4,0')).toBeInTheDocument()
   })
 
+  /** The one StatCard whose label reads `label`. StatCard nests the label in a
+   *  flex row inside the card, so the card is two parents up. */
+  const cardByLabel = (label: string) =>
+    within(cards().getByText(label).parentElement?.parentElement as HTMLElement)
+  /** Whatever "today" is when the suite runs -- the day the two cards read. */
+  const todayIso = new Date().toISOString()
+
+  it('leaves a placeholder\'s hours out of the two "hôm nay" cards (Feedback Rv5, RV5-35)', () => {
+    // The last reader on this screen still on the unfiltered list. Both cards
+    // sit beside Tổng Mhr thực hiện, which excludes these hours, so a removal
+    // typed today made the row of cards disagree with itself.
+    renderDashboard([
+      ...EVENTS,
+      ev({ deckName: 'Sàn A', cellCode: 'R4C1', cellAreaM2: 50, toStageName: null, at: todayIso,
+           effort: { leadName: 'Tổ 1', workHours: 50, wasteHours: 2 } }),
+    ])
+    expect(cardByLabel('Mhr thực hiện hôm nay').getByText('0,0')).toBeInTheDocument()
+    expect(cardByLabel('Mhr hao phí hôm nay').getByText('0,0')).toBeInTheDocument()
+    // The sibling on a real coat is still counted, so the filter has not simply
+    // emptied the cards.
+    expect(cards().getByText('450,0')).toBeInTheDocument()
+  })
+
+  it('still counts a coat\'s own hours today (Feedback Rv5, RV5-35)', () => {
+    renderDashboard([
+      ...EVENTS,
+      ev({ deckName: 'Sàn A', cellCode: 'R4C1', cellAreaM2: 50, toStageName: null, at: todayIso,
+           effort: { leadName: 'Tổ 1', workHours: 50, wasteHours: 2 } }),
+      ev({ deckName: 'Sàn A', cellCode: 'R4C2', cellAreaM2: 40, toStageName: 'Lớp 1', at: todayIso,
+           effort: { leadName: 'Tổ 1', workHours: 8, wasteHours: 1 } }),
+    ])
+    expect(cardByLabel('Mhr thực hiện hôm nay').getByText('8,0')).toBeInTheDocument()
+    expect(cardByLabel('Mhr hao phí hôm nay').getByText('1,0')).toBeInTheDocument()
+  })
+
   it('files a reason no coat carries under no reason at all, not under a new row', () => {
     // A removal whose hao phí reason is one nothing else used: it must not
     // appear as a row of its own either.
