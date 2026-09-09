@@ -90,6 +90,18 @@ unaffected by it arriving early; the app from that branch, however, writes
 the new columns on every bay update and FAILS against a database without
 them, so the migration goes first. No Edge Function change.
 
+`0033` (`stage_plans`, the KPI plan window per coat — Feedback Rv5 item 9) is
+**written and applied nowhere**: not to dev, not to production. It is a new
+table with its own two policies and two triggers, plus a `do $$ ... $$` block
+at the end that raises if the columns, the primary key, the policies, the
+triggers or the two check constraints are not what the migration claims — so
+applying it is self-verifying and needs no new `verify_schema.sql` row. The
+app code on `feat/feedback-rv5-a` reads and writes this table from the KPI
+screen, so the migration goes before that app is deployed anywhere; the KPI
+screen is the only thing that touches it, and every other screen is unaffected
+by the table's absence. The `stage_plans` cases in
+`tests/rls.integration.test.ts` fail until it is applied.
+
 `supabase/scripts/purge_user.sql` removes one test account together with the
 bays it ticked (owner request, 2026-09-04). It is a dry run until its
 `v_confirm` literal is set; read its header before running it anywhere.

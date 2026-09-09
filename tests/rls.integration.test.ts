@@ -665,6 +665,80 @@ describe.skipIf(!adminConfigured)('RLS as an admin session', () => {
     expect((deleted.data ?? []).length).toBe(1)
   })
 
+  it('stage_plans_admin_all: creates, reads, moves and deletes a KPI window no GS can see (0033)', async () => {
+    const created = await admin
+      .from('stage_plans')
+      .insert({
+        stage_id: stageId, work_id: workId, deck_id: deckId,
+        start_date: '2026-09-01', end_date: '2026-09-12', planned_area_m2: 3300,
+      })
+      .select('stage_id, start_date, end_date, planned_area_m2')
+      .single()
+    expect(created.error).toBeNull()
+    expect(created.data?.start_date).toBe('2026-09-01')
+    expect(Number(created.data?.planned_area_m2)).toBe(3300)
+
+    try {
+      const moved = await admin
+        .from('stage_plans')
+        .update({ end_date: '2026-09-20' })
+        .eq('stage_id', stageId)
+        .select('end_date')
+        .single()
+      expect(moved.error).toBeNull()
+      expect(moved.data?.end_date).toBe('2026-09-20')
+
+      // Clearing the override back to "let the system compute it" (RV5-23) is
+      // a write of NULL, not of 0. If PostgREST or the column ever stopped
+      // admitting it, the admin could no longer undo an override.
+      const cleared = await admin
+        .from('stage_plans')
+        .update({ planned_area_m2: null })
+        .eq('stage_id', stageId)
+        .select('planned_area_m2')
+        .single()
+      expect(cleared.error).toBeNull()
+      expect(cleared.data?.planned_area_m2).toBeNull()
+
+      // The window check refuses an inverted window. Exercised here rather
+      // than in the migration's DO block, which has no real coat to hang a
+      // probe row off (see 0033's comment).
+      const inverted = await admin
+        .from('stage_plans')
+        .update({ start_date: '2026-09-25' })
+        .eq('stage_id', stageId)
+      expect(inverted.error).not.toBeNull()
+
+      // The denormalised pair may not lie: stage_plans_assert_consistent
+      // refuses a row claiming a work the coat does not belong to.
+      const lying = await admin
+        .from('stage_plans')
+        .update({ work_id: ABSENT_PROJECT_ID })
+        .eq('stage_id', stageId)
+      expect(lying.error).not.toBeNull()
+
+      // The GS is not a member of this project at all, so the row is invisible
+      // and unwritable. Without this half, `using (true)` would pass above.
+      const gsRead = await gs.from('stage_plans').select('stage_id').eq('stage_id', stageId)
+      expect(gsRead.error).toBeNull()
+      expect(gsRead.data ?? []).toEqual([])
+
+      const gsWrite = await gs
+        .from('stage_plans')
+        .update({ end_date: '2027-01-01' })
+        .eq('stage_id', stageId)
+        .select('end_date')
+      expect(gsWrite.error).toBeNull()
+      expect(gsWrite.data ?? []).toEqual([])
+      const afterGs = await admin.from('stage_plans').select('end_date').eq('stage_id', stageId).single()
+      expect(afterGs.data?.end_date).toBe('2026-09-20')
+    } finally {
+      const removed = await admin.from('stage_plans').delete().eq('stage_id', stageId).select('stage_id')
+      expect(removed.error).toBeNull()
+      expect((removed.data ?? []).length).toBe(1)
+    }
+  })
+
   it('works_admin_all: deletes a work whose bays carry states, and the log keeps no orphan', async () => {
     // Found on dev: the cascade works -> deck_stages fires
     // log_stage_deletion_on_cells while the work row is already gone, and the
@@ -1512,6 +1586,12 @@ describe.skipIf(!adminConfigured)('0028: roles and permission per work', () => {
       expect(stage.error).toBeNull()
       const stageId = stage.data!.id as string
       expect((await admin.from('zones').insert({ deck_id: deckId, seq: 1, name: `${name} Zone`, stage_id: stageId })).error).toBeNull()
+      // A KPI plan window per coat (0033), so stage_plans has a row on each
+      // side of the work line too and the read narrowing can be observed.
+      expect((await admin.from('stage_plans').insert({
+        stage_id: stageId, work_id: workId, deck_id: deckId,
+        start_date: '2026-09-01', end_date: '2026-09-12',
+      })).error).toBeNull()
       expect((await admin.from('cell_states').upsert(
         { cell_id: cellId, work_id: workId, deck_id: deckId, stage_id: stageId },
         { onConflict: 'cell_id,work_id' },
@@ -1573,6 +1653,9 @@ describe.skipIf(!adminConfigured)('0028: roles and permission per work', () => {
     expect(await names(scoped, 'zones', 'name')).toEqual(['Scope A Zone'])
     expect(await names(scoped, 'cell_states', 'work_id')).toEqual([work1])
     expect(await names(scoped, 'cell_events', 'work_id')).toEqual([work1])
+    // stage_plans_member_read (0033) is the same shape, so it narrows the same
+    // way: a plan for a work this membership does not carry is invisible.
+    expect(await names(scoped, 'stage_plans', 'work_id')).toEqual([work1])
     // The deck itself stays visible: a deck is the project's, not the work's.
     expect(await names(scoped, 'decks', 'code')).toEqual(['WD'])
     // And its own grant row is readable, so the screen can explain itself.
@@ -1887,6 +1970,55 @@ describe.skipIf(!adminConfigured)('0030: effort on bay updates', () => {
     }
   })
 
+  it('an admin sets a KPI window on a coat and a GS on the work reads it (0033)', async () => {
+    const set = await admin
+      .from('stage_plans')
+      .insert({
+        stage_id: stage1, work_id: workId, deck_id: deckId,
+        start_date: '2026-09-01', end_date: '2026-09-12', planned_area_m2: 3300,
+      })
+      .select('stage_id, start_date, end_date')
+      .single()
+    expect(set.error).toBeNull()
+    expect(set.data?.end_date).toBe('2026-09-12')
+
+    // stage_plans_member_read goes through my_works(), which a `gs` passes:
+    // the field reads the plan it is being measured against (RV5-28).
+    const read = await gs
+      .from('stage_plans')
+      .select('start_date, end_date, planned_area_m2')
+      .eq('stage_id', stage1)
+    expect(read.error).toBeNull()
+    expect(read.data?.[0]?.start_date).toBe('2026-09-01')
+    expect(Number(read.data?.[0]?.planned_area_m2)).toBe(3300)
+  })
+
+  it('a GS cannot write a KPI window (0033)', async () => {
+    // stage_plans carries no member write policy, so an UPDATE sees zero rows
+    // rather than erroring -- the same shape as the deadline case above -- and
+    // an INSERT, which has no row to be hidden, is refused outright.
+    const update = await gs
+      .from('stage_plans')
+      .update({ end_date: '2027-01-01' })
+      .eq('stage_id', stage1)
+      .select('end_date')
+    expect(update.error).toBeNull()
+    expect(update.data ?? []).toEqual([])
+
+    const insert = await gs.from('stage_plans').insert({
+      stage_id: stage2, work_id: workId, deck_id: deckId,
+      start_date: '2026-09-13', end_date: '2026-09-20',
+    })
+    expect(insert.error).not.toBeNull()
+
+    const deleted = await gs.from('stage_plans').delete().eq('stage_id', stage1).select('stage_id')
+    expect(deleted.error).toBeNull()
+    expect(deleted.data ?? []).toEqual([])
+
+    const still = await admin.from('stage_plans').select('end_date').eq('stage_id', stage1).single()
+    expect(still.data?.end_date).toBe('2026-09-12')
+  })
+
   it('a viewer cannot record effort either, and no event is written', async () => {
     const promote = await admin.from('profiles').update({ role: 'viewer' }).eq('id', gsUserId)
     expect(promote.error).toBeNull()
@@ -1901,5 +2033,42 @@ describe.skipIf(!adminConfigured)('0030: effort on bay updates', () => {
     expect(count.error).toBeNull()
     // One from the first test, one from the production-order test above.
     expect(count.count).toBe(2)
+  })
+
+  it('a viewer reads the KPI window and cannot write it (0033, RV5-29)', async () => {
+    // RV5-29: the owner relayed Linh's "được" -- the viewer reads the KPI
+    // charts, so it must read the plan the charts are drawn against. That is
+    // the whole reason stage_plans_member_read resolves through my_works()
+    // rather than is_gs(): 0028 established that a viewer passes the former
+    // and fails the latter.
+    //
+    // The role is set here rather than inherited from the test above, so this
+    // case does not depend on the order the file happens to run in.
+    const promote = await admin.from('profiles').update({ role: 'viewer' }).eq('id', gsUserId)
+    expect(promote.error).toBeNull()
+
+    const read = await gs
+      .from('stage_plans')
+      .select('start_date, end_date, planned_area_m2')
+      .eq('stage_id', stage1)
+    expect(read.error).toBeNull()
+    expect(read.data?.[0]?.end_date).toBe('2026-09-12')
+
+    const update = await gs
+      .from('stage_plans')
+      .update({ end_date: '2027-01-01' })
+      .eq('stage_id', stage1)
+      .select('end_date')
+    expect(update.error).toBeNull()
+    expect(update.data ?? []).toEqual([])
+
+    const insert = await gs.from('stage_plans').insert({
+      stage_id: stage2, work_id: workId, deck_id: deckId,
+      start_date: '2026-09-13', end_date: '2026-09-20',
+    })
+    expect(insert.error).not.toBeNull()
+
+    const still = await admin.from('stage_plans').select('end_date').eq('stage_id', stage1).single()
+    expect(still.data?.end_date).toBe('2026-09-12')
   })
 })
