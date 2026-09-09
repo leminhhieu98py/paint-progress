@@ -1,5 +1,5 @@
 import type { Worksheet } from 'exceljs'
-import { leadEfficiency } from '../domain/effort'
+import { leadEfficiency, recordsWorkOnACoat } from '../domain/effort'
 import { computeDeckProgress, summariseDeck } from '../domain/progress'
 import {
   buildEffortSheetRows, buildEventRows, buildOverview, buildPlanRows, type DeckReportInput,
@@ -590,7 +590,7 @@ export async function buildReportWorkbook(input: ReportInput): Promise<Blob> {
     without touching them.
   */
   const leads = leadEfficiency(
-    input.decks.flatMap((d) => d.events).filter((ev) => ev.toStageName !== null),
+    input.decks.flatMap((d) => d.events).filter(recordsWorkOnACoat),
   ).filter((row) => row.leadName !== '')
   let leadHeaderRow = 0
   if (leads.length > 0) {

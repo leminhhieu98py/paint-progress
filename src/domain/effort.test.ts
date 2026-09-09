@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   dailyEffort, deckEffortTotals, effortCoverage, effortDayKey, efficiencySeries, hoursSeries,
-  leadEfficiency, stageEfficiency, stageOrder, wasteReasonLabel, wasteReasons, WASTE_REASONS,
-  type StageOrder,
+  leadEfficiency, recordsWorkOnACoat, stageEfficiency, stageOrder, wasteReasonLabel, wasteReasons,
+  WASTE_REASONS, type StageOrder,
 } from './effort'
 import { EMPTY_EFFORT, type DeckEvent, type Effort, type WorkModel } from './types'
 
@@ -46,6 +46,19 @@ describe('effortDayKey', () => {
 
   it('accepts the +00:00 offset form PostgREST returns', () => {
     expect(effortDayKey('2026-09-04T17:30:00+00:00')).toBe('2026-09-05')
+  })
+})
+
+describe('recordsWorkOnACoat', () => {
+  it('holds where a coat does and nowhere else (Feedback Rv5, Q10)', () => {
+    // Linh's rule: "Có công đoạn mới có giờ công". A bay sent back to nothing
+    // carries no coat, so hours typed on it are a mis-entry, not work.
+    expect(recordsWorkOnACoat(event({ toStageName: 'Lớp 1' }))).toBe(true)
+    expect(recordsWorkOnACoat(event({ toStageName: null }))).toBe(false)
+    // Every consumer passes it straight to Array#filter, so it has to read as
+    // one: no second parameter it could take an index for.
+    const kept = [event({ toStageName: 'Lớp 1' }), event({ toStageName: null })].filter(recordsWorkOnACoat)
+    expect(kept.map((ev) => ev.toStageName)).toEqual(['Lớp 1'])
   })
 })
 

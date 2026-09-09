@@ -7,8 +7,8 @@ import { SectionCard } from '../../components/SectionCard'
 import { StatCard } from '../../components/StatCard'
 import {
   NOT_STARTED_STAGE, dailyEffort, deckEffortTotals, effortCoverage, effortDayKey,
-  efficiencySeries, hoursSeries, leadEfficiency, stageEfficiency, stageOrder, wasteReasons,
-  type LeadEfficiency, type StageEfficiency, type WasteReason,
+  efficiencySeries, hoursSeries, leadEfficiency, recordsWorkOnACoat, stageEfficiency, stageOrder,
+  wasteReasons, type LeadEfficiency, type StageEfficiency, type WasteReason,
 } from '../../domain/effort'
 import { deckForecast, type DeckForecast } from '../../domain/forecast'
 import { computeDeckProgress } from '../../domain/progress'
@@ -123,7 +123,7 @@ export function ProductivityDashboard({
    * `deckForecast` reads `stageEfficiency` output to work out what is left, and
    * the report's history sheets must still list every event that happened.
    */
-  const withCoat = useMemo(() => filtered.filter((ev) => ev.toStageName !== null), [filtered])
+  const withCoat = useMemo(() => filtered.filter(recordsWorkOnACoat), [filtered])
   const leads = useMemo(() => leadEfficiency(withCoat), [withCoat])
   const reasons = useMemo(() => wasteReasons(withCoat), [withCoat])
   /** The two `hôm nay` cards aggregate on the DAY, so they are the third

@@ -7,7 +7,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { useAuth } from '../../auth/AuthProvider'
 
 import { DrawingCanvas } from '../../canvas/DrawingCanvas'
-import { deckEffortTotals, effortDayKey } from '../../domain/effort'
+import { deckEffortTotals, effortDayKey, recordsWorkOnACoat } from '../../domain/effort'
 import { todayAreaByStage } from '../../domain/today'
 import { describeZone, formatPlanRange, zoneLabelBoxes } from '../../domain/plan'
 import { paintLensColors, zoneColorMap, zoneLensColors, zoneLensLayers } from '../../domain/lens'
@@ -604,7 +604,7 @@ export function GsScreen() {
    * the report, whose history sheets list every event that happened.
    */
   const todayTotals = useMemo(
-    () => deckEffortTotals(todayEvents.filter((ev) => ev.toStageName !== null), todayKey),
+    () => deckEffortTotals(todayEvents.filter(recordsWorkOnACoat), todayKey),
     [todayEvents, todayKey],
   )
 
