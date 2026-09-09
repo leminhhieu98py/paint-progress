@@ -1311,12 +1311,11 @@ describe('GsScreen: công việc', () => {
 })
 
 describe('GsScreen: a deck its cells over-cover', () => {
-  it('discloses a deck whose bays cover more than it declares', async () => {
-    // On a deck declaring 500 m² whose bays cover 700, every share on this
-    // screen still divides by the 500 -- so Coat 3 reads 300/500 = 60,00% and
-    // the shares add past 100%. That is correct and deliberate, and it is the
-    // deck that is wrong; the screen has to say so rather than quietly
-    // renormalising to 300/700 = 42,86% and looking consistent.
+  it('says nothing to the field about it, and still divides by the declared area', async () => {
+    // Feedback Rv5, item 8: the banner told the reader to "nhờ quản trị viên
+    // kiểm tra lại" on the one screen whose users are gs and viewer and never
+    // an admin. The admin keeps their own warning, on DeckEditor at a 5%
+    // threshold, which is where a person who can act on it will see it.
     loadGsProject.mockResolvedValue({ decks: [DECKS[1]], isMember: true })
     listDeckCells.mockResolvedValue([
       { id: 'x1', code: 'R1C1', x: 0, y: 0, w: 0.5, h: 1, areaM2: 300, stageId: null, note: '' },
@@ -1325,21 +1324,16 @@ describe('GsScreen: a deck its cells over-cover', () => {
     listDeckStates.mockResolvedValue({ w1: { x1: { stageId: 's3', note: '' } } })
     renderScreen()
 
-    expect(
-      await screen.findByText('Diện tích các ô vượt diện tích sàn khai báo'),
-    ).toBeInTheDocument()
-    // Both numbers, so the foreman can see which way and by how much. Scoped to
-    // the rail: the deck card beside it also prints 500,00 m².
-    expect(
-      within(screen.getByTestId('gs-chart-region'))
-        .getByText(/Các ô cộng lại 700,00 m², sàn khai báo 500,00 m²/),
-    ).toBeInTheDocument()
-    // Disclosed, NOT renormalised: every share still divides by the deck's own
-    // declared area, which is the denominator of every percentage in this
-    // product (spec §3.2) including the one the customer is billed against.
-    const rollup = within(screen.getByTestId('gs-stage-rollup'))
-    expect(rollup.getAllByText('300,00 / 500,00 m² · 60,00%').length).toBeGreaterThan(0)
-    expect(rollup.queryByText(/42,86%/)).toBeNull()
+    // The numbers are untouched: on a deck declaring 500 m² whose bays cover
+    // 700, every share still divides by the 500 (spec §3.2), so Coat 3 reads
+    // 300/500 = 60,00% and NOT a renormalised 300/700 = 42,86%. Only the
+    // banner goes.
+    const rollup = () => within(screen.getByTestId('gs-stage-rollup'))
+    await waitFor(() =>
+      expect(rollup().getAllByText('300,00 / 500,00 m² · 60,00%').length).toBeGreaterThan(0))
+    expect(rollup().queryByText(/42,86%/)).toBeNull()
+    expect(screen.queryByText('Diện tích các ô vượt diện tích sàn khai báo')).toBeNull()
+    expect(screen.queryByText(/Các ô cộng lại/)).toBeNull()
   })
 
   it('names the deck by its area alone, with no bay count beside it', async () => {
@@ -1350,25 +1344,6 @@ describe('GsScreen: a deck its cells over-cover', () => {
     expect(screen.queryByText(/\d+ ô · /)).toBeNull()
   })
 
-  it('does not warn when the cells fit the deck, exactly or with room to spare', async () => {
-    renderScreen()
-    expect(await screen.findByText('15,50%')).toBeInTheDocument()
-    // The Cellar Deck's cells cover 600 m² of 1000 -- the ordinary state, since
-    // openings and the E-house are not cells. The unmapped slice keeps the pie
-    // honest there, so there is nothing to disclose.
-    expect(screen.queryByText('Diện tích các ô vượt diện tích sàn khai báo')).toBeNull()
-
-    await userEvent.click(screen.getByRole('tab', { name: new RegExp(`^Main Deck`) }))
-    // getByTestId, not getByText: the Main Deck's one cell sits at the last
-    // stage, so 100,00% is also every legend row and every spec-table cell.
-    await waitFor(() =>
-      expect(screen.getByTestId('gs-deck-progress')).toHaveTextContent('100,00%'))
-    // The Main Deck's one cell covers its 500 m² exactly, and exact coverage is
-    // the boundary that matters: at >= this banner would sit permanently on every
-    // pro-rated deck, whose cell areas are divided out of the declared total and
-    // therefore sum back to it.
-    expect(screen.queryByText('Diện tích các ô vượt diện tích sàn khai báo')).toBeNull()
-  })
 })
 
 describe('GsScreen: the plan overlay', () => {

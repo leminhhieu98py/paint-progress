@@ -65,19 +65,6 @@ const REALTIME_CONNECT_TIMEOUT_MS = 10_000
  */
 const REALTIME_REGISTRATION_GRACE_MS = 6_000
 
-/**
- * How far Σ cell.area_m2 must exceed the deck's declared area before the pie's
- * renormalisation is worth telling the foreman about.
- *
- * Sized by the DATABASE, like geometry.ts's EPSILON: `cells.area_m2` is
- * `numeric(12,3)`, so 0,001 m² is the smallest over-coverage the column can even
- * express -- anything under that is float residue from summing a few thousand
- * three-decimal values, and on a 6139 m² deck it renormalises the wedges by
- * 1,6e-7, which is invisible. Warning on that would put a "0,00 m² over" banner
- * on decks whose pro-rated cell areas are meant to sum to the total exactly.
- */
-const OVER_COVERAGE_EPSILON_M2 = 1e-3
-
 /** One in-flight `setCellState` for one (work, bay). See `pendingWrites`. */
 interface PendingWrite {
   /**
@@ -530,28 +517,6 @@ export function GsScreen() {
     () => (deck ? summariseDeck(deck.id, deckModels) : null),
     [deck, deckModels],
   )
-
-  /**
-   * Whether the cells cover more than the deck declares.
-   *
-   * The ring is drawn from bay COUNTS, not areas, so it no longer contradicts
-   * its own legend the way the recharts pie did -- but the disclosure stays,
-   * because the condition it describes is still real and still the admin's to
-   * fix: a deck declaring 500 m² whose bays cover 700 is a deck whose area or
-   * whose mesh is wrong.
-   *
-   * Disclosed, NOT renormalised. Dividing by Σ cell area instead would make
-   * every figure on the screen agree with each other and with nothing else --
-   * spec §3.2 makes total_area_m2 the denominator of every percentage in this
-   * product, including the one the customer is billed against. Non-blocking,
-   * matching how spec §11 treats divergence in the admin's deck editor.
-   */
-  const mappedAreaM2 = useMemo(
-    () => cells.reduce((sum, c) => sum + c.areaM2, 0),
-    [cells],
-  )
-  const overCovered = deck !== null
-    && mappedAreaM2 - deck.totalAreaM2 > OVER_COVERAGE_EPSILON_M2
 
   /** Stage colour per cell CODE, which is what DrawingCanvas keys on. Shared
    *  with the admin's progress screen so the two cannot drift into colouring
@@ -1383,14 +1348,6 @@ export function GsScreen() {
               }
           }
         >
-          {overCovered && deck && (
-            <Alert
-              type="warning"
-              showIcon
-              message="Diện tích các ô vượt diện tích sàn khai báo"
-              description={`Các ô cộng lại ${formatAreaM2(mappedAreaM2)} m², sàn khai báo ${formatAreaM2(deck.totalAreaM2)} m². Các con số vẫn tính theo diện tích sàn khai báo. Nhờ quản trị viên kiểm tra lại diện tích sàn hoặc lưới ô.`}
-            />
-          )}
           <DeckProgressCard
             progress={deckSummary?.progress ?? 0}
             totalAreaM2={deck?.totalAreaM2 ?? 0}
