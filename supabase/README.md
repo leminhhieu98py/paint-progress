@@ -98,16 +98,17 @@ six-argument one, so between its push and the deploy the admin backfill on the
 old app fails. Minutes apart, and only that one action.
 
 `0033` (`stage_plans`, the KPI plan window per coat — Feedback Rv5 item 9) is
-**written and applied nowhere**: not to dev, not to production. It is a new
-table with its own two policies and two triggers, plus a `do $$ ... $$` block
-at the end that raises if the columns, the primary key, the policies, the
-triggers or the two check constraints are not what the migration claims — so
-applying it is self-verifying and needs no new `verify_schema.sql` row. The
-app code on `feat/feedback-rv5-a` reads and writes this table from the KPI
-screen, so the migration goes before that app is deployed anywhere; the KPI
-screen is the only thing that touches it, and every other screen is unaffected
-by the table's absence. The `stage_plans` cases in
-`tests/rls.integration.test.ts` fail until it is applied.
+**applied to dev on 2026-09-09 by the owner, and not yet to production.** It
+is a new table with its own two policies and two triggers, plus a
+`do $$ ... $$` block at the end that raises if the columns, the primary key,
+the policies, the triggers or the two check constraints are not what the
+migration claims — so applying it is self-verifying and needs no new
+`verify_schema.sql` row. Purely additive: it alters nothing that already
+exists, so it is safe to apply to production ahead of the app that needs it,
+and unlike `0032` there is no window in which the deployed app breaks. The
+`stage_plans` cases in `tests/rls.integration.test.ts` passed against dev on
+2026-09-09, so the two policies are verified by a real viewer session and not
+only by shape.
 
 `supabase/scripts/purge_user.sql` removes one test account together with the
 bays it ticked (owner request, 2026-09-04). It is a dry run until its

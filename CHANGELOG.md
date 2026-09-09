@@ -10,6 +10,98 @@ own branch, verified against the development Supabase project, and deployed to
 production by the owner. **Database migrations are listed per release and must
 reach production before the app that needs them.**
 
+## [1.6.0] - 2026-09-09
+
+Feedback Rv5, and the five corrections the owner made after reviewing it on
+the development project.
+
+### Added
+
+- **KPI, plan against actual** — its own item in the sidebar for the admin, and
+  its own screen on the field client. The admin types a start and an end date
+  per coat of each deck; the system works out how much of that coat remains on
+  the start date and spreads it evenly over every calendar day of the window,
+  Sundays and holidays included. One chart carries planned and actual m² per day
+  as bars and the two cumulative shares as S-curves, filterable by deck and by
+  coat. It reproduces the customer's own `KPI.xlsx`, whose figures are the
+  regression tests. The admin writes the dates; the admin, the foreman and the
+  viewer all read the charts.
+- **`Thông tin nhanh — Hôm nay`** on every deck tab of the field screen: the m²
+  recorded today against each coat the admin configured on that deck, today's
+  man-hours and wasted hours, and the totals to date. Per deck, across every
+  work it belongs to, and it says on its face that man-hours exist only from
+  2026-09-05.
+- **Search and an Excel export on the employee roster.** The search ignores tone
+  marks, so `cuong` finds `Lê Minh Cường`. The export always carries the whole
+  roster including retired names, whatever the search is filtered to, and says
+  so.
+- A search box on the crew-lead table of the productivity screen.
+- **Crew productivity in the exported report**, as a block below the coat table
+  on the existing `Năng suất` sheet rather than a sheet or a download of its own.
+  It covers the whole project and does not follow the screen's filters.
+
+### Changed
+
+- **A bay being taken off a coat is no longer asked for a crew or for hours.**
+  Recording a fresh bay is unchanged: every field is there from the moment the
+  dialog opens.
+- The productivity screen no longer lists the `Chưa bắt đầu` coat or the
+  `Chưa ghi` crew lead in any table or chart, and **hours booked against no coat
+  now leave every total on that screen and in the workbook** — the cards above
+  the coat table, the crew table, the waste-reason table and the field screen's
+  own figures all agree again.
+- The project rollup's ring and its `Tổng dự án` m² cover the decks the table
+  lists, no longer the decks it hides.
+- The KPI plan window is one range picker per coat, matching how plan dates are
+  entered elsewhere in the app.
+
+### Fixed
+
+- **Decks read 0,00% on the project rollup although they had been worked for
+  weeks.** The project-wide read of bay states was a single unpaged request, and
+  PostgREST answers at most 1000 rows without reporting that it truncated. Which
+  decks lost their states depended on the order the database happened to return
+  them, which is why one screenshot showed a deck at 31,48% and the next at
+  0,00%. Every bay-state read now pages. The field screen's deck tabs were wrong
+  the same way and are fixed with it. **No data was lost or repaired — the rows
+  were always there.**
+- The project's total m² added up decks that the table above it hides. That
+  figure is display only and never fed a percentage.
+- KPI actual counted work done before the plan window, while the planned area
+  counted only what remained at the start of it — so a coat 76% finished before
+  its window began read 327% against plan. Actual now counts only what falls
+  inside the window, with no upper bound so overrun stays visible.
+- The KPI day axis is a contiguous range of days rather than a list, so coats
+  whose windows do not abut no longer leave the axis with holes in it.
+
+### Removed
+
+- **The deck-area warning on the field screen.** It asked the reader to have an
+  admin check the deck, on the one screen whose users are never admins. The
+  admin's own warning, at a 5% threshold, is untouched. It had also been firing
+  on floating-point dust — the customer's screenshot showed it complaining that
+  40.000,00 m² does not equal 40.000,00 m².
+
+### Database
+
+- `0033` — `stage_plans`: one KPI plan window per coat, with the admin's
+  optional area override. Purely additive: a new table, its own two policies and
+  two triggers, and no change to anything already there.
+
+### Operational
+
+`0033` must reach production before this release is deployed. It is safe to
+apply ahead of time — the running 1.5.0 app never reads the table — and unlike
+`0032` there is no window in which the old app breaks. No Edge Function change
+since 2026-09-04.
+
+### Known consequence
+
+KPI actual takes each bay at its **last** update for a coat, at the client's
+request, so that a foreman's mistyped figure can be corrected instead of counted
+twice. A past day's actual therefore changes when a correction lands on it. The
+chart says so under the axis.
+
 ## [1.5.0] - 2026-09-07
 
 Feedback Rv4.
@@ -282,6 +374,7 @@ Level Security.
 
 Production runs its own Supabase project, created empty.
 
+[1.6.0]: https://github.com/leminhhieu98py/paint-progress/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/leminhhieu98py/paint-progress/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/leminhhieu98py/paint-progress/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/leminhhieu98py/paint-progress/compare/v1.2.0...v1.3.0
