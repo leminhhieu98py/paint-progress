@@ -219,8 +219,17 @@ export function CellStageModal({
    * Mhr sitting on `Chưa bắt đầu` in dev, answered "User cập nhật nhầm. Có
    * công đoạn mới có giờ công." A removal records who did it and when, which
    * the event carries already, plus a note if the foreman has one to leave.
+   *
+   * **The current coat is half the test, and RV5-30 left it out.** `Chưa bắt
+   * đầu` is not a choice a foreman makes on a fresh bay; it is where that bay
+   * already stands, and the picker opens on it. Gating on the chosen coat
+   * alone therefore caught the everyday act of recording a bay for the first
+   * time: the dialog opened with two fields and grew to six once the coat was
+   * picked, which is what the owner saw on dev (RV5-34). A removal needs a
+   * coat to remove, so both halves are required -- the bay HAS one and the
+   * foreman has chosen none.
    */
-  const removal = chosenStageId === null
+  const removal = cell !== null && cell.stageId !== null && chosenStageId === null
 
   const wasteHours = effort.wasteHours ?? 0
   const errors: Record<string, string> = {}

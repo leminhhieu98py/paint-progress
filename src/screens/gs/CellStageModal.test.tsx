@@ -781,3 +781,42 @@ describe('CellStageModal — a removal asks for nothing (Feedback Rv5, Q10)', ()
     expect(onClose).not.toHaveBeenCalled()
   })
 })
+
+describe('CellStageModal — an untouched bay is not a removal (Feedback Rv5, RV5-34)', () => {
+  it('shows every field on a bay nobody has worked, before a coat is picked', async () => {
+    // The everyday act of recording a fresh bay. It opens on `Chưa bắt đầu`
+    // because that is where it stands, not because anyone chose a removal --
+    // so the dialog must offer all six fields from the moment it opens, and
+    // not two that grow to six once the coat is picked.
+    renderModal({ ...CELL, stageId: null })
+
+    const block = within(await screen.findByTestId('cell-effort'))
+    expect(block.getByRole('combobox', { name: 'Nhóm trưởng' })).toBeInTheDocument()
+    expect(block.getByRole('combobox', { name: 'Thợ chính' })).toBeInTheDocument()
+    expect(block.getByLabelText(/Số giờ công \(Mhr\)/)).toBeInTheDocument()
+    expect(block.getByLabelText(/Giờ hao phí \(Mhr\)/)).toBeInTheDocument()
+  })
+
+  it('keeps every field and every complaint once that bay gets a coat', async () => {
+    renderModal({ ...CELL, stageId: null })
+    await chooseStage('Coat 3')
+
+    expect(await screen.findByTestId('cell-effort')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Xác nhận' }))
+
+    expect(await screen.findByText('Chọn nhóm trưởng.')).toBeInTheDocument()
+    expect(screen.getByText('Chọn thợ chính.')).toBeInTheDocument()
+    expect(screen.getByText('Nhập số giờ công.')).toBeInTheDocument()
+    expect(screen.getByText('Nhập số giờ hao phí; không hao phí thì nhập 0.')).toBeInTheDocument()
+    expect(onCommit).not.toHaveBeenCalled()
+  })
+
+  it('records that bay with the crew and the hours it collected', async () => {
+    renderModal({ ...CELL, stageId: null })
+    await chooseStage('Coat 3')
+    await fillRequired()
+    await userEvent.click(screen.getByRole('button', { name: 'Xác nhận' }))
+
+    expect(onCommit).toHaveBeenCalledWith('c1', 's3', '', FILLED)
+  })
+})
