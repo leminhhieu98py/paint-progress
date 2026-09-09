@@ -532,7 +532,9 @@ describe('kpiSeries', () => {
     expect(dayOf(series, '2026-09-17').planM2).toBeCloseTo(3566.6666666666665, 9)
   })
 
-  it('spans exactly the union of the windows, in order', () => {
+  it('spans the whole range the windows cover, in order', () => {
+    // The workbook's four windows happen to be contiguous end to end, so its
+    // own columns run 01/09 to 24/09 with nothing missing (RV5-37).
     const series = kpiSeries(workbookScope())
     expect(series).toHaveLength(24)
     expect(series[0].day).toBe('2026-09-01')
@@ -749,6 +751,73 @@ describe('kpiSeries', () => {
     const inWindow = kpiSeries(dev('2026-09-12'))
     expect(dayOf(inWindow, '2026-09-12').actualM2).toBe(4027.89)
     expect(inWindow[inWindow.length - 1].actualCumShare).toBeCloseTo(4027.89 / 1230.11, 12)
+  })
+
+  // -------------------------------------------------------------------------
+  // RV5-37 — a contiguous day axis
+  // -------------------------------------------------------------------------
+
+  it('fills in the days between two windows that do not meet', () => {
+    // On dev the axis ran 26/08, 28/08, 29/08, 30/08 and then jumped straight
+    // to 10/09, because it was the union of the days something happened on.
+    const entries: KpiScopeStage[] = [
+      { plan: plan({ stageId: 'a', startDate: '2026-09-01', endDate: '2026-09-02', plannedAreaM2: 200 }), computedAreaM2: 0, actual: [] },
+      { plan: plan({ stageId: 'b', startDate: '2026-09-12', endDate: '2026-09-13', plannedAreaM2: 200 }), computedAreaM2: 0, actual: [] },
+    ]
+    const series = kpiSeries(entries)
+    expect(series).toHaveLength(13)
+    expect(series[0].day).toBe('2026-09-01')
+    expect(series[12].day).toBe('2026-09-13')
+
+    // The nine-day hole is there, plotting zero, and the S-curve stays flat
+    // across it rather than drawing a straight line over the gap.
+    const hole = [
+      '2026-09-03', '2026-09-04', '2026-09-05', '2026-09-06', '2026-09-07',
+      '2026-09-08', '2026-09-09', '2026-09-10', '2026-09-11',
+    ]
+    for (const day of hole) {
+      expect(dayOf(series, day).planM2).toBe(0)
+      expect(dayOf(series, day).actualM2).toBe(0)
+      expect(dayOf(series, day).planCumShare).toBe(0.5)
+    }
+  })
+
+  it('extends the range to the last day carrying actual', () => {
+    const entries: KpiScopeStage[] = [{
+      plan: plan({ startDate: '2026-09-10', endDate: '2026-09-11', plannedAreaM2: 100 }),
+      computedAreaM2: 0,
+      actual: [{ stageId: 'coat1', stageName: 'Lớp 1', day: '2026-09-15', areaM2: 30 }],
+    }]
+    const series = kpiSeries(entries)
+    expect(series.map((d) => d.day)).toEqual([
+      '2026-09-10', '2026-09-11', '2026-09-12', '2026-09-13', '2026-09-14', '2026-09-15',
+    ])
+    expect(dayOf(series, '2026-09-13').actualM2).toBe(0)
+    expect(series[5].actualM2).toBe(30)
+  })
+
+  it('starts at the earliest start date in scope, whatever order the coats arrive in', () => {
+    const entries: KpiScopeStage[] = [
+      { plan: plan({ stageId: 'a', startDate: '2026-09-08', endDate: '2026-09-09', plannedAreaM2: 100 }), computedAreaM2: 0, actual: [] },
+      { plan: plan({ stageId: 'b', startDate: '2026-09-04', endDate: '2026-09-05', plannedAreaM2: 100 }), computedAreaM2: 0, actual: [] },
+    ]
+    const series = kpiSeries(entries)
+    expect(series[0].day).toBe('2026-09-04')
+    expect(series[series.length - 1].day).toBe('2026-09-09')
+  })
+
+  it('keeps Sundays on the axis, the way the plan counts them', () => {
+    // Linh, Q6: "Chia đúng đều không quan tâm chủ nhật hay lễ". 06/09/2026 is
+    // a Sunday, and it carries its share of the flat rate like any other day.
+    const entries: KpiScopeStage[] = [{
+      plan: plan({ startDate: '2026-09-04', endDate: '2026-09-08', plannedAreaM2: 500 }),
+      computedAreaM2: 0,
+      actual: [],
+    }]
+    const series = kpiSeries(entries)
+    expect(new Date('2026-09-06T12:00:00Z').getUTCDay()).toBe(0)
+    expect(series.map((d) => d.day)).toContain('2026-09-06')
+    expect(dayOf(series, '2026-09-06').planM2).toBe(100)
   })
 
   it('leaves a coat with no plan row out of both series', () => {
