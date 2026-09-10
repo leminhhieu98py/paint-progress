@@ -1,5 +1,6 @@
 import {
   ApartmentOutlined,
+  AreaChartOutlined,
   BuildOutlined,
   FolderOpenOutlined,
   IdcardOutlined,
@@ -23,6 +24,8 @@ const items = [
   { key: 'works', label: 'Công việc', icon: <ApartmentOutlined /> },
   { key: 'decks', label: 'Sàn', icon: <BuildOutlined /> },
   { key: 'dashboard', label: 'Năng suất', icon: <LineChartOutlined /> },
+  // RV5-28: "KPI nằm 1 mục riêng trên thanh menu", immediately after Năng suất.
+  { key: 'kpi', label: 'KPI', icon: <AreaChartOutlined /> },
   { key: 'users', label: 'Người dùng', icon: <TeamOutlined /> },
   { key: 'employees', label: 'Nhân viên', icon: <IdcardOutlined /> },
 ]

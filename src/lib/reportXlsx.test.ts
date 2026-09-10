@@ -473,6 +473,155 @@ describe('effort on the report (Feedback Rv2, item 11)', () => {
     const sheet = wb.getWorksheet('Năng suất')!
     expect(sheet.rowCount).toBe(2)
   })
+
+  it('writes no "Chưa bắt đầu" row on Năng suất (Feedback Rv5, Q10)', async () => {
+    // Asserted on the workbook read back, not on the rows handed to it: the
+    // customer is handed this file, and a figure in it must not differ from
+    // the Năng suất screen (RV5-32).
+    const wb = await readBack(await buildReportWorkbook({
+      ...BASE,
+      decks: [{ ...DECK, events: [
+        EFFORT_EVENT,
+        { ...EFFORT_EVENT, id: 2, toStageName: null, at: '2026-08-21T10:00:00+00:00' },
+      ] }],
+    }))
+    const sheet = wb.getWorksheet('Năng suất')!
+    // Column 3 is Công đoạn; rowWhere returns 0 when no row matches.
+    expect(rowWhere(sheet, 3, 'Chưa bắt đầu')).toBe(0)
+    expect(rowWhere(sheet, 3, 'Blast + Coat 1')).toBeGreaterThan(0)
+  })
+})
+
+describe('the crew productivity block on Năng suất (Feedback Rv5, item 6)', () => {
+  const lead = (
+    id: number, cellCode: string, cellAreaM2: number, at: string,
+    leadName: string, workHours: number | null, wasteHours: number | null,
+  ) => ({
+    ...EVENT, id, cellCode, cellAreaM2, at, effort: { ...EMPTY_EFFORT, leadName, workHours, wasteHours },
+  })
+
+  /**
+   * Two named leads and one update whose lead was left blank, spread over TWO
+   * decks: the block is the project's, so Tổ 2's row can only appear if the
+   * builder reads every deck's events rather than the one sheet it is on.
+   */
+  const MD = { id: 'd2', code: 'MD', name: 'Main Deck', totalAreaM2: 1000, cells: [] }
+  const CREW: ReportInput = {
+    ...BASE,
+    decks: [
+      {
+        ...DECK,
+        events: [
+          lead(1, 'R1C1', 500, '2026-08-20T10:00:00+00:00', 'Tổ 1', 3.5, 0.5),
+          lead(2, 'R1C2', 300, '2026-08-21T10:00:00+00:00', 'Tổ 1', 2.5, null),
+          lead(4, 'R1C4', 100, '2026-08-23T10:00:00+00:00', '', null, null),
+        ],
+      },
+      { deck: MD, zones: [], events: [lead(3, 'R1C3', 200, '2026-08-22T10:00:00+00:00', 'Tổ 2', null, 1)] },
+    ],
+  }
+
+  it('lists each lead under the stage table, project-wide, and leaves the blank name out', async () => {
+    const wb = await readBack(await buildReportWorkbook(CREW))
+    const sheet = wb.getWorksheet('Năng suất')!
+
+    // Below the stage table: the header, the note and one row per (deck, stage).
+    const title = rowWhere(sheet, 1, 'Năng suất theo nhóm trưởng')
+    expect(title).toBeGreaterThan(3)
+    expect(sheet.getRow(title).getCell(1).font?.bold).toBe(true)
+
+    const header = title + 1
+    expect((sheet.getRow(header).values as string[]).slice(1, 7)).toEqual([
+      'Nhóm trưởng', 'Lần cập nhật', 'Tổng Mhr', 'Tổng m²', 'Mhr/m²', 'Giờ hao phí',
+    ])
+
+    // Tổ 1: two updates on Cellar Deck, 3,5 + 2,5 Mhr over 500 + 300 m².
+    const first = sheet.getRow(header + 1)
+    expect(first.getCell(1).value).toBe('Tổ 1')
+    expect(first.getCell(2).value).toBe(2)
+    expect(first.getCell(3).value).toBe(6)
+    expect(first.getCell(3).numFmt).toBe('0.0#')
+    expect(first.getCell(4).value).toBe(800)
+    expect(first.getCell(4).numFmt).toBe('#,##0.00')
+    expect(first.getCell(5).value as number).toBeCloseTo(0.0075, 9)
+    expect(first.getCell(5).numFmt).toBe('0.000')
+    expect(first.getCell(6).value).toBe(0.5)
+    expect(first.getCell(6).numFmt).toBe('0.0#')
+
+    // Tổ 2 was recorded on the other deck. No hours, so the ratio is EMPTY, not
+    // a zero that reads as work done for free -- as the stage rows treat theirs.
+    const second = sheet.getRow(header + 2)
+    expect(second.getCell(1).value).toBe('Tổ 2')
+    expect(second.getCell(2).value).toBe(1)
+    expect(second.getCell(3).value).toBe(0)
+    expect(second.getCell(4).value).toBe(0)
+    expect(second.getCell(5).value).toBeNull()
+    expect(second.getCell(6).value).toBe(1)
+
+    // The blank-name lead is left out, for the reason it is left out on screen
+    // (RV5-09): it is a placeholder, not a nhóm trưởng. Two rows, not three.
+    expect(sheet.rowCount).toBe(header + 2)
+  })
+
+  it('leaves hours booked against no coat out of the block (Feedback Rv5, RV5-35)', async () => {
+    // RV5-32 kept the `Chưa bắt đầu` bucket off the stage table above by
+    // filtering on the STAGE dimension. This block has no stage dimension, so
+    // the same hours came straight back in -- and a figure in the workbook the
+    // customer is handed must not differ from the screen's.
+    const removal = {
+      ...lead(5, 'R1C5', 400, '2026-08-24T10:00:00+00:00', 'Tổ 1', 4, 2),
+      toStageName: null,
+    }
+    const wb = await readBack(await buildReportWorkbook({
+      ...CREW,
+      decks: [
+        { ...CREW.decks[0], events: [...CREW.decks[0].events, removal] },
+        CREW.decks[1],
+      ],
+    }))
+    const sheet = wb.getWorksheet('Năng suất')!
+    const header = rowWhere(sheet, 1, 'Năng suất theo nhóm trưởng') + 1
+
+    const first = sheet.getRow(header + 1)
+    expect(first.getCell(1).value).toBe('Tổ 1')
+    expect(first.getCell(2).value).toBe(2)                        // two updates, not three
+    expect(first.getCell(3).value).toBe(6)                        // Tổng Mhr, not 10
+    expect(first.getCell(4).value).toBe(800)                      // Tổng m², not 1200
+    expect(first.getCell(5).value as number).toBeCloseTo(0.0075, 9)
+    expect(first.getCell(6).value).toBe(0.5)                      // Giờ hao phí, not 2,5
+    // Still the two named crews, and no `Chưa bắt đầu` row above them either.
+    expect(sheet.rowCount).toBe(header + 2)
+    expect(rowWhere(sheet, 3, 'Chưa bắt đầu')).toBe(0)
+  })
+
+  it('dresses its own header row and leaves the stage table above untouched', async () => {
+    const wb = await readBack(await buildReportWorkbook(CREW))
+    const sheet = wb.getWorksheet('Năng suất')!
+    const title = rowWhere(sheet, 1, 'Năng suất theo nhóm trưởng')
+    expect(title).toBeGreaterThan(3)
+    const header = title + 1
+
+    // dressSheet tints by row NUMBER, so a second header needs naming explicitly.
+    const cell = sheet.getRow(header).getCell(1)
+    expect(cell.fill).toBeDefined()
+    expect(cell.font?.bold).toBe(true)
+    expect(cell.alignment?.horizontal).toBe('center')
+
+    // The stage table is what the sheet is for; the freeze still pins its header.
+    expect(sheet.views[0]).toMatchObject({ state: 'frozen', ySplit: 1 })
+    expect((sheet.getRow(1).values as string[]).slice(1, 13)).toEqual([
+      'Sàn', 'Công việc', 'Công đoạn', 'Số ngày có số liệu', 'Tổng Mhr', 'Tổng m²',
+      'Hiệu suất TB (Mhr/m²)', 'Mhr TB/ngày', 'Giờ hao phí (Mhr)',
+      'm² còn lại', 'Mhr còn cần', 'Số ngày cần',
+    ])
+    expect(String(sheet.getRow(2).getCell(1).value)).toMatch(/trung bình cộng của hiệu suất từng ngày/)
+    const stage = sheet.getRow(3)
+    expect(stage.getCell(1).value).toBe('Cellar Deck')
+    expect(stage.getCell(3).value).toBe('Blast + Coat 1')
+    expect(stage.getCell(4).value).toBe(2)
+    expect(stage.getCell(5).value).toBe(6)
+    expect(stage.getCell(6).value).toBe(800)
+  })
 })
 
 describe('a single-deck export', () => {

@@ -7,11 +7,13 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { useAuth } from '../../auth/AuthProvider'
 
 import { DrawingCanvas } from '../../canvas/DrawingCanvas'
+import { deckEffortTotals, effortDayKey, recordsWorkOnACoat } from '../../domain/effort'
+import { todayAreaByStage } from '../../domain/today'
 import { describeZone, formatPlanRange, zoneLabelBoxes } from '../../domain/plan'
 import { paintLensColors, zoneColorMap, zoneLensColors, zoneLensLayers } from '../../domain/lens'
 import { computeDeckProgress, summariseDeck } from '../../domain/progress'
 import { planImagePairs } from '../../domain/report'
-import { EMPTY_EFFORT, type Cell, type Deck, type Effort, type Stage, type WorkModel, type Zone } from '../../domain/types'
+import { EMPTY_EFFORT, type Cell, type Deck, type DeckEvent, type Effort, type Stage, type WorkModel, type Zone } from '../../domain/types'
 // One signed-URL helper for both roles: the bucket name and the 3600-second
 // expiry belong in one place, and decksApi is a lib module rather than an admin
 // one. Screens still never touch `supabase` directly.
@@ -33,9 +35,10 @@ import { CellStageModal } from './CellStageModal'
 import { ConsequenceModal } from '../../components/ConsequenceModal'
 import { LogoutOutlined } from '@ant-design/icons'
 import { fieldError, palette, shadowCard } from '../../theme'
-import { CalendarOutlined, DownloadOutlined, LineChartOutlined } from '@ant-design/icons'
+import { AreaChartOutlined, CalendarOutlined, DownloadOutlined, LineChartOutlined } from '@ant-design/icons'
 import { EmptyState } from '../../components/EmptyState'
 import { DeckProgressCard, StageRollupCard } from './DeckStatsCards'
+import { DeckTodayCard } from './DeckTodayCard'
 import { SectionCard } from '../../components/SectionCard'
 import { StatusPill } from '../../components/StatusPill'
 
@@ -65,19 +68,6 @@ const REALTIME_CONNECT_TIMEOUT_MS = 10_000
  */
 const REALTIME_REGISTRATION_GRACE_MS = 6_000
 
-/**
- * How far Σ cell.area_m2 must exceed the deck's declared area before the pie's
- * renormalisation is worth telling the foreman about.
- *
- * Sized by the DATABASE, like geometry.ts's EPSILON: `cells.area_m2` is
- * `numeric(12,3)`, so 0,001 m² is the smallest over-coverage the column can even
- * express -- anything under that is float residue from summing a few thousand
- * three-decimal values, and on a 6139 m² deck it renormalises the wedges by
- * 1,6e-7, which is invisible. Warning on that would put a "0,00 m² over" banner
- * on decks whose pro-rated cell areas are meant to sum to the total exactly.
- */
-const OVER_COVERAGE_EPSILON_M2 = 1e-3
-
 /** One in-flight `setCellState` for one (work, bay). See `pendingWrites`. */
 interface PendingWrite {
   /**
@@ -99,6 +89,7 @@ interface PendingWrite {
 
 const EMPTY_STAGES: Stage[] = []
 const EMPTY_WORKS: DeckWork[] = []
+const EMPTY_EVENTS: DeckEvent[] = []
 
 /** The mesh with one work's states laid over it: what every lens reads. */
 function projectCells(geometry: Cell[], byCell: Record<string, CellStateView> | undefined): Cell[] {
@@ -532,26 +523,90 @@ export function GsScreen() {
   )
 
   /**
-   * Whether the cells cover more than the deck declares.
+   * The deck's stage changes, for Thông tin nhanh — Hôm nay (Feedback Rv5,
+   * item 7).
    *
-   * The ring is drawn from bay COUNTS, not areas, so it no longer contradicts
-   * its own legend the way the recharts pie did -- but the disclosure stays,
-   * because the condition it describes is still real and still the admin's to
-   * fix: a deck declaring 500 m² whose bays cover 700 is a deck whose area or
-   * whose mesh is wrong.
+   * A read of its own, and it has to be one. `cell_states` -- everything the
+   * drawing, the rollup and the deck percentage are built from -- records only
+   * where each bay stands NOW: no timestamp, no man-hours (see CellStateView).
+   * So "what did this deck produce today" and "what did it cost" cannot be
+   * derived from anything already on this screen. `listDeckEvents` is the same
+   * call the deck export makes, and it already pages past PostgREST's 1000-row
+   * cap (progressApi's EVENT_PAGE).
    *
-   * Disclosed, NOT renormalised. Dividing by Σ cell area instead would make
-   * every figure on the screen agree with each other and with nothing else --
-   * spec §3.2 makes total_area_m2 the denominator of every percentage in this
-   * product, including the one the customer is billed against. Non-blocking,
-   * matching how spec §11 treats divergence in the admin's deck editor.
+   * Keyed on the DECK, not on the work: the block covers every work the deck
+   * belongs to (RV5-18), so changing the work picker must neither refetch nor
+   * change what it shows.
+   *
+   * Deliberately NOT folded into refetchDeck, which also runs on every realtime
+   * reconnect and shortly after every SUBSCRIBED. This is one read per deck
+   * opened plus one per recorded bay, which is what a site tether can afford;
+   * the day's figures do not need re-reading on a socket hiccup. It shares
+   * `wantedDeckId` so a slow answer for the deck the foreman has just left is
+   * dropped rather than shown against the deck they are now looking at.
+   *
+   * A failure keeps the previous answer, like refetchDeck's: the drawing and
+   * every percentage on screen are still valid, and blanking the block would be
+   * the only thing here claiming otherwise.
+   *
+   * Stored WITH the deck it was read for, and read back only when that matches,
+   * rather than cleared on a deck change. A bare array would leave the previous
+   * deck's man-hours on the rail for as long as the new deck's read is in
+   * flight -- a figure quietly describing another deck -- and clearing it from
+   * the effect is the setState React would rather be derived at render.
    */
-  const mappedAreaM2 = useMemo(
-    () => cells.reduce((sum, c) => sum + c.areaM2, 0),
-    [cells],
+  const [deckEvents, setDeckEvents] = useState<{ deckId: string; rows: DeckEvent[] } | null>(null)
+  const refreshDeckEvents = useCallback((deckId: string) => {
+    listDeckEvents(deckId)
+      .then((rows) => {
+        if (wantedDeckId.current === deckId) setDeckEvents({ deckId, rows })
+      })
+      .catch(() => {
+        // See above: the block keeps the figures it already has.
+      })
+  }, [])
+
+  useEffect(() => {
+    if (activeDeckId) refreshDeckEvents(activeDeckId)
+  }, [activeDeckId, refreshDeckEvents])
+
+  const todayEvents = deckEvents?.deckId === activeDeckId ? deckEvents.rows : EMPTY_EVENTS
+
+  /**
+   * The Vietnam calendar day, settled once per mount -- the same way
+   * ProductivityDashboard and DeckForecastPanel settle theirs, so the three
+   * agree about where a day starts (RV5-20). A tablet left open across midnight
+   * keeps yesterday's key until it is reloaded, which is why the card prints the
+   * date it is reporting rather than only the word "Hôm nay".
+   */
+  const todayKey = useMemo(() => effortDayKey(new Date().toISOString()), [])
+  /**
+   * Every coat the admin configured on this deck: the works in the order the
+   * picker lists them, each work's coats in seq order as listDeckWorks sorts
+   * them. The order is settled HERE and todayAreaByStage keeps it (RV5-17).
+   */
+  const todayStages = useMemo(
+    () => todayAreaByStage(
+      todayEvents,
+      workList.flatMap((w) => w.stages.map((s) => ({ workName: w.work.name, stageName: s.name }))),
+      todayKey,
+    ),
+    [todayEvents, workList, todayKey],
   )
-  const overCovered = deck !== null
-    && mappedAreaM2 - deck.totalAreaM2 > OVER_COVERAGE_EPSILON_M2
+  /**
+   * Hours booked against no coat are left out (RV5-35). This card reported
+   * `Tổng Mhr đã thực hiện đến hôm nay = 4,0` on a dev deck whose five coats
+   * all read 0,0, because the m² rows above it are per coat and these four
+   * figures were over every event. Linh's rule is that hours exist only where
+   * a coat does (Q10), so the removal's hours belong in neither.
+   *
+   * Filtered here rather than in `deckEffortTotals`: the module is shared with
+   * the report, whose history sheets list every event that happened.
+   */
+  const todayTotals = useMemo(
+    () => deckEffortTotals(todayEvents.filter(recordsWorkOnACoat), todayKey),
+    [todayEvents, todayKey],
+  )
 
   /** Stage colour per cell CODE, which is what DrawingCanvas keys on. Shared
    *  with the admin's progress screen so the two cannot drift into colouring
@@ -933,6 +988,12 @@ export function GsScreen() {
     })
     setStates(put({ stageId, note }))
     void setCellState(cellId, workId, activeDeckId, stageId, note, effort)
+      .then(() => {
+        // Thông tin nhanh — Hôm nay reads cell_events, which the optimistic
+        // update above does not touch. Without this the block sits still while
+        // the foreman records the very work it is reporting on.
+        refreshDeckEvents(activeDeckId)
+      })
       .catch(() => {
         // Only the newest attempt for this (work, bay) may roll it back. An
         // older one finishing late would otherwise undo a later tap, or
@@ -1053,6 +1114,18 @@ export function GsScreen() {
           onClick={() => navigate(`${APP_BASE_PATH}/gs/${projectId}/dashboard`)}
         >
           {phone ? null : 'Năng suất'}
+        </Button>
+        {/*
+          KPI Plan vs Actual (Feedback Rv5, item 9), beside Năng suất and
+          reached the same way. Read-only for everyone here: the plan dates are
+          the admin's (RV5-28) and the viewer reads the chart too (RV5-29).
+        */}
+        <Button
+          aria-label="KPI"
+          icon={<AreaChartOutlined aria-hidden />}
+          onClick={() => navigate(`${APP_BASE_PATH}/gs/${projectId}/kpi`)}
+        >
+          {phone ? null : 'KPI'}
         </Button>
         {/* Spec §8.1: no account UI. Logout only. */}
         <Button
@@ -1383,14 +1456,6 @@ export function GsScreen() {
               }
           }
         >
-          {overCovered && deck && (
-            <Alert
-              type="warning"
-              showIcon
-              message="Diện tích các ô vượt diện tích sàn khai báo"
-              description={`Các ô cộng lại ${formatAreaM2(mappedAreaM2)} m², sàn khai báo ${formatAreaM2(deck.totalAreaM2)} m². Các con số vẫn tính theo diện tích sàn khai báo. Nhờ quản trị viên kiểm tra lại diện tích sàn hoặc lưới ô.`}
-            />
-          )}
           <DeckProgressCard
             progress={deckSummary?.progress ?? 0}
             totalAreaM2={deck?.totalAreaM2 ?? 0}
@@ -1406,6 +1471,13 @@ export function GsScreen() {
               totalAreaM2={deck?.totalAreaM2 ?? 0}
             />
           )}
+          {/*
+            Under the coat rollup, which is where Linh's arrow points (Feedback
+            Rv5, item 7). Ungated, unlike the rollup above: RV5-17 wants the
+            coats listed at 0,00 m² rather than the block disappearing, and a
+            deck whose drawing has not been uploaded yet still has coats.
+          */}
+          <DeckTodayCard todayKey={todayKey} rows={todayStages} totals={todayTotals} />
         </div>
       </Layout.Content>
 

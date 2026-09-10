@@ -108,15 +108,13 @@ describe('ProductivityDashboard', () => {
     expect(screen.getByTestId('hours-chart')).toBeInTheDocument()
   })
 
-  it('groups by crew and by reason, naming the blanks', () => {
+  it('groups by crew and by reason, naming the blank reason', () => {
     renderDashboard()
     const leads = within(screen.getByTestId('lead-table')).getAllByRole('row').slice(1)
     expect(within(leads[0]).getByText('Tổ 1')).toBeInTheDocument()
     expect(within(leads[0]).getByText('230,0')).toBeInTheDocument()
     expect(within(leads[0]).getByText('1,150')).toBeInTheDocument()
     expect(within(leads[1]).getByText('Tổ 2')).toBeInTheDocument()
-    expect(within(leads[2]).getByText('Chưa ghi')).toBeInTheDocument()
-    expect(within(leads[2]).getByText('—')).toBeInTheDocument()
 
     const reasons = within(screen.getByTestId('waste-table')).getAllByRole('row').slice(1)
     expect(within(reasons[0]).getByText('Mưa')).toBeInTheDocument()
@@ -144,6 +142,135 @@ describe('ProductivityDashboard', () => {
     renderDashboard([ev(), ev({ id: 99 })])
     expect(screen.getByText('Chưa có giờ công nào được ghi')).toBeInTheDocument()
     expect(screen.queryByTestId('dashboard-cards')).toBeNull()
+  })
+})
+
+describe('ProductivityDashboard — the placeholder rows (Feedback Rv5, item 5)', () => {
+  const leadRows = () => within(screen.getByTestId('lead-table')).getAllByRole('row').slice(1)
+  /** A bay sent back to nothing: no coat, so dailyEffort files it under
+   *  'Chưa bắt đầu'. The fixture already holds an update with no lead name. */
+  const sentBack = (effort: Partial<Effort> = {}) =>
+    ev({ deckName: 'Sàn A', cellCode: 'R3C1', cellAreaM2: 50, toStageName: null,
+         at: '2026-09-04T03:00:00Z', effort })
+
+  it('leaves "Chưa bắt đầu" out of the stage table and the daily chart', () => {
+    // It is a placeholder, not a công đoạn, and this screen's subject is
+    // efficiency per coat.
+    renderDashboard([...EVENTS, sentBack()])
+    expect(within(screen.getByTestId('stage-table')).queryByText('Chưa bắt đầu')).toBeNull()
+    expect(stageRows()).toHaveLength(2)
+    expect(screen.getByTestId('efficiency-chart')).toHaveTextContent('Lớp 1,Lớp 2')
+  })
+
+  it('leaves the unnamed crew out of Theo nhóm trưởng', () => {
+    // 442 updates at 0 Mhr and 0 m² under "Chưa ghi" -- not a nhóm trưởng.
+    renderDashboard()
+    expect(within(screen.getByTestId('lead-table')).queryByText('Chưa ghi')).toBeNull()
+    expect(leadRows()).toHaveLength(2)
+  })
+
+  it('leaves a placeholder\'s hours out of the totals too, so the cards match the columns', () => {
+    // RV5-31, replacing RV5-10. Linh identified hours on this bucket as a
+    // mis-entry ("User cập nhật nhầm. Có công đoạn mới có giờ công."), so the
+    // cards no longer read 500,0 over a table summing to 450,0.
+    //
+    // Concrete figures, not a sum recomputed the way the component does it:
+    // Lớp 1 is 340 Mhr / 300 m² and Lớp 2 is 110 Mhr / 100 m², and the 50 Mhr,
+    // 50 m² and 2 hao phí on the placeholder appear in none of the four.
+    renderDashboard([...EVENTS, sentBack({ leadName: 'Tổ 1', workHours: 50, wasteHours: 2 })])
+    expect(cards().getByText('450,0')).toBeInTheDocument()             // Tổng Mhr, not 500,0
+    expect(cards().getByText('400,00')).toBeInTheDocument()            // Tổng m², not 450,00
+    expect(cards().getByText('1,125')).toBeInTheDocument()             // 450 / 400, not 500 / 450
+    expect(cards().getByText('4,0')).toBeInTheDocument()               // Giờ hao phí, not 6,0
+    expect(cards().getByText('0,88% tổng giờ')).toBeInTheDocument()    // 4 of 454, not 6 of 506
+    expect(cards().queryByText('500,0')).toBeNull()
+    expect(cards().queryByText('450,00')).toBeNull()
+    expect(cards().queryByText('6,0')).toBeNull()
+    expect(within(screen.getByTestId('stage-table')).queryByText('Chưa bắt đầu')).toBeNull()
+  })
+
+  it('leaves a placeholder\'s hours out of Theo nhóm trưởng too (Feedback Rv5, RV5-35)', () => {
+    // Measured on dev after RV5-31 shipped: the lead table read 370,0 Mhr and
+    // 280,73 m² against a header of 366,0 and 243,31. RV5-31 excluded the
+    // bucket on the STAGE dimension, and this table has no stage dimension, so
+    // the exclusion never reached it.
+    renderDashboard([...EVENTS, sentBack({ leadName: 'Tổ 1', workHours: 50, wasteHours: 2 })])
+    const rows = leadRows()
+    expect(rows).toHaveLength(2)
+    const t1 = within(rows[0])
+    expect(t1.getByText('Tổ 1')).toBeInTheDocument()
+    expect(t1.getByText('2')).toBeInTheDocument()          // two updates, not three
+    expect(t1.getByText('230,0')).toBeInTheDocument()      // Tổng Mhr, not 280,0
+    expect(t1.getByText('200,00')).toBeInTheDocument()     // Tổng m², not 250,00
+    expect(t1.getByText('1,150')).toBeInTheDocument()      // 230 / 200, not 280 / 250
+    expect(t1.getByText('3,0')).toBeInTheDocument()        // Giờ hao phí, not 5,0
+  })
+
+  it('leaves a placeholder\'s lost hours out of Lý do hao phí (Feedback Rv5, RV5-35)', () => {
+    // The other table with no stage dimension: 10,0 giờ on dev against a stage
+    // table summing to 9,0.
+    renderDashboard([...EVENTS, sentBack({ wasteHours: 2, wasteReason: 'Mưa' })])
+    const reasons = within(screen.getByTestId('waste-table')).getAllByRole('row').slice(1)
+    expect(reasons).toHaveLength(2)
+    expect(within(reasons[0]).getByText('Mưa')).toBeInTheDocument()
+    expect(within(reasons[0]).getByText('3,0')).toBeInTheDocument()   // not 5,0
+    expect(within(reasons[0]).getByText('1')).toBeInTheDocument()     // one occurrence, not two
+    // And the cards still agree with the stage rows they sit above.
+    expect(cards().getByText('4,0')).toBeInTheDocument()
+  })
+
+  /** The one StatCard whose label reads `label`. StatCard nests the label in a
+   *  flex row inside the card, so the card is two parents up. */
+  const cardByLabel = (label: string) =>
+    within(cards().getByText(label).parentElement?.parentElement as HTMLElement)
+  /** Whatever "today" is when the suite runs -- the day the two cards read. */
+  const todayIso = new Date().toISOString()
+
+  it('leaves a placeholder\'s hours out of the two "hôm nay" cards (Feedback Rv5, RV5-35)', () => {
+    // The last reader on this screen still on the unfiltered list. Both cards
+    // sit beside Tổng Mhr thực hiện, which excludes these hours, so a removal
+    // typed today made the row of cards disagree with itself.
+    renderDashboard([
+      ...EVENTS,
+      ev({ deckName: 'Sàn A', cellCode: 'R4C1', cellAreaM2: 50, toStageName: null, at: todayIso,
+           effort: { leadName: 'Tổ 1', workHours: 50, wasteHours: 2 } }),
+    ])
+    expect(cardByLabel('Mhr thực hiện hôm nay').getByText('0,0')).toBeInTheDocument()
+    expect(cardByLabel('Mhr hao phí hôm nay').getByText('0,0')).toBeInTheDocument()
+    // The sibling on a real coat is still counted, so the filter has not simply
+    // emptied the cards.
+    expect(cards().getByText('450,0')).toBeInTheDocument()
+  })
+
+  it('still counts a coat\'s own hours today (Feedback Rv5, RV5-35)', () => {
+    renderDashboard([
+      ...EVENTS,
+      ev({ deckName: 'Sàn A', cellCode: 'R4C1', cellAreaM2: 50, toStageName: null, at: todayIso,
+           effort: { leadName: 'Tổ 1', workHours: 50, wasteHours: 2 } }),
+      ev({ deckName: 'Sàn A', cellCode: 'R4C2', cellAreaM2: 40, toStageName: 'Lớp 1', at: todayIso,
+           effort: { leadName: 'Tổ 1', workHours: 8, wasteHours: 1 } }),
+    ])
+    expect(cardByLabel('Mhr thực hiện hôm nay').getByText('8,0')).toBeInTheDocument()
+    expect(cardByLabel('Mhr hao phí hôm nay').getByText('1,0')).toBeInTheDocument()
+  })
+
+  it('files a reason no coat carries under no reason at all, not under a new row', () => {
+    // A removal whose hao phí reason is one nothing else used: it must not
+    // appear as a row of its own either.
+    renderDashboard([...EVENTS, sentBack({ wasteHours: 2, wasteReason: 'Sửa lại lớp sơn' })])
+    expect(within(screen.getByTestId('waste-table')).queryByText('Sửa lại lớp sơn')).toBeNull()
+  })
+
+  it('filters the crew table by name, case- and accent-insensitively, and nothing else', async () => {
+    renderDashboard()
+    await userEvent.type(screen.getByRole('textbox', { name: 'Tìm nhóm trưởng' }), 'to 2')
+    expect(leadRows()).toHaveLength(1)
+    expect(within(leadRows()[0]).getByText('Tổ 2')).toBeInTheDocument()
+    // Card only: the screen's Công việc / Sàn / date filters still govern what
+    // everything, this card included, is computed from.
+    expect(stageRows()).toHaveLength(2)
+    expect(cards().getByText('450,0')).toBeInTheDocument()
+    expect(within(screen.getByTestId('waste-table')).getAllByRole('row').slice(1)).toHaveLength(2)
   })
 })
 

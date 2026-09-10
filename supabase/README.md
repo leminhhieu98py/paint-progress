@@ -79,16 +79,36 @@ look for. Fixtures are seeded by hand and inserted `on conflict do nothing`, so
 without this reset every run starts on whatever the last one left, and a test
 that asserts on a CHANGE quietly becomes an assertion about nothing.
 
-`0019`–`0032` are applied to the dev project. Production holds `0001`–`0029`
-and the current Edge Function (pushed and deployed by the owner on
-2026-09-04). `0030` (effort columns on `cell_states` / `cell_events`, the
-`set_cell_event_effort` backfill RPC, the effort rule in the GS write guard)
-and `0031` (`work_decks.deadline`) still have to be pushed to production before the app from
-`feat/effort-dashboard` is deployed there. It is additive -- every new column
-is nullable or defaulted, no row is rewritten -- so the deployed app is
-unaffected by it arriving early; the app from that branch, however, writes
-the new columns on every bay update and FAILS against a database without
-them, so the migration goes first. No Edge Function change.
+`0019`–`0032` are applied to the dev project, and production now holds
+`0001`–`0032`. The owner pushed `0001`–`0029` together with the current Edge
+Function on 2026-09-04, then `0030` (effort columns on `cell_states` /
+`cell_events`, the `set_cell_event_effort` backfill RPC, the effort rule in the
+GS write guard) and `0031` (`work_decks.deadline`) with the `v1.4.0` release,
+and `0032` (`employees`, `cell_states.waste_order`, `cell_events.waste_order`)
+with `v1.5.0` on 2026-09-07. `CHANGELOG.md` records which release carried
+which migration. No Edge Function change since 2026-09-04.
+
+Every migration from `0027` on is additive for DATA -- each new column is
+nullable or defaulted and no row is rewritten -- so one arriving early never
+breaks the app already deployed. The app that NEEDS it is the fragile side: it
+writes or reads the new columns and fails against a database without them, so
+the migration always goes first. `0032` is the one exception worth naming: it
+replaces `set_cell_event_effort` with a seven-argument signature and drops the
+six-argument one, so between its push and the deploy the admin backfill on the
+old app fails. Minutes apart, and only that one action.
+
+`0033` (`stage_plans`, the KPI plan window per coat — Feedback Rv5 item 9) is
+**applied to dev on 2026-09-09 by the owner, and not yet to production.** It
+is a new table with its own two policies and two triggers, plus a
+`do $$ ... $$` block at the end that raises if the columns, the primary key,
+the policies, the triggers or the two check constraints are not what the
+migration claims — so applying it is self-verifying and needs no new
+`verify_schema.sql` row. Purely additive: it alters nothing that already
+exists, so it is safe to apply to production ahead of the app that needs it,
+and unlike `0032` there is no window in which the deployed app breaks. The
+`stage_plans` cases in `tests/rls.integration.test.ts` passed against dev on
+2026-09-09, so the two policies are verified by a real viewer session and not
+only by shape.
 
 `supabase/scripts/purge_user.sql` removes one test account together with the
 bays it ticked (owner request, 2026-09-04). It is a dry run until its

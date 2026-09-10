@@ -71,6 +71,15 @@ vi.mock('./screens/dashboard/DashboardScreen', () => ({
     return <div>DASHBOARD {variant}{projectId ? ` (dự án ${projectId})` : ''}</div>
   },
 }))
+// Recharts and its own three reads. Like the dashboard's stand-in, it prints
+// the variant and the project id so an assertion can prove the gate landed on
+// THIS project's KPI screen rather than merely on "some" KPI route.
+vi.mock('./screens/kpi/KpiScreen', () => ({
+  KpiScreen: ({ variant }: { variant: string }) => {
+    const { projectId } = useParams()
+    return <div>KPI {variant}{projectId ? ` (dự án ${projectId})` : ''}</div>
+  },
+}))
 vi.mock('./screens/gs/GsScreen', () => ({
   GsScreen: () => {
     const { projectId } = useParams()
@@ -215,6 +224,40 @@ describe('AppRoutes: /login is the entry point', () => {
     asRole('viewer')
     renderAt(`${APP_BASE_PATH}/gs/proj-4/dashboard`)
     expect(await screen.findByText('DASHBOARD gs (dự án proj-4)')).toBeInTheDocument()
+  })
+
+  it('gives an admin the KPI screen under the admin frame (Feedback Rv5, item 9)', async () => {
+    // RV5-28: KPI is its own item on the menu, and the admin is the one who
+    // types the plan dates.
+    asRole('admin')
+    renderAt(`${APP_BASE_PATH}/admin/kpi`)
+    expect(await screen.findByText('KPI admin')).toBeInTheDocument()
+    expect(screen.getByText(/ADMIN LAYOUT/)).toBeInTheDocument()
+  })
+
+  it('gives a foreman the field KPI chart of their project', async () => {
+    asRole('gs')
+    renderAt(`${APP_BASE_PATH}/gs/proj-7/kpi`)
+    expect(await screen.findByText('KPI gs (dự án proj-7)')).toBeInTheDocument()
+  })
+
+  it('gives a viewer the field KPI chart too, and not the admin one (RV5-29)', async () => {
+    // The owner relayed Linh's "được": admin writes the plan dates; admin, gs
+    // and viewer all read the charts. Without the viewer in the route's gate
+    // this lands on the 404 instead.
+    asRole('viewer')
+    renderAt(`${APP_BASE_PATH}/gs/proj-4/kpi`)
+    expect(await screen.findByText('KPI gs (dự án proj-4)')).toBeInTheDocument()
+    expect(screen.queryByText('404')).toBeNull()
+  })
+
+  it('refuses a foreman the admin KPI screen', async () => {
+    // admin/kpi sits under RequireRole role="admin", so the field cannot reach
+    // the entry table even by typing the URL.
+    asRole('gs')
+    renderAt(`${APP_BASE_PATH}/admin/kpi`)
+    expect(await screen.findByText('404')).toBeInTheDocument()
+    expect(screen.queryByText('KPI admin')).toBeNull()
   })
 
   it('gives an admin the shared staff roster (Feedback Rv4)', async () => {

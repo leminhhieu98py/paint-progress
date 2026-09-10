@@ -1,10 +1,14 @@
-import { PlusOutlined } from '@ant-design/icons'
-import { Alert, App, Button, Form, Input, Modal, Switch, Table, Typography } from 'antd'
+import { DownloadOutlined, PlusOutlined, SearchOutlined } from '@ant-design/icons'
+import { Alert, App, Button, Form, Input, Modal, Space, Switch, Table, Tooltip, Typography } from 'antd'
+import dayjs from 'dayjs'
 import { useEffect, useMemo, useState } from 'react'
 import { modalProps } from '../../components/modalChrome'
 import { PageBody, PageHeader } from '../../components/PageHeader'
 import { SectionCard } from '../../components/SectionCard'
 import { createEmployee, listEmployees, updateEmployee, type Employee } from '../../lib/employeesApi'
+import { buildEmployeesXlsx, employeesFileName } from '../../lib/employeesXlsx'
+import { downloadWorkbook } from '../../lib/projectReport'
+import { matchesSearch } from '../../lib/search'
 import { palette } from '../../theme'
 
 /**
@@ -28,6 +32,8 @@ export function EmployeesScreen() {
   const [renaming, setRenaming] = useState<Employee | null>(null)
   const [draft, setDraft] = useState('')
   const [saving, setSaving] = useState(false)
+  const [query, setQuery] = useState('')
+  const [exporting, setExporting] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -46,7 +52,39 @@ export function EmployeesScreen() {
   }, [attempt])
 
   const reload = () => setAttempt((n) => n + 1)
-  const active = useMemo(() => (rows ?? []).filter((r) => r.active).length, [rows])
+
+  /**
+   * Feedback Rv5, item 4. 32 names today and one line per person, so the
+   * question "is X on the list?" was a scroll. The roster stores ONE string --
+   * "MC005593 - Cao Minh Hải" -- so one substring match over it covers the code
+   * and the name at once, and `matchesSearch` folds case and tones because
+   * nobody types Vietnamese tones into a search box on a site tablet.
+   */
+  const shown = useMemo(
+    () => (rows ?? []).filter((r) => matchesSearch(r.fullName, query)),
+    [rows, query],
+  )
+  const searching = query.trim() !== ''
+  const active = useMemo(() => shown.filter((r) => r.active).length, [shown])
+
+  /**
+   * The WHOLE roster, retired names included, never `shown` (RV5-08): the file
+   * is what the admin checks the yard's paperwork against, and a name retired
+   * last month is still on every update it was recorded against. The button
+   * says so, because a filtered screen beside an unfiltered file is otherwise a
+   * surprise.
+   */
+  const exportRoster = async () => {
+    setExporting(true)
+    try {
+      const blob = await buildEmployeesXlsx(rows ?? [])
+      downloadWorkbook(blob, employeesFileName(dayjs().format('YYYY-MM-DD')))
+    } catch (e) {
+      message.error((e as Error).message)
+    } finally {
+      setExporting(false)
+    }
+  }
 
   const write = async (run: () => Promise<unknown>, done: string) => {
     setSaving(true)
@@ -71,16 +109,33 @@ export function EmployeesScreen() {
         subtitle={
           rows === null
             ? 'Danh sách dùng chung cho mọi dự án, sàn và công đoạn'
-            : `${active} đang làm · ${rows.length} tên trong danh sách · dùng chung cho mọi dự án`
+            // RV5-06: while a search is on, the count is of what is on screen,
+            // with the whole roster beside it -- "1 đang làm" with nine rows
+            // hidden and no sign of it would be a wrong number.
+            : searching
+              ? `${active} đang làm · ${shown.length}/${rows.length} tên khớp tìm kiếm · dùng chung cho mọi dự án`
+              : `${active} đang làm · ${rows.length} tên trong danh sách · dùng chung cho mọi dự án`
         }
         extra={
-          <Button
-            type="primary"
-            icon={<PlusOutlined aria-hidden />}
-            onClick={() => { setDraft(''); setAdding(true) }}
-          >
-            Thêm nhân viên
-          </Button>
+          <Space size={12}>
+            <Tooltip title="Xuất toàn bộ danh sách · cả người đã nghỉ · .xlsx">
+              <Button
+                icon={<DownloadOutlined aria-hidden />}
+                loading={exporting}
+                disabled={rows === null || rows.length === 0}
+                onClick={() => void exportRoster()}
+              >
+                Xuất danh sách
+              </Button>
+            </Tooltip>
+            <Button
+              type="primary"
+              icon={<PlusOutlined aria-hidden />}
+              onClick={() => { setDraft(''); setAdding(true) }}
+            >
+              Thêm nhân viên
+            </Button>
+          </Space>
         }
       />
       <PageBody>
@@ -98,14 +153,31 @@ export function EmployeesScreen() {
           title="Danh sách nhân viên"
           summary="GS chọn nhóm trưởng và thợ chính từ danh sách này; GS không sửa được"
           bodyPadding={0}
+          extra={
+            <Input
+              allowClear
+              aria-label="Tìm nhân viên"
+              placeholder="Tìm theo mã hoặc tên"
+              prefix={<SearchOutlined aria-hidden />}
+              style={{ width: 240 }}
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+          }
         >
           <Table<Employee>
             size="small"
             rowKey="id"
             loading={rows === null && error === null}
-            dataSource={rows ?? []}
+            dataSource={shown}
             pagination={{ pageSize: 25, hideOnSinglePage: true, size: 'small' }}
-            locale={{ emptyText: 'Chưa có nhân viên nào. Thêm để GS ghi được tiến độ.' }}
+            locale={{
+              // Two different nothings: a roster nobody has filled in yet is a
+              // job to do, a search that matched nothing is not.
+              emptyText: searching
+                ? 'Không có tên nào khớp'
+                : 'Chưa có nhân viên nào. Thêm để GS ghi được tiến độ.',
+            }}
             columns={[
               {
                 title: 'Họ tên',

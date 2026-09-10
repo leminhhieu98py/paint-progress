@@ -157,14 +157,6 @@ export function CellStageModal({
   }, [cell?.id])
 
   /**
-   * What is sent: a reason is dropped when no hours were lost, so a sentence
-   * typed for lost hours the foreman then cleared does not travel alone.
-   */
-  const effortToSend: Effort = (effort.wasteHours ?? 0) > 0
-    ? effort
-    : { ...effort, wasteReason: '', wasteOrder: '' }
-
-  /**
    * Every earlier note on this bay (Feedback Rv1, item 7). The foreman used to
    * see only `cell.note` -- the latest -- and the remark that explains why he
    * is standing here may be two coats old.
@@ -216,19 +208,60 @@ export function CellStageModal({
   const currentStage = stages.find((s) => s.id === cell?.stageId) ?? null
   const backwards = cell !== null && isBackwards(stages, cell.stageId, chosenStageId)
   const unchanged = cell !== null && chosenStageId === cell.stageId
+  /**
+   * Taking the coat off a bay rather than recording one (Feedback Rv5, Q10).
+   *
+   * Rv4 made the crew and the hours compulsory because hours that are only
+   * sometimes recorded cannot be divided by an area to give a manager
+   * anything to act on. That reason does not reach a removal: no coat was
+   * applied, so there are no hours to record and no area to divide them by.
+   * Asked anyway, a foreman types something -- and Linh, asked about the 4,0
+   * Mhr sitting on `Chưa bắt đầu` in dev, answered "User cập nhật nhầm. Có
+   * công đoạn mới có giờ công." A removal records who did it and when, which
+   * the event carries already, plus a note if the foreman has one to leave.
+   *
+   * **The current coat is half the test, and RV5-30 left it out.** `Chưa bắt
+   * đầu` is not a choice a foreman makes on a fresh bay; it is where that bay
+   * already stands, and the picker opens on it. Gating on the chosen coat
+   * alone therefore caught the everyday act of recording a bay for the first
+   * time: the dialog opened with two fields and grew to six once the coat was
+   * picked, which is what the owner saw on dev (RV5-34). A removal needs a
+   * coat to remove, so both halves are required -- the bay HAS one and the
+   * foreman has chosen none.
+   */
+  const removal = cell !== null && cell.stageId !== null && chosenStageId === null
 
   const wasteHours = effort.wasteHours ?? 0
   const errors: Record<string, string> = {}
+  // Outside the `removal` gate below, deliberately: this is not an effort rule.
+  // null -> null is not a stage change, and a removal on a bay that never
+  // started would put a meaningless row in the history.
   if (unchanged) errors.stage = 'Chọn công đoạn cho ô này.'
-  if (effort.leadName.trim() === '') errors.lead = 'Chọn nhóm trưởng.'
-  if (effort.painterName.trim() === '') errors.painter = 'Chọn thợ chính.'
-  if (effort.workHours === null) errors.workHours = 'Nhập số giờ công.'
-  if (effort.wasteHours === null) errors.wasteHours = 'Nhập số giờ hao phí; không hao phí thì nhập 0.'
-  if (wasteHours > 0) {
-    if (effort.wasteOrder.trim() === '') errors.wasteOrder = 'Nhập lệnh sản xuất ghi nhận hao phí.'
-    if (effort.wasteReason.trim() === '') errors.wasteReason = 'Chọn lý do hao phí.'
+  if (!removal) {
+    if (effort.leadName.trim() === '') errors.lead = 'Chọn nhóm trưởng.'
+    if (effort.painterName.trim() === '') errors.painter = 'Chọn thợ chính.'
+    if (effort.workHours === null) errors.workHours = 'Nhập số giờ công.'
+    if (effort.wasteHours === null) errors.wasteHours = 'Nhập số giờ hao phí; không hao phí thì nhập 0.'
+    if (wasteHours > 0) {
+      if (effort.wasteOrder.trim() === '') errors.wasteOrder = 'Nhập lệnh sản xuất ghi nhận hao phí.'
+      if (effort.wasteReason.trim() === '') errors.wasteReason = 'Chọn lý do hao phí.'
+    }
   }
   const errorOf = (key: string) => (attempted ? errors[key] : undefined)
+
+  /**
+   * What is sent: `EMPTY_EFFORT` for a removal -- the constant, not a
+   * hand-built object, so the payload cannot drift from the `Effort` type --
+   * which also discards hours typed against a real coat before the foreman
+   * switched the picker to `Chưa bắt đầu`. Otherwise a reason is dropped when
+   * no hours were lost, so a sentence typed for lost hours the foreman then
+   * cleared does not travel alone.
+   */
+  const effortToSend: Effort = removal
+    ? EMPTY_EFFORT
+    : (effort.wasteHours ?? 0) > 0
+      ? effort
+      : { ...effort, wasteReason: '', wasteOrder: '' }
 
   const submit = () => {
     if (!cell) return
@@ -317,8 +350,12 @@ export function CellStageModal({
             the shared roster (0032) rather than taking typed text: "Tổ 1",
             "To 1" and "tổ1" were three crews on the dashboard and one crew on
             the deck.
+
+            Absent on a removal, not merely un-required (see `removal` above):
+            a field that is on screen gets filled in, and what it collects is
+            hours against no coat.
           */}
-          {!readOnly && (
+          {!readOnly && !removal && (
             <div data-testid="cell-effort">
               <div style={{ marginBottom: 6 }}>
                 <Typography.Text strong>Giờ công</Typography.Text>

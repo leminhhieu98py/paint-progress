@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
-  EVENT_PAGE, latestProgressEvent, listCellNotes, listDeckEvents, listProjectEvents, loadDeckWorks,
-  loadProjectModel, setCellEventEffort, setReportNote,
+  EVENT_PAGE, STATE_PAGE, latestProgressEvent, listCellNotes, listDeckEvents, listProjectEvents,
+  loadDeckWorks, loadProjectModel, setCellEventEffort, setReportNote,
 } from './progressApi'
 
 const from = vi.hoisted(() => vi.fn())
@@ -100,6 +100,47 @@ describe('loadProjectModel', () => {
     expect(model.models[0].decks).toEqual([])
   })
 
+  it('pages the state read past the 1000-row cap, so a deck whose rows fall past it is not left at zero', async () => {
+    // Feedback Rv5, item 2. cell_states holds one row per (bay, work), so a
+    // project of eleven decks at 185-241 bays crosses PostgREST's cap several
+    // times over; the truncated read assembled the decks past it with no
+    // states at all and the rollup printed 0,00%.
+    const pad = Array.from({ length: STATE_PAGE }, (_, i) => ({
+      cell_id: `pad-${i}`, work_id: 'w1', deck_id: 'd1', stage_id: null, note: '',
+      updated_at: null, updated_by: null,
+    }))
+    const first = builder({ data: pad })
+    const second = builder({ data: STATE_ROWS })
+    const pages = [first, second]
+    const works = builder({ data: WORK_ROWS })
+    const decks = builder({ data: [DECK_ROW] })
+    from.mockImplementation((table: string) => {
+      if (table === 'works') return works
+      if (table === 'decks') return decks
+      if (table === 'cell_states') return pages.shift()
+      throw new Error(`unexpected table ${table}`)
+    })
+
+    const model = await loadProjectModel('p1')
+
+    expect(pages).toHaveLength(0)
+    expect(first.range).toHaveBeenCalledWith(0, STATE_PAGE - 1)
+    expect(second.range).toHaveBeenCalledWith(STATE_PAGE, 2 * STATE_PAGE - 1)
+    // The only real state sits in page two. Read unpaged, this bay is null and
+    // its deck is at 0,00% with nothing to say the read was truncated.
+    expect(model.models[0].decks[0].deck.cells[0].stageId).toBe('s1')
+    expect(model.audit.w1.c1?.updatedBy).toBe('u1')
+  })
+
+  it('orders the state pages over the whole primary key, so two pages cannot overlap or skip', async () => {
+    const b = mockProject()
+    await loadProjectModel('p1')
+    // cell_states is keyed (cell_id, work_id); one column is not a total order.
+    expect(b.states.order).toHaveBeenCalledWith('cell_id', { ascending: true })
+    expect(b.states.order).toHaveBeenCalledWith('work_id', { ascending: true })
+    expect(b.states.range).toHaveBeenCalledWith(0, STATE_PAGE - 1)
+  })
+
   it('throws when any read fails', async () => {
     from.mockImplementation(() => builder({ error: { message: 'permission denied' } }))
     await expect(loadProjectModel('p1')).rejects.toThrow('permission denied')
@@ -125,7 +166,9 @@ describe('loadDeckWorks', () => {
 
     expect(b.decks.eq).toHaveBeenCalledWith('id', 'd1')
     expect(b.wd.eq).toHaveBeenCalledWith('deck_id', 'd1')
-    expect(b.states.eq).toHaveBeenCalledWith('deck_id', 'd1')
+    // One deck goes through the same paged reader as eleven, so the filter is
+    // `in` on a one-element list rather than `eq`.
+    expect(b.states.in).toHaveBeenCalledWith('deck_id', ['d1'])
     expect(dw.deck).toMatchObject({ id: 'd1', code: 'CD', totalAreaM2: 6139 })
     expect(dw.imagePath).toBe('p1/d1.png')
     expect(dw.areaSource).toBe('prorated')
@@ -147,6 +190,29 @@ describe('loadDeckWorks', () => {
     const dw = (await loadDeckWorks('d1'))!
     expect(dw.works).toEqual([])
     expect(dw.deck.cells).toHaveLength(1)
+  })
+
+  it('pages one deck\'s states too: 241 bays in five works is already past the cap', async () => {
+    // RV5-03. One deck is not exempt -- cell_states is one row per (bay,
+    // work), so the row count is bays x works, not bays.
+    const pad = Array.from({ length: STATE_PAGE }, (_, i) => ({
+      cell_id: `pad-${i}`, work_id: 'w1', deck_id: 'd1', stage_id: null, note: '',
+      updated_at: null, updated_by: null,
+    }))
+    const pages = [builder({ data: pad }), builder({ data: STATE_ROWS })]
+    const decks = builder({ data: [DECK_ROW] })
+    const wd = builder({ data: WORK_DECK_ROWS })
+    from.mockImplementation((table: string) => {
+      if (table === 'decks') return decks
+      if (table === 'work_decks') return wd
+      if (table === 'cell_states') return pages.shift()
+      throw new Error(`unexpected table ${table}`)
+    })
+
+    const dw = (await loadDeckWorks('d1'))!
+
+    expect(pages).toHaveLength(0)
+    expect(dw.works[0].cells[0]).toMatchObject({ id: 'c1', stageId: 's1', note: 'ẩm' })
   })
 
   it('throws when the deck read fails', async () => {

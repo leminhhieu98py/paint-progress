@@ -628,6 +628,15 @@ describe('GsScreen: recording a stage', () => {
     expect(navigate).toHaveBeenCalledWith('/gs/p1/dashboard')
   })
 
+  it('opens the KPI chart of this project from the header (Feedback Rv5, item 9)', async () => {
+    // Beside Năng suất and reached the same way. Read-only for the field: the
+    // plan dates are the admin's (RV5-28).
+    renderScreen()
+    await screen.findByRole('button', { name: 'ô R1C2' })
+    await userEvent.click(screen.getByRole('button', { name: 'KPI' }))
+    expect(navigate).toHaveBeenCalledWith('/gs/p1/kpi')
+  })
+
   it('opens the modal for the tapped cell', async () => {
     renderScreen()
     await userEvent.click(await screen.findByRole('button', { name: 'ô R1C2' }))
@@ -646,6 +655,9 @@ describe('GsScreen: recording a stage', () => {
     renderScreen()
     await userEvent.click(await screen.findByRole('button', { name: 'ô R2C1' }))
     await waitFor(() => expect(listEmployees).toHaveBeenCalled())
+    // No coat picked first: R2C1 has not started, and an untouched bay is not a
+    // removal (Feedback Rv5, RV5-34), so the roster is on screen the moment the
+    // dialog opens -- which is what this test was written to check.
     await chooseIn('Nhóm trưởng', 'Lê Văn A')
     expect(within(screen.getByTestId('cell-effort')).getByTitle('Lê Văn A')).toBeInTheDocument()
   })
@@ -1311,12 +1323,11 @@ describe('GsScreen: công việc', () => {
 })
 
 describe('GsScreen: a deck its cells over-cover', () => {
-  it('discloses a deck whose bays cover more than it declares', async () => {
-    // On a deck declaring 500 m² whose bays cover 700, every share on this
-    // screen still divides by the 500 -- so Coat 3 reads 300/500 = 60,00% and
-    // the shares add past 100%. That is correct and deliberate, and it is the
-    // deck that is wrong; the screen has to say so rather than quietly
-    // renormalising to 300/700 = 42,86% and looking consistent.
+  it('says nothing to the field about it, and still divides by the declared area', async () => {
+    // Feedback Rv5, item 8: the banner told the reader to "nhờ quản trị viên
+    // kiểm tra lại" on the one screen whose users are gs and viewer and never
+    // an admin. The admin keeps their own warning, on DeckEditor at a 5%
+    // threshold, which is where a person who can act on it will see it.
     loadGsProject.mockResolvedValue({ decks: [DECKS[1]], isMember: true })
     listDeckCells.mockResolvedValue([
       { id: 'x1', code: 'R1C1', x: 0, y: 0, w: 0.5, h: 1, areaM2: 300, stageId: null, note: '' },
@@ -1325,21 +1336,16 @@ describe('GsScreen: a deck its cells over-cover', () => {
     listDeckStates.mockResolvedValue({ w1: { x1: { stageId: 's3', note: '' } } })
     renderScreen()
 
-    expect(
-      await screen.findByText('Diện tích các ô vượt diện tích sàn khai báo'),
-    ).toBeInTheDocument()
-    // Both numbers, so the foreman can see which way and by how much. Scoped to
-    // the rail: the deck card beside it also prints 500,00 m².
-    expect(
-      within(screen.getByTestId('gs-chart-region'))
-        .getByText(/Các ô cộng lại 700,00 m², sàn khai báo 500,00 m²/),
-    ).toBeInTheDocument()
-    // Disclosed, NOT renormalised: every share still divides by the deck's own
-    // declared area, which is the denominator of every percentage in this
-    // product (spec §3.2) including the one the customer is billed against.
-    const rollup = within(screen.getByTestId('gs-stage-rollup'))
-    expect(rollup.getAllByText('300,00 / 500,00 m² · 60,00%').length).toBeGreaterThan(0)
-    expect(rollup.queryByText(/42,86%/)).toBeNull()
+    // The numbers are untouched: on a deck declaring 500 m² whose bays cover
+    // 700, every share still divides by the 500 (spec §3.2), so Coat 3 reads
+    // 300/500 = 60,00% and NOT a renormalised 300/700 = 42,86%. Only the
+    // banner goes.
+    const rollup = () => within(screen.getByTestId('gs-stage-rollup'))
+    await waitFor(() =>
+      expect(rollup().getAllByText('300,00 / 500,00 m² · 60,00%').length).toBeGreaterThan(0))
+    expect(rollup().queryByText(/42,86%/)).toBeNull()
+    expect(screen.queryByText('Diện tích các ô vượt diện tích sàn khai báo')).toBeNull()
+    expect(screen.queryByText(/Các ô cộng lại/)).toBeNull()
   })
 
   it('names the deck by its area alone, with no bay count beside it', async () => {
@@ -1350,24 +1356,183 @@ describe('GsScreen: a deck its cells over-cover', () => {
     expect(screen.queryByText(/\d+ ô · /)).toBeNull()
   })
 
-  it('does not warn when the cells fit the deck, exactly or with room to spare', async () => {
-    renderScreen()
-    expect(await screen.findByText('15,50%')).toBeInTheDocument()
-    // The Cellar Deck's cells cover 600 m² of 1000 -- the ordinary state, since
-    // openings and the E-house are not cells. The unmapped slice keeps the pie
-    // honest there, so there is nothing to disclose.
-    expect(screen.queryByText('Diện tích các ô vượt diện tích sàn khai báo')).toBeNull()
+})
 
-    await userEvent.click(screen.getByRole('tab', { name: new RegExp(`^Main Deck`) }))
-    // getByTestId, not getByText: the Main Deck's one cell sits at the last
-    // stage, so 100,00% is also every legend row and every spec-table cell.
-    await waitFor(() =>
-      expect(screen.getByTestId('gs-deck-progress')).toHaveTextContent('100,00%'))
-    // The Main Deck's one cell covers its 500 m² exactly, and exact coverage is
-    // the boundary that matters: at >= this banner would sit permanently on every
-    // pro-rated deck, whose cell areas are divided out of the declared total and
-    // therefore sum back to it.
-    expect(screen.queryByText('Diện tích các ô vượt diện tích sàn khai báo')).toBeNull()
+describe('GsScreen: Thông tin nhanh — Hôm nay (Feedback Rv5, item 7)', () => {
+  /** Now, so the block's own effortDayKey of `new Date()` agrees with it. */
+  const NOW = () => new Date().toISOString()
+  let nextId = 1
+  const event = (over: Record<string, unknown> = {}) => ({
+    id: nextId++,
+    deckName: 'Cellar Deck',
+    cellCode: 'R1C1',
+    cellAreaM2: 300,
+    workName: 'Sơn',
+    toStageName: 'Blast + Coat 1',
+    at: NOW(),
+    byId: 'u1',
+    note: '',
+    reportNote: null,
+    reportHidden: false,
+    effort: {
+      leadName: 'Tổ 1', painterName: 'Nam', workHours: 4, wasteHours: 1,
+      wasteReason: '', wasteOrder: '',
+    },
+    effortEditedAt: null,
+    effortEditedByName: null,
+    ...over,
+  })
+
+  const card = () => within(screen.getByTestId('gs-deck-today'))
+
+  it('reads the deck\'s coats with today\'s m² and its four man-hour figures', async () => {
+    listDeckEvents.mockResolvedValue([
+      event(),
+      event({
+        cellCode: 'R1C2', cellAreaM2: 200, toStageName: 'Coat 2',
+        effort: {
+          leadName: 'Tổ 1', painterName: 'Nam', workHours: 2, wasteHours: 0,
+          wasteReason: '', wasteOrder: '',
+        },
+      }),
+      // Last year, so the cumulative figures differ from today's (RV5-19).
+      event({
+        cellCode: 'R2C1', cellAreaM2: 100, at: '2026-01-05T03:00:00Z',
+        effort: {
+          leadName: 'Tổ 1', painterName: 'Nam', workHours: 10, wasteHours: 3,
+          wasteReason: '', wasteOrder: '',
+        },
+      }),
+    ])
+    renderScreen()
+    await screen.findByRole('button', { name: 'ô R1C1' })
+    await waitFor(() => expect(listDeckEvents).toHaveBeenCalledWith('d1'))
+
+    // Every coat of the deck, and a 0,00 m² row for the three nobody touched
+    // (RV5-17). Coat 2's row proves it is today's output, not the rollup's
+    // cumulative area.
+    await waitFor(() => expect(card().getByText('300,00 m²')).toBeInTheDocument())
+    expect(card().getByText('200,00 m²')).toBeInTheDocument()
+    expect(card().getAllByText('0,00 m²')).toHaveLength(3)
+    expect(card().getByText('Tháo giáo')).toBeInTheDocument()
+
+    // 4 + 2 today of 16 all told; 1 + 0 lost today of 4 all told.
+    expect(card().getByText('6,0')).toBeInTheDocument()
+    expect(card().getByText('1,0')).toBeInTheDocument()
+    expect(card().getByText('16,0')).toBeInTheDocument()
+    expect(card().getByText('4,0')).toBeInTheDocument()
+  })
+
+  it('leaves hours booked against no coat out of its four figures (Feedback Rv5, RV5-35)', async () => {
+    // Measured on dev: this card read `Tổng Mhr đã thực hiện đến hôm nay = 4,0`
+    // on Main Deck while all five of that deck's coats read 0,0. Hours exist
+    // only where a coat does (Q10), so a removal carrying hours belongs in this
+    // aggregate no more than it belongs in a stage row.
+    listDeckEvents.mockResolvedValue([
+      event(),
+      event({
+        cellCode: 'R1C2', cellAreaM2: 200, toStageName: 'Coat 2',
+        effort: {
+          leadName: 'Tổ 1', painterName: 'Nam', workHours: 2, wasteHours: 0,
+          wasteReason: '', wasteOrder: '',
+        },
+      }),
+      // Last year, so the cumulative figures differ from today's (RV5-19).
+      event({
+        cellCode: 'R2C1', cellAreaM2: 100, at: '2026-01-05T03:00:00Z',
+        effort: {
+          leadName: 'Tổ 1', painterName: 'Nam', workHours: 10, wasteHours: 3,
+          wasteReason: '', wasteOrder: '',
+        },
+      }),
+      // The removal: today, with hours, and against no coat.
+      event({
+        cellCode: 'R2C2', cellAreaM2: 50, toStageName: null,
+        effort: {
+          leadName: 'Tổ 1', painterName: 'Nam', workHours: 7, wasteHours: 5,
+          wasteReason: '', wasteOrder: '',
+        },
+      }),
+    ])
+    renderScreen()
+    await screen.findByRole('button', { name: 'ô R1C1' })
+    await waitFor(() => expect(listDeckEvents).toHaveBeenCalledWith('d1'))
+
+    // The same four figures as without the removal: 6,0 and 1,0 today, 16,0 and
+    // 4,0 all told -- not 13,0 / 6,0 / 23,0 / 9,0.
+    await waitFor(() => expect(card().getByText('6,0')).toBeInTheDocument())
+    expect(card().getByText('1,0')).toBeInTheDocument()
+    expect(card().getByText('16,0')).toBeInTheDocument()
+    expect(card().getByText('4,0')).toBeInTheDocument()
+    expect(card().queryByText('13,0')).toBeNull()
+    expect(card().queryByText('23,0')).toBeNull()
+  })
+
+  it('is there for a viewer, who is who reads this screen without writing', async () => {
+    // RV5-20: rendered for gs and viewer alike. It writes nothing.
+    authRole.value = 'viewer'
+    listDeckEvents.mockResolvedValue([event()])
+    renderScreen()
+    await screen.findByRole('button', { name: 'ô R1C1' })
+    await waitFor(() => expect(card().getByText('300,00 m²')).toBeInTheDocument())
+  })
+
+  it('does not follow the work picker: both works\' coats, before and after', async () => {
+    // RV5-18, Linh's answer to Q4: "Bảng thông tin nhanh hiển thị theo sàn
+    // không liên quan công việc nào." The drawing and the rollup are scoped to
+    // the chosen work; this block is the deck's.
+    listDeckWorks.mockResolvedValue([
+      { work: WORK, weight: 1, stages: STAGES },
+      { work: WORK2, weight: 1, stages: TG_STAGES },
+    ])
+    listDeckEvents.mockResolvedValue([
+      event(),
+      event({ cellCode: 'R1C2', cellAreaM2: 200, workName: 'Tháo giáo', toStageName: 'Tháo giáo lửng' }),
+    ])
+    renderScreen()
+    await screen.findByRole('button', { name: 'ô R1C1' })
+
+    await waitFor(() => expect(card().getByText('300,00 m²')).toBeInTheDocument())
+    expect(card().getByText('Tháo giáo lửng')).toBeInTheDocument()
+    expect(card().getByText('200,00 m²')).toBeInTheDocument()
+
+    await userEvent.click(within(screen.getByTestId('gs-work-picker')).getByText('Tháo giáo'))
+
+    // Unchanged, and not refetched: the block is keyed on the deck.
+    expect(card().getByText('300,00 m²')).toBeInTheDocument()
+    expect(card().getByText('200,00 m²')).toBeInTheDocument()
+    expect(listDeckEvents).toHaveBeenCalledTimes(1)
+  })
+
+  it('re-reads the day after the foreman records a bay, so the figures move', async () => {
+    // A block whose whole subject is "what did we get done today" cannot sit
+    // still while the foreman records today's work. The tap is optimistic on the
+    // drawing; the day's m² and Mhr come from cell_events, so they need the read.
+    listDeckEvents.mockResolvedValue([])
+    renderScreen()
+    await screen.findByRole('button', { name: 'ô R1C1' })
+    await waitFor(() => expect(listDeckEvents).toHaveBeenCalledTimes(1))
+
+    listDeckEvents.mockResolvedValue([event()])
+    // R2C1, which is at no coat in Sơn: the modal refuses a write that changes
+    // nothing, so a bay already at the chosen coat would never reach the API.
+    await userEvent.click(screen.getByRole('button', { name: 'ô R2C1' }))
+    await chooseIn('Công đoạn', 'Blast + Coat 1')
+    await fillRequired()
+    await userEvent.click(screen.getByRole('button', { name: 'Xác nhận' }))
+
+    await waitFor(() => expect(setCellState).toHaveBeenCalled())
+    await waitFor(() => expect(listDeckEvents).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(card().getByText('300,00 m²')).toBeInTheDocument())
+  })
+
+  it('keeps the block off a project the foreman is not a member of', async () => {
+    // Same rule as the rest of the rail: a refusal must not render as a deck
+    // that simply did nothing today.
+    loadGsProject.mockResolvedValue({ decks: [], isMember: false })
+    renderScreen()
+    expect(await screen.findByText('Không xem được dự án này')).toBeInTheDocument()
+    expect(screen.queryByTestId('gs-deck-today')).toBeNull()
   })
 })
 
@@ -1680,6 +1845,12 @@ describe('GsScreen: exporting the open deck', () => {
     id: 1, cellCode: 'R1C1', cellAreaM2: 300, toStageName: 'Blast + Coat 1',
     at: '2026-08-20T10:00:00+00:00', byId: 'u1', note: 'Bắt đầu',
     reportNote: null, reportHidden: false,
+    // `effort` has been required on DeckEvent since 0030 and this fixture never
+    // carried it. Thông tin nhanh — Hôm nay reads the same events the export
+    // does, so a row without it now reaches deckEffortTotals as well.
+    effort: {
+      leadName: '', painterName: '', workHours: null, wasteHours: null, wasteReason: '', wasteOrder: '',
+    },
   }
   /** jsdom has no object URLs and no navigation; capture the download instead. */
   const downloads: string[] = []

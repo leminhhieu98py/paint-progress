@@ -1,18 +1,20 @@
-import { DatePicker, Segmented, Select, Table, Typography } from 'antd'
+import { SearchOutlined } from '@ant-design/icons'
+import { DatePicker, Input, Segmented, Select, Table, Typography } from 'antd'
 import dayjs, { type Dayjs } from 'dayjs'
 import { useMemo, useState } from 'react'
 import { EmptyState } from '../../components/EmptyState'
 import { SectionCard } from '../../components/SectionCard'
 import { StatCard } from '../../components/StatCard'
 import {
-  dailyEffort, deckEffortTotals, effortCoverage, effortDayKey, efficiencySeries, hoursSeries,
-  leadEfficiency, stageEfficiency, stageOrder, wasteReasons,
-  type LeadEfficiency, type StageEfficiency, type WasteReason,
+  NOT_STARTED_STAGE, dailyEffort, deckEffortTotals, effortCoverage, effortDayKey,
+  efficiencySeries, hoursSeries, leadEfficiency, recordsWorkOnACoat, stageEfficiency, stageOrder,
+  wasteReasons, type LeadEfficiency, type StageEfficiency, type WasteReason,
 } from '../../domain/effort'
 import { deckForecast, type DeckForecast } from '../../domain/forecast'
 import { computeDeckProgress } from '../../domain/progress'
 import type { DeckEvent, WorkModel } from '../../domain/types'
 import { formatAreaM2, formatHours, formatMhrPerM2, formatPercent } from '../../lib/format'
+import { matchesSearch } from '../../lib/search'
 import { fieldError, palette } from '../../theme'
 import { EfficiencyLineChart, HoursBarChart } from './charts'
 
@@ -79,20 +81,75 @@ export function ProductivityDashboard({
 
   /** Today, once per mount -- see DeckForecastPanel for why not per render. */
   const today = useMemo(() => effortDayKey(new Date().toISOString()), [])
-  const todayTotals = deckEffortTotals(filtered, today)
 
   const order = useMemo(() => stageOrder(models), [models])
   const daily = useMemo(() => dailyEffort(filtered), [filtered])
   const stages = useMemo(() => stageEfficiency(daily, order), [daily, order])
-  const leads = useMemo(() => leadEfficiency(filtered), [filtered])
-  const reasons = useMemo(() => wasteReasons(filtered), [filtered])
+
+  /**
+   * Feedback Rv5, item 5, Q10 and RV5-35. Two buckets exist so that events
+   * carrying no real label do not vanish: `NOT_STARTED_STAGE` collects the
+   * moves back to nothing, and the blank lead name collects the updates where
+   * the foreman left the box empty (442 of them in Linh's screenshot, all at
+   * 0 Mhr and 0 m²). Neither is a công đoạn or a nhóm trưởng, and neither can
+   * carry a Mhr/m² figure -- they are noise on a screen whose subject is
+   * efficiency.
+   *
+   * The hours some of these rows DO carry are a mis-entry, not work: asked
+   * about the 4,0 Mhr and 37,42 m² on `Chưa bắt đầu` in dev, Linh answered
+   * "User cập nhật nhầm. Có công đoạn mới có giờ công." The modal used to
+   * compel it by requiring hours for every choice in its coat picker; RV5-30
+   * and RV5-34 stopped that, so no new row can be written this way. The rows
+   * already recorded stay in the database untouched (RV5-33) -- they are the
+   * customer's history, and repairing production data is the owner's call --
+   * and simply stop being displayed.
+   *
+   * **The exclusion has to be made on every dimension this screen aggregates
+   * on, not only on the stage.** RV5-31 dropped the bucket from `stages` only,
+   * which is a filter on the STAGE dimension; `leadEfficiency` groups by crew,
+   * `wasteReasons` groups by reason and `deckEffortTotals` groups by day, and
+   * none of the three has a stage row to drop.
+   * So the owner measured 370,0 Mhr and 280,73 m² in Theo nhóm trưởng and 10,0
+   * giờ in Lý do hao phí against a header reading 366,0, 243,31 and 9,0.
+   * Linh's rule is that hours exist only where a coat does, so the EVENT is
+   * excluded as well as the row: hours attached to no coat belong in no
+   * aggregate, not merely in no stage row.
+   *
+   * `coverage` stays over the unfiltered set on purpose: it counts how much of
+   * the history carries hours at all, and a removal is a real update whether
+   * or not its hours may enter an average.
+   *
+   * Filtered HERE, at each consumer, and NOT inside `domain/effort.ts`:
+   * `deckForecast` reads `stageEfficiency` output to work out what is left, and
+   * the report's history sheets must still list every event that happened.
+   */
+  const withCoat = useMemo(() => filtered.filter(recordsWorkOnACoat), [filtered])
+  const leads = useMemo(() => leadEfficiency(withCoat), [withCoat])
+  const reasons = useMemo(() => wasteReasons(withCoat), [withCoat])
+  /** The two `hôm nay` cards aggregate on the DAY, so they are the third
+   *  consumer with no stage row to drop and need the same exclusion. */
+  const todayTotals = deckEffortTotals(withCoat, today)
   const coverage = effortCoverage(filtered)
 
-  const totalHours = stages.reduce((s, r) => s + r.totalHours, 0)
-  const totalAreaM2 = stages.reduce((s, r) => s + r.totalAreaM2, 0)
-  const wasteHours = stages.reduce((s, r) => s + r.wasteHours, 0)
+  /** The stage half of the exclusion argued for above. */
+  const visibleStages = useMemo(
+    () => stages.filter((s) => s.stageName !== NOT_STARTED_STAGE),
+    [stages],
+  )
+
+  // Over the VISIBLE rows: a header that does not add up to its own columns is
+  // worse than either figure alone (RV5-31, replacing RV5-10).
+  const totalHours = visibleStages.reduce((s, r) => s + r.totalHours, 0)
+  const totalAreaM2 = visibleStages.reduce((s, r) => s + r.totalAreaM2, 0)
+  const wasteHours = visibleStages.reduce((s, r) => s + r.wasteHours, 0)
   const overall = totalAreaM2 > 0 ? totalHours / totalAreaM2 : null
   const wasteShare = totalHours + wasteHours > 0 ? wasteHours / (totalHours + wasteHours) : null
+
+  const [leadQuery, setLeadQuery] = useState('')
+  const visibleLeads = useMemo(
+    () => leads.filter((l) => l.leadName !== '' && matchesSearch(l.leadName, leadQuery)),
+    [leads, leadQuery],
+  )
 
   /**
    * What is left on each deck of the chosen work, and whether its deadline
@@ -135,6 +192,9 @@ export function ProductivityDashboard({
     }
     return (order.get(workName) ?? []).concat(stages.map((s) => s.stageName))
       .filter((name, i, all) => all.indexOf(name) === i)
+      // This list IS the chart's set of lines, so dropping the placeholder
+      // here is what keeps it off Hiệu suất theo ngày (RV5-09).
+      .filter((name) => name !== NOT_STARTED_STAGE)
       .map((name, i) => ({ name, color: colors.get(name) ?? FALLBACK_COLORS[i % FALLBACK_COLORS.length] }))
   }, [models, workName, order, stages])
 
@@ -222,7 +282,7 @@ export function ProductivityDashboard({
             size="small"
             rowKey={(r) => `${r.workName}/${r.stageName}`}
             pagination={false}
-            dataSource={stages}
+            dataSource={visibleStages}
             columns={stageColumns}
             locale={{ emptyText: 'Không có lần cập nhật nào trong khoảng đã chọn' }}
           />
@@ -290,19 +350,30 @@ export function ProductivityDashboard({
       </SectionCard>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 16 }}>
-        <SectionCard title="Theo nhóm trưởng" bodyPadding={0}>
+        <SectionCard
+          title="Theo nhóm trưởng"
+          bodyPadding={0}
+          extra={
+            <Input
+              allowClear
+              aria-label="Tìm nhóm trưởng"
+              placeholder="Tìm nhóm trưởng"
+              prefix={<SearchOutlined aria-hidden />}
+              style={{ width: 200 }}
+              value={leadQuery}
+              onChange={(e) => setLeadQuery(e.target.value)}
+            />
+          }
+        >
           <div data-testid="lead-table">
             <Table<LeadEfficiency>
               size="small"
               rowKey="leadName"
               pagination={false}
-              dataSource={leads}
+              dataSource={visibleLeads}
+              locale={{ emptyText: 'Không có nhóm trưởng nào khớp' }}
               columns={[
-                {
-                  title: 'Nhóm trưởng',
-                  dataIndex: 'leadName',
-                  render: (v: string) => (v === '' ? <span style={{ color: palette.textQuaternary }}>Chưa ghi</span> : v),
-                },
+                { title: 'Nhóm trưởng', dataIndex: 'leadName' },
                 { title: 'Lần cập nhật', dataIndex: 'updates', align: 'right' },
                 { title: 'Tổng Mhr', align: 'right', render: (_, r) => formatHours(r.totalHours) },
                 { title: 'Tổng m²', align: 'right', render: (_, r) => formatAreaM2(r.totalAreaM2) },

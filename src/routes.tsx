@@ -52,6 +52,13 @@ const GsScreen = lazy(() =>
 const DashboardScreen = lazy(() =>
   import('./screens/dashboard/DashboardScreen').then((m) => ({ default: m.DashboardScreen })),
 )
+// KPI (Feedback Rv5, item 9) rides its own chunk rather than the dashboard's.
+// It shares `screens/dashboard/charts` with the dashboard, so Recharts is in
+// whichever of the two is opened first and in neither until then -- the login
+// form and the drawing still never download it.
+const KpiScreen = lazy(() =>
+  import('./screens/kpi/KpiScreen').then((m) => ({ default: m.KpiScreen })),
+)
 
 function LazySuspense({ children }: { children: ReactNode }) {
   return (
@@ -226,6 +233,15 @@ export function AppRoutes() {
               </LazySuspense>
             }
           />
+          {/* Its own item in the sidebar, after Năng suất (RV5-28). */}
+          <Route
+            path="kpi"
+            element={
+              <LazySuspense>
+                <KpiScreen variant="admin" />
+              </LazySuspense>
+            }
+          />
           <Route
             path="employees"
             element={
@@ -267,6 +283,24 @@ export function AppRoutes() {
               <ConfigProvider theme={fieldTheme}>
                 <LazySuspense>
                   <DashboardScreen variant="gs" />
+                </LazySuspense>
+              </ConfigProvider>
+            </RequireRole>
+          }
+        />
+        {/*
+          The field KPI chart (Feedback Rv5, item 9): a sibling of the field
+          dashboard, the same two roles, the same field theme, its own chunk.
+          The viewer is in the gate deliberately -- RV5-29: admin writes the
+          plan dates, and admin, gs and viewer all read the charts.
+        */}
+        <Route
+          path="gs/:projectId/kpi"
+          element={
+            <RequireRole roles={['gs', 'viewer']}>
+              <ConfigProvider theme={fieldTheme}>
+                <LazySuspense>
+                  <KpiScreen variant="gs" />
                 </LazySuspense>
               </ConfigProvider>
             </RequireRole>

@@ -1,5 +1,5 @@
 import dayjs from 'dayjs'
-import { dailyEffort, stageEfficiency, stageOrder } from './effort'
+import { NOT_STARTED_STAGE, dailyEffort, stageEfficiency, stageOrder } from './effort'
 import { deckForecast, type DeckForecast } from './forecast'
 import { zoneColorMap } from './lens'
 import { computeDeckProgress, computeProjectProgress, computeWorkProgress } from './progress'
@@ -368,6 +368,14 @@ export function buildEffortSheetRows(decks: DeckReportInput[], models: WorkModel
       }))
     }
     for (const stage of efficiency) {
+      // The move-back-to-nothing placeholder is not a công đoạn, and the hours
+      // recorded against it are a mis-entry (Feedback Rv5, Q10: "User cập nhật
+      // nhầm. Có công đoạn mới có giờ công."). Dropped here rather than in
+      // `stageEfficiency` above, because `deckForecast` reads that output to
+      // work out what is left. The Năng suất screen drops it at its own
+      // consumers for the same reason, so the sheet and the screen agree
+      // (RV5-32).
+      if (stage.stageName === NOT_STARTED_STAGE) continue
       const ahead = forecasts.get(stage.workName)?.stages.find((s) => s.stageName === stage.stageName)
       rows.push({
         deckName: entry.deck.name,

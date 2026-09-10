@@ -1,8 +1,10 @@
 import {
-  Bar, BarChart, CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
+  Bar, BarChart, CartesianGrid, ComposedChart, Legend, Line, LineChart, ResponsiveContainer,
+  Tooltip, XAxis, YAxis,
 } from 'recharts'
+import type { KpiDay } from '../../domain/kpi'
 import { fieldError, palette } from '../../theme'
-import { formatHours, formatMhrPerM2 } from '../../lib/format'
+import { formatAreaM2, formatHours, formatMhrPerM2, formatPercent } from '../../lib/format'
 
 /**
  * The two charts of the productivity dashboard (Feedback Rv2, item 12), on
@@ -77,6 +79,99 @@ export function HoursBarChart({ data }: { data: Array<{ day: string; hours: numb
           <Bar dataKey="hours" name="Thực hiện" stackId="h" fill={palette.accent} isAnimationActive={false} />
           <Bar dataKey="wasteHours" name="Hao phí" stackId="h" fill={fieldError} isAnimationActive={false} />
         </BarChart>
+      </ResponsiveContainer>
+    </div>
+  )
+}
+
+/** The four series' names, so the tooltip can tell an m² from a share. */
+const KPI_PLAN_M2 = 'Kế hoạch (m²/ngày)'
+const KPI_ACTUAL_M2 = 'Thực hiện (m²/ngày)'
+const KPI_PLAN_CUM = 'Luỹ kế kế hoạch'
+const KPI_ACTUAL_CUM = 'Luỹ kế thực hiện'
+
+/**
+ * KPI Plan vs Actual (Feedback Rv5, item 9, RV5-27): the combo chart of
+ * `KPI.xlsx`. Clustered bars for the plan and the actual m²/day against the
+ * left axis, and the two cumulative-share S-curves against the right.
+ *
+ * Colours come in two families rather than four separate hues, and no new
+ * token is introduced: the PLAN is the grey family and the ACTUAL is the
+ * accent family, which is the comparison the chart is about. Bar against line
+ * separates the daily figure from the cumulative one inside each family, and
+ * `HoursBarChart` above already paints "Thực hiện" in `palette.accent`, so the
+ * accent means the same thing on both screens.
+ *
+ * Data is `kpiSeries`' output untouched -- nothing here computes anything.
+ */
+export function KpiComboChart({ data }: { data: KpiDay[] }) {
+  return (
+    <div data-testid="kpi-chart" style={{ width: '100%', height: 340 }}>
+      <ResponsiveContainer width="100%" height="100%">
+        <ComposedChart data={data} margin={{ top: 8, right: 16, bottom: 0, left: 0 }}>
+          <CartesianGrid stroke={palette.borderSplit} vertical={false} />
+          <XAxis dataKey="day" tickFormatter={dayLabel} tick={AXIS} />
+          <YAxis
+            yAxisId="m2"
+            tick={AXIS}
+            width={72}
+            label={{ value: 'm²/ngày', angle: -90, position: 'insideLeft', style: AXIS }}
+          />
+          <YAxis
+            yAxisId="share"
+            orientation="right"
+            tick={AXIS}
+            width={64}
+            // Not capped at 1: actual above plan is real and the workbook does
+            // not clamp it either, so the axis has to be able to show it.
+            tickFormatter={(v: number) => formatPercent(v)}
+          />
+          <Tooltip
+            labelFormatter={(day) => dayLabel(String(day))}
+            formatter={(value, name) => {
+              if (typeof value !== 'number') return ''
+              return name === KPI_PLAN_CUM || name === KPI_ACTUAL_CUM
+                ? formatPercent(value)
+                : formatAreaM2(value)
+            }}
+          />
+          <Legend />
+          <Bar
+            yAxisId="m2"
+            dataKey="planM2"
+            name={KPI_PLAN_M2}
+            fill={palette.textQuaternary}
+            isAnimationActive={false}
+          />
+          <Bar
+            yAxisId="m2"
+            dataKey="actualM2"
+            name={KPI_ACTUAL_M2}
+            fill={palette.accent}
+            isAnimationActive={false}
+          />
+          <Line
+            yAxisId="share"
+            type="monotone"
+            dataKey="planCumShare"
+            name={KPI_PLAN_CUM}
+            stroke={palette.textTertiary}
+            strokeWidth={2}
+            strokeDasharray="5 3"
+            dot={false}
+            isAnimationActive={false}
+          />
+          <Line
+            yAxisId="share"
+            type="monotone"
+            dataKey="actualCumShare"
+            name={KPI_ACTUAL_CUM}
+            stroke={palette.accentHover}
+            strokeWidth={2}
+            dot={{ r: 2 }}
+            isAnimationActive={false}
+          />
+        </ComposedChart>
       </ResponsiveContainer>
     </div>
   )

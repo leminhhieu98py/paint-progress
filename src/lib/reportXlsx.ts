@@ -1,4 +1,5 @@
 import type { Worksheet } from 'exceljs'
+import { leadEfficiency, recordsWorkOnACoat } from '../domain/effort'
 import { computeDeckProgress, summariseDeck } from '../domain/progress'
 import {
   buildEffortSheetRows, buildEventRows, buildOverview, buildPlanRows, type DeckReportInput,
@@ -556,7 +557,74 @@ export async function buildReportWorkbook(input: ReportInput): Promise<Blob> {
       daysNeeded: row.daysNeeded ?? null,
     })
   }
-  dressSheet(effort, 1)
+
+  /*
+    Năng suất theo nhóm trưởng (Feedback Rv5, item 6), a second block UNDER the
+    stage table rather than a sheet of its own: Linh asked for it "vào sheet
+    năng suất trong file báo cáo dự án luôn ... không cần nút xuất riêng", so the
+    crew figures travel inside the workbook she already hands on, and there is
+    no separate download button to remember to press.
+
+    The whole project, always (RV5-15). The Năng suất screen's Công việc / Sàn /
+    date filters and its search box (RV5-11) shape what a manager is looking at
+    at that moment; the workbook is the record, and a record that silently
+    covers four of eleven decks is worse than no record at all. Nothing is read
+    for this: `DeckReportInput` already carries the deck's `events`, so the
+    block is an assembly of what the caller loaded.
+
+    The blank-name lead is dropped for the reason the screen drops it (RV5-09):
+    it is where updates that named no nhóm trưởng collect, not a crew, and it
+    can carry no Mhr/m². Filtered BEFORE the length test, so a project whose
+    only updates named nobody gets no empty block either.
+
+    Events carrying no coat are dropped as well (RV5-35). RV5-32 kept the
+    `Chưa bắt đầu` bucket off the stage table above by filtering on the STAGE
+    dimension; this block groups by crew and has no stage row to drop, so the
+    same hours came straight back in -- 370,0 Mhr against a screen reading
+    366,0. Hours exist only where a coat does (Q10), and a figure in the
+    workbook the customer is handed must not differ from the screen's. The
+    per-deck history sheets still list every event, removals included.
+
+    Columns 1-6 of the sheet, deliberately: the widths the stage table needs
+    (Sàn 24, Công việc 18, Công đoạn 20) are the widest ones, so the block reads
+    without touching them.
+  */
+  const leads = leadEfficiency(
+    input.decks.flatMap((d) => d.events).filter(recordsWorkOnACoat),
+  ).filter((row) => row.leadName !== '')
+  let leadHeaderRow = 0
+  if (leads.length > 0) {
+    effort.addRow([])
+    const title = effort.addRow(['Năng suất theo nhóm trưởng'])
+    title.font = { bold: true, size: 12 }
+    const header = effort.addRow([
+      'Nhóm trưởng', 'Lần cập nhật', 'Tổng Mhr', 'Tổng m²', 'Mhr/m²', 'Giờ hao phí',
+    ])
+    leadHeaderRow = header.number
+    for (const row of leads) {
+      const added = effort.addRow([
+        row.leadName, row.updates, row.totalHours, row.totalAreaM2,
+        // Empty, not zero, when the crew's updates carried no hours -- the same
+        // choice the stage rows make for `avgMhrPerM2`. A 0 there reads as work
+        // done for free rather than as work whose hours were never recorded.
+        row.mhrPerM2 ?? null,
+        row.wasteHours,
+      ])
+      added.getCell(3).numFmt = HOURS_FORMAT
+      added.getCell(4).numFmt = AREA_FORMAT
+      added.getCell(5).numFmt = RATIO_FORMAT
+      added.getCell(6).numFmt = HOURS_FORMAT
+    }
+  }
+  /*
+    dressSheet's freeze and its tint are one row number; here they differ. The
+    freeze stays on row 1 -- the stage table is the long list somebody scrolls,
+    and pinning a band down to the crew block would eat the screen -- while the
+    crew block's own header still has to be tinted, bold and centred, or it
+    reads as data.
+  */
+  effort.views = [{ state: 'frozen', ySplit: 1 }]
+  ruleSheet(effort, (n) => n === 1 || n === leadHeaderRow)
 
   const buffer = await wb.xlsx.writeBuffer()
   return new Blob([buffer], {

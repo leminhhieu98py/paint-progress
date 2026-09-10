@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { STATE_PAGE } from './progressApi'
 import {
   listCoworkerNames, listDeckCells, listDeckStates, listDeckWorks, listProjectIndex,
   loadGsProject, loadGsProjectIdentity, setCellState, subscribeDeckStates,
@@ -17,7 +18,7 @@ vi.mock('./supabase', () => ({
  *  `{ data, error }` -- postgrest-js reports failure as a value, never a throw. */
 function builder(result: { data?: unknown; error?: unknown }) {
   const b: Record<string, unknown> = {}
-  for (const m of ['select', 'insert', 'upsert', 'update', 'delete', 'eq', 'in', 'order', 'limit', 'single']) {
+  for (const m of ['select', 'insert', 'upsert', 'update', 'delete', 'eq', 'in', 'order', 'limit', 'range', 'single']) {
     b[m] = vi.fn(() => b)
   }
   b.then = (resolve: (v: unknown) => unknown) =>
@@ -360,11 +361,33 @@ describe('listDeckStates', () => {
     const states = await listDeckStates('d1')
 
     expect(from).toHaveBeenCalledWith('cell_states')
-    expect(stub.eq).toHaveBeenCalledWith('deck_id', 'd1')
+    // Through the shared pager, so the filter is `in` on a one-element list.
+    expect(stub.in).toHaveBeenCalledWith('deck_id', ['d1'])
     expect(states).toEqual({
       wA: { c1: { stageId: 'a1', note: 'ẩm' }, c2: { stageId: null, note: '' } },
       wB: { c1: { stageId: null, note: '' } },
     })
+  })
+
+  it('pages one deck past the 1000-row cap: the tablet reads bays times works, not bays', async () => {
+    // RV5-03. A deck of 241 bays in five works is 1205 rows, so the field
+    // screen's own read can be truncated exactly like the project rollup's.
+    const pad = Array.from({ length: STATE_PAGE }, (_, i) => ({
+      cell_id: `pad-${i}`, work_id: 'wA', stage_id: null, note: '',
+    }))
+    const first = builder({ data: pad })
+    const second = builder({ data: [{ cell_id: 'c1', work_id: 'wA', stage_id: 'a1', note: 'ẩm' }] })
+    const pages = [first, second]
+    from.mockImplementation(() => pages.shift())
+
+    const states = await listDeckStates('d1')
+
+    expect(pages).toHaveLength(0)
+    expect(first.range).toHaveBeenCalledWith(0, STATE_PAGE - 1)
+    expect(second.range).toHaveBeenCalledWith(STATE_PAGE, 2 * STATE_PAGE - 1)
+    expect(first.order).toHaveBeenCalledWith('cell_id', { ascending: true })
+    expect(first.order).toHaveBeenCalledWith('work_id', { ascending: true })
+    expect(states.wA.c1).toEqual({ stageId: 'a1', note: 'ẩm' })
   })
 
   it('throws when the read fails', async () => {
@@ -438,6 +461,38 @@ describe('listProjectIndex', () => {
     expect(index.d1[0].decks[0].deck.cells[0]).toMatchObject({ id: 'c1', stageId: 'a1' })
     expect(index.d2[0].decks.map((d) => d.deck.id)).toEqual(['d2'])
     expect(index.d1[0].work.weight).toBe(1)
+  })
+
+  it('pages the state read, so a deck tab whose rows fall past the cap is not labelled 0%', async () => {
+    // Feedback Rv5, item 2, on the field screen: the tab strip reads every bay
+    // state of the project in one go, and the project has more than 1000.
+    const works = builder({
+      data: [{ id: 'wA', project_id: 'p1', seq: 1, name: 'Sơn', kind: 'bays', weight: '1', counts: true, manual_progress: '0',
+        work_decks: [{ deck_id: 'd1', weight: '1' }] }],
+    })
+    const decks = builder({
+      data: [{ id: 'd1', seq: 1, code: 'CD', name: 'Cellar', total_area_m2: '100', cells: [{ id: 'c1', code: 'R1C1', area_m2: '100' }],
+        deck_stages: [{ id: 'a1', work_id: 'wA', deck_id: 'd1', seq: 1, name: 'Coat 1', color: '#111111', weight: '1' }] }],
+    })
+    const pad = Array.from({ length: STATE_PAGE }, (_, i) => ({
+      cell_id: `pad-${i}`, work_id: 'wA', deck_id: 'd1', stage_id: null, note: '',
+    }))
+    const pages = [
+      builder({ data: pad }),
+      builder({ data: [{ cell_id: 'c1', work_id: 'wA', deck_id: 'd1', stage_id: 'a1', note: '' }] }),
+    ]
+    from.mockImplementation((table: string) => {
+      if (table === 'works') return works
+      if (table === 'decks') return decks
+      if (table === 'cell_states') return pages.shift()
+      throw new Error(`unexpected table ${table}`)
+    })
+
+    const index = await listProjectIndex('p1', ['d1'])
+
+    expect(pages).toHaveLength(0)
+    // The only real state is in page two: unpaged, this tab reads 0%.
+    expect(index.d1[0].decks[0].deck.cells[0]).toMatchObject({ id: 'c1', stageId: 'a1' })
   })
 
   it('gives a deck with no works an entry, not a hole', async () => {
