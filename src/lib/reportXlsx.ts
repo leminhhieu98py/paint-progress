@@ -4,7 +4,11 @@ import { computeDeckProgress, summariseDeck } from '../domain/progress'
 import {
   buildEffortSheetRows, buildEventRows, buildOverview, buildPlanRows, type DeckReportInput,
 } from '../domain/report'
-import type { WorkModel } from '../domain/types'
+import type { Work, WorkModel } from '../domain/types'
+import {
+  DEFAULT_QUANTITY_LABEL, DEFAULT_UNIT, labelOfWorks, MIXED_QUANTITY_LABEL, MIXED_UNIT_SUM_TOOLTIP,
+  quantityHeading, unitOfWorks,
+} from '../domain/unit'
 import { toVNExcelDate } from './format'
 
 /**
@@ -75,7 +79,27 @@ function ruleSheet(sheet: Worksheet, isHeader: (rowNumber: number) => boolean): 
 
 /** A work that is on the sheet but not in P (RPT-26): shown, greyed. */
 const GREY_FONT = { color: { argb: 'FF8C8C8C' } }
-const FIXED = ['Mã', 'Sàn', 'Tỉ trọng', 'Diện tích (m²)']
+/**
+ * The fixed columns of an Overview block, per work (RV6-37): the quantity
+ * heading is the block's work's own, and `Đơn vị` sits right after it. Each
+ * block is ONE work, so its unit is never in doubt.
+ */
+const fixedHeaders = (work: Work) => [
+  'Mã', 'Sàn', 'Tỉ trọng', quantityHeading(work.quantityLabel, work.unit), 'Đơn vị',
+]
+const FIXED_COUNT = 5
+
+/**
+ * The quantity a scope of several works can be called (RV6-36): the shared
+ * label and unit when they agree, `Số lượng` with no unit when they do not,
+ * and the m² defaults when no work is in scope at all.
+ */
+function quantityOf(works: Work[]): { label: string; unit: string | null } {
+  if (works.length === 0) return { label: DEFAULT_QUANTITY_LABEL, unit: DEFAULT_UNIT }
+  const unit = unitOfWorks(works)
+  if (unit === null) return { label: MIXED_QUANTITY_LABEL, unit: null }
+  return { label: labelOfWorks(works) ?? MIXED_QUANTITY_LABEL, unit }
+}
 
 /**
  * An ISO date-only string as a cell Excel can sort and filter.
@@ -192,8 +216,8 @@ export async function buildReportWorkbook(input: ReportInput): Promise<Blob> {
    * only thing on the sheet that explains how `% Progress` was arrived at.
    */
   for (const block of blocks) {
-    const firstStageCol = FIXED.length + 1
-    const progCol = FIXED.length + block.stageNames.length * 2 + 1
+    const firstStageCol = FIXED_COUNT + 1
+    const progCol = FIXED_COUNT + block.stageNames.length * 2 + 1
     widestBlock = Math.max(widestBlock, block.stageNames.length)
     const counted = block.work.counts
 
@@ -212,18 +236,18 @@ export async function buildReportWorkbook(input: ReportInput): Promise<Blob> {
     })
 
     // Fixed headers, then each stage name spanning its two columns.
-    const nameRow = overview.addRow([...FIXED, ...block.stageNames.flatMap((n) => [n, ''])])
+    const nameRow = overview.addRow([...fixedHeaders(block.work), ...block.stageNames.flatMap((n) => [n, ''])])
     nameRow.getCell(progCol).value = '% Progress'
     nameRow.getCell(progCol + 1).value = '% Remain'
 
     // The pair under each stage.
-    const unitRow = overview.addRow(['', '', '', '', ...block.stageNames.flatMap(() => ['m²', '% Total Deck'])])
+    const unitRow = overview.addRow(['', '', '', '', '', ...block.stageNames.flatMap(() => [block.work.unit, '% Total Deck'])])
     block.stageNames.forEach((_, i) => {
       const c = firstStageCol + i * 2
       overview.mergeCells(nameRow.number, c, nameRow.number, c + 1)
     })
     // The fixed columns and the two totals span the name and unit rows.
-    for (let c = 1; c <= FIXED.length; c += 1) overview.mergeCells(nameRow.number, c, unitRow.number, c)
+    for (let c = 1; c <= FIXED_COUNT; c += 1) overview.mergeCells(nameRow.number, c, unitRow.number, c)
     overview.mergeCells(nameRow.number, progCol, unitRow.number, progCol)
     overview.mergeCells(nameRow.number, progCol + 1, unitRow.number, progCol + 1)
     unitRow.height = 28
@@ -231,7 +255,7 @@ export async function buildReportWorkbook(input: ReportInput): Promise<Blob> {
 
     for (const row of [...block.rows, block.subtotal]) {
       const values: (string | number | null)[] = [
-        row.code, row.name, row.share, row.totalAreaM2,
+        row.code, row.name, row.share, row.totalAreaM2, block.work.unit,
       ]
       for (const name of block.stageNames) {
         // Absent, not zero. A stage this deck does not declare leaves the cell
@@ -291,12 +315,13 @@ export async function buildReportWorkbook(input: ReportInput): Promise<Blob> {
   overview.getColumn(2).width = 24
   overview.getColumn(3).width = 12
   overview.getColumn(4).width = 18
+  overview.getColumn(5).width = 9
   for (let i = 0; i < widestBlock; i += 1) {
-    overview.getColumn(FIXED.length + 1 + i * 2).width = 14
-    overview.getColumn(FIXED.length + 2 + i * 2).width = 13
+    overview.getColumn(FIXED_COUNT + 1 + i * 2).width = 14
+    overview.getColumn(FIXED_COUNT + 2 + i * 2).width = 13
   }
-  overview.getColumn(FIXED.length + widestBlock * 2 + 1).width = 12
-  overview.getColumn(FIXED.length + widestBlock * 2 + 2).width = 12
+  overview.getColumn(FIXED_COUNT + widestBlock * 2 + 1).width = 12
+  overview.getColumn(FIXED_COUNT + widestBlock * 2 + 2).width = 12
   // No frozen band: the header repeats per block, so there is no one row to
   // pin. Rules and tints as before.
   ruleSheet(overview, (n) => headerRows.has(n))
@@ -308,13 +333,36 @@ export async function buildReportWorkbook(input: ReportInput): Promise<Blob> {
   // One sheet per deck, between Overview and Plan: the row-level evidence
   // behind the figures above, in the order the decks are laid out on the
   // platform.
+  /**
+   * Event, plan and effort rows carry the work's NAME (denormalised on the
+   * event so a deleted work's history survives); its unit is looked up here.
+   * A name no work has any more reads m², as every work did before 0036.
+   */
+  const workByName = new Map(input.works.map((m) => [m.work.name, m.work]))
+  const unitOfWorkName = (name: string | null | undefined): string =>
+    (name ? workByName.get(name)?.unit : undefined) ?? DEFAULT_UNIT
+  const baysWorks = input.works.filter((m) => m.work.kind === 'bays').map((m) => m.work)
+
   const taken = new Set<string>(['Overview', 'Plan'])
   for (const entry of input.decks) {
     const sheet = wb.addWorksheet(sheetNameFor(entry.deck.code, taken))
 
+    // The deck's quantity is its works' (RV6-36): one unit when they agree,
+    // `Số lượng` with none when they do not, m² for a deck in no work yet.
+    const deckWorks = input.works
+      .filter((m) => m.work.kind === 'bays' && m.decks.some((d) => d.deck.id === entry.deck.id))
+      .map((m) => m.work)
+    const deckQuantity = quantityOf(deckWorks)
+    const deckHeading = deckQuantity.unit === null
+      ? deckQuantity.label
+      : quantityHeading(deckQuantity.label, deckQuantity.unit)
+
     sheet.addRow([entry.deck.name, `${entry.deck.code}`])
     sheet.getRow(1).font = { bold: true, size: 14 }
-    sheet.addRow(['Diện tích sàn (m²)', entry.deck.totalAreaM2])
+    sheet.addRow([
+      deckQuantity.unit === null ? `${deckQuantity.label} sàn` : `${deckQuantity.label} sàn (${deckQuantity.unit})`,
+      entry.deck.totalAreaM2,
+    ])
     sheet.getCell('B2').numFmt = AREA_FORMAT
     if (entry.areaSource === 'prorated') {
       // Spec §9 requires this disclosed. A prorated area was divided out of the
@@ -350,7 +398,7 @@ export async function buildReportWorkbook(input: ReportInput): Promise<Blob> {
       const deckStageNames = view.stages.map((st: { name: string }) => st.name)
       sheet.addRow(['', ...deckStageNames])
       sheet.lastRow!.font = { bold: true }
-      const areaRow = sheet.addRow(['m²', ...progress.stages.map((sp) => sp.cumulativeAreaM2)])
+      const areaRow = sheet.addRow([work.unit, ...progress.stages.map((sp) => sp.cumulativeAreaM2)])
       const ratioRow = sheet.addRow(['% Total Deck', ...progress.stages.map((sp) => sp.ratio)])
       for (let i = 2; i <= deckStageNames.length + 1; i += 1) {
         areaRow.getCell(i).numFmt = AREA_FORMAT
@@ -376,26 +424,29 @@ export async function buildReportWorkbook(input: ReportInput): Promise<Blob> {
     // who led, who painted, hours spent, hours lost and why. Hours are numbers
     // or genuinely empty cells -- never a zero standing in for "not recorded",
     // which is what every row before 0030 is.
+    // `Đơn vị` right after the quantity (RV6-37): a bay moves in several
+    // works now, and each row's unit is that of the work the change belongs to.
     const listHeader = sheet.addRow([
-      'Mã ô', 'Diện tích (m²)', 'Công việc', 'Công đoạn', 'Cập nhật lúc', 'Bởi',
+      'Mã ô', deckHeading, 'Đơn vị', 'Công việc', 'Công đoạn', 'Cập nhật lúc', 'Bởi',
       'Nhóm trưởng', 'Thợ chính', 'Giờ công (Mhr)', 'Giờ hao phí (Mhr)', 'Lý do hao phí',
       'Lệnh sản xuất hao phí', 'Ghi chú',
     ])
     listHeader.font = { bold: true }
-    const listWidths = [12, 15, 18, 18, 22, 20, 14, 14, 14, 14, 24, 20, 40]
+    const listWidths = [12, 15, 9, 18, 18, 22, 20, 14, 14, 14, 14, 24, 20, 40]
     listWidths.forEach((w, i) => { sheet.getColumn(i + 1).width = w })
     for (const ev of buildEventRows(entry)) {
       const row = sheet.addRow([
-        ev.code, ev.areaM2, ev.workName, ev.stageName, toVNExcelDate(ev.at) ?? '', ev.byName ?? '',
+        ev.code, ev.areaM2, unitOfWorkName(ev.workName), ev.workName, ev.stageName,
+        toVNExcelDate(ev.at) ?? '', ev.byName ?? '',
         ev.leadName, ev.painterName, ev.workHours ?? null, ev.wasteHours ?? null,
         ev.wasteReason, ev.wasteOrder, ev.note,
       ])
       row.getCell(2).numFmt = AREA_FORMAT
-      row.getCell(5).numFmt = DATETIME_FORMAT
-      row.getCell(9).numFmt = HOURS_FORMAT
+      row.getCell(6).numFmt = DATETIME_FORMAT
       row.getCell(10).numFmt = HOURS_FORMAT
-      row.getCell(11).alignment = { wrapText: true, vertical: 'top' }
-      row.getCell(13).alignment = { wrapText: true, vertical: 'top' }
+      row.getCell(11).numFmt = HOURS_FORMAT
+      row.getCell(12).alignment = { wrapText: true, vertical: 'top' }
+      row.getCell(14).alignment = { wrapText: true, vertical: 'top' }
     }
 
     // Frozen at the listing header, and filterable: four hundred updates is a
@@ -441,7 +492,7 @@ export async function buildReportWorkbook(input: ReportInput): Promise<Blob> {
     }
     sheet.autoFilter = {
       from: { row: listHeader.number, column: 1 },
-      to: { row: sheet.rowCount, column: 7 },
+      to: { row: sheet.rowCount, column: 8 },
     }
     listHeader.eachCell({ includeEmpty: true }, (c) => {
       c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: HEADER_FILL } }
@@ -450,9 +501,8 @@ export async function buildReportWorkbook(input: ReportInput): Promise<Blob> {
 
   // Mirrors the customer's `Kế hoạch tháo GG`: where, what, unit, quantity,
   // days, the window, and a column to write in -- plus the work the coat
-  // belongs to (RPT-28). `Đơn vị` is always m² here -- a constant column, kept
-  // because it is one of theirs and the sheet is meant to drop into the habit
-  // rather than replace it.
+  // belongs to (RPT-28). `Đơn vị` is one of their columns; since 0036 it is
+  // the coat's work's unit rather than a constant m² (RV6-37).
   const plan = wb.addWorksheet('Plan')
   plan.columns = [
     { header: 'Sàn', key: 'deck', width: 24 },
@@ -473,7 +523,7 @@ export async function buildReportWorkbook(input: ReportInput): Promise<Blob> {
       zone: row.zoneName,
       work: row.workName,
       stage: row.stageName,
-      unit: 'm²',
+      unit: unitOfWorkName(row.workName),
       area: row.areaM2,
       days: row.days ?? '',
       // Real dates, anchored at local noon -- see dateCell. Written as text
@@ -518,6 +568,16 @@ export async function buildReportWorkbook(input: ReportInput): Promise<Blob> {
     empty: a manager who cannot find the sheet reads "not built yet", not
     "nothing recorded".
   */
+  /*
+    The sheet spans every bays work of the project, so its headings carry the
+    unit only when the works share one (RV6-36): `Tổng tấn`, `Mhr/tấn`, `tấn
+    còn lại`. Works of different units read `Tổng số lượng`, `Mhr/đơn vị`,
+    `Số lượng còn lại`, and each stage row -- always one work's -- names its
+    own unit in the `Đơn vị` column beside its figure (RV6-37).
+  */
+  const sheetUnit = quantityOf(baysWorks).unit
+  const totalHeading = sheetUnit === null ? 'Tổng số lượng' : `Tổng ${sheetUnit}`
+  const perUnitHeading = `Mhr/${sheetUnit ?? 'đơn vị'}`
   const effort = wb.addWorksheet('Năng suất')
   effort.columns = [
     { header: 'Sàn', key: 'deck', width: 24 },
@@ -525,18 +585,19 @@ export async function buildReportWorkbook(input: ReportInput): Promise<Blob> {
     { header: 'Công đoạn', key: 'stage', width: 20 },
     { header: 'Số ngày có số liệu', key: 'days', width: 12 },
     { header: 'Tổng Mhr', key: 'hours', width: 12, style: { numFmt: HOURS_FORMAT } },
-    { header: 'Tổng m²', key: 'area', width: 12, style: { numFmt: AREA_FORMAT } },
-    { header: 'Hiệu suất TB (Mhr/m²)', key: 'ratio', width: 16, style: { numFmt: RATIO_FORMAT } },
+    { header: totalHeading, key: 'area', width: 12, style: { numFmt: AREA_FORMAT } },
+    { header: 'Đơn vị', key: 'unit', width: 9 },
+    { header: `Hiệu suất TB (${perUnitHeading})`, key: 'ratio', width: 16, style: { numFmt: RATIO_FORMAT } },
     { header: 'Mhr TB/ngày', key: 'perDay', width: 12, style: { numFmt: HOURS_FORMAT } },
     { header: 'Giờ hao phí (Mhr)', key: 'waste', width: 14, style: { numFmt: HOURS_FORMAT } },
     // Columns M-O of Linh's workbook: what is left, what it will cost and how
     // long it takes at the measured rate (Feedback Rv2, item 13).
-    { header: 'm² còn lại', key: 'remaining', width: 12, style: { numFmt: AREA_FORMAT } },
+    { header: sheetUnit === null ? 'Số lượng còn lại' : `${sheetUnit} còn lại`, key: 'remaining', width: 12, style: { numFmt: AREA_FORMAT } },
     { header: 'Mhr còn cần', key: 'needed', width: 13, style: { numFmt: HOURS_FORMAT } },
     { header: 'Số ngày cần', key: 'daysNeeded', width: 12 },
   ]
   const definition = effort.addRow({
-    deck: 'Hiệu suất TB là trung bình cộng của hiệu suất từng ngày (Mhr trong ngày / m² trong ngày), '
+    deck: `Hiệu suất TB là trung bình cộng của hiệu suất từng ngày (Mhr trong ngày / ${sheetUnit ?? 'số lượng'} trong ngày), `
       + 'theo cách tính trong bảng của Linh. Chỉ tính các lần cập nhật có ghi giờ công. '
       + 'Số ngày của sàn là ngày lớn nhất trong các công đoạn, không phải tổng: các lớp thi công song song.',
   })
@@ -549,6 +610,7 @@ export async function buildReportWorkbook(input: ReportInput): Promise<Blob> {
       days: row.days,
       hours: row.totalHours,
       area: row.totalAreaM2,
+      unit: unitOfWorkName(row.workName),
       ratio: row.avgMhrPerM2 ?? null,
       perDay: row.avgHoursPerDay ?? null,
       waste: row.wasteHours,
@@ -598,22 +660,30 @@ export async function buildReportWorkbook(input: ReportInput): Promise<Blob> {
     const title = effort.addRow(['Năng suất theo nhóm trưởng'])
     title.font = { bold: true, size: 12 }
     const header = effort.addRow([
-      'Nhóm trưởng', 'Lần cập nhật', 'Tổng Mhr', 'Tổng m²', 'Mhr/m²', 'Giờ hao phí',
+      'Nhóm trưởng', 'Lần cập nhật', 'Tổng Mhr', totalHeading, perUnitHeading, 'Giờ hao phí',
     ])
     leadHeaderRow = header.number
     for (const row of leads) {
       const added = effort.addRow([
-        row.leadName, row.updates, row.totalHours, row.totalAreaM2,
+        row.leadName, row.updates, row.totalHours,
+        // A crew's quantity is summed over every work it touched, so across
+        // works of different units it is no figure at all (RV6-36): blank, and
+        // the note under the block says why. Hours add up whatever the unit.
+        sheetUnit === null ? null : row.totalAreaM2,
         // Empty, not zero, when the crew's updates carried no hours -- the same
         // choice the stage rows make for `avgMhrPerM2`. A 0 there reads as work
         // done for free rather than as work whose hours were never recorded.
-        row.mhrPerM2 ?? null,
+        sheetUnit === null ? null : row.mhrPerM2 ?? null,
         row.wasteHours,
       ])
       added.getCell(3).numFmt = HOURS_FORMAT
       added.getCell(4).numFmt = AREA_FORMAT
       added.getCell(5).numFmt = RATIO_FORMAT
       added.getCell(6).numFmt = HOURS_FORMAT
+    }
+    if (sheetUnit === null) {
+      const note = effort.addRow([MIXED_UNIT_SUM_TOOLTIP])
+      note.getCell(1).font = GREY_FONT
     }
   }
   /*

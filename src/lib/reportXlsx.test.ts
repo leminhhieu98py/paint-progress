@@ -91,7 +91,7 @@ describe('buildReportWorkbook', () => {
     expect(weights).toEqual([0.4, 0.6])
 
     const names = ov.getRow(title + 2).values as string[]
-    expect(names.slice(1, 5)).toEqual(['Mã', 'Sàn', 'Tỉ trọng', 'Diện tích (m²)'])
+    expect(names.slice(1, 6)).toEqual(['Mã', 'Sàn', 'Tỉ trọng', 'Diện tích (m²)', 'Đơn vị'])
     expect(names).toContain('Blast + Coat 1')
     expect(names).toContain('Tháo giáo')
     expect(names).toContain('% Progress')
@@ -99,7 +99,7 @@ describe('buildReportWorkbook', () => {
 
     // Only the stage columns: the four fixed ones are merged down, so they
     // report their own value on the unit row as well.
-    const units = (ov.getRow(title + 3).values as string[]).slice(5, 9)
+    const units = (ov.getRow(title + 3).values as string[]).slice(6, 10)
     expect(units).toEqual(['m²', '% Total Deck', 'm²', '% Total Deck'])
   })
 
@@ -345,26 +345,27 @@ describe('per-deck sheets', () => {
       }],
     })
     const header = rowWhere(sheet, 1, 'Mã ô')
-    expect((sheet.getRow(header).values as string[]).slice(1, 14)).toEqual([
-      'Mã ô', 'Diện tích (m²)', 'Công việc', 'Công đoạn', 'Cập nhật lúc', 'Bởi',
+    expect((sheet.getRow(header).values as string[]).slice(1, 15)).toEqual([
+      'Mã ô', 'Diện tích (m²)', 'Đơn vị', 'Công việc', 'Công đoạn', 'Cập nhật lúc', 'Bởi',
       'Nhóm trưởng', 'Thợ chính', 'Giờ công (Mhr)', 'Giờ hao phí (Mhr)', 'Lý do hao phí',
       'Lệnh sản xuất hao phí', 'Ghi chú',
     ])
     const first = sheet.getRow(header + 1)
     expect(first.getCell(1).value).toBe('R1C1')
     expect(first.getCell(2).value).toBe(500)
-    expect(first.getCell(3).value).toBe('Sơn')
-    expect(first.getCell(4).value).toBe('Blast + Coat 1')
-    expect(first.getCell(5).value).toBeInstanceOf(Date)
-    expect(first.getCell(6).value).toBe('Nguyễn Văn A')
-    expect(first.getCell(13).value).toBe('Bắt đầu')
+    expect(first.getCell(3).value).toBe('m²')
+    expect(first.getCell(4).value).toBe('Sơn')
+    expect(first.getCell(5).value).toBe('Blast + Coat 1')
+    expect(first.getCell(6).value).toBeInstanceOf(Date)
+    expect(first.getCell(7).value).toBe('Nguyễn Văn A')
+    expect(first.getCell(14).value).toBe('Bắt đầu')
     const second = sheet.getRow(header + 2)
-    expect(second.getCell(4).value).toBe('Tháo giáo')
-    expect(String(second.getCell(13).value ?? '')).toBe('')
+    expect(second.getCell(5).value).toBe('Tháo giáo')
+    expect(String(second.getCell(14).value ?? '')).toBe('')
     expect(sheet.getRow(header + 3).getCell(1).value).toBeNull()
   })
 
-  it('filters over all seven columns and anchors the drawing clear of them', async () => {
+  it('filters over the first eight columns and anchors the drawing clear of them', async () => {
     const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
     const sheet = await sheetOf({
       decks: [{ ...DECK, events: [EVENT] }],
@@ -372,8 +373,8 @@ describe('per-deck sheets', () => {
     })
     // ExcelJS reads the filter back as a range string.
     const filter = sheet.autoFilter as unknown
-    if (typeof filter === 'string') expect(filter).toMatch(/^A\d+:G\d+$/)
-    else expect((filter as { to: { column: number } }).to.column).toBe(7)
+    if (typeof filter === 'string') expect(filter).toMatch(/^A\d+:H\d+$/)
+    else expect((filter as { to: { column: number } }).to.column).toBe(8)
     // Column G is data now; the picture starts at H (zero-based anchor 7).
     const [drawing] = sheet.getImages()
     expect(drawing.range.tl.nativeCol).toBe(7)
@@ -424,17 +425,17 @@ describe('effort on the report (Feedback Rv2, item 11)', () => {
     const sheet = wb.getWorksheet('CD')!
     const header = rowWhere(sheet, 1, 'Mã ô')
     const first = sheet.getRow(header + 1)
-    expect(first.getCell(7).value).toBe('Tổ 1')
-    expect(first.getCell(8).value).toBe('Nam')
-    expect(first.getCell(9).value).toBe(3.5)
-    expect(first.getCell(9).numFmt).toBe('0.0#')
-    expect(first.getCell(10).value).toBe(0.5)
-    expect(first.getCell(11).value).toBe('Chờ vật tư')
-    expect(first.getCell(12).value).toBe('LSX-1')
+    expect(first.getCell(8).value).toBe('Tổ 1')
+    expect(first.getCell(9).value).toBe('Nam')
+    expect(first.getCell(10).value).toBe(3.5)
+    expect(first.getCell(10).numFmt).toBe('0.0#')
+    expect(first.getCell(11).value).toBe(0.5)
+    expect(first.getCell(12).value).toBe('Chờ vật tư')
+    expect(first.getCell(13).value).toBe('LSX-1')
     const legacy = sheet.getRow(header + 2)
-    expect(String(legacy.getCell(7).value ?? '')).toBe('')
-    expect(legacy.getCell(9).value).toBeNull()
+    expect(String(legacy.getCell(8).value ?? '')).toBe('')
     expect(legacy.getCell(10).value).toBeNull()
+    expect(legacy.getCell(11).value).toBeNull()
   })
 
   it('adds a Năng suất sheet with one row per (deck, work, stage) and the workbook\'s definition', async () => {
@@ -443,8 +444,8 @@ describe('effort on the report (Feedback Rv2, item 11)', () => {
       decks: [{ ...DECK, events: [EFFORT_EVENT] }],
     }))
     const sheet = wb.getWorksheet('Năng suất')!
-    expect((sheet.getRow(1).values as string[]).slice(1, 13)).toEqual([
-      'Sàn', 'Công việc', 'Công đoạn', 'Số ngày có số liệu', 'Tổng Mhr', 'Tổng m²',
+    expect((sheet.getRow(1).values as string[]).slice(1, 14)).toEqual([
+      'Sàn', 'Công việc', 'Công đoạn', 'Số ngày có số liệu', 'Tổng Mhr', 'Tổng m²', 'Đơn vị',
       'Hiệu suất TB (Mhr/m²)', 'Mhr TB/ngày', 'Giờ hao phí (Mhr)',
       'm² còn lại', 'Mhr còn cần', 'Số ngày cần',
     ])
@@ -456,15 +457,16 @@ describe('effort on the report (Feedback Rv2, item 11)', () => {
     expect(row.getCell(4).value).toBe(1)
     expect(row.getCell(5).value).toBe(3.5)
     expect(row.getCell(6).value).toBe(500)
-    expect(row.getCell(7).value).toBeCloseTo(0.007, 6)
-    expect(row.getCell(7).numFmt).toBe('0.000')
-    expect(row.getCell(8).value).toBe(3.5)
-    expect(row.getCell(9).value).toBe(0.5)
+    expect(row.getCell(7).value).toBe('m²')
+    expect(row.getCell(8).value).toBeCloseTo(0.007, 6)
+    expect(row.getCell(8).numFmt).toBe('0.000')
+    expect(row.getCell(9).value).toBe(3.5)
+    expect(row.getCell(10).value).toBe(0.5)
     // 1.000 m² deck with one 500 m² bay at Blast + Coat 1: 500 m² left, at
     // 0,007 Mhr/m² that is 3,5 Mhr, and at 3,5 Mhr a day, one day.
-    expect(row.getCell(10).value).toBe(500)
-    expect(row.getCell(11).value).toBeCloseTo(3.5, 6)
-    expect(row.getCell(12).value).toBe(1)
+    expect(row.getCell(11).value).toBe(500)
+    expect(row.getCell(12).value).toBeCloseTo(3.5, 6)
+    expect(row.getCell(13).value).toBe(1)
     expect(sheet.views[0]).toMatchObject({ state: 'frozen', ySplit: 1 })
   })
 
@@ -609,8 +611,8 @@ describe('the crew productivity block on Năng suất (Feedback Rv5, item 6)', (
 
     // The stage table is what the sheet is for; the freeze still pins its header.
     expect(sheet.views[0]).toMatchObject({ state: 'frozen', ySplit: 1 })
-    expect((sheet.getRow(1).values as string[]).slice(1, 13)).toEqual([
-      'Sàn', 'Công việc', 'Công đoạn', 'Số ngày có số liệu', 'Tổng Mhr', 'Tổng m²',
+    expect((sheet.getRow(1).values as string[]).slice(1, 14)).toEqual([
+      'Sàn', 'Công việc', 'Công đoạn', 'Số ngày có số liệu', 'Tổng Mhr', 'Tổng m²', 'Đơn vị',
       'Hiệu suất TB (Mhr/m²)', 'Mhr TB/ngày', 'Giờ hao phí (Mhr)',
       'm² còn lại', 'Mhr còn cần', 'Số ngày cần',
     ])
@@ -636,5 +638,97 @@ describe('a single-deck export', () => {
   it('keeps the Overview when the scope is the project, or unstated', async () => {
     const wb = await readBack(await buildReportWorkbook({ ...BASE, scope: 'project' }))
     expect(wb.worksheets.map((w) => w.name)).toEqual(['Overview', 'CD', 'Plan', 'Năng suất'])
+  })
+})
+
+describe('the work\'s quantity and unit in the workbook (RV6-37)', () => {
+  const TONNES = { quantityLabel: 'Khối lượng', unit: 'tấn' }
+  /** Sơn measured in tonnes: the one work over the one deck. */
+  const SON_T: WorkModel = { ...SON, work: { ...SON.work, ...TONNES } }
+  const TWO_UNITS: ReportInput = {
+    ...BASE,
+    works: [{ ...SON, work: { ...SON.work, weight: 0.6 } }, { ...TG, work: { ...TG.work, ...TONNES } }],
+    decks: [{ ...DECK, events: [EVENT, { ...EVENT, id: 2, workName: 'Tháo giáo', toStageName: 'Tháo giáo lửng' }] }],
+  }
+
+  it('heads each Overview block with its work\'s quantity, and gives every deck row a unit', async () => {
+    const wb = await readBack(await buildReportWorkbook({ ...BASE, works: [SON_T] }))
+    const ov = wb.getWorksheet('Overview')!
+    const title = rowWhere(ov, 1, /^Sơn/)
+    const names = ov.getRow(title + 2).values as string[]
+    expect(names.slice(1, 6)).toEqual(['Mã', 'Sàn', 'Tỉ trọng', 'Khối lượng (tấn)', 'Đơn vị'])
+    expect((ov.getRow(title + 3).values as string[]).slice(6, 10)).toEqual(['tấn', '% Total Deck', 'tấn', '% Total Deck'])
+    expect(ov.getRow(title + 4).getCell(4).value).toBe(1000)
+    expect(ov.getRow(title + 4).getCell(4).numFmt).toBe('#,##0.00')
+    expect(ov.getRow(title + 4).getCell(5).value).toBe('tấn')
+  })
+
+  it('labels the deck sheet in the one work\'s quantity and stamps each change with its unit', async () => {
+    const wb = await readBack(await buildReportWorkbook({ ...BASE, works: [SON_T], decks: [{ ...DECK, events: [EVENT] }] }))
+    const sheet = wb.getWorksheet('CD')!
+    expect(sheet.getRow(2).getCell(1).value).toBe('Khối lượng sàn (tấn)')
+    expect(sheet.getRow(2).getCell(2).value).toBe(1000)
+    const spec = rowWhere(sheet, 1, 'Công việc')
+    expect(sheet.getRow(spec + 2).getCell(1).value).toBe('tấn')
+    const header = rowWhere(sheet, 1, 'Mã ô')
+    expect((sheet.getRow(header).values as string[]).slice(1, 4)).toEqual(['Mã ô', 'Khối lượng (tấn)', 'Đơn vị'])
+    expect(sheet.getRow(header + 1).getCell(2).value).toBe(500)
+    expect(sheet.getRow(header + 1).getCell(3).value).toBe('tấn')
+  })
+
+  it('reads Số lượng on a deck whose works disagree, each change in its own work\'s unit', async () => {
+    const wb = await readBack(await buildReportWorkbook(TWO_UNITS))
+    const sheet = wb.getWorksheet('CD')!
+    expect(sheet.getRow(2).getCell(1).value).toBe('Số lượng sàn')
+    const header = rowWhere(sheet, 1, 'Mã ô')
+    expect(sheet.getRow(header).getCell(2).value).toBe('Số lượng')
+    expect(sheet.getRow(header + 1).getCell(3).value).toBe('m²')
+    expect(sheet.getRow(header + 2).getCell(3).value).toBe('tấn')
+  })
+
+  it('writes each Plan row\'s unit as its work\'s, no longer a constant m²', async () => {
+    const wb = await readBack(await buildReportWorkbook({ ...BASE, works: [SON_T] }))
+    expect(wb.getWorksheet('Plan')!.getRow(2).getCell(5).value).toBe('tấn')
+  })
+
+  it('heads Năng suất in the shared unit and stamps each stage row with its work\'s', async () => {
+    const wb = await readBack(await buildReportWorkbook({
+      ...BASE, works: [SON_T],
+      decks: [{ ...DECK, events: [{ ...EVENT, effort: { ...EMPTY_EFFORT, leadName: 'Tổ 1', workHours: 3.5 } }] }],
+    }))
+    const sheet = wb.getWorksheet('Năng suất')!
+    expect((sheet.getRow(1).values as string[]).slice(6, 9)).toEqual(['Tổng tấn', 'Đơn vị', 'Hiệu suất TB (Mhr/tấn)'])
+    expect(sheet.getRow(1).getCell(11).value).toBe('tấn còn lại')
+    expect(String(sheet.getRow(2).getCell(1).value)).toMatch(/tấn trong ngày/)
+    expect(sheet.getRow(3).getCell(7).value).toBe('tấn')
+    const header = rowWhere(sheet, 1, 'Năng suất theo nhóm trưởng') + 1
+    expect((sheet.getRow(header).values as string[]).slice(4, 6)).toEqual(['Tổng tấn', 'Mhr/tấn'])
+    expect(sheet.getRow(header + 1).getCell(4).value).toBe(500)
+  })
+
+  it('refuses the crew sums across units: blank cells and a note row (RV6-36)', async () => {
+    const wb = await readBack(await buildReportWorkbook({
+      ...TWO_UNITS,
+      decks: [{ ...DECK, events: TWO_UNITS.decks[0].events.map((ev) => ({
+        ...ev, effort: { ...EMPTY_EFFORT, leadName: 'Tổ 1', workHours: 2 },
+      })) }],
+    }))
+    const sheet = wb.getWorksheet('Năng suất')!
+    expect((sheet.getRow(1).values as string[]).slice(6, 9)).toEqual(['Tổng số lượng', 'Đơn vị', 'Hiệu suất TB (Mhr/đơn vị)'])
+    expect(sheet.getRow(1).getCell(11).value).toBe('Số lượng còn lại')
+    // The stage rows are each one work's, so they keep their figures and name their unit.
+    expect(sheet.getRow(3).getCell(6).value).toBe(500)
+    expect(sheet.getRow(3).getCell(7).value).toBe('m²')
+    expect(sheet.getRow(4).getCell(7).value).toBe('tấn')
+    const header = rowWhere(sheet, 1, 'Năng suất theo nhóm trưởng') + 1
+    expect((sheet.getRow(header).values as string[]).slice(1, 7)).toEqual([
+      'Nhóm trưởng', 'Lần cập nhật', 'Tổng Mhr', 'Tổng số lượng', 'Mhr/đơn vị', 'Giờ hao phí',
+    ])
+    const crew = sheet.getRow(header + 1)
+    expect(crew.getCell(1).value).toBe('Tổ 1')
+    expect(crew.getCell(3).value).toBe(4)
+    expect(crew.getCell(4).value).toBeNull()
+    expect(crew.getCell(5).value).toBeNull()
+    expect(sheet.getRow(header + 2).getCell(1).value).toBe('Các sàn dùng đơn vị khác nhau, không cộng được')
   })
 })
