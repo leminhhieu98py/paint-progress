@@ -12,9 +12,11 @@ import type { DeckEvent, WorkModel } from '../../domain/types'
 import {
   clearStagePlanArea, listStagePlans, saveStagePlan, type StoredStagePlan,
 } from '../../lib/kpiApi'
+import { setDeckKpiColors } from '../../lib/decksApi'
 import { listProjectEvents, loadProjectModel } from '../../lib/progressApi'
 import { listProjectNames } from '../../lib/projectsApi'
 import { palette, shadowCard } from '../../theme'
+import { DeckKpiColorTable, type DeckKpiColorRow, type DeckKpiColors } from './DeckKpiColorTable'
 import { KpiDashboard, type KpiEntry } from './KpiDashboard'
 import { StagePlanTable, type StagePlanRow, type StagePlanWindow } from './StagePlanTable'
 
@@ -99,7 +101,8 @@ type Loaded =
   | {
       projectId: string
       models: WorkModel[]
-      decks: { id: string; name: string }[]
+      /** Every deck with its KPI colours (RV6-29): the chart's filter and the admin's colour table read the same list. */
+      decks: DeckKpiColorRow[]
       events: DeckEvent[]
       plans: StoredStagePlan[]
     }
@@ -118,7 +121,9 @@ function useKpiData(projectId: string | null) {
         setLoaded({
           projectId,
           models: model.models,
-          decks: model.decks.map((d) => ({ id: d.id, name: d.name })),
+          decks: model.decks.map((d) => ({
+            id: d.id, name: d.name, kpiPlanColor: d.kpiPlanColor, kpiActualColor: d.kpiActualColor,
+          })),
           events,
           plans,
         })
@@ -249,6 +254,26 @@ function Body({ projectId, variant }: { projectId: string | null; variant: 'admi
     [message, reload],
   )
 
+  /**
+   * RV6-28: written on change, no save step, then reloaded so the chart below
+   * paints the colour the admin just chose from the row that was actually
+   * stored -- the same read-back the plan writes above do.
+   */
+  const onColors = useCallback(
+    async (deckId: string, colors: DeckKpiColors) => {
+      setSaving(true)
+      try {
+        await setDeckKpiColors(deckId, colors)
+        reload()
+      } catch (e) {
+        message.error((e as Error).message)
+      } finally {
+        setSaving(false)
+      }
+    },
+    [message, reload],
+  )
+
   if (projectId === null) {
     return <Alert type="info" message="Chọn một dự án để xem KPI" />
   }
@@ -278,6 +303,10 @@ function Body({ projectId, variant }: { projectId: string | null; variant: 'admi
           onClearArea={onClearArea}
           saving={saving}
         />
+      )}
+      {/* RV6-28: the chart's colours per deck, admin-only like the plan table. */}
+      {variant === 'admin' && (
+        <DeckKpiColorTable decks={current.decks} onChange={onColors} saving={saving} />
       )}
       <KpiDashboard entries={entries} decks={current.decks} todayKey={todayKey} />
     </div>

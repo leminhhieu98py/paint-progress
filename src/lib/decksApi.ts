@@ -98,6 +98,25 @@ export async function updateDeckIdentity(
 }
 
 /**
+ * The KPI chart's Plan and Actual colours for one deck (RV6-28), both at once.
+ *
+ * Null is the system default (0035): "Mặc định" writes both back to null, and a
+ * payload that left a null out would keep the old colour standing. Written on
+ * every change with no save step, so a failure surfaces on the change itself.
+ * The app validates the hex before calling this (RV6-31); the columns' check
+ * constraints are the backstop. Admin-only by the route and by `decks_admin_all`.
+ */
+export async function setDeckKpiColors(
+  deckId: string, colors: { plan: string | null; actual: string | null },
+): Promise<void> {
+  const { error } = await supabase
+    .from('decks')
+    .update({ kpi_plan_color: colors.plan, kpi_actual_color: colors.actual })
+    .eq('id', deckId)
+  if (error) throw new Error(error.message)
+}
+
+/**
  * Trade `seq` between two decks -- how DecksScreen moves a row up or down
  * (RV6-05), since deck order everywhere else (rollup table, donut legend, GS
  * deck tabs, KPI plan table, xlsx) already follows `seq`.

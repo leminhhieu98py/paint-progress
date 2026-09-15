@@ -5,6 +5,7 @@ import {
 import type { KpiDay } from '../../domain/kpi'
 import { fieldError, palette } from '../../theme'
 import { formatAreaM2, formatHours, formatMhrPerM2, formatPercent } from '../../lib/format'
+import { KPI_COLOR_DEFAULTS } from './kpiColors'
 
 /**
  * The two charts of the productivity dashboard (Feedback Rv2, item 12), on
@@ -148,14 +149,14 @@ export function KpiComboChart({ data }: { data: KpiDay[] }) {
             yAxisId="m2"
             dataKey="planM2"
             name={KPI_PLAN_M2}
-            fill={palette.textQuaternary}
+            fill={KPI_COLOR_DEFAULTS.plan}
             isAnimationActive={false}
           />
           <Bar
             yAxisId="m2"
             dataKey="actualM2"
             name={KPI_ACTUAL_M2}
-            fill={palette.accent}
+            fill={KPI_COLOR_DEFAULTS.actual}
             isAnimationActive={false}
           />
           <Line

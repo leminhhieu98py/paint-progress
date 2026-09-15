@@ -93,6 +93,17 @@ describe('loadProjectModel', () => {
     expect(model.audit.w1.c1).toEqual({ updatedAt: '2026-08-20T10:00:00+00:00', updatedBy: 'u1' })
   })
 
+  it('selects the per-deck KPI colours so they reach the chart for every role (RV6-29)', async () => {
+    const b = mockProject(WORK_ROWS, [{ ...DECK_ROW, kpi_plan_color: '#123abc', kpi_actual_color: null }])
+
+    const model = await loadProjectModel('p1')
+
+    const selected = String((b.decks.select as ReturnType<typeof vi.fn>).mock.calls[0][0])
+    expect(selected).toContain('kpi_plan_color')
+    expect(selected).toContain('kpi_actual_color')
+    expect(model.decks[0]).toMatchObject({ kpiPlanColor: '#123abc', kpiActualColor: null })
+  })
+
   it('skips the state read for a project with no decks', async () => {
     const b = mockProject(WORK_ROWS, [], [])
     const model = await loadProjectModel('p1')

@@ -3,7 +3,7 @@ import type { Stage } from '../domain/types'
 import {
   createDeck, deleteDeck, duplicateDeck, getDrawingUrl, listCells, listDecks, listWorkStages,
   reprorateDeckCells, saveWorkStages, roundStageWeight, STAGE_WEIGHT_EPSILON, stagesRemovedBy,
-  swapDeckSeq, syncCells, updateDeckArea, uploadDrawing, zoneImpactOf,
+  setDeckKpiColors, swapDeckSeq, syncCells, updateDeckArea, uploadDrawing, zoneImpactOf,
 } from './decksApi'
 
 const from = vi.hoisted(() => vi.fn())
@@ -1187,6 +1187,37 @@ describe('swapDeckSeq (RV6-06)', () => {
       .mockImplementationOnce(() => builder({ error: { message: 'permission denied' } }))
 
     await expect(swapDeckSeq({ id: 'd1', seq: 1 }, { id: 'd2', seq: 2 }))
+      .rejects.toThrow('permission denied')
+  })
+})
+
+describe('setDeckKpiColors (RV6-28)', () => {
+  it('writes both colours to the deck row in one update', async () => {
+    const b = builder({ data: null })
+    from.mockImplementationOnce(() => b)
+
+    await setDeckKpiColors('d1', { plan: '#123abc', actual: '#0a8175' })
+
+    expect(from).toHaveBeenCalledWith('decks')
+    expect(b.update).toHaveBeenCalledWith({ kpi_plan_color: '#123abc', kpi_actual_color: '#0a8175' })
+    expect(b.eq).toHaveBeenCalledWith('id', 'd1')
+  })
+
+  it('writes null for a colour returned to the default, rather than leaving it out', async () => {
+    // "Mặc định" clears both; a payload that omitted a null key would leave
+    // the old colour standing.
+    const b = builder({ data: null })
+    from.mockImplementationOnce(() => b)
+
+    await setDeckKpiColors('d1', { plan: null, actual: null })
+
+    expect(b.update).toHaveBeenCalledWith({ kpi_plan_color: null, kpi_actual_color: null })
+  })
+
+  it('throws on a refused write', async () => {
+    from.mockImplementationOnce(() => builder({ error: { message: 'permission denied' } }))
+
+    await expect(setDeckKpiColors('d1', { plan: '#123abc', actual: null }))
       .rejects.toThrow('permission denied')
   })
 })

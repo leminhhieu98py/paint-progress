@@ -65,6 +65,9 @@ export interface DeckRowIn {
   image_w?: number | null
   image_h?: number | null
   area_source?: string | null
+  /** 0035. Absent on a row selected without them; null is the system default. */
+  kpi_plan_color?: string | null
+  kpi_actual_color?: string | null
   cells?: CellRowIn[]
   deck_stages?: StageRowIn[]
 }
@@ -91,6 +94,13 @@ export interface DeckMeta {
   imageH: number | null
   areaSource: 'guides' | 'prorated'
   cellCount: number
+  /**
+   * The KPI chart's colours when its Sàn filter names this deck (RV6-29).
+   * Null: the system default (RV6-30). Carried here rather than on `Deck`
+   * because they colour a chart about the deck, not the deck's geometry.
+   */
+  kpiPlanColor: string | null
+  kpiActualColor: string | null
 }
 
 export interface StateAudit {
@@ -142,6 +152,8 @@ export function mapDeckMeta(row: DeckRowIn): DeckMeta {
     imageH: row.image_h ?? null,
     areaSource: (row.area_source ?? 'guides') as 'guides' | 'prorated',
     cellCount: (row.cells ?? []).length,
+    kpiPlanColor: row.kpi_plan_color ?? null,
+    kpiActualColor: row.kpi_actual_color ?? null,
   }
 }
 

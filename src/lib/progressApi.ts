@@ -42,6 +42,7 @@ export interface DeckProgressEntry {
 
 const DECK_SELECT =
   'id, seq, code, name, total_area_m2, area_source, image_path, image_w, image_h,'
+  + ' kpi_plan_color, kpi_actual_color,'
   + ' cells(id, code, x, y, w, h, area_m2),'
   + ' deck_stages(id, work_id, deck_id, seq, name, color, weight)'
 const WORK_SELECT = 'id, project_id, seq, name, kind, weight, counts, manual_progress'

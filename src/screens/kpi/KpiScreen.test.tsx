@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { EMPTY_EFFORT, type Cell, type DeckEvent, type Stage, type WorkModel } from '../../domain/types'
 import type { StoredStagePlan } from '../../lib/kpiApi'
 import { KpiScreen } from './KpiScreen'
+import type { DeckKpiColorRow, DeckKpiColors } from './DeckKpiColorTable'
 import type { KpiEntry } from './KpiDashboard'
 import type { StagePlanRow } from './StagePlanTable'
 
@@ -14,6 +15,7 @@ const listProjectNames = vi.hoisted(() => vi.fn())
 const listStagePlans = vi.hoisted(() => vi.fn())
 const saveStagePlan = vi.hoisted(() => vi.fn())
 const clearStagePlanArea = vi.hoisted(() => vi.fn())
+const setDeckKpiColors = vi.hoisted(() => vi.fn())
 const navigate = vi.hoisted(() => vi.fn())
 
 vi.mock('../../lib/progressApi', () => ({
@@ -28,6 +30,9 @@ vi.mock('../../lib/kpiApi', () => ({
   saveStagePlan: (row: unknown) => saveStagePlan(row),
   clearStagePlanArea: (id: string) => clearStagePlanArea(id),
 }))
+vi.mock('../../lib/decksApi', () => ({
+  setDeckKpiColors: (id: string, colors: unknown) => setDeckKpiColors(id, colors),
+}))
 vi.mock('react-router-dom', async () => {
   const actual = await vi.importActual<typeof import('react-router-dom')>('react-router-dom')
   return { ...actual, useNavigate: () => navigate }
@@ -38,12 +43,28 @@ vi.mock('react-router-dom', async () => {
 // table, and what the computed area comes out as -- so the stand-ins print
 // exactly that and nothing else.
 vi.mock('./KpiDashboard', () => ({
-  KpiDashboard: ({ entries, decks }: { entries: KpiEntry[]; decks: { name: string }[] }) => (
+  KpiDashboard: ({ entries, decks }: { entries: KpiEntry[]; decks: DeckKpiColorRow[] }) => (
     <div data-testid="kpi-dashboard">
-      {`CHART ${decks.map((d) => d.name).join(',')} | `}
+      {`CHART ${decks.map((d) => `${d.name}=${d.kpiPlanColor ?? '-'}/${d.kpiActualColor ?? '-'}`).join(',')} | `}
       {entries
         .map((e) => `${e.deckName}/${e.plan.stageName}@${e.plan.startDate} tt=${e.computedAreaM2} th=${e.actual.length}`)
         .join(' ; ')}
+    </div>
+  ),
+}))
+vi.mock('./DeckKpiColorTable', () => ({
+  DeckKpiColorTable: ({
+    decks,
+    onChange,
+  }: {
+    decks: DeckKpiColorRow[]
+    onChange: (deckId: string, colors: DeckKpiColors) => void
+  }) => (
+    <div data-testid="deck-color-table">
+      {`MÀU ${decks.map((d) => `${d.name}=${d.kpiPlanColor ?? '-'}/${d.kpiActualColor ?? '-'}`).join(' ; ')}`}
+      <button type="button" onClick={() => onChange(decks[0].id, { plan: '#123abc', actual: null })}>
+        đổi màu thử
+      </button>
     </div>
   ),
 }))
@@ -101,7 +122,11 @@ const MODELS: WorkModel[] = [
   },
 ]
 
-const MODEL = { models: MODELS, decks: [{ id: 'd1', name: 'Sàn A' }], audit: {} }
+const MODEL = {
+  models: MODELS,
+  decks: [{ id: 'd1', name: 'Sàn A', kpiPlanColor: '#aaaaaa', kpiActualColor: null }],
+  audit: {},
+}
 
 const ev = (over: Partial<Omit<DeckEvent, 'effort'>> = {}): DeckEvent => ({
   id: 1, deckName: 'Sàn A', cellCode: 'R1C1', cellAreaM2: 250, workName: 'Sơn',
@@ -130,12 +155,14 @@ beforeEach(() => {
   listStagePlans.mockReset()
   saveStagePlan.mockReset()
   clearStagePlanArea.mockReset()
+  setDeckKpiColors.mockReset()
   navigate.mockReset()
   loadProjectModel.mockResolvedValue(MODEL)
   listProjectEvents.mockResolvedValue(EVENTS)
   listStagePlans.mockResolvedValue(PLANS)
   saveStagePlan.mockResolvedValue(undefined)
   clearStagePlanArea.mockResolvedValue(undefined)
+  setDeckKpiColors.mockResolvedValue(undefined)
   listProjectNames.mockResolvedValue([
     { id: 'p1', name: 'Giàn A', code: 'GA' }, { id: 'p2', name: 'Giàn B', code: 'GB' },
   ])
@@ -252,6 +279,40 @@ describe('KpiScreen (admin)', () => {
     expect(screen.getByTestId('plan-table')).toBeInTheDocument()
   })
 
+  // ---------------------------------------------------------------------
+  // RV6-28 -- the per-deck colour table, between the plan table and the chart
+  // ---------------------------------------------------------------------
+
+  it('hands the colour table every deck with its stored colours, between the plan table and the chart', async () => {
+    renderAdmin()
+    const colors = await screen.findByTestId('deck-color-table')
+    expect(colors.textContent).toContain('MÀU Sàn A=#aaaaaa/-')
+    const table = screen.getByTestId('plan-table')
+    const chart = screen.getByTestId('kpi-dashboard')
+    expect(table.compareDocumentPosition(colors) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(colors.compareDocumentPosition(chart) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('writes a colour change and reloads so the chart reflects it', async () => {
+    renderAdmin()
+    await screen.findByTestId('deck-color-table')
+    await userEvent.click(screen.getByRole('button', { name: 'đổi màu thử' }))
+
+    await waitFor(() => expect(setDeckKpiColors).toHaveBeenCalledWith('d1', { plan: '#123abc', actual: null }))
+    await waitFor(() => expect(loadProjectModel).toHaveBeenCalledTimes(2))
+  })
+
+  it('reports a failed colour write without losing the screen', async () => {
+    setDeckKpiColors.mockRejectedValueOnce(new Error('không có quyền sửa màu'))
+    renderAdmin()
+    await screen.findByTestId('deck-color-table')
+    await userEvent.click(screen.getByRole('button', { name: 'đổi màu thử' }))
+
+    expect(await screen.findByText('không có quyền sửa màu')).toBeInTheDocument()
+    expect(screen.getByTestId('deck-color-table')).toBeInTheDocument()
+    expect(loadProjectModel).toHaveBeenCalledTimes(1)
+  })
+
   it('reports a failed read and retries on request', async () => {
     listStagePlans.mockRejectedValueOnce(new Error('mất kết nối'))
     renderAdmin()
@@ -267,6 +328,15 @@ describe('KpiScreen (gs)', () => {
     expect(await screen.findByTestId('kpi-dashboard')).toBeInTheDocument()
     // No entry table for the field, in either role that reaches this route.
     expect(screen.queryByTestId('plan-table')).toBeNull()
+    // And no colour table either (RV6-28: admin only); the colours still reach
+    // the chart through `decks`.
+    expect(screen.queryByTestId('deck-color-table')).toBeNull()
+  })
+
+  it('still hands the chart the deck colours, so the field sees the admin\'s choice (RV6-29)', async () => {
+    renderField()
+    const chart = await screen.findByTestId('kpi-dashboard')
+    expect(chart.textContent).toContain('CHART Sàn A=#aaaaaa/-')
   })
 
   it('reads the project from the path and offers the way back to the drawing', async () => {
