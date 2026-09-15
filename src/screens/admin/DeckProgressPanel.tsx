@@ -1219,6 +1219,20 @@ export function DeckProgressPanel({
           )}
         </div>
 
+        {/*
+          Comparing two layers, each one's controls sit above its own drawing
+          (RV6-17): "tách bộ lọc 2 bên trái phải nằm trên layout". One shared
+          row above two drawings made the admin read across two selects to
+          work out which drawing a change would land on; here the select is
+          over the picture it changes. On a single layer the pair stays in
+          the shared row, so nothing moves for the view that had no ambiguity.
+        */}
+        {splitView && (
+          <div style={{ padding: '0 14px 13px' }}>
+            {renderLayerControls(side === 'A' ? 'a' : 'b')}
+          </div>
+        )}
+
         <div
           style={{
             position: 'relative',
@@ -1546,8 +1560,13 @@ export function DeckProgressPanel({
                     {`Công việc: ${activeWork.work.name}`}
                   </span>
                 )}
-                {renderLayerControls('a')}
-                {splitView && renderLayerControls('b')}
+                {/*
+                  On a single layer the pair lives here, in the row it always
+                  did. Comparing two, each layer's pair moves into its own pane
+                  above its drawing (RV6-17), and this row keeps only what is
+                  common to both.
+                */}
+                {!splitView && renderLayerControls('a')}
                 {/*
                   Always on screen in Sửa, disabled rather than hidden. Hiding
                   it until bays are picked takes away the only thing on the

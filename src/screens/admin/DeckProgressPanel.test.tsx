@@ -1377,3 +1377,42 @@ describe('DeckProgressPanel — comparing two dates (RV6-14..16)', () => {
     expect(screen.getByTestId('cell-R1C2')).toHaveAttribute('data-color', '#fadb14')
   })
 })
+
+/**
+ * RV6-17 -- "tách bộ lọc 2 bên trái phải nằm trên layout".
+ *
+ * Two layers with one shared row of controls above them meant reading across
+ * two selects to work out which drawing a change would land on. In the split
+ * view each layer's stage select and date picker now sit in that layer's own
+ * pane, above its drawing; on a single layer the pair stays where it was.
+ */
+describe('DeckProgressPanel — each layer\'s controls above its own drawing (RV6-17)', () => {
+  it('keeps the single layer\'s controls in the row above the drawing', async () => {
+    renderPanel()
+    const lens = await screen.findByTestId('lens-A')
+    expect(lens).not.toContainElement(document.getElementById('lens-a-stage'))
+    expect(lens).not.toContainElement(screen.getByTestId('lens-a-date'))
+    // ...and they are still on the panel, reachable by their labels.
+    expect(screen.getByLabelText('Lớp sơn đang xem')).toBeInTheDocument()
+  })
+
+  it('puts each layer\'s stage select and date picker in its own pane when comparing', async () => {
+    renderPanel()
+    await screen.findByTestId('lens-A')
+    await userEvent.click(screen.getByText('So sánh hai lớp'))
+    const lensB = await screen.findByTestId('lens-B')
+    const lensA = screen.getByTestId('lens-A')
+
+    expect(lensA).toContainElement(document.getElementById('lens-a-stage'))
+    expect(lensA).toContainElement(screen.getByTestId('lens-a-date'))
+    expect(lensB).toContainElement(document.getElementById('lens-b-stage'))
+    expect(lensB).toContainElement(screen.getByTestId('lens-b-date'))
+
+    // The controls still work from their new place: the right layer moves
+    // to another coat without touching the left one.
+    await userEvent.click(screen.getByLabelText('Lớp bên phải'))
+    await userEvent.click(await screen.findByTitle('Coat 2'))
+    expect(within(lensB).getByText('Tiến độ · Coat 2')).toBeInTheDocument()
+    expect(within(lensA).getByText('Tiến độ · Blast + Coat 1')).toBeInTheDocument()
+  })
+})
