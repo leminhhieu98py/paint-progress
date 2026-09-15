@@ -228,24 +228,33 @@ export function DecksScreen() {
   const effectiveTotal = summaries.reduce((sum, d) => sum + d.effectiveWeight, 0)
 
   /*
-    Each slice is a weight TIMES a progress -- what it actually contributes to
-    the project number -- not a progress alone: a deck's effective weight times
-    its tổng hợp, then a counted manual work's weight times its figure. The
-    slices therefore sum to exactly P, and the ring's empty part is the work
-    left. A ring of raw percentages would sum to something meaningless and
-    read as though the project were further along.
+    Each slice's ARC is a weight TIMES a progress -- what it actually
+    contributes to the project number -- not a progress alone: a deck's
+    effective weight times its tổng hợp, then a counted manual work's weight
+    times its figure. The slices therefore sum to exactly P, and the ring's
+    empty part is the work left. A ring of raw percentages would sum to
+    something meaningless and read as though the project were further along.
+
+    The LEGEND number beside a slice is different (RV6-02): `display` carries
+    the deck's (or work's) own progress -- the same figure the rollup table's
+    `Tiến độ` column reads for it -- so a person comparing the legend to the
+    table sees one number, not the arc's contribution. `display` is optional
+    on `DonutSlice`; the legend prints `display ?? value`.
   */
   const slices: DonutSlice[] = [
     ...modelDecks.flatMap((deck, i) => (carriesWeight(i) ? [{
-      label: deck.name,
+      label: deck.code, // RV6-01: a deck slice is labelled by code, not name.
       value: (summaries[i]?.effectiveWeight ?? 0) * (summaries[i]?.progress ?? 0),
+      display: summaries[i]?.progress ?? 0,
       color: DECK_SHADES[i % DECK_SHADES.length],
     }] : [])),
     ...rollup.works
       .filter((w) => w.work.kind === 'manual' && w.work.counts)
       .map((w, i) => ({
+        // A work has no code, so a manual-work slice keeps its name.
         label: w.work.name,
         value: w.work.weight * w.progress,
+        display: w.progress,
         color: DECK_SHADES[(modelDecks.length + i) % DECK_SHADES.length],
       })),
   ]
@@ -495,7 +504,7 @@ export function DecksScreen() {
               description="Rollup và báo cáo đều tính từ các sàn, nên cả hai chờ sàn đầu tiên."
             />
           ) : (
-            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(300px, 340px)' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(340px, 400px)' }}>
               {/*
                 The table and the ring get separate ids. Every deck name appears
                 in both, so one id over the pair makes a scoped query ambiguous
@@ -659,7 +668,7 @@ export function DecksScreen() {
                           {sl.label}
                         </span>
                         <span style={{ marginLeft: 'auto', fontSize: 12, fontWeight: 600, flex: 'none' }}>
-                          {formatPercent(sl.value)}
+                          {formatPercent(sl.display ?? sl.value)}
                         </span>
                       </div>
                     ))}
@@ -686,10 +695,6 @@ export function DecksScreen() {
                       </span>
                     </div>
                   </div>
-                </div>
-                <div style={{ marginTop: 14, fontSize: 11, lineHeight: 1.5, color: palette.textTertiary }}>
-                  Mỗi phần là trọng số × tiến độ: sàn theo trọng số hiệu dụng, công việc nhập
-                  tay theo trọng số của nó — cộng lại đúng bằng {formatPercent(rollup.progress)}.
                 </div>
               </div>
             </div>

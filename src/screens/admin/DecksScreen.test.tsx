@@ -288,8 +288,10 @@ describe('DecksScreen — the project-wide half of progress', () => {
     renderScreen()
 
     const donut = await screen.findByTestId('rollup-donut')
-    await waitFor(() => expect(within(donut).getByText('Cellar Deck')).toBeInTheDocument())
+    // RV6-01: the legend labels a deck slice by its code, not its name.
+    await waitFor(() => expect(within(donut).getByText('CD')).toBeInTheDocument())
     expect(within(donut).queryByText('Test data')).toBeNull()
+    expect(within(donut).queryByText('TD')).toBeNull()
     // A counted manual work is not a deck: it carries real weight in P and
     // keeps its slice.
     expect(within(donut).getByText('Chứng từ')).toBeInTheDocument()
@@ -350,9 +352,46 @@ describe('DecksScreen — the project-wide half of progress', () => {
 
     const donut = await screen.findByTestId('rollup-donut')
     expect(within(donut).getByText('Chứng từ')).toBeInTheDocument()
-    expect(within(donut).getByText('10,00%')).toBeInTheDocument()    // .2 × 50%
-    expect(within(donut).getByText('21,25%')).toBeInTheDocument()    // CD: .425 × 50%
+    // RV6-02: the legend shows each slice's own progress (Chứng từ's is
+    // 50,00%, same as CD's), not the weight × progress the arc is sized by
+    // -- see the dedicated RV6-01/02 tests below for the arc math itself.
+    expect(within(donut).getAllByText('50,00%').length).toBeGreaterThan(0)
     expect(within(donut).getAllByText('31,25%').length).toBeGreaterThan(0)
+  })
+
+  it('labels deck slices by code and shows each one\'s own progress in the legend, ' +
+    'while the arc keeps weight × progress (RV6-01, RV6-02)', async () => {
+    renderScreen()
+
+    const rollup = await screen.findByTestId('project-rollup')
+    await waitFor(() => expect(within(rollup).getByText('Cellar Deck')).toBeInTheDocument())
+    const donut = await screen.findByTestId('rollup-donut')
+
+    // RV6-01: labelled by code, not name -- a work has no code, so it keeps
+    // its name.
+    expect(within(donut).getByText('CD')).toBeInTheDocument()
+    expect(within(donut).getByText('WD')).toBeInTheDocument()
+    expect(within(donut).queryByText('Cellar Deck')).toBeNull()
+    expect(within(donut).queryByText('Weather Deck')).toBeNull()
+
+    // RV6-02: the legend number beside CD is its own progress, 50,00% -- the
+    // same figure the rollup table's Tiến độ column reads for CD, not the
+    // 21,25% contribution (.425 effective weight × 50%) the arc is sized by.
+    expect(within(rollup).getByText('50,00%')).toBeInTheDocument()
+    expect(within(donut).queryByText('21,25%')).toBeNull()
+
+    // The arc itself is untouched: the ring's conic-gradient still runs CD's
+    // solid band up to 20.750% (21,25% minus the hairline gap), i.e. weight
+    // × progress, not the 50% shown in the legend.
+    const ring = within(donut).getByTestId('donut-ring')
+    expect(ring.style.background).toContain('20.750%')
+  })
+
+  it('removes the trọng số × tiến độ caption under the legend (RV6-03)', async () => {
+    renderScreen()
+
+    await screen.findByTestId('rollup-donut')
+    expect(screen.queryByText(/Mỗi phần là trọng số/)).toBeNull()
   })
 
   it('exports every deck of the project, with its own stages, plan and pictures', async () => {

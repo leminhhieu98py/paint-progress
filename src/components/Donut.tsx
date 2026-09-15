@@ -3,8 +3,16 @@ import { palette } from '../theme'
 
 export interface DonutSlice {
   label: string
-  /** Fraction of the WHOLE circle, not of the other slices. */
+  /** Fraction of the WHOLE circle, not of the other slices. Sizes the arc. */
   value: number
+  /**
+   * What the legend prints instead of `value`, when the two differ (RV6-02):
+   * a deck's arc is its weight × progress (its contribution to the whole),
+   * but its legend figure is meant to read the same as the rollup table's
+   * own `Tiến độ` column, i.e. the deck's progress alone. Optional so a
+   * caller with nothing to distinguish just prints `value`, as before.
+   */
+  display?: number
   color: string
 }
 

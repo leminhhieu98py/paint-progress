@@ -55,4 +55,14 @@ describe('Donut', () => {
     )
     expect(screen.getByText('44,38%')).toBeInTheDocument()
   })
+
+  it('keeps the arc keyed to value when a slice also carries a display number (RV6-02)', () => {
+    // `display` is legend-only (DecksScreen prints `display ?? value`); the
+    // ring itself must still size the arc off `value` alone.
+    const stops = conicStops(
+      [{ label: 'a', value: 0.5, display: 0.9, color: '#aa0000' }],
+      '#eeeeee',
+    )
+    expect(stops).toBe('#aa0000 0.000% 49.500%,#ffffff 49.500% 50.000%,#eeeeee 50.000% 100%')
+  })
 })
