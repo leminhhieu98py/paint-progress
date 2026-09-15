@@ -172,6 +172,25 @@ interface Lens {
   reachedAreaM2: number
 }
 
+/**
+ * A zone's name without the coat `createZone` suffixed onto it (RV6-11).
+ *
+ * Zones are stored as `${base} — ${coat}` so one plan drawn across five coats
+ * is five readable rows rather than five rows called "Khu A". The rename box
+ * therefore holds the base and the suffix is re-applied on save: an admin
+ * editing the stored name by hand would otherwise produce, one rename at a
+ * time, "Khu A — Topcoat — Topcoat".
+ *
+ * Matched on the exact suffix rather than on the last separator: a zone
+ * legitimately named "Khu A — B" on a coat called something else keeps its
+ * name whole. A legacy zone carrying no suffix at all is returned unchanged
+ * and gains one on its first rename, which is intended.
+ */
+function baseZoneName(name: string, stageName: string): string {
+  const suffix = ` — ${stageName}`
+  return stageName !== '' && name.endsWith(suffix) ? name.slice(0, -suffix.length) : name
+}
+
 const EMPTY_LENS: Lens = {
   view: null, title: '', colors: {}, opacities: {}, outlines: {},
   labels: [], zones: [], zoneColors: {}, chips: [], reachedAreaM2: 0,
@@ -264,6 +283,16 @@ export function DeckProgressPanel({
   const [zoom, setZoom] = useState(1)
   /** The zone whose date popover is open. */
   const [datesFor, setDatesFor] = useState<Zone | null>(null)
+  /**
+   * What is typed in that dialog's rename box, and which zone it belongs to.
+   *
+   * Kept together rather than seeded from an effect: `refreshZones` hands the
+   * dialog a fresh copy of the zone after every write, so an effect would have
+   * to decide whether each new copy should overwrite what the admin is typing.
+   * Keyed on the id, an unrecognised zone simply falls back to its stored name
+   * -- which is what a revert, a re-open and a landed rename all want.
+   */
+  const [nameDraft, setNameDraft] = useState<{ zoneId: string; value: string } | null>(null)
   /** The zone whose deletion is being confirmed. */
   const [removingZone, setRemovingZone] = useState<Zone | null>(null)
   const [windows, setWindows] = useState<Record<string, StageWindow>>({})
@@ -816,6 +845,48 @@ export function DeckProgressPanel({
       })
       await refreshZones()
     } catch (e) {
+      setError((e as Error).message)
+    }
+  }
+
+  /** The coat a zone plans, by name, or '' while the stage list is loading. */
+  const zoneStageName = (zone: Zone) =>
+    entry?.stages.find((st) => st.id === zone.stageId)?.name ?? ''
+
+  /** The rename box's content for the open zone: what is being typed, or the
+   *  stored name with its coat suffix stripped off. */
+  const zoneNameValue = (zone: Zone) => (
+    nameDraft?.zoneId === zone.id ? nameDraft.value : baseZoneName(zone.name, zoneStageName(zone))
+  )
+
+  /**
+   * A zone renamed from its own dialog (RV6-11, docx item 4).
+   *
+   * Committed on blur or Enter rather than behind a Save, like the dates and
+   * the colour beside it -- there is nothing here to validate across fields
+   * that would need a commit step. Empty or unchanged reverts instead of
+   * writing: an empty name is not a statement, and a no-op write would still
+   * move the row under anyone else looking at this plan.
+   *
+   * The coat suffix is re-applied here, so the modal title, the zone table,
+   * the label boxes on the drawing, the foreman's screen and the XLSX -- all
+   * of which read `zones.name` -- follow without further change.
+   */
+  const commitZoneName = async (zone: Zone) => {
+    const stage = zoneStageName(zone)
+    const base = baseZoneName(zone.name, stage)
+    const next = zoneNameValue(zone).trim()
+    if (next === '' || next === base) {
+      setNameDraft(null)
+      return
+    }
+    try {
+      await updateZone(zone.id, { name: stage === '' ? next : `${next} — ${stage}` })
+      setNameDraft(null)
+      await refreshZones()
+    } catch (e) {
+      // The draft is left standing, so the name that failed is still on screen
+      // to try again with rather than silently reverting to the stored one.
       setError((e as Error).message)
     }
   }
@@ -1730,6 +1801,26 @@ export function DeckProgressPanel({
             <Typography.Text type="secondary" style={{ fontSize: 12 }}>
               {`${stageName(datesFor.stageId)} · ${datesFor.cellIds.length} ô. Để trống nghĩa là chưa lên kế hoạch.`}
             </Typography.Text>
+            {/*
+              The name, above the dates (RV6-11). Prefilled with the base, not
+              the stored string: the coat suffix is `createZone`'s doing and is
+              re-applied on save, so it is never something to retype.
+            */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+              <label
+                htmlFor="zone-name"
+                style={{ fontSize: 12, fontWeight: 600, color: palette.textSecondary }}
+              >
+                Tên zone
+              </label>
+              <Input
+                id="zone-name"
+                value={zoneNameValue(datesFor)}
+                onChange={(e) => setNameDraft({ zoneId: datesFor.id, value: e.target.value })}
+                onBlur={() => void commitZoneName(datesFor)}
+                onPressEnter={() => void commitZoneName(datesFor)}
+              />
+            </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
               <span style={{ fontSize: 12, fontWeight: 600, color: palette.textSecondary }}>Thời gian</span>
               {/*

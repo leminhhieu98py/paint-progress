@@ -1134,3 +1134,74 @@ describe('DeckProgressPanel — hiding the plan (RV6-12)', () => {
   })
 })
 
+
+/**
+ * RV6-11 -- renaming a zone (docx item 4).
+ *
+ * The name is stored with its coat suffix, so the box holds the base and the
+ * suffix is re-applied on save: an admin retyping "Khu A — Tháo giáo" by hand
+ * would eventually produce "Khu A — Tháo giáo — Tháo giáo".
+ */
+describe('DeckProgressPanel — renaming a zone (RV6-11)', () => {
+  beforeEach(() => {
+    listDeckZones.mockResolvedValue([ZONE])
+  })
+
+  const openDates = async () => {
+    renderPanel()
+    await screen.findByTestId('lens-A')
+    await pickLens('Lớp sơn đang xem', 'Tháo giáo')
+    await userEvent.click(await screen.findByRole('button', { name: 'Mốc ngày của Khu A — Tháo giáo' }))
+    return within(await screen.findByRole('dialog')).getByLabelText('Tên zone')
+  }
+
+  it('prefills the box with the base name, without the coat suffix', async () => {
+    expect(await openDates()).toHaveValue('Khu A')
+  })
+
+  it('writes the new name with the coat suffix, then re-reads the plan', async () => {
+    const input = await openDates()
+    await userEvent.clear(input)
+    await userEvent.type(input, 'Khu B')
+    await userEvent.tab()
+
+    await waitFor(() => expect(updateZone).toHaveBeenCalledWith('z1', { name: 'Khu B — Tháo giáo' }))
+    await waitFor(() => expect(listDeckZones).toHaveBeenCalledTimes(2))
+  })
+
+  it('commits on Enter too, so the name can be saved without leaving the field', async () => {
+    const input = await openDates()
+    await userEvent.clear(input)
+    await userEvent.type(input, 'Khu C{Enter}')
+
+    await waitFor(() => expect(updateZone).toHaveBeenCalledWith('z1', { name: 'Khu C — Tháo giáo' }))
+  })
+
+  it('writes nothing when the name comes back unchanged', async () => {
+    const input = await openDates()
+    await userEvent.clear(input)
+    await userEvent.type(input, 'Khu A')
+    await userEvent.tab()
+
+    expect(updateZone).not.toHaveBeenCalled()
+  })
+
+  it('reverts an emptied box instead of storing a nameless zone', async () => {
+    const input = await openDates()
+    await userEvent.clear(input)
+    await userEvent.tab()
+
+    expect(updateZone).not.toHaveBeenCalled()
+    await waitFor(() => expect(input).toHaveValue('Khu A'))
+  })
+
+  it('surfaces a failed rename rather than showing a name that was not saved', async () => {
+    updateZone.mockRejectedValue(new Error('không đổi tên được'))
+    const input = await openDates()
+    await userEvent.clear(input)
+    await userEvent.type(input, 'Khu B')
+    await userEvent.tab()
+
+    expect(await screen.findByText('không đổi tên được')).toBeInTheDocument()
+  })
+})
