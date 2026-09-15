@@ -654,4 +654,23 @@ describe('DecksScreen — reordering decks (RV6-05, RV6-06)', () => {
 
     expect(await screen.findByText('permission denied')).toBeInTheDocument()
   })
+
+  it('ignores a second click while a swap is in flight, then re-enables the arrows', async () => {
+    let settle!: () => void
+    swapDeckSeq.mockReturnValue(new Promise<void>((resolve) => { settle = resolve }))
+    renderScreen()
+    await screen.findByText('First Deck')
+
+    const downs = screen.getAllByRole('button', { name: 'Xuống' })
+    await userEvent.click(downs[0])
+    await userEvent.click(downs[0])
+
+    expect(swapDeckSeq).toHaveBeenCalledTimes(1)
+    for (const b of screen.getAllByRole('button', { name: 'Xuống' })) expect(b).toBeDisabled()
+    for (const b of screen.getAllByRole('button', { name: 'Lên' })) expect(b).toBeDisabled()
+
+    settle()
+    await waitFor(() => expect(screen.getAllByRole('button', { name: 'Xuống' })[0]).toBeEnabled())
+    expect(screen.getAllByRole('button', { name: 'Lên' })[1]).toBeEnabled()
+  })
 })

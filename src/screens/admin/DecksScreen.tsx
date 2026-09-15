@@ -110,6 +110,8 @@ export function DecksScreen() {
   const [copying, setCopying] = useState(false)
   const [copyForm] = Form.useForm<{ name: string; code: string }>()
   const [removing, setRemoving] = useState(false)
+  /** A seq swap is in flight: every arrow waits for it (see reorderDeck). */
+  const [reordering, setReordering] = useState(false)
   const [confirmingExport, setConfirmingExport] = useState(false)
   const { message } = App.useApp()
 
@@ -327,14 +329,20 @@ export function DecksScreen() {
    * (decksApi.swapDeckSeq): a failure between the two writes leaves both
    * decks at one seq, which this list still renders (ties keep insertion
    * order) and the next swap repairs.
+   *
+   * One at a time: a second click before `refreshDecks` lands would swap
+   * from the seqs this render still holds, not the ones just written.
    */
   const reorderDeck = async (a: DeckRow, b: DeckRow | undefined) => {
-    if (!b) return
+    if (!b || reordering) return
+    setReordering(true)
     try {
       await swapDeckSeq({ id: a.id, seq: a.seq }, { id: b.id, seq: b.seq })
       await refreshDecks()
     } catch (e) {
       message.error((e as Error).message)
+    } finally {
+      setReordering(false)
     }
   }
 
@@ -513,7 +521,7 @@ export function DecksScreen() {
                         size="small"
                         aria-label="Lên"
                         icon={<ArrowUpOutlined />}
-                        disabled={index === 0}
+                        disabled={index === 0 || reordering}
                         onClick={() => void reorderDeck(deck, decks[index - 1])}
                       />
                     </Tooltip>
@@ -522,7 +530,7 @@ export function DecksScreen() {
                         size="small"
                         aria-label="Xuống"
                         icon={<ArrowDownOutlined />}
-                        disabled={index === decks.length - 1}
+                        disabled={index === decks.length - 1 || reordering}
                         onClick={() => void reorderDeck(deck, decks[index + 1])}
                       />
                     </Tooltip>
