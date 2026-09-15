@@ -112,8 +112,7 @@ only by shape.
 
 `0034` (`is_viewer()`, and `my_projects()` / `my_works()` re-created so a
 viewer reads every project — Feedback Rv6 item 7, Linh's "theo đề xuất") is
-**applied to dev on: pending (the owner applies it; fill in the date), and
-not yet to production.** It
+**applied to dev on 2026-09-15 by the owner, and not yet to production.** It
 creates one predicate and replaces the bodies of three existing functions
 (`my_projects`, `my_works`, `coworker_names`) with the same names, signatures,
 return types and grants, so the thirteen member read policies and the
@@ -131,9 +130,9 @@ to and writes none of them; a GS with no assignment still reads nothing) run
 against dev in the owner's full suite; run them before the PROD push.
 
 `0035` (`decks.kpi_plan_color`, `decks.kpi_actual_color` — the KPI chart's
-Plan and Actual colours per deck, Feedback Rv6 item 5c) is **applied to dev:
-pending (the owner applies it; fill in the date), and not yet to
-production.** Two nullable `text` columns on `decks`, each with a check
+Plan and Actual colours per deck, Feedback Rv6 item 5c) is **applied to dev
+on 2026-09-15 by the owner, and not yet to production.** Two nullable `text`
+columns on `decks`, each with a check
 constraint admitting null or `#RRGGBB` (the same six-digit form the
 StageConfigPanel hex field enforces for `stages.color`); null is the system
 default the chart uses today. No policy, trigger or function work:
