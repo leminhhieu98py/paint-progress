@@ -91,6 +91,15 @@ export interface Work {
   counts: boolean
   /** 0..1; read only for kind 'manual'. */
   manualProgress: number
+  /**
+   * What this work's numbers measure and in what unit -- `Diện tích` / `m²`
+   * by default (0036, RV6-32). Free text the admin types, 1–30 characters.
+   * Every deck in the work shares them; the `*M2` numeric fields on decks,
+   * cells and plans hold the quantity in THIS unit, whatever their names say
+   * (RV6-38). Labels are built from these in `domain/unit.ts`.
+   */
+  quantityLabel: string
+  unit: string
 }
 
 /** One deck's part in one bays work. */

@@ -27,7 +27,7 @@ vi.mock('../../lib/worksApi', () => ({
 vi.mock('../../lib/progressApi', () => ({ loadProjectModel: (p: string) => loadProjectModel(p) }))
 
 const work = (over: Partial<Work> = {}): Work => ({
-  id: 'w1', projectId: 'p1', seq: 1, name: 'Sơn', kind: 'bays', weight: 0.6, counts: true, manualProgress: 0, ...over,
+  id: 'w1', projectId: 'p1', seq: 1, name: 'Sơn', kind: 'bays', weight: 0.6, counts: true, manualProgress: 0, quantityLabel: 'Diện tích', unit: 'm²', ...over,
 })
 const WORKS: Work[] = [
   work(),

@@ -105,7 +105,7 @@ const cell = (code: string, stageId: string | null): Cell => ({
 /** One bays work over one deck of 1000 m², two bays at coat 1, two untouched. */
 const MODELS: WorkModel[] = [
   {
-    work: { id: 'w1', projectId: 'p1', seq: 1, name: 'Sơn', kind: 'bays', weight: 1, counts: true, manualProgress: 0 },
+    work: { id: 'w1', projectId: 'p1', seq: 1, name: 'Sơn', kind: 'bays', weight: 1, counts: true, manualProgress: 0, quantityLabel: 'Diện tích', unit: 'm²' },
     decks: [{
       deck: {
         id: 'd1', code: 'AD', name: 'Sàn A', totalAreaM2: 1000,
@@ -117,7 +117,7 @@ const MODELS: WorkModel[] = [
   },
   // A manual work has no bays and no coats, so it has nothing to plan.
   {
-    work: { id: 'wm', projectId: 'p1', seq: 2, name: 'Marking', kind: 'manual', weight: 0, counts: false, manualProgress: 0.2 },
+    work: { id: 'wm', projectId: 'p1', seq: 2, name: 'Marking', kind: 'manual', weight: 0, counts: false, manualProgress: 0.2, quantityLabel: 'Diện tích', unit: 'm²' },
     decks: [],
   },
 ]

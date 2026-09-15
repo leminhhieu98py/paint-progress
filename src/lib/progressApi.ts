@@ -45,7 +45,7 @@ const DECK_SELECT =
   + ' kpi_plan_color, kpi_actual_color,'
   + ' cells(id, code, x, y, w, h, area_m2),'
   + ' deck_stages(id, work_id, deck_id, seq, name, color, weight)'
-const WORK_SELECT = 'id, project_id, seq, name, kind, weight, counts, manual_progress'
+const WORK_SELECT = 'id, project_id, seq, name, kind, weight, counts, manual_progress, quantity_label, unit'
 const STATE_SELECT = 'cell_id, work_id, deck_id, stage_id, note, updated_at, updated_by'
 
 /**

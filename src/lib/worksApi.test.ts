@@ -20,7 +20,8 @@ function builder(result: { data?: unknown; error?: unknown }) {
 beforeEach(() => from.mockReset())
 
 const work = (over: Partial<Work> = {}): Work => ({
-  id: 'w1', projectId: 'p1', seq: 1, name: 'Sơn', kind: 'bays', weight: 1, counts: true, manualProgress: 0, ...over,
+  id: 'w1', projectId: 'p1', seq: 1, name: 'Sơn', kind: 'bays', weight: 1, counts: true, manualProgress: 0,
+  quantityLabel: 'Diện tích', unit: 'm²', ...over,
 })
 
 describe('listWorks', () => {
@@ -41,6 +42,19 @@ describe('listWorks', () => {
   it('throws when the read fails', async () => {
     from.mockImplementationOnce(() => builder({ error: { message: 'permission denied' } }))
     await expect(listWorks('p1')).rejects.toThrow('permission denied')
+  })
+
+  it('reads the quantity label and unit of a work (RV6-33)', async () => {
+    const b = builder({
+      data: [{
+        id: 'w1', project_id: 'p1', seq: 1, name: 'Tháo giáo', kind: 'bays', weight: '1', counts: true,
+        manual_progress: '0', quantity_label: 'Khối lượng', unit: 'tấn',
+      }],
+    })
+    from.mockImplementationOnce(() => b)
+    const works = await listWorks('p1')
+    expect(works[0].quantityLabel).toBe('Khối lượng')
+    expect(works[0].unit).toBe('tấn')
   })
 })
 
@@ -89,9 +103,31 @@ describe('saveWorks', () => {
     expect(del.delete).toHaveBeenCalled()
     expect(del.in).toHaveBeenCalledWith('id', ['w9'])
     expect(up.upsert).toHaveBeenCalledWith(
-      [{ id: 'w1', project_id: 'p1', seq: 1, name: 'Sơn', kind: 'bays', weight: 1, counts: true, manual_progress: 0 }],
+      [{ id: 'w1', project_id: 'p1', seq: 1, name: 'Sơn', kind: 'bays', weight: 1, counts: true, manual_progress: 0, quantity_label: 'Diện tích', unit: 'm²' }],
       { onConflict: 'id' },
     )
+  })
+
+  it('writes the quantity label and unit trimmed (RV6-34)', async () => {
+    const existing = builder({ data: [] })
+    const up = builder({ data: null })
+    from.mockImplementationOnce(() => existing).mockImplementationOnce(() => up)
+
+    await saveWorks('p1', [work({ quantityLabel: ' Khối lượng ', unit: ' tấn ' })])
+
+    const [rows] = (up.upsert as ReturnType<typeof vi.fn>).mock.calls[0] as [Record<string, unknown>[]]
+    expect(rows[0]).toMatchObject({ quantity_label: 'Khối lượng', unit: 'tấn' })
+  })
+
+  it('rejects a blank or over-long quantity label or unit, before any write (RV6-34)', async () => {
+    await expect(saveWorks('p1', [work({ quantityLabel: '   ' })])).rejects.toThrow(/Đại lượng/)
+    await expect(saveWorks('p1', [work({ unit: '' })])).rejects.toThrow(/Đơn vị/)
+    await expect(saveWorks('p1', [work({ quantityLabel: 'x'.repeat(31) })])).rejects.toThrow(/Đại lượng/)
+    await expect(saveWorks('p1', [work({ unit: 'y'.repeat(31) })])).rejects.toThrow(/Đơn vị/)
+    expect(from).not.toHaveBeenCalled()
+    // Exactly 30 characters is allowed, like the check constraint says.
+    from.mockImplementation(() => builder({ data: [] }))
+    await expect(saveWorks('p1', [work({ quantityLabel: 'x'.repeat(30), unit: 'y'.repeat(30) })])).resolves.toBeUndefined()
   })
 
   it('issues no delete when nothing was removed', async () => {

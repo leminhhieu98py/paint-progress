@@ -16,7 +16,7 @@ const bay = (id: string, code: string, areaM2: number, stageId: string | null): 
 const CD_META = { id: 'd1', code: 'CD', name: 'Cellar Deck', totalAreaM2: 1000 }
 const work = (
   id: string, seq: number, name: string, kind: Work['kind'], weight: number, over: Partial<Work> = {},
-): Work => ({ id, projectId: 'p1', seq, name, kind, weight, counts: true, manualProgress: 0, ...over })
+): Work => ({ id, projectId: 'p1', seq, name, kind, weight, counts: true, manualProgress: 0, quantityLabel: 'Diện tích', unit: 'm²', ...over })
 
 /** One work over one deck: 500 of 1000 m² at the last of two coats -> 50%. */
 const SON: WorkModel = {

@@ -76,6 +76,7 @@ describe('assembleProjectModel', () => {
     const { models } = model()
     expect(models[2].work).toEqual({
       id: 'wM', projectId: 'p1', seq: 3, name: 'Marking', kind: 'manual', weight: 0, counts: false, manualProgress: 0.12,
+      quantityLabel: 'Diện tích', unit: 'm²',
     })
     expect(models[2].decks).toEqual([])
   })

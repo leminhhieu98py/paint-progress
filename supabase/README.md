@@ -150,6 +150,30 @@ ahead of the app that needs it; the deployed app selects its deck columns by
 name and never sees these. No new `tests/rls.integration.test.ts` case: the
 policies are unchanged and their `decks` cases already run.
 
+`0036` (`works.quantity_label`, `works.unit` — the quantity a work is measured
+in and its unit, Feedback Rv6 item 3, Linh: "the unit belongs to the work") is
+**applied to dev: pending (the owner applies it; fill in the date), and not
+yet to production.** Two `text not null` columns on `works` defaulting to
+`Diện tích` and `m²`, each with a check constraint bounding the trimmed text
+to 1–30 characters (the same rule `saveWorks` enforces before writing), so
+every existing work reads exactly as it did until an admin edits it. The
+`*_m2` numeric columns (`decks.total_area_m2`, `cells.area_m2`,
+`stage_plans.planned_area_m2`) are NOT renamed: they hold the quantity in the
+work's unit, and their column comments now say so (RV6-38). No policy, trigger
+or function work: `works_admin_all` carries the write and `works_member_read`
+(through `my_works()`) the read, and both already cover every column. Its
+`do $$ ... $$` block raises if either column is missing, nullable or
+undefaulted; if a default is not the string the app hard-coded until now; if
+any existing row did not take the defaults; if either length constraint is
+missing or does not say "btrim … between 1 and 30"; if the rule admits a blank
+or a 31-character value or refuses a 30-character one; if any of the three
+`*_m2` columns is gone; or if `works` no longer carries exactly its two
+policies — so applying it is self-verifying and needs no new
+`verify_schema.sql` row. Purely additive: safe to apply to production ahead of
+the app that needs it; the deployed app selects its work columns by name and
+never sees these. No new `tests/rls.integration.test.ts` case: the policies
+are unchanged and their `works` cases already run.
+
 `supabase/scripts/purge_user.sql` removes one test account together with the
 bays it ticked (owner request, 2026-09-04). It is a dry run until its
 `v_confirm` literal is set; read its header before running it anywhere.

@@ -141,11 +141,11 @@ describe('stageOrder', () => {
     const stage = (id: string, seq: number, name: string) => ({ id, seq, name, color: '#000', weight: 0.5 })
     const models: WorkModel[] = [
       {
-        work: { id: 'w2', projectId: 'p', seq: 2, name: 'Tháo giáo', kind: 'bays', weight: 0.5, counts: true, manualProgress: 0 },
+        work: { id: 'w2', projectId: 'p', seq: 2, name: 'Tháo giáo', kind: 'bays', weight: 0.5, counts: true, manualProgress: 0, quantityLabel: 'Diện tích', unit: 'm²' },
         decks: [{ deck: { id: 'd', code: 'D', name: 'D', totalAreaM2: 1, cells: [] }, weight: 1, stages: [stage('t', 1, 'Tháo')] }],
       },
       {
-        work: { id: 'w1', projectId: 'p', seq: 1, name: 'Sơn', kind: 'bays', weight: 0.5, counts: true, manualProgress: 0 },
+        work: { id: 'w1', projectId: 'p', seq: 1, name: 'Sơn', kind: 'bays', weight: 0.5, counts: true, manualProgress: 0, quantityLabel: 'Diện tích', unit: 'm²' },
         decks: [
           { deck: { id: 'd', code: 'D', name: 'D', totalAreaM2: 1, cells: [] }, weight: 0.5, stages: [stage('s2', 2, 'Lớp 2'), stage('s1', 1, 'Lớp 1')] },
           { deck: { id: 'e', code: 'E', name: 'E', totalAreaM2: 1, cells: [] }, weight: 0.5, stages: [stage('s3', 1, 'Lớp 1'), stage('s4', 2, 'Lớp 3')] },

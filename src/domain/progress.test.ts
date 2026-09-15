@@ -9,7 +9,7 @@ const stages: Stage[] = WORKBOOK_STAGES
 
 const work = (over: Partial<Work> = {}): Work => ({
   id: 'w1', projectId: 'p1', seq: 1, name: 'Công việc chính', kind: 'bays',
-  weight: 1, counts: true, manualProgress: 0, ...over,
+  weight: 1, counts: true, manualProgress: 0, quantityLabel: 'Diện tích', unit: 'm²', ...over,
 })
 
 /** Every deck under one bays work of weight 1 with D = m² share -- what the

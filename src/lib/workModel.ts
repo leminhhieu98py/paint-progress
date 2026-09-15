@@ -1,4 +1,5 @@
 import type { Cell, Deck, Stage, Work, WorkKind, WorkModel } from '../domain/types'
+import { DEFAULT_QUANTITY_LABEL, DEFAULT_UNIT } from '../domain/unit'
 
 /**
  * From PostgREST rows to the domain's work model, in one place.
@@ -25,6 +26,9 @@ export interface WorkRow {
   weight: string | number
   counts: boolean
   manual_progress: string | number
+  /** 0036. Absent on a row selected without them; the defaults then apply. */
+  quantity_label?: string
+  unit?: string
 }
 
 export interface WorkDeckRow {
@@ -127,6 +131,8 @@ export function mapWork(row: WorkRow): Work {
     weight: Number(row.weight),
     counts: Boolean(row.counts),
     manualProgress: Number(row.manual_progress),
+    quantityLabel: row.quantity_label ?? DEFAULT_QUANTITY_LABEL,
+    unit: row.unit ?? DEFAULT_UNIT,
   }
 }
 

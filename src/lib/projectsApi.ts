@@ -118,7 +118,7 @@ export async function listProjects(): Promise<ProjectRow[]> {
     .from('projects')
     .select(
       'id, name, code,'
-      + ' works(id, project_id, seq, name, kind, weight, counts, manual_progress, work_decks(deck_id, weight)),'
+      + ' works(id, project_id, seq, name, kind, weight, counts, manual_progress, quantity_label, unit, work_decks(deck_id, weight)),'
       + ' decks(id, seq, code, name, total_area_m2, image_path,'
       + ' deck_stages(id, work_id, deck_id, seq, name, color, weight),'
       + ' cells(id, code, area_m2), cell_states(cell_id, work_id, stage_id))',

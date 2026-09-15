@@ -251,7 +251,7 @@ export interface DeckWork {
 export async function listDeckWorks(deckId: string): Promise<DeckWork[]> {
   const membershipQuery = await supabase
     .from('work_decks')
-    .select('work_id, weight, works!inner(id, project_id, seq, name, kind, weight, counts, manual_progress)')
+    .select('work_id, weight, works!inner(id, project_id, seq, name, kind, weight, counts, manual_progress, quantity_label, unit)')
     .eq('deck_id', deckId)
   if (membershipQuery.error) throw new Error(membershipQuery.error.message)
   const stagesQuery = await supabase
@@ -296,7 +296,7 @@ export async function listProjectIndex(
   if (deckIds.length === 0) return {}
   const worksQuery = await supabase
     .from('works')
-    .select('id, project_id, seq, name, kind, weight, counts, manual_progress, work_decks(deck_id, weight)')
+    .select('id, project_id, seq, name, kind, weight, counts, manual_progress, quantity_label, unit, work_decks(deck_id, weight)')
     .eq('project_id', projectId)
     .order('seq')
   if (worksQuery.error) throw new Error(worksQuery.error.message)

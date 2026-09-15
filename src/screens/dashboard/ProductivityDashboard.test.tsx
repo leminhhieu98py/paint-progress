@@ -47,14 +47,14 @@ const deck = (id: string, name: string) => ({
 })
 const MODELS: WorkModel[] = [
   {
-    work: { id: 'w1', projectId: 'p1', seq: 1, name: 'Sơn', kind: 'bays', weight: 0.8, counts: true, manualProgress: 0 },
+    work: { id: 'w1', projectId: 'p1', seq: 1, name: 'Sơn', kind: 'bays', weight: 0.8, counts: true, manualProgress: 0, quantityLabel: 'Diện tích', unit: 'm²' },
     decks: [
       { deck: deck('d1', 'Sàn A'), weight: 0.5, stages: [stage('s1', 1, 'Lớp 1', '#111111'), stage('s2', 2, 'Lớp 2', '#222222')] },
       { deck: deck('d2', 'Sàn B'), weight: 0.5, stages: [stage('s3', 1, 'Lớp 1', '#111111'), stage('s4', 2, 'Lớp 2', '#222222')] },
     ],
   },
   {
-    work: { id: 'w2', projectId: 'p1', seq: 2, name: 'Tháo giáo', kind: 'bays', weight: 0.2, counts: true, manualProgress: 0 },
+    work: { id: 'w2', projectId: 'p1', seq: 2, name: 'Tháo giáo', kind: 'bays', weight: 0.2, counts: true, manualProgress: 0, quantityLabel: 'Diện tích', unit: 'm²' },
     decks: [{ deck: deck('d1', 'Sàn A'), weight: 1, stages: [stage('t1', 1, 'Tháo', '#333333')] }],
   },
 ]

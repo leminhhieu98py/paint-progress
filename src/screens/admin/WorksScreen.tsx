@@ -8,6 +8,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { computeWorkProgress } from '../../domain/progress'
 import type { Work, WorkKind } from '../../domain/types'
+import { DEFAULT_QUANTITY_LABEL, DEFAULT_UNIT } from '../../domain/unit'
 import { sumsToOne } from '../../domain/weights'
 import { listDecks, type DeckRow } from '../../lib/decksApi'
 import { formatAreaM2, formatPercent, formatWeight } from '../../lib/format'
@@ -153,6 +154,8 @@ export function WorksScreen() {
         weight: 0,
         counts: true,
         manualProgress: 0,
+        quantityLabel: DEFAULT_QUANTITY_LABEL,
+        unit: DEFAULT_UNIT,
       },
     ])
   }
