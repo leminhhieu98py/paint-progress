@@ -7,6 +7,7 @@ import dayjs from 'dayjs'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { DrawingCanvas } from '../../canvas/DrawingCanvas'
 import { cellStagesAsOf, HISTORY_FROM_LABEL } from '../../domain/asOf'
+import { effortDayKey } from '../../domain/effort'
 import { cellsInBox } from '../../domain/geometry'
 import {
   codesNotReaching, paintLensColors, zoneColorMap, zoneColorOf, zoneLensLayers, ZONE_PALETTE,
@@ -1145,7 +1146,10 @@ export function DeckProgressPanel({
             allowClear
             placeholder="Hôm nay"
             value={isA ? dateA : dateB}
-            disabledDate={(d) => d.isAfter(dayjs(), 'day')}
+            // "Today" is the Vietnam day (effortDayKey, RV5-20), as on every
+            // other figure here -- not the browser's clock, which on a machine
+            // west of UTC+7 would still refuse a day the site is already working.
+            disabledDate={(d) => d.format('YYYY-MM-DD') > effortDayKey(new Date().toISOString())}
             onChange={(d) => setLayerDate(side, d)}
           />
         </div>

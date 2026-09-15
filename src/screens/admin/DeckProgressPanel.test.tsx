@@ -1,7 +1,6 @@
 import { App as AntApp } from 'antd'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import dayjs from 'dayjs'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { DeckProgressPanel } from './DeckProgressPanel'
 
@@ -1358,16 +1357,25 @@ describe('DeckProgressPanel — comparing two dates (RV6-14..16)', () => {
     expect(listDeckEvents).toHaveBeenCalledTimes(1)
   })
 
-  it('refuses a day that has not happened yet', async () => {
-    renderPanel()
-    await screen.findByTestId('lens-A')
-    await userEvent.click(dateInput('a'))
+  it('refuses a day that has not happened yet, by the Vietnam day like every other "today"', async () => {
+    // 18:30Z on the 15th is already 01:30 on the 16th in Vietnam. The dashboard,
+    // the Năng suất sheet and the GS card all call that the 16th (effortDayKey,
+    // RV5-20); a picker that asked the browser's clock instead would refuse the
+    // 16th on any machine west of UTC+7 while the site is already working it.
+    vi.useFakeTimers({ shouldAdvanceTime: true, now: new Date('2026-09-15T18:30:00Z') })
+    try {
+      renderPanel()
+      await screen.findByTestId('lens-A')
+      await userEvent.click(dateInput('a'))
 
-    const tomorrow = dayjs().add(1, 'day')
-    const cell = document.querySelector(
-      `.ant-picker-dropdown td[title="${tomorrow.format('YYYY-MM-DD')}"]`,
-    ) as HTMLElement
-    expect(cell).toHaveClass('ant-picker-cell-disabled')
+      const cellOf = (day: string) => document.querySelector(
+        `.ant-picker-dropdown td[title="${day}"]`,
+      ) as HTMLElement
+      expect(cellOf('2026-09-16')).not.toHaveClass('ant-picker-cell-disabled')
+      expect(cellOf('2026-09-17')).toHaveClass('ant-picker-cell-disabled')
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('still answers the plan toggle on a layer pinned to a date', async () => {
