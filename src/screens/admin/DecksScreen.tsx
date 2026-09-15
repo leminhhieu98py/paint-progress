@@ -200,20 +200,31 @@ export function DecksScreen() {
     const inWorks = bays.filter((m) => m.decks.some((e) => e.deck.id === deckId)).map((m) => m.work)
     return inWorks.length === 0 ? DEFAULT_UNIT : unitOfWorks(inWorks)
   }
-  const deckUnits = modelDecks.map((d) => unitOfDeck(d.id))
-  const scopeUnit = deckUnits.length === 0
-    ? DEFAULT_UNIT
-    : (deckUnits.every((u) => u !== null && u === deckUnits[0]) ? deckUnits[0] : null)
-  const scopeLabel = bays.length === 0
-    ? DEFAULT_QUANTITY_LABEL
-    : (labelOfWorks(bays.map((m) => m.work)) ?? MIXED_QUANTITY_LABEL)
-  const quantityTitle = scopeUnit === null ? MIXED_QUANTITY_LABEL : quantityHeading(scopeLabel, scopeUnit)
-  /** The figure, with the row's own unit only when the heading could not carry one. */
-  const quantityCell = (deckId: string, n: number): string => {
-    if (scopeUnit !== null) return formatAreaM2(n)
-    const own = unitOfDeck(deckId)
-    return own === null ? formatAreaM2(n) : `${formatAreaM2(n)} ${own}`
+  /**
+   * The heading, the Σ's unit and the cell rule for ONE set of decks. The deck
+   * list and the rollup each derive their own, because the rollup lists only
+   * the weighted decks: a deck in no work is m² in the list yet absent from
+   * the rollup, whose rows may then all agree on a unit the list cannot.
+   */
+  const quantityScope = (deckIds: string[]) => {
+    const units = deckIds.map(unitOfDeck)
+    const works = bays.filter((m) => m.decks.some((e) => deckIds.includes(e.deck.id))).map((m) => m.work)
+    const unit = units.length === 0
+      ? DEFAULT_UNIT
+      : (units.every((u) => u !== null && u === units[0]) ? units[0] : null)
+    const label = works.length === 0
+      ? DEFAULT_QUANTITY_LABEL
+      : (labelOfWorks(works) ?? MIXED_QUANTITY_LABEL)
+    const title = unit === null ? MIXED_QUANTITY_LABEL : quantityHeading(label, unit)
+    /** The figure, with the row's own unit only when the heading could not carry one. */
+    const cell = (deckId: string, n: number): string => {
+      if (unit !== null) return formatAreaM2(n)
+      const own = unitOfDeck(deckId)
+      return own === null ? formatAreaM2(n) : `${formatAreaM2(n)} ${own}`
+    }
+    return { unit, title, cell }
   }
+  const listScope = quantityScope(modelDecks.map((d) => d.id))
   /**
    * Each deck across its works: P_d, and the weight it carries in P, which is
    * Σ W·D over the counted bays works it is in -- no longer its m² share. A
@@ -225,12 +236,16 @@ export function DecksScreen() {
     [model],
   )
 
+  const carriesWeight = (i: number) => (summaries[i]?.effectiveWeight ?? 0) > 0
+  /** Over the decks the rollup actually lists -- see `carriesWeight` below. */
+  const rollupScope = quantityScope(modelDecks.filter((_, i) => carriesWeight(i)).map((d) => d.id))
+
   const rollupRows: RollupRow[] = modelDecks.map((deck, i) => ({
     key: deck.id,
     name: deck.name,
     code: deck.code,
     share: formatPercent(summaries[i]?.effectiveWeight ?? 0),
-    totalAreaM2: quantityCell(deck.id, deck.totalAreaM2),
+    totalAreaM2: rollupScope.cell(deck.id, deck.totalAreaM2),
     progress: summaries[i]?.progress ?? 0,
   }))
   /**
@@ -248,13 +263,7 @@ export function DecksScreen() {
    * ones: 194.525,00 over a visible 160.229,00. One predicate, so the three
    * cannot drift apart again.
    */
-  const carriesWeight = (i: number) => (summaries[i]?.effectiveWeight ?? 0) > 0
   const visibleRollup = rollupRows.filter((_, i) => carriesWeight(i))
-  /** The Σ under the table adds only figures of one unit (RV6-36). */
-  const visibleUnits = deckUnits.filter((_, i) => carriesWeight(i))
-  const sumUnit = visibleUnits.length > 0 && visibleUnits.every((u) => u !== null && u === visibleUnits[0])
-    ? visibleUnits[0]
-    : null
   const hiddenDecks = rollupRows.length - visibleRollup.length
   const workRows: WorkRow[] = rollup.works.map((w) => ({
     key: w.work.id,
@@ -487,11 +496,11 @@ export function DecksScreen() {
               },
               { title: 'Số ô', dataIndex: 'cellCount', width: 90, align: 'right' },
               {
-                title: quantityTitle,
+                title: listScope.title,
                 dataIndex: 'totalAreaM2',
                 width: 160,
                 align: 'right',
-                render: (v: number, deck) => quantityCell(deck.id, v),
+                render: (v: number, deck) => listScope.cell(deck.id, v),
               },
               {
                 title: 'Bản vẽ',
@@ -624,7 +633,7 @@ export function DecksScreen() {
                     },
                     { title: 'Tỉ trọng', dataIndex: 'share', key: 'share', width: 110, align: 'right' },
                     {
-                      title: quantityTitle,
+                      title: rollupScope.title,
                       dataIndex: 'totalAreaM2',
                       key: 'totalAreaM2',
                       width: 150,
@@ -648,7 +657,7 @@ export function DecksScreen() {
                         <strong>{formatPercent(effectiveTotal)}</strong>
                       </Table.Summary.Cell>
                       <Table.Summary.Cell index={3} align="right">
-                        {sumUnit === null ? (
+                        {rollupScope.unit === null ? (
                           <Tooltip title={MIXED_UNIT_SUM_TOOLTIP}>
                             <strong>—</strong>
                           </Tooltip>

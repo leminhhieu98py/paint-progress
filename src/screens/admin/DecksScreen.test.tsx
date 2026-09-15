@@ -713,5 +713,51 @@ describe('DecksScreen: the quantity and unit of the works in scope (RV6-36)', ()
     const dash = within(rollup).getByText('—')
     await userEvent.hover(dash)
     expect(await screen.findByRole('tooltip')).toHaveTextContent('Các sàn dùng đơn vị khác nhau, không cộng được')
+    // Both decks are in the rollup, so the deck list reads the same mix.
+    expect(headersOf(screen.getAllByRole('table')[0])).toContain('Số lượng')
+  })
+
+  it('heads the rollup by the decks it lists, not by every deck of the project', async () => {
+    // Seen on dev, 2026-09-15: one Kg work over every weighted deck, plus a
+    // deck in no work. The deck list shows all three, so it is mixed -- Số
+    // lượng, each row its own unit. The rollup hides the m² deck; every row it
+    // shows is Kg, so its heading says so and its Σ adds.
+    const kg = { quantityLabel: 'Khối lượng', unit: 'Kg' }
+    const deckRow = (id: string, seq: number, name: string, code: string, totalAreaM2: number) => ({
+      id, projectId: 'p1', seq, name, code,
+      imagePath: null, imageW: null, imageH: null, drawingName: null, drawingPage: null,
+      totalAreaM2, areaSource: 'guides', cellCount: 0,
+    })
+    loadProjectModel.mockResolvedValue({
+      ...MODEL,
+      models: MODEL.models.flatMap((m) => (
+        m.work.id === 'w1' ? [{ ...m, work: { ...m.work, ...kg } }] : m.work.kind === 'manual' ? [m] : []
+      )),
+      decks: [
+        ...MODEL.decks,
+        {
+          id: 'd3', code: 'TD', name: 'Test data', totalAreaM2: 100, seq: 3,
+          imagePath: null, imageW: null, imageH: null, areaSource: 'guides' as const, cellCount: 0,
+        },
+      ],
+    })
+    listDecks.mockResolvedValue([
+      deckRow('d1', 1, 'Cellar Deck', 'CD', 1000),
+      deckRow('d2', 2, 'Weather Deck', 'WD', 3000),
+      deckRow('d3', 3, 'Test data', 'TD', 100),
+    ])
+    renderScreen()
+    const rollup = await screen.findByTestId('project-rollup')
+    await waitFor(() => expect(within(rollup).getByText('Cellar Deck')).toBeInTheDocument())
+    expect(headersOf(rollup)).toContain('Khối lượng (Kg)')
+    expect(within(rollup).getByText('1.000,00')).toBeInTheDocument()
+    expect(within(rollup).getByText('3.000,00')).toBeInTheDocument()
+    expect(within(rollup).getByText('4.000,00')).toBeInTheDocument()
+    expect(within(rollup).queryByText('—')).toBeNull()
+    const list = screen.getAllByRole('table')[0]
+    expect(headersOf(list)).toContain('Số lượng')
+    expect(within(list).getByText('1.000,00 Kg')).toBeInTheDocument()
+    expect(within(list).getByText('3.000,00 Kg')).toBeInTheDocument()
+    expect(within(list).getByText('100,00 m²')).toBeInTheDocument()
   })
 })
