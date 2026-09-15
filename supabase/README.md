@@ -130,6 +130,26 @@ safe to apply to production ahead of the app that needs it. The
 to and writes none of them; a GS with no assignment still reads nothing) run
 against dev in the owner's full suite; run them before the PROD push.
 
+`0035` (`decks.kpi_plan_color`, `decks.kpi_actual_color` — the KPI chart's
+Plan and Actual colours per deck, Feedback Rv6 item 5c) is **applied to dev:
+pending (the owner applies it; fill in the date), and not yet to
+production.** Two nullable `text` columns on `decks`, each with a check
+constraint admitting null or `#RRGGBB` (the same six-digit form the
+StageConfigPanel hex field enforces for `stages.color`); null is the system
+default the chart uses today. No policy, trigger or function work:
+`decks_admin_all` carries the admin write and `decks_member_read` (through
+`my_projects()`, so a viewer reads it on every project since `0034`) carries
+the read for the GS and the viewer, and both already cover every column of
+the row. Its `do $$ ... $$` block raises if either column is missing, not
+text, NOT NULL or defaulted; if either check constraint is missing or does not
+say "null or `#RRGGBB`"; if the pattern admits a five-, seven- or no-hash
+value; or if `decks` no longer carries exactly the two `0006` policies — so
+applying it is self-verifying and needs no new `verify_schema.sql` row.
+Purely additive: no row rewritten, so it is safe to apply to production
+ahead of the app that needs it; the deployed app selects its deck columns by
+name and never sees these. No new `tests/rls.integration.test.ts` case: the
+policies are unchanged and their `decks` cases already run.
+
 `supabase/scripts/purge_user.sql` removes one test account together with the
 bays it ticked (owner request, 2026-09-04). It is a dry run until its
 `v_confirm` literal is set; read its header before running it anywhere.
