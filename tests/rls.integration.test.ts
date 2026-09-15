@@ -1677,11 +1677,27 @@ describe.skipIf(!adminConfigured)('0028: roles and permission per work', () => {
     expect(other.error).not.toBeNull()
   })
 
-  it('a viewer reads what a GS reads and writes nothing', async () => {
+  it('a viewer reads at least what a GS reads and writes nothing (widened by 0034)', async () => {
+    // Until 0034 the viewer read exactly the GS's rows, so this asserted array
+    // equality. 0034 (RV6-21) has `my_works()` return every work to a viewer,
+    // so the rule that holds now is superset: every row the GS read is still
+    // in the viewer's read, keyed by (cell_id, work_id). The viewer's unfiltered
+    // read is capped at 1000 rows by PostgREST, so the read is narrowed to this
+    // suite's deck; the 0034 describe below covers the rest of the widening.
+    const key = (r: { cell_id: string; work_id: string }) => `${r.cell_id}:${r.work_id}`
+    const asGs = await scoped.from('cell_states').select('cell_id, work_id')
+    expect(asGs.error).toBeNull()
+    const gsKeys = (asGs.data ?? []).map(key)
+    expect(gsKeys).toEqual([key({ cell_id: cellId, work_id: work1 })])
+
     const promote = await admin.from('profiles').update({ role: 'viewer' }).eq('id', scopedUserId)
     expect(promote.error).toBeNull()
 
-    expect(await names(scoped, 'cell_states', 'work_id')).toEqual([work1])
+    const asViewer = await scoped.from('cell_states').select('cell_id, work_id').eq('deck_id', deckId)
+    expect(asViewer.error).toBeNull()
+    const viewerKeys = new Set((asViewer.data ?? []).map(key))
+    for (const k of gsKeys) expect(viewerKeys.has(k)).toBe(true)
+
     const write = await scoped
       .from('cell_states')
       .update({ stage_id: null })
