@@ -1,6 +1,6 @@
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DeckKpiColorTable, type DeckKpiColorRow } from './DeckKpiColorTable'
 
 /**
@@ -57,12 +57,77 @@ describe('DeckKpiColorTable', () => {
     expect(screen.getByLabelText('Mã màu · Kế hoạch · Sàn B')).toHaveValue('#8698aa')
   })
 
-  it('writes a swatch pick with the other family left as stored', async () => {
-    const { onChange } = renderTable()
-    await open()
-    fireEvent.change(screen.getByLabelText('Chọn màu · Thực hiện · Sàn A'), { target: { value: '#0000ff' } })
-    expect(onChange).toHaveBeenCalledTimes(1)
-    expect(onChange).toHaveBeenCalledWith('d1', { plan: '#123abc', actual: '#0000ff' })
+  describe('swatch drag', () => {
+    /**
+     * The native picker reports every step of a drag as a change. Each one
+     * used to be a write plus a full reload; now the swatch follows the drag
+     * and the table writes once, when the drag has settled or the swatch is
+     * left. Fake timers go on after `open()`, which drives userEvent.
+     */
+    afterEach(() => { vi.useRealTimers() })
+    const drag = (label: string, ...steps: string[]) => {
+      for (const value of steps) fireEvent.change(screen.getByLabelText(`Chọn màu · ${label}`), { target: { value } })
+    }
+    const settle = (ms = 400) => { act(() => { vi.advanceTimersByTime(ms) }) }
+
+    it('follows the drag at once and writes the last step once, 400 ms after it, with the other family left as stored', async () => {
+      const { onChange } = renderTable()
+      await open()
+      vi.useFakeTimers()
+      drag('Thực hiện · Sàn A', '#111111', '#222222', '#333333', '#444444', '#0000ff')
+      expect(screen.getByLabelText('Chọn màu · Thực hiện · Sàn A')).toHaveValue('#0000ff')
+      expect(onChange).not.toHaveBeenCalled()
+      settle(399)
+      expect(onChange).not.toHaveBeenCalled()
+      settle(1)
+      expect(onChange).toHaveBeenCalledTimes(1)
+      expect(onChange).toHaveBeenCalledWith('d1', { plan: '#123abc', actual: '#0000ff' })
+    })
+
+    it('writes at once when the swatch loses focus before the drag has settled, and not again after', async () => {
+      const { onChange } = renderTable()
+      await open()
+      vi.useFakeTimers()
+      drag('Kế hoạch · Sàn B', '#111111', '#abcdef')
+      fireEvent.blur(screen.getByLabelText('Chọn màu · Kế hoạch · Sàn B'))
+      expect(onChange).toHaveBeenCalledTimes(1)
+      expect(onChange).toHaveBeenCalledWith('d2', { plan: '#abcdef', actual: null })
+      settle()
+      expect(onChange).toHaveBeenCalledTimes(1)
+    })
+
+    it('writes nothing when the drag ends back on the colour the swatch started from', async () => {
+      const { onChange } = renderTable()
+      await open()
+      vi.useFakeTimers()
+      drag('Kế hoạch · Sàn A', '#0000ff', '#123abc')
+      settle()
+      fireEvent.blur(screen.getByLabelText('Chọn màu · Kế hoạch · Sàn A'))
+      expect(onChange).not.toHaveBeenCalled()
+    })
+
+    it('lets a typed hex on the other family carry a still-pending drag along in the one write', async () => {
+      const { onChange } = renderTable()
+      await open()
+      vi.useFakeTimers()
+      drag('Kế hoạch · Sàn A', '#0000ff')
+      fireEvent.change(screen.getByLabelText('Mã màu · Thực hiện · Sàn A'), { target: { value: '#00ff00' } })
+      expect(onChange).toHaveBeenCalledTimes(1)
+      expect(onChange).toHaveBeenCalledWith('d1', { plan: '#0000ff', actual: '#00ff00' })
+      settle()
+      expect(onChange).toHaveBeenCalledTimes(1)
+    })
+
+    it('drops a still-pending drag when the deck is reset to the defaults', async () => {
+      const { onChange } = renderTable()
+      await open()
+      vi.useFakeTimers()
+      drag('Thực hiện · Sàn A', '#0000ff')
+      fireEvent.click(screen.getByRole('button', { name: 'Mặc định · Sàn A' }))
+      settle()
+      expect(onChange).toHaveBeenCalledTimes(1)
+      expect(onChange).toHaveBeenCalledWith('d1', { plan: null, actual: null })
+    })
   })
 
   it('writes a complete typed hex, lowercased, the moment it is complete', async () => {

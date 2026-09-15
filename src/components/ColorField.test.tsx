@@ -68,6 +68,23 @@ describe('ColorField', () => {
     expect(onHex).toHaveBeenCalledWith('#123abc')
   })
 
+  it('routes a swatch pick to onSwatchColor when the caller separates it, and reports the swatch losing focus', () => {
+    const onSwatchColor = vi.fn()
+    const onSwatchBlur = vi.fn()
+    const { onColor, onHex } = renderField({ onSwatchColor, onSwatchBlur })
+    const swatch = screen.getByLabelText('Chọn màu · Blast + Coat 1')
+    fireEvent.change(swatch, { target: { value: '#123abc' } })
+    expect(onSwatchColor).toHaveBeenCalledWith('#123abc')
+    expect(onColor).not.toHaveBeenCalled()
+    expect(onHex).toHaveBeenCalledWith('#123abc')
+    fireEvent.blur(swatch)
+    expect(onSwatchBlur).toHaveBeenCalledTimes(1)
+    // The hex field still reports through onColor: only the swatch is split off.
+    fireEvent.change(screen.getByLabelText('Mã màu · Blast + Coat 1'), { target: { value: '#abcdef' } })
+    expect(onColor).toHaveBeenCalledWith('#abcdef')
+    expect(onSwatchColor).toHaveBeenCalledTimes(1)
+  })
+
   it('tells the caller when the hex field loses focus', () => {
     const onHexBlur = vi.fn()
     renderField({ onHexBlur })

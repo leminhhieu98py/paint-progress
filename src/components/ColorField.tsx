@@ -22,7 +22,9 @@ export const HEX_COLOR = /^#[0-9a-fA-F]{6}$/
  * save shut on it, the KPI table lets it go on blur (RV6-31) -- and the field
  * has no business deciding that. `onColor` fires only with a complete colour:
  * a swatch pick, or a typed hex the regex accepts, lowercased so two spellings
- * of one colour cannot land as two values.
+ * of one colour cannot land as two values. A caller that wants to treat a
+ * swatch drag differently from a typed hex takes the swatch's picks on
+ * `onSwatchColor` instead and hears the swatch lose focus on `onSwatchBlur`.
  */
 export function ColorField({
   label,
@@ -32,6 +34,8 @@ export function ColorField({
   onColor,
   onHex,
   onHexBlur,
+  onSwatchColor,
+  onSwatchBlur,
 }: {
   /** What the two inputs are named after: `Chọn màu · {label}`, `Mã màu · {label}`. */
   label: string
@@ -45,6 +49,9 @@ export function ColorField({
   /** The hex field's text on every change, verbatim, and the swatch's pick too. */
   onHex: (typed: string) => void
   onHexBlur?: () => void
+  /** The swatch's pick alone; when absent the swatch reports through `onColor`. */
+  onSwatchColor?: (color: string) => void
+  onSwatchBlur?: () => void
 }) {
   const shown = hex ?? value
   const valid = HEX_COLOR.test(shown)
@@ -57,9 +64,10 @@ export function ColorField({
         disabled={disabled}
         style={{ width: 44, padding: 2 }}
         onChange={(e) => {
-          onColor(e.target.value)
+          (onSwatchColor ?? onColor)(e.target.value)
           onHex(e.target.value)
         }}
+        onBlur={onSwatchBlur}
       />
       {/*
         The hex beside the swatch, not instead of it, and typable. A foreman

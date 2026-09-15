@@ -1,5 +1,5 @@
 import { Button, Table } from 'antd'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { ColorField, HEX_COLOR } from '../../components/ColorField'
 import { SectionCard } from '../../components/SectionCard'
 import { KPI_COLOR_DEFAULTS } from '../dashboard/kpiColors'
@@ -21,6 +21,12 @@ import { KPI_COLOR_DEFAULTS } from '../dashboard/kpiColors'
  * written the moment it is complete; an incomplete one is written nowhere and
  * is let go when the field blurs, so the field shows the stored colour again
  * (RV6-31) -- unlike `StageConfigPanel`, which has a save to hold shut.
+ *
+ * The swatch is the one exception to "the moment it is complete": the native
+ * picker reports every step of a drag as a change, and each one used to cost a
+ * write and a three-read reload. The swatch follows the drag through
+ * `hexDraft`; the colour goes out once, 400 ms after the last step or the
+ * moment the swatch is left, and not at all if the drag ends where it began.
  */
 
 /** One deck as the table wants it: identity plus its two stored colours. */
@@ -57,11 +63,44 @@ export function DeckKpiColorTable({
   const [hexDraft, setHexDraft] = useState<Record<string, string>>({})
   const draftKey = (deckId: string, family: Family) => `${deckId}:${family}`
 
+  // One slot: a pointer drags one swatch at a time.
+  const pending = useRef<{ row: DeckKpiColorRow; family: Family; color: string } | null>(null)
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  /** The drag still waiting on `deckId`, if any, taken out of the queue. */
+  const takePending = (deckId: string) => {
+    const p = pending.current
+    if (p === null || p.row.id !== deckId) return null
+    if (timer.current !== null) clearTimeout(timer.current)
+    timer.current = null
+    pending.current = null
+    return p
+  }
+
   const write = (row: DeckKpiColorRow, family: Family, color: string | null) => {
+    // A drag on this deck's other family still waiting rides along, so its
+    // own write cannot land later on top of this one with the older colour.
+    const p = takePending(row.id)
+    const carried = (f: Family) => (p !== null && p.family === f ? p.color : stored(row, f))
     onChange(row.id, {
-      plan: family === 'plan' ? color : row.kpiPlanColor,
-      actual: family === 'actual' ? color : row.kpiActualColor,
+      plan: family === 'plan' ? color : carried('plan'),
+      actual: family === 'actual' ? color : carried('actual'),
     })
+  }
+
+  const flush = () => {
+    const p = pending.current
+    if (p !== null) write(p.row, p.family, p.color)
+  }
+
+  const queue = (row: DeckKpiColorRow, family: Family, color: string) => {
+    const p = pending.current
+    if (p !== null && (p.row.id !== row.id || p.family !== family)) flush()
+    else takePending(row.id)
+    // Back where the swatch started: nothing to write.
+    if (color === (stored(row, family) ?? KPI_COLOR_DEFAULTS[family]).toLowerCase()) return
+    pending.current = { row, family, color }
+    timer.current = setTimeout(flush, 400)
   }
 
   const field = (row: DeckKpiColorRow, family: Family) => {
@@ -80,6 +119,8 @@ export function DeckKpiColorTable({
         hex={draft}
         disabled={saving}
         onColor={(color) => write(row, family, color)}
+        onSwatchColor={(color) => queue(row, family, color)}
+        onSwatchBlur={flush}
         onHex={(typed) => setHexDraft((d) => ({ ...d, [key]: typed }))}
         onHexBlur={() => setHexDraft((d) => {
           const rest = { ...d }
@@ -123,7 +164,10 @@ export function DeckKpiColorTable({
                 // Nothing to clear on a deck already at the defaults: the
                 // write would be a no-op and the reload it triggers a cost.
                 disabled={saving || (row.kpiPlanColor === null && row.kpiActualColor === null)}
-                onClick={() => onChange(row.id, { plan: null, actual: null })}
+                onClick={() => {
+                  takePending(row.id)
+                  onChange(row.id, { plan: null, actual: null })
+                }}
               >
                 Mặc định
               </Button>
