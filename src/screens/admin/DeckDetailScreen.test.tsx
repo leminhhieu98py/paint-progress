@@ -33,8 +33,10 @@ vi.mock('../../lib/pdfToPng', () => ({
 // The drawing tools are their own screen with their own tests; here all that
 // matters is whether they are on the page and which deck they were handed.
 vi.mock('./DeckEditor', () => ({
-  DeckEditor: ({ deck, editable }: { deck: { code: string }; editable?: boolean }) => (
-    <div>{`editor ${deck.code} ${editable ? 'sửa' : 'xem'}`}</div>
+  DeckEditor: ({ deck, editable, quantityLabel, unit }: {
+    deck: { code: string }; editable?: boolean; quantityLabel?: string; unit?: string | null
+  }) => (
+    <div>{`editor ${deck.code} ${editable ? 'sửa' : 'xem'} ${quantityLabel ?? '?'}/${unit === null ? 'none' : unit ?? '?'}`}</div>
   ),
 }))
 // Stubbed for the same reason DeckEditor is: this file is about the deck's own
@@ -49,7 +51,7 @@ vi.mock('./StageConfigPanel', () => ({
 const listDeckWorks = vi.hoisted(() => vi.fn())
 vi.mock('../../lib/gsApi', () => ({ listDeckWorks: (id: string) => listDeckWorks(id) }))
 const WORK1 = {
-  id: 'w1', projectId: 'p1', seq: 1, name: 'Sơn', kind: 'bays' as const, weight: 0.6, counts: true, manualProgress: 0,
+  id: 'w1', projectId: 'p1', seq: 1, name: 'Sơn', kind: 'bays' as const, weight: 0.6, counts: true, manualProgress: 0, quantityLabel: 'Diện tích', unit: 'm²',
 }
 const WORK2 = { ...WORK1, id: 'w2', seq: 2, name: 'Tháo giáo', weight: 0.4 }
 // Stubbed like the other two, and for one more reason: left real it calls
@@ -145,7 +147,7 @@ describe('DeckDetailScreen', () => {
     // require entering a mode that can overwrite them. What Xem withholds is
     // the writing: no file picker, and both panels told they are read-only.
     expect(screen.queryByLabelText('Bản vẽ (PDF)')).not.toBeInTheDocument()
-    expect(screen.getByText('editor MD xem')).toBeInTheDocument()
+    expect(screen.getByText(/^editor MD xem/)).toBeInTheDocument()
     expect(await screen.findByText('stages w1 d1 xem')).toBeInTheDocument()
 
     // The Segmented's radio input carries pointer-events:none -- its visible
@@ -153,7 +155,7 @@ describe('DeckDetailScreen', () => {
     await userEvent.click(screen.getByText('Sửa'))
 
     expect(await screen.findByLabelText('Bản vẽ (PDF)')).toBeInTheDocument()
-    expect(screen.getByText('editor MD sửa')).toBeInTheDocument()
+    expect(screen.getByText(/^editor MD sửa/)).toBeInTheDocument()
     expect(await screen.findByText('stages w1 d1 sửa')).toBeInTheDocument()
   })
 
@@ -493,5 +495,40 @@ describe('DeckDetailScreen — công việc', () => {
     expect(screen.getByText('dự báo d1')).toBeInTheDocument()
     expect(listDeckEvents).toHaveBeenCalledTimes(1)
     expect(listDeckEvents).toHaveBeenCalledWith('d1')
+  })
+})
+
+describe('DeckDetailScreen: the quantity and unit of the deck\'s works (RV6-36)', () => {
+  it('labels the header, the card, the form and the editor with the one work\'s quantity', async () => {
+    listDeckWorks.mockResolvedValue([{ work: { ...WORK1, quantityLabel: 'Khối lượng', unit: 'tấn' }, weight: 1, stages: [] }])
+    renderAt('/decks/d1')
+    await screen.findByRole('heading', { level: 1, name: 'Main Deck' })
+    await waitFor(() => expect(screen.getByText(/24 ô · 5\.258,50 tấn/)).toBeInTheDocument())
+    expect(screen.getByText('Khối lượng sàn (tấn)')).toBeInTheDocument()
+    expect(screen.getByText('editor MD xem Khối lượng/tấn')).toBeInTheDocument()
+    await userEvent.click(screen.getByText('Sửa'))
+    expect(await screen.findByLabelText('Khối lượng sàn (tấn)')).toBeInTheDocument()
+    expect(screen.queryByText(/m²/)).toBeNull()
+  })
+
+  it('reads Số lượng with no unit when the deck\'s works disagree', async () => {
+    listDeckWorks.mockResolvedValue([
+      { work: WORK1, weight: 1, stages: [] },
+      { work: { ...WORK2, quantityLabel: 'Khối lượng', unit: 'tấn' }, weight: 1, stages: [] },
+    ])
+    renderAt('/decks/d1')
+    await screen.findByRole('heading', { level: 1, name: 'Main Deck' })
+    await waitFor(() => expect(screen.getByText('Số lượng sàn')).toBeInTheDocument())
+    expect(screen.getByText(/24 ô · 5\.258,50$/)).toBeInTheDocument()
+    expect(screen.getByText('editor MD xem Số lượng/none')).toBeInTheDocument()
+  })
+
+  it('keeps Diện tích sàn (m²) for a deck in no work yet', async () => {
+    listDeckWorks.mockResolvedValue([])
+    renderAt('/decks/d1')
+    await screen.findByRole('heading', { level: 1, name: 'Main Deck' })
+    await waitFor(() => expect(screen.getByText('editor MD xem Diện tích/m²')).toBeInTheDocument())
+    expect(screen.getByText('Diện tích sàn (m²)')).toBeInTheDocument()
+    expect(screen.getByText(/24 ô · 5\.258,50 m²/)).toBeInTheDocument()
   })
 })

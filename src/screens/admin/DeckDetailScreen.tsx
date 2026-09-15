@@ -14,6 +14,9 @@ import {
 import { formatAreaM2 } from '../../lib/format'
 import { listDeckEvents } from '../../lib/progressApi'
 import type { DeckEvent } from '../../domain/types'
+import {
+  DEFAULT_QUANTITY_LABEL, DEFAULT_UNIT, labelOfWorks, MIXED_QUANTITY_LABEL, unitOfWorks,
+} from '../../domain/unit'
 import { pdfPageCount, renderPdfPage } from '../../lib/pdfToPng'
 import { DeckEditor } from './DeckEditor'
 import { StageConfigPanel } from './StageConfigPanel'
@@ -180,6 +183,20 @@ export function DeckDetailScreen() {
    */
   const [works, setWorks] = useState<DeckWork[] | null>(null)
   const [worksError, setWorksError] = useState<string | null>(null)
+  /**
+   * RV6-36: the deck's quantity is its works'. One work, or several agreeing:
+   * `Khối lượng sàn (tấn)`. Works that disagree: `Số lượng sàn`, no unit, and
+   * the figure printed bare. A deck in no work yet -- or one whose works have
+   * not loaded -- keeps `Diện tích sàn (m²)`.
+   */
+  const unit: string | null = works === null || works.length === 0
+    ? DEFAULT_UNIT
+    : unitOfWorks(works.map((w) => w.work))
+  const quantityLabel = works === null || works.length === 0
+    ? DEFAULT_QUANTITY_LABEL
+    : (unit === null ? MIXED_QUANTITY_LABEL : labelOfWorks(works.map((w) => w.work)) ?? MIXED_QUANTITY_LABEL)
+  const quantityTitle = unit === null ? `${quantityLabel} sàn` : `${quantityLabel} sàn (${unit})`
+  const withUnit = (n: number) => (unit === null ? formatAreaM2(n) : `${formatAreaM2(n)} ${unit}`)
 
   const load = useCallback(async () => {
     if (creating || !deckId) return
@@ -307,7 +324,7 @@ export function DeckDetailScreen() {
   }
   if (!creating && deck && area !== deck.totalAreaM2) {
     saveConsequences.push({
-      label: `Diện tích sàn ${formatAreaM2(deck.totalAreaM2)} → ${formatAreaM2(area)} m²`,
+      label: `${quantityLabel} sàn ${formatAreaM2(deck.totalAreaM2)} → ${withUnit(area)}`,
       meta: deck.cellCount ? `${deck.cellCount} ô` : 'chưa dựng ô',
     })
   }
@@ -362,7 +379,7 @@ export function DeckDetailScreen() {
         <Input id="deck-code" value={code} onChange={(e) => setCode(e.target.value)} />
       </Form.Item>
       <Form.Item
-        label="Diện tích sàn (m²)"
+        label={quantityTitle}
         htmlFor="deck-area"
         required
         style={{ flex: '1 1 210px', minWidth: 0 }}
@@ -523,7 +540,7 @@ export function DeckDetailScreen() {
         subtitle={
           creating
             ? 'Đặt tên, mã và diện tích trước, rồi tải bản vẽ lên.'
-            : `${deck?.cellCount ? `${deck.cellCount} ô` : 'chưa dựng ô'} · ${formatAreaM2(deck?.totalAreaM2 ?? 0)} m²`
+            : `${deck?.cellCount ? `${deck.cellCount} ô` : 'chưa dựng ô'} · ${withUnit(deck?.totalAreaM2 ?? 0)}`
         }
         breadcrumbs={[{ label: 'Sàn', onClick: () => navigate('..', { relative: 'path' }) }]}
         onBack={() => navigate('..', { relative: 'path' })}
@@ -589,7 +606,7 @@ export function DeckDetailScreen() {
               <IdentityCard label="Tên sàn" value={deck?.name ?? ''} />
               <IdentityCard label="Mã sàn" value={deck?.code ?? ''} dense />
               <IdentityCard
-                label="Diện tích sàn (m²)"
+                label={quantityTitle}
                 value={formatAreaM2(deck?.totalAreaM2 ?? 0)}
                 sub="Mẫu số của mọi phần trăm trên sàn"
               />
@@ -658,7 +675,9 @@ export function DeckDetailScreen() {
           />
         )}
 
-        {deck && <DeckEditor deck={deck} editable={editing} onSaved={() => void load()} />}
+        {deck && (
+          <DeckEditor deck={deck} editable={editing} quantityLabel={quantityLabel} unit={unit} onSaved={() => void load()} />
+        )}
 
         {/* Progress lives here rather than on a screen of its own: everything on
             it is about THIS deck, and making the admin pick a project and then a

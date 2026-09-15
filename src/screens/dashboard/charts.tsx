@@ -4,7 +4,7 @@ import {
 } from 'recharts'
 import type { KpiDay } from '../../domain/kpi'
 import { fieldError, palette } from '../../theme'
-import { DEFAULT_UNIT, rateUnit } from '../../domain/unit'
+import { DEFAULT_UNIT, perUnit, rateUnit } from '../../domain/unit'
 import { formatAreaM2, formatHours, formatMhrPerM2, formatPercent } from '../../lib/format'
 import { KPI_COLOR_DEFAULTS } from './kpiColors'
 
@@ -26,10 +26,13 @@ const AXIS = { fontSize: 12, fill: palette.textTertiary }
 export function EfficiencyLineChart({
   data,
   stages,
+  unit = DEFAULT_UNIT,
 }: {
   data: Array<Record<string, string | number | null>>
   /** Stage names in seq order with the colour the drawing uses for each. */
   stages: Array<{ name: string; color: string }>
+  /** The chosen work's unit (RV6-36); the axis reads `Mhr/<unit>`. */
+  unit?: string
 }) {
   return (
     <div data-testid="efficiency-chart" style={{ width: '100%', height: 280 }}>
@@ -40,7 +43,7 @@ export function EfficiencyLineChart({
           <YAxis
             tick={AXIS}
             width={56}
-            label={{ value: 'Mhr/m²', angle: -90, position: 'insideLeft', style: AXIS }}
+            label={{ value: perUnit(unit), angle: -90, position: 'insideLeft', style: AXIS }}
           />
           <Tooltip
             labelFormatter={(day) => dayLabel(String(day))}

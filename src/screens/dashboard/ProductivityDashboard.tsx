@@ -13,6 +13,7 @@ import {
 import { deckForecast, type DeckForecast } from '../../domain/forecast'
 import { computeDeckProgress } from '../../domain/progress'
 import type { DeckEvent, WorkModel } from '../../domain/types'
+import { DEFAULT_UNIT, perUnit } from '../../domain/unit'
 import { formatAreaM2, formatHours, formatMhrPerM2, formatPercent } from '../../lib/format'
 import { matchesSearch } from '../../lib/search'
 import { fieldError, palette } from '../../theme'
@@ -63,6 +64,12 @@ export function ProductivityDashboard({
 
   const [workChoice, setWorkChoice] = useState<string | null>(null)
   const workName = workChoice !== null && workNames.includes(workChoice) ? workChoice : workNames[0] ?? ''
+  /**
+   * One work is always chosen here, so its unit labels every total and
+   * efficiency figure (RV6-36). A work the events remember but the model no
+   * longer has reads m², as everything did before 0036.
+   */
+  const unit = models.find((m) => m.work.name === workName)?.work.unit ?? DEFAULT_UNIT
   const [deckName, setDeckName] = useState<string>('')
   const [range, setRange] = useState<[Dayjs | null, Dayjs | null]>([null, null])
 
@@ -214,8 +221,8 @@ export function ProductivityDashboard({
     { title: 'Công đoạn', dataIndex: 'stageName' as const },
     { title: 'Số ngày', dataIndex: 'days' as const, align: 'right' as const },
     { title: 'Tổng Mhr', align: 'right' as const, render: (_: unknown, r: StageEfficiency) => formatHours(r.totalHours) },
-    { title: 'Tổng m²', align: 'right' as const, render: (_: unknown, r: StageEfficiency) => formatAreaM2(r.totalAreaM2) },
-    { title: 'Hiệu suất TB (Mhr/m²)', align: 'right' as const, render: (_: unknown, r: StageEfficiency) => ratio(r.avgMhrPerM2) },
+    { title: `Tổng ${unit}`, align: 'right' as const, render: (_: unknown, r: StageEfficiency) => formatAreaM2(r.totalAreaM2) },
+    { title: `Hiệu suất TB (${perUnit(unit)})`, align: 'right' as const, render: (_: unknown, r: StageEfficiency) => ratio(r.avgMhrPerM2) },
     { title: 'Mhr TB/ngày', align: 'right' as const, render: (_: unknown, r: StageEfficiency) => (r.avgHoursPerDay === null ? dash : formatHours(r.avgHoursPerDay)) },
     { title: 'Giờ hao phí', align: 'right' as const, render: (_: unknown, r: StageEfficiency) => formatHours(r.wasteHours) },
   ]
@@ -251,11 +258,11 @@ export function ProductivityDashboard({
         style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}
       >
         <StatCard label="Tổng Mhr thực hiện" value={formatHours(totalHours)} sub="giờ công đã ghi" />
-        <StatCard label="Tổng m² đã ghi giờ công" value={formatAreaM2(totalAreaM2)} sub="m²" />
+        <StatCard label={`Tổng ${unit} đã ghi giờ công`} value={formatAreaM2(totalAreaM2)} sub={unit} />
         <StatCard
-          label="Mhr/m² tổng thể"
+          label={`${perUnit(unit)} tổng thể`}
           value={ratio(overall)}
-          sub="tổng Mhr chia tổng m², khác với hiệu suất trung bình theo ngày"
+          sub={`tổng Mhr chia tổng ${unit}, khác với hiệu suất trung bình theo ngày`}
           tone="accent"
         />
         {/* Today, beside the totals (Linh, 2026-09-05): the same two figures
@@ -340,9 +347,9 @@ export function ProductivityDashboard({
 
       <SectionCard
         title="Hiệu suất theo ngày"
-        summary="Mhr/m² của từng công đoạn theo ngày; hiệu suất trung bình là trung bình cộng của các điểm này"
+        summary={`${perUnit(unit)} của từng công đoạn theo ngày; hiệu suất trung bình là trung bình cộng của các điểm này`}
       >
-        <EfficiencyLineChart data={efficiencySeries(daily)} stages={stageColors} />
+        <EfficiencyLineChart data={efficiencySeries(daily)} stages={stageColors} unit={unit} />
       </SectionCard>
 
       <SectionCard title="Giờ công theo ngày" summary="Giờ thực hiện và giờ hao phí, cộng dồn mọi công đoạn">
@@ -376,8 +383,8 @@ export function ProductivityDashboard({
                 { title: 'Nhóm trưởng', dataIndex: 'leadName' },
                 { title: 'Lần cập nhật', dataIndex: 'updates', align: 'right' },
                 { title: 'Tổng Mhr', align: 'right', render: (_, r) => formatHours(r.totalHours) },
-                { title: 'Tổng m²', align: 'right', render: (_, r) => formatAreaM2(r.totalAreaM2) },
-                { title: 'Mhr/m²', align: 'right', render: (_, r) => ratio(r.mhrPerM2) },
+                { title: `Tổng ${unit}`, align: 'right', render: (_, r) => formatAreaM2(r.totalAreaM2) },
+                { title: perUnit(unit), align: 'right', render: (_, r) => ratio(r.mhrPerM2) },
                 { title: 'Giờ hao phí', align: 'right', render: (_, r) => formatHours(r.wasteHours) },
               ]}
             />

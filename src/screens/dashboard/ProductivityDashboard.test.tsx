@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { EMPTY_EFFORT, type DeckEvent, type Effort, type WorkModel } from '../../domain/types'
@@ -311,5 +311,23 @@ describe('ProductivityDashboard forecast (Feedback Rv2, item 13)', () => {
     render(<ProductivityDashboard events={EVENTS} models={late} decks={DECKS} />)
     const rows = within(screen.getByTestId('forecast-table')).getAllByRole('row').slice(1)
     expect(within(rows[0]).getByText(/Trễ \d+ ngày · thiếu/)).toBeInTheDocument()
+  })
+})
+
+describe('ProductivityDashboard: the chosen work\'s unit (RV6-36)', () => {
+  it('labels the totals, the tables and the efficiency figures in the chosen work\'s unit', async () => {
+    const tonnes = MODELS.map((m) => (m.work.id === 'w1' ? { ...m, work: { ...m.work, quantityLabel: 'Khối lượng', unit: 'tấn' } } : m))
+    render(<ProductivityDashboard events={EVENTS} models={tonnes} decks={DECKS} />)
+    expect(cards().getByText('Tổng tấn đã ghi giờ công')).toBeInTheDocument()
+    expect(cards().getByText('Mhr/tấn tổng thể')).toBeInTheDocument()
+    const headers = within(screen.getByTestId('stage-table')).getAllByRole('columnheader').map((h) => h.textContent)
+    expect(headers).toContain('Tổng tấn')
+    expect(headers).toContain('Hiệu suất TB (Mhr/tấn)')
+    expect(screen.queryByText(/Tổng m²/)).toBeNull()
+
+    // Tháo giáo is still m²: switching the work switches the labels with it.
+    await userEvent.click(screen.getByText('Tháo giáo'))
+    await waitFor(() => expect(cards().getByText('Tổng m² đã ghi giờ công')).toBeInTheDocument())
+    expect(cards().getByText('Mhr/m² tổng thể')).toBeInTheDocument()
   })
 })

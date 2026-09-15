@@ -68,7 +68,7 @@ const bay = (stageId: string) => ({
 const work = (
   id: string, seq: number, name: string, kind: 'bays' | 'manual', weight: number,
   manualProgress: number | null = null,
-) => ({ id, projectId: 'p1', seq, name, kind, weight, counts: true, manualProgress })
+) => ({ id, projectId: 'p1', seq, name, kind, weight, counts: true, manualProgress, quantityLabel: 'Diện tích', unit: 'm²' })
 const MODEL = {
   models: [
     {
@@ -672,5 +672,46 @@ describe('DecksScreen — reordering decks (RV6-05, RV6-06)', () => {
     settle()
     await waitFor(() => expect(screen.getAllByRole('button', { name: 'Xuống' })[0]).toBeEnabled())
     expect(screen.getAllByRole('button', { name: 'Lên' })[1]).toBeEnabled()
+  })
+})
+
+describe('DecksScreen: the quantity and unit of the works in scope (RV6-36)', () => {
+  const tonnes = { quantityLabel: 'Khối lượng', unit: 'tấn' }
+  const headersOf = (table: HTMLElement) =>
+    within(table).getAllByRole('columnheader').map((h) => h.textContent)
+
+  it('heads both tables with the one quantity every bays work shares', async () => {
+    loadProjectModel.mockResolvedValue({
+      ...MODEL,
+      models: MODEL.models.map((m) => (m.work.kind === 'bays' ? { ...m, work: { ...m.work, ...tonnes } } : m)),
+    })
+    renderScreen()
+    const rollup = await screen.findByTestId('project-rollup')
+    await waitFor(() => expect(within(rollup).getByText('Cellar Deck')).toBeInTheDocument())
+    expect(headersOf(rollup)).toContain('Khối lượng (tấn)')
+    expect(within(rollup).getByText('4.000,00')).toBeInTheDocument()
+    const list = screen.getAllByRole('table')[0] // the deck list is the first table on the page
+    expect(headersOf(list)).toContain('Khối lượng (tấn)')
+    expect(screen.queryByText(/m²/)).toBeNull()
+  })
+
+  it('falls back to Số lượng, per-row units and no sum when the works disagree', async () => {
+    // Sơn stays m² and Tháo giáo becomes tấn. CD is in both, so its own unit is
+    // undecided and its row shows the bare number; WD is only in Sơn and reads
+    // m². The Σ under the table cannot add a tấn to a m² and says so.
+    loadProjectModel.mockResolvedValue({
+      ...MODEL,
+      models: MODEL.models.map((m) => (m.work.id === 'w2' ? { ...m, work: { ...m.work, ...tonnes } } : m)),
+    })
+    renderScreen()
+    const rollup = await screen.findByTestId('project-rollup')
+    await waitFor(() => expect(within(rollup).getByText('Cellar Deck')).toBeInTheDocument())
+    expect(headersOf(rollup)).toContain('Số lượng')
+    expect(within(rollup).getByText('1.000,00')).toBeInTheDocument()
+    expect(within(rollup).getByText('3.000,00 m²')).toBeInTheDocument()
+    expect(within(rollup).queryByText('4.000,00')).toBeNull()
+    const dash = within(rollup).getByText('—')
+    await userEvent.hover(dash)
+    expect(await screen.findByRole('tooltip')).toHaveTextContent('Các sàn dùng đơn vị khác nhau, không cộng được')
   })
 })

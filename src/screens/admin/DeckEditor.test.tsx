@@ -1322,3 +1322,28 @@ describe('mergeErrorInVietnamese', () => {
     })
   })
 })
+
+describe('DeckEditor: the quantity and unit of the deck\'s works (RV6-36)', () => {
+  it('sums the bays under the quantity and unit it is given', async () => {
+    render(
+      <AntApp>
+        <DeckEditor deck={deck} quantityLabel="Khối lượng" unit="tấn" />
+      </AntApp>,
+    )
+    expect(await screen.findByText('Σ Khối lượng ô (tấn)')).toBeInTheDocument()
+  })
+
+  it('sums under Số lượng with no unit when the works disagree', async () => {
+    render(
+      <AntApp>
+        <DeckEditor deck={deck} quantityLabel="Số lượng" unit={null} />
+      </AntApp>,
+    )
+    expect(await screen.findByText('Σ Số lượng ô')).toBeInTheDocument()
+  })
+
+  it('keeps Σ Diện tích ô (m²) when told nothing', async () => {
+    renderInApp(deck)
+    expect(await screen.findByText('Σ Diện tích ô (m²)')).toBeInTheDocument()
+  })
+})

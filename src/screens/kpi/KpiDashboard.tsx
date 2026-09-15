@@ -1,9 +1,9 @@
-import { Select } from 'antd'
+import { Select, Tooltip } from 'antd'
 import { useMemo, useState } from 'react'
 import { EmptyState } from '../../components/EmptyState'
 import { SectionCard } from '../../components/SectionCard'
 import { kpiSeries, plannedAreaM2, type KpiScopeStage } from '../../domain/kpi'
-import { DEFAULT_UNIT, unitOfWorks } from '../../domain/unit'
+import { DEFAULT_UNIT, MIXED_QUANTITY_LABEL, MIXED_UNIT_SUM_TOOLTIP, unitOfWorks } from '../../domain/unit'
 import { formatAreaM2 } from '../../lib/format'
 import { palette } from '../../theme'
 import { KpiComboChart } from '../dashboard/charts'
@@ -123,7 +123,15 @@ export function KpiDashboard({
       summary={
         scoped.length === 0
           ? undefined
-          : `${scoped.length} công đoạn · kế hoạch ${formatAreaM2(totalPlanned)} ${unit ?? DEFAULT_UNIT} · thực hiện ${formatAreaM2(totalActual)} ${unit ?? DEFAULT_UNIT}`
+          : unit === null
+            // RV6-36: `Tất cả công đoạn` over works of different units has no
+            // sum to print; the figures per coat are one filter away.
+            ? (
+              <Tooltip title={MIXED_UNIT_SUM_TOOLTIP}>
+                <span>{`${scoped.length} công đoạn · kế hoạch — · thực hiện —`}</span>
+              </Tooltip>
+            )
+            : `${scoped.length} công đoạn · kế hoạch ${formatAreaM2(totalPlanned)} ${unit} · thực hiện ${formatAreaM2(totalActual)} ${unit}`
       }
     >
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -165,7 +173,7 @@ export function KpiDashboard({
               different chart, and the Brush's own zoom/pan state must not
               survive onto it.
             */}
-            <KpiComboChart key={`${deckId}|${coatValue}`} data={series} colors={colors} unit={unit ?? DEFAULT_UNIT} />
+            <KpiComboChart key={`${deckId}|${coatValue}`} data={series} colors={colors} unit={unit ?? MIXED_QUANTITY_LABEL} />
             {/* RV6-08: what the chart above is scoped to. */}
             <p
               data-testid="kpi-chart-title"

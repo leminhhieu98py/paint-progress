@@ -8,6 +8,10 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { computeProjectProgress, summariseDeck } from '../../domain/progress'
 import type { WorkKind } from '../../domain/types'
+import {
+  DEFAULT_QUANTITY_LABEL, DEFAULT_UNIT, labelOfWorks, MIXED_QUANTITY_LABEL, MIXED_UNIT_SUM_TOOLTIP,
+  quantityHeading, unitOfWorks,
+} from '../../domain/unit'
 import { listGsUsers } from '../../lib/adminApi'
 import {
   deleteDeck, duplicateDeck, listDecks, swapDeckSeq, type DeckRow,
@@ -185,6 +189,32 @@ export function DecksScreen() {
   const modelDecks = model?.decks ?? []
   const rollup = useMemo(() => computeProjectProgress(model?.models ?? []), [model])
   /**
+   * RV6-36: several works may be in scope here, so the quantity heading is
+   * theirs only when they agree. A deck's own unit is that of the bays works
+   * it is in (m² when it is in none yet); the heading is that unit when every
+   * deck reads the same one, else `Số lượng` with each row naming its own and
+   * the Σ refusing to add them.
+   */
+  const bays = (model?.models ?? []).filter((m) => m.work.kind === 'bays' && m.decks.length > 0)
+  const unitOfDeck = (deckId: string): string | null => {
+    const inWorks = bays.filter((m) => m.decks.some((e) => e.deck.id === deckId)).map((m) => m.work)
+    return inWorks.length === 0 ? DEFAULT_UNIT : unitOfWorks(inWorks)
+  }
+  const deckUnits = modelDecks.map((d) => unitOfDeck(d.id))
+  const scopeUnit = deckUnits.length === 0
+    ? DEFAULT_UNIT
+    : (deckUnits.every((u) => u !== null && u === deckUnits[0]) ? deckUnits[0] : null)
+  const scopeLabel = bays.length === 0
+    ? DEFAULT_QUANTITY_LABEL
+    : (labelOfWorks(bays.map((m) => m.work)) ?? MIXED_QUANTITY_LABEL)
+  const quantityTitle = scopeUnit === null ? MIXED_QUANTITY_LABEL : quantityHeading(scopeLabel, scopeUnit)
+  /** The figure, with the row's own unit only when the heading could not carry one. */
+  const quantityCell = (deckId: string, n: number): string => {
+    if (scopeUnit !== null) return formatAreaM2(n)
+    const own = unitOfDeck(deckId)
+    return own === null ? formatAreaM2(n) : `${formatAreaM2(n)} ${own}`
+  }
+  /**
    * Each deck across its works: P_d, and the weight it carries in P, which is
    * Σ W·D over the counted bays works it is in -- no longer its m² share. A
    * deck in no work is still listed, at zero, so nothing the project has goes
@@ -200,7 +230,7 @@ export function DecksScreen() {
     name: deck.name,
     code: deck.code,
     share: formatPercent(summaries[i]?.effectiveWeight ?? 0),
-    totalAreaM2: formatAreaM2(deck.totalAreaM2),
+    totalAreaM2: quantityCell(deck.id, deck.totalAreaM2),
     progress: summaries[i]?.progress ?? 0,
   }))
   /**
@@ -220,6 +250,11 @@ export function DecksScreen() {
    */
   const carriesWeight = (i: number) => (summaries[i]?.effectiveWeight ?? 0) > 0
   const visibleRollup = rollupRows.filter((_, i) => carriesWeight(i))
+  /** The Σ under the table adds only figures of one unit (RV6-36). */
+  const visibleUnits = deckUnits.filter((_, i) => carriesWeight(i))
+  const sumUnit = visibleUnits.length > 0 && visibleUnits.every((u) => u !== null && u === visibleUnits[0])
+    ? visibleUnits[0]
+    : null
   const hiddenDecks = rollupRows.length - visibleRollup.length
   const workRows: WorkRow[] = rollup.works.map((w) => ({
     key: w.work.id,
@@ -452,11 +487,11 @@ export function DecksScreen() {
               },
               { title: 'Số ô', dataIndex: 'cellCount', width: 90, align: 'right' },
               {
-                title: 'Diện tích (m²)',
+                title: quantityTitle,
                 dataIndex: 'totalAreaM2',
                 width: 160,
                 align: 'right',
-                render: (v: number) => formatAreaM2(v),
+                render: (v: number, deck) => quantityCell(deck.id, v),
               },
               {
                 title: 'Bản vẽ',
@@ -589,7 +624,7 @@ export function DecksScreen() {
                     },
                     { title: 'Tỉ trọng', dataIndex: 'share', key: 'share', width: 110, align: 'right' },
                     {
-                      title: 'Diện tích (m²)',
+                      title: quantityTitle,
                       dataIndex: 'totalAreaM2',
                       key: 'totalAreaM2',
                       width: 150,
@@ -613,7 +648,13 @@ export function DecksScreen() {
                         <strong>{formatPercent(effectiveTotal)}</strong>
                       </Table.Summary.Cell>
                       <Table.Summary.Cell index={3} align="right">
-                        <strong>{formatAreaM2(totalArea)}</strong>
+                        {sumUnit === null ? (
+                          <Tooltip title={MIXED_UNIT_SUM_TOOLTIP}>
+                            <strong>—</strong>
+                          </Tooltip>
+                        ) : (
+                          <strong>{formatAreaM2(totalArea)}</strong>
+                        )}
                       </Table.Summary.Cell>
                       <Table.Summary.Cell index={4}>
                         <ProgressBar ratio={rollup.progress} height={8} />

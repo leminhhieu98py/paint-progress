@@ -227,3 +227,18 @@ describe('KpiDashboard: the work\'s unit (RV6-35)', () => {
     expect(chart()).toHaveAttribute('data-unit', 'm²')
   })
 })
+
+describe('KpiDashboard: coats of different units under Tất cả công đoạn (RV6-36)', () => {
+  it('refuses to sum across units and charts under Số lượng', async () => {
+    renderDash([{ ...ENTRIES[0], unit: 'm²' }, { ...ENTRIES[1], unit: 'tấn' }])
+    const header = screen.getByText(/2 công đoạn · kế hoạch — · thực hiện —/)
+    expect(header).toBeInTheDocument()
+    expect(chart()).toHaveAttribute('data-unit', 'Số lượng')
+    await userEvent.hover(header)
+    expect(await screen.findByRole('tooltip')).toHaveTextContent('Các sàn dùng đơn vị khác nhau, không cộng được')
+    // Narrowed to one coat, the sum and the unit are that coat's again.
+    await pick('Công đoạn', 'Công đoạn 2')
+    await waitFor(() => expect(screen.getByText(/kế hoạch 400,00 tấn · thực hiện 0,00 tấn/)).toBeInTheDocument())
+    expect(chart()).toHaveAttribute('data-unit', 'tấn')
+  })
+})
