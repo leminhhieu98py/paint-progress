@@ -1092,3 +1092,45 @@ describe('DeckProgressPanel — the all-stages layer (RV6-13)', () => {
     expect(await screen.findByText('Chọn một công đoạn để tạo zone')).toBeInTheDocument()
   })
 })
+
+/**
+ * RV6-12 -- the plan overlay, on a switch.
+ *
+ * Linh reads the drawing for what is DONE; the faint zone tints and dashed
+ * frames that answer "what is planned" are noise while she is doing that.
+ */
+describe('DeckProgressPanel — hiding the plan (RV6-12)', () => {
+  beforeEach(() => {
+    listDeckZones.mockResolvedValue([{ ...ZONE, cellIds: ['c1', 'c2'] }])
+  })
+
+  it('shows the plan by default, as the panel always has', async () => {
+    renderPanel()
+    await screen.findByTestId('lens-A')
+    expect(screen.getByRole('switch', { name: 'Hiện kế hoạch' })).toBeChecked()
+    await pickLens('Lớp sơn đang xem', 'Tháo giáo')
+    await waitFor(() =>
+      expect(screen.getByTestId('cell-R1C2')).toHaveAttribute('data-outline', '#eb2f96'))
+    expect(screen.getByTestId('canvas')).toHaveAttribute('data-labels', 'Khu A — Tháo giáo')
+  })
+
+  it('drops the tints, frames and labels when the plan is switched off', async () => {
+    renderPanel()
+    await screen.findByTestId('lens-A')
+    await pickLens('Lớp sơn đang xem', 'Tháo giáo')
+    await userEvent.click(screen.getByRole('switch', { name: 'Hiện kế hoạch' }))
+
+    // c1 reached Tháo giáo: the COAT's colour now, not its zone's magenta.
+    await waitFor(() =>
+      expect(screen.getByTestId('cell-R1C1')).toHaveAttribute('data-color', '#722ed1'))
+    expect(screen.getByTestId('cell-R1C1')).toHaveAttribute('data-opacity', '')
+    // c2 is planned but has not reached it: nothing at all.
+    expect(screen.getByTestId('cell-R1C2')).toHaveAttribute('data-color', '')
+    expect(screen.getByTestId('cell-R1C2')).toHaveAttribute('data-outline', '')
+    expect(screen.getByTestId('cell-R1C2')).toHaveAttribute('data-opacity', '')
+    expect(screen.getByTestId('canvas')).toHaveAttribute('data-labels', '')
+    // The table under the drawing is data, not overlay: it stays.
+    expect(within(screen.getByTestId('lens-A')).getByText('Khu A — Tháo giáo')).toBeInTheDocument()
+  })
+})
+

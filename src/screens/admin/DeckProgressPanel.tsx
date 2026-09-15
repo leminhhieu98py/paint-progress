@@ -1,7 +1,7 @@
 import { ExpandOutlined, MinusOutlined, PlusOutlined } from '@ant-design/icons'
 import {
   Alert, App, Button, DatePicker, Form, Input, Modal, Segmented,
-  Select, Space, Spin, Table, Tooltip, Typography,
+  Select, Space, Spin, Switch, Table, Tooltip, Typography,
 } from 'antd'
 import dayjs from 'dayjs'
 import { useCallback, useEffect, useMemo, useState } from 'react'
@@ -243,6 +243,17 @@ export function DeckProgressPanel({
    * second lens is something the admin asks for when they have two to compare.
    */
   const [splitView, setSplitView] = useState(false)
+  /**
+   * Whether the plan is drawn over the progress (RV6-12).
+   *
+   * Default on, which is the rendering the panel has always had. Off, the
+   * drawing answers one question only -- what is DONE -- because the faint
+   * zone tints, the dashed frames and the label boxes that answer "what is
+   * planned" are noise while that is the question being asked.
+   *
+   * View state: nothing is written, and it is not remembered between visits.
+   */
+  const [showPlan, setShowPlan] = useState(true)
   /** The coat each lens is showing. Null only before the stages have loaded. */
   const [viewA, setViewA] = useState<string | null>(null)
   const [viewB, setViewB] = useState<string | null>(null)
@@ -538,6 +549,24 @@ export function DeckProgressPanel({
     const { stage } = view
     const zonesHere = zonesOf(stage.id)
     const layers = zoneLensLayers(entry.deck.cells, entry.stages, stage, zonesHere, zoneColors)
+    // With the plan hidden (RV6-12) the reached bays wear the COAT's colour at
+    // full opacity and nothing else is drawn. Built from `zoneLensLayers`' own
+    // reachedCodes rather than from a second pass over the zones, so the two
+    // renderings can never disagree about which bays are done.
+    if (!showPlan) {
+      return {
+        view,
+        title: stage.name,
+        colors: Object.fromEntries(layers.reachedCodes.map((code) => [code, stage.color])),
+        opacities: {},
+        outlines: {},
+        labels: [],
+        zones: zoneRows,
+        zoneColors,
+        chips,
+        reachedAreaM2,
+      }
+    }
     return {
       view,
       title: stage.name,
@@ -864,6 +893,17 @@ export function DeckProgressPanel({
    */
   const renderLens = (lens: Lens, side: 'A' | 'B') => {
     if (!entry || !lens.view || !imageUrl) return null
+    /*
+      LNS-R1 describes the plan overlay, so it is only true while the overlay
+      is drawn. Every coat at once never draws one (a zone belongs to one
+      coat), and RV6-12 switches it off on a single coat; both get the sentence
+      that IS true of what is on the screen.
+    */
+    const legend = lens.view.kind === 'all'
+      ? 'Mỗi ô tô theo màu công đoạn cao nhất đã đạt · ô chưa bắt đầu để trắng'
+      : showPlan
+        ? 'Ô đã đạt lớp tô đặc · ô có kế hoạch chưa đạt tô nhạt, viền đứt · ô chưa đạt, chưa kế hoạch để trắng'
+        : 'Ô đã đạt lớp tô đặc theo màu công đoạn · ô chưa đạt để trắng'
     return (
       <div
         data-testid={`lens-${side}`}
@@ -882,17 +922,9 @@ export function DeckProgressPanel({
               {`Tiến độ · ${lens.title}`}
             </h3>
             <div style={{ fontSize: 12, lineHeight: 1.35, color: palette.textTertiary, marginTop: 4 }}>
-              {/*
-                LNS-R1 describes the plan overlay, so it is only true while the
-                overlay is drawn. Every coat at once never draws one (a zone
-                belongs to one coat), and RV6-12 can switch it off on a single
-                coat; both get the sentence that IS true of what is on screen.
-              */}
               {splitView
                 ? (side === 'A' ? 'Lớp bên trái' : 'Lớp bên phải · cùng mức zoom để so sánh')
-                : lens.view.kind === 'all'
-                  ? 'Mỗi ô tô theo màu công đoạn cao nhất đã đạt · ô chưa bắt đầu để trắng'
-                  : 'Ô đã đạt lớp tô đặc · ô có kế hoạch chưa đạt tô nhạt, viền đứt · ô chưa đạt, chưa kế hoạch để trắng'}
+                : legend}
             </div>
           </div>
           {/*
@@ -1104,6 +1136,24 @@ export function DeckProgressPanel({
       extra={
         entry && entry.imagePath && imageUrl ? (
           <Space size={10}>
+            {/*
+              The plan overlay, on a switch (RV6-12). Before the layer control
+              because it changes what every layer draws, where the segmented
+              control only changes how many there are. `Hiện kế hoạch` is the
+              foreman screen's wording for the same thing, so one plan toggle
+              is named one way across the product.
+            */}
+            <Space size={7}>
+              <Switch
+                size="small"
+                aria-label="Hiện kế hoạch"
+                checked={showPlan}
+                onChange={setShowPlan}
+              />
+              <span style={{ fontSize: 12, fontWeight: 600, color: palette.textSecondary }}>
+                Hiện kế hoạch
+              </span>
+            </Space>
             <Segmented
               size="small"
               value={splitView ? 'split' : 'single'}
