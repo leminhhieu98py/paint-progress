@@ -4,7 +4,7 @@ import {
   Select, Space, Spin, Switch, Table, Tooltip, Typography,
 } from 'antd'
 import dayjs from 'dayjs'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { DrawingCanvas } from '../../canvas/DrawingCanvas'
 import { cellStagesAsOf, HISTORY_FROM_LABEL } from '../../domain/asOf'
 import { cellsInBox } from '../../domain/geometry'
@@ -341,6 +341,11 @@ export function DeckProgressPanel({
    * -- which is what a revert, a re-open and a landed rename all want.
    */
   const [nameDraft, setNameDraft] = useState<{ zoneId: string; value: string } | null>(null)
+  /**
+   * The zone whose rename is being written, or null. A ref, not state: it
+   * only gates `commitZoneName`, and Enter's blur can land before a render.
+   */
+  const renamingZoneId = useRef<string | null>(null)
   /** The zone whose deletion is being confirmed. */
   const [removingZone, setRemovingZone] = useState<Zone | null>(null)
   const [windows, setWindows] = useState<Record<string, StageWindow>>({})
@@ -984,8 +989,12 @@ export function DeckProgressPanel({
    * The coat suffix is re-applied here, so the modal title, the zone table,
    * the label boxes on the drawing, the foreman's screen and the XLSX -- all
    * of which read `zones.name` -- follow without further change.
+   *
+   * Enter and the blur that usually follows it both commit, so the second
+   * is a no-op while the first is still in flight.
    */
   const commitZoneName = async (zone: Zone) => {
+    if (renamingZoneId.current !== null) return
     const stage = zoneStageName(zone)
     const base = baseZoneName(zone.name, stage)
     const next = zoneNameValue(zone).trim()
@@ -993,6 +1002,7 @@ export function DeckProgressPanel({
       setNameDraft(null)
       return
     }
+    renamingZoneId.current = zone.id
     try {
       await updateZone(zone.id, { name: stage === '' ? next : `${next} — ${stage}` })
       setNameDraft(null)
@@ -1001,6 +1011,8 @@ export function DeckProgressPanel({
       // The draft is left standing, so the name that failed is still on screen
       // to try again with rather than silently reverting to the stored one.
       setError((e as Error).message)
+    } finally {
+      renamingZoneId.current = null
     }
   }
 

@@ -1209,6 +1209,25 @@ describe('DeckProgressPanel — renaming a zone (RV6-11)', () => {
 
     expect(await screen.findByText('không đổi tên được')).toBeInTheDocument()
   })
+
+  it('writes once when Enter and blur overlap, and takes the next rename after it lands', async () => {
+    let settle!: () => void
+    updateZone.mockReturnValueOnce(new Promise<void>((resolve) => { settle = resolve }))
+    const input = await openDates()
+    await userEvent.clear(input)
+    await userEvent.type(input, 'Khu B{Enter}')
+    await userEvent.tab()
+
+    expect(updateZone).toHaveBeenCalledTimes(1)
+
+    settle()
+    await waitFor(() => expect(listDeckZones).toHaveBeenCalledTimes(2))
+
+    await userEvent.clear(input)
+    await userEvent.type(input, 'Khu C{Enter}')
+    await waitFor(() => expect(updateZone).toHaveBeenCalledWith('z1', { name: 'Khu C — Tháo giáo' }))
+    expect(updateZone).toHaveBeenCalledTimes(2)
+  })
 })
 
 /**
