@@ -7,8 +7,10 @@ import dayjs from 'dayjs'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { DrawingCanvas } from '../../canvas/DrawingCanvas'
 import { cellsInBox } from '../../domain/geometry'
-import { codesNotReaching, zoneColorMap, zoneColorOf, zoneLensLayers, ZONE_PALETTE } from '../../domain/lens'
-import { zoneLabelBoxes } from '../../domain/plan'
+import {
+  codesNotReaching, paintLensColors, zoneColorMap, zoneColorOf, zoneLensLayers, ZONE_PALETTE,
+} from '../../domain/lens'
+import { zoneLabelBoxes, type ZoneLabel } from '../../domain/plan'
 import { buildStageSlices } from '../../domain/pieSlices'
 import { formatPlanRange } from '../../domain/plan'
 import { computeDeckProgress, summariseDeck } from '../../domain/progress'
@@ -117,6 +119,63 @@ interface StageWindow {
  * short enough that the admin never notices the delay.
  */
 const REFRESH_DEBOUNCE_MS = 400
+
+/**
+ * The layer select's value for "Tất cả công đoạn" (RV6-13).
+ *
+ * A sentinel inside the same `string | null` the select already carried, rather
+ * than a second piece of state beside it. The two are mutually exclusive by
+ * construction that way -- a layer is on one coat or on all of them, never both
+ * and never neither -- and the select needs no special-casing to hold it.
+ */
+const ALL_STAGES = '__all__'
+
+/**
+ * What one layer is looking at.
+ *
+ * A union rather than a nullable `Stage`, because "every coat" and "no coat
+ * loaded yet" are different pictures and a null would have to carry both. Batch
+ * B's per-layer date hangs off this same object: the layer's SUBJECT is what
+ * the date changes, and everything below already reads the deck through here.
+ */
+type LensView = { kind: 'stage'; stage: Stage } | { kind: 'all' }
+
+/** One header chip: a coat, its colour, and the share of the deck that reached it. */
+interface LensChip {
+  id: string
+  name: string
+  color: string
+  ratio: number
+}
+
+/** One row of the `Tiến độ từng zone` table, in m² like everything else here. */
+interface ZoneRow {
+  zone: Zone
+  color: string
+  doneM2: number
+  totalM2: number
+}
+
+/** Everything one layer draws and lists, built by `lensFor`. */
+interface Lens {
+  /** Null only before the stages have loaded; the layer renders nothing then. */
+  view: LensView | null
+  /** The coat's name, or `Tất cả công đoạn`. */
+  title: string
+  colors: Record<string, string>
+  opacities: Record<string, number>
+  outlines: Record<string, string>
+  labels: ZoneLabel[]
+  zones: ZoneRow[]
+  zoneColors: Record<string, string>
+  chips: LensChip[]
+  reachedAreaM2: number
+}
+
+const EMPTY_LENS: Lens = {
+  view: null, title: '', colors: {}, opacities: {}, outlines: {},
+  labels: [], zones: [], zoneColors: {}, chips: [], reachedAreaM2: 0,
+}
 
 const PROGRESS_RULES = [
   {
@@ -362,69 +421,135 @@ export function DeckProgressPanel({
    * without a coat selected, and the first coat is the one every deck has.
    */
   const stages = entry?.stages ?? []
-  const stageA = stages.find((st) => st.id === viewA) ?? stages[0] ?? null
-  const stageB = stages.find((st) => st.id === viewB) ?? stages[stages.length - 1] ?? null
+  const stageA = viewA === ALL_STAGES
+    ? null
+    : stages.find((st) => st.id === viewA) ?? stages[0] ?? null
+  const stageB = viewB === ALL_STAGES
+    ? null
+    : stages.find((st) => st.id === viewB) ?? stages[stages.length - 1] ?? null
+
+  /** The select's value read back as what the layer is actually showing. */
+  const viewOf = (picked: string | null, stage: Stage | null): LensView | null => {
+    if (picked === ALL_STAGES) return { kind: 'all' }
+    return stage ? { kind: 'stage', stage } : null
+  }
 
   /**
-   * Everything one lens needs, for one coat.
+   * Everything one lens needs, for one coat -- or for every coat at once.
    *
    * Both lenses read the same deck through this, so the split view cannot drift
    * into showing two differently-computed pictures.
    *
-   * A bay that has REACHED the coat is filled: by its zone's colour where the
-   * coat has one planned, by the coat's own colour where it does not. A
-   * zone-only rule would leave an unplanned deck blank, which is most decks
-   * before the plan is drawn; a coat-only rule would lose the grouping the
-   * plan exists to show. A bay that has NOT reached the coat but is planned
-   * for it wears its zone colour faintly, under a dashed frame (Feedback Rv2,
-   * item 5: it used to get nothing, and a plan drawn before the work started
-   * was invisible on the screen it was drawn on). Unplanned and unreached,
-   * the drawing shows through. The table itself is `zoneLensLayers`.
+   * On ONE coat: a bay that has REACHED it is filled: by its zone's colour
+   * where the coat has one planned, by the coat's own colour where it does
+   * not. A zone-only rule would leave an unplanned deck blank, which is most
+   * decks before the plan is drawn; a coat-only rule would lose the grouping
+   * the plan exists to show. A bay that has NOT reached the coat but is
+   * planned for it wears its zone colour faintly, under a dashed frame
+   * (Feedback Rv2, item 5: it used to get nothing, and a plan drawn before the
+   * work started was invisible on the screen it was drawn on). Unplanned and
+   * unreached, the drawing shows through. The table itself is `zoneLensLayers`.
    *
-   * Zone colours come from `zoneColorMap` over ALL the deck's zones with the
-   * stage colours reserved, so a zone is one colour on every coat's view, in
-   * the GS screen and in the report -- and never a coat's colour (item 6).
+   * On EVERY coat (RV6-13): `paintLensColors`, which is exactly the foreman's
+   * live view -- each bay in the colour of the furthest coat it has reached.
+   * No overlay of any kind, because a zone belongs to ONE coat: a faint tint
+   * here would be the plan for a coat the picture is not about.
+   *
+   * Zone colours come from `zoneColorMap` per coat with the stage colours
+   * reserved, so a zone is one colour on every coat's view, in the GS screen
+   * and in the report -- and never a coat's colour (item 6). Settled per coat
+   * rather than over the whole list so the all-coats table's swatches are the
+   * ones the coat's own layer draws.
    */
-  const lensFor = (stage: Stage | null) => {
-    if (!entry || !stage) {
-      return {
-        stage: null, colors: {}, opacities: {}, outlines: {}, labels: [],
-        zones: [], zoneColors: {}, reachedAreaM2: 0,
-      }
+  const lensFor = (view: LensView | null): Lens => {
+    if (!entry || !view) return EMPTY_LENS
+
+    // The coats this layer speaks for. Sorted by seq rather than taken in
+    // array order: `listWorkStages` sorts, but nothing here should depend on
+    // that, and the all-coats table is ordered by coat then by zone.
+    const inView = view.kind === 'all'
+      ? [...entry.stages].sort((a, b) => a.seq - b.seq)
+      : [view.stage]
+    const pendingByStage = new Map(inView.map((st) => (
+      [st.id, new Set(codesNotReaching(entry.deck.cells, entry.stages, st.id))] as const
+    )))
+    const areaReaching = (stageId: string) => {
+      const pending = pendingByStage.get(stageId)
+      return entry.deck.cells
+        .reduce((sum, c) => (pending?.has(c.code) ? sum : sum + c.areaM2), 0)
     }
-    const zonesHere = zones.filter((z) => z.stageId === stage.id)
-    const colorById = zoneColorMap(zonesHere, entry.stages.map((st) => st.color))
-    const pendingSet = new Set(codesNotReaching(entry.deck.cells, entry.stages, stage.id))
-    const layers = zoneLensLayers(entry.deck.cells, entry.stages, stage, zonesHere, colorById)
-    // The zones named where they are, not only in the list beside the drawing
-    // (Feedback Rv3, item 4) -- the same labels the foreman's screen draws.
-    const labels = zoneLabelBoxes(zonesHere, entry.deck.cells)
-    const reached = new Set(layers.reachedCodes)
-    const reachedAreaM2 = entry.deck.cells
-      .reduce((sum, c) => (reached.has(c.code) ? sum + c.areaM2 : sum), 0)
 
     // In m², like everything else on this panel now: a zone of three bays at
     // "2/3" said nothing about how much of it was done when the bays differ
     // in size, and they usually do.
     const cellById = new Map(entry.deck.cells.map((c) => [c.id, c]))
-    const zoneRows = zonesHere.map((z) => {
-      const cells = z.cellIds.flatMap((id) => {
-        const c = cellById.get(id)
-        return c ? [c] : []
-      })
-      const totalM2 = cells.reduce((sum, c) => sum + c.areaM2, 0)
-      const doneM2 = cells.reduce((sum, c) => (pendingSet.has(c.code) ? sum : sum + c.areaM2), 0)
-      return { zone: z, color: colorById[z.id], doneM2, totalM2 }
-    })
+    const zoneColors: Record<string, string> = {}
+    const zoneRows: ZoneRow[] = []
+    const stageColorList = entry.stages.map((st) => st.color)
+    const zonesOf = (stageId: string) => zones.filter((z) => z.stageId === stageId)
+    for (const st of inView) {
+      const mine = zonesOf(st.id)
+      const colorById = zoneColorMap(mine, stageColorList)
+      const pending = pendingByStage.get(st.id)
+      for (const z of mine) {
+        zoneColors[z.id] = colorById[z.id]
+        const cells = z.cellIds.flatMap((id) => {
+          const c = cellById.get(id)
+          return c ? [c] : []
+        })
+        zoneRows.push({
+          zone: z,
+          color: colorById[z.id],
+          totalM2: cells.reduce((sum, c) => sum + c.areaM2, 0),
+          doneM2: cells.reduce((sum, c) => (pending?.has(c.code) ? sum : sum + c.areaM2), 0),
+        })
+      }
+    }
 
+    // One chip per coat in view, each carrying the share of the DECK that has
+    // reached it -- cumulative, the same ratio the spec table and the report
+    // carry. On a single coat that is the one figure the header always showed.
+    const chips: LensChip[] = inView.map((st) => ({
+      id: st.id,
+      name: st.name,
+      color: st.color,
+      ratio: entry.deck.totalAreaM2 > 0 ? areaReaching(st.id) / entry.deck.totalAreaM2 : 0,
+    }))
+    // The m² line under the drawing. On every coat at once that is the area
+    // that has STARTED -- the first coat's share -- because there is no one
+    // "reached" for five coats and the chips already break it down.
+    const reachedAreaM2 = inView.length > 0 ? areaReaching(inView[0].id) : 0
+
+    if (view.kind === 'all') {
+      return {
+        view,
+        title: 'Tất cả công đoạn',
+        colors: paintLensColors(entry.deck.cells, entry.stages),
+        opacities: {},
+        outlines: {},
+        labels: [],
+        zones: zoneRows,
+        zoneColors,
+        chips,
+        reachedAreaM2,
+      }
+    }
+
+    const { stage } = view
+    const zonesHere = zonesOf(stage.id)
+    const layers = zoneLensLayers(entry.deck.cells, entry.stages, stage, zonesHere, zoneColors)
     return {
-      stage,
+      view,
+      title: stage.name,
       colors: layers.colors,
       opacities: layers.opacities,
       outlines: layers.outlines,
-      labels,
+      // The zones named where they are, not only in the list beside the drawing
+      // (Feedback Rv3, item 4) -- the same labels the foreman's screen draws.
+      labels: zoneLabelBoxes(zonesHere, entry.deck.cells),
       zones: zoneRows,
-      zoneColors: colorById,
+      zoneColors,
+      chips,
       reachedAreaM2,
     }
   }
@@ -440,8 +565,8 @@ export function DeckProgressPanel({
   const defaultZoneColor = zoneColorOf({ color: null }, 0, stageColors)
   const chosenZoneColor = zoneColor ?? defaultZoneColor
 
-  const lensA = lensFor(stageA)
-  const lensB = lensFor(stageB)
+  const lensA = lensFor(viewOf(viewA, stageA))
+  const lensB = lensFor(viewOf(viewB, stageB))
 
   /**
    * The ring: how the bays that have been started are spread across the coats.
@@ -737,11 +862,8 @@ export function DeckProgressPanel({
    * the split view exists to compare, and a comparison whose halves are drawn
    * by different code is not one.
    */
-  const renderLens = (lens: ReturnType<typeof lensFor>, side: 'A' | 'B') => {
-    if (!entry || !lens.stage || !imageUrl) return null
-    // Area over the deck's declared area -- the same cumulative ratio the spec
-    // table and the report carry for this coat, not a bay fraction.
-    const reachedRatio = entry.deck.totalAreaM2 > 0 ? lens.reachedAreaM2 / entry.deck.totalAreaM2 : 0
+  const renderLens = (lens: Lens, side: 'A' | 'B') => {
+    if (!entry || !lens.view || !imageUrl) return null
     return (
       <div
         data-testid={`lens-${side}`}
@@ -757,12 +879,20 @@ export function DeckProgressPanel({
         <div style={{ padding: '13px 14px', display: 'flex', alignItems: 'flex-start', gap: 12 }}>
           <div style={{ minWidth: 0, flex: 1 }}>
             <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600, letterSpacing: '-0.015em' }}>
-              {`Tiến độ · ${lens.stage.name}`}
+              {`Tiến độ · ${lens.title}`}
             </h3>
             <div style={{ fontSize: 12, lineHeight: 1.35, color: palette.textTertiary, marginTop: 4 }}>
+              {/*
+                LNS-R1 describes the plan overlay, so it is only true while the
+                overlay is drawn. Every coat at once never draws one (a zone
+                belongs to one coat), and RV6-12 can switch it off on a single
+                coat; both get the sentence that IS true of what is on screen.
+              */}
               {splitView
                 ? (side === 'A' ? 'Lớp bên trái' : 'Lớp bên phải · cùng mức zoom để so sánh')
-                : 'Ô đã đạt lớp tô đặc · ô có kế hoạch chưa đạt tô nhạt, viền đứt · ô chưa đạt, chưa kế hoạch để trắng'}
+                : lens.view.kind === 'all'
+                  ? 'Mỗi ô tô theo màu công đoạn cao nhất đã đạt · ô chưa bắt đầu để trắng'
+                  : 'Ô đã đạt lớp tô đặc · ô có kế hoạch chưa đạt tô nhạt, viền đứt · ô chưa đạt, chưa kế hoạch để trắng'}
             </div>
           </div>
           {/*
@@ -815,41 +945,62 @@ export function DeckProgressPanel({
             }
             onSelectDraw={editable && side === 'A' ? sweep : undefined}
           />
+          {/*
+            One chip per coat in view (RV6-13). A single coat is the one chip
+            the header always carried; `Tất cả công đoạn` is the whole row, so
+            the colours on the drawing can be read back without a legend
+            elsewhere. Wraps rather than scrolls -- five coats over a narrow
+            half of the split view is the case that overflows.
+          */}
           <div
+            data-testid={`lens-chips-${side}`}
             style={{
               position: 'absolute',
               zIndex: 3,
               left: 12,
               top: 12,
               display: 'flex',
-              alignItems: 'center',
-              gap: 9,
-              background: '#FFFFFFF0',
-              border: `1px solid ${palette.borderSplit}`,
-              borderRadius: 9,
-              padding: '6px 10px',
+              flexWrap: 'wrap',
+              gap: 6,
+              maxWidth: 'calc(100% - 24px)',
             }}
           >
-            <span
-              aria-hidden
-              style={{
-                width: 14,
-                height: 14,
-                borderRadius: 4,
-                background: lens.stage.color,
-                boxShadow: 'inset 0 0 0 1px #16202B47',
-              }}
-            />
-            <span style={{ fontSize: 12, fontWeight: 600 }}>{lens.stage.name}</span>
-            <span style={{ fontSize: 12, fontWeight: 600, color: palette.accent }}>
-              {formatPercent(reachedRatio)}
-            </span>
+            {lens.chips.map((chip) => (
+              <span
+                key={chip.id}
+                data-testid="lens-chip"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 9,
+                  background: '#FFFFFFF0',
+                  border: `1px solid ${palette.borderSplit}`,
+                  borderRadius: 9,
+                  padding: '6px 10px',
+                }}
+              >
+                <span
+                  aria-hidden
+                  style={{
+                    width: 14,
+                    height: 14,
+                    borderRadius: 4,
+                    background: chip.color,
+                    boxShadow: 'inset 0 0 0 1px #16202B47',
+                  }}
+                />
+                <span style={{ fontSize: 12, fontWeight: 600 }}>{chip.name}</span>
+                <span style={{ fontSize: 12, fontWeight: 600, color: palette.accent }}>
+                  {formatPercent(chip.ratio)}
+                </span>
+              </span>
+            ))}
           </div>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 9, padding: '12px 14px 8px' }}>
           <span style={{ fontSize: 12, fontWeight: 600, color: palette.textTertiary }}>
-            {`Tiến độ từng zone · ${lens.stage.name}`}
+            {`Tiến độ từng zone · ${lens.title}`}
           </span>
           <span style={{ marginLeft: 'auto', fontSize: 12, color: palette.textTertiary }}>
             {`${formatAreaM2(lens.reachedAreaM2)} / ${formatAreaM2(entry.deck.totalAreaM2)} m²`}
@@ -1077,12 +1228,21 @@ export function DeckProgressPanel({
                   >
                     {splitView ? 'Lớp bên trái' : 'Lớp sơn đang xem'}
                   </label>
+                  {/*
+                    `Tất cả công đoạn` first, above the coats (RV6-13): it is
+                    the whole deck, and the coats below it are the ways of
+                    slicing that. Same list on both layers, so the split view
+                    can hold one coat against the whole picture.
+                  */}
                   <Select
                     id="lens-a-stage"
                     style={{ minWidth: 190 }}
-                    value={stageA?.id}
+                    value={viewA === ALL_STAGES ? ALL_STAGES : stageA?.id}
                     onChange={setViewA}
-                    options={entry.stages.map((st) => ({ value: st.id, label: st.name }))}
+                    options={[
+                      { value: ALL_STAGES, label: 'Tất cả công đoạn' },
+                      ...entry.stages.map((st) => ({ value: st.id, label: st.name })),
+                    ]}
                   />
                 </div>
                 {splitView && (
@@ -1096,9 +1256,12 @@ export function DeckProgressPanel({
                     <Select
                       id="lens-b-stage"
                       style={{ minWidth: 190 }}
-                      value={stageB?.id}
+                      value={viewB === ALL_STAGES ? ALL_STAGES : stageB?.id}
                       onChange={setViewB}
-                      options={entry.stages.map((st) => ({ value: st.id, label: st.name }))}
+                      options={[
+                        { value: ALL_STAGES, label: 'Tất cả công đoạn' },
+                        ...entry.stages.map((st) => ({ value: st.id, label: st.name })),
+                      ]}
                     />
                   </div>
                 )}
@@ -1113,11 +1276,19 @@ export function DeckProgressPanel({
                     {selectedCodes.length > 0 && (
                       <Button onClick={() => setSelectedCodes([])}>Bỏ chọn</Button>
                     )}
+                    {/*
+                      A zone row IS one stage_id, so there is no coat to write
+                      while the left layer is showing all of them (RV6-13).
+                      Disabled with the reason on it rather than hidden, for
+                      the same reason the empty-selection state is.
+                    */}
                     <Tooltip
                       title={
-                        selectedCodes.length > 0
-                          ? 'Gộp các ô đang chọn thành một zone'
-                          : 'Chọn ô trên bản vẽ trước — bấm từng ô, hoặc giữ Shift rồi kéo'
+                        viewA === ALL_STAGES
+                          ? 'Chọn một công đoạn để tạo zone'
+                          : selectedCodes.length > 0
+                            ? 'Gộp các ô đang chọn thành một zone'
+                            : 'Chọn ô trên bản vẽ trước — bấm từng ô, hoặc giữ Shift rồi kéo'
                       }
                     >
                       {/* A span, because antd Tooltip cannot anchor a disabled button. */}
@@ -1125,7 +1296,7 @@ export function DeckProgressPanel({
                         <Button
                           type="primary"
                           icon={<PlusOutlined aria-hidden />}
-                          disabled={selectedCodes.length === 0}
+                          disabled={selectedCodes.length === 0 || viewA === ALL_STAGES}
                           onClick={() => {
                             setWindows({})
                             form.resetFields()

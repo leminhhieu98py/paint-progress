@@ -46,7 +46,7 @@ vi.mock('../../lib/zonesApi', () => ({
 vi.mock('../../canvas/DrawingCanvas', () => ({
   DrawingCanvas: ({
     imageUrl, cells, cellColors, hatchedCodes, markedCodes, planLabels, selectedCodes,
-    outlineColors, cellOpacities, onCellClick, onSelectDraw,
+    outlineColors, cellOpacities, zoneLabels, onCellClick, onSelectDraw,
   }: {
     imageUrl: string
     cells: { code: string }[]
@@ -56,11 +56,18 @@ vi.mock('../../canvas/DrawingCanvas', () => ({
     hatchedCodes?: string[]
     markedCodes?: string[]
     planLabels?: Record<string, string>
+    zoneLabels?: { id: string; name: string }[]
     selectedCodes?: string[]
     onCellClick?: (code: string, additive: boolean) => void
     onSelectDraw?: (rect: { x: number; y: number; w: number; h: number }) => void
   }) => (
-    <div data-testid="canvas" data-image={imageUrl}>
+    <div
+      data-testid="canvas"
+      data-image={imageUrl}
+      // The label boxes the panel asks for, as a count and as their names:
+      // RV6-12 off and RV6-13 both have to draw none of them.
+      data-labels={(zoneLabels ?? []).map((l) => l.name).join('|')}
+    >
       {cells.map((c) => (
         <button
           key={c.code}
@@ -978,5 +985,110 @@ describe('DeckProgressPanel — công việc', () => {
     loadDeckWorks.mockResolvedValue({ ...ENTRY, works: [] })
     renderPanel(false)
     expect(await screen.findByText('Sàn này chưa thuộc công việc nào')).toBeInTheDocument()
+  })
+})
+
+/**
+ * RV6-13 -- "Tất cả công đoạn" as a layer of its own.
+ *
+ * The admin asked for the GS live view inside the panel: one picture of the
+ * deck coloured by the furthest coat each bay has reached, without having to
+ * step through the coats one select at a time.
+ */
+describe('DeckProgressPanel — the all-stages layer (RV6-13)', () => {
+  /** One zone per coat, handed back in seq order inside each coat. */
+  const ZONE_B = {
+    id: 'z2', name: 'Khu B — Coat 2', stageId: 's2', color: '#13c2c2',
+    startDate: null, finishDate: null, cellIds: ['c2'],
+  }
+
+  beforeEach(() => {
+    listDeckZones.mockResolvedValue([{ ...ZONE, cellIds: ['c1', 'c2'] }, ZONE_B])
+  })
+
+  /**
+   * What one layer select offers, in order.
+   *
+   * Scoped to that select's own dropdown -- both are mounted at once in the
+   * split view, and antd leaves a closed one in the document, so an unscoped
+   * query reads whichever was opened first.
+   */
+  const optionLabels = (id: string) => {
+    const dropdown = (document.getElementById(`${id}_list`) as HTMLElement)
+      .closest('.ant-select-dropdown') as HTMLElement
+    return Array.from(dropdown.querySelectorAll('.ant-select-item-option'))
+      .map((el) => el.getAttribute('title'))
+  }
+
+  it('offers Tất cả công đoạn as the first option on both layer selects', async () => {
+    renderPanel()
+    await screen.findByTestId('lens-A')
+    await userEvent.click(screen.getByText('So sánh hai lớp'))
+    await screen.findByTestId('lens-B')
+
+    const coats = ['Blast + Coat 1', 'Coat 2', 'Tháo giáo']
+    await userEvent.click(screen.getByLabelText('Lớp bên trái'))
+    expect(optionLabels('lens-a-stage')).toEqual(['Tất cả công đoạn', ...coats])
+    await userEvent.keyboard('{Escape}')
+
+    await userEvent.click(screen.getByLabelText('Lớp bên phải'))
+    expect(optionLabels('lens-b-stage')).toEqual(['Tất cả công đoạn', ...coats])
+  })
+
+  it('colours every bay by the furthest coat it has reached, with no plan overlay', async () => {
+    renderPanel()
+    await screen.findByTestId('lens-A')
+    await pickLens('Lớp sơn đang xem', 'Tất cả công đoạn')
+
+    // paintLensColors: c1 is at Tháo giáo, c2 at Coat 2. Zones belong to one
+    // coat, so none of them is drawn here however the plan toggle sits.
+    await waitFor(() =>
+      expect(screen.getByTestId('cell-R1C1')).toHaveAttribute('data-color', '#722ed1'))
+    expect(screen.getByTestId('cell-R1C2')).toHaveAttribute('data-color', '#bfbfbf')
+    expect(screen.getByTestId('cell-R1C1')).toHaveAttribute('data-outline', '')
+    expect(screen.getByTestId('cell-R1C2')).toHaveAttribute('data-outline', '')
+    expect(screen.getByTestId('cell-R1C2')).toHaveAttribute('data-opacity', '')
+    expect(screen.getByTestId('canvas')).toHaveAttribute('data-labels', '')
+  })
+
+  it('gives the layer one chip per coat, with the share of the deck that reached it', async () => {
+    renderPanel()
+    await screen.findByTestId('lens-A')
+    await pickLens('Lớp sơn đang xem', 'Tất cả công đoạn')
+
+    const chips = await screen.findByTestId('lens-chips-A')
+    // Cumulative, like every other reading here: both bays are past Coat 2,
+    // only the 500 m² one has reached Tháo giáo.
+    expect(within(chips).getAllByTestId('lens-chip')).toHaveLength(3)
+    expect(within(chips).getByText('Blast + Coat 1')).toBeInTheDocument()
+    expect(within(chips).getAllByText('100,00%')).toHaveLength(2)
+    expect(within(chips).getByText('50,00%')).toBeInTheDocument()
+  })
+
+  it('lists the zones of every coat, in coat order then zone order', async () => {
+    renderPanel()
+    await screen.findByTestId('lens-A')
+    await pickLens('Lớp sơn đang xem', 'Tất cả công đoạn')
+
+    const lens = await screen.findByTestId('lens-A')
+    expect(within(lens).getByText('Tiến độ từng zone · Tất cả công đoạn')).toBeInTheDocument()
+    const rows = within(lens).getAllByRole('button', { name: /^Mốc ngày của/ })
+    expect(rows.map((r) => r.getAttribute('aria-label'))).toEqual([
+      'Mốc ngày của Khu B — Coat 2',
+      'Mốc ngày của Khu A — Tháo giáo',
+    ])
+  })
+
+  it('refuses to build a zone while the layer shows every coat', async () => {
+    renderPanel()
+    await screen.findByTestId('lens-A')
+    await userEvent.click(screen.getByTestId('band-all'))
+    await pickLens('Lớp sơn đang xem', 'Tất cả công đoạn')
+
+    // A zone row is one stage_id; there is no coat to write here.
+    const make = await screen.findByRole('button', { name: /Gộp thành zone/ })
+    expect(make).toBeDisabled()
+    await userEvent.hover(make.parentElement as HTMLElement)
+    expect(await screen.findByText('Chọn một công đoạn để tạo zone')).toBeInTheDocument()
   })
 })
