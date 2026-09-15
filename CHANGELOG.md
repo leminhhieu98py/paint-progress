@@ -10,6 +10,101 @@ own branch, verified against the development Supabase project, and deployed to
 production by the owner. **Database migrations are listed per release and must
 reach production before the app that needs them.**
 
+## [1.7.0] - 2026-09-15
+
+Feedback Rv6 — eight items from Linh after she accepted Rv5, one item the owner
+added, and one bug she reported separately the same day. Three of the items
+needed a database migration each; all three are additive.
+
+### Added
+
+- **A3.4 compares a deck between two dates.** Each layer of the deck-progress
+  panel has a date picker beside its coat picker; a date shows the bays as they
+  stood at the end of that day, rebuilt from the recorded history, with the
+  header saying `Trạng thái ngày …`. Two layers side by side therefore compare
+  one coat on two days, or two coats on one day. History is complete from
+  2026-08-24 and the panel says so. In `So sánh hai lớp` each layer's controls
+  sit above its own drawing.
+- **`Hiện kế hoạch` on A3.4**, the same switch the field screen has: off, the
+  drawing shows only what has been done, with no zone tint, outline or label.
+- **`Tất cả công đoạn` as a layer on A3.4**: every bay in the colour of the
+  highest coat it has reached, exactly the field screen's live view, with one
+  chip per coat and every coat's zones listed below.
+- **Zones can be renamed** from their own dialog; the coat suffix stays.
+- **Admins reorder decks** with `Lên`/`Xuống` on the deck list. The field
+  screen's tabs, the rollup, the KPI plan table and the workbook already read
+  that order.
+- **KPI colours per deck.** The admin picks a Plan and an Actual colour for each
+  deck under `Màu biểu đồ theo sàn`; the chart uses them whenever one deck is
+  selected, on the admin's screen and on the field screen alike. Unset decks
+  keep the system pair.
+- **KPI chart zoom**: a range slider under the axis; drag its handles to zoom,
+  its body to pan. It resets when the filters change.
+- **A title under the KPI chart** — the deck's name and, when one coat is
+  chosen, the coat's: `CAM Under Deck MD — Blasting & Coat 1`.
+- **A quantity and a unit per work.** A work declares what its decks are
+  measured in — `Diện tích`/`m²` by default, or anything the admin types, such
+  as `Khối lượng`/`Kg`. Every label beside a figure follows the work when one
+  work is in view; where several works of different units meet (the project
+  rollup, the workbook's project sheets, KPI across all coats) the heading reads
+  `Số lượng`, each row carries its own unit, and a sum across units is shown as
+  `—` with the reason. **No number changed**: the columns still hold the same
+  values and every percentage is a ratio within one work.
+- **The viewer sees every project.** A `Chỉ xem` account lands on a project
+  chooser, switches projects from the header, and no longer needs to be assigned
+  to any. The users screen says so on such accounts. The role still writes
+  nothing.
+
+### Changed
+
+- The project rollup's ring lists decks by **code**, and the percentage beside
+  each is the deck's own progress — the same number as the table beside it. The
+  arcs still add up to the project figure; the note explaining the arithmetic is
+  gone, and the ring has more room so codes are not cut short.
+- The KPI cumulative-actual curve **stops at today**; the plan still runs to the
+  end of its window. The paragraph under the chart about corrections moved to
+  the specification.
+
+### Fixed
+
+- **Changing a deck's total area did not re-divide the bays.** A3.1 saved the
+  new total and the bays kept their old figures, so the sum of bays could read
+  27.429 m² under a 6.000 m² deck and every area-weighted number was computed
+  from stale bays until someone happened to re-save the mesh. Saving the total
+  now re-divides every bay by its drawn share, keeping every bay's identity,
+  coat and history. The confirmation dialog had always promised this.
+- `Lên`/`Xuống` and a zone rename cannot fire twice from one fast interaction.
+- Dragging a colour in the OS picker writes once when the drag settles, not once
+  per step.
+- The A3.4 date picker refuses future dates by the app's Vietnam day, like every
+  other "today" in the app.
+
+### Database
+
+- `0034` — `is_viewer()`, and `my_projects()` / `my_works()` re-created so a
+  viewer reads every project and every work; `coworker_names()` extended the
+  same way. Function bodies only; no table, column or policy changes, and no
+  write path opened.
+- `0035` — `decks.kpi_plan_color`, `decks.kpi_actual_color`, nullable `#RRGGBB`.
+- `0036` — `works.quantity_label`, `works.unit`, `not null` with the defaults
+  `Diện tích` and `m²`, so every existing work reads as before.
+
+### Operational
+
+`0034`, `0035` and `0036` must reach production **before** this release is
+deployed: the app selects the new columns by name, and PostgREST answers a
+select naming a missing column with `400` rather than omitting it. Applying
+them ahead of time is safe — the running 1.6.0 app never names them. No Edge
+Function change.
+
+### Known consequences
+
+- History for the date comparison starts at 2026-08-24; a bay redrawn since
+  then has no earlier history and reads as not started before its redraw.
+- A deck placed in two works of different units has no unit of its own and is
+  shown as a bare figure under `Số lượng`. Linh's rule is that decks of one
+  unit go in one work; the database does not enforce it.
+
 ## [1.6.0] - 2026-09-09
 
 Feedback Rv5, and the five corrections the owner made after reviewing it on
@@ -374,6 +469,7 @@ Level Security.
 
 Production runs its own Supabase project, created empty.
 
+[1.7.0]: https://github.com/leminhhieu98py/paint-progress/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/leminhhieu98py/paint-progress/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/leminhhieu98py/paint-progress/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/leminhhieu98py/paint-progress/compare/v1.3.0...v1.4.0
