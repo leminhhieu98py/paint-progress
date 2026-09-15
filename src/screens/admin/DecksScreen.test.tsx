@@ -18,11 +18,13 @@ const getDrawingUrl = vi.hoisted(() => vi.fn())
 vi.mock('../../lib/projectsApi', () => ({ listProjectNames: () => listProjectNames() }))
 const deleteDeck = vi.hoisted(() => vi.fn())
 const duplicateDeck = vi.hoisted(() => vi.fn())
+const swapDeckSeq = vi.hoisted(() => vi.fn())
 vi.mock('../../lib/decksApi', () => ({
   listDecks: (p: string) => listDecks(p),
   getDrawingUrl: (p: string) => getDrawingUrl(p),
   deleteDeck: (d: unknown) => deleteDeck(d),
   duplicateDeck: (src: unknown, input: unknown) => duplicateDeck(src, input),
+  swapDeckSeq: (a: unknown, b: unknown) => swapDeckSeq(a, b),
 }))
 const listDeckEvents = vi.hoisted(() => vi.fn())
 vi.mock('../../lib/progressApi', () => ({
@@ -115,6 +117,8 @@ beforeEach(() => {
   deleteDeck.mockResolvedValue({ drawingRemoved: true })
   duplicateDeck.mockReset()
   duplicateDeck.mockResolvedValue({ deckId: 'd9', drawingCopied: true })
+  swapDeckSeq.mockReset()
+  swapDeckSeq.mockResolvedValue(undefined)
   listDecks.mockResolvedValue([
     {
       id: 'd1', projectId: 'p1', seq: 1, name: 'Main Deck', code: 'MD',
@@ -570,5 +574,84 @@ describe('DecksScreen — duplicating a deck (Feedback Rv2, item 3)', () => {
     const dialog = await openDuplicate()
     await userEvent.click(within(dialog).getByRole('button', { name: 'Nhân bản' }))
     expect(await screen.findByText(/chưa sao chép được bản vẽ/)).toBeInTheDocument()
+  })
+})
+
+describe('DecksScreen — reordering decks (RV6-05, RV6-06)', () => {
+  const THREE_DECKS = [
+    {
+      id: 'd1', projectId: 'p1', seq: 1, name: 'First Deck', code: 'FD',
+      imagePath: null, imageW: null, imageH: null, drawingName: null, drawingPage: null,
+      totalAreaM2: 100, areaSource: 'prorated' as const, cellCount: 1,
+    },
+    {
+      id: 'd2', projectId: 'p1', seq: 2, name: 'Second Deck', code: 'SD',
+      imagePath: null, imageW: null, imageH: null, drawingName: null, drawingPage: null,
+      totalAreaM2: 100, areaSource: 'prorated' as const, cellCount: 1,
+    },
+    {
+      id: 'd3', projectId: 'p1', seq: 3, name: 'Third Deck', code: 'TD',
+      imagePath: null, imageW: null, imageH: null, drawingName: null, drawingPage: null,
+      totalAreaM2: 100, areaSource: 'prorated' as const, cellCount: 1,
+    },
+  ]
+
+  beforeEach(() => {
+    listDecks.mockResolvedValue(THREE_DECKS)
+  })
+
+  it('disables Lên on the first row and Xuống on the last, leaving the rest enabled', async () => {
+    renderScreen()
+    await screen.findByText('First Deck')
+
+    const ups = screen.getAllByRole('button', { name: 'Lên' })
+    const downs = screen.getAllByRole('button', { name: 'Xuống' })
+    expect(ups).toHaveLength(3)
+    expect(downs).toHaveLength(3)
+    expect(ups[0]).toBeDisabled()
+    expect(ups[1]).toBeEnabled()
+    expect(ups[2]).toBeEnabled()
+    expect(downs[0]).toBeEnabled()
+    expect(downs[1]).toBeEnabled()
+    expect(downs[2]).toBeDisabled()
+  })
+
+  it('clicking Xuống on the first row swaps it with its neighbour and reloads the list', async () => {
+    renderScreen()
+    await screen.findByText('First Deck')
+    listDecks.mockClear()
+
+    const downs = screen.getAllByRole('button', { name: 'Xuống' })
+    await userEvent.click(downs[0])
+
+    await waitFor(() => expect(swapDeckSeq).toHaveBeenCalledWith(
+      { id: 'd1', seq: 1 }, { id: 'd2', seq: 2 },
+    ))
+    await waitFor(() => expect(listDecks).toHaveBeenCalledWith('p1'))
+  })
+
+  it('clicking Lên on the last row swaps it with its neighbour above', async () => {
+    renderScreen()
+    await screen.findByText('First Deck')
+    listDecks.mockClear()
+
+    const ups = screen.getAllByRole('button', { name: 'Lên' })
+    await userEvent.click(ups[2])
+
+    await waitFor(() => expect(swapDeckSeq).toHaveBeenCalledWith(
+      { id: 'd3', seq: 3 }, { id: 'd2', seq: 2 },
+    ))
+    await waitFor(() => expect(listDecks).toHaveBeenCalledWith('p1'))
+  })
+
+  it('surfaces a refused swap instead of failing silently', async () => {
+    swapDeckSeq.mockRejectedValue(new Error('permission denied'))
+    renderScreen()
+    await screen.findByText('First Deck')
+
+    const downs = screen.getAllByRole('button', { name: 'Xuống' })
+    await userEvent.click(downs[0])
+
+    expect(await screen.findByText('permission denied')).toBeInTheDocument()
   })
 })

@@ -3,7 +3,7 @@ import type { Stage } from '../domain/types'
 import {
   createDeck, deleteDeck, duplicateDeck, getDrawingUrl, listCells, listDecks, listWorkStages,
   saveWorkStages, roundStageWeight, STAGE_WEIGHT_EPSILON, stagesRemovedBy,
-  syncCells, updateDeckArea, uploadDrawing, zoneImpactOf,
+  swapDeckSeq, syncCells, updateDeckArea, uploadDrawing, zoneImpactOf,
 } from './decksApi'
 
 const from = vi.hoisted(() => vi.fn())
@@ -1111,6 +1111,39 @@ describe('deleteDeck', () => {
     from.mockImplementationOnce(() => builder({ data: null }))
     await expect(deleteDeck({ id: 'd1', imagePath: null })).resolves.toEqual({ drawingRemoved: true })
     expect(remove).not.toHaveBeenCalled()
+  })
+})
+
+describe('swapDeckSeq (RV6-06)', () => {
+  it('writes each deck the other one\'s seq, as two separate updates', async () => {
+    const bA = builder({ data: null })
+    const bB = builder({ data: null })
+    from.mockImplementationOnce(() => bA).mockImplementationOnce(() => bB)
+
+    await swapDeckSeq({ id: 'd1', seq: 1 }, { id: 'd2', seq: 2 })
+
+    expect(from).toHaveBeenNthCalledWith(1, 'decks')
+    expect(bA.update).toHaveBeenCalledWith({ seq: 2 })
+    expect(bA.eq).toHaveBeenCalledWith('id', 'd1')
+    expect(from).toHaveBeenNthCalledWith(2, 'decks')
+    expect(bB.update).toHaveBeenCalledWith({ seq: 1 })
+    expect(bB.eq).toHaveBeenCalledWith('id', 'd2')
+  })
+
+  it('throws on a refused first write, without attempting the second', async () => {
+    from.mockImplementationOnce(() => builder({ error: { message: 'permission denied' } }))
+
+    await expect(swapDeckSeq({ id: 'd1', seq: 1 }, { id: 'd2', seq: 2 }))
+      .rejects.toThrow('permission denied')
+    expect(from).toHaveBeenCalledTimes(1)
+  })
+
+  it('throws on a refused second write', async () => {
+    from.mockImplementationOnce(() => builder({ data: null }))
+      .mockImplementationOnce(() => builder({ error: { message: 'permission denied' } }))
+
+    await expect(swapDeckSeq({ id: 'd1', seq: 1 }, { id: 'd2', seq: 2 }))
+      .rejects.toThrow('permission denied')
   })
 })
 

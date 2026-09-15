@@ -96,6 +96,27 @@ export async function updateDeckIdentity(
   if (error) throw new Error(error.message)
 }
 
+/**
+ * Trade `seq` between two decks -- how DecksScreen moves a row up or down
+ * (RV6-05), since deck order everywhere else (rollup table, donut legend, GS
+ * deck tabs, KPI plan table, xlsx) already follows `seq`.
+ *
+ * Two plain updates, not one query: `decks` carries no unique constraint on
+ * `seq` (0001 has only `(project_id, code)`), so no deferral dance is needed,
+ * and neither is a transaction. A failure between the two writes leaves both
+ * decks at one seq, which every screen that orders by `seq` still renders
+ * (ties keep insertion order), and the next swap repairs it. Admin-only by
+ * the route and by `decks_admin_all`.
+ */
+export async function swapDeckSeq(
+  a: { id: string; seq: number }, b: { id: string; seq: number },
+): Promise<void> {
+  const { error: errorA } = await supabase.from('decks').update({ seq: b.seq }).eq('id', a.id)
+  if (errorA) throw new Error(errorA.message)
+  const { error: errorB } = await supabase.from('decks').update({ seq: a.seq }).eq('id', b.id)
+  if (errorB) throw new Error(errorB.message)
+}
+
 export async function createDeck(input: {
   projectId: string
   seq: number

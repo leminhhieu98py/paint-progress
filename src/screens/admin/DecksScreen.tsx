@@ -1,5 +1,6 @@
 import {
-  ArrowRightOutlined, CopyOutlined, DeleteOutlined, DownloadOutlined, PlusOutlined,
+  ArrowDownOutlined, ArrowRightOutlined, ArrowUpOutlined, CopyOutlined, DeleteOutlined,
+  DownloadOutlined, PlusOutlined,
 } from '@ant-design/icons'
 import { Alert, App, Button, Form, Input, Modal, Select, Space, Table, Tooltip, Typography } from 'antd'
 import dayjs from 'dayjs'
@@ -8,7 +9,9 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { computeProjectProgress, summariseDeck } from '../../domain/progress'
 import type { WorkKind } from '../../domain/types'
 import { listGsUsers } from '../../lib/adminApi'
-import { deleteDeck, duplicateDeck, listDecks, type DeckRow } from '../../lib/decksApi'
+import {
+  deleteDeck, duplicateDeck, listDecks, swapDeckSeq, type DeckRow,
+} from '../../lib/decksApi'
 import { formatAreaM2, formatPercent, formatWeight } from '../../lib/format'
 import { loadProjectModel } from '../../lib/progressApi'
 import type { ProjectModel } from '../../lib/workModel'
@@ -317,6 +320,25 @@ export function DecksScreen() {
   }
 
   /**
+   * Swap a deck's `seq` with its neighbour in the current list order (RV6-05).
+   * Order everywhere else -- the rollup table, the donut legend, GS deck
+   * tabs, the KPI plan table, the xlsx -- already follows `seq`, so this one
+   * write moves the deck everywhere at once. Not transactional
+   * (decksApi.swapDeckSeq): a failure between the two writes leaves both
+   * decks at one seq, which this list still renders (ties keep insertion
+   * order) and the next swap repairs.
+   */
+  const reorderDeck = async (a: DeckRow, b: DeckRow | undefined) => {
+    if (!b) return
+    try {
+      await swapDeckSeq({ id: a.id, seq: a.seq }, { id: b.id, seq: b.seq })
+      await refreshDecks()
+    } catch (e) {
+      message.error((e as Error).message)
+    }
+  }
+
+  /**
    * The XLSX (spec §9), built from EVERY deck of the project.
    *
    * Zones and pictures are fetched here rather than held all the time: export is
@@ -471,6 +493,37 @@ export function DecksScreen() {
                         aria-label="Xóa sàn"
                         icon={<DeleteOutlined />}
                         onClick={() => setRemovingDeck(deck)}
+                      />
+                    </Tooltip>
+                  </Space>
+                ),
+              },
+              {
+                title: 'Thứ tự',
+                key: 'reorder',
+                width: 90,
+                align: 'right',
+                // Order everywhere else follows `seq`, i.e. this list's own
+                // order (`listDecks` already sorts by it) -- so the row
+                // before/after in `decks` IS the neighbour to swap with.
+                render: (_v, deck, index) => (
+                  <Space size={2}>
+                    <Tooltip title="Lên">
+                      <Button
+                        size="small"
+                        aria-label="Lên"
+                        icon={<ArrowUpOutlined />}
+                        disabled={index === 0}
+                        onClick={() => void reorderDeck(deck, decks[index - 1])}
+                      />
+                    </Tooltip>
+                    <Tooltip title="Xuống">
+                      <Button
+                        size="small"
+                        aria-label="Xuống"
+                        icon={<ArrowDownOutlined />}
+                        disabled={index === decks.length - 1}
+                        onClick={() => void reorderDeck(deck, decks[index + 1])}
                       />
                     </Tooltip>
                   </Space>
