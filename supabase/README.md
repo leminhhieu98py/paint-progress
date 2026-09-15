@@ -110,6 +110,83 @@ and unlike `0032` there is no window in which the deployed app breaks. The
 2026-09-09, so the two policies are verified by a real viewer session and not
 only by shape.
 
+`0034` (`is_viewer()`, and `my_projects()` / `my_works()` re-created so a
+viewer reads every project — Feedback Rv6 item 7, Linh's "theo đề xuất") is
+**applied to dev on 2026-09-15 by the owner, and not yet to production.** It
+creates one predicate and replaces the bodies of three existing functions
+(`my_projects`, `my_works`, `coworker_names`) with the same names, signatures,
+return types and grants, so the thirteen member read policies and the
+`drawings` storage policy that call them are untouched and keep working. Its
+`do $$ ... $$` block raises if any of the three functions gained an overload,
+lost its definer or pinned `search_path`, or stopped consulting `is_viewer()`;
+if `is_viewer()` or either set function returns anything with no caller; or if
+the read policies no longer route through the two functions — so applying it
+is self-verifying and needs no new `verify_schema.sql` row (rows 14 and 34
+still hold). Purely additive: no table, column or policy changes, so it is
+safe to apply to production ahead of the app that needs it. The
+`0034` cases in `tests/rls.integration.test.ts` (a viewer with no
+`project_members` row reads every table of a project it was never assigned
+to and writes none of them; a GS with no assignment still reads nothing) run
+against dev in the owner's full suite; run them before the PROD push.
+
+`0035` (`decks.kpi_plan_color`, `decks.kpi_actual_color` — the KPI chart's
+Plan and Actual colours per deck, Feedback Rv6 item 5c) is **applied to dev
+on 2026-09-15 by the owner, and not yet to production.** Two nullable `text`
+columns on `decks`, each with a check
+constraint admitting null or `#RRGGBB` (the same six-digit form the
+StageConfigPanel hex field enforces for `stages.color`); null is the system
+default the chart uses today. No policy, trigger or function work:
+`decks_admin_all` carries the admin write and `decks_member_read` (through
+`my_projects()`, so a viewer reads it on every project since `0034`) carries
+the read for the GS and the viewer, and both already cover every column of
+the row. Its `do $$ ... $$` block raises if either column is missing, not
+text, NOT NULL or defaulted; if either check constraint is missing or does not
+say "null or `#RRGGBB`"; if the pattern admits a five-, seven- or no-hash
+value; or if `decks` no longer carries exactly the two `0006` policies — so
+applying it is self-verifying and needs no new `verify_schema.sql` row.
+Purely additive: no row rewritten, so it is safe to apply to production
+ahead of the app that needs it; the deployed app selects its deck columns by
+name and never sees these. **The reverse order is not safe:** the app built
+from this branch names the two columns in its deck selects
+(`progressApi.ts` `DECK_SELECT`, `decksApi.ts`), and PostgREST answers a
+select that names a missing column with `400 column decks.kpi_plan_color does
+not exist` rather than omitting it — every screen that loads decks would
+error. Apply `0035` first, deploy the app second, as was done for `0033`. No
+new `tests/rls.integration.test.ts` case: the policies are unchanged and
+their `decks` cases already run.
+
+`0036` (`works.quantity_label`, `works.unit` — the quantity a work is measured
+in and its unit, Feedback Rv6 item 3, Linh: "the unit belongs to the work") is
+**applied to dev: pending (the owner applies it; fill in the date), and not
+yet to production.** Two `text not null` columns on `works` defaulting to
+`Diện tích` and `m²`, each with a check constraint bounding the trimmed text
+to 1–30 characters (the same rule `saveWorks` enforces before writing), so
+every existing work reads exactly as it did until an admin edits it. The
+`*_m2` numeric columns (`decks.total_area_m2`, `cells.area_m2`,
+`stage_plans.planned_area_m2`) are NOT renamed: they hold the quantity in the
+work's unit, and their column comments now say so (RV6-38). No policy, trigger
+or function work: `works_admin_all` carries the write and `works_member_read`
+(through `my_works()`) the read, and both already cover every column. Its
+`do $$ ... $$` block raises if either column is missing, nullable or
+undefaulted; if a default is not the string the app hard-coded until now; if
+any existing row did not take the defaults; if either length constraint is
+missing or does not say "btrim … between 1 and 30"; if the rule admits a blank
+or a 31-character value or refuses a 30-character one; if any of the three
+`*_m2` columns is gone; or if `works` no longer carries exactly its two
+policies — so applying it is self-verifying and needs no new
+`verify_schema.sql` row. Purely additive: safe to apply to production ahead of
+the app that needs it; the deployed app selects its work columns by name and
+never sees these. **The reverse order is not safe:** the app built from this
+branch names both columns in every work select (`worksApi.ts`
+`WORK_COLUMNS`, `progressApi.ts` `WORK_SELECT`, `projectsApi.ts`,
+`gsApi.ts`), and PostgREST answers such a select with `400 column
+works.quantity_label does not exist` — the KPI, Sàn, Công việc and GS screens
+all fail to load (seen on dev on 2026-09-15 while the code was ahead of the
+database). Apply `0036` first, deploy the app second. The `mapWork` defaults
+only cover a row that lacks the fields, which a 400 never produces. No new
+`tests/rls.integration.test.ts` case: the policies are unchanged and their
+`works` cases already run.
+
 `supabase/scripts/purge_user.sql` removes one test account together with the
 bays it ticked (owner request, 2026-09-04). It is a dry run until its
 `v_confirm` literal is set; read its header before running it anywhere.

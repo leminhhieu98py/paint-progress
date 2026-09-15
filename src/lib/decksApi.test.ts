@@ -2,8 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Stage } from '../domain/types'
 import {
   createDeck, deleteDeck, duplicateDeck, getDrawingUrl, listCells, listDecks, listWorkStages,
-  saveWorkStages, roundStageWeight, STAGE_WEIGHT_EPSILON, stagesRemovedBy,
-  syncCells, updateDeckArea, uploadDrawing, zoneImpactOf,
+  reprorateDeckCells, saveWorkStages, roundStageWeight, STAGE_WEIGHT_EPSILON, stagesRemovedBy,
+  setDeckKpiColors, swapDeckSeq, syncCells, updateDeckArea, uploadDrawing, zoneImpactOf,
 } from './decksApi'
 
 const from = vi.hoisted(() => vi.fn())
@@ -340,6 +340,50 @@ describe('syncCells', () => {
     ).rejects.toThrow('delete blocked')
 
     expect(from).toHaveBeenCalledTimes(3)
+  })
+})
+
+describe('reprorateDeckCells', () => {
+  const persisted = (id: string, code: string, w: string, h: string) => ({
+    id, code, x: '0.000000', y: '0.000000', w, h, area_m2: '999.99',
+  })
+
+  it('prorates persisted cells by pixel share of the new total and upserts, keyed on deck_id,code', async () => {
+    // Two cells, pixel areas 1x1 and 3x1 (total pixel area 4): a 6000 m² deck
+    // splits 6000*(1/4)=1500 and 6000*(3/4)=4500 -- summing back to 6000.
+    const list = builder({
+      data: [persisted('c1', 'R1C1', '1.000000', '1.000000'), persisted('c2', 'R1C2', '3.000000', '1.000000')],
+    })
+    const before = builder({
+      data: [persisted('c1', 'R1C1', '1.000000', '1.000000'), persisted('c2', 'R1C2', '3.000000', '1.000000')],
+    })
+    const up = builder({ data: [{ id: 'c1', code: 'R1C1' }, { id: 'c2', code: 'R1C2' }] })
+    from
+      .mockImplementationOnce(() => list) // reprorateDeckCells' own listCells
+      .mockImplementationOnce(() => before) // syncCells' internal snapshot
+      .mockImplementationOnce(() => up) // syncCells' upsert
+
+    await reprorateDeckCells('d1', 6000)
+
+    expect(up.upsert).toHaveBeenCalledWith(
+      [
+        { deck_id: 'd1', code: 'R1C1', x: 0, y: 0, w: 1, h: 1, area_m2: 1500 },
+        { deck_id: 'd1', code: 'R1C2', x: 0, y: 0, w: 3, h: 1, area_m2: 4500 },
+      ],
+      { onConflict: 'deck_id,code' },
+    )
+    // Same codes in as out, so syncCells has nothing to delete: exactly the
+    // read + snapshot + upsert, no fourth (delete) call.
+    expect(from).toHaveBeenCalledTimes(3)
+  })
+
+  it('performs no write at all for a deck with no cells', async () => {
+    from.mockImplementationOnce(() => builder({ data: [] }))
+
+    await reprorateDeckCells('d1', 6000)
+
+    // Only the listCells read; syncCells is never reached.
+    expect(from).toHaveBeenCalledTimes(1)
   })
 })
 
@@ -1111,6 +1155,70 @@ describe('deleteDeck', () => {
     from.mockImplementationOnce(() => builder({ data: null }))
     await expect(deleteDeck({ id: 'd1', imagePath: null })).resolves.toEqual({ drawingRemoved: true })
     expect(remove).not.toHaveBeenCalled()
+  })
+})
+
+describe('swapDeckSeq (RV6-06)', () => {
+  it('writes each deck the other one\'s seq, as two separate updates', async () => {
+    const bA = builder({ data: null })
+    const bB = builder({ data: null })
+    from.mockImplementationOnce(() => bA).mockImplementationOnce(() => bB)
+
+    await swapDeckSeq({ id: 'd1', seq: 1 }, { id: 'd2', seq: 2 })
+
+    expect(from).toHaveBeenNthCalledWith(1, 'decks')
+    expect(bA.update).toHaveBeenCalledWith({ seq: 2 })
+    expect(bA.eq).toHaveBeenCalledWith('id', 'd1')
+    expect(from).toHaveBeenNthCalledWith(2, 'decks')
+    expect(bB.update).toHaveBeenCalledWith({ seq: 1 })
+    expect(bB.eq).toHaveBeenCalledWith('id', 'd2')
+  })
+
+  it('throws on a refused first write, without attempting the second', async () => {
+    from.mockImplementationOnce(() => builder({ error: { message: 'permission denied' } }))
+
+    await expect(swapDeckSeq({ id: 'd1', seq: 1 }, { id: 'd2', seq: 2 }))
+      .rejects.toThrow('permission denied')
+    expect(from).toHaveBeenCalledTimes(1)
+  })
+
+  it('throws on a refused second write', async () => {
+    from.mockImplementationOnce(() => builder({ data: null }))
+      .mockImplementationOnce(() => builder({ error: { message: 'permission denied' } }))
+
+    await expect(swapDeckSeq({ id: 'd1', seq: 1 }, { id: 'd2', seq: 2 }))
+      .rejects.toThrow('permission denied')
+  })
+})
+
+describe('setDeckKpiColors (RV6-28)', () => {
+  it('writes both colours to the deck row in one update', async () => {
+    const b = builder({ data: null })
+    from.mockImplementationOnce(() => b)
+
+    await setDeckKpiColors('d1', { plan: '#123abc', actual: '#0a8175' })
+
+    expect(from).toHaveBeenCalledWith('decks')
+    expect(b.update).toHaveBeenCalledWith({ kpi_plan_color: '#123abc', kpi_actual_color: '#0a8175' })
+    expect(b.eq).toHaveBeenCalledWith('id', 'd1')
+  })
+
+  it('writes null for a colour returned to the default, rather than leaving it out', async () => {
+    // "Mặc định" clears both; a payload that omitted a null key would leave
+    // the old colour standing.
+    const b = builder({ data: null })
+    from.mockImplementationOnce(() => b)
+
+    await setDeckKpiColors('d1', { plan: null, actual: null })
+
+    expect(b.update).toHaveBeenCalledWith({ kpi_plan_color: null, kpi_actual_color: null })
+  })
+
+  it('throws on a refused write', async () => {
+    from.mockImplementationOnce(() => builder({ error: { message: 'permission denied' } }))
+
+    await expect(setDeckKpiColors('d1', { plan: '#123abc', actual: null }))
+      .rejects.toThrow('permission denied')
   })
 })
 

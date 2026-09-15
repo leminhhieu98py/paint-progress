@@ -1,5 +1,6 @@
 import {
-  ArrowRightOutlined, CopyOutlined, DeleteOutlined, DownloadOutlined, PlusOutlined,
+  ArrowDownOutlined, ArrowRightOutlined, ArrowUpOutlined, CopyOutlined, DeleteOutlined,
+  DownloadOutlined, PlusOutlined,
 } from '@ant-design/icons'
 import { Alert, App, Button, Form, Input, Modal, Select, Space, Table, Tooltip, Typography } from 'antd'
 import dayjs from 'dayjs'
@@ -7,8 +8,14 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { computeProjectProgress, summariseDeck } from '../../domain/progress'
 import type { WorkKind } from '../../domain/types'
+import {
+  DEFAULT_QUANTITY_LABEL, DEFAULT_UNIT, labelOfWorks, MIXED_QUANTITY_LABEL, MIXED_UNIT_SUM_TOOLTIP,
+  quantityHeading, unitOfWorks,
+} from '../../domain/unit'
 import { listGsUsers } from '../../lib/adminApi'
-import { deleteDeck, duplicateDeck, listDecks, type DeckRow } from '../../lib/decksApi'
+import {
+  deleteDeck, duplicateDeck, listDecks, swapDeckSeq, type DeckRow,
+} from '../../lib/decksApi'
 import { formatAreaM2, formatPercent, formatWeight } from '../../lib/format'
 import { loadProjectModel } from '../../lib/progressApi'
 import type { ProjectModel } from '../../lib/workModel'
@@ -107,6 +114,8 @@ export function DecksScreen() {
   const [copying, setCopying] = useState(false)
   const [copyForm] = Form.useForm<{ name: string; code: string }>()
   const [removing, setRemoving] = useState(false)
+  /** A seq swap is in flight: every arrow waits for it (see reorderDeck). */
+  const [reordering, setReordering] = useState(false)
   const [confirmingExport, setConfirmingExport] = useState(false)
   const { message } = App.useApp()
 
@@ -180,6 +189,43 @@ export function DecksScreen() {
   const modelDecks = model?.decks ?? []
   const rollup = useMemo(() => computeProjectProgress(model?.models ?? []), [model])
   /**
+   * RV6-36: several works may be in scope here, so the quantity heading is
+   * theirs only when they agree. A deck's own unit is that of the bays works
+   * it is in (m² when it is in none yet); the heading is that unit when every
+   * deck reads the same one, else `Số lượng` with each row naming its own and
+   * the Σ refusing to add them.
+   */
+  const bays = (model?.models ?? []).filter((m) => m.work.kind === 'bays' && m.decks.length > 0)
+  const unitOfDeck = (deckId: string): string | null => {
+    const inWorks = bays.filter((m) => m.decks.some((e) => e.deck.id === deckId)).map((m) => m.work)
+    return inWorks.length === 0 ? DEFAULT_UNIT : unitOfWorks(inWorks)
+  }
+  /**
+   * The heading, the Σ's unit and the cell rule for ONE set of decks. The deck
+   * list and the rollup each derive their own, because the rollup lists only
+   * the weighted decks: a deck in no work is m² in the list yet absent from
+   * the rollup, whose rows may then all agree on a unit the list cannot.
+   */
+  const quantityScope = (deckIds: string[]) => {
+    const units = deckIds.map(unitOfDeck)
+    const works = bays.filter((m) => m.decks.some((e) => deckIds.includes(e.deck.id))).map((m) => m.work)
+    const unit = units.length === 0
+      ? DEFAULT_UNIT
+      : (units.every((u) => u !== null && u === units[0]) ? units[0] : null)
+    const label = works.length === 0
+      ? DEFAULT_QUANTITY_LABEL
+      : (labelOfWorks(works) ?? MIXED_QUANTITY_LABEL)
+    const title = unit === null ? MIXED_QUANTITY_LABEL : quantityHeading(label, unit)
+    /** The figure, with the row's own unit only when the heading could not carry one. */
+    const cell = (deckId: string, n: number): string => {
+      if (unit !== null) return formatAreaM2(n)
+      const own = unitOfDeck(deckId)
+      return own === null ? formatAreaM2(n) : `${formatAreaM2(n)} ${own}`
+    }
+    return { unit, title, cell }
+  }
+  const listScope = quantityScope(modelDecks.map((d) => d.id))
+  /**
    * Each deck across its works: P_d, and the weight it carries in P, which is
    * Σ W·D over the counted bays works it is in -- no longer its m² share. A
    * deck in no work is still listed, at zero, so nothing the project has goes
@@ -190,12 +236,16 @@ export function DecksScreen() {
     [model],
   )
 
+  const carriesWeight = (i: number) => (summaries[i]?.effectiveWeight ?? 0) > 0
+  /** Over the decks the rollup actually lists -- see `carriesWeight` below. */
+  const rollupScope = quantityScope(modelDecks.filter((_, i) => carriesWeight(i)).map((d) => d.id))
+
   const rollupRows: RollupRow[] = modelDecks.map((deck, i) => ({
     key: deck.id,
     name: deck.name,
     code: deck.code,
     share: formatPercent(summaries[i]?.effectiveWeight ?? 0),
-    totalAreaM2: formatAreaM2(deck.totalAreaM2),
+    totalAreaM2: rollupScope.cell(deck.id, deck.totalAreaM2),
     progress: summaries[i]?.progress ?? 0,
   }))
   /**
@@ -213,7 +263,6 @@ export function DecksScreen() {
    * ones: 194.525,00 over a visible 160.229,00. One predicate, so the three
    * cannot drift apart again.
    */
-  const carriesWeight = (i: number) => (summaries[i]?.effectiveWeight ?? 0) > 0
   const visibleRollup = rollupRows.filter((_, i) => carriesWeight(i))
   const hiddenDecks = rollupRows.length - visibleRollup.length
   const workRows: WorkRow[] = rollup.works.map((w) => ({
@@ -228,24 +277,33 @@ export function DecksScreen() {
   const effectiveTotal = summaries.reduce((sum, d) => sum + d.effectiveWeight, 0)
 
   /*
-    Each slice is a weight TIMES a progress -- what it actually contributes to
-    the project number -- not a progress alone: a deck's effective weight times
-    its tổng hợp, then a counted manual work's weight times its figure. The
-    slices therefore sum to exactly P, and the ring's empty part is the work
-    left. A ring of raw percentages would sum to something meaningless and
-    read as though the project were further along.
+    Each slice's ARC is a weight TIMES a progress -- what it actually
+    contributes to the project number -- not a progress alone: a deck's
+    effective weight times its tổng hợp, then a counted manual work's weight
+    times its figure. The slices therefore sum to exactly P, and the ring's
+    empty part is the work left. A ring of raw percentages would sum to
+    something meaningless and read as though the project were further along.
+
+    The LEGEND number beside a slice is different (RV6-02): `display` carries
+    the deck's (or work's) own progress -- the same figure the rollup table's
+    `Tiến độ` column reads for it -- so a person comparing the legend to the
+    table sees one number, not the arc's contribution. `display` is optional
+    on `DonutSlice`; the legend prints `display ?? value`.
   */
   const slices: DonutSlice[] = [
     ...modelDecks.flatMap((deck, i) => (carriesWeight(i) ? [{
-      label: deck.name,
+      label: deck.code, // RV6-01: a deck slice is labelled by code, not name.
       value: (summaries[i]?.effectiveWeight ?? 0) * (summaries[i]?.progress ?? 0),
+      display: summaries[i]?.progress ?? 0,
       color: DECK_SHADES[i % DECK_SHADES.length],
     }] : [])),
     ...rollup.works
       .filter((w) => w.work.kind === 'manual' && w.work.counts)
       .map((w, i) => ({
+        // A work has no code, so a manual-work slice keeps its name.
         label: w.work.name,
         value: w.work.weight * w.progress,
+        display: w.progress,
         color: DECK_SHADES[(modelDecks.length + i) % DECK_SHADES.length],
       })),
   ]
@@ -304,6 +362,31 @@ export function DecksScreen() {
       message.error((e as Error).message)
     } finally {
       setRemoving(false)
+    }
+  }
+
+  /**
+   * Swap a deck's `seq` with its neighbour in the current list order (RV6-05).
+   * Order everywhere else -- the rollup table, the donut legend, GS deck
+   * tabs, the KPI plan table, the xlsx -- already follows `seq`, so this one
+   * write moves the deck everywhere at once. Not transactional
+   * (decksApi.swapDeckSeq): a failure between the two writes leaves both
+   * decks at one seq, which this list still renders (ties keep insertion
+   * order) and the next swap repairs.
+   *
+   * One at a time: a second click before `refreshDecks` lands would swap
+   * from the seqs this render still holds, not the ones just written.
+   */
+  const reorderDeck = async (a: DeckRow, b: DeckRow | undefined) => {
+    if (!b || reordering) return
+    setReordering(true)
+    try {
+      await swapDeckSeq({ id: a.id, seq: a.seq }, { id: b.id, seq: b.seq })
+      await refreshDecks()
+    } catch (e) {
+      message.error((e as Error).message)
+    } finally {
+      setReordering(false)
     }
   }
 
@@ -413,11 +496,11 @@ export function DecksScreen() {
               },
               { title: 'Số ô', dataIndex: 'cellCount', width: 90, align: 'right' },
               {
-                title: 'Diện tích (m²)',
+                title: listScope.title,
                 dataIndex: 'totalAreaM2',
                 width: 160,
                 align: 'right',
-                render: (v: number) => formatAreaM2(v),
+                render: (v: number, deck) => listScope.cell(deck.id, v),
               },
               {
                 title: 'Bản vẽ',
@@ -467,6 +550,37 @@ export function DecksScreen() {
                   </Space>
                 ),
               },
+              {
+                title: 'Thứ tự',
+                key: 'reorder',
+                width: 90,
+                align: 'right',
+                // Order everywhere else follows `seq`, i.e. this list's own
+                // order (`listDecks` already sorts by it) -- so the row
+                // before/after in `decks` IS the neighbour to swap with.
+                render: (_v, deck, index) => (
+                  <Space size={2}>
+                    <Tooltip title="Lên">
+                      <Button
+                        size="small"
+                        aria-label="Lên"
+                        icon={<ArrowUpOutlined />}
+                        disabled={index === 0 || reordering}
+                        onClick={() => void reorderDeck(deck, decks[index - 1])}
+                      />
+                    </Tooltip>
+                    <Tooltip title="Xuống">
+                      <Button
+                        size="small"
+                        aria-label="Xuống"
+                        icon={<ArrowDownOutlined />}
+                        disabled={index === decks.length - 1 || reordering}
+                        onClick={() => void reorderDeck(deck, decks[index + 1])}
+                      />
+                    </Tooltip>
+                  </Space>
+                ),
+              },
             ]}
           />
         </SectionCard>
@@ -495,7 +609,7 @@ export function DecksScreen() {
               description="Rollup và báo cáo đều tính từ các sàn, nên cả hai chờ sàn đầu tiên."
             />
           ) : (
-            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(300px, 340px)' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(340px, 400px)' }}>
               {/*
                 The table and the ring get separate ids. Every deck name appears
                 in both, so one id over the pair makes a scoped query ambiguous
@@ -519,7 +633,7 @@ export function DecksScreen() {
                     },
                     { title: 'Tỉ trọng', dataIndex: 'share', key: 'share', width: 110, align: 'right' },
                     {
-                      title: 'Diện tích (m²)',
+                      title: rollupScope.title,
                       dataIndex: 'totalAreaM2',
                       key: 'totalAreaM2',
                       width: 150,
@@ -543,7 +657,13 @@ export function DecksScreen() {
                         <strong>{formatPercent(effectiveTotal)}</strong>
                       </Table.Summary.Cell>
                       <Table.Summary.Cell index={3} align="right">
-                        <strong>{formatAreaM2(totalArea)}</strong>
+                        {rollupScope.unit === null ? (
+                          <Tooltip title={MIXED_UNIT_SUM_TOOLTIP}>
+                            <strong>—</strong>
+                          </Tooltip>
+                        ) : (
+                          <strong>{formatAreaM2(totalArea)}</strong>
+                        )}
                       </Table.Summary.Cell>
                       <Table.Summary.Cell index={4}>
                         <ProgressBar ratio={rollup.progress} height={8} />
@@ -659,7 +779,7 @@ export function DecksScreen() {
                           {sl.label}
                         </span>
                         <span style={{ marginLeft: 'auto', fontSize: 12, fontWeight: 600, flex: 'none' }}>
-                          {formatPercent(sl.value)}
+                          {formatPercent(sl.display ?? sl.value)}
                         </span>
                       </div>
                     ))}
@@ -686,10 +806,6 @@ export function DecksScreen() {
                       </span>
                     </div>
                   </div>
-                </div>
-                <div style={{ marginTop: 14, fontSize: 11, lineHeight: 1.5, color: palette.textTertiary }}>
-                  Mỗi phần là trọng số × tiến độ: sàn theo trọng số hiệu dụng, công việc nhập
-                  tay theo trọng số của nó — cộng lại đúng bằng {formatPercent(rollup.progress)}.
                 </div>
               </div>
             </div>

@@ -5,6 +5,9 @@ import { EmptyState } from '../../components/EmptyState'
 import { RulesDisclosure, type Rule } from '../../components/RulesDisclosure'
 import { SectionCard } from '../../components/SectionCard'
 import { planDays, type StagePlan } from '../../domain/kpi'
+import {
+  DEFAULT_QUANTITY_LABEL, DEFAULT_UNIT, labelOfWorks, MIXED_QUANTITY_LABEL, unitOfWorks,
+} from '../../domain/unit'
 import { formatAreaM2 } from '../../lib/format'
 import { palette } from '../../theme'
 
@@ -38,6 +41,9 @@ export interface StagePlanRow {
   stageName: string
   /** The stored window, or null when this coat has no plan yet. */
   plan: StagePlan | null
+  /** The coat's work's quantity and unit (RV6-35). Absent reads as Diện tích / m². */
+  quantityLabel?: string
+  unit?: string
 }
 
 /** The window as the admin has it on screen right now. */
@@ -89,6 +95,21 @@ export function StagePlanTable({
   onClearArea: (stageId: string) => void | Promise<void>
   saving?: boolean
 }) {
+  /**
+   * The heading names the quantity when every row's work agrees on it --
+   * `Diện tích kế hoạch (m²)` -- and falls back to `Số lượng kế hoạch` with
+   * the unit on each row when the works differ (RV6-35, RV6-36).
+   */
+  const quantities = rows.map((r) => ({
+    quantityLabel: r.quantityLabel ?? DEFAULT_QUANTITY_LABEL, unit: r.unit ?? DEFAULT_UNIT,
+  }))
+  const sharedUnit = unitOfWorks(quantities)
+  const sharedLabel = labelOfWorks(quantities)
+  const areaTitle = sharedUnit === null
+    ? `${MIXED_QUANTITY_LABEL} kế hoạch`
+    : `${sharedLabel ?? MIXED_QUANTITY_LABEL} kế hoạch (${sharedUnit})`
+  const rowUnit = (row: StagePlanRow) => (sharedUnit === null ? ` ${row.unit ?? DEFAULT_UNIT}` : '')
+
   /**
    * Drafts by stage id, holding only the rows the admin has touched.
    *
@@ -217,7 +238,7 @@ export function StagePlanTable({
       },
     },
     {
-      title: 'Diện tích kế hoạch (m²)',
+      title: areaTitle,
       key: 'area',
       width: 220,
       render: (_v: unknown, row: StagePlanRow) => {
@@ -270,7 +291,7 @@ export function StagePlanTable({
               data-testid={`plan-computed-${row.stageId}`}
               style={{ fontSize: 12, color: palette.textQuaternary }}
             >
-              {computed === null ? '—' : `Tự tính: ${formatAreaM2(computed)}`}
+              {computed === null ? '—' : `Tự tính: ${formatAreaM2(computed)}${rowUnit(row)}`}
             </span>
           </div>
         )

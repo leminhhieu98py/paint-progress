@@ -820,3 +820,25 @@ describe('CellStageModal — an untouched bay is not a removal (Feedback Rv5, RV
     expect(onCommit).toHaveBeenCalledWith('c1', 's3', '', FILLED)
   })
 })
+
+describe('CellStageModal: the work\'s quantity and unit (RV6-35)', () => {
+  it('labels the bay\'s figure with the active work\'s quantity and unit', () => {
+    render(
+      <AntApp>
+        <CellStageModal
+          cell={CELL}
+          stages={STAGES}
+          open
+          onClose={onClose}
+          onCommit={onCommit}
+          employees={CREW}
+          quantityLabel="Khối lượng"
+          unit="tấn"
+        />
+      </AntApp>,
+    )
+    expect(info().getByText('Khối lượng')).toBeInTheDocument()
+    expect(info().getByText('148,50 tấn')).toBeInTheDocument()
+    expect(info().queryByText(/m²/)).toBeNull()
+  })
+})

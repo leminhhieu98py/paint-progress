@@ -93,14 +93,16 @@ beforeEach(() => {
 })
 
 /**
- * loadGsProject issues its two queries inside one Promise.all, in the order they
- * appear in that array: decks, then project_members. `from` is mocked per call,
- * so every test here has to queue both.
+ * loadGsProject issues its three queries inside one Promise.all, in the order
+ * they appear in that array: decks, then the project row, then work_decks.
+ * `from` is mocked per call, so every test here has to queue all three.
  *
  * Stages are not among them: they are declared per deck now, and the GS screen
  * fetches the active deck's own set when the foreman picks one.
  */
-const MEMBER = [{ project_id: 'p1' }]
+const PROJECT_ROW = [{ id: 'p1' }]
+/** Kept under its old name where a test only needs "the second read answered". */
+const MEMBER = PROJECT_ROW
 
 describe('loadGsProject', () => {
   it('returns the project\'s decks', async () => {
@@ -159,20 +161,23 @@ describe('loadGsProject', () => {
     expect(decks.order).toHaveBeenCalledWith('seq')
   })
 
-  it('reports membership in THIS project, asking project_members for it', async () => {
+  it('reports membership in THIS project, asking whether the project row is readable', async () => {
     from.mockImplementationOnce(() => builder({ data: [] }))
-    const members = builder({ data: MEMBER })
-    from.mockImplementationOnce(() => members)
+    const project = builder({ data: PROJECT_ROW })
+    from.mockImplementationOnce(() => project)
     from.mockImplementationOnce(() => builder({ data: [] }))
 
     expect((await loadGsProject('p1')).isMember).toBe(true)
 
-    // Scoped to the project in the route, and to this table. Without the filter
-    // `project_members_self_read` still returns the caller's OTHER projects, so
-    // any GS assigned to anything would read as a member of every project id --
-    // which is precisely the refusal this field exists to detect.
-    expect(from).toHaveBeenCalledWith('project_members')
-    expect(members.eq).toHaveBeenCalledWith('project_id', 'p1')
+    // Scoped to the project in the route, and read from `projects`, not from
+    // `project_members`: since 0034 a viewer holds no membership row for the
+    // projects it reads, so the row `projects_member_read` (via my_projects())
+    // lets through is the one fact that means "this session may see this
+    // project" for a GS and a viewer alike. Without the id filter the read
+    // would return the caller's OTHER projects and every id would pass.
+    expect(from).toHaveBeenCalledWith('projects')
+    expect(from).not.toHaveBeenCalledWith('project_members')
+    expect(project.eq).toHaveBeenCalledWith('id', 'p1')
   })
 
   it('reports no membership when RLS returns nothing, without erroring', async () => {

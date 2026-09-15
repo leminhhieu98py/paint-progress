@@ -506,13 +506,20 @@ describe('actualByDay', () => {
 const workbookScope = (): KpiScopeStage[] =>
   WORKBOOK.map((row) => ({ plan: row.plan, computedAreaM2: 0, actual: [] }))
 
+/**
+ * Well after every date the fixtures above use (the latest is 2026-09-30), so
+ * passing it as `todayKey` leaves every existing assertion in this describe
+ * block unaffected -- RV6-09's cutoff is exercised in its own block below.
+ */
+const TODAY = '2026-12-31'
+
 describe('kpiSeries', () => {
   const dayOf = (series: ReturnType<typeof kpiSeries>, day: string) =>
     series.find((d) => d.day === day)!
 
   it("reproduces the workbook's summed plan per day", () => {
     // Row 6 of KPI.xlsx, `Total KPI (m2/day)`, column by column.
-    const series = kpiSeries(workbookScope())
+    const series = kpiSeries(workbookScope(), TODAY)
     const expected: Array<[string[], number]> = [
       [['2026-09-01', '2026-09-02', '2026-09-03', '2026-09-04'], 275],
       [['2026-09-05', '2026-09-06', '2026-09-07', '2026-09-08'], 1175],
@@ -535,7 +542,7 @@ describe('kpiSeries', () => {
   it('spans the whole range the windows cover, in order', () => {
     // The workbook's four windows happen to be contiguous end to end, so its
     // own columns run 01/09 to 24/09 with nothing missing (RV5-37).
-    const series = kpiSeries(workbookScope())
+    const series = kpiSeries(workbookScope(), TODAY)
     expect(series).toHaveLength(24)
     expect(series[0].day).toBe('2026-09-01')
     expect(series[23].day).toBe('2026-09-24')
@@ -544,7 +551,7 @@ describe('kpiSeries', () => {
   })
 
   it('totals the planned area to $G$6 and reaches a full share on the last day', () => {
-    const series = kpiSeries(workbookScope())
+    const series = kpiSeries(workbookScope(), TODAY)
     expect(series.reduce((sum, d) => sum + d.planM2, 0)).toBeCloseTo(45300, 6)
     // The workbook's own last cumulative share is 1.0000000000000002; neither
     // it nor this is exactly 1, because 16000/6 does not divide evenly.
@@ -554,7 +561,7 @@ describe('kpiSeries', () => {
   it('divides both curves by the same denominator, the scope total', () => {
     // RV5-26: `$G$6` for plan and for actual alike. Row 8 of the workbook is
     // the daily share and row 9 its running total.
-    const series = kpiSeries(workbookScope())
+    const series = kpiSeries(workbookScope(), TODAY)
     expect(dayOf(series, '2026-09-01').planCumShare).toBeCloseTo(275 / 45300, 12)
     expect(dayOf(series, '2026-09-02').planCumShare).toBeCloseTo(550 / 45300, 12)
     expect(dayOf(series, '2026-09-04').planCumShare).toBeCloseTo(1100 / 45300, 12)
@@ -570,7 +577,7 @@ describe('kpiSeries', () => {
         { stageId: 'coat1', stageName: 'Lớp 1', day: '2026-09-03', areaM2: 60 },
       ],
     }]
-    const series = kpiSeries(entries)
+    const series = kpiSeries(entries, TODAY)
     expect(series.map((d) => d.actualM2)).toEqual([100, 0, 60, 0])
     expect(series.map((d) => d.planM2)).toEqual([100, 100, 100, 100])
     expect(series.map((d) => d.actualCumShare)).toEqual([0.25, 0.25, 0.4, 0.4])
@@ -589,7 +596,7 @@ describe('kpiSeries', () => {
         { stageId: 'coat1', stageName: 'Lớp 1', day: '2026-09-05', areaM2: 30 },
       ],
     }]
-    const series = kpiSeries(entries)
+    const series = kpiSeries(entries, TODAY)
     expect(series.some((d) => d.day === '2026-08-31')).toBe(false)
     expect(dayOf(series, '2026-09-05').actualM2).toBe(30)
     expect(dayOf(series, '2026-09-05').planM2).toBe(0)
@@ -604,13 +611,13 @@ describe('kpiSeries', () => {
       computedAreaM2: 0,
       actual: [{ stageId: 'coat1', stageName: 'Lớp 1', day: '2026-09-01', areaM2: 150 }],
     }]
-    const series = kpiSeries(entries)
+    const series = kpiSeries(entries, TODAY)
     expect(series[0].actualCumShare).toBe(1.5)
     expect(series[1].actualCumShare).toBe(1.5)
   })
 
   it('returns an empty series for an empty scope rather than dividing by zero', () => {
-    expect(kpiSeries([])).toEqual([])
+    expect(kpiSeries([], TODAY)).toEqual([])
   })
 
   it('reports zero shares rather than NaN when the scope plans no area at all', () => {
@@ -621,7 +628,7 @@ describe('kpiSeries', () => {
       computedAreaM2: 0,
       actual: [{ stageId: 'coat1', stageName: 'Lớp 1', day: '2026-09-01', areaM2: 40 }],
     }]
-    const series = kpiSeries(entries)
+    const series = kpiSeries(entries, TODAY)
     expect(series.map((d) => d.planM2)).toEqual([0, 0])
     expect(series.map((d) => d.actualM2)).toEqual([40, 0])
     expect(series.every((d) => Number.isFinite(d.planCumShare))).toBe(true)
@@ -634,7 +641,7 @@ describe('kpiSeries', () => {
       { plan: plan({ stageId: 'a', startDate: '2026-09-01', endDate: '2026-09-02', plannedAreaM2: 200 }), computedAreaM2: 0, actual: [] },
       { plan: plan({ stageId: 'b', startDate: '2026-09-02', endDate: '2026-09-02', plannedAreaM2: 50 }), computedAreaM2: 0, actual: [] },
     ]
-    expect(kpiSeries(entries).map((d) => [d.day, d.planM2])).toEqual([
+    expect(kpiSeries(entries, TODAY).map((d) => [d.day, d.planM2])).toEqual([
       ['2026-09-01', 100],
       ['2026-09-02', 150],
     ])
@@ -646,7 +653,7 @@ describe('kpiSeries', () => {
       computedAreaM2: 600,
       actual: [],
     }]
-    const series = kpiSeries(entries)
+    const series = kpiSeries(entries, TODAY)
     expect(series.map((d) => d.planM2)).toEqual([300, 300])
     expect(series[1].planCumShare).toBe(1)
   })
@@ -661,7 +668,7 @@ describe('kpiSeries', () => {
       computedAreaM2: 0,
       actual: [{ stageId: 'coat1', stageName: 'Lớp 1', day: '2026-09-09', areaM2: 500 }],
     }]
-    const series = kpiSeries(entries)
+    const series = kpiSeries(entries, TODAY)
     expect(series.some((d) => d.day === '2026-09-09')).toBe(false)
     expect(series.map((d) => d.actualM2)).toEqual([0, 0, 0])
     expect(series.map((d) => d.actualCumShare)).toEqual([0, 0, 0])
@@ -675,7 +682,7 @@ describe('kpiSeries', () => {
       computedAreaM2: 0,
       actual: [{ stageId: 'coat1', stageName: 'Lớp 1', day: '2026-09-10', areaM2: 150 }],
     }]
-    const series = kpiSeries(entries)
+    const series = kpiSeries(entries, TODAY)
     expect(series.map((d) => d.actualM2)).toEqual([150, 0, 0])
     expect(series.map((d) => d.actualCumShare)).toEqual([0.5, 0.5, 0.5])
   })
@@ -686,7 +693,7 @@ describe('kpiSeries', () => {
       computedAreaM2: 0,
       actual: [{ stageId: 'coat1', stageName: 'Lớp 1', day: '2026-09-30', areaM2: 600 }],
     }]
-    const series = kpiSeries(entries)
+    const series = kpiSeries(entries, TODAY)
     expect(dayOf(series, '2026-09-30').actualM2).toBe(600)
     expect(series[series.length - 1].actualCumShare).toBe(3)
   })
@@ -703,7 +710,7 @@ describe('kpiSeries', () => {
         { stageId: 'coat1', stageName: 'Lớp 1', day: '2026-08-28', areaM2: 1600 },
       ],
     }]
-    const series = kpiSeries(entries)
+    const series = kpiSeries(entries, TODAY)
     expect(series.every((d) => d.actualM2 === 0)).toBe(true)
     expect(series.every((d) => d.actualCumShare === 0)).toBe(true)
   })
@@ -723,9 +730,9 @@ describe('kpiSeries', () => {
         actual: [{ stageId: 'b', stageName: 'Lớp 2', day: '2026-09-01', areaM2: 70 }],
       },
     ]
-    const series = kpiSeries(entries)
+    const series = kpiSeries(entries, TODAY)
     expect(dayOf(series, '2026-09-01').actualM2).toBe(40)
-    expect(series.reduce((sum, d) => sum + d.actualM2, 0)).toBe(40)
+    expect(series.reduce((sum, d) => sum + (d.actualM2 ?? 0), 0)).toBe(40)
   })
 
   it('does not read 327% for the dev case: Main Deck · Blast + Coat 1, 10/09-20/09', () => {
@@ -742,13 +749,13 @@ describe('kpiSeries', () => {
       actual: [{ stageId: 'coat1', stageName: 'Blast + Coat 1', day, areaM2: 4027.89 }],
     }]
 
-    const august = kpiSeries(dev('2026-08-28'))
+    const august = kpiSeries(dev('2026-08-28'), TODAY)
     expect(august.every((d) => d.actualM2 === 0)).toBe(true)
     expect(august[august.length - 1].actualCumShare).toBe(0)
 
     // The same two figures, the work recorded inside the window: 327% is a
     // real answer here, and only here.
-    const inWindow = kpiSeries(dev('2026-09-12'))
+    const inWindow = kpiSeries(dev('2026-09-12'), TODAY)
     expect(dayOf(inWindow, '2026-09-12').actualM2).toBe(4027.89)
     expect(inWindow[inWindow.length - 1].actualCumShare).toBeCloseTo(4027.89 / 1230.11, 12)
   })
@@ -764,7 +771,7 @@ describe('kpiSeries', () => {
       { plan: plan({ stageId: 'a', startDate: '2026-09-01', endDate: '2026-09-02', plannedAreaM2: 200 }), computedAreaM2: 0, actual: [] },
       { plan: plan({ stageId: 'b', startDate: '2026-09-12', endDate: '2026-09-13', plannedAreaM2: 200 }), computedAreaM2: 0, actual: [] },
     ]
-    const series = kpiSeries(entries)
+    const series = kpiSeries(entries, TODAY)
     expect(series).toHaveLength(13)
     expect(series[0].day).toBe('2026-09-01')
     expect(series[12].day).toBe('2026-09-13')
@@ -788,7 +795,7 @@ describe('kpiSeries', () => {
       computedAreaM2: 0,
       actual: [{ stageId: 'coat1', stageName: 'Lớp 1', day: '2026-09-15', areaM2: 30 }],
     }]
-    const series = kpiSeries(entries)
+    const series = kpiSeries(entries, TODAY)
     expect(series.map((d) => d.day)).toEqual([
       '2026-09-10', '2026-09-11', '2026-09-12', '2026-09-13', '2026-09-14', '2026-09-15',
     ])
@@ -801,7 +808,7 @@ describe('kpiSeries', () => {
       { plan: plan({ stageId: 'a', startDate: '2026-09-08', endDate: '2026-09-09', plannedAreaM2: 100 }), computedAreaM2: 0, actual: [] },
       { plan: plan({ stageId: 'b', startDate: '2026-09-04', endDate: '2026-09-05', plannedAreaM2: 100 }), computedAreaM2: 0, actual: [] },
     ]
-    const series = kpiSeries(entries)
+    const series = kpiSeries(entries, TODAY)
     expect(series[0].day).toBe('2026-09-04')
     expect(series[series.length - 1].day).toBe('2026-09-09')
   })
@@ -814,7 +821,7 @@ describe('kpiSeries', () => {
       computedAreaM2: 0,
       actual: [],
     }]
-    const series = kpiSeries(entries)
+    const series = kpiSeries(entries, TODAY)
     expect(new Date('2026-09-06T12:00:00Z').getUTCDay()).toBe(0)
     expect(series.map((d) => d.day)).toContain('2026-09-06')
     expect(dayOf(series, '2026-09-06').planM2).toBe(100)
@@ -830,8 +837,46 @@ describe('kpiSeries', () => {
       computedAreaM2: 0,
       actual: [{ stageId: 'a', stageName: 'Lớp 1', day: '2026-09-10', areaM2: 100 }],
     }]
-    const series = kpiSeries(entries)
+    const series = kpiSeries(entries, TODAY)
     expect(series.map((d) => d.day)).toEqual(['2026-09-10', '2026-09-11'])
-    expect(series.reduce((sum, d) => sum + d.actualM2, 0)).toBe(100)
+    expect(series.reduce((sum, d) => sum + (d.actualM2 ?? 0), 0)).toBe(100)
+  })
+
+  // -------------------------------------------------------------------------
+  // RV6-09 — cumulative actual stops today
+  // -------------------------------------------------------------------------
+
+  it('nulls actualM2 and actualCumShare for every day after todayKey', () => {
+    const entries: KpiScopeStage[] = [{
+      plan: plan({ startDate: '2026-09-01', endDate: '2026-09-05', plannedAreaM2: 500 }),
+      computedAreaM2: 0,
+      actual: [{ stageId: 'coat1', stageName: 'Lớp 1', day: '2026-09-01', areaM2: 100 }],
+    }]
+    const series = kpiSeries(entries, '2026-09-02')
+    // Up to and including today: numbers, the RV5-36 clamp untouched.
+    expect(dayOf(series, '2026-09-01').actualM2).toBe(100)
+    expect(dayOf(series, '2026-09-01').actualCumShare).toBe(0.2)
+    expect(dayOf(series, '2026-09-02').actualM2).toBe(0)
+    expect(dayOf(series, '2026-09-02').actualCumShare).toBe(0.2)
+    // After today: null, not zero -- a real "we don't know yet", not "nothing
+    // happened".
+    expect(dayOf(series, '2026-09-03').actualM2).toBeNull()
+    expect(dayOf(series, '2026-09-03').actualCumShare).toBeNull()
+    expect(dayOf(series, '2026-09-04').actualM2).toBeNull()
+    expect(dayOf(series, '2026-09-05').actualM2).toBeNull()
+    // Plan is unaffected: it legitimately extends into the future.
+    expect(series.map((d) => d.planM2)).toEqual([100, 100, 100, 100, 100])
+  })
+
+  it('keeps a day exactly at todayKey numeric when it carries a recorded actual', () => {
+    const entries: KpiScopeStage[] = [{
+      plan: plan({ startDate: '2026-09-01', endDate: '2026-09-03', plannedAreaM2: 300 }),
+      computedAreaM2: 0,
+      actual: [{ stageId: 'coat1', stageName: 'Lớp 1', day: '2026-09-02', areaM2: 60 }],
+    }]
+    const series = kpiSeries(entries, '2026-09-02')
+    expect(dayOf(series, '2026-09-02').actualM2).toBe(60)
+    expect(dayOf(series, '2026-09-02').actualCumShare).toBe(0.2)
+    expect(dayOf(series, '2026-09-03').actualM2).toBeNull()
   })
 })

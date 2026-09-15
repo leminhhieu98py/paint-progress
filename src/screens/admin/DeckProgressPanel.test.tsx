@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { DeckProgressPanel } from './DeckProgressPanel'
 
 const loadDeckWorks = vi.hoisted(() => vi.fn())
+const listDeckEvents = vi.hoisted(() => vi.fn())
 const getDrawingUrl = vi.hoisted(() => vi.fn())
 const listDeckZones = vi.hoisted(() => vi.fn())
 const createZone = vi.hoisted(() => vi.fn())
@@ -18,6 +19,7 @@ const subscribeDeckStates = vi.hoisted(() => vi.fn())
 
 vi.mock('../../lib/progressApi', () => ({
   loadDeckWorks: (id: string) => loadDeckWorks(id),
+  listDeckEvents: (id: string) => listDeckEvents(id),
   listCellNotes: (cellId: string) => listCellNotes(cellId),
   setReportNote: (id: number, note: string | null, hidden: boolean) => setReportNote(id, note, hidden),
 }))
@@ -46,7 +48,7 @@ vi.mock('../../lib/zonesApi', () => ({
 vi.mock('../../canvas/DrawingCanvas', () => ({
   DrawingCanvas: ({
     imageUrl, cells, cellColors, hatchedCodes, markedCodes, planLabels, selectedCodes,
-    outlineColors, cellOpacities, onCellClick, onSelectDraw,
+    outlineColors, cellOpacities, zoneLabels, onCellClick, onSelectDraw,
   }: {
     imageUrl: string
     cells: { code: string }[]
@@ -56,11 +58,18 @@ vi.mock('../../canvas/DrawingCanvas', () => ({
     hatchedCodes?: string[]
     markedCodes?: string[]
     planLabels?: Record<string, string>
+    zoneLabels?: { id: string; name: string }[]
     selectedCodes?: string[]
     onCellClick?: (code: string, additive: boolean) => void
     onSelectDraw?: (rect: { x: number; y: number; w: number; h: number }) => void
   }) => (
-    <div data-testid="canvas" data-image={imageUrl}>
+    <div
+      data-testid="canvas"
+      data-image={imageUrl}
+      // The label boxes the panel asks for, as a count and as their names:
+      // RV6-12 off and RV6-13 both have to draw none of them.
+      data-labels={(zoneLabels ?? []).map((l) => l.name).join('|')}
+    >
       {cells.map((c) => (
         <button
           key={c.code}
@@ -89,7 +98,7 @@ const STAGES = [
 
 const WORK = {
   id: 'w1', projectId: 'p1', seq: 1, name: 'Công việc chính', kind: 'bays' as const,
-  weight: 1, counts: true, manualProgress: 0,
+  weight: 1, counts: true, manualProgress: 0, quantityLabel: 'Diện tích', unit: 'm²',
 }
 /** The bays as the deck's one work sees them: 500 m² at Tháo giáo, 500 at Coat 2. */
 const CELLS = [
@@ -116,6 +125,8 @@ const ZONE = {
 beforeEach(() => {
   loadDeckWorks.mockReset()
   loadDeckWorks.mockResolvedValue(ENTRY)
+  listDeckEvents.mockReset()
+  listDeckEvents.mockResolvedValue([])
   getDrawingUrl.mockReset()
   getDrawingUrl.mockImplementation((p: string) => Promise.resolve(`https://signed/${p}`))
   listDeckZones.mockReset()
@@ -978,5 +989,477 @@ describe('DeckProgressPanel — công việc', () => {
     loadDeckWorks.mockResolvedValue({ ...ENTRY, works: [] })
     renderPanel(false)
     expect(await screen.findByText('Sàn này chưa thuộc công việc nào')).toBeInTheDocument()
+  })
+})
+
+/**
+ * RV6-13 -- "Tất cả công đoạn" as a layer of its own.
+ *
+ * The admin asked for the GS live view inside the panel: one picture of the
+ * deck coloured by the furthest coat each bay has reached, without having to
+ * step through the coats one select at a time.
+ */
+describe('DeckProgressPanel — the all-stages layer (RV6-13)', () => {
+  /** One zone per coat, handed back in seq order inside each coat. */
+  const ZONE_B = {
+    id: 'z2', name: 'Khu B — Coat 2', stageId: 's2', color: '#13c2c2',
+    startDate: null, finishDate: null, cellIds: ['c2'],
+  }
+
+  beforeEach(() => {
+    listDeckZones.mockResolvedValue([{ ...ZONE, cellIds: ['c1', 'c2'] }, ZONE_B])
+  })
+
+  /**
+   * What one layer select offers, in order.
+   *
+   * Scoped to that select's own dropdown -- both are mounted at once in the
+   * split view, and antd leaves a closed one in the document, so an unscoped
+   * query reads whichever was opened first.
+   */
+  const optionLabels = (id: string) => {
+    const dropdown = (document.getElementById(`${id}_list`) as HTMLElement)
+      .closest('.ant-select-dropdown') as HTMLElement
+    return Array.from(dropdown.querySelectorAll('.ant-select-item-option'))
+      .map((el) => el.getAttribute('title'))
+  }
+
+  it('offers Tất cả công đoạn as the first option on both layer selects', async () => {
+    renderPanel()
+    await screen.findByTestId('lens-A')
+    await userEvent.click(screen.getByText('So sánh hai lớp'))
+    await screen.findByTestId('lens-B')
+
+    const coats = ['Blast + Coat 1', 'Coat 2', 'Tháo giáo']
+    await userEvent.click(screen.getByLabelText('Lớp bên trái'))
+    expect(optionLabels('lens-a-stage')).toEqual(['Tất cả công đoạn', ...coats])
+    await userEvent.keyboard('{Escape}')
+
+    await userEvent.click(screen.getByLabelText('Lớp bên phải'))
+    expect(optionLabels('lens-b-stage')).toEqual(['Tất cả công đoạn', ...coats])
+  })
+
+  it('colours every bay by the furthest coat it has reached, with no plan overlay', async () => {
+    renderPanel()
+    await screen.findByTestId('lens-A')
+    await pickLens('Lớp sơn đang xem', 'Tất cả công đoạn')
+
+    // paintLensColors: c1 is at Tháo giáo, c2 at Coat 2. Zones belong to one
+    // coat, so none of them is drawn here however the plan toggle sits.
+    await waitFor(() =>
+      expect(screen.getByTestId('cell-R1C1')).toHaveAttribute('data-color', '#722ed1'))
+    expect(screen.getByTestId('cell-R1C2')).toHaveAttribute('data-color', '#bfbfbf')
+    expect(screen.getByTestId('cell-R1C1')).toHaveAttribute('data-outline', '')
+    expect(screen.getByTestId('cell-R1C2')).toHaveAttribute('data-outline', '')
+    expect(screen.getByTestId('cell-R1C2')).toHaveAttribute('data-opacity', '')
+    expect(screen.getByTestId('canvas')).toHaveAttribute('data-labels', '')
+  })
+
+  it('gives the layer one chip per coat, with the share of the deck that reached it', async () => {
+    renderPanel()
+    await screen.findByTestId('lens-A')
+    await pickLens('Lớp sơn đang xem', 'Tất cả công đoạn')
+
+    const chips = await screen.findByTestId('lens-chips-A')
+    // Cumulative, like every other reading here: both bays are past Coat 2,
+    // only the 500 m² one has reached Tháo giáo.
+    expect(within(chips).getAllByTestId('lens-chip')).toHaveLength(3)
+    expect(within(chips).getByText('Blast + Coat 1')).toBeInTheDocument()
+    expect(within(chips).getAllByText('100,00%')).toHaveLength(2)
+    expect(within(chips).getByText('50,00%')).toBeInTheDocument()
+  })
+
+  it('lists the zones of every coat, in coat order then zone order', async () => {
+    renderPanel()
+    await screen.findByTestId('lens-A')
+    await pickLens('Lớp sơn đang xem', 'Tất cả công đoạn')
+
+    const lens = await screen.findByTestId('lens-A')
+    expect(within(lens).getByText('Tiến độ từng zone · Tất cả công đoạn')).toBeInTheDocument()
+    const rows = within(lens).getAllByRole('button', { name: /^Mốc ngày của/ })
+    expect(rows.map((r) => r.getAttribute('aria-label'))).toEqual([
+      'Mốc ngày của Khu B — Coat 2',
+      'Mốc ngày của Khu A — Tháo giáo',
+    ])
+  })
+
+  it('refuses to build a zone while the layer shows every coat', async () => {
+    renderPanel()
+    await screen.findByTestId('lens-A')
+    await userEvent.click(screen.getByTestId('band-all'))
+    await pickLens('Lớp sơn đang xem', 'Tất cả công đoạn')
+
+    // A zone row is one stage_id; there is no coat to write here.
+    const make = await screen.findByRole('button', { name: /Gộp thành zone/ })
+    expect(make).toBeDisabled()
+    await userEvent.hover(make.parentElement as HTMLElement)
+    expect(await screen.findByText('Chọn một công đoạn để tạo zone')).toBeInTheDocument()
+  })
+})
+
+/**
+ * RV6-12 -- the plan overlay, on a switch.
+ *
+ * Linh reads the drawing for what is DONE; the faint zone tints and dashed
+ * frames that answer "what is planned" are noise while she is doing that.
+ */
+describe('DeckProgressPanel — hiding the plan (RV6-12)', () => {
+  beforeEach(() => {
+    listDeckZones.mockResolvedValue([{ ...ZONE, cellIds: ['c1', 'c2'] }])
+  })
+
+  it('shows the plan by default, as the panel always has', async () => {
+    renderPanel()
+    await screen.findByTestId('lens-A')
+    expect(screen.getByRole('switch', { name: 'Hiện kế hoạch' })).toBeChecked()
+    await pickLens('Lớp sơn đang xem', 'Tháo giáo')
+    await waitFor(() =>
+      expect(screen.getByTestId('cell-R1C2')).toHaveAttribute('data-outline', '#eb2f96'))
+    expect(screen.getByTestId('canvas')).toHaveAttribute('data-labels', 'Khu A — Tháo giáo')
+  })
+
+  it('drops the tints, frames and labels when the plan is switched off', async () => {
+    renderPanel()
+    await screen.findByTestId('lens-A')
+    await pickLens('Lớp sơn đang xem', 'Tháo giáo')
+    await userEvent.click(screen.getByRole('switch', { name: 'Hiện kế hoạch' }))
+
+    // c1 reached Tháo giáo: the COAT's colour now, not its zone's magenta.
+    await waitFor(() =>
+      expect(screen.getByTestId('cell-R1C1')).toHaveAttribute('data-color', '#722ed1'))
+    expect(screen.getByTestId('cell-R1C1')).toHaveAttribute('data-opacity', '')
+    // c2 is planned but has not reached it: nothing at all.
+    expect(screen.getByTestId('cell-R1C2')).toHaveAttribute('data-color', '')
+    expect(screen.getByTestId('cell-R1C2')).toHaveAttribute('data-outline', '')
+    expect(screen.getByTestId('cell-R1C2')).toHaveAttribute('data-opacity', '')
+    expect(screen.getByTestId('canvas')).toHaveAttribute('data-labels', '')
+    // The table under the drawing is data, not overlay: it stays.
+    expect(within(screen.getByTestId('lens-A')).getByText('Khu A — Tháo giáo')).toBeInTheDocument()
+  })
+})
+
+
+/**
+ * RV6-11 -- renaming a zone (docx item 4).
+ *
+ * The name is stored with its coat suffix, so the box holds the base and the
+ * suffix is re-applied on save: an admin retyping "Khu A — Tháo giáo" by hand
+ * would eventually produce "Khu A — Tháo giáo — Tháo giáo".
+ */
+describe('DeckProgressPanel — renaming a zone (RV6-11)', () => {
+  beforeEach(() => {
+    listDeckZones.mockResolvedValue([ZONE])
+  })
+
+  const openDates = async () => {
+    renderPanel()
+    await screen.findByTestId('lens-A')
+    await pickLens('Lớp sơn đang xem', 'Tháo giáo')
+    await userEvent.click(await screen.findByRole('button', { name: 'Mốc ngày của Khu A — Tháo giáo' }))
+    return within(await screen.findByRole('dialog')).getByLabelText('Tên zone')
+  }
+
+  it('prefills the box with the base name, without the coat suffix', async () => {
+    expect(await openDates()).toHaveValue('Khu A')
+  })
+
+  it('writes the new name with the coat suffix, then re-reads the plan', async () => {
+    const input = await openDates()
+    await userEvent.clear(input)
+    await userEvent.type(input, 'Khu B')
+    await userEvent.tab()
+
+    await waitFor(() => expect(updateZone).toHaveBeenCalledWith('z1', { name: 'Khu B — Tháo giáo' }))
+    await waitFor(() => expect(listDeckZones).toHaveBeenCalledTimes(2))
+  })
+
+  it('commits on Enter too, so the name can be saved without leaving the field', async () => {
+    const input = await openDates()
+    await userEvent.clear(input)
+    await userEvent.type(input, 'Khu C{Enter}')
+
+    await waitFor(() => expect(updateZone).toHaveBeenCalledWith('z1', { name: 'Khu C — Tháo giáo' }))
+  })
+
+  it('writes nothing when the name comes back unchanged', async () => {
+    const input = await openDates()
+    await userEvent.clear(input)
+    await userEvent.type(input, 'Khu A')
+    await userEvent.tab()
+
+    expect(updateZone).not.toHaveBeenCalled()
+  })
+
+  it('reverts an emptied box instead of storing a nameless zone', async () => {
+    const input = await openDates()
+    await userEvent.clear(input)
+    await userEvent.tab()
+
+    expect(updateZone).not.toHaveBeenCalled()
+    await waitFor(() => expect(input).toHaveValue('Khu A'))
+  })
+
+  it('surfaces a failed rename rather than showing a name that was not saved', async () => {
+    updateZone.mockRejectedValue(new Error('không đổi tên được'))
+    const input = await openDates()
+    await userEvent.clear(input)
+    await userEvent.type(input, 'Khu B')
+    await userEvent.tab()
+
+    expect(await screen.findByText('không đổi tên được')).toBeInTheDocument()
+  })
+
+  it('writes once when Enter and blur overlap, and takes the next rename after it lands', async () => {
+    let settle!: () => void
+    updateZone.mockReturnValueOnce(new Promise<void>((resolve) => { settle = resolve }))
+    const input = await openDates()
+    await userEvent.clear(input)
+    await userEvent.type(input, 'Khu B{Enter}')
+    await userEvent.tab()
+
+    expect(updateZone).toHaveBeenCalledTimes(1)
+
+    settle()
+    await waitFor(() => expect(listDeckZones).toHaveBeenCalledTimes(2))
+
+    await userEvent.clear(input)
+    await userEvent.type(input, 'Khu C{Enter}')
+    await waitFor(() => expect(updateZone).toHaveBeenCalledWith('z1', { name: 'Khu C — Tháo giáo' }))
+    expect(updateZone).toHaveBeenCalledTimes(2)
+  })
+})
+
+/**
+ * RV6-14..16 -- comparing the deck between two dates.
+ *
+ * "Xem được tiến độ của 2 ngày khác nhau": the panel could already hold two
+ * coats against each other, and could only ever show them as they are NOW.
+ * Each layer now takes a date, and the history in `cell_events` says where
+ * every bay stood at the end of it.
+ */
+describe('DeckProgressPanel — comparing two dates (RV6-14..16)', () => {
+  /**
+   * The deck's whole history. By the end of 10/09 only R1C1 had been started,
+   * at the first coat; everything else on this deck happened after.
+   */
+  const HISTORY = [
+    {
+      id: 1, deckName: 'Cellar Deck', cellCode: 'R1C1', cellAreaM2: 500,
+      workName: 'Công việc chính', toStageName: 'Blast + Coat 1',
+      at: '2026-09-02T03:00:00Z', byId: null, note: '',
+    },
+    {
+      id: 2, deckName: 'Cellar Deck', cellCode: 'R1C2', cellAreaM2: 500,
+      workName: 'Công việc chính', toStageName: 'Coat 2',
+      at: '2026-09-12T03:00:00Z', byId: null, note: '',
+    },
+    {
+      id: 3, deckName: 'Cellar Deck', cellCode: 'R1C1', cellAreaM2: 500,
+      workName: 'Công việc chính', toStageName: 'Tháo giáo',
+      at: '2026-09-13T03:00:00Z', byId: null, note: '',
+    },
+  ]
+
+  beforeEach(() => {
+    listDeckEvents.mockResolvedValue(HISTORY)
+  })
+
+  /** The day input of one layer's picker. */
+  const dateInput = (side: 'a' | 'b') =>
+    within(screen.getByTestId(`lens-${side}-date`)).getByPlaceholderText('Hôm nay')
+
+  const pickDate = async (side: 'a' | 'b', text: string) => {
+    await userEvent.type(dateInput(side), text)
+    await userEvent.keyboard('{Enter}')
+  }
+
+  it('gives every layer a date picker, empty for the live state', async () => {
+    renderPanel()
+    await screen.findByTestId('lens-A')
+    expect(dateInput('a')).toHaveValue('')
+    // Nothing is read until a date is actually asked for.
+    expect(listDeckEvents).not.toHaveBeenCalled()
+
+    await userEvent.click(screen.getByText('So sánh hai lớp'))
+    await screen.findByTestId('lens-B')
+    expect(dateInput('b')).toHaveValue('')
+  })
+
+  it('reads the deck\'s history once, however many layers are pinned to a date', async () => {
+    renderPanel()
+    await screen.findByTestId('lens-A')
+    await pickDate('a', '10/09/2026')
+    await waitFor(() => expect(listDeckEvents).toHaveBeenCalledWith('d1'))
+
+    await userEvent.click(screen.getByText('So sánh hai lớp'))
+    await screen.findByTestId('lens-B')
+    await pickDate('b', '13/09/2026')
+
+    // One read per deck, kept for both layers: the history does not change
+    // between two dates of the same deck.
+    await waitFor(() => expect(screen.getAllByText(/Trạng thái ngày/)).toHaveLength(2))
+    expect(listDeckEvents).toHaveBeenCalledTimes(1)
+  })
+
+  it('colours the bays by where they stood at the end of the day picked', async () => {
+    renderPanel()
+    await screen.findByTestId('lens-A')
+    // Live, both bays are past Blast + Coat 1, so both are filled.
+    expect(screen.getByTestId('cell-R1C1')).toHaveAttribute('data-color', '#fadb14')
+    expect(screen.getByTestId('cell-R1C2')).toHaveAttribute('data-color', '#fadb14')
+
+    await pickDate('a', '10/09/2026')
+
+    // R1C2 was not started until the 12th.
+    await waitFor(() =>
+      expect(screen.getByTestId('cell-R1C2')).toHaveAttribute('data-color', ''))
+    expect(screen.getByTestId('cell-R1C1')).toHaveAttribute('data-color', '#fadb14')
+  })
+
+  it('says which day the layer is showing, and how far back the history goes', async () => {
+    renderPanel()
+    await screen.findByTestId('lens-A')
+    expect(screen.queryByText(/Trạng thái ngày/)).not.toBeInTheDocument()
+
+    await pickDate('a', '10/09/2026')
+
+    const lens = await screen.findByTestId('lens-A')
+    expect(await within(lens).findByText('Trạng thái ngày 10/09/2026')).toBeInTheDocument()
+    // Rows older than the work model name no work; the layer admits the gap.
+    expect(within(lens).getByText('Lịch sử từ 24/08/2026')).toBeInTheDocument()
+  })
+
+  it('counts the as-of bays in the chips and the m² line, not the live ones', async () => {
+    renderPanel()
+    await screen.findByTestId('lens-A')
+    await pickDate('a', '10/09/2026')
+
+    const lens = await screen.findByTestId('lens-A')
+    await waitFor(() =>
+      expect(within(screen.getByTestId('lens-chips-A')).getByText('50,00%')).toBeInTheDocument())
+    expect(within(lens).getByText('500,00 / 1.000,00 m²')).toBeInTheDocument()
+  })
+
+  it('goes back to the live deck when the date is cleared, without re-reading', async () => {
+    renderPanel()
+    await screen.findByTestId('lens-A')
+    await pickDate('a', '10/09/2026')
+    await waitFor(() =>
+      expect(screen.getByTestId('cell-R1C2')).toHaveAttribute('data-color', ''))
+
+    await userEvent.click(
+      screen.getByTestId('lens-a-date').querySelector('.ant-picker-clear') as HTMLElement,
+    )
+
+    await waitFor(() =>
+      expect(screen.getByTestId('cell-R1C2')).toHaveAttribute('data-color', '#fadb14'))
+    expect(screen.queryByText(/Trạng thái ngày/)).not.toBeInTheDocument()
+    expect(listDeckEvents).toHaveBeenCalledTimes(1)
+  })
+
+  it('refuses a day that has not happened yet, by the Vietnam day like every other "today"', async () => {
+    // 18:30Z on the 15th is already 01:30 on the 16th in Vietnam. The dashboard,
+    // the Năng suất sheet and the GS card all call that the 16th (effortDayKey,
+    // RV5-20); a picker that asked the browser's clock instead would refuse the
+    // 16th on any machine west of UTC+7 while the site is already working it.
+    vi.useFakeTimers({ shouldAdvanceTime: true, now: new Date('2026-09-15T18:30:00Z') })
+    try {
+      renderPanel()
+      await screen.findByTestId('lens-A')
+      await userEvent.click(dateInput('a'))
+
+      const cellOf = (day: string) => document.querySelector(
+        `.ant-picker-dropdown td[title="${day}"]`,
+      ) as HTMLElement
+      expect(cellOf('2026-09-16')).not.toHaveClass('ant-picker-cell-disabled')
+      expect(cellOf('2026-09-17')).toHaveClass('ant-picker-cell-disabled')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('still answers the plan toggle on a layer pinned to a date', async () => {
+    listDeckZones.mockResolvedValue([{ ...ZONE, stageId: 's1', cellIds: ['c1', 'c2'] }])
+    renderPanel()
+    await screen.findByTestId('lens-A')
+    await pickDate('a', '10/09/2026')
+    await waitFor(() =>
+      expect(screen.getByTestId('canvas')).toHaveAttribute('data-labels', 'Khu A — Tháo giáo'))
+
+    await userEvent.click(screen.getByRole('switch', { name: 'Hiện kế hoạch' }))
+    // RV6-12 off: the coat's own colour on what was done by then, nothing else.
+    await waitFor(() =>
+      expect(screen.getByTestId('cell-R1C1')).toHaveAttribute('data-color', '#fadb14'))
+    expect(screen.getByTestId('cell-R1C2')).toHaveAttribute('data-color', '')
+    expect(screen.getByTestId('canvas')).toHaveAttribute('data-labels', '')
+  })
+
+  it('reports a history that could not be read, and keeps drawing the live deck', async () => {
+    listDeckEvents.mockRejectedValue(new Error('không đọc được lịch sử'))
+    renderPanel()
+    await screen.findByTestId('lens-A')
+    await pickDate('a', '10/09/2026')
+
+    expect(await screen.findByText('không đọc được lịch sử')).toBeInTheDocument()
+    expect(screen.getByTestId('cell-R1C2')).toHaveAttribute('data-color', '#fadb14')
+  })
+})
+
+/**
+ * RV6-17 -- "tách bộ lọc 2 bên trái phải nằm trên layout".
+ *
+ * Two layers with one shared row of controls above them meant reading across
+ * two selects to work out which drawing a change would land on. In the split
+ * view each layer's stage select and date picker now sit in that layer's own
+ * pane, above its drawing; on a single layer the pair stays where it was.
+ */
+describe('DeckProgressPanel — each layer\'s controls above its own drawing (RV6-17)', () => {
+  it('keeps the single layer\'s controls in the row above the drawing', async () => {
+    renderPanel()
+    const lens = await screen.findByTestId('lens-A')
+    expect(lens).not.toContainElement(document.getElementById('lens-a-stage'))
+    expect(lens).not.toContainElement(screen.getByTestId('lens-a-date'))
+    // ...and they are still on the panel, reachable by their labels.
+    expect(screen.getByLabelText('Lớp sơn đang xem')).toBeInTheDocument()
+  })
+
+  it('puts each layer\'s stage select and date picker in its own pane when comparing', async () => {
+    renderPanel()
+    await screen.findByTestId('lens-A')
+    await userEvent.click(screen.getByText('So sánh hai lớp'))
+    const lensB = await screen.findByTestId('lens-B')
+    const lensA = screen.getByTestId('lens-A')
+
+    expect(lensA).toContainElement(document.getElementById('lens-a-stage'))
+    expect(lensA).toContainElement(screen.getByTestId('lens-a-date'))
+    expect(lensB).toContainElement(document.getElementById('lens-b-stage'))
+    expect(lensB).toContainElement(screen.getByTestId('lens-b-date'))
+
+    // The controls still work from their new place: the right layer moves
+    // to another coat without touching the left one.
+    await userEvent.click(screen.getByLabelText('Lớp bên phải'))
+    await userEvent.click(await screen.findByTitle('Coat 2'))
+    expect(within(lensB).getByText('Tiến độ · Coat 2')).toBeInTheDocument()
+    expect(within(lensA).getByText('Tiến độ · Blast + Coat 1')).toBeInTheDocument()
+  })
+})
+
+describe('DeckProgressPanel: the work\'s unit (RV6-35)', () => {
+  it('labels every figure in the active work\'s own unit, not m²', async () => {
+    // Linh, item 3: the unit belongs to the work. A scaffolding work counted
+    // in tonnes reads "tấn" on the ring, the coats, the footer, the zone rows
+    // and the m² line -- the numbers themselves do not move (RV6-38).
+    loadDeckWorks.mockResolvedValue({
+      ...ENTRY,
+      works: [{ ...ENTRY.works[0], work: { ...WORK, quantityLabel: 'Khối lượng', unit: 'tấn' } }],
+    })
+    renderPanel()
+    const ring = await screen.findByTestId('stage-ring')
+    expect(within(ring).getAllByText('1.000,00 / 1.000,00 tấn')).toHaveLength(2)
+    expect(within(ring).getByText('500,00 / 1.000,00 tấn')).toBeInTheDocument()
+    expect(within(ring).getAllByText('1.000,00 tấn')).toHaveLength(2)
+    expect(screen.getAllByText('1.000,00 / 1.000,00 tấn').length).toBeGreaterThan(2)
+    expect(screen.queryByText(/m²/)).toBeNull()
+    expect(screen.getByRole('row', { name: /^tấn/ })).toBeInTheDocument()
   })
 })

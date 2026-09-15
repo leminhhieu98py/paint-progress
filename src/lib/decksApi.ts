@@ -1,3 +1,4 @@
+import { prorateCellAreas } from '../domain/geometry'
 import type { MeshCell, Stage } from '../domain/types'
 import { supabase } from './supabase'
 
@@ -96,6 +97,46 @@ export async function updateDeckIdentity(
   if (error) throw new Error(error.message)
 }
 
+/**
+ * The KPI chart's Plan and Actual colours for one deck (RV6-28), both at once.
+ *
+ * Null is the system default (0035): "Mặc định" writes both back to null, and a
+ * payload that left a null out would keep the old colour standing. Written on
+ * every change with no save step, so a failure surfaces on the change itself.
+ * The app validates the hex before calling this (RV6-31); the columns' check
+ * constraints are the backstop. Admin-only by the route and by `decks_admin_all`.
+ */
+export async function setDeckKpiColors(
+  deckId: string, colors: { plan: string | null; actual: string | null },
+): Promise<void> {
+  const { error } = await supabase
+    .from('decks')
+    .update({ kpi_plan_color: colors.plan, kpi_actual_color: colors.actual })
+    .eq('id', deckId)
+  if (error) throw new Error(error.message)
+}
+
+/**
+ * Trade `seq` between two decks -- how DecksScreen moves a row up or down
+ * (RV6-05), since deck order everywhere else (rollup table, donut legend, GS
+ * deck tabs, KPI plan table, xlsx) already follows `seq`.
+ *
+ * Two plain updates, not one query: `decks` carries no unique constraint on
+ * `seq` (0001 has only `(project_id, code)`), so no deferral dance is needed,
+ * and neither is a transaction. A failure between the two writes leaves both
+ * decks at one seq, which every screen that orders by `seq` still renders
+ * (ties keep insertion order), and the next swap repairs it. Admin-only by
+ * the route and by `decks_admin_all`.
+ */
+export async function swapDeckSeq(
+  a: { id: string; seq: number }, b: { id: string; seq: number },
+): Promise<void> {
+  const { error: errorA } = await supabase.from('decks').update({ seq: b.seq }).eq('id', a.id)
+  if (errorA) throw new Error(errorA.message)
+  const { error: errorB } = await supabase.from('decks').update({ seq: a.seq }).eq('id', b.id)
+  if (errorB) throw new Error(errorB.message)
+}
+
 export async function createDeck(input: {
   projectId: string
   seq: number
@@ -132,6 +173,11 @@ export async function createDeck(input: {
   return deckId
 }
 
+/**
+ * Writes the deck row only -- its total area and how that total was set.
+ * Every persisted `cells.area_m2` is untouched: `reprorateDeckCells` is what
+ * keeps the bays in step with a new total (RV6-18..20).
+ */
 export async function updateDeckArea(
   deckId: string,
   totalAreaM2: number,
@@ -142,6 +188,31 @@ export async function updateDeckArea(
     .update({ total_area_m2: totalAreaM2, area_source: areaSource })
     .eq('id', deckId)
   if (error) throw new Error(error.message)
+}
+
+/**
+ * Re-prorates every persisted bay under a deck to a new total area, keeping
+ * each bay's pixel share of the drawing (RV6-18).
+ *
+ * Composed from three existing primitives rather than new SQL: `listCells`
+ * reads the deck's current bays, `prorateCellAreas` recomputes each one's
+ * `areaM2` from its pixel footprint (`w * h`) against the new total, and
+ * `syncCells` writes the result back keyed on `deck_id, code`. Same codes in,
+ * same codes out, so `syncCells` deletes nothing and its geometry-only upsert
+ * leaves every cell's id, stage, zone links and event history untouched.
+ *
+ * A deck with no cells yet is a no-op: there is nothing to reprorate, and
+ * calling `syncCells` would be a pointless write (and, with no persisted
+ * rows to diff against, no better than doing nothing at all).
+ */
+export async function reprorateDeckCells(deckId: string, totalAreaM2: number): Promise<void> {
+  const cells = await listCells(deckId)
+  if (cells.length === 0) return
+  const prorated = prorateCellAreas(
+    totalAreaM2,
+    cells.map(({ code, x, y, w, h, areaM2 }) => ({ code, x, y, w, h, areaM2 })),
+  )
+  await syncCells(deckId, prorated)
 }
 
 /**

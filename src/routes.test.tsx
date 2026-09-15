@@ -86,6 +86,10 @@ vi.mock('./screens/gs/GsScreen', () => ({
     return <div>GS SCREEN (dự án {projectId})</div>
   },
 }))
+// The viewer's landing page (RV6-23): its own reads, its own tests.
+vi.mock('./screens/gs/ProjectPickerScreen', () => ({
+  ProjectPickerScreen: () => <div>PROJECT PICKER</div>,
+}))
 
 const fakeSession = { access_token: 'token', user: { id: 'user-1' } } as unknown as Session
 
@@ -138,17 +142,32 @@ describe('AppRoutes: landing at the base path by role', () => {
     expect(screen.queryByText('404')).toBeNull()
   })
 
-  it('sends a viewer to the GS route of its project, like a foreman (0028)', async () => {
+  it('sends a viewer to the project picker, without asking for a membership (RV6-23)', async () => {
+    // 0034: a viewer sees every project and holds no project_members row, so
+    // `myFirstProjectId()` would answer null and the 0028 landing would tell
+    // the boss to ask the admin for access they already have.
     maybeSingle.mockResolvedValue({
       data: { id: 'user-1', username: 'boss1', full_name: 'Sếp Một', role: 'viewer', active: true },
       error: null,
     })
-    myFirstProjectId.mockResolvedValue('proj-4')
+    myFirstProjectId.mockResolvedValue(null)
 
     renderAtBasePath()
 
-    expect(await screen.findByText('GS SCREEN (dự án proj-4)')).toBeInTheDocument()
+    expect(await screen.findByText('PROJECT PICKER')).toBeInTheDocument()
+    expect(myFirstProjectId).not.toHaveBeenCalled()
+    expect(screen.queryByText('Chưa được thêm vào dự án nào')).toBeNull()
     expect(screen.queryByText('404')).toBeNull()
+  })
+
+  it('refuses a foreman the project picker: /gs is the viewer\'s alone', async () => {
+    maybeSingle.mockResolvedValue({
+      data: { id: 'user-1', username: 'gs1', full_name: 'GS Một', role: 'gs', active: true },
+      error: null,
+    })
+    renderAt(`${APP_BASE_PATH}/gs`)
+    expect(await screen.findByText('404')).toBeInTheDocument()
+    expect(screen.queryByText('PROJECT PICKER')).toBeNull()
   })
 
   it('tells a membership-less gs to contact the admin, not the bare 404', async () => {

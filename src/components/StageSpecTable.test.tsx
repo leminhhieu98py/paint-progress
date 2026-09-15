@@ -64,3 +64,11 @@ describe('StageSpecTable', () => {
     expect(screen.queryByText('m²')).toBeNull()
   })
 })
+
+describe('StageSpecTable: the work\'s unit (RV6-35)', () => {
+  it('labels the quantity row with the unit it is given', () => {
+    render(<StageSpecTable stages={progress.stages} unit="tấn" />)
+    expect(screen.getByRole('row', { name: /^tấn/ })).toBeInTheDocument()
+    expect(screen.queryByText('m²')).toBeNull()
+  })
+})

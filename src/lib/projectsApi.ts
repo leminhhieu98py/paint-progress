@@ -80,6 +80,37 @@ export async function listProjectNames(): Promise<Array<{ id: string; name: stri
   }))
 }
 
+/** One card of the viewer's project picker (RV6-23). */
+export interface ProjectCard {
+  id: string
+  name: string
+  code: string
+  deckCount: number
+}
+
+/**
+ * Every project the caller may read, by name, with its deck count -- the three
+ * facts the viewer's picker shows. Deck ids only, counted here: `decks(count)`
+ * needs the aggregate switch PostgREST ships off, and `listProjects` pulls
+ * every stage, bay and state of every project for a page of cards.
+ */
+export async function listProjectCards(): Promise<ProjectCard[]> {
+  const { data, error } = await supabase
+    .from('projects')
+    .select('id, name, code, decks(id)')
+    .order('name')
+  if (error) throw new Error(error.message)
+  return (data ?? []).map((row) => {
+    const r = row as unknown as Record<string, unknown>
+    return {
+      id: r.id as string,
+      name: r.name as string,
+      code: r.code as string,
+      deckCount: ((r.decks ?? []) as unknown[]).length,
+    }
+  })
+}
+
 export async function listProjects(): Promise<ProjectRow[]> {
   // One query: works with their deck weights, decks with geometry, coats and
   // states. Assembled by the same function every other loader uses.
@@ -87,7 +118,7 @@ export async function listProjects(): Promise<ProjectRow[]> {
     .from('projects')
     .select(
       'id, name, code,'
-      + ' works(id, project_id, seq, name, kind, weight, counts, manual_progress, work_decks(deck_id, weight)),'
+      + ' works(id, project_id, seq, name, kind, weight, counts, manual_progress, quantity_label, unit, work_decks(deck_id, weight)),'
       + ' decks(id, seq, code, name, total_area_m2, image_path,'
       + ' deck_stages(id, work_id, deck_id, seq, name, color, weight),'
       + ' cells(id, code, area_m2), cell_states(cell_id, work_id, stage_id))',

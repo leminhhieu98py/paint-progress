@@ -3,7 +3,21 @@ import { sumsToOne } from '../domain/weights'
 import { supabase } from './supabase'
 import { mapWork, type WorkRow } from './workModel'
 
-const WORK_COLUMNS = 'id, project_id, seq, name, kind, weight, counts, manual_progress'
+const WORK_COLUMNS = 'id, project_id, seq, name, kind, weight, counts, manual_progress, quantity_label, unit'
+
+/**
+ * `works.quantity_label` / `works.unit` (0036): free text, 1–30 characters
+ * after trimming, the same bounds as the check constraints. Checked here so
+ * the admin reads a sentence and not a constraint name.
+ */
+const QUANTITY_TEXT_MAX = 30
+function checkQuantityText(value: string, field: 'Đại lượng' | 'Đơn vị'): string {
+  const trimmed = value.trim()
+  if (trimmed.length < 1 || trimmed.length > QUANTITY_TEXT_MAX) {
+    throw new Error(`${field} phải có từ 1 đến ${QUANTITY_TEXT_MAX} ký tự`)
+  }
+  return trimmed
+}
 
 /** A project's works, in seq order. */
 export async function listWorks(projectId: string): Promise<Work[]> {
@@ -36,6 +50,10 @@ export async function saveWorks(projectId: string, works: Work[]): Promise<void>
     const total = counted.reduce((sum, w) => sum + w.weight, 0)
     throw new Error(`Work weights must sum to 1, got ${total.toFixed(4)}`)
   }
+  const quantities = works.map((w) => ({
+    quantity_label: checkQuantityText(w.quantityLabel, 'Đại lượng'),
+    unit: checkQuantityText(w.unit, 'Đơn vị'),
+  }))
 
   const existing = await listWorks(projectId)
   const keep = new Set(works.map((w) => w.id))
@@ -46,7 +64,7 @@ export async function saveWorks(projectId: string, works: Work[]): Promise<void>
   }
   if (works.length === 0) return
   const { error } = await supabase.from('works').upsert(
-    works.map((w) => ({
+    works.map((w, i) => ({
       id: w.id,
       project_id: projectId,
       seq: w.seq,
@@ -55,6 +73,7 @@ export async function saveWorks(projectId: string, works: Work[]): Promise<void>
       weight: w.weight,
       counts: w.counts,
       manual_progress: w.manualProgress,
+      ...quantities[i],
     })),
     { onConflict: 'id' },
   )

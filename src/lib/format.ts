@@ -43,6 +43,13 @@ const HOURS = new Intl.NumberFormat('vi-VN', { minimumFractionDigits: 1, maximum
 /** Mhr/m²: three places, since the customer's workbook compares 1,149 with 1,161. */
 const MHR_PER_M2 = new Intl.NumberFormat('vi-VN', { minimumFractionDigits: 3, maximumFractionDigits: 3 })
 
+/**
+ * Two decimals for any quantity a work is measured in. Named for the m² it
+ * formatted for a year and deliberately NOT renamed with 0036 (RV6-38): the
+ * formatter is unit-agnostic -- it shapes a number, and the work's `unit`
+ * (`domain/unit.ts`) is printed beside it by the caller. A rename would touch
+ * every screen and the workbook to change nothing anybody reads.
+ */
 export const formatAreaM2 = (n: number): string => AREA_M2.format(n)
 export const formatPercent = (n: number): string => PERCENT.format(n)
 export const formatWeight = (n: number): string => WEIGHT.format(n)

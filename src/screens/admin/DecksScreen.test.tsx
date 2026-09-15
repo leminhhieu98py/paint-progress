@@ -18,11 +18,13 @@ const getDrawingUrl = vi.hoisted(() => vi.fn())
 vi.mock('../../lib/projectsApi', () => ({ listProjectNames: () => listProjectNames() }))
 const deleteDeck = vi.hoisted(() => vi.fn())
 const duplicateDeck = vi.hoisted(() => vi.fn())
+const swapDeckSeq = vi.hoisted(() => vi.fn())
 vi.mock('../../lib/decksApi', () => ({
   listDecks: (p: string) => listDecks(p),
   getDrawingUrl: (p: string) => getDrawingUrl(p),
   deleteDeck: (d: unknown) => deleteDeck(d),
   duplicateDeck: (src: unknown, input: unknown) => duplicateDeck(src, input),
+  swapDeckSeq: (a: unknown, b: unknown) => swapDeckSeq(a, b),
 }))
 const listDeckEvents = vi.hoisted(() => vi.fn())
 vi.mock('../../lib/progressApi', () => ({
@@ -66,7 +68,7 @@ const bay = (stageId: string) => ({
 const work = (
   id: string, seq: number, name: string, kind: 'bays' | 'manual', weight: number,
   manualProgress: number | null = null,
-) => ({ id, projectId: 'p1', seq, name, kind, weight, counts: true, manualProgress })
+) => ({ id, projectId: 'p1', seq, name, kind, weight, counts: true, manualProgress, quantityLabel: 'Diện tích', unit: 'm²' })
 const MODEL = {
   models: [
     {
@@ -115,6 +117,8 @@ beforeEach(() => {
   deleteDeck.mockResolvedValue({ drawingRemoved: true })
   duplicateDeck.mockReset()
   duplicateDeck.mockResolvedValue({ deckId: 'd9', drawingCopied: true })
+  swapDeckSeq.mockReset()
+  swapDeckSeq.mockResolvedValue(undefined)
   listDecks.mockResolvedValue([
     {
       id: 'd1', projectId: 'p1', seq: 1, name: 'Main Deck', code: 'MD',
@@ -288,8 +292,10 @@ describe('DecksScreen — the project-wide half of progress', () => {
     renderScreen()
 
     const donut = await screen.findByTestId('rollup-donut')
-    await waitFor(() => expect(within(donut).getByText('Cellar Deck')).toBeInTheDocument())
+    // RV6-01: the legend labels a deck slice by its code, not its name.
+    await waitFor(() => expect(within(donut).getByText('CD')).toBeInTheDocument())
     expect(within(donut).queryByText('Test data')).toBeNull()
+    expect(within(donut).queryByText('TD')).toBeNull()
     // A counted manual work is not a deck: it carries real weight in P and
     // keeps its slice.
     expect(within(donut).getByText('Chứng từ')).toBeInTheDocument()
@@ -350,9 +356,46 @@ describe('DecksScreen — the project-wide half of progress', () => {
 
     const donut = await screen.findByTestId('rollup-donut')
     expect(within(donut).getByText('Chứng từ')).toBeInTheDocument()
-    expect(within(donut).getByText('10,00%')).toBeInTheDocument()    // .2 × 50%
-    expect(within(donut).getByText('21,25%')).toBeInTheDocument()    // CD: .425 × 50%
+    // RV6-02: the legend shows each slice's own progress (Chứng từ's is
+    // 50,00%, same as CD's), not the weight × progress the arc is sized by
+    // -- see the dedicated RV6-01/02 tests below for the arc math itself.
+    expect(within(donut).getAllByText('50,00%').length).toBeGreaterThan(0)
     expect(within(donut).getAllByText('31,25%').length).toBeGreaterThan(0)
+  })
+
+  it('labels deck slices by code and shows each one\'s own progress in the legend, ' +
+    'while the arc keeps weight × progress (RV6-01, RV6-02)', async () => {
+    renderScreen()
+
+    const rollup = await screen.findByTestId('project-rollup')
+    await waitFor(() => expect(within(rollup).getByText('Cellar Deck')).toBeInTheDocument())
+    const donut = await screen.findByTestId('rollup-donut')
+
+    // RV6-01: labelled by code, not name -- a work has no code, so it keeps
+    // its name.
+    expect(within(donut).getByText('CD')).toBeInTheDocument()
+    expect(within(donut).getByText('WD')).toBeInTheDocument()
+    expect(within(donut).queryByText('Cellar Deck')).toBeNull()
+    expect(within(donut).queryByText('Weather Deck')).toBeNull()
+
+    // RV6-02: the legend number beside CD is its own progress, 50,00% -- the
+    // same figure the rollup table's Tiến độ column reads for CD, not the
+    // 21,25% contribution (.425 effective weight × 50%) the arc is sized by.
+    expect(within(rollup).getByText('50,00%')).toBeInTheDocument()
+    expect(within(donut).queryByText('21,25%')).toBeNull()
+
+    // The arc itself is untouched: the ring's conic-gradient still runs CD's
+    // solid band up to 20.750% (21,25% minus the hairline gap), i.e. weight
+    // × progress, not the 50% shown in the legend.
+    const ring = within(donut).getByTestId('donut-ring')
+    expect(ring.style.background).toContain('20.750%')
+  })
+
+  it('removes the trọng số × tiến độ caption under the legend (RV6-03)', async () => {
+    renderScreen()
+
+    await screen.findByTestId('rollup-donut')
+    expect(screen.queryByText(/Mỗi phần là trọng số/)).toBeNull()
   })
 
   it('exports every deck of the project, with its own stages, plan and pictures', async () => {
@@ -531,5 +574,190 @@ describe('DecksScreen — duplicating a deck (Feedback Rv2, item 3)', () => {
     const dialog = await openDuplicate()
     await userEvent.click(within(dialog).getByRole('button', { name: 'Nhân bản' }))
     expect(await screen.findByText(/chưa sao chép được bản vẽ/)).toBeInTheDocument()
+  })
+})
+
+describe('DecksScreen — reordering decks (RV6-05, RV6-06)', () => {
+  const THREE_DECKS = [
+    {
+      id: 'd1', projectId: 'p1', seq: 1, name: 'First Deck', code: 'FD',
+      imagePath: null, imageW: null, imageH: null, drawingName: null, drawingPage: null,
+      totalAreaM2: 100, areaSource: 'prorated' as const, cellCount: 1,
+    },
+    {
+      id: 'd2', projectId: 'p1', seq: 2, name: 'Second Deck', code: 'SD',
+      imagePath: null, imageW: null, imageH: null, drawingName: null, drawingPage: null,
+      totalAreaM2: 100, areaSource: 'prorated' as const, cellCount: 1,
+    },
+    {
+      id: 'd3', projectId: 'p1', seq: 3, name: 'Third Deck', code: 'TD',
+      imagePath: null, imageW: null, imageH: null, drawingName: null, drawingPage: null,
+      totalAreaM2: 100, areaSource: 'prorated' as const, cellCount: 1,
+    },
+  ]
+
+  beforeEach(() => {
+    listDecks.mockResolvedValue(THREE_DECKS)
+  })
+
+  it('disables Lên on the first row and Xuống on the last, leaving the rest enabled', async () => {
+    renderScreen()
+    await screen.findByText('First Deck')
+
+    const ups = screen.getAllByRole('button', { name: 'Lên' })
+    const downs = screen.getAllByRole('button', { name: 'Xuống' })
+    expect(ups).toHaveLength(3)
+    expect(downs).toHaveLength(3)
+    expect(ups[0]).toBeDisabled()
+    expect(ups[1]).toBeEnabled()
+    expect(ups[2]).toBeEnabled()
+    expect(downs[0]).toBeEnabled()
+    expect(downs[1]).toBeEnabled()
+    expect(downs[2]).toBeDisabled()
+  })
+
+  it('clicking Xuống on the first row swaps it with its neighbour and reloads the list', async () => {
+    renderScreen()
+    await screen.findByText('First Deck')
+    listDecks.mockClear()
+
+    const downs = screen.getAllByRole('button', { name: 'Xuống' })
+    await userEvent.click(downs[0])
+
+    await waitFor(() => expect(swapDeckSeq).toHaveBeenCalledWith(
+      { id: 'd1', seq: 1 }, { id: 'd2', seq: 2 },
+    ))
+    await waitFor(() => expect(listDecks).toHaveBeenCalledWith('p1'))
+  })
+
+  it('clicking Lên on the last row swaps it with its neighbour above', async () => {
+    renderScreen()
+    await screen.findByText('First Deck')
+    listDecks.mockClear()
+
+    const ups = screen.getAllByRole('button', { name: 'Lên' })
+    await userEvent.click(ups[2])
+
+    await waitFor(() => expect(swapDeckSeq).toHaveBeenCalledWith(
+      { id: 'd3', seq: 3 }, { id: 'd2', seq: 2 },
+    ))
+    await waitFor(() => expect(listDecks).toHaveBeenCalledWith('p1'))
+  })
+
+  it('surfaces a refused swap instead of failing silently', async () => {
+    swapDeckSeq.mockRejectedValue(new Error('permission denied'))
+    renderScreen()
+    await screen.findByText('First Deck')
+
+    const downs = screen.getAllByRole('button', { name: 'Xuống' })
+    await userEvent.click(downs[0])
+
+    expect(await screen.findByText('permission denied')).toBeInTheDocument()
+  })
+
+  it('ignores a second click while a swap is in flight, then re-enables the arrows', async () => {
+    let settle!: () => void
+    swapDeckSeq.mockReturnValue(new Promise<void>((resolve) => { settle = resolve }))
+    renderScreen()
+    await screen.findByText('First Deck')
+
+    const downs = screen.getAllByRole('button', { name: 'Xuống' })
+    await userEvent.click(downs[0])
+    await userEvent.click(downs[0])
+
+    expect(swapDeckSeq).toHaveBeenCalledTimes(1)
+    for (const b of screen.getAllByRole('button', { name: 'Xuống' })) expect(b).toBeDisabled()
+    for (const b of screen.getAllByRole('button', { name: 'Lên' })) expect(b).toBeDisabled()
+
+    settle()
+    await waitFor(() => expect(screen.getAllByRole('button', { name: 'Xuống' })[0]).toBeEnabled())
+    expect(screen.getAllByRole('button', { name: 'Lên' })[1]).toBeEnabled()
+  })
+})
+
+describe('DecksScreen: the quantity and unit of the works in scope (RV6-36)', () => {
+  const tonnes = { quantityLabel: 'Khối lượng', unit: 'tấn' }
+  const headersOf = (table: HTMLElement) =>
+    within(table).getAllByRole('columnheader').map((h) => h.textContent)
+
+  it('heads both tables with the one quantity every bays work shares', async () => {
+    loadProjectModel.mockResolvedValue({
+      ...MODEL,
+      models: MODEL.models.map((m) => (m.work.kind === 'bays' ? { ...m, work: { ...m.work, ...tonnes } } : m)),
+    })
+    renderScreen()
+    const rollup = await screen.findByTestId('project-rollup')
+    await waitFor(() => expect(within(rollup).getByText('Cellar Deck')).toBeInTheDocument())
+    expect(headersOf(rollup)).toContain('Khối lượng (tấn)')
+    expect(within(rollup).getByText('4.000,00')).toBeInTheDocument()
+    const list = screen.getAllByRole('table')[0] // the deck list is the first table on the page
+    expect(headersOf(list)).toContain('Khối lượng (tấn)')
+    expect(screen.queryByText(/m²/)).toBeNull()
+  })
+
+  it('falls back to Số lượng, per-row units and no sum when the works disagree', async () => {
+    // Sơn stays m² and Tháo giáo becomes tấn. CD is in both, so its own unit is
+    // undecided and its row shows the bare number; WD is only in Sơn and reads
+    // m². The Σ under the table cannot add a tấn to a m² and says so.
+    loadProjectModel.mockResolvedValue({
+      ...MODEL,
+      models: MODEL.models.map((m) => (m.work.id === 'w2' ? { ...m, work: { ...m.work, ...tonnes } } : m)),
+    })
+    renderScreen()
+    const rollup = await screen.findByTestId('project-rollup')
+    await waitFor(() => expect(within(rollup).getByText('Cellar Deck')).toBeInTheDocument())
+    expect(headersOf(rollup)).toContain('Số lượng')
+    expect(within(rollup).getByText('1.000,00')).toBeInTheDocument()
+    expect(within(rollup).getByText('3.000,00 m²')).toBeInTheDocument()
+    expect(within(rollup).queryByText('4.000,00')).toBeNull()
+    const dash = within(rollup).getByText('—')
+    await userEvent.hover(dash)
+    expect(await screen.findByRole('tooltip')).toHaveTextContent('Các sàn dùng đơn vị khác nhau, không cộng được')
+    // Both decks are in the rollup, so the deck list reads the same mix.
+    expect(headersOf(screen.getAllByRole('table')[0])).toContain('Số lượng')
+  })
+
+  it('heads the rollup by the decks it lists, not by every deck of the project', async () => {
+    // Seen on dev, 2026-09-15: one Kg work over every weighted deck, plus a
+    // deck in no work. The deck list shows all three, so it is mixed -- Số
+    // lượng, each row its own unit. The rollup hides the m² deck; every row it
+    // shows is Kg, so its heading says so and its Σ adds.
+    const kg = { quantityLabel: 'Khối lượng', unit: 'Kg' }
+    const deckRow = (id: string, seq: number, name: string, code: string, totalAreaM2: number) => ({
+      id, projectId: 'p1', seq, name, code,
+      imagePath: null, imageW: null, imageH: null, drawingName: null, drawingPage: null,
+      totalAreaM2, areaSource: 'guides', cellCount: 0,
+    })
+    loadProjectModel.mockResolvedValue({
+      ...MODEL,
+      models: MODEL.models.flatMap((m) => (
+        m.work.id === 'w1' ? [{ ...m, work: { ...m.work, ...kg } }] : m.work.kind === 'manual' ? [m] : []
+      )),
+      decks: [
+        ...MODEL.decks,
+        {
+          id: 'd3', code: 'TD', name: 'Test data', totalAreaM2: 100, seq: 3,
+          imagePath: null, imageW: null, imageH: null, areaSource: 'guides' as const, cellCount: 0,
+        },
+      ],
+    })
+    listDecks.mockResolvedValue([
+      deckRow('d1', 1, 'Cellar Deck', 'CD', 1000),
+      deckRow('d2', 2, 'Weather Deck', 'WD', 3000),
+      deckRow('d3', 3, 'Test data', 'TD', 100),
+    ])
+    renderScreen()
+    const rollup = await screen.findByTestId('project-rollup')
+    await waitFor(() => expect(within(rollup).getByText('Cellar Deck')).toBeInTheDocument())
+    expect(headersOf(rollup)).toContain('Khối lượng (Kg)')
+    expect(within(rollup).getByText('1.000,00')).toBeInTheDocument()
+    expect(within(rollup).getByText('3.000,00')).toBeInTheDocument()
+    expect(within(rollup).getByText('4.000,00')).toBeInTheDocument()
+    expect(within(rollup).queryByText('—')).toBeNull()
+    const list = screen.getAllByRole('table')[0]
+    expect(headersOf(list)).toContain('Số lượng')
+    expect(within(list).getByText('1.000,00 Kg')).toBeInTheDocument()
+    expect(within(list).getByText('3.000,00 Kg')).toBeInTheDocument()
+    expect(within(list).getByText('100,00 m²')).toBeInTheDocument()
   })
 })

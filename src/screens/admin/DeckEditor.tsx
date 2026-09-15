@@ -11,6 +11,7 @@ import {
 } from '../../domain/geometry'
 import { nameBays, type BayOptions } from '../../domain/bayDetect'
 import type { MeshCell } from '../../domain/types'
+import { DEFAULT_QUANTITY_LABEL, DEFAULT_UNIT } from '../../domain/unit'
 import {
   getDrawingUrl, listCells, syncCells,
   updateDeckArea, zoneImpactOf, type DeckRow,
@@ -90,9 +91,18 @@ const describeProgress = (entries: RecordedProgress[] | undefined) =>
 export function DeckEditor({
   deck,
   editable = true,
+  quantityLabel = DEFAULT_QUANTITY_LABEL,
+  unit = DEFAULT_UNIT,
   onSaved,
 }: {
   deck: DeckRow
+  /**
+   * The deck's quantity and unit as A3.1 works them out from the deck's works
+   * (RV6-36). `unit` null means the works disagree: the Σ line names the
+   * quantity and prints the figures bare.
+   */
+  quantityLabel?: string
+  unit?: string | null
   /**
    * Whether the deck screen is in Sửa.
    *
@@ -104,6 +114,8 @@ export function DeckEditor({
   onSaved?: () => void
 }) {
   const { cells, commit: commitCells, reset: resetCells, undo, redo, clearHistory } = useMeshHistory()
+  /** ` m²` after a figure, or nothing when the deck's works disagree on a unit (RV6-36). */
+  const unitSuffix = unit === null ? '' : ` ${unit}`
   /**
    * Recorded progress per cell code, as last read from the database: one
    * entry per work the bay holds a stage in (0024). `MeshCell` itself carries
@@ -676,7 +688,7 @@ export function DeckEditor({
           // (vượt = exceeds). Naming the direction here means the admin does
           // not have to open the description to know which way to correct.
           message={`Tổng diện tích các ô ${divergence > 0 ? 'thiếu' : 'vượt'} ${formatPercent(Math.abs(divergence))} so với diện tích sàn`}
-          description={`Các ô cộng lại ${formatAreaM2(sumCellArea)} m², sàn khai báo ${formatAreaM2(totalArea)} m². Lệch quá ${formatPercent(AREA_DIVERGENCE_THRESHOLD)} thường là do nhập sai khoảng cách guide — nhưng sàn thật vẫn có thể lệch vì có opening hoặc E-house không phải là ô, nên đây chỉ là cảnh báo.`}
+          description={`Các ô cộng lại ${formatAreaM2(sumCellArea)}${unitSuffix}, sàn khai báo ${formatAreaM2(totalArea)}${unitSuffix}. Lệch quá ${formatPercent(AREA_DIVERGENCE_THRESHOLD)} thường là do nhập sai khoảng cách guide — nhưng sàn thật vẫn có thể lệch vì có opening hoặc E-house không phải là ô, nên đây chỉ là cảnh báo.`}
         />
       )}
 
@@ -684,7 +696,7 @@ export function DeckEditor({
 
       <Descriptions size="small" column={2} bordered items={[
         { key: 'cells', label: 'Số ô', children: cells.length },
-        { key: 'sum', label: 'Σ diện tích ô (m²)', children: formatAreaM2(sumCellArea) },
+        { key: 'sum', label: `Σ ${quantityLabel} ô${unit === null ? '' : ` (${unit})`}`, children: formatAreaM2(sumCellArea) },
       ]} />
 
       {/*

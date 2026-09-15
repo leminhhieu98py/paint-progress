@@ -50,11 +50,17 @@ export interface KpiDay {
   day: string
   /** Σ over the coats in scope of that coat's flat daily rate, on days inside its window. */
   planM2: number
-  /** Σ over the coats in scope of the area actually recorded that day. */
-  actualM2: number
+  /**
+   * Σ over the coats in scope of the area actually recorded that day, or
+   * `null` for a day after `todayKey` (RV6-09): the plan legitimately reaches
+   * into the future, but there is nothing to report as "actual" for a day
+   * that has not happened yet, and `null` says so instead of a misleading 0.
+   */
+  actualM2: number | null
   /** Running totals of the two, as a share of the scope's total planned area. */
   planCumShare: number
-  actualCumShare: number
+  /** `null` on the same days `actualM2` is, for the same reason. */
+  actualCumShare: number | null
 }
 
 /**
@@ -445,8 +451,17 @@ export function actualByDay(scope: DeckPlanScope): ActualStageDay[] {
  * to be visible, and nothing is clamped at 1 either: actual above plan gives a
  * share above 1, as it does in the workbook -- a clamped curve would hide
  * being ahead, which is the one piece of good news this chart can carry.
+ *
+ * **The actual series stops at `todayKey` (RV6-09).** A day after today has
+ * no actual to report yet, so `actualM2` and `actualCumShare` are `null`
+ * there rather than 0: 0 would read as "nothing got done", which is not the
+ * same statement as "today has not happened yet". `planM2` and
+ * `planCumShare` are untouched -- the plan legitimately extends into the
+ * future. The caller supplies `todayKey` (an `effortDayKey`) so this stays
+ * pure and a test can name the day, the same pattern `remainingAreaOn` above
+ * already uses.
  */
-export function kpiSeries(entries: KpiScopeStage[]): KpiDay[] {
+export function kpiSeries(entries: KpiScopeStage[], todayKey: string): KpiDay[] {
   if (entries.length === 0) return []
 
   const planByDay = new Map<string, number>()
@@ -481,9 +496,13 @@ export function kpiSeries(entries: KpiScopeStage[]): KpiDay[] {
   let cumActual = 0
   return days.map((day) => {
     const planM2 = planByDay.get(day) ?? 0
-    const actualM2 = actualByDayTotal.get(day) ?? 0
+    const rawActualM2 = actualByDayTotal.get(day) ?? 0
+    const isFuture = day > todayKey
     cumPlan += planM2
-    cumActual += actualM2
+    // Frozen once `day` is in the future: there should be no actual recorded
+    // there in the first place, and freezing keeps `cumActual` meaning "as of
+    // todayKey" rather than silently drifting past it.
+    if (!isFuture) cumActual += rawActualM2
     // `> 0`, as `computeDeckProgress` guards its own denominator: a scope whose
     // coats are all overridden to 0 m² is legal (0 is an override, not an
     // absence) and 0/0 would put NaN on an axis, which renders as nothing at
@@ -491,9 +510,9 @@ export function kpiSeries(entries: KpiScopeStage[]): KpiDay[] {
     return {
       day,
       planM2,
-      actualM2,
+      actualM2: isFuture ? null : rawActualM2,
       planCumShare: totalPlannedM2 > 0 ? cumPlan / totalPlannedM2 : 0,
-      actualCumShare: totalPlannedM2 > 0 ? cumActual / totalPlannedM2 : 0,
+      actualCumShare: isFuture ? null : totalPlannedM2 > 0 ? cumActual / totalPlannedM2 : 0,
     }
   })
 }

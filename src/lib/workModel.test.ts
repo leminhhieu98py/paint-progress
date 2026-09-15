@@ -21,6 +21,7 @@ const DECKS = [
   },
   {
     id: 'd1', seq: 1, code: 'CD', name: 'Cellar Deck', total_area_m2: '100', image_path: 'p1/d1.png', image_w: 2000, image_h: 1600, area_source: 'prorated',
+    kpi_plan_color: '#8698aa', kpi_actual_color: '#0a8175',
     cells: [
       { id: 'c1', code: 'R1C1', x: '0', y: '0', w: '0.5', h: '1', area_m2: '50' },
       { id: 'c2', code: 'R1C2', x: '0.5', y: '0', w: '0.5', h: '1', area_m2: '50' },
@@ -75,6 +76,7 @@ describe('assembleProjectModel', () => {
     const { models } = model()
     expect(models[2].work).toEqual({
       id: 'wM', projectId: 'p1', seq: 3, name: 'Marking', kind: 'manual', weight: 0, counts: false, manualProgress: 0.12,
+      quantityLabel: 'Diện tích', unit: 'm²',
     })
     expect(models[2].decks).toEqual([])
   })
@@ -92,8 +94,12 @@ describe('assembleProjectModel', () => {
     expect(decks[0]).toEqual({
       id: 'd1', seq: 1, code: 'CD', name: 'Cellar Deck', totalAreaM2: 100,
       imagePath: 'p1/d1.png', imageW: 2000, imageH: 1600, areaSource: 'prorated', cellCount: 2,
+      kpiPlanColor: '#8698aa', kpiActualColor: '#0a8175',
     })
     expect(decks[1].areaSource).toBe('guides')
+    // A deck row from before 0035, or one nobody styled: the system defaults (RV6-30).
+    expect(decks[1].kpiPlanColor).toBeNull()
+    expect(decks[1].kpiActualColor).toBeNull()
   })
 
   it('keeps who last moved each bay, per work, for the report', () => {

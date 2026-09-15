@@ -8,14 +8,17 @@ import { KpiDashboard, type KpiEntry } from './KpiDashboard'
 // domain/kpi.test.ts against KPI.xlsx itself. What this file checks is which
 // numbers reach the chart, so the stand-in prints them.
 vi.mock('../dashboard/charts', () => ({
-  KpiComboChart: ({ data }: { data: KpiDay[] }) => (
-    <div data-testid="kpi-chart">
+  KpiComboChart: ({ data, colors, unit }: { data: KpiDay[]; colors?: { plan: string | null; actual: string | null }; unit?: string }) => (
+    <div data-testid="kpi-chart" data-colors={colors === undefined ? 'defaults' : `${colors.plan}/${colors.actual}`} data-unit={unit ?? ''}>
       {data.map((d) => `${d.day}:${d.planM2}/${d.actualM2}`).join(' ')}
     </div>
   ),
 }))
 
-const DECKS = [{ id: 'd1', name: 'Sàn A' }, { id: 'd2', name: 'Sàn B' }]
+const DECKS = [
+  { id: 'd1', name: 'Sàn A', kpiPlanColor: '#123abc', kpiActualColor: null },
+  { id: 'd2', name: 'Sàn B', kpiPlanColor: null, kpiActualColor: null },
+]
 
 const ENTRIES: KpiEntry[] = [
   {
@@ -38,8 +41,13 @@ const ENTRIES: KpiEntry[] = [
   },
 ]
 
-const renderDash = (entries = ENTRIES) =>
-  render(<KpiDashboard entries={entries} decks={DECKS} />)
+// After every day the fixtures above use, so the existing assertions below
+// see the same numbers RV6-09 leaves untouched; the cutoff itself is
+// exercised by its own tests further down with an earlier todayKey.
+const TODAY = '2026-09-04'
+
+const renderDash = (entries = ENTRIES, todayKey = TODAY) =>
+  render(<KpiDashboard entries={entries} decks={DECKS} todayKey={todayKey} />)
 
 const chart = () => screen.getByTestId('kpi-chart')
 
@@ -104,13 +112,10 @@ describe('KpiDashboard', () => {
     expect(screen.getByText(/chưa có kế hoạch kpi nào/i)).toBeInTheDocument()
   })
 
-  it('says that a correction moves its area to the day of the correction', () => {
-    // RV5-25's consequence: a past day's Actual can change. Unlike every other
-    // m² figure in the product, so it is said on the screen.
+  it('no longer shows the correction note (RV6-07)', () => {
+    // The explanation moved to the Notion spec only.
     renderDash()
-    const note = screen.getByTestId('kpi-correction-note')
-    expect(note).toHaveTextContent(/lần cập nhật SAU CÙNG/)
-    expect(note).toHaveTextContent(/ngày đã qua có thể thay đổi/)
+    expect(screen.queryByTestId('kpi-correction-note')).toBeNull()
   })
 
   it('totals the planned and the actual area in the card header', () => {
@@ -132,5 +137,108 @@ describe('KpiDashboard', () => {
     await userEvent.click(combobox('Công đoạn'))
     expect(await screen.findByTitle('Sơn · Công đoạn 1')).toBeInTheDocument()
     expect(await screen.findByTitle('Tháo giáo · Công đoạn 1')).toBeInTheDocument()
+  })
+
+  // ---------------------------------------------------------------------
+  // RV6-08 — the chart title under the legend
+  // ---------------------------------------------------------------------
+
+  describe('the chart title (RV6-08)', () => {
+    const title = () => screen.getByTestId('kpi-chart-title')
+
+    it('reads the deck name and the coat label when both are chosen', async () => {
+      renderDash()
+      await pick('Sàn', 'Sàn A')
+      await pick('Công đoạn', 'Công đoạn 1')
+      await waitFor(() => expect(title()).toHaveTextContent('Sàn A — Công đoạn 1'))
+    })
+
+    it('reads only the deck name when no coat is chosen', async () => {
+      renderDash()
+      await pick('Sàn', 'Sàn A')
+      expect(title()).toHaveTextContent('Sàn A')
+    })
+
+    it('reads "Tất cả sàn" plus the coat label when every deck is in view', async () => {
+      renderDash()
+      await pick('Công đoạn', 'Công đoạn 2')
+      await waitFor(() => expect(title()).toHaveTextContent('Tất cả sàn — Công đoạn 2'))
+    })
+
+    it('reads plain "Tất cả sàn" with nothing chosen', () => {
+      renderDash()
+      expect(title()).toHaveTextContent('Tất cả sàn')
+    })
+  })
+
+  // ---------------------------------------------------------------------
+  // RV6-29 — the selected deck's colours reach the chart
+  // ---------------------------------------------------------------------
+
+  describe('deck colours (RV6-29)', () => {
+    it('hands the chart no colours under "Tất cả sàn", so it paints its defaults', () => {
+      renderDash()
+      expect(chart()).toHaveAttribute('data-colors', 'defaults')
+    })
+
+    it('hands the chart the chosen deck\'s stored colours', async () => {
+      renderDash()
+      await pick('Sàn', 'Sàn A')
+      await waitFor(() => expect(chart()).toHaveAttribute('data-colors', '#123abc/null'))
+    })
+
+    it('hands the chart nulls for a deck with no stored colour, which is the default too', async () => {
+      renderDash()
+      await pick('Sàn', 'Sàn B')
+      await waitFor(() => expect(chart()).toHaveAttribute('data-colors', 'null/null'))
+    })
+
+    it('returns to the defaults when every deck is back in view', async () => {
+      renderDash()
+      await pick('Sàn', 'Sàn A')
+      await waitFor(() => expect(chart()).toHaveAttribute('data-colors', '#123abc/null'))
+      await pick('Sàn', 'Tất cả sàn')
+      await waitFor(() => expect(chart()).toHaveAttribute('data-colors', 'defaults'))
+    })
+  })
+
+  // ---------------------------------------------------------------------
+  // RV6-09 — cumulative actual stops today
+  // ---------------------------------------------------------------------
+
+  it('ignores the days kpiSeries nulls out of actualM2 when totalling the header', () => {
+    // Sàn B's coat runs to 2026-09-04, but todayKey stops at 2026-09-03: its
+    // 2026-09-04 day is null, and the header total must not read it as 0 lost
+    // out of a real number either -- it is simply not summed.
+    renderDash(ENTRIES, '2026-09-03')
+    expect(screen.getByText(/kế hoạch 600,00 m² · thực hiện 100,00 m²/)).toBeInTheDocument()
+  })
+})
+
+describe('KpiDashboard: the work\'s unit (RV6-35)', () => {
+  it('sums and charts in the one unit the scoped coats share', () => {
+    renderDash(ENTRIES.map((e) => ({ ...e, unit: 'tấn' })))
+    expect(screen.getByText(/kế hoạch 600,00 tấn · thực hiện 100,00 tấn/)).toBeInTheDocument()
+    expect(chart()).toHaveAttribute('data-unit', 'tấn')
+  })
+
+  it('reads m² for entries that carry no unit, as every work did before 0036', () => {
+    renderDash()
+    expect(chart()).toHaveAttribute('data-unit', 'm²')
+  })
+})
+
+describe('KpiDashboard: coats of different units under Tất cả công đoạn (RV6-36)', () => {
+  it('refuses to sum across units and charts under Số lượng', async () => {
+    renderDash([{ ...ENTRIES[0], unit: 'm²' }, { ...ENTRIES[1], unit: 'tấn' }])
+    const header = screen.getByText(/2 công đoạn · kế hoạch — · thực hiện —/)
+    expect(header).toBeInTheDocument()
+    expect(chart()).toHaveAttribute('data-unit', 'Số lượng')
+    await userEvent.hover(header)
+    expect(await screen.findByRole('tooltip')).toHaveTextContent('Các sàn dùng đơn vị khác nhau, không cộng được')
+    // Narrowed to one coat, the sum and the unit are that coat's again.
+    await pick('Công đoạn', 'Công đoạn 2')
+    await waitFor(() => expect(screen.getByText(/kế hoạch 400,00 tấn · thực hiện 0,00 tấn/)).toBeInTheDocument())
+    expect(chart()).toHaveAttribute('data-unit', 'tấn')
   })
 })

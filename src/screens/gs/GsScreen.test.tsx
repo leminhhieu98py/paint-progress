@@ -74,6 +74,11 @@ vi.mock('../../lib/zonesApi', () => ({
 vi.mock('../../lib/decksApi', () => ({
   getDrawingUrl: (path: string) => getDrawingUrl(path),
 }))
+// The viewer's project switch in the header (RV6-24) reads every project name.
+const listProjectNames = vi.hoisted(() => vi.fn())
+vi.mock('../../lib/projectsApi', () => ({
+  listProjectNames: () => listProjectNames(),
+}))
 // react-router's navigate, so the test can see WHERE signing out sends the
 // foreman -- not merely that signOut was called.
 const navigate = vi.hoisted(() => vi.fn())
@@ -141,7 +146,7 @@ const STAGES = [
 /** The one bays work both decks are in by default; a second one appears where a test needs it. */
 const WORK = {
   id: 'w1', projectId: 'p1', seq: 1, name: 'Sơn', kind: 'bays' as const, weight: 1, counts: true,
-  manualProgress: null,
+  manualProgress: null, quantityLabel: 'Diện tích', unit: 'm²',
 }
 const WORK2 = { ...WORK, id: 'w2', seq: 2, name: 'Tháo giáo' }
 const TG_STAGES = [{ id: 't1', seq: 1, name: 'Tháo giáo lửng', color: '#8B5CF6', weight: 1 }]
@@ -254,6 +259,11 @@ beforeEach(() => {
   listCellNotes.mockReturnValue(new Promise(() => {}))
   loadGsProjectIdentity.mockReset()
   loadGsProjectIdentity.mockResolvedValue({ code: 'BB1', name: 'BlockB1_CPPTS' })
+  listProjectNames.mockReset()
+  listProjectNames.mockResolvedValue([
+    { id: 'p1', name: 'BlockB1_CPPTS', code: 'BB1' },
+    { id: 'p2', name: 'Đại Hùng', code: 'DH' },
+  ])
   loadDeckWorks.mockReset()
   loadDeckWorks.mockImplementation((deckId: string) => Promise.resolve({
     seq: 1,
@@ -626,6 +636,29 @@ describe('GsScreen: recording a stage', () => {
     await screen.findByRole('button', { name: 'ô R1C2' })
     await userEvent.click(screen.getByRole('button', { name: 'Năng suất' }))
     expect(navigate).toHaveBeenCalledWith('/gs/p1/dashboard')
+  })
+
+  it('gives a viewer a project switch in the header that opens the chosen project (RV6-24)', async () => {
+    // 0034: the viewer reads every project, so the header names the one on
+    // screen and offers the rest. Changing it is a navigation, not a filter --
+    // the whole screen is one project's.
+    authRole.value = 'viewer'
+    renderScreen()
+    await screen.findByRole('button', { name: 'ô R1C2' })
+
+    const box = await screen.findByRole('combobox', { name: 'Dự án' })
+    expect(screen.getByText('BlockB1_CPPTS', { selector: '.ant-select-selection-item' })).toBeInTheDocument()
+    await userEvent.click(box)
+    await userEvent.click(await screen.findByTitle('Đại Hùng'))
+
+    expect(navigate).toHaveBeenCalledWith('/gs/p2')
+  })
+
+  it('keeps the header as it is for a foreman: no project switch, no read of the list', async () => {
+    renderScreen()
+    await screen.findByRole('button', { name: 'ô R1C2' })
+    expect(screen.queryByRole('combobox', { name: 'Dự án' })).toBeNull()
+    expect(listProjectNames).not.toHaveBeenCalled()
   })
 
   it('opens the KPI chart of this project from the header (Feedback Rv5, item 9)', async () => {
@@ -1963,5 +1996,20 @@ describe('GsScreen: the whole project in one file (Feedback Rv4)', () => {
     renderScreen()
     await screen.findByRole('button', { name: 'ô R1C1' })
     expect(screen.getByRole('button', { name: 'Xuất cả dự án' })).toBeInTheDocument()
+  })
+})
+
+describe('GsScreen: the active work\'s quantity and unit (RV6-35)', () => {
+  it('labels the header, the cards and the today rows in the active work\'s unit', async () => {
+    listDeckWorks.mockResolvedValue([{ work: { ...WORK, quantityLabel: 'Khối lượng', unit: 'tấn' }, weight: 1, stages: STAGES }])
+    renderScreen()
+    await screen.findByRole('button', { name: 'ô R1C1' })
+    // The section header under the drawing and the deck card both name the
+    // deck's declared quantity: 1.000 tấn, not 1.000 m².
+    await waitFor(() => expect(screen.getAllByText('1.000,00 tấn').length).toBeGreaterThanOrEqual(2))
+    expect(screen.getByText('Khối lượng sàn')).toBeInTheDocument()
+    expect(within(screen.getByTestId('gs-stage-rollup')).getByText('tấn sàn')).toBeInTheDocument()
+    expect(within(screen.getByTestId('gs-deck-today')).getAllByText('0,00 tấn').length).toBeGreaterThan(0)
+    expect(screen.queryByText(/m²/)).toBeNull()
   })
 })

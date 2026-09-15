@@ -15,20 +15,12 @@ import {
   listWorkStages, roundStageWeight, saveWorkStages, stagesRemovedBy, STAGE_WEIGHT_EPSILON,
 } from '../../lib/decksApi'
 import { randomUUID } from '../../lib/uuid'
+import { ColorField, HEX_COLOR } from '../../components/ColorField'
 import { ConsequenceModal } from '../../components/ConsequenceModal'
 import { EmptyState } from '../../components/EmptyState'
 import { RulesDisclosure } from '../../components/RulesDisclosure'
 import { SectionCard } from '../../components/SectionCard'
 import { palette } from '../../theme'
-
-/**
- * Six digits with the hash, which is the only form the native swatch and the
- * `stages.color` column both accept. Three-digit shorthand is deliberately not
- * allowed: `#abc` would have to be expanded before storage, and two stages
- * whose colours differ only by that expansion would read as a clash to the
- * duplicate check but not to the admin typing them.
- */
-const HEX_COLOR = /^#[0-9a-fA-F]{6}$/
 
 const STAGE_RULES = [
           {
@@ -494,44 +486,14 @@ export function StageConfigPanel({
                   </>
                 )}
                 {editable && (
-                <>
-                <Input
-                  aria-label={`Chọn màu · ${row.name}`}
-                  type="color"
-                  value={v}
-                  disabled={busy}
-                  style={{ width: 44, padding: 2 }}
-                  onChange={(e) => {
-                    patch(i, { color: e.target.value })
-                    setHexDraft((d) => ({ ...d, [row.id]: e.target.value }))
-                  }}
-                />
-                {/*
-                  The hex beside the swatch, not instead of it, and typable.
-                  A foreman reads the colour off a drawing; an admin comparing
-                  this deck's config against another one reads the code, and a
-                  colour that arrives as text -- off a paint spec, over the
-                  phone -- has nowhere else to go: the native swatch takes no
-                  keyboard and no paste.
-                */}
-                <Input
-                  aria-label={`Mã màu · ${row.name}`}
-                  aria-invalid={HEX_COLOR.test(hexDraft[row.id] ?? v) ? undefined : true}
-                  placeholder="#RRGGBB"
-                  maxLength={7}
-                  status={HEX_COLOR.test(hexDraft[row.id] ?? v) ? undefined : 'error'}
-                  value={hexDraft[row.id] ?? v}
-                  disabled={busy}
-                  style={{ width: 104 }}
-                  onChange={(e) => {
-                    const typed = e.target.value
-                    setHexDraft((d) => ({ ...d, [row.id]: typed }))
-                    // Only a complete colour reaches the draft. Everything
-                    // else stays visible in the field and holds the save.
-                    if (HEX_COLOR.test(typed)) patch(i, { color: typed.toLowerCase() })
-                  }}
-                />
-                </>
+                  <ColorField
+                    label={row.name}
+                    value={v}
+                    hex={hexDraft[row.id]}
+                    disabled={busy}
+                    onColor={(color) => patch(i, { color })}
+                    onHex={(typed) => setHexDraft((d) => ({ ...d, [row.id]: typed }))}
+                  />
                 )}
               </div>
             ),

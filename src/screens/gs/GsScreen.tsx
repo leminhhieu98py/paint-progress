@@ -19,12 +19,14 @@ import { EMPTY_EFFORT, type Cell, type Deck, type DeckEvent, type Effort, type S
 // one. Screens still never touch `supabase` directly.
 import { APP_BASE_PATH, LOGIN_PATH } from '../../config'
 import { getDrawingUrl } from '../../lib/decksApi'
+import { DEFAULT_QUANTITY_LABEL, DEFAULT_UNIT } from '../../domain/unit'
 import { formatAreaM2, formatPercent } from '../../lib/format'
 import {
   listCoworkerNames, listDeckCells, listDeckStates, listDeckWorks, listProjectIndex,
   loadGsProject, loadGsProjectIdentity, setCellState, subscribeDeckStates,
   type CellStateView, type DeckWork, type GsDeck, type GsRealtimeStatus,
 } from '../../lib/gsApi'
+import { listProjectNames } from '../../lib/projectsApi'
 import { listDeckZones } from '../../lib/zonesApi'
 import { listEmployees } from '../../lib/employeesApi'
 import { listDeckEvents, loadDeckWorks, loadProjectModel } from '../../lib/progressApi'
@@ -146,6 +148,28 @@ export function GsScreen() {
    * refusal can say so, rather than rendering as missing data (see GsProject).
    */
   const [notMember, setNotMember] = useState(false)
+  /**
+   * Every project, for the viewer's switch in the header (RV6-24). Read only
+   * for a viewer -- 0034 gives the role every project and this screen is one
+   * project's, so changing it is a navigation. A foreman has one project and
+   * no list, so nothing is read and nothing is shown.
+   */
+  const [projectOptions, setProjectOptions] = useState<{ value: string; label: string }[]>([])
+
+  useEffect(() => {
+    if (!readOnly) return
+    let cancelled = false
+    listProjectNames()
+      .then((rows) => {
+        if (!cancelled) setProjectOptions(rows.map((p) => ({ value: p.id, label: p.name })))
+      })
+      // Its failure is not the project's: the header keeps the deck tabs and
+      // the switch simply lists the project on screen, which is on the route.
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [readOnly])
 
   useEffect(() => {
     if (!projectId) return
@@ -208,6 +232,9 @@ export function GsScreen() {
   /** The chosen work, or the first until the foreman chooses (GSW-R1). */
   const activeWork = workList.find((w) => w.work.id === activeWorkId) ?? workList[0] ?? null
   const stages = activeWork?.stages ?? EMPTY_STAGES
+  /** The active work's quantity and unit label everything below (RV6-35). */
+  const quantityLabel = activeWork?.work.quantityLabel ?? DEFAULT_QUANTITY_LABEL
+  const unit = activeWork?.work.unit ?? DEFAULT_UNIT
   /**
    * The deck as seen through the active work: the mesh with each bay's stage
    * and note for that work. Everything below -- colours, progress, the modal --
@@ -586,11 +613,17 @@ export function GsScreen() {
    * them. The order is settled HERE and todayAreaByStage keeps it (RV5-17).
    */
   const todayStages = useMemo(
-    () => todayAreaByStage(
-      todayEvents,
-      workList.flatMap((w) => w.stages.map((s) => ({ workName: w.work.name, stageName: s.name }))),
-      todayKey,
-    ),
+    () => {
+      // Each row in its own work's unit (RV6-35): the block lists every work
+      // of the deck, not only the active one. Attached here, after the domain
+      // function, so `todayAreaByStage` stays as it is.
+      const unitByWork = new Map(workList.map((w) => [w.work.name, w.work.unit]))
+      return todayAreaByStage(
+        todayEvents,
+        workList.flatMap((w) => w.stages.map((s) => ({ workName: w.work.name, stageName: s.name }))),
+        todayKey,
+      ).map((row) => ({ ...row, unit: unitByWork.get(row.workName) ?? DEFAULT_UNIT }))
+    },
     [todayEvents, workList, todayKey],
   )
   /**
@@ -1098,6 +1131,25 @@ export function GsScreen() {
             ),
           }))}
         />
+        {/*
+          RV6-24: a viewer reads every project (0034), so the header names the
+          one on screen and offers the rest. A foreman gets no switch -- their
+          screen is their one project's, as before.
+        */}
+        {readOnly && projectId && (
+          <Select
+            aria-label="Dự án"
+            style={{ width: phone ? 160 : 220, flex: 'none' }}
+            value={projectId}
+            onChange={(id) => navigate(`${APP_BASE_PATH}/gs/${id}`)}
+            // Typing filters by the project's NAME; the value is a uuid.
+            showSearch
+            optionFilterProp="label"
+            options={projectOptions.some((o) => o.value === projectId)
+              ? projectOptions
+              : [{ value: projectId, label: projectId }, ...projectOptions]}
+          />
+        )}
         <div style={{ textAlign: 'right', flex: 'none' }}>
           <div style={{ fontWeight: 600, lineHeight: 1.25 }}>{profile?.fullName}</div>
           <span style={{ fontSize: 11, color: palette.textTertiary }}>{profile?.username}</span>
@@ -1235,7 +1287,7 @@ export function GsScreen() {
 
           <SectionCard
             title={deck?.name}
-            summary={deck ? `${formatAreaM2(deck.totalAreaM2)} m²` : undefined}
+            summary={deck ? `${formatAreaM2(deck.totalAreaM2)} ${unit}` : undefined}
             bodyPadding={0}
             extra={
               /*
@@ -1459,6 +1511,8 @@ export function GsScreen() {
           <DeckProgressCard
             progress={deckSummary?.progress ?? 0}
             totalAreaM2={deck?.totalAreaM2 ?? 0}
+            quantityLabel={quantityLabel}
+            unit={unit}
             perWork={deckSummary?.perWork.map((row) => ({
               id: row.work.id, name: row.work.name, progress: row.progress,
             }))}
@@ -1469,6 +1523,7 @@ export function GsScreen() {
               stageProgress={deckProgress?.stages ?? []}
               cells={cells}
               totalAreaM2={deck?.totalAreaM2 ?? 0}
+              unit={unit}
             />
           )}
           {/*
@@ -1489,6 +1544,8 @@ export function GsScreen() {
         onCommit={commitStage}
         authorNames={authorNames}
         workName={activeWork?.work.name}
+        quantityLabel={quantityLabel}
+        unit={unit}
         zones={zonesOfCell(selectedCell)}
         readOnly={readOnly}
         defaultEffortNames={lastNames}

@@ -1,5 +1,6 @@
 import { Table, type TableProps } from 'antd'
 import type { StageProgress } from '../domain/types'
+import { DEFAULT_UNIT } from '../domain/unit'
 import { formatAreaM2, formatPercent } from '../lib/format'
 
 interface SpecRow {
@@ -22,7 +23,11 @@ interface SpecRow {
  * requires this table to mirror that sheet exactly, and these two strings are
  * what the foreman already reads on the printout.
  */
-export function StageSpecTable({ stages }: { stages: StageProgress[] }) {
+export function StageSpecTable({ stages, unit = DEFAULT_UNIT }: {
+  stages: StageProgress[]
+  /** The work's unit (RV6-35); the quantity row is labelled with it. */
+  unit?: string
+}) {
   const columns: TableProps<SpecRow>['columns'] = [
     { title: '', dataIndex: 'label', key: 'label', fixed: 'left', width: 120 },
     ...stages.map((sp) => ({
@@ -39,7 +44,7 @@ export function StageSpecTable({ stages }: { stages: StageProgress[] }) {
       : [
           {
             key: 'area',
-            label: 'm²',
+            label: unit,
             ...Object.fromEntries(
               stages.map((sp) => [sp.stage.id, formatAreaM2(sp.cumulativeAreaM2)]),
             ),

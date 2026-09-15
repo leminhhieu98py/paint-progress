@@ -1,23 +1,29 @@
 import { ExpandOutlined, MinusOutlined, PlusOutlined } from '@ant-design/icons'
 import {
   Alert, App, Button, DatePicker, Form, Input, Modal, Segmented,
-  Select, Space, Spin, Table, Tooltip, Typography,
+  Select, Space, Spin, Switch, Table, Tooltip, Typography,
 } from 'antd'
 import dayjs from 'dayjs'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { DrawingCanvas } from '../../canvas/DrawingCanvas'
+import { cellStagesAsOf, HISTORY_FROM_LABEL } from '../../domain/asOf'
+import { effortDayKey } from '../../domain/effort'
 import { cellsInBox } from '../../domain/geometry'
-import { codesNotReaching, zoneColorMap, zoneColorOf, zoneLensLayers, ZONE_PALETTE } from '../../domain/lens'
-import { zoneLabelBoxes } from '../../domain/plan'
+import {
+  codesNotReaching, paintLensColors, zoneColorMap, zoneColorOf, zoneLensLayers, ZONE_PALETTE,
+} from '../../domain/lens'
+import { zoneLabelBoxes, type ZoneLabel } from '../../domain/plan'
 import { buildStageSlices } from '../../domain/pieSlices'
 import { formatPlanRange } from '../../domain/plan'
 import { computeDeckProgress, summariseDeck } from '../../domain/progress'
-import type { Stage, WorkModel, Zone } from '../../domain/types'
+import type { DeckEvent, Stage, WorkModel, Zone } from '../../domain/types'
 import { getDrawingUrl } from '../../lib/decksApi'
+import { DEFAULT_UNIT } from '../../domain/unit'
 import { formatAreaM2, formatPercent, formatWeight } from '../../lib/format'
 import { subscribeDeckStates } from '../../lib/gsApi'
 import {
-  listCellNotes, loadDeckWorks, setReportNote, type CellNote, type DeckProgressEntry, type DeckWorks,
+  listCellNotes, listDeckEvents, loadDeckWorks, setReportNote,
+  type CellNote, type DeckProgressEntry, type DeckWorks,
 } from '../../lib/progressApi'
 import {
   createZone, deleteZone, listDeckZones, setZoneActual, setZoneCells, updateZone,
@@ -118,6 +124,102 @@ interface StageWindow {
  */
 const REFRESH_DEBOUNCE_MS = 400
 
+/**
+ * The layer select's value for "Tất cả công đoạn" (RV6-13).
+ *
+ * A sentinel inside the same `string | null` the select already carried, rather
+ * than a second piece of state beside it. The two are mutually exclusive by
+ * construction that way -- a layer is on one coat or on all of them, never both
+ * and never neither -- and the select needs no special-casing to hold it.
+ */
+const ALL_STAGES = '__all__'
+
+/**
+ * The day one layer is pinned to, if any (RV6-14..16).
+ *
+ * `cells` is the whole of it: `cellStagesAsOf` hands back the deck's bays in
+ * the shape `lensFor` already reads them in, so ONE substitution at the top of
+ * `lensFor` moves every figure below -- the colours, the chips, the zone rows,
+ * the m² line -- onto the day, and the plan toggle keeps working because it
+ * never looked at where the bays came from.
+ *
+ * `cells` is absent while the history is still being read, which is what the
+ * header renders `Đang tải lịch sử…` on: `day` without `cells` is a date
+ * picked and not yet answered, and the drawing stays live until it is.
+ */
+interface LensAsOf {
+  /** The bays as they stood. Absent = the live deck. */
+  cells?: Cell[]
+  /** `DD/MM/YYYY` of the day picked. Absent = live. */
+  day?: string
+}
+
+/**
+ * What one layer is looking at.
+ *
+ * A union rather than a nullable `Stage`, because "every coat" and "no coat
+ * loaded yet" are different pictures and a null would have to carry both. The
+ * per-layer date hangs off this same object: the layer's SUBJECT is what the
+ * date changes, and everything below already reads the deck through here.
+ */
+type LensView = ({ kind: 'stage'; stage: Stage } | { kind: 'all' }) & LensAsOf
+
+/** One header chip: a coat, its colour, and the share of the deck that reached it. */
+interface LensChip {
+  id: string
+  name: string
+  color: string
+  ratio: number
+}
+
+/** One row of the `Tiến độ từng zone` table, in m² like everything else here. */
+interface ZoneRow {
+  zone: Zone
+  color: string
+  doneM2: number
+  totalM2: number
+}
+
+/** Everything one layer draws and lists, built by `lensFor`. */
+interface Lens {
+  /** Null only before the stages have loaded; the layer renders nothing then. */
+  view: LensView | null
+  /** The coat's name, or `Tất cả công đoạn`. */
+  title: string
+  colors: Record<string, string>
+  opacities: Record<string, number>
+  outlines: Record<string, string>
+  labels: ZoneLabel[]
+  zones: ZoneRow[]
+  zoneColors: Record<string, string>
+  chips: LensChip[]
+  reachedAreaM2: number
+}
+
+/**
+ * A zone's name without the coat `createZone` suffixed onto it (RV6-11).
+ *
+ * Zones are stored as `${base} — ${coat}` so one plan drawn across five coats
+ * is five readable rows rather than five rows called "Khu A". The rename box
+ * therefore holds the base and the suffix is re-applied on save: an admin
+ * editing the stored name by hand would otherwise produce, one rename at a
+ * time, "Khu A — Topcoat — Topcoat".
+ *
+ * Matched on the exact suffix rather than on the last separator: a zone
+ * legitimately named "Khu A — B" on a coat called something else keeps its
+ * name whole. A legacy zone carrying no suffix at all is returned unchanged
+ * and gains one on its first rename, which is intended.
+ */
+function baseZoneName(name: string, stageName: string): string {
+  const suffix = ` — ${stageName}`
+  return stageName !== '' && name.endsWith(suffix) ? name.slice(0, -suffix.length) : name
+}
+
+const EMPTY_LENS: Lens = {
+  view: null, title: '', colors: {}, opacities: {}, outlines: {},
+  labels: [], zones: [], zoneColors: {}, chips: [], reachedAreaM2: 0,
+}
+
 const PROGRESS_RULES = [
   {
     id: 'ZON-R5',
@@ -184,9 +286,46 @@ export function DeckProgressPanel({
    * second lens is something the admin asks for when they have two to compare.
    */
   const [splitView, setSplitView] = useState(false)
+  /**
+   * Whether the plan is drawn over the progress (RV6-12).
+   *
+   * Default on, which is the rendering the panel has always had. Off, the
+   * drawing answers one question only -- what is DONE -- because the faint
+   * zone tints, the dashed frames and the label boxes that answer "what is
+   * planned" are noise while that is the question being asked.
+   *
+   * View state: nothing is written, and it is not remembered between visits.
+   */
+  const [showPlan, setShowPlan] = useState(true)
   /** The coat each lens is showing. Null only before the stages have loaded. */
   const [viewA, setViewA] = useState<string | null>(null)
   const [viewB, setViewB] = useState<string | null>(null)
+  /**
+   * The day each layer is pinned to, and the deck those dates were picked on
+   * (RV6-14).
+   *
+   * The deck id travels WITH the dates rather than an effect resetting them
+   * afterwards: a deck change means both layers go back to live, and deriving
+   * that during render is one render fewer than noticing it in an effect --
+   * and one fewer `set-state-in-effect` on a panel that already has two.
+   */
+  const [asOfPick, setAsOfPick] = useState<{
+    deckId: string
+    a: dayjs.Dayjs | null
+    b: dayjs.Dayjs | null
+  }>({ deckId, a: null, b: null })
+  /**
+   * The deck's whole history, read once and kept.
+   *
+   * `cell_events` is the only record of where a bay stood yesterday, and it is
+   * the heaviest read on this screen -- a paged query over every change ever
+   * recorded on the deck. So it is read LAZILY: an admin who never picks a date
+   * never pays for it, and one who compares five pairs of dates pays once. Also
+   * keyed by deck, so a panel that moves to another deck cannot draw this
+   * deck's history over the new deck's bays.
+   */
+  const [history, setHistory] = useState<{ deckId: string; rows: DeckEvent[] } | null>(null)
+  const [historyLoading, setHistoryLoading] = useState(false)
   /**
    * Shared by both lenses, which is the whole point of the split view: two
    * drawings free to sit at different scales are not a comparison.
@@ -194,6 +333,21 @@ export function DeckProgressPanel({
   const [zoom, setZoom] = useState(1)
   /** The zone whose date popover is open. */
   const [datesFor, setDatesFor] = useState<Zone | null>(null)
+  /**
+   * What is typed in that dialog's rename box, and which zone it belongs to.
+   *
+   * Kept together rather than seeded from an effect: `refreshZones` hands the
+   * dialog a fresh copy of the zone after every write, so an effect would have
+   * to decide whether each new copy should overwrite what the admin is typing.
+   * Keyed on the id, an unrecognised zone simply falls back to its stored name
+   * -- which is what a revert, a re-open and a landed rename all want.
+   */
+  const [nameDraft, setNameDraft] = useState<{ zoneId: string; value: string } | null>(null)
+  /**
+   * The zone whose rename is being written, or null. A ref, not state: it
+   * only gates `commitZoneName`, and Enter's blur can land before a render.
+   */
+  const renamingZoneId = useRef<string | null>(null)
   /** The zone whose deletion is being confirmed. */
   const [removingZone, setRemovingZone] = useState<Zone | null>(null)
   const [windows, setWindows] = useState<Record<string, StageWindow>>({})
@@ -221,6 +375,8 @@ export function DeckProgressPanel({
   const activeWork = deckWorks
     ? deckWorks.works.find((w) => w.work.id === workId) ?? deckWorks.works[0] ?? null
     : null
+  /** Every figure on this panel is the active work's, so its unit labels them all (RV6-35). */
+  const unit = activeWork?.work.unit ?? DEFAULT_UNIT
   const entry = useMemo<DeckProgressEntry | null>(() => {
     if (!deckWorks) return null
     return {
@@ -362,69 +518,218 @@ export function DeckProgressPanel({
    * without a coat selected, and the first coat is the one every deck has.
    */
   const stages = entry?.stages ?? []
-  const stageA = stages.find((st) => st.id === viewA) ?? stages[0] ?? null
-  const stageB = stages.find((st) => st.id === viewB) ?? stages[stages.length - 1] ?? null
+  const stageA = viewA === ALL_STAGES
+    ? null
+    : stages.find((st) => st.id === viewA) ?? stages[0] ?? null
+  const stageB = viewB === ALL_STAGES
+    ? null
+    : stages.find((st) => st.id === viewB) ?? stages[stages.length - 1] ?? null
 
   /**
-   * Everything one lens needs, for one coat.
+   * The dates, and the history, read back for THIS deck. A leftover from the
+   * deck the panel was showing before reads as "live" and "not loaded".
+   */
+  const dateA = asOfPick.deckId === deckId ? asOfPick.a : null
+  const dateB = asOfPick.deckId === deckId ? asOfPick.b : null
+  const historyRows = history && history.deckId === deckId ? history.rows : null
+
+  /**
+   * Read the history, unless it is already in hand for this deck.
+   *
+   * Called from the pickers rather than from an effect: picking a date is the
+   * event that needs it, and an effect watching the dates would fire a second
+   * time for the second layer before the first read had landed.
+   */
+  const ensureHistory = async () => {
+    if (historyRows !== null || historyLoading) return
+    setHistoryLoading(true)
+    try {
+      setHistory({ deckId, rows: await listDeckEvents(deckId) })
+    } catch (e) {
+      // The panel's own banner, like every other failed read here. The layer
+      // keeps drawing the live deck, which is still true -- it is just not the
+      // day that was asked for, and the header says the history is missing.
+      setError((e as Error).message)
+    } finally {
+      setHistoryLoading(false)
+    }
+  }
+
+  const setLayerDate = (side: 'a' | 'b', date: dayjs.Dayjs | null) => {
+    setAsOfPick((prev) => {
+      const base = prev.deckId === deckId ? prev : { deckId, a: null, b: null }
+      return side === 'a' ? { ...base, deckId, a: date } : { ...base, deckId, b: date }
+    })
+    if (date) void ensureHistory()
+  }
+
+  /**
+   * The deck as it stood at the end of one day, or nothing while that cannot
+   * be answered yet -- no date, or the history still in flight.
+   */
+  const asOfFor = (date: dayjs.Dayjs | null): LensAsOf => {
+    if (!date) return {}
+    const day = date.format('DD/MM/YYYY')
+    if (!entry || !activeWork || !historyRows) return { day }
+    return {
+      day,
+      cells: cellStagesAsOf(
+        entry.deck.cells, historyRows, date.format('YYYY-MM-DD'),
+        activeWork.work.name, entry.stages,
+      ),
+    }
+  }
+
+  /** The select's value and the picker's, read back as what the layer is showing. */
+  const viewOf = (
+    picked: string | null, stage: Stage | null, date: dayjs.Dayjs | null,
+  ): LensView | null => {
+    const asOf = asOfFor(date)
+    if (picked === ALL_STAGES) return { kind: 'all', ...asOf }
+    return stage ? { kind: 'stage', stage, ...asOf } : null
+  }
+
+  /**
+   * Everything one lens needs, for one coat -- or for every coat at once.
    *
    * Both lenses read the same deck through this, so the split view cannot drift
    * into showing two differently-computed pictures.
    *
-   * A bay that has REACHED the coat is filled: by its zone's colour where the
-   * coat has one planned, by the coat's own colour where it does not. A
-   * zone-only rule would leave an unplanned deck blank, which is most decks
-   * before the plan is drawn; a coat-only rule would lose the grouping the
-   * plan exists to show. A bay that has NOT reached the coat but is planned
-   * for it wears its zone colour faintly, under a dashed frame (Feedback Rv2,
-   * item 5: it used to get nothing, and a plan drawn before the work started
-   * was invisible on the screen it was drawn on). Unplanned and unreached,
-   * the drawing shows through. The table itself is `zoneLensLayers`.
+   * On ONE coat: a bay that has REACHED it is filled: by its zone's colour
+   * where the coat has one planned, by the coat's own colour where it does
+   * not. A zone-only rule would leave an unplanned deck blank, which is most
+   * decks before the plan is drawn; a coat-only rule would lose the grouping
+   * the plan exists to show. A bay that has NOT reached the coat but is
+   * planned for it wears its zone colour faintly, under a dashed frame
+   * (Feedback Rv2, item 5: it used to get nothing, and a plan drawn before the
+   * work started was invisible on the screen it was drawn on). Unplanned and
+   * unreached, the drawing shows through. The table itself is `zoneLensLayers`.
    *
-   * Zone colours come from `zoneColorMap` over ALL the deck's zones with the
-   * stage colours reserved, so a zone is one colour on every coat's view, in
-   * the GS screen and in the report -- and never a coat's colour (item 6).
+   * On EVERY coat (RV6-13): `paintLensColors`, which is exactly the foreman's
+   * live view -- each bay in the colour of the furthest coat it has reached.
+   * No overlay of any kind, because a zone belongs to ONE coat: a faint tint
+   * here would be the plan for a coat the picture is not about.
+   *
+   * Zone colours come from `zoneColorMap` per coat with the stage colours
+   * reserved, so a zone is one colour on every coat's view, in the GS screen
+   * and in the report -- and never a coat's colour (item 6). Settled per coat
+   * rather than over the whole list so the all-coats table's swatches are the
+   * ones the coat's own layer draws.
    */
-  const lensFor = (stage: Stage | null) => {
-    if (!entry || !stage) {
-      return {
-        stage: null, colors: {}, opacities: {}, outlines: {}, labels: [],
-        zones: [], zoneColors: {}, reachedAreaM2: 0,
-      }
+  const lensFor = (view: LensView | null): Lens => {
+    if (!entry || !view) return EMPTY_LENS
+
+    // THE substitution (RV6-16). One list of bays feeds the colours, the
+    // chips, the zone rows and the m² line below, so a layer pinned to a day
+    // and a live one are the same code over a different deck-shaped thing --
+    // there is no second rendering path to keep in step. Geometry, area and
+    // note are the live ones either way; only the coats move.
+    const cells = view.cells ?? entry.deck.cells
+
+    // The coats this layer speaks for. Sorted by seq rather than taken in
+    // array order: `listWorkStages` sorts, but nothing here should depend on
+    // that, and the all-coats table is ordered by coat then by zone.
+    const inView = view.kind === 'all'
+      ? [...entry.stages].sort((a, b) => a.seq - b.seq)
+      : [view.stage]
+    const pendingByStage = new Map(inView.map((st) => (
+      [st.id, new Set(codesNotReaching(cells, entry.stages, st.id))] as const
+    )))
+    const areaReaching = (stageId: string) => {
+      const pending = pendingByStage.get(stageId)
+      return cells
+        .reduce((sum, c) => (pending?.has(c.code) ? sum : sum + c.areaM2), 0)
     }
-    const zonesHere = zones.filter((z) => z.stageId === stage.id)
-    const colorById = zoneColorMap(zonesHere, entry.stages.map((st) => st.color))
-    const pendingSet = new Set(codesNotReaching(entry.deck.cells, entry.stages, stage.id))
-    const layers = zoneLensLayers(entry.deck.cells, entry.stages, stage, zonesHere, colorById)
-    // The zones named where they are, not only in the list beside the drawing
-    // (Feedback Rv3, item 4) -- the same labels the foreman's screen draws.
-    const labels = zoneLabelBoxes(zonesHere, entry.deck.cells)
-    const reached = new Set(layers.reachedCodes)
-    const reachedAreaM2 = entry.deck.cells
-      .reduce((sum, c) => (reached.has(c.code) ? sum + c.areaM2 : sum), 0)
 
     // In m², like everything else on this panel now: a zone of three bays at
     // "2/3" said nothing about how much of it was done when the bays differ
     // in size, and they usually do.
-    const cellById = new Map(entry.deck.cells.map((c) => [c.id, c]))
-    const zoneRows = zonesHere.map((z) => {
-      const cells = z.cellIds.flatMap((id) => {
-        const c = cellById.get(id)
-        return c ? [c] : []
-      })
-      const totalM2 = cells.reduce((sum, c) => sum + c.areaM2, 0)
-      const doneM2 = cells.reduce((sum, c) => (pendingSet.has(c.code) ? sum : sum + c.areaM2), 0)
-      return { zone: z, color: colorById[z.id], doneM2, totalM2 }
-    })
+    const cellById = new Map(cells.map((c) => [c.id, c]))
+    const zoneColors: Record<string, string> = {}
+    const zoneRows: ZoneRow[] = []
+    const stageColorList = entry.stages.map((st) => st.color)
+    const zonesOf = (stageId: string) => zones.filter((z) => z.stageId === stageId)
+    for (const st of inView) {
+      const mine = zonesOf(st.id)
+      const colorById = zoneColorMap(mine, stageColorList)
+      const pending = pendingByStage.get(st.id)
+      for (const z of mine) {
+        zoneColors[z.id] = colorById[z.id]
+        const zoneCells = z.cellIds.flatMap((id) => {
+          const c = cellById.get(id)
+          return c ? [c] : []
+        })
+        zoneRows.push({
+          zone: z,
+          color: colorById[z.id],
+          totalM2: zoneCells.reduce((sum, c) => sum + c.areaM2, 0),
+          doneM2: zoneCells.reduce((sum, c) => (pending?.has(c.code) ? sum : sum + c.areaM2), 0),
+        })
+      }
+    }
 
+    // One chip per coat in view, each carrying the share of the DECK that has
+    // reached it -- cumulative, the same ratio the spec table and the report
+    // carry. On a single coat that is the one figure the header always showed.
+    const chips: LensChip[] = inView.map((st) => ({
+      id: st.id,
+      name: st.name,
+      color: st.color,
+      ratio: entry.deck.totalAreaM2 > 0 ? areaReaching(st.id) / entry.deck.totalAreaM2 : 0,
+    }))
+    // The m² line under the drawing. On every coat at once that is the area
+    // that has STARTED -- the first coat's share -- because there is no one
+    // "reached" for five coats and the chips already break it down.
+    const reachedAreaM2 = inView.length > 0 ? areaReaching(inView[0].id) : 0
+
+    if (view.kind === 'all') {
+      return {
+        view,
+        title: 'Tất cả công đoạn',
+        colors: paintLensColors(cells, entry.stages),
+        opacities: {},
+        outlines: {},
+        labels: [],
+        zones: zoneRows,
+        zoneColors,
+        chips,
+        reachedAreaM2,
+      }
+    }
+
+    const { stage } = view
+    const zonesHere = zonesOf(stage.id)
+    const layers = zoneLensLayers(cells, entry.stages, stage, zonesHere, zoneColors)
+    // With the plan hidden (RV6-12) the reached bays wear the COAT's colour at
+    // full opacity and nothing else is drawn. Built from `zoneLensLayers`' own
+    // reachedCodes rather than from a second pass over the zones, so the two
+    // renderings can never disagree about which bays are done.
+    if (!showPlan) {
+      return {
+        view,
+        title: stage.name,
+        colors: Object.fromEntries(layers.reachedCodes.map((code) => [code, stage.color])),
+        opacities: {},
+        outlines: {},
+        labels: [],
+        zones: zoneRows,
+        zoneColors,
+        chips,
+        reachedAreaM2,
+      }
+    }
     return {
-      stage,
+      view,
+      title: stage.name,
       colors: layers.colors,
       opacities: layers.opacities,
       outlines: layers.outlines,
-      labels,
+      // The zones named where they are, not only in the list beside the drawing
+      // (Feedback Rv3, item 4) -- the same labels the foreman's screen draws.
+      labels: zoneLabelBoxes(zonesHere, cells),
       zones: zoneRows,
-      zoneColors: colorById,
+      zoneColors,
+      chips,
       reachedAreaM2,
     }
   }
@@ -440,8 +745,8 @@ export function DeckProgressPanel({
   const defaultZoneColor = zoneColorOf({ color: null }, 0, stageColors)
   const chosenZoneColor = zoneColor ?? defaultZoneColor
 
-  const lensA = lensFor(stageA)
-  const lensB = lensFor(stageB)
+  const lensA = lensFor(viewOf(viewA, stageA, dateA))
+  const lensB = lensFor(viewOf(viewB, stageB, dateB))
 
   /**
    * The ring: how the bays that have been started are spread across the coats.
@@ -666,6 +971,55 @@ export function DeckProgressPanel({
     }
   }
 
+  /** The coat a zone plans, by name, or '' while the stage list is loading. */
+  const zoneStageName = (zone: Zone) =>
+    entry?.stages.find((st) => st.id === zone.stageId)?.name ?? ''
+
+  /** The rename box's content for the open zone: what is being typed, or the
+   *  stored name with its coat suffix stripped off. */
+  const zoneNameValue = (zone: Zone) => (
+    nameDraft?.zoneId === zone.id ? nameDraft.value : baseZoneName(zone.name, zoneStageName(zone))
+  )
+
+  /**
+   * A zone renamed from its own dialog (RV6-11, docx item 4).
+   *
+   * Committed on blur or Enter rather than behind a Save, like the dates and
+   * the colour beside it -- there is nothing here to validate across fields
+   * that would need a commit step. Empty or unchanged reverts instead of
+   * writing: an empty name is not a statement, and a no-op write would still
+   * move the row under anyone else looking at this plan.
+   *
+   * The coat suffix is re-applied here, so the modal title, the zone table,
+   * the label boxes on the drawing, the foreman's screen and the XLSX -- all
+   * of which read `zones.name` -- follow without further change.
+   *
+   * Enter and the blur that usually follows it both commit, so the second
+   * is a no-op while the first is still in flight.
+   */
+  const commitZoneName = async (zone: Zone) => {
+    if (renamingZoneId.current !== null) return
+    const stage = zoneStageName(zone)
+    const base = baseZoneName(zone.name, stage)
+    const next = zoneNameValue(zone).trim()
+    if (next === '' || next === base) {
+      setNameDraft(null)
+      return
+    }
+    renamingZoneId.current = zone.id
+    try {
+      await updateZone(zone.id, { name: stage === '' ? next : `${next} — ${stage}` })
+      setNameDraft(null)
+      await refreshZones()
+    } catch (e) {
+      // The draft is left standing, so the name that failed is still on screen
+      // to try again with rather than silently reverting to the stored one.
+      setError((e as Error).message)
+    } finally {
+      renamingZoneId.current = null
+    }
+  }
+
   /** One zone's colour, written as it is picked (item 6). The swatches offered
    *  are already outside the stage palette; the API guards any other path. */
   const recolorZone = async (zone: Zone, color: string) => {
@@ -737,11 +1091,88 @@ export function DeckProgressPanel({
    * the split view exists to compare, and a comparison whose halves are drawn
    * by different code is not one.
    */
-  const renderLens = (lens: ReturnType<typeof lensFor>, side: 'A' | 'B') => {
-    if (!entry || !lens.stage || !imageUrl) return null
-    // Area over the deck's declared area -- the same cumulative ratio the spec
-    // table and the report carry for this coat, not a bay fraction.
-    const reachedRatio = entry.deck.totalAreaM2 > 0 ? lens.reachedAreaM2 / entry.deck.totalAreaM2 : 0
+  /**
+   * One layer's controls: which coat it shows, and which day (RV6-13, RV6-14).
+   *
+   * One function for both layers so the pair cannot drift apart, wherever it
+   * sits. The ids `lens-a-stage` / `lens-b-stage` and `lens-a-date` /
+   * `lens-b-date` are what the labels and the tests reach for.
+   *
+   * The picker is empty for the live deck and says so in its own placeholder;
+   * clearing it is the way back. Days after today cannot be picked: the
+   * history has nothing to say about them, and a layer "as of next week"
+   * would draw today's deck under tomorrow's date.
+   */
+  const renderLayerControls = (side: 'a' | 'b') => {
+    if (!entry) return null
+    const isA = side === 'a'
+    const picked = isA ? viewA : viewB
+    const stage = isA ? stageA : stageB
+    const labelStyle = { fontSize: 11, fontWeight: 600, color: palette.textTertiary }
+    return (
+      <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+          <label htmlFor={`lens-${side}-stage`} style={labelStyle}>
+            {isA ? (splitView ? 'Lớp bên trái' : 'Lớp sơn đang xem') : 'Lớp bên phải'}
+          </label>
+          {/*
+            `Tất cả công đoạn` first, above the coats (RV6-13): it is the
+            whole deck, and the coats below it are the ways of slicing that.
+            Same list on both layers, so the split view can hold one coat
+            against the whole picture.
+          */}
+          <Select
+            id={`lens-${side}-stage`}
+            style={{ minWidth: 190 }}
+            value={picked === ALL_STAGES ? ALL_STAGES : stage?.id}
+            onChange={isA ? setViewA : setViewB}
+            options={[
+              { value: ALL_STAGES, label: 'Tất cả công đoạn' },
+              ...entry.stages.map((st) => ({ value: st.id, label: st.name })),
+            ]}
+          />
+        </div>
+        {/*
+          The test id sits on the column, not the picker: antd hands a
+          `data-*` prop to the INPUT, and the clear button beside it would
+          then be outside the element the id names.
+        */}
+        <div
+          data-testid={`lens-${side}-date`}
+          style={{ display: 'flex', flexDirection: 'column', gap: 7 }}
+        >
+          <label htmlFor={`lens-${side}-date-input`} style={labelStyle}>Ngày</label>
+          <DatePicker
+            id={`lens-${side}-date-input`}
+            style={{ width: 150 }}
+            format="DD/MM/YYYY"
+            allowClear
+            placeholder="Hôm nay"
+            value={isA ? dateA : dateB}
+            // "Today" is the Vietnam day (effortDayKey, RV5-20), as on every
+            // other figure here -- not the browser's clock, which on a machine
+            // west of UTC+7 would still refuse a day the site is already working.
+            disabledDate={(d) => d.format('YYYY-MM-DD') > effortDayKey(new Date().toISOString())}
+            onChange={(d) => setLayerDate(side, d)}
+          />
+        </div>
+      </div>
+    )
+  }
+
+  const renderLens = (lens: Lens, side: 'A' | 'B') => {
+    if (!entry || !lens.view || !imageUrl) return null
+    /*
+      LNS-R1 describes the plan overlay, so it is only true while the overlay
+      is drawn. Every coat at once never draws one (a zone belongs to one
+      coat), and RV6-12 switches it off on a single coat; both get the sentence
+      that IS true of what is on the screen.
+    */
+    const legend = lens.view.kind === 'all'
+      ? 'Mỗi ô tô theo màu công đoạn cao nhất đã đạt · ô chưa bắt đầu để trắng'
+      : showPlan
+        ? 'Ô đã đạt lớp tô đặc · ô có kế hoạch chưa đạt tô nhạt, viền đứt · ô chưa đạt, chưa kế hoạch để trắng'
+        : 'Ô đã đạt lớp tô đặc theo màu công đoạn · ô chưa đạt để trắng'
     return (
       <div
         data-testid={`lens-${side}`}
@@ -757,13 +1188,38 @@ export function DeckProgressPanel({
         <div style={{ padding: '13px 14px', display: 'flex', alignItems: 'flex-start', gap: 12 }}>
           <div style={{ minWidth: 0, flex: 1 }}>
             <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600, letterSpacing: '-0.015em' }}>
-              {`Tiến độ · ${lens.stage.name}`}
+              {`Tiến độ · ${lens.title}`}
             </h3>
             <div style={{ fontSize: 12, lineHeight: 1.35, color: palette.textTertiary, marginTop: 4 }}>
               {splitView
                 ? (side === 'A' ? 'Lớp bên trái' : 'Lớp bên phải · cùng mức zoom để so sánh')
-                : 'Ô đã đạt lớp tô đặc · ô có kế hoạch chưa đạt tô nhạt, viền đứt · ô chưa đạt, chưa kế hoạch để trắng'}
+                : legend}
             </div>
+            {/*
+              A layer pinned to a day says so under its title (RV6-16), and
+              says how far back the record it was built from goes (RV6-15):
+              rows older than the work model name no work and are left out, so
+              a day before 24/08 reads as nothing started -- which is true of
+              the record, not of the deck, and the line is what keeps the two
+              apart. While the history is still being read, or could not be,
+              the drawing underneath is the LIVE deck and the header says so
+              rather than letting the date above stand over today's colours.
+            */}
+            {lens.view.day && (
+              <div style={{ marginTop: 6, fontSize: 12, lineHeight: 1.35 }}>
+                <div style={{ fontWeight: 600, color: palette.textSecondary }}>
+                  {`Trạng thái ngày ${lens.view.day}`}
+                </div>
+                {!lens.view.cells && (
+                  <div style={{ color: palette.textTertiary, marginTop: 2 }}>
+                    {historyLoading
+                      ? <><Spin size="small" style={{ marginRight: 6 }} />Đang tải lịch sử…</>
+                      : 'Chưa đọc được lịch sử — đang hiện trạng thái hôm nay'}
+                  </div>
+                )}
+                <div style={{ color: palette.textTertiary, marginTop: 2 }}>{HISTORY_FROM_LABEL}</div>
+              </div>
+            )}
           </div>
           {/*
             The other way to a bay's notes. A tap on the drawing opens them
@@ -781,6 +1237,20 @@ export function DeckProgressPanel({
             </Button>
           )}
         </div>
+
+        {/*
+          Comparing two layers, each one's controls sit above its own drawing
+          (RV6-17): "tách bộ lọc 2 bên trái phải nằm trên layout". One shared
+          row above two drawings made the admin read across two selects to
+          work out which drawing a change would land on; here the select is
+          over the picture it changes. On a single layer the pair stays in
+          the shared row, so nothing moves for the view that had no ambiguity.
+        */}
+        {splitView && (
+          <div style={{ padding: '0 14px 13px' }}>
+            {renderLayerControls(side === 'A' ? 'a' : 'b')}
+          </div>
+        )}
 
         <div
           style={{
@@ -815,44 +1285,65 @@ export function DeckProgressPanel({
             }
             onSelectDraw={editable && side === 'A' ? sweep : undefined}
           />
+          {/*
+            One chip per coat in view (RV6-13). A single coat is the one chip
+            the header always carried; `Tất cả công đoạn` is the whole row, so
+            the colours on the drawing can be read back without a legend
+            elsewhere. Wraps rather than scrolls -- five coats over a narrow
+            half of the split view is the case that overflows.
+          */}
           <div
+            data-testid={`lens-chips-${side}`}
             style={{
               position: 'absolute',
               zIndex: 3,
               left: 12,
               top: 12,
               display: 'flex',
-              alignItems: 'center',
-              gap: 9,
-              background: '#FFFFFFF0',
-              border: `1px solid ${palette.borderSplit}`,
-              borderRadius: 9,
-              padding: '6px 10px',
+              flexWrap: 'wrap',
+              gap: 6,
+              maxWidth: 'calc(100% - 24px)',
             }}
           >
-            <span
-              aria-hidden
-              style={{
-                width: 14,
-                height: 14,
-                borderRadius: 4,
-                background: lens.stage.color,
-                boxShadow: 'inset 0 0 0 1px #16202B47',
-              }}
-            />
-            <span style={{ fontSize: 12, fontWeight: 600 }}>{lens.stage.name}</span>
-            <span style={{ fontSize: 12, fontWeight: 600, color: palette.accent }}>
-              {formatPercent(reachedRatio)}
-            </span>
+            {lens.chips.map((chip) => (
+              <span
+                key={chip.id}
+                data-testid="lens-chip"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 9,
+                  background: '#FFFFFFF0',
+                  border: `1px solid ${palette.borderSplit}`,
+                  borderRadius: 9,
+                  padding: '6px 10px',
+                }}
+              >
+                <span
+                  aria-hidden
+                  style={{
+                    width: 14,
+                    height: 14,
+                    borderRadius: 4,
+                    background: chip.color,
+                    boxShadow: 'inset 0 0 0 1px #16202B47',
+                  }}
+                />
+                <span style={{ fontSize: 12, fontWeight: 600 }}>{chip.name}</span>
+                <span style={{ fontSize: 12, fontWeight: 600, color: palette.accent }}>
+                  {formatPercent(chip.ratio)}
+                </span>
+              </span>
+            ))}
           </div>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 9, padding: '12px 14px 8px' }}>
           <span style={{ fontSize: 12, fontWeight: 600, color: palette.textTertiary }}>
-            {`Tiến độ từng zone · ${lens.stage.name}`}
+            {`Tiến độ từng zone · ${lens.title}`}
           </span>
           <span style={{ marginLeft: 'auto', fontSize: 12, color: palette.textTertiary }}>
-            {`${formatAreaM2(lens.reachedAreaM2)} / ${formatAreaM2(entry.deck.totalAreaM2)} m²`}
+            {`${formatAreaM2(lens.reachedAreaM2)} / ${formatAreaM2(entry.deck.totalAreaM2)} ${unit}`}
           </span>
         </div>
 
@@ -880,7 +1371,7 @@ export function DeckProgressPanel({
                 />
                 <span style={{ fontSize: 12, fontWeight: 600, flex: 'none' }}>{row.zone.name}</span>
                 <span style={{ fontSize: 11, color: palette.textTertiary, flex: 'none' }}>
-                  {`${formatAreaM2(row.doneM2)} / ${formatAreaM2(row.totalM2)} m²`}
+                  {`${formatAreaM2(row.doneM2)} / ${formatAreaM2(row.totalM2)} ${unit}`}
                 </span>
                 <span style={{ flex: 1, minWidth: 24 }}>
                   <ProgressBar ratio={zonePct} color={row.color} height={5} />
@@ -953,6 +1444,24 @@ export function DeckProgressPanel({
       extra={
         entry && entry.imagePath && imageUrl ? (
           <Space size={10}>
+            {/*
+              The plan overlay, on a switch (RV6-12). Before the layer control
+              because it changes what every layer draws, where the segmented
+              control only changes how many there are. `Hiện kế hoạch` is the
+              foreman screen's wording for the same thing, so one plan toggle
+              is named one way across the product.
+            */}
+            <Space size={7}>
+              <Switch
+                size="small"
+                aria-label="Hiện kế hoạch"
+                checked={showPlan}
+                onChange={setShowPlan}
+              />
+              <span style={{ fontSize: 12, fontWeight: 600, color: palette.textSecondary }}>
+                Hiện kế hoạch
+              </span>
+            </Space>
             <Segmented
               size="small"
               value={splitView ? 'split' : 'single'}
@@ -1070,38 +1579,13 @@ export function DeckProgressPanel({
                     {`Công việc: ${activeWork.work.name}`}
                   </span>
                 )}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-                  <label
-                    htmlFor="lens-a-stage"
-                    style={{ fontSize: 11, fontWeight: 600, color: palette.textTertiary }}
-                  >
-                    {splitView ? 'Lớp bên trái' : 'Lớp sơn đang xem'}
-                  </label>
-                  <Select
-                    id="lens-a-stage"
-                    style={{ minWidth: 190 }}
-                    value={stageA?.id}
-                    onChange={setViewA}
-                    options={entry.stages.map((st) => ({ value: st.id, label: st.name }))}
-                  />
-                </div>
-                {splitView && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-                    <label
-                      htmlFor="lens-b-stage"
-                      style={{ fontSize: 11, fontWeight: 600, color: palette.textTertiary }}
-                    >
-                      Lớp bên phải
-                    </label>
-                    <Select
-                      id="lens-b-stage"
-                      style={{ minWidth: 190 }}
-                      value={stageB?.id}
-                      onChange={setViewB}
-                      options={entry.stages.map((st) => ({ value: st.id, label: st.name }))}
-                    />
-                  </div>
-                )}
+                {/*
+                  On a single layer the pair lives here, in the row it always
+                  did. Comparing two, each layer's pair moves into its own pane
+                  above its drawing (RV6-17), and this row keeps only what is
+                  common to both.
+                */}
+                {!splitView && renderLayerControls('a')}
                 {/*
                   Always on screen in Sửa, disabled rather than hidden. Hiding
                   it until bays are picked takes away the only thing on the
@@ -1113,11 +1597,19 @@ export function DeckProgressPanel({
                     {selectedCodes.length > 0 && (
                       <Button onClick={() => setSelectedCodes([])}>Bỏ chọn</Button>
                     )}
+                    {/*
+                      A zone row IS one stage_id, so there is no coat to write
+                      while the left layer is showing all of them (RV6-13).
+                      Disabled with the reason on it rather than hidden, for
+                      the same reason the empty-selection state is.
+                    */}
                     <Tooltip
                       title={
-                        selectedCodes.length > 0
-                          ? 'Gộp các ô đang chọn thành một zone'
-                          : 'Chọn ô trên bản vẽ trước — bấm từng ô, hoặc giữ Shift rồi kéo'
+                        viewA === ALL_STAGES
+                          ? 'Chọn một công đoạn để tạo zone'
+                          : selectedCodes.length > 0
+                            ? 'Gộp các ô đang chọn thành một zone'
+                            : 'Chọn ô trên bản vẽ trước — bấm từng ô, hoặc giữ Shift rồi kéo'
                       }
                     >
                       {/* A span, because antd Tooltip cannot anchor a disabled button. */}
@@ -1125,7 +1617,7 @@ export function DeckProgressPanel({
                         <Button
                           type="primary"
                           icon={<PlusOutlined aria-hidden />}
-                          disabled={selectedCodes.length === 0}
+                          disabled={selectedCodes.length === 0 || viewA === ALL_STAGES}
                           onClick={() => {
                             setWindows({})
                             form.resetFields()
@@ -1195,7 +1687,7 @@ export function DeckProgressPanel({
                             {formatPercent(progress?.progress ?? 0)}
                           </span>
                           <span style={{ fontSize: 10, color: palette.textTertiary, marginTop: 3 }}>
-                            {`${formatAreaM2(entry.deck.totalAreaM2)} m²`}
+                            {`${formatAreaM2(entry.deck.totalAreaM2)} ${unit}`}
                           </span>
                         </Donut>
                         <span
@@ -1260,7 +1752,7 @@ export function DeckProgressPanel({
                                   }}
                                 >
                                   <span style={{ color: palette.textSecondary, whiteSpace: 'nowrap' }}>
-                                    {`${formatAreaM2(sp.cumulativeAreaM2)} / ${formatAreaM2(entry.deck.totalAreaM2)} m²`}
+                                    {`${formatAreaM2(sp.cumulativeAreaM2)} / ${formatAreaM2(entry.deck.totalAreaM2)} ${unit}`}
                                   </span>
                                   <span aria-hidden>·</span>
                                   <span>{formatPercent(sp.ratio)}</span>
@@ -1286,7 +1778,7 @@ export function DeckProgressPanel({
                         <span
                           style={{ marginLeft: 'auto', fontSize: 11, color: palette.textTertiary }}
                         >
-                          {`${formatAreaM2(entry.deck.totalAreaM2)} m²`}
+                          {`${formatAreaM2(entry.deck.totalAreaM2)} ${unit}`}
                         </span>
                         <span style={{ fontSize: 18, fontWeight: 700, letterSpacing: '-0.025em' }}>
                           {formatPercent(progress?.progress ?? 0)}
@@ -1344,7 +1836,7 @@ export function DeckProgressPanel({
               )}
 
               <div data-testid="deck-spec" style={{ marginTop: 18 }}>
-                <StageSpecTable stages={progress?.stages ?? []} />
+                <StageSpecTable stages={progress?.stages ?? []} unit={unit} />
               </div>
             </>
           )}
@@ -1509,6 +2001,26 @@ export function DeckProgressPanel({
             <Typography.Text type="secondary" style={{ fontSize: 12 }}>
               {`${stageName(datesFor.stageId)} · ${datesFor.cellIds.length} ô. Để trống nghĩa là chưa lên kế hoạch.`}
             </Typography.Text>
+            {/*
+              The name, above the dates (RV6-11). Prefilled with the base, not
+              the stored string: the coat suffix is `createZone`'s doing and is
+              re-applied on save, so it is never something to retype.
+            */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+              <label
+                htmlFor="zone-name"
+                style={{ fontSize: 12, fontWeight: 600, color: palette.textSecondary }}
+              >
+                Tên zone
+              </label>
+              <Input
+                id="zone-name"
+                value={zoneNameValue(datesFor)}
+                onChange={(e) => setNameDraft({ zoneId: datesFor.id, value: e.target.value })}
+                onBlur={() => void commitZoneName(datesFor)}
+                onPressEnter={() => void commitZoneName(datesFor)}
+              />
+            </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
               <span style={{ fontSize: 12, fontWeight: 600, color: palette.textSecondary }}>Thời gian</span>
               {/*

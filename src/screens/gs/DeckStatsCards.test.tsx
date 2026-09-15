@@ -134,3 +134,22 @@ describe('StageRollupCard', () => {
     ])
   })
 })
+
+describe('the work\'s quantity and unit (RV6-35)', () => {
+  it('DeckProgressCard names the quantity and the unit of the active work', () => {
+    render(<DeckProgressCard progress={0.4438} totalAreaM2={5258.5} quantityLabel="Khối lượng" unit="tấn" />)
+    expect(screen.getByText('Khối lượng sàn')).toBeInTheDocument()
+    expect(screen.getByText('5.258,50 tấn')).toBeInTheDocument()
+    expect(screen.queryByText(/Diện tích/)).toBeNull()
+  })
+
+  it('StageRollupCard reads each coat and the ring in the work\'s unit', () => {
+    render(
+      <StageRollupCard stages={STAGES} stageProgress={progressOf().stages} cells={CELLS} totalAreaM2={DECK.totalAreaM2} unit="tấn" />,
+    )
+    const card = screen.getByTestId('gs-stage-rollup')
+    expect(within(card).getByText('800,00 / 1.000,00 tấn · 80,00%')).toBeInTheDocument()
+    expect(within(screen.getByTestId('donut')).getByText('tấn sàn')).toBeInTheDocument()
+    expect(within(card).queryByText(/m²/)).toBeNull()
+  })
+})

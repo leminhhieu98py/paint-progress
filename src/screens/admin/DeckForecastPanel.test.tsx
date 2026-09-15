@@ -21,7 +21,7 @@ const STAGES = [
 ]
 const WORK = {
   id: 'w1', projectId: 'p1', seq: 1, name: 'Sơn', kind: 'bays' as const,
-  weight: 1, counts: true, manualProgress: 0,
+  weight: 1, counts: true, manualProgress: 0, quantityLabel: 'Diện tích', unit: 'm²',
 }
 
 /** 1.000 m²: one 500 m² bay through Lớp 2, one still at Lớp 1. */
@@ -219,5 +219,19 @@ describe('DeckForecastPanel', () => {
     expect(await screen.findByText('mạng hỏng')).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Thử lại' }))
     await waitFor(() => expect(screen.queryByText('mạng hỏng')).toBeNull())
+  })
+})
+
+describe('DeckForecastPanel: the work\'s unit (RV6-35)', () => {
+  it('heads the remaining-quantity and efficiency columns with the work\'s unit', async () => {
+    loadDeckWorks.mockResolvedValue(deckWorks({
+      works: [{ work: { ...WORK, quantityLabel: 'Khối lượng', unit: 'tấn' }, weight: 1, deadline: null, stages: STAGES, cells: CELLS, audit: {} }],
+    }))
+    renderPanel()
+    await screen.findByRole('table')
+    const headers = screen.getAllByRole('columnheader').map((h) => h.textContent)
+    expect(headers).toContain('tấn còn lại')
+    expect(headers).toContain('Hiệu suất TB (Mhr/tấn)')
+    expect(headers.some((h) => /m²/.test(h ?? ''))).toBe(false)
   })
 })
