@@ -1,10 +1,12 @@
 import { App as AntApp } from 'antd'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import dayjs from 'dayjs'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { DeckProgressPanel } from './DeckProgressPanel'
 
 const loadDeckWorks = vi.hoisted(() => vi.fn())
+const listDeckEvents = vi.hoisted(() => vi.fn())
 const getDrawingUrl = vi.hoisted(() => vi.fn())
 const listDeckZones = vi.hoisted(() => vi.fn())
 const createZone = vi.hoisted(() => vi.fn())
@@ -18,6 +20,7 @@ const subscribeDeckStates = vi.hoisted(() => vi.fn())
 
 vi.mock('../../lib/progressApi', () => ({
   loadDeckWorks: (id: string) => loadDeckWorks(id),
+  listDeckEvents: (id: string) => listDeckEvents(id),
   listCellNotes: (cellId: string) => listCellNotes(cellId),
   setReportNote: (id: number, note: string | null, hidden: boolean) => setReportNote(id, note, hidden),
 }))
@@ -123,6 +126,8 @@ const ZONE = {
 beforeEach(() => {
   loadDeckWorks.mockReset()
   loadDeckWorks.mockResolvedValue(ENTRY)
+  listDeckEvents.mockReset()
+  listDeckEvents.mockResolvedValue([])
   getDrawingUrl.mockReset()
   getDrawingUrl.mockImplementation((p: string) => Promise.resolve(`https://signed/${p}`))
   listDeckZones.mockReset()
@@ -1203,5 +1208,172 @@ describe('DeckProgressPanel — renaming a zone (RV6-11)', () => {
     await userEvent.tab()
 
     expect(await screen.findByText('không đổi tên được')).toBeInTheDocument()
+  })
+})
+
+/**
+ * RV6-14..16 -- comparing the deck between two dates.
+ *
+ * "Xem được tiến độ của 2 ngày khác nhau": the panel could already hold two
+ * coats against each other, and could only ever show them as they are NOW.
+ * Each layer now takes a date, and the history in `cell_events` says where
+ * every bay stood at the end of it.
+ */
+describe('DeckProgressPanel — comparing two dates (RV6-14..16)', () => {
+  /**
+   * The deck's whole history. By the end of 10/09 only R1C1 had been started,
+   * at the first coat; everything else on this deck happened after.
+   */
+  const HISTORY = [
+    {
+      id: 1, deckName: 'Cellar Deck', cellCode: 'R1C1', cellAreaM2: 500,
+      workName: 'Công việc chính', toStageName: 'Blast + Coat 1',
+      at: '2026-09-02T03:00:00Z', byId: null, note: '',
+    },
+    {
+      id: 2, deckName: 'Cellar Deck', cellCode: 'R1C2', cellAreaM2: 500,
+      workName: 'Công việc chính', toStageName: 'Coat 2',
+      at: '2026-09-12T03:00:00Z', byId: null, note: '',
+    },
+    {
+      id: 3, deckName: 'Cellar Deck', cellCode: 'R1C1', cellAreaM2: 500,
+      workName: 'Công việc chính', toStageName: 'Tháo giáo',
+      at: '2026-09-13T03:00:00Z', byId: null, note: '',
+    },
+  ]
+
+  beforeEach(() => {
+    listDeckEvents.mockResolvedValue(HISTORY)
+  })
+
+  /** The day input of one layer's picker. */
+  const dateInput = (side: 'a' | 'b') =>
+    within(screen.getByTestId(`lens-${side}-date`)).getByPlaceholderText('Hôm nay')
+
+  const pickDate = async (side: 'a' | 'b', text: string) => {
+    await userEvent.type(dateInput(side), text)
+    await userEvent.keyboard('{Enter}')
+  }
+
+  it('gives every layer a date picker, empty for the live state', async () => {
+    renderPanel()
+    await screen.findByTestId('lens-A')
+    expect(dateInput('a')).toHaveValue('')
+    // Nothing is read until a date is actually asked for.
+    expect(listDeckEvents).not.toHaveBeenCalled()
+
+    await userEvent.click(screen.getByText('So sánh hai lớp'))
+    await screen.findByTestId('lens-B')
+    expect(dateInput('b')).toHaveValue('')
+  })
+
+  it('reads the deck\'s history once, however many layers are pinned to a date', async () => {
+    renderPanel()
+    await screen.findByTestId('lens-A')
+    await pickDate('a', '10/09/2026')
+    await waitFor(() => expect(listDeckEvents).toHaveBeenCalledWith('d1'))
+
+    await userEvent.click(screen.getByText('So sánh hai lớp'))
+    await screen.findByTestId('lens-B')
+    await pickDate('b', '13/09/2026')
+
+    // One read per deck, kept for both layers: the history does not change
+    // between two dates of the same deck.
+    await waitFor(() => expect(screen.getAllByText(/Trạng thái ngày/)).toHaveLength(2))
+    expect(listDeckEvents).toHaveBeenCalledTimes(1)
+  })
+
+  it('colours the bays by where they stood at the end of the day picked', async () => {
+    renderPanel()
+    await screen.findByTestId('lens-A')
+    // Live, both bays are past Blast + Coat 1, so both are filled.
+    expect(screen.getByTestId('cell-R1C1')).toHaveAttribute('data-color', '#fadb14')
+    expect(screen.getByTestId('cell-R1C2')).toHaveAttribute('data-color', '#fadb14')
+
+    await pickDate('a', '10/09/2026')
+
+    // R1C2 was not started until the 12th.
+    await waitFor(() =>
+      expect(screen.getByTestId('cell-R1C2')).toHaveAttribute('data-color', ''))
+    expect(screen.getByTestId('cell-R1C1')).toHaveAttribute('data-color', '#fadb14')
+  })
+
+  it('says which day the layer is showing, and how far back the history goes', async () => {
+    renderPanel()
+    await screen.findByTestId('lens-A')
+    expect(screen.queryByText(/Trạng thái ngày/)).not.toBeInTheDocument()
+
+    await pickDate('a', '10/09/2026')
+
+    const lens = await screen.findByTestId('lens-A')
+    expect(await within(lens).findByText('Trạng thái ngày 10/09/2026')).toBeInTheDocument()
+    // Rows older than the work model name no work; the layer admits the gap.
+    expect(within(lens).getByText('Lịch sử từ 24/08/2026')).toBeInTheDocument()
+  })
+
+  it('counts the as-of bays in the chips and the m² line, not the live ones', async () => {
+    renderPanel()
+    await screen.findByTestId('lens-A')
+    await pickDate('a', '10/09/2026')
+
+    const lens = await screen.findByTestId('lens-A')
+    await waitFor(() =>
+      expect(within(screen.getByTestId('lens-chips-A')).getByText('50,00%')).toBeInTheDocument())
+    expect(within(lens).getByText('500,00 / 1.000,00 m²')).toBeInTheDocument()
+  })
+
+  it('goes back to the live deck when the date is cleared, without re-reading', async () => {
+    renderPanel()
+    await screen.findByTestId('lens-A')
+    await pickDate('a', '10/09/2026')
+    await waitFor(() =>
+      expect(screen.getByTestId('cell-R1C2')).toHaveAttribute('data-color', ''))
+
+    await userEvent.click(
+      screen.getByTestId('lens-a-date').querySelector('.ant-picker-clear') as HTMLElement,
+    )
+
+    await waitFor(() =>
+      expect(screen.getByTestId('cell-R1C2')).toHaveAttribute('data-color', '#fadb14'))
+    expect(screen.queryByText(/Trạng thái ngày/)).not.toBeInTheDocument()
+    expect(listDeckEvents).toHaveBeenCalledTimes(1)
+  })
+
+  it('refuses a day that has not happened yet', async () => {
+    renderPanel()
+    await screen.findByTestId('lens-A')
+    await userEvent.click(dateInput('a'))
+
+    const tomorrow = dayjs().add(1, 'day')
+    const cell = document.querySelector(
+      `.ant-picker-dropdown td[title="${tomorrow.format('YYYY-MM-DD')}"]`,
+    ) as HTMLElement
+    expect(cell).toHaveClass('ant-picker-cell-disabled')
+  })
+
+  it('still answers the plan toggle on a layer pinned to a date', async () => {
+    listDeckZones.mockResolvedValue([{ ...ZONE, stageId: 's1', cellIds: ['c1', 'c2'] }])
+    renderPanel()
+    await screen.findByTestId('lens-A')
+    await pickDate('a', '10/09/2026')
+    await waitFor(() =>
+      expect(screen.getByTestId('canvas')).toHaveAttribute('data-labels', 'Khu A — Tháo giáo'))
+
+    await userEvent.click(screen.getByRole('switch', { name: 'Hiện kế hoạch' }))
+    // RV6-12 off: the coat's own colour on what was done by then, nothing else.
+    await waitFor(() =>
+      expect(screen.getByTestId('cell-R1C1')).toHaveAttribute('data-color', '#fadb14'))
+    expect(screen.getByTestId('cell-R1C2')).toHaveAttribute('data-color', '')
+    expect(screen.getByTestId('canvas')).toHaveAttribute('data-labels', '')
+  })
+
+  it('reports a history that could not be read, and keeps drawing the live deck', async () => {
+    listDeckEvents.mockRejectedValue(new Error('không đọc được lịch sử'))
+    renderPanel()
+    await screen.findByTestId('lens-A')
+    await pickDate('a', '10/09/2026')
+
+    expect(await screen.findByText('không đọc được lịch sử')).toBeInTheDocument()
+    expect(screen.getByTestId('cell-R1C2')).toHaveAttribute('data-color', '#fadb14')
   })
 })

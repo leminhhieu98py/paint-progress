@@ -6,6 +6,7 @@ import {
 import dayjs from 'dayjs'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { DrawingCanvas } from '../../canvas/DrawingCanvas'
+import { cellStagesAsOf, HISTORY_FROM_LABEL } from '../../domain/asOf'
 import { cellsInBox } from '../../domain/geometry'
 import {
   codesNotReaching, paintLensColors, zoneColorMap, zoneColorOf, zoneLensLayers, ZONE_PALETTE,
@@ -14,12 +15,13 @@ import { zoneLabelBoxes, type ZoneLabel } from '../../domain/plan'
 import { buildStageSlices } from '../../domain/pieSlices'
 import { formatPlanRange } from '../../domain/plan'
 import { computeDeckProgress, summariseDeck } from '../../domain/progress'
-import type { Stage, WorkModel, Zone } from '../../domain/types'
+import type { DeckEvent, Stage, WorkModel, Zone } from '../../domain/types'
 import { getDrawingUrl } from '../../lib/decksApi'
 import { formatAreaM2, formatPercent, formatWeight } from '../../lib/format'
 import { subscribeDeckStates } from '../../lib/gsApi'
 import {
-  listCellNotes, loadDeckWorks, setReportNote, type CellNote, type DeckProgressEntry, type DeckWorks,
+  listCellNotes, listDeckEvents, loadDeckWorks, setReportNote,
+  type CellNote, type DeckProgressEntry, type DeckWorks,
 } from '../../lib/progressApi'
 import {
   createZone, deleteZone, listDeckZones, setZoneActual, setZoneCells, updateZone,
@@ -131,14 +133,34 @@ const REFRESH_DEBOUNCE_MS = 400
 const ALL_STAGES = '__all__'
 
 /**
+ * The day one layer is pinned to, if any (RV6-14..16).
+ *
+ * `cells` is the whole of it: `cellStagesAsOf` hands back the deck's bays in
+ * the shape `lensFor` already reads them in, so ONE substitution at the top of
+ * `lensFor` moves every figure below -- the colours, the chips, the zone rows,
+ * the m² line -- onto the day, and the plan toggle keeps working because it
+ * never looked at where the bays came from.
+ *
+ * `cells` is absent while the history is still being read, which is what the
+ * header renders `Đang tải lịch sử…` on: `day` without `cells` is a date
+ * picked and not yet answered, and the drawing stays live until it is.
+ */
+interface LensAsOf {
+  /** The bays as they stood. Absent = the live deck. */
+  cells?: Cell[]
+  /** `DD/MM/YYYY` of the day picked. Absent = live. */
+  day?: string
+}
+
+/**
  * What one layer is looking at.
  *
  * A union rather than a nullable `Stage`, because "every coat" and "no coat
- * loaded yet" are different pictures and a null would have to carry both. Batch
- * B's per-layer date hangs off this same object: the layer's SUBJECT is what
- * the date changes, and everything below already reads the deck through here.
+ * loaded yet" are different pictures and a null would have to carry both. The
+ * per-layer date hangs off this same object: the layer's SUBJECT is what the
+ * date changes, and everything below already reads the deck through here.
  */
-type LensView = { kind: 'stage'; stage: Stage } | { kind: 'all' }
+type LensView = ({ kind: 'stage'; stage: Stage } | { kind: 'all' }) & LensAsOf
 
 /** One header chip: a coat, its colour, and the share of the deck that reached it. */
 interface LensChip {
@@ -276,6 +298,32 @@ export function DeckProgressPanel({
   /** The coat each lens is showing. Null only before the stages have loaded. */
   const [viewA, setViewA] = useState<string | null>(null)
   const [viewB, setViewB] = useState<string | null>(null)
+  /**
+   * The day each layer is pinned to, and the deck those dates were picked on
+   * (RV6-14).
+   *
+   * The deck id travels WITH the dates rather than an effect resetting them
+   * afterwards: a deck change means both layers go back to live, and deriving
+   * that during render is one render fewer than noticing it in an effect --
+   * and one fewer `set-state-in-effect` on a panel that already has two.
+   */
+  const [asOfPick, setAsOfPick] = useState<{
+    deckId: string
+    a: dayjs.Dayjs | null
+    b: dayjs.Dayjs | null
+  }>({ deckId, a: null, b: null })
+  /**
+   * The deck's whole history, read once and kept.
+   *
+   * `cell_events` is the only record of where a bay stood yesterday, and it is
+   * the heaviest read on this screen -- a paged query over every change ever
+   * recorded on the deck. So it is read LAZILY: an admin who never picks a date
+   * never pays for it, and one who compares five pairs of dates pays once. Also
+   * keyed by deck, so a panel that moves to another deck cannot draw this
+   * deck's history over the new deck's bays.
+   */
+  const [history, setHistory] = useState<{ deckId: string; rows: DeckEvent[] } | null>(null)
+  const [historyLoading, setHistoryLoading] = useState(false)
   /**
    * Shared by both lenses, which is the whole point of the split view: two
    * drawings free to sit at different scales are not a comparison.
@@ -468,10 +516,68 @@ export function DeckProgressPanel({
     ? null
     : stages.find((st) => st.id === viewB) ?? stages[stages.length - 1] ?? null
 
-  /** The select's value read back as what the layer is actually showing. */
-  const viewOf = (picked: string | null, stage: Stage | null): LensView | null => {
-    if (picked === ALL_STAGES) return { kind: 'all' }
-    return stage ? { kind: 'stage', stage } : null
+  /**
+   * The dates, and the history, read back for THIS deck. A leftover from the
+   * deck the panel was showing before reads as "live" and "not loaded".
+   */
+  const dateA = asOfPick.deckId === deckId ? asOfPick.a : null
+  const dateB = asOfPick.deckId === deckId ? asOfPick.b : null
+  const historyRows = history && history.deckId === deckId ? history.rows : null
+
+  /**
+   * Read the history, unless it is already in hand for this deck.
+   *
+   * Called from the pickers rather than from an effect: picking a date is the
+   * event that needs it, and an effect watching the dates would fire a second
+   * time for the second layer before the first read had landed.
+   */
+  const ensureHistory = async () => {
+    if (historyRows !== null || historyLoading) return
+    setHistoryLoading(true)
+    try {
+      setHistory({ deckId, rows: await listDeckEvents(deckId) })
+    } catch (e) {
+      // The panel's own banner, like every other failed read here. The layer
+      // keeps drawing the live deck, which is still true -- it is just not the
+      // day that was asked for, and the header says the history is missing.
+      setError((e as Error).message)
+    } finally {
+      setHistoryLoading(false)
+    }
+  }
+
+  const setLayerDate = (side: 'a' | 'b', date: dayjs.Dayjs | null) => {
+    setAsOfPick((prev) => {
+      const base = prev.deckId === deckId ? prev : { deckId, a: null, b: null }
+      return side === 'a' ? { ...base, deckId, a: date } : { ...base, deckId, b: date }
+    })
+    if (date) void ensureHistory()
+  }
+
+  /**
+   * The deck as it stood at the end of one day, or nothing while that cannot
+   * be answered yet -- no date, or the history still in flight.
+   */
+  const asOfFor = (date: dayjs.Dayjs | null): LensAsOf => {
+    if (!date) return {}
+    const day = date.format('DD/MM/YYYY')
+    if (!entry || !activeWork || !historyRows) return { day }
+    return {
+      day,
+      cells: cellStagesAsOf(
+        entry.deck.cells, historyRows, date.format('YYYY-MM-DD'),
+        activeWork.work.name, entry.stages,
+      ),
+    }
+  }
+
+  /** The select's value and the picker's, read back as what the layer is showing. */
+  const viewOf = (
+    picked: string | null, stage: Stage | null, date: dayjs.Dayjs | null,
+  ): LensView | null => {
+    const asOf = asOfFor(date)
+    if (picked === ALL_STAGES) return { kind: 'all', ...asOf }
+    return stage ? { kind: 'stage', stage, ...asOf } : null
   }
 
   /**
@@ -504,6 +610,13 @@ export function DeckProgressPanel({
   const lensFor = (view: LensView | null): Lens => {
     if (!entry || !view) return EMPTY_LENS
 
+    // THE substitution (RV6-16). One list of bays feeds the colours, the
+    // chips, the zone rows and the m² line below, so a layer pinned to a day
+    // and a live one are the same code over a different deck-shaped thing --
+    // there is no second rendering path to keep in step. Geometry, area and
+    // note are the live ones either way; only the coats move.
+    const cells = view.cells ?? entry.deck.cells
+
     // The coats this layer speaks for. Sorted by seq rather than taken in
     // array order: `listWorkStages` sorts, but nothing here should depend on
     // that, and the all-coats table is ordered by coat then by zone.
@@ -511,18 +624,18 @@ export function DeckProgressPanel({
       ? [...entry.stages].sort((a, b) => a.seq - b.seq)
       : [view.stage]
     const pendingByStage = new Map(inView.map((st) => (
-      [st.id, new Set(codesNotReaching(entry.deck.cells, entry.stages, st.id))] as const
+      [st.id, new Set(codesNotReaching(cells, entry.stages, st.id))] as const
     )))
     const areaReaching = (stageId: string) => {
       const pending = pendingByStage.get(stageId)
-      return entry.deck.cells
+      return cells
         .reduce((sum, c) => (pending?.has(c.code) ? sum : sum + c.areaM2), 0)
     }
 
     // In m², like everything else on this panel now: a zone of three bays at
     // "2/3" said nothing about how much of it was done when the bays differ
     // in size, and they usually do.
-    const cellById = new Map(entry.deck.cells.map((c) => [c.id, c]))
+    const cellById = new Map(cells.map((c) => [c.id, c]))
     const zoneColors: Record<string, string> = {}
     const zoneRows: ZoneRow[] = []
     const stageColorList = entry.stages.map((st) => st.color)
@@ -533,15 +646,15 @@ export function DeckProgressPanel({
       const pending = pendingByStage.get(st.id)
       for (const z of mine) {
         zoneColors[z.id] = colorById[z.id]
-        const cells = z.cellIds.flatMap((id) => {
+        const zoneCells = z.cellIds.flatMap((id) => {
           const c = cellById.get(id)
           return c ? [c] : []
         })
         zoneRows.push({
           zone: z,
           color: colorById[z.id],
-          totalM2: cells.reduce((sum, c) => sum + c.areaM2, 0),
-          doneM2: cells.reduce((sum, c) => (pending?.has(c.code) ? sum : sum + c.areaM2), 0),
+          totalM2: zoneCells.reduce((sum, c) => sum + c.areaM2, 0),
+          doneM2: zoneCells.reduce((sum, c) => (pending?.has(c.code) ? sum : sum + c.areaM2), 0),
         })
       }
     }
@@ -564,7 +677,7 @@ export function DeckProgressPanel({
       return {
         view,
         title: 'Tất cả công đoạn',
-        colors: paintLensColors(entry.deck.cells, entry.stages),
+        colors: paintLensColors(cells, entry.stages),
         opacities: {},
         outlines: {},
         labels: [],
@@ -577,7 +690,7 @@ export function DeckProgressPanel({
 
     const { stage } = view
     const zonesHere = zonesOf(stage.id)
-    const layers = zoneLensLayers(entry.deck.cells, entry.stages, stage, zonesHere, zoneColors)
+    const layers = zoneLensLayers(cells, entry.stages, stage, zonesHere, zoneColors)
     // With the plan hidden (RV6-12) the reached bays wear the COAT's colour at
     // full opacity and nothing else is drawn. Built from `zoneLensLayers`' own
     // reachedCodes rather than from a second pass over the zones, so the two
@@ -604,7 +717,7 @@ export function DeckProgressPanel({
       outlines: layers.outlines,
       // The zones named where they are, not only in the list beside the drawing
       // (Feedback Rv3, item 4) -- the same labels the foreman's screen draws.
-      labels: zoneLabelBoxes(zonesHere, entry.deck.cells),
+      labels: zoneLabelBoxes(zonesHere, cells),
       zones: zoneRows,
       zoneColors,
       chips,
@@ -623,8 +736,8 @@ export function DeckProgressPanel({
   const defaultZoneColor = zoneColorOf({ color: null }, 0, stageColors)
   const chosenZoneColor = zoneColor ?? defaultZoneColor
 
-  const lensA = lensFor(viewOf(viewA, stageA))
-  const lensB = lensFor(viewOf(viewB, stageB))
+  const lensA = lensFor(viewOf(viewA, stageA, dateA))
+  const lensB = lensFor(viewOf(viewB, stageB, dateB))
 
   /**
    * The ring: how the bays that have been started are spread across the coats.
@@ -962,6 +1075,72 @@ export function DeckProgressPanel({
    * the split view exists to compare, and a comparison whose halves are drawn
    * by different code is not one.
    */
+  /**
+   * One layer's controls: which coat it shows, and which day (RV6-13, RV6-14).
+   *
+   * One function for both layers so the pair cannot drift apart, wherever it
+   * sits. The ids `lens-a-stage` / `lens-b-stage` and `lens-a-date` /
+   * `lens-b-date` are what the labels and the tests reach for.
+   *
+   * The picker is empty for the live deck and says so in its own placeholder;
+   * clearing it is the way back. Days after today cannot be picked: the
+   * history has nothing to say about them, and a layer "as of next week"
+   * would draw today's deck under tomorrow's date.
+   */
+  const renderLayerControls = (side: 'a' | 'b') => {
+    if (!entry) return null
+    const isA = side === 'a'
+    const picked = isA ? viewA : viewB
+    const stage = isA ? stageA : stageB
+    const labelStyle = { fontSize: 11, fontWeight: 600, color: palette.textTertiary }
+    return (
+      <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+          <label htmlFor={`lens-${side}-stage`} style={labelStyle}>
+            {isA ? (splitView ? 'Lớp bên trái' : 'Lớp sơn đang xem') : 'Lớp bên phải'}
+          </label>
+          {/*
+            `Tất cả công đoạn` first, above the coats (RV6-13): it is the
+            whole deck, and the coats below it are the ways of slicing that.
+            Same list on both layers, so the split view can hold one coat
+            against the whole picture.
+          */}
+          <Select
+            id={`lens-${side}-stage`}
+            style={{ minWidth: 190 }}
+            value={picked === ALL_STAGES ? ALL_STAGES : stage?.id}
+            onChange={isA ? setViewA : setViewB}
+            options={[
+              { value: ALL_STAGES, label: 'Tất cả công đoạn' },
+              ...entry.stages.map((st) => ({ value: st.id, label: st.name })),
+            ]}
+          />
+        </div>
+        {/*
+          The test id sits on the column, not the picker: antd hands a
+          `data-*` prop to the INPUT, and the clear button beside it would
+          then be outside the element the id names.
+        */}
+        <div
+          data-testid={`lens-${side}-date`}
+          style={{ display: 'flex', flexDirection: 'column', gap: 7 }}
+        >
+          <label htmlFor={`lens-${side}-date-input`} style={labelStyle}>Ngày</label>
+          <DatePicker
+            id={`lens-${side}-date-input`}
+            style={{ width: 150 }}
+            format="DD/MM/YYYY"
+            allowClear
+            placeholder="Hôm nay"
+            value={isA ? dateA : dateB}
+            disabledDate={(d) => d.isAfter(dayjs(), 'day')}
+            onChange={(d) => setLayerDate(side, d)}
+          />
+        </div>
+      </div>
+    )
+  }
+
   const renderLens = (lens: Lens, side: 'A' | 'B') => {
     if (!entry || !lens.view || !imageUrl) return null
     /*
@@ -997,6 +1176,31 @@ export function DeckProgressPanel({
                 ? (side === 'A' ? 'Lớp bên trái' : 'Lớp bên phải · cùng mức zoom để so sánh')
                 : legend}
             </div>
+            {/*
+              A layer pinned to a day says so under its title (RV6-16), and
+              says how far back the record it was built from goes (RV6-15):
+              rows older than the work model name no work and are left out, so
+              a day before 24/08 reads as nothing started -- which is true of
+              the record, not of the deck, and the line is what keeps the two
+              apart. While the history is still being read, or could not be,
+              the drawing underneath is the LIVE deck and the header says so
+              rather than letting the date above stand over today's colours.
+            */}
+            {lens.view.day && (
+              <div style={{ marginTop: 6, fontSize: 12, lineHeight: 1.35 }}>
+                <div style={{ fontWeight: 600, color: palette.textSecondary }}>
+                  {`Trạng thái ngày ${lens.view.day}`}
+                </div>
+                {!lens.view.cells && (
+                  <div style={{ color: palette.textTertiary, marginTop: 2 }}>
+                    {historyLoading
+                      ? <><Spin size="small" style={{ marginRight: 6 }} />Đang tải lịch sử…</>
+                      : 'Chưa đọc được lịch sử — đang hiện trạng thái hôm nay'}
+                  </div>
+                )}
+                <div style={{ color: palette.textTertiary, marginTop: 2 }}>{HISTORY_FROM_LABEL}</div>
+              </div>
+            )}
           </div>
           {/*
             The other way to a bay's notes. A tap on the drawing opens them
@@ -1342,50 +1546,8 @@ export function DeckProgressPanel({
                     {`Công việc: ${activeWork.work.name}`}
                   </span>
                 )}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-                  <label
-                    htmlFor="lens-a-stage"
-                    style={{ fontSize: 11, fontWeight: 600, color: palette.textTertiary }}
-                  >
-                    {splitView ? 'Lớp bên trái' : 'Lớp sơn đang xem'}
-                  </label>
-                  {/*
-                    `Tất cả công đoạn` first, above the coats (RV6-13): it is
-                    the whole deck, and the coats below it are the ways of
-                    slicing that. Same list on both layers, so the split view
-                    can hold one coat against the whole picture.
-                  */}
-                  <Select
-                    id="lens-a-stage"
-                    style={{ minWidth: 190 }}
-                    value={viewA === ALL_STAGES ? ALL_STAGES : stageA?.id}
-                    onChange={setViewA}
-                    options={[
-                      { value: ALL_STAGES, label: 'Tất cả công đoạn' },
-                      ...entry.stages.map((st) => ({ value: st.id, label: st.name })),
-                    ]}
-                  />
-                </div>
-                {splitView && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-                    <label
-                      htmlFor="lens-b-stage"
-                      style={{ fontSize: 11, fontWeight: 600, color: palette.textTertiary }}
-                    >
-                      Lớp bên phải
-                    </label>
-                    <Select
-                      id="lens-b-stage"
-                      style={{ minWidth: 190 }}
-                      value={viewB === ALL_STAGES ? ALL_STAGES : stageB?.id}
-                      onChange={setViewB}
-                      options={[
-                        { value: ALL_STAGES, label: 'Tất cả công đoạn' },
-                        ...entry.stages.map((st) => ({ value: st.id, label: st.name })),
-                      ]}
-                    />
-                  </div>
-                )}
+                {renderLayerControls('a')}
+                {splitView && renderLayerControls('b')}
                 {/*
                   Always on screen in Sửa, disabled rather than hidden. Hiding
                   it until bays are picked takes away the only thing on the
