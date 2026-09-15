@@ -153,6 +153,53 @@ describe('WorksScreen', () => {
     expect(screen.getByRole('button', { name: 'Lưu công việc' })).toBeEnabled()
   })
 
+  it('lets the admin type the quantity and unit of a work, and saves them (RV6-34)', async () => {
+    renderScreen()
+    await screen.findByDisplayValue('Sơn')
+    const row = rowOf('Tháo giáo')
+    const label = within(row).getByLabelText('Đại lượng')
+    const unit = within(row).getByLabelText('Đơn vị')
+    expect(label).toHaveValue('Diện tích')
+    expect(unit).toHaveValue('m²')
+    await userEvent.clear(label)
+    await userEvent.type(label, 'Khối lượng')
+    await userEvent.clear(unit)
+    await userEvent.type(unit, 'tấn')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Lưu công việc' }))
+    const dialog = await screen.findByRole('dialog')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Lưu' }))
+
+    await waitFor(() => expect(saveWorks).toHaveBeenCalledTimes(1))
+    const [, works] = saveWorks.mock.calls[0] as [string, Work[]]
+    expect(works.map((w) => [w.quantityLabel, w.unit])).toEqual([
+      ['Diện tích', 'm²'], ['Khối lượng', 'tấn'], ['Diện tích', 'm²'],
+    ])
+  })
+
+  it('starts a new work at Diện tích / m², and locks the save while either is blank (RV6-34)', async () => {
+    renderScreen()
+    await screen.findByDisplayValue('Sơn')
+    await userEvent.click(screen.getByRole('button', { name: 'Thêm công việc' }))
+    const labels = screen.getAllByLabelText('Đại lượng')
+    const units = screen.getAllByLabelText('Đơn vị')
+    expect(labels[3]).toHaveValue('Diện tích')
+    expect(units[3]).toHaveValue('m²')
+    await userEvent.type(screen.getAllByLabelText('Tên công việc')[3], 'Dọn dẹp')
+    expect(screen.getByRole('button', { name: 'Lưu công việc' })).toBeEnabled()
+    await userEvent.clear(units[3])
+    expect(screen.getByRole('button', { name: 'Lưu công việc' })).toBeDisabled()
+    await userEvent.type(units[3], 'm')
+    expect(screen.getByRole('button', { name: 'Lưu công việc' })).toBeEnabled()
+  })
+
+  it('states the rule: one quantity and unit per work (RV6-34)', async () => {
+    renderScreen()
+    await screen.findByDisplayValue('Sơn')
+    await userEvent.click(screen.getByRole('button', { name: /Quy tắc áp dụng/ }))
+    expect(screen.getByText(/Mọi sàn trong một công việc dùng cùng đại lượng và đơn vị; sàn đo bằng đơn vị khác thì thuộc công việc khác\./)).toBeInTheDocument()
+  })
+
   it('opens a bays work\'s decks, fills the weights by m² on request, and saves the ones that take part', async () => {
     renderScreen()
     await screen.findByDisplayValue('Sơn')

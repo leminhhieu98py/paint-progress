@@ -30,7 +30,11 @@ const RULES = [
   { id: 'WRK-R2', text: 'Tổng trọng số của các công việc TÍNH VÀO TỔNG phải đúng bằng 1; chưa đúng thì nút Lưu bị khoá. Công việc không tính vào tổng vẫn theo dõi được nhưng không vào %.' },
   { id: 'WRK-R5', text: 'Mỗi công việc theo ô chọn sàn tham gia và trọng số sàn; "Chia theo m²" chỉ là gợi ý, anh sửa được. Tổng trọng số sàn phải bằng 1.' },
   { id: 'WRK-R6', text: 'Công việc nhập tay không có ô: tiến độ là con số anh gõ, tính vào tổng theo trọng số.' },
+  { id: 'WRK-R7', text: 'Mọi sàn trong một công việc dùng cùng đại lượng và đơn vị; sàn đo bằng đơn vị khác thì thuộc công việc khác.' },
 ]
+
+/** `works.quantity_label` / `works.unit` (0036): 1–30 characters after trimming. */
+const quantityTextOk = (v: string) => v.trim().length >= 1 && v.trim().length <= 30
 
 const KIND_OPTIONS: { value: WorkKind; label: string }[] = [
   { value: 'bays', label: 'Theo ô' },
@@ -136,7 +140,8 @@ export function WorksScreen() {
   const balanced = counted.length === 0 || sumsToOne(counted.map((w) => w.weight))
   const names = draft.map((w) => w.name.trim())
   const namesOk = names.every((n) => n !== '') && new Set(names).size === names.length
-  const canSave = balanced && namesOk && !saving && !loading
+  const quantitiesOk = draft.every((w) => quantityTextOk(w.quantityLabel) && quantityTextOk(w.unit))
+  const canSave = balanced && namesOk && quantitiesOk && !saving && !loading
 
   const patch = (i: number, change: Partial<Work>) =>
     setDraft((prev) => prev.map((w, j) => (j === i ? { ...w, ...change } : w)))
@@ -295,7 +300,7 @@ export function WorksScreen() {
             <Tooltip
               title={canSave
                 ? 'Lưu danh sách công việc'
-                : 'Tên không được trống hoặc trùng, và tổng trọng số tính vào tổng phải bằng 1'}
+                : 'Tên không được trống hoặc trùng, đại lượng và đơn vị từ 1 đến 30 ký tự, và tổng trọng số tính vào tổng phải bằng 1'}
             >
               <Button
                 type="primary"
@@ -362,6 +367,39 @@ export function WorksScreen() {
                     placeholder="Ví dụ: Sơn, Tháo giáo, Dọn dẹp"
                     status={v.trim() === '' ? 'error' : undefined}
                     onChange={(e) => patch(i, { name: e.target.value })}
+                  />
+                ),
+              },
+              // RV6-34: what the work's numbers measure, and in what unit. Free
+              // text (Linh), shared by every deck in the work; the labels every
+              // other screen prints for this work are built from these two.
+              {
+                title: 'Đại lượng',
+                dataIndex: 'quantityLabel',
+                width: 150,
+                render: (v: string, _w, i) => (
+                  <Input
+                    aria-label="Đại lượng"
+                    value={v}
+                    placeholder={DEFAULT_QUANTITY_LABEL}
+                    maxLength={30}
+                    status={quantityTextOk(v) ? undefined : 'error'}
+                    onChange={(e) => patch(i, { quantityLabel: e.target.value })}
+                  />
+                ),
+              },
+              {
+                title: 'Đơn vị',
+                dataIndex: 'unit',
+                width: 110,
+                render: (v: string, _w, i) => (
+                  <Input
+                    aria-label="Đơn vị"
+                    value={v}
+                    placeholder={DEFAULT_UNIT}
+                    maxLength={30}
+                    status={quantityTextOk(v) ? undefined : 'error'}
+                    onChange={(e) => patch(i, { unit: e.target.value })}
                   />
                 ),
               },
