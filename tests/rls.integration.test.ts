@@ -1705,6 +1705,115 @@ describe.skipIf(!adminConfigured)('0028: roles and permission per work', () => {
     expect((await anonClient.rpc('my_works')).error?.code).toBe('42501')
     expect((await anonClient.rpc('is_gs')).error?.code).toBe('42501')
   })
+
+  /**
+   * 0034 (Feedback Rv6 item 7, RV6-21/RV6-22): the viewer reads every project.
+   *
+   * One more throwaway account, created as a viewer and then stripped of the
+   * membership row `create` gave it, so it holds NO project_members row at all.
+   * Every read below is filtered to this suite's own project, because on dev
+   * the viewer now also sees RLSA, RLSD and whatever else is there -- which is
+   * the point, but not what these assertions are about.
+   */
+  describe('0034: a viewer with no membership reads every project', () => {
+    let viewer: SupabaseClient
+    let viewerUserId: string
+
+    /** Rows of one column of `table`, restricted to `filter`, sorted. */
+    const scopedNames = async (
+      client: SupabaseClient, table: string, column: string, filter: [string, string | string[]],
+    ) => {
+      const [col, value] = filter
+      const q = client.from(table).select(column)
+      const { data, error } = await (Array.isArray(value) ? q.in(col, value) : q.eq(col, value))
+      expect(error).toBeNull()
+      return ((data ?? []) as unknown as Record<string, unknown>[]).map((r) => r[column]).sort()
+    }
+
+    beforeAll(async () => {
+      const viewerUsername = throwawayUsername('allview')
+      const viewerPassword = throwawayPassword()
+      const created = await invokeAdminUsers(admin, {
+        action: 'create', username: viewerUsername, fullName: 'RLS All-Projects Viewer',
+        password: viewerPassword, projectId, role: 'viewer',
+      })
+      expect(created.status).toBe(200)
+      viewerUserId = created.body.userId as string
+      // `create` always writes one membership; take it away so the account is
+      // assigned to nothing anywhere.
+      const stripped = await admin.from('project_members').delete().eq('user_id', viewerUserId)
+      expect(stripped.error).toBeNull()
+
+      viewer = createClient(url!, anon!, { auth: { persistSession: false } })
+      const signIn = await viewer.auth.signInWithPassword({
+        email: toAuthEmail(viewerUsername), password: viewerPassword,
+      })
+      expect(signIn.error).toBeNull()
+    })
+
+    it('holds no membership row, and is_viewer() says what it is', async () => {
+      expect(await names(viewer, 'project_members', 'project_id')).toEqual([])
+      const isViewer = await viewer.rpc('is_viewer')
+      expect(isViewer.error).toBeNull()
+      expect(isViewer.data).toBe(true)
+    })
+
+    it('reads decks, cell_states, zones, stage_plans and cell_events of a project it was never assigned to', async () => {
+      expect(await scopedNames(viewer, 'projects', 'code', ['id', projectId])).toEqual([SCOPE_PROJECT_CODE])
+      expect(await scopedNames(viewer, 'decks', 'code', ['project_id', projectId])).toEqual(['WD'])
+      expect(await scopedNames(viewer, 'works', 'name', ['project_id', projectId])).toEqual(['Scope A', 'Scope B'])
+      expect(await scopedNames(viewer, 'deck_stages', 'name', ['deck_id', deckId])).toEqual(['Scope A Coat', 'Scope B Coat'])
+      expect(await scopedNames(viewer, 'cell_states', 'work_id', ['deck_id', deckId])).toEqual([work1, work2].sort())
+      expect(await scopedNames(viewer, 'zones', 'name', ['deck_id', deckId])).toEqual(['Scope A Zone', 'Scope B Zone'])
+      expect(await scopedNames(viewer, 'stage_plans', 'work_id', ['deck_id', deckId])).toEqual([work1, work2].sort())
+      // The admin's ticks in beforeAll logged one event per work.
+      expect(await scopedNames(viewer, 'cell_events', 'work_id', ['work_id', [work1, work2]])).toEqual([work1, work2].sort())
+    })
+
+    it('still writes none of them', async () => {
+      // RLS hides the rows from UPDATE rather than erroring: zero rows back.
+      const deck = await viewer.from('decks').update({ name: 'Nope' }).eq('id', deckId).select('id')
+      expect(deck.error).toBeNull()
+      expect(deck.data ?? []).toEqual([])
+      const state = await viewer
+        .from('cell_states').update({ stage_id: null }).eq('cell_id', cellId).eq('work_id', work2).select('cell_id')
+      expect(state.error).toBeNull()
+      expect(state.data ?? []).toEqual([])
+      const zone = await viewer.from('zones').update({ name: 'Nope' }).eq('deck_id', deckId).select('id')
+      expect(zone.error).toBeNull()
+      expect(zone.data ?? []).toEqual([])
+      const plan = await viewer.from('stage_plans').update({ end_date: '2026-12-31' }).eq('deck_id', deckId).select('stage_id')
+      expect(plan.error).toBeNull()
+      expect(plan.data ?? []).toEqual([])
+      // Inserts are refused outright (no insert policy admits a viewer).
+      const insertZone = await viewer.from('zones').insert({ deck_id: deckId, seq: 9, name: 'Forged', stage_id: stage1 })
+      expect(insertZone.error).not.toBeNull()
+      const insertEvent = await viewer.from('cell_events').insert({ cell_id: cellId, work_id: work1, by: viewerUserId })
+      expect(insertEvent.error).not.toBeNull()
+
+      const untouched = await admin.from('cell_states').select('stage_id').eq('cell_id', cellId).eq('work_id', work2).single()
+      expect(untouched.data?.stage_id).toBe(stage2)
+    })
+
+    it('a GS with no assignment still reads nothing (the union\'s first half is the viewer\'s alone)', async () => {
+      const demote = await admin.from('profiles').update({ role: 'gs' }).eq('id', viewerUserId)
+      expect(demote.error).toBeNull()
+
+      expect(await scopedNames(viewer, 'projects', 'code', ['id', projectId])).toEqual([])
+      expect(await scopedNames(viewer, 'decks', 'code', ['project_id', projectId])).toEqual([])
+      expect(await scopedNames(viewer, 'cell_states', 'work_id', ['deck_id', deckId])).toEqual([])
+      expect(await scopedNames(viewer, 'zones', 'name', ['deck_id', deckId])).toEqual([])
+      expect(await scopedNames(viewer, 'stage_plans', 'work_id', ['deck_id', deckId])).toEqual([])
+      expect(await scopedNames(viewer, 'cell_events', 'work_id', ['work_id', [work1, work2]])).toEqual([])
+      const isViewer = await viewer.rpc('is_viewer')
+      expect(isViewer.data).toBe(false)
+    })
+
+    it('anonymous cannot call is_viewer()', async () => {
+      const anonClient = createClient(url!, anon!, { auth: { persistSession: false } })
+      expect((await anonClient.rpc('is_viewer')).error?.code).toBe('42501')
+    })
+  })
 })
 
 describe.skipIf(!adminConfigured)('0030: effort on bay updates', () => {

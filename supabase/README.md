@@ -110,6 +110,26 @@ and unlike `0032` there is no window in which the deployed app breaks. The
 2026-09-09, so the two policies are verified by a real viewer session and not
 only by shape.
 
+`0034` (`is_viewer()`, and `my_projects()` / `my_works()` re-created so a
+viewer reads every project — Feedback Rv6 item 7, Linh's "theo đề xuất") is
+**applied to dev on: pending (the owner applies it; fill in the date), and
+not yet to production.** It
+creates one predicate and replaces the bodies of three existing functions
+(`my_projects`, `my_works`, `coworker_names`) with the same names, signatures,
+return types and grants, so the thirteen member read policies and the
+`drawings` storage policy that call them are untouched and keep working. Its
+`do $$ ... $$` block raises if any of the three functions gained an overload,
+lost its definer or pinned `search_path`, or stopped consulting `is_viewer()`;
+if `is_viewer()` or either set function returns anything with no caller; or if
+the read policies no longer route through the two functions — so applying it
+is self-verifying and needs no new `verify_schema.sql` row (rows 14 and 34
+still hold). Purely additive: no table, column or policy changes, so it is
+safe to apply to production ahead of the app that needs it. The
+`0034` cases in `tests/rls.integration.test.ts` (a viewer with no
+`project_members` row reads every table of a project it was never assigned
+to and writes none of them; a GS with no assignment still reads nothing) run
+against dev in the owner's full suite; run them before the PROD push.
+
 `supabase/scripts/purge_user.sql` removes one test account together with the
 bays it ticked (owner request, 2026-09-04). It is a dry run until its
 `v_confirm` literal is set; read its header before running it anywhere.
