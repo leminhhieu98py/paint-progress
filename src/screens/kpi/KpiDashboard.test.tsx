@@ -109,13 +109,10 @@ describe('KpiDashboard', () => {
     expect(screen.getByText(/chưa có kế hoạch kpi nào/i)).toBeInTheDocument()
   })
 
-  it('says that a correction moves its area to the day of the correction', () => {
-    // RV5-25's consequence: a past day's Actual can change. Unlike every other
-    // m² figure in the product, so it is said on the screen.
+  it('no longer shows the correction note (RV6-07)', () => {
+    // The explanation moved to the Notion spec only.
     renderDash()
-    const note = screen.getByTestId('kpi-correction-note')
-    expect(note).toHaveTextContent(/lần cập nhật SAU CÙNG/)
-    expect(note).toHaveTextContent(/ngày đã qua có thể thay đổi/)
+    expect(screen.queryByTestId('kpi-correction-note')).toBeNull()
   })
 
   it('totals the planned and the actual area in the card header', () => {
@@ -137,6 +134,38 @@ describe('KpiDashboard', () => {
     await userEvent.click(combobox('Công đoạn'))
     expect(await screen.findByTitle('Sơn · Công đoạn 1')).toBeInTheDocument()
     expect(await screen.findByTitle('Tháo giáo · Công đoạn 1')).toBeInTheDocument()
+  })
+
+  // ---------------------------------------------------------------------
+  // RV6-08 — the chart title under the legend
+  // ---------------------------------------------------------------------
+
+  describe('the chart title (RV6-08)', () => {
+    const title = () => screen.getByTestId('kpi-chart-title')
+
+    it('reads the deck name and the coat label when both are chosen', async () => {
+      renderDash()
+      await pick('Sàn', 'Sàn A')
+      await pick('Công đoạn', 'Công đoạn 1')
+      await waitFor(() => expect(title()).toHaveTextContent('Sàn A — Công đoạn 1'))
+    })
+
+    it('reads only the deck name when no coat is chosen', async () => {
+      renderDash()
+      await pick('Sàn', 'Sàn A')
+      expect(title()).toHaveTextContent('Sàn A')
+    })
+
+    it('reads "Tất cả sàn" plus the coat label when every deck is in view', async () => {
+      renderDash()
+      await pick('Công đoạn', 'Công đoạn 2')
+      await waitFor(() => expect(title()).toHaveTextContent('Tất cả sàn — Công đoạn 2'))
+    })
+
+    it('reads plain "Tất cả sàn" with nothing chosen', () => {
+      renderDash()
+      expect(title()).toHaveTextContent('Tất cả sàn')
+    })
   })
 
   // ---------------------------------------------------------------------
