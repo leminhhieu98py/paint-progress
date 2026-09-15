@@ -147,8 +147,14 @@ value; or if `decks` no longer carries exactly the two `0006` policies — so
 applying it is self-verifying and needs no new `verify_schema.sql` row.
 Purely additive: no row rewritten, so it is safe to apply to production
 ahead of the app that needs it; the deployed app selects its deck columns by
-name and never sees these. No new `tests/rls.integration.test.ts` case: the
-policies are unchanged and their `decks` cases already run.
+name and never sees these. **The reverse order is not safe:** the app built
+from this branch names the two columns in its deck selects
+(`progressApi.ts` `DECK_SELECT`, `decksApi.ts`), and PostgREST answers a
+select that names a missing column with `400 column decks.kpi_plan_color does
+not exist` rather than omitting it — every screen that loads decks would
+error. Apply `0035` first, deploy the app second, as was done for `0033`. No
+new `tests/rls.integration.test.ts` case: the policies are unchanged and
+their `decks` cases already run.
 
 `0036` (`works.quantity_label`, `works.unit` — the quantity a work is measured
 in and its unit, Feedback Rv6 item 3, Linh: "the unit belongs to the work") is
@@ -171,8 +177,16 @@ or a 31-character value or refuses a 30-character one; if any of the three
 policies — so applying it is self-verifying and needs no new
 `verify_schema.sql` row. Purely additive: safe to apply to production ahead of
 the app that needs it; the deployed app selects its work columns by name and
-never sees these. No new `tests/rls.integration.test.ts` case: the policies
-are unchanged and their `works` cases already run.
+never sees these. **The reverse order is not safe:** the app built from this
+branch names both columns in every work select (`worksApi.ts`
+`WORK_COLUMNS`, `progressApi.ts` `WORK_SELECT`, `projectsApi.ts`,
+`gsApi.ts`), and PostgREST answers such a select with `400 column
+works.quantity_label does not exist` — the KPI, Sàn, Công việc and GS screens
+all fail to load (seen on dev on 2026-09-15 while the code was ahead of the
+database). Apply `0036` first, deploy the app second. The `mapWork` defaults
+only cover a row that lacks the fields, which a 400 never produces. No new
+`tests/rls.integration.test.ts` case: the policies are unchanged and their
+`works` cases already run.
 
 `supabase/scripts/purge_user.sql` removes one test account together with the
 bays it ticked (owner request, 2026-09-04). It is a dry run until its
