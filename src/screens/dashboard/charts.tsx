@@ -103,6 +103,13 @@ const KPI_ACTUAL_CUM = 'Luỹ kế thực hiện'
  * `HoursBarChart` above already paints "Thực hiện" in `palette.accent`, so the
  * accent means the same thing on both screens.
  *
+ * `colors` (RV6-29) is the one deck's own pair when the Sàn filter names one
+ * deck: the plan bar AND the plan line take `plan`, the actual pair take
+ * `actual`, each family falling back to its default when its colour is null or
+ * the prop is absent (RV6-30). One colour per family, not per series, so a
+ * deck's two plan marks still read as one family; the plan line keeps its dash
+ * so bar and line stay told apart inside it.
+ *
  * Data is `kpiSeries`' output untouched -- nothing here computes anything.
  *
  * The `Brush` below is RV6-10's zoom/pan ("phóng to/thu nhỏ"): it starts
@@ -113,7 +120,16 @@ const KPI_ACTUAL_CUM = 'Luỹ kế thực hiện'
  * and the brush resets to the whole range rather than keeping an old zoom
  * that may no longer make sense for the new data.
  */
-export function KpiComboChart({ data }: { data: KpiDay[] }) {
+export function KpiComboChart({
+  data,
+  colors,
+}: {
+  data: KpiDay[]
+  /** The selected deck's stored colours; null or absent means the default for that family. */
+  colors?: { plan?: string | null; actual?: string | null }
+}) {
+  const plan = colors?.plan ?? null
+  const actual = colors?.actual ?? null
   return (
     <div data-testid="kpi-chart" style={{ width: '100%', height: 372 }}>
       <ResponsiveContainer width="100%" height="100%">
@@ -149,14 +165,14 @@ export function KpiComboChart({ data }: { data: KpiDay[] }) {
             yAxisId="m2"
             dataKey="planM2"
             name={KPI_PLAN_M2}
-            fill={KPI_COLOR_DEFAULTS.plan}
+            fill={plan ?? KPI_COLOR_DEFAULTS.plan}
             isAnimationActive={false}
           />
           <Bar
             yAxisId="m2"
             dataKey="actualM2"
             name={KPI_ACTUAL_M2}
-            fill={KPI_COLOR_DEFAULTS.actual}
+            fill={actual ?? KPI_COLOR_DEFAULTS.actual}
             isAnimationActive={false}
           />
           <Line
@@ -164,7 +180,7 @@ export function KpiComboChart({ data }: { data: KpiDay[] }) {
             type="monotone"
             dataKey="planCumShare"
             name={KPI_PLAN_CUM}
-            stroke={palette.textTertiary}
+            stroke={plan ?? palette.textTertiary}
             strokeWidth={2}
             strokeDasharray="5 3"
             dot={false}
@@ -175,7 +191,7 @@ export function KpiComboChart({ data }: { data: KpiDay[] }) {
             type="monotone"
             dataKey="actualCumShare"
             name={KPI_ACTUAL_CUM}
-            stroke={palette.accentHover}
+            stroke={actual ?? palette.accentHover}
             strokeWidth={2}
             dot={{ r: 2 }}
             isAnimationActive={false}

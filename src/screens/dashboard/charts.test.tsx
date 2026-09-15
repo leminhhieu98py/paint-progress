@@ -1,6 +1,7 @@
 import { render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import type { KpiDay } from '../../domain/kpi'
+import { palette } from '../../theme'
 import { KpiComboChart } from './charts'
 
 /**
@@ -30,8 +31,18 @@ vi.mock('recharts', async (importOriginal) => {
     YAxis: () => null,
     Tooltip: () => null,
     Legend: () => null,
-    Bar: () => null,
-    Line: () => null,
+    // The four series print the one prop RV6-29 changes -- their colour -- and
+    // the plan line its dash, which RV6-29 must leave alone.
+    Bar: (props: Record<string, unknown>) => (
+      <div data-testid={`kpi-bar-${String(props.dataKey)}`} data-fill={String(props.fill)} />
+    ),
+    Line: (props: Record<string, unknown>) => (
+      <div
+        data-testid={`kpi-line-${String(props.dataKey)}`}
+        data-stroke={String(props.stroke)}
+        data-dash={props.strokeDasharray === undefined ? '' : String(props.strokeDasharray)}
+      />
+    ),
   }
 })
 
@@ -50,5 +61,44 @@ describe('KpiComboChart', () => {
   it('grows the chart container to 372px so the plot area keeps its height', () => {
     render(<KpiComboChart data={DATA} />)
     expect(screen.getByTestId('kpi-chart')).toHaveStyle({ height: '372px' })
+  })
+
+  // ---------------------------------------------------------------------
+  // RV6-29 / RV6-30 -- per-deck colours, and the defaults when there are none
+  // ---------------------------------------------------------------------
+
+  describe('series colours', () => {
+    const fill = (key: string) => screen.getByTestId(`kpi-bar-${key}`).getAttribute('data-fill')
+    const stroke = (key: string) => screen.getByTestId(`kpi-line-${key}`).getAttribute('data-stroke')
+
+    it('paints plan grey and actual accent with no colours given (RV6-30)', () => {
+      render(<KpiComboChart data={DATA} />)
+      expect(fill('planM2')).toBe(palette.textQuaternary)
+      expect(stroke('planCumShare')).toBe(palette.textTertiary)
+      expect(fill('actualM2')).toBe(palette.accent)
+      expect(stroke('actualCumShare')).toBe(palette.accentHover)
+    })
+
+    it('paints the plan bar and the plan line with the plan colour, and the actual pair with the actual colour', () => {
+      render(<KpiComboChart data={DATA} colors={{ plan: '#123abc', actual: '#0000ff' }} />)
+      expect(fill('planM2')).toBe('#123abc')
+      expect(stroke('planCumShare')).toBe('#123abc')
+      expect(fill('actualM2')).toBe('#0000ff')
+      expect(stroke('actualCumShare')).toBe('#0000ff')
+    })
+
+    it('keeps the plan line dashed whatever its colour', () => {
+      render(<KpiComboChart data={DATA} colors={{ plan: '#123abc', actual: '#0000ff' }} />)
+      expect(screen.getByTestId('kpi-line-planCumShare').getAttribute('data-dash')).toBe('5 3')
+      expect(screen.getByTestId('kpi-line-actualCumShare').getAttribute('data-dash')).toBe('')
+    })
+
+    it('falls back per family: a null colour is the default for that family alone', () => {
+      render(<KpiComboChart data={DATA} colors={{ plan: null, actual: '#0000ff' }} />)
+      expect(fill('planM2')).toBe(palette.textQuaternary)
+      expect(stroke('planCumShare')).toBe(palette.textTertiary)
+      expect(fill('actualM2')).toBe('#0000ff')
+      expect(stroke('actualCumShare')).toBe('#0000ff')
+    })
   })
 })

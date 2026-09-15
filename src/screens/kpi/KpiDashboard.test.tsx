@@ -8,14 +8,17 @@ import { KpiDashboard, type KpiEntry } from './KpiDashboard'
 // domain/kpi.test.ts against KPI.xlsx itself. What this file checks is which
 // numbers reach the chart, so the stand-in prints them.
 vi.mock('../dashboard/charts', () => ({
-  KpiComboChart: ({ data }: { data: KpiDay[] }) => (
-    <div data-testid="kpi-chart">
+  KpiComboChart: ({ data, colors }: { data: KpiDay[]; colors?: { plan: string | null; actual: string | null } }) => (
+    <div data-testid="kpi-chart" data-colors={colors === undefined ? 'defaults' : `${colors.plan}/${colors.actual}`}>
       {data.map((d) => `${d.day}:${d.planM2}/${d.actualM2}`).join(' ')}
     </div>
   ),
 }))
 
-const DECKS = [{ id: 'd1', name: 'Sàn A' }, { id: 'd2', name: 'Sàn B' }]
+const DECKS = [
+  { id: 'd1', name: 'Sàn A', kpiPlanColor: '#123abc', kpiActualColor: null },
+  { id: 'd2', name: 'Sàn B', kpiPlanColor: null, kpiActualColor: null },
+]
 
 const ENTRIES: KpiEntry[] = [
   {
@@ -165,6 +168,37 @@ describe('KpiDashboard', () => {
     it('reads plain "Tất cả sàn" with nothing chosen', () => {
       renderDash()
       expect(title()).toHaveTextContent('Tất cả sàn')
+    })
+  })
+
+  // ---------------------------------------------------------------------
+  // RV6-29 — the selected deck's colours reach the chart
+  // ---------------------------------------------------------------------
+
+  describe('deck colours (RV6-29)', () => {
+    it('hands the chart no colours under "Tất cả sàn", so it paints its defaults', () => {
+      renderDash()
+      expect(chart()).toHaveAttribute('data-colors', 'defaults')
+    })
+
+    it('hands the chart the chosen deck\'s stored colours', async () => {
+      renderDash()
+      await pick('Sàn', 'Sàn A')
+      await waitFor(() => expect(chart()).toHaveAttribute('data-colors', '#123abc/null'))
+    })
+
+    it('hands the chart nulls for a deck with no stored colour, which is the default too', async () => {
+      renderDash()
+      await pick('Sàn', 'Sàn B')
+      await waitFor(() => expect(chart()).toHaveAttribute('data-colors', 'null/null'))
+    })
+
+    it('returns to the defaults when every deck is back in view', async () => {
+      renderDash()
+      await pick('Sàn', 'Sàn A')
+      await waitFor(() => expect(chart()).toHaveAttribute('data-colors', '#123abc/null'))
+      await pick('Sàn', 'Tất cả sàn')
+      await waitFor(() => expect(chart()).toHaveAttribute('data-colors', 'defaults'))
     })
   })
 
