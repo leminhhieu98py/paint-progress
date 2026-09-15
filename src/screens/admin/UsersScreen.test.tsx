@@ -387,4 +387,28 @@ describe('UsersScreen — Feedback Rv2 (0028)', () => {
     ]))
     expect(await screen.findByText('Đã cập nhật quyền')).toBeInTheDocument()
   })
+
+  it('tells the admin a viewer sees everything, and offers no matrix to save (RV6-25)', async () => {
+    // 0034: RLS gives the viewer role every project and every work and no
+    // longer consults project_members for it, so a matrix here would promise
+    // a narrowing that cannot happen. One sentence, no Lưu, nothing written.
+    listProjectNames.mockResolvedValue([
+      { id: 'p1', name: 'BB1', code: 'BB1' }, { id: 'p2', name: 'BB2', code: 'BB2' },
+    ])
+    renderApp(<UsersScreen />)
+    await screen.findByText('gs2')
+    // The second row is the viewer (u9).
+    await userEvent.click(screen.getAllByRole('button', { name: 'Phân quyền' })[1])
+
+    expect(await screen.findByText('Tài khoản chỉ xem thấy mọi dự án và mọi công việc.')).toBeInTheDocument()
+    expect(screen.queryByRole('checkbox', { name: 'Thành viên BB1' })).toBeNull()
+    expect(screen.queryByRole('checkbox', { name: 'Thành viên BB2' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Lưu quyền' })).toBeNull()
+    expect(listWorks).not.toHaveBeenCalled()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Đóng' }))
+    await waitFor(() =>
+      expect(screen.queryByText('Tài khoản chỉ xem thấy mọi dự án và mọi công việc.')).toBeNull())
+    expect(setMemberships).not.toHaveBeenCalled()
+  })
 })

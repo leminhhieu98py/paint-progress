@@ -149,8 +149,16 @@ function PermissionsDialog({
   )
   const [works, setWorks] = useState<Record<string, { value: string; label: string }[]>>({})
   const [saving, setSaving] = useState(false)
+  /**
+   * RV6-25: since 0034 the database gives a viewer every project and every
+   * work and no longer consults project_members for the role, so a matrix here
+   * would promise a narrowing that cannot happen. One sentence, nothing to
+   * save, nothing written. Rows a viewer already holds are left alone.
+   */
+  const viewer = user.role === 'viewer'
 
   useEffect(() => {
+    if (viewer) return
     let cancelled = false
     void Promise.all(projects.map(async (p) => [p.value, await listWorks(p.value)] as const))
       .then((pairs) => {
@@ -161,7 +169,7 @@ function PermissionsDialog({
       })
       .catch((e) => onError((e as Error).message))
     return () => { cancelled = true }
-  }, [projects, onError])
+  }, [projects, onError, viewer])
 
   const patch = (projectId: string, change: Partial<PermissionRow>) =>
     setRows((prev) => ({ ...prev, [projectId]: { ...prev[projectId], ...change } }))
@@ -183,6 +191,21 @@ function PermissionsDialog({
     } finally {
       setSaving(false)
     }
+  }
+
+  if (viewer) {
+    return (
+      <Modal
+        open
+        title={`Phân quyền · ${user.username}`}
+        onCancel={onClose}
+        width={640}
+        {...modalProps}
+        footer={[<Button key="close" onClick={onClose}>Đóng</Button>]}
+      >
+        <Typography.Text>Tài khoản chỉ xem thấy mọi dự án và mọi công việc.</Typography.Text>
+      </Modal>
+    )
   }
 
   return (
