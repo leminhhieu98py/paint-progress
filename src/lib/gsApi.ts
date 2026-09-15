@@ -32,8 +32,7 @@ export interface GsDeck {
 export interface GsProject {
   decks: GsDeck[]
   /**
-   * Whether the signed-in user actually holds a `project_members` row for this
-   * project.
+   * Whether the signed-in user may read this project at all.
    *
    * Fetched because RLS makes a refusal and an empty project indistinguishable
    * from the outside: `/gs/:projectId` gates on role alone, so a GS deep-linking
@@ -44,11 +43,13 @@ export interface GsProject {
    * after a Phase 1 defect of the same class, is that a refusal must never
    * render as missing data.
    *
-   * `project_members_self_read` (0006) is `user_id = auth.uid()`, so this reads
-   * the caller's own row and nothing else -- the same policy myFirstProjectId
-   * relies on from the index route. It cannot tell "not a member of this
-   * project" from "this project does not exist", and deliberately does not try:
-   * both get the same message, so nothing leaks about which ids exist.
+   * Read from `projects`, not `project_members`, since 0034: a viewer reads
+   * every project and holds no membership row for any of them, so the row
+   * `projects_member_read` lets through -- `my_projects()`, the same predicate
+   * every other read on this screen goes through -- is the one fact that means
+   * "this session may see this project" for a GS and a viewer alike. It cannot
+   * tell "not yours" from "does not exist", and deliberately does not try: both
+   * get the same message, so nothing leaks about which ids exist.
    */
   isMember: boolean
 }
@@ -103,9 +104,9 @@ export async function loadGsProject(projectId: string): Promise<GsProject> {
       .eq('project_id', projectId)
       .order('seq'),
     supabase
-      .from('project_members')
-      .select('project_id')
-      .eq('project_id', projectId)
+      .from('projects')
+      .select('id')
+      .eq('id', projectId)
       .limit(1),
     // The decks this session may actually work on (Feedback Rv4).
     //

@@ -74,6 +74,11 @@ vi.mock('../../lib/zonesApi', () => ({
 vi.mock('../../lib/decksApi', () => ({
   getDrawingUrl: (path: string) => getDrawingUrl(path),
 }))
+// The viewer's project switch in the header (RV6-24) reads every project name.
+const listProjectNames = vi.hoisted(() => vi.fn())
+vi.mock('../../lib/projectsApi', () => ({
+  listProjectNames: () => listProjectNames(),
+}))
 // react-router's navigate, so the test can see WHERE signing out sends the
 // foreman -- not merely that signOut was called.
 const navigate = vi.hoisted(() => vi.fn())
@@ -254,6 +259,11 @@ beforeEach(() => {
   listCellNotes.mockReturnValue(new Promise(() => {}))
   loadGsProjectIdentity.mockReset()
   loadGsProjectIdentity.mockResolvedValue({ code: 'BB1', name: 'BlockB1_CPPTS' })
+  listProjectNames.mockReset()
+  listProjectNames.mockResolvedValue([
+    { id: 'p1', name: 'BlockB1_CPPTS', code: 'BB1' },
+    { id: 'p2', name: 'Đại Hùng', code: 'DH' },
+  ])
   loadDeckWorks.mockReset()
   loadDeckWorks.mockImplementation((deckId: string) => Promise.resolve({
     seq: 1,
@@ -626,6 +636,29 @@ describe('GsScreen: recording a stage', () => {
     await screen.findByRole('button', { name: 'ô R1C2' })
     await userEvent.click(screen.getByRole('button', { name: 'Năng suất' }))
     expect(navigate).toHaveBeenCalledWith('/gs/p1/dashboard')
+  })
+
+  it('gives a viewer a project switch in the header that opens the chosen project (RV6-24)', async () => {
+    // 0034: the viewer reads every project, so the header names the one on
+    // screen and offers the rest. Changing it is a navigation, not a filter --
+    // the whole screen is one project's.
+    authRole.value = 'viewer'
+    renderScreen()
+    await screen.findByRole('button', { name: 'ô R1C2' })
+
+    const box = await screen.findByRole('combobox', { name: 'Dự án' })
+    expect(screen.getByText('BlockB1_CPPTS', { selector: '.ant-select-selection-item' })).toBeInTheDocument()
+    await userEvent.click(box)
+    await userEvent.click(await screen.findByTitle('Đại Hùng'))
+
+    expect(navigate).toHaveBeenCalledWith('/gs/p2')
+  })
+
+  it('keeps the header as it is for a foreman: no project switch, no read of the list', async () => {
+    renderScreen()
+    await screen.findByRole('button', { name: 'ô R1C2' })
+    expect(screen.queryByRole('combobox', { name: 'Dự án' })).toBeNull()
+    expect(listProjectNames).not.toHaveBeenCalled()
   })
 
   it('opens the KPI chart of this project from the header (Feedback Rv5, item 9)', async () => {

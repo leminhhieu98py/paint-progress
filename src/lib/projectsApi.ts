@@ -80,6 +80,37 @@ export async function listProjectNames(): Promise<Array<{ id: string; name: stri
   }))
 }
 
+/** One card of the viewer's project picker (RV6-23). */
+export interface ProjectCard {
+  id: string
+  name: string
+  code: string
+  deckCount: number
+}
+
+/**
+ * Every project the caller may read, by name, with its deck count -- the three
+ * facts the viewer's picker shows. Deck ids only, counted here: `decks(count)`
+ * needs the aggregate switch PostgREST ships off, and `listProjects` pulls
+ * every stage, bay and state of every project for a page of cards.
+ */
+export async function listProjectCards(): Promise<ProjectCard[]> {
+  const { data, error } = await supabase
+    .from('projects')
+    .select('id, name, code, decks(id)')
+    .order('name')
+  if (error) throw new Error(error.message)
+  return (data ?? []).map((row) => {
+    const r = row as unknown as Record<string, unknown>
+    return {
+      id: r.id as string,
+      name: r.name as string,
+      code: r.code as string,
+      deckCount: ((r.decks ?? []) as unknown[]).length,
+    }
+  })
+}
+
 export async function listProjects(): Promise<ProjectRow[]> {
   // One query: works with their deck weights, decks with geometry, coats and
   // states. Assembled by the same function every other loader uses.

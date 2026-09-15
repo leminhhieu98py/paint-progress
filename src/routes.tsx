@@ -47,6 +47,11 @@ const EmployeesScreen = lazy(() =>
 const GsScreen = lazy(() =>
   import('./screens/gs/GsScreen').then((m) => ({ default: m.GsScreen })),
 )
+// The viewer's landing page (RV6-23): one card per project. Its own chunk so
+// the foreman, who never sees it, never downloads it.
+const ProjectPickerScreen = lazy(() =>
+  import('./screens/gs/ProjectPickerScreen').then((m) => ({ default: m.ProjectPickerScreen })),
+)
 // Recharts rides in this chunk and nowhere else: the login form and the
 // drawing never download it.
 const DashboardScreen = lazy(() =>
@@ -86,9 +91,10 @@ function RoleHome() {
   const { profile } = useAuth()
   const [membership, setMembership] = useState<'loading' | 'error' | string | null>('loading')
 
-  // A viewer (0028) lands where a foreman lands: the GS screen of their first
-  // project, in read-only mode. Membership is the same table for both.
-  const fieldRole = profile?.role === 'gs' || profile?.role === 'viewer'
+  // Only a foreman lands on a membership. A viewer reads every project since
+  // 0034 and holds no project_members row, so it is sent to the picker below
+  // and never asks for a first project it does not have.
+  const fieldRole = profile?.role === 'gs'
   useEffect(() => {
     if (!fieldRole) return
     let cancelled = false
@@ -106,6 +112,12 @@ function RoleHome() {
 
   if (profile?.role === 'admin') {
     return <Navigate to={`${APP_BASE_PATH}/admin/projects`} replace />
+  }
+
+  // RV6-23: the viewer chooses a project; the picker redirects on its own when
+  // there is only one to choose from.
+  if (profile?.role === 'viewer') {
+    return <Navigate to={`${APP_BASE_PATH}/gs`} replace />
   }
 
   if (fieldRole) {
@@ -251,6 +263,25 @@ export function AppRoutes() {
             }
           />
         </Route>
+        {/*
+          The viewer's project picker (RV6-23). The viewer's alone: a foreman
+          lands on their own project from RoleHome and has no list to choose
+          from, so the gate gives them the same 404 as any other wrong role.
+          The field theme, because it is the same tablet at the same arm's
+          length as the screen it leads to.
+        */}
+        <Route
+          path="gs"
+          element={
+            <RequireRole roles={['viewer']}>
+              <ConfigProvider theme={fieldTheme}>
+                <LazySuspense>
+                  <ProjectPickerScreen />
+                </LazySuspense>
+              </ConfigProvider>
+            </RequireRole>
+          }
+        />
         <Route
           path="gs/:projectId"
           element={

@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   createProject,
   deleteProject,
+  listProjectCards,
   listProjects,
   myFirstProjectId,
   updateProject,
@@ -98,6 +99,34 @@ describe('listProjects', () => {
     )
     const [row] = await listProjects()
     expect(row).toMatchObject({ deckCount: 0, cellCount: 0, decksWithDrawing: 0, progress: 0 })
+  })
+})
+
+describe('listProjectCards', () => {
+  it('returns name, code and the deck count of every project, by name', async () => {
+    // RV6-23: the viewer's picker needs three fields per project. Pulling
+    // `listProjects` -- every stage, bay and state of every project -- for a
+    // page of cards is the query the listProjectNames comment warns about.
+    const b = builder({
+      data: [
+        { id: 'p1', name: 'BlockB1_CPPTS', code: 'BB1', decks: [{ id: 'd1' }, { id: 'd2' }] },
+        { id: 'p2', name: 'Đại Hùng', code: 'DH', decks: [] },
+      ],
+    })
+    from.mockImplementationOnce(() => b)
+
+    await expect(listProjectCards()).resolves.toEqual([
+      { id: 'p1', name: 'BlockB1_CPPTS', code: 'BB1', deckCount: 2 },
+      { id: 'p2', name: 'Đại Hùng', code: 'DH', deckCount: 0 },
+    ])
+    expect(from).toHaveBeenCalledWith('projects')
+    expect(b.select).toHaveBeenCalledWith('id, name, code, decks(id)')
+    expect(b.order).toHaveBeenCalledWith('name')
+  })
+
+  it('throws when the read fails', async () => {
+    from.mockImplementationOnce(() => builder({ error: { message: 'network down' } }))
+    await expect(listProjectCards()).rejects.toThrow('network down')
   })
 })
 

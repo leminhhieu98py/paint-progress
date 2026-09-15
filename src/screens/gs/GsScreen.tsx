@@ -25,6 +25,7 @@ import {
   loadGsProject, loadGsProjectIdentity, setCellState, subscribeDeckStates,
   type CellStateView, type DeckWork, type GsDeck, type GsRealtimeStatus,
 } from '../../lib/gsApi'
+import { listProjectNames } from '../../lib/projectsApi'
 import { listDeckZones } from '../../lib/zonesApi'
 import { listEmployees } from '../../lib/employeesApi'
 import { listDeckEvents, loadDeckWorks, loadProjectModel } from '../../lib/progressApi'
@@ -146,6 +147,28 @@ export function GsScreen() {
    * refusal can say so, rather than rendering as missing data (see GsProject).
    */
   const [notMember, setNotMember] = useState(false)
+  /**
+   * Every project, for the viewer's switch in the header (RV6-24). Read only
+   * for a viewer -- 0034 gives the role every project and this screen is one
+   * project's, so changing it is a navigation. A foreman has one project and
+   * no list, so nothing is read and nothing is shown.
+   */
+  const [projectOptions, setProjectOptions] = useState<{ value: string; label: string }[]>([])
+
+  useEffect(() => {
+    if (!readOnly) return
+    let cancelled = false
+    listProjectNames()
+      .then((rows) => {
+        if (!cancelled) setProjectOptions(rows.map((p) => ({ value: p.id, label: p.name })))
+      })
+      // Its failure is not the project's: the header keeps the deck tabs and
+      // the switch simply lists the project on screen, which is on the route.
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [readOnly])
 
   useEffect(() => {
     if (!projectId) return
@@ -1098,6 +1121,25 @@ export function GsScreen() {
             ),
           }))}
         />
+        {/*
+          RV6-24: a viewer reads every project (0034), so the header names the
+          one on screen and offers the rest. A foreman gets no switch -- their
+          screen is their one project's, as before.
+        */}
+        {readOnly && projectId && (
+          <Select
+            aria-label="Dự án"
+            style={{ width: phone ? 160 : 220, flex: 'none' }}
+            value={projectId}
+            onChange={(id) => navigate(`${APP_BASE_PATH}/gs/${id}`)}
+            // Typing filters by the project's NAME; the value is a uuid.
+            showSearch
+            optionFilterProp="label"
+            options={projectOptions.some((o) => o.value === projectId)
+              ? projectOptions
+              : [{ value: projectId, label: projectId }, ...projectOptions]}
+          />
+        )}
         <div style={{ textAlign: 'right', flex: 'none' }}>
           <div style={{ fontWeight: 600, lineHeight: 1.25 }}>{profile?.fullName}</div>
           <span style={{ fontSize: 11, color: palette.textTertiary }}>{profile?.username}</span>
