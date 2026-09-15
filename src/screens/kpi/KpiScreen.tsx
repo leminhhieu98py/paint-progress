@@ -279,7 +279,7 @@ function Body({ projectId, variant }: { projectId: string | null; variant: 'admi
           saving={saving}
         />
       )}
-      <KpiDashboard entries={entries} decks={current.decks} />
+      <KpiDashboard entries={entries} decks={current.decks} todayKey={todayKey} />
     </div>
   )
 }

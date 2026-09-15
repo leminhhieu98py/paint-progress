@@ -38,8 +38,13 @@ const ENTRIES: KpiEntry[] = [
   },
 ]
 
-const renderDash = (entries = ENTRIES) =>
-  render(<KpiDashboard entries={entries} decks={DECKS} />)
+// After every day the fixtures above use, so the existing assertions below
+// see the same numbers RV6-09 leaves untouched; the cutoff itself is
+// exercised by its own tests further down with an earlier todayKey.
+const TODAY = '2026-09-04'
+
+const renderDash = (entries = ENTRIES, todayKey = TODAY) =>
+  render(<KpiDashboard entries={entries} decks={DECKS} todayKey={todayKey} />)
 
 const chart = () => screen.getByTestId('kpi-chart')
 
@@ -132,5 +137,17 @@ describe('KpiDashboard', () => {
     await userEvent.click(combobox('Công đoạn'))
     expect(await screen.findByTitle('Sơn · Công đoạn 1')).toBeInTheDocument()
     expect(await screen.findByTitle('Tháo giáo · Công đoạn 1')).toBeInTheDocument()
+  })
+
+  // ---------------------------------------------------------------------
+  // RV6-09 — cumulative actual stops today
+  // ---------------------------------------------------------------------
+
+  it('ignores the days kpiSeries nulls out of actualM2 when totalling the header', () => {
+    // Sàn B's coat runs to 2026-09-04, but todayKey stops at 2026-09-03: its
+    // 2026-09-04 day is null, and the header total must not read it as 0 lost
+    // out of a real number either -- it is simply not summed.
+    renderDash(ENTRIES, '2026-09-03')
+    expect(screen.getByText(/kế hoạch 600,00 m² · thực hiện 100,00 m²/)).toBeInTheDocument()
   })
 })
