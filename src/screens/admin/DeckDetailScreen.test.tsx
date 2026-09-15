@@ -11,6 +11,7 @@ const listDecks = vi.hoisted(() => vi.fn())
 const createDeck = vi.hoisted(() => vi.fn())
 const updateDeckIdentity = vi.hoisted(() => vi.fn())
 const updateDeckArea = vi.hoisted(() => vi.fn())
+const reprorateDeckCells = vi.hoisted(() => vi.fn())
 const uploadDrawing = vi.hoisted(() => vi.fn())
 const pdfPageCount = vi.hoisted(() => vi.fn())
 const renderPdfPage = vi.hoisted(() => vi.fn())
@@ -21,6 +22,7 @@ vi.mock('../../lib/decksApi', () => ({
   createDeck: (i: unknown) => createDeck(i),
   updateDeckIdentity: (a: string, b: string, c: string) => updateDeckIdentity(a, b, c),
   updateDeckArea: (a: string, b: number, c: string) => updateDeckArea(a, b, c),
+  reprorateDeckCells: (a: string, b: number) => reprorateDeckCells(a, b),
   uploadDrawing: (...args: unknown[]) => uploadDrawing(...args),
 }))
 vi.mock('../../lib/pdfToPng', () => ({
@@ -90,7 +92,7 @@ const DECK = {
 beforeEach(() => {
   listDeckEvents.mockReset()
   listDeckEvents.mockResolvedValue([{ id: 1 }, { id: 2 }])
-  for (const m of [getDeck, listDecks, createDeck, updateDeckIdentity, updateDeckArea, uploadDrawing, pdfPageCount, renderPdfPage]) {
+  for (const m of [getDeck, listDecks, createDeck, updateDeckIdentity, updateDeckArea, reprorateDeckCells, uploadDrawing, pdfPageCount, renderPdfPage]) {
     m.mockReset()
   }
   getDeck.mockResolvedValue(DECK)
@@ -98,6 +100,7 @@ beforeEach(() => {
   createDeck.mockResolvedValue('d9')
   updateDeckIdentity.mockResolvedValue(undefined)
   updateDeckArea.mockResolvedValue(undefined)
+  reprorateDeckCells.mockResolvedValue(undefined)
   uploadDrawing.mockResolvedValue(undefined)
   pdfPageCount.mockResolvedValue(1)
   renderPdfPage.mockResolvedValue({ blob: new Blob(['x']), width: 2000, height: 1414 })
@@ -250,6 +253,54 @@ describe('DeckDetailScreen', () => {
 
     await waitFor(() => expect(updateDeckIdentity).toHaveBeenCalledWith('d1', 'Cellar Deck', 'MD'))
     expect(updateDeckArea).toHaveBeenCalledWith('d1', 5258.5, 'prorated')
+  })
+
+  it('re-prorates every bay right after writing the new total, on a deck that has bays', async () => {
+    // DECK.cellCount is 24. RV6-19: this runs on every such save, not only
+    // when the area actually changed, so a deck whose bays already disagree
+    // with its total is repaired by the next save.
+    renderAt('/decks/d1')
+    await screen.findByRole('heading', { level: 1, name: 'Main Deck' })
+    await userEvent.click(screen.getByText('Sửa'))
+    await userEvent.click(screen.getByRole('button', { name: 'Lưu thông tin sàn' }))
+
+    await waitFor(() => expect(reprorateDeckCells).toHaveBeenCalledWith('d1', 5258.5))
+    // updateDeckArea first, then the cells: a failure between the two should
+    // leave the total right and the bays stale, not the other way round.
+    expect(updateDeckArea.mock.invocationCallOrder[0])
+      .toBeLessThan(reprorateDeckCells.mock.invocationCallOrder[0])
+  })
+
+  it('does not re-prorate a deck with no bays yet', async () => {
+    getDeck.mockResolvedValue({ ...DECK, cellCount: 0 })
+    renderAt('/decks/d1')
+    await screen.findByRole('heading', { level: 1, name: 'Main Deck' })
+    await userEvent.click(screen.getByText('Sửa'))
+    await userEvent.click(screen.getByRole('button', { name: 'Lưu thông tin sàn' }))
+
+    await waitFor(() => expect(updateDeckArea).toHaveBeenCalled())
+    expect(reprorateDeckCells).not.toHaveBeenCalled()
+  })
+
+  it('never re-prorates while creating a deck', async () => {
+    renderAt('/decks/new?project=p1')
+
+    await userEvent.type(await screen.findByLabelText('Tên sàn'), 'Cellar Deck')
+    await userEvent.type(screen.getByLabelText('Mã sàn'), 'CD')
+    await userEvent.click(screen.getByRole('button', { name: 'Tạo sàn' }))
+
+    await waitFor(() => expect(createDeck).toHaveBeenCalled())
+    expect(reprorateDeckCells).not.toHaveBeenCalled()
+  })
+
+  it('surfaces a re-prorate failure through the same error path as any other save failure', async () => {
+    reprorateDeckCells.mockRejectedValue(new Error('re-prorate failed'))
+    renderAt('/decks/d1')
+    await screen.findByRole('heading', { level: 1, name: 'Main Deck' })
+    await userEvent.click(screen.getByText('Sửa'))
+    await userEvent.click(screen.getByRole('button', { name: 'Lưu thông tin sàn' }))
+
+    expect(await screen.findByText('re-prorate failed')).toBeInTheDocument()
   })
 
   it('asks before replacing a drawing that already has bays on it', async () => {

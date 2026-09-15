@@ -8,8 +8,8 @@ import { APP_BASE_PATH, NEW_DECK } from '../../config'
 import { listDeckWorks, type DeckWork } from '../../lib/gsApi'
 import { EmptyState } from '../../components/EmptyState'
 import {
-  createDeck, getDeck, listDecks, updateDeckArea, updateDeckIdentity, uploadDrawing,
-  type DeckRow,
+  createDeck, getDeck, listDecks, reprorateDeckCells, updateDeckArea, updateDeckIdentity,
+  uploadDrawing, type DeckRow,
 } from '../../lib/decksApi'
 import { formatAreaM2 } from '../../lib/format'
 import { listDeckEvents } from '../../lib/progressApi'
@@ -263,6 +263,15 @@ export function DeckDetailScreen() {
       }
       // Always 'prorated': pixel share is the only way a cell area is produced.
       await updateDeckArea(id, area, 'prorated')
+      // RV6-18/19: the total just written is the denominator every persisted
+      // bay's area_m2 is supposed to share. Re-prorate on every such save, not
+      // only when the number changed, so a deck whose bays already disagree
+      // with its total (stale from before this fix) is repaired by the next
+      // save. After updateDeckArea, not before: a failure here leaves the
+      // total right and the bays stale, the state the app was already in.
+      if (!creating && deck && deck.cellCount > 0) {
+        await reprorateDeckCells(id, area)
+      }
 
       setPdf(null)
       // `relative: 'path'` because `..` otherwise walks the ROUTE tree, which

@@ -1,3 +1,4 @@
+import { prorateCellAreas } from '../domain/geometry'
 import type { MeshCell, Stage } from '../domain/types'
 import { supabase } from './supabase'
 
@@ -153,6 +154,11 @@ export async function createDeck(input: {
   return deckId
 }
 
+/**
+ * Writes the deck row only -- its total area and how that total was set.
+ * Every persisted `cells.area_m2` is untouched: `reprorateDeckCells` is what
+ * keeps the bays in step with a new total (RV6-18..20).
+ */
 export async function updateDeckArea(
   deckId: string,
   totalAreaM2: number,
@@ -163,6 +169,31 @@ export async function updateDeckArea(
     .update({ total_area_m2: totalAreaM2, area_source: areaSource })
     .eq('id', deckId)
   if (error) throw new Error(error.message)
+}
+
+/**
+ * Re-prorates every persisted bay under a deck to a new total area, keeping
+ * each bay's pixel share of the drawing (RV6-18).
+ *
+ * Composed from three existing primitives rather than new SQL: `listCells`
+ * reads the deck's current bays, `prorateCellAreas` recomputes each one's
+ * `areaM2` from its pixel footprint (`w * h`) against the new total, and
+ * `syncCells` writes the result back keyed on `deck_id, code`. Same codes in,
+ * same codes out, so `syncCells` deletes nothing and its geometry-only upsert
+ * leaves every cell's id, stage, zone links and event history untouched.
+ *
+ * A deck with no cells yet is a no-op: there is nothing to reprorate, and
+ * calling `syncCells` would be a pointless write (and, with no persisted
+ * rows to diff against, no better than doing nothing at all).
+ */
+export async function reprorateDeckCells(deckId: string, totalAreaM2: number): Promise<void> {
+  const cells = await listCells(deckId)
+  if (cells.length === 0) return
+  const prorated = prorateCellAreas(
+    totalAreaM2,
+    cells.map(({ code, x, y, w, h, areaM2 }) => ({ code, x, y, w, h, areaM2 })),
+  )
+  await syncCells(deckId, prorated)
 }
 
 /**
