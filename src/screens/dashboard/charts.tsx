@@ -1,5 +1,5 @@
 import {
-  Bar, BarChart, CartesianGrid, ComposedChart, Legend, Line, LineChart, ResponsiveContainer,
+  Bar, BarChart, Brush, CartesianGrid, ComposedChart, Legend, Line, LineChart, ResponsiveContainer,
   Tooltip, XAxis, YAxis,
 } from 'recharts'
 import type { KpiDay } from '../../domain/kpi'
@@ -103,10 +103,18 @@ const KPI_ACTUAL_CUM = 'Luỹ kế thực hiện'
  * accent means the same thing on both screens.
  *
  * Data is `kpiSeries`' output untouched -- nothing here computes anything.
+ *
+ * The `Brush` below is RV6-10's zoom/pan ("phóng to/thu nhỏ"): it starts
+ * covering the whole range, dragging its handles zooms and dragging its body
+ * pans. The container grows from 340 to 372px so the 22px the brush needs
+ * comes out of new space rather than the plot area's. `KpiDashboard` keys
+ * this component on the filter scope, so a deck or coat change remounts it
+ * and the brush resets to the whole range rather than keeping an old zoom
+ * that may no longer make sense for the new data.
  */
 export function KpiComboChart({ data }: { data: KpiDay[] }) {
   return (
-    <div data-testid="kpi-chart" style={{ width: '100%', height: 340 }}>
+    <div data-testid="kpi-chart" style={{ width: '100%', height: 372 }}>
       <ResponsiveContainer width="100%" height="100%">
         <ComposedChart data={data} margin={{ top: 8, right: 16, bottom: 0, left: 0 }}>
           <CartesianGrid stroke={palette.borderSplit} vertical={false} />
@@ -170,6 +178,14 @@ export function KpiComboChart({ data }: { data: KpiDay[] }) {
             strokeWidth={2}
             dot={{ r: 2 }}
             isAnimationActive={false}
+          />
+          <Brush
+            dataKey="day"
+            height={22}
+            travellerWidth={8}
+            tickFormatter={dayLabel}
+            stroke={palette.border}
+            fill={palette.bgSubtle}
           />
         </ComposedChart>
       </ResponsiveContainer>
