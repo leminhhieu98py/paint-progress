@@ -8,8 +8,8 @@ import { KpiDashboard, type KpiEntry } from './KpiDashboard'
 // domain/kpi.test.ts against KPI.xlsx itself. What this file checks is which
 // numbers reach the chart, so the stand-in prints them.
 vi.mock('../dashboard/charts', () => ({
-  KpiComboChart: ({ data, colors }: { data: KpiDay[]; colors?: { plan: string | null; actual: string | null } }) => (
-    <div data-testid="kpi-chart" data-colors={colors === undefined ? 'defaults' : `${colors.plan}/${colors.actual}`}>
+  KpiComboChart: ({ data, colors, unit }: { data: KpiDay[]; colors?: { plan: string | null; actual: string | null }; unit?: string }) => (
+    <div data-testid="kpi-chart" data-colors={colors === undefined ? 'defaults' : `${colors.plan}/${colors.actual}`} data-unit={unit ?? ''}>
       {data.map((d) => `${d.day}:${d.planM2}/${d.actualM2}`).join(' ')}
     </div>
   ),
@@ -212,5 +212,18 @@ describe('KpiDashboard', () => {
     // out of a real number either -- it is simply not summed.
     renderDash(ENTRIES, '2026-09-03')
     expect(screen.getByText(/kế hoạch 600,00 m² · thực hiện 100,00 m²/)).toBeInTheDocument()
+  })
+})
+
+describe('KpiDashboard: the work\'s unit (RV6-35)', () => {
+  it('sums and charts in the one unit the scoped coats share', () => {
+    renderDash(ENTRIES.map((e) => ({ ...e, unit: 'tấn' })))
+    expect(screen.getByText(/kế hoạch 600,00 tấn · thực hiện 100,00 tấn/)).toBeInTheDocument()
+    expect(chart()).toHaveAttribute('data-unit', 'tấn')
+  })
+
+  it('reads m² for entries that carry no unit, as every work did before 0036', () => {
+    renderDash()
+    expect(chart()).toHaveAttribute('data-unit', 'm²')
   })
 })

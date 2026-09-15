@@ -47,7 +47,7 @@ vi.mock('./KpiDashboard', () => ({
     <div data-testid="kpi-dashboard">
       {`CHART ${decks.map((d) => `${d.name}=${d.kpiPlanColor ?? '-'}/${d.kpiActualColor ?? '-'}`).join(',')} | `}
       {entries
-        .map((e) => `${e.deckName}/${e.plan.stageName}@${e.plan.startDate} tt=${e.computedAreaM2} th=${e.actual.length}`)
+        .map((e) => `${e.deckName}/${e.plan.stageName}@${e.plan.startDate} tt=${e.computedAreaM2} th=${e.actual.length} đv=${e.unit}`)
         .join(' ; ')}
     </div>
   ),
@@ -81,7 +81,7 @@ vi.mock('./StagePlanTable', () => ({
     onClearArea: (stageId: string) => void
   }) => (
     <div data-testid="plan-table">
-      {`BẢNG ${rows.map((r) => `${r.stageName}${r.plan === null ? '(trống)' : '(đã có)'}=${computedAreaFor(r, '2026-09-20')}`).join(' ; ')}`}
+      {`BẢNG ${rows.map((r) => `${r.stageName}${r.plan === null ? '(trống)' : '(đã có)'}=${computedAreaFor(r, '2026-09-20')} đv=${r.quantityLabel}/${r.unit}`).join(' ; ')}`}
       <button
         type="button"
         onClick={() => onSave(rows[0], { startDate: '2026-09-01', endDate: '2026-09-12', plannedAreaM2: null })}
@@ -346,5 +346,18 @@ describe('KpiScreen (gs)', () => {
     expect(listProjectNames).not.toHaveBeenCalled()
     await userEvent.click(screen.getByRole('button', { name: 'Về bản vẽ' }))
     expect(navigate).toHaveBeenCalledWith('/gs/p2')
+  })
+})
+
+describe('KpiScreen: the work\'s quantity and unit (RV6-35)', () => {
+  it('hands each coat its work\'s quantity label and unit to the table and the chart', async () => {
+    loadProjectModel.mockResolvedValue({
+      ...MODEL,
+      models: [{ ...MODELS[0], work: { ...MODELS[0].work, quantityLabel: 'Khối lượng', unit: 'tấn' } }, MODELS[1]],
+    })
+    renderAdmin()
+    const table = await screen.findByTestId('plan-table')
+    expect(table).toHaveTextContent('Lớp 1(đã có)=500 đv=Khối lượng/tấn')
+    expect(screen.getByTestId('kpi-dashboard')).toHaveTextContent('đv=tấn')
   })
 })

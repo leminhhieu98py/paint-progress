@@ -44,6 +44,9 @@ interface Coat {
   workName: string
   deckName: string
   stageName: string
+  /** The work's quantity and unit (RV6-35), carried to the table and the chart. */
+  quantityLabel: string
+  unit: string
   /** The coat's seq, which is what `remainingAreaOn` measures against. */
   seq: number
   scope: DeckPlanScope
@@ -87,6 +90,8 @@ function coatsOf(models: WorkModel[], events: DeckEvent[]): Coat[] {
           workName: model.work.name,
           deckName: entry.deck.name,
           stageName: stage.name,
+          quantityLabel: model.work.quantityLabel,
+          unit: model.work.unit,
           seq: stage.seq,
           scope,
           actual: actual.filter((r) => r.stageId === stage.id),
@@ -179,6 +184,7 @@ function Body({ projectId, variant }: { projectId: string | null; variant: 'admi
         return [{
           deckId: c.deckId,
           deckName: c.deckName,
+          unit: c.unit,
           plan,
           computedAreaM2: remainingAreaOn(c.scope, c.seq, plan.startDate, todayKey),
           actual: c.actual,
@@ -196,6 +202,8 @@ function Body({ projectId, variant }: { projectId: string | null; variant: 'admi
         workName: c.workName,
         deckName: c.deckName,
         stageName: c.stageName,
+        quantityLabel: c.quantityLabel,
+        unit: c.unit,
         plan: planByStage.get(c.stageId) ?? null,
       })),
     [coats, planByStage],

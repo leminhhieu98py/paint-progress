@@ -1,5 +1,6 @@
 import type { DeckEffortTotals } from '../../domain/effort'
 import type { TodayStageArea } from '../../domain/today'
+import { DEFAULT_UNIT } from '../../domain/unit'
 import { formatAreaM2, formatHours } from '../../lib/format'
 import { palette, shadowCard } from '../../theme'
 
@@ -54,13 +55,17 @@ export function DeckTodayCard({
   /** `effortDayKey` of now. Named on the card, so a tablet left open overnight
    *  cannot quietly report yesterday as today. */
   todayKey: string
-  /** Every coat of the deck, in seq order, with today's m². See todayAreaByStage. */
-  rows: TodayStageArea[]
+  /**
+   * Every coat of the deck, in seq order, with today's quantity. See
+   * todayAreaByStage. `unit` is the row's work's (RV6-35): the rows span
+   * every work of the deck, so each carries its own; absent reads as m².
+   */
+  rows: (TodayStageArea & { unit?: string })[]
   /** The four figures of RV5-19, straight from `deckEffortTotals`. */
   totals: DeckEffortTotals
 }) {
   /** Preserves `rows`' order; the caller owns seq order. */
-  const groups: { workName: string; rows: TodayStageArea[] }[] = []
+  const groups: { workName: string; rows: (TodayStageArea & { unit?: string })[] }[] = []
   for (const row of rows) {
     const last = groups[groups.length - 1]
     if (last && last.workName === row.workName) last.rows.push(row)
@@ -120,7 +125,7 @@ export function DeckTodayCard({
                     {row.stageName}
                   </span>
                   <span style={{ marginLeft: 'auto', fontSize: 13, fontWeight: 600, flex: 'none' }}>
-                    {`${formatAreaM2(row.areaM2)} m²`}
+                    {`${formatAreaM2(row.areaM2)} ${row.unit ?? DEFAULT_UNIT}`}
                   </span>
                 </div>
               ))}

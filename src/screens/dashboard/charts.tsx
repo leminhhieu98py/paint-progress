@@ -4,6 +4,7 @@ import {
 } from 'recharts'
 import type { KpiDay } from '../../domain/kpi'
 import { fieldError, palette } from '../../theme'
+import { DEFAULT_UNIT, rateUnit } from '../../domain/unit'
 import { formatAreaM2, formatHours, formatMhrPerM2, formatPercent } from '../../lib/format'
 import { KPI_COLOR_DEFAULTS } from './kpiColors'
 
@@ -85,9 +86,10 @@ export function HoursBarChart({ data }: { data: Array<{ day: string; hours: numb
   )
 }
 
-/** The four series' names, so the tooltip can tell an m² from a share. */
-const KPI_PLAN_M2 = 'Kế hoạch (m²/ngày)'
-const KPI_ACTUAL_M2 = 'Thực hiện (m²/ngày)'
+/** The four series' names, so the tooltip can tell a quantity from a share.
+ *  The daily pair carry the work's unit (RV6-35): `Kế hoạch (m²/ngày)`. */
+const kpiPlanName = (unit: string) => `Kế hoạch (${rateUnit(unit)})`
+const kpiActualName = (unit: string) => `Thực hiện (${rateUnit(unit)})`
 const KPI_PLAN_CUM = 'Luỹ kế kế hoạch'
 const KPI_ACTUAL_CUM = 'Luỹ kế thực hiện'
 
@@ -123,10 +125,13 @@ const KPI_ACTUAL_CUM = 'Luỹ kế thực hiện'
 export function KpiComboChart({
   data,
   colors,
+  unit = DEFAULT_UNIT,
 }: {
   data: KpiDay[]
   /** The selected deck's stored colours; null or absent means the default for that family. */
   colors?: { plan?: string | null; actual?: string | null }
+  /** The one unit the plotted coats share (RV6-35); the left axis and the daily series say it. */
+  unit?: string
 }) {
   const plan = colors?.plan ?? null
   const actual = colors?.actual ?? null
@@ -140,7 +145,7 @@ export function KpiComboChart({
             yAxisId="m2"
             tick={AXIS}
             width={72}
-            label={{ value: 'm²/ngày', angle: -90, position: 'insideLeft', style: AXIS }}
+            label={{ value: rateUnit(unit), angle: -90, position: 'insideLeft', style: AXIS }}
           />
           <YAxis
             yAxisId="share"
@@ -164,14 +169,14 @@ export function KpiComboChart({
           <Bar
             yAxisId="m2"
             dataKey="planM2"
-            name={KPI_PLAN_M2}
+            name={kpiPlanName(unit)}
             fill={plan ?? KPI_COLOR_DEFAULTS.plan}
             isAnimationActive={false}
           />
           <Bar
             yAxisId="m2"
             dataKey="actualM2"
-            name={KPI_ACTUAL_M2}
+            name={kpiActualName(unit)}
             fill={actual ?? KPI_COLOR_DEFAULTS.actual}
             isAnimationActive={false}
           />

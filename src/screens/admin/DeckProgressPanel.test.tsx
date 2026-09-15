@@ -98,7 +98,7 @@ const STAGES = [
 
 const WORK = {
   id: 'w1', projectId: 'p1', seq: 1, name: 'Công việc chính', kind: 'bays' as const,
-  weight: 1, counts: true, manualProgress: 0,
+  weight: 1, counts: true, manualProgress: 0, quantityLabel: 'Diện tích', unit: 'm²',
 }
 /** The bays as the deck's one work sees them: 500 m² at Tháo giáo, 500 at Coat 2. */
 const CELLS = [
@@ -1441,5 +1441,25 @@ describe('DeckProgressPanel — each layer\'s controls above its own drawing (RV
     await userEvent.click(await screen.findByTitle('Coat 2'))
     expect(within(lensB).getByText('Tiến độ · Coat 2')).toBeInTheDocument()
     expect(within(lensA).getByText('Tiến độ · Blast + Coat 1')).toBeInTheDocument()
+  })
+})
+
+describe('DeckProgressPanel: the work\'s unit (RV6-35)', () => {
+  it('labels every figure in the active work\'s own unit, not m²', async () => {
+    // Linh, item 3: the unit belongs to the work. A scaffolding work counted
+    // in tonnes reads "tấn" on the ring, the coats, the footer, the zone rows
+    // and the m² line -- the numbers themselves do not move (RV6-38).
+    loadDeckWorks.mockResolvedValue({
+      ...ENTRY,
+      works: [{ ...ENTRY.works[0], work: { ...WORK, quantityLabel: 'Khối lượng', unit: 'tấn' } }],
+    })
+    renderPanel()
+    const ring = await screen.findByTestId('stage-ring')
+    expect(within(ring).getAllByText('1.000,00 / 1.000,00 tấn')).toHaveLength(2)
+    expect(within(ring).getByText('500,00 / 1.000,00 tấn')).toBeInTheDocument()
+    expect(within(ring).getAllByText('1.000,00 tấn')).toHaveLength(2)
+    expect(screen.getAllByText('1.000,00 / 1.000,00 tấn').length).toBeGreaterThan(2)
+    expect(screen.queryByText(/m²/)).toBeNull()
+    expect(screen.getByRole('row', { name: /^tấn/ })).toBeInTheDocument()
   })
 })

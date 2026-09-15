@@ -9,6 +9,7 @@ import {
 import { deckForecast, type StageForecast } from '../../domain/forecast'
 import { computeDeckProgress } from '../../domain/progress'
 import type { DeckEvent, WorkModel } from '../../domain/types'
+import { DEFAULT_UNIT, perUnit } from '../../domain/unit'
 import { formatAreaM2, formatHours, formatMhrPerM2 } from '../../lib/format'
 import { loadDeckWorks, type DeckWorks } from '../../lib/progressApi'
 import { setWorkDeckDeadline } from '../../lib/worksApi'
@@ -65,6 +66,8 @@ export function DeckForecastPanel({
 
   const works = deckWorks?.works ?? []
   const activeWork = works.find((w) => w.work.id === workId) ?? works[0] ?? null
+  /** The forecast is one work's, so its unit heads the columns (RV6-35). */
+  const unit = activeWork?.work.unit ?? DEFAULT_UNIT
 
   /** The work as a model, so the shared effort and progress functions apply. */
   const models = useMemo<WorkModel[]>(() => (deckWorks
@@ -245,12 +248,12 @@ export function DeckForecastPanel({
             columns={[
               { title: 'Công đoạn', dataIndex: 'stageName' },
               {
-                title: 'm² còn lại',
+                title: `${unit} còn lại`,
                 align: 'right',
                 render: (_, r) => formatAreaM2(r.remainingAreaM2),
               },
               {
-                title: 'Hiệu suất TB (Mhr/m²)',
+                title: `Hiệu suất TB (${perUnit(unit)})`,
                 align: 'right',
                 render: (_, r) => (r.avgMhrPerM2 === null ? dash : formatMhrPerM2(r.avgMhrPerM2)),
               },

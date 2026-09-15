@@ -18,6 +18,7 @@ import { formatPlanRange } from '../../domain/plan'
 import { computeDeckProgress, summariseDeck } from '../../domain/progress'
 import type { DeckEvent, Stage, WorkModel, Zone } from '../../domain/types'
 import { getDrawingUrl } from '../../lib/decksApi'
+import { DEFAULT_UNIT } from '../../domain/unit'
 import { formatAreaM2, formatPercent, formatWeight } from '../../lib/format'
 import { subscribeDeckStates } from '../../lib/gsApi'
 import {
@@ -374,6 +375,8 @@ export function DeckProgressPanel({
   const activeWork = deckWorks
     ? deckWorks.works.find((w) => w.work.id === workId) ?? deckWorks.works[0] ?? null
     : null
+  /** Every figure on this panel is the active work's, so its unit labels them all (RV6-35). */
+  const unit = activeWork?.work.unit ?? DEFAULT_UNIT
   const entry = useMemo<DeckProgressEntry | null>(() => {
     if (!deckWorks) return null
     return {
@@ -1340,7 +1343,7 @@ export function DeckProgressPanel({
             {`Tiến độ từng zone · ${lens.title}`}
           </span>
           <span style={{ marginLeft: 'auto', fontSize: 12, color: palette.textTertiary }}>
-            {`${formatAreaM2(lens.reachedAreaM2)} / ${formatAreaM2(entry.deck.totalAreaM2)} m²`}
+            {`${formatAreaM2(lens.reachedAreaM2)} / ${formatAreaM2(entry.deck.totalAreaM2)} ${unit}`}
           </span>
         </div>
 
@@ -1368,7 +1371,7 @@ export function DeckProgressPanel({
                 />
                 <span style={{ fontSize: 12, fontWeight: 600, flex: 'none' }}>{row.zone.name}</span>
                 <span style={{ fontSize: 11, color: palette.textTertiary, flex: 'none' }}>
-                  {`${formatAreaM2(row.doneM2)} / ${formatAreaM2(row.totalM2)} m²`}
+                  {`${formatAreaM2(row.doneM2)} / ${formatAreaM2(row.totalM2)} ${unit}`}
                 </span>
                 <span style={{ flex: 1, minWidth: 24 }}>
                   <ProgressBar ratio={zonePct} color={row.color} height={5} />
@@ -1684,7 +1687,7 @@ export function DeckProgressPanel({
                             {formatPercent(progress?.progress ?? 0)}
                           </span>
                           <span style={{ fontSize: 10, color: palette.textTertiary, marginTop: 3 }}>
-                            {`${formatAreaM2(entry.deck.totalAreaM2)} m²`}
+                            {`${formatAreaM2(entry.deck.totalAreaM2)} ${unit}`}
                           </span>
                         </Donut>
                         <span
@@ -1749,7 +1752,7 @@ export function DeckProgressPanel({
                                   }}
                                 >
                                   <span style={{ color: palette.textSecondary, whiteSpace: 'nowrap' }}>
-                                    {`${formatAreaM2(sp.cumulativeAreaM2)} / ${formatAreaM2(entry.deck.totalAreaM2)} m²`}
+                                    {`${formatAreaM2(sp.cumulativeAreaM2)} / ${formatAreaM2(entry.deck.totalAreaM2)} ${unit}`}
                                   </span>
                                   <span aria-hidden>·</span>
                                   <span>{formatPercent(sp.ratio)}</span>
@@ -1775,7 +1778,7 @@ export function DeckProgressPanel({
                         <span
                           style={{ marginLeft: 'auto', fontSize: 11, color: palette.textTertiary }}
                         >
-                          {`${formatAreaM2(entry.deck.totalAreaM2)} m²`}
+                          {`${formatAreaM2(entry.deck.totalAreaM2)} ${unit}`}
                         </span>
                         <span style={{ fontSize: 18, fontWeight: 700, letterSpacing: '-0.025em' }}>
                           {formatPercent(progress?.progress ?? 0)}
@@ -1833,7 +1836,7 @@ export function DeckProgressPanel({
               )}
 
               <div data-testid="deck-spec" style={{ marginTop: 18 }}>
-                <StageSpecTable stages={progress?.stages ?? []} />
+                <StageSpecTable stages={progress?.stages ?? []} unit={unit} />
               </div>
             </>
           )}

@@ -6,6 +6,7 @@ import { describeZone } from '../../domain/plan'
 import { WASTE_REASONS, wasteReasonLabel } from '../../domain/effort'
 import { isBackwards } from '../../domain/stageFlow'
 import { EMPTY_EFFORT, type Cell, type Effort, type Stage } from '../../domain/types'
+import { DEFAULT_QUANTITY_LABEL, DEFAULT_UNIT } from '../../domain/unit'
 import { formatAreaM2 } from '../../lib/format'
 import { listCellNotes, type CellNote } from '../../lib/progressApi'
 import { NoteThread } from '../../components/NoteThread'
@@ -54,6 +55,8 @@ export function CellStageModal({
   onCommit,
   authorNames = {},
   workName,
+  quantityLabel = DEFAULT_QUANTITY_LABEL,
+  unit = DEFAULT_UNIT,
   zones = [],
   readOnly = false,
   defaultEffortNames = EMPTY_NAMES,
@@ -80,6 +83,9 @@ export function CellStageModal({
    * now holds one stage per work and "Ô R1C1" alone no longer says which.
    */
   workName?: string
+  /** The active work's quantity and unit (RV6-35), for the bay's figure. */
+  quantityLabel?: string
+  unit?: string
   /**
    * The zones this bay is planned in, one line each (Feedback Rv2, item 7).
    * The tablet has no hover, so the plan the laptop shows on mouse-over is
@@ -300,7 +306,7 @@ export function CellStageModal({
             style={{ display: 'flex', flexDirection: 'column', gap: 8 }}
           >
             <Field label="Mã ô">{cell.code}</Field>
-            <Field label="Diện tích">{formatAreaM2(cell.areaM2)} m²</Field>
+            <Field label={quantityLabel}>{`${formatAreaM2(cell.areaM2)} ${unit}`}</Field>
             <Field label="Công đoạn hiện tại">{currentStage?.name ?? NOT_STARTED_LABEL}</Field>
             {zones.length > 0 && (
               <Field label="Kế hoạch">

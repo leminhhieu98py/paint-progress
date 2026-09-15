@@ -19,6 +19,7 @@ import { EMPTY_EFFORT, type Cell, type Deck, type DeckEvent, type Effort, type S
 // one. Screens still never touch `supabase` directly.
 import { APP_BASE_PATH, LOGIN_PATH } from '../../config'
 import { getDrawingUrl } from '../../lib/decksApi'
+import { DEFAULT_QUANTITY_LABEL, DEFAULT_UNIT } from '../../domain/unit'
 import { formatAreaM2, formatPercent } from '../../lib/format'
 import {
   listCoworkerNames, listDeckCells, listDeckStates, listDeckWorks, listProjectIndex,
@@ -231,6 +232,9 @@ export function GsScreen() {
   /** The chosen work, or the first until the foreman chooses (GSW-R1). */
   const activeWork = workList.find((w) => w.work.id === activeWorkId) ?? workList[0] ?? null
   const stages = activeWork?.stages ?? EMPTY_STAGES
+  /** The active work's quantity and unit label everything below (RV6-35). */
+  const quantityLabel = activeWork?.work.quantityLabel ?? DEFAULT_QUANTITY_LABEL
+  const unit = activeWork?.work.unit ?? DEFAULT_UNIT
   /**
    * The deck as seen through the active work: the mesh with each bay's stage
    * and note for that work. Everything below -- colours, progress, the modal --
@@ -609,11 +613,17 @@ export function GsScreen() {
    * them. The order is settled HERE and todayAreaByStage keeps it (RV5-17).
    */
   const todayStages = useMemo(
-    () => todayAreaByStage(
-      todayEvents,
-      workList.flatMap((w) => w.stages.map((s) => ({ workName: w.work.name, stageName: s.name }))),
-      todayKey,
-    ),
+    () => {
+      // Each row in its own work's unit (RV6-35): the block lists every work
+      // of the deck, not only the active one. Attached here, after the domain
+      // function, so `todayAreaByStage` stays as it is.
+      const unitByWork = new Map(workList.map((w) => [w.work.name, w.work.unit]))
+      return todayAreaByStage(
+        todayEvents,
+        workList.flatMap((w) => w.stages.map((s) => ({ workName: w.work.name, stageName: s.name }))),
+        todayKey,
+      ).map((row) => ({ ...row, unit: unitByWork.get(row.workName) ?? DEFAULT_UNIT }))
+    },
     [todayEvents, workList, todayKey],
   )
   /**
@@ -1277,7 +1287,7 @@ export function GsScreen() {
 
           <SectionCard
             title={deck?.name}
-            summary={deck ? `${formatAreaM2(deck.totalAreaM2)} m²` : undefined}
+            summary={deck ? `${formatAreaM2(deck.totalAreaM2)} ${unit}` : undefined}
             bodyPadding={0}
             extra={
               /*
@@ -1501,6 +1511,8 @@ export function GsScreen() {
           <DeckProgressCard
             progress={deckSummary?.progress ?? 0}
             totalAreaM2={deck?.totalAreaM2 ?? 0}
+            quantityLabel={quantityLabel}
+            unit={unit}
             perWork={deckSummary?.perWork.map((row) => ({
               id: row.work.id, name: row.work.name, progress: row.progress,
             }))}
@@ -1511,6 +1523,7 @@ export function GsScreen() {
               stageProgress={deckProgress?.stages ?? []}
               cells={cells}
               totalAreaM2={deck?.totalAreaM2 ?? 0}
+              unit={unit}
             />
           )}
           {/*
@@ -1531,6 +1544,8 @@ export function GsScreen() {
         onCommit={commitStage}
         authorNames={authorNames}
         workName={activeWork?.work.name}
+        quantityLabel={quantityLabel}
+        unit={unit}
         zones={zonesOfCell(selectedCell)}
         readOnly={readOnly}
         defaultEffortNames={lastNames}

@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react'
 import { EmptyState } from '../../components/EmptyState'
 import { SectionCard } from '../../components/SectionCard'
 import { kpiSeries, plannedAreaM2, type KpiScopeStage } from '../../domain/kpi'
+import { DEFAULT_UNIT, unitOfWorks } from '../../domain/unit'
 import { formatAreaM2 } from '../../lib/format'
 import { palette } from '../../theme'
 import { KpiComboChart } from '../dashboard/charts'
@@ -23,6 +24,8 @@ import { KpiComboChart } from '../dashboard/charts'
 export interface KpiEntry extends KpiScopeStage {
   deckId: string
   deckName: string
+  /** The coat's work's unit (RV6-35). Absent reads as m², as every work did before 0036. */
+  unit?: string
 }
 
 /**
@@ -86,6 +89,11 @@ export function KpiDashboard({
   // `?? 0`: a day after todayKey has no actual to report yet (RV6-09), and it
   // must not count as a zero against the total either.
   const totalActual = series.reduce((sum, d) => sum + (d.actualM2 ?? 0), 0)
+  /**
+   * The unit the scoped coats share (RV6-35): one coat, or every coat in view
+   * from works of one unit. Null when the scope mixes units (RV6-36).
+   */
+  const unit = unitOfWorks(scoped.map((e) => ({ unit: e.unit ?? DEFAULT_UNIT })))
 
   // A coat the chosen deck no longer has must not stay selected: the filter
   // would then be narrowing to nothing and the empty state would look like a
@@ -115,7 +123,7 @@ export function KpiDashboard({
       summary={
         scoped.length === 0
           ? undefined
-          : `${scoped.length} công đoạn · kế hoạch ${formatAreaM2(totalPlanned)} m² · thực hiện ${formatAreaM2(totalActual)} m²`
+          : `${scoped.length} công đoạn · kế hoạch ${formatAreaM2(totalPlanned)} ${unit ?? DEFAULT_UNIT} · thực hiện ${formatAreaM2(totalActual)} ${unit ?? DEFAULT_UNIT}`
       }
     >
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -157,7 +165,7 @@ export function KpiDashboard({
               different chart, and the Brush's own zoom/pan state must not
               survive onto it.
             */}
-            <KpiComboChart key={`${deckId}|${coatValue}`} data={series} colors={colors} />
+            <KpiComboChart key={`${deckId}|${coatValue}`} data={series} colors={colors} unit={unit ?? DEFAULT_UNIT} />
             {/* RV6-08: what the chart above is scoped to. */}
             <p
               data-testid="kpi-chart-title"

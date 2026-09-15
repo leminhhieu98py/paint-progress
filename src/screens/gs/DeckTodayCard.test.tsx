@@ -86,3 +86,22 @@ describe('DeckTodayCard', () => {
     expect(within(card()).getByText(/chưa có công đoạn/)).toBeInTheDocument()
   })
 })
+
+describe('DeckTodayCard: the work\'s unit (RV6-35)', () => {
+  it('prints each row in its own work\'s unit, and m² where none is given', () => {
+    render(
+      <DeckTodayCard
+        todayKey="2026-09-09"
+        rows={[
+          { workName: 'Sơn', stageName: 'Coat 1', areaM2: 320.5, unit: 'm²' },
+          { workName: 'Tháo giáo', stageName: 'Tháo giáo lửng', areaM2: 12, unit: 'tấn' },
+          { workName: 'Cũ', stageName: 'Không rõ', areaM2: 0 },
+        ]}
+        totals={TOTALS}
+      />,
+    )
+    expect(within(card()).getByText('320,50 m²')).toBeInTheDocument()
+    expect(within(card()).getByText('12,00 tấn')).toBeInTheDocument()
+    expect(within(card()).getByText('0,00 m²')).toBeInTheDocument()
+  })
+})

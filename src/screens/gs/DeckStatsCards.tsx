@@ -2,6 +2,7 @@ import { Donut } from '../../components/Donut'
 import { ProgressBar } from '../../components/ProgressBar'
 import { buildStageSlices, NOT_STARTED_KEY, UNMAPPED_KEY } from '../../domain/pieSlices'
 import type { Cell, Stage, StageProgress } from '../../domain/types'
+import { DEFAULT_QUANTITY_LABEL, DEFAULT_UNIT } from '../../domain/unit'
 import { formatAreaM2, formatPercent } from '../../lib/format'
 import { palette, shadowCard } from '../../theme'
 
@@ -24,10 +25,15 @@ export function DeckProgressCard({
   progress,
   totalAreaM2,
   perWork = [],
+  quantityLabel = DEFAULT_QUANTITY_LABEL,
+  unit = DEFAULT_UNIT,
 }: {
   /** P_d: the deck across its works, weighted by W·D (0024). */
   progress: number
   totalAreaM2: number
+  /** The active work's quantity and unit (RV6-35): `<label> sàn`, `<n> <unit>`. */
+  quantityLabel?: string
+  unit?: string
   /**
    * P_wd per bays work the deck is in. Shown only when there are several:
    * with one work the deck figure IS the work's, and a row repeating it is a
@@ -80,9 +86,9 @@ export function DeckProgressCard({
           fontSize: 13,
         }}
       >
-        <span style={{ color: palette.textTertiary }}>Diện tích sàn</span>
+        <span style={{ color: palette.textTertiary }}>{`${quantityLabel} sàn`}</span>
         <span style={{ marginLeft: 'auto', fontWeight: 600 }}>
-          {`${formatAreaM2(totalAreaM2)} m²`}
+          {`${formatAreaM2(totalAreaM2)} ${unit}`}
         </span>
       </div>
     </div>
@@ -109,11 +115,14 @@ export function StageRollupCard({
   stageProgress,
   cells,
   totalAreaM2,
+  unit = DEFAULT_UNIT,
 }: {
   stages: Stage[]
   stageProgress: StageProgress[]
   cells: Cell[]
   totalAreaM2: number
+  /** The active work's unit (RV6-35): the coats here are that work's. */
+  unit?: string
 }) {
   const ordered = [...stages].sort((a, b) => a.seq - b.seq)
 
@@ -148,7 +157,7 @@ export function StageRollupCard({
             {formatAreaM2(totalAreaM2)}
           </span>
           <span style={{ fontSize: 10, color: palette.textTertiary, marginTop: 2 }}>
-            m² sàn
+            {`${unit} sàn`}
           </span>
         </Donut>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 11, flex: 1, minWidth: 168 }}>
@@ -185,7 +194,7 @@ export function StageRollupCard({
                     {stage.name}
                   </div>
                   <div style={{ fontSize: 12, color: palette.textTertiary, marginTop: 2 }}>
-                    {`${formatAreaM2(doneM2)} / ${formatAreaM2(totalAreaM2)} m² · ${formatPercent(ratio)}`}
+                    {`${formatAreaM2(doneM2)} / ${formatAreaM2(totalAreaM2)} ${unit} · ${formatPercent(ratio)}`}
                   </div>
                 </div>
               </div>

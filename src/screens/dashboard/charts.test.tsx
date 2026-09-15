@@ -34,7 +34,7 @@ vi.mock('recharts', async (importOriginal) => {
     // The four series print the one prop RV6-29 changes -- their colour -- and
     // the plan line its dash, which RV6-29 must leave alone.
     Bar: (props: Record<string, unknown>) => (
-      <div data-testid={`kpi-bar-${String(props.dataKey)}`} data-fill={String(props.fill)} />
+      <div data-testid={`kpi-bar-${String(props.dataKey)}`} data-fill={String(props.fill)} data-name={String(props.name)} />
     ),
     Line: (props: Record<string, unknown>) => (
       <div
@@ -100,5 +100,21 @@ describe('KpiComboChart', () => {
       expect(fill('actualM2')).toBe('#0000ff')
       expect(stroke('actualCumShare')).toBe('#0000ff')
     })
+  })
+})
+
+describe('KpiComboChart: the work\'s unit (RV6-35)', () => {
+  const name = (key: string) => screen.getByTestId(`kpi-bar-${key}`).getAttribute('data-name')
+
+  it('names the daily series in the unit it is given', () => {
+    render(<KpiComboChart data={DATA} unit="tấn" />)
+    expect(name('planM2')).toBe('Kế hoạch (tấn/ngày)')
+    expect(name('actualM2')).toBe('Thực hiện (tấn/ngày)')
+  })
+
+  it('names them in m² when no unit is given', () => {
+    render(<KpiComboChart data={DATA} />)
+    expect(name('planM2')).toBe('Kế hoạch (m²/ngày)')
+    expect(name('actualM2')).toBe('Thực hiện (m²/ngày)')
   })
 })
