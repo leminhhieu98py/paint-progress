@@ -87,10 +87,6 @@ export function MeshEditDialog({
       onCancel={onCancel}
       onOk={onConfirm}
     >
-      <Typography.Paragraph>
-        Kiểm tra các mục dưới đây trước khi xác nhận.
-      </Typography.Paragraph>
-
       {/*
         Unconditional, because it is always true: `apply` writes saveGuides and
         updateDeckArea on every path through this dialog, not only on a mesh
@@ -113,7 +109,7 @@ export function MeshEditDialog({
       {pending && pending.wipes > 0 && (
         <Typography.Paragraph strong>
           Sau thao tác này sàn sẽ không còn ô nào: {pending.wipes} ô hiện có sẽ bị
-          xoá khỏi cơ sở dữ liệu. Muốn kẻ lại lưới thì phải sinh lưới ô mới.
+          xoá. Muốn kẻ lại lưới thì phải sinh lưới ô mới.
         </Typography.Paragraph>
       )}
 
@@ -144,13 +140,6 @@ export function MeshEditDialog({
               </li>
             ))}
           </ul>
-          {pending.kind === 'merge' && (
-            <Typography.Paragraph type="secondary">
-              Ô sống sót giữ tiến độ của chính nó. Không có cách gộp nào trung
-              thực cho phần còn lại: lấy lớp cao nhất thì báo vượt, lấy lớp thấp
-              nhất thì bỏ mất công đã làm.
-            </Typography.Paragraph>
-          )}
         </>
       )}
 
