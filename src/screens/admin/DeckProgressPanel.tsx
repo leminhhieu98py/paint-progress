@@ -2138,6 +2138,15 @@ export function DeckProgressPanel({
       >
         <div data-testid="deck-works-table">
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            {/* Labelled columns: the weight used to sit mid-row with nothing
+                saying what it was. Same header look as the antd tables. */}
+            <thead>
+              <tr style={{ background: palette.bgSubtleAlt, borderBottom: `1px solid ${palette.borderSplit}` }}>
+                <th style={{ padding: `${space.sm}px ${space.md}px ${space.sm}px ${space.xl}px`, textAlign: 'left', fontWeight: 600, fontSize: 12, color: palette.textTertiary }}>Công việc</th>
+                <th style={{ padding: `${space.sm}px ${space.md}px`, textAlign: 'right', fontWeight: 600, fontSize: 12, color: palette.textTertiary }}>Trọng số sàn</th>
+                <th style={{ padding: `${space.sm}px ${space.xl}px ${space.sm}px ${space.md}px`, textAlign: 'right', fontWeight: 600, fontSize: 12, color: palette.textTertiary }}>Tiến độ</th>
+              </tr>
+            </thead>
             <tbody>
               {deckSummary.perWork.map((row) => (
                 <tr key={row.work.id} style={{ borderBottom: `1px solid ${palette.borderSplit}` }}>

@@ -987,6 +987,9 @@ describe('DeckProgressPanel — công việc', () => {
     expect(within(table).getAllByText('1,00')).toHaveLength(2)
     expect(within(table).getByText('Tổng hợp')).toBeInTheDocument()
     expect(within(table).getByText('42,00%')).toBeInTheDocument()
+    // QA: the weight sat unlabelled mid-row; the columns now say what they hold.
+    expect(within(table).getAllByRole('columnheader').map((h) => h.textContent))
+      .toEqual(['Công việc', 'Trọng số sàn', 'Tiến độ'])
   })
 
   it('shows one work without a selector, and says which it is', async () => {
