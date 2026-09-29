@@ -208,7 +208,7 @@ export function AppRoutes() {
             </RequireRole>
           }
         >
-          <Route index element={<Navigate to="users" replace />} />
+          <Route index element={<Navigate to="projects" replace />} />
           <Route
             path="users"
             element={

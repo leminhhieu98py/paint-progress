@@ -288,6 +288,13 @@ describe('AppRoutes: /login is the entry point', () => {
     expect(await screen.findByText('NHAN LUC SCREEN')).toBeInTheDocument()
   })
 
+  it('sends /admin itself to Dự án, where login, the role home and the not-found page go (M13)', async () => {
+    asRole('admin')
+    renderAt(`${APP_BASE_PATH}/admin`)
+    expect(await screen.findByText('PROJECTS SCREEN')).toBeInTheDocument()
+    expect(screen.queryByText('NHAN LUC SCREEN')).toBeNull()
+  })
+
   it('sends the old staff roster address to Nhân lực, so a bookmark still lands (NL-01)', async () => {
     asRole('admin')
     renderAt(`${APP_BASE_PATH}/admin/employees`)
