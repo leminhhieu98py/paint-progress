@@ -139,6 +139,13 @@ export function EffortHistoryPanel({
     }
   }
 
+  /** Who backfilled this update's hours, and when; nothing on one never edited. */
+  const editedMark = (ev: DeckEvent) => ev.effortEditedAt && (
+    <Tooltip title={`Sửa bởi ${ev.effortEditedByName ?? 'quản trị viên'} lúc ${formatDateTimeVN(ev.effortEditedAt)}`}>
+      <Typography.Text type="secondary" style={type.caption}>đã sửa</Typography.Text>
+    </Tooltip>
+  )
+
   return (
     <SectionCard
       code="A3.7"
@@ -191,27 +198,35 @@ export function EffortHistoryPanel({
           { title: 'Bởi', dataIndex: 'byId', width: 140, render: (v: string | null) => (v === null ? MISSING : names[v] ?? v) },
           { title: 'Nhóm trưởng', width: 180, render: (_, ev) => text(ev.effort.leadName) },
           { title: 'Thợ chính', width: 180, render: (_, ev) => text(ev.effort.painterName) },
-          { title: 'Giờ công', align: 'center', width: 90, render: (_, ev) => hours(ev.effort.workHours) },
+          {
+            title: 'Giờ công',
+            align: 'center',
+            width: 90,
+            // Outside Sửa there is no Thao tác column (R3): the edit marker sits by the hours it is about.
+            render: (_, ev) => (editable || !ev.effortEditedAt ? hours(ev.effort.workHours) : (
+              <Space size={4}>
+                {hours(ev.effort.workHours)}
+                {editedMark(ev)}
+              </Space>
+            )),
+          },
           { title: 'Giờ hao phí', align: 'center', width: 100, render: (_, ev) => hours(ev.effort.wasteHours) },
           // A note, not a category (UI-04 amended): plain text, left like every note (UI-03).
           { title: 'Lý do hao phí', width: 220, render: (_, ev) => text(ev.effort.wasteReason) },
           { title: 'Lệnh sản xuất', width: 130, render: (_, ev) => text(ev.effort.wasteOrder) },
-          {
+          // In Sửa only: in view mode it was an empty pinned 90 px (R3).
+          ...(editable ? [{
             title: 'Thao tác',
             width: 90,
-            align: 'center',
-            fixed: 'right',
-            render: (_, ev) => (
+            align: 'center' as const,
+            fixed: 'right' as const,
+            render: (_: unknown, ev: DeckEvent) => (
               <Space size={4}>
-                {ev.effortEditedAt && (
-                  <Tooltip title={`Sửa bởi ${ev.effortEditedByName ?? 'quản trị viên'} lúc ${formatDateTimeVN(ev.effortEditedAt)}`}>
-                    <Typography.Text type="secondary" style={type.caption}>đã sửa</Typography.Text>
-                  </Tooltip>
-                )}
-                {editable && <Button size="small" onClick={() => openEdit(ev)}>Sửa</Button>}
+                {editedMark(ev)}
+                <Button size="small" onClick={() => openEdit(ev)}>Sửa</Button>
               </Space>
             ),
-          },
+          }] : []),
         ]}
       />
 

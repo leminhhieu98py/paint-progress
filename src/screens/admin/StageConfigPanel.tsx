@@ -406,19 +406,21 @@ export function StageConfigPanel({
           onDrop: () => dropOn(index ?? 0),
         })}
         columns={[
-          {
+          // The handle and the actions exist in Sửa only: in view mode they
+          // were two empty columns, one pinned at 72 px (R3).
+          ...(editable ? [{
             // The row has been draggable all along with nothing on screen to
             // say so. A handle is not a control here -- the whole row is the
             // drag target -- it is the affordance that makes the gesture
             // discoverable at all.
             title: <span style={visuallyHidden}>Kéo để sắp xếp</span>,
             key: 'handle',
-            align: 'center',
+            align: 'center' as const,
             width: 34,
-            render: () => (!editable ? null : (
+            render: () => (
               <HolderOutlined style={{ color: palette.iconMuted, cursor: busy ? 'not-allowed' : 'grab' }} />
-            )),
-          },
+            ),
+          }] : []),
           {
             title: editable ? <>Thứ tự<InfoTip text="Kéo hàng để đổi thứ tự" /></> : 'Thứ tự',
             dataIndex: 'seq',
@@ -523,12 +525,13 @@ export function StageConfigPanel({
               />
             )),
           },
-          {
-            title: 'Thao tác',
+          ...(editable ? [{
+            // Wide enough for its header on one line (R3).
+            title: <span style={{ whiteSpace: 'nowrap' }}>Thao tác</span>,
             key: 'actions',
-            width: 72,
-            align: 'center',
-            render: (_v, _r, i) => (!editable ? null : (
+            width: 90,
+            align: 'center' as const,
+            render: (_v: unknown, _r: unknown, i: number) => (
               <Tooltip title="Xoá lớp sơn">
                 {/* A span, because antd Tooltip cannot anchor a disabled button. */}
                 <span>
@@ -542,8 +545,8 @@ export function StageConfigPanel({
                   />
                 </span>
               </Tooltip>
-            )),
-          },
+            ),
+          }] : []),
         ]}
       />
 

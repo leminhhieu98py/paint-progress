@@ -835,6 +835,13 @@ describe('StageConfigPanel — the read-only colour (CLR-01)', () => {
 })
 
 describe('StageConfigPanel — alignment (UI-03)', () => {
+  it('draws no action or handle column in view mode, where both would be empty (R3)', async () => {
+    renderApp(<StageConfigPanel workId="w1" deckId="d1" editable={false} />)
+    await screen.findByText('Blast + Coat 1')
+    expect(screen.queryByRole('columnheader', { name: 'Thao tác' })).toBeNull()
+    expect(screen.queryByRole('columnheader', { name: 'Kéo để sắp xếp' })).toBeNull()
+  })
+
   it('names its action column Thao tác and its drag handle column for a screen reader (M20)', async () => {
     renderApp(<StageConfigPanel workId="w1" deckId="d1" />)
     await screen.findByDisplayValue('Blast + Coat 1')

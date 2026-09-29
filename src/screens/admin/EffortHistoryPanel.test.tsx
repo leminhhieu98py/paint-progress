@@ -246,6 +246,16 @@ describe('EffortHistoryPanel — identifiers are text (UI-06)', () => {
     expect(th('Giờ công')).toHaveStyle({ textAlign: 'center' })
   })
 
+  it('draws no Thao tác column in view mode, and still says which update was edited (R3)', async () => {
+    renderPanel(false)
+    await screen.findByText('LSX-1')
+    expect(screen.queryByRole('columnheader', { name: 'Thao tác' })).toBeNull()
+    const [first] = rows()
+    const edited = within(first).getByText('đã sửa')
+    const headers = screen.getAllByRole('columnheader').map((th) => th.textContent)
+    expect(edited.closest('td')).toBe(first.querySelectorAll('td')[headers.indexOf('Giờ công')])
+  })
+
   it('titles its action column Thao tác (M20)', async () => {
     renderPanel()
     await screen.findByText('LSX-1')
