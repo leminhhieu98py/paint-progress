@@ -16,7 +16,7 @@ import { zoneLabelBoxes, type ZoneLabel } from '../../domain/plan'
 import { buildStageSlices } from '../../domain/pieSlices'
 import { formatPlanRange } from '../../domain/plan'
 import { computeDeckProgress, summariseDeck } from '../../domain/progress'
-import type { DeckEvent, Stage, WorkModel, Zone } from '../../domain/types'
+import type { DeckEvent, Stage, StageProgress, WorkModel, Zone } from '../../domain/types'
 import { getDrawingUrl } from '../../lib/decksApi'
 import { DEFAULT_UNIT } from '../../domain/unit'
 import { formatAreaM2, formatPercent, formatWeight } from '../../lib/format'
@@ -29,7 +29,7 @@ import {
   createZone, deleteZone, listDeckZones, setZoneActual, setZoneCells, updateZone,
 } from '../../lib/zonesApi'
 import { ConsequenceModal } from '../../components/ConsequenceModal'
-import { Donut } from '../../components/Donut'
+import { Donut, type DonutSlice } from '../../components/Donut'
 import { EmptyState } from '../../components/EmptyState'
 import { InfoTip } from '../../components/InfoTip'
 import { NoteThread } from '../../components/NoteThread'
@@ -790,8 +790,6 @@ export function DeckProgressPanel({
         }
       })
   }, [entry, progress, unit])
-  /** The ring slice and coat row under the pointer or focus (CHT-02). */
-  const [activeRing, setActiveRing] = useState<string | null>(null)
 
   /**
    * Bays carrying a note, by code.
@@ -1696,108 +1694,13 @@ export function DeckProgressPanel({
                           <InfoTip text="Ô đã ở lớp sau thì đã qua các lớp trước, nên tính cho cả các lớp đó" />
                         </h3>
                       </div>
-                      <div style={{ padding: `${space.lg}px ${space.xl}px`, display: 'flex', alignItems: 'center', gap: 18 }}>
-                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 7 }}>
-                        <Donut
-                          label="Diện tích đang dừng ở mỗi lớp"
-                          slices={ringSlices}
-                          size={168}
-                          thickness={30}
-                          activeKey={activeRing}
-                          onActiveChange={setActiveRing}
-                        >
-                          <span style={{ fontSize: 10, fontWeight: 600, color: palette.textTertiary }}>
-                            Tiến độ sàn
-                            <InfoTip text="Vòng tròn: diện tích đang dừng ở mỗi lớp, không cộng dồn" />
-                          </span>
-                          <span
-                            style={{
-                              fontSize: 24,
-                              fontWeight: 700,
-                              letterSpacing: '-0.03em',
-                              marginTop: 5,
-                            }}
-                          >
-                            {formatPercent(progress?.progress ?? 0)}
-                          </span>
-                          <span style={{ fontSize: 10, color: palette.textTertiary, marginTop: 3 }}>
-                            {`${formatAreaM2(entry.deck.totalAreaM2)} ${unit}`}
-                          </span>
-                        </Donut>
-                        </div>
-                        {/*
-                          CUMULATIVE, and the ring beside it is not (Feedback
-                          Rv3, item 1). Linh read "Blast + Coat 1 · 10,05%" off
-                          this list on a deck where 90,54% of the area had been
-                          through Blast + Coat 1, because the list was the
-                          ring's own non-cumulative slices. A bay at Coat 3 has
-                          been through Coat 2, and the customer is billed on
-                          the cumulative figure -- so that is what the rows say,
-                          exactly as the GS screen's rollup card says it. The
-                          ring keeps its own question and now carries a caption
-                          saying which one it answers.
-                        */}
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0 }}>
-                          {(progress?.stages ?? []).map((sp) => (
-                            <div
-                              key={sp.stage.id}
-                              data-testid="stage-legend-row"
-                              tabIndex={0}
-                              onPointerEnter={() => setActiveRing(sp.stage.id)}
-                              onPointerLeave={() => setActiveRing(null)}
-                              onFocus={() => setActiveRing(sp.stage.id)}
-                              onBlur={() => setActiveRing(null)}
-                              style={{
-                                display: 'flex', alignItems: 'center', gap: 9, minWidth: 0,
-                                // CHT-02: the highlight's padding comes out of
-                                // the row gap, so the rows do not move.
-                                margin: '-2px -6px', padding: '2px 6px', borderRadius: 6,
-                                background: activeRing === sp.stage.id ? palette.bgSubtle : undefined,
-                              }}
-                            >
-                              <span
-                                aria-hidden
-                                data-testid="stage-legend-marker"
-                                style={{
-                                  // A circle of the coat's colour, nothing else (CLR-03).
-                                  width: 15,
-                                  height: 15,
-                                  borderRadius: '50%',
-                                  flex: 'none',
-                                  background: sp.stage.color,
-                                }}
-                              />
-                              {/*
-                                Two lines, not three columns: the rail is ~300px
-                                and "Blast + Coat 1" beside an area and a percent
-                                wrapped word by word over the numbers (seen in
-                                Chrome). Name on top, figures beneath it.
-                              */}
-                              <div style={{ minWidth: 0, flex: 1 }}>
-                                <div style={{ fontSize: 12, fontWeight: 600, lineHeight: 1.3 }}>
-                                  {sp.stage.name}
-                                </div>
-                                <div
-                                  style={{
-                                    display: 'flex',
-                                    gap: 6,
-                                    fontSize: 12,
-                                    color: palette.textTertiary,
-                                    lineHeight: 1.3,
-                                    marginTop: 1,
-                                  }}
-                                >
-                                  <span style={{ color: palette.textSecondary, whiteSpace: 'nowrap' }}>
-                                    {`${formatAreaM2(sp.cumulativeAreaM2)} / ${formatAreaM2(entry.deck.totalAreaM2)} ${unit}`}
-                                  </span>
-                                  <span aria-hidden>·</span>
-                                  <span>{formatPercent(sp.ratio)}</span>
-                                </div>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
+                      <StageRing
+                        slices={ringSlices}
+                        stages={progress?.stages ?? []}
+                        progress={progress?.progress ?? 0}
+                        totalAreaM2={entry.deck.totalAreaM2}
+                        unit={unit}
+                      />
                       <div
                         style={{
                           padding: `${space.md}px ${space.xl}px`,
@@ -2214,5 +2117,132 @@ export function DeckProgressPanel({
       </SectionCard>
     )}
     </>
+  )
+}
+
+/**
+ * The deck's coat ring and its cumulative rows, with the coat under the
+ * pointer or focus (CHT-02). Its own component so that hovering re-renders
+ * the ring and the rows, not the panel and its two Konva canvases (m-4).
+ */
+function StageRing({
+  slices,
+  stages,
+  progress,
+  totalAreaM2,
+  unit,
+}: {
+  slices: DonutSlice[]
+  /** Cumulative, per coat in seq order: the rows. */
+  stages: StageProgress[]
+  /** The deck figure in the ring's centre. */
+  progress: number
+  totalAreaM2: number
+  unit: string
+}) {
+  const [active, setActive] = useState<string | null>(null)
+  return (
+    <div style={{ padding: `${space.lg}px ${space.xl}px`, display: 'flex', alignItems: 'center', gap: 18 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 7 }}>
+      <Donut
+        label="Diện tích đang dừng ở mỗi lớp"
+        slices={slices}
+        size={168}
+        thickness={30}
+        activeKey={active}
+        onActiveChange={setActive}
+      >
+        <span style={{ fontSize: 10, fontWeight: 600, color: palette.textTertiary }}>
+          Tiến độ sàn
+          <InfoTip text="Vòng tròn: diện tích đang dừng ở mỗi lớp, không cộng dồn" />
+        </span>
+        <span
+          style={{
+            fontSize: 24,
+            fontWeight: 700,
+            letterSpacing: '-0.03em',
+            marginTop: 5,
+          }}
+        >
+          {formatPercent(progress)}
+        </span>
+        <span style={{ fontSize: 10, color: palette.textTertiary, marginTop: 3 }}>
+          {`${formatAreaM2(totalAreaM2)} ${unit}`}
+        </span>
+      </Donut>
+      </div>
+      {/*
+        CUMULATIVE, and the ring beside it is not (Feedback
+        Rv3, item 1). Linh read "Blast + Coat 1 · 10,05%" off
+        this list on a deck where 90,54% of the area had been
+        through Blast + Coat 1, because the list was the
+        ring's own non-cumulative slices. A bay at Coat 3 has
+        been through Coat 2, and the customer is billed on
+        the cumulative figure -- so that is what the rows say,
+        exactly as the GS screen's rollup card says it. The
+        ring keeps its own question and now carries a caption
+        saying which one it answers.
+      */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0 }}>
+        {stages.map((sp) => (
+          <div
+            key={sp.stage.id}
+            data-testid="stage-legend-row"
+            tabIndex={0}
+            onPointerEnter={() => setActive(sp.stage.id)}
+            onPointerLeave={() => setActive(null)}
+            onFocus={() => setActive(sp.stage.id)}
+            onBlur={() => setActive(null)}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 9, minWidth: 0,
+              // CHT-02: the highlight's padding comes out of
+              // the row gap, so the rows do not move.
+              margin: '-2px -6px', padding: '2px 6px', borderRadius: 6,
+              background: active === sp.stage.id ? palette.bgSubtle : undefined,
+            }}
+          >
+            <span
+              aria-hidden
+              data-testid="stage-legend-marker"
+              style={{
+                // A circle of the coat's colour, nothing else (CLR-03).
+                width: 15,
+                height: 15,
+                borderRadius: '50%',
+                flex: 'none',
+                background: sp.stage.color,
+              }}
+            />
+            {/*
+              Two lines, not three columns: the rail is ~300px
+              and "Blast + Coat 1" beside an area and a percent
+              wrapped word by word over the numbers (seen in
+              Chrome). Name on top, figures beneath it.
+            */}
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <div style={{ fontSize: 12, fontWeight: 600, lineHeight: 1.3 }}>
+                {sp.stage.name}
+              </div>
+              <div
+                style={{
+                  display: 'flex',
+                  gap: 6,
+                  fontSize: 12,
+                  color: palette.textTertiary,
+                  lineHeight: 1.3,
+                  marginTop: 1,
+                }}
+              >
+                <span style={{ color: palette.textSecondary, whiteSpace: 'nowrap' }}>
+                  {`${formatAreaM2(sp.cumulativeAreaM2)} / ${formatAreaM2(totalAreaM2)} ${unit}`}
+                </span>
+                <span aria-hidden>·</span>
+                <span>{formatPercent(sp.ratio)}</span>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
   )
 }

@@ -44,6 +44,9 @@ vi.mock('../../lib/zonesApi', () => ({
   setZoneCells: (id: string, ids: string[]) => setZoneCells(id, ids),
 }))
 
+/** How often the panel rendered a canvas: the ring's hover must not (m-4). */
+const canvasRenders = vi.hoisted(() => ({ count: 0 }))
+
 // Konva renders to a canvas, which jsdom does not implement. The double exposes
 // what this panel is responsible for putting on one: which drawing, what colour
 // each bay came out, what is selected, and what the plan says.
@@ -64,7 +67,9 @@ vi.mock('../../canvas/DrawingCanvas', () => ({
     selectedCodes?: string[]
     onCellClick?: (code: string, additive: boolean) => void
     onSelectDraw?: (rect: { x: number; y: number; w: number; h: number }) => void
-  }) => (
+  }) => {
+    canvasRenders.count += 1
+    return (
     <div
       data-testid="canvas"
       data-image={imageUrl}
@@ -89,7 +94,8 @@ vi.mock('../../canvas/DrawingCanvas', () => ({
       {/* Stands in for a Shift-drag across the whole drawing. */}
       <button data-testid="band-all" onClick={() => onSelectDraw?.({ x: 0, y: 0, w: 1, h: 1 })} />
     </div>
-  ),
+    )
+  },
 }))
 
 const STAGES = [
@@ -326,6 +332,17 @@ describe('DeckProgressPanel', () => {
       expect(sliceOf(ring, 'Tháo giáo')).toHaveAccessibleDescription(
         'Đang ở lớp này: 500,00 / 1.000,00 m² · 50,00% Cộng dồn: 500,00 / 1.000,00 m² · 50,00%',
       )
+    })
+
+    it('re-renders the ring and its rows on hover, not the panel and its canvases (m-4)', async () => {
+      renderPanel()
+      const ring = await screen.findByTestId('stage-ring')
+      await screen.findAllByTestId('canvas')
+      const before = canvasRenders.count
+      fireEvent.pointerEnter(rowOf(ring, 'Coat 2'))
+      fireEvent.pointerEnter(sliceOf(ring, 'Tháo giáo'))
+      expect(sliceOf(ring, 'Coat 2')).toHaveAttribute('opacity', '0.35')
+      expect(canvasRenders.count).toBe(before)
     })
 
     it('draws each coat marker as a circle of the coat\'s colour (CLR-03)', async () => {

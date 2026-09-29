@@ -105,8 +105,6 @@ export function DecksScreen() {
   const [removingDeck, setRemovingDeck] = useState<DeckRow | null>(null)
   /** The deck being duplicated (Feedback Rv2, item 3), while its dialog is open. */
   const [copyingDeck, setCopyingDeck] = useState<DeckRow | null>(null)
-  /** The ring slice and legend row under the pointer or focus (CHT-02). */
-  const [activeSlice, setActiveSlice] = useState<string | null>(null)
   const [copying, setCopying] = useState(false)
   const [copyForm] = Form.useForm<{ name: string; code: string }>()
   const [removing, setRemoving] = useState(false)
@@ -751,103 +749,12 @@ export function DecksScreen() {
                 <div style={{ fontSize: 12, fontWeight: 600, color: palette.textTertiary }}>
                   Tiến độ dự án
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginTop: 14 }}>
-                  <Donut
-                    label="Tiến độ dự án"
-                    slices={slices}
-                    activeKey={activeSlice}
-                    onActiveChange={setActiveSlice}
-                  >
-                    <span style={{ fontSize: 21, fontWeight: 700, letterSpacing: '-0.028em' }}>
-                      {formatPercent(rollup.progress)}
-                    </span>
-                    <span style={{ fontSize: 10, color: palette.textTertiary, marginTop: 3 }}>
-                      toàn dự án
-                    </span>
-                  </Donut>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0, flex: 1 }}>
-                    {/*
-                      Two numbers per row (RV6-40, Linh's review of v1.7.0). RV6-02
-                      put the deck's own progress here so the legend agreed with
-                      the table; she then read `83,22%` beside an arc a fifth of
-                      the ring and asked why the five numbers do not add up to the
-                      centre. They never did -- the arc is weight × progress -- so
-                      that figure now stands beside the progress, in its own column,
-                      and the header says which is which. The contribution column
-                      sums to P exactly; the progress column is the table's.
-                    */}
-                    <div style={{ fontSize: 11, color: palette.textTertiary, textAlign: 'right' }}>
-                      Tiến độ · Đóng góp
-                    </div>
-                    {slices.map((sl, i) => (
-                      <div
-                        key={sl.key}
-                        data-testid="legend-row"
-                        tabIndex={0}
-                        onPointerEnter={() => setActiveSlice(sl.key ?? null)}
-                        onPointerLeave={() => setActiveSlice(null)}
-                        onFocus={() => setActiveSlice(sl.key ?? null)}
-                        onBlur={() => setActiveSlice(null)}
-                        style={{
-                          display: 'flex', alignItems: 'center', gap: 9,
-                          // The highlight's padding comes out of the row gap, so
-                          // the rows sit where they always did.
-                          margin: '-2px -6px', padding: '2px 6px', borderRadius: 6,
-                          background: activeSlice === sl.key ? LEGEND_ACTIVE_BG : undefined,
-                        }}
-                      >
-                        <span
-                          data-testid="legend-marker"
-                          style={{
-                            width: 11, height: 11, borderRadius: '50%', flex: 'none', background: sl.color,
-                          }}
-                        />
-                        <span
-                          style={{
-                            fontSize: 12, fontWeight: 500, minWidth: 0,
-                            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                          }}
-                        >
-                          {sl.label}
-                        </span>
-                        <span
-                          style={{
-                            marginLeft: 'auto', width: 56, textAlign: 'right', flex: 'none',
-                            fontSize: 12, fontWeight: 500, color: palette.textSecondary,
-                          }}
-                        >
-                          {formatPercent(sl.display ?? sl.value)}
-                        </span>
-                        <span style={{ width: 56, textAlign: 'right', flex: 'none', fontSize: 12, fontWeight: 600 }}>
-                          {formatPercent(shownShares[i])}
-                        </span>
-                      </div>
-                    ))}
-                    <div
-                      style={{
-                        display: 'flex', alignItems: 'center', gap: 9, paddingTop: 8,
-                        borderTop: `1px solid ${palette.borderSplit}`, marginTop: 2,
-                      }}
-                    >
-                      <span
-                        style={{
-                          width: 11, height: 11, borderRadius: '50%', flex: 'none', background: palette.track,
-                        }}
-                      />
-                      <span style={{ fontSize: 12, fontWeight: 500, color: palette.textTertiary }}>
-                        Còn lại
-                      </span>
-                      <span
-                        style={{
-                          marginLeft: 'auto', width: 56, textAlign: 'right', flex: 'none',
-                          fontSize: 12, fontWeight: 600, color: palette.textTertiary,
-                        }}
-                      >
-                        {formatPercent(shownRemainder)}
-                      </span>
-                    </div>
-                  </div>
-                </div>
+                <ProjectRing
+                  slices={slices}
+                  shownShares={shownShares}
+                  shownRemainder={shownRemainder}
+                  progress={rollup.progress}
+                />
               </div>
             </div>
           )}
@@ -926,5 +833,126 @@ export function DecksScreen() {
         onOk={() => void removeDeck()}
       />
     </>
+  )
+}
+
+/**
+ * The project ring and its legend, with the slice under the pointer or focus
+ * (CHT-02). Its own component so that hovering re-renders the ring and the
+ * legend, not the whole screen and its tables (m-4).
+ */
+function ProjectRing({
+  slices,
+  shownShares,
+  shownRemainder,
+  progress,
+}: {
+  slices: DonutSlice[]
+  /** The contribution column as printed (RV6-40). */
+  shownShares: number[]
+  /** `Còn lại`, the printed complement of the centre figure. */
+  shownRemainder: number
+  /** P, the centre figure. */
+  progress: number
+}) {
+  const [active, setActive] = useState<string | null>(null)
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginTop: 14 }}>
+      <Donut
+        label="Tiến độ dự án"
+        slices={slices}
+        activeKey={active}
+        onActiveChange={setActive}
+      >
+        <span style={{ fontSize: 21, fontWeight: 700, letterSpacing: '-0.028em' }}>
+          {formatPercent(progress)}
+        </span>
+        <span style={{ fontSize: 10, color: palette.textTertiary, marginTop: 3 }}>
+          toàn dự án
+        </span>
+      </Donut>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0, flex: 1 }}>
+        {/*
+          Two numbers per row (RV6-40, Linh's review of v1.7.0). RV6-02
+          put the deck's own progress here so the legend agreed with
+          the table; she then read `83,22%` beside an arc a fifth of
+          the ring and asked why the five numbers do not add up to the
+          centre. They never did -- the arc is weight × progress -- so
+          that figure now stands beside the progress, in its own column,
+          and the header says which is which. The contribution column
+          sums to P exactly; the progress column is the table's.
+        */}
+        <div style={{ fontSize: 11, color: palette.textTertiary, textAlign: 'right' }}>
+          Tiến độ · Đóng góp
+        </div>
+        {slices.map((sl, i) => (
+          <div
+            key={sl.key}
+            data-testid="legend-row"
+            tabIndex={0}
+            onPointerEnter={() => setActive(sl.key ?? null)}
+            onPointerLeave={() => setActive(null)}
+            onFocus={() => setActive(sl.key ?? null)}
+            onBlur={() => setActive(null)}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 9,
+              // The highlight's padding comes out of the row gap, so
+              // the rows sit where they always did.
+              margin: '-2px -6px', padding: '2px 6px', borderRadius: 6,
+              background: active === sl.key ? LEGEND_ACTIVE_BG : undefined,
+            }}
+          >
+            <span
+              data-testid="legend-marker"
+              style={{
+                width: 11, height: 11, borderRadius: '50%', flex: 'none', background: sl.color,
+              }}
+            />
+            <span
+              style={{
+                fontSize: 12, fontWeight: 500, minWidth: 0,
+                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+              }}
+            >
+              {sl.label}
+            </span>
+            <span
+              style={{
+                marginLeft: 'auto', width: 56, textAlign: 'right', flex: 'none',
+                fontSize: 12, fontWeight: 500, color: palette.textSecondary,
+              }}
+            >
+              {formatPercent(sl.display ?? sl.value)}
+            </span>
+            <span style={{ width: 56, textAlign: 'right', flex: 'none', fontSize: 12, fontWeight: 600 }}>
+              {formatPercent(shownShares[i])}
+            </span>
+          </div>
+        ))}
+        <div
+          style={{
+            display: 'flex', alignItems: 'center', gap: 9, paddingTop: 8,
+            borderTop: `1px solid ${palette.borderSplit}`, marginTop: 2,
+          }}
+        >
+          <span
+            style={{
+              width: 11, height: 11, borderRadius: '50%', flex: 'none', background: palette.track,
+            }}
+          />
+          <span style={{ fontSize: 12, fontWeight: 500, color: palette.textTertiary }}>
+            Còn lại
+          </span>
+          <span
+            style={{
+              marginLeft: 'auto', width: 56, textAlign: 'right', flex: 'none',
+              fontSize: 12, fontWeight: 600, color: palette.textTertiary,
+            }}
+          >
+            {formatPercent(shownRemainder)}
+          </span>
+        </div>
+      </div>
+    </div>
   )
 }
