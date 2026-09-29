@@ -57,8 +57,27 @@ export function expectHelperText(texts: string[]) {
   }
 }
 
-/** The consequence items of an open ConsequenceModal under `root`, in order (RUL-01). */
+/**
+ * RUL-01 for a confirm dialog's consequence item: a fragment, not a sentence --
+ * no full stop, no second clause after a semicolon or colon, no spec id, no
+ * reasoning ("vì…", "nên…") or future ("sẽ").
+ */
+export function expectConsequenceItem(text: string) {
+  expect(text.trim()).not.toBe('')
+  expect(text).not.toMatch(/[.;:]\s*$/)
+  expect(text).not.toMatch(/[.;:](\s|$)/)
+  expect(text).not.toMatch(SPEC_ID)
+  expect(text).not.toMatch(/(^|\s)(vì|nên|sẽ)\s/i)
+}
+
+/**
+ * The consequence items of an open ConsequenceModal under `root`, in order
+ * (RUL-01), each checked with `expectConsequenceItem` on the way.
+ */
 export function consequenceItems(root: HTMLElement = document.body): string[] {
-  return within(root).getAllByRole('listitem').filter((li) => li.closest('ul[aria-label="Hệ quả"]') !== null)
+  const texts = within(root).queryAllByRole('listitem')
+    .filter((li) => li.closest('ul[aria-label="Hệ quả"]') !== null)
     .map((li) => li.textContent ?? '')
+  texts.forEach(expectConsequenceItem)
+  return texts
 }
