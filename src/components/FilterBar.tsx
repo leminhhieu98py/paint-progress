@@ -14,7 +14,8 @@ import { space } from '../theme'
  * title row, not here.
  *
  * With more than one control the bar holds a draft (FLT-02, `useDraftFilters`)
- * and ends with `Đặt lại` and `Tìm`: pass `onApply` and `onReset`. Enter in a
+ * and ends with `Đặt lại` and `Tìm`, one unit that never wraps apart
+ * (FLT-05): pass `onApply` and `onReset`. Enter in a
  * text field of the bar (an input of type text or search) applies too; Enter
  * in a select, a date picker or a Segmented option is theirs and does not.
  * `applyLoading` holds Tìm (and Enter) while the options a draft depends on
@@ -50,12 +51,13 @@ export function FilterBar({
     >
       {children}
       {onApply !== undefined && (
-        <>
+        // One unit (FLT-05): the bar wraps whole controls, never Tìm away from Đặt lại.
+        <div style={{ display: 'flex', flexWrap: 'nowrap', gap: space.sm, flex: 'none' }}>
           <Button type="text" onClick={onReset}>Đặt lại</Button>
           <Button type="primary" icon={<SearchOutlined aria-hidden />} loading={applyLoading} onClick={onApply}>
             Tìm
           </Button>
-        </>
+        </div>
       )}
     </div>
   )

@@ -69,7 +69,16 @@ describe('FilterBar with more than one control (FLT-02)', () => {
     expect(buttons[1]).toHaveClass('ant-btn-primary')
     expect(buttons[1].querySelector('.anticon-search')).not.toBeNull()
     expect(buttons[0]).toHaveClass('ant-btn-text')
-    expect(bar.lastElementChild).toBe(buttons[1])
+    expect(bar.lastElementChild?.lastElementChild).toBe(buttons[1])
+  })
+
+  it('keeps Đặt lại and Tìm together, one unit the bar never wraps apart (FLT-05)', () => {
+    const { bar } = renderBar()
+    const unit = bar.lastElementChild as HTMLElement
+    expect(Array.from(unit.children).map((b) => b.textContent)).toEqual(['Đặt lại', 'Tìm'])
+    // The bar wraps whole controls; the pair itself neither wraps nor shrinks.
+    expect(bar).toHaveStyle({ flexWrap: 'wrap' })
+    expect(unit).toHaveStyle({ display: 'flex', flexWrap: 'nowrap', flex: 'none' })
   })
 
   it('applies on Tìm and resets on Đặt lại', async () => {
