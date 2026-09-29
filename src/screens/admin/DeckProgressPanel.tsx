@@ -35,6 +35,7 @@ import { DECK_RING, ringFigureStep } from '../../components/ringFit'
 import { legendRowProps } from '../../components/ringHover'
 import { EmptyState } from '../../components/EmptyState'
 import { FilterBar } from '../../components/FilterBar'
+import { KeyFacts } from '../../components/KeyFacts'
 import { InfoTip } from '../../components/InfoTip'
 import { NoteThread } from '../../components/NoteThread'
 import { ProgressBar } from '../../components/ProgressBar'
@@ -2038,9 +2039,7 @@ export function DeckProgressPanel({
       >
         {datesFor && (
           <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-            <Typography.Text type="secondary" style={type.caption}>
-              {`${stageName(datesFor.stageId)} · ${datesFor.cellIds.length} ô`}
-            </Typography.Text>
+            <KeyFacts facts={[{ value: stageName(datesFor.stageId) }, { value: datesFor.cellIds.length, label: 'ô' }]} />
             {/*
               The name, above the dates (RV6-11). Prefilled with the base, not
               the stored string: the coat suffix is `createZone`'s doing and is

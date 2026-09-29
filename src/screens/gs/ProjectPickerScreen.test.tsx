@@ -5,6 +5,7 @@ import { MemoryRouter, Route, Routes, useParams } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { endSession } from '../../lib/sessionCache'
 import { cachedProjectList } from './fieldProjects'
+import { keyFactTexts } from '../../test/copy'
 import { ProjectPickerScreen } from './ProjectPickerScreen'
 
 const listProjectCards = vi.hoisted(() => vi.fn())
@@ -66,11 +67,10 @@ describe('ProjectPickerScreen', () => {
     renderPicker()
 
     const first = await screen.findByRole('link', { name: /BlockB1_CPPTS/ })
-    expect(first).toHaveTextContent('BB1')
-    expect(first).toHaveTextContent('3 sàn')
+    // The code and the deck count are the card's KeyFacts (HLT-01).
+    expect(keyFactTexts(first)).toEqual(['BB1', '3 sàn'])
     const second = screen.getByRole('link', { name: /Đại Hùng/ })
-    expect(second).toHaveTextContent('DH')
-    expect(second).toHaveTextContent('1 sàn')
+    expect(keyFactTexts(second)).toEqual(['DH', '1 sàn'])
     // In the API's order -- the API sorts by name, and the screen must not
     // re-sort by something else.
     const links = screen.getAllByRole('link')
@@ -143,9 +143,10 @@ describe('ProjectPickerScreen: on the field scale (GS-10)', () => {
     const card = await screen.findByRole('link', { name: /BlockB1_CPPTS/ })
     expect(screen.getByRole('heading', { level: 1, name: 'Chọn dự án' })).toHaveStyle({ fontSize: '20px', fontWeight: '600' })
     expect(within(card).getByText('BlockB1_CPPTS')).toHaveStyle({ fontSize: '15px', fontWeight: '600' })
-    // The sub-line under a name is a caption; the code is set apart by colour, not weight.
-    expect(within(card).getByText('BB1')).toHaveStyle({ fontWeight: '400' })
-    expect(within(card).getByText('BB1').parentElement).toHaveStyle({ fontSize: '12px' })
+    // The line under the name is the card's KeyFacts (HLT-01): the code a
+    // value, on the field scale, the deck count's word a caption.
+    expect(within(card).getByText('BB1')).toHaveStyle({ fontSize: '14px', fontWeight: '600' })
+    expect(within(card).getByText('sàn')).toHaveStyle({ fontSize: '12px', fontWeight: '400' })
   })
 
   it('names who is signed in on the scale, in a phone\'s account menu: the full name bodyStrong, no login (MOB-04)', async () => {

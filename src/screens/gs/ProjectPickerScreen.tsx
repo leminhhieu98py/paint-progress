@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { Link, Navigate } from 'react-router-dom'
 import { APP_BASE_PATH } from '../../config'
 import { listProjectCards, type ProjectCard } from '../../lib/projectsApi'
+import { KeyFacts } from '../../components/KeyFacts'
 import { TypeScaleProvider } from '../../components/typeScale'
 import { fieldType, palette, shadowCard, space } from '../../theme'
 import { FieldAccountTrigger } from './FieldAccountTrigger'
@@ -135,10 +136,8 @@ export function ProjectPickerScreen() {
                     >
                       {p.name}
                     </div>
-                    <div style={{ marginTop: space.xs, ...fieldType.caption, color: palette.textTertiary }}>
-                      <span style={{ color: palette.textSecondary }}>{p.code}</span>
-                      {' · '}
-                      {p.deckCount} sàn
+                    <div style={{ marginTop: space.xs }}>
+                      <KeyFacts facts={[{ value: p.code }, { value: p.deckCount, label: 'sàn' }]} />
                     </div>
                   </div>
                   <RightOutlined aria-hidden style={{ color: palette.textQuaternary }} />

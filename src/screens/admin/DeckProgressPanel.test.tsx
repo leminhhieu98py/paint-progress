@@ -912,7 +912,8 @@ describe('DeckProgressPanel — zones', () => {
     expect(await screen.findByRole('tooltip')).toHaveTextContent(hint)
     // And the intro keeps its data, not the obvious second sentence.
     const dialog = screen.getByRole('dialog')
-    expect(within(dialog).getByText('Tháo giáo · 1 ô')).toBeInTheDocument()
+    // The zone's coat and bay count, as KeyFacts under the title (HLT-01).
+    expect(keyFactTexts(dialog)).toEqual(['Tháo giáo', '1 ô'])
   })
 
   it('writes the zone\'s stage across its bays on Ghi thực tế, and re-reads the deck', async () => {
