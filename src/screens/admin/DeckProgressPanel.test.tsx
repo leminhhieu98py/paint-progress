@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { expectNoSpecIds } from '../../test/copy'
 import { expectOnScale, weightOf } from '../../test/typography'
-import { palette } from '../../theme'
+import { adminTheme, palette } from '../../theme'
 import { DeckProgressPanel } from './DeckProgressPanel'
 
 const loadDeckWorks = vi.hoisted(() => vi.fn())
@@ -1213,9 +1213,20 @@ describe('DeckProgressPanel — công việc', () => {
     await screen.findByTestId('lens-A')
     const segmented = screen.getByText('So sánh hai lớp').closest('.ant-segmented')
     expect(segmented).not.toHaveClass('ant-segmented-sm')
-    for (const name of ['Thu nhỏ', 'Phóng to', 'Vừa khung', /^Ghi chú \(/]) {
-      expect(screen.getByRole('button', { name })).not.toHaveClass('ant-btn-sm')
+    expect(screen.getByRole('button', { name: /^Ghi chú \(/ })).not.toHaveClass('ant-btn-sm')
+    // The zoom group is one compound control, as the password field with its
+    // generator is: small buttons in a 4px-padded, 1px-bordered frame come to
+    // controlHeightSM + 10, within 1px of the default Segmented (Q3).
+    const zoomOut = screen.getByRole('button', { name: 'Thu nhỏ' })
+    const frame = zoomOut.closest('.ant-space') as HTMLElement
+    expect(frame).toHaveStyle({ padding: '4px', borderWidth: '1px', borderStyle: 'solid' })
+    for (const name of ['Thu nhỏ', 'Phóng to', 'Vừa khung']) {
+      const b = screen.getByRole('button', { name })
+      expect(b).toHaveClass('ant-btn-sm')
+      expect(frame).toContainElement(b)
     }
+    const t = theme.getDesignToken(adminTheme)
+    expect(Math.abs(t.controlHeightSM + 2 * 4 + 2 * 1 - t.controlHeight)).toBeLessThanOrEqual(1)
   })
 
   it('sets every hand-set text in the panel on the type scale (TYP-01)', async () => {
