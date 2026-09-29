@@ -155,6 +155,25 @@ export const shadowCard = '0 1px 2px #16202B0A, 0 6px 18px -8px #16202B14'
 /** Modals, popovers, toasts — anything that floats over the page. */
 export const shadowPop = '0 28px 56px -18px #16202B38, 0 4px 12px #16202B0D'
 
+/**
+ * antd's derived type steps, pinned to the scale (TYP-01). antd works them
+ * out from the base size -- at 13 that gave 10, 14 and 18, and an Alert's
+ * title over its description rendered at 14. `body` is the theme's base: 13
+ * on the admin, 14 in the field (GS-04), where every other step keeps its
+ * relation. `fontSizeIcon` follows `fontSizeSM`.
+ */
+const derivedTypeSteps = (body: number) => ({
+  fontSize: body,
+  fontSizeSM: type.caption.fontSize,
+  fontSizeLG: type.cardTitle.fontSize,
+  fontSizeXL: type.pageTitle.fontSize,
+  fontSizeHeading1: type.display.fontSize,
+  fontSizeHeading2: type.displaySm.fontSize,
+  fontSizeHeading3: type.pageTitle.fontSize,
+  fontSizeHeading4: type.cardTitle.fontSize,
+  fontSizeHeading5: body,
+})
+
 const sharedTokens = {
   colorPrimary: palette.accent,
   colorInfo: palette.accent,
@@ -198,7 +217,7 @@ const sharedTokens = {
 export const adminTheme: ThemeConfig = {
   token: {
     ...sharedTokens,
-    fontSize: type.body.fontSize,
+    ...derivedTypeSteps(type.body.fontSize),
     controlHeight: 38,
     borderRadius: 10,
     borderRadiusLG: 14,
@@ -290,7 +309,7 @@ export const fieldTheme: ThemeConfig = {
   token: {
     ...sharedTokens,
     colorError: fieldError,
-    fontSize: 14,
+    ...derivedTypeSteps(14),
     controlHeight: 48,
     controlHeightSM: 40,
     borderRadius: 12,

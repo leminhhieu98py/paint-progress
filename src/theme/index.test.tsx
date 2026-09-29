@@ -1,5 +1,7 @@
+import { render } from '@testing-library/react'
+import { Alert, ConfigProvider, theme } from 'antd'
 import { describe, expect, it } from 'vitest'
-import { adminTheme, categoricalColor, palette, type } from '.'
+import { adminTheme, categoricalColor, fieldTheme, palette, type } from '.'
 
 /** WCAG relative luminance of a `#rrggbb` colour. */
 function luminance(hex: string): number {
@@ -97,5 +99,44 @@ describe('type (TYP-01)', () => {
     expect(adminTheme.token?.fontWeightStrong).toBe(type.bodyStrong.fontWeight)
     expect(adminTheme.components?.Card?.headerFontSize).toBe(type.cardTitle.fontSize)
     expect(adminTheme.components?.Modal?.titleFontSize).toBe(type.cardTitle.fontSize)
+  })
+})
+
+describe('antd\'s derived type steps (TYP-01, S1)', () => {
+  // antd works its other sizes out from the base: at 13 that gave 10, 14 and
+  // 18, and an Alert's title rendered at 14.
+  const SCALE = new Set<number>(Object.values(type).map((t) => t.fontSize))
+
+  it.each([
+    ['admin', adminTheme, 13],
+    ['field', fieldTheme, 14],
+  ] as const)('puts every font size of the %s theme on the scale, its base as body', (_n, t, body) => {
+    const token = theme.getDesignToken(t) as unknown as Record<string, number>
+    expect(token.fontSize).toBe(body)
+    const steps = {
+      fontSizeSM: token.fontSizeSM, fontSizeLG: token.fontSizeLG, fontSizeXL: token.fontSizeXL,
+      fontSizeIcon: token.fontSizeIcon,
+      fontSizeHeading1: token.fontSizeHeading1, fontSizeHeading2: token.fontSizeHeading2,
+      fontSizeHeading3: token.fontSizeHeading3, fontSizeHeading4: token.fontSizeHeading4,
+      fontSizeHeading5: token.fontSizeHeading5,
+    }
+    expect(steps).toEqual({
+      fontSizeSM: type.caption.fontSize, fontSizeLG: type.cardTitle.fontSize, fontSizeXL: type.pageTitle.fontSize,
+      fontSizeIcon: type.caption.fontSize,
+      fontSizeHeading1: type.display.fontSize, fontSizeHeading2: type.displaySm.fontSize,
+      fontSizeHeading3: type.pageTitle.fontSize, fontSizeHeading4: type.cardTitle.fontSize,
+      fontSizeHeading5: body,
+    })
+    for (const v of Object.values(steps)) expect(SCALE.has(v) || v === body).toBe(true)
+  })
+
+  it('sets an Alert\'s title over its description as a card title, 15px', () => {
+    const { container } = render(
+      <ConfigProvider theme={adminTheme}>
+        <Alert type="warning" message="Cảnh báo" description="Chi tiết" />
+      </ConfigProvider>,
+    )
+    const title = container.querySelector('.ant-alert-message') as HTMLElement
+    expect(getComputedStyle(title).fontSize).toBe(`${type.cardTitle.fontSize}px`)
   })
 })
