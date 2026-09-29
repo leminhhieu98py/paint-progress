@@ -445,7 +445,7 @@ describe('DeckProgressPanel', () => {
   it('explains cộng dồn on the card title\'s (?), not in a subtitle (CPY-01)', async () => {
     renderPanel()
     const title = await screen.findByRole('heading', { name: /Tiến độ theo công đoạn · cộng dồn/ })
-    expect(within(title).getByRole('img', { name: /Ô đã ở lớp sau thì đã qua các lớp trước/ })).toBeInTheDocument()
+    expect(within(title).getByRole('img', { name: 'Ô đã ở lớp sau được tính cho cả các lớp trước.' })).toBeInTheDocument()
     expect(screen.queryByText(/^Ô đã ở lớp sau/)).toBeNull()
   })
 

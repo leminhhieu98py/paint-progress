@@ -215,7 +215,7 @@ describe('DeckForecastPanel', () => {
     renderPanel({ events: EVENTS.filter((e) => e.toStageName === 'Lớp 1') })
     await screen.findByRole('table')
     expect(screen.getByTestId('forecast-missing')).toHaveTextContent(
-      '1 công đoạn chưa có giờ công nào nên chưa dự báo được',
+      'Tổng ở trên chưa gồm 1 công đoạn chưa có giờ công nào.',
     )
     // Lớp 1 has nothing left to do, so the total is 0 Mhr over 0 days.
     const total = within(screen.getByTestId('forecast-total'))

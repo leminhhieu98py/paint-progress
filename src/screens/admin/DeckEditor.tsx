@@ -691,7 +691,7 @@ export function DeckEditor({
             <>
               {`Tổng diện tích các ô ${divergence > 0 ? 'thiếu' : 'vượt'} ${formatPercent(Math.abs(divergence))} so với diện tích sàn`}
               <InfoTip
-                text={`Lệch quá ${formatPercent(AREA_DIVERGENCE_THRESHOLD)} thường là do nhập sai khoảng cách guide — nhưng sàn thật vẫn có thể lệch vì có opening hoặc E-house không phải là ô, nên đây chỉ là cảnh báo.`}
+                text={`Kiểm tra khoảng cách đường chia khi lệch quá ${formatPercent(AREA_DIVERGENCE_THRESHOLD)}, trừ khi sàn có opening hoặc E-house không phải ô.`}
               />
             </>
           }

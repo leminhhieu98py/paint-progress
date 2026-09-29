@@ -1845,7 +1845,7 @@ export function DeckProgressPanel({
                       <div style={{ padding: `${space.md}px ${space.xl}px`, borderBottom: `1px solid ${palette.borderSplit}` }}>
                         <h3 style={{ margin: 0, ...type.cardTitle, letterSpacing: '-0.015em' }}>
                           Tiến độ theo công đoạn · cộng dồn
-                          <InfoTip text="Ô đã ở lớp sau thì đã qua các lớp trước, nên tính cho cả các lớp đó" />
+                          <InfoTip text="Ô đã ở lớp sau được tính cho cả các lớp trước." />
                         </h3>
                       </div>
                       <StageRing

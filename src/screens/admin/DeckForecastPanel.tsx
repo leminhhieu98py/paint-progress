@@ -331,7 +331,7 @@ export function DeckForecastPanel({
           {forecast !== null && forecast.stagesWithoutData > 0 && (
             <div style={{ padding: `${space.sm}px ${space.xl}px ${space.xl}px`, ...type.caption, lineHeight: 1.5, color: palette.textTertiary }}>
               <div data-testid="forecast-missing">
-                {`${forecast.stagesWithoutData} công đoạn chưa có giờ công nào nên chưa dự báo được; tổng ở trên chưa gồm các công đoạn đó.`}
+                {`Tổng ở trên chưa gồm ${forecast.stagesWithoutData} công đoạn chưa có giờ công nào.`}
               </div>
             </div>
           )}

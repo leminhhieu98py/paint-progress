@@ -246,7 +246,7 @@ describe('DeckEditor', () => {
     // "thiếu" because the cells (100 m²) under-cover the declared 5258.5 m².
     expect(await screen.findByText(/thiếu 98,10%/)).toBeInTheDocument()
     // What a divergence usually means is on the title's (?) (CPY-01).
-    expect(screen.getByRole('img', { name: /Lệch quá 5,00%/ })).toBeInTheDocument()
+    expect(screen.getByRole('img', { name: /khi lệch quá 5,00%/ })).toBeInTheDocument()
   })
 
   it('warns on over-coverage too, naming it "vượt" -- not just under-coverage', async () => {
@@ -814,7 +814,7 @@ await userEvent.click(screen.getByRole('button', { name: 'chọn R1C1' }))
     ])
     renderInApp({ ...deck, totalAreaM2: 200 })
     const title = await screen.findByText(/Tổng diện tích các ô thiếu/)
-    expect(within(title).getByRole('img', { name: /thường là do nhập sai khoảng cách guide/ })).toBeInTheDocument()
+    expect(within(title).getByRole('img', { name: 'Kiểm tra khoảng cách đường chia khi lệch quá 5,00%, trừ khi sàn có opening hoặc E-house không phải ô.' })).toBeInTheDocument()
     expect(screen.getByText(/^Các ô cộng lại 100,00.*, sàn khai báo 200,00.*\.$/)).toBeInTheDocument()
   })
 
