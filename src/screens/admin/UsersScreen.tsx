@@ -53,9 +53,6 @@ interface CreateValues {
 
 const ROLE_LABEL: Record<AccountRole, string> = { gs: 'GS', viewer: 'Chỉ xem' }
 
-/** How many project chips fit a row before the rest collapse into "+N". */
-const CHIPS_SHOWN = 2
-
 const RULES = [
   {
     id: 'USR-R5',
@@ -75,51 +72,28 @@ const RULES = [
   },
 ]
 
-function ProjectChips({ user }: { user: GsUser }) {
-  const chip = (label: string, more: boolean) => (
-    <span
-      key={label}
-      style={{
-        fontSize: 11.5,
-        fontWeight: 500,
-        padding: '5px 9px',
-        borderRadius: 7,
-        whiteSpace: 'nowrap',
-        background: more ? 'transparent' : user.active ? palette.bgHover : palette.bgApp,
-        border: `1px ${more ? 'dashed' : 'solid'} ${palette.borderCard}`,
-        color: user.active ? palette.textSecondary : palette.textQuaternary,
-      }}
-    >
-      {label}
-    </span>
-  )
+const projectTextStyle = (user: GsUser) => ({
+  color: user.active ? palette.textSecondary : palette.textQuaternary,
+})
+
+/**
+ * The projects an account covers, as the plain text it is (UI-06): names a
+ * person typed, joined by `, ` and left to wrap -- the whole list, since a
+ * `+N` would hide the assignment on the only screen that shows it.
+ */
+function ProjectList({ user }: { user: GsUser }) {
   // A viewer reads every project (RV6-21/25, 0034) whatever project_members
   // still holds from an assignment made before that -- printing those rows
   // told the admin the account was limited to them (QA F5).
-  if (user.role === 'viewer') {
-    return chip('Mọi dự án', false)
-  }
+  if (user.role === 'viewer') return <span style={projectTextStyle(user)}>Mọi dự án</span>
   if (user.projects.length === 0) {
     return <span style={{ color: palette.textTertiary }}>—</span>
   }
-  const shown = user.projects.slice(0, CHIPS_SHOWN)
-  const rest = user.projects.length - shown.length
   // A restricted membership says how much of the project it sees (item 1c);
   // the common case -- every work -- stays a bare name.
   const labelOf = (p: GsUser['projects'][number]) =>
     p.allWorks ? p.name : `${p.name} · ${p.workIds.length}/${p.workCount} công việc`
-  return (
-    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
-      {shown.map((p) => chip(labelOf(p), false))}
-      {/* The overflow chip names the projects it stands for, so the count is
-          not a dead end on the only screen that shows the assignment. */}
-      {rest > 0 && (
-        <Tooltip title={user.projects.slice(CHIPS_SHOWN).map(labelOf).join(' · ')}>
-          {chip(`+${rest}`, true)}
-        </Tooltip>
-      )}
-    </div>
-  )
+  return <span style={projectTextStyle(user)}>{user.projects.map(labelOf).join(', ')}</span>
 }
 
 interface PermissionRow {
@@ -437,7 +411,6 @@ export function UsersScreen() {
                 dataIndex: 'username',
                 key: 'username',
                 width: 150,
-                align: 'center',
               },
               {
                 title: 'Loại',
@@ -449,7 +422,7 @@ export function UsersScreen() {
               {
                 title: 'Dự án',
                 key: 'projects',
-                render: (_v, user) => <ProjectChips user={user} />,
+                render: (_v, user) => <ProjectList user={user} />,
               },
               {
                 title: 'Trạng thái',

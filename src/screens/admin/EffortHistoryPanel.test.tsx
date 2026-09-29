@@ -171,3 +171,16 @@ describe('EffortHistoryPanel — the waste reason is a note (UI-04 amended, UI-0
     expectLeft(screen.getByRole('columnheader', { name: 'Lý do hao phí' }))
   })
 })
+
+describe('EffortHistoryPanel — identifiers are text (UI-06)', () => {
+  it('keeps the bay code and the production order left, the hours centred', async () => {
+    renderPanel()
+    const order = await screen.findByText('LSX-1')
+    const th = (label: string) => screen.getByRole('columnheader', { name: label })
+    expectLeft(th('Mã ô'))
+    expectLeft(th('Lệnh sản xuất'))
+    expectLeft(order.closest('td'))
+    expectLeft(screen.getByText('R1C2').closest('td'))
+    expect(th('Giờ công')).toHaveStyle({ textAlign: 'center' })
+  })
+})

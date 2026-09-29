@@ -146,7 +146,7 @@ export function EffortHistoryPanel({
         pagination={tablePagination(shown.length)}
         locale={{ emptyText: onlyMissing ? 'Mọi lần cập nhật đã có giờ công' : 'Sàn này chưa có lần cập nhật nào' }}
         columns={[
-          { title: 'Mã ô', dataIndex: 'cellCode', width: 80, align: 'center' },
+          { title: 'Mã ô', dataIndex: 'cellCode', width: 80 },
           { title: 'Công việc', dataIndex: 'workName', width: 120, render: (v: string | null) => v ?? '' },
           { title: 'Công đoạn', dataIndex: 'toStageName', width: 140, render: (v: string | null) => v ?? 'Chưa bắt đầu' },
           { title: 'Cập nhật lúc', dataIndex: 'at', width: 160, render: (v: string) => formatDateTimeVN(v), align: 'center' },
@@ -157,7 +157,7 @@ export function EffortHistoryPanel({
           { title: 'Giờ hao phí', align: 'center', width: 100, render: (_, ev) => hours(ev.effort.wasteHours) },
           // A note, not a category (UI-04 amended): plain text, left like every note (UI-03).
           { title: 'Lý do hao phí', render: (_, ev) => ev.effort.wasteReason },
-          { title: 'Lệnh sản xuất', width: 130, render: (_, ev) => ev.effort.wasteOrder, align: 'center' },
+          { title: 'Lệnh sản xuất', width: 130, render: (_, ev) => ev.effort.wasteOrder },
           {
             title: '',
             width: 90,

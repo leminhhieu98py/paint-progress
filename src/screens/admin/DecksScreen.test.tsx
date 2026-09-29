@@ -799,18 +799,32 @@ describe('DecksScreen: the quantity and unit of the works in scope (RV6-36)', ()
 })
 
 describe('DecksScreen — alignment (UI-03)', () => {
-  it('keeps the deck name left and centres the code, counts, badge and actions, header included', async () => {
+  it('keeps the deck name and code left and centres counts, badge and actions, header included (UI-06)', async () => {
     renderScreen()
     const name = await screen.findByText('Main Deck')
     const list = within(name.closest('table') as HTMLElement)
     const th = (label: string) => list.getByRole('columnheader', { name: label })
     expectLeft(th('Tên sàn'))
     expectLeft(name.closest('td'))
-    for (const label of ['Mã', 'Số ô', 'Bản vẽ', 'Thao tác', 'Thứ tự']) {
+    // The code is typed by the admin: text, so left like the name.
+    expectLeft(th('Mã'))
+    expectLeft(list.getByText('MD').closest('td'))
+    for (const label of ['Số ô', 'Bản vẽ', 'Thao tác', 'Thứ tự']) {
       expect(th(label)).toHaveStyle({ textAlign: 'center' })
     }
     const row = within(name.closest('tr') as HTMLElement)
     expect(row.getByText('24').closest('td')).toHaveStyle({ textAlign: 'center' })
     expect(row.getByText('Chưa có').closest('td')).toHaveStyle({ textAlign: 'center' })
+  })
+})
+
+describe('DecksScreen — rollup alignment (UI-06)', () => {
+  it('keeps the deck name and code left in the project rollup', async () => {
+    renderScreen()
+    const rollup = within(await screen.findByTestId('project-rollup'))
+    const name = await rollup.findByText('Cellar Deck')
+    expectLeft(rollup.getByRole('columnheader', { name: 'Mã' }))
+    expectLeft(within(name.closest('tr') as HTMLElement).getByText('CD').closest('td'))
+    expect(rollup.getByRole('columnheader', { name: 'Tỉ trọng' })).toHaveStyle({ textAlign: 'center' })
   })
 })

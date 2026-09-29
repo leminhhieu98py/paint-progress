@@ -504,12 +504,7 @@ export function DecksScreen() {
                 dataIndex: 'name',
                 render: (v: string) => <span style={{ fontWeight: 600 }}>{v}</span>,
               },
-              {
-                title: 'Mã',
-                align: 'center',
-                dataIndex: 'code',
-                width: 120,
-              },
+              { title: 'Mã', dataIndex: 'code', width: 120 },
               { title: 'Số ô', dataIndex: 'cellCount', width: 90, align: 'center' },
               {
                 title: listScope.title,
@@ -643,13 +638,7 @@ export function DecksScreen() {
                   dataSource={visibleRollup}
                   columns={[
                     { title: 'Sàn', dataIndex: 'name', key: 'name' },
-                    {
-                      title: 'Mã',
-                      align: 'center',
-                      dataIndex: 'code',
-                      key: 'code',
-                      width: 100,
-                    },
+                    { title: 'Mã', dataIndex: 'code', key: 'code', width: 100 },
                     { title: 'Tỉ trọng', dataIndex: 'share', key: 'share', width: 110, align: 'center' },
                     {
                       title: rollupScope.title,
@@ -672,7 +661,7 @@ export function DecksScreen() {
                       <Table.Summary.Cell index={0}>
                         <strong>Tổng dự án</strong>
                       </Table.Summary.Cell>
-                      <Table.Summary.Cell index={1} align="center" />
+                      <Table.Summary.Cell index={1} />
                       <Table.Summary.Cell index={2} align="center">
                         <strong>{formatPercent(effectiveTotal)}</strong>
                       </Table.Summary.Cell>

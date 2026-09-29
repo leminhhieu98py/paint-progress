@@ -393,7 +393,6 @@ export function WorksScreen() {
               },
               {
                 title: 'Đơn vị',
-                align: 'center',
                 dataIndex: 'unit',
                 width: 110,
                 render: (v: string, _w, i) => (

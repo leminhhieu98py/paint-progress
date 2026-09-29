@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderApp } from '../../test/renderApp'
+import { expectLeft } from '../../test/alignment'
 import type { Work, WorkModel } from '../../domain/types'
 import { WorksScreen } from './WorksScreen'
 
@@ -260,5 +261,16 @@ describe('WorksScreen', () => {
     loadProjectModel.mockResolvedValue({ models: [], decks: [], audit: {} })
     renderScreen()
     expect(await screen.findByText('Dự án chưa có công việc nào')).toBeInTheDocument()
+  })
+})
+
+describe('WorksScreen — alignment (UI-06)', () => {
+  it('keeps the typed quantity label and unit left, beside the name', async () => {
+    renderScreen()
+    await screen.findByDisplayValue('Sơn')
+    const th = (label: string) => screen.getByRole('columnheader', { name: label })
+    for (const label of ['Tên công việc', 'Đại lượng', 'Đơn vị']) expectLeft(th(label))
+    expectLeft(within(rowOf('Sơn')).getAllByLabelText('Đơn vị')[0].closest('td'))
+    expect(th('Trọng số')).toHaveStyle({ textAlign: 'center' })
   })
 })

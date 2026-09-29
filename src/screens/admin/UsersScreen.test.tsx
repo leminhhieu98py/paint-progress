@@ -90,7 +90,7 @@ describe('UsersScreen', () => {
     expect(screen.getByText('BB1')).toBeInTheDocument()
   })
 
-  it('shows every project a GS covers, collapsing the tail into a count', async () => {
+  it('lists every project a GS covers as plain text, the whole list, no chips (UI-06)', async () => {
     listGsUsers.mockResolvedValue([
       {
         id: 'u7', username: 'gs1', fullName: 'GS Một', active: true, role: 'gs', hidden: false,
@@ -102,9 +102,15 @@ describe('UsersScreen', () => {
       },
     ])
     renderApp(<UsersScreen />)
-    expect(await screen.findByText('Bạch Hổ BH-7')).toBeInTheDocument()
-    expect(screen.getByText('Rạng Đông RD-2')).toBeInTheDocument()
-    expect(screen.getByText('+1')).toBeInTheDocument()
+    const list = await screen.findByText('Bạch Hổ BH-7, Rạng Đông RD-2, Đại Hùng DH-1')
+    expect(screen.queryByText('+1')).toBeNull()
+    // The names are the cell's own text: nothing drawn around them.
+    const cell = list.closest('td') as HTMLElement
+    expectLeft(cell)
+    expect(cell.querySelectorAll('span, div').length).toBeLessThanOrEqual(1)
+    expect(list).not.toHaveStyle({ borderStyle: 'solid' })
+    expect(list.style.background).toBe('')
+    expect(list.style.padding).toBe('')
   })
 
   it('says so rather than rendering an empty cell for an unassigned account', async () => {
@@ -328,7 +334,10 @@ describe('UsersScreen — Feedback Rv2 (0028)', () => {
     ])
     renderApp(<UsersScreen />)
     await screen.findByText('boss')
-    expect(screen.getByText('Mọi dự án')).toBeInTheDocument()
+    // The text that stands in for the list, so plain text like the list (UI-06).
+    const all = screen.getByText('Mọi dự án')
+    expect(all.style.background).toBe('')
+    expect(all.style.padding).toBe('')
     expect(screen.queryByText('BB2 · 1/1 công việc')).toBeNull()
     // A foreman's row is unchanged.
     expect(screen.getByText('BB1')).toBeInTheDocument()
@@ -462,13 +471,14 @@ describe('UsersScreen — pagination (UI-05)', () => {
 })
 
 describe('UsersScreen — alignment (UI-03)', () => {
-  it('keeps the name column left and centres everything else, header included', async () => {
+  it('keeps typed text left and centres everything else, header included (UI-06)', async () => {
     renderApp(<UsersScreen />)
     await screen.findByText('GS Một')
     const th = (label: string) => screen.getByRole('columnheader', { name: label })
-    expectLeft(th('Người dùng'))
-    expectLeft(th('Dự án'))
-    for (const label of ['Tên đăng nhập', 'Loại', 'Trạng thái', 'Thao tác']) {
+    // A login name is typed text, like the person's name beside it.
+    for (const label of ['Người dùng', 'Tên đăng nhập', 'Dự án']) expectLeft(th(label))
+    expectLeft(screen.getByText('gs1').closest('td'))
+    for (const label of ['Loại', 'Trạng thái', 'Thao tác']) {
       expect(th(label)).toHaveStyle({ textAlign: 'center' })
     }
     const cell = screen.getAllByText('Đang dùng')[0].closest('td')
