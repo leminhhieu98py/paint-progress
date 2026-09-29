@@ -11,17 +11,20 @@ const SMALL: [selector: string, small: string][] = [
   ['.ant-select', 'ant-select-sm'],
   ['.ant-segmented', 'ant-segmented-sm'],
   ['.ant-input-affix-wrapper', 'ant-input-affix-wrapper-sm'],
+  // A field with an addon: antd sizes the wrapper, not only the input.
+  ['.ant-input-group-wrapper', 'ant-input-group-wrapper-sm'],
   // A bare Input, not the one inside an InputNumber, a picker or an affix.
   ['input.ant-input:not(.ant-input-number-input)', 'ant-input-sm'],
 ]
 
 /** The antd controls under `root` that are not `size="small"`, by class and name. */
-function sizeOf(root: HTMLElement, wantSmall: boolean) {
+function notSmall(root: HTMLElement) {
   const off: string[] = []
   for (const [selector, small] of SMALL) {
     for (const el of root.querySelectorAll<HTMLElement>(selector)) {
-      if (selector.startsWith('input') && el.closest('.ant-input-affix-wrapper, .ant-input-group-wrapper') !== null) continue
-      if (el.classList.contains(small) !== wantSmall) {
+      // An input inside an affix wrapper is sized by the wrapper, checked above.
+      if (selector.startsWith('input') && el.closest('.ant-input-affix-wrapper') !== null) continue
+      if (!el.classList.contains(small)) {
         off.push(`${selector} ${el.getAttribute('aria-label') ?? el.textContent?.slice(0, 30) ?? ''}`)
       }
     }
@@ -32,10 +35,5 @@ function sizeOf(root: HTMLElement, wantSmall: boolean) {
 /** Every control inside a table row is `size="small"` (CTL-01). */
 export function expectAllSmall(row: HTMLElement) {
   expect(row.querySelectorAll(SMALL.map(([s]) => s).join(', ')).length).toBeGreaterThan(0)
-  expect(sizeOf(row, true)).toEqual([])
-}
-
-/** Every control outside a table is the default size (CTL-01). */
-export function expectNoneSmall(root: HTMLElement) {
-  expect(sizeOf(root, false)).toEqual([])
+  expect(notSmall(row)).toEqual([])
 }
