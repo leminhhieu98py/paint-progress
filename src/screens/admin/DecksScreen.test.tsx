@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderApp } from '../../test/renderApp'
 import { DecksScreen } from './DecksScreen'
 import { expectLeft } from '../../test/alignment'
+import { pageSubtitle } from '../../test/copy'
 
 const listProjectNames = vi.hoisted(() => vi.fn())
 const listDecks = vi.hoisted(() => vi.fn())
@@ -268,6 +269,9 @@ describe('DecksScreen — the project-wide half of progress', () => {
     await waitFor(() => expect(within(rollup).getByText('Cellar Deck')).toBeInTheDocument())
     expect(within(rollup).queryByText('Test data')).toBeNull()
     expect(within(rollup).getByText(/Đã ẩn 1 sàn có tỉ trọng 0,00%/)).toBeInTheDocument()
+    // Why they carry nothing is a tooltip on the note, not a parenthetical (CPY-01).
+    expect(within(rollup).queryByText(/\(không thuộc/)).toBeNull()
+    expect(within(rollup).getByRole('img', { name: 'Không thuộc công việc nào tính vào tổng' })).toBeInTheDocument()
     // Still a deck of the project, in the list that says what exists.
     expect(screen.getAllByText('Test data').length).toBeGreaterThan(0)
   })
@@ -497,8 +501,39 @@ describe('DecksScreen — the project-wide half of progress', () => {
     loadProjectModel.mockResolvedValue({ models: [], decks: [], audit: {} })
     renderScreen()
 
-    expect(await screen.findByText('Dự án này chưa có sàn nào')).toBeInTheDocument()
+    expect((await screen.findAllByText('Dự án này chưa có sàn nào')).length).toBeGreaterThan(0)
     expect(screen.getByRole('button', { name: /Xuất báo cáo/ })).toBeDisabled()
+    // The export button's own tooltip says why; the empty states say nothing
+    // more than their title (CPY-01).
+    expect(screen.queryByText(/Xuất báo cáo bị tắt/)).toBeNull()
+    expect(screen.queryByText(/Rollup và báo cáo/)).toBeNull()
+  })
+
+  it('has no subtitle and no summary that explains the computation (CPY-01, CPY-03)', async () => {
+    renderScreen()
+    await screen.findByTestId('project-rollup')
+    expect(pageSubtitle()).toBeNull()
+    expect(screen.queryByText(/rollup và xuất báo cáo/)).toBeNull()
+    expect(screen.queryByText('Tổng theo công việc; mỗi công việc theo các sàn của nó')).toBeNull()
+  })
+
+  it('keeps only the business rule under the rollup, not how refresh and export are built (CPY-01)', async () => {
+    renderScreen()
+    await screen.findByTestId('project-rollup')
+    await userEvent.click(screen.getByRole('button', { name: /Quy tắc áp dụng/ }))
+    expect(screen.getByText(/Tỉ trọng của sàn là trọng số hiệu dụng/)).toBeInTheDocument()
+    expect(screen.queryByText(/Làm mới thất bại/)).toBeNull()
+    expect(screen.queryByText(/lần lượt từng sàn/)).toBeNull()
+  })
+
+  it('asks before exporting without describing how the drawings are built (CPY-01)', async () => {
+    renderScreen()
+    await screen.findByTestId('project-rollup')
+    await userEvent.click(screen.getByRole('button', { name: /Xuất báo cáo/ }))
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText('Xuất báo cáo dự án?')).toBeInTheDocument()
+    expect(within(dialog).getByText('Có thể mất một lúc với dự án nhiều sàn.')).toBeInTheDocument()
+    expect(within(dialog).queryByText(/lần lượt|tuần tự|song song/)).toBeNull()
   })
 })
 
@@ -560,7 +595,7 @@ describe('DecksScreen — duplicating a deck (Feedback Rv2, item 3)', () => {
   it('proposes a name and a code, says what is copied, and opens the copy', async () => {
     const dialog = await openDuplicate()
     expect(within(dialog).getByText('Nhân bản sàn «Main Deck»')).toBeInTheDocument()
-    expect(within(dialog).getByText(/Không sao chép công việc, lớp sơn, tiến độ hay kế hoạch/)).toBeInTheDocument()
+    expect(within(dialog).getByText('Sao chép bản vẽ, khung và lưới ô. Không sao chép công việc, lớp sơn, tiến độ hay kế hoạch.')).toBeInTheDocument()
     expect(within(dialog).getByLabelText('Tên sàn mới')).toHaveValue('Main Deck (bản sao)')
     expect(within(dialog).getByLabelText('Mã sàn mới')).toHaveValue('MD-2')
 

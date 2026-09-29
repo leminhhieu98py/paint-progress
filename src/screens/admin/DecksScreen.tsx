@@ -27,6 +27,7 @@ import { ConsequenceModal } from '../../components/ConsequenceModal'
 import { modalProps } from '../../components/modalChrome'
 import { Donut, type DonutSlice } from '../../components/Donut'
 import { EmptyState } from '../../components/EmptyState'
+import { InfoTip } from '../../components/InfoTip'
 import { PageBody, PageHeader } from '../../components/PageHeader'
 import { ProgressBar } from '../../components/ProgressBar'
 import { RulesDisclosure } from '../../components/RulesDisclosure'
@@ -73,14 +74,6 @@ const RULES = [
   {
     id: 'DCK-R2',
     text: 'Tỉ trọng của sàn là trọng số hiệu dụng: tổng (trọng số công việc × trọng số sàn trong công việc) qua các công việc có tính vào tổng. Cả hai trọng số đặt ở mục Công việc, không nhập ở đây.',
-  },
-  {
-    id: 'DCK-R3',
-    text: 'Làm mới thất bại thì số cũ ở lại trên màn hình, không xoá trắng con số ai đó đang đọc.',
-  },
-  {
-    id: 'DCK-R6',
-    text: 'Xuất báo cáo dựng bản vẽ lần lượt từng sàn, không song song, và không đưa ra tệp một phần nếu hỏng giữa chừng.',
   },
 ]
 
@@ -322,7 +315,6 @@ export function DecksScreen() {
   const shownShares = roundSharesToTotal(slices.map((sl) => sl.value), rollup.progress)
   const shownRemainder = 1 - roundSharesToTotal([rollup.progress], rollup.progress)[0]
   const totalArea = modelDecks.reduce((sum, d, i) => (carriesWeight(i) ? sum + d.totalAreaM2 : sum), 0)
-  const projectName = projects.find((p) => p.id === projectId)?.name ?? ''
 
   /**
    * Hard delete, behind the typed name (Feedback Rv1, item 1). The row goes
@@ -438,11 +430,6 @@ export function DecksScreen() {
     <>
       <PageHeader
         title="Sàn"
-        subtitle={
-          projectName
-            ? `${projectName} · rollup và xuất báo cáo ở đây vì cả hai là phạm vi dự án`
-            : 'Chọn một dự án để xem các sàn của nó'
-        }
         filters={
           <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
             <label
@@ -496,10 +483,7 @@ export function DecksScreen() {
             scroll={{ x: 'max-content' }}
             locale={{
               emptyText: (
-                <EmptyState
-                  title="Dự án này chưa có sàn nào"
-                  description="Xuất báo cáo bị tắt cho tới khi có ít nhất một sàn."
-                />
+                <EmptyState title="Dự án này chưa có sàn nào" />
               ),
             }}
             columns={[
@@ -605,7 +589,6 @@ export function DecksScreen() {
 
         <SectionCard
           title="Tiến độ toàn dự án"
-          summary="Tổng theo công việc; mỗi công việc theo các sàn của nó"
           bodyPadding={0}
           footer={<RulesDisclosure rules={RULES} />}
           extra={
@@ -622,10 +605,7 @@ export function DecksScreen() {
           }
         >
           {modelDecks.length === 0 ? (
-            <EmptyState
-              title="Dự án này chưa có sàn nào"
-              description="Rollup và báo cáo đều tính từ các sàn, nên cả hai chờ sàn đầu tiên."
-            />
+            <EmptyState title="Dự án này chưa có sàn nào" />
           ) : (
             <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(340px, 400px)' }}>
               {/*
@@ -689,7 +669,8 @@ export function DecksScreen() {
                     type="secondary"
                     style={{ display: 'block', fontSize: 12, padding: `${space.sm}px ${space.xl}px ${space.md}px` }}
                   >
-                    {`Đã ẩn ${hiddenDecks} sàn có tỉ trọng 0,00% (không thuộc công việc nào tính vào tổng)`}
+                    {`Đã ẩn ${hiddenDecks} sàn có tỉ trọng 0,00%`}
+                    <InfoTip text="Không thuộc công việc nào tính vào tổng" />
                   </Typography.Text>
                 )}
                 </div>
@@ -861,12 +842,11 @@ export function DecksScreen() {
         open={confirmingExport}
         tag="Xác nhận"
         title="Xuất báo cáo dự án?"
-        description="Bản vẽ được dựng lại lần lượt từng sàn:"
         items={modelDecks.map((d) => ({
           label: d.name,
           meta: `${d.cellCount} ô`,
         }))}
-        consequence="Dựng tuần tự, không song song, nên với dự án nhiều sàn việc này mất một lúc. Trong lúc chạy nút không bấm lại được, và nếu hỏng giữa chừng thì không có tệp một phần nào được đưa ra."
+        consequence="Có thể mất một lúc với dự án nhiều sàn."
         okText="Xuất"
         confirmLoading={exporting}
         onCancel={() => setConfirmingExport(false)}
@@ -886,8 +866,7 @@ export function DecksScreen() {
         ]}
       >
         <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginTop: 0 }}>
-          Sao chép bản vẽ, khung và lưới ô. Không sao chép công việc, lớp sơn, tiến độ hay kế hoạch:
-          sàn mới chưa thuộc công việc nào cho tới khi bạn thêm nó ở mục Công việc.
+          Sao chép bản vẽ, khung và lưới ô. Không sao chép công việc, lớp sơn, tiến độ hay kế hoạch.
         </Typography.Paragraph>
         <Form form={copyForm} layout="vertical" onFinish={(v) => void copyDeck(v)}>
           <Form.Item name="name" label="Tên sàn mới" rules={[{ required: true, message: 'Đặt tên sàn' }]}>

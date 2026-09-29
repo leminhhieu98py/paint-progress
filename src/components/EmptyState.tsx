@@ -5,10 +5,10 @@ import { palette } from '../theme'
  * An empty state that says what is missing AND what it blocks.
  *
  * "Chưa có dữ liệu" leaves the admin to guess whether something is broken or
- * merely unstarted. Every use here names the next action and its
- * consequence -- "no drawing means no bays for a foreman to tap" -- because
- * every empty state in this app is a step someone has not done yet, not an
- * error.
+ * merely unstarted. A use names the next action when there is one -- "no
+ * drawing means no bays for a foreman to tap" -- because every empty state in
+ * this app is a step someone has not done yet, not an error. When the title
+ * already says it all, it stands alone (CPY-01).
  */
 export function EmptyState({
   title,
@@ -17,7 +17,8 @@ export function EmptyState({
   tone = 'default',
 }: {
   title: ReactNode
-  description: ReactNode
+  /** Left out when the title says it all (CPY-01). */
+  description?: ReactNode
   action?: ReactNode
   tone?: 'default' | 'error'
 }) {
@@ -37,18 +38,20 @@ export function EmptyState({
         }}
       />
       <div style={{ marginTop: 20, fontSize: 15, fontWeight: 600, lineHeight: 1.3 }}>{title}</div>
-      <div
-        style={{
-          marginTop: 7,
-          fontSize: 13,
-          lineHeight: 1.5,
-          color: palette.textSecondary,
-          maxWidth: 420,
-          margin: '7px auto 0',
-        }}
-      >
-        {description}
-      </div>
+      {description !== undefined && (
+        <div
+          style={{
+            marginTop: 7,
+            fontSize: 13,
+            lineHeight: 1.5,
+            color: palette.textSecondary,
+            maxWidth: 420,
+            margin: '7px auto 0',
+          }}
+        >
+          {description}
+        </div>
+      )}
       {action !== undefined && <div style={{ marginTop: 20 }}>{action}</div>}
     </div>
   )
