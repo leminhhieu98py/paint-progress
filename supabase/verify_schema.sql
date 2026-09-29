@@ -1340,7 +1340,9 @@ begin
   select count(*) into guarded from pg_proc
    where pronamespace = 'public'::regnamespace
      and proname in ('employees_assert_unique_name', 'profiles_assert_unique_name')
-     and prosrc like '%current_setting(''role'', true) in (''anon'', ''authenticated'') and not is_admin()%';
+     and prosrc like '%current_setting(''role'', true) in (''anon'', ''authenticated'') and not is_admin() then%'
+     and prosrc like '%raise exception ''new row violates row-level security policy%'
+     and prosrc like '%errcode = ''insufficient_privilege''%';
   grants_ok := not has_table_privilege('anon', 'public.profiles', 'insert')
     and not has_table_privilege('authenticated', 'public.profiles', 'insert')
     and not has_table_privilege('anon', 'public.employees', 'insert')

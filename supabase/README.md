@@ -199,7 +199,9 @@ the rule. A refusal is SQLSTATE `PPDUP` with DETAIL `account`, `hidden_account`,
 `employee` or `retired_employee`, which the app and the `admin-users` Edge Function translate. The lookup runs
 only for an admin, the service role and SQL sessions: a BEFORE trigger fires
 before RLS checks the new row, so for anon or a GS it would confirm that a
-name exists; those callers skip it and get the plain RLS refusal. For the same
+name exists; those callers are refused first with RLS's own 42501, which also
+stops a security definer function they call from writing a name around the
+rule. For the same
 reason `0037` revokes INSERT on `profiles` from `anon` and `authenticated`
 (only the Edge Function creates accounts) and on `employees` from `anon`.
 **It changes no row.** Before the push, run the read-only report

@@ -51,10 +51,11 @@
 -- search_path so the check sees every row whoever writes -- the admin through
 -- PostgREST, or the Edge Function's service_role. Because a BEFORE trigger
 -- runs before RLS checks the new row, the lookup is done only for those
--- callers (and SQL sessions); anon and non-admin sessions skip it and are
--- refused by RLS as before, so no name is ever confirmed to them (review
--- I-1). The same reason revokes INSERT on profiles from anon and
--- authenticated (only the Edge Function creates accounts) and on employees
+-- callers (and SQL sessions). anon and non-admin sessions are refused with
+-- RLS's own 42501 before any lookup, so no name is ever confirmed to them
+-- (review I-1), and no security definer function they call can write a name
+-- around the rule (N-1). The same reason revokes INSERT on profiles from anon
+-- and authenticated (only the Edge Function creates accounts) and on employees
 -- from anon.
 --
 -- Deploy order: this migration, then the Edge Function, then the app. The
@@ -100,13 +101,16 @@ declare
   name_key text := lower(btrim(new.full_name));
 begin
   -- Only an admin, the service role (the admin-users Edge Function) or a SQL
-  -- session is told a name is taken. anon and every other signed-in session
-  -- return here untouched and meet RLS, which refuses them without a name
-  -- ever being looked up: a PPDUP answer to them would say whether a person
-  -- exists (review I-1). `role` is the role PostgREST set for the request;
-  -- security definer changes the user, not that setting.
+  -- session may write this table's names. anon and every other signed-in
+  -- session are refused here, before a name is looked up, with the same
+  -- 42501 and message RLS gives them -- so the answer is identical for a name
+  -- that exists and one that does not (review I-1) -- and a security definer
+  -- function they call cannot write around the rule either (N-1). `role` is
+  -- the role PostgREST set for the request; security definer changes the
+  -- user, not that setting.
   if current_setting('role', true) in ('anon', 'authenticated') and not is_admin() then
-    return new;
+    raise exception 'new row violates row-level security policy for table "employees"'
+      using errcode = 'insufficient_privilege';
   end if;
   perform pg_advisory_xact_lock(hashtext('nhan_luc_person_name'), hashtext(name_key));
   if exists (
@@ -137,13 +141,16 @@ begin
     return new;
   end if;
   -- Only an admin, the service role (the admin-users Edge Function) or a SQL
-  -- session is told a name is taken. anon and every other signed-in session
-  -- return here untouched and meet RLS, which refuses them without a name
-  -- ever being looked up: a PPDUP answer to them would say whether a person
-  -- exists (review I-1). `role` is the role PostgREST set for the request;
-  -- security definer changes the user, not that setting.
+  -- session may write this table's names. anon and every other signed-in
+  -- session are refused here, before a name is looked up, with the same
+  -- 42501 and message RLS gives them -- so the answer is identical for a name
+  -- that exists and one that does not (review I-1) -- and a security definer
+  -- function they call cannot write around the rule either (N-1). `role` is
+  -- the role PostgREST set for the request; security definer changes the
+  -- user, not that setting.
   if current_setting('role', true) in ('anon', 'authenticated') and not is_admin() then
-    return new;
+    raise exception 'new row violates row-level security policy for table "profiles"'
+      using errcode = 'insufficient_privilege';
   end if;
   perform pg_advisory_xact_lock(hashtext('nhan_luc_person_name'), hashtext(name_key));
   select p.hidden into holder_hidden from profiles p
@@ -229,9 +236,11 @@ begin
   select count(*) into n from pg_proc
   where pronamespace = 'public'::regnamespace
     and proname in ('employees_assert_unique_name', 'profiles_assert_unique_name')
-    and prosrc like '%current_setting(''role'', true) in (''anon'', ''authenticated'') and not is_admin()%';
+    and prosrc like '%current_setting(''role'', true) in (''anon'', ''authenticated'') and not is_admin() then%'
+    and prosrc like '%raise exception ''new row violates row-level security policy%'
+    and prosrc like '%errcode = ''insufficient_privilege''%';
   if n <> 2 then
-    raise exception '0037: a name check looks names up for callers other than admins and the service role (found % of 2 guarded)', n;
+    raise exception '0037: a name check does not refuse callers other than admins and the service role with 42501 before the lookup (found % of 2 guarded)', n;
   end if;
   if has_table_privilege('anon', 'public.profiles', 'insert')
      or has_table_privilege('authenticated', 'public.profiles', 'insert')

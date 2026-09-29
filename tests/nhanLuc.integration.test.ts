@@ -242,10 +242,11 @@ describe.skipIf(!configured)('admin-users after Nhân lực, as an admin session
 })
 
 /*
-  Review I-1: a BEFORE trigger runs before RLS checks the new row, so 0037's
-  lookup must never answer anyone who may not write the row. anon and a GS
-  get the same refusal for a name that exists as for one that does not --
-  never PPDUP.
+  Review I-1 / N-1: a BEFORE trigger runs before RLS checks the new row, so
+  0037 refuses anyone who may not write the row before it looks a name up,
+  with RLS's own 42501 and message. anon (refused on the grant) and a GS get
+  the same refusal for a name that exists as for one that does not -- never
+  PPDUP.
 */
 describe.skipIf(!configured || !gsPassword)('0037 tells anon and a GS nothing about names', () => {
   let admin: SupabaseClient
@@ -285,6 +286,8 @@ describe.skipIf(!configured || !gsPassword)('0037 tells anon and a GS nothing ab
     const existing = await client().from('employees').insert({ full_name: known.toUpperCase() })
     const missing = await client().from('employees').insert({ full_name: unknown })
     expect(refusal(existing.error)).toBe(refusal(missing.error))
+    expect(existing.error?.details ?? null).toBe(missing.error?.details ?? null)
+    expect(refusal(existing.error)).toMatch(/permission denied|row-level security policy/)
   })
 
   it.each([
