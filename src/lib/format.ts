@@ -44,8 +44,12 @@ const PERCENT = new Intl.NumberFormat('vi-VN', {
 */
 const WEIGHT = new Intl.NumberFormat('vi-VN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
-/** Man-hours: one decimal always ("3,0"), a second when it carries information ("0,25"). */
-const HOURS = new Intl.NumberFormat('vi-VN', { minimumFractionDigits: 1, maximumFractionDigits: 2 })
+/**
+ * Man-hours: two decimals always ("3,00", "0,25"), like every other quantity
+ * on screen. One-or-two put "0,0" above "411,62" in one column (M11); two
+ * keeps every digit the old second place carried.
+ */
+const HOURS = new Intl.NumberFormat('vi-VN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 /** Mhr/m²: three places, since the customer's workbook compares 1,149 with 1,161. */
 const MHR_PER_M2 = new Intl.NumberFormat('vi-VN', { minimumFractionDigits: 3, maximumFractionDigits: 3 })
 /**

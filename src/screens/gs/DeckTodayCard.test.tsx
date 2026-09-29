@@ -21,7 +21,7 @@ describe('DeckTodayCard while the deck loads', () => {
     expect(within(card()).getByRole('heading', { level: 2, name: 'Thông tin nhanh — Hôm nay' })).toBeInTheDocument()
     expect(within(card()).getByRole('status', { name: 'Đang tải thông tin hôm nay' })).toBeInTheDocument()
     expect(card()).not.toHaveTextContent('chưa có công đoạn')
-    expect(card()).not.toHaveTextContent('0,0')
+    expect(card()).not.toHaveTextContent('0,00')
     expect(within(card()).queryByText('Mhr thực hiện hôm nay')).toBeNull()
   })
 
@@ -70,10 +70,10 @@ describe('DeckTodayCard', () => {
     // RV5-19, verbatim from the spec's wording.
     render(<DeckTodayCard todayKey="2026-09-09" rows={ONE_WORK} totals={TOTALS} />)
     const rows: [string, string][] = [
-      ['Mhr thực hiện hôm nay', '12,5'],
-      ['Mhr hao phí hôm nay', '1,5'],
-      ['Tổng Mhr đã thực hiện đến hôm nay', '480,0'],
-      ['Tổng Mhr hao phí đến hôm nay', '22,0'],
+      ['Mhr thực hiện hôm nay', '12,50'],
+      ['Mhr hao phí hôm nay', '1,50'],
+      ['Tổng Mhr đã thực hiện đến hôm nay', '480,00'],
+      ['Tổng Mhr hao phí đến hôm nay', '22,00'],
     ]
     for (const [label, value] of rows) {
       expect(within(card()).getByText(label)).toBeInTheDocument()

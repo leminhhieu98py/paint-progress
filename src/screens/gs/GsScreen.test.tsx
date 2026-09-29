@@ -720,7 +720,7 @@ describe('GsScreen', () => {
     expect(within(progress).getByRole('status', { name: 'Đang tải tiến độ sàn' })).toBeInTheDocument()
     expect(progress).not.toHaveTextContent('%')
     expect(within(today).getByRole('status', { name: 'Đang tải thông tin hôm nay' })).toBeInTheDocument()
-    expect(today).not.toHaveTextContent('0,0')
+    expect(today).not.toHaveTextContent('0,00')
 
     // The works alone are not the deck: its bays are still on the way.
     await act(async () => { landWorks() })
@@ -752,7 +752,7 @@ describe('GsScreen', () => {
     const today = await screen.findByTestId('gs-deck-today')
     await waitFor(() => expect(within(today).queryByRole('status')).toBeNull())
     expect(within(today).getByText('Mhr thực hiện hôm nay')).toBeInTheDocument()
-    expect(today).not.toHaveTextContent('0,0')
+    expect(today).not.toHaveTextContent('0,00')
     expect(within(today).getAllByText('-').length).toBeGreaterThan(0)
   })
 
@@ -2220,10 +2220,10 @@ describe('GsScreen: Thông tin nhanh — Hôm nay (Feedback Rv5, item 7)', () =>
     expect(card().getByText('Tháo giáo')).toBeInTheDocument()
 
     // 4 + 2 today of 16 all told; 1 + 0 lost today of 4 all told.
-    expect(card().getByText('6,0')).toBeInTheDocument()
-    expect(card().getByText('1,0')).toBeInTheDocument()
-    expect(card().getByText('16,0')).toBeInTheDocument()
-    expect(card().getByText('4,0')).toBeInTheDocument()
+    expect(card().getByText('6,00')).toBeInTheDocument()
+    expect(card().getByText('1,00')).toBeInTheDocument()
+    expect(card().getByText('16,00')).toBeInTheDocument()
+    expect(card().getByText('4,00')).toBeInTheDocument()
   })
 
   it('leaves hours booked against no coat out of its four figures (Feedback Rv5, RV5-35)', async () => {
@@ -2263,12 +2263,12 @@ describe('GsScreen: Thông tin nhanh — Hôm nay (Feedback Rv5, item 7)', () =>
 
     // The same four figures as without the removal: 6,0 and 1,0 today, 16,0 and
     // 4,0 all told -- not 13,0 / 6,0 / 23,0 / 9,0.
-    await waitFor(() => expect(card().getByText('6,0')).toBeInTheDocument())
-    expect(card().getByText('1,0')).toBeInTheDocument()
-    expect(card().getByText('16,0')).toBeInTheDocument()
-    expect(card().getByText('4,0')).toBeInTheDocument()
-    expect(card().queryByText('13,0')).toBeNull()
-    expect(card().queryByText('23,0')).toBeNull()
+    await waitFor(() => expect(card().getByText('6,00')).toBeInTheDocument())
+    expect(card().getByText('1,00')).toBeInTheDocument()
+    expect(card().getByText('16,00')).toBeInTheDocument()
+    expect(card().getByText('4,00')).toBeInTheDocument()
+    expect(card().queryByText('13,00')).toBeNull()
+    expect(card().queryByText('23,00')).toBeNull()
   })
 
   it('is there for a viewer, who is who reads this screen without writing', async () => {

@@ -101,9 +101,9 @@ describe('DeckForecastPanel', () => {
     renderPanel()
     const totals = within(await screen.findByTestId('deck-effort-totals'))
     expect(totals.getByText('Mhr thực hiện hôm nay')).toBeInTheDocument()
-    expect(totals.getAllByText('0,0')).toHaveLength(2)
-    expect(totals.getByText('2.000,0')).toBeInTheDocument()
-    expect(totals.getByText('2,0')).toBeInTheDocument()
+    expect(totals.getAllByText('0,00')).toHaveLength(2)
+    expect(totals.getByText('2.000,00')).toBeInTheDocument()
+    expect(totals.getByText('2,00')).toBeInTheDocument()
     // The scope and calculation notes are the labels' (?), not captions (CPY-01).
     expect(totals.getAllByRole('img', { name: 'Cả sàn, mọi công việc' })).toHaveLength(2)
     expect(totals.getAllByRole('img', { name: 'Không tính vào hiệu suất' })).toHaveLength(2)
@@ -117,24 +117,26 @@ describe('DeckForecastPanel', () => {
 
     // Lớp 1: every bay has been through it, so nothing is left and no days.
     expect(within(lop1).getByText('Lớp 1')).toBeInTheDocument()
-    expect(within(lop1).getByText('0,00')).toBeInTheDocument()
+    // m² left and Mhr needed, both nothing; hours print at two decimals like m² (M11).
+    expect(within(lop1).getAllByText('0,00')).toHaveLength(2)
     expect(within(lop1).getByText('1,000')).toBeInTheDocument()
 
     // Lớp 2: 500 m² left at 2 Mhr/m² is 1.000 Mhr, and at 500 Mhr a day, 2 days.
     expect(within(lop2).getByText('Lớp 2')).toBeInTheDocument()
-    expect(within(lop2).getByText('500,00')).toBeInTheDocument()
+    // 500 m² left, and 500 Mhr a day.
+    expect(within(lop2).getAllByText('500,00')).toHaveLength(2)
     expect(within(lop2).getByText('2,000')).toBeInTheDocument()
-    expect(within(lop2).getByText('1.000,0')).toBeInTheDocument()
+    expect(within(lop2).getByText('1.000,00')).toBeInTheDocument()
     expect(within(lop2).getByText('2')).toBeInTheDocument()
   })
 
   it('totals the Mhr and takes the largest number of days, and says why', async () => {
     renderPanel()
     const total = within(await screen.findByTestId('forecast-total'))
-    expect(total.getByText('1.000,0')).toBeInTheDocument()
+    expect(total.getByText('1.000,00')).toBeInTheDocument()
     expect(total.getByText('2')).toBeInTheDocument()
     // The totals row is bodyStrong, not the <strong> 700 it was (TYP-02).
-    for (const text of ['Tổng', '1.000,0', '2']) expect(weightOf(total.getByText(text))).toBe(600)
+    for (const text of ['Tổng', '1.000,00', '2']) expect(weightOf(total.getByText(text))).toBe(600)
     // Why, on the column it explains (CPY-01).
     const tip = screen.getByRole('img', { name: /ngày lớn nhất trong các công đoạn, không phải tổng/ })
     expect(tip.closest('th')).toHaveTextContent(/^Số ngày cần$/)
@@ -167,7 +169,7 @@ describe('DeckForecastPanel', () => {
     const warning = within(await screen.findByTestId('forecast-warning'))
     expect(warning.getByText('Cảnh báo không kịp tiến độ')).toBeInTheDocument()
     // One day left, two needed; Lớp 2 gets through 500 of its 1.000 Mhr.
-    expect(warning.getByText('Cần thêm 500,0 Mhr hoặc 1 ngày làm việc.')).toBeInTheDocument()
+    expect(warning.getByText('Cần thêm 500,00 Mhr hoặc 1 ngày làm việc.')).toBeInTheDocument()
   })
 
   it('says how far past the deadline the deck already is', async () => {
@@ -219,7 +221,7 @@ describe('DeckForecastPanel', () => {
     )
     // Lớp 1 has nothing left to do, so the total is 0 Mhr over 0 days.
     const total = within(screen.getByTestId('forecast-total'))
-    expect(total.getByText('0,0')).toBeInTheDocument()
+    expect(total.getByText('0,00')).toBeInTheDocument()
   })
 
   it('tells the admin when the deck belongs to no work at all', async () => {

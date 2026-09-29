@@ -107,11 +107,11 @@ const coverageFact = () => {
 describe('ProductivityDashboard', () => {
   it('sums the first work\'s hours, area, overall ratio and lost hours into the cards', () => {
     renderDashboard()
-    expect(cards().getByText('450,0')).toBeInTheDocument()
+    expect(cards().getByText('450,00')).toBeInTheDocument()
     expect(cards().getByText('400,00')).toBeInTheDocument()
     // 450 / 400. Labelled as total over total, since it is not the daily mean.
     expect(cards().getByText('1,125')).toBeInTheDocument()
-    expect(cards().getByText('4,0')).toBeInTheDocument()
+    expect(cards().getByText('4,00')).toBeInTheDocument()
     // 4 of 454.
     expect(cards().getByText('0,88% tổng giờ')).toBeInTheDocument()
     // How the overall ratio is computed is its label's (?), and no card
@@ -150,15 +150,15 @@ describe('ProductivityDashboard', () => {
     // Lớp 1: 120/100 on 01/09 and 220/200 on 02/09 -> mean 1,150; 340 Mhr over 2 days.
     expect(within(lop1).getByText('Lớp 1')).toBeInTheDocument()
     expect(within(lop1).getByText('2')).toBeInTheDocument()
-    expect(within(lop1).getByText('340,0')).toBeInTheDocument()
+    expect(within(lop1).getByText('340,00')).toBeInTheDocument()
     expect(within(lop1).getByText('300,00')).toBeInTheDocument()
     expect(within(lop1).getByText('1,150')).toBeInTheDocument()
-    expect(within(lop1).getByText('170,0')).toBeInTheDocument()
-    expect(within(lop1).getByText('4,0')).toBeInTheDocument()
+    expect(within(lop1).getByText('170,00')).toBeInTheDocument()
+    expect(within(lop1).getByText('4,00')).toBeInTheDocument()
     expect(within(lop2).getByText('Lớp 2')).toBeInTheDocument()
     expect(within(lop2).getByText('1,100')).toBeInTheDocument()
     // 110 Mhr in one day: the total and the daily mean are the same figure.
-    expect(within(lop2).getAllByText('110,0')).toHaveLength(2)
+    expect(within(lop2).getAllByText('110,00')).toHaveLength(2)
   })
 
   it('hands the line chart the work\'s stages in order, with the drawing\'s colours', () => {
@@ -183,13 +183,13 @@ describe('ProductivityDashboard', () => {
     renderDashboard()
     const leads = within(screen.getByTestId('lead-table')).getAllByRole('row').slice(1)
     expect(within(leads[0]).getByText('Tổ 1')).toBeInTheDocument()
-    expect(within(leads[0]).getByText('230,0')).toBeInTheDocument()
+    expect(within(leads[0]).getByText('230,00')).toBeInTheDocument()
     expect(within(leads[0]).getByText('1,150')).toBeInTheDocument()
     expect(within(leads[1]).getByText('Tổ 2')).toBeInTheDocument()
 
     const reasons = within(screen.getByTestId('waste-table')).getAllByRole('row').slice(1)
     expect(within(reasons[0]).getByText('Mưa')).toBeInTheDocument()
-    expect(within(reasons[0]).getByText('3,0')).toBeInTheDocument()
+    expect(within(reasons[0]).getByText('3,00')).toBeInTheDocument()
     expect(within(reasons[1]).getByText('Chờ vật tư')).toBeInTheDocument()
   })
 
@@ -197,7 +197,7 @@ describe('ProductivityDashboard', () => {
     renderDashboard()
     await userEvent.click(screen.getByRole('combobox', { name: 'Sàn' }))
     await userEvent.click(await screen.findByTitle('Sàn B'))
-    expect(cards().getByText('220,0')).toBeInTheDocument()
+    expect(cards().getByText('220,00')).toBeInTheDocument()
     // Every update in scope has hours: a plain fact, nothing to explain.
     expect(coverageFact()).toHaveTextContent('1 / 1 lần cập nhật')
     expect(coverageFact()).toHaveStyle({ background: palette.bgSubtle })
@@ -211,7 +211,7 @@ describe('ProductivityDashboard', () => {
     // Searchable (UI-02): typed without the accents, the way a site tablet types.
     await userEvent.type(screen.getByRole('combobox', { name: 'Công việc' }), 'thao')
     await userEvent.click(await screen.findByTitle('Tháo giáo'))
-    expect(cards().getByText('10,0')).toBeInTheDocument()
+    expect(cards().getByText('10,00')).toBeInTheDocument()
     expect(screen.getByTestId('efficiency-chart')).toHaveTextContent('Tháo')
   })
 
@@ -255,14 +255,15 @@ describe('ProductivityDashboard — the placeholder rows (Feedback Rv5, item 5)'
     // Lớp 1 is 340 Mhr / 300 m² and Lớp 2 is 110 Mhr / 100 m², and the 50 Mhr,
     // 50 m² and 2 hao phí on the placeholder appear in none of the four.
     renderDashboard([...EVENTS, sentBack({ leadName: 'Tổ 1', workHours: 50, wasteHours: 2 })])
-    expect(cards().getByText('450,0')).toBeInTheDocument()             // Tổng Mhr, not 500,0
+    expect(cards().getByText('450,00')).toBeInTheDocument()             // Tổng Mhr, not 500,0
     expect(cards().getByText('400,00')).toBeInTheDocument()            // Tổng m², not 450,00
     expect(cards().getByText('1,125')).toBeInTheDocument()             // 450 / 400, not 500 / 450
-    expect(cards().getByText('4,0')).toBeInTheDocument()               // Giờ hao phí, not 6,0
+    expect(cards().getByText('4,00')).toBeInTheDocument()               // Giờ hao phí, not 6,0
     expect(cards().getByText('0,88% tổng giờ')).toBeInTheDocument()    // 4 of 454, not 6 of 506
-    expect(cards().queryByText('500,0')).toBeNull()
-    expect(cards().queryByText('450,00')).toBeNull()
-    expect(cards().queryByText('6,0')).toBeNull()
+    expect(cards().queryByText('500,00')).toBeNull()
+    // Hours and m² print alike at two decimals (M11): 450,00 once, the Mhr card's.
+    expect(cards().getAllByText('450,00')).toHaveLength(1)
+    expect(cards().queryByText('6,00')).toBeNull()
     expect(within(screen.getByTestId('stage-table')).queryByText('Chưa bắt đầu')).toBeNull()
   })
 
@@ -277,10 +278,10 @@ describe('ProductivityDashboard — the placeholder rows (Feedback Rv5, item 5)'
     const t1 = within(rows[0])
     expect(t1.getByText('Tổ 1')).toBeInTheDocument()
     expect(t1.getByText('2')).toBeInTheDocument()          // two updates, not three
-    expect(t1.getByText('230,0')).toBeInTheDocument()      // Tổng Mhr, not 280,0
+    expect(t1.getByText('230,00')).toBeInTheDocument()      // Tổng Mhr, not 280,0
     expect(t1.getByText('200,00')).toBeInTheDocument()     // Tổng m², not 250,00
     expect(t1.getByText('1,150')).toBeInTheDocument()      // 230 / 200, not 280 / 250
-    expect(t1.getByText('3,0')).toBeInTheDocument()        // Giờ hao phí, not 5,0
+    expect(t1.getByText('3,00')).toBeInTheDocument()        // Giờ hao phí, not 5,0
   })
 
   it('leaves a placeholder\'s lost hours out of Lý do hao phí (Feedback Rv5, RV5-35)', () => {
@@ -290,10 +291,10 @@ describe('ProductivityDashboard — the placeholder rows (Feedback Rv5, item 5)'
     const reasons = within(screen.getByTestId('waste-table')).getAllByRole('row').slice(1)
     expect(reasons).toHaveLength(2)
     expect(within(reasons[0]).getByText('Mưa')).toBeInTheDocument()
-    expect(within(reasons[0]).getByText('3,0')).toBeInTheDocument()   // not 5,0
+    expect(within(reasons[0]).getByText('3,00')).toBeInTheDocument()   // not 5,0
     expect(within(reasons[0]).getByText('1')).toBeInTheDocument()     // one occurrence, not two
     // And the cards still agree with the stage rows they sit above.
-    expect(cards().getByText('4,0')).toBeInTheDocument()
+    expect(cards().getByText('4,00')).toBeInTheDocument()
   })
 
   /** The one StatCard whose label reads `label`. StatCard nests the label in a
@@ -312,11 +313,11 @@ describe('ProductivityDashboard — the placeholder rows (Feedback Rv5, item 5)'
       ev({ deckName: 'Sàn A', cellCode: 'R4C1', cellAreaM2: 50, toStageName: null, at: todayIso,
            effort: { leadName: 'Tổ 1', workHours: 50, wasteHours: 2 } }),
     ])
-    expect(cardByLabel('Mhr thực hiện hôm nay').getByText('0,0')).toBeInTheDocument()
-    expect(cardByLabel('Mhr hao phí hôm nay').getByText('0,0')).toBeInTheDocument()
+    expect(cardByLabel('Mhr thực hiện hôm nay').getByText('0,00')).toBeInTheDocument()
+    expect(cardByLabel('Mhr hao phí hôm nay').getByText('0,00')).toBeInTheDocument()
     // The sibling on a real coat is still counted, so the filter has not simply
     // emptied the cards.
-    expect(cards().getByText('450,0')).toBeInTheDocument()
+    expect(cards().getByText('450,00')).toBeInTheDocument()
   })
 
   it('still counts a coat\'s own hours today (Feedback Rv5, RV5-35)', () => {
@@ -327,8 +328,8 @@ describe('ProductivityDashboard — the placeholder rows (Feedback Rv5, item 5)'
       ev({ deckName: 'Sàn A', cellCode: 'R4C2', cellAreaM2: 40, toStageName: 'Lớp 1', at: todayIso,
            effort: { leadName: 'Tổ 1', workHours: 8, wasteHours: 1 } }),
     ])
-    expect(cardByLabel('Mhr thực hiện hôm nay').getByText('8,0')).toBeInTheDocument()
-    expect(cardByLabel('Mhr hao phí hôm nay').getByText('1,0')).toBeInTheDocument()
+    expect(cardByLabel('Mhr thực hiện hôm nay').getByText('8,00')).toBeInTheDocument()
+    expect(cardByLabel('Mhr hao phí hôm nay').getByText('1,00')).toBeInTheDocument()
   })
 
   it('files a reason no coat carries under no reason at all, not under a new row', () => {
@@ -358,7 +359,7 @@ describe('ProductivityDashboard — the placeholder rows (Feedback Rv5, item 5)'
     // Card only: the screen's Công việc / Sàn / date filters still govern what
     // everything, this card included, is computed from.
     expect(stageRows()).toHaveLength(2)
-    expect(cards().getByText('450,0')).toBeInTheDocument()
+    expect(cards().getByText('450,00')).toBeInTheDocument()
     expect(within(screen.getByTestId('waste-table')).getAllByRole('row').slice(1)).toHaveLength(2)
   })
 })
@@ -435,7 +436,7 @@ describe('ProductivityDashboard — alignment (UI-03)', () => {
     }
     const [lop1] = stageRows()
     expectLeft(within(lop1).getByText('Lớp 1').closest('td'))
-    expect(within(lop1).getByText('340,0').closest('td')).toHaveStyle({ textAlign: 'center' })
+    expect(within(lop1).getByText('340,00').closest('td')).toHaveStyle({ textAlign: 'center' })
 
     const leads = within(screen.getByTestId('lead-table'))
     expectLeft(leads.getByRole('columnheader', { name: 'Nhóm trưởng' }))
@@ -535,7 +536,7 @@ describe('ProductivityDashboard — stat cards on a phone (MOB-02)', () => {
     renderDashboard()
     expect(grid()).toHaveStyle({ gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' })
     expect(grid().children).toHaveLength(6)
-    expect(cards().getByText('450,0')).toHaveStyle({ fontSize: '21px' })
+    expect(cards().getByText('450,00')).toHaveStyle({ fontSize: '21px' })
   })
 
   it('stacks them one to a row only under 360 px', () => {
@@ -548,7 +549,7 @@ describe('ProductivityDashboard — stat cards on a phone (MOB-02)', () => {
     restoreViewport = setViewport(1280)
     renderDashboard()
     expect(grid()).toHaveStyle({ gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))' })
-    expect(cards().getByText('450,0')).toHaveStyle({ fontSize: '32px' })
+    expect(cards().getByText('450,00')).toHaveStyle({ fontSize: '32px' })
   })
 })
 
