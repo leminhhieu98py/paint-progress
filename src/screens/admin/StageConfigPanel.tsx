@@ -7,7 +7,7 @@ import {
   SaveOutlined,
 } from '@ant-design/icons'
 import { Alert, App, Button, Input, InputNumber, Space, Table, Tooltip } from 'antd'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { duplicateStageFields } from '../../domain/stageFlow'
 import type { Stage } from '../../domain/types'
 import { formatWeight } from '../../lib/format'
@@ -87,6 +87,7 @@ export function StageConfigPanel({
   deckId,
   editable = true,
   onSaved,
+  workSelect,
 }: {
   /** The work whose coats these are: since 0024 a coat list belongs to a (work, deck). */
   workId: string
@@ -110,6 +111,8 @@ export function StageConfigPanel({
    * the same pattern, scoped tighter to when a write actually happened.
    */
   onSaved?: () => void
+  /** The deck screen's choice of work, for a deck in several: in this card's header (M7). */
+  workSelect?: ReactNode
 }) {
   /**
    * The rows being edited, each carrying the id it is identified by.
@@ -350,6 +353,7 @@ export function StageConfigPanel({
       footer={<RulesDisclosure rules={STAGE_RULES} />}
       extra={
         <Space size={12}>
+          {workSelect}
           {sumChip}
           {editable && (
             <Tooltip

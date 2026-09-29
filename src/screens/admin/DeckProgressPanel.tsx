@@ -1276,6 +1276,8 @@ export function DeckProgressPanel({
       </label>
       <Select
         id="lens-work"
+        // Named by its card, apart from the deck page's other work selects (M7).
+        aria-label="Công việc · Tiến độ theo lớp sơn"
         {...searchSelectProps}
         style={{ minWidth: 170 }}
         value={value}

@@ -285,7 +285,7 @@ describe('DeckForecastPanel: the work switch (FLT-03)', () => {
       ],
     }))
     renderPanel()
-    const work = await screen.findByRole('combobox', { name: 'Công việc' })
+    const work = await screen.findByRole('combobox', { name: 'Công việc · Dự báo tiến độ' })
     expect(screen.queryByRole('radiogroup')).toBeNull()
     expect(screen.queryByText('Công việc', { exact: true })).toBeNull()
     expect(within(screen.getByRole('table')).getByText('Lớp 1')).toBeInTheDocument()

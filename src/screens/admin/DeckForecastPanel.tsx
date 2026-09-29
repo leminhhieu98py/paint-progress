@@ -203,7 +203,7 @@ export function DeckForecastPanel({
       {works.length > 1 && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
           <Select
-            aria-label="Công việc"
+            aria-label="Công việc · Dự báo tiến độ"
             {...searchSelectProps}
             {...fullOptions}
             style={{ width: WORK_SELECT_WIDTH }}

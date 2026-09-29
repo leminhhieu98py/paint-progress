@@ -1,6 +1,6 @@
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { useEffect } from 'react'
+import { useEffect, type ReactNode } from 'react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderApp } from '../../test/renderApp'
@@ -45,8 +45,13 @@ vi.mock('./DeckEditor', () => ({
 // form, and the panel has its own test file. Left real it would pull decksApi's
 // stage exports through a mock that does not carry them.
 vi.mock('./StageConfigPanel', () => ({
-  StageConfigPanel: ({ workId, deckId, editable }: { workId: string; deckId: string; editable?: boolean }) => (
-    <div>{`stages ${workId} ${deckId} ${editable ? 'sửa' : 'xem'}`}</div>
+  StageConfigPanel: ({ workId, deckId, editable, workSelect }: {
+    workId: string; deckId: string; editable?: boolean; workSelect?: ReactNode
+  }) => (
+    <div data-testid={`stage-panel-${workId}`}>
+      <span>{`stages ${workId} ${deckId} ${editable ? 'sửa' : 'xem'}`}</span>
+      {workSelect}
+    </div>
   ),
 }))
 // The works the deck is part of, which A3.2 chooses between since 0024.
@@ -481,7 +486,7 @@ describe('DeckDetailScreen — công việc', () => {
     renderAt('/decks/d1')
     expect(await screen.findByText('stages w1 d1 xem')).toBeInTheDocument()
     expect(screen.queryByRole('tab')).toBeNull()
-    expect(screen.queryByRole('combobox', { name: 'Công việc' })).toBeNull()
+    expect(screen.queryByRole('combobox', { name: 'Công việc · Cấu hình lớp sơn' })).toBeNull()
   })
 
   it('chooses the work of the coat configuration from a searchable select when the deck is in several (FLT-07)', async () => {
@@ -490,17 +495,19 @@ describe('DeckDetailScreen — công việc', () => {
     expect(await screen.findByText('stages w1 d1 xem')).toBeInTheDocument()
     // A select, not a row of tabs.
     expect(screen.queryByRole('tab')).toBeNull()
-    expect(screen.getByRole('combobox', { name: 'Công việc' })).toBeInTheDocument()
+    // Named by its card, apart from the other cards' work selects, and inside
+    // the card it switches (M7).
+    expect(within(screen.getByTestId('stage-panel-w1')).getByRole('combobox', { name: 'Công việc · Cấu hình lớp sơn' })).toBeInTheDocument()
     // Searchable, tones ignored (UI-02).
-    await userEvent.type(screen.getByRole('combobox', { name: 'Công việc' }), 'thao')
-    expect(await optionTitles('Công việc')).toEqual(['Tháo giáo'])
+    await userEvent.type(screen.getByRole('combobox', { name: 'Công việc · Cấu hình lớp sơn' }), 'thao')
+    expect(await optionTitles('Công việc · Cấu hình lớp sơn')).toEqual(['Tháo giáo'])
     await userEvent.keyboard('{Escape}')
-    await chooseOption('Công việc', 'Tháo giáo')
+    await chooseOption('Công việc · Cấu hình lớp sơn', 'Tháo giáo')
     expect(await screen.findByText('stages w2 d1 xem')).toBeVisible()
     // The first work's panel stays mounted, hidden, so an unsaved draft
     // survives switching back, as it did under the tabs.
     expect(screen.getByText('stages w1 d1 xem')).not.toBeVisible()
-    await chooseOption('Công việc', 'Sơn')
+    await chooseOption('Công việc · Cấu hình lớp sơn', 'Sơn')
     expect(screen.getByText('stages w1 d1 xem')).toBeVisible()
     expect(screen.getByText('stages w2 d1 xem')).not.toBeVisible()
   })

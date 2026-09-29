@@ -746,6 +746,15 @@ describe('StageConfigPanel — explanatory copy (CPY-01)', () => {
   })
 })
 
+describe('StageConfigPanel: the work select in its header (M7)', () => {
+  it('puts a work select handed to it in its own header, beside the sum', async () => {
+    renderApp(<StageConfigPanel workId="w1" deckId="d1" workSelect={<button type="button">chọn công việc</button>} />)
+    await screen.findByDisplayValue('Blast + Coat 1')
+    const header = screen.getByRole('heading', { name: 'Cấu hình lớp sơn' }).parentElement as HTMLElement
+    expect(within(header).getByRole('button', { name: 'chọn công việc' })).toBeInTheDocument()
+  })
+})
+
 describe('StageConfigPanel weight bar', () => {
   it('gives each stage a band as wide as its own weight, in its own colour', async () => {
     renderApp(<StageConfigPanel workId="w1" deckId="d1" />)

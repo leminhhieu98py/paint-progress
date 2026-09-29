@@ -29,7 +29,7 @@ import { InfoTip } from '../../components/InfoTip'
 import { SectionCard } from '../../components/SectionCard'
 import { WORK_SELECT_WIDTH, searchSelectProps, useFullOptionsProps } from '../../components/searchSelect'
 import { formatPercent } from '../../lib/format'
-import { palette, space, type } from '../../theme'
+import { palette, type } from '../../theme'
 
 /** One read-only fact about the deck, in the card grid of panel A3.1. */
 function IdentityCard({
@@ -663,21 +663,7 @@ export function DeckDetailScreen() {
           <StageConfigPanel workId={works[0].work.id} deckId={deck.id} editable={editing} onSaved={() => void load()} />
         )}
         {deck && works !== null && works.length > 1 && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: space.md }}>
-            <Select
-              aria-label="Công việc"
-              {...searchSelectProps}
-              {...fullOptions}
-              style={{ width: WORK_SELECT_WIDTH }}
-              value={activeStageWork}
-              onChange={(id: string) => {
-                if (activeStageWork !== undefined) {
-                  setSeenStageWorks((seen) => (seen.includes(activeStageWork) ? seen : [...seen, activeStageWork]))
-                }
-                setStageWorkId(id)
-              }}
-              options={works.map((w) => ({ label: w.work.name, value: w.work.id }))}
-            />
+          <div>
             {works
               .filter((w) => w.work.id === activeStageWork || seenStageWorks.includes(w.work.id))
               .map((w) => (
@@ -687,6 +673,23 @@ export function DeckDetailScreen() {
                     deckId={deck.id}
                     editable={editing}
                     onSaved={() => void load()}
+                    // In the visible card's header, named by the card (M7).
+                    workSelect={w.work.id === activeStageWork && (
+                      <Select
+                        aria-label="Công việc · Cấu hình lớp sơn"
+                        {...searchSelectProps}
+                        {...fullOptions}
+                        style={{ width: WORK_SELECT_WIDTH }}
+                        value={activeStageWork}
+                        onChange={(id: string) => {
+                          if (activeStageWork !== undefined) {
+                            setSeenStageWorks((seen) => (seen.includes(activeStageWork) ? seen : [...seen, activeStageWork]))
+                          }
+                          setStageWorkId(id)
+                        }}
+                        options={works.map((x) => ({ label: x.work.name, value: x.work.id }))}
+                      />
+                    )}
                   />
                 </div>
               ))}

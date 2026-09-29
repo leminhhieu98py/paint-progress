@@ -1235,6 +1235,8 @@ describe('DeckProgressPanel — công việc', () => {
     renderPanel(false)
     await screen.findByTestId('lens-A')
     expect(screen.getByLabelText('Công việc')).toBeInTheDocument()
+    // Named by its card, apart from the deck page's other work selects (M7).
+    expect(screen.getByRole('combobox', { name: 'Công việc · Tiến độ theo lớp sơn' })).toBeInTheDocument()
     expect(within(screen.getByTestId('lens-A')).getByText('Tiến độ · Blast + Coat 1')).toBeInTheDocument()
   })
 
