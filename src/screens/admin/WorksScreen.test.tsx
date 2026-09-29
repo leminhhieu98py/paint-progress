@@ -6,6 +6,7 @@ import { renderApp } from '../../test/renderApp'
 import { expectLeft } from '../../test/alignment'
 import { expectAllSmall } from '../../test/controls'
 import { consequenceItems, expectHelperText, keyFactTexts, pageSubtitle, ruleTexts } from '../../test/copy'
+import { palette } from '../../theme'
 import type { Work, WorkModel } from '../../domain/types'
 import { WorksScreen } from './WorksScreen'
 
@@ -89,8 +90,10 @@ describe('WorksScreen', () => {
     expect(listWorks).toHaveBeenCalledWith('p1')
     expect(screen.getByDisplayValue('Tháo giáo')).toBeInTheDocument()
     expect(screen.getByDisplayValue('Marking')).toBeInTheDocument()
-    // 0.6 + 0.4; Marking does not count and stays out of the sum.
-    expect(screen.getByTestId('works-sum')).toHaveTextContent('1,00')
+    // 0.6 + 0.4; Marking does not count and stays out of the sum. A KeyFact,
+    // not a hand-made pill in the header (M5, HLT-01).
+    expect(keyFactTexts()).toContain('Σ trọng số 1,00')
+    expect(screen.queryByTestId('works-sum')).toBeNull()
     expect(screen.getByRole('button', { name: 'Lưu công việc' })).toBeEnabled()
   })
 
@@ -98,7 +101,7 @@ describe('WorksScreen', () => {
     renderScreen()
     await screen.findByDisplayValue('Sơn')
     const card = screen.getByRole('heading', { name: 'Công việc của dự án' }).parentElement as HTMLElement
-    expect(keyFactTexts(card)).toEqual(['3 công việc', '2 tính vào tổng'])
+    expect(keyFactTexts(card)).toEqual(['3 công việc', '2 tính vào tổng', 'Σ trọng số 1,00'])
   })
 
   it('shows the deck matrix\'s facts beside its title as KeyFacts pills (HLT-01)', async () => {
@@ -126,7 +129,9 @@ describe('WorksScreen', () => {
     await userEvent.clear(weight)
     await userEvent.type(weight, '0.3')
     await userEvent.tab()
-    expect(screen.getByTestId('works-sum')).toHaveTextContent('0,90')
+    expect(keyFactTexts()).toContain('Σ trọng số 0,90')
+    const fact = screen.getAllByTestId('key-fact').find((f) => f.textContent === 'Σ trọng số 0,90')
+    expect(fact).toHaveStyle({ color: palette.warning })
     expect(screen.getByRole('button', { name: 'Lưu công việc' })).toBeDisabled()
   })
 
@@ -134,7 +139,7 @@ describe('WorksScreen', () => {
     renderScreen()
     await screen.findByDisplayValue('Sơn')
     await userEvent.click(within(rowOf('Tháo giáo')).getByRole('switch', { name: 'Tính vào tổng' }))
-    expect(screen.getByTestId('works-sum')).toHaveTextContent('0,60')
+    expect(keyFactTexts()).toContain('Σ trọng số 0,60')
     expect(screen.getByRole('button', { name: 'Lưu công việc' })).toBeDisabled()
   })
 

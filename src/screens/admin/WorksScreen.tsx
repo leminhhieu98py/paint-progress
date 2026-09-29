@@ -264,24 +264,6 @@ export function WorksScreen() {
 
   const matrixWork = matrix ? draft.find((w) => w.id === matrix.workId) : undefined
 
-  const sumChip = (
-    <span
-      data-testid="works-sum"
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: 6,
-        padding: '5px 10px',
-        borderRadius: 999,
-        ...type.micro,
-        background: balanced ? palette.accentTint : palette.errorBg,
-        color: balanced ? palette.accent : palette.error,
-      }}
-    >
-      {`Σ trọng số ${formatWeight(sum)} / 1`}
-    </span>
-  )
-
   return (
     <>
       <PageHeader
@@ -300,7 +282,6 @@ export function WorksScreen() {
         }
         extra={
           <Space size={12}>
-            {sumChip}
             <Button icon={<PlusOutlined aria-hidden />} disabled={!projectId || loading} onClick={addWork}>
               Thêm công việc
             </Button>
@@ -327,7 +308,12 @@ export function WorksScreen() {
 
         <SectionCard
           title="Công việc của dự án"
-          facts={[{ value: draft.length, label: 'công việc' }, { value: counted.length, label: 'tính vào tổng' }]}
+          // The sum is a fact of the list like the counts, amber while it is not 1 (M5, HLT-01).
+          facts={[
+            { value: draft.length, label: 'công việc' },
+            { value: counted.length, label: 'tính vào tổng' },
+            { prefix: 'Σ trọng số', value: formatWeight(sum), ...(balanced ? {} : { tone: 'warning' as const }) },
+          ]}
           bodyPadding={0}
           footer={<RulesDisclosure rules={RULES} />}
         >

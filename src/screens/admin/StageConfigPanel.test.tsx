@@ -6,6 +6,7 @@ import { StageConfigPanel } from './StageConfigPanel'
 import { expectLeft } from '../../test/alignment'
 import { expectAllSmall } from '../../test/controls'
 import { consequenceItems, expectHelperText, keyFactTexts, ruleTexts } from '../../test/copy'
+import { palette } from '../../theme'
 
 const listWorkStages = vi.hoisted(() => vi.fn())
 const saveWorkStages = vi.hoisted(() => vi.fn())
@@ -86,10 +87,12 @@ describe('StageConfigPanel', () => {
     // mocked listWorkStages promise rather than testing the settled total.
     await screen.findByDisplayValue('Blast + Coat 1')
     // vi-VN formatting: comma decimal separator, matching the paperwork the
-    // operators already read from. Twice on purpose: the section's facts
-    // survive the panel being collapsed, the chip beside Lưu does not.
+    // operators already read from. Once: the fact, which survives the panel
+    // being collapsed, is the only sum; the chip beside Lưu is gone (M5).
     await waitFor(() => expect(keyFactTexts()).toEqual(['2 lớp', 'tổng 1,00']))
-    expect(screen.getAllByText('1,00')).toHaveLength(2)
+    expect(screen.getAllByText('1,00')).toHaveLength(1)
+    expect(screen.queryByText('/ 1')).toBeNull()
+    expect(screen.getAllByTestId('key-fact')[1]).not.toHaveStyle({ color: palette.warning })
   })
 
   it('blocks save when the weights do not sum to 1', async () => {
@@ -467,8 +470,8 @@ describe('StageConfigPanel', () => {
 
     await waitFor(() => expect(screen.getByDisplayValue('0,33333')).toBeInTheDocument())
     expect(screen.queryByDisplayValue('0,333333')).toBeNull()
-    // 0.4 + 0.33333, not 0.4 + 0.333333 -- on the chip and in the card's facts.
-    expect(screen.getAllByText('0,73')).toHaveLength(2)
+    // 0.4 + 0.33333, not 0.4 + 0.333333 -- in the card's facts, the one sum (M5).
+    expect(screen.getAllByText('0,73')).toHaveLength(1)
   })
 
   it('saves the three-way split that used to disable its own Save button', async () => {
@@ -505,8 +508,8 @@ describe('StageConfigPanel', () => {
     // rounds away and it reads 1,00. That is precisely why the epsilon has to
     // forgive it: at 1e-6 the banner appeared next to a total the admin reads as
     // exactly 1,00, saying "Tổng trọng số phải bằng 1 — hiện tại 1,00".
-    // On the chip and in the card's facts.
-    expect(screen.getAllByText('1,00')).toHaveLength(2)
+    // In the card's facts, the one sum (M5).
+    expect(screen.getAllByText('1,00')).toHaveLength(1)
     expect(screen.queryByText(/Tổng trọng số phải bằng/)).toBeNull()
 
     expect(screen.getByRole('button', { name: 'Lưu cấu hình lớp sơn' })).toBeEnabled()
@@ -784,7 +787,9 @@ describe('StageConfigPanel weight bar', () => {
     // "0,7000" has to be read and compared against a number that is not there.
     expect(screen.getByTestId('weight-bar-s1')).toHaveStyle({ width: '60.0000%' })
     expect(screen.getByTestId('weight-bar-s2')).toHaveStyle({ width: '10.0000%' })
-    expect(screen.getAllByText('0,70')).toHaveLength(2)
+    // The one sum, the fact, amber while it is not 1 (M5, HLT-01).
+    expect(screen.getAllByText('0,70')).toHaveLength(1)
+    expect(screen.getAllByTestId('key-fact')[1]).toHaveStyle({ color: palette.warning })
     // The validation hint, without the rationale after it (CPY-01).
     expect(screen.getByText('Tổng trọng số các lớp phải bằng 1; hiện tại 0,70.')).toBeInTheDocument()
   })

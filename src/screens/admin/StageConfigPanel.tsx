@@ -1,6 +1,4 @@
 import {
-  CheckCircleFilled,
-  CloseCircleFilled,
   DeleteOutlined,
   HolderOutlined,
   PlusOutlined,
@@ -326,42 +324,21 @@ export function StageConfigPanel({
     }
   }
 
-  const sumChip = (
-    <span
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: 9,
-        padding: '7px 13px',
-        borderRadius: 999,
-        background: balanced ? palette.successBg : palette.errorBg,
-        color: balanced ? palette.success : palette.error,
-      }}
-    >
-      {balanced ? <CheckCircleFilled aria-hidden /> : <CloseCircleFilled aria-hidden />}
-      <span style={type.micro}>{formatWeight(total)}</span>
-      {/*
-        The target is written as a bare 1, not formatWeight(1). Four zeros on a
-        constant add nothing, and repeating the same string the chip's own total
-        prints when balanced makes the two indistinguishable to read -- and
-        ambiguous to query.
-      */}
-      <span style={{ ...type.micro, opacity: 0.7 }}>/ 1</span>
-    </span>
-  )
-
   return (
     <SectionCard
       code="A3.2"
       title="Cấu hình lớp sơn"
-      facts={[{ value: draft.length, label: 'lớp' }, { prefix: 'tổng', value: formatWeight(total) }]}
+      // The one sum on the card (M5): amber while it is not 1 (HLT-01).
+      facts={[
+        { value: draft.length, label: 'lớp' },
+        { prefix: 'tổng', value: formatWeight(total), ...(balanced ? {} : { tone: 'warning' as const }) },
+      ]}
       collapsible
       bodyPadding={0}
       footer={<RulesDisclosure rules={STAGE_RULES} />}
       extra={
         <Space size={12}>
           {workSelect}
-          {sumChip}
           {editable && (
             <Tooltip
               title={
