@@ -12,7 +12,10 @@ reach production before the app that needs them.**
 
 ## [1.7.1] - 2026-09-29
 
-Linh's review of v1.7.0, one item.
+The UI consistency release: one layout, table, filter bar and type scale
+across the admin and field screens, charts and rings that read on phones, the
+field screens' second pass, and an animated login screen. It also carries the
+one item from Linh's review of v1.7.0.
 
 ### Changed
 
@@ -22,6 +25,17 @@ Linh's review of v1.7.0, one item.
   arc is sized by. The contribution column adds up to the centre exactly;
   1.7.0 showed only the progress, so `83,22%` sat beside an arc a fifth of the
   ring and the numbers did not add up to `42,91%`. No number changed.
+- **The login screen's picture moves**: "Free construction Animation" by
+  Lakhwinder, from LottieFiles
+  (https://lottiefiles.com/free-animation/construction-g8Hve0ildf), under the
+  Lottie Simple License (https://lottiefiles.com/page/license), in its
+  original colours, played by `lottie-web` (new dependency). It is loaded only
+  by the login screen, is shown on phones too (above the card, 160 px tall at
+  most), and pauses while the page is hidden. The drawn platform stays for
+  visitors who ask for reduced motion and whenever the animation cannot load.
+  The published file loops eight of its movements with expressions, which
+  the light player skips; those are written out as keyframes
+  (`scripts/bake-lottie-pingpong.mjs`), so it plays as published.
 
 ### Operational
 

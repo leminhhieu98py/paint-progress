@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom/vitest'
-import { vi } from 'vitest'
+import { afterEach, vi } from 'vitest'
 
 // jsdom does not implement matchMedia; antd's responsive Grid hook (used
 // internally by Card/Form) calls it on mount. Guarded so it never clobbers a
@@ -49,3 +49,47 @@ if (typeof SVGElement !== 'undefined' && !('getBBox' in SVGElement.prototype)) {
     value: () => ({ x: 0, y: 0, width: 0, height: 0 }),
   })
 }
+
+// The login screen loads lottie-web on mount (LoginIllustration), and every
+// test that shows the login screen would otherwise run the real player in
+// jsdom, which has no canvas or layout for it (it probes a canvas context as
+// it loads). A player that draws nothing stands in everywhere, its methods
+// recording their calls; LoginIllustration.test.tsx replaces it with one it
+// inspects more closely.
+//
+// Strict on purpose: touching a member the stub does not have throws, and the
+// test that did it fails below. The throw alone would not be enough -- the
+// component catches a failed player and quietly shows its drawing instead, so
+// a new player call would otherwise pass every test and never be exercised.
+const lottieStub = vi.hoisted(() => ({ missing: [] as string[] }))
+
+vi.mock('lottie-web/build/player/lottie_light', () => {
+  // Probed by module interop and promise resolution, not by the component.
+  const probes = new Set<PropertyKey>(['then', '__esModule', 'default', 'toJSON'])
+  const strict = <T extends object>(name: string, members: T): T =>
+    new Proxy(members, {
+      get(target, key, receiver) {
+        if (key in target || typeof key === 'symbol' || probes.has(key)) {
+          return Reflect.get(target, key, receiver)
+        }
+        const member = `${name}.${String(key)}`
+        lottieStub.missing.push(member)
+        throw new Error(`lottie-web test stub has no ${member}; add it in src/test-setup.ts`)
+      },
+    })
+  const animation = () =>
+    strict('AnimationItem', {
+      addEventListener: vi.fn(),
+      play: vi.fn(),
+      pause: vi.fn(),
+      destroy: vi.fn(),
+    })
+  return { default: strict('lottie', { loadAnimation: vi.fn(animation) }) }
+})
+
+afterEach(() => {
+  const missing = lottieStub.missing.splice(0)
+  if (missing.length > 0) {
+    throw new Error(`lottie-web test stub was asked for ${missing.join(', ')}; add it in src/test-setup.ts`)
+  }
+})
