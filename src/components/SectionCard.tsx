@@ -27,6 +27,7 @@ export function SectionCard({
   defaultOpen = true,
   bodyPadding = '18px 20px 20px',
   footer,
+  extraFill = false,
 }: {
   code?: string
   title?: ReactNode
@@ -37,6 +38,11 @@ export function SectionCard({
   defaultOpen?: boolean
   bodyPadding?: string | number
   footer?: ReactNode
+  /**
+   * The extra takes the header row's free width, its items at the right end,
+   * for an extra with a control that should grow into it (a phone's coat select).
+   */
+  extraFill?: boolean
 }) {
   const [open, setOpen] = useState(defaultOpen)
   const shown = !collapsible || open
@@ -122,7 +128,10 @@ export function SectionCard({
           )}
           {extra !== undefined && (
             <div
-              style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}
+              style={{
+                marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10,
+                ...(extraFill ? { flex: '1 1 auto', minWidth: 0, justifyContent: 'flex-end' } : {}),
+              }}
             >
               {extra}
             </div>

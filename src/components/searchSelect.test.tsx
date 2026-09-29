@@ -2,7 +2,7 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Select } from 'antd'
 import { describe, expect, it } from 'vitest'
-import { searchKeyOf, searchSelectProps } from './searchSelect'
+import { fullOptionsProps, searchKeyOf, searchSelectProps } from './searchSelect'
 
 const OPTIONS = [
   { value: 'a', label: 'Lê Minh Cường' },
@@ -51,5 +51,26 @@ describe('searchSelectProps', () => {
     await userEvent.click(combobox())
     await userEvent.type(combobox(), 'xyz')
     expect(await screen.findByText('Không có kết quả')).toBeInTheDocument()
+  })
+})
+
+describe('fullOptionsProps (options read in full)', () => {
+  const LONG = 'Blast + Coat 1 (Primer) Jotun Penguard Primer SEA, a coat whose name runs long'
+
+  it('opens a popup at least as wide as the select, growing to its longest option up to the screen less 16 px a side', async () => {
+    expect(fullOptionsProps.popupMatchSelectWidth).toBe(false)
+    render(<Select aria-label="Lớp" {...fullOptionsProps} options={[{ value: 'a', label: LONG }]} />)
+    await userEvent.click(screen.getByRole('combobox', { name: 'Lớp' }))
+    const popup = document.querySelector('.ant-select-dropdown') as HTMLElement
+    expect(popup.style.maxWidth).toBe('calc(100vw - 32px)')
+  })
+
+  it('wraps an option too long for that, never cutting it to an ellipsis', async () => {
+    render(<Select aria-label="Lớp" {...fullOptionsProps} options={[{ value: 'a', label: LONG }]} />)
+    await userEvent.click(screen.getByRole('combobox', { name: 'Lớp' }))
+    const option = await screen.findByTitle(LONG)
+    const text = option.querySelector('.ant-select-item-option-content > span') as HTMLElement
+    expect(text).toHaveTextContent(LONG)
+    expect(text).toHaveStyle({ whiteSpace: 'normal', overflowWrap: 'anywhere' })
   })
 })

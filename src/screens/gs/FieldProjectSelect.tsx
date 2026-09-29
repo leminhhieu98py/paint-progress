@@ -1,7 +1,7 @@
 import { Select } from 'antd'
 import { useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { searchSelectProps } from '../../components/searchSelect'
+import { fullOptionsProps, searchSelectProps } from '../../components/searchSelect'
 import { APP_BASE_PATH } from '../../config'
 import { cachedProjectList, cachedProjectName, projectListFor } from './fieldProjects'
 import { FIELD_SECTIONS, fieldSectionOf } from './fieldSections'
@@ -64,6 +64,7 @@ export function FieldProjectSelect({ projectId, width = 260, value, onChange }: 
     <Select
       aria-label="Dự án"
       {...searchSelectProps}
+      {...fullOptionsProps}
       style={{ width, maxWidth: '100%' }}
       value={value ?? projectId}
       loading={reading && !listed}

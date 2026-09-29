@@ -102,3 +102,18 @@ describe('SectionCard', () => {
     expect(screen.getByText('5 lớp')).toHaveStyle({ fontSize: '12px', fontWeight: '400', color: palette.textTertiary })
   })
 })
+
+describe('SectionCard: an extra that fills the header', () => {
+  it('lets the extra take the header row\'s free width, its items at the right end, when asked', () => {
+    render(<SectionCard title="Sàn" extra={<button type="button">Lưu</button>} extraFill>x</SectionCard>)
+    const wrapper = screen.getByRole('button', { name: 'Lưu' }).parentElement as HTMLElement
+    expect(wrapper).toHaveStyle({ flex: '1 1 auto', minWidth: '0px', justifyContent: 'flex-end' })
+  })
+
+  it('keeps the extra its own width otherwise', () => {
+    render(<SectionCard title="Sàn" extra={<button type="button">Lưu</button>}>x</SectionCard>)
+    const wrapper = screen.getByRole('button', { name: 'Lưu' }).parentElement as HTMLElement
+    expect(wrapper.style.flex).toBe('')
+    expect(wrapper).toHaveStyle({ marginLeft: 'auto' })
+  })
+})

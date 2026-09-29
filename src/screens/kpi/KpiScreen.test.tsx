@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { EMPTY_EFFORT, type Cell, type DeckEvent, type Stage, type WorkModel } from '../../domain/types'
 import type { StoredStagePlan } from '../../lib/kpiApi'
 import { pageSubtitle } from '../../test/copy'
-import { chooseOption } from '../../test/select'
+import { chooseOption, openDropdown } from '../../test/select'
 import { setViewport } from '../../test/viewport'
 import { KpiScreen } from './KpiScreen'
 import { endSession } from '../../lib/sessionCache'
@@ -619,6 +619,16 @@ describe('KpiScreen (gs) on a phone (FLT-04)', () => {
     expect(await summary('Giàn B · Tất cả sàn · Tất cả công đoạn')).toBeInTheDocument()
     expect(within(bar()).queryByRole('combobox')).toBeNull()
     expect(bar().querySelector('.ant-badge-count')).toBeNull()
+  })
+
+  it('opens every select of the sheet with its options in full', async () => {
+    renderField(390)
+    await screen.findByTestId('kpi-dashboard')
+    await userEvent.click(within(bar()).getByRole('button', { name: 'Bộ lọc' }))
+    const sheet = await screen.findByRole('dialog', { name: 'Bộ lọc' })
+    for (const name of ['Dự án', 'Sàn', 'Công đoạn']) {
+      expect((await openDropdown(name, sheet)).style.maxWidth).toBe('calc(100vw - 32px)')
+    }
   })
 
   it('holds Dự án, Sàn and Công đoạn in the sheet, full width; its Tìm applies once and closes', async () => {

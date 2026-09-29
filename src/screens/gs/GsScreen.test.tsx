@@ -6,7 +6,7 @@ import userEvent from '@testing-library/user-event'
 import { Link, MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { endSession } from '../../lib/sessionCache'
-import { chooseOption } from '../../test/select'
+import { chooseOption, openDropdown } from '../../test/select'
 import { setViewport } from '../../test/viewport'
 import { FieldHeader } from './FieldHeader'
 import { GsScreen } from './GsScreen'
@@ -1695,6 +1695,17 @@ describe('GsScreen: the phone\'s bar is one row, the rest in a sheet (FLT-04)', 
     await closeFilterSheet()
   })
 
+  it('opens every select of the row and the sheet with its options in full', async () => {
+    listDeckWorks.mockResolvedValue(TWO_WORKS)
+    renderScreen()
+    await screen.findByRole('button', { name: 'ô R1C1' })
+    expect((await openDropdown('Sàn', bar())).style.maxWidth).toBe('calc(100vw - 32px)')
+    const sheet = await openFilterSheet()
+    for (const name of ['Dự án', 'Sàn', 'Công việc']) {
+      expect((await openDropdown(name, sheet)).style.maxWidth).toBe('calc(100vw - 32px)')
+    }
+  })
+
   it('badges Bộ lọc with the work once it is not the first', async () => {
     listDeckWorks.mockResolvedValue(TWO_WORKS)
     renderScreen()
@@ -2091,6 +2102,30 @@ describe('GsScreen: the plan overlay', () => {
     await waitFor(() =>
       expect(within(screen.getByTestId('gs-zone-legend')).queryByText('Khu A — Blast')).toBeNull())
     expect(within(screen.getByTestId('gs-zone-legend')).getByText('Khu A — Coat 4')).toBeInTheDocument()
+  })
+
+  it('gives the plan\'s coat select the header row\'s free width on a phone, its options in full', async () => {
+    renderScreen()
+    await userEvent.click(await screen.findByRole('button', { name: 'Hiện kế hoạch' }))
+    const box = await screen.findByRole('combobox', { name: 'Công đoạn kế hoạch' })
+    const select = box.closest('.ant-select') as HTMLElement
+    expect(select).toHaveStyle({ flex: '1 1 auto', minWidth: '160px' })
+    expect(select.style.width).toBe('')
+    // Its row, the card header's extra, grows into what the title leaves.
+    expect(select.parentElement?.parentElement).toHaveStyle({ flex: '1 1 auto', minWidth: '0px' })
+    const popup = await openDropdown('Công đoạn kế hoạch')
+    expect(popup.style.maxWidth).toBe('calc(100vw - 32px)')
+    const option = within(popup).getByTitle('Blast + Coat 1').querySelector('.ant-select-item-option-content > span')
+    expect(option).toHaveStyle({ whiteSpace: 'normal' })
+  })
+
+  it('keeps the plan\'s coat select at 180 from 768 px', async () => {
+    const restore = setViewport(1024)
+    renderScreen()
+    await userEvent.click(await screen.findByRole('button', { name: 'Hiện kế hoạch' }))
+    const box = await screen.findByRole('combobox', { name: 'Công đoạn kế hoạch' })
+    expect(box.closest('.ant-select')).toHaveStyle({ width: '180px' })
+    restore()
   })
 
   it('offers no "Tất cả" in the plan filter (Feedback Rv4)', async () => {

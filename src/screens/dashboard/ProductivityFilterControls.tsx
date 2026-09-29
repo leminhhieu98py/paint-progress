@@ -1,5 +1,5 @@
 import { DatePicker, Select } from 'antd'
-import { WORK_SELECT_WIDTH, searchSelectProps } from '../../components/searchSelect'
+import { WORK_SELECT_WIDTH, fullOptionsProps, searchSelectProps } from '../../components/searchSelect'
 import { resolveWork, workLabel, type ProductivityFilters } from './productivityFilters'
 
 /**
@@ -28,6 +28,7 @@ export function ProductivityFilterControls({
         <Select
           aria-label="Công việc"
           {...searchSelectProps}
+          {...fullOptionsProps}
           style={{ width: block ? '100%' : WORK_SELECT_WIDTH }}
           value={resolveWork(value.work, workNames)}
           onChange={(work: string) => onChange({ ...value, work })}
@@ -37,6 +38,7 @@ export function ProductivityFilterControls({
       <Select
         aria-label="Sàn"
         {...searchSelectProps}
+        {...fullOptionsProps}
         style={{ width: block ? '100%' : 220 }}
         value={value.deck}
         onChange={(deck: string) => onChange({ ...value, deck })}

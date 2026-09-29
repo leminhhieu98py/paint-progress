@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { createElement, type ReactNode } from 'react'
 import type { SelectProps } from 'antd'
 import { matchesSearch } from '../lib/search'
 
@@ -43,3 +43,18 @@ export const searchSelectProps = {
  * works are a list that gets longer, not two fixed positions.
  */
 export const WORK_SELECT_WIDTH = 180
+
+/**
+ * A select whose options read in full, spread after `searchSelectProps`: its
+ * popup is at least the select's width (rc-select stretches `minWidth` when
+ * `popupMatchSelectWidth` is false) and grows to the longest option, up to
+ * the screen less 16 px a side; an option longer than that wraps instead of
+ * ellipsising. For the field bars and sheets, where a phone's select is
+ * narrower than the coat names it offers ("Blast + Co…").
+ */
+export const fullOptionsProps = {
+  popupMatchSelectWidth: false,
+  styles: { popup: { root: { maxWidth: 'calc(100vw - 32px)' } } },
+  optionRender: (option: { label?: ReactNode }) =>
+    createElement('span', { style: { whiteSpace: 'normal', overflowWrap: 'anywhere' } }, option.label),
+} satisfies SelectProps

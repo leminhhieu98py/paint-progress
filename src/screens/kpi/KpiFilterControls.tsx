@@ -1,5 +1,5 @@
 import { Select } from 'antd'
-import { searchSelectProps } from '../../components/searchSelect'
+import { fullOptionsProps, searchSelectProps } from '../../components/searchSelect'
 import { ALL, resolveCoat, type KpiFilters } from './kpiFilters'
 
 /**
@@ -27,6 +27,7 @@ export function KpiFilterControls({
       <Select
         aria-label="Sàn"
         {...searchSelectProps}
+        {...fullOptionsProps}
         style={{ width: block ? '100%' : 220 }}
         value={value.deckId}
         onChange={(deckId: string) => onChange({ deckId, coat: ALL })}
@@ -35,6 +36,7 @@ export function KpiFilterControls({
       <Select
         aria-label="Công đoạn"
         {...searchSelectProps}
+        {...fullOptionsProps}
         style={{ width: block ? '100%' : 240 }}
         value={resolveCoat(value.coat, coats)}
         onChange={(coat: string) => onChange({ ...value, coat })}

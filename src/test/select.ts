@@ -22,7 +22,8 @@ export async function optionTitles(name: string, root?: HTMLElement): Promise<Ar
   return [...dropdown.querySelectorAll('.ant-select-item-option')].map((o) => o.getAttribute('title'))
 }
 
-async function openDropdown(name: string, root?: HTMLElement): Promise<HTMLElement> {
+/** Opens the named Select and returns its popup, the one dropdown not hidden. */
+export async function openDropdown(name: string, root?: HTMLElement): Promise<HTMLElement> {
   const box = await (root ? within(root) : screen).findByRole('combobox', { name })
   await userEvent.click(box)
   let dropdown: HTMLElement | undefined

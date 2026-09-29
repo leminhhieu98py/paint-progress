@@ -1,5 +1,5 @@
 import {
-  Alert, App, Button, Dropdown, Grid, Layout, Select, Space, Spin, Tooltip,
+  Alert, App, Button, Dropdown, Grid, Layout, Select, Spin, Tooltip,
 } from 'antd'
 import dayjs from 'dayjs'
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
@@ -45,7 +45,7 @@ import { FilterSheet } from '../../components/FilterSheet'
 import { rememberProjectName } from './fieldProjects'
 import { openingDeckId, rememberDeck } from './lastDeck'
 import { SectionCard } from '../../components/SectionCard'
-import { WORK_SELECT_WIDTH, searchSelectProps } from '../../components/searchSelect'
+import { WORK_SELECT_WIDTH, fullOptionsProps, searchSelectProps } from '../../components/searchSelect'
 
 /**
  * How long to wait for the realtime channel to reach SUBSCRIBED before telling
@@ -1111,6 +1111,7 @@ export function GsScreen() {
     <Select
       aria-label="Sàn"
       {...searchSelectProps}
+      {...fullOptionsProps}
       value={activeDeckId ?? undefined}
       onChange={(id) => {
         setActiveDeckId(id)
@@ -1145,6 +1146,7 @@ export function GsScreen() {
         <Select
           aria-label="Công việc"
           {...searchSelectProps}
+          {...fullOptionsProps}
           style={{ width: block ? '100%' : WORK_SELECT_WIDTH, maxWidth: '100%' }}
           value={activeWork.work.id}
           onChange={(id: string) => setActiveWorkId(id)}
@@ -1363,6 +1365,8 @@ export function GsScreen() {
             title={deck?.name}
             summary={deck ? `${formatAreaM2(deck.totalAreaM2)} ${unit}` : undefined}
             bodyPadding={0}
+            // On a phone the coat select grows into the header row's free width.
+            extraFill={phone}
             extra={
               /*
                 A button, not a switch. It is pressed through a glove, so it
@@ -1371,7 +1375,7 @@ export function GsScreen() {
                 decision. The label drops on a phone, where the calendar icon
                 and the pressed state carry it.
               */
-              <Space size={8}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: space.sm, flex: '1 1 auto', minWidth: 0, justifyContent: 'flex-end' }}>
                 <Button
                   type={showPlan ? 'primary' : 'default'}
                   icon={<CalendarOutlined aria-hidden />}
@@ -1386,13 +1390,16 @@ export function GsScreen() {
                     id="gs-plan-stage"
                     aria-label="Công đoạn kế hoạch"
                     {...searchSelectProps}
+                    {...fullOptionsProps}
                     value={planStageId ?? undefined}
                     onChange={(v) => setPlanStage({ deckId: activeDeckId, stageId: v })}
-                    style={{ width: phone ? 120 : 180 }}
+                    // A phone's coat names ran to "Blast + C…" at 120: the
+                    // select takes the row's free width there, 160 at least.
+                    style={phone ? { flex: '1 1 auto', minWidth: 160 } : { width: 180 }}
                     options={stages.map((st) => ({ value: st.id, label: st.name }))}
                   />
                 )}
-              </Space>
+              </div>
             }
           >
             {deck && deck.imagePath && deck.imageW && deck.imageH && imageUrl ? (

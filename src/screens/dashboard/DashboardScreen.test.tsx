@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { Link, MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { pageSubtitle } from '../../test/copy'
-import { chooseOption, optionTitles } from '../../test/select'
+import { chooseOption, openDropdown, optionTitles } from '../../test/select'
 import { setViewport } from '../../test/viewport'
 import { DashboardScreen } from './DashboardScreen'
 import { endSession } from '../../lib/sessionCache'
@@ -475,6 +475,15 @@ describe('DashboardScreen (gs) on a phone (FLT-04)', () => {
     expect(await summary('Giàn B · Sàn A · Tháo giáo')).toBeInTheDocument()
     expect(bar().querySelector('.ant-badge-count')).toHaveTextContent('2')
     expect(loadProjectModel).toHaveBeenCalledTimes(1)
+  })
+
+  it('opens every select of the sheet with its options in full', async () => {
+    renderField()
+    await screen.findByText(/^DASHBOARD 2 sự kiện/)
+    const sheet = await openSheet()
+    for (const name of ['Dự án', 'Công việc', 'Sàn']) {
+      expect((await openDropdown(name, sheet)).style.maxWidth).toBe('calc(100vw - 32px)')
+    }
   })
 
   it('keeps the inline bar from 768 px, with no sheet', async () => {
