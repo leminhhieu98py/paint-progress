@@ -1439,6 +1439,10 @@ export function DeckProgressPanel({
     : undefined
 
   return (
+    <>
+    {/* Three cards, not one: the drawing panel, then the deck across its works
+        and per coat as A3.5 and A3.6 (UX-03). Kept at this indentation so the
+        panel's 700 lines did not all move for a wrapper. */}
     <SectionCard
       code="A3.4"
       title="Tiến độ theo lớp sơn"
@@ -1793,57 +1797,6 @@ export function DeckProgressPanel({
                   )}
               </div>
 
-              {deckSummary && (
-                <div
-                  data-testid="deck-works-table"
-                  style={{
-                    marginTop: 18,
-                    border: `1px solid ${palette.borderCard}`,
-                    borderRadius: 14,
-                    background: palette.bgContainer,
-                    boxShadow: shadowCard,
-                    overflow: 'hidden',
-                  }}
-                >
-                  <div style={{ padding: `${space.md}px ${space.xl}px`, borderBottom: `1px solid ${palette.borderSplit}` }}>
-                    <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600, letterSpacing: '-0.015em' }}>
-                      Sàn này theo từng công việc
-                    </h3>
-                    <div style={{ fontSize: 12, lineHeight: 1.4, color: palette.textTertiary, marginTop: 4 }}>
-                      Trọng số sàn trong công việc · tiến độ của sàn ở công việc đó
-                    </div>
-                  </div>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-                    <tbody>
-                      {deckSummary.perWork.map((row) => (
-                        <tr key={row.work.id} style={{ borderBottom: `1px solid ${palette.borderSplit}` }}>
-                          {/* Edge cells carry the card gutter, as antd's do under `.pp-card`. */}
-                          <td style={{ padding: `${space.sm}px ${space.md}px ${space.sm}px ${space.xl}px`, fontWeight: 600 }}>{row.work.name}</td>
-                          <td style={{ padding: `${space.sm}px ${space.md}px`, color: palette.textTertiary, textAlign: 'right' }}>
-                            {formatWeight(row.weight)}
-                          </td>
-                          <td style={{ padding: `${space.sm}px ${space.xl}px ${space.sm}px ${space.md}px`, textAlign: 'right', fontWeight: 600, minWidth: 72 }}>
-                            {formatPercent(row.progress)}
-                          </td>
-                        </tr>
-                      ))}
-                      <tr style={{ background: palette.bgSubtle }}>
-                        <td style={{ padding: `${space.sm}px ${space.md}px ${space.sm}px ${space.xl}px`, fontWeight: 600 }}>Tổng hợp</td>
-                        {/* Σ W·D is a project-level share, not a deck weight; it
-                            belongs on the decks list, not in this column. */}
-                        <td />
-                        <td style={{ padding: `${space.sm}px ${space.xl}px ${space.sm}px ${space.md}px`, textAlign: 'right', fontWeight: 700 }}>
-                          {formatPercent(deckSummary.progress)}
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              )}
-
-              <div data-testid="deck-spec" style={{ marginTop: 18 }}>
-                <StageSpecTable stages={progress?.stages ?? []} unit={unit} />
-              </div>
             </>
           )}
         </div>
@@ -2168,5 +2121,63 @@ export function DeckProgressPanel({
       </Modal>
       )}
     </SectionCard>
+
+    {/*
+      The deck across its works, and per coat: boxes inside A3.4 until UX-03,
+      which made them the only sections of the deck page without a code. As
+      cards of their own the page reads as one ordered list, and each takes
+      the card inset (LAY-01). Same guard as the drawing above -- there is
+      nothing to sum before the deck has a drawing and cells.
+    */}
+    {!loading && entry && entry.imagePath && imageUrl && activeWork && deckSummary && (
+      <SectionCard
+        code="A3.5"
+        title="Sàn này theo từng công việc"
+        summary="Trọng số sàn trong công việc · tiến độ của sàn ở công việc đó"
+        bodyPadding={0}
+      >
+        <div data-testid="deck-works-table">
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <tbody>
+              {deckSummary.perWork.map((row) => (
+                <tr key={row.work.id} style={{ borderBottom: `1px solid ${palette.borderSplit}` }}>
+                  {/* Edge cells carry the card gutter, as antd's do under `.pp-card`. */}
+                  <td style={{ padding: `${space.sm}px ${space.md}px ${space.sm}px ${space.xl}px`, fontWeight: 600 }}>{row.work.name}</td>
+                  <td style={{ padding: `${space.sm}px ${space.md}px`, color: palette.textTertiary, textAlign: 'right' }}>
+                    {formatWeight(row.weight)}
+                  </td>
+                  <td style={{ padding: `${space.sm}px ${space.xl}px ${space.sm}px ${space.md}px`, textAlign: 'right', fontWeight: 600, minWidth: 72 }}>
+                    {formatPercent(row.progress)}
+                  </td>
+                </tr>
+              ))}
+              <tr style={{ background: palette.bgSubtle }}>
+                <td style={{ padding: `${space.sm}px ${space.md}px ${space.sm}px ${space.xl}px`, fontWeight: 600 }}>Tổng hợp</td>
+                {/* Σ W·D is a project-level share, not a deck weight; it
+                    belongs on the decks list, not in this column. */}
+                <td />
+                <td style={{ padding: `${space.sm}px ${space.xl}px ${space.sm}px ${space.md}px`, textAlign: 'right', fontWeight: 700 }}>
+                  {formatPercent(deckSummary.progress)}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </SectionCard>
+    )}
+
+    {!loading && entry && entry.imagePath && imageUrl && activeWork && (
+      <SectionCard
+        code="A3.6"
+        title="Diện tích cộng dồn theo công đoạn"
+        summary={`${unit} và % sàn tại mỗi công đoạn · hai dòng của sheet Dashboard trong báo cáo`}
+        bodyPadding={0}
+      >
+        <div data-testid="deck-spec">
+          <StageSpecTable stages={progress?.stages ?? []} unit={unit} />
+        </div>
+      </SectionCard>
+    )}
+    </>
   )
 }

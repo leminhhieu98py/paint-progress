@@ -146,7 +146,7 @@ export function DeckForecastPanel({
       : `${activeWork.work.name} · chưa đặt hạn`
 
   return (
-    <SectionCard code="A3.6" title="Dự báo tiến độ" summary={summary} bodyPadding={0}>
+    <SectionCard code="A3.8" title="Dự báo tiến độ" summary={summary} bodyPadding={0}>
       {/*
         Flush body, so the table's edge columns carry the card's inset (LAY-01);
         the blocks above and below it take the same inset themselves.

@@ -213,6 +213,18 @@ describe('DeckProgressPanel', () => {
     expect(await screen.findByTestId('deck-spec')).toBeInTheDocument()
   })
 
+  it('numbers the works and per-coat sections as cards after the drawing panel (UX-03)', async () => {
+    // They were boxes inside A3.4 and the only sections of the deck page
+    // without a code. As A3.5 and A3.6 the page reads as one ordered list.
+    renderPanel(false)
+    await screen.findByTestId('deck-works-table')
+    const [a4, a5, a6] = ['A3.4', 'A3.5', 'A3.6'].map((code) => screen.getByText(code))
+    expect(a4.compareDocumentPosition(a5) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(a5.compareDocumentPosition(a6) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'Sàn này theo từng công việc' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Diện tích cộng dồn theo công đoạn' })).toBeInTheDocument()
+  })
+
   it('breaks the deck down by coat CUMULATIVELY, since a later coat implies the earlier ones', async () => {
     // Feedback Rv3, item 1. One 500 m² bay sits at Coat 2 and the other at
     // Tháo giáo, so the whole deck has been through Blast + Coat 1 and Coat 2

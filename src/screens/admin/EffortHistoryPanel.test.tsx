@@ -65,6 +65,11 @@ beforeEach(() => {
 })
 
 describe('EffortHistoryPanel', () => {
+  it('carries its page code, after the two progress cards (UX-03)', async () => {
+    renderPanel()
+    expect(await screen.findByText('A3.7')).toBeInTheDocument()
+  })
+
   it('lists every update newest first, with the author, the crew and the hours', async () => {
     renderPanel()
     expect(await screen.findByText('R1C2')).toBeInTheDocument()

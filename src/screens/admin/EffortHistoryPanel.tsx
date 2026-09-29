@@ -111,7 +111,7 @@ export function EffortHistoryPanel({
 
   return (
     <SectionCard
-      code="A3.5"
+      code="A3.7"
       title="Giờ công theo lần cập nhật"
       summary={events === null ? undefined : `${coverage.withHours} / ${coverage.total} lần cập nhật có giờ công`}
       // Flush, as every list card is: the table's edge columns carry the

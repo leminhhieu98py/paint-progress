@@ -87,6 +87,11 @@ afterEach(() => {
 })
 
 describe('DeckForecastPanel', () => {
+  it('carries its page code, last on the deck page (UX-03)', async () => {
+    renderPanel()
+    expect(await screen.findByText('A3.8')).toBeInTheDocument()
+  })
+
   it('shows the deck\'s hours today and in total, worked and lost', async () => {
     // Linh, 2026-09-05: four lines beside the deck. Nothing was recorded on the
     // 5th, so today is zero while the totals are not -- which is the whole
