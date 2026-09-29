@@ -61,6 +61,13 @@ describe('names', () => {
     expect(duplicateNameMessage({ code: 'PPDUP', details: 'employee' }, 'A')).toBe('Đã có nhân viên tên "A".')
   })
 
+  it('says when the holder of the name is hidden or retired', () => {
+    expect(duplicateNameMessage({ code: 'PPDUP', details: 'hidden_account' }, 'A'))
+      .toBe('Đã có tài khoản GS/Visitor tên "A" (đã ẩn; chọn Trạng thái «Đã ẩn» để thấy).')
+    expect(duplicateNameMessage({ code: 'PPDUP', details: 'retired_employee' }, 'A'))
+      .toBe('Đã có nhân viên tên "A" (đã nghỉ; chọn Trạng thái «Đã nghỉ» để thấy).')
+  })
+
   it('reads 23505 as a duplicate employee only on an employees write', () => {
     expect(duplicateNameMessage({ code: '23505' }, 'A', true)).toBe('Đã có nhân viên tên "A".')
     expect(duplicateNameMessage({ code: '23505' }, 'A')).toBeNull()

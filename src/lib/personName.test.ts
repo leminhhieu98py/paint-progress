@@ -29,6 +29,13 @@ describe('duplicateNameMessage', () => {
       .toBe('Đã có nhân viên tên "Lê Văn A".')
   })
 
+  it('says when the account or employee holding the name is out of the default view', () => {
+    expect(duplicateNameMessage({ code: 'PPDUP', details: 'hidden_account' }, 'A'))
+      .toBe('Đã có tài khoản GS/Visitor tên "A" (đã ẩn; chọn Trạng thái «Đã ẩn» để thấy).')
+    expect(duplicateNameMessage({ code: 'PPDUP', details: 'retired_employee' }, 'A'))
+      .toBe('Đã có nhân viên tên "A" (đã nghỉ; chọn Trạng thái «Đã nghỉ» để thấy).')
+  })
+
   it('leaves every other error alone', () => {
     expect(duplicateNameMessage({ code: '42501', message: 'permission denied' }, 'Lê Văn A')).toBeNull()
     expect(duplicateNameMessage({ message: 'mất kết nối' }, 'Lê Văn A')).toBeNull()

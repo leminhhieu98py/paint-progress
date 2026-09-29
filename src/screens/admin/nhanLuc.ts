@@ -1,7 +1,7 @@
 import type { CategoryValue } from '../../components/categoryTone'
 import type { AccountRole, GsUser, StaffRole } from '../../lib/adminApi'
 import type { Employee } from '../../lib/employeesApi'
-import { personNameKey } from '../../lib/personName'
+import { nameTakenMessage, personNameKey } from '../../lib/personName'
 import { matchesSearch } from '../../lib/search'
 
 /**
@@ -119,10 +119,15 @@ export function nameClash(rows: StaffRow[], name: string, target: 'employee' | '
   if (key === '') return null
   const shown = name.trim()
   const same = rows.filter((r) => r.key !== exceptKey && personNameKey(r.fullName) === key)
-  if (same.some((r) => r.kind === 'employee')) return `Đã có nhân viên tên "${shown}".`
+  const employees = same.filter((r) => r.kind === 'employee')
+  if (employees.length > 0) {
+    return nameTakenMessage(shown, employees.some((r) => r.status === 'Đang làm') ? 'employee' : 'retired_employee')
+  }
   const accounts = same.filter((r) => r.kind === 'account')
-  const counted = target === 'account' ? accounts : accounts.filter((r) => r.status !== 'Đã ẩn')
-  return counted.length > 0 ? `Đã có tài khoản GS/Visitor tên "${shown}".` : null
+  const visible = accounts.filter((r) => r.status !== 'Đã ẩn')
+  if (visible.length > 0) return nameTakenMessage(shown, 'account')
+  // A hidden account blocks a new account, never an employee (0037, A1).
+  return target === 'account' && accounts.length > 0 ? nameTakenMessage(shown, 'hidden_account') : null
 }
 
 /** A login already taken by any account on the list, hidden ones included. */

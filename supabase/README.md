@@ -195,8 +195,8 @@ as `lower(btrim(full_name))`, as `employees_name_key` does: two GS/Visitor
 accounts never share a name (hidden ones included), and an employee never
 shares one with a visible GS/Visitor account (a hidden one is allowed: that is
 an account parked by "Đổi phân quyền" to Nhân viên). Admin accounts are outside
-the rule. A refusal is SQLSTATE `PPDUP` with DETAIL `account` or `employee`,
-which the app and the `admin-users` Edge Function translate. The lookup runs
+the rule. A refusal is SQLSTATE `PPDUP` with DETAIL `account`, `hidden_account`,
+`employee` or `retired_employee`, which the app and the `admin-users` Edge Function translate. The lookup runs
 only for an admin, the service role and SQL sessions: a BEFORE trigger fires
 before RLS checks the new row, so for anon or a GS it would confirm that a
 name exists; those callers skip it and get the plain RLS refusal. For the same

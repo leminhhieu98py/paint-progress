@@ -65,9 +65,14 @@ export function personNameKey(name: string): string {
 export function duplicateNameMessage(error: DbError | null, name: string, employeeWrite = false): string | null {
   if (!error) return null
   if (error.code === 'PPDUP') {
-    return error.details === 'account'
-      ? `Đã có tài khoản GS/Visitor tên "${name}".`
-      : `Đã có nhân viên tên "${name}".`
+    // DETAIL: account | hidden_account | employee | retired_employee (0037).
+    // The two out-of-view holders say how to find them on Nhân lực.
+    switch (error.details) {
+      case 'account': return `Đã có tài khoản GS/Visitor tên "${name}".`
+      case 'hidden_account': return `Đã có tài khoản GS/Visitor tên "${name}" (đã ẩn; chọn Trạng thái «Đã ẩn» để thấy).`
+      case 'retired_employee': return `Đã có nhân viên tên "${name}" (đã nghỉ; chọn Trạng thái «Đã nghỉ» để thấy).`
+      default: return `Đã có nhân viên tên "${name}".`
+    }
   }
   if (employeeWrite && error.code === '23505') return `Đã có nhân viên tên "${name}".`
   return null

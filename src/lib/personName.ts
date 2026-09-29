@@ -12,8 +12,26 @@ export function personNameKey(name: string): string {
   return name.replace(/^ +| +$/g, '').toLowerCase()
 }
 
-/** The SQLSTATE 0037's two triggers raise, with DETAIL `account` or `employee`. */
+/**
+ * The SQLSTATE 0037's two triggers raise. DETAIL names who holds the name:
+ * `account`, `hidden_account`, `employee` or `retired_employee`.
+ */
 export const DUPLICATE_PERSON_NAME = 'PPDUP'
+
+export type NameHolder = 'account' | 'hidden_account' | 'employee' | 'retired_employee'
+
+/**
+ * "Already on the list", saying so when the holder is out of the default
+ * view -- a hidden account or a retired employee -- and how to see it.
+ */
+export function nameTakenMessage(name: string, holder: NameHolder): string {
+  switch (holder) {
+    case 'account': return `Đã có tài khoản GS/Visitor tên "${name}".`
+    case 'hidden_account': return `Đã có tài khoản GS/Visitor tên "${name}" (đã ẩn; chọn Trạng thái «Đã ẩn» để thấy).`
+    case 'employee': return `Đã có nhân viên tên "${name}".`
+    case 'retired_employee': return `Đã có nhân viên tên "${name}" (đã nghỉ; chọn Trạng thái «Đã nghỉ» để thấy).`
+  }
+}
 
 /**
  * The admin's sentence for a refused name, or null when the error is not one.
@@ -24,11 +42,11 @@ export function duplicateNameMessage(
   error: { code?: string; message?: string; details?: string | null },
   name: string,
 ): string | null {
-  if (error.code === '23505') return `Đã có nhân viên tên "${name}".`
+  if (error.code === '23505') return nameTakenMessage(name, 'employee')
   if (error.code === DUPLICATE_PERSON_NAME) {
-    return error.details === 'account'
-      ? `Đã có tài khoản GS/Visitor tên "${name}".`
-      : `Đã có nhân viên tên "${name}".`
+    const holder = (['account', 'hidden_account', 'employee', 'retired_employee'] as const)
+      .find((h) => h === error.details) ?? 'employee'
+    return nameTakenMessage(name, holder)
   }
   return null
 }

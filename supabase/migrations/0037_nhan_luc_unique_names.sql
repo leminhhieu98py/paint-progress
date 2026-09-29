@@ -34,9 +34,10 @@
 -- the second waits, and its check then reads the first one's committed row.
 --
 -- A refusal is `SQLSTATE PPDUP`, message `duplicate_person_name: …`, DETAIL
--- `account` or `employee` (which list already holds the name). The app and the
--- admin-users Edge Function turn that into Vietnamese; no text here is shown
--- to anyone.
+-- who already holds the name: `account`, `hidden_account`, `employee` or
+-- `retired_employee` -- the last two are out of the list's default view, and
+-- the admin is told how to find them. The app and the admin-users Edge
+-- Function turn that into Vietnamese; no text here is shown to anyone.
 --
 -- ---------------------------------------------------------------------------
 -- Data
@@ -129,6 +130,8 @@ set search_path = public, pg_temp
 as $$
 declare
   name_key text := lower(btrim(new.full_name));
+  holder_hidden boolean;
+  holder_active boolean;
 begin
   if new.role not in ('gs', 'viewer') then
     return new;
@@ -143,21 +146,24 @@ begin
     return new;
   end if;
   perform pg_advisory_xact_lock(hashtext('nhan_luc_person_name'), hashtext(name_key));
-  if exists (
-    select 1 from profiles p
-    where p.id <> new.id
-      and p.role in ('gs', 'viewer')
-      and lower(btrim(p.full_name)) = name_key
-  ) then
+  select p.hidden into holder_hidden from profiles p
+  where p.id <> new.id
+    and p.role in ('gs', 'viewer')
+    and lower(btrim(p.full_name)) = name_key
+  order by p.hidden
+  limit 1;
+  if found then
     raise exception 'duplicate_person_name: % is already the name of an account', new.full_name
-      using errcode = 'PPDUP', detail = 'account';
+      using errcode = 'PPDUP', detail = case when holder_hidden then 'hidden_account' else 'account' end;
   end if;
-  if not new.hidden and exists (
-    select 1 from employees e
+  if not new.hidden then
+    select e.active into holder_active from employees e
     where lower(btrim(e.full_name)) = name_key
-  ) then
-    raise exception 'duplicate_person_name: % is already the name of an employee', new.full_name
-      using errcode = 'PPDUP', detail = 'employee';
+    limit 1;
+    if found then
+      raise exception 'duplicate_person_name: % is already the name of an employee', new.full_name
+        using errcode = 'PPDUP', detail = case when holder_active then 'employee' else 'retired_employee' end;
+    end if;
   end if;
   return new;
 end;
