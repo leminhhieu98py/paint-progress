@@ -11,6 +11,7 @@ import { listDecks } from '../../lib/decksApi'
 import { listProjectNames } from '../../lib/projectsApi'
 import { listWorks } from '../../lib/worksApi'
 import { FieldLayout } from '../gs/FieldLayout'
+import { space } from '../../theme'
 import { FieldProjectSelect } from '../gs/FieldProjectSelect'
 import { ProductivityDashboard } from './ProductivityDashboard'
 import { ProductivityFilterControls } from './ProductivityFilterControls'
@@ -230,7 +231,7 @@ function FieldDashboard({ projectId }: { projectId: string | null }) {
   return (
     // GS-06: the field header is the way between the pages; no back button (GS-02).
     <FieldLayout projectId={projectId}>
-      <Layout.Content style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <Layout.Content style={{ padding: space.lg, display: 'flex', flexDirection: 'column', gap: space.lg }}>
         {/*
           The field's bar, first under the header, the project first (GS-07).
           The project is navigation, not part of the draft: choosing one opens
