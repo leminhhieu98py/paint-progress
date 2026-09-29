@@ -41,7 +41,7 @@ import { StageSpecTable } from '../../components/StageSpecTable'
 import { modalProps } from '../../components/modalChrome'
 import { searchSelectProps } from '../../components/searchSelect'
 import { tablePagination } from '../../components/tablePagination'
-import { palette, shadowCard, space } from '../../theme'
+import { palette, shadowCard, space, type } from '../../theme'
 import type { Cell } from '../../domain/types'
 
 
@@ -64,7 +64,7 @@ function ZoneColorSwatches({
 }) {
   return (
     <div data-testid="zone-color" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-      <span style={{ fontSize: 12, fontWeight: 600, color: palette.textSecondary }}>Màu zone</span>
+      <span style={{ ...type.label, color: palette.textSecondary }}>Màu zone</span>
       <div role="radiogroup" aria-label="Màu zone" style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
         {colors.map((c) => {
           const selected = c === value.toLowerCase()
@@ -1133,7 +1133,7 @@ export function DeckProgressPanel({
     const isA = side === 'a'
     const picked = isA ? viewA : viewB
     const stage = isA ? stageA : stageB
-    const labelStyle = { fontSize: 11, fontWeight: 600, color: palette.textTertiary }
+    const labelStyle = { ...type.label, color: palette.textTertiary }
     return (
       <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
@@ -1218,7 +1218,7 @@ export function DeckProgressPanel({
       >
         <div style={{ padding: `${space.md}px ${space.xl}px`, display: 'flex', alignItems: 'flex-start', gap: 12 }}>
           <div style={{ minWidth: 0, flex: 1 }}>
-            <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600, letterSpacing: '-0.015em' }}>
+            <h3 style={{ margin: 0, ...type.cardTitle, letterSpacing: '-0.015em' }}>
               {`Tiến độ · ${lens.title}`}
               {/* The map legend: needed once, not read every visit (CPY-01). */}
               <InfoTip text={legend} />
@@ -1234,8 +1234,8 @@ export function DeckProgressPanel({
               rather than letting the date above stand over today's colours.
             */}
             {lens.view.day && (
-              <div style={{ marginTop: 6, fontSize: 12, lineHeight: 1.35 }}>
-                <div style={{ fontWeight: 600, color: palette.textSecondary }}>
+              <div style={{ marginTop: 6, ...type.caption, lineHeight: 1.35 }}>
+                <div style={{ color: palette.textSecondary }}>
                   {`Trạng thái ngày ${lens.view.day}`}
                   <InfoTip text={HISTORY_FROM_LABEL} />
                 </div>
@@ -1357,8 +1357,8 @@ export function DeckProgressPanel({
                     boxShadow: 'inset 0 0 0 1px #16202B47',
                   }}
                 />
-                <span style={{ fontSize: 12, fontWeight: 600 }}>{chip.name}</span>
-                <span style={{ fontSize: 12, fontWeight: 600, color: palette.accent }}>
+                <span style={type.micro}>{chip.name}</span>
+                <span style={{ ...type.micro, color: palette.accent }}>
                   {formatPercent(chip.ratio)}
                 </span>
               </span>
@@ -1367,17 +1367,17 @@ export function DeckProgressPanel({
         </div>
 
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 9, padding: `${space.md}px ${space.xl}px ${space.sm}px` }}>
-          <span style={{ fontSize: 12, fontWeight: 600, color: palette.textTertiary }}>
+          <span style={{ ...type.label, color: palette.textTertiary }}>
             {`Tiến độ từng zone · ${lens.title}`}
           </span>
-          <span style={{ marginLeft: 'auto', fontSize: 12, color: palette.textTertiary }}>
+          <span style={{ marginLeft: 'auto', ...type.caption, color: palette.textTertiary }}>
             {`${formatAreaM2(lens.reachedAreaM2)} / ${formatAreaM2(entry.deck.totalAreaM2)} ${unit}`}
           </span>
         </div>
 
         <div style={{ padding: '0 10px 10px', display: 'flex', flexDirection: 'column', gap: 6 }}>
           {lens.zones.length === 0 && (
-            <div style={{ padding: '7px 9px', fontSize: 12, color: palette.textTertiary }}>
+            <div style={{ padding: '7px 9px', ...type.caption, color: palette.textTertiary }}>
               Lớp sơn này chưa có zone nào được lên kế hoạch.
             </div>
           )}
@@ -1397,21 +1397,21 @@ export function DeckProgressPanel({
                     boxShadow: 'inset 0 0 0 1px #16202B47',
                   }}
                 />
-                <span style={{ fontSize: 12, fontWeight: 600, flex: 'none' }}>{row.zone.name}</span>
-                <span style={{ fontSize: 11, color: palette.textTertiary, flex: 'none' }}>
+                <span style={{ ...type.body, flex: 'none' }}>{row.zone.name}</span>
+                <span style={{ ...type.caption, color: palette.textTertiary, flex: 'none' }}>
                   {`${formatAreaM2(row.doneM2)} / ${formatAreaM2(row.totalM2)} ${unit}`}
                 </span>
                 <span style={{ flex: 1, minWidth: 24 }}>
                   <ProgressBar ratio={zonePct} color={row.color} height={5} />
                 </span>
                 <span
-                  style={{ fontSize: 12, fontWeight: 600, flex: 'none', minWidth: 44, textAlign: 'right' }}
+                  style={{ ...type.body, flex: 'none', minWidth: 44, textAlign: 'right' }}
                 >
                   {formatPercent(zonePct)}
                 </span>
                 <span
                   style={{
-                    fontSize: 11,
+                    ...type.caption,
                     color: planned ? palette.textTertiary : palette.accent,
                     minWidth: 116,
                     textAlign: 'right',
@@ -1490,7 +1490,7 @@ export function DeckProgressPanel({
                 checked={showPlan}
                 onChange={setShowPlan}
               />
-              <span style={{ fontSize: 12, fontWeight: 600, color: palette.textSecondary }}>
+              <span style={{ ...type.body, color: palette.textSecondary }}>
                 Hiện kế hoạch
               </span>
             </Space>
@@ -1523,8 +1523,7 @@ export function DeckProgressPanel({
                   display: 'inline-flex',
                   justifyContent: 'center',
                   minWidth: 50,
-                  fontSize: 12,
-                  fontWeight: 600,
+                  ...type.body,
                   color: palette.textSecondary,
                 }}
               >
@@ -1588,7 +1587,7 @@ export function DeckProgressPanel({
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
                     <label
                       htmlFor="lens-work"
-                      style={{ fontSize: 11, fontWeight: 600, color: palette.textTertiary }}
+                      style={{ ...type.label, color: palette.textTertiary }}
                     >
                       Công việc
                     </label>
@@ -1608,7 +1607,7 @@ export function DeckProgressPanel({
                     />
                   </div>
                 ) : (
-                  <span style={{ fontSize: 12, color: palette.textTertiary, alignSelf: 'center' }}>
+                  <span style={{ ...type.caption, color: palette.textTertiary, alignSelf: 'center' }}>
                     {`Công việc: ${activeWork.work.name}`}
                   </span>
                 )}
@@ -1690,7 +1689,7 @@ export function DeckProgressPanel({
                       }}
                     >
                       <div style={{ padding: `${space.md}px ${space.xl}px`, borderBottom: `1px solid ${palette.borderSplit}` }}>
-                        <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600, letterSpacing: '-0.015em' }}>
+                        <h3 style={{ margin: 0, ...type.cardTitle, letterSpacing: '-0.015em' }}>
                           Tiến độ theo công đoạn · cộng dồn
                           <InfoTip text="Ô đã ở lớp sau thì đã qua các lớp trước, nên tính cho cả các lớp đó" />
                         </h3>
@@ -1712,15 +1711,15 @@ export function DeckProgressPanel({
                           gap: 9,
                         }}
                       >
-                        <span style={{ fontSize: 12, fontWeight: 500, color: palette.textSecondary }}>
+                        <span style={{ ...type.label, color: palette.textSecondary }}>
                           Tiến độ sàn
                         </span>
                         <span
-                          style={{ marginLeft: 'auto', fontSize: 11, color: palette.textTertiary }}
+                          style={{ marginLeft: 'auto', ...type.caption, color: palette.textTertiary }}
                         >
                           {`${formatAreaM2(entry.deck.totalAreaM2)} ${unit}`}
                         </span>
-                        <span style={{ fontSize: 18, fontWeight: 700, letterSpacing: '-0.025em' }}>
+                        <span style={{ ...type.displaySm, letterSpacing: '-0.025em' }}>
                           {formatPercent(progress?.progress ?? 0)}
                         </span>
                       </div>
@@ -1805,7 +1804,7 @@ export function DeckProgressPanel({
                   openNote(c.code)
                 }}
               >
-                <span style={{ fontWeight: 600, marginRight: 8 }}>{c.code}</span>
+                <span style={{ ...type.bodyStrong, marginRight: 8 }}>{c.code}</span>
                 <span style={{ color: palette.textSecondary, whiteSpace: 'normal' }}>
                   {(c.note ?? '').trim()}
                 </span>
@@ -1838,7 +1837,7 @@ export function DeckProgressPanel({
       >
         {reportEdit && (
           <>
-            <div style={{ fontSize: 12, color: palette.textTertiary, marginBottom: 10 }}>
+            <div style={{ ...type.caption, color: palette.textTertiary, marginBottom: 10 }}>
               {`Ghi chú gốc của GS · ${reportEdit.stageName ?? 'Trả về chưa bắt đầu'}`}
             </div>
             <Typography.Paragraph
@@ -1852,7 +1851,7 @@ export function DeckProgressPanel({
             >
               {reportEdit.note}
             </Typography.Paragraph>
-            <label htmlFor="report-note" style={{ display: 'block', marginBottom: 6, fontWeight: 600 }}>
+            <label htmlFor="report-note" style={{ display: 'block', marginBottom: 6, ...type.label }}>
               Bản cho báo cáo
               <InfoTip text="Chỉ file Excel in bản này. GS và màn hình này vẫn thấy ghi chú gốc." />
             </label>
@@ -1886,7 +1885,7 @@ export function DeckProgressPanel({
       >
         {datesFor && (
           <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            <Typography.Text type="secondary" style={type.caption}>
               {`${stageName(datesFor.stageId)} · ${datesFor.cellIds.length} ô`}
             </Typography.Text>
             {/*
@@ -1897,7 +1896,7 @@ export function DeckProgressPanel({
             <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
               <label
                 htmlFor="zone-name"
-                style={{ fontSize: 12, fontWeight: 600, color: palette.textSecondary }}
+                style={{ ...type.label, color: palette.textSecondary }}
               >
                 Tên zone
               </label>
@@ -1910,7 +1909,7 @@ export function DeckProgressPanel({
               />
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-              <span style={{ fontSize: 12, fontWeight: 600, color: palette.textSecondary }}>Thời gian</span>
+              <span style={{ ...type.label, color: palette.textSecondary }}>Thời gian</span>
               {/*
                 One range, not two dates (owner request, 2026-09-05). Either
                 end may be empty -- a zone whose finish has slipped keeps its
@@ -1938,7 +1937,7 @@ export function DeckProgressPanel({
                 selection on the drawing behind this dialog, so the count is
                 named rather than left to be guessed at. */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-              <span style={{ fontSize: 12, fontWeight: 600, color: palette.textSecondary }}>Ô trong zone</span>
+              <span style={{ ...type.label, color: palette.textSecondary }}>Ô trong zone</span>
               {/* The reason a button is disabled is on the button, as on
                   Gộp thành zone; a span, because antd Tooltip cannot anchor
                   a disabled button (CPY-01). */}
@@ -2068,35 +2067,35 @@ export function DeckProgressPanel({
         bodyPadding={0}
       >
         <div data-testid="deck-works-table">
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', ...type.body }}>
             {/* Labelled columns: the weight used to sit mid-row with nothing
                 saying what it was. Same header look as the antd tables. */}
             <thead>
               <tr style={{ background: palette.bgSubtleAlt, borderBottom: `1px solid ${palette.borderSplit}` }}>
-                <th style={{ padding: `${space.sm}px ${space.md}px ${space.sm}px ${space.xl}px`, textAlign: 'left', fontWeight: 600, fontSize: 12, color: palette.textTertiary }}>Công việc</th>
-                <th style={{ padding: `${space.sm}px ${space.md}px`, textAlign: 'center', fontWeight: 600, fontSize: 12, color: palette.textTertiary }}>Trọng số sàn</th>
-                <th style={{ padding: `${space.sm}px ${space.xl}px ${space.sm}px ${space.md}px`, textAlign: 'center', fontWeight: 600, fontSize: 12, color: palette.textTertiary }}>Tiến độ</th>
+                <th style={{ padding: `${space.sm}px ${space.md}px ${space.sm}px ${space.xl}px`, textAlign: 'left', ...type.label, color: palette.textTertiary }}>Công việc</th>
+                <th style={{ padding: `${space.sm}px ${space.md}px`, textAlign: 'center', ...type.label, color: palette.textTertiary }}>Trọng số sàn</th>
+                <th style={{ padding: `${space.sm}px ${space.xl}px ${space.sm}px ${space.md}px`, textAlign: 'center', ...type.label, color: palette.textTertiary }}>Tiến độ</th>
               </tr>
             </thead>
             <tbody>
               {deckSummary.perWork.map((row) => (
                 <tr key={row.work.id} style={{ borderBottom: `1px solid ${palette.borderSplit}` }}>
                   {/* Edge cells carry the card gutter, as antd's do under `.pp-card`. */}
-                  <td style={{ padding: `${space.sm}px ${space.md}px ${space.sm}px ${space.xl}px`, fontWeight: 600 }}>{row.work.name}</td>
+                  <td style={{ padding: `${space.sm}px ${space.md}px ${space.sm}px ${space.xl}px` }}>{row.work.name}</td>
                   <td style={{ padding: `${space.sm}px ${space.md}px`, color: palette.textTertiary, textAlign: 'center' }}>
                     {formatWeight(row.weight)}
                   </td>
-                  <td style={{ padding: `${space.sm}px ${space.xl}px ${space.sm}px ${space.md}px`, textAlign: 'center', fontWeight: 600, minWidth: 72 }}>
+                  <td style={{ padding: `${space.sm}px ${space.xl}px ${space.sm}px ${space.md}px`, textAlign: 'center', minWidth: 72 }}>
                     {formatPercent(row.progress)}
                   </td>
                 </tr>
               ))}
               <tr style={{ background: palette.bgSubtle }}>
-                <td style={{ padding: `${space.sm}px ${space.md}px ${space.sm}px ${space.xl}px`, fontWeight: 600 }}>Tổng hợp</td>
+                <td style={{ padding: `${space.sm}px ${space.md}px ${space.sm}px ${space.xl}px`, ...type.bodyStrong }}>Tổng hợp</td>
                 {/* Σ W·D is a project-level share, not a deck weight; it
                     belongs on the decks list, not in this column. */}
                 <td />
-                <td style={{ padding: `${space.sm}px ${space.xl}px ${space.sm}px ${space.md}px`, textAlign: 'center', fontWeight: 700 }}>
+                <td style={{ padding: `${space.sm}px ${space.xl}px ${space.sm}px ${space.md}px`, textAlign: 'center', ...type.bodyStrong }}>
                   {formatPercent(deckSummary.progress)}
                 </td>
               </tr>
@@ -2153,21 +2152,20 @@ function StageRing({
         activeKey={active}
         onActiveChange={setActive}
       >
-        <span style={{ fontSize: 10, fontWeight: 600, color: palette.textTertiary }}>
+        <span style={{ ...type.micro, color: palette.textTertiary }}>
           Tiến độ sàn
           <InfoTip text="Vòng tròn: diện tích đang dừng ở mỗi lớp, không cộng dồn" />
         </span>
         <span
           style={{
-            fontSize: 24,
-            fontWeight: 700,
+            ...type.displaySm,
             letterSpacing: '-0.03em',
             marginTop: 5,
           }}
         >
           {formatPercent(progress)}
         </span>
-        <span style={{ fontSize: 10, color: palette.textTertiary, marginTop: 3 }}>
+        <span style={{ ...type.caption, color: palette.textTertiary, marginTop: 3 }}>
           {`${formatAreaM2(totalAreaM2)} ${unit}`}
         </span>
       </Donut>
@@ -2212,14 +2210,14 @@ function StageRing({
               Chrome). Name on top, figures beneath it.
             */}
             <div style={{ minWidth: 0, flex: 1 }}>
-              <div style={{ fontSize: 12, fontWeight: 600, lineHeight: 1.3 }}>
+              <div style={{ ...type.body, lineHeight: 1.3 }}>
                 {sp.stage.name}
               </div>
               <div
                 style={{
                   display: 'flex',
                   gap: 6,
-                  fontSize: 12,
+                  ...type.caption,
                   color: palette.textTertiary,
                   lineHeight: 1.3,
                   marginTop: 1,

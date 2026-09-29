@@ -3,6 +3,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { expectNoSpecIds } from '../../test/copy'
+import { expectOnScale, weightOf } from '../../test/typography'
 import { palette } from '../../theme'
 import { DeckProgressPanel } from './DeckProgressPanel'
 
@@ -1119,6 +1120,26 @@ describe('DeckProgressPanel — công việc', () => {
     // QA: the weight sat unlabelled mid-row; the columns now say what they hold.
     expect(within(table).getAllByRole('columnheader').map((h) => h.textContent))
       .toEqual(['Công việc', 'Trọng số sàn', 'Tiến độ'])
+  })
+
+  it('sets the works table on the type scale: names and figures body, the tổng hợp bodyStrong (TYP-02)', async () => {
+    renderPanel(false)
+    const table = await screen.findByTestId('deck-works-table')
+    for (const h of within(table).getAllByRole('columnheader')) {
+      expect(h).toHaveStyle({ fontSize: '13px', fontWeight: '600' })
+    }
+    const firstRow = within(table).getAllByRole('row')[1]
+    expect(weightOf(within(firstRow).getAllByRole('cell')[0])).toBe(400)
+    expect(weightOf(within(table).getByText('70,00%'))).toBe(400)
+    expect(weightOf(within(table).getByText('Tổng hợp'))).toBe(600)
+    expect(weightOf(within(table).getByText('42,00%'))).toBe(600)
+  })
+
+  it('sets every hand-set text in the panel on the type scale (TYP-01)', async () => {
+    const { container } = renderPanel(false)
+    await screen.findByTestId('deck-works-table')
+    await screen.findAllByTestId('stage-legend-row')
+    expectOnScale(container)
   })
 
   it('shows one work without a selector, and says which it is', async () => {
