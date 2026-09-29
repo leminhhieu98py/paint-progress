@@ -10,9 +10,9 @@ import { fieldType, palette, space } from '../../theme'
  * entry here rather than a button in the header.
  *
  * No login name anywhere in it (MOB-04). From 768 px the trigger carries the
- * full name (and a viewer's Chỉ xem), so the menu starts with its items; on a
+ * full name (and a viewer's Visitor), so the menu starts with its items; on a
  * phone the trigger is the avatar alone, so the menu opens with who is signed
- * in -- the full name, and Chỉ xem for a viewer, which has no room on the
+ * in -- the full name, and Visitor for a viewer, which has no room on the
  * avatar.
  */
 export function fieldAccountMenuItems({ fullName, readOnly, phone, onLogout }: {
@@ -30,7 +30,7 @@ export function fieldAccountMenuItems({ fullName, readOnly, phone, onLogout }: {
       label: (
         <div style={{ color: palette.text }}>
           <div style={fieldType.bodyStrong}>{fullName}</div>
-          {readOnly && <div style={{ marginTop: space.xs }}><StatusPill tone="off">Chỉ xem</StatusPill></div>}
+          {readOnly && <div style={{ marginTop: space.xs }}><StatusPill tone="off">Visitor</StatusPill></div>}
         </div>
       ),
       children: [],

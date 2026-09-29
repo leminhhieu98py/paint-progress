@@ -53,7 +53,7 @@ interface CreateValues {
   role: AccountRole
 }
 
-const ROLE_LABEL = { gs: 'GS', viewer: 'Chỉ xem' } as const satisfies Record<AccountRole, CategoryValue<'role'>>
+const ROLE_LABEL = { gs: 'GS', viewer: 'Visitor' } as const satisfies Record<AccountRole, CategoryValue<'role'>>
 
 const RULES = [
   {
@@ -67,7 +67,7 @@ const RULES = [
   {
     id: 'USR-R8',
     // RV6-21/RV6-25: a viewer reads every project and every work (0034).
-    text: 'Tài khoản Chỉ xem đọc được mọi dự án và mọi công việc, tải được báo cáo, nhưng không ghi được gì.',
+    text: 'Tài khoản Visitor đọc được mọi dự án và mọi công việc, tải được báo cáo, nhưng không ghi được gì.',
   },
   {
     id: 'USR-R9',
@@ -188,7 +188,7 @@ function PermissionsDialog({
         {...modalProps}
         footer={[<Button key="close" onClick={onClose}>Đóng</Button>]}
       >
-        <Typography.Text>Tài khoản chỉ xem thấy mọi dự án và mọi công việc.</Typography.Text>
+        <Typography.Text>Tài khoản Visitor thấy mọi dự án và mọi công việc.</Typography.Text>
       </Modal>
     )
   }
@@ -749,7 +749,7 @@ export function UsersScreen() {
                   ]}
                 />
               </Form.Item>
-              <InfoTip text="GS ghi tiến độ trên tablet. Chỉ xem dành cho người chỉ cần theo dõi và tải báo cáo." />
+              <InfoTip text="GS ghi tiến độ trên tablet. Visitor dành cho người chỉ cần theo dõi và tải báo cáo." />
             </Space>
           </Form.Item>
           <Form.Item

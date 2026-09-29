@@ -14,7 +14,7 @@ const ellipsis: CSSProperties = { whiteSpace: 'nowrap', overflow: 'hidden', text
 
 /**
  * Who is signed in, at the right end of a field header (GS-06): avatar, full
- * name and, for a viewer, `Chỉ xem`; its menu (fieldAccountMenuItems) holds
+ * name and, for a viewer, `Visitor`; its menu (fieldAccountMenuItems) holds
  * Đăng xuất, behind a confirm. The same trigger on the project pages and on
  * the viewer's project picker (M-4). On a phone it folds to the avatar, named
  * for who is signed in, and the menu names them instead (MOB-04).
@@ -61,7 +61,7 @@ export function FieldAccountTrigger({ consequence }: {
         */}
         <Button
           type="text"
-          aria-label={readOnly ? `${who} · Chỉ xem` : who}
+          aria-label={readOnly ? `${who} · Visitor` : who}
           aria-haspopup="menu"
           aria-expanded={menuOpen}
           style={{
@@ -82,7 +82,7 @@ export function FieldAccountTrigger({ consequence }: {
               <span style={{ ...ellipsis, ...fieldType.bodyStrong, minWidth: 0, maxWidth: 200 }}>
                 {fullName}
               </span>
-              {readOnly && <StatusPill tone="off">Chỉ xem</StatusPill>}
+              {readOnly && <StatusPill tone="off">Visitor</StatusPill>}
             </>
           )}
         </Button>

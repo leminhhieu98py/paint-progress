@@ -30,14 +30,14 @@ const ellipsis: CSSProperties = { whiteSpace: 'nowrap', overflow: 'hidden', text
  *
  * Left, the three pages as router links, the active one read from the route;
  * they are the only way between the pages (GS-02), so there is no back button
- * anywhere. Right, the account trigger -- avatar, full name, `Chỉ xem` for a
+ * anywhere. Right, the account trigger -- avatar, full name, `Visitor` for a
  * viewer -- whose menu holds who is signed in and Đăng xuất, behind the same
  * confirm as before. The project is not here: it is the first control of each
  * page's filter bar (GS-07).
  *
  * On a phone (< 768) the top bar holds the page's name and the trigger,
  * folded to the avatar and named for who is signed in (the name, the login
- * and a viewer's `Chỉ xem` are in its menu); the tabs move to a bar fixed to
+ * and a viewer's `Visitor` are in its menu); the tabs move to a bar fixed to
  * the bottom of the screen, icon over label.
  */
 export function FieldHeader({ projectId }: { projectId: string }) {

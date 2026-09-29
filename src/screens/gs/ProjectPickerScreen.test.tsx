@@ -113,7 +113,7 @@ describe('ProjectPickerScreen', () => {
 
     // The project pages' account trigger and menu (GS-06, M-4), not a button of its own.
     expect(screen.queryByRole('button', { name: 'Đăng xuất' })).toBeNull()
-    await userEvent.click(screen.getByRole('button', { name: 'Sếp Một (boss1) · Chỉ xem' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Sếp Một (boss1) · Visitor' }))
     const menu = await screen.findByRole('menu')
     expect(within(menu).getAllByRole('menuitem').map((i) => i.textContent)).toEqual(['Đăng xuất'])
     await userEvent.click(within(menu).getByRole('menuitem', { name: /Đăng xuất/ }))
@@ -153,10 +153,10 @@ describe('ProjectPickerScreen: on the field scale (GS-10)', () => {
     renderPicker()
     await screen.findByRole('link', { name: /BlockB1_CPPTS/ })
     const header = document.querySelector('header') as HTMLElement
-    await userEvent.click(within(header).getByRole('button', { name: 'Sếp Một (boss1) · Chỉ xem' }))
+    await userEvent.click(within(header).getByRole('button', { name: 'Sếp Một (boss1) · Visitor' }))
     const menu = await screen.findByRole('menu')
     expect(within(menu).getByText('Sếp Một')).toHaveStyle({ fontSize: '14px', fontWeight: '600' })
     expect(within(menu).queryByText('boss1')).toBeNull()
-    expect(within(menu).getByText('Chỉ xem')).toBeInTheDocument()
+    expect(within(menu).getByText('Visitor')).toBeInTheDocument()
   })
 })

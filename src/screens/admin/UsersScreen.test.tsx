@@ -325,7 +325,7 @@ describe('UsersScreen — Feedback Rv2 (0028)', () => {
     renderApp(<UsersScreen />)
     await screen.findByText('gs1')
     expect(screen.getByText('GS')).toBeInTheDocument()
-    expect(screen.getByText('Chỉ xem')).toBeInTheDocument()
+    expect(screen.getByText('Visitor')).toBeInTheDocument()
     expect(screen.getByText('BB1 · 1/3 công việc')).toBeInTheDocument()
     // The viewer's row does not repeat its stale membership (see below).
     expect(screen.queryByText('BB2')).toBeNull()
@@ -357,12 +357,12 @@ describe('UsersScreen — Feedback Rv2 (0028)', () => {
     expect(screen.getByText('BB1')).toBeInTheDocument()
   })
 
-  it('creates a viewer when the admin picks Chỉ xem', async () => {
+  it('creates a viewer when the admin picks Visitor', async () => {
     listProjectNames.mockResolvedValue([{ id: 'p1', name: 'BB1', code: 'BB1' }])
     renderApp(<UsersScreen />)
     await screen.findByText('gs1')
     await userEvent.click(screen.getByRole('button', { name: 'Tạo tài khoản' }))
-    await userEvent.click(await screen.findByText('Chỉ xem', { selector: '.ant-segmented-item-label' }))
+    await userEvent.click(await screen.findByText('Visitor', { selector: '.ant-segmented-item-label' }))
     await userEvent.type(screen.getByLabelText('Tên đăng nhập'), 'sep.a')
     await userEvent.type(screen.getByLabelText('Họ tên'), 'Sếp A')
     await userEvent.type(screen.getByLabelText('Mật khẩu'), 'Bh7@Deck2026')
@@ -448,7 +448,7 @@ describe('UsersScreen — Feedback Rv2 (0028)', () => {
     // The second row is the viewer (u9).
     await userEvent.click(screen.getAllByRole('button', { name: 'Phân quyền' })[1])
 
-    expect(await screen.findByText('Tài khoản chỉ xem thấy mọi dự án và mọi công việc.')).toBeInTheDocument()
+    expect(await screen.findByText('Tài khoản Visitor thấy mọi dự án và mọi công việc.')).toBeInTheDocument()
     expect(screen.queryByRole('checkbox', { name: 'Thành viên BB1' })).toBeNull()
     expect(screen.queryByRole('checkbox', { name: 'Thành viên BB2' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Lưu quyền' })).toBeNull()
@@ -456,7 +456,7 @@ describe('UsersScreen — Feedback Rv2 (0028)', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Đóng' }))
     await waitFor(() =>
-      expect(screen.queryByText('Tài khoản chỉ xem thấy mọi dự án và mọi công việc.')).toBeNull())
+      expect(screen.queryByText('Tài khoản Visitor thấy mọi dự án và mọi công việc.')).toBeNull())
     expect(setMemberships).not.toHaveBeenCalled()
   })
 })
@@ -466,7 +466,7 @@ describe('UsersScreen — explanatory copy (CPY-01)', () => {
     renderApp(<UsersScreen />)
     await screen.findByText('gs1')
     expect(pageSubtitle()).toBeNull()
-    expect(screen.queryByText(/Cấp tài khoản GS và Chỉ xem/)).toBeNull()
+    expect(screen.queryByText(/Cấp tài khoản GS và Visitor/)).toBeNull()
   })
 
   it('opens the permission dialog on its controls, with no paragraph explaining them', async () => {
@@ -491,7 +491,7 @@ describe('UsersScreen — explanatory copy (CPY-01)', () => {
     await screen.findByText('gs1')
     await userEvent.click(screen.getByRole('button', { name: 'Tạo tài khoản' }))
     const tip = await screen.findByRole('img', {
-      name: 'GS ghi tiến độ trên tablet. Chỉ xem dành cho người chỉ cần theo dõi và tải báo cáo.',
+      name: 'GS ghi tiến độ trên tablet. Visitor dành cho người chỉ cần theo dõi và tải báo cáo.',
     })
     // Outside the <label>: a click on (?) must not move focus to the field,
     // and the tip is not part of the field's name. It sits in the same form row.
@@ -514,11 +514,11 @@ describe('UsersScreen — explanatory copy (CPY-01)', () => {
 })
 
 describe('UsersScreen — rules (CPY-05)', () => {
-  it('says a Chỉ xem account reads every project, as it has since RV6-21', async () => {
+  it('says a Visitor account reads every project, as it has since RV6-21', async () => {
     renderApp(<UsersScreen />)
     await screen.findByText('gs1')
     await userEvent.click(screen.getByRole('button', { name: /Quy tắc áp dụng/ }))
-    expect(screen.getByText('Tài khoản Chỉ xem đọc được mọi dự án và mọi công việc, tải được báo cáo, nhưng không ghi được gì.')).toBeInTheDocument()
+    expect(screen.getByText('Tài khoản Visitor đọc được mọi dự án và mọi công việc, tải được báo cáo, nhưng không ghi được gì.')).toBeInTheDocument()
     expect(screen.queryByText(/một GS cùng dự án/)).toBeNull()
   })
 })

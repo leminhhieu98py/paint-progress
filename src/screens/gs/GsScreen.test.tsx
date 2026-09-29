@@ -2334,10 +2334,10 @@ describe('GsScreen: a viewer (0028)', () => {
     authRole.value = 'viewer'
     renderScreen()
     await deckPicker()
-    // jsdom reads as a phone, where the header carries Chỉ xem in the avatar
+    // jsdom reads as a phone, where the header carries Visitor in the avatar
     // trigger's name (GS-06); the badge itself is FieldHeader's, tested at
     // tablet width there.
-    expect(screen.getByRole('button', { name: 'Nguyễn Văn A (gs1) · Chỉ xem' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Nguyễn Văn A (gs1) · Visitor' })).toBeInTheDocument()
 
     await userEvent.click(await screen.findByRole('button', { name: 'ô R1C2' }))
     expect(await screen.findByText('Ô R1C2 · Sơn')).toBeInTheDocument()
@@ -2351,7 +2351,7 @@ describe('GsScreen: a viewer (0028)', () => {
   it('shows no read-only mark to a foreman', async () => {
     renderScreen()
     await deckPicker()
-    expect(screen.queryByText('Chỉ xem')).toBeNull()
+    expect(screen.queryByText('Visitor')).toBeNull()
     expect(screen.getByRole('button', { name: 'Nguyễn Văn A (gs1)' })).toBeInTheDocument()
   })
 })
