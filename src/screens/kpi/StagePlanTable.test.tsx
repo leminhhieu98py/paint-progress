@@ -355,7 +355,7 @@ describe('StagePlanTable', () => {
     expect(ruleTexts()).toEqual([
       'Kế hoạch chia đều cho mọi ngày từ ngày bắt đầu đến ngày kết thúc, kể cả chủ nhật và ngày lễ.',
       'Để trống diện tích kế hoạch thì hệ thống tự tính phần còn lại của công đoạn từ ngày bắt đầu.',
-      'Nút bỏ ghi đè cạnh ô đưa số anh gõ về số tự tính.',
+      'Số anh gõ ghi đè diện tích tự tính cho tới khi bấm nút bỏ ghi đè cạnh ô.',
       'Gõ 0 nghĩa là không có diện tích kế hoạch, khác với để trống.',
     ])
     expectHelperText(ruleTexts())
