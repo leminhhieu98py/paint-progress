@@ -121,7 +121,8 @@ export function EffortHistoryPanel({
       title="Giờ công theo lần cập nhật"
       facts={events === null ? undefined : [{
         value: `${coverage.withHours} / ${coverage.total}`,
-        label: 'lần cập nhật có giờ công',
+        // The same words as Năng suất's coverage fact.
+        label: 'lần cập nhật có ghi giờ công',
         // Missing hours are a data-quality warning (HLT-01).
         ...(coverage.withHours < coverage.total
           ? { tone: 'warning' as const, info: 'Các lần chưa ghi không tính vào hiệu suất.' }

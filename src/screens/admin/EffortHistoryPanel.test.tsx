@@ -94,7 +94,7 @@ describe('EffortHistoryPanel', () => {
 
     // A data-quality fact: amber, its explanation in a (?) (HLT-01).
     const [coverage] = screen.getAllByTestId('key-fact')
-    expect(coverage).toHaveTextContent('1 / 2 lần cập nhật có giờ công')
+    expect(coverage).toHaveTextContent('1 / 2 lần cập nhật có ghi giờ công')
     expect(coverage).toHaveStyle({ background: palette.warningBg })
     expect(within(coverage).getByRole('img', { name: 'Các lần chưa ghi không tính vào hiệu suất.' })).toBeInTheDocument()
   })
@@ -102,7 +102,7 @@ describe('EffortHistoryPanel', () => {
   it('draws the coverage as a plain fact once every update has hours (HLT-01)', async () => {
     renderPanel(true, { events: [EVENTS[1]] })
     const [coverage] = await screen.findAllByTestId('key-fact')
-    expect(coverage).toHaveTextContent('1 / 1 lần cập nhật có giờ công')
+    expect(coverage).toHaveTextContent('1 / 1 lần cập nhật có ghi giờ công')
     expect(coverage).toHaveStyle({ background: palette.bgSubtle })
     expect(within(coverage).queryByRole('img')).toBeNull()
   })
