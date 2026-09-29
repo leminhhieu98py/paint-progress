@@ -72,6 +72,61 @@ export function zoneLabelBoxes(
   return labels
 }
 
+/** An axis-aligned box in whatever unit the caller draws in. */
+export interface LabelBox {
+  x: number
+  y: number
+  w: number
+  h: number
+}
+
+const boxesOverlap = (a: LabelBox, b: LabelBox) =>
+  a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
+
+/**
+ * The zone cards moved apart so none covers another (QA F7).
+ *
+ * Two zones whose bays overlap put both cards at nearly the same centre, and
+ * "Zone 1 — Tháo giáo 15/11–20/11" sat unreadable under "Zone 2 21/11–26/11".
+ * Each box is taken in the order given -- the zone order, so the outcome is
+ * the same on every render and the first zone's card never moves -- and, when
+ * it overlaps a box already placed, is moved DOWN by the least that clears
+ * every placed box; up instead when every downward spot would leave the
+ * drawing (`height`); and left where it was when neither direction fits,
+ * because a visible overlap still beats a card pushed out of sight.
+ *
+ * Boxes that only share an edge do not overlap. `gap` keeps a little air
+ * between cards. Pure and unit-free: the canvas calls it in pixels once it
+ * knows how big each card is, so the same pass serves the admin's drawing and
+ * the foreman's.
+ */
+export function spreadLabelBoxes<T extends LabelBox>(boxes: T[], height: number, gap = 0): T[] {
+  const placed: T[] = []
+  for (const box of boxes) {
+    const clear = (y: number) => !placed.some((p) => boxesOverlap({ ...box, y }, p))
+    let next = box
+    if (!clear(box.y)) {
+      // Nearest first, so the shift is the least that resolves the overlap.
+      const down = placed
+        .map((p) => p.y + p.h + gap)
+        .filter((y) => y > box.y && y + box.h <= height)
+        .sort((a, b) => a - b)
+        .find(clear)
+      const up = down === undefined
+        ? placed
+            .map((p) => p.y - box.h - gap)
+            .filter((y) => y < box.y && y >= 0)
+            .sort((a, b) => b - a)
+            .find(clear)
+        : undefined
+      const y = down ?? up
+      if (y !== undefined) next = { ...box, y }
+    }
+    placed.push(next)
+  }
+  return placed
+}
+
 /**
  * The parts of a zone line, with the coat dropped when the zone's own name
  * already carries it (Feedback Rv3, item 3).

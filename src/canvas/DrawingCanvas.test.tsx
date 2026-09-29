@@ -722,6 +722,29 @@ describe('DrawingCanvas', () => {
       )
       expect(screen.queryByTestId('group:zone-label-z1')).toBeNull()
     })
+
+    it('moves a card that would cover an earlier one below it, text and all (QA F7)', () => {
+      // Two zones over the same bays put both cards at the same centre, and
+      // the first zone's name was unreadable under the second's.
+      render(
+        <DrawingCanvas
+          imageUrl="u" imageW={2000} imageH={1600} cells={cells}
+          selectedCodes={[]}
+          zoneLabels={[zone, { ...zone, id: 'z2', name: 'Zone (4)' }]}
+        />,
+      )
+      const first = within(screen.getByTestId('group:zone-label-z1'))
+      const second = within(screen.getByTestId('group:zone-label-z2'))
+      const firstCard = first.getByTestId('rect:')
+      const secondCard = second.getByTestId('rect:')
+      const firstBottom = Number(firstCard.getAttribute('data-y')) + Number(firstCard.getAttribute('data-height'))
+      expect(Number(secondCard.getAttribute('data-y'))).toBeGreaterThanOrEqual(firstBottom)
+      // The text rides with its card rather than staying at the old centre.
+      const cardShift = Number(secondCard.getAttribute('data-y')) - Number(firstCard.getAttribute('data-y'))
+      const textShift = Number(second.getByTestId('text:').getAttribute('data-y'))
+        - Number(first.getByTestId('text:').getAttribute('data-y'))
+      expect(textShift).toBe(cardShift)
+    })
   })
 
   describe('zone lens layers (Feedback Rv2)', () => {
