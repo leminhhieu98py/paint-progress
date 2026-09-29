@@ -4,6 +4,7 @@ import {
 import { useEffect, useMemo, useState } from 'react'
 import { SectionCard } from '../../components/SectionCard'
 import { modalProps } from '../../components/modalChrome'
+import { searchSelectProps } from '../../components/searchSelect'
 import { effortCoverage, WASTE_REASONS, wasteReasonLabel } from '../../domain/effort'
 import { type DeckEvent, type Effort } from '../../domain/types'
 import { listGsUsers } from '../../lib/adminApi'
@@ -238,10 +239,9 @@ export function EffortHistoryPanel({
                   <Select
                     id="effort-waste-reason"
                     aria-label="Lý do hao phí"
-                    showSearch
+                    {...searchSelectProps}
                     allowClear
                     style={{ width: '100%' }}
-                    optionFilterProp="label"
                     placeholder="Chọn lý do"
                     value={draft.wasteReason === '' ? undefined : draft.wasteReason}
                     onChange={(v) => setDraft({ ...draft, wasteReason: v ?? '' })}

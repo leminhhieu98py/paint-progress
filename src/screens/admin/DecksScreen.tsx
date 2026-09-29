@@ -32,6 +32,7 @@ import { ProgressBar } from '../../components/ProgressBar'
 import { RulesDisclosure } from '../../components/RulesDisclosure'
 import { SectionCard } from '../../components/SectionCard'
 import { StatusPill } from '../../components/StatusPill'
+import { searchSelectProps } from '../../components/searchSelect'
 import { roundSharesToTotal } from '../../domain/rounding'
 import { palette, space } from '../../theme'
 
@@ -447,6 +448,7 @@ export function DecksScreen() {
             </label>
             <Select
               id="decks-project"
+              {...searchSelectProps}
               style={{ width: 260 }}
               value={projectId ?? undefined}
               placeholder="Chọn dự án"

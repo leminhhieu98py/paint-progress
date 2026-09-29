@@ -2,6 +2,7 @@ import { Select, Tooltip } from 'antd'
 import { useMemo, useState } from 'react'
 import { EmptyState } from '../../components/EmptyState'
 import { SectionCard } from '../../components/SectionCard'
+import { searchSelectProps } from '../../components/searchSelect'
 import { kpiSeries, plannedAreaM2, type KpiScopeStage } from '../../domain/kpi'
 import { DEFAULT_UNIT, MIXED_QUANTITY_LABEL, MIXED_UNIT_SUM_TOOLTIP, unitOfWorks } from '../../domain/unit'
 import { formatAreaM2 } from '../../lib/format'
@@ -141,6 +142,7 @@ export function KpiDashboard({
         >
           <Select
             aria-label="Sàn"
+            {...searchSelectProps}
             style={{ width: 220 }}
             value={deckId}
             onChange={(v) => {
@@ -154,6 +156,7 @@ export function KpiDashboard({
           />
           <Select
             aria-label="Công đoạn"
+            {...searchSelectProps}
             style={{ width: 240 }}
             value={coatValue}
             onChange={setCoat}

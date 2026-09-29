@@ -22,6 +22,7 @@ import { EmptyState } from '../../components/EmptyState'
 import { PageBody, PageHeader } from '../../components/PageHeader'
 import { RulesDisclosure } from '../../components/RulesDisclosure'
 import { SectionCard } from '../../components/SectionCard'
+import { searchSelectProps } from '../../components/searchSelect'
 import { palette } from '../../theme'
 
 type ProjectOption = Awaited<ReturnType<typeof listProjectNames>>[number]
@@ -280,6 +281,7 @@ export function WorksScreen() {
             </label>
             <Select
               id="works-project"
+              {...searchSelectProps}
               style={{ width: 260 }}
               value={projectId ?? undefined}
               placeholder="Chọn dự án"
@@ -409,6 +411,7 @@ export function WorksScreen() {
                 render: (v: WorkKind, _w, i) => (
                   <Select<WorkKind>
                     aria-label="Loại công việc"
+                    {...searchSelectProps}
                     value={v}
                     options={KIND_OPTIONS}
                     style={{ width: 120 }}

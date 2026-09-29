@@ -3,6 +3,7 @@ import { Alert, Button, Layout, Select, Spin } from 'antd'
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { PageBody, PageHeader } from '../../components/PageHeader'
+import { searchSelectProps } from '../../components/searchSelect'
 import { APP_BASE_PATH } from '../../config'
 import type { DeckEvent, WorkModel } from '../../domain/types'
 import { listProjectEvents, loadProjectModel } from '../../lib/progressApi'
@@ -110,6 +111,7 @@ function AdminDashboard() {
             </label>
             <Select
               id="dashboard-project"
+              {...searchSelectProps}
               style={{ width: 260 }}
               value={projectId ?? undefined}
               placeholder="Chọn dự án"

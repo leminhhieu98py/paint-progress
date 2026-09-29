@@ -3,6 +3,7 @@ import { Alert, App, Button, Layout, Select, Spin } from 'antd'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { PageBody, PageHeader } from '../../components/PageHeader'
+import { searchSelectProps } from '../../components/searchSelect'
 import { APP_BASE_PATH } from '../../config'
 import { effortDayKey } from '../../domain/effort'
 import {
@@ -364,6 +365,7 @@ function AdminKpi() {
             </label>
             <Select
               id="kpi-project"
+              {...searchSelectProps}
               style={{ width: 260 }}
               value={projectId ?? undefined}
               placeholder="Chọn dự án"

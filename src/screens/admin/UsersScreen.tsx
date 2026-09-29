@@ -15,6 +15,7 @@ import { RulesDisclosure } from '../../components/RulesDisclosure'
 import { SectionCard } from '../../components/SectionCard'
 import { modalProps } from '../../components/modalChrome'
 import { StatusPill } from '../../components/StatusPill'
+import { searchSelectProps } from '../../components/searchSelect'
 import {
   createGsUser,
   deactivateGsUser,
@@ -267,10 +268,7 @@ function PermissionsDialog({
                       mode="multiple"
                       aria-label={`Công việc ${p.label}`}
                       placeholder="Chọn công việc"
-                      // Typing filters by the work's NAME. antd's default
-                      // filters by value, which here is a uuid: every
-                      // keystroke produced "No data" in Chrome.
-                      optionFilterProp="label"
+                      {...searchSelectProps}
                       style={{ minWidth: 260 }}
                       value={row.workIds}
                       onChange={(ids) => patch(p.value, { workIds: ids })}
@@ -809,7 +807,7 @@ export function UsersScreen() {
             />
           </Form.Item>
           <Form.Item name="projectId" label="Dự án" rules={[{ required: true, message: 'Chọn dự án' }]}>
-            <Select options={projects} placeholder="Chọn dự án" />
+            <Select options={projects} placeholder="Chọn dự án" {...searchSelectProps} />
           </Form.Item>
         </Form>
       </Modal>

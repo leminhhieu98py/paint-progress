@@ -5,6 +5,7 @@ import { useMemo, useState } from 'react'
 import { EmptyState } from '../../components/EmptyState'
 import { SectionCard } from '../../components/SectionCard'
 import { StatCard } from '../../components/StatCard'
+import { searchSelectProps } from '../../components/searchSelect'
 import {
   NOT_STARTED_STAGE, dailyEffort, deckEffortTotals, effortCoverage, effortDayKey,
   efficiencySeries, hoursSeries, leadEfficiency, recordsWorkOnACoat, stageEfficiency, stageOrder,
@@ -240,6 +241,7 @@ export function ProductivityDashboard({
         )}
         <Select
           aria-label="Sàn"
+          {...searchSelectProps}
           style={{ width: 220 }}
           value={deckName}
           onChange={setDeckName}

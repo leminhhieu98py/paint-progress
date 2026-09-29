@@ -241,4 +241,15 @@ describe('KpiDashboard: coats of different units under Tất cả công đoạn 
     await waitFor(() => expect(screen.getByText(/kế hoạch 400,00 tấn · thực hiện 0,00 tấn/)).toBeInTheDocument())
     expect(chart()).toHaveAttribute('data-unit', 'tấn')
   })
+
+  it('filters the Sàn options by what the user types, tones ignored (UI-02)', async () => {
+    renderDash()
+    await userEvent.click(combobox('Sàn'))
+    expect(await screen.findByTitle('Sàn A')).toBeInTheDocument()
+    await userEvent.type(combobox('Sàn'), 'san b')
+    expect(await screen.findByTitle('Sàn B')).toBeInTheDocument()
+    // The option list only; the closed picker still shows its own value.
+    const shown = () => Array.from(document.querySelectorAll('.ant-select-item-option')).map((el) => el.getAttribute('title'))
+    expect(shown()).toEqual(['Sàn B'])
+  })
 })

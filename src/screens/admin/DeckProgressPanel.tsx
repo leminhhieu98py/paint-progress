@@ -37,6 +37,7 @@ import { RulesDisclosure } from '../../components/RulesDisclosure'
 import { SectionCard } from '../../components/SectionCard'
 import { StageSpecTable } from '../../components/StageSpecTable'
 import { modalProps } from '../../components/modalChrome'
+import { searchSelectProps } from '../../components/searchSelect'
 import { palette, shadowCard, space } from '../../theme'
 import type { Cell } from '../../domain/types'
 
@@ -1128,6 +1129,7 @@ export function DeckProgressPanel({
           */}
           <Select
             id={`lens-${side}-stage`}
+            {...searchSelectProps}
             style={{ minWidth: 190 }}
             value={picked === ALL_STAGES ? ALL_STAGES : stage?.id}
             onChange={isA ? setViewA : setViewB}
@@ -1571,6 +1573,7 @@ export function DeckProgressPanel({
                     </label>
                     <Select
                       id="lens-work"
+                      {...searchSelectProps}
                       style={{ minWidth: 170 }}
                       value={activeWork.work.id}
                       onChange={(id) => {

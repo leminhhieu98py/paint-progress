@@ -43,6 +43,7 @@ import { DeckProgressCard, StageRollupCard } from './DeckStatsCards'
 import { DeckTodayCard } from './DeckTodayCard'
 import { SectionCard } from '../../components/SectionCard'
 import { StatusPill } from '../../components/StatusPill'
+import { searchSelectProps } from '../../components/searchSelect'
 
 /**
  * How long to wait for the realtime channel to reach SUBSCRIBED before telling
@@ -1142,9 +1143,7 @@ export function GsScreen() {
             style={{ width: phone ? 160 : 220, flex: 'none' }}
             value={projectId}
             onChange={(id) => navigate(`${APP_BASE_PATH}/gs/${id}`)}
-            // Typing filters by the project's NAME; the value is a uuid.
-            showSearch
-            optionFilterProp="label"
+            {...searchSelectProps}
             options={projectOptions.some((o) => o.value === projectId)
               ? projectOptions
               : [{ value: projectId, label: projectId }, ...projectOptions]}
@@ -1311,6 +1310,7 @@ export function GsScreen() {
                   <Select
                     id="gs-plan-stage"
                     aria-label="Công đoạn kế hoạch"
+                    {...searchSelectProps}
                     value={planStageId ?? undefined}
                     onChange={(v) => setPlanStage({ deckId: activeDeckId, stageId: v })}
                     style={{ width: phone ? 120 : 180 }}

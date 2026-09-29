@@ -10,6 +10,7 @@ import { DEFAULT_QUANTITY_LABEL, DEFAULT_UNIT } from '../../domain/unit'
 import { formatAreaM2 } from '../../lib/format'
 import { listCellNotes, type CellNote } from '../../lib/progressApi'
 import { NoteThread } from '../../components/NoteThread'
+import { searchSelectProps } from '../../components/searchSelect'
 
 /**
  * antd's Select cannot carry `null` as an option value (it is indistinguishable
@@ -336,6 +337,7 @@ export function CellStageModal({
               id="cell-stage"
               aria-label="Công đoạn"
               size="large"
+              {...searchSelectProps}
               style={{ width: '100%' }}
               status={errorOf('stage') ? 'error' : undefined}
               value={choice}
@@ -381,15 +383,11 @@ export function CellStageModal({
                   <Select
                     id="cell-lead"
                     aria-label="Nhóm trưởng"
-                    showSearch
+                    {...searchSelectProps}
                     allowClear
                     style={{ width: '100%' }}
                     status={errorOf('lead') ? 'error' : undefined}
                     placeholder="Gõ để tìm tên"
-                    // Matched on the label, which is the only thing these
-                    // options carry; without it antd filters on `value` and a
-                    // search for a name finds nothing.
-                    optionFilterProp="label"
                     value={effort.leadName === '' ? undefined : effort.leadName}
                     onChange={(v) => setEffort({ ...effort, leadName: v ?? '' })}
                     options={employees.map((name) => ({ value: name, label: name }))}
@@ -401,12 +399,11 @@ export function CellStageModal({
                   <Select
                     id="cell-painter"
                     aria-label="Thợ chính"
-                    showSearch
+                    {...searchSelectProps}
                     allowClear
                     style={{ width: '100%' }}
                     status={errorOf('painter') ? 'error' : undefined}
                     placeholder="Gõ để tìm tên"
-                    optionFilterProp="label"
                     value={effort.painterName === '' ? undefined : effort.painterName}
                     onChange={(v) => setEffort({ ...effort, painterName: v ?? '' })}
                     options={employees.map((name) => ({ value: name, label: name }))}
@@ -474,11 +471,10 @@ export function CellStageModal({
                     <Select
                       id="cell-waste-reason"
                       aria-label="Lý do hao phí"
-                      showSearch
+                      {...searchSelectProps}
                       style={{ width: '100%' }}
                       status={errorOf('wasteReason') ? 'error' : undefined}
                       placeholder="Chọn lý do"
-                      optionFilterProp="label"
                       value={effort.wasteReason === '' ? undefined : effort.wasteReason}
                       onChange={(v) => setEffort({ ...effort, wasteReason: v ?? '' })}
                       options={WASTE_REASONS.map((r) => ({
