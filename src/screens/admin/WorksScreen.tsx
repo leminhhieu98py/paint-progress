@@ -22,6 +22,7 @@ import { EmptyState } from '../../components/EmptyState'
 import { PageBody, PageHeader } from '../../components/PageHeader'
 import { RulesDisclosure } from '../../components/RulesDisclosure'
 import { SectionCard } from '../../components/SectionCard'
+import { viNumberInputProps } from '../../components/viNumberInput'
 import { palette } from '../../theme'
 
 type ProjectOption = Awaited<ReturnType<typeof listProjectNames>>[number]
@@ -427,6 +428,8 @@ export function WorksScreen() {
                     value={v}
                     min={0}
                     max={1}
+                    // "0,25", not 25 clamped to 1: see viNumberInput for the rule.
+                    {...viNumberInputProps}
                     style={{ width: 100 }}
                     onChange={(n) => patch(i, { weight: n ?? 0 })}
                   />
@@ -451,6 +454,7 @@ export function WorksScreen() {
                     min={0}
                     max={100}
                     addonAfter="%"
+                    {...viNumberInputProps}
                     style={{ width: 120 }}
                     onChange={(n) => patch(i, { manualProgress: (n ?? 0) / 100 })}
                   />
@@ -559,6 +563,7 @@ export function WorksScreen() {
                         min={0}
                         max={1}
                         disabled={!r.on}
+                        {...viNumberInputProps}
                         style={{ width: 110 }}
                         onChange={(n) => setMatrix((m) => (m ? {
                           ...m,

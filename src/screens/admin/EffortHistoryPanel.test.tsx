@@ -146,6 +146,40 @@ describe('EffortHistoryPanel', () => {
     expect(screen.getByText('Giờ công · Ô R1C1 · Lớp 1')).toBeInTheDocument()
   })
 
+  it('writes hours typed with a decimal comma at their value, not ten times it', async () => {
+    // antd's InputNumber with no decimalSeparator deletes the comma: "2,5"
+    // became 25 Mhr, and "0,5" lost became 5.
+    setCellEventEffort.mockResolvedValue(undefined)
+    renderPanel()
+    expect(await screen.findByText('R1C2')).toBeInTheDocument()
+    await userEvent.click(within(rows()[0]).getByRole('button', { name: 'Sửa' }))
+    const work = await screen.findByLabelText('Số giờ công (Mhr)')
+    // The recorded 3.5 is shown the way the rest of the screen writes it.
+    expect(work).toHaveValue('3,5')
+    await userEvent.clear(work)
+    await userEvent.type(work, '1.230,5')
+    const waste = screen.getByLabelText('Giờ hao phí (Mhr)')
+    await userEvent.clear(waste)
+    await userEvent.type(waste, '0,5')
+    await userEvent.click(screen.getByRole('button', { name: 'Lưu' }))
+
+    await waitFor(() => expect(setCellEventEffort).toHaveBeenCalledWith(2, {
+      leadName: 'Tổ 1', painterName: 'Nam', workHours: 1230.5, wasteHours: 0.5,
+      wasteReason: 'Chờ vật tư', wasteOrder: 'LSX-1',
+    }))
+  })
+
+  it('writes 2,5 Mhr as 2.5 on a row that had none', async () => {
+    setCellEventEffort.mockResolvedValue(undefined)
+    renderPanel()
+    expect(await screen.findByText('R1C2')).toBeInTheDocument()
+    await userEvent.click(within(rows()[1]).getByRole('button', { name: 'Sửa' }))
+    await userEvent.type(await screen.findByLabelText('Số giờ công (Mhr)'), '2,5')
+    await userEvent.click(screen.getByRole('button', { name: 'Lưu' }))
+
+    await waitFor(() => expect(setCellEventEffort).toHaveBeenCalledWith(1, expect.objectContaining({ workHours: 2.5 })))
+  })
+
   it('says so when the history cannot be loaded, and asks the screen to retry', async () => {
     renderPanel(true, { events: null, error: 'mất kết nối' })
     expect(await screen.findByText('Không tải được lịch sử cập nhật')).toBeInTheDocument()

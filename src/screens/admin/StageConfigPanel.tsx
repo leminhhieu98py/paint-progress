@@ -20,6 +20,7 @@ import { ConsequenceModal } from '../../components/ConsequenceModal'
 import { EmptyState } from '../../components/EmptyState'
 import { RulesDisclosure } from '../../components/RulesDisclosure'
 import { SectionCard } from '../../components/SectionCard'
+import { viNumberInputProps } from '../../components/viNumberInput'
 import { palette } from '../../theme'
 
 const STAGE_RULES = [
@@ -520,7 +521,9 @@ export function StageConfigPanel({
                 // A Vietnamese admin types "0,25" for a weight. Without this,
                 // antd parses that as 0 and the stage silently loses its
                 // weight -- the same class of bug the deck-area field had.
-                decimalSeparator=","
+                // The shared props carry decimalSeparator="," and the parser
+                // the other decimal fields use.
+                {...viNumberInputProps}
                 // Clamped to the column's own scale (numeric(6,5)) as it is
                 // typed, so the admin never enters a sixth decimal that
                 // Postgres rounds away behind their back. That rounding is what

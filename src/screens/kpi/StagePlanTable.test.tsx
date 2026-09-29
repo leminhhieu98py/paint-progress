@@ -224,6 +224,32 @@ describe('StagePlanTable', () => {
     ))
   })
 
+  it('reads an override typed the Vietnamese way, with a decimal comma and thousands dots', async () => {
+    // antd's InputNumber with no decimalSeparator deletes the comma: "1.234,5"
+    // was sent as 1.2345 m², and "2,5" as 25.
+    const { onSave } = renderTable()
+
+    const area = row('s2').getByLabelText('Diện tích kế hoạch')
+    await userEvent.clear(area)
+    await userEvent.type(area, '1.234,5')
+    await userEvent.click(saveOf('s2'))
+
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({ stageId: 's2' }),
+      { startDate: '2026-09-09', endDate: '2026-09-16', plannedAreaM2: 1234.5 },
+    ))
+
+    onSave.mockClear()
+    await userEvent.clear(area)
+    await userEvent.type(area, '2,5')
+    await userEvent.click(saveOf('s2'))
+
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({ stageId: 's2' }),
+      { startDate: '2026-09-09', endDate: '2026-09-16', plannedAreaM2: 2.5 },
+    ))
+  })
+
   it('treats a typed zero as an override of zero, not as an empty field', async () => {
     // The distinction the whole nullable column exists for: 0 says this coat
     // plans no area, empty says work it out for me.

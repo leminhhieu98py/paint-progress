@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { EmptyState } from '../../components/EmptyState'
 import { RulesDisclosure, type Rule } from '../../components/RulesDisclosure'
 import { SectionCard } from '../../components/SectionCard'
+import { viNumberInputProps } from '../../components/viNumberInput'
 import { planDays, type StagePlan } from '../../domain/kpi'
 import {
   DEFAULT_QUANTITY_LABEL, DEFAULT_UNIT, labelOfWorks, MIXED_QUANTITY_LABEL, unitOfWorks,
@@ -266,6 +267,8 @@ export function StagePlanTable({
                 value={d.plannedAreaM2}
                 disabled={saving}
                 style={{ width: 130 }}
+                // "1.234,5" m², not 1.2345: see viNumberInput for the rule.
+                {...viNumberInputProps}
                 onChange={(n) => patch(row, { plannedAreaM2: n === null ? null : Number(n) })}
               />
               {d.plannedAreaM2 !== null && (

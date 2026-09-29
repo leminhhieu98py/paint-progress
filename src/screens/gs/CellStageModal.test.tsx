@@ -842,3 +842,52 @@ describe('CellStageModal: the work\'s quantity and unit (RV6-35)', () => {
     expect(info().queryByText(/m²/)).toBeNull()
   })
 })
+
+describe('CellStageModal — decimal comma', () => {
+  // antd's InputNumber with no decimalSeparator deletes a comma, so a foreman
+  // typing "2,5" wrote 25 Mhr against the bay -- ten times the hours, straight
+  // into every KPI built on cell_events.
+  it('writes 2,5 Mhr worked as 2.5, not 25', async () => {
+    renderModal()
+    await chooseStage('Coat 3')
+    await fillRequired('2,5')
+    await userEvent.click(screen.getByRole('button', { name: 'Xác nhận' }))
+
+    expect(onCommit).toHaveBeenCalledWith('c1', 's3', '', { ...FILLED, workHours: 2.5 })
+  })
+
+  it('reads the dot a tablet keypad sends as the decimal point too', async () => {
+    renderModal()
+    await chooseStage('Coat 3')
+    await fillRequired('2.5')
+    await userEvent.click(screen.getByRole('button', { name: 'Xác nhận' }))
+
+    expect(onCommit).toHaveBeenCalledWith('c1', 's3', '', { ...FILLED, workHours: 2.5 })
+  })
+
+  it('reads dots as thousands once a comma is typed', async () => {
+    renderModal()
+    await chooseStage('Coat 3')
+    await fillRequired('1.230,5')
+    await userEvent.click(screen.getByRole('button', { name: 'Xác nhận' }))
+
+    expect(onCommit).toHaveBeenCalledWith('c1', 's3', '', { ...FILLED, workHours: 1230.5 })
+  })
+
+  it('writes 1,5 Mhr lost as 1.5, not 15', async () => {
+    renderModal()
+    await chooseStage('Coat 3')
+    await chooseCrew('Nhóm trưởng', 'Lê Văn A')
+    await chooseCrew('Thợ chính', 'Nguyễn Văn B')
+    await userEvent.type(screen.getByLabelText(/Số giờ công \(Mhr\)/), '4')
+    await userEvent.type(screen.getByLabelText(/Giờ hao phí \(Mhr\)/), '1,5')
+    await userEvent.type(screen.getByLabelText(/Lệnh sản xuất/), 'LSX-2026-77')
+    await chooseIn('Lý do hao phí', '8.1 Thời tiết', 'Thời tiết')
+    await userEvent.click(screen.getByRole('button', { name: 'Xác nhận' }))
+
+    expect(onCommit).toHaveBeenCalledWith('c1', 's3', '', {
+      leadName: 'Lê Văn A', painterName: 'Nguyễn Văn B', workHours: 4, wasteHours: 1.5,
+      wasteReason: '8.1 Thời tiết', wasteOrder: 'LSX-2026-77',
+    })
+  })
+})

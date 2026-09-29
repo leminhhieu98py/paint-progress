@@ -4,6 +4,7 @@ import {
 import { useEffect, useMemo, useState } from 'react'
 import { SectionCard } from '../../components/SectionCard'
 import { modalProps } from '../../components/modalChrome'
+import { viNumberInputProps } from '../../components/viNumberInput'
 import { effortCoverage, WASTE_REASONS, wasteReasonLabel } from '../../domain/effort'
 import { type DeckEvent, type Effort } from '../../domain/types'
 import { listGsUsers } from '../../lib/adminApi'
@@ -193,6 +194,8 @@ export function EffortHistoryPanel({
                 id="effort-work-hours"
                 min={0}
                 step={0.5}
+                // "2,5" Mhr, not 25: see viNumberInput for the rule.
+                {...viNumberInputProps}
                 style={{ width: '100%' }}
                 value={draft.workHours}
                 onChange={(v) => setDraft({ ...draft, workHours: v === null || v === undefined ? null : Number(v) })}
@@ -204,6 +207,7 @@ export function EffortHistoryPanel({
                 id="effort-waste-hours"
                 min={0}
                 step={0.5}
+                {...viNumberInputProps}
                 style={{ width: '100%' }}
                 value={draft.wasteHours}
                 onChange={(v) => setDraft({ ...draft, wasteHours: v === null || v === undefined ? null : Number(v) })}
