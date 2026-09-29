@@ -87,14 +87,13 @@ export function AdminLayout() {
                   fontSize: 14,
                   fontWeight: 600,
                   letterSpacing: '-0.01em',
+                  lineHeight: 1.25,
                   flex: 1,
                   minWidth: 0,
-                  whiteSpace: 'nowrap',
-                  overflow: 'hidden',
-                  // The name is longer than the rail at its narrowest; clipped
-                  // mid-word it reads as a rendering fault, ellipsised as a
-                  // name that did not fit.
-                  textOverflow: 'ellipsis',
+                  // The name is longer than the space beside the mark at the
+                  // open rail's width. Wrapped onto a second line rather than
+                  // ellipsised: an ellipsis read as "Construction Ma…" on
+                  // every screen, which is the product's name cut short.
                 }}
               >
                 Construction Management

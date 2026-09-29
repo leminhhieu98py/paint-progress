@@ -106,6 +106,16 @@ describe('AdminLayout', () => {
     expect(screen.getByText('Construction Management')).toBeInTheDocument()
   })
 
+  it('lets the product name wrap instead of clipping it (QA F1)', () => {
+    // At the open rail's width the name is longer than the space beside the
+    // mark, and a nowrap + ellipsis span cut it to "Construction Ma…" on
+    // every admin screen. Wrapping keeps the whole name at the same size.
+    renderAt('/admin/projects')
+    const brand = screen.getByText('Construction Management')
+    expect(brand).not.toHaveStyle({ whiteSpace: 'nowrap' })
+    expect(brand).not.toHaveStyle({ textOverflow: 'ellipsis' })
+  })
+
   it('renders without a profile rather than crashing on first paint', () => {
     // The layout mounts before AuthProvider has read profiles; an unguarded
     // fullName here is a white screen on every admin page load.
