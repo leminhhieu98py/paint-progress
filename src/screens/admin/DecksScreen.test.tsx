@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -6,6 +6,7 @@ import { renderApp } from '../../test/renderApp'
 import { DecksScreen } from './DecksScreen'
 import { expectLeft } from '../../test/alignment'
 import { pageSubtitle } from '../../test/copy'
+import { palette } from '../../theme'
 
 const listProjectNames = vi.hoisted(() => vi.fn())
 const listDecks = vi.hoisted(() => vi.fn())
@@ -424,6 +425,76 @@ describe('DecksScreen — the project-wide half of progress', () => {
 
     await screen.findByTestId('rollup-donut')
     expect(screen.queryByText(/Mỗi phần là trọng số/)).toBeNull()
+  })
+
+  describe('the ring and its legend (CHT-01, CHT-02)', () => {
+    // In the fixture CD and Chứng từ have an arc; WD is at 0% and has none.
+    const rowOf = (donut: HTMLElement, name: string) =>
+      within(donut).getByText(name).closest('[data-testid="legend-row"]') as HTMLElement
+    const sliceOf = (donut: HTMLElement, name: string) => within(donut).getByRole('img', { name })
+    const openDonut = async () => {
+      renderScreen()
+      const donut = await screen.findByTestId('rollup-donut')
+      await waitFor(() => expect(within(donut).getByText('CD')).toBeInTheDocument())
+      return donut
+    }
+
+    it('gives every legend row its own colour from the categorical palette, as a circle, and its slice the same', async () => {
+      const donut = await openDonut()
+      const rows = within(donut).getAllByTestId('legend-row')
+      rows.forEach((row, i) => {
+        // CLR-03: the marker is a circle of the slice's colour.
+        expect(within(row).getByTestId('legend-marker')).toHaveStyle({
+          borderRadius: '50%', background: palette.categorical[i],
+        })
+      })
+      expect(sliceOf(donut, 'CD')).toHaveAttribute('fill', palette.categorical[0])
+      expect(sliceOf(donut, 'Chứng từ')).toHaveAttribute('fill', palette.categorical[2])
+    })
+
+    it('lights up the slice of a hovered legend row, and lets go when the pointer leaves', async () => {
+      const donut = await openDonut()
+      fireEvent.pointerEnter(rowOf(donut, 'CD'))
+      expect(sliceOf(donut, 'CD')).toHaveAttribute('opacity', '1')
+      expect(sliceOf(donut, 'Chứng từ')).toHaveAttribute('opacity', '0.35')
+      expect(rowOf(donut, 'CD')).toHaveStyle({ background: palette.bgSubtle })
+      fireEvent.pointerLeave(rowOf(donut, 'CD'))
+      expect(sliceOf(donut, 'Chứng từ')).toHaveAttribute('opacity', '1')
+      expect(rowOf(donut, 'CD').style.background).toBe('')
+    })
+
+    it('highlights the legend row of a hovered slice', async () => {
+      const donut = await openDonut()
+      fireEvent.pointerEnter(sliceOf(donut, 'Chứng từ'))
+      expect(rowOf(donut, 'Chứng từ')).toHaveStyle({ background: palette.bgSubtle })
+      expect(rowOf(donut, 'CD').style.background).toBe('')
+      // Text not bolder: the row keeps its weights.
+      expect(within(rowOf(donut, 'Chứng từ')).getByText('Chứng từ')).toHaveStyle({ fontWeight: '500' })
+      fireEvent.pointerLeave(sliceOf(donut, 'Chứng từ'))
+      expect(rowOf(donut, 'Chứng từ').style.background).toBe('')
+    })
+
+    it('reaches the rows by keyboard, in legend order, and a focused row lights its slice', async () => {
+      const donut = await openDonut()
+      const rows = within(donut).getAllByTestId('legend-row')
+      for (const r of rows) expect(r).toHaveAttribute('tabindex', '0')
+      expect(rows.map((r) => r.firstElementChild?.nextElementSibling?.textContent)).toEqual(['CD', 'WD', 'Chứng từ'])
+      act(() => rows[2].focus())
+      expect(sliceOf(donut, 'Chứng từ')).toHaveAttribute('opacity', '1')
+      expect(sliceOf(donut, 'CD')).toHaveAttribute('opacity', '0.35')
+      act(() => rows[2].blur())
+      expect(sliceOf(donut, 'CD')).toHaveAttribute('opacity', '1')
+    })
+
+    it('describes each slice with the two figures its legend row prints', async () => {
+      const donut = await openDonut()
+      for (const name of ['CD', 'Chứng từ']) {
+        const cells = within(rowOf(donut, name)).getAllByText(/%$/).map((c) => c.textContent)
+        expect(cells).toHaveLength(2)
+        expect(sliceOf(donut, name)).toHaveAccessibleDescription(`Tiến độ ${cells[0]} · Đóng góp ${cells[1]}`)
+      }
+      expect(sliceOf(donut, 'CD')).toHaveAccessibleDescription('Tiến độ 50,00% · Đóng góp 21,25%')
+    })
   })
 
   it('exports every deck of the project, with its own stages, plan and pictures', async () => {

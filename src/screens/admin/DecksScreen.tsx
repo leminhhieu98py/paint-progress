@@ -38,7 +38,7 @@ import { CategoryBadge } from '../../components/CategoryBadge'
 import type { CategoryValue } from '../../components/categoryTone'
 import { useTablePagination } from '../../components/tablePagination'
 import { roundSharesToTotal } from '../../domain/rounding'
-import { palette, space } from '../../theme'
+import { categoricalColor, palette, space } from '../../theme'
 
 interface RollupRow {
   key: string
@@ -62,14 +62,10 @@ interface WorkRow {
 const WORK_KIND_LABEL = { bays: 'Theo ô', manual: 'Nhập tay' } as const satisfies Record<WorkKind, CategoryValue<'workKind'>>
 
 /**
- * Three shades of the one accent, cycled.
- *
- * Deck contributions are parts of a single quantity -- the project's own
- * percentage -- so they belong to one hue. Giving each deck a colour of its own
- * would put a fourth palette on a screen that already carries the stage
- * colours, and would imply the decks differ in kind rather than in size.
+ * A legend row while its slice is active (CHT-02): a background, the text not
+ * bolder. The ring's own `activeKey` does the rest.
  */
-const DECK_SHADES = ['#0A8175', '#3AA396', '#6FC2B7']
+const LEGEND_ACTIVE_BG = palette.bgSubtle
 
 const RULES = [
   {
@@ -109,6 +105,8 @@ export function DecksScreen() {
   const [removingDeck, setRemovingDeck] = useState<DeckRow | null>(null)
   /** The deck being duplicated (Feedback Rv2, item 3), while its dialog is open. */
   const [copyingDeck, setCopyingDeck] = useState<DeckRow | null>(null)
+  /** The ring slice and legend row under the pointer or focus (CHT-02). */
+  const [activeSlice, setActiveSlice] = useState<string | null>(null)
   const [copying, setCopying] = useState(false)
   const [copyForm] = Form.useForm<{ name: string; code: string }>()
   const [removing, setRemoving] = useState(false)
@@ -291,21 +289,21 @@ export function DecksScreen() {
     table sees one number, not the arc's contribution. `display` is optional
     on `DonutSlice`; the legend prints `display ?? value`.
   */
-  const slices: DonutSlice[] = [
+  const parts = [
     ...modelDecks.flatMap((deck, i) => (carriesWeight(i) ? [{
+      key: deck.id,
       label: deck.code, // RV6-01: a deck slice is labelled by code, not name.
       value: (summaries[i]?.effectiveWeight ?? 0) * (summaries[i]?.progress ?? 0),
       display: summaries[i]?.progress ?? 0,
-      color: DECK_SHADES[i % DECK_SHADES.length],
     }] : [])),
     ...rollup.works
       .filter((w) => w.work.kind === 'manual' && w.work.counts)
-      .map((w, i) => ({
+      .map((w) => ({
+        key: w.work.id,
         // A work has no code, so a manual-work slice keeps its name.
         label: w.work.name,
         value: w.work.weight * w.progress,
         display: w.progress,
-        color: DECK_SHADES[(modelDecks.length + i) % DECK_SHADES.length],
       })),
   ]
   /**
@@ -313,7 +311,17 @@ export function DecksScreen() {
    * to the centre figure to the last digit, and `Còn lại` is the printed
    * complement -- a reader checks this column by adding it up.
    */
-  const shownShares = roundSharesToTotal(slices.map((sl) => sl.value), rollup.progress)
+  const shownShares = roundSharesToTotal(parts.map((sl) => sl.value), rollup.progress)
+  /*
+    A colour of its own per slice (CHT-01), in legend order, so six decks no
+    longer read as three repeated teals. The tooltip's figures are the two the
+    legend row prints -- the shown share, not a recomputed one.
+  */
+  const slices: DonutSlice[] = parts.map((sl, i) => ({
+    ...sl,
+    color: categoricalColor(i),
+    detail: `Tiến độ ${formatPercent(sl.display)} · Đóng góp ${formatPercent(shownShares[i])}`,
+  }))
   const shownRemainder = 1 - roundSharesToTotal([rollup.progress], rollup.progress)[0]
   const totalArea = modelDecks.reduce((sum, d, i) => (carriesWeight(i) ? sum + d.totalAreaM2 : sum), 0)
 
@@ -744,7 +752,12 @@ export function DecksScreen() {
                   Tiến độ dự án
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginTop: 14 }}>
-                  <Donut label="Tiến độ dự án" slices={slices}>
+                  <Donut
+                    label="Tiến độ dự án"
+                    slices={slices}
+                    activeKey={activeSlice}
+                    onActiveChange={setActiveSlice}
+                  >
                     <span style={{ fontSize: 21, fontWeight: 700, letterSpacing: '-0.028em' }}>
                       {formatPercent(rollup.progress)}
                     </span>
@@ -768,13 +781,25 @@ export function DecksScreen() {
                     </div>
                     {slices.map((sl, i) => (
                       <div
-                        key={sl.label}
+                        key={sl.key}
                         data-testid="legend-row"
-                        style={{ display: 'flex', alignItems: 'center', gap: 9 }}
+                        tabIndex={0}
+                        onPointerEnter={() => setActiveSlice(sl.key ?? null)}
+                        onPointerLeave={() => setActiveSlice(null)}
+                        onFocus={() => setActiveSlice(sl.key ?? null)}
+                        onBlur={() => setActiveSlice(null)}
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: 9,
+                          // The highlight's padding comes out of the row gap, so
+                          // the rows sit where they always did.
+                          margin: '-2px -6px', padding: '2px 6px', borderRadius: 6,
+                          background: activeSlice === sl.key ? LEGEND_ACTIVE_BG : undefined,
+                        }}
                       >
                         <span
+                          data-testid="legend-marker"
                           style={{
-                            width: 11, height: 11, borderRadius: 4, flex: 'none', background: sl.color,
+                            width: 11, height: 11, borderRadius: '50%', flex: 'none', background: sl.color,
                           }}
                         />
                         <span
@@ -806,7 +831,7 @@ export function DecksScreen() {
                     >
                       <span
                         style={{
-                          width: 11, height: 11, borderRadius: 4, flex: 'none', background: palette.track,
+                          width: 11, height: 11, borderRadius: '50%', flex: 'none', background: palette.track,
                         }}
                       />
                       <span style={{ fontSize: 12, fontWeight: 500, color: palette.textTertiary }}>
