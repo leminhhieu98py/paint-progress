@@ -290,6 +290,46 @@ describe('WorksScreen', () => {
     expect(consequenceItems(dialog)).toEqual(['Sàn bị bỏ ra khỏi công việc mất lớp sơn và vị trí ô của công việc đó'])
   })
 
+  it('knows after a save which decks are in the work, when the matrix stays open for the next save (I6)', async () => {
+    listWorkDecks.mockResolvedValue([{ deckId: 'd1', weight: 1 }])
+    renderScreen()
+    await screen.findByDisplayValue('Sơn')
+    await userEvent.click(within(rowOf('Sơn')).getByRole('button', { name: 'Sàn tham gia' }))
+    const matrix = await screen.findByTestId('work-decks-w1')
+    await within(matrix).findByLabelText('Trọng số Cellar Deck')
+    const saveOnce = async () => {
+      await userEvent.click(within(matrix).getByRole('button', { name: 'Chia theo m²' }))
+      // A regex: jsdom never ends the spinner's leave motion, so its icon stays in the name.
+      await userEvent.click(within(matrix).getByRole('button', { name: /Lưu sàn tham gia$/ }))
+      return screen.findByRole('dialog')
+    }
+    const confirm = async (dialog: HTMLElement) => {
+      const calls = saveWorkDecks.mock.calls.length
+      // The re-read after the save fails, so the matrix is not closed by it.
+      listWorks.mockRejectedValueOnce(new Error('Failed to fetch'))
+      await userEvent.click(within(dialog).getByRole('button', { name: 'Lưu' }))
+      await waitFor(() => expect(saveWorkDecks).toHaveBeenCalledTimes(calls + 1))
+      await waitFor(() => expect(within(matrix).getByRole('button', { name: /Lưu sàn tham gia/ })).not.toHaveClass('ant-btn-loading'))
+      expect(screen.getByTestId('work-decks-w1')).toBe(matrix)
+    }
+
+    // Main Deck in, saved.
+    await userEvent.click(within(matrix).getByRole('switch', { name: 'Main Deck tham gia' }))
+    await confirm(await saveOnce())
+
+    // Out again: it is in the work now, so it leaves it, and says what it loses.
+    await userEvent.click(within(matrix).getByRole('switch', { name: 'Main Deck tham gia' }))
+    let dialog = await saveOnce()
+    expect(within(dialog).getByText('bỏ ra')).toBeInTheDocument()
+    expect(consequenceItems(dialog)).toEqual(['Sàn bị bỏ ra khỏi công việc mất lớp sơn và vị trí ô của công việc đó'])
+    await confirm(dialog)
+
+    // Saved again unchanged: nothing leaves a work it has already left.
+    dialog = await saveOnce()
+    expect(within(dialog).queryByText('bỏ ra')).toBeNull()
+    expect(consequenceItems(dialog)).toEqual([])
+  })
+
   it('deletes a work only behind its typed name, and reloads', async () => {
     renderScreen()
     await screen.findByDisplayValue('Sơn')

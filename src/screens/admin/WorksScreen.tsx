@@ -243,8 +243,16 @@ export function WorksScreen() {
     if (!matrix) return
     setConfirmingMatrix(false)
     setMatrixSaving(true)
+    const { workId } = matrix
+    const saved = new Set(matrixOn.map((r) => r.deckId))
     try {
-      await saveWorkDecks(matrix.workId, matrixOn.map((r) => ({ deckId: r.deckId, weight: r.weight })))
+      await saveWorkDecks(workId, matrixOn.map((r) => ({ deckId: r.deckId, weight: r.weight })))
+      // What is stored is now what was saved. The re-read below closes the
+      // matrix; when it fails the matrix stays open, and its next save must
+      // name the decks leaving the work as it stands now, not at opening (I6).
+      setMatrix((m) => (m && m.workId === workId
+        ? { ...m, rows: m.rows.map((r) => ({ ...r, stored: saved.has(r.deckId) })) }
+        : m))
       message.success('Đã lưu sàn tham gia')
       await refresh()
     } catch (e) {
