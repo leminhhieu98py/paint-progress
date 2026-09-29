@@ -77,6 +77,17 @@ describe('StagePlanTable', () => {
     expect((endOf('s1') as HTMLInputElement).value).toBe('12/09/2026')
   })
 
+  it('keeps the dates whole at a narrow window: the table scrolls instead of squeezing (QA F9)', () => {
+    // At 1024px the picker was cut to "10/09, → 20/09" -- the year gone --
+    // and "Công đoạn" wrapped one word per line. Sized to its content, the
+    // card scrolls sideways and every column keeps the width it asked for.
+    renderTable()
+    expect(screen.getByRole('columnheader', { name: 'Số ngày' }).closest('table'))
+      .toHaveStyle({ width: 'max-content' })
+    const picker = row('s1').getAllByTestId('plan-range-s1')[0].closest('.ant-picker')
+    expect(picker).toHaveStyle({ minWidth: '250px' })
+  })
+
   it('holds the window in one Khoảng kế hoạch column (Feedback Rv5, RV5-38)', () => {
     // The app already had a settled answer for a per-coat date range and this
     // table did not use it: DeckProgressPanel.tsx:582, "One RangePicker per

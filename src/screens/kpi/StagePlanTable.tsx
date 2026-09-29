@@ -167,6 +167,8 @@ export function StagePlanTable({
     {
       title: 'Công đoạn',
       key: 'stage',
+      // A floor, not a cap: `Blast + Coat 1` wraps once at most (QA F9).
+      width: 140,
       render: (_v: unknown, row: StagePlanRow) => (
         <span style={{ fontWeight: 600 }}>{row.stageName}</span>
       ),
@@ -203,6 +205,9 @@ export function StagePlanTable({
           <DatePicker.RangePicker
             data-testid={`plan-range-${row.stageId}`}
             format="DD/MM/YYYY"
+            // Room for `DD/MM/YYYY → DD/MM/YYYY` (QA F9): squeezed, the
+            // picker cut the year off both ends.
+            style={{ minWidth: 250 }}
             allowEmpty={[true, true]}
             placeholder={['Bắt đầu', 'Kết thúc']}
             disabled={saving}
@@ -345,7 +350,12 @@ export function StagePlanTable({
         size="middle"
         dataSource={rows}
         pagination={false}
-        scroll={{ x: true }}
+        // `max-content`, not `true` (QA F9): with `true` antd lets the table
+        // shrink to the card and the column widths become hints, which is how
+        // the picker lost its years and "Số ngày" wrapped at 1024px. Sized to
+        // its content, the card scrolls sideways and every column keeps the
+        // width it asked for.
+        scroll={{ x: 'max-content' }}
         onRow={(row) => ({ 'data-testid': `plan-row-${row.stageId}` } as React.HTMLAttributes<HTMLElement>)}
         locale={{
           emptyText: (
