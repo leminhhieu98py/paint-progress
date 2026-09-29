@@ -1,8 +1,9 @@
 import { act, render, screen, within } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { KpiDay } from '../../domain/kpi'
 import { formatAreaM2, formatHours, formatMhrPerM2, formatPercent } from '../../lib/format'
 import { palette } from '../../theme'
+import { setViewport } from '../../test/viewport'
 import { EfficiencyLineChart, HoursBarChart, KpiComboChart } from './charts'
 
 /**
@@ -95,8 +96,10 @@ describe('KpiComboChart', () => {
   })
 
   it('grows the chart container to 372px so the plot area keeps its height', () => {
+    const restore = setViewport(1280)
     render(<KpiComboChart data={DATA} />)
     expect(screen.getByTestId('kpi-chart')).toHaveStyle({ height: '372px' })
+    restore()
   })
 
   // ---------------------------------------------------------------------
@@ -325,5 +328,44 @@ describe('axes and tooltips in the app\'s number format (R5-C2, R5-C3)', () => {
     expect([1800, 1350, 2200].map((v) => tick('m2', v))).toEqual(['1.800', '1.350', '2.200'])
     expect([0, 0.25, 0.5].map((v) => tick('share', v))).toEqual(['0%', '25%', '50%'])
     expect(separator()).toBe(': ')
+  })
+})
+
+describe('legends on a phone (MOB-03)', () => {
+  let restoreViewport = () => {}
+  afterEach(() => restoreViewport())
+  const STAGES = [
+    { name: 'Coat 1', color: '#fadb14' }, { name: 'Coat 2', color: '#bfbfbf' }, { name: 'Coat 3', color: '#52c41a' },
+  ]
+  const charts = [
+    ['KpiComboChart', () => <KpiComboChart data={DATA} />],
+    ['EfficiencyLineChart', () => <EfficiencyLineChart data={[{ day: '2026-09-01', 'Coat 1': 0.5 }]} stages={STAGES} />],
+    ['HoursBarChart', () => <HoursBarChart data={[{ day: '2026-09-01', hours: 8, wasteHours: 1 }]} />],
+  ] as const
+
+  it.each(charts)('%s puts one legend item per line, left at the card inset, still highlighting on hover', (_, chart) => {
+    restoreViewport = setViewport(390)
+    render(chart())
+    expect(captured.legend).toMatchObject({ layout: 'vertical', align: 'left', verticalAlign: 'bottom' })
+    expect(captured.legend?.onMouseEnter).toBeTypeOf('function')
+    expect(captured.legend?.onMouseLeave).toBeTypeOf('function')
+  })
+
+  it.each(charts)('%s keeps the one-row legend from 768 px', (_, chart) => {
+    restoreViewport = setViewport(768)
+    render(chart())
+    expect(captured.legend?.layout).toBeUndefined()
+    expect(captured.legend?.onMouseEnter).toBeTypeOf('function')
+  })
+
+  it('grows each chart by a line per legend item past the first, so the plot keeps its height', () => {
+    restoreViewport = setViewport(390)
+    render(<KpiComboChart data={DATA} />)
+    // Four series: three lines more than the one-row legend took.
+    expect(screen.getByTestId('kpi-chart')).toHaveStyle({ height: `${372 + 3 * 22}px` })
+    render(<EfficiencyLineChart data={[{ day: '2026-09-01', 'Coat 1': 0.5 }]} stages={STAGES} />)
+    expect(screen.getByTestId('efficiency-chart')).toHaveStyle({ height: `${280 + 2 * 22}px` })
+    render(<HoursBarChart data={[{ day: '2026-09-01', hours: 8, wasteHours: 1 }]} />)
+    expect(screen.getByTestId('hours-chart')).toHaveStyle({ height: `${260 + 22}px` })
   })
 })

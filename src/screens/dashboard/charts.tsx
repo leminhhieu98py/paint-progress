@@ -8,6 +8,7 @@ import { palette } from '../../theme'
 import { DEFAULT_UNIT, perUnit, rateUnit } from '../../domain/unit'
 import { formatAreaM2, formatAxisNumber, formatAxisPercent, formatHours, formatMhrPerM2, formatPercent } from '../../lib/format'
 import { KPI_COLOR_DEFAULTS } from './kpiColors'
+import { useFieldPhone } from '../gs/fieldSections'
 
 /**
  * The two charts of the productivity dashboard (Feedback Rv2, item 12), on
@@ -46,19 +47,32 @@ const ACTIVE_DOT = { r: 5 }
 const ACTIVE_BAR = { stroke: palette.ink, strokeWidth: 1 }
 
 /**
+ * A phone's legend (MOB-03): one item per line, under the plot, left at the
+ * card's inset -- a row of coat names wrapped into a ragged block there.
+ */
+const PHONE_LEGEND = { layout: 'vertical', align: 'left', verticalAlign: 'bottom' } as const
+/** One vertical legend line; the chart grows by one per item past the first, so the plot keeps its height. */
+const LEGEND_LINE = 22
+
+/**
  * Hovering a legend item highlights its series (CHT-03): the others dim to
  * 0.3 until the pointer leaves. Keyed by the series' `dataKey`, which Recharts
- * hands the legend handlers. Click-to-hide is deliberately not wired.
+ * hands the legend handlers. Click-to-hide is deliberately not wired. On a
+ * phone the legend stands one item per line (MOB-03), and `height` adds the
+ * lines it takes beyond the one-row legend the chart's height was set for.
  */
 function useLegendHighlight() {
   const [active, setActive] = useState<string | null>(null)
+  const phone = useFieldPhone()
   return {
     legend: {
+      ...(phone ? PHONE_LEGEND : {}),
       onMouseEnter: (entry: LegendPayload) =>
         setActive(typeof entry.dataKey === 'string' ? entry.dataKey : null),
       onMouseLeave: () => setActive(null),
     },
     opacity: (dataKey: string) => (active === null || active === dataKey ? 1 : DIMMED),
+    height: (base: number, items: number) => (phone ? base + Math.max(0, items - 1) * LEGEND_LINE : base),
   }
 }
 
@@ -73,9 +87,9 @@ export function EfficiencyLineChart({
   /** The chosen work's unit (RV6-36); the axis reads `Mhr/<unit>`. */
   unit?: string
 }) {
-  const { legend, opacity } = useLegendHighlight()
+  const { legend, opacity, height } = useLegendHighlight()
   return (
-    <div data-testid="efficiency-chart" style={{ width: '100%', height: 280 }}>
+    <div data-testid="efficiency-chart" style={{ width: '100%', height: height(280, stages.length) }}>
       <ResponsiveContainer width="100%" height="100%">
         <LineChart data={data} margin={{ top: 8, right: 16, bottom: 0, left: 0 }}>
           <CartesianGrid stroke={palette.borderSplit} vertical={false} />
@@ -119,9 +133,9 @@ export function HoursBarChart({
   /** Null on a padded day with no record (QA F4): no bar, not a zero-height one. */
   data: Array<{ day: string; hours: number | null; wasteHours: number | null }>
 }) {
-  const { legend, opacity } = useLegendHighlight()
+  const { legend, opacity, height } = useLegendHighlight()
   return (
-    <div data-testid="hours-chart" style={{ width: '100%', height: 260 }}>
+    <div data-testid="hours-chart" style={{ width: '100%', height: height(260, 2) }}>
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={data} margin={{ top: 8, right: 16, bottom: 0, left: 0 }}>
           <CartesianGrid stroke={palette.borderSplit} vertical={false} />
@@ -213,9 +227,9 @@ export function KpiComboChart({
 }) {
   const plan = colors?.plan ?? null
   const actual = colors?.actual ?? null
-  const { legend, opacity } = useLegendHighlight()
+  const { legend, opacity, height } = useLegendHighlight()
   return (
-    <div data-testid="kpi-chart" style={{ width: '100%', height: 372 }}>
+    <div data-testid="kpi-chart" style={{ width: '100%', height: height(372, 4) }}>
       <ResponsiveContainer width="100%" height="100%">
         <ComposedChart data={data} margin={{ top: 8, right: 16, bottom: 0, left: 0 }}>
           <CartesianGrid stroke={palette.borderSplit} vertical={false} />
