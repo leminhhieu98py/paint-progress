@@ -52,6 +52,7 @@ vi.mock('recharts', async (importOriginal) => {
         data-testid={`kpi-line-${String(props.dataKey)}`}
         data-stroke={String(props.stroke)}
         data-dash={props.strokeDasharray === undefined ? '' : String(props.strokeDasharray)}
+        data-connectnulls={String(props.connectNulls ?? false)}
       />
     ),
   }
@@ -154,5 +155,20 @@ describe('legend text colour (QA F3)', () => {
   it('reads the hours bar legend in the secondary text colour', () => {
     render(<HoursBarChart data={[{ day: '2026-09-01', hours: 8, wasteHours: 1 }]} />)
     expect(legendText()).toHaveStyle({ color: palette.textSecondary })
+  })
+})
+
+describe('EfficiencyLineChart: missing days (QA F4)', () => {
+  it('does not draw the line across a day with no ratio', () => {
+    // The data is padded to every calendar day, and a day nobody worked a
+    // coat is a null: a gap in the line, not a slope joining the days either
+    // side of it as though work had gone on.
+    render(
+      <EfficiencyLineChart
+        data={[{ day: '2026-09-01', 'Coat 1': 0.5 }, { day: '2026-09-02', 'Coat 1': null }, { day: '2026-09-03', 'Coat 1': 0.7 }]}
+        stages={[{ name: 'Coat 1', color: '#fadb14' }]}
+      />,
+    )
+    expect(screen.getByTestId('kpi-line-Coat 1')).toHaveAttribute('data-connectnulls', 'false')
   })
 })

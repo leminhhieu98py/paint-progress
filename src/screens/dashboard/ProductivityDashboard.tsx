@@ -10,6 +10,7 @@ import {
   efficiencySeries, hoursSeries, leadEfficiency, recordsWorkOnACoat, stageEfficiency, stageOrder,
   wasteReasons, type LeadEfficiency, type StageEfficiency, type WasteReason,
 } from '../../domain/effort'
+import { padDays } from '../../domain/daySeries'
 import { deckForecast, type DeckForecast } from '../../domain/forecast'
 import { computeDeckProgress } from '../../domain/progress'
 import type { DeckEvent, WorkModel } from '../../domain/types'
@@ -349,11 +350,16 @@ export function ProductivityDashboard({
         title="Hiệu suất theo ngày"
         summary={`${perUnit(unit)} của từng công đoạn theo ngày; hiệu suất trung bình là trung bình cộng của các điểm này`}
       >
-        <EfficiencyLineChart data={efficiencySeries(daily)} stages={stageColors} unit={unit} />
+        {/*
+          Padded to every calendar day (QA F4): the series only has the days
+          with data, and an axis of those alone spaced 27/08, 30/08 and 05/09
+          evenly. The tables above keep the unpadded figures.
+        */}
+        <EfficiencyLineChart data={padDays(efficiencySeries(daily))} stages={stageColors} unit={unit} />
       </SectionCard>
 
       <SectionCard title="Giờ công theo ngày" summary="Giờ thực hiện và giờ hao phí, cộng dồn mọi công đoạn">
-        <HoursBarChart data={hoursSeries(daily)} />
+        <HoursBarChart data={padDays(hoursSeries(daily))} />
       </SectionCard>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 16 }}>

@@ -68,7 +68,8 @@ export function EfficiencyLineChart({
               stroke={s.color}
               strokeWidth={2}
               dot={{ r: 3 }}
-              connectNulls
+              // No `connectNulls`: the data is padded to every calendar day
+              // (QA F4), and a day nobody worked a coat is a gap, not a slope.
               isAnimationActive={false}
             />
           ))}
@@ -78,7 +79,12 @@ export function EfficiencyLineChart({
   )
 }
 
-export function HoursBarChart({ data }: { data: Array<{ day: string; hours: number; wasteHours: number }> }) {
+export function HoursBarChart({
+  data,
+}: {
+  /** Null on a padded day with no record (QA F4): no bar, not a zero-height one. */
+  data: Array<{ day: string; hours: number | null; wasteHours: number | null }>
+}) {
   return (
     <div data-testid="hours-chart" style={{ width: '100%', height: 260 }}>
       <ResponsiveContainer width="100%" height="100%">

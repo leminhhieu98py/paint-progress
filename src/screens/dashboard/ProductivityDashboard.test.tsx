@@ -7,10 +7,14 @@ import { ProductivityDashboard } from './ProductivityDashboard'
 // jsdom gives Recharts no size; the numbers the charts plot are covered in
 // domain/effort.test.ts, and the wrappers are what this file checks for.
 vi.mock('./charts', () => ({
-  EfficiencyLineChart: ({ stages }: { stages: { name: string }[] }) => (
-    <div data-testid="efficiency-chart">{stages.map((s) => s.name).join(',')}</div>
+  EfficiencyLineChart: ({ data, stages }: { data: { day: string }[]; stages: { name: string }[] }) => (
+    <div data-testid="efficiency-chart" data-days={data.map((d) => d.day).join(',')}>
+      {stages.map((s) => s.name).join(',')}
+    </div>
   ),
-  HoursBarChart: () => <div data-testid="hours-chart" />,
+  HoursBarChart: ({ data }: { data: { day: string }[] }) => (
+    <div data-testid="hours-chart" data-days={data.map((d) => d.day).join(',')} />
+  ),
 }))
 
 let nextId = 1
@@ -106,6 +110,18 @@ describe('ProductivityDashboard', () => {
     renderDashboard()
     expect(screen.getByTestId('efficiency-chart')).toHaveTextContent('Lớp 1,Lớp 2')
     expect(screen.getByTestId('hours-chart')).toBeInTheDocument()
+  })
+
+  it('plots both day charts over every calendar day from the first to the last (QA F4)', () => {
+    // Work on 01/09 and 04/09 only: the axis still runs 01, 02, 03, 04 rather
+    // than putting the two worked days side by side.
+    renderDashboard([
+      ev({ at: '2026-09-01T03:00:00Z', effort: { workHours: 100 } }),
+      ev({ cellCode: 'R1C2', at: '2026-09-04T03:00:00Z', effort: { workHours: 100 } }),
+    ])
+    const days = '2026-09-01,2026-09-02,2026-09-03,2026-09-04'
+    expect(screen.getByTestId('efficiency-chart')).toHaveAttribute('data-days', days)
+    expect(screen.getByTestId('hours-chart')).toHaveAttribute('data-days', days)
   })
 
   it('groups by crew and by reason, naming the blank reason', () => {
