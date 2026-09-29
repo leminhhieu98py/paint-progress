@@ -508,3 +508,13 @@ describe('UsersScreen — login name column (UI-01)', () => {
     expect(await screen.findByRole('tooltip')).toHaveTextContent('Đổi tên đăng nhập')
   })
 })
+
+describe('UsersScreen — narrow screens (review I7)', () => {
+  it('scrolls sideways rather than clipping, with the actions pinned right like the deck list', async () => {
+    renderApp(<UsersScreen />)
+    await screen.findByText('GS Một')
+    const actions = screen.getByRole('columnheader', { name: 'Thao tác' })
+    expect(actions).toHaveClass('ant-table-cell-fix-right')
+    expect(actions.closest('table')).toHaveStyle({ width: 'max-content' })
+  })
+})

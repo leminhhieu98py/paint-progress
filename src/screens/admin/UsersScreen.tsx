@@ -380,6 +380,10 @@ export function UsersScreen() {
             loading={loading}
             dataSource={users}
             pagination={pagination}
+            // Sized to its content, as the deck list is: at 1024px the columns
+            // add up to more than the card, which clips (overflow: hidden)
+            // rather than scrolls. The card scrolls sideways instead.
+            scroll={{ x: 'max-content' }}
             columns={[
               {
                 title: 'Người dùng',
@@ -436,6 +440,8 @@ export function UsersScreen() {
                 title: 'Thao tác',
                 key: 'actions',
                 width: 220,
+                // Pinned: lock, hide and reveal must not scroll out of the card.
+                fixed: 'right',
                 align: 'center',
                 render: (_v, user) => (
                   <div style={{ display: 'flex', gap: 7, justifyContent: 'center' }}>
