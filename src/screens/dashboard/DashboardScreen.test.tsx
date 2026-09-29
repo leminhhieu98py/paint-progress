@@ -11,13 +11,11 @@ const listProjectNames = vi.hoisted(() => vi.fn())
 const navigate = vi.hoisted(() => vi.fn())
 const listWorks = vi.hoisted(() => vi.fn())
 const listDecks = vi.hoisted(() => vi.fn())
-const listProjectEventWorkNames = vi.hoisted(() => vi.fn())
 vi.mock('../../lib/worksApi', () => ({ listWorks: (id: string) => listWorks(id) }))
 vi.mock('../../lib/decksApi', () => ({ listDecks: (id: string) => listDecks(id) }))
 vi.mock('../../lib/progressApi', () => ({
   loadProjectModel: (id: string) => loadProjectModel(id),
   listProjectEvents: (id: string) => listProjectEvents(id),
-  listProjectEventWorkNames: (id: string) => listProjectEventWorkNames(id),
 }))
 vi.mock('../../lib/projectsApi', () => ({
   listProjectNames: () => listProjectNames(),
@@ -66,8 +64,6 @@ beforeEach(() => {
   // Another project's options, read only while it is the DRAFT project (FLT-02).
   listWorks.mockResolvedValue([{ ...work('w9', 1, 'Giàn giáo').work, projectId: 'p2' }])
   listDecks.mockResolvedValue([{ id: 'd9', name: 'Sàn Z' }])
-  listProjectEventWorkNames.mockReset()
-  listProjectEventWorkNames.mockResolvedValue([])
   loadProjectModel.mockResolvedValue(MODEL)
   listProjectEvents.mockResolvedValue([{ id: 1 }, { id: 2 }])
   listProjectNames.mockResolvedValue([
@@ -218,15 +214,21 @@ describe('DashboardScreen (admin)', () => {
     expect(screen.getByText('DASHBOARD 2 sự kiện · Tất cả sàn · công việc đầu')).toBeInTheDocument()
   })
 
-  it('offers the draft project\'s works as the applied view will, the ones only its events remember too (FLT-02)', async () => {
-    listProjectEventWorkNames.mockResolvedValue(['Giàn giáo', 'Sơn cũ'])
+  it('offers the draft project\'s works from its works list alone, with no history read before Tìm (FLT-02)', async () => {
+    listWorks.mockResolvedValue([
+      { ...work('w8', 2, 'Tháo giáo B').work, projectId: 'p2' },
+      { ...work('w9', 1, 'Giàn giáo').work, projectId: 'p2' },
+    ])
     renderAdmin()
     await screen.findByText(/^DASHBOARD 2 sự kiện/)
     await userEvent.click(within(bar()).getByRole('combobox', { name: 'Dự án' }))
     await userEvent.click(await screen.findByTitle('Giàn B (GB)'))
     const scope = await within(bar()).findByRole('radiogroup', { name: 'Công việc' })
-    expect(within(scope).getAllByRole('radio').map((r) => r.closest('label')?.textContent)).toEqual(['Giàn giáo', 'Sơn cũ'])
-    expect(listProjectEventWorkNames).toHaveBeenCalledWith('p2')
+    expect(within(scope).getAllByRole('radio').map((r) => r.closest('label')?.textContent)).toEqual(['Giàn giáo', 'Tháo giáo B'])
+    // Tìm is ready on the works and decks alone; the history is read once, on Tìm.
+    await waitFor(() => expect(within(bar()).getByRole('button', { name: /Tìm/ })).not.toHaveClass('ant-btn-loading'))
+    expect(listProjectEvents).toHaveBeenCalledTimes(1)
+    expect(listProjectEvents).not.toHaveBeenCalledWith('p2')
   })
 
   it('writes ?project= when Tìm applies the project, not when the draft changes (FLT-02)', async () => {

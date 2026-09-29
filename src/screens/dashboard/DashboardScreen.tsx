@@ -8,7 +8,7 @@ import { PageBody, PageHeader } from '../../components/PageHeader'
 import { ProjectSelect } from '../../components/ProjectSelect'
 import { APP_BASE_PATH } from '../../config'
 import type { DeckEvent, WorkModel } from '../../domain/types'
-import { listProjectEventWorkNames, listProjectEvents, loadProjectModel } from '../../lib/progressApi'
+import { listProjectEvents, loadProjectModel } from '../../lib/progressApi'
 import { listDecks } from '../../lib/decksApi'
 import { listProjectNames } from '../../lib/projectsApi'
 import { listWorks } from '../../lib/worksApi'
@@ -85,17 +85,17 @@ function filterOptions(current: Data['current']): FilterOptions | null {
 
 /**
  * The bar's options for a DRAFT project the screen has not loaded (FLT-02):
- * light reads that give the same works `dashboardWorkNames` will show once it
- * is applied -- the bays works in seq order, then the names only its events
- * remember -- and its decks.
+ * two light reads, its bays works in seq order and its decks. A renamed or
+ * deleted work that only the project's events remember joins the Công việc
+ * switch once Tìm has loaded that history (accepted: Tìm must not wait on a
+ * scan of the history).
  */
 async function loadFilterOptions(projectId: string): Promise<FilterOptions> {
-  const [works, eventWorks, decks] = await Promise.all([
-    listWorks(projectId), listProjectEventWorkNames(projectId), listDecks(projectId),
-  ])
-  const workNames = works.filter((w) => w.kind === 'bays').sort((a, b) => a.seq - b.seq).map((w) => w.name)
-  for (const name of eventWorks) if (!workNames.includes(name)) workNames.push(name)
-  return { workNames, deckNames: decks.map((d) => d.name) }
+  const [works, decks] = await Promise.all([listWorks(projectId), listDecks(projectId)])
+  return {
+    workNames: works.filter((w) => w.kind === 'bays').sort((a, b) => a.seq - b.seq).map((w) => w.name),
+    deckNames: decks.map((d) => d.name),
+  }
 }
 
 /**
