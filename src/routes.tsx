@@ -40,11 +40,9 @@ const DecksScreen = lazy(() =>
 const DeckDetailScreen = lazy(() =>
   import('./screens/admin/DeckDetailScreen').then((m) => ({ default: m.DeckDetailScreen })),
 )
-const UsersScreen = lazy(() =>
-  import('./screens/admin/UsersScreen').then((m) => ({ default: m.UsersScreen })),
-)
-const EmployeesScreen = lazy(() =>
-  import('./screens/admin/EmployeesScreen').then((m) => ({ default: m.EmployeesScreen })),
+// Nhân lực (NL-01): accounts and employees, at the address the users screen had.
+const NhanLucScreen = lazy(() =>
+  import('./screens/admin/NhanLucScreen').then((m) => ({ default: m.NhanLucScreen })),
 )
 const GsScreen = lazy(() =>
   import('./screens/gs/GsScreen').then((m) => ({ default: m.GsScreen })),
@@ -215,7 +213,7 @@ export function AppRoutes() {
             path="users"
             element={
               <LazySuspense>
-                <UsersScreen />
+                <NhanLucScreen />
               </LazySuspense>
             }
           />
@@ -273,14 +271,8 @@ export function AppRoutes() {
               </LazySuspense>
             }
           />
-          <Route
-            path="employees"
-            element={
-              <LazySuspense>
-                <EmployeesScreen />
-              </LazySuspense>
-            }
-          />
+          {/* The staff roster moved into Nhân lực; an old bookmark still lands (NL-01). */}
+          <Route path="employees" element={<Navigate to={`${APP_BASE_PATH}/admin/users`} replace />} />
           {/*
             Only an admin reaches this: the gate above gives every other role
             the same not-found page for any /admin path, known or not (QA F2).

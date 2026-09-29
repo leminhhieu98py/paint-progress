@@ -3,7 +3,6 @@ import {
   AreaChartOutlined,
   BuildOutlined,
   FolderOpenOutlined,
-  IdcardOutlined,
   LineChartOutlined,
   LogoutOutlined,
   MenuFoldOutlined,
@@ -26,8 +25,8 @@ const items = [
   { key: 'dashboard', label: 'Năng suất', icon: <LineChartOutlined /> },
   // RV5-28: "KPI nằm 1 mục riêng trên thanh menu", immediately after Năng suất.
   { key: 'kpi', label: 'KPI', icon: <AreaChartOutlined /> },
-  { key: 'users', label: 'Người dùng', icon: <TeamOutlined /> },
-  { key: 'employees', label: 'Nhân viên', icon: <IdcardOutlined /> },
+  // NL-01: accounts and employees are one list, Nhân lực.
+  { key: 'users', label: 'Nhân lực', icon: <TeamOutlined /> },
 ]
 
 const OPEN_WIDTH = 240

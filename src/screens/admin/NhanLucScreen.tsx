@@ -1,26 +1,24 @@
 import {
-  EditOutlined, EyeInvisibleOutlined, EyeOutlined, KeyOutlined, LockOutlined, ReloadOutlined,
-  TeamOutlined, UnlockOutlined, UserAddOutlined,
+  DownloadOutlined, EditOutlined, EyeInvisibleOutlined, EyeOutlined, KeyOutlined, LockOutlined,
+  SearchOutlined, SwapOutlined, TeamOutlined, UnlockOutlined, UserAddOutlined,
 } from '@ant-design/icons'
 import {
-  Alert, App, Button, Checkbox, Form, Input, Modal, Segmented, Select, Space, Switch, Table, Tooltip,
-  Typography,
+  Alert, App, Button, Checkbox, Form, Input, Modal, Select, Space, Switch, Table, Tooltip, Typography,
 } from 'antd'
 import dayjs from 'dayjs'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../../auth/AuthProvider'
-import { ConsequenceModal } from '../../components/ConsequenceModal'
-import { InfoTip } from '../../components/InfoTip'
-import { PageBody, PageHeader } from '../../components/PageHeader'
-import { RulesDisclosure } from '../../components/RulesDisclosure'
-import { SectionCard } from '../../components/SectionCard'
-import { modalProps } from '../../components/modalChrome'
 import { CategoryBadge } from '../../components/CategoryBadge'
-import type { CategoryValue } from '../../components/categoryTone'
-import { searchSelectProps } from '../../components/searchSelect'
+import { ConsequenceModal } from '../../components/ConsequenceModal'
+import { useDraftFilters } from '../../components/draftFilters'
+import { FilterBar } from '../../components/FilterBar'
+import { modalProps } from '../../components/modalChrome'
+import { PageBody, PageHeader } from '../../components/PageHeader'
+import { RulesDisclosure, type Rule } from '../../components/RulesDisclosure'
+import { SectionCard } from '../../components/SectionCard'
+import { fullOptionsProps, searchSelectProps } from '../../components/searchSelect'
 import { useTablePagination } from '../../components/tablePagination'
 import {
-  createGsUser,
   deactivateGsUser,
   hideUser,
   listGsUsers,
@@ -30,50 +28,63 @@ import {
   setMemberships,
   setPassword,
   unhideUser,
-  type AccountRole,
   type GsUser,
   type MembershipDraft,
 } from '../../lib/adminApi'
+import { listEmployees, updateEmployee, type Employee } from '../../lib/employeesApi'
+import { buildEmployeesXlsx, employeesFileName } from '../../lib/employeesXlsx'
 import { initialsOf } from '../../lib/initials'
-import { MIN_PASSWORD_LENGTH, generatePassword } from '../../lib/passwordGen'
+import { generatePassword } from '../../lib/passwordGen'
+import { downloadWorkbook } from '../../lib/projectReport'
 import { listProjectNames } from '../../lib/projectsApi'
 import { listWorks } from '../../lib/worksApi'
 import { palette, type } from '../../theme'
+import { ChangeRoleDialog } from './ChangeRoleDialog'
+import { NhanLucCreateDialog } from './NhanLucCreateDialog'
+import { PasswordInput } from './PasswordInput'
+import {
+  DEFAULT_FILTERS, ROLE_DESCRIPTION, ROLE_LABEL, ROLE_OPTIONS, STATUS_OPTIONS,
+  buildRows, countsLine, filterRows, isFiltered, nameClash, type StaffRow,
+} from './nhanLuc'
+import { PASSWORD_RULES, clashRule, type ProjectOption } from './nhanLucForm'
 
-interface ProjectOption {
-  value: string
-  label: string
-}
-
-interface CreateValues {
-  username: string
-  fullName: string
-  password: string
-  projectId: string
-  role: AccountRole
-}
-
-const ROLE_LABEL = { gs: 'GS', viewer: 'Visitor' } as const satisfies Record<AccountRole, CategoryValue<'role'>>
-
-const RULES = [
+/**
+ * Quy tắc áp dụng (RUL-01): what the admin can do here and what the app does,
+ * one present-tense sentence each. The three role sentences are the create
+ * dialog's helper texts, from the same constant.
+ */
+const RULES: Rule[] = [
+  { id: 'NL-role-employee', text: ROLE_DESCRIPTION.employee },
+  { id: 'NL-role-gs', text: ROLE_DESCRIPTION.gs },
+  { id: 'NL-role-viewer', text: ROLE_DESCRIPTION.viewer },
+  {
+    id: 'NL-one-row',
+    text: 'Mỗi người chỉ có một dòng: họ tên không trùng giữa nhân viên và tài khoản, tên đăng nhập không trùng giữa các tài khoản.',
+  },
   {
     id: 'USR-R5',
-    text: 'Tài khoản chỉ bị khoá hoặc ẩn, không bị xoá — mọi ghi nhận tiến độ mang tên người này vẫn phải tra được.',
+    text: 'Tài khoản chỉ bị khoá hoặc ẩn, không bị xoá; mọi ghi nhận tiến độ mang tên người này vẫn tra được.',
+  },
+  {
+    id: 'NL-change-role',
+    text: 'Đổi tài khoản thành nhân viên thì tài khoản bị khoá và ẩn; đổi lại thành GS hoặc Visitor thì mở lại đúng tài khoản đó.',
   },
   {
     id: 'USR-R7',
-    text: 'Mỗi lần xem mật khẩu đều được ghi vào nhật ký, kèm tên người xem, tài khoản đích và thời điểm.',
-  },
-  {
-    id: 'USR-R8',
-    // RV6-21/RV6-25: a viewer reads every project and every work (0034).
-    text: 'Tài khoản Visitor đọc được mọi dự án và mọi công việc, tải được báo cáo, nhưng không ghi được gì.',
+    text: 'Mỗi lần xem mật khẩu đều được ghi vào nhật ký, kèm người xem, tài khoản và thời điểm.',
   },
   {
     id: 'USR-R9',
-    text: 'Giới hạn công việc chỉ thu hẹp những gì tài khoản thấy: sàn vẫn hiện, công việc không được gán thì không hiện tiến độ.',
+    text: 'Giới hạn công việc chỉ thu hẹp những gì tài khoản GS thấy: sàn vẫn hiện, công việc không được gán thì không hiện tiến độ.',
+  },
+  {
+    id: 'roster-inactive',
+    text: 'Tắt Đang làm thì người đó không còn trong ô chọn của GS; các lần cập nhật đã ghi vẫn giữ nguyên tên.',
   },
 ]
+
+/** A cell with nothing to say for this kind of row (owner, Nhân lực). */
+const NONE = <span style={{ color: palette.textTertiary }}>-</span>
 
 const projectTextStyle = (user: GsUser) => ({
   color: user.active ? palette.textSecondary : palette.textQuaternary,
@@ -89,9 +100,7 @@ function ProjectList({ user }: { user: GsUser }) {
   // still holds from an assignment made before that -- printing those rows
   // told the admin the account was limited to them (QA F5).
   if (user.role === 'viewer') return <span style={projectTextStyle(user)}>Mọi dự án</span>
-  if (user.projects.length === 0) {
-    return <span style={{ color: palette.textTertiary }}>—</span>
-  }
+  if (user.projects.length === 0) return NONE
   // A restricted membership says how much of the project it sees (item 1c);
   // the common case -- every work -- stays a bare name.
   const labelOf = (p: GsUser['projects'][number]) =>
@@ -260,22 +269,39 @@ function PermissionsDialog({
   )
 }
 
-export function UsersScreen() {
+
+/**
+ * Nhân lực (NL-01): the GS/Visitor accounts and the employees on one list.
+ *
+ * Two tables under it and they stay two: an account signs in (`profiles`, an
+ * auth user behind it), an employee is a name the foreman picks as lead or
+ * painter (`employees`, 0032). One person is one row -- 0037 refuses a name on
+ * both -- and Đổi phân quyền moves a person from one to the other.
+ *
+ * Both lists are read whole (hidden accounts, retired employees) and narrowed
+ * here, so the Trạng thái filter never waits on the network and the checks
+ * for a duplicate name see everything the database will.
+ */
+export function NhanLucScreen() {
   const { profile } = useAuth()
-  const [users, setUsers] = useState<GsUser[]>([])
+  const { message } = App.useApp()
+  const [accounts, setAccounts] = useState<GsUser[] | null>(null)
+  const [employees, setEmployees] = useState<Employee[] | null>(null)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [attempt, setAttempt] = useState(0)
   const [projects, setProjects] = useState<ProjectOption[]>([])
   const [revealed, setRevealed] = useState<{ user: GsUser; password: string; at: string } | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
   const [createOpen, setCreateOpen] = useState(false)
   const [pwTarget, setPwTarget] = useState<GsUser | null>(null)
   const [offTarget, setOffTarget] = useState<GsUser | null>(null)
   const [hideTarget, setHideTarget] = useState<GsUser | null>(null)
   const [renameTarget, setRenameTarget] = useState<GsUser | null>(null)
   const [permTarget, setPermTarget] = useState<GsUser | null>(null)
-  /** Hidden accounts (0028) stay out of the list until asked for. */
-  const [showHidden, setShowHidden] = useState(false)
-  const pagination = useTablePagination(users.length, showHidden)
+  const [changeTarget, setChangeTarget] = useState<StaffRow | null>(null)
+  const [renaming, setRenaming] = useState<StaffRow | null>(null)
+  const [exporting, setExporting] = useState(false)
+  const filters = useDraftFilters(DEFAULT_FILTERS)
   /**
    * A reset the admin has typed but not yet confirmed.
    *
@@ -284,48 +310,52 @@ export function UsersScreen() {
    * admin has to weigh. Cleared on both exits.
    */
   const [pwPending, setPwPending] = useState<{ user: GsUser; password: string } | null>(null)
-  const { message } = App.useApp()
-  // Held here rather than submitted from inside the sheet: the actions moved to
-  // the dialog's footer strip, which is outside the <Form>.
-  const [createForm] = Form.useForm<CreateValues>()
   const [pwForm] = Form.useForm<{ password: string }>()
   const [renameForm] = Form.useForm<{ username: string }>()
+  const [employeeForm] = Form.useForm<{ fullName: string }>()
 
-  /** Every dismissal path of the create dialog -- X, mask, Escape, Huỷ. */
-  const closeCreate = () => {
-    setCreateOpen(false)
-    createForm.resetFields()
-  }
   /** Same for the reset dialog, and it clears a password out of memory. */
   const closePw = () => {
     setPwTarget(null)
     pwForm.resetFields()
   }
 
-  const refresh = useCallback(async () => {
-    setLoading(true)
-    try {
-      setUsers(await listGsUsers(showHidden))
-      setError(null)
-    } catch (e) {
-      setError((e as Error).message)
-    } finally {
-      setLoading(false)
+  // Two reads (NL-01); either failing shows the alert with its retry. The
+  // rows on screen stay until the next read lands, so a write's re-read does
+  // not blank the table.
+  useEffect(() => {
+    let cancelled = false
+    Promise.all([listGsUsers(true), listEmployees(true)])
+      .then(([nextAccounts, nextEmployees]) => {
+        if (cancelled) return
+        setAccounts(nextAccounts)
+        setEmployees(nextEmployees)
+        setLoadError(null)
+      })
+      .catch((e: Error) => {
+        if (!cancelled) setLoadError(e.message)
+      })
+    return () => {
+      cancelled = true
     }
-  }, [showHidden])
+  }, [attempt])
+  const reload = () => setAttempt((n) => n + 1)
 
   useEffect(() => {
-    void refresh()
     void listProjectNames()
-      .then((data) => {
-        setProjects(data.map((p) => ({ value: p.id, label: p.name })))
-      })
-      .catch((e) => {
-        // Every other failure in this screen surfaces through setError; an
-        // empty Select with no explanation is the worst of both worlds.
-        setError((e as Error).message)
-      })
-  }, [refresh])
+      .then((data) => setProjects(data.map((p) => ({ value: p.id, label: p.name }))))
+      // An empty Select with no explanation is the worst of both worlds.
+      .catch((e: Error) => setError(e.message))
+  }, [])
+
+  const rows = useMemo(
+    () => (accounts !== null && employees !== null ? buildRows(accounts, employees) : []),
+    [accounts, employees],
+  )
+  const shown = useMemo(() => filterRows(rows, filters.applied), [rows, filters.applied])
+  const loaded = accounts !== null && employees !== null
+  const filtered = isFiltered(filters.applied)
+  const pagination = useTablePagination(shown.length, filters.version)
 
   const run = async (fn: () => Promise<void>) => {
     try {
@@ -337,90 +367,272 @@ export function UsersScreen() {
   }
   const reportError = useCallback((m: string) => setError(m), [])
 
-  const statusOf = (user: GsUser) => (
-    <CategoryBadge
-      category="accountStatus"
-      value={user.hidden ? 'Đã ẩn' : user.active ? 'Đang dùng' : 'Đã khoá'}
-    />
+  /**
+   * Employees only, retired included, never the filtered view (RV5-08): the
+   * file is what the admin checks the yard's paperwork against, and a name
+   * retired last month is still on every update it was recorded against.
+   */
+  const exportRoster = async () => {
+    setExporting(true)
+    try {
+      const blob = await buildEmployeesXlsx(employees ?? [])
+      downloadWorkbook(blob, employeesFileName(dayjs().format('YYYY-MM-DD')))
+    } catch (e) {
+      message.error((e as Error).message)
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  const accountActions = (user: GsUser) => (
+    <>
+      <Tooltip title="Đổi tên đăng nhập">
+        <Button
+          size="small"
+          aria-label="Đổi tên đăng nhập"
+          icon={<EditOutlined />}
+          onClick={() => {
+            renameForm.setFieldsValue({ username: user.username })
+            setRenameTarget(user)
+          }}
+        />
+      </Tooltip>
+      <Tooltip title="Phân quyền dự án và công việc">
+        <Button size="small" aria-label="Phân quyền" icon={<TeamOutlined />} onClick={() => setPermTarget(user)} />
+      </Tooltip>
+      <Tooltip title="Đặt lại mật khẩu">
+        <Button
+          size="small"
+          aria-label="Đổi mật khẩu"
+          icon={<KeyOutlined />}
+          onClick={() => { pwForm.resetFields(); setPwTarget(user) }}
+        />
+      </Tooltip>
+      <Tooltip title="Xem mật khẩu · được ghi log">
+        <Button
+          size="small"
+          aria-label="Xem mật khẩu"
+          icon={<EyeOutlined style={{ color: palette.warning }} />}
+          onClick={() =>
+            void run(async () => {
+              const password = await revealPassword(user.id)
+              setRevealed({ user, password, at: dayjs().format('DD.MM.YYYY HH:mm') })
+            })
+          }
+        />
+      </Tooltip>
+      {user.active ? (
+        <Tooltip title="Khoá tài khoản">
+          <Button
+            size="small"
+            danger
+            aria-label="Khoá tài khoản"
+            icon={<LockOutlined />}
+            onClick={() => setOffTarget(user)}
+          />
+        </Tooltip>
+      ) : (
+        !user.hidden && (
+          <Tooltip title="Mở khoá · đăng nhập lại được, dự án giữ nguyên">
+            <Button
+              size="small"
+              aria-label="Mở khoá"
+              icon={<UnlockOutlined />}
+              onClick={() =>
+                void run(async () => {
+                  await reactivateUser(user.id)
+                  reload()
+                  message.success('Đã mở khoá tài khoản')
+                })
+              }
+            />
+          </Tooltip>
+        )
+      )}
+      {user.hidden ? (
+        <Button
+          size="small"
+          onClick={() =>
+            void run(async () => {
+              await unhideUser(user.id)
+              reload()
+              message.success('Đã hiện lại tài khoản')
+            })
+          }
+        >
+          Hiện lại
+        </Button>
+      ) : (
+        <Tooltip title="Ẩn khỏi danh sách · không xoá">
+          <Button
+            size="small"
+            aria-label="Ẩn tài khoản"
+            icon={<EyeInvisibleOutlined />}
+            onClick={() => setHideTarget(user)}
+          />
+        </Tooltip>
+      )}
+    </>
+  )
+
+  const employeeActions = (row: StaffRow & { kind: 'employee' }) => (
+    <>
+      <Tooltip title="Đang làm · tắt thì không còn trong ô chọn của GS">
+        <Switch
+          size="small"
+          checked={row.employee.active}
+          aria-label={`Đang làm · ${row.fullName}`}
+          onChange={(next) =>
+            void run(async () => {
+              await updateEmployee(row.id, { active: next })
+              reload()
+              message.success(next ? 'Đã bật lại' : 'Đã tắt khỏi danh sách chọn')
+            })
+          }
+        />
+      </Tooltip>
+      <Tooltip title="Sửa tên">
+        <Button
+          size="small"
+          aria-label="Sửa tên"
+          icon={<EditOutlined />}
+          onClick={() => {
+            employeeForm.setFieldsValue({ fullName: row.fullName })
+            setRenaming(row)
+          }}
+        />
+      </Tooltip>
+    </>
   )
 
   return (
     <>
       <PageHeader
-        title="Người dùng"
+        title="Nhân lực"
+        // The counts arrive with the lists: their line is held meanwhile (R1).
+        reserveSubtitle
+        subtitle={loaded ? countsLine(rows, shown, filtered) : undefined}
+        filters={
+          // Three controls: a draft, applied by Tìm or Enter (FLT-02, FLT-08).
+          <FilterBar onApply={() => filters.apply()} onReset={filters.reset}>
+            <Input
+              allowClear
+              aria-label="Tìm nhân lực"
+              placeholder="Tìm theo tên hoặc tên đăng nhập"
+              prefix={<SearchOutlined aria-hidden />}
+              style={{ width: 260 }}
+              value={filters.draft.query}
+              onChange={(e) => filters.setDraft({ query: e.target.value })}
+            />
+            <Select
+              aria-label="Phân quyền"
+              {...searchSelectProps}
+              {...fullOptionsProps}
+              style={{ width: 170 }}
+              value={filters.draft.role}
+              options={ROLE_OPTIONS}
+              onChange={(role) => filters.setDraft({ role })}
+            />
+            <Select
+              aria-label="Trạng thái"
+              {...searchSelectProps}
+              {...fullOptionsProps}
+              style={{ width: 190 }}
+              value={filters.draft.status}
+              options={STATUS_OPTIONS}
+              onChange={(status) => filters.setDraft({ status })}
+            />
+          </FilterBar>
+        }
         extra={
           <Space size={12}>
-            <Space size={6}>
-              <Switch
-                size="small"
-                aria-label="Hiện tài khoản đã ẩn"
-                checked={showHidden}
-                onChange={setShowHidden}
-              />
-              <span style={{ ...type.body, color: palette.textSecondary }}>Hiện tài khoản đã ẩn</span>
-            </Space>
-            <Button
-              type="primary"
-              icon={<UserAddOutlined aria-hidden />}
-              onClick={() => { createForm.resetFields(); setCreateOpen(true) }}
-            >
-              Tạo tài khoản
+            <Tooltip title="Xuất danh sách nhân viên · cả người đã nghỉ · .xlsx">
+              <Button
+                icon={<DownloadOutlined aria-hidden />}
+                loading={exporting}
+                disabled={employees === null || employees.length === 0}
+                onClick={() => void exportRoster()}
+              >
+                Xuất danh sách
+              </Button>
+            </Tooltip>
+            <Button type="primary" icon={<UserAddOutlined aria-hidden />} onClick={() => setCreateOpen(true)}>
+              Thêm nhân lực
             </Button>
           </Space>
         }
       />
 
       <PageBody>
+        {loadError && (
+          <Alert
+            type="error"
+            showIcon
+            message="Không tải được danh sách nhân lực"
+            description={loadError}
+            action={<Button onClick={reload}>Thử lại</Button>}
+          />
+        )}
         {error && <Alert type="error" message={error} closable onClose={() => setError(null)} />}
 
         <SectionCard bodyPadding={0} footer={<RulesDisclosure rules={RULES} />}>
-          <Table<GsUser>
-            rowKey="id"
-            loading={loading}
-            dataSource={users}
+          <Table<StaffRow>
+            rowKey="key"
+            loading={!loaded && loadError === null}
+            dataSource={shown}
             pagination={pagination}
             // Sized to its content, as the deck list is: at 1024px the columns
             // add up to more than the card, which clips (overflow: hidden)
             // rather than scrolls. The card scrolls sideways instead.
             scroll={{ x: 'max-content' }}
+            locale={{
+              // Two different nothings: a list nobody has filled in yet is a
+              // job to do, a filter that matched nothing is not.
+              emptyText: filtered || rows.length > 0
+                ? 'Không có dòng nào khớp bộ lọc'
+                : 'Chưa có ai trong danh sách. Thêm nhân viên để GS ghi được tiến độ.',
+            }}
             columns={[
               {
-                title: 'Người dùng',
-                key: 'user',
+                title: 'Họ tên',
+                key: 'name',
                 width: 280,
-                render: (_v, user) => (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                    <span
-                      style={{
-                        width: 34,
-                        height: 34,
-                        borderRadius: 10,
-                        flex: 'none',
-                        textAlign: 'center',
-                        ...type.micro,
-                        lineHeight: '34px',
-                        background: user.active ? palette.bgHover : palette.bgApp,
-                        color: user.active ? palette.textSecondary : palette.textQuaternary,
-                      }}
-                    >
-                      {initialsOf(user.fullName)}
-                    </span>
-                    <div style={{ minWidth: 0, ...type.body, lineHeight: 1.35 }}>{user.fullName}</div>
-                  </div>
-                ),
+                render: (_v, row) => {
+                  const live = row.status === 'Đang dùng' || row.status === 'Đang làm'
+                  return (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                      <span
+                        style={{
+                          width: 34,
+                          height: 34,
+                          borderRadius: 10,
+                          flex: 'none',
+                          textAlign: 'center',
+                          ...type.micro,
+                          lineHeight: '34px',
+                          background: live ? palette.bgHover : palette.bgApp,
+                          color: live ? palette.textSecondary : palette.textQuaternary,
+                        }}
+                      >
+                        {initialsOf(row.fullName)}
+                      </span>
+                      <div style={{ minWidth: 0, ...type.body, lineHeight: 1.35 }}>{row.fullName}</div>
+                    </div>
+                  )
+                },
               },
               {
                 title: 'Tên đăng nhập',
-                dataIndex: 'username',
                 key: 'username',
                 width: 150,
+                render: (_v, row) => (row.kind === 'account' ? row.account.username : NONE),
               },
               {
-                title: 'Loại',
+                title: 'Phân quyền',
+                key: 'role',
                 align: 'center',
-                dataIndex: 'role',
-                width: 90,
-                render: (role: AccountRole) => <CategoryBadge category="role" value={ROLE_LABEL[role]} />,
+                width: 110,
+                render: (_v, row) => <CategoryBadge category="role" value={ROLE_LABEL[row.role]} />,
               },
               {
                 title: 'Dự án',
@@ -428,115 +640,35 @@ export function UsersScreen() {
                 // Fixed, so the list wraps: under scroll.x max-content an
                 // unsized column grows to its longest line (UI-06).
                 width: 280,
-                render: (_v, user) => <ProjectList user={user} />,
+                render: (_v, row) => (row.kind === 'account' ? <ProjectList user={row.account} /> : NONE),
               },
               {
                 title: 'Trạng thái',
-                align: 'center',
                 key: 'status',
+                align: 'center',
                 width: 120,
-                render: (_v, user) => statusOf(user),
+                render: (_v, row) => (row.kind === 'account'
+                  ? <CategoryBadge category="accountStatus" value={row.status} />
+                  : <CategoryBadge category="employeeStatus" value={row.status} />),
               },
               {
                 title: 'Thao tác',
                 key: 'actions',
-                width: 220,
+                width: 250,
                 // Pinned: lock, hide and reveal must not scroll out of the card.
                 fixed: 'right',
                 align: 'center',
-                render: (_v, user) => (
-                  <div style={{ display: 'flex', gap: 7, justifyContent: 'center' }}>
-                    <Tooltip title="Đổi tên đăng nhập">
+                render: (_v, row) => (
+                  <div style={{ display: 'flex', gap: 7, justifyContent: 'center', alignItems: 'center' }}>
+                    {row.kind === 'account' ? accountActions(row.account) : employeeActions(row)}
+                    <Tooltip title="Đổi phân quyền · Nhân viên, GS, Visitor">
                       <Button
                         size="small"
-                        aria-label="Đổi tên đăng nhập"
-                        icon={<EditOutlined />}
-                        onClick={() => {
-                          renameForm.setFieldsValue({ username: user.username })
-                          setRenameTarget(user)
-                        }}
+                        aria-label="Đổi phân quyền"
+                        icon={<SwapOutlined />}
+                        onClick={() => setChangeTarget(row)}
                       />
                     </Tooltip>
-                    <Tooltip title="Phân quyền dự án và công việc">
-                      <Button
-                        size="small"
-                        aria-label="Phân quyền"
-                        icon={<TeamOutlined />}
-                        onClick={() => setPermTarget(user)}
-                      />
-                    </Tooltip>
-                    <Tooltip title="Đặt lại mật khẩu">
-                      <Button
-                        size="small"
-                        aria-label="Đổi mật khẩu"
-                        icon={<KeyOutlined />}
-                        onClick={() => { pwForm.resetFields(); setPwTarget(user) }}
-                      />
-                    </Tooltip>
-                    <Tooltip title="Xem mật khẩu · được ghi log">
-                      <Button
-                        size="small"
-                        aria-label="Xem mật khẩu"
-                        icon={<EyeOutlined style={{ color: palette.warning }} />}
-                        onClick={() =>
-                          void run(async () => {
-                            const password = await revealPassword(user.id)
-                            setRevealed({ user, password, at: dayjs().format('DD.MM.YYYY HH:mm') })
-                          })
-                        }
-                      />
-                    </Tooltip>
-                    {user.active ? (
-                      <Tooltip title="Khoá tài khoản">
-                        <Button
-                          size="small"
-                          danger
-                          aria-label="Khoá tài khoản"
-                          icon={<LockOutlined />}
-                          onClick={() => setOffTarget(user)}
-                        />
-                      </Tooltip>
-                    ) : (
-                      !user.hidden && (
-                        <Tooltip title="Mở khoá · đăng nhập lại được, dự án giữ nguyên">
-                          <Button
-                            size="small"
-                            aria-label="Mở khoá"
-                            icon={<UnlockOutlined />}
-                            onClick={() =>
-                              void run(async () => {
-                                await reactivateUser(user.id)
-                                await refresh()
-                                message.success('Đã mở khoá tài khoản')
-                              })
-                            }
-                          />
-                        </Tooltip>
-                      )
-                    )}
-                    {user.hidden ? (
-                      <Button
-                        size="small"
-                        onClick={() =>
-                          void run(async () => {
-                            await unhideUser(user.id)
-                            await refresh()
-                            message.success('Đã hiện lại tài khoản')
-                          })
-                        }
-                      >
-                        Hiện lại
-                      </Button>
-                    ) : (
-                      <Tooltip title="Ẩn khỏi danh sách · không xoá">
-                        <Button
-                          size="small"
-                          aria-label="Ẩn tài khoản"
-                          icon={<EyeInvisibleOutlined />}
-                          onClick={() => setHideTarget(user)}
-                        />
-                      </Tooltip>
-                    )}
                   </div>
                 ),
               },
@@ -625,7 +757,7 @@ export function UsersScreen() {
           void run(async () => {
             await deactivateGsUser(offTarget!.id)
             setOffTarget(null)
-            await refresh()
+            reload()
             message.success('Đã khoá tài khoản')
           })
         }
@@ -645,14 +777,14 @@ export function UsersScreen() {
               }]
             : []
         }
-        consequence="Mọi ghi chú và lịch sử ghi nhận vẫn mang tên người này. Bật «Hiện tài khoản đã ẩn» để tìm lại và mở khoá khi cần."
+        consequence="Mọi ghi chú và lịch sử ghi nhận vẫn mang tên người này. Chọn Trạng thái «Đã ẩn» để tìm lại và mở khoá khi cần."
         okText="Vẫn ẩn"
         onCancel={() => setHideTarget(null)}
         onOk={() =>
           void run(async () => {
             await hideUser(hideTarget!.id)
             setHideTarget(null)
-            await refresh()
+            reload()
             message.success('Đã ẩn tài khoản')
           })
         }
@@ -675,7 +807,7 @@ export function UsersScreen() {
             void run(async () => {
               await renameUser(renameTarget!.id, username.trim().toLowerCase())
               setRenameTarget(null)
-              await refresh()
+              reload()
               message.success('Đã đổi tên đăng nhập')
             })
           }
@@ -702,99 +834,73 @@ export function UsersScreen() {
           onError={reportError}
           onSaved={async () => {
             setPermTarget(null)
-            await refresh()
+            reload()
             message.success('Đã cập nhật quyền')
           }}
         />
       )}
 
-      <Modal
+
+      <NhanLucCreateDialog
         open={createOpen}
-        title="Tạo tài khoản"
-        onCancel={closeCreate}
+        rows={rows}
+        projects={projects}
+        onClose={() => setCreateOpen(false)}
+        onCreated={(done) => {
+          reload()
+          message.success(done)
+        }}
+      />
+
+      {changeTarget !== null && (
+        <ChangeRoleDialog
+          row={changeTarget}
+          rows={rows}
+          projects={projects}
+          onClose={() => setChangeTarget(null)}
+          onDone={(done) => {
+            setChangeTarget(null)
+            reload()
+            message.success(done)
+          }}
+          onError={(problem) => {
+            setChangeTarget(null)
+            setError(problem)
+          }}
+        />
+      )}
+
+      <Modal
+        open={renaming !== null}
+        title={`Sửa tên · ${renaming?.fullName ?? ''}`}
+        onCancel={() => setRenaming(null)}
         {...modalProps}
         footer={[
-          <Button key="cancel" onClick={closeCreate}>
-            Huỷ
-          </Button>,
-          <Button key="ok" type="primary" onClick={() => createForm.submit()}>
-            Tạo
-          </Button>,
+          <Button key="cancel" onClick={() => setRenaming(null)}>Huỷ</Button>,
+          <Button key="ok" type="primary" onClick={() => employeeForm.submit()}>Lưu</Button>,
         ]}
       >
-        <Form<CreateValues>
-          form={createForm}
+        <Form<{ fullName: string }>
+          form={employeeForm}
           layout="vertical"
-          initialValues={{ role: 'gs' }}
-          onFinish={(values) =>
+          onFinish={({ fullName }) =>
             void run(async () => {
-              await createGsUser({ ...values, role: values.role ?? 'gs' })
-              setCreateOpen(false)
-              await refresh()
-              message.success('Đã tạo tài khoản')
+              await updateEmployee(renaming!.id, { fullName })
+              setRenaming(null)
+              reload()
+              message.success('Đã đổi tên')
             })
           }
         >
-          {/* The (?) beside the control, outside the <label>: inside it, a
-              click would move focus to the field and the tip would join the
-              field's name. */}
-          <Form.Item label="Loại tài khoản">
-            <Space size={4} align="center">
-              <Form.Item name="role" noStyle>
-                <Segmented
-                  aria-label="Loại tài khoản"
-                  options={[
-                    { value: 'gs', label: ROLE_LABEL.gs },
-                    { value: 'viewer', label: ROLE_LABEL.viewer },
-                  ]}
-                />
-              </Form.Item>
-              <InfoTip text="GS ghi tiến độ trên tablet. Visitor dành cho người chỉ cần theo dõi và tải báo cáo." />
-            </Space>
-          </Form.Item>
           <Form.Item
-            name="username"
-            label="Tên đăng nhập"
+            name="fullName"
+            label="Họ tên"
             rules={[
-              { required: true, message: 'Nhập tên đăng nhập' },
-              { pattern: /^[a-z0-9._-]{3,32}$/i, message: 'Chỉ chữ, số, dấu chấm, gạch ngang, gạch dưới (3-32 ký tự)' },
+              { required: true, whitespace: true, message: 'Nhập họ tên' },
+              clashRule((v) => nameClash(rows, v, 'employee', renaming?.key)),
             ]}
           >
-            <Input placeholder="Ví dụ: gs.hieu" />
-          </Form.Item>
-          <Form.Item name="fullName" label="Họ tên" rules={[{ required: true, message: 'Nhập họ tên' }]}>
-            <Input placeholder="Ví dụ: Lê Trung Hiếu" />
-          </Form.Item>
-          <Form.Item
-            name="password"
-            label="Mật khẩu"
-            rules={[
-              { required: true, message: 'Nhập mật khẩu' },
-              { min: MIN_PASSWORD_LENGTH, message: `Tối thiểu ${MIN_PASSWORD_LENGTH} ký tự` },
-            ]}
-          >
-            <Input
-              placeholder="Nhập mật khẩu"
-              addonAfter={
-                /*
-                  A rule the admin has to satisfy is a rule the admin works
-                  around -- they find the shortest string that passes and reuse
-                  it. Not asking them to invent one is the actual fix.
-                */
-                <Tooltip title="Sinh mật khẩu ngẫu nhiên, dễ đọc qua bộ đàm">
-                  <Button
-                    type="text"
-                    size="small"
-                    aria-label="Sinh mật khẩu"
-                    icon={<ReloadOutlined aria-hidden />}
-                    onClick={() => createForm.setFieldsValue({ password: generatePassword() })}
-                  />
-                </Tooltip>
-              }
-            />
-          </Form.Item>
-          <Form.Item name="projectId" label="Dự án" rules={[{ required: true, message: 'Chọn dự án' }]}>
-            <Select options={projects} placeholder="Chọn dự án" {...searchSelectProps} />
+            <Input placeholder="Ví dụ: Nguyễn Văn A" />
           </Form.Item>
         </Form>
       </Modal>
@@ -832,24 +938,11 @@ export function UsersScreen() {
           <Form.Item
             name="password"
             label="Mật khẩu mới"
-            rules={[
-              { required: true, message: 'Nhập mật khẩu mới' },
-              { min: MIN_PASSWORD_LENGTH, message: `Tối thiểu ${MIN_PASSWORD_LENGTH} ký tự` },
-            ]}
+            rules={[{ required: true, message: 'Nhập mật khẩu mới' }, PASSWORD_RULES[1]]}
           >
-            <Input
+            <PasswordInput
               placeholder="Nhập mật khẩu mới"
-              addonAfter={
-                <Tooltip title="Sinh mật khẩu ngẫu nhiên, dễ đọc qua bộ đàm">
-                  <Button
-                    type="text"
-                    size="small"
-                    aria-label="Sinh mật khẩu"
-                    icon={<ReloadOutlined aria-hidden />}
-                    onClick={() => pwForm.setFieldsValue({ password: generatePassword() })}
-                  />
-                </Tooltip>
-              }
+              onGenerate={() => pwForm.setFieldsValue({ password: generatePassword() })}
             />
           </Form.Item>
         </Form>
