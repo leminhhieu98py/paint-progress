@@ -500,15 +500,14 @@ describe('ProductivityDashboard — tables on a phone (MOB-01)', () => {
       expect(pinned).toHaveLength(1)
       expect(pinned[0]).toBe(screen.getByTestId(id).querySelector('thead th'))
     }
-    // On a phone the stage table pins the coat, its work a caption beneath (R1):
-    // a pinned work column left "Sơn" on every row once the figures scrolled.
+    // On a phone the stage table pins the coat. One work is always applied,
+    // so no row repeats it, as a column or as a caption (M19).
     const stages = within(screen.getByTestId('stage-table'))
     expect(screen.getByTestId('stage-table').querySelector('thead th')).toHaveTextContent(/^Công đoạn$/)
     expect(stages.queryByRole('columnheader', { name: 'Công việc' })).toBeNull()
     const coatCell = stages.getAllByText('Lớp 1')[0].closest('td') as HTMLElement
     expect(coatCell).toHaveClass('ant-table-cell-fix-left')
-    const work = within(coatCell).getByText('Sơn')
-    expect(work).toHaveStyle({ fontSize: '12px', fontWeight: '400', color: palette.textTertiary })
+    expect(coatCell).toHaveTextContent(/^Lớp 1$/)
     const wrapOf = (text: string, id: string) => within(screen.getByTestId(id)).getAllByText(text)[0]
     for (const [text, id] of [['Lớp 1', 'stage-table'], ['Tổ 1', 'lead-table'], ['Mưa', 'waste-table'], ['Sàn A', 'forecast-table']] as const) {
       expect(wrapOf(text, id)).toHaveStyle({ maxWidth: '160px', whiteSpace: 'normal', overflowWrap: 'anywhere' })
@@ -518,9 +517,10 @@ describe('ProductivityDashboard — tables on a phone (MOB-01)', () => {
   it('keeps the scroll but pins nothing from 768 px, where the columns fit', () => {
     restoreViewport = setViewport(1280)
     renderDashboard()
-    // The work keeps its own column there, before the coat, the coat cell the name alone.
+    // No Công việc column: the one work applied would fill it on every row (M19).
     const headers = within(screen.getByTestId('stage-table')).getAllByRole('columnheader').map((h) => h.textContent)
-    expect(headers.slice(0, 2)).toEqual(['Công việc', 'Công đoạn'])
+    expect(headers[0]).toBe('Công đoạn')
+    expect(headers).not.toContain('Công việc')
     expect(within(screen.getByTestId('stage-table')).getAllByText('Lớp 1')[0].closest('td')).toHaveTextContent(/^Lớp 1$/)
     for (const id of TABLES) {
       expect(tableIn(id)).toHaveClass('ant-table-scroll-horizontal')
@@ -548,10 +548,18 @@ describe('ProductivityDashboard — stat cards on a phone (MOB-02)', () => {
     expect(grid()).toHaveStyle({ gridTemplateColumns: 'minmax(0, 1fr)' })
   })
 
-  it('keeps the wide cards from 768 px', () => {
+  it('keeps the wide cards from 768 px, three to a row from 992 px so six leave no orphan (M19)', () => {
     restoreViewport = setViewport(1280)
     renderDashboard()
-    expect(grid()).toHaveStyle({ gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))' })
+    expect(grid()).toHaveStyle({ gridTemplateColumns: 'repeat(3, minmax(0, 1fr))' })
+    expect(grid().children).toHaveLength(6)
+    expect(cards().getByText('450,00')).toHaveStyle({ fontSize: '32px' })
+  })
+
+  it('lays the wide cards two to a row between 768 and 992 px (M19)', () => {
+    restoreViewport = setViewport(800)
+    renderDashboard()
+    expect(grid()).toHaveStyle({ gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' })
     expect(cards().getByText('450,00')).toHaveStyle({ fontSize: '32px' })
   })
 })

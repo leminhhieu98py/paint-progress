@@ -1,5 +1,5 @@
 import { SearchOutlined } from '@ant-design/icons'
-import { Input, Table } from 'antd'
+import { Grid, Input, Table } from 'antd'
 import dayjs from 'dayjs'
 import { useMemo, useState, type ReactNode } from 'react'
 import { EmptyState } from '../../components/EmptyState'
@@ -80,9 +80,14 @@ export function ProductivityDashboard({
   /** A text cell, wrapped at 160 px on a phone (I5). */
   const text = (node: ReactNode) => (phone ? wrapped(node) : node)
   const narrowPhone = useFieldNarrowPhone()
-  /** On a phone the cards go two to a row, one under 360 px (MOB-02). */
+  const lg = Grid.useBreakpoint().lg === true
+  /**
+   * On a phone the cards go two to a row, one under 360 px (MOB-02). Wider,
+   * the six go three to a row from 992 px and two below it, so no row holds
+   * one orphan card as auto-fit left at 1512 (M19).
+   */
   const cardColumns = !phone
-    ? 'repeat(auto-fit, minmax(200px, 1fr))'
+    ? (lg ? 'repeat(3, minmax(0, 1fr))' : 'repeat(2, minmax(0, 1fr))')
     : narrowPhone ? 'minmax(0, 1fr)' : 'repeat(2, minmax(0, 1fr))'
   const workNames = useMemo(() => dashboardWorkNames(models, events), [models, events])
   const workName = resolveWork(filters.work, workNames)
@@ -248,23 +253,14 @@ export function ProductivityDashboard({
   }
 
   const stageColumns = [
-    // Wider, the work has its own column, before the coat. On a phone the coat
-    // is the one pinned column and names the row, its work a caption beneath
-    // (R1): a pinned work column left "Sơn" on every row once the figures
-    // scrolled, and nothing told the coats apart.
-    ...(workNames.length > 1 && !phone ? [{ title: 'Công việc', dataIndex: 'workName' as const }] : []),
+    // No work column, nor a work caption under the coat on a phone: one work
+    // is always applied, and it filled every row with the same name (M19).
+    // The coat is the one pinned column on a phone and names the row.
     {
       title: 'Công đoạn',
       dataIndex: 'stageName' as const,
       fixed: pin,
-      render: (v: string, r: StageEfficiency) => (phone && workNames.length > 1
-        ? (
-          <>
-            {wrapped(v)}
-            <div style={{ ...wrapStyle, ...type.caption, color: palette.textTertiary }}>{r.workName}</div>
-          </>
-        )
-        : text(v)),
+      render: (v: string) => text(v),
     },
     { title: 'Số ngày', dataIndex: 'days' as const, align: 'center' as const },
     { title: 'Tổng Mhr', align: 'center' as const, render: (_: unknown, r: StageEfficiency) => formatHours(r.totalHours) },
