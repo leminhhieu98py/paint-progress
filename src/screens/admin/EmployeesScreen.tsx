@@ -119,6 +119,8 @@ export function EmployeesScreen() {
     <>
       <PageHeader
         title="Nhân viên"
+        // The counts arrive with the list: their line is held meanwhile (R1).
+        reserveSubtitle
         subtitle={
           rows === null
             ? undefined

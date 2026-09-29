@@ -71,11 +71,15 @@ describe('EmployeesScreen', () => {
     expect(within(bar).queryByRole('button', { name: /Thêm nhân viên|Xuất danh sách/ })).toBeNull()
   })
 
-  it('has no subtitle while the roster loads (CPY-03)', async () => {
+  it('says nothing under the title while the roster loads, but keeps its line (CPY-03, R1)', async () => {
+    // The counts arrive with the list; an empty reserved line means the header
+    // does not grow, and the card under it does not jump, when they do.
     listEmployees.mockReturnValue(new Promise(() => {}))
     renderScreen()
     expect(await screen.findByRole('heading', { level: 1, name: 'Nhân viên' })).toBeInTheDocument()
-    expect(pageSubtitle()).toBeNull()
+    const line = pageSubtitle() as HTMLElement
+    expect(line).toHaveAttribute('aria-hidden', 'true')
+    expect(line.textContent?.trim()).toBe('')
   })
 
   it('states who uses the roster and what switching someone off keeps, under Quy tắc áp dụng (CPY-01)', async () => {

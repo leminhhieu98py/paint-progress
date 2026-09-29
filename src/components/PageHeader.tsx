@@ -28,6 +28,7 @@ export function PageHeader({
   extra,
   filters,
   sticky = false,
+  reserveSubtitle = false,
 }: {
   title: ReactNode
   badge?: ReactNode
@@ -37,6 +38,11 @@ export function PageHeader({
   extra?: ReactNode
   filters?: ReactNode
   sticky?: boolean
+  /**
+   * Holds the subtitle's line, empty, while the subtitle is not there yet (a
+   * count that arrives with the data), so its arrival grows nothing (R1).
+   */
+  reserveSubtitle?: boolean
 }) {
   return (
     <div
@@ -141,11 +147,14 @@ export function PageHeader({
               </span>
             )}
           </div>
-          {subtitle !== undefined && (
+          {(subtitle !== undefined || reserveSubtitle) && (
             // -1.5px: the title line is 38 and the title 25 of it, so this
             // keeps the 5px the subtitle always had under the text.
-            <p style={{ margin: '-1.5px 0 0', ...type.caption, lineHeight: 1.35, color: palette.textTertiary }}>
-              {subtitle}
+            <p
+              aria-hidden={subtitle === undefined ? true : undefined}
+              style={{ margin: '-1.5px 0 0', ...type.caption, lineHeight: 1.35, color: palette.textTertiary }}
+            >
+              {subtitle ?? '\u00a0'}
             </p>
           )}
         </div>

@@ -3,6 +3,7 @@ import type { ReactElement } from 'react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { palette } from '../theme'
+import { pageSubtitle } from '../test/copy'
 import { PageHeader } from './PageHeader'
 
 describe('PageHeader', () => {
@@ -48,6 +49,17 @@ describe('PageHeader', () => {
     )
     expect(screen.getByRole('button', { name: 'Tạo sàn' })).toBeInTheDocument()
     expect(screen.getByText('Dự án')).toBeInTheDocument()
+  })
+
+  it('can hold the subtitle\'s line empty, so a subtitle that arrives with the data grows nothing (R1)', () => {
+    const { rerender } = render(<PageHeader title="Nhân viên" reserveSubtitle />)
+    const line = pageSubtitle() as HTMLElement
+    expect(line).toHaveAttribute('aria-hidden', 'true')
+    expect(line.textContent).toBe('\u00a0')
+    rerender(<PageHeader title="Nhân viên" reserveSubtitle subtitle="1 đang làm" />)
+    expect(pageSubtitle()).toBe(line)
+    expect(line).toHaveTextContent('1 đang làm')
+    expect(line).not.toHaveAttribute('aria-hidden')
   })
 
   it('sets title, badge and subtitle on the type scale (TYP-01, TYP-03)', () => {
