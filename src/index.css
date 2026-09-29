@@ -157,6 +157,12 @@ body {
   outline: 2px solid #0a8175;
   outline-offset: 2px;
 }
+/* A picked swatch already wears a 2px gap and a 2px ring (CLR-02); the
+   focus ring goes outside both, with a gap of its own, so a focused pick
+   still reads as picked. */
+.pp-swatch[aria-checked="true"]:focus-visible {
+  outline-offset: 6px;
+}
 .pp-swatch:disabled {
   cursor: not-allowed;
   opacity: 0.5;

@@ -98,4 +98,13 @@ describe('index.css colour swatch (CLR-01)', () => {
     expect(ring!.style.outline).toMatch(/2px solid/)
     expect(ring!.style.outlineOffset).toBe('2px')
   })
+
+  it('moves the focus ring outside a picked swatch\'s selection ring (S3)', () => {
+    // The pick is a 2px gap then a 2px ring (0 0 0 2px, 0 0 0 4px): the focus
+    // ring at offset 2 painted over that band, and a focused pick read as a
+    // focused unpicked colour.
+    const picked = rule('.pp-swatch[aria-checked="true"]:focus-visible')
+    expect(picked).toBeDefined()
+    expect(parseFloat(picked!.style.outlineOffset)).toBeGreaterThanOrEqual(6)
+  })
 })
