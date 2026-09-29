@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { endSession } from '../../lib/sessionCache'
 import { carryFilters, clearCarried, peekCarried } from './fieldCarry'
 
 describe('fieldCarry (I-1)', () => {
@@ -22,5 +23,13 @@ describe('fieldCarry (I-1)', () => {
 
   it('has nothing for a page with no project', () => {
     expect(peekCarried('kpi', null)).toBeUndefined()
+  })
+})
+
+describe('fieldCarry across accounts (RR-M5)', () => {
+  it('forgets every carry when the session ends, so the next account opens on defaults', () => {
+    carryFilters('kpi', 'p1', { deckId: 'd1' })
+    endSession()
+    expect(peekCarried('kpi', 'p1')).toBeUndefined()
   })
 })

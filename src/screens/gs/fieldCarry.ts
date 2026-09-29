@@ -1,3 +1,5 @@
+import { onSessionEnd } from '../../lib/sessionCache'
+
 /**
  * Filters handed from one field page to the same page of another project
  * (I-1). The field Năng suất and KPI pages remount on a project switch (they
@@ -8,6 +10,9 @@
  * (`clearCarried`), so a later visit to the page opens on its defaults.
  */
 const carried = new Map<string, unknown>()
+
+// A carry whose page never mounted must not open the next account's page (RR-M5).
+onSessionEnd(() => carried.clear())
 
 const keyOf = (page: string, projectId: string) => `${page}:${projectId}`
 
