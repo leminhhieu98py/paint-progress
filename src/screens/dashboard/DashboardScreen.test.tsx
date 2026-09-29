@@ -2,6 +2,7 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { pageSubtitle } from '../../test/copy'
 import { DashboardScreen } from './DashboardScreen'
 
 const loadProjectModel = vi.hoisted(() => vi.fn())
@@ -63,7 +64,9 @@ describe('DashboardScreen (admin)', () => {
     expect(await screen.findByText('DASHBOARD 2 sự kiện · Sàn A')).toBeInTheDocument()
     expect(loadProjectModel).toHaveBeenCalledWith('p1')
     expect(listProjectEvents).toHaveBeenCalledWith('p1')
-    expect(screen.getByText(/Giàn A · Mhr\/m²/)).toBeInTheDocument()
+    // No subtitle listing the cards below; the project is in the select (CPY-01, CPY-03).
+    expect(pageSubtitle()).toBeNull()
+    expect(screen.queryByText(/theo công đoạn, theo ngày và theo nhóm trưởng/)).toBeNull()
   })
 
   it('honours ?project= when it names a project that exists', async () => {

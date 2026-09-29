@@ -3,6 +3,7 @@ import { DatePicker, Input, Segmented, Select, Table, Typography } from 'antd'
 import dayjs, { type Dayjs } from 'dayjs'
 import { useMemo, useState } from 'react'
 import { EmptyState } from '../../components/EmptyState'
+import { InfoTip } from '../../components/InfoTip'
 import { SectionCard } from '../../components/SectionCard'
 import { StatCard } from '../../components/StatCard'
 import { searchSelectProps } from '../../components/searchSelect'
@@ -232,7 +233,11 @@ export function ProductivityDashboard({
     { title: 'Số ngày', dataIndex: 'days' as const, align: 'center' as const },
     { title: 'Tổng Mhr', align: 'center' as const, render: (_: unknown, r: StageEfficiency) => formatHours(r.totalHours) },
     { title: `Tổng ${unit}`, align: 'center' as const, render: (_: unknown, r: StageEfficiency) => formatAreaM2(r.totalAreaM2) },
-    { title: `Hiệu suất TB (${perUnit(unit)})`, align: 'center' as const, render: (_: unknown, r: StageEfficiency) => ratio(r.avgMhrPerM2) },
+    {
+      title: <>{`Hiệu suất TB (${perUnit(unit)})`}<InfoTip text={`Hiệu suất trung bình là trung bình cộng của ${perUnit(unit)} từng ngày`} /></>,
+      align: 'center' as const,
+      render: (_: unknown, r: StageEfficiency) => ratio(r.avgMhrPerM2),
+    },
     { title: 'Mhr TB/ngày', align: 'center' as const, render: (_: unknown, r: StageEfficiency) => (r.avgHoursPerDay === null ? dash : formatHours(r.avgHoursPerDay)) },
     { title: 'Giờ hao phí', align: 'center' as const, render: (_: unknown, r: StageEfficiency) => formatHours(r.wasteHours) },
   ]
@@ -268,18 +273,17 @@ export function ProductivityDashboard({
         data-testid="dashboard-cards"
         style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}
       >
-        <StatCard label="Tổng Mhr thực hiện" value={formatHours(totalHours)} sub="giờ công đã ghi" />
+        <StatCard label="Tổng Mhr thực hiện" value={formatHours(totalHours)} />
         <StatCard label={`Tổng ${unit} đã ghi giờ công`} value={formatAreaM2(totalAreaM2)} sub={unit} />
         <StatCard
-          label={`${perUnit(unit)} tổng thể`}
+          label={<>{`${perUnit(unit)} tổng thể`}<InfoTip text={`Tổng Mhr chia tổng ${unit}, khác với hiệu suất trung bình theo ngày`} /></>}
           value={ratio(overall)}
-          sub={`tổng Mhr chia tổng ${unit}, khác với hiệu suất trung bình theo ngày`}
           tone="accent"
         />
         {/* Today, beside the totals (Linh, 2026-09-05): the same two figures
             for the day the reader is standing in. */}
-        <StatCard label="Mhr thực hiện hôm nay" value={formatHours(todayTotals.todayHours)} sub="theo bộ lọc trên" />
-        <StatCard label="Mhr hao phí hôm nay" value={formatHours(todayTotals.todayWasteHours)} sub="theo bộ lọc trên" />
+        <StatCard label="Mhr thực hiện hôm nay" value={formatHours(todayTotals.todayHours)} />
+        <StatCard label="Mhr hao phí hôm nay" value={formatHours(todayTotals.todayWasteHours)} />
         <StatCard
           label="Giờ hao phí"
           value={formatHours(wasteHours)}
@@ -291,7 +295,8 @@ export function ProductivityDashboard({
         data-testid="dashboard-coverage"
         type={coverage.withHours < coverage.total ? 'warning' : 'secondary'}
       >
-        {`${coverage.withHours} / ${coverage.total} lần cập nhật có ghi giờ công. Các lần chưa ghi không tính vào hiệu suất.`}
+        {`${coverage.withHours} / ${coverage.total} lần cập nhật có ghi giờ công.`}
+        <InfoTip text="Các lần chưa ghi không tính vào hiệu suất." />
       </Typography.Text>
 
       <SectionCard title="Hiệu suất theo công đoạn" bodyPadding={0}>
@@ -309,7 +314,6 @@ export function ProductivityDashboard({
 
       <SectionCard
         title="Dự báo tiến độ"
-        summary="Còn lại bao nhiêu và có kịp hạn không; số ngày của sàn là ngày lớn nhất trong các công đoạn vì các lớp làm song song"
         bodyPadding={0}
       >
         <div data-testid="forecast-table">
@@ -327,7 +331,7 @@ export function ProductivityDashboard({
                 render: (_, r) => (r.forecast.totalMhrNeeded === null ? dash : formatHours(r.forecast.totalMhrNeeded)),
               },
               {
-                title: 'Số ngày cần',
+                title: <>Số ngày cần<InfoTip text="Số ngày của sàn là ngày lớn nhất trong các công đoạn vì các lớp làm song song" /></>,
                 align: 'center',
                 render: (_, r) => (r.forecast.daysNeeded === null ? dash : String(r.forecast.daysNeeded)),
               },
@@ -360,7 +364,6 @@ export function ProductivityDashboard({
 
       <SectionCard
         title="Hiệu suất theo ngày"
-        summary={`${perUnit(unit)} của từng công đoạn theo ngày; hiệu suất trung bình là trung bình cộng của các điểm này`}
       >
         {/*
           Padded to every calendar day (QA F4): the series only has the days
@@ -370,7 +373,7 @@ export function ProductivityDashboard({
         <EfficiencyLineChart data={padDays(efficiencySeries(daily))} stages={stageColors} unit={unit} />
       </SectionCard>
 
-      <SectionCard title="Giờ công theo ngày" summary="Giờ thực hiện và giờ hao phí, cộng dồn mọi công đoạn">
+      <SectionCard title="Giờ công theo ngày">
         <HoursBarChart data={padDays(hoursSeries(daily))} />
       </SectionCard>
 

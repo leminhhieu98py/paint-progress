@@ -81,13 +81,31 @@ describe('ProductivityDashboard', () => {
     expect(cards().getByText('4,0')).toBeInTheDocument()
     // 4 of 454.
     expect(cards().getByText('0,88% tổng giờ')).toBeInTheDocument()
+    // How the overall ratio is computed is its label's (?), and no card
+    // restates its label or says it follows the filters (CPY-01).
+    const tip = cards().getByRole('img', { name: 'Tổng Mhr chia tổng m², khác với hiệu suất trung bình theo ngày' })
+    expect(tip.parentElement).toHaveTextContent(/^Mhr\/m² tổng thể$/)
+    expect(cards().queryByText('giờ công đã ghi')).toBeNull()
+    expect(cards().queryByText('theo bộ lọc trên')).toBeNull()
   })
 
   it('says how much of the history the ratios stand on', () => {
     renderDashboard()
-    expect(screen.getByTestId('dashboard-coverage')).toHaveTextContent(
-      '3 / 4 lần cập nhật có ghi giờ công. Các lần chưa ghi không tính vào hiệu suất.',
-    )
+    const coverage = screen.getByTestId('dashboard-coverage')
+    expect(coverage).toHaveTextContent(/^3 \/ 4 lần cập nhật có ghi giờ công\.$/)
+    // What the unrecorded ones mean for the ratios, on its (?) (CPY-01).
+    expect(within(coverage).getByRole('img', { name: 'Các lần chưa ghi không tính vào hiệu suất.' })).toBeInTheDocument()
+  })
+
+  it('explains the two computed columns on their headers, not in card summaries (CPY-01)', () => {
+    renderDashboard()
+    const days = within(screen.getByTestId('forecast-table')).getByRole('img', { name: /ngày lớn nhất trong các công đoạn/ })
+    expect(days.closest('th')).toHaveTextContent(/^Số ngày cần$/)
+    const mean = within(screen.getByTestId('stage-table')).getByRole('img', { name: /trung bình cộng/ })
+    expect(mean.closest('th')).toHaveTextContent(/^Hiệu suất TB \(Mhr\/m²\)$/)
+    expect(screen.queryByText(/Còn lại bao nhiêu và có kịp hạn không/)).toBeNull()
+    expect(screen.queryByText(/của từng công đoạn theo ngày;/)).toBeNull()
+    expect(screen.queryByText('Giờ thực hiện và giờ hao phí, cộng dồn mọi công đoạn')).toBeNull()
   })
 
   it('lists each stage with the workbook\'s figures, in seq order', () => {

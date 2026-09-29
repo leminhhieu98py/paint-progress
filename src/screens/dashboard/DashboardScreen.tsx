@@ -97,13 +97,11 @@ function AdminDashboard() {
     ?? (projects.some((p) => p.id === requested) ? requested : null)
     ?? projects[0]?.id
     ?? null
-  const project = projects.find((p) => p.id === projectId)
 
   return (
     <>
       <PageHeader
         title="Năng suất"
-        subtitle={project ? `${project.name} · Mhr/m² theo công đoạn, theo ngày và theo nhóm trưởng` : 'Chọn một dự án'}
         filters={(
           <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
             <label htmlFor="dashboard-project" style={{ fontSize: 11, fontWeight: 600, color: palette.textTertiary }}>
