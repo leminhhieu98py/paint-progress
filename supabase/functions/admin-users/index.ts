@@ -263,9 +263,14 @@ function staffPorts(key: CryptoKey): StaffPorts {
       try {
         return { password: await decryptSecret(key, data.secret), error: null }
       } catch {
-        // Never the secret or the key in a message: a fixed sentence.
-        return { password: null, error: { message: 'stored credential could not be decrypted' } }
+        // A rotated or damaged key: re-open treats it as no stored password
+        // (review N-2). Nothing of the secret goes anywhere.
+        return { password: null, error: null, unreadable: true }
       }
+    },
+    async deleteCredential(userId) {
+      const { error } = await admin.from('gs_credentials').delete().eq('user_id', userId)
+      return error
     },
     async addMembership(userId, projectId) {
       // An existing membership is kept as it is, with its work restriction.

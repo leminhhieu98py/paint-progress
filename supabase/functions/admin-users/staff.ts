@@ -144,8 +144,13 @@ export interface StaffPorts {
   updateProfile(id: string, patch: { role?: string; active?: boolean; hidden?: boolean }): Promise<DbError | null>
   /** Encrypts and upserts the stored password. */
   storeCredential(userId: string, password: string): Promise<DbError | null>
-  /** The stored password, decrypted; null when none is stored. */
-  readCredential(userId: string): Promise<{ password: string | null; error: DbError | null }>
+  /**
+   * The stored password, decrypted; null when none is stored, or with
+   * `unreadable` when one is stored that the current key cannot decrypt.
+   */
+  readCredential(userId: string): Promise<{ password: string | null; error: DbError | null; unreadable?: boolean }>
+  /** Removes the stored password. */
+  deleteCredential(userId: string): Promise<DbError | null>
   /** Adds the project unless the account is already in it (memberships kept). */
   addMembership(userId: string, projectId: string): Promise<DbError | null>
   insertEmployee(fullName: string, active: boolean): Promise<{ id: string | null; error: DbError | null }>
@@ -316,8 +321,9 @@ async function employeeToAccount(ports: StaffPorts, input: ChangeRoleInput, role
  * The real password is set before the stored one, as set-password does, and
  * the old one is read first so an undo can put BOTH back: "Xem mật khẩu" on a
  * re-parked account never shows a password that does not work (review
- * minor 1). With nothing stored before, the undo stores the new one instead,
- * so the two still agree.
+ * minor 1). With nothing usable stored before -- none, or one the key cannot
+ * decrypt (logged, never shown; review N-2) -- the undo leaves no stored
+ * password at all: the account is parked again and the next re-open sets both.
  */
 async function reopenParked(
   ports: StaffPorts,
@@ -328,8 +334,12 @@ async function reopenParked(
   projectId: string,
   restoreEmployee: () => Promise<string | null>,
 ): Promise<Outcome> {
-  const { password: previous, error: readError } = await ports.readCredential(parked.id)
+  const { password: previous, error: readError, unreadable } = await ports.readCredential(parked.id)
   if (readError) return fail(500, safeError('Không đọc được mật khẩu hiện tại', readError.message))
+  if (unreadable) {
+    // The id only: no ciphertext, no key, no password reaches the log.
+    console.warn(`admin-users: stored credential of ${parked.id} cannot be decrypted; re-opening it as one with no stored password`)
+  }
 
   const { deleted, error: deleteError } = await ports.deleteEmployee(employee.id)
   if (deleteError) return fail(500, safeError('Không xoá được dòng nhân viên', deleteError.message))
@@ -350,8 +360,8 @@ async function reopenParked(
       if (changed === 'both' && (await ports.storeCredential(parked.id, previous))) {
         problems.push('mật khẩu đã lưu chưa trả lại được')
       }
-    } else if (changed === 'auth' && (await ports.storeCredential(parked.id, password))) {
-      problems.push('mật khẩu mới chưa lưu được')
+    } else if (changed !== 'none' && (await ports.deleteCredential(parked.id))) {
+      problems.push('mật khẩu đã lưu chưa xoá được')
     }
     const lost = await restoreEmployee()
     if (lost) problems.push(lost)

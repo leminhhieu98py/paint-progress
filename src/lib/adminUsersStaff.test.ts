@@ -224,7 +224,16 @@ function makePorts(world: World, failing: Partial<Record<PortName, DbError>> = {
     },
     async readCredential(userId) {
       const error = failOnce('readCredential')
-      return { password: error ? null : world.credentials.get(userId) ?? null, error }
+      if (error) return { password: null, error }
+      const stored = world.credentials.get(userId) ?? null
+      // UNREADABLE stands for a secret the current key cannot decrypt.
+      if (stored === UNREADABLE) return { password: null, error: null, unreadable: true }
+      return { password: stored, error: null }
+    },
+    async deleteCredential(userId) {
+      const error = failOnce('deleteCredential')
+      if (!error) world.credentials.delete(userId)
+      return error
     },
     async deleteEmployee(id) {
       const error = failOnce('deleteEmployee')
@@ -239,6 +248,7 @@ function makePorts(world: World, failing: Partial<Record<PortName, DbError>> = {
 }
 
 const PW = 'mat-khau-moi-12'
+const UNREADABLE = '<ciphertext the key cannot open>'
 
 function freshWorld(): World {
   return {
@@ -407,13 +417,44 @@ describe('changeRole: employee → GS/Visitor, re-opening a parked account (A1, 
     expect(world.employees.map((e) => [e.fullName, e.active])).toEqual(fresh.employees.map((e) => [e.fullName, e.active]))
   })
 
-  it('keeps the real and the stored password equal when there was no stored one to go back to', async () => {
+  it.each([
+    ['storeCredential'],
+    ['addMembership'],
+  ] as const)('leaves no stored secret when there was none to go back to and %s fails', async (port) => {
     const world = freshWorld()
     world.credentials.delete('u-parked')
+    const { ports } = makePorts(world, { [port]: { message: 'boom' } })
+    const out = await changeRole(ports, { kind: 'employee', id: 'e-lan', role: 'gs', password: PW, projectId: 'p3' })
+    expect(out.status).toBe(500)
+    expect(world.credentials.has('u-parked')).toBe(false)
+    expect(world.accounts.find((a) => a.id === 'u-parked')).toMatchObject({ active: false, hidden: true })
+  })
+
+  it('re-opens an account whose stored secret cannot be decrypted, as one with none, and says so in the log only (review N-2)', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const world = freshWorld()
+    world.credentials.set('u-parked', UNREADABLE)
+    const { ports } = makePorts(world)
+    const out = await changeRole(ports, { kind: 'employee', id: 'e-lan', role: 'viewer', password: PW })
+    expect(out).toEqual({ status: 200, body: { userId: 'u-parked', username: 'lan.cu', reactivated: true } })
+    expect(world.credentials.get('u-parked')).toBe(PW)
+    expect(world.passwords.get('u-parked')).toBe(PW)
+    const logged = warn.mock.calls.map((c) => c.join(' ')).join('\n')
+    expect(logged).toContain('u-parked')
+    expect(logged).not.toContain(UNREADABLE)
+    expect(logged).not.toContain(PW)
+  })
+
+  it('removes the unreadable secret too when that re-open is undone (review N-2)', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const world = freshWorld()
+    world.credentials.set('u-parked', UNREADABLE)
     const { ports } = makePorts(world, { storeCredential: { message: 'boom' } })
     const out = await changeRole(ports, { kind: 'employee', id: 'e-lan', role: 'viewer', password: PW })
     expect(out.status).toBe(500)
-    expect(world.credentials.get('u-parked')).toBe(world.passwords.get('u-parked'))
+    expect(world.credentials.has('u-parked')).toBe(false)
+    expect(world.accounts.find((a) => a.id === 'u-parked')).toMatchObject({ active: false, hidden: true })
+    expect(world.employees.map((e) => e.fullName)).toContain('Trần Thị Lan')
   })
 
   it('changes nothing when the stored password cannot be read', async () => {
