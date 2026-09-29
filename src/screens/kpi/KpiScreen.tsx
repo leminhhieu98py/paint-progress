@@ -26,7 +26,7 @@ import { StagePlanTable, type StagePlanRow, type StagePlanWindow } from './Stage
  *
  * Two variants over one body, exactly as `DashboardScreen` does it: the admin
  * picks a project the way the decks list does (`?project=`, first project when
- * absent) under the admin frame and gets the entry table above the chart; a
+ * absent) under the admin frame and gets the entry table under the chart; a
  * foreman or viewer arrives from their own project's GS screen with the id in
  * the path, under the field theme, and gets the chart alone. RV5-28 puts the
  * write with the admin; RV5-29 puts the read with all three.
@@ -302,6 +302,12 @@ function Body({ projectId, variant }: { projectId: string | null; variant: 'admi
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {/*
+        The chart first (UX-01): it is the reason for the screen, and the plan
+        table under it runs to 20+ rows -- above the chart it pushed the answer
+        below the fold on every visit.
+      */}
+      <KpiDashboard entries={entries} decks={current.decks} todayKey={todayKey} />
       {/* The write is the admin's alone (RV5-28): the field gets the chart. */}
       {variant === 'admin' && (
         <StagePlanTable
@@ -316,7 +322,6 @@ function Body({ projectId, variant }: { projectId: string | null; variant: 'admi
       {variant === 'admin' && (
         <DeckKpiColorTable decks={current.decks} onChange={onColors} saving={saving} />
       )}
-      <KpiDashboard entries={entries} decks={current.decks} todayKey={todayKey} />
     </div>
   )
 }

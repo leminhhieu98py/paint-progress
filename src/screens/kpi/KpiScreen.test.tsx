@@ -280,17 +280,19 @@ describe('KpiScreen (admin)', () => {
   })
 
   // ---------------------------------------------------------------------
-  // RV6-28 -- the per-deck colour table, between the plan table and the chart
+  // RV6-28 -- the per-deck colour table, under the plan table
   // ---------------------------------------------------------------------
 
-  it('hands the colour table every deck with its stored colours, between the plan table and the chart', async () => {
+  it('hands the colour table every deck with its stored colours, under the chart and the plan table', async () => {
+    // UX-01: the chart is the reason for the screen and goes first; the plan
+    // table (20+ rows) and the colour table go under it.
     renderAdmin()
     const colors = await screen.findByTestId('deck-color-table')
     expect(colors.textContent).toContain('MÀU Sàn A=#aaaaaa/-')
     const table = screen.getByTestId('plan-table')
     const chart = screen.getByTestId('kpi-dashboard')
+    expect(chart.compareDocumentPosition(table) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(table.compareDocumentPosition(colors) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    expect(colors.compareDocumentPosition(chart) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
   it('writes a colour change and reloads so the chart reflects it', async () => {
