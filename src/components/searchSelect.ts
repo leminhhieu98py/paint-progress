@@ -30,13 +30,6 @@ export function searchKeyOf(option: SearchableOption | undefined): string {
   return option.value === undefined || option.value === null ? '' : String(option.value)
 }
 
-export const searchSelectProps = {
-  showSearch: true,
-  optionFilterProp: 'label',
-  filterOption: (input: string, option?: SearchableOption) => matchesSearch(searchKeyOf(option), input),
-  notFoundContent: NOT_FOUND_TEXT,
-} satisfies SelectProps
-
 /**
  * The work switch's width, one on every screen (FLT-03): wide enough for the
  * longest work name in use (Giàn giáo, Tháo giáo) with room to grow, since the
@@ -52,6 +45,21 @@ const WIDE_OPTIONS = {
   styles: { popup: { root: { maxWidth: SCREEN_LESS_GUTTERS } } },
   optionRender,
 } satisfies SelectProps
+
+/**
+ * Spread onto every Select. It also reads its options in full (M6): the popup
+ * is at least the select's width and grows to the longest option, up to the
+ * screen less 16 px a side, and a longer one wraps instead of ellipsising.
+ * `useFullOptionsProps`, spread after it, adds the phone's placement.
+ */
+export const searchSelectProps = {
+  showSearch: true,
+  optionFilterProp: 'label',
+  filterOption: (input: string, option?: SearchableOption) => matchesSearch(searchKeyOf(option), input),
+  notFoundContent: NOT_FOUND_TEXT,
+  ...WIDE_OPTIONS,
+} satisfies SelectProps
+
 /**
  * A phone's popup (M3): the screen less 16 px a side, wherever its select
  * sits. Aligned to a select near an edge, the popup flipped or shifted flush
@@ -68,9 +76,9 @@ const PHONE_OPTIONS = {
  * popup is at least the select's width (rc-select stretches `minWidth` when
  * `popupMatchSelectWidth` is false) and grows to the longest option, up to
  * the screen less 16 px a side; on a phone (under 768 px) it spans exactly
- * that. An option longer than that wraps instead of ellipsising. For the
- * field bars and sheets and every work select, where a select is narrower
- * than the names it offers ("Blast + Co…").
+ * that, wherever the select sits. `searchSelectProps` already carries the
+ * first half (M6); this adds the phone's placement, for the field bars and
+ * sheets and every work select.
  */
 export function useFullOptionsProps() {
   return Grid.useBreakpoint().md ? WIDE_OPTIONS : PHONE_OPTIONS
