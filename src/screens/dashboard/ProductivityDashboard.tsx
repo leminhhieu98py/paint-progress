@@ -4,6 +4,7 @@ import dayjs from 'dayjs'
 import { useMemo, useState, type ReactNode } from 'react'
 import { EmptyState } from '../../components/EmptyState'
 import { InfoTip } from '../../components/InfoTip'
+import { useDebouncedValue } from '../../components/useDebouncedValue'
 import { SectionCard } from '../../components/SectionCard'
 import { StatCard } from '../../components/StatCard'
 import { useTablePagination } from '../../components/tablePagination'
@@ -174,9 +175,11 @@ export function ProductivityDashboard({
   const wasteShare = totalHours + wasteHours > 0 ? wasteHours / (totalHours + wasteHours) : null
 
   const [leadQuery, setLeadQuery] = useState('')
+  /** The search box is the card's one control: it applies as it changes, debounced (FLT-08). */
+  const leadFilter = useDebouncedValue(leadQuery)
   const visibleLeads = useMemo(
-    () => leads.filter((l) => l.leadName !== '' && matchesSearch(l.leadName, leadQuery)),
-    [leads, leadQuery],
+    () => leads.filter((l) => l.leadName !== '' && matchesSearch(l.leadName, leadFilter)),
+    [leads, leadFilter],
   )
 
   /**
@@ -230,7 +233,7 @@ export function ProductivityDashboard({
   const filterKey = [version, workName, deckName, range[0]?.format('YYYY-MM-DD'), range[1]?.format('YYYY-MM-DD')].join('|')
   const stagePagination = useTablePagination(visibleStages.length, filterKey)
   const forecastPagination = useTablePagination(forecasts.length, `${version}|${workName}|${deckName}`)
-  const leadPagination = useTablePagination(visibleLeads.length, `${filterKey}|${leadQuery}`)
+  const leadPagination = useTablePagination(visibleLeads.length, `${filterKey}|${leadFilter}`)
   const reasonPagination = useTablePagination(reasons.length, filterKey)
 
   // Nothing recorded anywhere in the project: say what to do, not "no data".

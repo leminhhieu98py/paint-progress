@@ -341,7 +341,8 @@ describe('ProductivityDashboard — the placeholder rows (Feedback Rv5, item 5)'
   it('filters the crew table by name, case- and accent-insensitively, and nothing else', async () => {
     renderDashboard()
     await userEvent.type(screen.getByRole('textbox', { name: 'Tìm nhóm trưởng' }), 'to 2')
-    expect(leadRows()).toHaveLength(1)
+    // The box alone, so it applies as it changes, once the typing pauses (FLT-08).
+    await waitFor(() => expect(leadRows()).toHaveLength(1))
     expect(within(leadRows()[0]).getByText('Tổ 2')).toBeInTheDocument()
     // Card only: the screen's Công việc / Sàn / date filters still govern what
     // everything, this card included, is computed from.
