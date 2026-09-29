@@ -643,8 +643,9 @@ export function GsScreen() {
 
   /*
     What the stats cards may print (see DeckFigureStatus). No deck, nothing
-    to wait for. A failed stage read is not a load: its warning above the
-    drawing says the figures are short, as it always has.
+    to wait for. A failed stage read is not a load, and not a figure either:
+    both cards print the missing mark under its warning, never a 0,00% that
+    reads as nothing painted (I2).
   */
   const worksLoading = activeDeckId !== null && works === null && !stagesError
   const cellsStatus: DeckFigureStatus = activeDeckId === null ? 'ready'
@@ -653,8 +654,8 @@ export function GsScreen() {
   const eventsStatus: DeckFigureStatus = activeDeckId === null ? 'ready'
     : deckEvents?.deckId !== activeDeckId ? 'loading'
       : deckEvents.rows === null ? 'unknown' : 'ready'
-  const progressStatus: DeckFigureStatus = worksLoading ? 'loading' : cellsStatus
-  const todayStatus: DeckFigureStatus = worksLoading ? 'loading' : eventsStatus
+  const progressStatus: DeckFigureStatus = stagesError ? 'unknown' : worksLoading ? 'loading' : cellsStatus
+  const todayStatus: DeckFigureStatus = stagesError ? 'unknown' : worksLoading ? 'loading' : eventsStatus
 
   /**
    * The Vietnam calendar day, settled once per mount -- the same way
@@ -1502,7 +1503,7 @@ export function GsScreen() {
                 type="warning"
                 showIcon
                 message="Không tải được lớp sơn của sàn"
-                description="Phần trăm bên dưới đang tính thiếu. Thử lại sau khi có mạng."
+                description="Tiến độ bên dưới chưa tính được. Thử lại sau khi có mạng."
               />
             )}
 
@@ -1740,7 +1741,14 @@ export function GsScreen() {
             coats listed at 0,00 m² rather than the block disappearing, and a
             deck whose drawing has not been uploaded yet still has coats.
           */}
-          <DeckTodayCard status={todayStatus} todayKey={todayKey} rows={todayStages} totals={todayTotals} />
+          <DeckTodayCard
+            status={todayStatus}
+            todayKey={todayKey}
+            rows={todayStages}
+            totals={todayTotals}
+            emptyText={stagesError ? 'Không tải được công đoạn.'
+              : noWorks ? 'Sàn này chưa được gán công việc nào.' : undefined}
+          />
         </div>
       </Layout.Content>
 

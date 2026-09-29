@@ -46,6 +46,7 @@ export function DeckTodayCard({
   todayKey,
   rows,
   totals,
+  emptyText = 'Sàn này chưa có công đoạn nào. Quản trị viên cần khai báo công đoạn trước khi ghi tiến độ.',
 }: {
   /**
    * See DeckFigureStatus. Loading until both the deck's works (the rows) and
@@ -63,6 +64,12 @@ export function DeckTodayCard({
   rows: (TodayStageArea & { unit?: string })[]
   /** The four figures of RV5-19, straight from `deckEffortTotals`. */
   totals: DeckEffortTotals
+  /**
+   * What the card says with no rows. The default is for a deck whose works
+   * have no coats; the caller names a failed read or a deck in no work, which
+   * an admin's coat list would not fix (I2).
+   */
+  emptyText?: string
 }) {
   /** Preserves `rows`' order; the caller owns seq order. */
   const groups: { workName: string; rows: (TodayStageArea & { unit?: string })[] }[] = []
@@ -101,9 +108,7 @@ export function DeckTodayCard({
         {status === 'loading' ? (
           <CardSkeleton label="Đang tải thông tin hôm nay" />
         ) : rows.length === 0 ? (
-          <div style={{ ...fieldType.body, color: palette.textTertiary }}>
-            Sàn này chưa có công đoạn nào. Quản trị viên cần khai báo công đoạn trước khi ghi tiến độ.
-          </div>
+          <div style={{ ...fieldType.body, color: palette.textTertiary }}>{emptyText}</div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: space.md }}>
             {groups.map((group) => (

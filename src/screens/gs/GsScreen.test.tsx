@@ -491,6 +491,32 @@ describe('GsScreen', () => {
     expect(await screen.findByText('Không tải được lớp sơn của sàn')).toBeInTheDocument()
   })
 
+  it('prints no figure and blames no admin when the stages cannot be read (I2)', async () => {
+    listDeckWorks.mockRejectedValue(new Error('Failed to fetch'))
+
+    renderScreen()
+    await screen.findByText('Không tải được lớp sơn của sàn')
+
+    const progress = await screen.findByTestId('gs-deck-progress')
+    await waitFor(() => expect(within(progress).queryByText('Đang tải tiến độ sàn')).toBeNull())
+    expect(progress.textContent).not.toMatch(/0,00%/)
+    const today = screen.getByTestId('gs-deck-today')
+    expect(within(today).getByText('Không tải được công đoạn.')).toBeInTheDocument()
+    expect(today.textContent).not.toMatch(/Quản trị viên/)
+  })
+
+  it('says a deck in no work is in no work, not that it has no coats (I2)', async () => {
+    listDeckWorks.mockResolvedValue([])
+
+    renderScreen()
+    await screen.findByText('Sàn này chưa được gán công việc nào', { selector: '.ant-alert-message' })
+
+    const today = await screen.findByTestId('gs-deck-today')
+    await waitFor(() =>
+      expect(within(today).getByText('Sàn này chưa được gán công việc nào.')).toBeInTheDocument())
+    expect(today.textContent).not.toMatch(/Quản trị viên/)
+  })
+
   it('drops a slow answer for the deck the foreman has already left', async () => {
     // Task 9 moved this fetch out of the effect and into a shared callback, so
     // the effect's own `cancelled` closure is gone and the guard is now a ref on
