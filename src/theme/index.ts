@@ -57,7 +57,45 @@ export const palette = {
 
   /** The bar a progress track sits in. */
   track: '#E9EFF5',
+
+  /**
+   * Series colours the app picks itself (CHT-01): one per deck on the project
+   * ring, one per Recharts series that has no colour an admin chose. Colours
+   * an admin configures (coats, KPI per deck, zones) stay as configured.
+   *
+   * Okabe–Ito's order, rotated to start at the accent -- bluish green,
+   * yellow, blue, vermillion, reddish purple, grey, orange, sky blue -- each
+   * hue darkened until it holds 3:1 against white, and tuned so that under
+   * protanopia, deuteranopia and tritanopia (Machado 2009) no two of the
+   * eight fall below ΔE2000 11.6. Past eight, `categoricalColor` repeats them
+   * in a lighter tint.
+   */
+  categorical: [
+    '#0A8175', '#88690B', '#2563EB', '#8F1D21', '#A13A97', '#8C93A1', '#CF813A', '#1E9DD1',
+  ],
 } as const
+
+/** How much white each lap past the palette mixes in: a tint, then a paler one. */
+const CATEGORICAL_TINTS = [0, 0.35, 0.6] as const
+
+/**
+ * The colour of the `index`-th item in a list the app colours itself.
+ *
+ * Neighbours never share a colour, a ring's last slice and its first
+ * included: two neighbours are always one slot of the palette apart, and a
+ * last slice that wraps onto the first slot is a lap later, so a tint of it.
+ */
+export function categoricalColor(index: number): string {
+  const base = palette.categorical[index % palette.categorical.length]
+  const lap = Math.floor(index / palette.categorical.length)
+  const white = CATEGORICAL_TINTS[Math.min(lap, CATEGORICAL_TINTS.length - 1)]
+  if (white === 0) return base
+  const channel = (i: number) => {
+    const c = parseInt(base.slice(i, i + 2), 16)
+    return Math.round(c + (255 - c) * white).toString(16).padStart(2, '0')
+  }
+  return `#${channel(1)}${channel(3)}${channel(5)}`.toUpperCase()
+}
 
 /**
  * Field red is darker than admin red. On a tablet in sun the admin's #B42318
