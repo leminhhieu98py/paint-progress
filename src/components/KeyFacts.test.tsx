@@ -81,6 +81,20 @@ describe('KeyFacts (HLT-01)', () => {
     expect(screen.getByTestId('key-facts')).toHaveStyle({ display: 'inline-flex', flexWrap: 'wrap' })
   })
 
+  it('lets one long pill wrap inside a narrow row rather than run past it (M1)', () => {
+    const long = 'Ban-ve-tong-the-Main-Deck-phuong-an-cuoi-cung-da-duyet.pdf (trang 12)'
+    render(<KeyFacts facts={[{ value: long }]} />)
+    const pill = screen.getByTestId('key-fact')
+    expect(pill).toHaveTextContent(long)
+    expect(pill).toHaveStyle({ maxWidth: '100%', whiteSpace: 'normal', overflowWrap: 'anywhere' })
+  })
+
+  it('reads as a list, one item per pill, so a screen reader separates them', () => {
+    render(<KeyFacts facts={[{ value: '45,00%' }, { value: 1, label: 'zone' }]} />)
+    const list = screen.getByRole('list')
+    expect(within(list).getAllByRole('listitem').map((i) => i.textContent)).toEqual(['45,00%', '1 zone'])
+  })
+
   it('takes the field scale on a field page (GS-10)', () => {
     render(
       <TypeScaleProvider value={fieldType}>

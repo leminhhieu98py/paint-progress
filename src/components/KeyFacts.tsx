@@ -38,6 +38,8 @@ export function KeyFacts({ facts }: { facts: ReadonlyArray<KeyFact | false | nul
   return (
     <span
       data-testid="key-facts"
+      // A list, so a screen reader reads the pills apart ("45,00%", "1 zone").
+      role="list"
       style={{ display: 'inline-flex', flexWrap: 'wrap', alignItems: 'center', gap: space.sm, minWidth: 0 }}
     >
       {shown.map((f, i) => {
@@ -47,6 +49,7 @@ export function KeyFacts({ facts }: { facts: ReadonlyArray<KeyFact | false | nul
             // Facts are positional and never reorder within one render.
             key={i}
             data-testid="key-fact"
+            role="listitem"
             style={{
               // inline-block, not flex: the spaces between value and label
               // are real text, so they render and read as one phrase.
@@ -57,7 +60,11 @@ export function KeyFacts({ facts }: { facts: ReadonlyArray<KeyFact | false | nul
               background: tone.background,
               color: tone.color,
               lineHeight: 1.4,
-              whiteSpace: 'nowrap',
+              // A pill longer than its row (a drawing's file name on a phone)
+              // wraps inside itself instead of running past the card.
+              maxWidth: '100%',
+              whiteSpace: 'normal',
+              overflowWrap: 'anywhere',
             }}
           >
             {f.prefix !== undefined && <span style={t.caption}>{f.prefix}</span>}
