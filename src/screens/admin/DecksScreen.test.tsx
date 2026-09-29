@@ -661,7 +661,7 @@ describe('DecksScreen — the project-wide half of progress', () => {
     await screen.findByTestId('project-rollup')
     await userEvent.click(screen.getByRole('button', { name: /Quy tắc áp dụng/ }))
     // Helper text: what the column is and where it is set, no formula (RUL-01).
-    expect(ruleTexts()).toEqual(['Tỉ trọng của sàn tính từ trọng số công việc và trọng số sàn, đặt ở mục Công việc.'])
+    expect(ruleTexts()).toEqual(['Tỉ trọng của sàn tính từ trọng số công việc và trọng số sàn đặt ở mục Công việc.'])
     expectHelperText(ruleTexts())
     expect(screen.queryByText(/Làm mới thất bại/)).toBeNull()
     expect(screen.queryByText(/lần lượt từng sàn/)).toBeNull()
@@ -738,7 +738,7 @@ describe('DecksScreen — duplicating a deck (Feedback Rv2, item 3)', () => {
   it('proposes a name and a code, says what is copied, and opens the copy', async () => {
     const dialog = await openDuplicate()
     expect(within(dialog).getByText('Nhân bản sàn «Main Deck»')).toBeInTheDocument()
-    expect(within(dialog).getByText('Sao chép bản vẽ, khung và lưới ô, không sao chép công việc, lớp sơn, tiến độ hay kế hoạch.')).toBeInTheDocument()
+    expect(within(dialog).getByText('Sao chép bản vẽ, khung và lưới ô nhưng không sao chép công việc, lớp sơn, tiến độ hay kế hoạch.')).toBeInTheDocument()
     expect(within(dialog).getByLabelText('Tên sàn mới')).toHaveValue('Main Deck (bản sao)')
     expect(within(dialog).getByLabelText('Mã sàn mới')).toHaveValue('MD-2')
 

@@ -30,7 +30,7 @@ import { palette, type } from '../../theme'
 const RULES: Rule[] = [
   { id: 'RV5-22', text: 'Kế hoạch chia đều cho mọi ngày từ ngày bắt đầu đến ngày kết thúc, kể cả chủ nhật và ngày lễ.' },
   { id: 'RV5-23', text: 'Để trống diện tích kế hoạch thì hệ thống tự tính phần còn lại của công đoạn từ ngày bắt đầu.' },
-  { id: 'RV5-23-override', text: 'Số anh gõ ghi đè phần tự tính, nút bỏ ghi đè cạnh ô đưa về số tự tính.' },
+  { id: 'RV5-23-override', text: 'Nút bỏ ghi đè cạnh ô đưa số anh gõ về số tự tính.' },
   { id: 'RV5-23-zero', text: 'Gõ 0 nghĩa là không có diện tích kế hoạch, khác với để trống.' },
 ]
 

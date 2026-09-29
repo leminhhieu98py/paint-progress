@@ -295,7 +295,7 @@ function HintedButton({
 }
 
 /** What deleting a zone does, in the rules and in its dialog alike (CPY-05). */
-const ZONE_DELETE_EFFECT = 'Xoá zone chỉ xoá kế hoạch, tiến độ đã ghi trên các ô vẫn giữ nguyên.'
+const ZONE_DELETE_EFFECT = 'Xoá zone chỉ xoá kế hoạch và giữ nguyên tiến độ đã ghi trên các ô.'
 
 /**
  * Helper text, one sentence each, checked against the code (RUL-01). The map

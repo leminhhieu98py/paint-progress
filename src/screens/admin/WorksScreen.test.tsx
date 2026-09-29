@@ -220,7 +220,7 @@ describe('WorksScreen', () => {
       'Lưu được khi tổng trọng số các công việc tính vào tổng bằng 1.',
       'Công việc không tính vào tổng vẫn có tiến độ riêng nhưng không vào % dự án.',
       'Lưu sàn tham gia được khi tổng trọng số các sàn tham gia bằng 1.',
-      '“Chia theo m²” điền sẵn trọng số sàn theo diện tích, anh sửa lại được.',
+      'Anh sửa được trọng số sàn mà “Chia theo m²” điền sẵn theo diện tích.',
       'Công việc nhập tay lấy tiến độ từ con số anh gõ.',
       'Mỗi công việc dùng một đại lượng và một đơn vị cho mọi sàn của nó.',
     ])

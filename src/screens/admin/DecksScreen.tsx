@@ -67,7 +67,7 @@ const RULES = [
   {
     id: 'DCK-R2',
     // Helper text, checked against summariseDeck (RUL-01).
-    text: 'Tỉ trọng của sàn tính từ trọng số công việc và trọng số sàn, đặt ở mục Công việc.',
+    text: 'Tỉ trọng của sàn tính từ trọng số công việc và trọng số sàn đặt ở mục Công việc.',
   },
 ]
 
@@ -786,7 +786,7 @@ export function DecksScreen() {
         ]}
       >
         <Typography.Paragraph type="secondary" style={{ ...type.caption, marginTop: 0 }}>
-          Sao chép bản vẽ, khung và lưới ô, không sao chép công việc, lớp sơn, tiến độ hay kế hoạch.
+          Sao chép bản vẽ, khung và lưới ô nhưng không sao chép công việc, lớp sơn, tiến độ hay kế hoạch.
         </Typography.Paragraph>
         <Form form={copyForm} layout="vertical" onFinish={(v) => void copyDeck(v)}>
           <Form.Item name="name" label="Tên sàn mới" rules={[{ required: true, message: 'Đặt tên sàn' }]}>
