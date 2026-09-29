@@ -10,7 +10,7 @@ import { SectionCard } from '../../components/SectionCard'
 import { modalProps } from '../../components/modalChrome'
 import { StatCard } from '../../components/StatCard'
 import { tablePagination } from '../../components/tablePagination'
-import { MISSING, formatAreaM2 } from '../../lib/format'
+import { MISSING, formatAreaM2, formatDateTimeVN } from '../../lib/format'
 import { latestProgressEvent, type ProgressEvent } from '../../lib/progressApi'
 import {
   createProject, deleteProject, listProjects, updateProject, type ProjectRow,
@@ -35,7 +35,8 @@ const COUNT = new Intl.NumberFormat('vi-VN')
  */
 function eventTime(iso: string): string {
   const at = dayjs(iso)
-  return at.isSame(dayjs(), 'day') ? at.format('HH:mm') : at.format('DD.MM · HH:mm')
+  // The one date-time form, HH:mm DD/MM/YYYY (M12); today's is its time alone.
+  return at.isSame(dayjs(), 'day') ? at.format('HH:mm') : formatDateTimeVN(iso)
 }
 
 function eventDetail(e: ProgressEvent): string {

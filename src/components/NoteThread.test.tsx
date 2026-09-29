@@ -95,7 +95,8 @@ describe('NoteThread — the report copy (0023)', () => {
     reportEditedByName: 'Đoàn Công Linh',
     reportEditedAt: '2026-09-02T03:00:00Z',
   }
-  const STAMP = /Đoàn Công Linh · \d{2}\.\d{2}\.\d{4} \d{2}:\d{2}/
+  // The one date-time form (M12): HH:mm DD/MM/YYYY.
+  const STAMP = /Đoàn Công Linh · \d{2}:\d{2} \d{2}\/\d{2}\/\d{4}/
 
   it('shows the report version beside the original, with who set it and when', () => {
     // The foreman's sentence is never replaced on screen. The admin's version

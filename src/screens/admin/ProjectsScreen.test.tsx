@@ -154,7 +154,8 @@ describe('ProjectsScreen header counters', () => {
     })
     renderScreen()
     expect(
-      await screen.findByText(dayjs().subtract(21, 'day').format('DD.MM') + ' · 07:05'),
+      // The one date-time form (M12): HH:mm DD/MM/YYYY.
+      await screen.findByText('07:05 ' + dayjs().subtract(21, 'day').format('DD/MM/YYYY')),
     ).toBeInTheDocument()
   })
 

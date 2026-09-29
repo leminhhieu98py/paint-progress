@@ -1,5 +1,5 @@
 import { Button } from 'antd'
-import dayjs from 'dayjs'
+import { formatDateTimeVN } from '../lib/format'
 import { EmptyState } from './EmptyState'
 import { initialsOf } from '../lib/initials'
 import type { CellNote } from '../lib/progressApi'
@@ -47,7 +47,7 @@ export function NoteThread({
   const stamp = (n: CellNote) =>
     [
       n.reportEditedByName ?? 'Không rõ',
-      n.reportEditedAt ? dayjs(n.reportEditedAt).format('DD.MM.YYYY HH:mm') : null,
+      n.reportEditedAt ? formatDateTimeVN(n.reportEditedAt) : null,
     ].filter(Boolean).join(' · ')
   if (notes.length === 0) {
     return (
@@ -105,7 +105,7 @@ export function NoteThread({
                   {n.byName ?? 'Không rõ người ghi'}
                 </span>
                 <span style={{ ...type.caption, color: palette.textTertiary }}>
-                  {dayjs(n.at).format('DD.MM.YYYY HH:mm')}
+                  {formatDateTimeVN(n.at)}
                 </span>
                 {isCurrent && (
                   <span

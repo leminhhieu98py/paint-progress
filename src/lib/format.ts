@@ -84,7 +84,9 @@ export const formatAxisPercent = (n: number): string => AXIS_PERCENT.format(n)
 const VN_OFFSET_MINUTES = 7 * 60
 
 /**
- * A recorded moment, in the form the paperwork uses: `hh:mm:ss dd/mm/yyyy`.
+ * A recorded moment, in the one date-time form on screen: `HH:mm DD/MM/YYYY`
+ * (M12). No seconds: nobody on a deck reads them, and they pushed the date
+ * out of a 160 px column.
  *
  * Time first, because on a deck the question is almost always "when today",
  * and the date is the part that repeats down the column.
@@ -101,7 +103,7 @@ export function formatDateTimeVN(iso: string | null | undefined): string {
   const vn = new Date(at.getTime() + VN_OFFSET_MINUTES * 60_000)
   const p = (n: number) => String(n).padStart(2, '0')
   return (
-    `${p(vn.getUTCHours())}:${p(vn.getUTCMinutes())}:${p(vn.getUTCSeconds())} `
+    `${p(vn.getUTCHours())}:${p(vn.getUTCMinutes())} `
     + `${p(vn.getUTCDate())}/${p(vn.getUTCMonth() + 1)}/${vn.getUTCFullYear()}`
   )
 }

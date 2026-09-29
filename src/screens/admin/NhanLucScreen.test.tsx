@@ -391,6 +391,8 @@ describe('NhanLucScreen — accounts, as before (USR)', () => {
     expect(revealPassword).not.toHaveBeenCalledWith('u9')
     expect(screen.queryByText('other-secret')).toBeNull()
     expect(screen.getByText(/Đã ghi log/)).toHaveTextContent('Nguyễn Thị Linh → gs1')
+    // The one date-time form (M12): HH:mm DD/MM/YYYY.
+    expect(screen.getByText(/Đã ghi log/)).toHaveTextContent(/^Đã ghi log · \d{2}:\d{2} \d{2}\/\d{2}\/\d{4} · /)
     expect(screen.queryByText(/Log chỉ ghi thêm/)).toBeNull()
 
     await userEvent.click(screen.getByRole('button', { name: 'Đã ghi nhận' }))

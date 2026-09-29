@@ -37,7 +37,7 @@ import { initialsOf } from '../../lib/initials'
 import { generatePassword } from '../../lib/passwordGen'
 import { downloadWorkbook } from '../../lib/projectReport'
 import { listProjectNames } from '../../lib/projectsApi'
-import { MISSING } from '../../lib/format'
+import { MISSING, formatDateTimeVN } from '../../lib/format'
 import { listWorks } from '../../lib/worksApi'
 import { palette, type } from '../../theme'
 import { ChangeRoleDialog } from './ChangeRoleDialog'
@@ -438,7 +438,7 @@ export function NhanLucScreen() {
           onClick={() =>
             void run(async () => {
               const password = await revealPassword(user.id)
-              setRevealed({ user, password, at: dayjs().format('DD.MM.YYYY HH:mm') })
+              setRevealed({ user, password, at: formatDateTimeVN(new Date().toISOString()) })
             })
           }
         />
@@ -1015,7 +1015,7 @@ export function NhanLucScreen() {
             setPwPending(null)
             // Straight into the reveal modal: the admin has to read this value
             // out to the foreman, and it appears nowhere else.
-            setRevealed({ user, password, at: dayjs().format('DD.MM.YYYY HH:mm') })
+            setRevealed({ user, password, at: formatDateTimeVN(new Date().toISOString()) })
             message.success('Đã đổi mật khẩu')
           })
         }
