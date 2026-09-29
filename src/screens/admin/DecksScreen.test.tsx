@@ -457,7 +457,7 @@ describe('DecksScreen — the project-wide half of progress', () => {
       fireEvent.pointerEnter(rowOf(donut, 'CD'))
       expect(sliceOf(donut, 'CD')).toHaveAttribute('opacity', '1')
       expect(sliceOf(donut, 'Chứng từ')).toHaveAttribute('opacity', '0.35')
-      expect(rowOf(donut, 'CD')).toHaveStyle({ background: palette.bgSubtle })
+      expect(rowOf(donut, 'CD')).toHaveStyle({ background: palette.bgHover })
       fireEvent.pointerLeave(rowOf(donut, 'CD'))
       expect(sliceOf(donut, 'Chứng từ')).toHaveAttribute('opacity', '1')
       expect(rowOf(donut, 'CD').style.background).toBe('')
@@ -473,7 +473,7 @@ describe('DecksScreen — the project-wide half of progress', () => {
     it('highlights the legend row of a hovered slice', async () => {
       const donut = await openDonut()
       fireEvent.pointerEnter(sliceOf(donut, 'Chứng từ'))
-      expect(rowOf(donut, 'Chứng từ')).toHaveStyle({ background: palette.bgSubtle })
+      expect(rowOf(donut, 'Chứng từ')).toHaveStyle({ background: palette.bgHover })
       expect(rowOf(donut, 'CD').style.background).toBe('')
       // Text not bolder: the row keeps its weights.
       expect(within(rowOf(donut, 'Chứng từ')).getByText('Chứng từ')).toHaveStyle({ fontWeight: '500' })

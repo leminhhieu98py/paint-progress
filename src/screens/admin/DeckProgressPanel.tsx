@@ -30,6 +30,7 @@ import {
 } from '../../lib/zonesApi'
 import { ConsequenceModal } from '../../components/ConsequenceModal'
 import { Donut, type DonutSlice } from '../../components/Donut'
+import { legendRowProps } from '../../components/ringHover'
 import { EmptyState } from '../../components/EmptyState'
 import { InfoTip } from '../../components/InfoTip'
 import { NoteThread } from '../../components/NoteThread'
@@ -2188,18 +2189,9 @@ function StageRing({
           <div
             key={sp.stage.id}
             data-testid="stage-legend-row"
-            tabIndex={0}
-            onPointerEnter={() => setActive(sp.stage.id)}
-            onPointerLeave={() => setActive(null)}
-            onFocus={() => setActive(sp.stage.id)}
-            onBlur={() => setActive(null)}
-            style={{
+            {...legendRowProps(sp.stage.id, active, setActive, {
               display: 'flex', alignItems: 'center', gap: 9, minWidth: 0,
-              // CHT-02: the highlight's padding comes out of
-              // the row gap, so the rows do not move.
-              margin: '-2px -6px', padding: '2px 6px', borderRadius: 6,
-              background: active === sp.stage.id ? palette.bgSubtle : undefined,
-            }}
+            })}
           >
             <span
               aria-hidden

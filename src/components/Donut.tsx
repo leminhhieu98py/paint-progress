@@ -2,6 +2,7 @@ import { Tooltip } from 'antd'
 import { useId, useState, type CSSProperties, type ReactNode } from 'react'
 import { palette } from '../theme'
 import { ringSegments, sectorPath } from './donutGeometry'
+import { clearOnTapElsewhere } from './ringHover'
 
 export interface DonutSlice {
   /**
@@ -109,8 +110,6 @@ export function Donut({
         viewBox={`0 0 ${size} ${size}`}
         style={{ position: 'absolute', inset: 0, overflow: 'visible' }}
       >
-        {/* White under everything: the gaps between slices, and what a dimmed slice fades towards. */}
-        <path d={sectorPath(c, c, c, rInner, 0, 1)} fill="#ffffff" fillRule="evenodd" pointerEvents="none" />
         {remainderFrom < 1 && (
           <path
             data-testid="donut-remainder"
@@ -120,45 +119,79 @@ export function Donut({
             pointerEvents="none"
           />
         )}
-        {segments.map((seg) => {
-          const s = slices[seg.index]
-          const key = keyOf(s)
-          const active = activeKey === key
-          // The group between the tooltip and the path is there because
-          // rc-tooltip writes its own aria-describedby onto its child, and the
-          // path's has to stay the legend's figures.
-          return (
-            <Tooltip
-              key={key}
-              open={tipKey === key}
-              title={(
-                <>
-                  <div>{s.label}</div>
-                  {linesOf(s.detail).map((line) => <div key={line}>{line}</div>)}
-                </>
-              )}
-            >
-              <g>
-                <path
-                  data-testid="donut-slice"
-                  data-arc={String(seg.arc)}
-                  role="img"
-                  aria-label={s.label}
-                  aria-describedby={linesOf(s.detail).length > 0 ? `${id}-${seg.index}` : undefined}
-                  tabIndex={0}
-                  d={sectorPath(c, c, active ? c + LIFT : c, rInner, seg.from, seg.solidTo)}
-                  fill={s.color}
-                  opacity={dimming && !active ? DIM : 1}
-                  style={{ outline: 'none', cursor: 'default', transition: 'opacity 120ms' }}
-                  onPointerEnter={() => enter(key)}
-                  onPointerLeave={leave}
-                  onFocus={() => enter(key)}
-                  onBlur={leave}
-                />
-              </g>
-            </Tooltip>
-          )
-        })}
+        {/*
+          The slices and the gaps between them are one hover area (m-11):
+          crossing a gap keeps the slice active, so the tooltip and the dim do
+          not flicker off and on between neighbours. Leaving the area -- off
+          the ring, into the centre, onto the remainder track -- lets go. A
+          finger's leave is ignored; a tap toggles instead (m-3).
+        */}
+        <g
+          data-testid="donut-slices"
+          onPointerLeave={(e) => {
+            if (e.pointerType !== 'touch' && tipKey !== null) leave()
+          }}
+        >
+          {remainderFrom > 0 && (
+            // White under the slices: the gaps, the hover area across them, and
+            // what a dimmed slice fades towards.
+            <path
+              data-testid="donut-hit"
+              d={sectorPath(c, c, c, rInner, 0, remainderFrom)}
+              fill="#ffffff"
+              fillRule="evenodd"
+            />
+          )}
+          {segments.map((seg) => {
+            const s = slices[seg.index]
+            const key = keyOf(s)
+            const active = activeKey === key
+            // The group between the tooltip and the path is there because
+            // rc-tooltip writes its own aria-describedby onto its child, and the
+            // path's has to stay the legend's figures.
+            return (
+              <Tooltip
+                key={key}
+                open={tipKey === key}
+                title={(
+                  <>
+                    <div>{s.label}</div>
+                    {linesOf(s.detail).map((line) => <div key={line}>{line}</div>)}
+                  </>
+                )}
+              >
+                <g>
+                  <path
+                    data-testid="donut-slice"
+                    data-arc={String(seg.arc)}
+                    role="img"
+                    aria-label={s.label}
+                    aria-describedby={linesOf(s.detail).length > 0 ? `${id}-${seg.index}` : undefined}
+                    tabIndex={0}
+                    d={sectorPath(c, c, active ? c + LIFT : c, rInner, seg.from, seg.solidTo)}
+                    fill={s.color}
+                    opacity={dimming && !active ? DIM : 1}
+                    style={{ outline: 'none', cursor: 'default', transition: 'opacity 120ms' }}
+                    onPointerEnter={(e) => {
+                      if (e.pointerType !== 'touch') enter(key)
+                    }}
+                    onPointerUp={(e) => {
+                      if (e.pointerType !== 'touch') return
+                      if (tipKey === key) {
+                        leave()
+                      } else {
+                        enter(key)
+                        clearOnTapElsewhere(e.currentTarget, leave)
+                      }
+                    }}
+                    onFocus={() => enter(key)}
+                    onBlur={leave}
+                  />
+                </g>
+              </Tooltip>
+            )
+          })}
+        </g>
         {/* The hairline edge the ring has always had. */}
         <circle cx={c} cy={c} r={c - 0.5} fill="none" stroke="#16202B14" strokeWidth={1} pointerEvents="none" />
       </svg>

@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Donut } from '../../components/Donut'
+import { legendRowProps } from '../../components/ringHover'
 import { ProgressBar } from '../../components/ProgressBar'
 import { buildStageSlices, NOT_STARTED_KEY, UNMAPPED_KEY } from '../../domain/pieSlices'
 import type { Cell, Stage, StageProgress } from '../../domain/types'
@@ -193,18 +194,9 @@ export function StageRollupCard({
               <div
                 key={stage.id}
                 data-testid="gs-stage-row"
-                tabIndex={0}
-                onPointerEnter={() => setActive(stage.id)}
-                onPointerLeave={() => setActive(null)}
-                onFocus={() => setActive(stage.id)}
-                onBlur={() => setActive(null)}
-                style={{
+                {...legendRowProps(stage.id, active, setActive, {
                   display: 'flex', alignItems: 'center', gap: 11, minWidth: 0,
-                  // CHT-02: the highlight's padding comes out of the row gap,
-                  // so the rows do not move.
-                  margin: '-2px -6px', padding: '2px 6px', borderRadius: 6,
-                  background: active === stage.id ? palette.bgSubtle : undefined,
-                }}
+                })}
               >
                 <span
                   aria-hidden

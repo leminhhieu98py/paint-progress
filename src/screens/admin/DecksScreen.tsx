@@ -26,6 +26,7 @@ import { NEW_DECK } from '../../config'
 import { ConsequenceModal } from '../../components/ConsequenceModal'
 import { modalProps } from '../../components/modalChrome'
 import { Donut, type DonutSlice } from '../../components/Donut'
+import { legendRowProps } from '../../components/ringHover'
 import { EmptyState } from '../../components/EmptyState'
 import { FilterBar } from '../../components/FilterBar'
 import { InfoTip } from '../../components/InfoTip'
@@ -60,12 +61,6 @@ interface WorkRow {
 }
 
 const WORK_KIND_LABEL = { bays: 'Theo ô', manual: 'Nhập tay' } as const satisfies Record<WorkKind, CategoryValue<'workKind'>>
-
-/**
- * A legend row while its slice is active (CHT-02): a background, the text not
- * bolder. The ring's own `activeKey` does the rest.
- */
-const LEGEND_ACTIVE_BG = palette.bgSubtle
 
 const RULES = [
   {
@@ -889,18 +884,9 @@ function ProjectRing({
           <div
             key={sl.key}
             data-testid="legend-row"
-            tabIndex={0}
-            onPointerEnter={() => setActive(sl.key ?? null)}
-            onPointerLeave={() => setActive(null)}
-            onFocus={() => setActive(sl.key ?? null)}
-            onBlur={() => setActive(null)}
-            style={{
+            {...legendRowProps(sl.key ?? sl.label, active, setActive, {
               display: 'flex', alignItems: 'center', gap: 9,
-              // The highlight's padding comes out of the row gap, so
-              // the rows sit where they always did.
-              margin: '-2px -6px', padding: '2px 6px', borderRadius: 6,
-              background: active === sl.key ? LEGEND_ACTIVE_BG : undefined,
-            }}
+            })}
           >
             <span
               data-testid="legend-marker"

@@ -129,6 +129,68 @@ describe('Donut', () => {
     expect(track.getAttribute('d')?.match(/A/g)).toHaveLength(4)
   })
 
+  it('keeps the slice active across the gap to the next one, and lets go only off the ring (m-11)', async () => {
+    const onActiveChange = vi.fn()
+    render(<Donut label="Tiến độ dự án" slices={SLICES} onActiveChange={onActiveChange} />)
+    fireEvent.pointerEnter(slice('CD'))
+    expect(await screen.findByRole('tooltip')).toHaveTextContent('CD')
+    // Onto the white gap after CD: still inside the ring.
+    fireEvent.pointerOut(slice('CD'), { relatedTarget: screen.getByTestId('donut-hit') })
+    expect(onActiveChange).toHaveBeenLastCalledWith('cd')
+    expect(screen.getByRole('tooltip')).toHaveTextContent('CD')
+    // Into the next slice: that one, with no none-active frame between.
+    fireEvent.pointerOut(screen.getByTestId('donut-hit'), { relatedTarget: slice('WD') })
+    expect(onActiveChange.mock.calls.map((c) => c[0])).toEqual(['cd', 'wd'])
+    // Off the ring altogether.
+    fireEvent.pointerLeave(slice('WD'))
+    expect(onActiveChange).toHaveBeenLastCalledWith(null)
+  })
+
+  it('lets go when the pointer moves from a slice onto the remainder track', () => {
+    const onActiveChange = vi.fn()
+    render(<Donut label="Tiến độ dự án" slices={SLICES} onActiveChange={onActiveChange} />)
+    fireEvent.pointerEnter(slice('WD'))
+    fireEvent.pointerOut(slice('WD'), { relatedTarget: screen.getByTestId('donut-remainder') })
+    expect(onActiveChange).toHaveBeenLastCalledWith(null)
+  })
+
+  describe('on touch (m-3)', () => {
+    const tap = (el: Element) => {
+      fireEvent.pointerDown(el, { pointerType: 'touch' })
+      fireEvent.pointerUp(el, { pointerType: 'touch' })
+      // The browser's own leave after a lifted finger: not the reader leaving.
+      fireEvent.pointerLeave(el, { pointerType: 'touch' })
+    }
+
+    it('toggles a slice on a tap, keeps it after the finger lifts, and clears it on a second tap', async () => {
+      const onActiveChange = vi.fn()
+      render(<Donut label="Tiến độ dự án" slices={SLICES} onActiveChange={onActiveChange} />)
+      fireEvent.pointerEnter(slice('CD'), { pointerType: 'touch' })
+      expect(onActiveChange).not.toHaveBeenCalled()
+      tap(slice('CD'))
+      expect(onActiveChange.mock.calls.map((c) => c[0])).toEqual(['cd'])
+      expect(await screen.findByRole('tooltip')).toHaveTextContent('CD')
+      tap(slice('CD'))
+      expect(onActiveChange).toHaveBeenLastCalledWith(null)
+    })
+
+    it('clears the slice when the next tap lands anywhere else', () => {
+      const onActiveChange = vi.fn()
+      render(<Donut label="Tiến độ dự án" slices={SLICES} onActiveChange={onActiveChange} />)
+      tap(slice('CD'))
+      fireEvent.pointerDown(document.body, { pointerType: 'touch' })
+      expect(onActiveChange).toHaveBeenLastCalledWith(null)
+    })
+
+    it('moves to another slice tapped next', () => {
+      const onActiveChange = vi.fn()
+      render(<Donut label="Tiến độ dự án" slices={SLICES} onActiveChange={onActiveChange} />)
+      tap(slice('CD'))
+      tap(slice('WD'))
+      expect(onActiveChange).toHaveBeenLastCalledWith('wd')
+    })
+  })
+
   it('opens no tooltip when a slice is only made active from outside, by its legend row', () => {
     // The row the reader is pointing at already prints the same figures.
     render(<Donut label="Tiến độ dự án" slices={SLICES} activeKey="cd" />)

@@ -162,7 +162,7 @@ describe('StageRollupCard: the ring and its coat rows (CHT-02)', () => {
     const donut = screen.getByTestId('donut')
     fireEvent.pointerEnter(rowOf('Coat 2'))
     expect(donut).toHaveAttribute('data-active', 's2')
-    expect(rowOf('Coat 2')).toHaveStyle({ background: palette.bgSubtle })
+    expect(rowOf('Coat 2')).toHaveStyle({ background: palette.bgHover })
     fireEvent.pointerLeave(rowOf('Coat 2'))
     expect(donut).toHaveAttribute('data-active', '')
     expect(rowOf('Coat 2')).toHaveAttribute('tabindex', '0')
@@ -175,7 +175,7 @@ describe('StageRollupCard: the ring and its coat rows (CHT-02)', () => {
   it('highlights the row of a hovered slice', () => {
     renderRollup()
     fireEvent.pointerEnter(screen.getByTestId('slice-s1'))
-    expect(rowOf('Blast + Coat 1')).toHaveStyle({ background: palette.bgSubtle })
+    expect(rowOf('Blast + Coat 1')).toHaveStyle({ background: palette.bgHover })
     expect(rowOf('Coat 2').style.background).toBe('')
   })
 
