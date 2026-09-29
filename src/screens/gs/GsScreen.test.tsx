@@ -597,6 +597,8 @@ describe('GsScreen', () => {
     loadGsProject.mockRejectedValue(new Error('permission denied'))
     renderScreen()
     expect(await screen.findByText('Không tải được dữ liệu dự án')).toBeInTheDocument()
+    // Outside a table cell a control is the default size (CTL-01 via GS-10).
+    expect(screen.getByRole('button', { name: 'Thử lại' })).not.toHaveClass('ant-btn-sm')
   })
 
   it('explains a failed drawing load but still shows the numbers', async () => {
@@ -1368,6 +1370,9 @@ describe('GsScreen: recording a stage', () => {
     act(() => { liveHandlers?.onStatus('disconnected') })
 
     expect(await screen.findByText('Mất kết nối, đang kết nối lại…')).toBeInTheDocument()
+    // On the field scale (GS-10): the line that matters in bodyStrong, the reassurance a caption.
+    expect(screen.getByText('Mất kết nối, đang kết nối lại…')).toHaveStyle({ fontSize: '14px', fontWeight: '600' })
+    expect(screen.getByText(/Số liệu trên màn hình có thể chưa cập nhật/)).toHaveStyle({ fontSize: '12px' })
   })
 
   it('re-reads the deck shortly after subscribing, to cover the registration lag', async () => {
@@ -1979,6 +1984,11 @@ describe('GsScreen: the plan overlay', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Hiện kế hoạch' }))
     const legend = await screen.findByTestId('gs-zone-legend')
     expect(within(legend).getByText('Khu A — Blast')).toBeInTheDocument()
+    // CLR-03, and names in body (TYP-02 via GS-10).
+    const dot = legend.querySelector('[aria-hidden]') as HTMLElement
+    expect(dot).toHaveStyle({ width: '15px', height: '15px', borderRadius: '50%' })
+    expect(dot.style.boxShadow).toBe('')
+    expect(within(legend).getByText('Khu A — Blast')).toHaveStyle({ fontSize: '14px', fontWeight: '400' })
     expect(within(legend).queryByText('Khu A — Coat 4')).toBeNull()
 
     await chooseIn('Công đoạn kế hoạch', 'Coat 4')
@@ -2091,6 +2101,11 @@ describe('GsScreen: the plan overlay', () => {
 
     await userEvent.hover(screen.getByRole('button', { name: 'ô R1C1' }))
     const hint = await screen.findByTestId('gs-zone-hint')
+    // A zone's colour is a plain circle, as every swatch in the app (CLR-03).
+    const dot = hint.querySelector('[aria-hidden]') as HTMLElement
+    expect(dot).toHaveStyle({ width: '12px', height: '12px', borderRadius: '50%' })
+    expect(dot.style.boxShadow).toBe('')
+    expect(within(hint).getByText(/Khu A — Tháo giáo/)).toHaveStyle({ fontSize: '14px', fontWeight: '400' })
     expect(hint).toHaveTextContent('Khu A — Tháo giáo')
     expect(hint).toHaveTextContent('Tháo giáo')
     expect(hint).toHaveTextContent('13/08 – 19/08')

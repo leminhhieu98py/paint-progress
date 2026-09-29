@@ -32,7 +32,7 @@ import { buildReportWorkbook, reportFileName, type DeckImages, type PlanImage } 
 import { buildProjectReport, downloadWorkbook } from '../../lib/projectReport'
 import { renderDeckDrawing, renderDeckPie, renderPlanDrawing } from '../../canvas/deckSnapshot'
 import { CellStageModal } from './CellStageModal'
-import { fieldError, palette, shadowCard, space } from '../../theme'
+import { fieldError, fieldType, palette, shadowCard, space } from '../../theme'
 import { CalendarOutlined, EllipsisOutlined, FileExcelOutlined, FolderOpenOutlined } from '@ant-design/icons'
 import { EmptyState } from '../../components/EmptyState'
 import { DeckProgressCard, StageRollupCard } from './DeckStatsCards'
@@ -1051,7 +1051,7 @@ export function GsScreen() {
   const projectBar = (body: ReactNode) => (
     <>
       {projectId && (
-        <div style={{ padding: phone ? 12 : 16, paddingBottom: 0 }}>
+        <div style={{ padding: phone ? space.md : space.lg, paddingBottom: 0 }}>
           <FilterBar><FieldProjectSelect projectId={projectId} /></FilterBar>
         </div>
       )}
@@ -1071,7 +1071,7 @@ export function GsScreen() {
           message="Không tải được dữ liệu dự án"
           description="Kiểm tra kết nối mạng rồi thử lại."
           action={
-            <Button size="small" onClick={() => window.location.reload()}>
+            <Button onClick={() => window.location.reload()}>
               Thử lại
             </Button>
           }
@@ -1118,18 +1118,18 @@ export function GsScreen() {
           style={{
             display: 'flex',
             alignItems: 'center',
-            gap: 13,
+            gap: space.md,
             background: fieldError,
             color: '#fff',
-            padding: '14px 20px',
+            padding: `${space.lg}px ${space.xl}px`,
           }}
         >
           <span
             style={{ width: 10, height: 10, borderRadius: '50%', background: '#fff', flex: 'none' }}
           />
           <div style={{ minWidth: 0 }}>
-            <div style={{ fontWeight: 600, lineHeight: 1.3 }}>Mất kết nối, đang kết nối lại…</div>
-            <div style={{ fontSize: 12, lineHeight: 1.3, opacity: 0.85, marginTop: 2 }}>
+            <div style={{ ...fieldType.bodyStrong, lineHeight: 1.3 }}>Mất kết nối, đang kết nối lại…</div>
+            <div style={{ ...fieldType.caption, lineHeight: 1.3, opacity: 0.85, marginTop: 2 }}>
               Số liệu trên màn hình có thể chưa cập nhật. Ghi tiến độ vẫn được lưu khi có mạng trở lại.
             </div>
           </div>
@@ -1150,9 +1150,9 @@ export function GsScreen() {
             glove -- so the rail goes underneath instead.
           */
           gridTemplateColumns: wide ? 'minmax(0,1fr) minmax(320px,372px)' : 'minmax(0,1fr)',
-          gap: wide ? 16 : 12,
+          gap: wide ? space.lg : space.md,
           alignItems: 'start',
-          padding: phone ? 12 : 16,
+          padding: phone ? space.md : space.lg,
         }}
       >
         {/*
@@ -1298,7 +1298,7 @@ export function GsScreen() {
           line.
         */}
         {(noWorks || stagesError || drawingError) && (
-          <div style={{ gridColumn: '1 / -1', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ gridColumn: '1 / -1', minWidth: 0, display: 'flex', flexDirection: 'column', gap: space.md }}>
             {noWorks && (
               <Alert
                 type="info"
@@ -1417,18 +1417,11 @@ export function GsScreen() {
                       <div key={z.id} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                         <span
                           aria-hidden
-                          style={{
-                            width: 12,
-                            height: 12,
-                            flex: 'none',
-                            borderRadius: 4,
-                            background: planColors[z.id],
-                            boxShadow: 'inset 0 0 0 1px #16202B47',
-                          }}
+                          style={{ width: 12, height: 12, flex: 'none', borderRadius: '50%', background: planColors[z.id] }}
                         />
                         {/* One line, and the coat dropped when the zone's own
                             name already carries it (Feedback Rv3, item 3). */}
-                        <span style={{ fontSize: 13, fontWeight: 600 }}>
+                        <span style={fieldType.body}>
                           {describeZone(
                             z.name,
                             stageNameOf(z.stageId),
@@ -1478,20 +1471,13 @@ export function GsScreen() {
                       >
                         <span
                           aria-hidden
-                          style={{
-                            width: 15,
-                            height: 15,
-                            flex: 'none',
-                            borderRadius: 5,
-                            background: planColors[z.id],
-                            boxShadow: 'inset 0 0 0 1px #16202B47',
-                          }}
+                          style={{ width: 15, height: 15, flex: 'none', borderRadius: '50%', background: planColors[z.id] }}
                         />
-                        <span style={{ fontSize: 13, fontWeight: 600, flex: 'none' }}>{z.name}</span>
+                        <span style={{ ...fieldType.body, flex: 'none' }}>{z.name}</span>
                         <span
                           style={{
                             marginLeft: 'auto',
-                            fontSize: 12,
+                            ...fieldType.caption,
                             color: palette.textSecondary,
                             whiteSpace: 'nowrap',
                           }}
@@ -1523,11 +1509,11 @@ export function GsScreen() {
           data-testid="gs-chart-region"
           style={
             wide
-              ? { display: 'flex', flexDirection: 'column', gap: 14, minWidth: 0 }
+              ? { display: 'flex', flexDirection: 'column', gap: space.lg, minWidth: 0 }
               : {
                 display: 'grid',
                 gridTemplateColumns: phone ? 'minmax(0,1fr)' : 'repeat(auto-fit,minmax(300px,1fr))',
-                gap: 12,
+                gap: space.md,
               }
           }
         >
