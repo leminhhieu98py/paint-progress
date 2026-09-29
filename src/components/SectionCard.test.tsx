@@ -1,6 +1,7 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
+import { palette } from '../theme'
 import { SectionCard } from './SectionCard'
 
 describe('SectionCard', () => {
@@ -85,5 +86,19 @@ describe('SectionCard', () => {
     // would make "collapse to see more of the page" cost the admin the
     // action they collapsed the page to get to.
     expect(screen.getByRole('button', { name: 'Lưu' })).toBeInTheDocument()
+  })
+
+  it('sets code, title and summary on the type scale (TYP-01, TYP-03)', () => {
+    render(
+      <SectionCard code="A3.2" title="Cấu hình lớp sơn" summary="5 lớp">
+        x
+      </SectionCard>,
+    )
+    expect(screen.getByText('A3.2')).toHaveStyle({ fontSize: '11px', fontWeight: '600' })
+    expect(screen.getByRole('heading', { name: 'Cấu hình lớp sơn' })).toHaveStyle({
+      fontSize: '15px',
+      fontWeight: '600',
+    })
+    expect(screen.getByText('5 lớp')).toHaveStyle({ fontSize: '12px', fontWeight: '400', color: palette.textTertiary })
   })
 })

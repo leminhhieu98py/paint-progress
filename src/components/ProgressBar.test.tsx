@@ -39,4 +39,9 @@ describe('ProgressBar', () => {
     render(<ProgressBar ratio={0.5} showLabel={false} />)
     expect(screen.queryByText('50,00%')).not.toBeInTheDocument()
   })
+
+  it('sets its percentage as body text, not bold (TYP-02)', () => {
+    render(<ProgressBar ratio={0.5} />)
+    expect(screen.getByText('50,00%')).toHaveStyle({ fontSize: '13px', fontWeight: '400' })
+  })
 })

@@ -1,6 +1,6 @@
 import { DownOutlined, InfoCircleOutlined } from '@ant-design/icons'
 import { useState } from 'react'
-import { palette } from '../theme'
+import { palette, type } from '../theme'
 
 export interface Rule {
   /**
@@ -53,11 +53,10 @@ export function RulesDisclosure({ rules }: { rules: Rule[] }) {
         }}
       >
         <InfoCircleOutlined style={{ color: palette.accent }} />
-        <span style={{ fontSize: 12, fontWeight: 600 }}>Quy tắc áp dụng</span>
+        <span style={type.label}>Quy tắc áp dụng</span>
         <span
           style={{
-            fontSize: 11,
-            fontWeight: 600,
+            ...type.micro,
             lineHeight: 1,
             color: palette.accent,
             background: palette.accentTint,
@@ -88,7 +87,7 @@ export function RulesDisclosure({ rules }: { rules: Rule[] }) {
                 borderTop: `1px solid ${palette.borderSplit}`,
               }}
             >
-              <span style={{ fontSize: 13, lineHeight: 1.5, color: palette.textSecondary }}>
+              <span style={{ ...type.body, lineHeight: 1.5, color: palette.textSecondary }}>
                 {r.text}
               </span>
             </div>

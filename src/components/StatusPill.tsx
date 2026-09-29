@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { palette } from '../theme'
+import { palette, type } from '../theme'
 
 export type StatusTone = 'ok' | 'warn' | 'off' | 'accent' | 'slate'
 
@@ -31,8 +31,7 @@ export function StatusPill({ tone, children }: { tone: StatusTone; children: Rea
         alignItems: 'center',
         padding: '4px 9px',
         borderRadius: 7,
-        fontSize: 11,
-        fontWeight: 500,
+        ...type.micro,
         lineHeight: 1,
         background,
         color,

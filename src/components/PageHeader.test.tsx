@@ -1,6 +1,7 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
+import { palette } from '../theme'
 import { PageHeader } from './PageHeader'
 
 describe('PageHeader', () => {
@@ -46,5 +47,16 @@ describe('PageHeader', () => {
     )
     expect(screen.getByRole('button', { name: 'Tạo sàn' })).toBeInTheDocument()
     expect(screen.getByText('Dự án')).toBeInTheDocument()
+  })
+
+  it('sets title, badge and subtitle on the type scale (TYP-01, TYP-03)', () => {
+    render(<PageHeader title="Main Deck" badge="MD-01" subtitle="184 ô" />)
+    expect(screen.getByRole('heading', { level: 1 })).toHaveStyle({ fontSize: '20px', fontWeight: '600' })
+    expect(screen.getByText('MD-01')).toHaveStyle({ fontSize: '11px', fontWeight: '600' })
+    expect(screen.getByText('184 ô')).toHaveStyle({
+      fontSize: '12px',
+      fontWeight: '400',
+      color: palette.textTertiary,
+    })
   })
 })

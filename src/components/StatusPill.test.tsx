@@ -19,4 +19,9 @@ describe('StatusPill', () => {
     render(<StatusPill tone={tone}>x</StatusPill>)
     expect(screen.getByText('x')).toHaveStyle({ background })
   })
+
+  it('is micro text, 11/600 (TYP-01)', () => {
+    render(<StatusPill tone="ok">x</StatusPill>)
+    expect(screen.getByText('x')).toHaveStyle({ fontSize: '11px', fontWeight: '600' })
+  })
 })

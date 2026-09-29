@@ -3,7 +3,7 @@ import dayjs from 'dayjs'
 import { EmptyState } from './EmptyState'
 import { initialsOf } from '../lib/initials'
 import type { CellNote } from '../lib/progressApi'
-import { palette } from '../theme'
+import { palette, type } from '../theme'
 
 /**
  * Every note left on one bay, as a thread.
@@ -82,8 +82,7 @@ export function NoteThread({
                 borderRadius: 10,
                 background: palette.bgHover,
                 color: palette.textSecondary,
-                fontSize: 12,
-                fontWeight: 600,
+                ...type.micro,
                 lineHeight: '32px',
                 textAlign: 'center',
               }}
@@ -99,17 +98,16 @@ export function NoteThread({
                   flexWrap: 'wrap',
                 }}
               >
-                <span style={{ fontSize: 13, fontWeight: 600 }}>
+                <span style={type.bodyStrong}>
                   {n.byName ?? 'Không rõ người ghi'}
                 </span>
-                <span style={{ fontSize: 12, color: palette.textTertiary }}>
+                <span style={{ ...type.caption, color: palette.textTertiary }}>
                   {dayjs(n.at).format('DD.MM.YYYY HH:mm')}
                 </span>
                 {isCurrent && (
                   <span
                     style={{
-                      fontSize: 11,
-                      fontWeight: 600,
+                      ...type.micro,
                       lineHeight: 1,
                       padding: '4px 8px',
                       borderRadius: 999,
@@ -124,7 +122,7 @@ export function NoteThread({
               <div
                 style={{
                   marginTop: 7,
-                  fontSize: 13,
+                  ...type.body,
                   lineHeight: 1.6,
                   whiteSpace: 'pre-wrap',
                   textWrap: 'pretty',
@@ -140,8 +138,7 @@ export function NoteThread({
                     display: 'inline-flex',
                     alignItems: 'center',
                     gap: 7,
-                    fontSize: 12,
-                    fontWeight: 600,
+                    ...type.micro,
                     lineHeight: 1,
                     padding: '6px 10px',
                     borderRadius: 8,
@@ -162,8 +159,7 @@ export function NoteThread({
                       display: 'inline-flex',
                       alignItems: 'center',
                       marginLeft: 8,
-                      fontSize: 12,
-                      fontWeight: 600,
+                      ...type.micro,
                       lineHeight: 1,
                       padding: '6px 10px',
                       borderRadius: 8,
@@ -185,13 +181,13 @@ export function NoteThread({
                     borderLeft: `3px solid ${palette.accent}`,
                   }}
                 >
-                  <div style={{ fontSize: 11, fontWeight: 600, color: palette.accent }}>
+                  <div style={{ ...type.micro, color: palette.accent }}>
                     Bản cho báo cáo
                   </div>
                   <div
                     style={{
                       marginTop: 4,
-                      fontSize: 13,
+                      ...type.body,
                       lineHeight: 1.6,
                       whiteSpace: 'pre-wrap',
                       textWrap: 'pretty',
@@ -199,7 +195,7 @@ export function NoteThread({
                   >
                     {n.reportNote}
                   </div>
-                  <div style={{ marginTop: 4, fontSize: 11, color: palette.textTertiary }}>
+                  <div style={{ marginTop: 4, ...type.caption, color: palette.textTertiary }}>
                     {`Sửa bởi ${stamp(n)}`}
                   </div>
                 </div>

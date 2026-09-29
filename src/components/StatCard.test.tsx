@@ -32,4 +32,11 @@ describe('StatCard', () => {
     render(<StatCard label="Ghi nhận gần nhất" value="09:42" tone="accent" live />)
     expect(screen.getByTestId('stat-live-dot').style.animation).toContain('pp-pulse')
   })
+
+  it('sets the number in display and the lines around it on the scale (TYP-01)', () => {
+    render(<StatCard label="Tổng diện tích" value="27.482,75" sub="m²" />)
+    expect(screen.getByText('27.482,75')).toHaveStyle({ fontSize: '32px', fontWeight: '700' })
+    expect(screen.getByText('Tổng diện tích')).toHaveStyle({ fontSize: '13px', fontWeight: '600' })
+    expect(screen.getByText('m²')).toHaveStyle({ fontSize: '12px', fontWeight: '400' })
+  })
 })

@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { palette, shadowCard } from '../theme'
+import { palette, shadowCard, type } from '../theme'
 
 /**
  * One number, large, with what it is above it and what it is out of below.
@@ -38,8 +38,7 @@ export function StatCard({
       <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
         <span
           style={{
-            fontSize: 12,
-            fontWeight: 600,
+            ...type.label,
             lineHeight: 1,
             color: accent ? palette.accentHover : palette.textTertiary,
           }}
@@ -63,14 +62,14 @@ export function StatCard({
         )}
       </div>
       <div
-        style={{ marginTop: 12, fontSize: 32, fontWeight: 700, lineHeight: 1, letterSpacing: '-0.03em' }}
+        style={{ marginTop: 12, ...type.display, lineHeight: 1, letterSpacing: '-0.03em' }}
       >
         {value}
       </div>
       {sub !== undefined && (
         <div
           data-testid="stat-sub"
-          style={{ marginTop: 7, fontSize: 12, lineHeight: 1, color: palette.textTertiary }}
+          style={{ marginTop: 7, ...type.caption, lineHeight: 1, color: palette.textTertiary }}
         >
           {sub}
         </div>

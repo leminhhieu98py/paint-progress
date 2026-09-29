@@ -6,7 +6,7 @@ import {
 } from '@ant-design/icons'
 import { Button, Input, Modal } from 'antd'
 import { useState, type ReactNode } from 'react'
-import { palette } from '../theme'
+import { palette, type } from '../theme'
 
 export interface ConsequenceItem {
   label: string
@@ -121,8 +121,7 @@ export function ConsequenceModal({
             <span
               style={{
                 display: 'inline-flex',
-                fontSize: 11,
-                fontWeight: 600,
+                ...type.micro,
                 lineHeight: 1,
                 padding: '5px 8px',
                 borderRadius: 999,
@@ -136,8 +135,7 @@ export function ConsequenceModal({
           <h3
             style={{
               margin: '7px 0 0',
-              fontSize: 17,
-              fontWeight: 600,
+              ...type.cardTitle,
               lineHeight: 1.3,
               letterSpacing: '-0.022em',
             }}
@@ -148,7 +146,7 @@ export function ConsequenceModal({
             <p
               style={{
                 margin: '7px 0 0',
-                fontSize: 13,
+                ...type.body,
                 lineHeight: 1.5,
                 color: palette.textSecondary,
               }}
@@ -192,11 +190,11 @@ export function ConsequenceModal({
                   }}
                 />
               )}
-              <span style={{ fontSize: 13, fontWeight: 600, lineHeight: 1.4, flex: 1 }}>
+              <span style={{ ...type.body, lineHeight: 1.4, flex: 1 }}>
                 {it.label}
               </span>
               {it.meta !== undefined && (
-                <span style={{ fontSize: 13, color: palette.textTertiary }}>{it.meta}</span>
+                <span style={{ ...type.body, color: palette.textTertiary }}>{it.meta}</span>
               )}
             </div>
           ))}
@@ -204,7 +202,7 @@ export function ConsequenceModal({
             <div
               style={{
                 padding: '13px 14px',
-                fontSize: 13,
+                ...type.body,
                 lineHeight: 1.55,
                 color: palette.textSecondary,
                 background: tone === 'danger' ? palette.errorBg : palette.bgSubtle,
@@ -220,7 +218,7 @@ export function ConsequenceModal({
         <div style={{ marginTop: 16 }}>
           <label
             htmlFor="consequence-confirm"
-            style={{ display: 'block', marginBottom: 6, fontSize: 13, fontWeight: 600 }}
+            style={{ display: 'block', marginBottom: 6, ...type.label }}
           >
             Gõ đúng tên để xác nhận
           </label>

@@ -1,6 +1,6 @@
 import { DownOutlined } from '@ant-design/icons'
 import { useState, type ReactNode } from 'react'
-import { palette, shadowCard } from '../theme'
+import { palette, shadowCard, type } from '../theme'
 
 /**
  * The one card shape this app has: white, hairline border, soft shadow, an
@@ -93,8 +93,7 @@ export function SectionCard({
           {code !== undefined && (
             <span
               style={{
-                fontSize: 10,
-                fontWeight: 600,
+                ...type.micro,
                 lineHeight: 1,
                 color: palette.accent,
                 background: palette.accentTint,
@@ -110,8 +109,7 @@ export function SectionCard({
             <h2
               style={{
                 margin: 0,
-                fontSize: 15,
-                fontWeight: 600,
+                ...type.cardTitle,
                 lineHeight: 1.25,
                 letterSpacing: '-0.018em',
               }}
@@ -120,7 +118,7 @@ export function SectionCard({
             </h2>
           )}
           {summary !== undefined && (
-            <span style={{ fontSize: 13, color: palette.textTertiary, minWidth: 0 }}>{summary}</span>
+            <span style={{ ...type.caption, color: palette.textTertiary, minWidth: 0 }}>{summary}</span>
           )}
           {extra !== undefined && (
             <div

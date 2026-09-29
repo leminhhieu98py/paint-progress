@@ -1,6 +1,6 @@
 import { ArrowLeftOutlined, RightOutlined } from '@ant-design/icons'
 import { Fragment, type ReactNode } from 'react'
-import { palette } from '../theme'
+import { palette, type } from '../theme'
 
 export interface Crumb {
   label: string
@@ -55,8 +55,7 @@ export function PageHeader({
             display: 'flex',
             alignItems: 'center',
             gap: 7,
-            fontSize: 12,
-            fontWeight: 500,
+            ...type.caption,
             color: palette.textTertiary,
             marginBottom: 10,
           }}
@@ -71,7 +70,6 @@ export function PageHeader({
                   border: 0,
                   padding: 0,
                   font: 'inherit',
-                  fontWeight: 500,
                   color: palette.accent,
                   cursor: 'pointer',
                 }}
@@ -117,8 +115,7 @@ export function PageHeader({
             <h1
               style={{
                 margin: 0,
-                fontSize: 20,
-                fontWeight: 600,
+                ...type.pageTitle,
                 lineHeight: 1.25,
                 letterSpacing: '-0.028em',
               }}
@@ -128,8 +125,7 @@ export function PageHeader({
             {badge !== undefined && (
               <span
                 style={{
-                  fontSize: 11,
-                  fontWeight: 600,
+                  ...type.micro,
                   lineHeight: 1,
                   color: palette.textSecondary,
                   padding: '5px 8px',
@@ -142,7 +138,7 @@ export function PageHeader({
             )}
           </div>
           {subtitle !== undefined && (
-            <p style={{ margin: '5px 0 0', fontSize: 13, lineHeight: 1.35, color: palette.textTertiary }}>
+            <p style={{ margin: '5px 0 0', ...type.caption, lineHeight: 1.35, color: palette.textTertiary }}>
               {subtitle}
             </p>
           )}

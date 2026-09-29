@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { palette } from '../theme'
+import { palette, type } from '../theme'
 
 /**
  * An empty state that says what is missing AND what it blocks.
@@ -37,12 +37,12 @@ export function EmptyState({
               : `repeating-linear-gradient(45deg, ${palette.bgSubtleAlt} 0 8px, #fff 8px 16px)`,
         }}
       />
-      <div style={{ marginTop: 20, fontSize: 15, fontWeight: 600, lineHeight: 1.3 }}>{title}</div>
+      <div style={{ marginTop: 20, ...type.cardTitle, lineHeight: 1.3 }}>{title}</div>
       {description !== undefined && (
         <div
           style={{
             marginTop: 7,
-            fontSize: 13,
+            ...type.body,
             lineHeight: 1.5,
             color: palette.textSecondary,
             maxWidth: 420,

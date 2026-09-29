@@ -1,5 +1,5 @@
 import { formatPercent } from '../lib/format'
-import { palette } from '../theme'
+import { palette, type } from '../theme'
 
 /**
  * A ratio as a track, a fill and its own number.
@@ -57,7 +57,7 @@ export function ProgressBar({
       </div>
       {showLabel && (
         <span
-          style={{ fontSize: 13, fontWeight: 600, minWidth: 58, textAlign: 'right', flex: 'none' }}
+          style={{ ...type.body, minWidth: 58, textAlign: 'right', flex: 'none' }}
         >
           {formatPercent(ratio)}
         </span>

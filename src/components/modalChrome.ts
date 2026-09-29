@@ -1,4 +1,4 @@
-import { palette } from '../theme'
+import { palette, type } from '../theme'
 
 /**
  * The one dialog shape this app has, applied through antd's `styles` slots.
@@ -57,7 +57,7 @@ export const modalProps = {
  */
 export const fieldHelpStyle = {
   marginTop: 8,
-  fontSize: 12,
+  ...type.caption,
   lineHeight: 1.55,
   color: palette.textTertiary,
 } as const
