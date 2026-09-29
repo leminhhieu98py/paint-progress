@@ -1099,6 +1099,8 @@ export function GsScreen() {
     ))
   }
 
+  const noWorks = works !== null && workList.length === 0 && !stagesError
+
   // The drawing is the screen; everything under the header has to earn its
   // height on a tablet held at arm's length.
   return inShell(
@@ -1207,34 +1209,43 @@ export function GsScreen() {
           </FilterBar>
         </div>
 
-        <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {works !== null && workList.length === 0 && !stagesError && (
-            <Alert
-              type="info"
-              showIcon
-              message="Sàn này chưa được gán công việc nào"
-              description="Nhờ quản trị viên gán sàn vào một công việc ở mục Công việc; tới lúc đó bản vẽ chỉ để xem."
-            />
-          )}
+        {/*
+          GS-08: notices about the deck are a row of their own across both
+          columns, so the drawing card and the stats beside it start on one
+          line.
+        */}
+        {(noWorks || stagesError || drawingError) && (
+          <div style={{ gridColumn: '1 / -1', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {noWorks && (
+              <Alert
+                type="info"
+                showIcon
+                message="Sàn này chưa được gán công việc nào"
+                description="Nhờ quản trị viên gán sàn vào một công việc ở mục Công việc; tới lúc đó bản vẽ chỉ để xem."
+              />
+            )}
 
-          {stagesError && (
-            <Alert
-              type="warning"
-              showIcon
-              message="Không tải được lớp sơn của sàn"
-              description="Phần trăm bên dưới đang tính thiếu. Thử lại sau khi có mạng."
-            />
-          )}
+            {stagesError && (
+              <Alert
+                type="warning"
+                showIcon
+                message="Không tải được lớp sơn của sàn"
+                description="Phần trăm bên dưới đang tính thiếu. Thử lại sau khi có mạng."
+              />
+            )}
 
-          {drawingError && (
-            <Alert
-              type="warning"
-              showIcon
-              message="Không tải được bản vẽ"
-              description="Số liệu bên dưới vẫn đúng. Thử lại sau khi có mạng."
-            />
-          )}
+            {drawingError && (
+              <Alert
+                type="warning"
+                showIcon
+                message="Không tải được bản vẽ"
+                description="Số liệu bên dưới vẫn đúng. Thử lại sau khi có mạng."
+              />
+            )}
+          </div>
+        )}
 
+        <div style={{ minWidth: 0 }}>
           <SectionCard
             title={deck?.name}
             summary={deck ? `${formatAreaM2(deck.totalAreaM2)} ${unit}` : undefined}

@@ -1596,6 +1596,34 @@ describe('GsScreen: one filter bar, the project first (GS-07)', () => {
   })
 })
 
+describe('GsScreen: the drawing and the stats start on one line (GS-08)', () => {
+  /** The grid's items that are not full-width rows: the two columns. */
+  const columns = () => {
+    const grid = screen.getByTestId('gs-chart-region').parentElement as HTMLElement
+    return Array.from(grid.children).filter((c) => (c as HTMLElement).style.gridColumn !== '1 / -1')
+  }
+
+  it('puts the drawing card alone at the top of the left column, the stats beside it', async () => {
+    renderScreen()
+    const canvas = await screen.findByTestId('canvas')
+    const [drawing, rail] = columns()
+    expect(columns()).toHaveLength(2)
+    expect(drawing.contains(canvas)).toBe(true)
+    expect(drawing.children).toHaveLength(1)
+    expect(rail).toBe(screen.getByTestId('gs-chart-region'))
+  })
+
+  it('gives a notice about the deck a full-width row, never a row above one column', async () => {
+    listDeckWorks.mockResolvedValue([])
+    renderScreen()
+    const notice = await screen.findByText('Sàn này chưa được gán công việc nào')
+    const row = Array.from((screen.getByTestId('gs-chart-region').parentElement as HTMLElement).children)
+      .find((c) => c.contains(notice)) as HTMLElement
+    expect(row.style.gridColumn).toBe('1 / -1')
+    expect(columns()[0].children).toHaveLength(1)
+  })
+})
+
 describe('GsScreen: công việc', () => {
   const TWO_WORKS = [
     { work: WORK, weight: 1, stages: STAGES },
