@@ -83,14 +83,14 @@ export function ChangeRoleDialog({
             title: `Đổi ${row.fullName} thành ${ROLE_LABEL[role]}?`,
             description: 'Dòng nhân viên được thay bằng tài khoản đã ẩn cùng tên:',
             items: [{ label: `Mở lại tài khoản ${parked.username}`, meta: scope }],
-            consequence: 'Tài khoản cũ được mở khoá với mật khẩu mới, không tạo tài khoản thứ hai. Người này không còn trong ô chọn nhóm trưởng, thợ chính của GS; các lần cập nhật đã ghi vẫn giữ tên.',
+            consequence: 'Tài khoản cũ mở khoá với mật khẩu mới và người này rời ô chọn nhóm trưởng, thợ chính của GS.',
           }
         : {
             request, tone: 'warn',
             title: `Đổi ${row.fullName} thành ${ROLE_LABEL[role]}?`,
             description: 'Dòng nhân viên được thay bằng tài khoản:',
             items: [{ label: `Tài khoản mới ${request.username}`, meta: scope }],
-            consequence: 'Người này đăng nhập được bằng tài khoản mới và không còn trong ô chọn nhóm trưởng, thợ chính của GS. Các lần cập nhật đã ghi vẫn giữ tên.',
+            consequence: 'Người này đăng nhập bằng tài khoản mới và rời ô chọn nhóm trưởng, thợ chính của GS.',
           })
       return
     }
@@ -99,9 +99,9 @@ export function ChangeRoleDialog({
       setPending({
         request, tone: 'danger',
         title: `Đổi ${row.account.username} thành Nhân viên?`,
-        description: 'Tài khoản sẽ bị khoá và ẩn, không bị xoá:',
+        description: 'Tài khoản bị khoá và ẩn, không bị xoá:',
         items: [who],
-        consequence: 'Tài khoản không đăng nhập được nữa; lịch sử ghi nhận vẫn mang tên người này. Một nhân viên đang làm cùng tên được thêm vào ô chọn của GS. Đổi lại thành GS hoặc Visitor sẽ mở lại đúng tài khoản này.',
+        consequence: 'Một nhân viên đang làm cùng tên được thêm vào ô chọn của GS.',
       })
     } else if (role === 'viewer') {
       setPending({
@@ -109,7 +109,7 @@ export function ChangeRoleDialog({
         title: `Đổi ${row.account.username} thành Visitor?`,
         description: 'Phân quyền của tài khoản đổi thành Visitor:',
         items: [who],
-        consequence: 'Tài khoản xem được mọi dự án và mọi công việc nhưng không ghi được tiến độ nữa. Dự án đã gán được giữ lại cho lần đổi về GS.',
+        consequence: 'Tài khoản xem được mọi dự án và công việc nhưng không ghi tiến độ nữa.',
       })
     } else {
       // Memberships are kept across GS ↔ Visitor, so a Visitor becoming a GS
@@ -128,7 +128,7 @@ export function ChangeRoleDialog({
         title: `Đổi ${row.account.username} thành GS?`,
         description: 'Tài khoản thành GS, ghi được tiến độ ở các dự án này:',
         items,
-        consequence: 'Tài khoản không còn xem được mọi dự án. Bỏ bớt dự án bằng nút «Dự án và công việc» sau khi đổi.',
+        consequence: 'Nút «Dự án và công việc» bỏ bớt được các dự án trên sau khi đổi.',
       })
     }
   }

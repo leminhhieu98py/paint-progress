@@ -5,6 +5,7 @@ import {
   DEFAULT_FILTERS, ROLE_DESCRIPTION, ROLE_LABEL, buildRows, countFacts, filterRows, isFiltered,
   loginClash, nameClash, parkedAccountFor,
 } from './nhanLuc'
+import { expectHelperText } from '../../test/copy'
 
 const account = (over: Partial<GsUser>): GsUser => ({
   id: 'u1', username: 'gs1', fullName: 'GS Một', active: true, role: 'gs', hidden: false, projects: [], ...over,
@@ -136,5 +137,7 @@ describe('role texts', () => {
     for (const text of Object.values(ROLE_DESCRIPTION)) {
       expect(text).toMatch(/^[^.]+\.$/)
     }
+    // Helper text (RUL-01): no second clause after a semicolon.
+    expectHelperText(Object.values(ROLE_DESCRIPTION))
   })
 })

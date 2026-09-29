@@ -23,7 +23,7 @@ export const ROLE_LABEL = {
  * the list's Quy tắc áp dụng read these same strings (owner, NL-02).
  */
 export const ROLE_DESCRIPTION: Record<StaffRole, string> = {
-  employee: 'Nhân viên không đăng nhập; GS chọn họ làm nhóm trưởng hoặc thợ chính khi ghi tiến độ và không sửa được danh sách.',
+  employee: 'Nhân viên không đăng nhập và được GS chọn làm nhóm trưởng hoặc thợ chính khi ghi tiến độ.',
   gs: 'GS đăng nhập trên tablet và ghi tiến độ ở các dự án được gán.',
   viewer: 'Visitor đăng nhập, xem mọi dự án và mọi công việc, tải được báo cáo nhưng không ghi được gì.',
 }

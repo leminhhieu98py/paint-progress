@@ -57,29 +57,15 @@ const RULES: Rule[] = [
   { id: 'NL-role-employee', text: ROLE_DESCRIPTION.employee },
   { id: 'NL-role-gs', text: ROLE_DESCRIPTION.gs },
   { id: 'NL-role-viewer', text: ROLE_DESCRIPTION.viewer },
-  {
-    id: 'NL-one-row',
-    text: 'Mỗi người chỉ có một dòng: họ tên không trùng giữa nhân viên và tài khoản, tên đăng nhập không trùng giữa các tài khoản.',
-  },
-  {
-    id: 'USR-R5',
-    text: 'Tài khoản chỉ bị khoá hoặc ẩn, không bị xoá; mọi ghi nhận tiến độ mang tên người này vẫn tra được.',
-  },
-  {
-    id: 'NL-change-role',
-    text: 'Đổi tài khoản thành nhân viên thì tài khoản bị khoá và ẩn; đổi lại thành GS hoặc Visitor thì mở lại đúng tài khoản đó.',
-  },
-  {
-    id: 'USR-R7',
-    text: 'Mỗi lần xem mật khẩu đều được ghi vào nhật ký, kèm người xem, tài khoản và thời điểm.',
-  },
-  {
-    id: 'USR-R9',
-    text: 'Giới hạn công việc chỉ thu hẹp những gì tài khoản GS thấy: sàn vẫn hiện, công việc không được gán thì không hiện tiến độ.',
-  },
+  { id: 'NL-one-row', text: 'Họ tên và tên đăng nhập không trùng với người đã có trong danh sách.' },
+  { id: 'USR-R5', text: 'Tài khoản chỉ khoá hoặc ẩn được, không xoá được.' },
+  { id: 'NL-change-role', text: 'Đổi tài khoản thành nhân viên thì tài khoản bị khoá và ẩn.' },
+  { id: 'NL-change-role-back', text: 'Đổi nhân viên đó lại thành GS hoặc Visitor thì mở lại đúng tài khoản cũ.' },
+  { id: 'USR-R7', text: 'Mỗi lần xem mật khẩu đều được ghi vào nhật ký, kèm người xem, tài khoản và thời điểm.' },
+  { id: 'USR-R9', text: 'Giới hạn công việc chỉ ẩn tiến độ của công việc không được gán và không ẩn sàn nào.' },
   {
     id: 'roster-inactive',
-    text: 'Tắt Đang làm thì người đó không còn trong ô chọn của GS; các lần cập nhật đã ghi vẫn giữ nguyên tên.',
+    text: 'Người đã tắt Đang làm không còn trong ô chọn của GS nhưng vẫn giữ tên trên các lần cập nhật đã ghi.',
   },
 ]
 
@@ -747,7 +733,7 @@ export function NhanLucScreen() {
         tone="danger"
         tag="Xác nhận"
         title={`Khoá tài khoản ${offTarget?.username ?? ''}?`}
-        description="Tài khoản sẽ bị khoá, không bị xoá:"
+        description="Tài khoản bị khoá, không bị xoá:"
         items={
           offTarget
             ? [
@@ -758,7 +744,7 @@ export function NhanLucScreen() {
               ]
             : []
         }
-        consequence="Tài khoản không đăng nhập được nữa và mất quyền truy cập ngay. Dự án và công việc đã gán giữ nguyên, mở khoá là dùng lại được. Lịch sử ghi nhận mang tên người này vẫn còn."
+        consequence="Tài khoản không đăng nhập được nữa và giữ nguyên dự án, công việc đã gán cho lần mở khoá."
         okText="Vẫn khoá"
         onCancel={() => setOffTarget(null)}
         onOk={() =>
@@ -776,7 +762,7 @@ export function NhanLucScreen() {
         tone="danger"
         tag="Xác nhận"
         title={`Ẩn tài khoản ${hideTarget?.username ?? ''}?`}
-        description="Tài khoản sẽ bị khoá và ẩn khỏi danh sách, không bị xoá:"
+        description="Tài khoản bị khoá và ẩn khỏi danh sách, không bị xoá:"
         items={
           hideTarget
             ? [{
@@ -785,7 +771,7 @@ export function NhanLucScreen() {
               }]
             : []
         }
-        consequence="Mọi ghi chú và lịch sử ghi nhận vẫn mang tên người này. Chọn Trạng thái «Đã ẩn» để tìm lại và mở khoá khi cần."
+        consequence="Chọn Trạng thái «Đã ẩn» là tìm lại được tài khoản này."
         okText="Vẫn ẩn"
         onCancel={() => setHideTarget(null)}
         onOk={() =>
@@ -827,7 +813,7 @@ export function NhanLucScreen() {
               { required: true, message: 'Nhập tên đăng nhập' },
               { pattern: /^[a-z0-9._-]{3,32}$/i, message: 'Chỉ chữ, số, dấu chấm, gạch ngang, gạch dưới (3-32 ký tự)' },
             ]}
-            extra="Mật khẩu giữ nguyên. Từ lần đăng nhập sau, người này dùng tên mới."
+            extra="Từ lần đăng nhập sau người này dùng tên mới với mật khẩu cũ."
           >
             <Input placeholder="Ví dụ: gs.hieu" />
           </Form.Item>
@@ -957,7 +943,7 @@ export function NhanLucScreen() {
         tone="danger"
         tag="Thao tác phá huỷ"
         title={`Đổi mật khẩu cho ${pwPending?.user.username ?? ''}?`}
-        description="Mật khẩu cũ ngừng hiệu lực ngay khi bạn xác nhận:"
+        description="Mật khẩu cũ ngừng hiệu lực ngay khi anh xác nhận:"
         items={
           pwPending
             ? [
@@ -968,7 +954,7 @@ export function NhanLucScreen() {
               ]
             : []
         }
-        consequence="GS đang cầm mật khẩu cũ sẽ không đăng nhập được và không nhận được thông báo nào. Anh phải giao mật khẩu mới cho họ. Mật khẩu mới hiện ra ngay sau bước này."
+        consequence="Anh giao cho GS mật khẩu mới hiện ra ngay sau bước này."
         okText="Vẫn đổi"
         onCancel={() => setPwPending(null)}
         onOk={() =>
