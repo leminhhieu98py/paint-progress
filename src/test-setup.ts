@@ -36,3 +36,16 @@ if (typeof window.matchMedia !== 'function') {
 const originalGetComputedStyle = window.getComputedStyle.bind(window)
 window.getComputedStyle = ((elt: Element, pseudoElt?: string | null) =>
   pseudoElt ? originalGetComputedStyle(elt) : originalGetComputedStyle(elt, pseudoElt)) as typeof window.getComputedStyle
+
+// jsdom has no SVG layout, so no getBBox. rc-trigger (antd Tooltip) observes
+// its anchor with resize-observer-polyfill, which calls getBBox on an SVG
+// anchor -- the Donut's slices -- and threw an uncaught TypeError whenever a
+// slice's tooltip opened in a test. An empty box is what jsdom's layout would
+// give; guarded like the shims above so a real implementation wins.
+if (typeof SVGElement !== 'undefined' && !('getBBox' in SVGElement.prototype)) {
+  Object.defineProperty(SVGElement.prototype, 'getBBox', {
+    configurable: true,
+    writable: true,
+    value: () => ({ x: 0, y: 0, width: 0, height: 0 }),
+  })
+}
