@@ -835,6 +835,14 @@ describe('StageConfigPanel — the read-only colour (CLR-01)', () => {
 })
 
 describe('StageConfigPanel — alignment (UI-03)', () => {
+  it('names its action column Thao tác and its drag handle column for a screen reader (M20)', async () => {
+    renderApp(<StageConfigPanel workId="w1" deckId="d1" />)
+    await screen.findByDisplayValue('Blast + Coat 1')
+    expect(screen.getByRole('columnheader', { name: 'Thao tác' })).toBeInTheDocument()
+    const handle = screen.getByRole('columnheader', { name: 'Kéo để sắp xếp' })
+    expect(within(handle).getByText('Kéo để sắp xếp')).toHaveStyle({ position: 'absolute', width: '1px' })
+  })
+
   it('keeps the coat name left and centres the colour picker itself, not only the cell text', async () => {
     renderApp(<StageConfigPanel workId="w1" deckId="d1" />)
     const hex = await screen.findByLabelText('Mã màu · Blast + Coat 1')

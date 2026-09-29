@@ -208,6 +208,12 @@ describe('EffortHistoryPanel — identifiers are text (UI-06)', () => {
     expect(th('Giờ công')).toHaveStyle({ textAlign: 'center' })
   })
 
+  it('titles its action column Thao tác (M20)', async () => {
+    renderPanel()
+    await screen.findByText('LSX-1')
+    expect(screen.getByRole('columnheader', { name: 'Thao tác' })).toHaveClass('ant-table-cell-fix-right')
+  })
+
   it('scrolls sideways rather than squeezing a name to one word per line (I3, MOB-01)', async () => {
     renderPanel()
     await screen.findByText('LSX-1')

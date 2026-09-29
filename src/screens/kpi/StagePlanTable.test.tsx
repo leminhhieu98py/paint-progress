@@ -107,6 +107,11 @@ describe('StagePlanTable', () => {
     expect(picker).toHaveStyle({ minWidth: '250px' })
   })
 
+  it('titles the column of Lưu Thao tác, like every other action column (M20)', () => {
+    renderTable()
+    expect(screen.getByRole('columnheader', { name: 'Thao tác' })).toBeInTheDocument()
+  })
+
   it('keeps Lưu in view while the table scrolls sideways (QA F9 follow-up)', () => {
     // Seen at 1024px after F9: the scrolling table pushed every row's Lưu past
     // the card's right edge. The save column is pinned to the right instead.

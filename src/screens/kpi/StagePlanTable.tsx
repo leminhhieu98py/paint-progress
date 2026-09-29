@@ -320,7 +320,7 @@ export function StagePlanTable({
       },
     },
     {
-      title: '',
+      title: 'Thao tác',
       key: 'save',
       width: 120,
       // Pinned: the table scrolls sideways at tablet widths (QA F9) and a

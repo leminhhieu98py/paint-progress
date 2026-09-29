@@ -175,7 +175,7 @@ export function EffortHistoryPanel({
           { title: 'Lý do hao phí', width: 220, render: (_, ev) => text(ev.effort.wasteReason) },
           { title: 'Lệnh sản xuất', width: 130, render: (_, ev) => text(ev.effort.wasteOrder) },
           {
-            title: '',
+            title: 'Thao tác',
             width: 90,
             align: 'center',
             fixed: 'right',

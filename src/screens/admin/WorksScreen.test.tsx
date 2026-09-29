@@ -388,6 +388,13 @@ describe('WorksScreen', () => {
 })
 
 describe('WorksScreen — alignment (UI-06)', () => {
+  it('names its drag handle column for a screen reader, not with an empty header (M20)', async () => {
+    renderScreen()
+    await screen.findByDisplayValue('Sơn')
+    const handle = screen.getByRole('columnheader', { name: 'Kéo để sắp xếp' })
+    expect(within(handle).getByText('Kéo để sắp xếp')).toHaveStyle({ position: 'absolute', width: '1px' })
+  })
+
   it('keeps the typed quantity label and unit left, beside the name', async () => {
     renderScreen()
     await screen.findByDisplayValue('Sơn')

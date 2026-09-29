@@ -20,7 +20,7 @@ import { EmptyState } from '../../components/EmptyState'
 import { InfoTip } from '../../components/InfoTip'
 import { RulesDisclosure } from '../../components/RulesDisclosure'
 import { SectionCard } from '../../components/SectionCard'
-import { palette, space, type } from '../../theme'
+import { palette, space, type, visuallyHidden } from '../../theme'
 
 /**
  * What deleting a coat does, as the rule says it (the delete dialog lists the
@@ -411,7 +411,7 @@ export function StageConfigPanel({
             // say so. A handle is not a control here -- the whole row is the
             // drag target -- it is the affordance that makes the gesture
             // discoverable at all.
-            title: '',
+            title: <span style={visuallyHidden}>Kéo để sắp xếp</span>,
             key: 'handle',
             align: 'center',
             width: 34,
@@ -524,7 +524,7 @@ export function StageConfigPanel({
             )),
           },
           {
-            title: '',
+            title: 'Thao tác',
             key: 'actions',
             width: 72,
             align: 'center',

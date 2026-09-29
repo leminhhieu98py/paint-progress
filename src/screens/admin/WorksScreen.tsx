@@ -25,7 +25,7 @@ import { ProjectSelect } from '../../components/ProjectSelect'
 import { RulesDisclosure } from '../../components/RulesDisclosure'
 import { SectionCard } from '../../components/SectionCard'
 import { searchSelectProps } from '../../components/searchSelect'
-import { palette, type } from '../../theme'
+import { palette, type, visuallyHidden } from '../../theme'
 
 type ProjectOption = Awaited<ReturnType<typeof listProjectNames>>[number]
 
@@ -343,7 +343,7 @@ export function WorksScreen() {
             })}
             columns={[
               {
-                title: '',
+                title: <span style={visuallyHidden}>Kéo để sắp xếp</span>,
                 key: 'handle',
                 align: 'center',
                 width: 34,

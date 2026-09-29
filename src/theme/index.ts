@@ -176,6 +176,12 @@ export const fieldType: TypeScale = {
 export const fontFamily =
   "'Be Vietnam Pro', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Helvetica, Arial, sans-serif"
 
+/** On screen for assistive technology alone: a column header a drag handle has no room to show (M20). */
+export const visuallyHidden = {
+  position: 'absolute', width: 1, height: 1, padding: 0, margin: -1, border: 0,
+  overflow: 'hidden', clip: 'rect(0, 0, 0, 0)', whiteSpace: 'nowrap',
+} as const
+
 /** Cards and panels. */
 export const shadowCard = '0 1px 2px #16202B0A, 0 6px 18px -8px #16202B14'
 /** Modals, popovers, toasts — anything that floats over the page. */
