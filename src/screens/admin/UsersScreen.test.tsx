@@ -436,3 +436,26 @@ describe('UsersScreen — Feedback Rv2 (0028)', () => {
     expect(setMemberships).not.toHaveBeenCalled()
   })
 })
+
+describe('UsersScreen — pagination (UI-05)', () => {
+  it('shows no pager under a short list', async () => {
+    renderApp(<UsersScreen />)
+    await screen.findByText('GS Một')
+    expect(document.querySelector('.ant-pagination')).toBeNull()
+  })
+
+  it('pages ten at a time from the eleventh account, with a size changer', async () => {
+    listGsUsers.mockResolvedValue(
+      Array.from({ length: 11 }, (_, i) => ({
+        id: `u${i + 20}`, username: `gs${i + 20}`, fullName: `GS ${i + 20}`, active: true, role: 'gs', hidden: false,
+        projects: [member('p1', 'BB1')],
+      })),
+    )
+    renderApp(<UsersScreen />)
+    await screen.findByText('GS 20')
+    expect(document.querySelectorAll('.ant-table-tbody .ant-table-row')).toHaveLength(10)
+    expect(screen.queryByText('GS 30')).not.toBeInTheDocument()
+    expect(document.querySelector('.ant-pagination')).not.toBeNull()
+    expect(document.querySelector('.ant-pagination-options')).not.toBeNull()
+  })
+})

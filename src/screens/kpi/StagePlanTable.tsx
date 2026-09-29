@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { EmptyState } from '../../components/EmptyState'
 import { RulesDisclosure, type Rule } from '../../components/RulesDisclosure'
 import { SectionCard } from '../../components/SectionCard'
+import { tablePagination } from '../../components/tablePagination'
 import { planDays, type StagePlan } from '../../domain/kpi'
 import {
   DEFAULT_QUANTITY_LABEL, DEFAULT_UNIT, labelOfWorks, MIXED_QUANTITY_LABEL, unitOfWorks,
@@ -354,7 +355,7 @@ export function StagePlanTable({
         rowKey="stageId"
         size="middle"
         dataSource={rows}
-        pagination={false}
+        pagination={tablePagination(rows.length)}
         // `max-content`, not `true` (QA F9): with `true` antd lets the table
         // shrink to the card and the column widths become hints, which is how
         // the picker lost its years and "Số ngày" wrapped at 1024px. Sized to

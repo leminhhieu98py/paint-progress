@@ -9,6 +9,7 @@ import { ProgressBar } from '../../components/ProgressBar'
 import { SectionCard } from '../../components/SectionCard'
 import { modalProps } from '../../components/modalChrome'
 import { StatCard } from '../../components/StatCard'
+import { tablePagination } from '../../components/tablePagination'
 import { formatAreaM2 } from '../../lib/format'
 import { latestProgressEvent, type ProgressEvent } from '../../lib/progressApi'
 import {
@@ -240,7 +241,7 @@ export function ProjectsScreen() {
             rowKey="id"
             loading={loading}
             dataSource={rows}
-            pagination={false}
+            pagination={tablePagination(rows.length)}
             /*
               The whole row opens the project. The decks screen has its own
               project picker, so the id travels in the query string rather than

@@ -2,6 +2,7 @@ import { Button, Table } from 'antd'
 import { useRef, useState } from 'react'
 import { ColorField, HEX_COLOR } from '../../components/ColorField'
 import { SectionCard } from '../../components/SectionCard'
+import { tablePagination } from '../../components/tablePagination'
 import { KPI_COLOR_DEFAULTS } from '../dashboard/kpiColors'
 
 /**
@@ -145,7 +146,7 @@ export function DeckKpiColorTable({
         rowKey="id"
         size="middle"
         dataSource={decks}
-        pagination={false}
+        pagination={tablePagination(decks.length)}
         scroll={{ x: true }}
         onRow={(row) => ({ 'data-testid': `deck-color-row-${row.id}` } as React.HTMLAttributes<HTMLElement>)}
         columns={[

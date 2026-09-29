@@ -38,6 +38,7 @@ import { SectionCard } from '../../components/SectionCard'
 import { StageSpecTable } from '../../components/StageSpecTable'
 import { modalProps } from '../../components/modalChrome'
 import { searchSelectProps } from '../../components/searchSelect'
+import { tablePagination } from '../../components/tablePagination'
 import { palette, shadowCard, space } from '../../theme'
 import type { Cell } from '../../domain/types'
 
@@ -2100,7 +2101,7 @@ export function DeckProgressPanel({
           <Table
             size="small"
             rowKey="id"
-            pagination={false}
+            pagination={tablePagination(entry?.stages.length ?? 0)}
             dataSource={entry?.stages ?? []}
             columns={[
               { title: 'Công đoạn', dataIndex: 'name', key: 'name' },

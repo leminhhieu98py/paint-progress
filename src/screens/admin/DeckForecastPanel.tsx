@@ -3,6 +3,7 @@ import dayjs, { type Dayjs } from 'dayjs'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { SectionCard } from '../../components/SectionCard'
 import { StatCard } from '../../components/StatCard'
+import { tablePagination } from '../../components/tablePagination'
 import {
   dailyEffort, deckEffortTotals, effortDayKey, stageEfficiency, stageOrder,
 } from '../../domain/effort'
@@ -251,7 +252,7 @@ export function DeckForecastPanel({
             data-testid="forecast-table"
             size="small"
             rowKey="stageId"
-            pagination={false}
+            pagination={tablePagination(forecast?.stages.length ?? 0)}
             loading={events === null}
             dataSource={forecast?.stages ?? []}
             locale={{ emptyText: 'Công việc này chưa có công đoạn nào trên sàn' }}

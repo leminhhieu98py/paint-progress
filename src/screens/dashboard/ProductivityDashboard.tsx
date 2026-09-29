@@ -6,6 +6,7 @@ import { EmptyState } from '../../components/EmptyState'
 import { SectionCard } from '../../components/SectionCard'
 import { StatCard } from '../../components/StatCard'
 import { searchSelectProps } from '../../components/searchSelect'
+import { tablePagination } from '../../components/tablePagination'
 import {
   NOT_STARTED_STAGE, dailyEffort, deckEffortTotals, effortCoverage, effortDayKey,
   efficiencySeries, hoursSeries, leadEfficiency, recordsWorkOnACoat, stageEfficiency, stageOrder,
@@ -291,7 +292,7 @@ export function ProductivityDashboard({
           <Table<StageEfficiency>
             size="small"
             rowKey={(r) => `${r.workName}/${r.stageName}`}
-            pagination={false}
+            pagination={tablePagination(visibleStages.length)}
             dataSource={visibleStages}
             columns={stageColumns}
             locale={{ emptyText: 'Không có lần cập nhật nào trong khoảng đã chọn' }}
@@ -308,7 +309,7 @@ export function ProductivityDashboard({
           <Table<{ deckName: string; forecast: DeckForecast }>
             size="small"
             rowKey="deckName"
-            pagination={false}
+            pagination={tablePagination(forecasts.length)}
             dataSource={forecasts}
             locale={{ emptyText: 'Chưa có sàn nào trong công việc này' }}
             columns={[
@@ -384,7 +385,7 @@ export function ProductivityDashboard({
             <Table<LeadEfficiency>
               size="small"
               rowKey="leadName"
-              pagination={false}
+              pagination={tablePagination(visibleLeads.length)}
               dataSource={visibleLeads}
               locale={{ emptyText: 'Không có nhóm trưởng nào khớp' }}
               columns={[
@@ -403,7 +404,7 @@ export function ProductivityDashboard({
             <Table<WasteReason>
               size="small"
               rowKey="reason"
-              pagination={false}
+              pagination={tablePagination(reasons.length)}
               dataSource={reasons}
               columns={[
                 {

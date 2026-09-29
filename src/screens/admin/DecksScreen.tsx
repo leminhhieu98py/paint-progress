@@ -33,6 +33,7 @@ import { RulesDisclosure } from '../../components/RulesDisclosure'
 import { SectionCard } from '../../components/SectionCard'
 import { StatusPill } from '../../components/StatusPill'
 import { searchSelectProps } from '../../components/searchSelect'
+import { tablePagination } from '../../components/tablePagination'
 import { roundSharesToTotal } from '../../domain/rounding'
 import { palette, space } from '../../theme'
 
@@ -638,7 +639,7 @@ export function DecksScreen() {
                 <div data-testid="project-rollup">
                 <Table<RollupRow>
                   size="small"
-                  pagination={false}
+                  pagination={tablePagination(visibleRollup.length)}
                   dataSource={visibleRollup}
                   columns={[
                     { title: 'Sàn', dataIndex: 'name', key: 'name' },
@@ -712,7 +713,7 @@ export function DecksScreen() {
                 >
                   <Table<WorkRow>
                     size="small"
-                    pagination={false}
+                    pagination={tablePagination(workRows.length)}
                     dataSource={workRows}
                     columns={[
                       { title: 'Công việc', dataIndex: 'name', key: 'name' },

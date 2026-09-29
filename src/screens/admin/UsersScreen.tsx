@@ -16,6 +16,7 @@ import { SectionCard } from '../../components/SectionCard'
 import { modalProps } from '../../components/modalChrome'
 import { StatusPill } from '../../components/StatusPill'
 import { searchSelectProps } from '../../components/searchSelect'
+import { tablePagination } from '../../components/tablePagination'
 import {
   createGsUser,
   deactivateGsUser,
@@ -403,7 +404,7 @@ export function UsersScreen() {
             rowKey="id"
             loading={loading}
             dataSource={users}
-            pagination={false}
+            pagination={tablePagination(users.length)}
             columns={[
               {
                 title: 'Người dùng',

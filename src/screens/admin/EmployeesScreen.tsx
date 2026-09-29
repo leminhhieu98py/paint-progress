@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { modalProps } from '../../components/modalChrome'
 import { PageBody, PageHeader } from '../../components/PageHeader'
 import { SectionCard } from '../../components/SectionCard'
+import { tablePagination } from '../../components/tablePagination'
 import { createEmployee, listEmployees, updateEmployee, type Employee } from '../../lib/employeesApi'
 import { buildEmployeesXlsx, employeesFileName } from '../../lib/employeesXlsx'
 import { downloadWorkbook } from '../../lib/projectReport'
@@ -170,7 +171,7 @@ export function EmployeesScreen() {
             rowKey="id"
             loading={rows === null && error === null}
             dataSource={shown}
-            pagination={{ pageSize: 25, hideOnSinglePage: true, size: 'small' }}
+            pagination={tablePagination(shown.length)}
             locale={{
               // Two different nothings: a roster nobody has filled in yet is a
               // job to do, a search that matched nothing is not.

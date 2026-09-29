@@ -23,6 +23,7 @@ import { PageBody, PageHeader } from '../../components/PageHeader'
 import { RulesDisclosure } from '../../components/RulesDisclosure'
 import { SectionCard } from '../../components/SectionCard'
 import { searchSelectProps } from '../../components/searchSelect'
+import { tablePagination } from '../../components/tablePagination'
 import { palette } from '../../theme'
 
 type ProjectOption = Awaited<ReturnType<typeof listProjectNames>>[number]
@@ -526,7 +527,7 @@ export function WorksScreen() {
                 rowKey="deckId"
                 size="middle"
                 dataSource={matrix.rows}
-                pagination={false}
+                pagination={tablePagination(matrix.rows.length)}
                 columns={[
                   { title: 'Sàn', dataIndex: 'name' },
                   {

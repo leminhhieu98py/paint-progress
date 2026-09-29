@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { SectionCard } from '../../components/SectionCard'
 import { modalProps } from '../../components/modalChrome'
 import { searchSelectProps } from '../../components/searchSelect'
+import { tablePagination } from '../../components/tablePagination'
 import { effortCoverage, WASTE_REASONS, wasteReasonLabel } from '../../domain/effort'
 import { type DeckEvent, type Effort } from '../../domain/types'
 import { listGsUsers } from '../../lib/adminApi'
@@ -142,7 +143,7 @@ export function EffortHistoryPanel({
         rowKey="id"
         loading={events === null && !error}
         dataSource={shown}
-        pagination={{ pageSize: 20, hideOnSinglePage: true, size: 'small' }}
+        pagination={tablePagination(shown.length)}
         locale={{ emptyText: onlyMissing ? 'Mọi lần cập nhật đã có giờ công' : 'Sàn này chưa có lần cập nhật nào' }}
         columns={[
           { title: 'Mã ô', dataIndex: 'cellCode', width: 80 },
