@@ -743,6 +743,7 @@ export function UsersScreen() {
             <Space size={4} align="center">
               <Form.Item name="role" noStyle>
                 <Segmented
+                  aria-label="Loại tài khoản"
                   options={[
                     { value: 'gs', label: ROLE_LABEL.gs },
                     { value: 'viewer', label: ROLE_LABEL.viewer },

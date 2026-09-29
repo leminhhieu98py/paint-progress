@@ -495,6 +495,8 @@ describe('UsersScreen — explanatory copy (CPY-01)', () => {
     // Outside the <label>: a click on (?) must not move focus to the field,
     // and the tip is not part of the field's name. It sits in the same form row.
     expect(tip.closest('label')).toBeNull()
+    // The switch carries the name itself: the label above names no input.
+    expect(screen.getByRole('radiogroup', { name: 'Loại tài khoản' })).toBeInTheDocument()
     const row = tip.closest('.ant-form-item') as HTMLElement
     expect(within(row).getByText('Loại tài khoản').closest('label')).toHaveTextContent(/^Loại tài khoản$/)
     expect(screen.queryByText(/^GS ghi tiến độ trên tablet/)).toBeNull()
