@@ -1,7 +1,7 @@
 import { LogoutOutlined } from '@ant-design/icons'
 import { Avatar, Button, Grid, Layout, Select, Tooltip } from 'antd'
 import { useEffect, useState, type CSSProperties } from 'react'
-import { NavLink, matchPath, useLocation, useNavigate } from 'react-router-dom'
+import { Link, matchPath, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../auth/AuthProvider'
 import { ConsequenceModal } from '../../components/ConsequenceModal'
 import { searchSelectProps } from '../../components/searchSelect'
@@ -87,8 +87,14 @@ export function FieldHeader({ projectId }: { projectId: string }) {
   }, [readOnly, projectId])
 
   const base = `${APP_BASE_PATH}/gs/${projectId}`
-  const section = SECTIONS.find((s) => matchPath(`${APP_BASE_PATH}/gs/:projectId${s.suffix}`, pathname))
-    ?? SECTIONS[0]
+  /**
+   * The page on screen, read from the route. matchPath, not NavLink's own
+   * comparison: NavLink with `end` compares the pathname byte for byte, so a
+   * shared `/gs/p1/` or `/gs/p1/kpi/` -- which the routes still match -- lit
+   * no tab at all.
+   */
+  const current = SECTIONS.find((s) => matchPath(`${APP_BASE_PATH}/gs/:projectId${s.suffix}`, pathname))
+  const section = current ?? SECTIONS[0]
 
   const fullName = profile?.fullName ?? ''
   const username = profile?.username ?? ''
@@ -135,26 +141,24 @@ export function FieldHeader({ projectId }: { projectId: string }) {
 
       <nav aria-label="Điều hướng" style={{ display: 'flex', alignSelf: 'stretch', flex: 'none' }}>
         {SECTIONS.map((s) => (
-          <NavLink
+          <Link
             key={s.label}
             to={`${base}${s.suffix}`}
-            // Sàn is the project's own address, so without `end` it would stay
-            // lit under Năng suất and KPI as well.
-            end
-            style={({ isActive }) => ({
+            aria-current={s === current ? 'page' : undefined}
+            style={{
               display: 'flex',
               alignItems: 'center',
               paddingInline: phone ? space.sm : space.md,
               whiteSpace: 'nowrap',
               textDecoration: 'none',
-              fontWeight: isActive ? 600 : 500,
-              color: isActive ? palette.accent : palette.textSecondary,
-              borderBottom: `2px solid ${isActive ? palette.accent : 'transparent'}`,
+              fontWeight: s === current ? 600 : 500,
+              color: s === current ? palette.accent : palette.textSecondary,
+              borderBottom: `2px solid ${s === current ? palette.accent : 'transparent'}`,
               borderTop: '2px solid transparent',
-            })}
+            }}
           >
             {s.label}
-          </NavLink>
+          </Link>
         ))}
       </nav>
 

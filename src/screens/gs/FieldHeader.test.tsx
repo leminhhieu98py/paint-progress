@@ -13,7 +13,7 @@ vi.mock('../../lib/gsApi', () => ({
   loadGsProjectIdentity: (projectId: string) => loadGsProjectIdentity(projectId),
 }))
 // react-router's navigate, so a test can see where the project switch and the
-// logout send the user. NavLink does not go through this export, so the tabs
+// logout send the user. Link does not go through this export, so the tabs
 // still navigate for real.
 const navigate = vi.hoisted(() => vi.fn())
 vi.mock('react-router-dom', async (importOriginal) => ({
@@ -114,6 +114,10 @@ describe('FieldHeader: navigation (GS-01)', () => {
     ['/gs/p1', 'Sàn'],
     ['/gs/p1/dashboard', 'Năng suất'],
     ['/gs/p1/kpi', 'KPI'],
+    // A hand-typed or shared address with a trailing slash matches the same route.
+    ['/gs/p1/', 'Sàn'],
+    ['/gs/p1/dashboard/', 'Năng suất'],
+    ['/gs/p1/kpi/', 'KPI'],
   ])('marks the tab of the route as the current page on %s', (path, active) => {
     renderAt(path)
     for (const name of ['Sàn', 'Năng suất', 'KPI']) {
