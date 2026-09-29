@@ -23,6 +23,7 @@ function renderAt(path: string) {
           <Route path="dashboard" element={<div>nội dung năng suất</div>} />
           <Route path="kpi" element={<div>nội dung KPI</div>} />
           <Route path="employees" element={<div>nội dung nhân viên</div>} />
+          <Route path="*" element={<div>không tìm thấy</div>} />
         </Route>
         <Route path="/login" element={<div>màn đăng nhập</div>} />
       </Routes>
@@ -73,6 +74,15 @@ describe('AdminLayout', () => {
     // the most time in.
     renderAt('/admin/decks/abc-123')
     expect(screen.getByRole('menuitem', { name: /Sàn/ })).toHaveClass('ant-menu-item-selected')
+  })
+
+  it('marks nothing on a path that is not a destination (QA F2 follow-up)', () => {
+    // The not-found page sits inside this shell; highlighting Dự án there told
+    // the admin they were on the projects screen.
+    renderAt('/admin/nowhere')
+    for (const item of screen.getAllByRole('menuitem')) {
+      expect(item).not.toHaveClass('ant-menu-item-selected')
+    }
   })
 
   it('shows who is signed in, by name, role and initials', () => {

@@ -46,8 +46,13 @@ export function AdminLayout() {
     sidebar unselected on the screen the admin spends the most time in --
     which reads as "you are nowhere".
   */
+  // Nothing is selected on a path that is not a destination: the not-found
+  // page renders inside this shell, and highlighting Dự án there said the
+  // admin was on the projects screen. `/admin` itself redirects to projects.
+  const segments = pathname.split('/')
   const selected =
-    items.find((i) => pathname.split('/').includes(i.key))?.key ?? 'projects'
+    items.find((i) => segments.includes(i.key))?.key
+    ?? (pathname.replace(/\/+$/, '') === '/admin' ? 'projects' : undefined)
 
   return (
     <Layout style={{ minHeight: '100vh' }}>
@@ -111,7 +116,7 @@ export function AdminLayout() {
           <Menu
             mode="inline"
             inlineCollapsed={collapsed}
-            selectedKeys={[selected]}
+            selectedKeys={selected ? [selected] : []}
             style={{ borderInlineEnd: 0, padding: collapsed ? '4px 0' : '4px 12px' }}
             items={items.map((i) => ({
               key: i.key,
