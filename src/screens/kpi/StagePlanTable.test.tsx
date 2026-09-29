@@ -177,7 +177,13 @@ describe('StagePlanTable', () => {
 
     await retype(endOf('s1'), '01/08/2026')
 
-    expect(await row('s1').findByText(/không được trước ngày bắt đầu/i)).toBeInTheDocument()
+    // On the picker itself, as its error status and its tooltip: a caption
+    // under Lưu broke the row's one axis (M10, TBL-02).
+    const picker = row('s1').getAllByTestId('plan-range-s1')[0].closest('.ant-picker') as HTMLElement
+    await waitFor(() => expect(picker).toHaveClass('ant-picker-status-error'))
+    expect(row('s1').queryByText(/không được trước ngày bắt đầu/i)).toBeNull()
+    await userEvent.hover(picker)
+    expect(await screen.findByRole('tooltip')).toHaveTextContent(/không được trước ngày bắt đầu/i)
     expect(row('s1').getByTestId('plan-days-s1')).toHaveTextContent(/^-$/)
     expect(saveOf('s1')).toBeDisabled()
 
@@ -311,7 +317,12 @@ describe('StagePlanTable', () => {
     await userEvent.clear(area)
     await userEvent.type(area, '-5')
 
-    expect(await row('s1').findByText(/không được âm/i)).toBeInTheDocument()
+    // On the field, as its error status and its tooltip (M10, TBL-02).
+    const box = area.closest('.ant-input-number') as HTMLElement
+    await waitFor(() => expect(box).toHaveClass('ant-input-number-status-error'))
+    expect(row('s1').queryByText(/không được âm/i)).toBeNull()
+    await userEvent.hover(area)
+    expect(await screen.findByRole('tooltip')).toHaveTextContent(/không được âm/i)
     expect(saveOf('s1')).toBeDisabled()
     await userEvent.click(saveOf('s1'))
     expect(onSave).not.toHaveBeenCalled()
@@ -399,6 +410,47 @@ describe('StagePlanTable — one control height per row (CTL-01)', () => {
     renderTable()
     const field = row('s1').getByLabelText('Diện tích kế hoạch').closest('.ant-input-number')
     expect(field).toHaveStyle({ width: '176px' })
+  })
+})
+
+describe('StagePlanTable — pager and drafts follow the scope (M10, UI-05)', () => {
+  const many = Array.from({ length: 12 }, (_, i) => ({
+    ...ROWS[0], stageId: `m${i}`, stageName: `Coat ${i + 1}`,
+  }))
+  const table = (scopeKey: string) => (
+    <AntApp>
+      <StagePlanTable rows={many} computedAreaFor={() => 0} onSave={vi.fn()} onClearArea={vi.fn()} scopeKey={scopeKey} />
+    </AntApp>
+  )
+
+  it('goes back to page 1 when Tìm applies, with the same rows', async () => {
+    const { rerender } = render(table('p1|0'))
+    await userEvent.click(screen.getByTitle('2'))
+    expect(screen.getByTitle('2')).toHaveClass('ant-pagination-item-active')
+    rerender(table('p1|1'))
+    expect(screen.getByTitle('1')).toHaveClass('ant-pagination-item-active')
+  })
+
+  it('drops the drafts typed under the scope before', async () => {
+    const { rerender } = render(table('p1|0'))
+    const area = within(screen.getByTestId('plan-row-m0')).getByLabelText('Diện tích kế hoạch')
+    await userEvent.clear(area)
+    await userEvent.type(area, '77')
+    expect(area).toHaveValue('77')
+    rerender(table('p1|1'))
+    expect(within(screen.getByTestId('plan-row-m0')).getByLabelText('Diện tích kế hoạch')).not.toHaveValue('77')
+  })
+})
+
+describe('StagePlanTable — Lưu only for a changed row (M10)', () => {
+  it('keeps Lưu off on a stored window nobody has changed, and on once it is', async () => {
+    renderTable()
+    // s1 is stored, complete and valid; nothing to save until it changes.
+    expect(saveOf('s1')).toBeDisabled()
+    const area = row('s1').getByLabelText('Diện tích kế hoạch')
+    await userEvent.clear(area)
+    await userEvent.type(area, '4321')
+    await waitFor(() => expect(saveOf('s1')).toBeEnabled())
   })
 })
 

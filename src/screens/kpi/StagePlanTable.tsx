@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { EmptyState } from '../../components/EmptyState'
 import { RulesDisclosure, type Rule } from '../../components/RulesDisclosure'
 import { SectionCard } from '../../components/SectionCard'
-import { tablePagination } from '../../components/tablePagination'
+import { useTablePagination, type PaginationResetKey } from '../../components/tablePagination'
 import { planDays, type StagePlan } from '../../domain/kpi'
 import {
   DEFAULT_QUANTITY_LABEL, DEFAULT_UNIT, labelOfWorks, MIXED_QUANTITY_LABEL, unitOfWorks,
@@ -88,6 +88,7 @@ export function StagePlanTable({
   onSave,
   onClearArea,
   saving = false,
+  scopeKey = null,
 }: {
   rows: StagePlanRow[]
   /**
@@ -99,6 +100,12 @@ export function StagePlanTable({
   onSave: (row: StagePlanRow, window: StagePlanWindow) => void | Promise<void>
   onClearArea: (stageId: string) => void | Promise<void>
   saving?: boolean
+  /**
+   * What the rows are of: the project and the count of the bar's applies.
+   * When it changes the pager goes back to page 1 and the drafts typed under
+   * the scope before are dropped (M10, UI-05).
+   */
+  scopeKey?: PaginationResetKey
 }) {
   /**
    * The heading names the quantity when every row's work agrees on it --
@@ -125,7 +132,22 @@ export function StagePlanTable({
    * showing the old dates after the write landed.
    */
   const [drafts, setDrafts] = useState<Record<string, Draft>>({})
+  // Dropped on a new scope, during render rather than in an effect (React's
+  // "state from the previous render" pattern), so no frame shows them (M10).
+  const [draftScope, setDraftScope] = useState(scopeKey)
+  if (scopeKey !== draftScope) {
+    setDraftScope(scopeKey)
+    setDrafts({})
+  }
+  const pagination = useTablePagination(rows.length, scopeKey)
   const draft = (row: StagePlanRow): Draft => drafts[row.stageId] ?? draftOf(row)
+  /** Whether the row on screen differs from what is stored: Lưu has something to write (M10). */
+  const dirty = (row: StagePlanRow): boolean => {
+    const d = drafts[row.stageId]
+    if (d === undefined) return false
+    const s = draftOf(row)
+    return d.startDate !== s.startDate || d.endDate !== s.endDate || d.plannedAreaM2 !== s.plannedAreaM2
+  }
   const patch = (row: StagePlanRow, over: Partial<Draft>) =>
     setDrafts((d) => ({ ...d, [row.stageId]: { ...draft(row), ...over } }))
 
@@ -141,16 +163,12 @@ export function StagePlanTable({
    * real guard; this is what keeps the admin from meeting it as a raw write
    * failure.
    */
-  const errorOf = (d: Draft): string | null => {
-    if (d.startDate !== null && d.endDate !== null && d.endDate < d.startDate) {
-      // Date-only 'YYYY-MM-DD' strings compare correctly as strings.
-      return 'Ngày kết thúc không được trước ngày bắt đầu.'
-    }
-    if (d.plannedAreaM2 !== null && !(d.plannedAreaM2 >= 0)) {
-      return 'Diện tích kế hoạch không được âm.'
-    }
-    return null
-  }
+  const DATE_ERROR = 'Ngày kết thúc không được trước ngày bắt đầu.'
+  const AREA_ERROR = 'Diện tích kế hoạch không được âm.'
+  // Date-only 'YYYY-MM-DD' strings compare correctly as strings.
+  const datesWrong = (d: Draft) => d.startDate !== null && d.endDate !== null && d.endDate < d.startDate
+  const areaWrong = (d: Draft) => d.plannedAreaM2 !== null && !(d.plannedAreaM2 >= 0)
+  const errorOf = (d: Draft): string | null => (datesWrong(d) ? DATE_ERROR : areaWrong(d) ? AREA_ERROR : null)
 
   const columns = [
     {
@@ -207,26 +225,31 @@ export function StagePlanTable({
       width: 280,
       render: (_v: unknown, row: StagePlanRow) => {
         const d = draft(row)
+        // The refusal is the picker's own: its error status and its tooltip,
+        // never a caption that makes the row two lines tall (M10, TBL-02).
         return (
-          <DatePicker.RangePicker
-            size="small"
-            data-testid={`plan-range-${row.stageId}`}
-            format="DD/MM/YYYY"
-            // Room for `DD/MM/YYYY → DD/MM/YYYY` (QA F9): squeezed, the
-            // picker cut the year off both ends.
-            style={{ minWidth: 250 }}
-            allowEmpty={[true, true]}
-            placeholder={['Bắt đầu', 'Kết thúc']}
-            disabled={saving}
-            value={[d.startDate ? dayjs(d.startDate) : null, d.endDate ? dayjs(d.endDate) : null]}
-            onCalendarChange={(v) => {
-              const range = v as [Dayjs | null, Dayjs | null] | null
-              patch(row, {
-                startDate: dateKey(range?.[0] ?? null),
-                endDate: dateKey(range?.[1] ?? null),
-              })
-            }}
-          />
+          <Tooltip title={datesWrong(d) ? DATE_ERROR : undefined}>
+            <DatePicker.RangePicker
+              size="small"
+              data-testid={`plan-range-${row.stageId}`}
+              format="DD/MM/YYYY"
+              status={datesWrong(d) ? 'error' : undefined}
+              // Room for `DD/MM/YYYY → DD/MM/YYYY` (QA F9): squeezed, the
+              // picker cut the year off both ends.
+              style={{ minWidth: 250 }}
+              allowEmpty={[true, true]}
+              placeholder={['Bắt đầu', 'Kết thúc']}
+              disabled={saving}
+              value={[d.startDate ? dayjs(d.startDate) : null, d.endDate ? dayjs(d.endDate) : null]}
+              onCalendarChange={(v) => {
+                const range = v as [Dayjs | null, Dayjs | null] | null
+                patch(row, {
+                  startDate: dateKey(range?.[0] ?? null),
+                  endDate: dateKey(range?.[1] ?? null),
+                })
+              }}
+            />
+          </Tooltip>
         )
       },
     },
@@ -280,11 +303,12 @@ export function StagePlanTable({
         const computedLabel = computed === null ? undefined : `Tự tính ${formatAreaM2(computed)}${rowUnit(row)}`
         return (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-            <Tooltip title={computedLabel}>
+            <Tooltip title={areaWrong(d) ? AREA_ERROR : computedLabel}>
               <InputNumber
                 size="small"
                 aria-label="Diện tích kế hoạch"
                 placeholder={computedLabel}
+                status={areaWrong(d) ? 'error' : undefined}
                 value={d.plannedAreaM2}
                 disabled={saving}
                 // Room for `Tự tính 99.999,99 m²` (R3-B): at 130 the
@@ -329,10 +353,10 @@ export function StagePlanTable({
       align: 'center' as const,
       render: (_v: unknown, row: StagePlanRow) => {
         const d = draft(row)
-        const message = errorOf(d)
-        const ready = d.startDate !== null && d.endDate !== null && message === null
+        // Complete, valid, and changed: an untouched row has nothing to write (M10).
+        const ready = d.startDate !== null && d.endDate !== null && errorOf(d) === null && dirty(row)
         return (
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <Button
               size="small"
               type="primary"
@@ -349,9 +373,6 @@ export function StagePlanTable({
             >
               Lưu
             </Button>
-            {message !== null && (
-              <span style={{ ...type.caption, color: palette.error }}>{message}</span>
-            )}
           </div>
         )
       },
@@ -372,7 +393,7 @@ export function StagePlanTable({
         rowKey="stageId"
         size="middle"
         dataSource={rows}
-        pagination={tablePagination(rows.length)}
+        pagination={pagination}
         // `max-content`, not `true` (QA F9): with `true` antd lets the table
         // shrink to the card and the column widths become hints, which is how
         // the picker lost its years and "Số ngày" wrapped at 1024px. Sized to

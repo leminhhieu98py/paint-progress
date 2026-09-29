@@ -91,13 +91,15 @@ vi.mock('./StagePlanTable', () => ({
     computedAreaFor,
     onSave,
     onClearArea,
+    scopeKey,
   }: {
     rows: StagePlanRow[]
     computedAreaFor: (row: StagePlanRow, startDate: string | null) => number
     onSave: (row: StagePlanRow, w: { startDate: string; endDate: string; plannedAreaM2: number | null }) => void
     onClearArea: (stageId: string) => void
+    scopeKey?: unknown
   }) => (
-    <div data-testid="plan-table">
+    <div data-testid="plan-table" data-scope={String(scopeKey)}>
       {`BẢNG ${rows.map((r) => `${r.stageName}${r.plan === null ? '(trống)' : '(đã có)'}=${computedAreaFor(r, '2026-09-20')} đv=${r.quantityLabel}/${r.unit}`).join(' ; ')}`}
       <button
         type="button"
@@ -411,6 +413,15 @@ describe('KpiScreen — one filter bar (FLT-01)', () => {
 })
 
 describe('KpiScreen (admin)', () => {
+  it('hands the plan table a new scope on every Tìm, so its page and drafts start over (M10)', async () => {
+    renderAdmin()
+    const table = await screen.findByTestId('plan-table')
+    const first = table.getAttribute('data-scope')
+    expect(first).toMatch(/^p1\|/)
+    await pressTim()
+    await waitFor(() => expect(screen.getByTestId('plan-table').getAttribute('data-scope')).not.toBe(first))
+  })
+
   it('opens on the first project and makes its three reads', async () => {
     renderAdmin()
     await screen.findByTestId('kpi-dashboard')

@@ -263,12 +263,15 @@ function Body({
   data: { current, reload },
   model: { todayKey, coats, planByStage, coatByStage, entries },
   filters,
+  version = 0,
 }: {
   projectId: string | null
   variant: 'admin' | 'gs'
   data: KpiData
   model: KpiModel
   filters: KpiFilters
+  /** Counts the bar's applies: the plan table's page and drafts start over on each (M10). */
+  version?: number
 }) {
   const { message } = App.useApp()
   const [saving, setSaving] = useState(false)
@@ -402,6 +405,7 @@ function Body({
           onSave={onSave}
           onClearArea={onClearArea}
           saving={saving}
+          scopeKey={`${projectId}|${version}`}
         />
       )}
       {/* RV6-28: the chart's colours per deck, admin-only like the plan table. */}
@@ -486,7 +490,7 @@ function AdminKpi() {
         {draftProject !== projectId && other.error !== null && (
           <Alert type="error" showIcon message="Không tải được bộ lọc của dự án" description={other.error} />
         )}
-        <Body projectId={projectId} variant="admin" data={data} model={model} filters={scope.applied} />
+        <Body projectId={projectId} variant="admin" data={data} model={model} filters={scope.applied} version={scope.version} />
       </PageBody>
     </>
   )
