@@ -66,7 +66,8 @@ const WORK_KIND_LABEL = { bays: 'Theo ô', manual: 'Nhập tay' } as const satis
 const RULES = [
   {
     id: 'DCK-R2',
-    text: 'Tỉ trọng của sàn là trọng số hiệu dụng: tổng (trọng số công việc × trọng số sàn trong công việc) qua các công việc có tính vào tổng. Cả hai trọng số đặt ở mục Công việc, không nhập ở đây.',
+    // Helper text, checked against summariseDeck (RUL-01).
+    text: 'Tỉ trọng của sàn tính từ trọng số công việc và trọng số sàn, đặt ở mục Công việc.',
   },
 ]
 
@@ -785,7 +786,7 @@ export function DecksScreen() {
         ]}
       >
         <Typography.Paragraph type="secondary" style={{ ...type.caption, marginTop: 0 }}>
-          Sao chép bản vẽ, khung và lưới ô. Không sao chép công việc, lớp sơn, tiến độ hay kế hoạch.
+          Sao chép bản vẽ, khung và lưới ô, không sao chép công việc, lớp sơn, tiến độ hay kế hoạch.
         </Typography.Paragraph>
         <Form form={copyForm} layout="vertical" onFinish={(v) => void copyDeck(v)}>
           <Form.Item name="name" label="Tên sàn mới" rules={[{ required: true, message: 'Đặt tên sàn' }]}>

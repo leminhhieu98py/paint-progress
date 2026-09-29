@@ -1,3 +1,4 @@
+import { within } from '@testing-library/react'
 import { expect } from 'vitest'
 
 /**
@@ -29,4 +30,29 @@ export function pageSubtitle(): HTMLElement | null {
  */
 export function keyFactTexts(root: ParentNode = document): string[] {
   return Array.from(root.querySelectorAll('[data-testid="key-fact"]'), (el) => el.textContent ?? '')
+}
+
+/**
+ * The entries of the open `Quy tắc áp dụng` under `root`, in order. Open it
+ * first; a closed disclosure has none.
+ */
+export function ruleTexts(root: HTMLElement = document.body): string[] {
+  const button = within(root).getByRole('button', { name: /Quy tắc áp dụng/ })
+  const list = button.nextElementSibling
+  return list === null ? [] : Array.from(list.children, (el) => el.textContent ?? '')
+}
+
+/**
+ * RUL-01: each entry is helper text -- one sentence ending in a full stop, no
+ * spec id, no second sentence or clause after a semicolon or colon, and no
+ * reasoning ("vì…", "nên…") or future ("sẽ").
+ */
+export function expectHelperText(texts: string[]) {
+  expect(texts.length).toBeGreaterThan(0)
+  for (const text of texts) {
+    expect(text).not.toMatch(SPEC_ID)
+    expect(text).toMatch(/\.$/)
+    expect(text.slice(0, -1)).not.toMatch(/[.;:!?](\s|$)/)
+    expect(text).not.toMatch(/(^|\s)(vì|nên|sẽ)\s/i)
+  }
 }

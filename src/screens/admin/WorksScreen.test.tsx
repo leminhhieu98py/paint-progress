@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderApp } from '../../test/renderApp'
 import { expectLeft } from '../../test/alignment'
 import { expectAllSmall } from '../../test/controls'
-import { keyFactTexts, pageSubtitle } from '../../test/copy'
+import { expectHelperText, keyFactTexts, pageSubtitle, ruleTexts } from '../../test/copy'
 import type { Work, WorkModel } from '../../domain/types'
 import { WorksScreen } from './WorksScreen'
 
@@ -212,11 +212,19 @@ describe('WorksScreen', () => {
     expect(screen.getByRole('button', { name: 'Lưu công việc' })).toBeEnabled()
   })
 
-  it('states the rule: one quantity and unit per work (RV6-34)', async () => {
+  it('states its rules as helper text, one quantity and unit per work among them (RV6-34, RUL-01)', async () => {
     renderScreen()
     await screen.findByDisplayValue('Sơn')
     await userEvent.click(screen.getByRole('button', { name: /Quy tắc áp dụng/ }))
-    expect(screen.getByText(/Mọi sàn trong một công việc dùng cùng đại lượng và đơn vị; sàn đo bằng đơn vị khác thì thuộc công việc khác\./)).toBeInTheDocument()
+    expect(ruleTexts()).toEqual([
+      'Lưu được khi tổng trọng số các công việc tính vào tổng bằng 1.',
+      'Công việc không tính vào tổng vẫn có tiến độ riêng nhưng không vào % dự án.',
+      'Lưu sàn tham gia được khi tổng trọng số các sàn tham gia bằng 1.',
+      '“Chia theo m²” điền sẵn trọng số sàn theo diện tích, anh sửa lại được.',
+      'Công việc nhập tay lấy tiến độ từ con số anh gõ.',
+      'Mỗi công việc dùng một đại lượng và một đơn vị cho mọi sàn của nó.',
+    ])
+    expectHelperText(ruleTexts())
   })
 
   it('opens a bays work\'s decks, fills the weights by m² on request, and saves the ones that take part', async () => {

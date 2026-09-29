@@ -29,11 +29,14 @@ import { palette, type } from '../../theme'
 
 type ProjectOption = Awaited<ReturnType<typeof listProjectNames>>[number]
 
+/** Helper text, one sentence each, checked against the code (RUL-01). */
 const RULES = [
-  { id: 'WRK-R2', text: 'Tổng trọng số của các công việc TÍNH VÀO TỔNG phải đúng bằng 1; chưa đúng thì nút Lưu bị khoá. Công việc không tính vào tổng vẫn theo dõi được nhưng không vào %.' },
-  { id: 'WRK-R5', text: 'Mỗi công việc theo ô chọn sàn tham gia và trọng số sàn; "Chia theo m²" chỉ là gợi ý, anh sửa được. Tổng trọng số sàn phải bằng 1.' },
-  { id: 'WRK-R6', text: 'Công việc nhập tay không có ô: tiến độ là con số anh gõ, tính vào tổng theo trọng số.' },
-  { id: 'WRK-R7', text: 'Mọi sàn trong một công việc dùng cùng đại lượng và đơn vị; sàn đo bằng đơn vị khác thì thuộc công việc khác.' },
+  { id: 'WRK-R2', text: 'Lưu được khi tổng trọng số các công việc tính vào tổng bằng 1.' },
+  { id: 'WRK-R2-uncounted', text: 'Công việc không tính vào tổng vẫn có tiến độ riêng nhưng không vào % dự án.' },
+  { id: 'WRK-R5', text: 'Lưu sàn tham gia được khi tổng trọng số các sàn tham gia bằng 1.' },
+  { id: 'WRK-R5-by-area', text: '“Chia theo m²” điền sẵn trọng số sàn theo diện tích, anh sửa lại được.' },
+  { id: 'WRK-R6', text: 'Công việc nhập tay lấy tiến độ từ con số anh gõ.' },
+  { id: 'WRK-R7', text: 'Mỗi công việc dùng một đại lượng và một đơn vị cho mọi sàn của nó.' },
 ]
 
 /** `works.quantity_label` / `works.unit` (0036): 1–30 characters after trimming. */
