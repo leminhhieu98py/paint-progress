@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -263,6 +263,59 @@ describe('FieldHeader: the project', () => {
     renderAt('/gs/p1')
     expect(await screen.findByRole('combobox', { name: 'Dự án' })).toBeInTheDocument()
     expect(screen.getByText('p1', { selector: '.ant-select-selection-item' })).toBeInTheDocument()
+  })
+})
+
+describe('FieldHeader: a project slot that does not move the tabs (M-3)', () => {
+  const slot = () => screen.getByTestId('field-header-project')
+  const skeleton = () => slot().querySelector('.ant-skeleton')
+
+  it('holds one width while the name loads, once it lands, and for the viewer\'s switch', async () => {
+    let release: (v: { code: string; name: string }) => void = () => {}
+    loadGsProjectIdentity.mockReturnValue(new Promise((r) => { release = r }))
+    const view = renderAt('/gs/p1/kpi')
+    expect(slot()).toHaveStyle({ width: '220px' })
+    expect(skeleton()).not.toBeNull()
+    expect(slot()).toHaveAttribute('aria-busy', 'true')
+
+    await act(async () => release({ code: 'BB1', name: 'BlockB1_CPPTS' }))
+    expect(await screen.findByText('BlockB1_CPPTS')).toBeInTheDocument()
+    expect(skeleton()).toBeNull()
+    expect(slot()).not.toHaveAttribute('aria-busy')
+    expect(slot()).toHaveStyle({ width: '220px' })
+    view.unmount()
+
+    authRole.value = 'viewer'
+    renderAt('/gs/p1')
+    await screen.findByRole('combobox', { name: 'Dự án' })
+    expect(slot()).toHaveStyle({ width: '220px' })
+  })
+
+  it('is narrower on a phone, the same for both roles', async () => {
+    setViewport(390)
+    const view = renderAt('/gs/p1')
+    expect(slot()).toHaveStyle({ width: '140px' })
+    view.unmount()
+    authRole.value = 'viewer'
+    renderAt('/gs/p1')
+    expect(slot()).toHaveStyle({ width: '140px' })
+  })
+
+  it('shows the placeholder while the host is still loading the name, and reads nothing', () => {
+    render(
+      <MemoryRouter initialEntries={['/gs/p1']}>
+        <FieldHeader projectId="p1" projectName={null} projectNameLoading />
+      </MemoryRouter>,
+    )
+    expect(skeleton()).not.toBeNull()
+    expect(loadGsProjectIdentity).not.toHaveBeenCalled()
+  })
+
+  it('stops the placeholder when the name cannot be read, keeping the width', async () => {
+    loadGsProjectIdentity.mockRejectedValue(new Error('Failed to fetch'))
+    renderAt('/gs/p1/kpi')
+    await waitFor(() => expect(skeleton()).toBeNull())
+    expect(slot()).toHaveStyle({ width: '220px' })
   })
 })
 

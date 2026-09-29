@@ -1039,7 +1039,7 @@ export function GsScreen() {
     the next one's spinner.
   */
   const header = projectId
-    ? <FieldHeader projectId={projectId} projectName={loading ? null : projectName} />
+    ? <FieldHeader projectId={projectId} projectName={loading ? null : projectName} projectNameLoading={loading} />
     : null
   const inShell = (body: ReactNode) => (
     <Layout style={{ minHeight: '100vh' }}>

@@ -1,5 +1,5 @@
 import { LogoutOutlined } from '@ant-design/icons'
-import { Avatar, Button, Grid, Layout, Select, Tooltip } from 'antd'
+import { Avatar, Button, Grid, Layout, Select, Skeleton, Tooltip } from 'antd'
 import { useEffect, useState, type CSSProperties } from 'react'
 import { Link, matchPath, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../auth/AuthProvider'
@@ -42,7 +42,7 @@ const ellipsis: CSSProperties = { whiteSpace: 'nowrap', overflow: 'hidden', text
  * avatar whose tooltip gives both, and a viewer's `Chỉ xem` goes with them:
  * at 390px the badge would leave the project switch no width to show a name.
  */
-export function FieldHeader({ projectId, projectName: givenName }: {
+export function FieldHeader({ projectId, projectName: givenName, projectNameLoading = false }: {
   projectId: string
   /**
    * The foreman's project name when the host already read the project row
@@ -50,6 +50,8 @@ export function FieldHeader({ projectId, projectName: givenName }: {
    * Omitted, the header takes it from the session or reads it once.
    */
   projectName?: string | null
+  /** The host is still reading the row that name comes from: show the placeholder, read nothing. */
+  projectNameLoading?: boolean
 }) {
   const navigate = useNavigate()
   const { pathname } = useLocation()
@@ -66,11 +68,13 @@ export function FieldHeader({ projectId, projectName: givenName }: {
    * foreman loses a label, and the viewer's switch lists the project on
    * screen, which is on the route.
    */
-  const [identity, setIdentity] = useState<{ projectId: string; name: string } | null>(null)
-  const nameGiven = givenName !== undefined
-  const projectName = nameGiven
-    ? givenName
-    : (identity?.projectId === projectId ? identity.name : cachedProjectName(projectId) ?? null)
+  /** The header's own read, settled: a name, or null when the read failed. */
+  const [identity, setIdentity] = useState<{ projectId: string; name: string | null } | null>(null)
+  const nameGiven = givenName !== undefined || projectNameLoading
+  const cachedName = cachedProjectName(projectId)
+  const ownRead = identity?.projectId === projectId ? identity : null
+  const projectName = nameGiven ? (givenName ?? null) : (cachedName ?? ownRead?.name ?? null)
+  const nameLoading = nameGiven ? projectNameLoading : cachedName === undefined && ownRead === null
   const [projectList, setProjectList] = useState(cachedProjectList)
   const projectOptions = (projectList ?? []).map((p) => ({ value: p.id, label: p.name }))
   useEffect(() => {
@@ -92,7 +96,9 @@ export function FieldHeader({ projectId, projectName: givenName }: {
       .then((name) => {
         if (!cancelled) setIdentity({ projectId, name })
       })
-      .catch(() => {})
+      .catch(() => {
+        if (!cancelled) setIdentity({ projectId, name: null })
+      })
     return () => {
       cancelled = true
     }
@@ -132,11 +138,20 @@ export function FieldHeader({ projectId, projectName: givenName }: {
         ellipsises, the Select narrows). Everything else is flex: none, so on a
         phone logout can never be pushed past the header's clip edge.
       */}
-      <div data-testid="field-header-project" style={{ flex: '0 1 auto', minWidth: 0 }}>
+      {/*
+        One width for both roles and every state (M-3): the tabs start at the
+        same place whether the name is loading, loaded or missing, and whether
+        a name or the viewer's Select sits here.
+      */}
+      <div
+        data-testid="field-header-project"
+        aria-busy={!readOnly && nameLoading ? true : undefined}
+        style={{ flex: '0 1 auto', minWidth: 0, width: phone ? 140 : 220 }}
+      >
         {readOnly ? (
           <Select
             aria-label="Dự án"
-            style={{ width: phone ? 140 : 220, maxWidth: '100%' }}
+            style={{ width: '100%' }}
             value={projectId}
             onChange={(id) => navigate(`${APP_BASE_PATH}/gs/${id}${section.suffix}`)}
             {...searchSelectProps}
@@ -145,9 +160,11 @@ export function FieldHeader({ projectId, projectName: givenName }: {
               : [{ value: projectId, label: projectId }, ...projectOptions]}
           />
         ) : (
-          <div style={{ ...ellipsis, maxWidth: 280, fontWeight: 600 }}>
-            {projectName}
-          </div>
+          nameLoading ? (
+            <Skeleton.Input active size="small" block aria-hidden />
+          ) : (
+            <div style={{ ...ellipsis, fontWeight: 600 }}>{projectName}</div>
+          )
         )}
       </div>
 

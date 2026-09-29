@@ -801,6 +801,9 @@ describe('GsScreen: the header in every state (M-4)', () => {
     expect(within(nav()).getByRole('link', { name: 'KPI' })).toHaveAttribute('href', '/gs/p1/kpi')
     expect(screen.getByRole('button', { name: 'Đăng xuất' })).toBeInTheDocument()
     expect(document.querySelector('.ant-spin-spinning')).not.toBeNull()
+    // The name's placeholder, not a read of its own: the row is on its way (M-1, M-3).
+    expect(screen.getByTestId('field-header-project').querySelector('.ant-skeleton')).not.toBeNull()
+    expect(loadGsProjectIdentity).not.toHaveBeenCalled()
   })
 
   it('keeps it over a failed project load', async () => {
