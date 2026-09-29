@@ -32,6 +32,7 @@ import { ProgressBar } from '../../components/ProgressBar'
 import { RulesDisclosure } from '../../components/RulesDisclosure'
 import { SectionCard } from '../../components/SectionCard'
 import { StatusPill } from '../../components/StatusPill'
+import { roundSharesToTotal } from '../../domain/rounding'
 import { palette } from '../../theme'
 
 interface RollupRow {
@@ -307,6 +308,13 @@ export function DecksScreen() {
         color: DECK_SHADES[(modelDecks.length + i) % DECK_SHADES.length],
       })),
   ]
+  /**
+   * The contribution column as printed (RV6-40): rounded so the column adds up
+   * to the centre figure to the last digit, and `Còn lại` is the printed
+   * complement -- a reader checks this column by adding it up.
+   */
+  const shownShares = roundSharesToTotal(slices.map((sl) => sl.value), rollup.progress)
+  const shownRemainder = 1 - roundSharesToTotal([rollup.progress], rollup.progress)[0]
   const totalArea = modelDecks.reduce((sum, d, i) => (carriesWeight(i) ? sum + d.totalAreaM2 : sum), 0)
   const projectName = projects.find((p) => p.id === projectId)?.name ?? ''
 
@@ -776,7 +784,7 @@ export function DecksScreen() {
                     <div style={{ fontSize: 11, color: palette.textTertiary, textAlign: 'right' }}>
                       Tiến độ · Đóng góp
                     </div>
-                    {slices.map((sl) => (
+                    {slices.map((sl, i) => (
                       <div
                         key={sl.label}
                         data-testid="legend-row"
@@ -804,7 +812,7 @@ export function DecksScreen() {
                           {formatPercent(sl.display ?? sl.value)}
                         </span>
                         <span style={{ width: 56, textAlign: 'right', flex: 'none', fontSize: 12, fontWeight: 600 }}>
-                          {formatPercent(sl.value)}
+                          {formatPercent(shownShares[i])}
                         </span>
                       </div>
                     ))}
@@ -828,7 +836,7 @@ export function DecksScreen() {
                           fontSize: 12, fontWeight: 600, color: palette.textTertiary,
                         }}
                       >
-                        {formatPercent(1 - rollup.progress)}
+                        {formatPercent(shownRemainder)}
                       </span>
                     </div>
                   </div>
