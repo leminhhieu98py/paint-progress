@@ -736,16 +736,21 @@ export function UsersScreen() {
             })
           }
         >
-          <Form.Item
-            name="role"
-            label={<>Loại tài khoản<InfoTip text="GS ghi tiến độ trên tablet. Chỉ xem dành cho người chỉ cần theo dõi và tải báo cáo." /></>}
-          >
-            <Segmented
-              options={[
-                { value: 'gs', label: ROLE_LABEL.gs },
-                { value: 'viewer', label: ROLE_LABEL.viewer },
-              ]}
-            />
+          {/* The (?) beside the control, outside the <label>: inside it, a
+              click would move focus to the field and the tip would join the
+              field's name. */}
+          <Form.Item label="Loại tài khoản">
+            <Space size={4} align="center">
+              <Form.Item name="role" noStyle>
+                <Segmented
+                  options={[
+                    { value: 'gs', label: ROLE_LABEL.gs },
+                    { value: 'viewer', label: ROLE_LABEL.viewer },
+                  ]}
+                />
+              </Form.Item>
+              <InfoTip text="GS ghi tiến độ trên tablet. Chỉ xem dành cho người chỉ cần theo dõi và tải báo cáo." />
+            </Space>
           </Form.Item>
           <Form.Item
             name="username"

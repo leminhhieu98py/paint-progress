@@ -1,4 +1,4 @@
-import { screen, waitFor } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderApp } from '../../test/renderApp'
@@ -492,7 +492,11 @@ describe('UsersScreen — explanatory copy (CPY-01)', () => {
     const tip = await screen.findByRole('img', {
       name: 'GS ghi tiến độ trên tablet. Chỉ xem dành cho người chỉ cần theo dõi và tải báo cáo.',
     })
-    expect(tip.closest('label')).toHaveTextContent(/^Loại tài khoản$/)
+    // Outside the <label>: a click on (?) must not move focus to the field,
+    // and the tip is not part of the field's name. It sits in the same form row.
+    expect(tip.closest('label')).toBeNull()
+    const row = tip.closest('.ant-form-item') as HTMLElement
+    expect(within(row).getByText('Loại tài khoản').closest('label')).toHaveTextContent(/^Loại tài khoản$/)
     expect(screen.queryByText(/^GS ghi tiến độ trên tablet/)).toBeNull()
     expect(screen.queryByText(/Bạn giao mật khẩu này cho GS/)).toBeNull()
   })
