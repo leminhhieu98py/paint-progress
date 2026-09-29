@@ -23,6 +23,16 @@ const dayLabel = (day: string) => `${day.slice(8, 10)}/${day.slice(5, 7)}`
 
 const AXIS = { fontSize: 12, fill: palette.textTertiary }
 
+/**
+ * Recharts paints a legend entry's TEXT in its series colour, so a yellow or
+ * a light-grey coat printed a label nobody could read on white (QA F3). The
+ * marker beside it already carries the colour; the text reads in the neutral
+ * secondary colour on every chart here.
+ */
+const legendText = (value: unknown) => (
+  <span style={{ color: palette.textSecondary }}>{String(value)}</span>
+)
+
 export function EfficiencyLineChart({
   data,
   stages,
@@ -49,7 +59,7 @@ export function EfficiencyLineChart({
             labelFormatter={(day) => dayLabel(String(day))}
             formatter={(value) => (typeof value === 'number' ? formatMhrPerM2(value) : '')}
           />
-          <Legend />
+          <Legend formatter={legendText} />
           {stages.map((s) => (
             <Line
               key={s.name}
@@ -80,7 +90,7 @@ export function HoursBarChart({ data }: { data: Array<{ day: string; hours: numb
             labelFormatter={(day) => dayLabel(String(day))}
             formatter={(value) => (typeof value === 'number' ? formatHours(value) : '')}
           />
-          <Legend />
+          <Legend formatter={legendText} />
           <Bar dataKey="hours" name="Thực hiện" stackId="h" fill={palette.accent} isAnimationActive={false} />
           <Bar dataKey="wasteHours" name="Hao phí" stackId="h" fill={fieldError} isAnimationActive={false} />
         </BarChart>
@@ -168,7 +178,7 @@ export function KpiComboChart({
                 : formatAreaM2(value)
             }}
           />
-          <Legend />
+          <Legend formatter={legendText} />
           <Bar
             yAxisId="m2"
             dataKey="planM2"

@@ -1,8 +1,8 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import type { KpiDay } from '../../domain/kpi'
 import { palette } from '../../theme'
-import { KpiComboChart } from './charts'
+import { EfficiencyLineChart, HoursBarChart, KpiComboChart } from './charts'
 
 /**
  * RV6-10's zoom/pan Brush and the container height it needs. jsdom's
@@ -23,6 +23,12 @@ vi.mock('recharts', async (importOriginal) => {
     ComposedChart: ({ children }: { children: React.ReactNode }) => (
       <div data-testid="composed-chart">{children}</div>
     ),
+    LineChart: ({ children }: { children: React.ReactNode }) => (
+      <div data-testid="line-chart">{children}</div>
+    ),
+    BarChart: ({ children }: { children: React.ReactNode }) => (
+      <div data-testid="bar-chart">{children}</div>
+    ),
     Brush: (props: Record<string, unknown>) => (
       <div data-testid="kpi-brush" data-day-key={String(props.dataKey)} />
     ),
@@ -30,7 +36,12 @@ vi.mock('recharts', async (importOriginal) => {
     XAxis: () => null,
     YAxis: () => null,
     Tooltip: () => null,
-    Legend: () => null,
+    // The legend prints one entry through the chart's own `formatter`, which
+    // is where QA F3 puts the label's colour; the real Legend needs a sized
+    // chart to render anything at all.
+    Legend: (props: { formatter?: (value: string) => React.ReactNode }) => (
+      <div data-testid="legend">{props.formatter ? props.formatter('Kế hoạch') : 'Kế hoạch'}</div>
+    ),
     // The four series print the one prop RV6-29 changes -- their colour -- and
     // the plan line its dash, which RV6-29 must leave alone.
     Bar: (props: Record<string, unknown>) => (
@@ -116,5 +127,32 @@ describe('KpiComboChart: the work\'s unit (RV6-35)', () => {
     render(<KpiComboChart data={DATA} />)
     expect(name('planM2')).toBe('Kế hoạch (m²/ngày)')
     expect(name('actualM2')).toBe('Thực hiện (m²/ngày)')
+  })
+})
+
+describe('legend text colour (QA F3)', () => {
+  // Recharts paints a legend entry's text in the series colour, so a yellow
+  // or a grey coat was unreadable on white. The marker keeps the colour; the
+  // label reads in the neutral secondary text colour on every chart.
+  const legendText = () => within(screen.getByTestId('legend')).getByText('Kế hoạch')
+
+  it('reads the KPI combo legend in the secondary text colour', () => {
+    render(<KpiComboChart data={DATA} colors={{ plan: '#fadb14', actual: '#00ff1e' }} />)
+    expect(legendText()).toHaveStyle({ color: palette.textSecondary })
+  })
+
+  it('reads the efficiency line legend in the secondary text colour', () => {
+    render(
+      <EfficiencyLineChart
+        data={[{ day: '2026-09-01', 'Coat 1': 0.5 }]}
+        stages={[{ name: 'Coat 1', color: '#fadb14' }]}
+      />,
+    )
+    expect(legendText()).toHaveStyle({ color: palette.textSecondary })
+  })
+
+  it('reads the hours bar legend in the secondary text colour', () => {
+    render(<HoursBarChart data={[{ day: '2026-09-01', hours: 8, wasteHours: 1 }]} />)
+    expect(legendText()).toHaveStyle({ color: palette.textSecondary })
   })
 })
