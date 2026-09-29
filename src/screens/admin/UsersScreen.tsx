@@ -14,7 +14,7 @@ import { PageBody, PageHeader } from '../../components/PageHeader'
 import { RulesDisclosure } from '../../components/RulesDisclosure'
 import { SectionCard } from '../../components/SectionCard'
 import { modalProps } from '../../components/modalChrome'
-import { StatusPill } from '../../components/StatusPill'
+import { CategoryBadge } from '../../components/CategoryBadge'
 import { searchSelectProps } from '../../components/searchSelect'
 import { tablePagination } from '../../components/tablePagination'
 import {
@@ -362,12 +362,12 @@ export function UsersScreen() {
   }
   const reportError = useCallback((m: string) => setError(m), [])
 
-  const statusOf = (user: GsUser) =>
-    user.hidden
-      ? <StatusPill tone="off">Đã ẩn</StatusPill>
-      : user.active
-        ? <StatusPill tone="ok">Đang dùng</StatusPill>
-        : <StatusPill tone="off">Đã khoá</StatusPill>
+  const statusOf = (user: GsUser) => (
+    <CategoryBadge
+      category="accountStatus"
+      value={user.hidden ? 'Đã ẩn' : user.active ? 'Đang dùng' : 'Đã khoá'}
+    />
+  )
 
   return (
     <>
@@ -452,7 +452,7 @@ export function UsersScreen() {
                 title: 'Loại',
                 dataIndex: 'role',
                 width: 90,
-                render: (role: AccountRole) => ROLE_LABEL[role],
+                render: (role: AccountRole) => <CategoryBadge category="role" value={ROLE_LABEL[role]} />,
               },
               {
                 title: 'Dự án',

@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import { palette } from '../theme'
 
-export type StatusTone = 'ok' | 'warn' | 'off'
+export type StatusTone = 'ok' | 'warn' | 'off' | 'accent' | 'error' | 'slate'
 
 /**
  * `ok` is a fact that holds -- a drawing is attached, an account is live.
@@ -9,11 +9,18 @@ export type StatusTone = 'ok' | 'warn' | 'off'
  * bays for a foreman to tap. `off` is deliberate absence, not a problem: a
  * deactivated account is the admin's own decision and should not read as an
  * alarm.
+ *
+ * `accent`, `error` and `slate` carry no verdict; they exist so a column of
+ * category badges (UI-04, `CategoryBadge`) can give each value of a small set
+ * its own colour. Every pair is palette-only and clears AA on the text.
  */
 const TONES: Record<StatusTone, { background: string; color: string }> = {
   ok: { background: palette.successBg, color: '#177245' },
   warn: { background: palette.warningBg, color: '#9A5B12' },
   off: { background: palette.bgHover, color: palette.textTertiary },
+  accent: { background: palette.accentTint, color: palette.accentHover },
+  error: { background: palette.errorBg, color: palette.error },
+  slate: { background: palette.track, color: palette.ink },
 }
 
 export function StatusPill({ tone, children }: { tone: StatusTone; children: ReactNode }) {

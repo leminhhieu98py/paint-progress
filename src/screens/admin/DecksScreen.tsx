@@ -31,7 +31,7 @@ import { PageBody, PageHeader } from '../../components/PageHeader'
 import { ProgressBar } from '../../components/ProgressBar'
 import { RulesDisclosure } from '../../components/RulesDisclosure'
 import { SectionCard } from '../../components/SectionCard'
-import { StatusPill } from '../../components/StatusPill'
+import { CategoryBadge } from '../../components/CategoryBadge'
 import { searchSelectProps } from '../../components/searchSelect'
 import { tablePagination } from '../../components/tablePagination'
 import { roundSharesToTotal } from '../../domain/rounding'
@@ -522,9 +522,7 @@ export function DecksScreen() {
                 key: 'drawing',
                 width: 130,
                 render: (_v, deck) => (
-                  <StatusPill tone={deck.imagePath ? 'ok' : 'warn'}>
-                    {deck.imagePath ? 'Đã có' : 'Chưa có'}
-                  </StatusPill>
+                  <CategoryBadge category="drawing" value={deck.imagePath ? 'Đã có' : 'Chưa có'} />
                 ),
               },
               {
@@ -722,7 +720,7 @@ export function DecksScreen() {
                         dataIndex: 'kind',
                         key: 'kind',
                         width: 100,
-                        render: (k: WorkKind) => WORK_KIND_LABEL[k],
+                        render: (k: WorkKind) => <CategoryBadge category="workKind" value={WORK_KIND_LABEL[k]} />,
                       },
                       { title: 'Trọng số', dataIndex: 'weight', key: 'weight', width: 110, align: 'right' },
                       {
@@ -730,7 +728,7 @@ export function DecksScreen() {
                         dataIndex: 'counts',
                         key: 'counts',
                         width: 150,
-                        render: (c: boolean) => (c ? 'Có' : 'Không'),
+                        render: (c: boolean) => <CategoryBadge category="counts" value={c ? 'Có' : 'Không'} />,
                       },
                       {
                         title: 'Tiến độ',

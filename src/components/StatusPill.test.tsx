@@ -13,6 +13,9 @@ describe('StatusPill', () => {
     ['ok' as const, palette.successBg],
     ['warn' as const, palette.warningBg],
     ['off' as const, palette.bgHover],
+    ['accent' as const, palette.accentTint],
+    ['error' as const, palette.errorBg],
+    ['slate' as const, palette.track],
   ])('gives the %s tone its own background', (tone, background) => {
     render(<StatusPill tone={tone}>x</StatusPill>)
     expect(screen.getByText('x')).toHaveStyle({ background })

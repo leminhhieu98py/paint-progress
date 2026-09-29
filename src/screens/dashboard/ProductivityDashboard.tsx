@@ -5,6 +5,7 @@ import { useMemo, useState } from 'react'
 import { EmptyState } from '../../components/EmptyState'
 import { SectionCard } from '../../components/SectionCard'
 import { StatCard } from '../../components/StatCard'
+import { WasteReasonBadge } from '../../components/CategoryBadge'
 import { searchSelectProps } from '../../components/searchSelect'
 import { tablePagination } from '../../components/tablePagination'
 import {
@@ -410,7 +411,7 @@ export function ProductivityDashboard({
                 {
                   title: 'Lý do',
                   dataIndex: 'reason',
-                  render: (v: string) => (v === '' ? <span style={{ color: palette.textQuaternary }}>Không ghi lý do</span> : v),
+                  render: (v: string) => (v === '' ? <span style={{ color: palette.textQuaternary }}>Không ghi lý do</span> : <WasteReasonBadge reason={v} />),
                 },
                 { title: 'Giờ', align: 'right', render: (_, r) => formatHours(r.hours) },
                 { title: 'Số lần', dataIndex: 'count', align: 'right' },
