@@ -306,6 +306,8 @@ export function DeckProgressPanel({
 }) {
   /** The deck with one view per bays work it is part of (0024). */
   const [deckWorks, setDeckWorks] = useState<DeckWorks | null>(null)
+  /** A lens header's floor: Ghi chú (n) is in A's alone, and B's must match it (Q1). */
+  const controlHeight = useControlHeight()
   /** The work the lens, ring, zones and notes are scoped to. */
   const [workId, setWorkId] = useState<string | null>(null)
   const [imageUrl, setImageUrl] = useState<string | null>(null)
@@ -1255,7 +1257,10 @@ export function DeckProgressPanel({
         }}
       >
         <div style={{ padding: `${space.md}px ${space.xl}px`, display: 'flex', alignItems: 'flex-start', gap: 12 }}>
-          <div style={{ minWidth: 0, flex: 1 }}>
+          {/* At least a control's height on both lenses, so B's drawing
+              starts on the line of A's, whose header also carries the
+              default-height Ghi chú button (Q1). */}
+          <div style={{ minWidth: 0, flex: 1, minHeight: controlHeight }}>
             <h3 style={{ margin: 0, ...type.cardTitle, letterSpacing: '-0.015em' }}>
               {`Tiến độ · ${lens.title}`}
               {/* The map legend: needed once, not read every visit (CPY-01). */}

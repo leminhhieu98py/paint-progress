@@ -1,4 +1,4 @@
-import { App as AntApp } from 'antd'
+import { App as AntApp, theme } from 'antd'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -203,6 +203,23 @@ describe('DeckProgressPanel', () => {
     expect(screen.getByTestId('canvas')).toHaveAttribute('data-image', 'https://signed/p1/d1.png')
     expect(within(screen.getByTestId('lens-A')).getByText('Tiến độ · Blast + Coat 1'))
       .toBeInTheDocument()
+  })
+
+  it('starts both drawings on one line: each lens header holds a control\'s height (Q1)', async () => {
+    // Ghi chú (n) is a default-height button in lens A's header alone; B's
+    // header held only its title and put B's drawing 14px higher.
+    renderPanel()
+    await screen.findByTestId('lens-A')
+    await userEvent.click(screen.getByText('So sánh hai lớp'))
+    await screen.findByTestId('lens-B')
+    const titles = screen.getAllByRole('heading', { level: 3, name: /^Tiến độ · / })
+    expect(titles).toHaveLength(2)
+    const { controlHeight } = theme.getDesignToken()
+    for (const h of titles) expect(h.parentElement).toHaveStyle({ minHeight: `${controlHeight}px` })
+    // The button is the one control there, at the default height (CTL-01).
+    const notes = screen.getByRole('button', { name: /^Ghi chú \(/ })
+    expect(notes).not.toHaveClass('ant-btn-sm')
+    expect(notes.parentElement).toBe(titles[0].parentElement!.parentElement)
   })
 
   it('puts a second lens beside the first, on demand, sharing one zoom', async () => {
