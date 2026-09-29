@@ -68,8 +68,24 @@ describe('FilterBar with more than one control (FLT-02)', () => {
     expect(buttons.map((b) => b.textContent)).toEqual(['Đặt lại', 'Tìm'])
     expect(buttons[1]).toHaveClass('ant-btn-primary')
     expect(buttons[1].querySelector('.anticon-search')).not.toBeNull()
-    expect(buttons[0]).toHaveClass('ant-btn-text')
     expect(bar.lastElementChild?.lastElementChild).toBe(buttons[1])
+  })
+
+  it('draws Đặt lại as an outlined button, the height Tìm reads at (FLT-06)', () => {
+    renderBar()
+    const reset = screen.getByRole('button', { name: 'Đặt lại' })
+    expect(reset).toHaveClass('ant-btn-default', 'ant-btn-variant-outlined')
+    expect(reset).not.toHaveClass('ant-btn-text')
+  })
+
+  it('puts the pair at the right end of the bar, the filters on the left (FLT-06)', () => {
+    const { bar } = renderBar()
+    const unit = bar.lastElementChild as HTMLElement
+    expect(unit).toContainElement(screen.getByRole('button', { name: /Tìm/ }))
+    // The bar spans its row, so auto on the left takes up whatever the
+    // filters leave: the pair's own row when the bar wraps, too.
+    expect(unit).toHaveStyle({ marginLeft: 'auto' })
+    expect(bar).toHaveStyle({ width: '100%' })
   })
 
   it('keeps Đặt lại and Tìm together, one unit the bar never wraps apart (FLT-05)', () => {

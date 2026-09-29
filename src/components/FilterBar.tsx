@@ -15,7 +15,7 @@ import { space } from '../theme'
  *
  * With more than one control the bar holds a draft (FLT-02, `useDraftFilters`)
  * and ends with `Đặt lại` and `Tìm`, one unit that never wraps apart
- * (FLT-05): pass `onApply` and `onReset`. Enter in a
+ * (FLT-05), at the bar's right end (FLT-06): pass `onApply` and `onReset`. Enter in a
  * text field of the bar (an input of type text or search) applies too; Enter
  * in a select, a date picker or a Segmented option is theirs and does not.
  * `applyLoading` holds Tìm (and Enter) while the options a draft depends on
@@ -47,13 +47,15 @@ export function FilterBar({
       role="search"
       aria-label="Bộ lọc"
       onKeyDown={onKeyDown}
-      style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: space.md, minWidth: 0 }}
+      style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: space.md, minWidth: 0, width: '100%' }}
     >
       {children}
       {onApply !== undefined && (
-        // One unit (FLT-05): the bar wraps whole controls, never Tìm away from Đặt lại.
-        <div style={{ display: 'flex', flexWrap: 'nowrap', gap: space.sm, flex: 'none' }}>
-          <Button type="text" onClick={onReset}>Đặt lại</Button>
+        // One unit (FLT-05): the bar wraps whole controls, never Tìm away from
+        // Đặt lại. At the bar's right end, on its last row when it wraps
+        // (FLT-06); Đặt lại outlined, so the two read at one height.
+        <div style={{ display: 'flex', flexWrap: 'nowrap', gap: space.sm, flex: 'none', marginLeft: 'auto' }}>
+          <Button onClick={onReset}>Đặt lại</Button>
           <Button type="primary" icon={<SearchOutlined aria-hidden />} loading={applyLoading} onClick={onApply}>
             Tìm
           </Button>
