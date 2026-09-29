@@ -392,7 +392,7 @@ describe('DeckEditor', () => {
     // longer names the operation (delete/merge/mesh) -- it only ever
     // distinguishes zone impact from everything else.
     expect(screen.getByText('Thao tác này ảnh hưởng đến zone')).toBeInTheDocument()
-    expect(screen.getByText(/Các ô này đang thuộc zone/)).toBeInTheDocument()
+    expect(screen.getByText('Các ô này rời khỏi zone của chúng:')).toBeInTheDocument()
     expect(syncCells).not.toHaveBeenCalled()
   })
 
@@ -405,7 +405,10 @@ describe('DeckEditor', () => {
     await selectAll()
     press('Delete')
     await saveDeck()
-    expect(await screen.findByText(/Sau thao tác này sàn sẽ không còn ô nào: 1 ô hiện có sẽ bị\s+xoá\./)).toBeInTheDocument()
+    // One present-tense sentence, no advice after it (RUL-01).
+    expect(await screen.findByText('Thao tác này xoá cả 1 ô hiện có của sàn.')).toBeInTheDocument()
+    expect(screen.getByText('Lần lưu này lưu cả các đường chia trên bản vẽ và diện tích sàn đang nhập.')).toBeInTheDocument()
+    expect(screen.queryByText(/sẽ|bạn/)).toBeNull()
     expect(screen.queryByText(/cơ sở dữ liệu/)).toBeNull()
   })
 
@@ -488,8 +491,8 @@ describe('DeckEditor', () => {
     // since both lists are non-empty simultaneously. Folding them back under
     // one umbrella sentence (the round-2 defect) can show at most one of the
     // two, so this pair fails under that mutation.
-    expect(screen.getByText('Các ô này sẽ mất tiến độ đã ghi:')).toBeInTheDocument()
-    expect(screen.getByText(/Các ô này giữ tiến độ đã ghi nhưng diện tích thay đổi/)).toBeInTheDocument()
+    expect(screen.getByText('Các ô này mất tiến độ đã ghi:')).toBeInTheDocument()
+    expect(screen.getByText('Các ô này giữ tiến độ đã ghi và đổi diện tích cùng phần trăm hoàn thành:')).toBeInTheDocument()
     // No sentence may claim, as an umbrella, that recorded progress is being
     // wiped -- R1C1 is listed below and keeps its progress; the round-2 lead
     // paragraph asserted the opposite about it.
@@ -522,7 +525,7 @@ describe('DeckEditor', () => {
     // are the two where the disclosure is least expected and most needed, and
     // 'mesh' is the one where a conditional version would most plausibly have
     // been thought sufficient.
-    const DISCLOSURE = /cũng lưu luôn bảng guide và diện tích sàn/
+    const DISCLOSURE = /lưu cả các đường chia trên bản vẽ và diện tích sàn/
     const twoTickedCells = [
       { id: 'c1', code: 'R1C1', x: 0, y: 0, w: 0.5, h: 1, areaM2: 100, stageId: 'coat1' },
       { id: 'c2', code: 'R1C2', x: 0.5, y: 0, w: 0.5, h: 1, areaM2: 100, stageId: 'coat3' },
@@ -607,12 +610,12 @@ describe('DeckEditor', () => {
     expect(await screen.findByText('Xác nhận thay đổi lưới ô')).toBeInTheDocument()
     // vi-VN formatted, in the exact form the review specified.
     expect(screen.getByText(listItem('R1C1 — Sơn · Coat 3: 232,00 → 400,00 m²'))).toBeInTheDocument()
-    expect(screen.getByText(/Các ô này giữ tiến độ đã ghi nhưng diện tích thay đổi/)).toBeInTheDocument()
+    expect(screen.getByText('Các ô này giữ tiến độ đã ghi và đổi diện tích cùng phần trăm hoàn thành:')).toBeInTheDocument()
     // Neither of the other two sections applies here -- there is no zone
     // impact and nothing is actually being deleted -- so asserting either
     // would catch this dialog quietly reverting to an overstatement.
     expect(screen.queryByText(/Các ô này đang thuộc zone/)).toBeNull()
-    expect(screen.queryByText('Các ô này sẽ mất tiến độ đã ghi:')).toBeNull()
+    expect(screen.queryByText('Các ô này mất tiến độ đã ghi:')).toBeNull()
     expect(screen.queryByText(/sẽ xoá tiến độ đã ghi/)).toBeNull()
     expect(syncCells).not.toHaveBeenCalled()
 
@@ -747,7 +750,7 @@ await userEvent.click(screen.getByRole('button', { name: 'chọn R1C1' }))
     expect(await screen.findByText('Xác nhận thay đổi lưới ô')).toBeInTheDocument()
     // The progress-loss section carries its own claim now; there is no
     // shared sentence left to assert "no zone impact" against.
-    expect(screen.getByText('Các ô này sẽ mất tiến độ đã ghi:')).toBeInTheDocument()
+    expect(screen.getByText('Các ô này mất tiến độ đã ghi:')).toBeInTheDocument()
     expect(screen.queryByText(/Các ô này đang thuộc zone/)).toBeNull()
   })
 
@@ -874,7 +877,7 @@ await userEvent.click(screen.getByRole('button', { name: 'chọn R1C1' }))
     await saveDeck()
 
     expect(await screen.findByText(listItem('R1C1 — Sơn · Coat 2: 0,00 → 232,00 m²'))).toBeInTheDocument()
-    expect(screen.getByText(/Các ô này giữ tiến độ đã ghi nhưng diện tích thay đổi/)).toBeInTheDocument()
+    expect(screen.getByText('Các ô này giữ tiến độ đã ghi và đổi diện tích cùng phần trăm hoàn thành:')).toBeInTheDocument()
     expect(syncCells).not.toHaveBeenCalled()
   })
 
@@ -929,7 +932,7 @@ await userEvent.click(screen.getByRole('button', { name: 'chọn R1C1' }))
 
     expect(await screen.findByText('Xoá toàn bộ lưới ô của sàn')).toBeInTheDocument()
     // The count, so the admin can tell a two-cell mistake from the whole deck.
-    expect(screen.getByText(/2 ô hiện có sẽ bị xoá/)).toBeInTheDocument()
+    expect(screen.getByText('Thao tác này xoá cả 2 ô hiện có của sàn.')).toBeInTheDocument()
     expect(syncCells).not.toHaveBeenCalled()
 
     syncCells.mockResolvedValue(undefined)

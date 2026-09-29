@@ -103,21 +103,19 @@ export function MeshEditDialog({
         wrong on the dialog whose whole job is to be trusted.
       */}
       <Typography.Paragraph>
-        Thao tác này cũng lưu luôn bảng guide và diện tích sàn đang nhập trên
-        màn hình — kể cả khi bạn chỉ định xoá hoặc gộp ô.
+        Lần lưu này lưu cả các đường chia trên bản vẽ và diện tích sàn đang nhập.
       </Typography.Paragraph>
 
       {pending && pending.wipes > 0 && (
         <Typography.Paragraph strong>
-          Sau thao tác này sàn sẽ không còn ô nào: {pending.wipes} ô hiện có sẽ bị
-          xoá. Muốn kẻ lại lưới thì phải sinh lưới ô mới.
+          {`Thao tác này xoá cả ${pending.wipes} ô hiện có của sàn.`}
         </Typography.Paragraph>
       )}
 
       {pending && pending.impact.length > 0 && (
         <>
           <Typography.Paragraph strong>
-            Các ô này đang thuộc zone. Xoá hoặc gộp sẽ làm chúng rời khỏi zone:
+            Các ô này rời khỏi zone của chúng:
           </Typography.Paragraph>
           <ul>
             {pending.impact.map((z) => (
@@ -132,7 +130,7 @@ export function MeshEditDialog({
       {pending && pending.progressLoss.length > 0 && (
         <>
           <Typography.Paragraph strong>
-            Các ô này sẽ mất tiến độ đã ghi:
+            Các ô này mất tiến độ đã ghi:
           </Typography.Paragraph>
           <ul>
             {pending.progressLoss.map((p) => (
@@ -154,8 +152,7 @@ export function MeshEditDialog({
             tests, for 'merge' and 'mesh'. Not dead code: kept intentionally.
           */}
           <Typography.Paragraph strong>
-            Các ô này giữ tiến độ đã ghi nhưng diện tích thay đổi, nên phần trăm
-            hoàn thành sẽ thay đổi theo:
+            Các ô này giữ tiến độ đã ghi và đổi diện tích cùng phần trăm hoàn thành:
           </Typography.Paragraph>
           <ul>
             {pending.reshaped.map((r) => (

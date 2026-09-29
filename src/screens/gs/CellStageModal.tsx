@@ -553,7 +553,7 @@ export function CellStageModal({
               type="error"
               showIcon
               message="Đang chuyển ô về công đoạn trước"
-              description="Tiến độ đã ghi của ô này sẽ bị hạ xuống. Chỉ làm khi thực sự cần sửa sai."
+              description="Lưu lần này hạ tiến độ đã ghi của ô về công đoạn đã chọn."
             />
           )}
         </Space>

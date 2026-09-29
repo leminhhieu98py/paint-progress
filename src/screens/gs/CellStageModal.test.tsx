@@ -174,6 +174,8 @@ describe('CellStageModal', () => {
     // "warning" here would look like the divergence banner, which is
     // informational and routinely ignored.
     expect(document.querySelector('.ant-alert-error')).not.toBeNull()
+    // One present-tense sentence (RUL-01).
+    expect(screen.getByText('Lưu lần này hạ tiến độ đã ghi của ô về công đoạn đã chọn.')).toBeInTheDocument()
   })
 
   it('does not warn for a forward move', async () => {
