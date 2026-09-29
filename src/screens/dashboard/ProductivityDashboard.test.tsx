@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { EMPTY_EFFORT, type DeckEvent, type Effort, type WorkModel } from '../../domain/types'
@@ -336,6 +336,17 @@ describe('ProductivityDashboard — the placeholder rows (Feedback Rv5, item 5)'
     // appear as a row of its own either.
     renderDashboard([...EVENTS, sentBack({ wasteHours: 2, wasteReason: 'Sửa lại lớp sơn' })])
     expect(within(screen.getByTestId('waste-table')).queryByText('Sửa lại lớp sơn')).toBeNull()
+  })
+
+  it('waits for the typing to pause before it filters the crew table (FLT-08)', async () => {
+    renderDashboard()
+    const before = leadRows().length
+    expect(before).toBeGreaterThan(1)
+    fireEvent.change(screen.getByRole('textbox', { name: 'Tìm nhóm trưởng' }), { target: { value: 'to 2' } })
+    // Typed, and shown in the box at once, but not yet applied to the table.
+    expect(screen.getByRole('textbox', { name: 'Tìm nhóm trưởng' })).toHaveValue('to 2')
+    expect(leadRows()).toHaveLength(before)
+    await waitFor(() => expect(leadRows()).toHaveLength(1))
   })
 
   it('filters the crew table by name, case- and accent-insensitively, and nothing else', async () => {
