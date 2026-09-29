@@ -28,7 +28,7 @@ import {
 import {
   createZone, deleteZone, listDeckZones, setZoneActual, setZoneCells, updateZone,
 } from '../../lib/zonesApi'
-import { swatchStyle, useControlHeight } from '../../components/ColorField'
+import { swatchStyle, useControlHeight } from '../../components/swatch'
 import { ConsequenceModal } from '../../components/ConsequenceModal'
 import { Donut, type DonutSlice } from '../../components/Donut'
 import { legendRowProps } from '../../components/ringHover'

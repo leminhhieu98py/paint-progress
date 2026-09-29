@@ -15,7 +15,8 @@ import {
   listWorkStages, roundStageWeight, saveWorkStages, stagesRemovedBy, STAGE_WEIGHT_EPSILON,
 } from '../../lib/decksApi'
 import { randomUUID } from '../../lib/uuid'
-import { ColorField, HEX_COLOR, swatchStyle, useControlHeight } from '../../components/ColorField'
+import { ColorField, HEX_COLOR } from '../../components/ColorField'
+import { swatchStyle, useControlHeight } from '../../components/swatch'
 import { ConsequenceModal } from '../../components/ConsequenceModal'
 import { EmptyState } from '../../components/EmptyState'
 import { InfoTip } from '../../components/InfoTip'
