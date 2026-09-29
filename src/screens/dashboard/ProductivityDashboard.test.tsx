@@ -98,6 +98,11 @@ const renderDashboard = (events = EVENTS) =>
 
 const cards = () => within(screen.getByTestId('dashboard-cards'))
 const stageRows = () => within(screen.getByTestId('stage-table')).getAllByRole('row').slice(1)
+/** The coverage fact beside the stage table's title (HLT-01). */
+const coverageFact = () => {
+  const card = screen.getByRole('heading', { level: 2, name: 'Hiệu suất theo công đoạn' }).closest('section') as HTMLElement
+  return within(card).getByTestId('key-fact')
+}
 
 describe('ProductivityDashboard', () => {
   it('sums the first work\'s hours, area, overall ratio and lost hours into the cards', () => {
@@ -117,12 +122,15 @@ describe('ProductivityDashboard', () => {
     expect(cards().queryByText('theo bộ lọc trên')).toBeNull()
   })
 
-  it('says how much of the history the ratios stand on', () => {
+  it('says how much of the history the ratios stand on, as an amber fact beside the stage table\'s title (HLT-01)', () => {
     renderDashboard()
-    const coverage = screen.getByTestId('dashboard-coverage')
-    expect(coverage).toHaveTextContent(/^3 \/ 4 lần cập nhật có ghi giờ công\.$/)
+    const coverage = coverageFact()
+    expect(coverage).toHaveTextContent(/^3 \/ 4 lần cập nhật có ghi giờ công$/)
+    expect(coverage).toHaveStyle({ background: palette.warningBg, color: palette.warning })
     // What the unrecorded ones mean for the ratios, on its (?) (CPY-01).
     expect(within(coverage).getByRole('img', { name: 'Các lần chưa ghi không tính vào hiệu suất.' })).toBeInTheDocument()
+    // No line of its own any more.
+    expect(screen.queryByTestId('dashboard-coverage')).toBeNull()
   })
 
   it('explains the two computed columns on their headers, not in card summaries (CPY-01)', () => {
@@ -190,7 +198,10 @@ describe('ProductivityDashboard', () => {
     await userEvent.click(screen.getByRole('combobox', { name: 'Sàn' }))
     await userEvent.click(await screen.findByTitle('Sàn B'))
     expect(cards().getByText('220,0')).toBeInTheDocument()
-    expect(screen.getByTestId('dashboard-coverage')).toHaveTextContent('1 / 1 lần cập nhật')
+    // Every update in scope has hours: a plain fact, nothing to explain.
+    expect(coverageFact()).toHaveTextContent('1 / 1 lần cập nhật')
+    expect(coverageFact()).toHaveStyle({ background: palette.bgSubtle })
+    expect(within(coverageFact()).queryByRole('img')).toBeNull()
     expect(stageRows()).toHaveLength(1)
   })
 

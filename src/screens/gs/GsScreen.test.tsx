@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { endSession } from '../../lib/sessionCache'
 import { chooseOption, openDropdown } from '../../test/select'
 import { setViewport } from '../../test/viewport'
+import { keyFactTexts } from '../../test/copy'
 import { FieldHeader } from './FieldHeader'
 import { GsScreen } from './GsScreen'
 
@@ -1933,6 +1934,9 @@ describe('GsScreen: a deck its cells over-cover', () => {
     renderScreen()
     await screen.findByRole('button', { name: 'ô R1C1' })
     expect(screen.queryByText(/\d+ ô · /)).toBeNull()
+    // The area is the deck card's one fact, a KeyFacts pill (HLT-01).
+    const card = screen.getByRole('button', { name: 'ô R1C1' }).closest('section') as HTMLElement
+    expect(keyFactTexts(card)).toEqual(['1.000,00 m²'])
   })
 
 })
@@ -2761,8 +2765,10 @@ describe('GsScreen: the active work\'s quantity and unit (RV6-35)', () => {
     renderScreen()
     await screen.findByRole('button', { name: 'ô R1C1' })
     // The section header under the drawing and the deck card both name the
-    // deck's declared quantity: 1.000 tấn, not 1.000 m².
-    await waitFor(() => expect(screen.getAllByText('1.000,00 tấn').length).toBeGreaterThanOrEqual(2))
+    // deck's declared quantity: 1.000 tấn, not 1.000 m². The header's is a
+    // KeyFacts pill (HLT-01), the card's one line.
+    await waitFor(() => expect(keyFactTexts()).toContain('1.000,00 tấn'))
+    expect(screen.getAllByText('1.000,00 tấn').length).toBeGreaterThanOrEqual(1)
     expect(screen.getByText('Khối lượng sàn')).toBeInTheDocument()
     expect(within(screen.getByTestId('gs-stage-rollup')).getByText('tấn sàn')).toBeInTheDocument()
     expect(within(screen.getByTestId('gs-deck-today')).getAllByText('0,00 tấn').length).toBeGreaterThan(0)

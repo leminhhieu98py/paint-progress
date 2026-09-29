@@ -1410,7 +1410,7 @@ export function GsScreen() {
         <div style={{ minWidth: 0 }}>
           <SectionCard
             title={deck?.name}
-            summary={deck ? `${formatAreaM2(deck.totalAreaM2)} ${unit}` : undefined}
+            facts={deck ? [{ value: formatAreaM2(deck.totalAreaM2), label: unit }] : undefined}
             bodyPadding={0}
             // On a phone the coat select grows into the header row's free width.
             extraFill={phone}

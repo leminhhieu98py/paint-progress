@@ -1,5 +1,5 @@
 import { SearchOutlined } from '@ant-design/icons'
-import { Input, Table, Typography } from 'antd'
+import { Input, Table } from 'antd'
 import dayjs from 'dayjs'
 import { useMemo, useState, type ReactNode } from 'react'
 import { EmptyState } from '../../components/EmptyState'
@@ -303,15 +303,19 @@ export function ProductivityDashboard({
         />
       </div>
 
-      <Typography.Text
-        data-testid="dashboard-coverage"
-        type={coverage.withHours < coverage.total ? 'warning' : 'secondary'}
+      <SectionCard
+        title="Hiệu suất theo công đoạn"
+        // How much of the history the ratios stand on; missing hours are a
+        // data-quality warning (HLT-01).
+        facts={[{
+          value: `${coverage.withHours} / ${coverage.total}`,
+          label: 'lần cập nhật có ghi giờ công',
+          ...(coverage.withHours < coverage.total
+            ? { tone: 'warning' as const, info: 'Các lần chưa ghi không tính vào hiệu suất.' }
+            : {}),
+        }]}
+        bodyPadding={0}
       >
-        {`${coverage.withHours} / ${coverage.total} lần cập nhật có ghi giờ công.`}
-        <InfoTip text="Các lần chưa ghi không tính vào hiệu suất." />
-      </Typography.Text>
-
-      <SectionCard title="Hiệu suất theo công đoạn" bodyPadding={0}>
         <div data-testid="stage-table">
           <Table<StageEfficiency>
             size="small"

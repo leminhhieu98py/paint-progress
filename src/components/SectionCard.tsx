@@ -22,7 +22,6 @@ export function SectionCard({
   code,
   title,
   facts,
-  summary,
   extra,
   children,
   collapsible = false,
@@ -34,8 +33,6 @@ export function SectionCard({
   code?: string
   title?: ReactNode
   facts?: ReadonlyArray<KeyFact | false | null | undefined>
-  /** @deprecated Hand-formatted facts; being replaced by `facts` (HLT-01). */
-  summary?: ReactNode
   extra?: ReactNode
   children: ReactNode
   collapsible?: boolean
@@ -128,9 +125,6 @@ export function SectionCard({
             </h2>
           )}
           {facts !== undefined && <KeyFacts facts={facts} />}
-          {summary !== undefined && (
-            <span style={{ ...type.caption, color: palette.textTertiary, minWidth: 0 }}>{summary}</span>
-          )}
           {extra !== undefined && (
             <div
               style={{
