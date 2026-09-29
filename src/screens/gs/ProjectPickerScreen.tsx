@@ -95,7 +95,7 @@ export function ProjectPickerScreen() {
             <Alert
               type="info"
               message="Chưa có dự án nào"
-              description="Quản trị viên chưa tạo dự án nào. Khi có dự án, nó sẽ hiện ở đây."
+              description="Quản trị viên chưa tạo dự án nào."
             />
           </div>
         ) : (

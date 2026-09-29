@@ -50,8 +50,13 @@ describe('DeckTodayCard', () => {
     // RV5-21: man-hours exist only from 0030 (2026-09-05), so the two totals are
     // not totals over all the work the deck has had done.
     render(<DeckTodayCard todayKey="2026-09-09" rows={ONE_WORK} totals={TOTALS} />)
-    expect(within(card()).getByText(/05\/09\/2026/)).toBeInTheDocument()
-    expect(within(card()).getByText(/không phải toàn bộ/)).toBeInTheDocument()
+    // On the two cumulative rows' (?), not as a footnote under the card (CPY-01).
+    for (const label of ['Tổng Mhr đã thực hiện đến hôm nay', 'Tổng Mhr hao phí đến hôm nay']) {
+      const tip = within(within(card()).getByText(label)).getByRole('img', { name: /05\/09\/2026.*không phải toàn bộ/ })
+      expect(tip).toBeInTheDocument()
+    }
+    expect(within(card()).queryByText(/không phải toàn bộ/)).toBeNull()
+    expect(within(card()).getByText('Mhr thực hiện hôm nay').querySelector('[role="img"]')).toBeNull()
   })
 
   it('groups the coats under their work when the deck is in two works', () => {

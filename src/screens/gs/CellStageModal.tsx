@@ -544,11 +544,6 @@ export function CellStageModal({
               onChange={(e) => setNote(e.target.value)}
               placeholder="Ví dụ: bề mặt còn ẩm, hoãn sơn sang mai"
             />
-            {note.trim() !== '' && (
-              <Typography.Text type="secondary" style={{ fontSize: 11 }}>
-                {`Ghi chú đi kèm ô ${cell.code} trong lịch sử; quản trị viên thấy ngay trên bản vẽ.`}
-              </Typography.Text>
-            )}
             </>
             )}
           </div>

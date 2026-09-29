@@ -24,6 +24,8 @@ describe('NoteThread', () => {
   it('says the bay has nothing rather than showing an empty box', () => {
     render(<NoteThread notes={[]} />)
     expect(screen.getByText('Ô này chưa có ghi chú nào')).toBeInTheDocument()
+    // The title says it; no paragraph on how notes get here (CPY-01).
+    expect(screen.queryByText(/GS ghi chú khi ghi công đoạn/)).toBeNull()
   })
 
   it('names the coat each note was recorded against', () => {

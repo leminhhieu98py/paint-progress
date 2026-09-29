@@ -48,10 +48,7 @@ export function NoteThread({
     ].filter(Boolean).join(' · ')
   if (notes.length === 0) {
     return (
-      <EmptyState
-        title="Ô này chưa có ghi chú nào"
-        description="GS ghi chú khi ghi công đoạn trên máy tính bảng. Ghi chú sẽ hiện ở đây kèm công đoạn, người ghi và thời điểm."
-      />
+      <EmptyState title="Ô này chưa có ghi chú nào" />
     )
   }
 

@@ -91,6 +91,7 @@ describe('ProjectPickerScreen', () => {
     listProjectCards.mockResolvedValue([])
     renderPicker()
     expect(await screen.findByText('Chưa có dự án nào')).toBeInTheDocument()
+    expect(screen.getByText('Quản trị viên chưa tạo dự án nào.')).toBeInTheDocument()
   })
 
   it('explains a failed read, and does not pretend there are no projects', async () => {

@@ -575,7 +575,16 @@ describe('GsScreen', () => {
     })
     renderScreen()
     expect(await screen.findByText('Sàn này chưa có bản vẽ')).toBeInTheDocument()
+    // Who has to act, without the obvious consequence after it (CPY-01).
+    expect(screen.getByText('Quản trị viên cần tải bản vẽ lên trước khi ghi tiến độ.')).toBeInTheDocument()
     expect(getDrawingUrl).not.toHaveBeenCalled()
+  })
+
+  it('tells a foreman who can put the deck in a work, without explaining the model (CPY-01)', async () => {
+    listDeckWorks.mockResolvedValue([])
+    renderScreen()
+    expect(await screen.findByText('Sàn này chưa được gán công việc nào')).toBeInTheDocument()
+    expect(screen.getByText('Nhờ quản trị viên gán sàn vào một công việc ở mục Công việc; tới lúc đó bản vẽ chỉ để xem.')).toBeInTheDocument()
   })
 
   it('refuses a project the foreman is not in, instead of showing it empty', async () => {

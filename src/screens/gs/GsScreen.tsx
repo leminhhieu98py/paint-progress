@@ -1262,7 +1262,7 @@ export function GsScreen() {
               type="info"
               showIcon
               message="Sàn này chưa được gán công việc nào"
-              description="Tiến độ được ghi theo từng công việc. Nhờ quản trị viên gán sàn vào một công việc ở mục Công việc; tới lúc đó bản vẽ chỉ để xem."
+              description="Nhờ quản trị viên gán sàn vào một công việc ở mục Công việc; tới lúc đó bản vẽ chỉ để xem."
             />
           )}
 
@@ -1484,7 +1484,7 @@ export function GsScreen() {
               !drawingError && (
                 <EmptyState
                   title="Sàn này chưa có bản vẽ"
-                  description="Quản trị viên cần tải bản vẽ lên trước khi ghi tiến độ. Không có bản vẽ thì không có ô để chạm."
+                  description="Quản trị viên cần tải bản vẽ lên trước khi ghi tiến độ."
                 />
               )
             )}

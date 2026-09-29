@@ -1,3 +1,4 @@
+import { InfoTip } from '../../components/InfoTip'
 import type { DeckEffortTotals } from '../../domain/effort'
 import type { TodayStageArea } from '../../domain/today'
 import { DEFAULT_UNIT } from '../../domain/unit'
@@ -73,11 +74,20 @@ export function DeckTodayCard({
   }
   const grouped = new Set(rows.map((r) => r.workName)).size > 1
 
-  const hourRows: [string, number][] = [
-    ['Mhr thực hiện hôm nay', totals.todayHours],
-    ['Mhr hao phí hôm nay', totals.todayWasteHours],
-    ['Tổng Mhr đã thực hiện đến hôm nay', totals.totalHours],
-    ['Tổng Mhr hao phí đến hôm nay', totals.totalWasteHours],
+  /*
+    RV5-21. Man-hours only exist from 0030, so the two cumulative figures are
+    totals over the updates that CARRY hours, not over everything this deck
+    has had done. Said on those two rows' (?) rather than left to be
+    discovered (CPY-01): a foreman comparing "Tổng Mhr" against a deck that is
+    visibly 60% painted would otherwise conclude the figure is broken.
+  */
+  const sinceNote = `Giờ công chỉ được ghi từ ngày ${EFFORT_SINCE}. Số tổng này là tổng của những lần `
+    + 'cập nhật có ghi giờ, không phải toàn bộ công việc đã làm trên sàn.'
+  const hourRows: [string, number, string | undefined][] = [
+    ['Mhr thực hiện hôm nay', totals.todayHours, undefined],
+    ['Mhr hao phí hôm nay', totals.todayWasteHours, undefined],
+    ['Tổng Mhr đã thực hiện đến hôm nay', totals.totalHours, sinceNote],
+    ['Tổng Mhr hao phí đến hôm nay', totals.totalWasteHours, sinceNote],
   ]
 
   return (
@@ -144,26 +154,17 @@ export function DeckTodayCard({
           borderTop: `1px solid ${palette.borderSplit}`,
         }}
       >
-        {hourRows.map(([label, value]) => (
+        {hourRows.map(([label, value, tip]) => (
           <div key={label} style={{ display: 'flex', alignItems: 'baseline', gap: 8, minWidth: 0 }}>
-            <span style={{ fontSize: 13, color: palette.textTertiary, minWidth: 0 }}>{label}</span>
+            <span style={{ fontSize: 13, color: palette.textTertiary, minWidth: 0 }}>
+              {label}
+              {tip !== undefined && <InfoTip text={tip} />}
+            </span>
             <span style={{ marginLeft: 'auto', fontSize: 13, fontWeight: 600, flex: 'none' }}>
               {formatHours(value)}
             </span>
           </div>
         ))}
-      </div>
-
-      {/*
-        RV5-21. Man-hours only exist from 0030, so the two cumulative figures are
-        totals over the updates that CARRY hours, not over everything this deck
-        has had done. Said on the card rather than left to be discovered: a
-        foreman comparing "Tổng Mhr" against a deck that is visibly 60% painted
-        would otherwise conclude the figure is broken.
-      */}
-      <div style={{ fontSize: 11, lineHeight: 1.45, color: palette.textQuaternary, marginTop: 12 }}>
-        {`Giờ công chỉ được ghi từ ngày ${EFFORT_SINCE}. Hai số tổng ở trên là tổng của những lần `
-        + 'cập nhật có ghi giờ, không phải toàn bộ công việc đã làm trên sàn.'}
       </div>
     </div>
   )

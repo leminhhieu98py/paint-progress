@@ -269,6 +269,8 @@ describe('CellStageModal notes', () => {
       screen.getByLabelText(/Ghi chú/),
       'Bề mặt còn ẩm, hoãn sơn sang mai',
     )
+    // The label says who reads it; no hint under the box repeats it (CPY-01).
+    expect(screen.queryByText(/trong lịch sử; quản trị viên thấy ngay/)).toBeNull()
     await chooseStage('Coat 3')
     await fillRequired()
     await user.click(screen.getByRole('button', { name: 'Xác nhận' }))
