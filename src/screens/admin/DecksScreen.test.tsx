@@ -439,6 +439,38 @@ describe('DecksScreen — the project-wide half of progress', () => {
     expect(figureFits(text, step, ROLLUP_RING)).toBe(true)
   })
 
+  it('stands the ring above its legend, so the names get the column\'s full width (RR2-I1)', async () => {
+    renderScreen()
+    const donut = await screen.findByTestId('rollup-donut')
+    await waitFor(() => expect(within(donut).getByText('CD')).toBeInTheDocument())
+    const ring = within(donut).getByTestId('donut-ring')
+    const legend = within(donut).getByTestId('rollup-legend')
+    const stack = legend.parentElement as HTMLElement
+    expect(stack.contains(ring)).toBe(true)
+    expect(stack).toHaveStyle({ display: 'flex', flexDirection: 'column', alignItems: 'center' })
+    expect(ring.compareDocumentPosition(legend) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(legend).toHaveStyle({ alignSelf: 'stretch' })
+    // Dot · name · Tiến độ · Đóng góp, under the header, then Còn lại.
+    expect(within(legend).getByText('Tiến độ · Đóng góp')).toBeInTheDocument()
+    expect(within(legend).getByText('Còn lại')).toBeInTheDocument()
+    const name = within(legend).getByText('Chứng từ')
+    // In full: a name too long for the row wraps, it is never cut to an ellipsis.
+    expect(name.style.textOverflow).toBe('')
+    expect(name.style.whiteSpace).toBe('')
+    expect(name).toHaveStyle({ overflowWrap: 'break-word', flex: '1 1 0%', minWidth: '0px' })
+  })
+
+  it('keeps each rollup dot on its name\'s first line when the name wraps (RR2-I1, RR2-M1)', async () => {
+    renderScreen()
+    const donut = await screen.findByTestId('rollup-donut')
+    await waitFor(() => expect(within(donut).getByText('CD')).toBeInTheDocument())
+    for (const row of within(donut).getAllByTestId('legend-row')) {
+      expect(row).toHaveStyle({ alignItems: 'flex-start' })
+      // Centred on a 20 px first line: (20 - 11) / 2.
+      expect(within(row).getByTestId('legend-marker')).toHaveStyle({ marginTop: '4.5px' })
+    }
+  })
+
   it('draws the ring 160 across, so every percent keeps displaySm (RR-M2)', async () => {
     renderScreen()
     const donut = await screen.findByTestId('rollup-donut')

@@ -832,6 +832,9 @@ export function DecksScreen() {
   )
 }
 
+/** One line of the rollup legend: a row's figures and its dot sit on its first. */
+const ROLLUP_LEGEND_LINE = 20
+
 /**
  * The project ring and its legend, with the slice under the pointer or focus
  * (CHT-02). Its own component so that hovering re-renders the ring and the
@@ -853,7 +856,9 @@ function ProjectRing({
 }) {
   const [active, setActive] = useState<string | null>(null)
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginTop: 14 }}>
+    // The ring above its legend, the legend the column's full width (RR2-I1),
+    // as both coat rings stand: beside a 160 px ring the deck names had 34 px.
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16, marginTop: 14 }}>
       <Donut
         label="Tiến độ dự án"
         slices={slices}
@@ -876,7 +881,10 @@ function ProjectRing({
           toàn dự án
         </span>
       </Donut>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0, flex: 1 }}>
+      <div
+        data-testid="rollup-legend"
+        style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0, alignSelf: 'stretch' }}
+      >
         {/*
           Two numbers per row (RV6-40, Linh's review of v1.7.0). RV6-02
           put the deck's own progress here so the legend agreed with
@@ -895,32 +903,31 @@ function ProjectRing({
             key={sl.key}
             data-testid="legend-row"
             {...legendRowProps(sl.key ?? sl.label, active, setActive, {
-              display: 'flex', alignItems: 'center', gap: 9,
+              // The top, not the middle: a wrapped name keeps its dot and its
+              // two figures on its first line (RR2-M1).
+              display: 'flex', alignItems: 'flex-start', gap: 9,
             })}
           >
             <span
               data-testid="legend-marker"
               style={{
                 width: 11, height: 11, borderRadius: '50%', flex: 'none', background: sl.color,
+                marginTop: (ROLLUP_LEGEND_LINE - 11) / 2,
               }}
             />
-            <span
-              style={{
-                ...type.body, minWidth: 0,
-                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-              }}
-            >
+            {/* In full: wrapped when the row cannot hold it, never cut (RR2-I1). */}
+            <span style={{ ...type.body, lineHeight: `${ROLLUP_LEGEND_LINE}px`, minWidth: 0, flex: 1, overflowWrap: 'break-word' }}>
               {sl.label}
             </span>
             <span
               style={{
-                marginLeft: 'auto', width: 56, textAlign: 'right', flex: 'none',
-                ...type.body, color: palette.textSecondary,
+                width: 56, textAlign: 'right', flex: 'none',
+                ...type.body, lineHeight: `${ROLLUP_LEGEND_LINE}px`, color: palette.textSecondary,
               }}
             >
               {formatPercent(sl.display ?? sl.value)}
             </span>
-            <span style={{ width: 56, textAlign: 'right', flex: 'none', ...type.bodyStrong }}>
+            <span style={{ width: 56, textAlign: 'right', flex: 'none', ...type.bodyStrong, lineHeight: `${ROLLUP_LEGEND_LINE}px` }}>
               {formatPercent(shownShares[i])}
             </span>
           </div>
