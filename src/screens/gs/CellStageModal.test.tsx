@@ -844,3 +844,33 @@ describe('CellStageModal: the work\'s quantity and unit (RV6-35)', () => {
     expect(info().queryByText(/m²/)).toBeNull()
   })
 })
+
+describe('CellStageModal: on the field scale (GS-10)', () => {
+  beforeEach(() => {
+    listCellNotes.mockReset()
+    listCellNotes.mockResolvedValue([])
+  })
+
+  it('labels every field alike, in the field label step', () => {
+    renderModal()
+    for (const text of [/^Công đoạn/, /^Nhóm trưởng/, /^Thợ chính/, /^Số giờ công/, /^Giờ hao phí/, /^Ghi chú cho quản trị viên/]) {
+      const label = screen.getByText(text, { selector: 'label' })
+      expect(label).toHaveStyle({ fontSize: '14px', fontWeight: '600' })
+    }
+  })
+
+  it('sets hints and field errors as captions, nothing under 12 px', async () => {
+    renderModal()
+    expect(screen.getByText('Không hao phí thì nhập 0')).toHaveStyle({ fontSize: '12px' })
+    await userEvent.click(screen.getByRole('button', { name: 'Xác nhận' }))
+    expect(await screen.findByText('Chọn nhóm trưởng.')).toHaveStyle({ fontSize: '12px' })
+  })
+
+  it('gives the coat the same control height as the fields under it (CTL-01)', () => {
+    renderModal()
+    const coat = screen.getByRole('combobox', { name: 'Công đoạn' }).closest('.ant-select') as HTMLElement
+    const lead = screen.getByRole('combobox', { name: 'Nhóm trưởng' }).closest('.ant-select') as HTMLElement
+    expect(coat).not.toHaveClass('ant-select-lg')
+    expect(coat.className.includes('ant-select-sm')).toBe(lead.className.includes('ant-select-sm'))
+  })
+})
