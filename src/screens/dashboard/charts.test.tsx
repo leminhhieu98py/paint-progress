@@ -343,10 +343,15 @@ describe('legends on a phone (MOB-03)', () => {
     ['HoursBarChart', () => <HoursBarChart data={[{ day: '2026-09-01', hours: 8, wasteHours: 1 }]} />],
   ] as const
 
-  it.each(charts)('%s puts one legend item per line, left at the card inset, still highlighting on hover', (_, chart) => {
+  it.each(charts)('%s puts the legend under the plot, one item per line, left at the card inset, still highlighting on hover', (_, chart) => {
     restoreViewport = setViewport(390)
     render(chart())
-    expect(captured.legend).toMatchObject({ layout: 'vertical', align: 'left', verticalAlign: 'bottom' })
+    // Recharts reserves a vertical legend's WIDTH beside the plot when it is
+    // aligned left or right, which squeezed the chart into two thirds of a
+    // phone; aligned centre it reserves its HEIGHT under the plot instead,
+    // and the wrapper is then pinned to the left edge, the card's inset.
+    expect(captured.legend).toMatchObject({ layout: 'vertical', align: 'center', verticalAlign: 'bottom' })
+    expect(captured.legend?.wrapperStyle).toEqual({ left: 0 })
     expect(captured.legend?.onMouseEnter).toBeTypeOf('function')
     expect(captured.legend?.onMouseLeave).toBeTypeOf('function')
   })
@@ -355,6 +360,7 @@ describe('legends on a phone (MOB-03)', () => {
     restoreViewport = setViewport(768)
     render(chart())
     expect(captured.legend?.layout).toBeUndefined()
+    expect(captured.legend?.wrapperStyle).toBeUndefined()
     expect(captured.legend?.onMouseEnter).toBeTypeOf('function')
   })
 

@@ -49,8 +49,16 @@ const ACTIVE_BAR = { stroke: palette.ink, strokeWidth: 1 }
 /**
  * A phone's legend (MOB-03): one item per line, under the plot, left at the
  * card's inset -- a row of coat names wrapped into a ragged block there.
+ *
+ * `align` stays centre: Recharts reserves a vertical legend's WIDTH beside
+ * the plot when it is aligned left or right (appendOffsetOfLegend), which
+ * squeezed the chart into two thirds of a phone. Centred, it reserves its
+ * HEIGHT under the plot, and `left: 0` pins the wrapper to the plot's left
+ * edge -- every chart here has no left margin -- instead of centring it.
  */
-const PHONE_LEGEND = { layout: 'vertical', align: 'left', verticalAlign: 'bottom' } as const
+const PHONE_LEGEND = {
+  layout: 'vertical', align: 'center', verticalAlign: 'bottom', wrapperStyle: { left: 0 },
+} as const
 /** One vertical legend line; the chart grows by one per item past the first, so the plot keeps its height. */
 const LEGEND_LINE = 22
 
