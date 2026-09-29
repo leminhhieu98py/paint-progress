@@ -40,27 +40,64 @@ export function useDraftFilters<T extends object>(defaults: T) {
 /**
  * The options a draft control needs for a project the screen has not loaded
  * (FLT-02: dependent options follow the DRAFT -- another project in the
- * draft brings its own Sàn). Null while loading, or without a project; a
- * failed read leaves it null, and the control offers only its "Tất cả" entry.
+ * draft brings its own Sàn).
+ *
+ * `options` is what was read for `projectId`, null while loading, without a
+ * project, or after a failed read (the control then offers only its "Tất cả"
+ * entry). `loading` is true while that read is in flight: the bar's Tìm waits
+ * for it, so a draft is never applied against options that have not arrived.
+ * `cached(id)` answers from every project read so far, so the screen can keep
+ * showing a project's options between Tìm and the arrival of its full data.
+ * A response that arrives after the project changed is dropped.
+ *
  * `load` must be stable (a module-level function): it is an effect dependency.
  */
-export function useProjectOptions<T>(projectId: string | null, load: (projectId: string) => Promise<T>): T | null {
-  const [loaded, setLoaded] = useState<{ projectId: string; options: T } | null>(null)
+export function useProjectOptions<T>(projectId: string | null, load: (projectId: string) => Promise<T>) {
+  const [read, setRead] = useState<Record<string, T>>({})
+  const [failed, setFailed] = useState<string | null>(null)
+  const known = projectId !== null && Object.prototype.hasOwnProperty.call(read, projectId)
 
   useEffect(() => {
-    if (projectId === null) return
+    if (projectId === null || known) return
     let cancelled = false
     load(projectId)
       .then((options) => {
-        if (!cancelled) setLoaded({ projectId, options })
+        if (!cancelled) setRead((r) => ({ ...r, [projectId]: options }))
       })
       .catch(() => {
         // Options only: the bar still offers Tất cả, and Tìm loads the real data.
+        if (!cancelled) setFailed(projectId)
       })
     return () => {
       cancelled = true
     }
-  }, [projectId, load])
+  }, [projectId, known, load])
 
-  return loaded !== null && loaded.projectId === projectId ? loaded.options : null
+  return {
+    options: known ? read[projectId as string] : null,
+    loading: projectId !== null && !known && failed !== projectId,
+    cached: (id: string | null): T | null => (id !== null && Object.prototype.hasOwnProperty.call(read, id) ? read[id] : null),
+  }
+}
+
+/**
+ * The draft reconciled with the options it depends on (FLT-02), IN the draft:
+ * a Sàn (or work, or coat) the draft project lacks is cleared, not only hidden,
+ * so picking project A, then B, then A again does not bring it back. With
+ * `options` null (still loading, or unknown after a failed read) the draft is
+ * left as it is: it is never reconciled against options that have not arrived.
+ *
+ * Called during render; the correction is a state update of the same
+ * component, made only when it changes something, so it settles in one pass.
+ */
+export function settleDraft<T extends object, O>(
+  scope: { draft: T; setDraft: (next: T) => void },
+  options: O | null,
+  settle: (draft: T, options: O) => T,
+): T {
+  if (options === null) return scope.draft
+  const settled = settle(scope.draft, options)
+  const changed = (Object.keys(settled) as (keyof T)[]).some((k) => !Object.is(settled[k], scope.draft[k]))
+  if (changed) scope.setDraft(settled)
+  return settled
 }

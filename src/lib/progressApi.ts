@@ -450,6 +450,34 @@ export async function listProjectEvents(projectId: string): Promise<DeckEvent[]>
 }
 
 /**
+ * The work names a project's events carry, distinct, first seen first -- the
+ * light read behind a DRAFT project's Công việc options on Năng suất (FLT-02),
+ * so they match what `dashboardWorkNames` shows once the project is applied:
+ * a renamed or deleted work still holds the hours somebody typed. Same embed,
+ * filter, order and paging as `listProjectEvents`, two columns instead of all.
+ * A null name reads as '' there, and here.
+ */
+export async function listProjectEventWorkNames(projectId: string): Promise<string[]> {
+  const names: string[] = []
+  for (let from = 0; ; from += EVENT_PAGE) {
+    const { data, error } = await supabase.from('cell_events')
+      .select('id, at, work_name, cells!inner(decks!inner(project_id))')
+      .eq('cells.decks.project_id', projectId)
+      .order('at', { ascending: true })
+      .order('id', { ascending: true })
+      .range(from, from + EVENT_PAGE - 1)
+    if (error) throw new Error(error.message)
+    const page = (data ?? []) as { work_name: string | null }[]
+    for (const row of page) {
+      const name = row.work_name ?? ''
+      if (!names.includes(name)) names.push(name)
+    }
+    if (page.length < EVENT_PAGE) break
+  }
+  return names
+}
+
+/**
  * Admin backfill of the effort on one event (0030): Linh's answer to the rows
  * written before hours existed. Like `setReportNote`, a definer function that
  * checks `is_admin()` itself and stamps who and when; nothing here re-grants a

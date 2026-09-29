@@ -2,7 +2,7 @@ import { ArrowLeftOutlined } from '@ant-design/icons'
 import { Alert, App, Button, Layout, Spin } from 'antd'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { useDraftFilters, useProjectOptions } from '../../components/draftFilters'
+import { settleDraft, useDraftFilters, useProjectOptions } from '../../components/draftFilters'
 import { FilterBar } from '../../components/FilterBar'
 import { PageBody, PageHeader } from '../../components/PageHeader'
 import { ProjectSelect } from '../../components/ProjectSelect'
@@ -217,8 +217,12 @@ interface FilterOptions {
 const NO_OPTIONS: FilterOptions = { decks: [], coats: [] }
 
 /** The bar's options for the loaded project: its decks, and the coats the chart can show. */
-function filterOptions(current: Loaded | null, entries: KpiEntry[]): FilterOptions {
-  if (current === null || 'error' in current) return NO_OPTIONS
+/**
+ * The bar's options for the loaded project. Null while it loads, or after a
+ * failed read: unknown, so no draft is reconciled against it.
+ */
+function filterOptions(current: Loaded | null, entries: KpiEntry[]): FilterOptions | null {
+  if (current === null || 'error' in current) return null
   return {
     decks: current.decks,
     coats: entries.map((e) => ({ deckId: e.deckId, workName: e.plan.workName, stageName: e.plan.stageName })),
@@ -429,10 +433,17 @@ function AdminKpi() {
 
   // The options follow the DRAFT (FLT-02): the loaded project's own, or a
   // light read of the project picked but not yet applied.
+  // Between Tìm and the full data arriving, the light read made while the
+  // project was a draft still answers for it. Tìm waits while the options it
+  // would reconcile against are still loading.
   const draftProject = scope.draft.project ?? projectId
-  const otherOptions = useProjectOptions(draftProject === projectId ? null : draftProject, loadFilterOptions)
-  const options = draftProject === projectId ? filterOptions(data.current, model.entries) : otherOptions ?? NO_OPTIONS
-  const draft = settle(scope.draft, options)
+  const other = useProjectOptions(draftProject === projectId ? null : draftProject, loadFilterOptions)
+  const options = draftProject === projectId
+    ? filterOptions(data.current, model.entries) ?? other.cached(projectId)
+    : other.options
+  const loading = draftProject === projectId ? projectId !== null && data.current === null : other.loading
+  const draft = settleDraft(scope, options, settle)
+  const shown = options ?? NO_OPTIONS
 
   const apply = () => {
     if (draftProject !== null && draftProject !== projectId) {
@@ -448,15 +459,15 @@ function AdminKpi() {
         title="KPI"
         filters={(
           // One bar, the project first (FLT-01); a draft until Tìm (FLT-02).
-          <FilterBar onApply={apply} onReset={scope.reset}>
+          <FilterBar onApply={apply} onReset={scope.reset} applyLoading={loading}>
             <ProjectSelect
               projects={projects}
               value={draftProject}
               onChange={(v) => scope.setDraft({ project: v })}
             />
             <KpiFilterControls
-              decks={options.decks}
-              coats={kpiCoatOptions(options.coats, draft.deckId)}
+              decks={shown.decks}
+              coats={kpiCoatOptions(shown.coats, draft.deckId)}
               value={draft}
               onChange={(next) => scope.setDraft({ ...next, project: scope.draft.project })}
             />
@@ -478,7 +489,8 @@ function FieldKpi() {
   const data = useKpiData(projectId ?? null)
   const model = useKpiEntries(data.current)
   const options = filterOptions(data.current, model.entries)
-  const draft = settle(scope.draft, options)
+  const draft = settleDraft(scope, options, settle)
+  const shown = options ?? NO_OPTIONS
   return (
     <Layout style={{ minHeight: '100vh' }}>
       <Layout.Header
@@ -505,10 +517,10 @@ function FieldKpi() {
       </Layout.Header>
       <Layout.Content style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 16 }}>
         {/* The field's bar, first under the title bar (FLT-01 via GS-04). */}
-        <FilterBar onApply={() => scope.apply(draft)} onReset={scope.reset}>
+        <FilterBar onApply={() => scope.apply(draft)} onReset={scope.reset} applyLoading={data.current === null}>
           <KpiFilterControls
-            decks={options.decks}
-            coats={kpiCoatOptions(options.coats, draft.deckId)}
+            decks={shown.decks}
+            coats={kpiCoatOptions(shown.coats, draft.deckId)}
             value={draft}
             onChange={scope.setDraft}
           />

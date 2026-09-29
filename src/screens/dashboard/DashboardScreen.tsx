@@ -2,13 +2,13 @@ import { ArrowLeftOutlined } from '@ant-design/icons'
 import { Alert, Button, Layout, Spin } from 'antd'
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { useDraftFilters, useProjectOptions } from '../../components/draftFilters'
+import { settleDraft, useDraftFilters, useProjectOptions } from '../../components/draftFilters'
 import { FilterBar } from '../../components/FilterBar'
 import { PageBody, PageHeader } from '../../components/PageHeader'
 import { ProjectSelect } from '../../components/ProjectSelect'
 import { APP_BASE_PATH } from '../../config'
 import type { DeckEvent, WorkModel } from '../../domain/types'
-import { listProjectEvents, loadProjectModel } from '../../lib/progressApi'
+import { listProjectEventWorkNames, listProjectEvents, loadProjectModel } from '../../lib/progressApi'
 import { listDecks } from '../../lib/decksApi'
 import { listProjectNames } from '../../lib/projectsApi'
 import { listWorks } from '../../lib/worksApi'
@@ -70,22 +70,32 @@ interface FilterOptions {
 
 const NO_OPTIONS: FilterOptions = { workNames: [], deckNames: [] }
 
-/** The bar's options for the loaded project: its works (with the ones only its events remember) and decks. */
-function filterOptions(current: Data['current']): FilterOptions {
-  if (current === null || 'error' in current) return NO_OPTIONS
+/**
+ * The bar's options for the loaded project: its works (with the ones only its
+ * events remember) and decks. Null while it loads, or after a failed read:
+ * unknown, so no draft is reconciled against it.
+ */
+function filterOptions(current: Data['current']): FilterOptions | null {
+  if (current === null || 'error' in current) return null
   return {
     workNames: dashboardWorkNames(current.models, current.events),
     deckNames: current.decks.map((d) => d.name),
   }
 }
 
-/** The bar's options for a DRAFT project the screen has not loaded (FLT-02): two light reads. */
+/**
+ * The bar's options for a DRAFT project the screen has not loaded (FLT-02):
+ * light reads that give the same works `dashboardWorkNames` will show once it
+ * is applied -- the bays works in seq order, then the names only its events
+ * remember -- and its decks.
+ */
 async function loadFilterOptions(projectId: string): Promise<FilterOptions> {
-  const [works, decks] = await Promise.all([listWorks(projectId), listDecks(projectId)])
-  return {
-    workNames: works.filter((w) => w.kind === 'bays').sort((a, b) => a.seq - b.seq).map((w) => w.name),
-    deckNames: decks.map((d) => d.name),
-  }
+  const [works, eventWorks, decks] = await Promise.all([
+    listWorks(projectId), listProjectEventWorkNames(projectId), listDecks(projectId),
+  ])
+  const workNames = works.filter((w) => w.kind === 'bays').sort((a, b) => a.seq - b.seq).map((w) => w.name)
+  for (const name of eventWorks) if (!workNames.includes(name)) workNames.push(name)
+  return { workNames, deckNames: decks.map((d) => d.name) }
 }
 
 /**
@@ -161,10 +171,16 @@ function AdminDashboard() {
 
   // The options follow the DRAFT (FLT-02): the loaded project's own, or a
   // light read of the project picked but not yet applied.
+  // Between Tìm and the full data arriving, the light read made while the
+  // project was a draft still answers for it. Tìm waits while the options it
+  // would reconcile against are still loading.
   const draftProject = scope.draft.project ?? projectId
-  const otherOptions = useProjectOptions(draftProject === projectId ? null : draftProject, loadFilterOptions)
-  const options = draftProject === projectId ? filterOptions(data.current) : otherOptions ?? NO_OPTIONS
-  const draft = settle(scope.draft, options)
+  const other = useProjectOptions(draftProject === projectId ? null : draftProject, loadFilterOptions)
+  const options = draftProject === projectId
+    ? filterOptions(data.current) ?? other.cached(projectId)
+    : other.options
+  const loading = draftProject === projectId ? projectId !== null && data.current === null : other.loading
+  const draft = settleDraft(scope, options, settle)
 
   const apply = () => {
     if (draftProject !== null && draftProject !== projectId) {
@@ -180,14 +196,14 @@ function AdminDashboard() {
         title="Năng suất"
         filters={(
           // One bar, the project first (FLT-01); a draft until Tìm (FLT-02).
-          <FilterBar onApply={apply} onReset={scope.reset}>
+          <FilterBar onApply={apply} onReset={scope.reset} applyLoading={loading}>
             <ProjectSelect
               projects={projects}
               value={draftProject}
               onChange={(v) => scope.setDraft({ project: v })}
             />
             <ProductivityFilterControls
-              {...options}
+              {...(options ?? NO_OPTIONS)}
               value={draft}
               onChange={(next) => scope.setDraft({ ...next, project: scope.draft.project })}
             />
@@ -208,7 +224,7 @@ function FieldDashboard() {
   const scope = useDraftFilters(DEFAULT_PRODUCTIVITY_FILTERS)
   const data = useProjectData(projectId ?? null)
   const options = filterOptions(data.current)
-  const draft = settle(scope.draft, options)
+  const draft = settleDraft(scope, options, settle)
   return (
     <Layout style={{ minHeight: '100vh' }}>
       <Layout.Header
@@ -235,8 +251,8 @@ function FieldDashboard() {
       </Layout.Header>
       <Layout.Content style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 16 }}>
         {/* The field's bar, first under the title bar (FLT-01 via GS-04). */}
-        <FilterBar onApply={() => scope.apply(draft)} onReset={scope.reset}>
-          <ProductivityFilterControls {...options} value={draft} onChange={scope.setDraft} />
+        <FilterBar onApply={() => scope.apply(draft)} onReset={scope.reset} applyLoading={data.current === null}>
+          <ProductivityFilterControls {...(options ?? NO_OPTIONS)} value={draft} onChange={scope.setDraft} />
         </FilterBar>
         <Body projectId={projectId ?? null} data={data} filters={scope.applied} version={scope.version} />
       </Layout.Content>

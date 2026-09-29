@@ -205,6 +205,12 @@ const renderField = () =>
 /** The one filter bar under the title (FLT-01). */
 const bar = () => screen.getByRole('search', { name: 'Bộ lọc' })
 const before = (a: Element, b: Element) => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0
+/** Tìm, once the options it waits for have arrived (FLT-02). */
+const pressTim = async () => {
+  const tim = within(bar()).getByRole('button', { name: /Tìm/ })
+  await waitFor(() => expect(tim).not.toHaveClass('ant-btn-loading'))
+  await userEvent.click(tim)
+}
 
 describe('KpiScreen — one filter bar (FLT-01)', () => {
   it('holds Dự án, Sàn and Công đoạn in one bar under the title, in that order, unlabelled', async () => {
@@ -223,7 +229,7 @@ describe('KpiScreen — one filter bar (FLT-01)', () => {
     await userEvent.click(within(bar()).getByRole('combobox', { name: 'Sàn' }))
     await userEvent.click(await screen.findByTitle('Sàn A'))
     expect(screen.getByText(/PHẠM VI tất cả\/tất cả/)).toBeInTheDocument()
-    await userEvent.click(within(bar()).getByRole('button', { name: 'Tìm' }))
+    await pressTim()
     expect(await screen.findByText(/PHẠM VI d1\/tất cả/)).toBeInTheDocument()
   })
 
@@ -236,7 +242,7 @@ describe('KpiScreen — one filter bar (FLT-01)', () => {
     await userEvent.click(await screen.findByTitle('Giàn B (GB)'))
     expect(loadProjectModel).toHaveBeenCalledTimes(1)
     expect(listProjectEvents).toHaveBeenCalledTimes(1)
-    await userEvent.click(within(bar()).getByRole('button', { name: 'Tìm' }))
+    await pressTim()
     await waitFor(() => expect(loadProjectModel).toHaveBeenCalledTimes(2))
     expect(loadProjectModel).toHaveBeenLastCalledWith('p2')
     expect(listProjectEvents).toHaveBeenCalledTimes(2)
@@ -255,12 +261,48 @@ describe('KpiScreen — one filter bar (FLT-01)', () => {
     expect(await screen.findByTitle('Sàn Z')).toBeInTheDocument()
   })
 
+  it('keeps the chosen deck when Tìm is pressed twice while the new project loads (FLT-02)', async () => {
+    let resolveP2: (v: typeof MODEL) => void = () => {}
+    loadProjectModel.mockImplementation((id: string) =>
+      (id === 'p2' ? new Promise((r) => { resolveP2 = r }) : Promise.resolve(MODEL)))
+    renderAdmin()
+    await screen.findByTestId('kpi-dashboard')
+    await userEvent.click(within(bar()).getByRole('combobox', { name: 'Dự án' }))
+    await userEvent.click(await screen.findByTitle('Giàn B (GB)'))
+    await userEvent.click(within(bar()).getByRole('combobox', { name: 'Sàn' }))
+    await userEvent.click(await screen.findByTitle('Sàn Z'))
+    await pressTim()
+    const tim = within(bar()).getByRole('button', { name: /Tìm/ })
+    expect(tim).toHaveClass('ant-btn-loading')
+    await userEvent.click(tim)
+    expect(within(bar()).getByTitle('Sàn Z')).toBeInTheDocument()
+    resolveP2({ ...MODEL, decks: [{ id: 'd9', name: 'Sàn Z', kpiPlanColor: '#aaaaaa', kpiActualColor: null }] })
+    expect(await screen.findByText(/PHẠM VI d9\/tất cả/)).toBeInTheDocument()
+    await pressTim()
+    expect(screen.getByText(/PHẠM VI d9\/tất cả/)).toBeInTheDocument()
+  })
+
+  it('clears a draft deck the newly chosen project lacks, so going back does not restore it (FLT-02)', async () => {
+    renderAdmin()
+    await screen.findByTestId('kpi-dashboard')
+    await userEvent.click(within(bar()).getByRole('combobox', { name: 'Sàn' }))
+    await userEvent.click(await screen.findByTitle('Sàn A'))
+    await userEvent.click(within(bar()).getByRole('combobox', { name: 'Dự án' }))
+    await userEvent.click(await screen.findByTitle('Giàn B (GB)'))
+    await waitFor(() => expect(within(bar()).getByTitle('Tất cả sàn')).toBeInTheDocument())
+    await userEvent.click(within(bar()).getByRole('combobox', { name: 'Dự án' }))
+    await userEvent.click(await screen.findByTitle('Giàn A (GA)'))
+    expect(within(bar()).getByTitle('Tất cả sàn')).toBeInTheDocument()
+    await pressTim()
+    expect(screen.getByText(/PHẠM VI tất cả\/tất cả/)).toBeInTheDocument()
+  })
+
   it('puts the defaults back and applies them on Đặt lại (FLT-02)', async () => {
     renderAdmin()
     await screen.findByTestId('kpi-dashboard')
     await userEvent.click(within(bar()).getByRole('combobox', { name: 'Sàn' }))
     await userEvent.click(await screen.findByTitle('Sàn A'))
-    await userEvent.click(within(bar()).getByRole('button', { name: 'Tìm' }))
+    await pressTim()
     expect(await screen.findByText(/PHẠM VI d1\/tất cả/)).toBeInTheDocument()
     await userEvent.click(within(bar()).getByRole('button', { name: 'Đặt lại' }))
     expect(await screen.findByText(/PHẠM VI tất cả\/tất cả/)).toBeInTheDocument()
@@ -272,7 +314,7 @@ describe('KpiScreen — one filter bar (FLT-01)', () => {
     await userEvent.click(within(bar()).getByRole('combobox', { name: 'Sàn' }))
     await userEvent.click(await screen.findByTitle('Sàn A'))
     expect(screen.getByText(/PHẠM VI tất cả\/tất cả/)).toBeInTheDocument()
-    await userEvent.click(within(bar()).getByRole('button', { name: 'Tìm' }))
+    await pressTim()
     expect(await screen.findByText(/PHẠM VI d1\/tất cả/)).toBeInTheDocument()
   })
 

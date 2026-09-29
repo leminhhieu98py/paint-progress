@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
-  EVENT_PAGE, STATE_PAGE, latestProgressEvent, listCellNotes, listDeckEvents, listProjectEvents,
+  EVENT_PAGE, STATE_PAGE, latestProgressEvent, listCellNotes, listDeckEvents, listProjectEventWorkNames, listProjectEvents,
   loadDeckWorks, loadProjectModel, setCellEventEffort, setReportNote,
 } from './progressApi'
 
@@ -627,5 +627,35 @@ describe('setCellEventEffort', () => {
     await expect(setCellEventEffort(7, {
       leadName: '', painterName: '', workHours: 1, wasteHours: null, wasteReason: '', wasteOrder: '',
     })).rejects.toThrow('admin only')
+  })
+})
+
+describe('listProjectEventWorkNames (FLT-02)', () => {
+  const row = (id: number, work_name: string | null) => ({ id, work_name, cells: { decks: { project_id: 'p2' } } })
+
+  it('reads only the work names of a project\'s events, through cell and deck, distinct, first seen first', async () => {
+    const b = builder({ data: [row(1, 'Sơn'), row(2, 'Sơn cũ'), row(3, 'Sơn'), row(4, null)] })
+    from.mockImplementation(() => b)
+    expect(await listProjectEventWorkNames('p2')).toEqual(['Sơn', 'Sơn cũ', ''])
+    expect(from).toHaveBeenCalledWith('cell_events')
+    expect(b.select).toHaveBeenCalledWith('id, at, work_name, cells!inner(decks!inner(project_id))')
+    expect(b.eq).toHaveBeenCalledWith('cells.decks.project_id', 'p2')
+    // The full read's order, so the names come first-seen in the same order.
+    expect(b.order).toHaveBeenCalledWith('at', { ascending: true })
+    expect(b.order).toHaveBeenCalledWith('id', { ascending: true })
+    expect(b.range).toHaveBeenCalledWith(0, EVENT_PAGE - 1)
+  })
+
+  it('pages past the row cap like the full read', async () => {
+    const full = Array.from({ length: EVENT_PAGE }, (_, i) => row(i + 1, 'Sơn'))
+    const pages = [builder({ data: full }), builder({ data: [row(EVENT_PAGE + 1, 'Tháo giáo')] })]
+    from.mockImplementation(() => pages.shift())
+    expect(await listProjectEventWorkNames('p2')).toEqual(['Sơn', 'Tháo giáo'])
+    expect(from).toHaveBeenCalledTimes(2)
+  })
+
+  it('surfaces a failed read', async () => {
+    from.mockImplementation(() => builder({ error: { message: 'permission denied' } }))
+    await expect(listProjectEventWorkNames('p2')).rejects.toThrow('permission denied')
   })
 })

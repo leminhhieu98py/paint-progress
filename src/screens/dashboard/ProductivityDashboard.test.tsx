@@ -418,3 +418,18 @@ describe('ProductivityDashboard — alignment (UI-03)', () => {
     expect(waste.getByRole('columnheader', { name: 'Giờ' })).toHaveStyle({ textAlign: 'center' })
   })
 })
+
+describe('ProductivityDashboard — Tìm and the pagers (FLT-02)', () => {
+  it('sends a paged table back to page 1 on every apply, even when no filter changed', async () => {
+    // Twelve crews: Theo nhóm trưởng pages at ten.
+    const crews = Array.from({ length: 12 }, (_, i) =>
+      ev({ id: 500 + i, effort: { leadName: `Tổ ${i + 10}`, workHours: 10 } }))
+    const events = [...EVENTS, ...crews]
+    const { rerender } = render(<ProductivityDashboard events={events} models={MODELS} filters={DEFAULT_PRODUCTIVITY_FILTERS} version={1} />)
+    const pager = within(screen.getByTestId('lead-table'))
+    await userEvent.click(pager.getByTitle('2'))
+    expect(pager.getByTitle('2')).toHaveClass('ant-pagination-item-active')
+    rerender(<ProductivityDashboard events={events} models={MODELS} filters={DEFAULT_PRODUCTIVITY_FILTERS} version={2} />)
+    expect(within(screen.getByTestId('lead-table')).getByTitle('1')).toHaveClass('ant-pagination-item-active')
+  })
+})

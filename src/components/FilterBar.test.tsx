@@ -1,6 +1,7 @@
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { Input, Select } from 'antd'
+import { Input, Segmented, Select } from 'antd'
+import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { space } from '../theme'
 import { FilterBar } from './FilterBar'
@@ -87,8 +88,51 @@ describe('FilterBar with more than one control (FLT-02)', () => {
     expect(onApply).toHaveBeenCalledOnce()
   })
 
-  it('has no buttons when it holds one control and applies as it changes', () => {
-    render(<FilterBar><Input aria-label="Tìm" /></FilterBar>)
+  it('applies on Enter only from a text-like input, not from a Segmented option', async () => {
+    const onApply = vi.fn()
+    render(
+      <FilterBar onApply={onApply} onReset={() => {}}>
+        <Segmented aria-label="Công việc" options={['Sơn', 'Tháo giáo']} />
+        <Input aria-label="Tìm" type="search" />
+      </FilterBar>,
+    )
+    const option = screen.getAllByRole('radio')[1]
+    option.focus()
+    await userEvent.keyboard('{Enter}')
+    expect(onApply).not.toHaveBeenCalled()
+    await userEvent.type(screen.getByRole('searchbox', { name: 'Tìm' }), '{Enter}')
+    expect(onApply).toHaveBeenCalledOnce()
+  })
+
+  it('shows Tìm as loading, and ignores it and Enter, while the options are still loading', async () => {
+    const onApply = vi.fn()
+    render(
+      <FilterBar onApply={onApply} onReset={() => {}} applyLoading>
+        <Input aria-label="Tìm" />
+        <Select aria-label="Sàn" options={[]} />
+      </FilterBar>,
+    )
+    const tim = screen.getByRole('button', { name: /Tìm/ })
+    expect(tim).toHaveClass('ant-btn-loading')
+    await userEvent.click(tim)
+    await userEvent.type(screen.getByRole('textbox', { name: 'Tìm' }), '{Enter}')
+    expect(onApply).not.toHaveBeenCalled()
+  })
+
+  it('has no buttons when it holds one control, which applies as it changes', async () => {
+    // A one-control bar is the screen's own onChange: what is typed is applied at once.
+    function OneControl() {
+      const [query, setQuery] = useState('')
+      return (
+        <>
+          <FilterBar><Input aria-label="Tìm" value={query} onChange={(e) => setQuery(e.target.value)} /></FilterBar>
+          <output>{`áp dụng: ${query}`}</output>
+        </>
+      )
+    }
+    render(<OneControl />)
     expect(within(screen.getByRole('search', { name: 'Bộ lọc' })).queryByRole('button')).toBeNull()
+    await userEvent.type(screen.getByRole('textbox', { name: 'Tìm' }), 'hai')
+    expect(screen.getByText('áp dụng: hai')).toBeInTheDocument()
   })
 })
