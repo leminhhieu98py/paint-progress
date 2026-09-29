@@ -1,11 +1,12 @@
-import { DatePicker, Segmented, Select } from 'antd'
-import { searchSelectProps } from '../../components/searchSelect'
+import { DatePicker, Select } from 'antd'
+import { WORK_SELECT_WIDTH, searchSelectProps } from '../../components/searchSelect'
 import { resolveWork, type ProductivityFilters } from './productivityFilters'
 
 /**
  * The Năng suất controls of the filter bar, after Dự án (FLT-01): the work
  * (scope), then Sàn, then the dates. Unlabelled on screen, each named by its
- * aria-label. The work switch only appears when there is more than one work.
+ * aria-label. The work is a searchable select (FLT-03), and only appears when
+ * there is more than one work.
  */
 export function ProductivityFilterControls({
   workNames,
@@ -21,10 +22,12 @@ export function ProductivityFilterControls({
   return (
     <>
       {workNames.length > 1 && (
-        <Segmented
+        <Select
           aria-label="Công việc"
+          {...searchSelectProps}
+          style={{ width: WORK_SELECT_WIDTH }}
           value={resolveWork(value.work, workNames)}
-          onChange={(v) => onChange({ ...value, work: String(v) })}
+          onChange={(work: string) => onChange({ ...value, work })}
           options={workNames.map((name) => ({ label: name === '' ? '(không rõ công việc)' : name, value: name }))}
         />
       )}

@@ -271,3 +271,27 @@ describe('DeckForecastPanel — pager scope (UI-06)', () => {
     expect(await screen.findByTitle('1')).toHaveClass('ant-pagination-item-active')
   })
 })
+
+describe('DeckForecastPanel: the work switch (FLT-03)', () => {
+  const WORK2 = { ...WORK, id: 'w2', seq: 2, name: 'Tháo giáo' }
+  const TG_STAGES = [{ id: 't1', seq: 1, name: 'Tháo giáo lửng', color: '#8B5CF6', weight: 1 }]
+
+  it('chooses the work from a searchable select named Công việc, with no label on screen', async () => {
+    loadDeckWorks.mockResolvedValue(deckWorks({
+      works: [
+        { work: WORK, weight: 0.5, deadline: null, stages: STAGES, cells: CELLS, audit: {} },
+        { work: WORK2, weight: 0.5, deadline: null, stages: TG_STAGES, cells: CELLS, audit: {} },
+      ],
+    }))
+    renderPanel()
+    const work = await screen.findByRole('combobox', { name: 'Công việc' })
+    expect(screen.queryByRole('radiogroup')).toBeNull()
+    expect(screen.queryByText('Công việc', { exact: true })).toBeNull()
+    expect(within(screen.getByRole('table')).getByText('Lớp 1')).toBeInTheDocument()
+
+    await userEvent.type(work, 'thao')
+    await userEvent.click(await screen.findByTitle('Tháo giáo'))
+    await waitFor(() => expect(within(screen.getByRole('table')).getByText('Tháo giáo lửng')).toBeInTheDocument())
+    expect(within(screen.getByRole('table')).queryByText('Lớp 1')).toBeNull()
+  })
+})

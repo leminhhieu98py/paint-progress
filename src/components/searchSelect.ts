@@ -36,3 +36,10 @@ export const searchSelectProps = {
   filterOption: (input: string, option?: SearchableOption) => matchesSearch(searchKeyOf(option), input),
   notFoundContent: NOT_FOUND_TEXT,
 } satisfies SelectProps
+
+/**
+ * The work switch's width, one on every screen (FLT-03): wide enough for the
+ * longest work name in use (Giàn giáo, Tháo giáo) with room to grow, since the
+ * works are a list that gets longer, not two fixed positions.
+ */
+export const WORK_SELECT_WIDTH = 180

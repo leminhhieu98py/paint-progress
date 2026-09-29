@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { Link, MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { pageSubtitle } from '../../test/copy'
+import { chooseOption, optionTitles } from '../../test/select'
 import { DashboardScreen } from './DashboardScreen'
 import { endSession } from '../../lib/sessionCache'
 
@@ -61,6 +62,8 @@ function deferred<T>() {
   const promise = new Promise<T>((r) => { resolve = r })
   return { promise, resolve }
 }
+/** Picks the bar's work, from its searchable select (FLT-03). */
+const pickWork = (name: string) => chooseOption('Công việc', name, bar())
 const before = (a: Element, b: Element) => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0
 
 beforeEach(() => {
@@ -140,20 +143,21 @@ describe('DashboardScreen (admin)', () => {
     renderAdmin()
     expect(await screen.findByText(/^DASHBOARD 2 sự kiện/)).toBeInTheDocument()
     const project = within(bar()).getByRole('combobox', { name: 'Dự án' })
-    const scope = within(bar()).getByRole('radiogroup', { name: 'Công việc' })
+    const scope = within(bar()).getByRole('combobox', { name: 'Công việc' })
     const deck = within(bar()).getByRole('combobox', { name: 'Sàn' })
     const from = within(bar()).getByPlaceholderText('Từ ngày')
     expect(within(bar()).getByPlaceholderText('Đến ngày')).toBeInTheDocument()
     expect(before(project, scope) && before(scope, deck) && before(deck, from)).toBe(true)
-    // No field label: the only <label>s are the Segmented's own options.
-    expect(bar().querySelector('label:not(.ant-segmented-item)')).toBeNull()
+    // No field label (FLT-01), and the work is a select, not a segmented (FLT-03).
+    expect(bar().querySelector('label')).toBeNull()
+    expect(within(bar()).queryByRole('radiogroup')).toBeNull()
     expect(screen.getByRole('heading', { level: 1, name: 'Năng suất' })).toBeInTheDocument()
   })
 
   it('narrows the dashboard by what the bar holds, once Tìm is pressed (FLT-02)', async () => {
     renderAdmin()
     await screen.findByText(/^DASHBOARD 2 sự kiện/)
-    await userEvent.click(within(bar()).getByText('Tháo giáo'))
+    await pickWork('Tháo giáo')
     expect(screen.getByText('DASHBOARD 2 sự kiện · Tất cả sàn · công việc đầu')).toBeInTheDocument()
     await pressTim()
     expect(await screen.findByText('DASHBOARD 2 sự kiện · Tất cả sàn · Tháo giáo')).toBeInTheDocument()
@@ -189,7 +193,7 @@ describe('DashboardScreen (admin)', () => {
     expect(await screen.findByTitle('Sàn Z')).toBeInTheDocument()
     expect(screen.queryByTitle('Sàn A')).toBeNull()
     // And the draft project's works replace the scope switch's options.
-    expect(within(bar()).queryByRole('radiogroup', { name: 'Công việc' })).toBeNull()
+    expect(within(bar()).queryByRole('combobox', { name: 'Công việc' })).toBeNull()
   })
 
   it('keeps the chosen deck when Tìm is pressed twice while the new project loads (FLT-02)', async () => {
@@ -237,8 +241,8 @@ describe('DashboardScreen (admin)', () => {
     await screen.findByText(/^DASHBOARD 2 sự kiện/)
     await userEvent.click(within(bar()).getByRole('combobox', { name: 'Dự án' }))
     await userEvent.click(await screen.findByTitle('Giàn B (GB)'))
-    const scope = await within(bar()).findByRole('radiogroup', { name: 'Công việc' })
-    expect(within(scope).getAllByRole('radio').map((r) => r.closest('label')?.textContent)).toEqual(['Giàn giáo', 'Tháo giáo B'])
+    await within(bar()).findByRole('combobox', { name: 'Công việc' })
+    expect(await optionTitles('Công việc', bar())).toEqual(['Giàn giáo', 'Tháo giáo B'])
     // Tìm is ready on the works and decks alone; the history is read once, on Tìm.
     await waitFor(() => expect(within(bar()).getByRole('button', { name: /Tìm/ })).not.toHaveClass('ant-btn-loading'))
     expect(listProjectEvents).toHaveBeenCalledTimes(1)
@@ -267,7 +271,7 @@ describe('DashboardScreen (admin)', () => {
     listDecks.mockRejectedValue(new Error('mất kết nối'))
     renderAdmin()
     await screen.findByText(/^DASHBOARD 2 sự kiện/)
-    await userEvent.click(within(bar()).getByText('Tháo giáo'))
+    await pickWork('Tháo giáo')
     await userEvent.click(within(bar()).getByRole('combobox', { name: 'Sàn' }))
     await userEvent.click(await screen.findByTitle('Sàn A'))
     await userEvent.click(within(bar()).getByRole('combobox', { name: 'Dự án' }))
@@ -284,7 +288,7 @@ describe('DashboardScreen (admin)', () => {
   it('puts the defaults back and applies them on Đặt lại (FLT-02)', async () => {
     renderAdmin()
     await screen.findByText(/^DASHBOARD 2 sự kiện/)
-    await userEvent.click(within(bar()).getByText('Tháo giáo'))
+    await pickWork('Tháo giáo')
     await pressTim()
     expect(await screen.findByText('DASHBOARD 2 sự kiện · Tất cả sàn · Tháo giáo')).toBeInTheDocument()
     await userEvent.click(within(bar()).getByRole('button', { name: 'Đặt lại' }))
@@ -343,7 +347,7 @@ describe('DashboardScreen (gs)', () => {
     renderField()
     await screen.findByText(/^DASHBOARD 2 sự kiện/)
     const project = within(bar()).getByRole('combobox', { name: 'Dự án' })
-    const work = within(bar()).getByRole('radiogroup', { name: 'Công việc' })
+    const work = within(bar()).getByRole('combobox', { name: 'Công việc' })
     const deck = within(bar()).getByRole('combobox', { name: 'Sàn' })
     const from = within(bar()).getByPlaceholderText('Từ ngày')
     const tim = within(bar()).getByRole('button', { name: /Tìm/ })
@@ -383,7 +387,7 @@ describe('DashboardScreen (gs)', () => {
     listDecks.mockResolvedValue([{ id: 'd1', name: 'Sàn A' }])
     renderField()
     await screen.findByText(/^DASHBOARD 2 sự kiện/)
-    await userEvent.click(within(bar()).getByText('Tháo giáo'))
+    await pickWork('Tháo giáo')
     await pickProject('Giàn A')
     await waitFor(() => expect(listDecks).toHaveBeenCalledWith('p1'))
     await userEvent.click(within(bar()).getByRole('combobox', { name: 'Sàn' }))

@@ -1582,21 +1582,22 @@ describe('GsScreen: one filter bar, the project first (GS-07)', () => {
     listDeckWorks.mockResolvedValue(TWO_WORKS)
     renderScreen()
     await screen.findByRole('button', { name: 'ô R1C1' })
-    await screen.findByTestId('gs-work-picker')
+    await screen.findByRole('combobox', { name: 'Công việc' })
     expect(bars()).toHaveLength(1)
     const bar = bars()[0]
     const project = within(bar).getByRole('combobox', { name: 'Dự án' })
     const deck = within(bar).getByRole('combobox', { name: 'Sàn' })
-    const work = within(bar).getByTestId('gs-work-picker')
+    const work = within(bar).getByRole('combobox', { name: 'Công việc' })
     const follows = (a: Element, b: Element) => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0
     expect(follows(project, deck) && follows(deck, work)).toBe(true)
-    expect(work).toHaveAttribute('aria-label', 'Công việc')
+    // A searchable select, not a segmented (FLT-03).
+    expect(within(bar).queryByRole('radiogroup')).toBeNull()
   })
 
   it('floats no Công việc label over the work switch (FLT-01)', async () => {
     listDeckWorks.mockResolvedValue(TWO_WORKS)
     renderScreen()
-    await screen.findByTestId('gs-work-picker')
+    await screen.findByRole('combobox', { name: 'Công việc' })
     expect(screen.queryByText('Công việc', { exact: true })).toBeNull()
   })
 
@@ -1654,16 +1655,13 @@ describe('GsScreen: công việc', () => {
     w1: { c1: { stageId: 's1', note: '' }, c2: { stageId: 's2', note: '' } },
     w2: { c1: { stageId: 't1', note: '' } },
   }
-  // The Segmented's radio input carries pointer-events:none -- its visible
-  // label is what the foreman presses. Scoped: 'Tháo giáo' is also a coat.
-  const pickWork = async (name: string) => {
-    await userEvent.click(within(screen.getByTestId('gs-work-picker')).getByText(name))
-  }
+  /** The work, from its searchable select (FLT-03). */
+  const pickWork = (name: string) => chooseIn('Công việc', name)
 
   it('offers no work picker when the deck is in one work', async () => {
     renderScreen()
     await screen.findByRole('button', { name: 'ô R1C1' })
-    expect(screen.queryByTestId('gs-work-picker')).toBeNull()
+    expect(screen.queryByRole('combobox', { name: 'Công việc' })).toBeNull()
   })
 
   it('colours the bays and the coat list by the chosen work', async () => {
@@ -1920,7 +1918,7 @@ describe('GsScreen: Thông tin nhanh — Hôm nay (Feedback Rv5, item 7)', () =>
     expect(card().getByText('Tháo giáo lửng')).toBeInTheDocument()
     expect(card().getByText('200,00 m²')).toBeInTheDocument()
 
-    await userEvent.click(within(screen.getByTestId('gs-work-picker')).getByText('Tháo giáo'))
+    await chooseIn('Công việc', 'Tháo giáo')
 
     // Unchanged, and not refetched: the block is keyed on the deck.
     expect(card().getByText('300,00 m²')).toBeInTheDocument()

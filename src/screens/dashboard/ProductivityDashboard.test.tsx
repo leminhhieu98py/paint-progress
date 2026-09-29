@@ -8,6 +8,7 @@ import { ProductivityDashboard } from './ProductivityDashboard'
 import { ProductivityFilterControls } from './ProductivityFilterControls'
 import { DEFAULT_PRODUCTIVITY_FILTERS, dashboardWorkNames } from './productivityFilters'
 import { expectLeft } from '../../test/alignment'
+import { chooseOption } from '../../test/select'
 
 // jsdom gives Recharts no size; the numbers the charts plot are covered in
 // domain/effort.test.ts, and the wrappers are what this file checks for.
@@ -191,9 +192,12 @@ describe('ProductivityDashboard', () => {
     expect(stageRows()).toHaveLength(1)
   })
 
-  it('switches work, and shows the work picker only because there are two', async () => {
+  it('switches work from a searchable Công việc select, shown only because there are two (FLT-03)', async () => {
     renderDashboard()
-    await userEvent.click(screen.getByText('Tháo giáo'))
+    expect(screen.queryByRole('radiogroup')).toBeNull()
+    // Searchable (UI-02): typed without the accents, the way a site tablet types.
+    await userEvent.type(screen.getByRole('combobox', { name: 'Công việc' }), 'thao')
+    await userEvent.click(await screen.findByTitle('Tháo giáo'))
     expect(cards().getByText('10,0')).toBeInTheDocument()
     expect(screen.getByTestId('efficiency-chart')).toHaveTextContent('Tháo')
   })
@@ -386,7 +390,7 @@ describe('ProductivityDashboard: the chosen work\'s unit (RV6-36)', () => {
     expect(screen.queryByText(/Tổng m²/)).toBeNull()
 
     // Tháo giáo is still m²: switching the work switches the labels with it.
-    await userEvent.click(screen.getByText('Tháo giáo'))
+    await chooseOption('Công việc', 'Tháo giáo')
     await waitFor(() => expect(cards().getByText('Tổng m² đã ghi giờ công')).toBeInTheDocument())
     expect(cards().getByText('Mhr/m² tổng thể')).toBeInTheDocument()
   })

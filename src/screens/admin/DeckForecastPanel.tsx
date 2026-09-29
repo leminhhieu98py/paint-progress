@@ -1,8 +1,9 @@
-import { Alert, App, Button, DatePicker, Segmented, Table, Typography } from 'antd'
+import { Alert, App, Button, DatePicker, Select, Table, Typography } from 'antd'
 import dayjs, { type Dayjs } from 'dayjs'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { SectionCard } from '../../components/SectionCard'
 import { InfoTip } from '../../components/InfoTip'
+import { WORK_SELECT_WIDTH, searchSelectProps } from '../../components/searchSelect'
 import { StatCard } from '../../components/StatCard'
 import { useTablePagination } from '../../components/tablePagination'
 import {
@@ -193,12 +194,15 @@ export function DeckForecastPanel({
         <StatCard label={<>Mhr hao phí đến nay<InfoTip text={NOT_IN_EFFICIENCY} /></>} value={formatHours(totals.totalWasteHours)} />
       </div>
 
+      {/* The work, from a searchable select named by its aria-label (FLT-01, FLT-03). */}
       {works.length > 1 && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
-          <span style={{ ...type.label, color: palette.textTertiary }}>Công việc</span>
-          <Segmented
+          <Select
+            aria-label="Công việc"
+            {...searchSelectProps}
+            style={{ width: WORK_SELECT_WIDTH }}
             value={activeWork?.work.id}
-            onChange={(v) => setWorkId(String(v))}
+            onChange={(id: string) => setWorkId(id)}
             options={works.map((w) => ({ label: w.work.name, value: w.work.id }))}
           />
         </div>

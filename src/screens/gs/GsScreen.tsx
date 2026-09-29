@@ -1,5 +1,5 @@
 import {
-  Alert, App, Button, Dropdown, Grid, Layout, Segmented, Select, Space, Spin, Tooltip,
+  Alert, App, Button, Dropdown, Grid, Layout, Select, Space, Spin, Tooltip,
 } from 'antd'
 import dayjs from 'dayjs'
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
@@ -44,7 +44,7 @@ import { FilterBar } from '../../components/FilterBar'
 import { rememberProjectName } from './fieldProjects'
 import { openingDeckId, rememberDeck } from './lastDeck'
 import { SectionCard } from '../../components/SectionCard'
-import { searchSelectProps } from '../../components/searchSelect'
+import { WORK_SELECT_WIDTH, searchSelectProps } from '../../components/searchSelect'
 
 /**
  * How long to wait for the realtime channel to reach SUBSCRIBED before telling
@@ -1218,14 +1218,16 @@ export function GsScreen() {
                   GSW-R1: the work the drawing is showing. Hidden with one work,
                   since a control with one position is a label pretending to be a
                   choice. Everything below -- colours, cards, plan, the bay modal --
-                  follows it. Named by its aria-label, no label on screen (FLT-01).
+                  follows it. Named by its aria-label, no label on screen (FLT-01);
+                  a searchable select, as on every screen (FLT-03).
                 */}
                 {activeWork && workList.length > 1 && (
-                  <Segmented
-                    data-testid="gs-work-picker"
+                  <Select
                     aria-label="Công việc"
+                    {...searchSelectProps}
+                    style={{ width: fullWidthControls ? '100%' : WORK_SELECT_WIDTH, maxWidth: '100%' }}
                     value={activeWork.work.id}
-                    onChange={(id) => setActiveWorkId(String(id))}
+                    onChange={(id: string) => setActiveWorkId(id)}
                     options={workList.map((w) => ({ label: w.work.name, value: w.work.id }))}
                   />
                 )}
