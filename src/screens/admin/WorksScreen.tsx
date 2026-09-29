@@ -11,7 +11,7 @@ import type { Work, WorkKind } from '../../domain/types'
 import { DEFAULT_QUANTITY_LABEL, DEFAULT_UNIT } from '../../domain/unit'
 import { sumsToOne } from '../../domain/weights'
 import { listDecks, type DeckRow } from '../../lib/decksApi'
-import { formatAreaM2, formatPercent, formatWeight } from '../../lib/format'
+import { MISSING, formatAreaM2, formatPercent, formatWeight } from '../../lib/format'
 import { loadProjectModel } from '../../lib/progressApi'
 import { listProjectNames } from '../../lib/projectsApi'
 import {
@@ -474,7 +474,7 @@ export function WorksScreen() {
                   />
                 ) : (
                   <span style={type.body}>
-                    {w.id in progressByWork ? formatPercent(progressByWork[w.id]) : '—'}
+                    {w.id in progressByWork ? formatPercent(progressByWork[w.id]) : MISSING}
                   </span>
                 )),
               },

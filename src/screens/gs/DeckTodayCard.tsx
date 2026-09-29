@@ -3,7 +3,7 @@ import { SectionCard } from '../../components/SectionCard'
 import type { DeckEffortTotals } from '../../domain/effort'
 import type { TodayStageArea } from '../../domain/today'
 import { DEFAULT_UNIT } from '../../domain/unit'
-import { formatAreaM2, formatHours } from '../../lib/format'
+import { MISSING, formatAreaM2, formatHours } from '../../lib/format'
 import { fieldType, palette, space } from '../../theme'
 import { CardSkeleton, type DeckFigureStatus } from './DeckStatsCards'
 
@@ -96,8 +96,8 @@ export function DeckTodayCard({
     ['Tổng Mhr hao phí đến hôm nay', totals.totalWasteHours, sinceNote],
   ]
 
-  /** A figure as printed, or an em dash where the day could not be read. */
-  const figure = (text: string) => (status === 'unknown' ? '—' : text)
+  /** A figure as printed, or the missing mark where the day could not be read. */
+  const figure = (text: string) => (status === 'unknown' ? MISSING : text)
 
   return (
     <div data-testid="gs-deck-today">

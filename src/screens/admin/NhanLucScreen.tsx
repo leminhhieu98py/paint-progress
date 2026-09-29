@@ -37,6 +37,7 @@ import { initialsOf } from '../../lib/initials'
 import { generatePassword } from '../../lib/passwordGen'
 import { downloadWorkbook } from '../../lib/projectReport'
 import { listProjectNames } from '../../lib/projectsApi'
+import { MISSING } from '../../lib/format'
 import { listWorks } from '../../lib/worksApi'
 import { palette, type } from '../../theme'
 import { ChangeRoleDialog } from './ChangeRoleDialog'
@@ -70,7 +71,7 @@ const RULES: Rule[] = [
 ]
 
 /** A cell with nothing to say for this kind of row (owner, Nhân lực). */
-const NONE = <span style={{ color: palette.textTertiary }}>-</span>
+const NONE = <span style={{ color: palette.textTertiary }}>{MISSING}</span>
 
 const projectTextStyle = (user: GsUser) => ({
   color: user.active ? palette.textSecondary : palette.textQuaternary,

@@ -18,7 +18,7 @@ import { deckForecast, type DeckForecast } from '../../domain/forecast'
 import { computeDeckProgress } from '../../domain/progress'
 import type { DeckEvent, WorkModel } from '../../domain/types'
 import { DEFAULT_UNIT, perUnit } from '../../domain/unit'
-import { formatAreaM2, formatHours, formatMhrPerM2, formatPercent } from '../../lib/format'
+import { MISSING, formatAreaM2, formatHours, formatMhrPerM2, formatPercent } from '../../lib/format'
 import { matchesSearch } from '../../lib/search'
 import { fieldError, palette } from '../../theme'
 import { useTypeScale } from '../../components/typeScale'
@@ -43,7 +43,7 @@ import { dashboardWorkNames, resolveWork, type ProductivityFilters } from './pro
 
 const FALLBACK_COLORS = ['#0A8175', '#F97316', '#2563EB', '#7C3AED', '#DB2777', '#65A30D']
 
-const dash = '—'
+const dash = MISSING
 const ratio = (n: number | null) => (n === null ? dash : formatMhrPerM2(n))
 /**
  * Every table as wide as its content (MOB-01): a header never wraps, and on a
@@ -372,7 +372,7 @@ export function ProductivityDashboard({
                 title: 'Cảnh báo',
                 align: 'center',
                 render: (_, r) => (r.forecast.lateDays === null
-                  ? ''
+                  ? dash
                   : (
                     <span style={{ ...type.body, color: fieldError }}>
                       {`Trễ ${r.forecast.lateDays} ngày · thiếu ${formatHours(r.forecast.shortfallMhr ?? 0)} Mhr`}

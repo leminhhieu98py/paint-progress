@@ -3,7 +3,7 @@ import { EmptyState } from '../../components/EmptyState'
 import { SectionCard } from '../../components/SectionCard'
 import { kpiSeries, plannedAreaM2, type KpiScopeStage } from '../../domain/kpi'
 import { DEFAULT_UNIT, MIXED_QUANTITY_LABEL, MIXED_UNIT_SUM_TOOLTIP, unitOfWorks } from '../../domain/unit'
-import { formatAreaM2 } from '../../lib/format'
+import { MISSING, formatAreaM2 } from '../../lib/format'
 import { KpiComboChart } from '../dashboard/charts'
 import { ALL, coatKey, kpiCoatOptions, resolveCoat, type KpiFilters } from './kpiFilters'
 
@@ -109,8 +109,8 @@ export function KpiDashboard({
             // sum to print; the figures per coat are one filter away.
             ? [
               { value: scoped.length, label: 'công đoạn' },
-              { prefix: 'kế hoạch', value: '—' },
-              { prefix: 'thực hiện', value: '—', info: MIXED_UNIT_SUM_TOOLTIP },
+              { prefix: 'kế hoạch', value: MISSING },
+              { prefix: 'thực hiện', value: MISSING, info: MIXED_UNIT_SUM_TOOLTIP },
             ]
             : [
               { value: scoped.length, label: 'công đoạn' },

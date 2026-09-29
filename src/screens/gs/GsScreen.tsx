@@ -19,7 +19,7 @@ import { EMPTY_EFFORT, type Cell, type Deck, type DeckEvent, type Effort, type S
 // one. Screens still never touch `supabase` directly.
 import { getDrawingUrl } from '../../lib/decksApi'
 import { DEFAULT_QUANTITY_LABEL, DEFAULT_UNIT } from '../../domain/unit'
-import { formatAreaM2, formatPercent } from '../../lib/format'
+import { MISSING, formatAreaM2, formatPercent } from '../../lib/format'
 import {
   listCoworkerNames, listDeckCells, listDeckStates, listDeckWorks, listProjectIndex,
   loadGsProject, loadGsProjectIdentity, setCellState, subscribeDeckStates,
@@ -711,9 +711,9 @@ export function GsScreen() {
    * prog(D) per deck, for the deck picker.
    *
    * Empty until the batched read lands. Meanwhile the option is the deck's
-   * name alone, the picker spinning, and after a failed read an em dash --
-   * never a 0,00% it does not know: a wrong figure on the control the foreman
-   * is choosing by is worse than no figure, and "—" while it loads reads as
+   * name alone, the picker spinning, and after a failed read the missing mark
+   * -- never a 0,00% it does not know: a wrong figure on the control the foreman
+   * is choosing by is worse than no figure, and "-" while it loads reads as
    * "no figure" when there simply is not one yet.
    */
   const [deckPercents, setDeckPercents] = useState<Record<string, number>>({})
@@ -1210,7 +1210,7 @@ export function GsScreen() {
       options={decks.map((d) => ({
         value: d.id,
         label: deckPercents[d.id] !== undefined ? `${d.name} · ${formatPercent(deckPercents[d.id])}`
-          : deckPercentsFailed ? `${d.name} · —` : d.name,
+          : deckPercentsFailed ? `${d.name} · ${MISSING}` : d.name,
         searchKey: d.name,
       }))}
     />

@@ -262,7 +262,7 @@ describe('KpiDashboard: the work\'s unit (RV6-35)', () => {
 describe('KpiDashboard: coats of different units under Tất cả công đoạn (RV6-36)', () => {
   it('refuses to sum across units and charts under Số lượng', async () => {
     renderDash([{ ...ENTRIES[0], unit: 'm²' }, { ...ENTRIES[1], unit: 'tấn' }])
-    expect(keyFactTexts()).toEqual(['2 công đoạn', 'kế hoạch —', 'thực hiện —'])
+    expect(keyFactTexts()).toEqual(['2 công đoạn', 'kế hoạch -', 'thực hiện -'])
     expect(chart()).toHaveAttribute('data-unit', 'Số lượng')
     // Why there is no sum: a (?) on the facts, not a sentence (HLT-01).
     await userEvent.hover(screen.getByRole('img', { name: 'Các sàn dùng đơn vị khác nhau, không cộng được' }))

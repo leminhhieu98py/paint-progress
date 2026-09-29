@@ -18,6 +18,12 @@
  * front of the customer.
  */
 
+/**
+ * The mark for a value a row does not have, on every screen: one hyphen, the
+ * owner's rule from Nhân lực, never an em dash or an empty cell (I7).
+ */
+export const MISSING = '-'
+
 const AREA_M2 = new Intl.NumberFormat('vi-VN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const PERCENT = new Intl.NumberFormat('vi-VN', {
   style: 'percent', minimumFractionDigits: 2, maximumFractionDigits: 2,

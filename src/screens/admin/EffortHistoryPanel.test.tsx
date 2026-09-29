@@ -99,6 +99,16 @@ describe('EffortHistoryPanel', () => {
     expect(within(coverage).getByRole('img', { name: 'Các lần chưa ghi không tính vào hiệu suất.' })).toBeInTheDocument()
   })
 
+  it('marks every empty cell of an update with no effort "-" (I7)', async () => {
+    renderPanel(true, { events: [ev({ id: 1, cellCode: 'R1C1', workName: null, byId: null })] })
+    const row = (await screen.findByText('R1C1')).closest('tr') as HTMLElement
+    const headers = screen.getAllByRole('columnheader').map((th) => th.textContent)
+    const cell = (label: string) => row.querySelectorAll('td')[headers.indexOf(label)]
+    for (const label of ['Công việc', 'Bởi', 'Nhóm trưởng', 'Thợ chính', 'Giờ công', 'Giờ hao phí', 'Lý do hao phí', 'Lệnh sản xuất']) {
+      expect(cell(label)).toHaveTextContent(/^-$/)
+    }
+  })
+
   it('draws the coverage as a plain fact once every update has hours (HLT-01)', async () => {
     renderPanel(true, { events: [EVENTS[1]] })
     const [coverage] = await screen.findAllByTestId('key-fact')

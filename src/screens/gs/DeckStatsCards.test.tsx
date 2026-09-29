@@ -154,10 +154,10 @@ describe('DeckProgressCard while the deck loads', () => {
     expect(within(card).queryByText('Sơn')).toBeNull()
   })
 
-  it('reads an em dash when the deck could not be read, not 0,00%', () => {
+  it('reads the missing mark "-" when the deck could not be read, not 0,00%', () => {
     render(<DeckProgressCard status="unknown" progress={0} totalAreaM2={1000} />)
     const card = screen.getByTestId('gs-deck-progress')
-    expect(within(card).getByText('—')).toBeInTheDocument()
+    expect(within(card).getByText('-')).toBeInTheDocument()
     expect(card).not.toHaveTextContent('%')
     expect(within(card).queryByRole('status')).toBeNull()
   })

@@ -9,7 +9,7 @@ import { planDays, type StagePlan } from '../../domain/kpi'
 import {
   DEFAULT_QUANTITY_LABEL, DEFAULT_UNIT, labelOfWorks, MIXED_QUANTITY_LABEL, unitOfWorks,
 } from '../../domain/unit'
-import { formatAreaM2 } from '../../lib/format'
+import { MISSING, formatAreaM2 } from '../../lib/format'
 import { palette, type } from '../../theme'
 
 /**
@@ -242,7 +242,7 @@ export function StagePlanTable({
             // `planDays` and not a subtraction here, so Số ngày on screen and
             // the divisor the chart uses cannot drift apart.
             ? String(planDays({ startDate: d.startDate, endDate: d.endDate }))
-            : '—'
+            : MISSING
         return (
           <span data-testid={`plan-days-${row.stageId}`} style={type.body}>
             {shown}

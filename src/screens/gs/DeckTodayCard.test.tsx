@@ -25,12 +25,12 @@ describe('DeckTodayCard while the deck loads', () => {
     expect(within(card()).queryByText('Mhr thực hiện hôm nay')).toBeNull()
   })
 
-  it('reads an em dash for every figure when today\'s updates could not be read', () => {
+  it('reads the missing mark "-" for every figure when today\'s updates could not be read', () => {
     render(<DeckTodayCard status="unknown" todayKey="2026-09-09" rows={ONE_WORK} totals={ZERO} />)
     expect(within(card()).getByText('Blast + Coat 1')).toBeInTheDocument()
     expect(within(card()).getByText('Mhr thực hiện hôm nay')).toBeInTheDocument()
     // Three coats and four man-hour rows.
-    expect(within(card()).getAllByText('—')).toHaveLength(7)
+    expect(within(card()).getAllByText('-')).toHaveLength(7)
     expect(card()).not.toHaveTextContent('0,00 m²')
     expect(card()).not.toHaveTextContent('320,50')
     expect(within(card()).queryByRole('status')).toBeNull()

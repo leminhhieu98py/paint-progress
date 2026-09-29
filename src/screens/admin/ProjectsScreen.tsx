@@ -10,7 +10,7 @@ import { SectionCard } from '../../components/SectionCard'
 import { modalProps } from '../../components/modalChrome'
 import { StatCard } from '../../components/StatCard'
 import { tablePagination } from '../../components/tablePagination'
-import { formatAreaM2 } from '../../lib/format'
+import { MISSING, formatAreaM2 } from '../../lib/format'
 import { latestProgressEvent, type ProgressEvent } from '../../lib/progressApi'
 import {
   createProject, deleteProject, listProjects, updateProject, type ProjectRow,
@@ -229,7 +229,7 @@ export function ProjectsScreen() {
             label="Ghi nhận gần nhất"
             tone="accent"
             live={event !== null}
-            value={event ? eventTime(event.at) : '—'}
+            value={event ? eventTime(event.at) : MISSING}
             sub={event ? eventDetail(event) : 'Chưa có ghi nhận nào'}
           />
         </div>

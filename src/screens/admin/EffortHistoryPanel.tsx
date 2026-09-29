@@ -10,7 +10,7 @@ import { effortCoverage, WASTE_REASONS, wasteReasonLabel } from '../../domain/ef
 import { type DeckEvent, type Effort } from '../../domain/types'
 import { listGsUsers } from '../../lib/adminApi'
 import { listCoworkerNames } from '../../lib/gsApi'
-import { formatDateTimeVN, formatHours } from '../../lib/format'
+import { MISSING, formatDateTimeVN, formatHours } from '../../lib/format'
 import { setCellEventEffort } from '../../lib/progressApi'
 import { palette, space, type } from '../../theme'
 
@@ -26,7 +26,9 @@ import { palette, space, type } from '../../theme'
  * comes here to fix are the ones from this week.
  */
 
-const hours = (n: number | null) => (n === null ? '' : formatHours(n))
+const hours = (n: number | null) => (n === null ? MISSING : formatHours(n))
+/** Typed text, or the missing mark for an empty one (I7). */
+const text = (v: string | null) => (v === null || v.trim() === '' ? MISSING : v)
 
 const fieldLabel = { display: 'block', marginBottom: 4, ...type.label } as const
 
@@ -161,17 +163,17 @@ export function EffortHistoryPanel({
         locale={{ emptyText: onlyMissing ? 'Mọi lần cập nhật đã có giờ công' : 'Sàn này chưa có lần cập nhật nào' }}
         columns={[
           { title: 'Mã ô', dataIndex: 'cellCode', width: 80 },
-          { title: 'Công việc', dataIndex: 'workName', width: 120, render: (v: string | null) => v ?? '' },
+          { title: 'Công việc', dataIndex: 'workName', width: 120, render: (v: string | null) => text(v) },
           { title: 'Công đoạn', dataIndex: 'toStageName', width: 140, render: (v: string | null) => v ?? 'Chưa bắt đầu' },
           { title: 'Cập nhật lúc', dataIndex: 'at', width: 160, render: (v: string) => formatDateTimeVN(v), align: 'center' },
-          { title: 'Bởi', dataIndex: 'byId', width: 140, render: (v: string | null) => (v === null ? '' : names[v] ?? v) },
-          { title: 'Nhóm trưởng', width: 180, render: (_, ev) => ev.effort.leadName },
-          { title: 'Thợ chính', width: 180, render: (_, ev) => ev.effort.painterName },
+          { title: 'Bởi', dataIndex: 'byId', width: 140, render: (v: string | null) => (v === null ? MISSING : names[v] ?? v) },
+          { title: 'Nhóm trưởng', width: 180, render: (_, ev) => text(ev.effort.leadName) },
+          { title: 'Thợ chính', width: 180, render: (_, ev) => text(ev.effort.painterName) },
           { title: 'Giờ công', align: 'center', width: 90, render: (_, ev) => hours(ev.effort.workHours) },
           { title: 'Giờ hao phí', align: 'center', width: 100, render: (_, ev) => hours(ev.effort.wasteHours) },
           // A note, not a category (UI-04 amended): plain text, left like every note (UI-03).
-          { title: 'Lý do hao phí', width: 220, render: (_, ev) => ev.effort.wasteReason },
-          { title: 'Lệnh sản xuất', width: 130, render: (_, ev) => ev.effort.wasteOrder },
+          { title: 'Lý do hao phí', width: 220, render: (_, ev) => text(ev.effort.wasteReason) },
+          { title: 'Lệnh sản xuất', width: 130, render: (_, ev) => text(ev.effort.wasteOrder) },
           {
             title: '',
             width: 90,

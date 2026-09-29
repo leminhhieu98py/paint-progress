@@ -173,7 +173,7 @@ describe('StagePlanTable', () => {
     await retype(endOf('s1'), '01/08/2026')
 
     expect(await row('s1').findByText(/không được trước ngày bắt đầu/i)).toBeInTheDocument()
-    expect(row('s1').getByTestId('plan-days-s1')).toHaveTextContent('—')
+    expect(row('s1').getByTestId('plan-days-s1')).toHaveTextContent(/^-$/)
     expect(saveOf('s1')).toBeDisabled()
 
     // Clicking Lưu blurs the picker first, and antd's own swap lands before the

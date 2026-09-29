@@ -19,7 +19,7 @@ import { computeDeckProgress, summariseDeck } from '../../domain/progress'
 import type { DeckEvent, Stage, StageProgress, WorkModel, Zone } from '../../domain/types'
 import { getDrawingUrl } from '../../lib/decksApi'
 import { DEFAULT_UNIT } from '../../domain/unit'
-import { formatAreaM2, formatPercent, formatWeight } from '../../lib/format'
+import { MISSING, formatAreaM2, formatPercent, formatWeight } from '../../lib/format'
 import { subscribeDeckStates } from '../../lib/gsApi'
 import {
   listCellNotes, listDeckEvents, loadDeckWorks, setReportNote,
@@ -1242,7 +1242,7 @@ export function DeckProgressPanel({
     }
   }
 
-  const stageName = (id: string) => entry?.stages.find((st: Stage) => st.id === id)?.name ?? '—'
+  const stageName = (id: string) => entry?.stages.find((st: Stage) => st.id === id)?.name ?? MISSING
 
   if (loading) return <Spin style={{ display: 'block', margin: '8vh auto' }} />
 

@@ -9,7 +9,7 @@ import { GS_RING, GS_RING_SIZE, GS_RING_THICKNESS, ringFigureStep } from '../../
 import { buildStageSlices, NOT_STARTED_KEY, UNMAPPED_KEY } from '../../domain/pieSlices'
 import type { Cell, Stage, StageProgress } from '../../domain/types'
 import { DEFAULT_QUANTITY_LABEL, DEFAULT_UNIT } from '../../domain/unit'
-import { formatAreaM2, formatPercent } from '../../lib/format'
+import { MISSING, formatAreaM2, formatPercent } from '../../lib/format'
 import { fieldType, palette, space } from '../../theme'
 
 /** The coat legend's colour dot, the admin legends' size (CLR-03). */
@@ -87,7 +87,7 @@ export function DeckProgressCard({
         ) : (
           <>
             <div style={{ ...fieldType.display, lineHeight: 1, letterSpacing: '-0.032em' }}>
-              {status === 'unknown' ? '—' : formatPercent(progress)}
+              {status === 'unknown' ? MISSING : formatPercent(progress)}
             </div>
             {status === 'ready' && (
               <div style={{ marginTop: space.lg }}>

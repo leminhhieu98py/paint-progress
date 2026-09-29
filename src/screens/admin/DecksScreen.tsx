@@ -16,7 +16,7 @@ import { listGsUsers } from '../../lib/adminApi'
 import {
   deleteDeck, duplicateDeck, listDecks, swapDeckSeq, type DeckRow,
 } from '../../lib/decksApi'
-import { formatAreaM2, formatPercent, formatWeight } from '../../lib/format'
+import { MISSING, formatAreaM2, formatPercent, formatWeight } from '../../lib/format'
 import { loadProjectModel } from '../../lib/progressApi'
 import type { ProjectModel } from '../../lib/workModel'
 import { listProjectNames } from '../../lib/projectsApi'
@@ -646,7 +646,7 @@ export function DecksScreen() {
                       <Table.Summary.Cell index={3} align="center">
                         {rollupScope.unit === null ? (
                           <Tooltip title={MIXED_UNIT_SUM_TOOLTIP}>
-                            <span style={type.bodyStrong}>—</span>
+                            <span style={type.bodyStrong}>{MISSING}</span>
                           </Tooltip>
                         ) : (
                           <span style={type.bodyStrong}>{formatAreaM2(totalArea)}</span>

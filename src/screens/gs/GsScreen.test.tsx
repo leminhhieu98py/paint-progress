@@ -684,7 +684,7 @@ describe('GsScreen', () => {
 
   it('names each deck alone, the picker spinning, while the figures are on the way', async () => {
     // A wrong figure on the control you are choosing by is worse than none --
-    // and so is an em dash that reads as "this deck has no figure" when it
+    // and so is the missing mark "-" that reads as "this deck has no figure" when it
     // simply has not arrived yet.
     listProjectIndex.mockReturnValue(new Promise(() => {}))
     renderScreen()
@@ -692,11 +692,11 @@ describe('GsScreen', () => {
     expect((await deckPicker()).closest('.ant-select')?.querySelector('.anticon-loading')).not.toBeNull()
   })
 
-  it('shows an em dash on a deck whose figure could not be read', async () => {
+  it('shows the missing mark "-" on a deck whose figure could not be read', async () => {
     listProjectIndex.mockRejectedValue(new Error('Failed to fetch'))
     renderScreen()
     await waitFor(async () =>
-      expect(await deckOptionTitles()).toEqual(['Cellar Deck · —', 'Main Deck · —']))
+      expect(await deckOptionTitles()).toEqual(['Cellar Deck · -', 'Main Deck · -']))
     expect((await deckPicker()).closest('.ant-select')?.querySelector('.anticon-loading')).toBeNull()
   })
 
@@ -737,23 +737,23 @@ describe('GsScreen', () => {
     expect(within(today).getByText('Mhr thực hiện hôm nay')).toBeInTheDocument()
   })
 
-  it('reads an em dash, not 0,00%, when the deck could not be read at all', async () => {
+  it('reads the missing mark "-", not 0,00%, when the deck could not be read at all', async () => {
     listDeckCells.mockRejectedValue(new Error('Failed to fetch'))
     renderScreen()
     const progress = await screen.findByTestId('gs-deck-progress')
     await waitFor(() => expect(within(progress).queryByRole('status')).toBeNull())
-    expect(within(progress).getByText('—')).toBeInTheDocument()
+    expect(within(progress).getByText('-')).toBeInTheDocument()
     expect(progress).not.toHaveTextContent('%')
   })
 
-  it('reads an em dash for the day\'s figures when its updates could not be read', async () => {
+  it('reads the missing mark "-" for the day\'s figures when its updates could not be read', async () => {
     listDeckEvents.mockRejectedValue(new Error('Failed to fetch'))
     renderScreen()
     const today = await screen.findByTestId('gs-deck-today')
     await waitFor(() => expect(within(today).queryByRole('status')).toBeNull())
     expect(within(today).getByText('Mhr thực hiện hôm nay')).toBeInTheDocument()
     expect(today).not.toHaveTextContent('0,0')
-    expect(within(today).getAllByText('—').length).toBeGreaterThan(0)
+    expect(within(today).getAllByText('-').length).toBeGreaterThan(0)
   })
 
   it('offers logout and nothing else about the account', async () => {

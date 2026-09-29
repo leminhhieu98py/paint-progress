@@ -380,7 +380,11 @@ describe('ProductivityDashboard forecast (Feedback Rv2, item 13)', () => {
     expect(rows).toHaveLength(2)
     expect(within(rows[0]).getByText('Sàn A')).toBeInTheDocument()
     // No deadline on the fixture, so no date and no warning.
-    expect(within(rows[0]).getAllByText('—').length).toBeGreaterThan(0)
+    expect(within(rows[0]).getAllByText('-').length).toBeGreaterThan(0)
+    // Not late: the warning cell says "-", not nothing (I7).
+    const headers = table.getAllByRole('columnheader').map((th) => th.textContent)
+    const warning = rows[0].querySelectorAll('td')[headers.indexOf('Cảnh báo')]
+    expect(warning).toHaveTextContent(/^-$/)
   })
 
   it('narrows the forecast to the deck in the filter', async () => {

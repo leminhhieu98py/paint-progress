@@ -13,7 +13,7 @@ import { deckForecast, type StageForecast } from '../../domain/forecast'
 import { computeDeckProgress } from '../../domain/progress'
 import type { DeckEvent, WorkModel } from '../../domain/types'
 import { DEFAULT_UNIT, perUnit } from '../../domain/unit'
-import { formatAreaM2, formatHours, formatMhrPerM2 } from '../../lib/format'
+import { MISSING, formatAreaM2, formatHours, formatMhrPerM2 } from '../../lib/format'
 import { loadDeckWorks, type DeckWorks } from '../../lib/progressApi'
 import { setWorkDeckDeadline } from '../../lib/worksApi'
 import { palette, space, type } from '../../theme'
@@ -36,7 +36,7 @@ const NOT_IN_EFFICIENCY = 'Không tính vào hiệu suất'
  * exposes the deadline.
  */
 
-const dash = '—'
+const dash = MISSING
 
 export function DeckForecastPanel({
   deckId,
