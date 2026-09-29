@@ -1,15 +1,16 @@
 import { DownOutlined } from '@ant-design/icons'
 import { useState, type ReactNode } from 'react'
 import { palette, shadowCard, type } from '../theme'
+import { KeyFacts, type KeyFact } from './KeyFacts'
 
 /**
  * The one card shape this app has: white, hairline border, soft shadow, an
- * optional header with a spec code, a title, a live summary and its own
+ * optional header with a spec code, a title, its live facts and its own
  * actions.
  *
- * `summary` is what makes collapsing worth anything. The deck screen stacks
- * four of these, and a foreman-shaped answer -- "184 ô đã dựng", "tổng 1,00"
- * -- has to survive the panel being shut, or the admin opens all four every
+ * `facts` (HLT-01, drawn by `KeyFacts`) are what make collapsing worth
+ * anything. The deck screen stacks four of these, and a foreman-shaped answer
+ * -- "184 ô đã dựng", "tổng 1,00" -- has to survive the panel being shut, or the admin opens all four every
  * visit and the collapse is decoration.
  *
  * `extra` lives in the header, NOT the body, and stays mounted while
@@ -20,6 +21,7 @@ import { palette, shadowCard, type } from '../theme'
 export function SectionCard({
   code,
   title,
+  facts,
   summary,
   extra,
   children,
@@ -31,6 +33,8 @@ export function SectionCard({
 }: {
   code?: string
   title?: ReactNode
+  facts?: ReadonlyArray<KeyFact | false | null | undefined>
+  /** @deprecated Hand-formatted facts; being replaced by `facts` (HLT-01). */
   summary?: ReactNode
   extra?: ReactNode
   children: ReactNode
@@ -123,6 +127,7 @@ export function SectionCard({
               {title}
             </h2>
           )}
+          {facts !== undefined && <KeyFacts facts={facts} />}
           {summary !== undefined && (
             <span style={{ ...type.caption, color: palette.textTertiary, minWidth: 0 }}>{summary}</span>
           )}

@@ -51,6 +51,8 @@ export const palette = {
   successBg: '#E7F8EF',
   warning: '#B45309',
   warningBg: '#FFFAEB',
+  /** The hairline around a warning pill (HLT-01), so its amber reads on white. */
+  warningBorder: '#FEDF89',
 
   /** Tooltips and the "destructive" toggle, both near-black rather than black. */
   ink: '#1D2A38',

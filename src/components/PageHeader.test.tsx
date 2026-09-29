@@ -18,6 +18,22 @@ describe('PageHeader', () => {
     expect(screen.getByText('184 ô · 5.258,50 m²')).toBeInTheDocument()
   })
 
+  it('shows the facts right after the title and badge, on the title\'s line, as KeyFacts pills (HLT-01)', () => {
+    render(
+      <PageHeader
+        title="Main Deck"
+        badge="MD-01"
+        facts={[{ value: 184, label: 'ô' }, { value: '5.258,50', label: 'm²' }]}
+      />,
+    )
+    expect(screen.getAllByTestId('key-fact').map((p) => p.textContent)).toEqual(['184 ô', '5.258,50 m²'])
+    const line = screen.getByRole('heading', { level: 1 }).parentElement!
+    expect(screen.getByTestId('key-facts').parentElement).toBe(line)
+    expect(screen.getByText('MD-01').nextElementSibling).toBe(screen.getByTestId('key-facts'))
+    // Wrapping below the title on a narrow header, never overflowing it.
+    expect(line).toHaveStyle({ flexWrap: 'wrap' })
+  })
+
   it('has no back button unless a handler is supplied', () => {
     render(<PageHeader title="Dự án" />)
     expect(screen.queryByRole('button', { name: 'Quay lại' })).not.toBeInTheDocument()
@@ -93,6 +109,7 @@ describe('PageHeader', () => {
     const bare = chain(<PageHeader title="Năng suất" />)
     expect(chain(<PageHeader title="Nhân viên" subtitle="12 người" />)).toEqual(bare)
     expect(chain(<PageHeader title="Người dùng" extra={<button type="button">Tạo</button>} />)).toEqual(bare)
+    expect(chain(<PageHeader title="Sàn" facts={[{ value: 184, label: 'ô' }]} />)).toEqual(bare)
     expect(chain(<PageHeader title="Sàn" subtitle="184 ô" extra={<button type="button">Tạo</button>} />)).toEqual(bare)
     // The title's line is a control's height with the title centred in it,
     // and the row aligns its items to the top rather than centring them: a

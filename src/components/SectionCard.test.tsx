@@ -11,14 +11,17 @@ describe('SectionCard', () => {
     expect(screen.getByText('nội dung')).toBeInTheDocument()
   })
 
-  it('shows the spec code and the summary beside the title', () => {
+  it('shows the spec code and the facts beside the title, as KeyFacts pills (HLT-01)', () => {
     render(
-      <SectionCard code="A3.2" title="Cấu hình lớp sơn" summary="5 lớp · tổng 1,00">
+      <SectionCard code="A3.2" title="Cấu hình lớp sơn" facts={[{ value: 5, label: 'lớp' }, { prefix: 'tổng', value: '1,00' }]}>
         x
       </SectionCard>,
     )
     expect(screen.getByText('A3.2')).toBeInTheDocument()
-    expect(screen.getByText('5 lớp · tổng 1,00')).toBeInTheDocument()
+    expect(screen.getAllByTestId('key-fact').map((p) => p.textContent)).toEqual(['5 lớp', 'tổng 1,00'])
+    // Right after the title, on the title's own row.
+    const heading = screen.getByRole('heading', { name: 'Cấu hình lớp sơn' })
+    expect(heading.nextElementSibling).toBe(screen.getByTestId('key-facts'))
   })
 
   it('marks its body so a stylesheet can inset the tables inside it (LAY-01)', () => {
@@ -52,17 +55,17 @@ describe('SectionCard', () => {
     expect(screen.getByText('nội dung')).toBeInTheDocument()
   })
 
-  it('keeps the summary readable while collapsed', async () => {
-    // The summary is what a collapsed panel is FOR: four panels shut, and the
+  it('keeps the facts readable while collapsed', async () => {
+    // The facts are what a collapsed panel is FOR: four panels shut, and the
     // admin still reads "184 ô đã dựng" and "tổng 1,00" without opening one.
     const user = userEvent.setup()
     render(
-      <SectionCard collapsible title="Phân ô" summary="184 ô đã dựng">
+      <SectionCard collapsible title="Phân ô" facts={[{ value: 184, label: 'ô đã dựng' }]}>
         nội dung
       </SectionCard>,
     )
     await user.click(screen.getByRole('button', { name: 'Phân ô' }))
-    expect(screen.getByText('184 ô đã dựng')).toBeInTheDocument()
+    expect(screen.getByTestId('key-fact')).toHaveTextContent('184 ô đã dựng')
   })
 
   it('can start collapsed', () => {
@@ -88,9 +91,9 @@ describe('SectionCard', () => {
     expect(screen.getByRole('button', { name: 'Lưu' })).toBeInTheDocument()
   })
 
-  it('sets code, title and summary on the type scale (TYP-01, TYP-03)', () => {
+  it('sets code, title and facts on the type scale (TYP-01, TYP-03)', () => {
     render(
-      <SectionCard code="A3.2" title="Cấu hình lớp sơn" summary="5 lớp">
+      <SectionCard code="A3.2" title="Cấu hình lớp sơn" facts={[{ value: 5, label: 'lớp' }]}>
         x
       </SectionCard>,
     )
@@ -99,7 +102,9 @@ describe('SectionCard', () => {
       fontSize: '15px',
       fontWeight: '600',
     })
-    expect(screen.getByText('5 lớp')).toHaveStyle({ fontSize: '12px', fontWeight: '400', color: palette.textTertiary })
+    expect(screen.getByText('5')).toHaveStyle({ fontSize: '13px', fontWeight: '600' })
+    expect(screen.getByText('lớp')).toHaveStyle({ fontSize: '12px', fontWeight: '400' })
+    expect(screen.getByTestId('key-fact')).toHaveStyle({ color: palette.textSecondary })
   })
 })
 

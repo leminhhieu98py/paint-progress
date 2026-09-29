@@ -1,6 +1,7 @@
 import { ArrowLeftOutlined, RightOutlined } from '@ant-design/icons'
 import { Fragment, type ReactNode } from 'react'
 import { palette, type } from '../theme'
+import { KeyFacts, type KeyFact } from './KeyFacts'
 
 export interface Crumb {
   label: string
@@ -22,6 +23,7 @@ export interface Crumb {
 export function PageHeader({
   title,
   badge,
+  facts,
   subtitle,
   breadcrumbs,
   onBack,
@@ -32,6 +34,8 @@ export function PageHeader({
 }: {
   title: ReactNode
   badge?: ReactNode
+  /** The facts beside the title (HLT-01), on its line after the badge. */
+  facts?: ReadonlyArray<KeyFact | false | null | undefined>
   subtitle?: ReactNode
   breadcrumbs?: Crumb[]
   onBack?: () => void
@@ -121,7 +125,7 @@ export function PageHeader({
         )}
 
         <div style={{ minWidth: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 11, minHeight: 38 }}>
+          <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 11, minHeight: 38 }}>
             <h1
               style={{
                 margin: 0,
@@ -146,6 +150,7 @@ export function PageHeader({
                 {badge}
               </span>
             )}
+            {facts !== undefined && <KeyFacts facts={facts} />}
           </div>
           {(subtitle !== undefined || reserveSubtitle) && (
             // -1.5px: the title line is 38 and the title 25 of it, so this
