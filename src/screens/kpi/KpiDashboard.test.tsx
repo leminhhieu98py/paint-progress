@@ -177,34 +177,27 @@ describe('KpiDashboard', () => {
   })
 
   // ---------------------------------------------------------------------
-  // RV6-08 — the chart title under the legend
+  // RV6-08, withdrawn by R5-C4 — no caption under the chart
   // ---------------------------------------------------------------------
 
-  describe('the chart title (RV6-08)', () => {
-    const title = () => screen.getByTestId('kpi-chart-title')
+  describe('no caption under the chart (R5-C4)', () => {
+    // The filter bar above already says which deck and which coat the chart
+    // is scoped to; a caption repeating it is a second copy to read.
+    it('prints no "Tất cả sàn" under the chart with every deck in view', () => {
+      renderDash()
+      expect(chart()).toBeInTheDocument()
+      expect(screen.queryByTestId('kpi-chart-title')).toBeNull()
+      expect(screen.queryByText(/^Tất cả sàn/, { selector: 'p' })).toBeNull()
+    })
 
-    it('reads the deck name and the coat label when both are chosen', async () => {
+    it('prints no deck name or coat label under it when one of each is chosen', async () => {
       renderDash()
       await pick('Sàn', 'Sàn A')
       await pick('Công đoạn', 'Công đoạn 1')
-      await waitFor(() => expect(title()).toHaveTextContent('Sàn A — Công đoạn 1'))
-    })
-
-    it('reads only the deck name when no coat is chosen', async () => {
-      renderDash()
-      await pick('Sàn', 'Sàn A')
-      expect(title()).toHaveTextContent('Sàn A')
-    })
-
-    it('reads "Tất cả sàn" plus the coat label when every deck is in view', async () => {
-      renderDash()
-      await pick('Công đoạn', 'Công đoạn 2')
-      await waitFor(() => expect(title()).toHaveTextContent('Tất cả sàn — Công đoạn 2'))
-    })
-
-    it('reads plain "Tất cả sàn" with nothing chosen', () => {
-      renderDash()
-      expect(title()).toHaveTextContent('Tất cả sàn')
+      await waitFor(() => expect(chart()).toHaveAttribute('data-colors', '#123abc/null'))
+      expect(screen.queryByTestId('kpi-chart-title')).toBeNull()
+      expect(screen.queryByText(/Sàn A — Công đoạn 1/)).toBeNull()
+      expect(screen.queryByText('Sàn A', { selector: 'p' })).toBeNull()
     })
   })
 

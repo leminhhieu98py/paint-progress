@@ -5,7 +5,6 @@ import { SectionCard } from '../../components/SectionCard'
 import { kpiSeries, plannedAreaM2, type KpiScopeStage } from '../../domain/kpi'
 import { DEFAULT_UNIT, MIXED_QUANTITY_LABEL, MIXED_UNIT_SUM_TOOLTIP, unitOfWorks } from '../../domain/unit'
 import { formatAreaM2 } from '../../lib/format'
-import { palette } from '../../theme'
 import { KpiComboChart } from '../dashboard/charts'
 import { ALL, coatKey, kpiCoatOptions, resolveCoat, type KpiFilters } from './kpiFilters'
 
@@ -87,22 +86,18 @@ export function KpiDashboard({
   const unit = unitOfWorks(scoped.map((e) => ({ unit: e.unit ?? DEFAULT_UNIT })))
 
 
-  /**
-   * RV6-08's caption under the chart: the selected deck's name (or "Tất cả
-   * sàn"), then the chosen coat's label when one is chosen. The coat label is
-   * `coats`' own -- it already carries the work name when more than one work
-   * is in view, so this reuses it rather than re-deriving it.
-   */
+  /*
+    No caption under the chart (R5-C4): RV6-08 printed the deck's name (or
+    "Tất cả sàn") and the coat's label there, which the filter bar above
+    already says.
+  */
   const deck = deckId === ALL ? undefined : decks.find((d) => d.id === deckId)
-  const deckLabel = deck?.name ?? 'Tất cả sàn'
   /**
    * RV6-29: the chart takes the selected deck's colours, and only then. Under
    * "Tất cả sàn" the series sum several decks and no one deck's colour is
    * true of them, so the prop is left off and the chart paints its defaults.
    */
   const colors = deck === undefined ? undefined : { plan: deck.kpiPlanColor, actual: deck.kpiActualColor }
-  const coatLabel = coats.find((c) => c.value === coatValue)?.label
-  const chartTitle = coatValue === ALL || coatLabel === undefined ? deckLabel : `${deckLabel} — ${coatLabel}`
 
   return (
     <SectionCard
@@ -135,13 +130,6 @@ export function KpiDashboard({
               survive onto it.
             */}
             <KpiComboChart key={`${deckId}|${coatValue}`} data={series} colors={colors} unit={unit ?? MIXED_QUANTITY_LABEL} />
-            {/* RV6-08: what the chart above is scoped to. */}
-            <p
-              data-testid="kpi-chart-title"
-              style={{ margin: 0, fontSize: 13, fontWeight: 600, color: palette.textSecondary, textAlign: 'center' }}
-            >
-              {chartTitle}
-            </p>
           </>
         )}
       </div>
