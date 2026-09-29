@@ -46,7 +46,7 @@ import { APP_BASE_PATH } from '../../config'
 import { rememberProjectName } from './fieldProjects'
 import { openingDeckId, rememberDeck } from './lastDeck'
 import { SectionCard } from '../../components/SectionCard'
-import { WORK_SELECT_WIDTH, fullOptionsProps, searchSelectProps } from '../../components/searchSelect'
+import { WORK_SELECT_WIDTH, searchSelectProps, useFullOptionsProps } from '../../components/searchSelect'
 
 /**
  * How long to wait for the realtime channel to reach SUBSCRIBED before telling
@@ -129,6 +129,8 @@ export function GsScreen() {
    */
   const [sheetDraft, setSheetDraft] = useState<{ project?: string; work?: string }>({})
   const navigate = useNavigate()
+  /** The bar's and the plan's selects read their options in full (FLT-04, M3). */
+  const fullOptions = useFullOptionsProps()
   const [decks, setDecks] = useState<GsDeck[]>([])
   const [activeDeckId, setActiveDeckId] = useState<string | null>(null)
   /** The deck's mesh, geometry only. Where each bay stands is in `states`. */
@@ -1118,7 +1120,7 @@ export function GsScreen() {
     <Select
       aria-label="Sàn"
       {...searchSelectProps}
-      {...fullOptionsProps}
+      {...fullOptions}
       value={activeDeckId ?? undefined}
       onChange={(id) => {
         setActiveDeckId(id)
@@ -1148,7 +1150,7 @@ export function GsScreen() {
     <Select
       aria-label="Công việc"
       {...searchSelectProps}
-      {...fullOptionsProps}
+      {...fullOptions}
       style={{ width: block ? '100%' : WORK_SELECT_WIDTH, maxWidth: '100%' }}
       value={value}
       onChange={onChange}
@@ -1435,7 +1437,7 @@ export function GsScreen() {
                     id="gs-plan-stage"
                     aria-label="Công đoạn kế hoạch"
                     {...searchSelectProps}
-                    {...fullOptionsProps}
+                    {...fullOptions}
                     value={planStageId ?? undefined}
                     onChange={(v) => setPlanStage({ deckId: activeDeckId, stageId: v })}
                     // A phone's coat names ran to "Blast + C…" at 120: the

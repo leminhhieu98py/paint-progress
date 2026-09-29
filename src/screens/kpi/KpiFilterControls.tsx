@@ -1,5 +1,5 @@
 import { Select } from 'antd'
-import { fullOptionsProps, searchSelectProps } from '../../components/searchSelect'
+import { searchSelectProps, useFullOptionsProps } from '../../components/searchSelect'
 import { ALL, resolveCoat, type KpiFilters } from './kpiFilters'
 
 /**
@@ -22,12 +22,13 @@ export function KpiFilterControls({
   /** Each control full width, as the phone's sheet stacks them (FLT-04). */
   block?: boolean
 }) {
+  const fullOptions = useFullOptionsProps()
   return (
     <>
       <Select
         aria-label="Sàn"
         {...searchSelectProps}
-        {...fullOptionsProps}
+        {...fullOptions}
         style={{ width: block ? '100%' : 220 }}
         value={value.deckId}
         onChange={(deckId: string) => onChange({ deckId, coat: ALL })}
@@ -36,7 +37,7 @@ export function KpiFilterControls({
       <Select
         aria-label="Công đoạn"
         {...searchSelectProps}
-        {...fullOptionsProps}
+        {...fullOptions}
         style={{ width: block ? '100%' : 240 }}
         value={resolveCoat(value.coat, coats)}
         onChange={(coat: string) => onChange({ ...value, coat })}

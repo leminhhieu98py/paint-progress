@@ -3,7 +3,7 @@ import dayjs, { type Dayjs } from 'dayjs'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { SectionCard } from '../../components/SectionCard'
 import { InfoTip } from '../../components/InfoTip'
-import { WORK_SELECT_WIDTH, searchSelectProps } from '../../components/searchSelect'
+import { WORK_SELECT_WIDTH, searchSelectProps, useFullOptionsProps } from '../../components/searchSelect'
 import { StatCard } from '../../components/StatCard'
 import { useTablePagination } from '../../components/tablePagination'
 import {
@@ -49,6 +49,8 @@ export function DeckForecastPanel({
   events: DeckEvent[] | null
 }) {
   const { message } = App.useApp()
+  // The work select's options read in full, as every work select's (M5).
+  const fullOptions = useFullOptionsProps()
   const [deckWorks, setDeckWorks] = useState<DeckWorks | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [workId, setWorkId] = useState<string | null>(null)
@@ -200,6 +202,7 @@ export function DeckForecastPanel({
           <Select
             aria-label="Công việc"
             {...searchSelectProps}
+            {...fullOptions}
             style={{ width: WORK_SELECT_WIDTH }}
             value={activeWork?.work.id}
             onChange={(id: string) => setWorkId(id)}

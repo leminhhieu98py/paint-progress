@@ -1,5 +1,5 @@
 import { createElement, type ReactNode } from 'react'
-import type { SelectProps } from 'antd'
+import { Grid, type SelectProps } from 'antd'
 import { matchesSearch } from '../lib/search'
 
 /**
@@ -44,17 +44,34 @@ export const searchSelectProps = {
  */
 export const WORK_SELECT_WIDTH = 180
 
+const SCREEN_LESS_GUTTERS = 'calc(100vw - 32px)'
+const optionRender = (option: { label?: ReactNode }) =>
+  createElement('span', { style: { whiteSpace: 'normal', overflowWrap: 'anywhere' } }, option.label)
+const WIDE_OPTIONS = {
+  popupMatchSelectWidth: false,
+  styles: { popup: { root: { maxWidth: SCREEN_LESS_GUTTERS } } },
+  optionRender,
+} satisfies SelectProps
+/**
+ * A phone's popup (M3): the screen less 16 px a side, wherever its select
+ * sits. Aligned to a select near an edge, the popup flipped or shifted flush
+ * against the screen's edge; the trigger lets the popup's own style win over
+ * the position it works out.
+ */
+const PHONE_OPTIONS = {
+  ...WIDE_OPTIONS,
+  styles: { popup: { root: { left: 16, right: 'auto', width: SCREEN_LESS_GUTTERS, maxWidth: SCREEN_LESS_GUTTERS } } },
+} satisfies SelectProps
+
 /**
  * A select whose options read in full, spread after `searchSelectProps`: its
  * popup is at least the select's width (rc-select stretches `minWidth` when
  * `popupMatchSelectWidth` is false) and grows to the longest option, up to
- * the screen less 16 px a side; an option longer than that wraps instead of
- * ellipsising. For the field bars and sheets, where a phone's select is
- * narrower than the coat names it offers ("Blast + Co…").
+ * the screen less 16 px a side; on a phone (under 768 px) it spans exactly
+ * that. An option longer than that wraps instead of ellipsising. For the
+ * field bars and sheets and every work select, where a select is narrower
+ * than the names it offers ("Blast + Co…").
  */
-export const fullOptionsProps = {
-  popupMatchSelectWidth: false,
-  styles: { popup: { root: { maxWidth: 'calc(100vw - 32px)' } } },
-  optionRender: (option: { label?: ReactNode }) =>
-    createElement('span', { style: { whiteSpace: 'normal', overflowWrap: 'anywhere' } }, option.label),
-} satisfies SelectProps
+export function useFullOptionsProps() {
+  return Grid.useBreakpoint().md ? WIDE_OPTIONS : PHONE_OPTIONS
+}

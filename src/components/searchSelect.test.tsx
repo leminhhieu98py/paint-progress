@@ -1,8 +1,9 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Select } from 'antd'
-import { describe, expect, it } from 'vitest'
-import { fullOptionsProps, searchKeyOf, searchSelectProps } from './searchSelect'
+import { afterEach, describe, expect, it } from 'vitest'
+import { searchKeyOf, searchSelectProps, useFullOptionsProps } from './searchSelect'
+import { setViewport } from '../test/viewport'
 
 const OPTIONS = [
   { value: 'a', label: 'Lê Minh Cường' },
@@ -54,20 +55,37 @@ describe('searchSelectProps', () => {
   })
 })
 
-describe('fullOptionsProps (options read in full)', () => {
+describe('useFullOptionsProps (options read in full)', () => {
   const LONG = 'Blast + Coat 1 (Primer) Jotun Penguard Primer SEA, a coat whose name runs long'
+  let restoreViewport = () => {}
+  afterEach(() => restoreViewport())
+  function Picker() {
+    return <Select aria-label="Lớp" {...useFullOptionsProps()} options={[{ value: 'a', label: LONG }]} />
+  }
+  const open = async () => {
+    render(<Picker />)
+    await userEvent.click(screen.getByRole('combobox', { name: 'Lớp' }))
+    return document.querySelector('.ant-select-dropdown') as HTMLElement
+  }
 
   it('opens a popup at least as wide as the select, growing to its longest option up to the screen less 16 px a side', async () => {
-    expect(fullOptionsProps.popupMatchSelectWidth).toBe(false)
-    render(<Select aria-label="Lớp" {...fullOptionsProps} options={[{ value: 'a', label: LONG }]} />)
-    await userEvent.click(screen.getByRole('combobox', { name: 'Lớp' }))
-    const popup = document.querySelector('.ant-select-dropdown') as HTMLElement
+    restoreViewport = setViewport(1280)
+    const popup = await open()
+    expect(popup.style.maxWidth).toBe('calc(100vw - 32px)')
+    expect(popup.style.left).not.toBe('16px')
+  })
+
+  it('on a phone spans the screen less a 16 px gutter each side, wherever its select sits (M3)', async () => {
+    restoreViewport = setViewport(390)
+    const popup = await open()
+    expect(popup.style.left).toBe('16px')
+    expect(popup.style.right).toBe('auto')
+    expect(popup.style.width).toBe('calc(100vw - 32px)')
     expect(popup.style.maxWidth).toBe('calc(100vw - 32px)')
   })
 
   it('wraps an option too long for that, never cutting it to an ellipsis', async () => {
-    render(<Select aria-label="Lớp" {...fullOptionsProps} options={[{ value: 'a', label: LONG }]} />)
-    await userEvent.click(screen.getByRole('combobox', { name: 'Lớp' }))
+    await open()
     const option = await screen.findByTitle(LONG)
     const text = option.querySelector('.ant-select-item-option-content > span') as HTMLElement
     expect(text).toHaveTextContent(LONG)

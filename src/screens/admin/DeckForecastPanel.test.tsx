@@ -289,6 +289,11 @@ describe('DeckForecastPanel: the work switch (FLT-03)', () => {
     expect(screen.queryByText('Công việc', { exact: true })).toBeNull()
     expect(within(screen.getByRole('table')).getByText('Lớp 1')).toBeInTheDocument()
 
+    // Its options read in full, as every work select's (M5).
+    await userEvent.click(work)
+    const popup = [...document.querySelectorAll<HTMLElement>('.ant-select-dropdown:not(.ant-select-dropdown-hidden)')].at(-1) as HTMLElement
+    expect(popup.style.maxWidth).toBe('calc(100vw - 32px)')
+    expect(within(popup).getByTitle('Tháo giáo').querySelector('.ant-select-item-option-content > span')).toHaveStyle({ whiteSpace: 'normal' })
     await userEvent.type(work, 'thao')
     await userEvent.click(await screen.findByTitle('Tháo giáo'))
     await waitFor(() => expect(within(screen.getByRole('table')).getByText('Tháo giáo lửng')).toBeInTheDocument())

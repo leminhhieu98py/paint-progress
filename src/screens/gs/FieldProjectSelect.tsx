@@ -1,7 +1,7 @@
 import { Select } from 'antd'
 import { useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { fullOptionsProps, searchSelectProps } from '../../components/searchSelect'
+import { searchSelectProps, useFullOptionsProps } from '../../components/searchSelect'
 import { APP_BASE_PATH } from '../../config'
 import { cachedProjectList, cachedProjectName, projectListFor } from './fieldProjects'
 import { FIELD_SECTIONS, fieldSectionOf } from './fieldSections'
@@ -34,6 +34,7 @@ export function FieldProjectSelect({ projectId, width = 260, value, onChange }: 
   onChange?: (projectId: string) => void
 }) {
   const navigate = useNavigate()
+  const fullOptions = useFullOptionsProps()
   const { pathname } = useLocation()
   const [projectList, setProjectList] = useState(cachedProjectList)
   const [reading, setReading] = useState(() => cachedProjectList()?.some((p) => p.id === projectId) !== true)
@@ -64,7 +65,7 @@ export function FieldProjectSelect({ projectId, width = 260, value, onChange }: 
     <Select
       aria-label="Dự án"
       {...searchSelectProps}
-      {...fullOptionsProps}
+      {...fullOptions}
       style={{ width, maxWidth: '100%' }}
       value={value ?? projectId}
       loading={reading && !listed}
