@@ -10,6 +10,23 @@ own branch, verified against the development Supabase project, and deployed to
 production by the owner. **Database migrations are listed per release and must
 reach production before the app that needs them.**
 
+## [1.7.1] - 2026-09-29
+
+Linh's review of v1.7.0, one item.
+
+### Changed
+
+- **The project ring's legend shows two numbers per deck** under the header
+  `Tiến độ · Đóng góp`: the deck's own progress, as the table reads it, and its
+  contribution to the project figure (weight × progress), which is what the
+  arc is sized by. The contribution column adds up to the centre exactly;
+  1.7.0 showed only the progress, so `83,22%` sat beside an arc a fifth of the
+  ring and the numbers did not add up to `42,91%`. No number changed.
+
+### Operational
+
+No migration. Deploy the app only.
+
 ## [1.7.0] - 2026-09-15
 
 Feedback Rv6 — eight items from Linh after she accepted Rv5, one item the owner
@@ -469,6 +486,7 @@ Level Security.
 
 Production runs its own Supabase project, created empty.
 
+[1.7.1]: https://github.com/leminhhieu98py/paint-progress/compare/v1.7.0...v1.7.1
 [1.7.0]: https://github.com/leminhhieu98py/paint-progress/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/leminhhieu98py/paint-progress/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/leminhhieu98py/paint-progress/compare/v1.4.0...v1.5.0
