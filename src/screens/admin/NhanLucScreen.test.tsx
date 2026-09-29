@@ -151,6 +151,7 @@ describe('NhanLucScreen — one list (NL-01)', () => {
     renderScreen()
     await screen.findByText('gs1')
     expect(within(rowOf('GS Một')).getByText('GS')).toBeInTheDocument()
+    expect(within(rowOf('GS Một')).queryByRole('button', { name: 'Phân quyền' })).toBeNull()
     expect(within(rowOf('GS Hai')).getByText('Visitor')).toBeInTheDocument()
     const employee = rowOf('Lê Văn A')
     expect(within(employee).getByText('Nhân viên')).toBeInTheDocument()
@@ -412,7 +413,7 @@ describe('NhanLucScreen — accounts, as before (USR)', () => {
   it.each([
     ['Khoá tài khoản', /mở khoá là dùng lại được/],
     ['Ẩn tài khoản', /Trạng thái «Đã ẩn» để tìm lại/],
-    ['Phân quyền', /Lưu quyền/],
+    ['Dự án và công việc', /Lưu quyền/],
     ['Đổi phân quyền', /Tiếp tục/],
   ])('names no spec id in the %s dialog (CPY-04)', async (action, marker) => {
     renderScreen()
@@ -500,7 +501,9 @@ describe('NhanLucScreen — accounts, as before (USR)', () => {
     ))
     renderScreen()
     await screen.findByText('gs1')
-    await userEvent.click(within(rowOf('GS Một')).getByRole('button', { name: 'Phân quyền' }))
+    await userEvent.click(within(rowOf('GS Một')).getByRole('button', { name: 'Dự án và công việc' }))
+    // Named for what it edits: "Phân quyền" is the role, on this screen (review I-2).
+    expect(await screen.findByRole('dialog', { name: 'Dự án và công việc · gs1' })).toBeInTheDocument()
     expect(screen.queryByText(/Tick dự án tài khoản được vào/)).toBeNull()
     await userEvent.click(await screen.findByRole('switch', { name: 'Tất cả công việc BB1' }))
     await userEvent.type(screen.getByRole('combobox', { name: 'Công việc BB1' }), 'Sơ')
@@ -520,7 +523,8 @@ describe('NhanLucScreen — accounts, as before (USR)', () => {
     listProjectNames.mockResolvedValue(PROJECTS)
     renderScreen()
     await screen.findByText('gs2')
-    await userEvent.click(within(rowOf('GS Hai')).getByRole('button', { name: 'Phân quyền' }))
+    await userEvent.click(within(rowOf('GS Hai')).getByRole('button', { name: 'Dự án và công việc' }))
+    expect(await screen.findByRole('dialog', { name: 'Dự án và công việc · gs2' })).toBeInTheDocument()
     expect(await screen.findByText('Tài khoản Visitor thấy mọi dự án và mọi công việc.')).toBeInTheDocument()
     expect(screen.queryByRole('checkbox', { name: 'Thành viên BB1' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Lưu quyền' })).toBeNull()

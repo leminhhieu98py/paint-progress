@@ -115,7 +115,7 @@ interface PermissionRow {
 }
 
 /**
- * "Phân quyền": one dialog per account, one line per project (items 1b, 1c).
+ * "Dự án và công việc": one dialog per account, one line per project (items 1b, 1c).
  *
  * Membership, and within it either every work or the listed ones. Saved as
  * one statement through setMemberships, so what the admin sees on Lưu is
@@ -191,7 +191,7 @@ function PermissionsDialog({
     return (
       <Modal
         open
-        title={`Phân quyền · ${user.username}`}
+        title={`Dự án và công việc · ${user.username}`}
         onCancel={onClose}
         width={640}
         {...modalProps}
@@ -205,7 +205,7 @@ function PermissionsDialog({
   return (
     <Modal
       open
-      title={`Phân quyền · ${user.username}`}
+      title={`Dự án và công việc · ${user.username}`}
       onCancel={onClose}
       width={640}
       {...modalProps}
@@ -397,8 +397,9 @@ export function NhanLucScreen() {
           }}
         />
       </Tooltip>
-      <Tooltip title="Phân quyền dự án và công việc">
-        <Button size="small" aria-label="Phân quyền" icon={<TeamOutlined />} onClick={() => setPermTarget(user)} />
+      {/* Not "Phân quyền": on this screen that word is the role (review I-2). */}
+      <Tooltip title="Dự án và công việc">
+        <Button size="small" aria-label="Dự án và công việc" icon={<TeamOutlined />} onClick={() => setPermTarget(user)} />
       </Tooltip>
       <Tooltip title="Đặt lại mật khẩu">
         <Button
