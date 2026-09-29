@@ -33,7 +33,7 @@ import { buildProjectReport, downloadWorkbook } from '../../lib/projectReport'
 import { renderDeckDrawing, renderDeckPie, renderPlanDrawing } from '../../canvas/deckSnapshot'
 import { CellStageModal } from './CellStageModal'
 import { fieldError, fieldType, palette, shadowCard, space } from '../../theme'
-import { CalendarOutlined, EllipsisOutlined, FileExcelOutlined, FolderOpenOutlined } from '@ant-design/icons'
+import { CalendarOutlined, EllipsisOutlined, FileExcelOutlined, FolderOpenOutlined, LoadingOutlined } from '@ant-design/icons'
 import { EmptyState } from '../../components/EmptyState'
 import { DeckProgressCard, StageRollupCard } from './DeckStatsCards'
 import { DeckTodayCard } from './DeckTodayCard'
@@ -859,6 +859,8 @@ export function GsScreen() {
    * describe one project differently.
    */
   const [exportingProject, setExportingProject] = useState(false)
+  /** The phone's ⋯ export menu, open or not, for its aria-expanded (M-3). */
+  const [exportMenuOpen, setExportMenuOpen] = useState(false)
   const exportProject = async () => {
     if (!projectId) return
     setExportingProject(true)
@@ -1238,18 +1240,20 @@ export function GsScreen() {
                 <Dropdown
                   trigger={['click']}
                   placement="bottomRight"
+                  open={exportMenuOpen}
+                  onOpenChange={setExportMenuOpen}
                   menu={{
                     items: [
                       {
                         key: 'deck',
-                        icon: <FileExcelOutlined aria-hidden />,
+                        icon: exporting ? <LoadingOutlined aria-hidden /> : <FileExcelOutlined aria-hidden />,
                         label: 'Xuất báo cáo',
                         disabled: exporting,
                         onClick: () => { void exportDeck() },
                       },
                       {
                         key: 'project',
-                        icon: <FolderOpenOutlined aria-hidden />,
+                        icon: exportingProject ? <LoadingOutlined aria-hidden /> : <FolderOpenOutlined aria-hidden />,
                         label: 'Xuất cả dự án',
                         disabled: exportingProject,
                         onClick: () => { void exportProject() },
@@ -1257,16 +1261,21 @@ export function GsScreen() {
                     ],
                   }}
                 >
+                  {/*
+                    Never a spinner itself (M-3): it stays openable while an
+                    export runs, and the menu shows which one is running.
+                  */}
                   <Button
                     aria-label="Thêm thao tác"
                     aria-haspopup="menu"
+                    aria-expanded={exportMenuOpen}
                     icon={<EllipsisOutlined aria-hidden />}
-                    loading={exporting || exportingProject}
                   />
                 </Dropdown>
               ) : (
                 <>
-                  <Tooltip title="Xuất báo cáo">
+                  {/* Closed the moment the pointer leaves, so it never sits over the header (C3). */}
+                  <Tooltip title="Xuất báo cáo" mouseLeaveDelay={0}>
                     <Button
                       aria-label="Xuất báo cáo"
                       icon={<FileExcelOutlined aria-hidden />}
@@ -1280,7 +1289,7 @@ export function GsScreen() {
                     all the decks. RLS decides what lands in it, so a foreman
                     held to one work gets that work's decks and no others.
                   */}
-                  <Tooltip title="Xuất cả dự án">
+                  <Tooltip title="Xuất cả dự án" mouseLeaveDelay={0}>
                     <Button
                       aria-label="Xuất cả dự án"
                       icon={<FolderOpenOutlined aria-hidden />}

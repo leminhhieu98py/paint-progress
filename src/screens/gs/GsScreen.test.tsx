@@ -2506,6 +2506,52 @@ describe('GsScreen: the exports are bar actions (GS-09)', () => {
     expect(items[0].querySelector('.anticon-file-excel')).not.toBeNull()
     expect(items[1].querySelector('.anticon-folder-open')).not.toBeNull()
   })
+
+  it('says whether the ⋯ menu is open, and stays openable while an export runs (M-3)', async () => {
+    setViewport(390)
+    Object.defineProperty(URL, 'createObjectURL', { value: () => 'blob:x', configurable: true })
+    Object.defineProperty(URL, 'revokeObjectURL', { value: () => {}, configurable: true })
+    buildReportWorkbook.mockReturnValue(new Promise(() => {}))
+    renderScreen()
+    await screen.findByTestId('canvas')
+    const more = within(barRow()).getByRole('button', { name: 'Thêm thao tác' })
+    expect(more).toHaveAttribute('aria-expanded', 'false')
+    await userEvent.click(more)
+    expect(more).toHaveAttribute('aria-expanded', 'true')
+    await userEvent.click(within(await screen.findByRole('menu')).getByRole('menuitem', { name: /Xuất báo cáo/ }))
+    await waitFor(() => expect(buildReportWorkbook).toHaveBeenCalled())
+
+    // The deck export is still running: the button is not a spinner that
+    // swallows the tap, the menu opens, and only the running item is held.
+    expect(more).not.toHaveClass('ant-btn-loading')
+    await userEvent.click(more)
+    const menu = await screen.findByRole('menu')
+    await waitFor(() => expect(within(menu).getByRole('menuitem', { name: /Xuất báo cáo/ })).toHaveAttribute('aria-disabled', 'true'))
+    expect(within(menu).getByRole('menuitem', { name: /Xuất cả dự án/ })).not.toHaveAttribute('aria-disabled', 'true')
+  })
+
+  it('lets go of an export tooltip as soon as the pointer leaves (C3)', async () => {
+    setViewport(1280)
+    renderScreen()
+    await screen.findByTestId('canvas')
+    const button = within(barRow()).getByRole('button', { name: 'Xuất cả dự án' })
+    await userEvent.hover(button)
+    const tip = (await screen.findByRole('tooltip')).closest('.ant-tooltip') as HTMLElement
+    await userEvent.unhover(button)
+    // antd's default waits 100 ms before closing; this one closes at once.
+    // Leaving (or gone) within 60 ms; antd's default holds it open for 100.
+    await waitFor(() => expect(tip.className).toMatch(/-leave\b|ant-tooltip-hidden/), { timeout: 60 })
+  })
+
+  it('opens the account menu above any tooltip still fading out (C3)', async () => {
+    setViewport(1280)
+    renderScreen()
+    await screen.findByTestId('canvas')
+    await userEvent.click(screen.getByRole('button', { name: /^Nguyễn Văn A \(gs1\)/ }))
+    const dropdown = (await screen.findByRole('menu')).closest('.ant-dropdown') as HTMLElement
+    // antd's tooltips sit at 1070.
+    expect(Number(dropdown.style.zIndex)).toBeGreaterThan(1070)
+  })
 })
 
 describe('GsScreen: the active work\'s quantity and unit (RV6-35)', () => {

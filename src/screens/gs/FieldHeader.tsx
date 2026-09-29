@@ -143,6 +143,9 @@ export function FieldHeader({ projectId }: { projectId: string }) {
           open={menuOpen}
           onOpenChange={setMenuOpen}
           menu={{ items }}
+          // Above antd's tooltips (1070), so one still fading out of the bar
+          // can never cover the account menu (C3).
+          overlayStyle={{ zIndex: 1080 }}
         >
           {/*
             The one item that gives up width when the row is short: the name
