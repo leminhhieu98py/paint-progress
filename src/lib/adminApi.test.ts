@@ -1,7 +1,7 @@
 import { FunctionsHttpError } from '@supabase/supabase-js'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
-  createGsUser, deactivateGsUser, hideUser, listGsUsers, reactivateUser, renameUser,
+  changeRole, createGsUser, deactivateGsUser, hideUser, listGsUsers, reactivateUser, renameUser,
   revealPassword, setMemberships, setPassword, unhideUser,
 } from './adminApi'
 
@@ -54,6 +54,14 @@ describe('adminApi', () => {
     expect(id).toBe('u1')
     expect(invoke).toHaveBeenCalledWith('admin-users', {
       body: { action: 'create', username: 'gs1', fullName: 'GS Một', password: 'pw', projectId: 'p1', role: 'viewer' },
+    })
+  })
+
+  it('sends no project for a Visitor created without one (NL-05)', async () => {
+    invoke.mockResolvedValue({ data: { userId: 'u2' }, error: null })
+    await createGsUser({ username: 'sep.a', fullName: 'Sếp A', password: 'pw', role: 'viewer' })
+    expect(invoke).toHaveBeenCalledWith('admin-users', {
+      body: { action: 'create', username: 'sep.a', fullName: 'Sếp A', password: 'pw', role: 'viewer' },
     })
   })
 
@@ -115,6 +123,18 @@ describe('adminApi', () => {
       { action: 'rename', userId: 'u1', username: 'gs.moi' },
       { action: 'hide', userId: 'u1' },
       { action: 'unhide', userId: 'u1' },
+    ])
+  })
+
+  it('maps change_role onto the function, sending only the fields given (NL-04)', async () => {
+    invoke.mockResolvedValueOnce({ data: { userId: 'u5', username: 'gs.hai', reactivated: false }, error: null })
+    invoke.mockResolvedValueOnce({ data: { employeeId: 'e9' }, error: null })
+    expect(await changeRole({ kind: 'employee', id: 'e1', role: 'gs', username: 'gs.hai', password: 'pw', projectId: 'p1' }))
+      .toEqual({ userId: 'u5', username: 'gs.hai', reactivated: false })
+    expect(await changeRole({ kind: 'account', id: 'u7', role: 'employee' })).toEqual({ employeeId: 'e9' })
+    expect(invoke.mock.calls.map((c) => c[1].body)).toEqual([
+      { action: 'change_role', kind: 'employee', id: 'e1', role: 'gs', username: 'gs.hai', password: 'pw', projectId: 'p1' },
+      { action: 'change_role', kind: 'account', id: 'u7', role: 'employee' },
     ])
   })
 })
