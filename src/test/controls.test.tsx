@@ -17,12 +17,12 @@ describe('expectAllSmall (CTL-01)', () => {
   })
 
   it.each([
-    ['a bare Input', <Input aria-label="a" />],
-    ['an Input with an addon', <Input aria-label="b" addonAfter="%" />],
-    ['an InputNumber with an addon', <InputNumber aria-label="c" addonAfter="m²" />],
-    ['a Button', <Button>x</Button>],
+    ['a bare Input', () => <Input aria-label="a" />],
+    ['an Input with an addon', () => <Input aria-label="b" addonAfter="%" />],
+    ['an InputNumber with an addon', () => <InputNumber aria-label="c" addonAfter="m²" />],
+    ['a Button', () => <Button>x</Button>],
   ])('fails a row holding %s at the default size', (_n, ui) => {
-    const { container } = render(<div><Button size="small">ok</Button>{ui}</div>)
+    const { container } = render(<div><Button size="small">ok</Button>{ui()}</div>)
     expect(() => expectAllSmall(container)).toThrow()
   })
 })
