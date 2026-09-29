@@ -6,7 +6,10 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { tablePagination } from './components/tablePagination'
 
 // Read from disk: vitest hands a stylesheet import back empty, `?raw` included.
-const css = readFileSync(resolve(process.cwd(), 'src/index.css'), 'utf8')
+// Beside this file, not under the working directory, so a runner started
+// elsewhere (an IDE, a workspace root) finds it too. Not `new URL(...,
+// import.meta.url)`: Vite rewrites that pattern into a served asset URL.
+const css = readFileSync(resolve(import.meta.dirname, 'index.css'), 'utf8')
 
 /**
  * The table rules that live in the stylesheet rather than on a column (UI-03,
