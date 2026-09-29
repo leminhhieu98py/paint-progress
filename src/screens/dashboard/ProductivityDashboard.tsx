@@ -55,9 +55,8 @@ const TABLE_SCROLL = { x: 'max-content' } as const
  * max-content name column could hide every figure beside it.
  */
 const PHONE_TEXT_MAX = 160
-const wrapped = (node: ReactNode) => (
-  <div style={{ maxWidth: PHONE_TEXT_MAX, whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{node}</div>
-)
+const wrapStyle = { maxWidth: PHONE_TEXT_MAX, whiteSpace: 'normal', overflowWrap: 'anywhere' } as const
+const wrapped = (node: ReactNode) => <div style={wrapStyle}>{node}</div>
 
 export function ProductivityDashboard({
   events,
@@ -246,15 +245,23 @@ export function ProductivityDashboard({
   }
 
   const stageColumns = [
-    // Only the first column is pinned (I5): the work when it shows, else the coat.
-    ...(workNames.length > 1
-      ? [{ title: 'Công việc', dataIndex: 'workName' as const, fixed: pin, render: (v: string) => text(v) }]
-      : []),
+    // Wider, the work has its own column, before the coat. On a phone the coat
+    // is the one pinned column and names the row, its work a caption beneath
+    // (R1): a pinned work column left "Sơn" on every row once the figures
+    // scrolled, and nothing told the coats apart.
+    ...(workNames.length > 1 && !phone ? [{ title: 'Công việc', dataIndex: 'workName' as const }] : []),
     {
       title: 'Công đoạn',
       dataIndex: 'stageName' as const,
-      fixed: workNames.length > 1 ? undefined : pin,
-      render: (v: string) => text(v),
+      fixed: pin,
+      render: (v: string, r: StageEfficiency) => (phone && workNames.length > 1
+        ? (
+          <>
+            {wrapped(v)}
+            <div style={{ ...wrapStyle, ...type.caption, color: palette.textTertiary }}>{r.workName}</div>
+          </>
+        )
+        : text(v)),
     },
     { title: 'Số ngày', dataIndex: 'days' as const, align: 'center' as const },
     { title: 'Tổng Mhr', align: 'center' as const, render: (_: unknown, r: StageEfficiency) => formatHours(r.totalHours) },

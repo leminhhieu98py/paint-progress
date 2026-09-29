@@ -8,6 +8,7 @@ import { ProductivityDashboard } from './ProductivityDashboard'
 import { ProductivityFilterControls } from './ProductivityFilterControls'
 import { DEFAULT_PRODUCTIVITY_FILTERS, dashboardWorkNames } from './productivityFilters'
 import { expectLeft } from '../../test/alignment'
+import { palette } from '../../theme'
 import { chooseOption } from '../../test/select'
 import { setViewport } from '../../test/viewport'
 
@@ -468,9 +469,15 @@ describe('ProductivityDashboard — tables on a phone (MOB-01)', () => {
       expect(pinned).toHaveLength(1)
       expect(pinned[0]).toBe(screen.getByTestId(id).querySelector('thead th'))
     }
-    // The stage table leads with the work, then the coat: the coat wraps but scrolls.
+    // On a phone the stage table pins the coat, its work a caption beneath (R1):
+    // a pinned work column left "Sơn" on every row once the figures scrolled.
     const stages = within(screen.getByTestId('stage-table'))
-    for (const header of ['Công việc', 'Công đoạn']) expect(stages.getByRole('columnheader', { name: header })).toBeInTheDocument()
+    expect(screen.getByTestId('stage-table').querySelector('thead th')).toHaveTextContent(/^Công đoạn$/)
+    expect(stages.queryByRole('columnheader', { name: 'Công việc' })).toBeNull()
+    const coatCell = stages.getAllByText('Lớp 1')[0].closest('td') as HTMLElement
+    expect(coatCell).toHaveClass('ant-table-cell-fix-left')
+    const work = within(coatCell).getByText('Sơn')
+    expect(work).toHaveStyle({ fontSize: '12px', fontWeight: '400', color: palette.textTertiary })
     const wrapOf = (text: string, id: string) => within(screen.getByTestId(id)).getAllByText(text)[0]
     for (const [text, id] of [['Lớp 1', 'stage-table'], ['Tổ 1', 'lead-table'], ['Mưa', 'waste-table'], ['Sàn A', 'forecast-table']] as const) {
       expect(wrapOf(text, id)).toHaveStyle({ maxWidth: '160px', whiteSpace: 'normal', overflowWrap: 'anywhere' })
@@ -480,6 +487,10 @@ describe('ProductivityDashboard — tables on a phone (MOB-01)', () => {
   it('keeps the scroll but pins nothing from 768 px, where the columns fit', () => {
     restoreViewport = setViewport(1280)
     renderDashboard()
+    // The work keeps its own column there, before the coat, the coat cell the name alone.
+    const headers = within(screen.getByTestId('stage-table')).getAllByRole('columnheader').map((h) => h.textContent)
+    expect(headers.slice(0, 2)).toEqual(['Công việc', 'Công đoạn'])
+    expect(within(screen.getByTestId('stage-table')).getAllByText('Lớp 1')[0].closest('td')).toHaveTextContent(/^Lớp 1$/)
     for (const id of TABLES) {
       expect(tableIn(id)).toHaveClass('ant-table-scroll-horizontal')
       expect(tableIn(id)).not.toHaveClass('ant-table-has-fix-left')
