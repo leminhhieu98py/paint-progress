@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderApp } from '../../test/renderApp'
 import { UsersScreen } from './UsersScreen'
 import { expectLeft } from '../../test/alignment'
+import { expectNoSpecIds } from '../../test/copy'
 
 const listGsUsers = vi.fn()
 const revealPassword = vi.fn()
@@ -197,6 +198,18 @@ describe('UsersScreen', () => {
 
     await userEvent.click(screen.getByRole('button', { name: /Vẫn khoá/ }))
     await waitFor(() => expect(deactivateGsUser).toHaveBeenCalledWith('u7'))
+  })
+
+  it.each([
+    ['Khoá tài khoản', /mở khoá là dùng lại được/],
+    ['Ẩn tài khoản', /Hiện tài khoản đã ẩn» để tìm lại/],
+    ['Phân quyền', /Lưu quyền/],
+  ])('names no spec id in the %s dialog (CPY-04)', async (action, marker) => {
+    renderApp(<UsersScreen />)
+    await screen.findByText('gs1')
+    await userEvent.click(screen.getAllByRole('button', { name: action })[0])
+    expect((await screen.findAllByText(marker)).length).toBeGreaterThan(0)
+    expectNoSpecIds()
   })
 
   it('offers unlock, not lock, on a locked account', async () => {

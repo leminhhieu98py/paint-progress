@@ -3,7 +3,11 @@ import { useState } from 'react'
 import { palette } from '../theme'
 
 export interface Rule {
-  /** The spec's own id, e.g. STG-R1. Same name on screen and in the spec. */
+  /**
+   * The spec's own id, e.g. STG-R1: the key, and the name to look the rule up
+   * by in the spec. Never rendered (CPY-04) -- on screen it read as the
+   * developer's vocabulary, not the admin's.
+   */
   id: string
   text: string
 }
@@ -79,29 +83,10 @@ export function RulesDisclosure({ rules }: { rules: Rule[] }) {
             <div
               key={r.id}
               style={{
-                display: 'flex',
-                gap: 12,
-                alignItems: 'flex-start',
                 padding: '9px 0',
                 borderTop: `1px solid ${palette.borderSplit}`,
               }}
             >
-              <span
-                style={{
-                  fontSize: 10,
-                  fontWeight: 600,
-                  lineHeight: 1,
-                  color: palette.accent,
-                  background: palette.accentTint,
-                  padding: '5px 6px',
-                  borderRadius: 6,
-                  flex: 'none',
-                  minWidth: 58,
-                  textAlign: 'center',
-                }}
-              >
-                {r.id}
-              </span>
               <span style={{ fontSize: 13, lineHeight: 1.5, color: palette.textSecondary }}>
                 {r.text}
               </span>

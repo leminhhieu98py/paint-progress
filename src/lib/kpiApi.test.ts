@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { SPEC_ID } from '../test/copy'
 import { PLAN_ROW_CAP, clearStagePlanArea, listStagePlans, saveStagePlan } from './kpiApi'
 
 const from = vi.hoisted(() => vi.fn())
@@ -90,6 +91,21 @@ describe('listStagePlans', () => {
     const full = Array.from({ length: PLAN_ROW_CAP }, (_, i) => ({ ...ROWS[0], stage_id: `s${i}` }))
     from.mockReturnValue(builder({ data: full }))
     await expect(listStagePlans('p1')).rejects.toThrow(/PLAN_ROW_CAP|1000/)
+  })
+
+  it('tells the reader what is missing in plain words and logs the developer detail (CPY-04)', async () => {
+    // The message reaches the KPI screen's error alert: no spec id, no query
+    // vocabulary. What the developer needs goes to the console instead.
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const full = Array.from({ length: PLAN_ROW_CAP }, (_, i) => ({ ...ROWS[0], stage_id: `s${i}` }))
+    from.mockReturnValue(builder({ data: full }))
+    const error = await listStagePlans('p1').catch((e: unknown) => e as Error)
+    expect(error).toBeInstanceOf(Error)
+    expect((error as Error).message).not.toMatch(SPEC_ID)
+    expect((error as Error).message).not.toMatch(/phân trang|truy vấn/)
+    expect((error as Error).message).toMatch(/biểu đồ sẽ thiếu công đoạn/)
+    expect(log).toHaveBeenCalledWith(expect.stringMatching(/PLAN_ROW_CAP/))
+    log.mockRestore()
   })
 
   it('accepts a read one row short of the cap', async () => {

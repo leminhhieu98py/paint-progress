@@ -204,7 +204,7 @@ function PermissionsDialog({
       ]}
     >
       <Typography.Text type="secondary" style={{ display: 'block', marginBottom: 12, fontSize: 12 }}>
-        Tick dự án tài khoản được vào. Trong mỗi dự án, để «Tất cả công việc» hoặc chọn đúng những công việc được thấy (USR-R9).
+        Tick dự án tài khoản được vào. Trong mỗi dự án, để «Tất cả công việc» hoặc chọn đúng những công việc được thấy.
       </Typography.Text>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         {projects.map((p) => {
@@ -621,7 +621,7 @@ export function UsersScreen() {
               ]
             : []
         }
-        consequence="Tài khoản không đăng nhập được nữa và mất quyền truy cập ngay. Dự án và công việc đã gán giữ nguyên, mở khoá là dùng lại được. Lịch sử ghi nhận mang tên người này vẫn còn (USR-R5)."
+        consequence="Tài khoản không đăng nhập được nữa và mất quyền truy cập ngay. Dự án và công việc đã gán giữ nguyên, mở khoá là dùng lại được. Lịch sử ghi nhận mang tên người này vẫn còn."
         okText="Vẫn khoá"
         onCancel={() => setOffTarget(null)}
         onOk={() =>
@@ -648,7 +648,7 @@ export function UsersScreen() {
               }]
             : []
         }
-        consequence="Mọi ghi chú và lịch sử ghi nhận vẫn mang tên người này (USR-R5). Bật «Hiện tài khoản đã ẩn» để tìm lại và mở khoá khi cần."
+        consequence="Mọi ghi chú và lịch sử ghi nhận vẫn mang tên người này. Bật «Hiện tài khoản đã ẩn» để tìm lại và mở khoá khi cần."
         okText="Vẫn ẩn"
         onCancel={() => setHideTarget(null)}
         onOk={() =>
@@ -741,7 +741,7 @@ export function UsersScreen() {
           <Form.Item
             name="role"
             label="Loại tài khoản"
-            extra="GS ghi tiến độ trên tablet. Chỉ xem dành cho người chỉ cần theo dõi và tải báo cáo (USR-R8)."
+            extra="GS ghi tiến độ trên tablet. Chỉ xem dành cho người chỉ cần theo dõi và tải báo cáo."
           >
             <Segmented
               options={[

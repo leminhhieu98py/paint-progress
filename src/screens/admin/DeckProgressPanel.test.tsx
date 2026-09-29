@@ -2,6 +2,7 @@ import { App as AntApp } from 'antd'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { expectNoSpecIds } from '../../test/copy'
 import { DeckProgressPanel } from './DeckProgressPanel'
 
 const loadDeckWorks = vi.hoisted(() => vi.fn())
@@ -172,6 +173,15 @@ describe('DeckProgressPanel', () => {
   it('loads the deck it was given', async () => {
     renderPanel()
     await waitFor(() => expect(loadDeckWorks).toHaveBeenCalledWith('d1'))
+  })
+
+  it('names the coat panel by its title in the rules, and no spec id (CPY-04)', async () => {
+    renderPanel()
+    await screen.findByTestId('lens-A')
+    await userEvent.click(screen.getByRole('button', { name: /Quy tắc áp dụng/ }))
+    expect(screen.getByText(/một lớp sơn ở Cấu hình lớp sơn của cùng công việc/)).toBeInTheDocument()
+    expect(screen.queryByText(/A3\.2/)).not.toBeInTheDocument()
+    expectNoSpecIds()
   })
 
   it('opens on one coat, over the deck\'s own drawing', async () => {
@@ -671,6 +681,8 @@ describe('DeckProgressPanel — zones', () => {
 
     expect(await screen.findByText('Xoá zone Khu A — Tháo giáo?')).toBeInTheDocument()
     expect(screen.getByText(/Tiến độ GS đã ghi trên các ô vẫn giữ nguyên/)).toBeInTheDocument()
+    // The consequence reads as a sentence, not a reference into the spec (CPY-04).
+    expectNoSpecIds()
     expect(deleteZone).not.toHaveBeenCalled()
 
     await userEvent.click(screen.getByRole('button', { name: 'Vẫn xoá' }))

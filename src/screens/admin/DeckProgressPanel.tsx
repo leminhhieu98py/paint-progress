@@ -233,7 +233,7 @@ const PROGRESS_RULES = [
   },
   {
     id: 'ZON-R6',
-    text: 'Màu zone do quản trị viên chọn và không bao giờ trùng màu một lớp sơn ở A3.2 của cùng công việc, sàn.',
+    text: 'Màu zone do quản trị viên chọn và không bao giờ trùng màu một lớp sơn ở Cấu hình lớp sơn của cùng công việc, sàn.',
   },
   {
     id: 'LNS-R2',
@@ -2055,7 +2055,7 @@ export function DeckProgressPanel({
             ? [{ label: removingZone.name, meta: `${removingZone.cellIds.length} ô` }]
             : []
         }
-        consequence="Chỉ kế hoạch bị xoá. Tiến độ GS đã ghi trên các ô vẫn giữ nguyên, và các ô đó quay về trạng thái chưa được lên kế hoạch cho lớp sơn này (ZON-R5)."
+        consequence="Chỉ kế hoạch bị xoá. Tiến độ GS đã ghi trên các ô vẫn giữ nguyên, và các ô đó quay về trạng thái chưa được lên kế hoạch cho lớp sơn này."
         okText="Vẫn xoá"
         onCancel={() => setRemovingZone(null)}
         onOk={() =>

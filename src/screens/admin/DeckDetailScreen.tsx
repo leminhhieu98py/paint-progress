@@ -724,7 +724,7 @@ export function DeckDetailScreen() {
         consequence={
           [
             pdf
-              ? 'Ô đã dựng vẫn giữ nguyên vị trí theo tỉ lệ trên khung bản vẽ, nên nếu bản vẽ mới lệch khung so với bản cũ thì lưới ô sẽ nằm sai chỗ. Kiểm tra lại ở A3.3 và dò lại ô nếu cần.'
+              ? 'Ô đã dựng vẫn giữ nguyên vị trí theo tỉ lệ trên khung bản vẽ, nên nếu bản vẽ mới lệch khung so với bản cũ thì lưới ô sẽ nằm sai chỗ. Kiểm tra lại ở Phân ô và dò lại ô nếu cần.'
               : '',
             deck && area !== deck.totalAreaM2
               ? 'Diện tích từng ô được chia lại theo tỉ lệ pixel từ con số mới. Mọi phần trăm của sàn — và số tiền tính theo nó — đều lấy con số này làm mẫu số.'

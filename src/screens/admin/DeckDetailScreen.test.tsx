@@ -318,6 +318,9 @@ describe('DeckDetailScreen', () => {
 
     expect(await screen.findByText('Lưu thay đổi cho sàn này?')).toBeInTheDocument()
     expect(screen.getByText(/Ô đã dựng vẫn giữ nguyên vị trí/)).toBeInTheDocument()
+    // The panel is named as the admin sees it, not by its mockup code (CPY-04).
+    expect(screen.getByText(/Kiểm tra lại ở Phân ô/)).toBeInTheDocument()
+    expect(screen.queryByText(/A3\.3/)).not.toBeInTheDocument()
     expect(uploadDrawing).not.toHaveBeenCalled()
 
     await userEvent.click(screen.getByRole('button', { name: 'Lưu' }))

@@ -36,7 +36,7 @@ function normaliseColor(color: string | null | undefined, stages: Stage[]): stri
   if (!color) return null
   const conflict = zoneColorConflict(color, stages)
   if (conflict) {
-    throw new Error(`Màu này đang dùng cho lớp «${conflict.name}» ở A3.2, chọn màu khác`)
+    throw new Error(`Màu này đang dùng cho lớp «${conflict.name}» ở Cấu hình lớp sơn, chọn màu khác`)
   }
   return color.toLowerCase()
 }
