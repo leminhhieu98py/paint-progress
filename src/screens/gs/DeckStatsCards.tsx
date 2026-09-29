@@ -1,20 +1,16 @@
-import { useState } from 'react'
+import { useState, type CSSProperties } from 'react'
 import { Donut } from '../../components/Donut'
+import { InfoTip } from '../../components/InfoTip'
 import { legendRowProps } from '../../components/ringHover'
 import { ProgressBar } from '../../components/ProgressBar'
+import { SectionCard } from '../../components/SectionCard'
 import { buildStageSlices, NOT_STARTED_KEY, UNMAPPED_KEY } from '../../domain/pieSlices'
 import type { Cell, Stage, StageProgress } from '../../domain/types'
 import { DEFAULT_QUANTITY_LABEL, DEFAULT_UNIT } from '../../domain/unit'
 import { formatAreaM2, formatPercent } from '../../lib/format'
-import { palette, shadowCard } from '../../theme'
+import { fieldType, palette, space } from '../../theme'
 
-const cardStyle = {
-  background: palette.bgContainer,
-  border: `1px solid ${palette.borderCard}`,
-  borderRadius: 14,
-  boxShadow: shadowCard,
-  padding: '18px 20px 20px',
-} as const
+const ellipsis: CSSProperties = { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }
 
 /**
  * The one number the foreman is asked for on the radio.
@@ -45,54 +41,45 @@ export function DeckProgressCard({
 }) {
   const several = perWork.length > 1
   return (
-    <div data-testid="gs-deck-progress" style={cardStyle}>
-      <div style={{ fontSize: 12, fontWeight: 600, color: palette.textTertiary }}>Tiến độ sàn</div>
-      <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginTop: 10 }}>
-        <span style={{ fontSize: 30, fontWeight: 700, lineHeight: 1, letterSpacing: '-0.032em' }}>
-          {formatPercent(progress)}
-        </span>
-        {several && (
-          <span style={{ fontSize: 12, color: palette.textTertiary }}>tổng hợp</span>
+    <div data-testid="gs-deck-progress">
+      <SectionCard
+        title={(
+          <>
+            Tiến độ sàn
+            {/* What the figure aggregates, where the admin's deck page says it (round 4). */}
+            {several && <InfoTip text="Tổng hợp các công việc" />}
+          </>
         )}
-      </div>
-      <div style={{ marginTop: 14 }}>
-        {/* No label of its own: the figure is already above it, in the
-            largest type on the screen. */}
-        <ProgressBar ratio={progress} color={palette.accent} height={8} showLabel={false} />
-      </div>
-      {several && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 14, fontSize: 13 }}>
-          {perWork.map((row) => (
-            <div key={row.id} style={{ display: 'flex', alignItems: 'baseline', gap: 8, minWidth: 0 }}>
-              <span
-                style={{
-                  color: palette.textSecondary, minWidth: 0,
-                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                }}
-              >
-                {row.name}
-              </span>
-              <span style={{ marginLeft: 'auto', fontWeight: 600, flex: 'none' }}>
-                {formatPercent(row.progress)}
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'baseline',
-          gap: 8,
-          marginTop: 14,
-          fontSize: 13,
-        }}
       >
-        <span style={{ color: palette.textTertiary }}>{`${quantityLabel} sàn`}</span>
-        <span style={{ marginLeft: 'auto', fontWeight: 600 }}>
-          {`${formatAreaM2(totalAreaM2)} ${unit}`}
-        </span>
-      </div>
+        <div style={{ ...fieldType.display, lineHeight: 1, letterSpacing: '-0.032em' }}>
+          {formatPercent(progress)}
+        </div>
+        <div style={{ marginTop: space.lg }}>
+          {/* No label of its own: the figure is already above it, in the
+              largest type on the screen. */}
+          <ProgressBar ratio={progress} color={palette.accent} height={8} showLabel={false} />
+        </div>
+        {several && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: space.sm, marginTop: space.lg }}>
+            {perWork.map((row) => (
+              <div key={row.id} style={{ display: 'flex', alignItems: 'baseline', gap: space.sm, minWidth: 0 }}>
+                <span style={{ ...fieldType.body, ...ellipsis, color: palette.textSecondary, minWidth: 0 }}>
+                  {row.name}
+                </span>
+                <span style={{ ...fieldType.bodyStrong, marginLeft: 'auto', flex: 'none' }}>
+                  {formatPercent(row.progress)}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: space.sm, marginTop: space.lg }}>
+          <span style={{ ...fieldType.body, color: palette.textTertiary }}>{`${quantityLabel} sàn`}</span>
+          <span style={{ ...fieldType.bodyStrong, marginLeft: 'auto' }}>
+            {`${formatAreaM2(totalAreaM2)} ${unit}`}
+          </span>
+        </div>
+      </SectionCard>
     </div>
   )
 }
@@ -100,9 +87,10 @@ export function DeckProgressCard({
 /**
  * How far each coat has got across the deck, cumulatively.
  *
- * Each row reads "m² done / deck m² · percent", and all three come from the
- * same place: `cumulativeAreaM2` over `totalAreaM2` IS the ratio, so the row
- * cannot disagree with itself. It used to lead with a bay count -- "158 of
+ * Each row reads the coat and its percent, then "m² done / deck m²", and all
+ * three come from the same place: `cumulativeAreaM2` over `totalAreaM2` IS
+ * the ratio, so the row cannot disagree with itself. It used to lead with a
+ * bay count -- "158 of
  * 184" -- which the client's review struck: bays differ in size, so a count
  * says nothing the office can bill from, and the percentage stood beside a
  * fraction it visibly did not match.
@@ -156,80 +144,82 @@ export function StageRollupCard({
     .filter((s) => s.value > 0)
 
   return (
-    <div data-testid="gs-stage-rollup" style={cardStyle}>
-      <div style={{ fontSize: 12, fontWeight: 600, color: palette.textTertiary, marginBottom: 14 }}>
-        Tiến độ theo công đoạn · cộng dồn
-      </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 18, flexWrap: 'wrap' }}>
-        {/*
-          The deck area in the middle, not the deck percentage.
+    <div data-testid="gs-stage-rollup">
+      <SectionCard title="Tiến độ theo công đoạn · cộng dồn">
+        <div style={{ display: 'flex', alignItems: 'center', gap: space.lg, flexWrap: 'wrap' }}>
+          {/*
+            The deck area in the middle, not the deck percentage.
 
-          The design puts the percentage there, and it is already the largest
-          thing on the screen one card above. Two copies of one number is not
-          emphasis -- it is two things to keep in step, and one of them will
-          eventually be the stale one. The area is what the ring is actually
-          dividing up.
-        */}
-        <Donut
-          label="Diện tích đang dừng ở mỗi lớp"
-          slices={ringSlices}
-          size={132}
-          thickness={24}
-          activeKey={active}
-          onActiveChange={setActive}
-        >
-          <span style={{ fontSize: 17, fontWeight: 700, letterSpacing: '-0.028em' }}>
-            {formatAreaM2(totalAreaM2)}
-          </span>
-          <span style={{ fontSize: 10, color: palette.textTertiary, marginTop: 2 }}>
-            {`${unit} sàn`}
-          </span>
-        </Donut>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 11, flex: 1, minWidth: 168 }}>
-          {ordered.map((stage, i) => {
-            const sp = stageProgress.find((x) => x.stage.id === stage.id)
-            const doneM2 = sp?.cumulativeAreaM2 ?? 0
-            const ratio = sp?.ratio ?? 0
-            return (
-              <div
-                key={stage.id}
-                data-testid="gs-stage-row"
-                {...legendRowProps(stage.id, active, setActive, {
-                  display: 'flex', alignItems: 'center', gap: 11, minWidth: 0,
-                })}
-              >
-                <span
-                  aria-hidden
-                  style={{
-                    width: 26,
-                    height: 26,
-                    flex: 'none',
-                    borderRadius: '50%',
-                    background: palette.bgContainer,
-                    boxShadow: `inset 0 0 0 3px ${stage.color}`,
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: 11,
-                    fontWeight: 600,
-                    color: palette.textSecondary,
-                  }}
+            The design puts the percentage there, and it is already the largest
+            thing on the screen one card above. Two copies of one number is not
+            emphasis -- it is two things to keep in step, and one of them will
+            eventually be the stale one. The area is what the ring is actually
+            dividing up.
+          */}
+          <Donut
+            label="Diện tích đang dừng ở mỗi lớp"
+            slices={ringSlices}
+            size={132}
+            thickness={24}
+            activeKey={active}
+            onActiveChange={setActive}
+          >
+            <span style={{ ...fieldType.displaySm, letterSpacing: '-0.028em' }}>
+              {formatAreaM2(totalAreaM2)}
+            </span>
+            <span style={{ ...fieldType.caption, color: palette.textTertiary, marginTop: 2 }}>
+              {`${unit} sàn`}
+            </span>
+          </Donut>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: space.md, flex: 1, minWidth: 168 }}>
+            {ordered.map((stage) => {
+              const sp = stageProgress.find((x) => x.stage.id === stage.id)
+              const doneM2 = sp?.cumulativeAreaM2 ?? 0
+              const ratio = sp?.ratio ?? 0
+              return (
+                <div
+                  key={stage.id}
+                  data-testid="gs-stage-row"
+                  {...legendRowProps(stage.id, active, setActive, {
+                    display: 'flex', alignItems: 'baseline', gap: 9, minWidth: 0,
+                  })}
                 >
-                  {i + 1}
-                </span>
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: 13, fontWeight: 600, lineHeight: 1.25 }}>
-                    {stage.name}
-                  </div>
-                  <div style={{ fontSize: 12, color: palette.textTertiary, marginTop: 2 }}>
-                    {figures(doneM2, ratio)}
+                  {/* The coat's colour as a plain circle, as every legend in the app (CLR-03). */}
+                  <span
+                    aria-hidden
+                    data-testid="gs-stage-marker"
+                    style={{ width: 11, height: 11, flex: 'none', borderRadius: '50%', background: stage.color }}
+                  />
+                  {/*
+                    Two lines at most in a 320px rail (baseline notes): the name
+                    and its percent, then the area. Neither wraps; a long name
+                    ellipsises, the figures never do.
+                  */}
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div style={{ display: 'flex', alignItems: 'baseline', gap: space.sm, minWidth: 0 }}>
+                      <span style={{ ...fieldType.body, ...ellipsis, minWidth: 0, lineHeight: 1.25 }}>
+                        {stage.name}
+                      </span>
+                      <span
+                        data-testid="gs-stage-percent"
+                        style={{ ...fieldType.bodyStrong, marginLeft: 'auto', flex: 'none', whiteSpace: 'nowrap' }}
+                      >
+                        {formatPercent(ratio)}
+                      </span>
+                    </div>
+                    <div
+                      data-testid="gs-stage-area"
+                      style={{ ...fieldType.caption, ...ellipsis, color: palette.textTertiary, marginTop: 2 }}
+                    >
+                      {`${formatAreaM2(doneM2)} / ${formatAreaM2(totalAreaM2)} ${unit}`}
+                    </div>
                   </div>
                 </div>
-              </div>
-            )
-          })}
+              )
+            })}
+          </div>
         </div>
-      </div>
+      </SectionCard>
     </div>
   )
 }

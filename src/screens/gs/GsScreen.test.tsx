@@ -1699,7 +1699,8 @@ describe('GsScreen: công việc', () => {
     // = 30,00%. Tổng hợp with W .6/.4 and D 1/1: .6·.155 + .4·.3 = 21,30%.
     const card = await screen.findByTestId('gs-deck-progress')
     await waitFor(() => expect(within(card).getByText('21,30%')).toBeInTheDocument())
-    expect(within(card).getByText('tổng hợp')).toBeInTheDocument()
+    // tổng hợp is the title's (?) now (round 4 via GS-10), not a caption.
+    expect(within(card).getByRole('img', { name: 'Tổng hợp các công việc' })).toBeInTheDocument()
     expect(within(card).getByText('15,50%')).toBeInTheDocument()
     expect(within(card).getByText('30,00%')).toBeInTheDocument()
   })
@@ -1752,7 +1753,8 @@ describe('GsScreen: a deck its cells over-cover', () => {
     // banner goes.
     const rollup = () => within(screen.getByTestId('gs-stage-rollup'))
     await waitFor(() =>
-      expect(rollup().getAllByText('300,00 / 500,00 m² · 60,00%').length).toBeGreaterThan(0))
+      expect(rollup().getAllByText('300,00 / 500,00 m²').length).toBeGreaterThan(0))
+    expect(rollup().getAllByText('60,00%').length).toBeGreaterThan(0)
     expect(rollup().queryByText(/42,86%/)).toBeNull()
     expect(screen.queryByText('Diện tích các ô vượt diện tích sàn khai báo')).toBeNull()
     expect(screen.queryByText(/Các ô cộng lại/)).toBeNull()
