@@ -14,17 +14,28 @@ import { palette } from '../theme'
 /** A legend row while its slice is active: a background, the text not bolder (R5-C1). */
 export const LEGEND_ACTIVE_BG = palette.bgHover
 
+/** The listener each element has waiting, so a second tap replaces rather than adds one. */
+const waiting = new WeakMap<Element, (e: PointerEvent) => void>()
+
 /**
  * Calls `clear` on the next pointer that goes down outside `el`, once.
  *
  * Registered in the capture phase, so a tap on another row or slice clears
- * this one before that one's own tap sets it.
+ * this one before that one's own tap sets it. A pointer that goes down
+ * INSIDE `el` leaves the listener in place: a touch that starts on the lit
+ * row and turns into a scroll never lifts there, and taking the listener
+ * with it stranded the highlight past the next tap on the drawing.
  */
 export function clearOnTapElsewhere(el: Element, clear: () => void): void {
+  const previous = waiting.get(el)
+  if (previous !== undefined) document.removeEventListener('pointerdown', previous, true)
   const onDown = (e: PointerEvent) => {
+    if (e.target instanceof Node && el.contains(e.target)) return
     document.removeEventListener('pointerdown', onDown, true)
-    if (!(e.target instanceof Node) || !el.contains(e.target)) clear()
+    waiting.delete(el)
+    clear()
   }
+  waiting.set(el, onDown)
   document.addEventListener('pointerdown', onDown, true)
 }
 

@@ -63,4 +63,16 @@ describe('legendRowProps', () => {
     tap(row('b'))
     expect(active()).toBe('b')
   })
+
+  it('still clears on a tap elsewhere after a touch on the active row turned into a scroll (CHT-02)', () => {
+    render(<Legend />)
+    tap(row('a'))
+    // A finger that lands on the lit row and scrolls: down, then cancel, no up.
+    fireEvent.pointerDown(row('a'), { pointerType: 'touch' })
+    fireEvent.pointerCancel(row('a'), { pointerType: 'touch' })
+    expect(active()).toBe('a')
+    // The next tap lands elsewhere -- on the drawing, say -- and lets go.
+    fireEvent.pointerDown(screen.getByTestId('elsewhere'), { pointerType: 'touch' })
+    expect(active()).toBe('')
+  })
 })
