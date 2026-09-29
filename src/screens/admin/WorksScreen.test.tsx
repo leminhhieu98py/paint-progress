@@ -250,7 +250,9 @@ describe('WorksScreen', () => {
     const dialog = await screen.findByRole('dialog')
     // One lead sentence, each consequence its own item (RUL-01).
     expect(within(dialog).getByText('Lưu các sàn tham gia sau:')).toBeInTheDocument()
-    expect(consequenceItems(dialog)).toEqual(['Sàn bị bỏ ra khỏi công việc mất lớp sơn và vị trí ô của công việc đó'])
+    // No deck leaves the work here, so nothing is lost and nothing is said.
+    expect(consequenceItems(dialog)).toEqual([])
+    expect(within(dialog).queryByText('bỏ ra')).toBeNull()
     await userEvent.click(within(dialog).getByRole('button', { name: 'Lưu' }))
     await waitFor(() => expect(saveWorkDecks).toHaveBeenCalledWith('w1', [
       { deckId: 'd1', weight: 0.25 }, { deckId: 'd2', weight: 0.75 },
@@ -270,6 +272,22 @@ describe('WorksScreen', () => {
     // Shares among the decks that take part: CD alone -> 1.
     expect(within(matrix).getByLabelText('Trọng số Cellar Deck')).toHaveValue('1')
     expect(within(matrix).getByRole('button', { name: 'Lưu sàn tham gia' })).toBeEnabled()
+  })
+
+  it('names the decks a save takes out of the work, and what they lose, only when there are some (RUL-01)', async () => {
+    renderScreen()
+    await screen.findByDisplayValue('Sơn')
+    await userEvent.click(within(rowOf('Sơn')).getByRole('button', { name: 'Sàn tham gia' }))
+    const matrix = await screen.findByTestId('work-decks-w1')
+    await within(matrix).findByLabelText('Trọng số Cellar Deck')
+    await userEvent.click(within(matrix).getByRole('switch', { name: 'Main Deck tham gia' }))
+    await userEvent.click(within(matrix).getByRole('button', { name: 'Chia theo m²' }))
+    await userEvent.click(within(matrix).getByRole('button', { name: 'Lưu sàn tham gia' }))
+    const dialog = await screen.findByRole('dialog')
+    // The deck that goes is a row of its own, marked so.
+    expect(within(dialog).getByText('Main Deck')).toBeInTheDocument()
+    expect(within(dialog).getByText('bỏ ra')).toBeInTheDocument()
+    expect(consequenceItems(dialog)).toEqual(['Sàn bị bỏ ra khỏi công việc mất lớp sơn và vị trí ô của công việc đó'])
   })
 
   it('deletes a work only behind its typed name, and reloads', async () => {

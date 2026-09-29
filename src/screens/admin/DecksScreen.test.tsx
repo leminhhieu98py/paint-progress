@@ -674,6 +674,8 @@ describe('DecksScreen — the project-wide half of progress', () => {
     const dialog = await screen.findByRole('dialog')
     expect(within(dialog).getByText('Xuất báo cáo dự án?')).toBeInTheDocument()
     expect(consequenceItems(dialog)).toEqual(['Có thể mất một lúc với dự án nhiều sàn'])
+    // One short lead, so the deck rows say what they are (RUL-01).
+    expect(within(dialog).getByText('Báo cáo gồm các sàn sau:')).toBeInTheDocument()
     expect(within(dialog).queryByText(/lần lượt|tuần tự|song song/)).toBeNull()
   })
 })

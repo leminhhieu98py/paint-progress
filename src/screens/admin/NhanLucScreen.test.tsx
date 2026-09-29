@@ -159,7 +159,7 @@ describe('NhanLucScreen — one list (NL-01)', () => {
     expect(within(employee).getByText('Nhân viên')).toBeInTheDocument()
     // The badge says what the role means, in the dialogs' own words (NL-01 amendment).
     await userEvent.hover(within(rowOf('GS Một')).getByText('GS'))
-    expect(await screen.findByRole('tooltip')).toHaveTextContent('GS đăng nhập trên tablet và ghi tiến độ ở các dự án được gán.')
+    expect(await screen.findByRole('tooltip')).toHaveTextContent('GS đăng nhập trên máy tính bảng và ghi tiến độ ở các dự án được gán.')
     expect(within(employee).getAllByText('-')).toHaveLength(2)
     expect(within(employee).getByText('Đang làm')).toBeInTheDocument()
   })
@@ -410,9 +410,9 @@ describe('NhanLucScreen — accounts, as before (USR)', () => {
     await userEvent.click(within(rowOf('GS Một')).getByRole('button', { name: 'Khoá tài khoản' }))
     expect(deactivateGsUser).not.toHaveBeenCalled()
     // Each consequence its own item, not prose (RUL-01).
-    expect(await screen.findByText('Mất quyền truy cập ngay, cả tablet đang mở cũng ngừng ghi tiến độ')).toBeInTheDocument()
+    expect(await screen.findByText('Mất quyền truy cập ngay, cả máy tính bảng đang mở cũng ngừng ghi tiến độ')).toBeInTheDocument()
     expect(consequenceItems()).toEqual([
-      'Mất quyền truy cập ngay, cả tablet đang mở cũng ngừng ghi tiến độ',
+      'Mất quyền truy cập ngay, cả máy tính bảng đang mở cũng ngừng ghi tiến độ',
       'Dự án và công việc đã gán giữ nguyên cho lần mở khoá',
       'Lịch sử ghi nhận vẫn mang tên người này',
     ])
@@ -498,7 +498,7 @@ describe('NhanLucScreen — accounts, as before (USR)', () => {
     await userEvent.click(within(rowOf('GS Một')).getByRole('button', { name: 'Ẩn tài khoản' }))
     expect(hideUser).not.toHaveBeenCalled()
     expect(await screen.findByText('Tìm lại bằng Trạng thái «Đã ẩn»')).toBeInTheDocument()
-    expect(screen.getByText('Mất quyền truy cập ngay, cả tablet đang mở cũng ngừng ghi tiến độ')).toBeInTheDocument()
+    expect(screen.getByText('Mất quyền truy cập ngay, cả máy tính bảng đang mở cũng ngừng ghi tiến độ')).toBeInTheDocument()
     expect(screen.getByText('Lịch sử ghi nhận vẫn mang tên người này')).toBeInTheDocument()
     listGsUsers.mockResolvedValue([account({ active: false, hidden: true })])
     await userEvent.click(await screen.findByRole('button', { name: 'Vẫn ẩn' }))
@@ -671,7 +671,7 @@ describe('NhanLucScreen — Thêm nhân lực (NL-02)', () => {
     renderScreen()
     const dialog = await open()
     await pick('GS')
-    expect(within(dialog).getByText('GS đăng nhập trên tablet và ghi tiến độ ở các dự án được gán.')).toBeInTheDocument()
+    expect(within(dialog).getByText('GS đăng nhập trên máy tính bảng và ghi tiến độ ở các dự án được gán.')).toBeInTheDocument()
     await userEvent.type(within(dialog).getByLabelText('Họ tên'), 'Lê Trung Hiếu')
     await userEvent.type(within(dialog).getByLabelText('Tên đăng nhập'), 'gs.hieu')
     await userEvent.type(within(dialog).getByLabelText('Mật khẩu'), 'Bh7@Deck2026')
@@ -806,10 +806,13 @@ describe('NhanLucScreen — Đổi phân quyền (NL-04)', () => {
     expect(within(dialog).queryByLabelText('Mật khẩu')).toBeNull()
     await next(dialog)
     expect(await screen.findByText('Tài khoản bị khoá và ẩn, không bị xoá:')).toBeInTheDocument()
-    expect(screen.getByText('Không đăng nhập được nữa')).toBeInTheDocument()
-    expect(screen.getByText('Lịch sử ghi nhận vẫn mang tên người này')).toBeInTheDocument()
-    expect(screen.getByText('Một nhân viên đang làm cùng tên vào ô chọn của GS')).toBeInTheDocument()
-    expect(screen.getByText('Đổi lại thành GS hoặc Visitor là mở lại đúng tài khoản này')).toBeInTheDocument()
+    // The same lock as Khoá: access ends at once (staff.ts sets active = false).
+    expect(consequenceItems()).toEqual([
+      'Mất quyền truy cập ngay, cả máy tính bảng đang mở cũng ngừng ghi tiến độ',
+      'Lịch sử ghi nhận vẫn mang tên người này',
+      'Một nhân viên đang làm cùng tên được thêm vào ô chọn của GS',
+      'Đổi lại thành GS hoặc Visitor là mở lại đúng tài khoản này',
+    ])
     await userEvent.click(screen.getByRole('button', { name: 'Vẫn đổi' }))
     await waitFor(() => expect(changeRole).toHaveBeenCalledWith({ kind: 'account', id: 'u7', role: 'employee' }))
     expect(await screen.findByText('Đã chuyển thành nhân viên')).toBeInTheDocument()
@@ -889,11 +892,11 @@ describe('NhanLucScreen — rules (RUL-01, CPY-05)', () => {
   it('states each role in the words the create dialog uses, and the list\'s own rules', async () => {
     renderScreen()
     await screen.findByText('gs1')
-    expect(screen.queryByText(/GS đăng nhập trên tablet/)).toBeNull()
+    expect(screen.queryByText(/GS đăng nhập trên máy tính bảng/)).toBeNull()
     await userEvent.click(screen.getByRole('button', { name: /Quy tắc áp dụng/ }))
     for (const text of [
       'Nhân viên không đăng nhập và được GS chọn làm nhóm trưởng hoặc thợ chính khi ghi tiến độ.',
-      'GS đăng nhập trên tablet và ghi tiến độ ở các dự án được gán.',
+      'GS đăng nhập trên máy tính bảng và ghi tiến độ ở các dự án được gán.',
       'Visitor đăng nhập, xem mọi dự án và mọi công việc, tải được báo cáo nhưng không ghi được gì.',
     ]) expect(screen.getByText(text)).toBeInTheDocument()
     // Every entry one present-tense helper sentence (RUL-01).

@@ -50,6 +50,8 @@ const KIND_OPTIONS: { value: WorkKind; label: string }[] = [
 interface MatrixRow {
   deckId: string
   name: string
+  /** In the work when the matrix opened: switched off now, it leaves the work on save. */
+  stored: boolean
   totalAreaM2: number
   on: boolean
   weight: number
@@ -224,6 +226,7 @@ export function WorksScreen() {
           name: d.name,
           totalAreaM2: d.totalAreaM2,
           on: byDeck.has(d.id),
+          stored: byDeck.has(d.id),
           weight: byDeck.get(d.id) ?? 0,
         })),
       })
@@ -233,6 +236,7 @@ export function WorksScreen() {
   }
 
   const matrixOn = matrix?.rows.filter((r) => r.on) ?? []
+  const matrixRemoved = matrix?.rows.filter((r) => r.stored && !r.on) ?? []
   const matrixBalanced = matrixOn.length === 0 || sumsToOne(matrixOn.map((r) => r.weight))
 
   const saveMatrix = async () => {
@@ -612,8 +616,12 @@ export function WorksScreen() {
         tag="Xác nhận"
         title="Lưu sàn tham gia?"
         description="Lưu các sàn tham gia sau:"
-        consequences={['Sàn bị bỏ ra khỏi công việc mất lớp sơn và vị trí ô của công việc đó']}
-        items={matrixOn.map((r) => ({ label: r.name, meta: `trọng số ${formatWeight(r.weight)}` }))}
+        // The decks that leave are rows too, and only then is their loss said (RUL-01).
+        consequences={matrixRemoved.length > 0 ? ['Sàn bị bỏ ra khỏi công việc mất lớp sơn và vị trí ô của công việc đó'] : undefined}
+        items={[
+          ...matrixOn.map((r) => ({ label: r.name, meta: `trọng số ${formatWeight(r.weight)}` })),
+          ...matrixRemoved.map((r) => ({ label: r.name, meta: 'bỏ ra' })),
+        ]}
         okText="Lưu"
         confirmLoading={matrixSaving}
         onCancel={() => setConfirmingMatrix(false)}

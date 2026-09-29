@@ -745,7 +745,11 @@ export function DeckDetailScreen() {
         items={saveConsequences}
         consequences={[
           ...(pdf ? ['Ô đã dựng giữ vị trí cũ trên bản vẽ mới, cần kiểm tra lại ở Phân ô'] : []),
-          ...(deck && area !== deck.totalAreaM2 ? ['Diện tích từng ô được chia lại theo con số mới'] : []),
+          // reprorateDeckCells rewrites every bay's area_m2, which the done m²,
+          // the KPI actuals (progressApi reads cell.area_m2) and the report sum.
+          ...(deck && area !== deck.totalAreaM2
+            ? ['Diện tích từng ô được chia lại theo con số mới', 'Diện tích đã làm, KPI thực hiện và báo cáo tính theo diện tích sàn mới']
+            : []),
         ]}
         okText="Lưu"
         confirmLoading={saving}

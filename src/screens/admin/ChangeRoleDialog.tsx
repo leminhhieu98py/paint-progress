@@ -116,9 +116,10 @@ export function ChangeRoleDialog({
         description: 'Tài khoản bị khoá và ẩn, không bị xoá:',
         items: [who],
         consequences: [
-          'Không đăng nhập được nữa',
+          // The same lock as Khoá: the change sets active = false (staff.ts).
+          'Mất quyền truy cập ngay, cả máy tính bảng đang mở cũng ngừng ghi tiến độ',
           'Lịch sử ghi nhận vẫn mang tên người này',
-          'Một nhân viên đang làm cùng tên vào ô chọn của GS',
+          'Một nhân viên đang làm cùng tên được thêm vào ô chọn của GS',
           'Đổi lại thành GS hoặc Visitor là mở lại đúng tài khoản này',
         ],
       })

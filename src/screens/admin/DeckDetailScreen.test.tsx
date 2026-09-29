@@ -355,7 +355,11 @@ describe('DeckDetailScreen', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Lưu thông tin sàn' }))
 
     expect(await screen.findByText('Lưu thay đổi cho sàn này?')).toBeInTheDocument()
-    expect(consequenceItems()).toEqual(['Diện tích từng ô được chia lại theo con số mới'])
+    expect(consequenceItems()).toEqual([
+      'Diện tích từng ô được chia lại theo con số mới',
+      // The done m², the KPI actuals and the report read the cells' areas.
+      'Diện tích đã làm, KPI thực hiện và báo cáo tính theo diện tích sàn mới',
+    ])
     expect(screen.queryByText(/mẫu số/)).toBeNull()
     expect(screen.queryByText(/pixel/)).not.toBeInTheDocument()
     expect(updateDeckArea).not.toHaveBeenCalled()

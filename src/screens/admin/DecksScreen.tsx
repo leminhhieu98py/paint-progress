@@ -762,6 +762,7 @@ export function DecksScreen() {
         open={confirmingExport}
         tag="Xác nhận"
         title="Xuất báo cáo dự án?"
+        description="Báo cáo gồm các sàn sau:"
         items={modelDecks.map((d) => ({
           label: d.name,
           meta: `${d.cellCount} ô`,

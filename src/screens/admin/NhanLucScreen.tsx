@@ -747,7 +747,7 @@ export function NhanLucScreen() {
         // Each consequence its own item (RUL-01): member policies stop granting
         // on the spot (admin-users lockAccount), an open tablet included.
         consequences={[
-          'Mất quyền truy cập ngay, cả tablet đang mở cũng ngừng ghi tiến độ',
+          'Mất quyền truy cập ngay, cả máy tính bảng đang mở cũng ngừng ghi tiến độ',
           'Dự án và công việc đã gán giữ nguyên cho lần mở khoá',
           'Lịch sử ghi nhận vẫn mang tên người này',
         ]}
@@ -780,7 +780,7 @@ export function NhanLucScreen() {
             : []
         }
         consequences={[
-          'Mất quyền truy cập ngay, cả tablet đang mở cũng ngừng ghi tiến độ',
+          'Mất quyền truy cập ngay, cả máy tính bảng đang mở cũng ngừng ghi tiến độ',
           'Lịch sử ghi nhận vẫn mang tên người này',
           'Tìm lại bằng Trạng thái «Đã ẩn»',
         ]}
