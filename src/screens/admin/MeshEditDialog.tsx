@@ -1,9 +1,7 @@
-import { Modal, Typography } from 'antd'
 import { formatAreaM2 } from '../../lib/format'
 import type { MeshCell } from '../../domain/types'
 import type { ZoneImpact } from '../../lib/decksApi'
-import { modalProps } from '../../components/modalChrome'
-import { type } from '../../theme'
+import { ConsequenceModal, type ConsequenceItem } from '../../components/ConsequenceModal'
 
 export type EditKind = 'delete' | 'merge' | 'mesh'
 
@@ -43,17 +41,14 @@ export interface PendingEdit {
 }
 
 /**
- * The gate every deck-level mesh write goes through.
+ * The gate every deck-level mesh write goes through, on ConsequenceModal like
+ * every other destructive path (I5): the bays and zones affected as items,
+ * then what happens, one consequence each.
  *
- * Split out of DeckEditor because it is 120 lines of prose about consequences
- * and nothing else -- no state, no fetches, no gestures. It reads better beside
- * the shape it describes than buried under the screen's keyboard handling, and
- * the screen it came out of was doing four jobs.
- *
- * Every claim in here is owned by the section that renders it: the dialog can
- * open for any of three independent reasons -- zone impact, progress loss, or a
- * reshape -- in any combination, so no sentence may make a claim about a list
- * it does not own.
+ * Every claim in here is owned by the list it describes: the dialog can open
+ * for any of three independent reasons -- zone impact, progress loss, or a
+ * reshape -- in any combination, so no consequence may make a claim about a
+ * list that is not on screen. Each item's meta names which list it is in.
  */
 export function MeshEditDialog({
   pending,
@@ -66,103 +61,58 @@ export function MeshEditDialog({
   onCancel: () => void
   onConfirm: () => void
 }) {
+  const impact = pending?.impact ?? []
+  const progressLoss = pending?.progressLoss ?? []
+  // Structurally empty when kind === 'delete': a delete never changes a
+  // surviving cell's geometry. Reachable, and tested, for 'merge' and 'mesh'.
+  const reshaped = pending?.reshaped ?? []
+  const wipes = pending?.wipes ?? 0
+  const destructive = wipes > 0 || impact.length > 0 || progressLoss.length > 0
+
+  const items: ConsequenceItem[] = [
+    ...impact.map((z) => ({ label: `${z.zoneName}: ${z.cellCodes.join(', ')}`, meta: 'rời zone' })),
+    ...progressLoss.map((p) => ({ label: `${p.code} — ${p.stageName}`, meta: 'mất tiến độ' })),
+    ...reshaped.map((r) => ({
+      label: `${r.code} — ${r.stageName}: ${formatAreaM2(r.fromAreaM2)} → ${formatAreaM2(r.toAreaM2)} m²`,
+      meta: 'giữ tiến độ',
+    })),
+  ]
+  const consequences = [
+    ...(wipes > 0 ? [`Xoá cả ${wipes} ô hiện có của sàn`] : []),
+    ...(impact.length > 0 ? ['Ô rời zone ra khỏi zone của nó'] : []),
+    ...(progressLoss.length > 0 ? ['Ô mất tiến độ bị xoá tiến độ đã ghi'] : []),
+    ...(reshaped.length > 0 ? ['Ô giữ tiến độ đổi diện tích cùng phần trăm hoàn thành'] : []),
+    /*
+      Unconditional, because it is always true: `apply` writes saveGuides and
+      updateDeckArea on every path through this dialog, not only on a mesh
+      save. A delete or a merge also commits whatever the admin has done to
+      the guide table and the deck-area field, so it is said every time.
+    */
+    'Lưu cả các đường chia trên bản vẽ và diện tích sàn đang nhập',
+  ]
+
   return (
-    <Modal
+    <ConsequenceModal
       open={pending !== null}
-      {...modalProps}
+      tone={destructive ? 'danger' : 'warn'}
+      tag={destructive ? 'Thao tác phá huỷ' : 'Xác nhận'}
       title={
-        pending &&
-        (pending.impact.length > 0
+        impact.length > 0
           ? 'Thao tác này ảnh hưởng đến zone'
           // Zone impact still wins the title when both apply: it is the one
           // that reaches outside this deck's geometry into a zone's plan. The
-          // wipe still gets its own sentence below either way -- every claim
-          // in this dialog is owned by the section that renders it.
-          : pending.wipes > 0
+          // wipe keeps its own consequence either way.
+          : wipes > 0
             ? 'Xoá toàn bộ lưới ô của sàn'
-            : 'Xác nhận thay đổi lưới ô')
+            : 'Xác nhận thay đổi lưới ô'
       }
+      description={items.length > 0 ? 'Các ô bị ảnh hưởng:' : undefined}
+      items={items}
+      consequences={consequences}
       okText={pending ? EDIT_CONFIRM[pending.kind] : undefined}
-      cancelText="Huỷ"
       confirmLoading={busy}
       onCancel={onCancel}
       onOk={onConfirm}
-    >
-      {/*
-        Unconditional, because it is always true: `apply` writes saveGuides and
-        updateDeckArea on every path through this dialog, not only on a mesh
-        save. Since A1 collapsed the two save buttons into one, confirming a
-        delete or a merge also commits whatever the admin has done to the guide
-        table and to the deck-area field -- a guide nudged by accident, or an
-        area typed while thinking it over -- with nothing here saying so.
-
-        A conditional version (only when the guides or the area actually
-        differ from what was loaded) was rejected: it would need a second
-        baseline to diff against, kept in step with the one `cells` already
-        has, and a disclosure that is sometimes absent is one more thing to get
-        wrong on the dialog whose whole job is to be trusted.
-      */}
-      <Typography.Paragraph>
-        Lần lưu này lưu cả các đường chia trên bản vẽ và diện tích sàn đang nhập.
-      </Typography.Paragraph>
-
-      {pending && pending.wipes > 0 && (
-        <Typography.Paragraph strong>
-          {`Thao tác này xoá cả ${pending.wipes} ô hiện có của sàn.`}
-        </Typography.Paragraph>
-      )}
-
-      {pending && pending.impact.length > 0 && (
-        <>
-          <Typography.Paragraph strong>
-            Các ô này rời khỏi zone của chúng:
-          </Typography.Paragraph>
-          <ul>
-            {pending.impact.map((z) => (
-              <li key={z.zoneId}>
-                <span style={type.bodyStrong}>{z.zoneName}</span>: {z.cellCodes.join(', ')}
-              </li>
-            ))}
-          </ul>
-        </>
-      )}
-
-      {pending && pending.progressLoss.length > 0 && (
-        <>
-          <Typography.Paragraph strong>
-            Các ô này mất tiến độ đã ghi:
-          </Typography.Paragraph>
-          <ul>
-            {pending.progressLoss.map((p) => (
-              <li key={p.code}>
-                <span style={type.bodyStrong}>{p.code}</span> — {p.stageName}
-              </li>
-            ))}
-          </ul>
-        </>
-      )}
-
-      {pending && pending.reshaped.length > 0 && (
-        <>
-          {/*
-            R9: structurally unreachable when kind === 'delete' -- a delete
-            never changes a surviving cell's geometry (it only removes
-            cells), so `reshaped` is always empty on that path and this
-            section can never render there. It is reachable, and covered by
-            tests, for 'merge' and 'mesh'. Not dead code: kept intentionally.
-          */}
-          <Typography.Paragraph strong>
-            Các ô này giữ tiến độ đã ghi và đổi diện tích cùng phần trăm hoàn thành:
-          </Typography.Paragraph>
-          <ul>
-            {pending.reshaped.map((r) => (
-              <li key={r.code}>
-                <span style={type.bodyStrong}>{r.code}</span> — {r.stageName}: {formatAreaM2(r.fromAreaM2)} → {formatAreaM2(r.toAreaM2)} m²
-              </li>
-            ))}
-          </ul>
-        </>
-      )}
-    </Modal>
+    />
   )
 }
