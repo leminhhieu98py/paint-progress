@@ -5,7 +5,7 @@
  * never does either.
  *
  * Animation: "Free construction Animation" by Lakhwinder, from LottieFiles
- * (https://lottiefiles.com/free-animation/construction-eQrfqkSdBo), free to use
+ * (https://lottiefiles.com/free-animation/construction-g8Hve0ildf), free to use
  * under the Lottie Simple License (https://lottiefiles.com/page/license). Its
  * frames are raster images, embedded in the JSON as data URIs, with their
  * colours as published (owner, 2026-09-30).
