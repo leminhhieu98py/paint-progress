@@ -4,9 +4,10 @@ import { palette } from '../theme'
 
 export interface Rule {
   /**
-   * The spec's own id, e.g. STG-R1: the key, and the name to look the rule up
-   * by in the spec. Never rendered (CPY-04) -- on screen it read as the
-   * developer's vocabulary, not the admin's.
+   * The spec's own id, e.g. STG-R1, or a descriptive key where the spec names
+   * none: the React key, and the name to look the rule up by. Never rendered
+   * (CPY-04) -- on screen it read as the developer's vocabulary, not the
+   * admin's.
    */
   id: string
   text: string

@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { EmployeesScreen } from './EmployeesScreen'
 import { expectLeft } from '../../test/alignment'
+import { pageSubtitle } from '../../test/copy'
 
 const listEmployees = vi.hoisted(() => vi.fn())
 const createEmployee = vi.hoisted(() => vi.fn())
@@ -51,6 +52,30 @@ describe('EmployeesScreen', () => {
     expect(screen.getByText('Trần Thị B')).toBeInTheDocument()
     expect(listEmployees).toHaveBeenCalledWith(true)
     expect(screen.getByText(/1 đang làm · 2 tên trong danh sách/)).toBeInTheDocument()
+  })
+
+  it('keeps the counts in the subtitle and nothing after them (CPY-01)', async () => {
+    renderScreen()
+    await screen.findByText('Lê Văn A')
+    expect(pageSubtitle()).toHaveTextContent(/^1 đang làm · 2 tên trong danh sách$/)
+  })
+
+  it('has no subtitle while the roster loads (CPY-03)', async () => {
+    listEmployees.mockReturnValue(new Promise(() => {}))
+    renderScreen()
+    expect(await screen.findByRole('heading', { level: 1, name: 'Nhân viên' })).toBeInTheDocument()
+    expect(pageSubtitle()).toBeNull()
+  })
+
+  it('states who uses the roster and what switching someone off keeps, under Quy tắc áp dụng (CPY-01)', async () => {
+    renderScreen()
+    await screen.findByText('Lê Văn A')
+    expect(screen.queryByText(/GS chọn nhóm trưởng và thợ chính/)).toBeNull()
+    expect(screen.queryByText(/Tắt một người thì họ không còn hiện/)).toBeNull()
+    const card = screen.getByRole('heading', { name: 'Danh sách nhân viên' }).closest('section') as HTMLElement
+    await userEvent.click(within(card).getByRole('button', { name: /Quy tắc áp dụng/ }))
+    expect(within(card).getByText('GS chọn nhóm trưởng và thợ chính từ danh sách này; GS không sửa được.')).toBeInTheDocument()
+    expect(within(card).getByText(/^Tắt một người thì họ không còn hiện trong ô chọn của GS/)).toBeInTheDocument()
   })
 
   it('adds a name and re-reads the list', async () => {

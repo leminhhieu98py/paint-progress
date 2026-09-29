@@ -1,9 +1,10 @@
 import { DownloadOutlined, PlusOutlined, SearchOutlined } from '@ant-design/icons'
-import { Alert, App, Button, Form, Input, Modal, Space, Switch, Table, Tooltip, Typography } from 'antd'
+import { Alert, App, Button, Form, Input, Modal, Space, Switch, Table, Tooltip } from 'antd'
 import dayjs from 'dayjs'
 import { useEffect, useMemo, useState } from 'react'
 import { modalProps } from '../../components/modalChrome'
 import { PageBody, PageHeader } from '../../components/PageHeader'
+import { RulesDisclosure, type Rule } from '../../components/RulesDisclosure'
 import { SectionCard } from '../../components/SectionCard'
 import { useTablePagination } from '../../components/tablePagination'
 import { createEmployee, listEmployees, updateEmployee, type Employee } from '../../lib/employeesApi'
@@ -11,6 +12,15 @@ import { buildEmployeesXlsx, employeesFileName } from '../../lib/employeesXlsx'
 import { downloadWorkbook } from '../../lib/projectReport'
 import { matchesSearch } from '../../lib/search'
 import { palette } from '../../theme'
+
+/** Who reads the roster and what switching a name off keeps (CPY-01). Keys only; the spec names no ids for these. */
+const ROSTER_RULES: Rule[] = [
+  { id: 'roster-source', text: 'GS chọn nhóm trưởng và thợ chính từ danh sách này; GS không sửa được.' },
+  {
+    id: 'roster-inactive',
+    text: 'Tắt một người thì họ không còn hiện trong ô chọn của GS, nhưng vẫn còn nguyên trên các lần cập nhật đã ghi — tên trên lịch sử là bản chụp lúc ghi, không đổi theo danh sách.',
+  },
+]
 
 /**
  * The shared staff roster (Feedback Rv4, 0032).
@@ -110,13 +120,13 @@ export function EmployeesScreen() {
         title="Nhân viên"
         subtitle={
           rows === null
-            ? 'Danh sách dùng chung cho mọi dự án, sàn và công đoạn'
+            ? undefined
             // RV5-06: while a search is on, the count is of what is on screen,
             // with the whole roster beside it -- "1 đang làm" with nine rows
             // hidden and no sign of it would be a wrong number.
             : searching
-              ? `${active} đang làm · ${shown.length}/${rows.length} tên khớp tìm kiếm · dùng chung cho mọi dự án`
-              : `${active} đang làm · ${rows.length} tên trong danh sách · dùng chung cho mọi dự án`
+              ? `${active} đang làm · ${shown.length}/${rows.length} tên khớp tìm kiếm`
+              : `${active} đang làm · ${rows.length} tên trong danh sách`
         }
         extra={
           <Space size={12}>
@@ -153,8 +163,8 @@ export function EmployeesScreen() {
         <SectionCard
           code="A5.1"
           title="Danh sách nhân viên"
-          summary="GS chọn nhóm trưởng và thợ chính từ danh sách này; GS không sửa được"
           bodyPadding={0}
+          footer={<RulesDisclosure rules={ROSTER_RULES} />}
           extra={
             <Input
               allowClear
@@ -220,10 +230,6 @@ export function EmployeesScreen() {
             ]}
           />
         </SectionCard>
-        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-          Tắt một người thì họ không còn hiện trong ô chọn của GS, nhưng vẫn còn nguyên trên các
-          lần cập nhật đã ghi — tên trên lịch sử là bản chụp lúc ghi, không đổi theo danh sách.
-        </Typography.Text>
       </PageBody>
 
       <Modal
