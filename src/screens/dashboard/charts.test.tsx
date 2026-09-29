@@ -196,19 +196,22 @@ describe('EfficiencyLineChart: missing days (QA F4)', () => {
 // CHT-01 / CHT-03 -- colours the app picks, legend hover, tooltips, active marks
 // ---------------------------------------------------------------------
 
+/** A prop the chart handed the Legend or the Tooltip double. */
+function propOf<T>(props: Record<string, unknown> | null, key: string): T {
+  if (!props) throw new Error(`nothing rendered to read ${key} from`)
+  return props[key] as T
+}
+type LegendHandler = (entry: { dataKey: string; value: string }, i: number) => void
+
 /** Hover the legend item of `dataKey`, as Recharts reports it, then leave it. */
-const hoverLegend = (dataKey: string) => act(() => {
-  const enter = captured.legend?.onMouseEnter as (entry: { dataKey: string; value: string }, i: number) => void
-  enter({ dataKey, value: dataKey }, 0)
-})
-const leaveLegend = () => act(() => {
-  const leave = captured.legend?.onMouseLeave as (entry: { dataKey: string; value: string }, i: number) => void
-  leave({ dataKey: '', value: '' }, 0)
-})
+const hoverLegend = (dataKey: string) =>
+  act(() => propOf<LegendHandler>(captured.legend, 'onMouseEnter')({ dataKey, value: dataKey }, 0))
+const leaveLegend = () =>
+  act(() => propOf<LegendHandler>(captured.legend, 'onMouseLeave')({ dataKey: '', value: '' }, 0))
 const opacity = (id: string) => screen.getByTestId(id).getAttribute('data-opacity')
 const format = (value: number, name: string) =>
-  (captured.tooltip?.formatter as (v: number, n: string) => unknown)(value, name)
-const label = (day: string) => (captured.tooltip?.labelFormatter as (d: string) => unknown)(day)
+  propOf<(v: number, n: string) => unknown>(captured.tooltip, 'formatter')(value, name)
+const label = (day: string) => propOf<(d: string) => unknown>(captured.tooltip, 'labelFormatter')(day)
 
 describe('EfficiencyLineChart: legend hover and active dot (CHT-03)', () => {
   const STAGES = [{ name: 'Coat 1', color: '#fadb14' }, { name: 'Coat 2', color: '#722ed1' }]
