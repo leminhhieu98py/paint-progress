@@ -14,6 +14,14 @@ const base = {
 }
 
 describe('ConsequenceModal', () => {
+  it('takes its tone tints from the palette, not from literals (M3)', () => {
+    const icon = () => document.querySelector('.ant-modal-body > div > span') as HTMLElement
+    const { rerender } = render(<ConsequenceModal {...base} tone="warn" />)
+    expect(icon()).toHaveStyle({ background: palette.warningTint })
+    rerender(<ConsequenceModal {...base} tone="danger" />)
+    expect(icon()).toHaveStyle({ background: palette.errorTint })
+  })
+
   it('names what will be lost, item by item', () => {
     render(
       <ConsequenceModal

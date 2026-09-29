@@ -1,9 +1,10 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { render, screen } from '@testing-library/react'
-import { Modal, Table } from 'antd'
+import { Alert, ConfigProvider, Modal, Table } from 'antd'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { tablePagination } from './components/tablePagination'
+import { adminTheme, fieldTheme } from './theme'
 
 // Read from disk: vitest hands a stylesheet import back empty, `?raw` included.
 // Beside this file, not under the working directory, so a runner started
@@ -106,5 +107,21 @@ describe('index.css colour swatch (CLR-01)', () => {
     const picked = rule('.pp-swatch[aria-checked="true"]:focus-visible')
     expect(picked).toBeDefined()
     expect(parseFloat(picked!.style.outlineOffset)).toBeGreaterThanOrEqual(6)
+  })
+})
+
+describe('index.css Alert title (M3, TYP-01)', () => {
+  it('sets an Alert\'s title over its description as a card title, 15/600, on both themes', () => {
+    for (const theme of [adminTheme, fieldTheme]) {
+      const { container, unmount } = render(
+        <ConfigProvider theme={theme}>
+          <Alert type="error" message="Không tải được dự án" description="Thử lại sau." />
+        </ConfigProvider>,
+      )
+      const title = container.querySelector('.ant-alert-message') as HTMLElement
+      expect(getComputedStyle(title).fontSize).toBe('15px')
+      expect(getComputedStyle(title).fontWeight).toBe('600')
+      unmount()
+    }
   })
 })

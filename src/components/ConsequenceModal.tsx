@@ -20,8 +20,8 @@ export type ConsequenceTone = 'accent' | 'warn' | 'danger'
 
 const TONES: Record<ConsequenceTone, { fg: string; bg: string; icon: ReactNode }> = {
   accent: { fg: palette.accent, bg: palette.accentTint, icon: <InfoCircleFilled aria-hidden /> },
-  warn: { fg: palette.warning, bg: '#FDF0D5', icon: <WarningFilled aria-hidden /> },
-  danger: { fg: palette.error, bg: '#FEE4E2', icon: <DeleteOutlined aria-hidden /> },
+  warn: { fg: palette.warning, bg: palette.warningTint, icon: <WarningFilled aria-hidden /> },
+  danger: { fg: palette.error, bg: palette.errorTint, icon: <DeleteOutlined aria-hidden /> },
 }
 
 /**

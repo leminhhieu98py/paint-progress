@@ -167,3 +167,14 @@ body {
   cursor: not-allowed;
   opacity: 0.5;
 }
+
+/*
+  An Alert's title over its description is a card title, 15/600 (TYP-01, M3).
+  antd sets its size from fontSizeLG, which the themes pin to 15, but has no
+  token for its weight and draws it at 400 -- a step the scale does not have.
+  Two class names ahead of antd's own zero-specificity rule, like the table
+  rules above.
+*/
+.ant-alert.ant-alert-with-description .ant-alert-message {
+  font-weight: 600;
+}

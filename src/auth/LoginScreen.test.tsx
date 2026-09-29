@@ -111,6 +111,14 @@ describe('LoginScreen', () => {
     expect(animation.destroy).toHaveBeenCalledTimes(1)
   })
 
+  it('sets the sign-in title and the hero headline on the type scale (M3, TYP-01)', () => {
+    render(<LoginScreen />)
+    expect(screen.getByRole('heading', { name: 'Đăng nhập' })).toHaveStyle({ fontSize: '20px', fontWeight: '600' })
+    render(<Hero />)
+    expect(screen.getByRole('heading', { name: 'Quản lý tiến độ thi công ngay trên bản vẽ.' }))
+      .toHaveStyle({ fontSize: '15px', fontWeight: '600' })
+  })
+
   it('carries the approved headline in the wide-screen hero', () => {
     // Asserted on Hero directly: antd's breakpoint hook reports every screen
     // false under jsdom, so the wide layout never renders through LoginScreen

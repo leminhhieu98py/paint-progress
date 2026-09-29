@@ -1,7 +1,7 @@
 import { Alert, Button, Form, Grid, Input } from 'antd'
 import type { AnimationItem } from 'lottie-web/build/player/lottie_light'
 import { useEffect, useRef, useState } from 'react'
-import { palette, shadowCard } from '../theme'
+import { palette, shadowCard, type } from '../theme'
 import { useAuth } from './AuthProvider'
 
 interface Values {
@@ -55,8 +55,8 @@ export function Hero() {
         style={{
           position: 'relative',
           margin: '28px 0 0',
-          fontSize: 19,
-          fontWeight: 600,
+          // On the scale (TYP-01, M3): it was 19/600.
+          ...type.cardTitle,
           lineHeight: 1.35,
           letterSpacing: '-0.024em',
           maxWidth: 300,
@@ -306,8 +306,8 @@ export function LoginScreen() {
       <h1
         style={{
           margin: '20px 0 22px',
-          fontSize: 21,
-          fontWeight: 600,
+          // The page title's step (TYP-01, M3): it was 21/600.
+          ...type.pageTitle,
           lineHeight: 1.25,
           letterSpacing: '-0.028em',
         }}

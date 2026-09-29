@@ -3,6 +3,7 @@ import type { ReactElement } from 'react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { pageSubtitle } from '../test/copy'
+import { palette } from '../theme'
 import { PageHeader } from './PageHeader'
 
 describe('PageHeader', () => {
@@ -44,6 +45,12 @@ describe('PageHeader', () => {
     render(<PageHeader title="Main Deck" onBack={onBack} />)
     await user.click(screen.getByRole('button', { name: 'Quay lại' }))
     expect(onBack).toHaveBeenCalledOnce()
+  })
+
+  it('draws the chevron between crumbs in the muted icon colour of the palette (M3)', () => {
+    render(<PageHeader title="Main Deck" breadcrumbs={[{ label: 'Dự án', onClick: () => {} }, { label: 'Sàn', onClick: () => {} }]} />)
+    const chevron = document.querySelector('.anticon-right') as HTMLElement
+    expect(chevron).toHaveStyle({ color: palette.iconMuted })
   })
 
   it('renders breadcrumbs as buttons that navigate', async () => {
@@ -102,5 +109,16 @@ describe('PageHeader', () => {
     expect(line).toHaveStyle({ minHeight: '38px', alignItems: 'center' })
     expect(line.parentElement!.parentElement).toHaveStyle({ alignItems: 'flex-start' })
     expect(screen.getByRole('button', { name: 'Tạo' }).parentElement).toHaveStyle({ minHeight: '38px', alignItems: 'center' })
+  })
+
+  it('keeps the title at its y when the facts wrap, and wraps them as a row (M1)', () => {
+    render(<PageHeader title="Nhân lực" facts={[{ value: 12, label: 'người' }, { value: 3, label: 'GS' }]} extra={<button type="button">Tạo</button>} />)
+    const title = screen.getByRole('heading', { level: 1 })
+    // The heading itself is a control's height, its text centred: the first
+    // wrapped line can then never be shorter than 38px and lift the title.
+    expect(title).toHaveStyle({ minHeight: '38px', display: 'flex', alignItems: 'center' })
+    // The title block takes the row's free width, so the facts wrap as a
+    // row inside it rather than one pill per line in a shrunk column.
+    expect(title.parentElement!.parentElement).toHaveStyle({ flex: '1 1 auto' })
   })
 })

@@ -439,7 +439,7 @@ export function StageConfigPanel({
             align: 'center',
             width: 34,
             render: () => (!editable ? null : (
-              <HolderOutlined style={{ color: '#647688', cursor: busy ? 'not-allowed' : 'grab' }} />
+              <HolderOutlined style={{ color: palette.iconMuted, cursor: busy ? 'not-allowed' : 'grab' }} />
             )),
           },
           {

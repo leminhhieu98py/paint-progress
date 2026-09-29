@@ -81,7 +81,7 @@ export function PageHeader({
               {/* Between crumbs, not after the last one: a trailing chevron
                   points at nothing and reads as a label that failed to load. */}
               {i < breadcrumbs.length - 1 && (
-                <RightOutlined style={{ fontSize: 10, color: '#647688' }} />
+                <RightOutlined style={{ fontSize: 10, color: palette.iconMuted }} />
               )}
             </Fragment>
           ))}
@@ -116,14 +116,20 @@ export function PageHeader({
           </button>
         )}
 
-        <div style={{ minWidth: 0 }}>
+        {/* The row's free width, so the facts wrap as a row, not a pill a line (M1). */}
+        <div style={{ minWidth: 0, flex: '1 1 auto' }}>
           <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 11, minHeight: 38 }}>
+            {/* A control's height of its own: when the facts wrap, the first
+                line is no shorter than 38px, so the title does not rise (M1). */}
             <h1
               style={{
                 margin: 0,
                 ...type.pageTitle,
                 lineHeight: 1.25,
                 letterSpacing: '-0.028em',
+                minHeight: 38,
+                display: 'flex',
+                alignItems: 'center',
               }}
             >
               {title}

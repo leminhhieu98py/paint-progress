@@ -30,6 +30,8 @@ export const palette = {
   textSecondary: '#4A5A6B',
   textTertiary: '#5F7183',
   textQuaternary: '#8698AA',
+  /** A glyph that points or grips rather than reads: a crumb chevron, a drag handle. */
+  iconMuted: '#647688',
 
   bgApp: '#F8FAFC',
   /** Outside the app frame: the login page, the area around a device mock. */
@@ -47,10 +49,14 @@ export const palette = {
   error: '#B42318',
   errorBg: '#FEF3F2',
   errorBorder: '#FECDCA',
+  /** The danger tone's icon tile, a step deeper than errorBg (ConsequenceModal). */
+  errorTint: '#FEE4E2',
   success: '#15803D',
   successBg: '#E7F8EF',
   warning: '#B45309',
   warningBg: '#FFFAEB',
+  /** The warn tone's icon tile, a step deeper than warningBg (ConsequenceModal). */
+  warningTint: '#FDF0D5',
   /** The hairline around a warning pill (HLT-01), so its amber reads on white. */
   warningBorder: '#FEDF89',
 
