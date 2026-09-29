@@ -250,7 +250,7 @@ export function StagePlanTable({
       title: areaTitle,
       align: 'center' as const,
       key: 'area',
-      width: 220,
+      width: 240,
       render: (_v: unknown, row: StagePlanRow) => {
         const d = draft(row)
         /*
@@ -283,7 +283,9 @@ export function StagePlanTable({
                 placeholder={computedLabel}
                 value={d.plannedAreaM2}
                 disabled={saving}
-                style={{ width: 130 }}
+                // Room for `Tự tính 99.999,99 m²` (R3-B): at 130 the
+                // placeholder was cut to `Tự tính 2.880,0…`.
+                style={{ width: 176 }}
                 onChange={(n) => patch(row, { plannedAreaM2: n === null ? null : Number(n) })}
               />
             </Tooltip>

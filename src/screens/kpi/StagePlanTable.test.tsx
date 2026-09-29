@@ -372,6 +372,15 @@ describe('StagePlanTable — one control height per row (CTL-01)', () => {
     expectAllSmall(screen.getByTestId('plan-row-s1'))
     expectAllSmall(screen.getByTestId('plan-row-s2'))
   })
+
+  it('makes the area field wide enough for the longest Tự tính placeholder (R3-B)', () => {
+    // `Tự tính 99.999,99 m²` measures 136px at 13px Be Vietnam Pro; with the
+    // small field's padding, border and step handle it needs 176. At 130 the
+    // placeholder was cut to `Tự tính 2.880,0…`.
+    renderTable()
+    const field = row('s1').getByLabelText('Diện tích kế hoạch').closest('.ant-input-number')
+    expect(field).toHaveStyle({ width: '176px' })
+  })
 })
 
 describe('StagePlanTable — alignment (UI-03)', () => {
