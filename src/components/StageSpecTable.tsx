@@ -62,7 +62,8 @@ export function StageSpecTable({ stages, unit = DEFAULT_UNIT }: {
       dataSource={dataSource}
       pagination={false}
       size="small"
-      bordered
+      // Not `bordered`: its only use sits flush inside a card (A3.6), whose own
+      // border would otherwise double the table's outer hairline.
       sticky
       // A project with many stages must scroll sideways rather than squeeze
       // every column to unreadable width on a tablet.
