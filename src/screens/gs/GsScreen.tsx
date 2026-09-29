@@ -659,6 +659,8 @@ export function GsScreen() {
       : deckEvents.rows === null ? 'unknown' : 'ready'
   const progressStatus: DeckFigureStatus = stagesError ? 'unknown' : worksLoading ? 'loading' : cellsStatus
   const todayStatus: DeckFigureStatus = stagesError ? 'unknown' : worksLoading ? 'loading' : eventsStatus
+  /** The man-hour totals come from the events alone: a failed stage read leaves them readable (R2). */
+  const todayTotalsStatus: DeckFigureStatus = worksLoading ? 'loading' : eventsStatus
 
   /**
    * The Vietnam calendar day, settled once per mount -- the same way
@@ -1746,6 +1748,7 @@ export function GsScreen() {
           */}
           <DeckTodayCard
             status={todayStatus}
+            totalsStatus={todayTotalsStatus}
             todayKey={todayKey}
             rows={todayStages}
             totals={todayTotals}

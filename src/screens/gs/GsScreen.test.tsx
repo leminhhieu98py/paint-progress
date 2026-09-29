@@ -2207,6 +2207,18 @@ describe('GsScreen: Thông tin nhanh — Hôm nay (Feedback Rv5, item 7)', () =>
 
   const card = () => within(screen.getByTestId('gs-deck-today'))
 
+  it('keeps the four man-hour figures when only the stage read fails (R2)', async () => {
+    listDeckWorks.mockRejectedValue(new Error('Failed to fetch'))
+    listDeckEvents.mockResolvedValue([event()])
+    renderScreen()
+    await screen.findByText('Không tải được lớp sơn của sàn')
+    await waitFor(() => expect(card().getByText('Không tải được công đoạn.')).toBeInTheDocument())
+    // 4 worked and 1 lost, today and all told.
+    await waitFor(() => expect(card().getAllByText('4,00')).toHaveLength(2))
+    expect(card().getAllByText('1,00')).toHaveLength(2)
+    expect(card().queryByText('-')).toBeNull()
+  })
+
   it('reads the deck\'s coats with today\'s m² and its four man-hour figures', async () => {
     listDeckEvents.mockResolvedValue([
       event(),

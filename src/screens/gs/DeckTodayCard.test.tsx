@@ -66,6 +66,14 @@ describe('DeckTodayCard', () => {
     expect(within(card()).getByText('09/09/2026')).toBeInTheDocument()
   })
 
+  it('keeps the hours when only the coats are unknown: they come from the updates (R2)', () => {
+    render(<DeckTodayCard status="unknown" totalsStatus="ready" todayKey="2026-09-09" rows={[]} totals={TOTALS} emptyText="Không tải được công đoạn." />)
+    expect(within(card()).getByText('Không tải được công đoạn.')).toBeInTheDocument()
+    expect(within(card()).getByText('12,50')).toBeInTheDocument()
+    expect(within(card()).getByText('480,00')).toBeInTheDocument()
+    expect(within(card()).queryByText('-')).toBeNull()
+  })
+
   it('prints the four man-hour figures Linh asked for, under their own labels', () => {
     // RV5-19, verbatim from the spec's wording.
     render(<DeckTodayCard todayKey="2026-09-09" rows={ONE_WORK} totals={TOTALS} />)

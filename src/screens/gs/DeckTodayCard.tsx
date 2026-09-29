@@ -47,6 +47,7 @@ export function DeckTodayCard({
   rows,
   totals,
   emptyText = 'Sàn này chưa có công đoạn nào. Quản trị viên cần khai báo công đoạn trước khi ghi tiến độ.',
+  totalsStatus = status,
 }: {
   /**
    * See DeckFigureStatus. Loading until both the deck's works (the rows) and
@@ -70,6 +71,12 @@ export function DeckTodayCard({
    * an admin's coat list would not fix (I2).
    */
   emptyText?: string
+  /**
+   * The four man-hour figures' own status, when it differs from the coats':
+   * they come from the updates alone, so a failed stage read leaves them
+   * readable (R2). Defaults to `status`.
+   */
+  totalsStatus?: DeckFigureStatus
 }) {
   /** Preserves `rows`' order; the caller owns seq order. */
   const groups: { workName: string; rows: (TodayStageArea & { unit?: string })[] }[] = []
@@ -98,6 +105,7 @@ export function DeckTodayCard({
 
   /** A figure as printed, or the missing mark where the day could not be read. */
   const figure = (text: string) => (status === 'unknown' ? MISSING : text)
+  const hourFigure = (text: string) => (totalsStatus === 'unknown' ? MISSING : text)
 
   return (
     <div data-testid="gs-deck-today">
@@ -159,14 +167,16 @@ export function DeckTodayCard({
               borderTop: `1px solid ${palette.borderSplit}`,
             }}
           >
-            {hourRows.map(([label, value, tip]) => (
+            {totalsStatus === 'loading' ? (
+              <CardSkeleton label="Đang tải giờ công hôm nay" />
+            ) : hourRows.map(([label, value, tip]) => (
               <div key={label} style={{ display: 'flex', alignItems: 'baseline', gap: space.sm, minWidth: 0 }}>
                 <span style={{ ...fieldType.body, color: palette.textTertiary, minWidth: 0 }}>
                   {label}
                   {tip !== undefined && <InfoTip text={tip} />}
                 </span>
                 <span style={{ ...fieldType.bodyStrong, marginLeft: 'auto', flex: 'none' }}>
-                  {figure(formatHours(value))}
+                  {hourFigure(formatHours(value))}
                 </span>
               </div>
             ))}
