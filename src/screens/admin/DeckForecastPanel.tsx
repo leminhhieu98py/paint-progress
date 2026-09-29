@@ -145,7 +145,9 @@ export function DeckForecastPanel({
     }
   }
 
-  const pagination = useTablePagination(forecast?.stages.length ?? 0, activeWork?.work.id ?? null)
+  // The deck is part of the scope: one work spans every deck, and this panel
+  // stays mounted from one deck to the next.
+  const pagination = useTablePagination(forecast?.stages.length ?? 0, `${deckId}|${activeWork?.work.id ?? ''}`)
   const summary = activeWork === null
     ? undefined
     : activeWork.deadline

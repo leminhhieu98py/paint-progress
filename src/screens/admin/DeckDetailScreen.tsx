@@ -694,6 +694,7 @@ export function DeckDetailScreen() {
             on one screen is a second of the admin's time for nothing. */}
         {deck && (
           <EffortHistoryPanel
+            deckId={deck.id}
             editable={editing}
             events={events}
             error={eventsError}

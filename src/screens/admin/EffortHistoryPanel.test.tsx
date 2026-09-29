@@ -43,6 +43,7 @@ const renderPanel = (editable = true, over: { events?: DeckEvent[] | null; error
   render(
     <AntApp>
       <EffortHistoryPanel
+        deckId="d1"
         editable={editable}
         events={over.events === undefined ? EVENTS : over.events}
         error={over.error ?? null}
@@ -182,5 +183,22 @@ describe('EffortHistoryPanel — identifiers are text (UI-06)', () => {
     expectLeft(order.closest('td'))
     expectLeft(screen.getByText('R1C2').closest('td'))
     expect(th('Giờ công')).toHaveStyle({ textAlign: 'center' })
+  })
+})
+
+describe('EffortHistoryPanel — pager scope (UI-06)', () => {
+  it('goes back to page 1 when the deck changes under it, with no filter change', async () => {
+    // The deck screen keeps this panel mounted from one deck to the next.
+    const many = Array.from({ length: 25 }, (_, i) => ev({ id: 100 + i, cellCode: `R${i}C1` }))
+    const panel = (deckId: string) => (
+      <AntApp>
+        <EffortHistoryPanel deckId={deckId} editable events={many} error={null} onRetry={onRetry} onSaved={onSaved} />
+      </AntApp>
+    )
+    const { rerender } = render(panel('d1'))
+    await userEvent.click(await screen.findByTitle('2'))
+    expect(screen.getByTitle('2')).toHaveClass('ant-pagination-item-active')
+    rerender(panel('d2'))
+    expect(screen.getByTitle('1')).toHaveClass('ant-pagination-item-active')
   })
 })

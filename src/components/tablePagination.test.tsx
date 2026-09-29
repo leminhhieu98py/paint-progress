@@ -80,6 +80,19 @@ describe('useTablePagination', () => {
     expect(screen.getByTitle('1')).toHaveClass('ant-pagination-item-active')
   })
 
+  it('goes back to page 1 when the data it pages changes scope, with no filter change', async () => {
+    // A panel that stays mounted while the deck under it changes (the deck
+    // screen's history panel): the scope is part of the key.
+    function Scoped({ scope }: { scope: string }) {
+      const data = rows(40)
+      return <Table rowKey="id" dataSource={data} columns={COLUMNS} pagination={useTablePagination(data.length, `${scope}|`)} />
+    }
+    const { rerender } = render(<Scoped scope="d1" />)
+    await userEvent.click(screen.getByTitle('3'))
+    rerender(<Scoped scope="d2" />)
+    expect(screen.getByTitle('1')).toHaveClass('ant-pagination-item-active')
+  })
+
   it('keeps the page while the filter stays the same', async () => {
     const { rerender } = render(<Filtered n={40} filter="" />)
     await userEvent.click(screen.getByTitle('3'))

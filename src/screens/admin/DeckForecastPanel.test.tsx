@@ -248,3 +248,23 @@ describe('DeckForecastPanel: the work\'s unit (RV6-35)', () => {
     expect(headers.some((h) => /m²/.test(h ?? ''))).toBe(false)
   })
 })
+
+describe('DeckForecastPanel — pager scope (UI-06)', () => {
+  it('goes back to page 1 when the deck changes under it, with the same work', async () => {
+    // One work spans every deck, so the work id alone does not change with
+    // the deck; the deck screen keeps this panel mounted from one to the next.
+    const many = Array.from({ length: 12 }, (_, i) => ({ id: `s${i}`, seq: i + 1, name: `Lớp ${i + 1}`, color: '#fadb14', weight: 1 / 12 }))
+    loadDeckWorks.mockResolvedValue(deckWorks({
+      works: [{ work: WORK, weight: 1, deadline: null, stages: many, cells: CELLS, audit: {} }],
+    }))
+    const panel = (deckId: string) => (
+      <AntApp><DeckForecastPanel deckId={deckId} editable events={EVENTS} /></AntApp>
+    )
+    const { rerender } = render(panel('d1'))
+    await userEvent.click(await screen.findByTitle('2'))
+    expect(screen.getByTitle('2')).toHaveClass('ant-pagination-item-active')
+    rerender(panel('d2'))
+    await waitFor(() => expect(loadDeckWorks).toHaveBeenCalledWith('d2'))
+    expect(await screen.findByTitle('1')).toHaveClass('ant-pagination-item-active')
+  })
+})

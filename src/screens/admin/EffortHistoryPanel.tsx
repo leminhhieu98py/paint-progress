@@ -31,12 +31,15 @@ const hours = (n: number | null) => (n === null ? '' : formatHours(n))
 const fieldLabel = { display: 'block', marginBottom: 4, fontSize: 12, fontWeight: 600 } as const
 
 export function EffortHistoryPanel({
+  deckId,
   editable,
   events,
   error,
   onRetry,
   onSaved,
 }: {
+  /** The deck the events are of: the scope the pager pages, so a new deck starts at page 1. */
+  deckId: string
   editable: boolean
   /**
    * Every stage change on the deck, OLDEST first, as the API returns them.
@@ -82,7 +85,7 @@ export function EffortHistoryPanel({
     const newestFirst = [...events].reverse()
     return onlyMissing ? newestFirst.filter((ev) => ev.effort.workHours === null) : newestFirst
   }, [events, onlyMissing])
-  const pagination = useTablePagination(shown.length, onlyMissing)
+  const pagination = useTablePagination(shown.length, `${deckId}|${onlyMissing}`)
 
   const coverage = effortCoverage(events ?? [])
 

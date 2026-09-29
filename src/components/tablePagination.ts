@@ -26,12 +26,18 @@ export function tablePagination(total: number): TablePaginationConfig | false {
   }
 }
 
-/** What a table is narrowed by, as one comparable value: a search, a toggle, `a|b` for several. */
+/**
+ * What a table is narrowed by AND what it pages, as one comparable value: a
+ * search, a toggle, the deck a panel shows, `a|b` for several. A panel that
+ * stays mounted while its data scope changes (the deck screen's history and
+ * forecast panels, from one deck to the next) puts the scope in the key too.
+ */
 export type PaginationResetKey = string | number | boolean | null
 
 /**
- * `tablePagination` for a table whose rows a filter, search or toggle narrows
- * (UI-06): the pager goes back to page 1 whenever `resetKey` changes.
+ * `tablePagination` for a table whose rows a filter, search or toggle narrows,
+ * or whose data scope can change under it (UI-06): the pager goes back to
+ * page 1 whenever `resetKey` changes.
  *
  * antd only clamps an uncontrolled page to the last one, so a search typed on
  * page 3 left the reader on page 2 of the matches with the first ten hidden,
