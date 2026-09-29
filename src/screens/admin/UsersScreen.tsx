@@ -74,15 +74,6 @@ const RULES = [
 ]
 
 function ProjectChips({ user }: { user: GsUser }) {
-  if (user.projects.length === 0) {
-    return <span style={{ color: palette.textTertiary }}>—</span>
-  }
-  const shown = user.projects.slice(0, CHIPS_SHOWN)
-  const rest = user.projects.length - shown.length
-  // A restricted membership says how much of the project it sees (item 1c);
-  // the common case -- every work -- stays a bare name.
-  const labelOf = (p: GsUser['projects'][number]) =>
-    p.allWorks ? p.name : `${p.name} · ${p.workIds.length}/${p.workCount} công việc`
   const chip = (label: string, more: boolean) => (
     <span
       key={label}
@@ -100,6 +91,21 @@ function ProjectChips({ user }: { user: GsUser }) {
       {label}
     </span>
   )
+  // A viewer reads every project (RV6-21/25, 0034) whatever project_members
+  // still holds from an assignment made before that -- printing those rows
+  // told the admin the account was limited to them (QA F5).
+  if (user.role === 'viewer') {
+    return chip('Mọi dự án', false)
+  }
+  if (user.projects.length === 0) {
+    return <span style={{ color: palette.textTertiary }}>—</span>
+  }
+  const shown = user.projects.slice(0, CHIPS_SHOWN)
+  const rest = user.projects.length - shown.length
+  // A restricted membership says how much of the project it sees (item 1c);
+  // the common case -- every work -- stays a bare name.
+  const labelOf = (p: GsUser['projects'][number]) =>
+    p.allWorks ? p.name : `${p.name} · ${p.workIds.length}/${p.workCount} công việc`
   return (
     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
       {shown.map((p) => chip(labelOf(p), false))}

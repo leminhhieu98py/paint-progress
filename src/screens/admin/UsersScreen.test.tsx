@@ -306,7 +306,31 @@ describe('UsersScreen — Feedback Rv2 (0028)', () => {
     expect(screen.getByText('GS')).toBeInTheDocument()
     expect(screen.getByText('Chỉ xem')).toBeInTheDocument()
     expect(screen.getByText('BB1 · 1/3 công việc')).toBeInTheDocument()
-    expect(screen.getByText('BB2')).toBeInTheDocument()
+    // The viewer's row does not repeat its stale membership (see below).
+    expect(screen.queryByText('BB2')).toBeNull()
+  })
+
+  it('shows a viewer as Mọi dự án, not the project_members rows left from before 0034 (QA F5)', async () => {
+    // RV6-21/25: since 0034 a viewer reads every project and the database no
+    // longer consults project_members for the role -- but the rows an older
+    // assignment wrote are still there, and the column printed them as though
+    // they limited what the account sees.
+    listGsUsers.mockResolvedValue([
+      {
+        id: 'u9', username: 'boss', fullName: 'Sếp', active: true, role: 'viewer', hidden: false,
+        projects: [member('p2', 'BB2', { allWorks: false, workIds: ['w1'], workCount: 1 })],
+      },
+      {
+        id: 'u7', username: 'gs1', fullName: 'GS Một', active: true, role: 'gs', hidden: false,
+        projects: [member('p1', 'BB1')],
+      },
+    ])
+    renderApp(<UsersScreen />)
+    await screen.findByText('boss')
+    expect(screen.getByText('Mọi dự án')).toBeInTheDocument()
+    expect(screen.queryByText('BB2 · 1/1 công việc')).toBeNull()
+    // A foreman's row is unchanged.
+    expect(screen.getByText('BB1')).toBeInTheDocument()
   })
 
   it('creates a viewer when the admin picks Chỉ xem', async () => {
