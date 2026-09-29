@@ -831,6 +831,13 @@ describe('GsScreen: the header in every state (M-4)', () => {
     loadGsProject.mockRejectedValue(new Error('permission denied'))
     renderScreen()
     expect(await screen.findByText('Không tải được dữ liệu dự án')).toBeInTheDocument()
+    // Longhands only, the same inset as the loaded page's bar: a padding
+    // shorthand beside paddingBottom loses the 0 when the breakpoint re-renders (M-1).
+    const wrap = screen.getByRole('search', { name: 'Bộ lọc' }).parentElement as HTMLElement
+    expect(wrap.style.padding).toBe('')
+    expect(wrap.style.paddingTop).toBe('12px')
+    expect(wrap.style.paddingInline).toBe('12px')
+    expect(wrap.style.paddingBottom).toBe('')
     expect(nav()).toBeInTheDocument()
     expect(await projectSwitch()).toBeInTheDocument()
     await chooseLogout()

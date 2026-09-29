@@ -1051,7 +1051,9 @@ export function GsScreen() {
   const projectBar = (body: ReactNode) => (
     <>
       {projectId && (
-        <div style={{ padding: phone ? space.md : space.lg, paddingBottom: 0 }}>
+        // Longhands: a shorthand beside paddingBottom loses the 0 when the
+        // breakpoint re-renders (M-1). The loaded page's bar sits at this inset too.
+        <div style={{ paddingTop: phone ? space.md : space.lg, paddingInline: phone ? space.md : space.lg }}>
           <FilterBar><FieldProjectSelect projectId={projectId} /></FilterBar>
         </div>
       )}
