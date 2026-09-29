@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { EMPTY_EFFORT, type DeckEvent, type Effort } from '../../domain/types'
 import { weightOf } from '../../test/typography'
 import { DeckForecastPanel } from './DeckForecastPanel'
+import { keyFactTexts } from '../../test/copy'
 
 const loadDeckWorks = vi.hoisted(() => vi.fn())
 const setWorkDeckDeadline = vi.hoisted(() => vi.fn())
@@ -143,7 +144,7 @@ describe('DeckForecastPanel', () => {
   it('says nothing about being late when no deadline is set', async () => {
     renderPanel()
     await screen.findByRole('table')
-    expect(screen.getByText('Sơn · chưa đặt hạn')).toBeInTheDocument()
+    expect(keyFactTexts()).toEqual(['Sơn', 'chưa đặt hạn'])
     expect(screen.queryByTestId('forecast-warning')).toBeNull()
   })
 
@@ -196,7 +197,7 @@ describe('DeckForecastPanel', () => {
     await waitFor(() => expect(setWorkDeckDeadline).toHaveBeenCalledWith('w1', 'd1', '2026-09-10'))
     expect((await screen.findAllByText('Đã lưu hạn hoàn thành')).length).toBeGreaterThan(0)
     await waitFor(() => expect(loadDeckWorks).toHaveBeenCalledTimes(2))
-    expect(await screen.findByText('Sơn · hạn 10/09/2026')).toBeInTheDocument()
+    await waitFor(() => expect(keyFactTexts()).toEqual(['Sơn', 'hạn 10/09/2026']))
     // And no loop: the reloaded value must not trigger another write.
     expect(setWorkDeckDeadline).toHaveBeenCalledTimes(1)
   })

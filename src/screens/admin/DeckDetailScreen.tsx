@@ -531,10 +531,13 @@ export function DeckDetailScreen() {
         sticky
         title={creating ? 'Sàn mới' : (deck?.name ?? '')}
         badge={creating ? undefined : deck?.code}
-        subtitle={
+        facts={
           creating
             ? undefined
-            : `${deck?.cellCount ? `${deck.cellCount} ô` : 'chưa dựng ô'} · ${withUnit(deck?.totalAreaM2 ?? 0)}`
+            : [
+              deck?.cellCount ? { value: deck.cellCount, label: 'ô' } : { label: 'chưa dựng ô' },
+              { value: formatAreaM2(deck?.totalAreaM2 ?? 0), label: unit ?? undefined },
+            ]
         }
         breadcrumbs={[{ label: 'Sàn', onClick: () => navigate('..', { relative: 'path' }) }]}
         onBack={() => navigate('..', { relative: 'path' })}
@@ -576,7 +579,7 @@ export function DeckDetailScreen() {
         <SectionCard
           code="A3.1"
           title="Thông tin sàn & bản vẽ"
-          summary={creating ? undefined : drawingLabel}
+          facts={creating ? undefined : [{ value: drawingLabel }]}
           collapsible
         >
           {/*

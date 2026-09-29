@@ -119,7 +119,14 @@ export function EffortHistoryPanel({
     <SectionCard
       code="A3.7"
       title="Giờ công theo lần cập nhật"
-      summary={events === null ? undefined : `${coverage.withHours} / ${coverage.total} lần cập nhật có giờ công`}
+      facts={events === null ? undefined : [{
+        value: `${coverage.withHours} / ${coverage.total}`,
+        label: 'lần cập nhật có giờ công',
+        // Missing hours are a data-quality warning (HLT-01).
+        ...(coverage.withHours < coverage.total
+          ? { tone: 'warning' as const, info: 'Các lần chưa ghi không tính vào hiệu suất.' }
+          : {}),
+      }]}
       // Flush, as every list card is: the table's edge columns carry the
       // card's inset (LAY-01) rather than sitting a cell's padding inboard.
       bodyPadding={0}

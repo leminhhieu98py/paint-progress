@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { EMPTY_EFFORT, type DeckEvent } from '../../domain/types'
 import { EffortHistoryPanel } from './EffortHistoryPanel'
 import { expectLeft } from '../../test/alignment'
+import { palette } from '../../theme'
 
 const setCellEventEffort = vi.hoisted(() => vi.fn())
 const listGsUsers = vi.hoisted(() => vi.fn())
@@ -91,7 +92,19 @@ describe('EffortHistoryPanel', () => {
     expect(within(second).getByText('Lê Văn A')).toBeInTheDocument()
     expect(within(second).queryByText('đã sửa')).toBeNull()
 
-    expect(screen.getByText('1 / 2 lần cập nhật có giờ công')).toBeInTheDocument()
+    // A data-quality fact: amber, its explanation in a (?) (HLT-01).
+    const [coverage] = screen.getAllByTestId('key-fact')
+    expect(coverage).toHaveTextContent('1 / 2 lần cập nhật có giờ công')
+    expect(coverage).toHaveStyle({ background: palette.warningBg })
+    expect(within(coverage).getByRole('img', { name: 'Các lần chưa ghi không tính vào hiệu suất.' })).toBeInTheDocument()
+  })
+
+  it('draws the coverage as a plain fact once every update has hours (HLT-01)', async () => {
+    renderPanel(true, { events: [EVENTS[1]] })
+    const [coverage] = await screen.findAllByTestId('key-fact')
+    expect(coverage).toHaveTextContent('1 / 1 lần cập nhật có giờ công')
+    expect(coverage).toHaveStyle({ background: palette.bgSubtle })
+    expect(within(coverage).queryByRole('img')).toBeNull()
   })
 
   it('filters to the updates still missing hours', async () => {

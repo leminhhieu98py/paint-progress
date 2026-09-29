@@ -609,7 +609,7 @@ export function DeckEditor({
     <SectionCard
       code="A3.3"
       title="Phân ô"
-      summary={cells.length > 0 ? `${cells.length} ô đã dựng` : 'chưa dựng ô'}
+      facts={[cells.length > 0 ? { value: cells.length, label: 'ô đã dựng' } : { label: 'chưa dựng ô' }]}
       collapsible
       bodyPadding="16px 20px 20px"
       extra={

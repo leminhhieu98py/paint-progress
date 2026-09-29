@@ -4,7 +4,7 @@ import { useEffect } from 'react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderApp } from '../../test/renderApp'
-import { pageSubtitle } from '../../test/copy'
+import { keyFactTexts, pageSubtitle } from '../../test/copy'
 import { DeckDetailScreen } from './DeckDetailScreen'
 
 const getDeck = vi.hoisted(() => vi.fn())
@@ -123,6 +123,11 @@ const renderAt = (path: string) =>
 
 const pdfFile = () => new File(['%PDF-1.4'], 'deck.pdf', { type: 'application/pdf' })
 
+/** The facts beside the page title (HLT-01). */
+const headerFacts = () => keyFactTexts(screen.getByRole('heading', { level: 1 }).parentElement as HTMLElement)
+/** The card a heading titles. */
+const cardOf = (title: string) => screen.getByRole('heading', { level: 2, name: title }).closest('section') as HTMLElement
+
 describe('DeckDetailScreen', () => {
   it('opens the deck named in the URL, so a reload keeps it', async () => {
     renderAt('/decks/d1')
@@ -179,6 +184,8 @@ describe('DeckDetailScreen', () => {
 
     const identity = await screen.findByTestId('deck-identity')
     expect(within(identity).getByText('ban-ve.pdf (trang 3)')).toBeInTheDocument()
+    // The card's fact names the same file (HLT-01).
+    expect(keyFactTexts(cardOf('Thông tin sàn & bản vẽ'))).toEqual(['ban-ve.pdf (trang 3)'])
   })
 
   it('admits it does not know, on a deck whose drawing predates recording it', async () => {
@@ -513,6 +520,7 @@ describe('DeckDetailScreen — công việc', () => {
     renderAt('/decks/new?project=p1')
     expect(await screen.findByRole('heading', { level: 1, name: 'Sàn mới' })).toBeInTheDocument()
     expect(pageSubtitle()).toBeNull()
+    expect(keyFactTexts()).toEqual([])
     expect(screen.queryByText(/Đặt tên, mã và diện tích trước/)).not.toBeInTheDocument()
     expect(screen.queryByText('Sàn chưa được tạo')).not.toBeInTheDocument()
   })
@@ -531,7 +539,7 @@ describe('DeckDetailScreen: the quantity and unit of the deck\'s works (RV6-36)'
     listDeckWorks.mockResolvedValue([{ work: { ...WORK1, quantityLabel: 'Khối lượng', unit: 'tấn' }, weight: 1, stages: [] }])
     renderAt('/decks/d1')
     await screen.findByRole('heading', { level: 1, name: 'Main Deck' })
-    await waitFor(() => expect(screen.getByText(/24 ô · 5\.258,50 tấn/)).toBeInTheDocument())
+    await waitFor(() => expect(headerFacts()).toEqual(['24 ô', '5.258,50 tấn']))
     expect(screen.getByText('Khối lượng sàn (tấn)')).toBeInTheDocument()
     expect(screen.getByText('editor MD xem Khối lượng/tấn')).toBeInTheDocument()
     await userEvent.click(screen.getByText('Sửa'))
@@ -547,7 +555,7 @@ describe('DeckDetailScreen: the quantity and unit of the deck\'s works (RV6-36)'
     renderAt('/decks/d1')
     await screen.findByRole('heading', { level: 1, name: 'Main Deck' })
     await waitFor(() => expect(screen.getByText('Số lượng sàn')).toBeInTheDocument())
-    expect(screen.getByText(/24 ô · 5\.258,50$/)).toBeInTheDocument()
+    expect(headerFacts()).toEqual(['24 ô', '5.258,50'])
     expect(screen.getByText('editor MD xem Số lượng/none')).toBeInTheDocument()
   })
 
@@ -557,6 +565,6 @@ describe('DeckDetailScreen: the quantity and unit of the deck\'s works (RV6-36)'
     await screen.findByRole('heading', { level: 1, name: 'Main Deck' })
     await waitFor(() => expect(screen.getByText('editor MD xem Diện tích/m²')).toBeInTheDocument())
     expect(screen.getByText('Diện tích sàn (m²)')).toBeInTheDocument()
-    expect(screen.getByText(/24 ô · 5\.258,50 m²/)).toBeInTheDocument()
+    expect(headerFacts()).toEqual(['24 ô', '5.258,50 m²'])
   })
 })

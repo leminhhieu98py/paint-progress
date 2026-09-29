@@ -1508,8 +1508,8 @@ export function DeckProgressPanel({
     )
   }
 
-  const summary = progress
-    ? `${formatPercent(progress.progress)} · ${zones.length} zone`
+  const facts = progress
+    ? [{ value: formatPercent(progress.progress) }, { value: zones.length, label: 'zone' }]
     : undefined
 
   return (
@@ -1520,7 +1520,7 @@ export function DeckProgressPanel({
     <SectionCard
       code="A3.4"
       title="Tiến độ theo lớp sơn"
-      summary={summary}
+      facts={facts}
       collapsible
       bodyPadding={0}
       footer={<RulesDisclosure rules={PROGRESS_RULES} />}

@@ -151,14 +151,17 @@ export function DeckForecastPanel({
   // The deck is part of the scope: one work spans every deck, and this panel
   // stays mounted from one deck to the next.
   const pagination = useTablePagination(forecast?.stages.length ?? 0, `${deckId}|${activeWork?.work.id ?? ''}`)
-  const summary = activeWork === null
+  const facts = activeWork === null
     ? undefined
-    : activeWork.deadline
-      ? `${activeWork.work.name} · hạn ${dayjs(activeWork.deadline).format('DD/MM/YYYY')}`
-      : `${activeWork.work.name} · chưa đặt hạn`
+    : [
+      { value: activeWork.work.name },
+      activeWork.deadline
+        ? { prefix: 'hạn', value: dayjs(activeWork.deadline).format('DD/MM/YYYY') }
+        : { label: 'chưa đặt hạn' },
+    ]
 
   return (
-    <SectionCard code="A3.8" title="Dự báo tiến độ" summary={summary} bodyPadding={0}>
+    <SectionCard code="A3.8" title="Dự báo tiến độ" facts={facts} bodyPadding={0}>
       {/*
         Flush body, so the table's edge columns carry the card's inset (LAY-01);
         the blocks above and below it take the same inset themselves.

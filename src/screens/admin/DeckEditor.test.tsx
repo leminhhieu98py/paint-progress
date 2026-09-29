@@ -5,6 +5,7 @@ import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { DeckEditor } from './DeckEditor'
 import { mergeErrorInVietnamese } from './meshErrors'
+import { keyFactTexts } from '../../test/copy'
 
 const listCells = vi.hoisted(() => vi.fn())
 const syncCells = vi.hoisted(() => vi.fn())
@@ -1039,13 +1040,15 @@ await userEvent.click(screen.getByRole('button', { name: 'chọn R1C1' }))
       detectBaysFromImage.mockResolvedValue(BAYS)
       renderInApp(deck)
       await screen.findByTestId('canvas')
+      // No bay yet: the card's one fact says so (HLT-01).
+      expect(keyFactTexts()).toEqual(['chưa dựng ô'])
 
       await userEvent.click(screen.getByRole('button', { name: 'Tự động dò ô từ bản vẽ' }))
 
       await waitFor(() => expect(screen.getByTestId('cell-geometry')).toHaveTextContent(
         'R1C1:0.1+0.35 R1C2:0.5+0.4 R2C1:0.1+0.8',
       ))
-      expect(screen.getByText('3 ô đã dựng')).toBeInTheDocument()
+      expect(keyFactTexts()).toEqual(['3 ô đã dựng'])
       // Prorated: a detected bay carries no printed dimension, so its area is
       // its share of the deck's pixels. The three bays between them come to the
       // whole deck.
@@ -1149,7 +1152,7 @@ describe('mergeErrorInVietnamese', () => {
       await userEvent.click(screen.getByRole('button', { name: 'vẽ ô vào chỗ trống' }))
 
       expect(await screen.findByTestId('canvas')).toHaveTextContent('R1C1,X1')
-      expect(screen.getByText('2 ô đã dựng')).toBeInTheDocument()
+      expect(keyFactTexts()).toEqual(['2 ô đã dựng'])
     })
 
     it('re-prorates every area, so the deck still sums to its declared total', async () => {
@@ -1179,7 +1182,7 @@ describe('mergeErrorInVietnamese', () => {
 
       await waitFor(() => expect(toastText()).toContain('đã có ô'))
       expect(screen.getByTestId('canvas')).toHaveTextContent('R1C1')
-      expect(screen.getByText('1 ô đã dựng')).toBeInTheDocument()
+      expect(keyFactTexts()).toEqual(['1 ô đã dựng'])
     })
 
   })
@@ -1264,7 +1267,7 @@ describe('mergeErrorInVietnamese', () => {
 
       press('Backspace')
 
-      await waitFor(() => expect(screen.getByText('3 ô đã dựng')).toBeInTheDocument())
+      await waitFor(() => expect(keyFactTexts()).toEqual(['3 ô đã dựng']))
       expect(syncCells).not.toHaveBeenCalled()
       // The deck total is the truth, so what is left absorbs the area.
       expect(document.querySelectorAll('.ant-descriptions-item-content')[1]?.textContent)
@@ -1277,13 +1280,13 @@ describe('mergeErrorInVietnamese', () => {
       await arm()
       await userEvent.click(screen.getByRole('button', { name: 'chọn R1C1' }))
       press('Delete')
-      await waitFor(() => expect(screen.getByText('3 ô đã dựng')).toBeInTheDocument())
+      await waitFor(() => expect(keyFactTexts()).toEqual(['3 ô đã dựng']))
 
       press('z', { metaKey: true })
-      await waitFor(() => expect(screen.getByText('4 ô đã dựng')).toBeInTheDocument())
+      await waitFor(() => expect(keyFactTexts()).toEqual(['4 ô đã dựng']))
 
       press('z', { metaKey: true, shiftKey: true })
-      await waitFor(() => expect(screen.getByText('3 ô đã dựng')).toBeInTheDocument())
+      await waitFor(() => expect(keyFactTexts()).toEqual(['3 ô đã dựng']))
     })
 
     it('keeps the browser out of the keys it takes', async () => {

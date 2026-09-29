@@ -2,7 +2,7 @@ import { App as AntApp, theme } from 'antd'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { expectNoSpecIds } from '../../test/copy'
+import { expectNoSpecIds, keyFactTexts } from '../../test/copy'
 import { expectOnScale, weightOf } from '../../test/typography'
 import { adminTheme, palette, type } from '../../theme'
 import { DECK_RING, figureFits, ringFigureStep } from '../../components/ringFit'
@@ -182,6 +182,16 @@ describe('DeckProgressPanel', () => {
   it('loads the deck it was given', async () => {
     renderPanel()
     await waitFor(() => expect(loadDeckWorks).toHaveBeenCalledWith('d1'))
+  })
+
+  it('shows the deck\'s progress and its zone count beside the coat card\'s title as KeyFacts (HLT-01)', async () => {
+    listDeckZones.mockResolvedValue([ZONE])
+    renderPanel()
+    await screen.findByTestId('lens-A')
+    await waitFor(() => expect(keyFactTexts()).toHaveLength(2))
+    const [progress, zones] = keyFactTexts()
+    expect(progress).toMatch(/^\d+,\d{2}%$/)
+    expect(zones).toBe('1 zone')
   })
 
   it('names the coat panel by its title in the rules, and no spec id (CPY-04)', async () => {
