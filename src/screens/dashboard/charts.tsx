@@ -6,7 +6,7 @@ import {
 import type { KpiDay } from '../../domain/kpi'
 import { palette } from '../../theme'
 import { DEFAULT_UNIT, perUnit, rateUnit } from '../../domain/unit'
-import { formatAreaM2, formatAxisNumber, formatHours, formatMhrPerM2, formatPercent } from '../../lib/format'
+import { formatAreaM2, formatAxisNumber, formatAxisPercent, formatHours, formatMhrPerM2, formatPercent } from '../../lib/format'
 import { KPI_COLOR_DEFAULTS } from './kpiColors'
 
 /**
@@ -234,7 +234,7 @@ export function KpiComboChart({
             width={64}
             // Not capped at 1: actual above plan is real and the workbook does
             // not clamp it either, so the axis has to be able to show it.
-            tickFormatter={(v: number) => formatPercent(v)}
+            tickFormatter={formatAxisPercent}
           />
           <Tooltip
             separator={TOOLTIP_SEPARATOR}

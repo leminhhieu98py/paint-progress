@@ -320,10 +320,10 @@ describe('axes and tooltips in the app\'s number format (R5-C2, R5-C3)', () => {
     expect(separator()).toBe(': ')
   })
 
-  it('reads the KPI quantity axis with a thousands dot, and keeps the share axis in percent', () => {
+  it('reads the KPI quantity axis with a thousands dot, and the share axis in unpadded percent (CHT-03)', () => {
     render(<KpiComboChart data={DATA} />)
     expect([1800, 1350, 2200].map((v) => tick('m2', v))).toEqual(['1.800', '1.350', '2.200'])
-    expect(tick('share', 0.5)).toBe(formatPercent(0.5))
+    expect([0, 0.25, 0.5].map((v) => tick('share', v))).toEqual(['0%', '25%', '50%'])
     expect(separator()).toBe(': ')
   })
 })
