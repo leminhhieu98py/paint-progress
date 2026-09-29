@@ -206,8 +206,11 @@ describe('DeckProgressPanel', () => {
     // The ring is the single-lens companion. Two drawings and a ring in one row
     // leaves nothing wide enough to read.
     expect(screen.queryByTestId('stage-ring')).not.toBeInTheDocument()
-    expect(within(screen.getByTestId('lens-B')).getByText(/cùng mức zoom để so sánh/))
-      .toBeInTheDocument()
+    // No side captions: each pane carries the legend on its title's (?),
+    // like the single view (CPY-01).
+    const lensB = screen.getByTestId('lens-B')
+    expect(within(lensB).queryByText(/cùng mức zoom để so sánh/)).toBeNull()
+    expect(within(lensB).getByRole('img', { name: /tô đặc/ })).toBeInTheDocument()
   })
 
   it('drives both lenses from one zoom control', async () => {
@@ -267,9 +270,24 @@ describe('DeckProgressPanel', () => {
   it('says what the ring itself answers, so it is not read as the cumulative list', async () => {
     renderPanel()
     const ring = await screen.findByTestId('stage-ring')
-    expect(
-      within(ring).getByText('Vòng tròn: diện tích đang dừng ở mỗi lớp, không cộng dồn'),
-    ).toBeInTheDocument()
+    // On the (?) of the ring's centre label, not as a caption under it (CPY-01).
+    const tip = within(ring).getByRole('img', { name: 'Vòng tròn: diện tích đang dừng ở mỗi lớp, không cộng dồn' })
+    expect(tip.parentElement).toHaveTextContent(/^Tiến độ sàn$/)
+    expect(within(ring).queryByText(/^Vòng tròn:/)).toBeNull()
+  })
+
+  it('explains cộng dồn on the card title\'s (?), not in a subtitle (CPY-01)', async () => {
+    renderPanel()
+    const title = await screen.findByRole('heading', { name: /Tiến độ theo công đoạn · cộng dồn/ })
+    expect(within(title).getByRole('img', { name: /Ô đã ở lớp sau thì đã qua các lớp trước/ })).toBeInTheDocument()
+    expect(screen.queryByText(/^Ô đã ở lớp sau/)).toBeNull()
+  })
+
+  it('drops the section summaries that repeat their columns or name the report sheet (CPY-01)', async () => {
+    renderPanel()
+    await screen.findByTestId('deck-works-table')
+    expect(screen.queryByText(/Trọng số sàn trong công việc ·/)).toBeNull()
+    expect(screen.queryByText(/sheet Dashboard/)).toBeNull()
   })
 
   it('tells the admin when a deck has no drawing, instead of an empty frame', async () => {
@@ -439,7 +457,17 @@ describe('DeckProgressPanel — colouring one coat', () => {
 
   it('says what white means, rather than leaving it to be inferred', async () => {
     renderPanel()
-    expect(await screen.findByText(/ô chưa đạt, chưa kế hoạch để trắng/)).toBeInTheDocument()
+    // The map legend is the lens title's (?), not a line read every visit (CPY-01).
+    const lens = await screen.findByTestId('lens-A')
+    const title = within(lens).getByRole('heading', { level: 3 })
+    expect(within(title).getByRole('img', { name: /ô chưa đạt, chưa kế hoạch để trắng/ })).toBeInTheDocument()
+    expect(screen.queryByText(/ô chưa đạt, chưa kế hoạch để trắng/)).toBeNull()
+  })
+
+  it('names no gesture under the toolbar: the Gộp thành zone tooltip already does (CPY-01)', async () => {
+    renderPanel()
+    await screen.findByTestId('lens-A')
+    expect(screen.queryByText(/Giữ Shift rồi kéo trên bản vẽ để quét chọn/)).toBeNull()
   })
 
   it('counts each zone against the coat being viewed', async () => {
@@ -654,9 +682,16 @@ describe('DeckProgressPanel — zones', () => {
     await pickLens('Lớp sơn đang xem', 'Tháo giáo')
     await userEvent.click(await screen.findByRole('button', { name: 'Mốc ngày của Khu A — Tháo giáo' }))
 
-    expect(await screen.findByRole('button', { name: 'Thêm 0 ô đã chọn' })).toBeDisabled()
+    const add = await screen.findByRole('button', { name: 'Thêm 0 ô đã chọn' })
+    expect(add).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Bỏ 0 ô đã chọn' })).toBeDisabled()
-    expect(screen.getByText('Chọn ô trên bản vẽ rồi quay lại đây để thêm hoặc bỏ.')).toBeInTheDocument()
+    // The reason is on the disabled buttons, like Gộp thành zone (CPY-01).
+    expect(screen.queryByText('Chọn ô trên bản vẽ rồi quay lại đây để thêm hoặc bỏ.')).toBeNull()
+    await userEvent.hover(add.parentElement as HTMLElement)
+    expect(await screen.findByText('Chọn ô trên bản vẽ rồi quay lại đây để thêm hoặc bỏ.')).toBeInTheDocument()
+    // And the intro keeps its data, not the obvious second sentence.
+    const dialog = screen.getByRole('dialog')
+    expect(within(dialog).getByText('Tháo giáo · 1 ô')).toBeInTheDocument()
   })
 
   it('writes the zone\'s stage across its bays on Ghi thực tế, and re-reads the deck', async () => {
@@ -886,6 +921,10 @@ describe('DeckProgressPanel — the report copy of a note (0023)', () => {
     await userEvent.click(within(dialog).getByRole('button', { name: 'Sửa cho báo cáo' }))
 
     const box = await screen.findByLabelText('Bản cho báo cáo')
+    // What the field is for is its label's (?); the restore button says the
+    // rest (CPY-01).
+    expect(screen.getByRole('img', { name: 'Chỉ file Excel in bản này. GS và màn hình này vẫn thấy ghi chú gốc.' })).toBeInTheDocument()
+    expect(screen.queryByText(/^Chỉ file Excel in bản này/)).toBeNull()
     // Prefilled with what will otherwise print, so the admin edits rather
     // than retypes.
     expect(box).toHaveValue('Bề mặt còn ẩm, hoãn sơn sang mai')
@@ -1016,6 +1055,7 @@ describe('DeckProgressPanel — công việc', () => {
     loadDeckWorks.mockResolvedValue({ ...ENTRY, works: [] })
     renderPanel(false)
     expect(await screen.findByText('Sàn này chưa thuộc công việc nào')).toBeInTheDocument()
+    expect(screen.getByText('Gán sàn vào một công việc ở mục Công việc, rồi cấu hình lớp sơn cho nó.')).toBeInTheDocument()
   })
 })
 
@@ -1080,9 +1120,9 @@ describe('DeckProgressPanel — the all-stages layer (RV6-13)', () => {
     expect(within(lensB).getByLabelText('Công đoạn')).toHaveAttribute('id', 'lens-b-stage')
     expect(screen.queryByLabelText('Lớp bên trái')).toBeNull()
     expect(screen.queryByLabelText('Lớp bên phải')).toBeNull()
-    // The subtitles still name the sides.
-    expect(within(lensA).getByText('Lớp bên trái')).toBeInTheDocument()
-    expect(within(lensB).getByText(/Lớp bên phải/)).toBeInTheDocument()
+    // Nor does a subtitle name the sides any more: the position is obvious (CPY-01).
+    expect(within(lensA).queryByText('Lớp bên trái')).toBeNull()
+    expect(within(lensB).queryByText(/Lớp bên phải/)).toBeNull()
   })
 
   it('colours every bay by the furthest coat it has reached, with no plan overlay', async () => {
@@ -1371,8 +1411,11 @@ describe('DeckProgressPanel — comparing two dates (RV6-14..16)', () => {
 
     const lens = await screen.findByTestId('lens-A')
     expect(await within(lens).findByText('Trạng thái ngày 10/09/2026')).toBeInTheDocument()
-    // Rows older than the work model name no work; the layer admits the gap.
-    expect(within(lens).getByText('Lịch sử từ 24/08/2026')).toBeInTheDocument()
+    // Rows older than the work model name no work; the layer admits the gap,
+    // on the day line's (?) (CPY-01).
+    const tip = within(lens).getByRole('img', { name: 'Lịch sử từ 24/08/2026' })
+    expect(tip.parentElement).toHaveTextContent(/^Trạng thái ngày 10\/09\/2026$/)
+    expect(within(lens).queryByText('Lịch sử từ 24/08/2026')).toBeNull()
   })
 
   it('counts the as-of bays in the chips and the m² line, not the live ones', async () => {

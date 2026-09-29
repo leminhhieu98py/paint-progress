@@ -31,6 +31,7 @@ import {
 import { ConsequenceModal } from '../../components/ConsequenceModal'
 import { Donut } from '../../components/Donut'
 import { EmptyState } from '../../components/EmptyState'
+import { InfoTip } from '../../components/InfoTip'
 import { NoteThread } from '../../components/NoteThread'
 import { ProgressBar } from '../../components/ProgressBar'
 import { RulesDisclosure } from '../../components/RulesDisclosure'
@@ -222,6 +223,9 @@ const EMPTY_LENS: Lens = {
   labels: [], zones: [], zoneColors: {}, chips: [], reachedAreaM2: 0,
 }
 
+/** Why the zone dialog's add and drop buttons are disabled. */
+const ZONE_CELLS_HINT = 'Chọn ô trên bản vẽ rồi quay lại đây để thêm hoặc bỏ.'
+
 const PROGRESS_RULES = [
   {
     id: 'ZON-R5',
@@ -234,10 +238,6 @@ const PROGRESS_RULES = [
   {
     id: 'ZON-R6',
     text: 'Màu zone do quản trị viên chọn và không bao giờ trùng màu một lớp sơn ở Cấu hình lớp sơn của cùng công việc, sàn.',
-  },
-  {
-    id: 'LNS-R2',
-    text: 'Panel tự làm mới khi GS ghi tiến độ: số liệu ở đây bám theo dữ liệu thật, không cần tải lại trang.',
   },
 ]
 
@@ -1197,12 +1197,9 @@ export function DeckProgressPanel({
           <div style={{ minWidth: 0, flex: 1 }}>
             <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600, letterSpacing: '-0.015em' }}>
               {`Tiến độ · ${lens.title}`}
+              {/* The map legend: needed once, not read every visit (CPY-01). */}
+              <InfoTip text={legend} />
             </h3>
-            <div style={{ fontSize: 12, lineHeight: 1.35, color: palette.textTertiary, marginTop: 4 }}>
-              {splitView
-                ? (side === 'A' ? 'Lớp bên trái' : 'Lớp bên phải · cùng mức zoom để so sánh')
-                : legend}
-            </div>
             {/*
               A layer pinned to a day says so under its title (RV6-16), and
               says how far back the record it was built from goes (RV6-15):
@@ -1217,6 +1214,7 @@ export function DeckProgressPanel({
               <div style={{ marginTop: 6, fontSize: 12, lineHeight: 1.35 }}>
                 <div style={{ fontWeight: 600, color: palette.textSecondary }}>
                   {`Trạng thái ngày ${lens.view.day}`}
+                  <InfoTip text={HISTORY_FROM_LABEL} />
                 </div>
                 {!lens.view.cells && (
                   <div style={{ color: palette.textTertiary, marginTop: 2 }}>
@@ -1225,7 +1223,6 @@ export function DeckProgressPanel({
                       : 'Chưa đọc được lịch sử — đang hiện trạng thái hôm nay'}
                   </div>
                 )}
-                <div style={{ color: palette.textTertiary, marginTop: 2 }}>{HISTORY_FROM_LABEL}</div>
               </div>
             )}
           </div>
@@ -1557,7 +1554,7 @@ export function DeckProgressPanel({
           {deckWorks && deckWorks.works.length === 0 && entry?.imagePath && (
             <EmptyState
               title="Sàn này chưa thuộc công việc nào"
-              description="Tiến độ được ghi theo từng công việc. Gán sàn vào một công việc ở mục Công việc, rồi cấu hình lớp sơn cho nó."
+              description="Gán sàn vào một công việc ở mục Công việc, rồi cấu hình lớp sơn cho nó."
             />
           )}
 
@@ -1645,12 +1642,6 @@ export function DeckProgressPanel({
                 )}
               </div>
 
-              {editable && (
-                <div style={{ fontSize: 12, color: palette.textTertiary, marginBottom: 12 }}>
-                  Giữ Shift rồi kéo trên bản vẽ để quét chọn nhiều ô, hoặc bấm từng ô.
-                </div>
-              )}
-
               <div
                 style={{
                   display: 'grid',
@@ -1678,16 +1669,15 @@ export function DeckProgressPanel({
                       <div style={{ padding: `${space.md}px ${space.xl}px`, borderBottom: `1px solid ${palette.borderSplit}` }}>
                         <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600, letterSpacing: '-0.015em' }}>
                           Tiến độ theo công đoạn · cộng dồn
+                          <InfoTip text="Ô đã ở lớp sau thì đã qua các lớp trước, nên tính cho cả các lớp đó" />
                         </h3>
-                        <div style={{ fontSize: 12, lineHeight: 1.4, color: palette.textTertiary, marginTop: 4 }}>
-                          Ô đã ở lớp sau thì đã qua các lớp trước, nên tính cho cả các lớp đó
-                        </div>
                       </div>
                       <div style={{ padding: `${space.lg}px ${space.xl}px`, display: 'flex', alignItems: 'center', gap: 18 }}>
                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 7 }}>
                         <Donut slices={ringSlices} size={168} thickness={30}>
                           <span style={{ fontSize: 10, fontWeight: 600, color: palette.textTertiary }}>
                             Tiến độ sàn
+                            <InfoTip text="Vòng tròn: diện tích đang dừng ở mỗi lớp, không cộng dồn" />
                           </span>
                           <span
                             style={{
@@ -1703,17 +1693,6 @@ export function DeckProgressPanel({
                             {`${formatAreaM2(entry.deck.totalAreaM2)} ${unit}`}
                           </span>
                         </Donut>
-                        <span
-                          style={{
-                            fontSize: 10,
-                            lineHeight: 1.35,
-                            color: palette.textTertiary,
-                            textAlign: 'center',
-                            maxWidth: 168,
-                          }}
-                        >
-                          Vòng tròn: diện tích đang dừng ở mỗi lớp, không cộng dồn
-                        </span>
                         </div>
                         {/*
                           CUMULATIVE, and the ring beside it is not (Feedback
@@ -1927,6 +1906,7 @@ export function DeckProgressPanel({
             </Typography.Paragraph>
             <label htmlFor="report-note" style={{ display: 'block', marginBottom: 6, fontWeight: 600 }}>
               Bản cho báo cáo
+              <InfoTip text="Chỉ file Excel in bản này. GS và màn hình này vẫn thấy ghi chú gốc." />
             </label>
             <Input.TextArea
               id="report-note"
@@ -1934,9 +1914,6 @@ export function DeckProgressPanel({
               value={reportDraft}
               onChange={(e) => setReportDraft(e.target.value)}
             />
-            <Typography.Text type="secondary" style={{ display: 'block', marginTop: 8, fontSize: 12 }}>
-              Chỉ file Excel in bản này. GS và màn hình này vẫn thấy ghi chú gốc. Để trống rồi lưu để in lại bản gốc.
-            </Typography.Text>
           </>
         )}
       </Modal>
@@ -1962,7 +1939,7 @@ export function DeckProgressPanel({
         {datesFor && (
           <Space direction="vertical" size="middle" style={{ width: '100%' }}>
             <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-              {`${stageName(datesFor.stageId)} · ${datesFor.cellIds.length} ô. Để trống nghĩa là chưa lên kế hoạch.`}
+              {`${stageName(datesFor.stageId)} · ${datesFor.cellIds.length} ô`}
             </Typography.Text>
             {/*
               The name, above the dates (RV6-11). Prefilled with the base, not
@@ -2014,25 +1991,31 @@ export function DeckProgressPanel({
                 named rather than left to be guessed at. */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
               <span style={{ fontSize: 12, fontWeight: 600, color: palette.textSecondary }}>Ô trong zone</span>
+              {/* The reason a button is disabled is on the button, as on
+                  Gộp thành zone; a span, because antd Tooltip cannot anchor
+                  a disabled button (CPY-01). */}
               <Space wrap>
-                <Button
-                  disabled={selectedCodes.length === 0}
-                  onClick={() => void changeZoneCells(datesFor, 'add')}
-                >
-                  {`Thêm ${selectedCodes.length} ô đã chọn`}
-                </Button>
-                <Button
-                  disabled={selectedCodes.length === 0}
-                  onClick={() => void changeZoneCells(datesFor, 'remove')}
-                >
-                  {`Bỏ ${selectedCodes.length} ô đã chọn`}
-                </Button>
+                <Tooltip title={selectedCodes.length === 0 ? ZONE_CELLS_HINT : undefined}>
+                  <span>
+                    <Button
+                      disabled={selectedCodes.length === 0}
+                      onClick={() => void changeZoneCells(datesFor, 'add')}
+                    >
+                      {`Thêm ${selectedCodes.length} ô đã chọn`}
+                    </Button>
+                  </span>
+                </Tooltip>
+                <Tooltip title={selectedCodes.length === 0 ? ZONE_CELLS_HINT : undefined}>
+                  <span>
+                    <Button
+                      disabled={selectedCodes.length === 0}
+                      onClick={() => void changeZoneCells(datesFor, 'remove')}
+                    >
+                      {`Bỏ ${selectedCodes.length} ô đã chọn`}
+                    </Button>
+                  </span>
+                </Tooltip>
               </Space>
-              {selectedCodes.length === 0 && (
-                <Typography.Text type="secondary" style={{ fontSize: 11 }}>
-                  Chọn ô trên bản vẽ rồi quay lại đây để thêm hoặc bỏ.
-                </Typography.Text>
-              )}
             </div>
             <Space>
               <Button onClick={() => void applyZone(datesFor)}>Ghi thực tế</Button>
@@ -2093,10 +2076,6 @@ export function DeckProgressPanel({
           onChange={setZoneColor}
         />
 
-        <Typography.Text type="secondary" style={{ display: 'block', marginBottom: 8 }}>
-          Đặt ngày cho từng công đoạn. Công đoạn để trống nghĩa là chưa lên kế hoạch.
-        </Typography.Text>
-
         <div data-testid="stage-windows">
           <Table
             size="small"
@@ -2138,7 +2117,6 @@ export function DeckProgressPanel({
       <SectionCard
         code="A3.5"
         title="Sàn này theo từng công việc"
-        summary="Trọng số sàn trong công việc · tiến độ của sàn ở công việc đó"
         bodyPadding={0}
       >
         <div data-testid="deck-works-table">
@@ -2184,7 +2162,6 @@ export function DeckProgressPanel({
       <SectionCard
         code="A3.6"
         title="Diện tích cộng dồn theo công đoạn"
-        summary={`${unit} và % sàn tại mỗi công đoạn · hai dòng của sheet Dashboard trong báo cáo`}
         bodyPadding={0}
       >
         <div data-testid="deck-spec">
