@@ -13,18 +13,25 @@ import { FIELD_SECTIONS, fieldSectionOf } from './fieldSections'
  * by its aria-label (FLT-01). An account on one project still sees it, with
  * one option, so the bar reads the same for everyone.
  *
- * Choosing is navigation, not a filter: it opens the same page of the chosen
- * project at once, and the page remounts on the new id, so no draft of the
- * old project's filters is carried across.
+ * On the Sàn page choosing is navigation: it opens the same page of the
+ * chosen project at once. In a draft bar (Năng suất, KPI) it is part of the
+ * draft (`value`/`onChange`), and the bar opens the chosen project on Tìm.
  *
  * The list is kept for the session (fieldProjects), because every field page
  * and every project switch mounts this anew. A failed read leaves the project
  * on screen, which is on the route: by the name the screen already read when
  * it has one, else by its id.
  */
-export function FieldProjectSelect({ projectId, width = 260 }: {
+export function FieldProjectSelect({ projectId, width = 260, value, onChange }: {
+  /** The project on screen, from the route. */
   projectId: string
   width?: number | string
+  /**
+   * A draft bar's choice (FLT-02, I-1): with `onChange` the select shows
+   * `value` and reports a pick instead of navigating; the bar navigates on Tìm.
+   */
+  value?: string
+  onChange?: (projectId: string) => void
 }) {
   const navigate = useNavigate()
   const { pathname } = useLocation()
@@ -58,10 +65,11 @@ export function FieldProjectSelect({ projectId, width = 260 }: {
       aria-label="Dự án"
       {...searchSelectProps}
       style={{ width, maxWidth: '100%' }}
-      value={projectId}
+      value={value ?? projectId}
       loading={reading && !listed}
       onChange={(id: string) => {
-        if (id !== projectId) navigate(`${APP_BASE_PATH}/gs/${id}${section.suffix}`)
+        if (onChange) onChange(id)
+        else if (id !== projectId) navigate(`${APP_BASE_PATH}/gs/${id}${section.suffix}`)
       }}
       options={listed
         ? options

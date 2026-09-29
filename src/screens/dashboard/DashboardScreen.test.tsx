@@ -351,12 +351,60 @@ describe('DashboardScreen (gs)', () => {
     expect(within(bar()).getAllByRole('combobox')[0]).toBe(project)
   })
 
-  it('opens this page of another project at once from Dự án: navigation, not a draft (GS-07)', async () => {
+  /** Picks the field bar's draft project. */
+  const pickProject = async (name: string) => {
+    await userEvent.click(within(bar()).getByRole('combobox', { name: 'Dự án' }))
+    await userEvent.click(await screen.findByTitle(name))
+  }
+
+  it('holds the Dự án choice in the draft: nothing moves until Tìm, and Sàn follows it (FLT-02, I-1)', async () => {
     renderField()
     await screen.findByText(/^DASHBOARD 2 sự kiện/)
-    await userEvent.click(within(bar()).getByRole('combobox', { name: 'Dự án' }))
-    await userEvent.click(await screen.findByTitle('Giàn A'))
+    await pickProject('Giàn A')
+    expect(navigate).not.toHaveBeenCalled()
+    await waitFor(() => expect(listDecks).toHaveBeenCalledWith('p1'))
+    await userEvent.click(within(bar()).getByRole('combobox', { name: 'Sàn' }))
+    expect(await screen.findByTitle('Sàn Z')).toBeInTheDocument()
+    // The figures are still the route project's.
+    expect(screen.getByText('DASHBOARD 2 sự kiện · Tất cả sàn · công việc đầu')).toBeInTheDocument()
+  })
+
+  it('opens this page of the draft project on Tìm, once (I-1)', async () => {
+    renderField()
+    await screen.findByText(/^DASHBOARD 2 sự kiện/)
+    await pickProject('Giàn A')
+    await pressTim()
+    expect(navigate).toHaveBeenCalledTimes(1)
     expect(navigate).toHaveBeenCalledWith('/gs/p1/dashboard')
+  })
+
+  it('carries the applied filters that the chosen project still has, and drops the rest (I-1)', async () => {
+    // The draft project has Sàn A too, but not the work Tháo giáo.
+    listDecks.mockResolvedValue([{ id: 'd1', name: 'Sàn A' }])
+    renderField()
+    await screen.findByText(/^DASHBOARD 2 sự kiện/)
+    await userEvent.click(within(bar()).getByText('Tháo giáo'))
+    await pickProject('Giàn A')
+    await waitFor(() => expect(listDecks).toHaveBeenCalledWith('p1'))
+    await userEvent.click(within(bar()).getByRole('combobox', { name: 'Sàn' }))
+    await userEvent.click(await screen.findByTitle('Sàn A'))
+    await pressTim()
+    expect(navigate).toHaveBeenCalledWith('/gs/p1/dashboard')
+
+    // The route change the navigate makes, on the page's fresh mount.
+    await userEvent.click(screen.getByRole('link', { name: 'sang Giàn A' }))
+    await waitFor(() => expect(loadProjectModel).toHaveBeenCalledWith('p1'))
+    expect(await screen.findByText('DASHBOARD 2 sự kiện · Sàn A · công việc đầu')).toBeInTheDocument()
+  })
+
+  it('puts the route\'s project back on Đặt lại', async () => {
+    renderField()
+    await screen.findByText(/^DASHBOARD 2 sự kiện/)
+    await pickProject('Giàn A')
+    await userEvent.click(within(bar()).getByRole('button', { name: 'Đặt lại' }))
+    expect(await within(bar()).findByText('Giàn B', { selector: '.ant-select-selection-item' })).toBeInTheDocument()
+    await pressTim()
+    expect(navigate).not.toHaveBeenCalled()
   })
 
   it('holds the field\'s draft until Tìm too (FLT-02)', async () => {

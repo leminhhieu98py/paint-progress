@@ -1,6 +1,6 @@
 import { Alert, App, Button, Layout, Spin } from 'antd'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useParams, useSearchParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { settleDraft, useDraftFilters, useProjectOptions } from '../../components/draftFilters'
 import { FilterBar } from '../../components/FilterBar'
 import { PageBody, PageHeader } from '../../components/PageHeader'
@@ -19,6 +19,8 @@ import { listProjectNames } from '../../lib/projectsApi'
 import { FieldLayout } from '../gs/FieldLayout'
 import { space } from '../../theme'
 import { FieldProjectSelect } from '../gs/FieldProjectSelect'
+import { carryFilters, clearCarried, peekCarried } from '../gs/fieldCarry'
+import { APP_BASE_PATH } from '../../config'
 import { DeckKpiColorTable, type DeckKpiColorRow, type DeckKpiColors } from './DeckKpiColorTable'
 import { KpiDashboard, type KpiEntry } from './KpiDashboard'
 import { KpiFilterControls } from './KpiFilterControls'
@@ -487,31 +489,66 @@ function AdminKpi() {
   )
 }
 
+/** The field bar's draft: the project (null is the route's) and the chart's scope (I-1). */
+const DEFAULT_FIELD_SCOPE: AdminScope = DEFAULT_ADMIN_SCOPE
+const CARRY_PAGE = 'kpi'
+
 function FieldKpi({ projectId }: { projectId: string | null }) {
-  const scope = useDraftFilters(DEFAULT_KPI_FILTERS)
+  const navigate = useNavigate()
+  // Opened by a Tìm on another project's page: start on what it applied (I-1).
+  const [carried] = useState(() => peekCarried<KpiFilters>(CARRY_PAGE, projectId))
+  useEffect(() => clearCarried(CARRY_PAGE, projectId), [projectId])
+  const scope = useDraftFilters(DEFAULT_FIELD_SCOPE, carried ? { ...carried, project: null } : DEFAULT_FIELD_SCOPE)
   const data = useKpiData(projectId)
   const model = useKpiEntries(data.current)
-  const options = filterOptions(data.current, model.entries)
+
+  // The options follow the DRAFT project, as on the admin page (FLT-02).
+  const draftProject = scope.draft.project ?? projectId
+  const other = useProjectOptions(draftProject === projectId ? null : draftProject, loadFilterOptions)
+  const options = draftProject === projectId
+    ? filterOptions(data.current, model.entries)
+    : other.error !== null ? NO_OPTIONS : other.options
+  const loading = draftProject === projectId ? data.current === null : other.loading
   const draft = settleDraft(scope, options, settle)
   const shown = options ?? NO_OPTIONS
+
+  const apply = () => {
+    if (draftProject !== null && draftProject !== projectId) {
+      // Another project: its page, on the draft as settled against its options.
+      const { project: _project, ...filters } = draft
+      carryFilters(CARRY_PAGE, draftProject, filters)
+      navigate(`${APP_BASE_PATH}/gs/${draftProject}/kpi`)
+      return
+    }
+    scope.apply({ ...draft, project: null })
+  }
+
   return (
     // GS-06: the field header is the way between the pages; no back button (GS-02).
     <FieldLayout projectId={projectId}>
       <Layout.Content style={{ padding: space.lg, display: 'flex', flexDirection: 'column', gap: space.lg }}>
         {/*
-          The field's bar, first under the header, the project first (GS-07).
-          The project is navigation, not part of the draft: choosing one opens
-          this page of that project at once, on a fresh mount.
+          The field's bar, first under the header, the project first (GS-07),
+          all of it a draft until Tìm (FLT-02, I-1).
         */}
-        <FilterBar onApply={() => scope.apply(draft)} onReset={scope.reset} applyLoading={data.current === null}>
-          {projectId && <FieldProjectSelect projectId={projectId} />}
+        <FilterBar onApply={apply} onReset={scope.reset} applyLoading={loading}>
+          {projectId && (
+            <FieldProjectSelect
+              projectId={projectId}
+              value={draftProject ?? undefined}
+              onChange={(v) => scope.setDraft({ project: v })}
+            />
+          )}
           <KpiFilterControls
             decks={shown.decks}
             coats={kpiCoatOptions(shown.coats, draft.deckId)}
             value={draft}
-            onChange={scope.setDraft}
+            onChange={(next) => scope.setDraft({ ...next, project: scope.draft.project })}
           />
         </FilterBar>
+        {draftProject !== projectId && other.error !== null && (
+          <Alert type="error" showIcon message="Không tải được bộ lọc của dự án" description={other.error} />
+        )}
         <Body projectId={projectId} variant="gs" data={data} model={model} filters={scope.applied} />
       </Layout.Content>
     </FieldLayout>
@@ -519,9 +556,9 @@ function FieldKpi({ projectId }: { projectId: string | null }) {
 }
 
 export function KpiScreen({ variant }: { variant: 'admin' | 'gs' }) {
-  // Keyed by the path's project, as DashboardScreen is: the Dự án switch in
-  // the filter bar changes it on this page, and a fresh mount keeps the last
-  // project's applied filters off the next project's chart.
+  // Keyed by the path's project, as DashboardScreen is: Tìm on another project
+  // changes it on this page, and the fresh mount opens on what that Tìm
+  // carried (I-1), never on the last project's state.
   const { projectId } = useParams()
   return variant === 'admin'
     ? <AdminKpi />

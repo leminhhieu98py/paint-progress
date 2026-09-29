@@ -5,7 +5,8 @@ import { useEffect, useState } from 'react'
  * control changes only `draft`; the screen reads `applied`, which moves to
  * the draft on `apply` (Tìm, or Enter in a text field of the bar) and back to
  * the defaults on `reset` (Đặt lại), both at once. The first load applies the
- * defaults without a click.
+ * defaults without a click, or `initial` when given (a field page opened by a
+ * project switch starts on the filters it carried, I-1).
  *
  * `apply(value)` takes the value to apply when the caller has settled the
  * draft first -- a Sàn the draft project does not have resets to Tất cả sàn
@@ -14,9 +15,9 @@ import { useEffect, useState } from 'react'
  *
  * A bar with ONE control does not use this: it keeps applying on change.
  */
-export function useDraftFilters<T extends object>(defaults: T) {
-  const [draft, setDraftState] = useState<T>(defaults)
-  const [applied, setApplied] = useState<T>(defaults)
+export function useDraftFilters<T extends object>(defaults: T, initial: T = defaults) {
+  const [draft, setDraftState] = useState<T>(initial)
+  const [applied, setApplied] = useState<T>(initial)
   const [version, setVersion] = useState(0)
 
   const setDraft = (next: Partial<T> | ((current: T) => T)) =>

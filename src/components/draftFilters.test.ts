@@ -29,6 +29,15 @@ describe('useDraftFilters (FLT-02)', () => {
     expect(result.current.draft).toEqual(DEFAULTS)
   })
 
+  it('can open on a value other than its defaults, and still resets to the defaults', () => {
+    // A field page opened by a project switch starts on the filters it carried (I-1).
+    const { result } = renderHook(() => useDraftFilters(DEFAULTS, { deck: 'd1', coat: '' }))
+    expect(result.current.applied).toEqual({ deck: 'd1', coat: '' })
+    expect(result.current.draft).toEqual({ deck: 'd1', coat: '' })
+    act(() => result.current.reset())
+    expect(result.current.applied).toEqual(DEFAULTS)
+  })
+
   it('resets draft and applied to the defaults at once', () => {
     const { result } = renderHook(() => useDraftFilters(DEFAULTS))
     act(() => result.current.setDraft({ deck: 'd1' }))

@@ -1,6 +1,6 @@
 import { Alert, Button, Layout, Spin } from 'antd'
 import { useEffect, useState } from 'react'
-import { useParams, useSearchParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { settleDraft, useDraftFilters, useProjectOptions } from '../../components/draftFilters'
 import { FilterBar } from '../../components/FilterBar'
 import { PageBody, PageHeader } from '../../components/PageHeader'
@@ -13,6 +13,8 @@ import { listWorks } from '../../lib/worksApi'
 import { FieldLayout } from '../gs/FieldLayout'
 import { space } from '../../theme'
 import { FieldProjectSelect } from '../gs/FieldProjectSelect'
+import { carryFilters, clearCarried, peekCarried } from '../gs/fieldCarry'
+import { APP_BASE_PATH } from '../../config'
 import { ProductivityDashboard } from './ProductivityDashboard'
 import { ProductivityFilterControls } from './ProductivityFilterControls'
 import { DEFAULT_PRODUCTIVITY_FILTERS, dashboardWorkNames, type ProductivityFilters } from './productivityFilters'
@@ -223,24 +225,65 @@ function AdminDashboard() {
   )
 }
 
+/** The field bar's draft: the project (null is the route's) and the dashboard's filters (I-1). */
+type FieldScope = ProductivityFilters & { project: string | null }
+const DEFAULT_FIELD_SCOPE: FieldScope = { project: null, ...DEFAULT_PRODUCTIVITY_FILTERS }
+const CARRY_PAGE = 'dashboard'
+
 function FieldDashboard({ projectId }: { projectId: string | null }) {
-  const scope = useDraftFilters(DEFAULT_PRODUCTIVITY_FILTERS)
+  const navigate = useNavigate()
+  // Opened by a Tìm on another project's page: start on what it applied (I-1).
+  const [carried] = useState(() => peekCarried<ProductivityFilters>(CARRY_PAGE, projectId))
+  useEffect(() => clearCarried(CARRY_PAGE, projectId), [projectId])
+  const scope = useDraftFilters(DEFAULT_FIELD_SCOPE, carried ? { ...carried, project: null } : DEFAULT_FIELD_SCOPE)
   const data = useProjectData(projectId)
-  const options = filterOptions(data.current)
+
+  // The options follow the DRAFT project, as on the admin page (FLT-02): the
+  // route project's own, or a light read of the one picked but not applied.
+  const draftProject = scope.draft.project ?? projectId
+  const other = useProjectOptions(draftProject === projectId ? null : draftProject, loadFilterOptions)
+  const options = draftProject === projectId
+    ? filterOptions(data.current)
+    : other.error !== null ? NO_OPTIONS : other.options
+  const loading = draftProject === projectId ? data.current === null : other.loading
   const draft = settleDraft(scope, options, settle)
+
+  const apply = () => {
+    if (draftProject !== null && draftProject !== projectId) {
+      // Another project: its page, on the draft as settled against its options.
+      const { project: _project, ...filters } = draft
+      carryFilters(CARRY_PAGE, draftProject, filters)
+      navigate(`${APP_BASE_PATH}/gs/${draftProject}/dashboard`)
+      return
+    }
+    scope.apply({ ...draft, project: null })
+  }
+
   return (
     // GS-06: the field header is the way between the pages; no back button (GS-02).
     <FieldLayout projectId={projectId}>
       <Layout.Content style={{ padding: space.lg, display: 'flex', flexDirection: 'column', gap: space.lg }}>
         {/*
-          The field's bar, first under the header, the project first (GS-07).
-          The project is navigation, not part of the draft: choosing one opens
-          this page of that project at once, on a fresh mount.
+          The field's bar, first under the header, the project first (GS-07),
+          all of it a draft until Tìm (FLT-02, I-1).
         */}
-        <FilterBar onApply={() => scope.apply(draft)} onReset={scope.reset} applyLoading={data.current === null}>
-          {projectId && <FieldProjectSelect projectId={projectId} />}
-          <ProductivityFilterControls {...(options ?? NO_OPTIONS)} value={draft} onChange={scope.setDraft} />
+        <FilterBar onApply={apply} onReset={scope.reset} applyLoading={loading}>
+          {projectId && (
+            <FieldProjectSelect
+              projectId={projectId}
+              value={draftProject ?? undefined}
+              onChange={(v) => scope.setDraft({ project: v })}
+            />
+          )}
+          <ProductivityFilterControls
+            {...(options ?? NO_OPTIONS)}
+            value={draft}
+            onChange={(next) => scope.setDraft({ ...next, project: scope.draft.project })}
+          />
         </FilterBar>
+        {draftProject !== projectId && other.error !== null && (
+          <Alert type="error" showIcon message="Không tải được bộ lọc của dự án" description={other.error} />
+        )}
         <Body projectId={projectId} data={data} filters={scope.applied} version={scope.version} />
       </Layout.Content>
     </FieldLayout>
@@ -248,9 +291,9 @@ function FieldDashboard({ projectId }: { projectId: string | null }) {
 }
 
 export function DashboardScreen({ variant }: { variant: 'admin' | 'gs' }) {
-  // Keyed by the path's project: the Dự án switch in the field filter bar
-  // changes it on this page, and a fresh mount is what keeps the last
-  // project's applied filters from narrowing the next project's figures.
+  // Keyed by the path's project: Tìm on another project changes it on this
+  // page, and the fresh mount opens on what that Tìm carried (I-1), never on
+  // the last project's state.
   const { projectId } = useParams()
   return variant === 'admin'
     ? <AdminDashboard />

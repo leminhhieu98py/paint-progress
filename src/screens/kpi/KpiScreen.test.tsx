@@ -355,12 +355,45 @@ describe('KpiScreen — one filter bar (FLT-01)', () => {
     expect(within(bar()).getByRole('button', { name: 'Đặt lại' })).toBeInTheDocument()
   })
 
-  it('opens this page of another project at once from Dự án: navigation, not a draft (GS-07)', async () => {
+  /** Picks the field bar's draft project. */
+  const pickProject = async (name: string) => {
+    await userEvent.click(within(bar()).getByRole('combobox', { name: 'Dự án' }))
+    await userEvent.click(await screen.findByTitle(name))
+  }
+
+  it('holds the Dự án choice in the draft: nothing moves until Tìm, and Sàn follows it (FLT-02, I-1)', async () => {
     renderField()
     await screen.findByTestId('kpi-dashboard')
-    await userEvent.click(within(bar()).getByRole('combobox', { name: 'Dự án' }))
-    await userEvent.click(await screen.findByTitle('Giàn A'))
+    await pickProject('Giàn A')
+    expect(navigate).not.toHaveBeenCalled()
+    await waitFor(() => expect(listDecks).toHaveBeenCalledWith('p1'))
+    await userEvent.click(within(bar()).getByRole('combobox', { name: 'Sàn' }))
+    expect(await screen.findByTitle('Sàn Z')).toBeInTheDocument()
+  })
+
+  it('opens this page of the draft project on Tìm, once (I-1)', async () => {
+    renderField()
+    await screen.findByTestId('kpi-dashboard')
+    await pickProject('Giàn A')
+    await pressTim()
+    expect(navigate).toHaveBeenCalledTimes(1)
     expect(navigate).toHaveBeenCalledWith('/gs/p1/kpi')
+  })
+
+  it('carries the applied filters that the chosen project still has (I-1)', async () => {
+    listDecks.mockResolvedValue([{ id: 'd1', name: 'Sàn A' }])
+    renderField()
+    await screen.findByTestId('kpi-dashboard')
+    await pickProject('Giàn A')
+    await waitFor(() => expect(listDecks).toHaveBeenCalledWith('p1'))
+    await userEvent.click(within(bar()).getByRole('combobox', { name: 'Sàn' }))
+    await userEvent.click(await screen.findByTitle('Sàn A'))
+    await pressTim()
+    expect(navigate).toHaveBeenCalledWith('/gs/p1/kpi')
+
+    await userEvent.click(screen.getByRole('link', { name: 'sang Giàn A' }))
+    await waitFor(() => expect(listStagePlans).toHaveBeenCalledWith('p1'))
+    expect(await screen.findByText(/PHẠM VI d1\/tất cả/)).toBeInTheDocument()
   })
 })
 
