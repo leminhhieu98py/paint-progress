@@ -4,6 +4,7 @@ import { useEffect } from 'react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderApp } from '../../test/renderApp'
+import { pageSubtitle } from '../../test/copy'
 import { DeckDetailScreen } from './DeckDetailScreen'
 
 const getDeck = vi.hoisted(() => vi.fn())
@@ -337,7 +338,8 @@ describe('DeckDetailScreen', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Lưu thông tin sàn' }))
 
     expect(await screen.findByText('Lưu thay đổi cho sàn này?')).toBeInTheDocument()
-    expect(screen.getByText(/chia lại theo tỉ lệ pixel/)).toBeInTheDocument()
+    expect(screen.getByText(/Diện tích từng ô được chia lại từ con số mới\./)).toBeInTheDocument()
+    expect(screen.queryByText(/pixel/)).not.toBeInTheDocument()
     expect(updateDeckArea).not.toHaveBeenCalled()
 
     await userEvent.click(screen.getByRole('button', { name: 'Lưu' }))
@@ -482,6 +484,9 @@ describe('DeckDetailScreen — công việc', () => {
     renderAt('/decks/d1')
     expect(await screen.findByText('Sàn này chưa thuộc công việc nào')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /Công việc/ })).toHaveAttribute('href', expect.stringContaining('/admin/works?project=p1'))
+    // The next step only; no summary that repeats the title beside it (CPY-01).
+    expect(screen.getByText('Gán sàn vào một công việc trước, rồi quay lại đây cấu hình lớp sơn.')).toBeInTheDocument()
+    expect(screen.queryByText('Sàn chưa thuộc công việc nào')).not.toBeInTheDocument()
   })
 
   it('labels the header figure as the deck\'s tổng hợp across works', async () => {
@@ -489,7 +494,27 @@ describe('DeckDetailScreen — công việc', () => {
     await screen.findByRole('heading', { level: 1, name: 'Main Deck' })
     // The figure arrives one effect after the panel mounts, so wait for it.
     expect(await screen.findByText('44,38%')).toBeInTheDocument()
-    expect(screen.getByText(/tổng hợp các công việc/)).toBeInTheDocument()
+    // On the label's (?) rather than as a caption read on every visit (CPY-01).
+    expect(screen.getByRole('img', { name: 'Tổng hợp các công việc' }).parentElement).toHaveTextContent(/^Tiến độ sàn$/)
+    expect(screen.queryByText(/^tổng hợp các công việc$/)).not.toBeInTheDocument()
+  })
+
+  it('explains the area on its label, and has no rules footer left under A3.1 (CPY-01)', async () => {
+    renderAt('/decks/d1')
+    await screen.findByRole('heading', { level: 1, name: 'Main Deck' })
+    const identity = screen.getByTestId('deck-identity')
+    const tip = within(identity).getByRole('img', { name: 'Mẫu số của mọi phần trăm trên sàn' })
+    expect(tip.parentElement).toHaveTextContent(/^Diện tích sàn \(m²\)$/)
+    // IDN-R4 and IDN-R5 were rationale, and with both gone the footer goes.
+    expect(screen.queryByRole('button', { name: /Quy tắc áp dụng/ })).not.toBeInTheDocument()
+  })
+
+  it('has no subtitle and no summary while a deck is being created (CPY-01, CPY-03)', async () => {
+    renderAt('/decks/new?project=p1')
+    expect(await screen.findByRole('heading', { level: 1, name: 'Sàn mới' })).toBeInTheDocument()
+    expect(pageSubtitle()).toBeNull()
+    expect(screen.queryByText(/Đặt tên, mã và diện tích trước/)).not.toBeInTheDocument()
+    expect(screen.queryByText('Sàn chưa được tạo')).not.toBeInTheDocument()
   })
 
   it('reads the deck history once and hands it to both panels (Feedback Rv2, items 11 and 13)', async () => {

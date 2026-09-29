@@ -25,32 +25,24 @@ import { EffortHistoryPanel } from './EffortHistoryPanel'
 import { DeckForecastPanel } from './DeckForecastPanel'
 import { ConsequenceModal } from '../../components/ConsequenceModal'
 import { PageBody, PageHeader } from '../../components/PageHeader'
-import { RulesDisclosure } from '../../components/RulesDisclosure'
+import { InfoTip } from '../../components/InfoTip'
 import { SectionCard } from '../../components/SectionCard'
 import { formatPercent } from '../../lib/format'
 import { palette } from '../../theme'
-
-const IDENTITY_RULES = [
-  {
-    id: 'IDN-R5',
-    text: 'Diện tích nhận dấu phẩy thập phân: 5258,5 phải vào đúng là 5258,5 chứ không thành 5258.',
-  },
-  {
-    id: 'IDN-R4',
-    text: 'Tên tệp và trang của bản vẽ hiện tại luôn hiện trước nút chọn tệp, vì chọn tệp mới là thao tác phá huỷ.',
-  },
-]
 
 /** One read-only fact about the deck, in the card grid of panel A3.1. */
 function IdentityCard({
   label,
   value,
   sub,
+  tip,
   dense = false,
 }: {
   label: string
   value: string
   sub?: string
+  /** What the figure means, on the label's (?) (CPY-02). */
+  tip?: string
   dense?: boolean
 }) {
   return (
@@ -62,7 +54,10 @@ function IdentityCard({
         padding: '14px 16px 16px',
       }}
     >
-      <div style={{ fontSize: 12, fontWeight: 600, color: palette.textTertiary }}>{label}</div>
+      <div style={{ fontSize: 12, fontWeight: 600, color: palette.textTertiary }}>
+        {label}
+        {tip !== undefined && <InfoTip text={tip} />}
+      </div>
       <div style={{ marginTop: 9, fontSize: dense ? 13 : 16, fontWeight: 600, lineHeight: 1.25, wordBreak: dense ? 'break-all' : 'normal' }}>
         {value}
       </div>
@@ -539,7 +534,7 @@ export function DeckDetailScreen() {
         badge={creating ? undefined : deck?.code}
         subtitle={
           creating
-            ? 'Đặt tên, mã và diện tích trước, rồi tải bản vẽ lên.'
+            ? undefined
             : `${deck?.cellCount ? `${deck.cellCount} ô` : 'chưa dựng ô'} · ${withUnit(deck?.totalAreaM2 ?? 0)}`
         }
         breadcrumbs={[{ label: 'Sàn', onClick: () => navigate('..', { relative: 'path' }) }]}
@@ -551,12 +546,10 @@ export function DeckDetailScreen() {
                 <div style={{ textAlign: 'right' }}>
                   <div style={{ fontSize: 12, fontWeight: 600, color: palette.textTertiary }}>
                     Tiến độ sàn
+                    <InfoTip text="Tổng hợp các công việc" />
                   </div>
                   <div style={{ marginTop: 7, fontSize: 23, fontWeight: 700, letterSpacing: '-0.032em' }}>
                     {formatPercent(progress)}
-                  </div>
-                  <div style={{ marginTop: 3, fontSize: 11, color: palette.textTertiary }}>
-                    tổng hợp các công việc
                   </div>
                 </div>
               )}
@@ -584,9 +577,8 @@ export function DeckDetailScreen() {
         <SectionCard
           code="A3.1"
           title="Thông tin sàn & bản vẽ"
-          summary={creating ? 'Sàn chưa được tạo' : drawingLabel}
+          summary={creating ? undefined : drawingLabel}
           collapsible
-          footer={<RulesDisclosure rules={IDENTITY_RULES} />}
         >
           {/*
             The read-only cards are NOT an alternative to the form -- they sit
@@ -608,7 +600,7 @@ export function DeckDetailScreen() {
               <IdentityCard
                 label={quantityTitle}
                 value={formatAreaM2(deck?.totalAreaM2 ?? 0)}
-                sub="Mẫu số của mọi phần trăm trên sàn"
+                tip="Mẫu số của mọi phần trăm trên sàn"
               />
               <IdentityCard label="Số ô" value={String(deck?.cellCount ?? 0)} />
               <IdentityCard
@@ -643,10 +635,10 @@ export function DeckDetailScreen() {
           cells for them to work on.
         */}
         {deck && works !== null && works.length === 0 && (
-          <SectionCard code="A3.2" title="Cấu hình lớp sơn" summary="Sàn chưa thuộc công việc nào">
+          <SectionCard code="A3.2" title="Cấu hình lớp sơn">
             <EmptyState
               title="Sàn này chưa thuộc công việc nào"
-              description="Lớp sơn thuộc về từng công việc trên sàn. Gán sàn vào một công việc trước, rồi quay lại đây cấu hình lớp sơn."
+              description="Gán sàn vào một công việc trước, rồi quay lại đây cấu hình lớp sơn."
             />
             <div style={{ textAlign: 'center', marginTop: 12 }}>
               <Link to={`${APP_BASE_PATH}/admin/works?project=${deck.projectId}`}>Mở Công việc</Link>
@@ -727,7 +719,7 @@ export function DeckDetailScreen() {
               ? 'Ô đã dựng vẫn giữ nguyên vị trí theo tỉ lệ trên khung bản vẽ, nên nếu bản vẽ mới lệch khung so với bản cũ thì lưới ô sẽ nằm sai chỗ. Kiểm tra lại ở Phân ô và dò lại ô nếu cần.'
               : '',
             deck && area !== deck.totalAreaM2
-              ? 'Diện tích từng ô được chia lại theo tỉ lệ pixel từ con số mới. Mọi phần trăm của sàn — và số tiền tính theo nó — đều lấy con số này làm mẫu số.'
+              ? 'Diện tích từng ô được chia lại từ con số mới. Mọi phần trăm của sàn — và số tiền tính theo nó — đều lấy con số này làm mẫu số.'
               : '',
           ]
             .filter(Boolean)

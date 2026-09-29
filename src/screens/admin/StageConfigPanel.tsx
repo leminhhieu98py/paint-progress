@@ -18,6 +18,7 @@ import { randomUUID } from '../../lib/uuid'
 import { ColorField, HEX_COLOR } from '../../components/ColorField'
 import { ConsequenceModal } from '../../components/ConsequenceModal'
 import { EmptyState } from '../../components/EmptyState'
+import { InfoTip } from '../../components/InfoTip'
 import { RulesDisclosure } from '../../components/RulesDisclosure'
 import { SectionCard } from '../../components/SectionCard'
 import { palette, space } from '../../theme'
@@ -29,7 +30,7 @@ const STAGE_RULES = [
           },
           {
             id: 'STG-R2',
-            text: 'Không hai lớp trùng tên hoặc trùng màu — GS nhận ra lớp bằng màu trên bản vẽ, báo cáo nhận ra bằng tên.',
+            text: 'Không hai lớp trùng tên hoặc trùng màu.',
           },
           {
             id: 'STG-R3',
@@ -396,7 +397,7 @@ export function StageConfigPanel({
           emptyText: (
             <EmptyState
               title="Sàn này chưa có lớp sơn nào"
-              description="Mỗi sàn khai báo lớp sơn của riêng nó. Thêm lớp, đặt màu và trọng số — tổng trọng số phải bằng 1 thì mới lưu được."
+              description="Thêm lớp, đặt màu và trọng số."
             />
           ),
         }}
@@ -426,7 +427,7 @@ export function StageConfigPanel({
             )),
           },
           {
-            title: 'Thứ tự',
+            title: editable ? <>Thứ tự<InfoTip text="Kéo hàng để đổi thứ tự" /></> : 'Thứ tự',
             dataIndex: 'seq',
             width: 80,
             align: 'center',
@@ -598,13 +599,13 @@ export function StageConfigPanel({
             />
           ))}
         </div>
-        <div style={{ marginTop: 8, fontSize: 11, color: palette.textTertiary }}>
-          {draft.length === 0
-            ? 'Thêm ít nhất một lớp sơn. Sàn không có lớp sơn nào thì mọi phần trăm tiến độ của nó vĩnh viễn bằng 0, và không có gì báo cho ai biết.'
-            : balanced
-              ? 'Dải lấp đầy khung — tổng bằng 1, lưu được.'
-              : `Tổng trọng số các lớp phải bằng 1; hiện tại ${formatWeight(total)}. Mọi phần trăm tiến độ đều tính từ các trọng số này, nên nút Lưu khoá tới khi đúng.`}
-        </div>
+        {/* Only while it is wrong: the empty state carries the no-coats step,
+            and a balanced bar is its own answer (CPY-01). */}
+        {draft.length > 0 && !balanced && (
+          <div style={{ marginTop: 8, fontSize: 11, color: palette.textTertiary }}>
+            {`Tổng trọng số các lớp phải bằng 1; hiện tại ${formatWeight(total)}.`}
+          </div>
+        )}
       </div>
 
       {hasClash && (
@@ -615,7 +616,6 @@ export function StageConfigPanel({
           description={[
             clashes.names.length > 0 ? `Trùng tên: ${clashes.names.join(', ')}.` : '',
             clashes.colors.length > 0 ? `Trùng màu: ${clashes.colors.join(', ')}.` : '',
-            'GS nhận ra lớp sơn bằng màu trên bản vẽ, báo cáo nhận ra bằng tên — trùng thì không đọc lại được.',
           ].filter(Boolean).join(' ')}
         />
         </div>
@@ -633,9 +633,6 @@ export function StageConfigPanel({
           <Button icon={<PlusOutlined aria-hidden />} disabled={busy} onClick={addStage}>
             Thêm lớp
           </Button>
-          <span style={{ fontSize: 12, color: palette.textTertiary }}>
-            Kéo hàng để đổi thứ tự · nhập trọng số trực tiếp, nhận dấu phẩy
-          </span>
         </div>
       )}
 
@@ -678,8 +675,8 @@ export function StageConfigPanel({
           }
           consequence={
             removed.length > 0
-              ? 'Xoá một lớp sẽ xoá tiến độ đã ghi của mọi ô đang ở lớp đó — các ô đó trở về trạng thái chưa bắt đầu — và xoá luôn các zone đã lên kế hoạch cho lớp đó. Đổi tên, đổi trọng số hay đổi thứ tự thì không mất gì: mỗi lớp giữ nguyên danh tính của nó. Nhưng các lớp bị xoá ở trên thì mất vĩnh viễn.'
-              : 'Mọi phần trăm tiến độ của sàn này tính lại từ các trọng số trên. Sàn khác trong dự án không bị ảnh hưởng, và không ô nào mất tiến độ đã ghi.'
+              ? 'Xoá một lớp sẽ xoá tiến độ đã ghi của mọi ô đang ở lớp đó — các ô đó trở về trạng thái chưa bắt đầu — và xoá luôn các zone đã lên kế hoạch cho lớp đó. Các lớp bị xoá ở trên mất vĩnh viễn.'
+              : undefined
           }
           okText={removed.length > 0 ? 'Vẫn lưu' : 'Lưu'}
           confirmLoading={busy}
