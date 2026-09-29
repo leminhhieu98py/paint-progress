@@ -9,8 +9,10 @@
  *
  * Widths are estimated, not measured: jsdom has no text layout, and a canvas
  * measure before the web font loads reads the fallback face. The estimate is
- * calibrated to be at least as wide as Chromium draws Be Vietnam Pro (a digit
- * 0.66 em, a separator 0.30 em, `%` 0.92 em), so a figure it passes fits.
+ * calibrated against Chromium drawing Be Vietnam Pro with the app's
+ * tabular-nums (RR-M1): 0.60 em per character, `.` and `,` included, 0.92 em
+ * for `%`. It lands within about 4 px of the real width at 21 px, which the
+ * 4 px margin either side absorbs.
  */
 
 type Step = { readonly fontSize: number; readonly fontWeight: number }
@@ -26,8 +28,8 @@ export interface RingGeometry {
   letterSpacingEm: number
 }
 
-const CHAR_EM: Record<string, number> = { '.': 0.3, ',': 0.3, '%': 0.92, ' ': 0.28 }
-const DEFAULT_EM = 0.66
+const CHAR_EM: Record<string, number> = { '%': 0.92, ' ': 0.28 }
+const DEFAULT_EM = 0.6
 /** Clear space between the figure and the ring, each side. */
 const MARGIN = 4
 /** Half a digit's height, from its line's centre (cap height about 0.72 em). */
@@ -59,20 +61,23 @@ export const ROLLUP_RING: RingGeometry = {
   letterSpacingEm: -0.028,
 }
 
-/** An upper estimate of `text`'s width at `fontSize` px. */
+/** An estimate of `text`'s width at `fontSize` px in Be Vietnam Pro. */
 export function textWidthEstimate(text: string, fontSize: number, letterSpacingEm = 0): number {
   let em = 0
   for (const ch of text) em += (CHAR_EM[ch] ?? DEFAULT_EM) + letterSpacingEm
   return em * fontSize
 }
 
-/** Whether `text` at `step` fits the hole with the margin either side, at its line's height. */
-export function figureFits(text: string, step: Step, ring: RingGeometry): boolean {
+/** The hole's width at the outer edge of a figure set at `step`: 0 when the line is off the hole. */
+export function figureChord(step: Step, ring: RingGeometry): number {
   const r = ring.holeDiameter / 2
   const y = Math.abs(ring.above - ring.below) / 2 + HALF_GLYPH_EM * step.fontSize
-  if (y >= r) return false
-  const chord = 2 * Math.sqrt(r * r - y * y)
-  return textWidthEstimate(text, step.fontSize, ring.letterSpacingEm) + 2 * MARGIN <= chord
+  return y >= r ? 0 : 2 * Math.sqrt(r * r - y * y)
+}
+
+/** Whether `text` at `step` fits the hole with the margin either side, at its line's height. */
+export function figureFits(text: string, step: Step, ring: RingGeometry): boolean {
+  return textWidthEstimate(text, step.fontSize, ring.letterSpacingEm) + 2 * MARGIN <= figureChord(step, ring)
 }
 
 /** The largest of `steps` (largest first) at which `text` fits; the smallest when none does. */
