@@ -178,7 +178,9 @@ function AdminDashboard() {
   const other = useProjectOptions(draftProject === projectId ? null : draftProject, loadFilterOptions)
   const options = draftProject === projectId
     ? filterOptions(data.current) ?? other.cached(projectId)
-    : other.options
+    // A failed read settles against "nothing": Tìm then applies Tất cả for
+    // the new project instead of carrying the old project's choice across.
+    : other.error !== null ? NO_OPTIONS : other.options
   const loading = draftProject === projectId ? projectId !== null && data.current === null : other.loading
   const draft = settleDraft(scope, options, settle)
 
@@ -212,6 +214,9 @@ function AdminDashboard() {
       />
       <PageBody>
         {listError && <Alert type="error" showIcon message="Không tải được danh sách dự án" description={listError} />}
+        {draftProject !== projectId && other.error !== null && (
+          <Alert type="error" showIcon message="Không tải được bộ lọc của dự án" description={other.error} />
+        )}
         <Body projectId={projectId} data={data} filters={scope.applied} version={scope.version} />
       </PageBody>
     </>

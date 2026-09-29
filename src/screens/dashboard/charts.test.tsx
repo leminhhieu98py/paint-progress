@@ -1,6 +1,7 @@
-import { render, screen, within } from '@testing-library/react'
+import { act, render, screen, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import type { KpiDay } from '../../domain/kpi'
+import { formatAreaM2, formatHours, formatMhrPerM2, formatPercent } from '../../lib/format'
 import { palette } from '../../theme'
 import { EfficiencyLineChart, HoursBarChart, KpiComboChart } from './charts'
 
@@ -15,6 +16,12 @@ import { EfficiencyLineChart, HoursBarChart, KpiComboChart } from './charts'
  * stood in for so their real (unobservable in jsdom) sizing logic does not
  * swallow the `Brush` before it ever mounts.
  */
+/** What the charts hand the Legend and the Tooltip, for CHT-03. */
+const captured = vi.hoisted(() => ({
+  legend: null as null | Record<string, unknown>,
+  tooltip: null as null | Record<string, unknown>,
+}))
+
 vi.mock('recharts', async (importOriginal) => {
   const actual = await importOriginal<typeof import('recharts')>()
   return {
@@ -35,17 +42,27 @@ vi.mock('recharts', async (importOriginal) => {
     CartesianGrid: () => null,
     XAxis: () => null,
     YAxis: () => null,
-    Tooltip: () => null,
+    Tooltip: (props: Record<string, unknown>) => {
+      captured.tooltip = props
+      return null
+    },
     // The legend prints one entry through the chart's own `formatter`, which
     // is where QA F3 puts the label's colour; the real Legend needs a sized
     // chart to render anything at all.
-    Legend: (props: { formatter?: (value: string) => React.ReactNode }) => (
-      <div data-testid="legend">{props.formatter ? props.formatter('Kế hoạch') : 'Kế hoạch'}</div>
-    ),
+    Legend: (props: { formatter?: (value: string) => React.ReactNode } & Record<string, unknown>) => {
+      captured.legend = props
+      return <div data-testid="legend">{props.formatter ? props.formatter('Kế hoạch') : 'Kế hoạch'}</div>
+    },
     // The four series print the one prop RV6-29 changes -- their colour -- and
     // the plan line its dash, which RV6-29 must leave alone.
     Bar: (props: Record<string, unknown>) => (
-      <div data-testid={`kpi-bar-${String(props.dataKey)}`} data-fill={String(props.fill)} data-name={String(props.name)} />
+      <div
+        data-testid={`kpi-bar-${String(props.dataKey)}`}
+        data-fill={String(props.fill)}
+        data-name={String(props.name)}
+        data-opacity={String(props.fillOpacity ?? 1)}
+        data-active-bar={JSON.stringify(props.activeBar ?? null)}
+      />
     ),
     Line: (props: Record<string, unknown>) => (
       <div
@@ -53,6 +70,8 @@ vi.mock('recharts', async (importOriginal) => {
         data-stroke={String(props.stroke)}
         data-dash={props.strokeDasharray === undefined ? '' : String(props.strokeDasharray)}
         data-connectnulls={String(props.connectNulls ?? false)}
+        data-opacity={String(props.strokeOpacity ?? 1)}
+        data-active-dot={JSON.stringify(props.activeDot ?? null)}
       />
     ),
   }
@@ -170,5 +189,108 @@ describe('EfficiencyLineChart: missing days (QA F4)', () => {
       />,
     )
     expect(screen.getByTestId('kpi-line-Coat 1')).toHaveAttribute('data-connectnulls', 'false')
+  })
+})
+
+// ---------------------------------------------------------------------
+// CHT-01 / CHT-03 -- colours the app picks, legend hover, tooltips, active marks
+// ---------------------------------------------------------------------
+
+/** Hover the legend item of `dataKey`, as Recharts reports it, then leave it. */
+const hoverLegend = (dataKey: string) => act(() => {
+  const enter = captured.legend?.onMouseEnter as (entry: { dataKey: string; value: string }, i: number) => void
+  enter({ dataKey, value: dataKey }, 0)
+})
+const leaveLegend = () => act(() => {
+  const leave = captured.legend?.onMouseLeave as (entry: { dataKey: string; value: string }, i: number) => void
+  leave({ dataKey: '', value: '' }, 0)
+})
+const opacity = (id: string) => screen.getByTestId(id).getAttribute('data-opacity')
+const format = (value: number, name: string) =>
+  (captured.tooltip?.formatter as (v: number, n: string) => unknown)(value, name)
+const label = (day: string) => (captured.tooltip?.labelFormatter as (d: string) => unknown)(day)
+
+describe('EfficiencyLineChart: legend hover and active dot (CHT-03)', () => {
+  const STAGES = [{ name: 'Coat 1', color: '#fadb14' }, { name: 'Coat 2', color: '#722ed1' }]
+  const renderChart = () => render(
+    <EfficiencyLineChart data={[{ day: '2026-09-01', 'Coat 1': 0.5, 'Coat 2': 0.25 }]} stages={STAGES} />,
+  )
+
+  it('keeps the hovered legend item\'s line and dims the others to 0.3, until the pointer leaves', () => {
+    renderChart()
+    expect(opacity('kpi-line-Coat 1')).toBe('1')
+    hoverLegend('Coat 2')
+    expect(opacity('kpi-line-Coat 2')).toBe('1')
+    expect(opacity('kpi-line-Coat 1')).toBe('0.3')
+    leaveLegend()
+    expect(opacity('kpi-line-Coat 1')).toBe('1')
+  })
+
+  it('keeps the coats\' own colours, which an admin configures', () => {
+    renderChart()
+    expect(screen.getByTestId('kpi-line-Coat 2')).toHaveAttribute('data-stroke', '#722ed1')
+  })
+
+  it('marks the hovered day with an active dot and reads it in the app\'s format', () => {
+    renderChart()
+    expect(JSON.parse(screen.getByTestId('kpi-line-Coat 1').getAttribute('data-active-dot') ?? 'null')).toMatchObject({ r: 5 })
+    expect(label('2026-09-04')).toBe('04/09')
+    expect(format(0.125, 'Coat 1')).toBe(formatMhrPerM2(0.125))
+  })
+})
+
+describe('HoursBarChart: palette, legend hover and active bar (CHT-01, CHT-03)', () => {
+  const renderChart = () => render(<HoursBarChart data={[{ day: '2026-09-01', hours: 8, wasteHours: 1 }]} />)
+
+  it('paints its two series from the categorical palette: done in the accent, waste in the red', () => {
+    renderChart()
+    expect(screen.getByTestId('kpi-bar-hours')).toHaveAttribute('data-fill', palette.categorical[0])
+    expect(screen.getByTestId('kpi-bar-wasteHours')).toHaveAttribute('data-fill', palette.categorical[3])
+  })
+
+  it('keeps the hovered legend item\'s bars and dims the other series to 0.3', () => {
+    renderChart()
+    hoverLegend('wasteHours')
+    expect(opacity('kpi-bar-wasteHours')).toBe('1')
+    expect(opacity('kpi-bar-hours')).toBe('0.3')
+    leaveLegend()
+    expect(opacity('kpi-bar-hours')).toBe('1')
+  })
+
+  it('gives a hovered bar an active state and reads it in hours, under Vietnamese names', () => {
+    renderChart()
+    expect(JSON.parse(screen.getByTestId('kpi-bar-hours').getAttribute('data-active-bar') ?? 'null')).toMatchObject({ stroke: palette.ink })
+    expect(screen.getByTestId('kpi-bar-hours')).toHaveAttribute('data-name', 'Thực hiện')
+    expect(screen.getByTestId('kpi-bar-wasteHours')).toHaveAttribute('data-name', 'Hao phí')
+    expect(format(7.5, 'Thực hiện')).toBe(formatHours(7.5))
+  })
+})
+
+describe('KpiComboChart: legend hover and active marks (CHT-03)', () => {
+  it('keeps the hovered legend item\'s series and dims the other three to 0.3', () => {
+    render(<KpiComboChart data={DATA} />)
+    hoverLegend('actualCumShare')
+    expect(opacity('kpi-line-actualCumShare')).toBe('1')
+    expect(opacity('kpi-line-planCumShare')).toBe('0.3')
+    expect(opacity('kpi-bar-planM2')).toBe('0.3')
+    expect(opacity('kpi-bar-actualM2')).toBe('0.3')
+    leaveLegend()
+    expect(opacity('kpi-bar-planM2')).toBe('1')
+  })
+
+  it('gives bars an active state and both lines an active dot, the plan line included', () => {
+    render(<KpiComboChart data={DATA} />)
+    for (const key of ['planM2', 'actualM2']) {
+      expect(JSON.parse(screen.getByTestId(`kpi-bar-${key}`).getAttribute('data-active-bar') ?? 'null')).toMatchObject({ stroke: palette.ink })
+    }
+    for (const key of ['planCumShare', 'actualCumShare']) {
+      expect(JSON.parse(screen.getByTestId(`kpi-line-${key}`).getAttribute('data-active-dot') ?? 'null')).toMatchObject({ r: 5 })
+    }
+  })
+
+  it('reads a share as a percentage and a quantity in the app\'s number format', () => {
+    render(<KpiComboChart data={DATA} />)
+    expect(format(0.5, 'Luỹ kế kế hoạch')).toBe(formatPercent(0.5))
+    expect(format(100, 'Kế hoạch (m²/ngày)')).toBe(formatAreaM2(100))
   })
 })

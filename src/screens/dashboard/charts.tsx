@@ -1,9 +1,10 @@
+import { useState } from 'react'
 import {
   Bar, BarChart, Brush, CartesianGrid, ComposedChart, Legend, Line, LineChart, ResponsiveContainer,
-  Tooltip, XAxis, YAxis,
+  Tooltip, XAxis, YAxis, type LegendPayload,
 } from 'recharts'
 import type { KpiDay } from '../../domain/kpi'
-import { fieldError, palette } from '../../theme'
+import { palette } from '../../theme'
 import { DEFAULT_UNIT, perUnit, rateUnit } from '../../domain/unit'
 import { formatAreaM2, formatHours, formatMhrPerM2, formatPercent } from '../../lib/format'
 import { KPI_COLOR_DEFAULTS } from './kpiColors'
@@ -33,6 +34,30 @@ const legendText = (value: unknown) => (
   <span style={{ color: palette.textSecondary }}>{String(value)}</span>
 )
 
+/** The series other than the one a hovered legend item names (CHT-03). */
+const DIMMED = 0.3
+/** A hovered day's dot on a line (CHT-03). */
+const ACTIVE_DOT = { r: 5 }
+/** A hovered day's bar (CHT-03): outlined in ink, its colour left alone. */
+const ACTIVE_BAR = { stroke: palette.ink, strokeWidth: 1 }
+
+/**
+ * Hovering a legend item highlights its series (CHT-03): the others dim to
+ * 0.3 until the pointer leaves. Keyed by the series' `dataKey`, which Recharts
+ * hands the legend handlers. Click-to-hide is deliberately not wired.
+ */
+function useLegendHighlight() {
+  const [active, setActive] = useState<string | null>(null)
+  return {
+    legend: {
+      onMouseEnter: (entry: LegendPayload) =>
+        setActive(typeof entry.dataKey === 'string' ? entry.dataKey : null),
+      onMouseLeave: () => setActive(null),
+    },
+    opacity: (dataKey: string) => (active === null || active === dataKey ? 1 : DIMMED),
+  }
+}
+
 export function EfficiencyLineChart({
   data,
   stages,
@@ -44,6 +69,7 @@ export function EfficiencyLineChart({
   /** The chosen work's unit (RV6-36); the axis reads `Mhr/<unit>`. */
   unit?: string
 }) {
+  const { legend, opacity } = useLegendHighlight()
   return (
     <div data-testid="efficiency-chart" style={{ width: '100%', height: 280 }}>
       <ResponsiveContainer width="100%" height="100%">
@@ -59,15 +85,17 @@ export function EfficiencyLineChart({
             labelFormatter={(day) => dayLabel(String(day))}
             formatter={(value) => (typeof value === 'number' ? formatMhrPerM2(value) : '')}
           />
-          <Legend formatter={legendText} />
+          <Legend formatter={legendText} {...legend} />
           {stages.map((s) => (
             <Line
               key={s.name}
               type="monotone"
               dataKey={s.name}
               stroke={s.color}
+              strokeOpacity={opacity(s.name)}
               strokeWidth={2}
-              dot={{ r: 3 }}
+              dot={{ r: 3, fillOpacity: opacity(s.name), strokeOpacity: opacity(s.name) }}
+              activeDot={ACTIVE_DOT}
               // No `connectNulls`: the data is padded to every calendar day
               // (QA F4), and a day nobody worked a coat is a gap, not a slope.
               isAnimationActive={false}
@@ -85,6 +113,7 @@ export function HoursBarChart({
   /** Null on a padded day with no record (QA F4): no bar, not a zero-height one. */
   data: Array<{ day: string; hours: number | null; wasteHours: number | null }>
 }) {
+  const { legend, opacity } = useLegendHighlight()
   return (
     <div data-testid="hours-chart" style={{ width: '100%', height: 260 }}>
       <ResponsiveContainer width="100%" height="100%">
@@ -96,9 +125,27 @@ export function HoursBarChart({
             labelFormatter={(day) => dayLabel(String(day))}
             formatter={(value) => (typeof value === 'number' ? formatHours(value) : '')}
           />
-          <Legend formatter={legendText} />
-          <Bar dataKey="hours" name="Thực hiện" stackId="h" fill={palette.accent} isAnimationActive={false} />
-          <Bar dataKey="wasteHours" name="Hao phí" stackId="h" fill={fieldError} isAnimationActive={false} />
+          <Legend formatter={legendText} {...legend} />
+          {/* The palette's first colour is the accent, so Thực hiện reads as on
+              the KPI chart; waste takes its red (CHT-01). */}
+          <Bar
+            dataKey="hours"
+            name="Thực hiện"
+            stackId="h"
+            fill={palette.categorical[0]}
+            fillOpacity={opacity('hours')}
+            activeBar={ACTIVE_BAR}
+            isAnimationActive={false}
+          />
+          <Bar
+            dataKey="wasteHours"
+            name="Hao phí"
+            stackId="h"
+            fill={palette.categorical[3]}
+            fillOpacity={opacity('wasteHours')}
+            activeBar={ACTIVE_BAR}
+            isAnimationActive={false}
+          />
         </BarChart>
       </ResponsiveContainer>
     </div>
@@ -154,6 +201,7 @@ export function KpiComboChart({
 }) {
   const plan = colors?.plan ?? null
   const actual = colors?.actual ?? null
+  const { legend, opacity } = useLegendHighlight()
   return (
     <div data-testid="kpi-chart" style={{ width: '100%', height: 372 }}>
       <ResponsiveContainer width="100%" height="100%">
@@ -184,12 +232,14 @@ export function KpiComboChart({
                 : formatAreaM2(value)
             }}
           />
-          <Legend formatter={legendText} />
+          <Legend formatter={legendText} {...legend} />
           <Bar
             yAxisId="m2"
             dataKey="planM2"
             name={kpiPlanName(unit)}
             fill={plan ?? KPI_COLOR_DEFAULTS.plan}
+            fillOpacity={opacity('planM2')}
+            activeBar={ACTIVE_BAR}
             isAnimationActive={false}
           />
           <Bar
@@ -197,6 +247,8 @@ export function KpiComboChart({
             dataKey="actualM2"
             name={kpiActualName(unit)}
             fill={actual ?? KPI_COLOR_DEFAULTS.actual}
+            fillOpacity={opacity('actualM2')}
+            activeBar={ACTIVE_BAR}
             isAnimationActive={false}
           />
           <Line
@@ -205,9 +257,11 @@ export function KpiComboChart({
             dataKey="planCumShare"
             name={KPI_PLAN_CUM}
             stroke={plan ?? palette.textTertiary}
+            strokeOpacity={opacity('planCumShare')}
             strokeWidth={2}
             strokeDasharray="5 3"
             dot={false}
+            activeDot={ACTIVE_DOT}
             isAnimationActive={false}
           />
           <Line
@@ -216,8 +270,10 @@ export function KpiComboChart({
             dataKey="actualCumShare"
             name={KPI_ACTUAL_CUM}
             stroke={actual ?? palette.accentHover}
+            strokeOpacity={opacity('actualCumShare')}
             strokeWidth={2}
-            dot={{ r: 2 }}
+            dot={{ r: 2, fillOpacity: opacity('actualCumShare'), strokeOpacity: opacity('actualCumShare') }}
+            activeDot={ACTIVE_DOT}
             isAnimationActive={false}
           />
           <Brush

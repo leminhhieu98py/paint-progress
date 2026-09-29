@@ -92,6 +92,7 @@ describe('useProjectOptions (FLT-02)', () => {
     const { result } = renderHook(() => useProjectOptions('p1', load))
     await waitFor(() => expect(result.current.loading).toBe(false))
     expect(result.current.options).toBeNull()
+    expect(result.current.error).toBe('mạng hỏng')
   })
 
   it('loads nothing without a project', () => {

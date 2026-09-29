@@ -43,8 +43,9 @@ export function useDraftFilters<T extends object>(defaults: T) {
  * draft brings its own Sàn).
  *
  * `options` is what was read for `projectId`, null while loading, without a
- * project, or after a failed read (the control then offers only its "Tất cả"
- * entry). `loading` is true while that read is in flight: the bar's Tìm waits
+ * project, or after a failed read; `error` is that failure's message, for the
+ * screen to show and to settle the draft against "nothing" rather than carry
+ * the old project's choice across. `loading` is true while that read is in flight: the bar's Tìm waits
  * for it, so a draft is never applied against options that have not arrived.
  * `cached(id)` answers from every project read so far, so the screen can keep
  * showing a project's options between Tìm and the arrival of its full data.
@@ -54,7 +55,7 @@ export function useDraftFilters<T extends object>(defaults: T) {
  */
 export function useProjectOptions<T>(projectId: string | null, load: (projectId: string) => Promise<T>) {
   const [read, setRead] = useState<Record<string, T>>({})
-  const [failed, setFailed] = useState<string | null>(null)
+  const [failed, setFailed] = useState<{ projectId: string; message: string } | null>(null)
   const known = projectId !== null && Object.prototype.hasOwnProperty.call(read, projectId)
 
   useEffect(() => {
@@ -64,9 +65,9 @@ export function useProjectOptions<T>(projectId: string | null, load: (projectId:
       .then((options) => {
         if (!cancelled) setRead((r) => ({ ...r, [projectId]: options }))
       })
-      .catch(() => {
+      .catch((e: unknown) => {
         // Options only: the bar still offers Tất cả, and Tìm loads the real data.
-        if (!cancelled) setFailed(projectId)
+        if (!cancelled) setFailed({ projectId, message: e instanceof Error ? e.message : String(e) })
       })
     return () => {
       cancelled = true
@@ -75,7 +76,8 @@ export function useProjectOptions<T>(projectId: string | null, load: (projectId:
 
   return {
     options: known ? read[projectId as string] : null,
-    loading: projectId !== null && !known && failed !== projectId,
+    loading: projectId !== null && !known && failed?.projectId !== projectId,
+    error: !known && failed !== null && failed.projectId === projectId ? failed.message : null,
     cached: (id: string | null): T | null => (id !== null && Object.prototype.hasOwnProperty.call(read, id) ? read[id] : null),
   }
 }

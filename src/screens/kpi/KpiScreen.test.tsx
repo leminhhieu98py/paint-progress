@@ -297,6 +297,23 @@ describe('KpiScreen — one filter bar (FLT-01)', () => {
     expect(screen.getByText(/PHẠM VI tất cả\/tất cả/)).toBeInTheDocument()
   })
 
+  it('says so when the draft project\'s options fail, and applies it with Tất cả rather than the old selection (FLT-02)', async () => {
+    listDecks.mockRejectedValue(new Error('mất kết nối'))
+    renderAdmin()
+    await screen.findByTestId('kpi-dashboard')
+    await userEvent.click(within(bar()).getByRole('combobox', { name: 'Sàn' }))
+    await userEvent.click(await screen.findByTitle('Sàn A'))
+    await userEvent.click(within(bar()).getByRole('combobox', { name: 'Dự án' }))
+    await userEvent.click(await screen.findByTitle('Giàn B (GB)'))
+    expect(await screen.findByText('Không tải được bộ lọc của dự án')).toBeInTheDocument()
+    expect(screen.getByText('mất kết nối')).toBeInTheDocument()
+    const tim = within(bar()).getByRole('button', { name: /Tìm/ })
+    expect(tim).not.toHaveClass('ant-btn-loading')
+    await userEvent.click(tim)
+    await waitFor(() => expect(loadProjectModel).toHaveBeenLastCalledWith('p2'))
+    expect(await screen.findByText(/PHẠM VI tất cả\/tất cả/)).toBeInTheDocument()
+  })
+
   it('puts the defaults back and applies them on Đặt lại (FLT-02)', async () => {
     renderAdmin()
     await screen.findByTestId('kpi-dashboard')
