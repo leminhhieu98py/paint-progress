@@ -2,6 +2,7 @@ import { Alert, App, Button, DatePicker, Segmented, Table, Typography } from 'an
 import dayjs, { type Dayjs } from 'dayjs'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { SectionCard } from '../../components/SectionCard'
+import { InfoTip } from '../../components/InfoTip'
 import { StatCard } from '../../components/StatCard'
 import { useTablePagination } from '../../components/tablePagination'
 import {
@@ -15,6 +16,10 @@ import { formatAreaM2, formatHours, formatMhrPerM2 } from '../../lib/format'
 import { loadDeckWorks, type DeckWorks } from '../../lib/progressApi'
 import { setWorkDeckDeadline } from '../../lib/worksApi'
 import { palette, space } from '../../theme'
+
+/** The deck-wide totals' notes, on their labels' (?) (CPY-01). */
+const DECK_WIDE = 'Cả sàn, mọi công việc'
+const NOT_IN_EFFICIENCY = 'Không tính vào hiệu suất'
 
 /**
  * What is left on this deck and whether its deadline is reachable (Feedback
@@ -180,10 +185,10 @@ export function DeckForecastPanel({
           marginBottom: 16,
         }}
       >
-        <StatCard label="Mhr thực hiện hôm nay" value={formatHours(totals.todayHours)} sub="cả sàn, mọi công việc" tone="accent" />
-        <StatCard label="Mhr thực hiện đến nay" value={formatHours(totals.totalHours)} sub="cả sàn, mọi công việc" />
-        <StatCard label="Mhr hao phí hôm nay" value={formatHours(totals.todayWasteHours)} sub="không tính vào hiệu suất" />
-        <StatCard label="Mhr hao phí đến nay" value={formatHours(totals.totalWasteHours)} sub="không tính vào hiệu suất" />
+        <StatCard label={<>Mhr thực hiện hôm nay<InfoTip text={DECK_WIDE} /></>} value={formatHours(totals.todayHours)} tone="accent" />
+        <StatCard label={<>Mhr thực hiện đến nay<InfoTip text={DECK_WIDE} /></>} value={formatHours(totals.totalHours)} />
+        <StatCard label={<>Mhr hao phí hôm nay<InfoTip text={NOT_IN_EFFICIENCY} /></>} value={formatHours(totals.todayWasteHours)} />
+        <StatCard label={<>Mhr hao phí đến nay<InfoTip text={NOT_IN_EFFICIENCY} /></>} value={formatHours(totals.totalWasteHours)} />
       </div>
 
       {works.length > 1 && (
@@ -199,7 +204,7 @@ export function DeckForecastPanel({
 
       {activeWork === null ? (
         <Typography.Text type="secondary">
-          Sàn này chưa thuộc công việc nào, nên chưa có gì để dự báo.
+          Sàn này chưa thuộc công việc nào.
         </Typography.Text>
       ) : (
         <>
@@ -225,7 +230,7 @@ export function DeckForecastPanel({
             {forecast?.daysRemaining !== null && forecast !== null && (
               <span style={{ fontSize: 12, color: palette.textSecondary }}>
                 {forecast.daysRemaining > 0
-                  ? `Còn ${forecast.daysRemaining} ngày (tính cả chủ nhật)`
+                  ? <>{`Còn ${forecast.daysRemaining} ngày`}<InfoTip text="Tính cả chủ nhật" /></>
                   : `Đã quá hạn ${1 - forecast.daysRemaining} ngày`}
               </span>
             )}
@@ -280,7 +285,7 @@ export function DeckForecastPanel({
                 render: (_, r) => (r.mhrNeeded === null ? dash : formatHours(r.mhrNeeded)),
               },
               {
-                title: 'Số ngày cần',
+                title: <>Số ngày cần<InfoTip text="Số ngày của sàn là ngày lớn nhất trong các công đoạn, không phải tổng: các lớp thi công song song." /></>,
                 align: 'center',
                 render: (_, r) => (r.daysNeeded === null ? dash : String(r.daysNeeded)),
               },
@@ -307,20 +312,17 @@ export function DeckForecastPanel({
             )}
           />
 
-          <div style={{ padding: `${space.sm}px ${space.xl}px ${space.xl}px`, fontSize: 12, lineHeight: 1.5, color: palette.textTertiary }}>
-            {/*
-              Two sentences the numbers cannot say for themselves: why the
-              total days is not the sum, and what the totals leave out.
-            */}
-            <div>
-              Số ngày của sàn là ngày lớn nhất trong các công đoạn, không phải tổng: các lớp thi công song song.
-            </div>
-            {forecast !== null && forecast.stagesWithoutData > 0 && (
-              <div data-testid="forecast-missing" style={{ marginTop: 3 }}>
+          {/*
+            What the totals leave out, only when they leave something out. Why
+            the total days is not the sum is the Số ngày cần header's (?).
+          */}
+          {forecast !== null && forecast.stagesWithoutData > 0 && (
+            <div style={{ padding: `${space.sm}px ${space.xl}px ${space.xl}px`, fontSize: 12, lineHeight: 1.5, color: palette.textTertiary }}>
+              <div data-testid="forecast-missing">
                 {`${forecast.stagesWithoutData} công đoạn chưa có giờ công nào nên chưa dự báo được; tổng ở trên chưa gồm các công đoạn đó.`}
               </div>
-            )}
-          </div>
+            </div>
+          )}
         </>
       )}
     </SectionCard>

@@ -102,6 +102,10 @@ describe('DeckForecastPanel', () => {
     expect(totals.getAllByText('0,0')).toHaveLength(2)
     expect(totals.getByText('2.000,0')).toBeInTheDocument()
     expect(totals.getByText('2,0')).toBeInTheDocument()
+    // The scope and calculation notes are the labels' (?), not captions (CPY-01).
+    expect(totals.getAllByRole('img', { name: 'Cả sàn, mọi công việc' })).toHaveLength(2)
+    expect(totals.getAllByRole('img', { name: 'Không tính vào hiệu suất' })).toHaveLength(2)
+    expect(totals.queryAllByTestId('stat-sub')).toHaveLength(0)
   })
 
   it('forecasts each coat from what is left and what it has been costing', async () => {
@@ -127,7 +131,10 @@ describe('DeckForecastPanel', () => {
     const total = within(await screen.findByTestId('forecast-total'))
     expect(total.getByText('1.000,0')).toBeInTheDocument()
     expect(total.getByText('2')).toBeInTheDocument()
-    expect(screen.getByText(/ngày lớn nhất trong các công đoạn, không phải tổng/)).toBeInTheDocument()
+    // Why, on the column it explains (CPY-01).
+    const tip = screen.getByRole('img', { name: /ngày lớn nhất trong các công đoạn, không phải tổng/ })
+    expect(tip.closest('th')).toHaveTextContent(/^Số ngày cần$/)
+    expect(screen.queryByText(/ngày lớn nhất trong các công đoạn, không phải tổng/)).toBeNull()
   })
 
   it('says nothing about being late when no deadline is set', async () => {
@@ -143,7 +150,8 @@ describe('DeckForecastPanel', () => {
     }))
     renderPanel()
     // 05/09 to 10/09 inclusive is six days, against two needed.
-    expect(await screen.findByText('Còn 6 ngày (tính cả chủ nhật)')).toBeInTheDocument()
+    const left = await screen.findByText('Còn 6 ngày')
+    expect(within(left).getByRole('img', { name: 'Tính cả chủ nhật' })).toBeInTheDocument()
     expect(screen.queryByTestId('forecast-warning')).toBeNull()
   })
 
@@ -214,7 +222,7 @@ describe('DeckForecastPanel', () => {
     loadDeckWorks.mockResolvedValue(deckWorks({ works: [] }))
     renderPanel()
     expect(
-      await screen.findByText('Sàn này chưa thuộc công việc nào, nên chưa có gì để dự báo.'),
+      await screen.findByText('Sàn này chưa thuộc công việc nào.'),
     ).toBeInTheDocument()
   })
 
