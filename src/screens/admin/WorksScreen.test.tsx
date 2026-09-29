@@ -267,6 +267,15 @@ describe('WorksScreen', () => {
     expect(screen.queryByText(/tiến độ dự án =/)).not.toBeInTheDocument()
   })
 
+  it('puts the project select in the filter bar under the title, with no visible label (FLT-01)', async () => {
+    renderScreen()
+    await screen.findByDisplayValue('Sơn')
+    const bar = screen.getByRole('search', { name: 'Bộ lọc' })
+    expect(within(bar).getByRole('combobox', { name: 'Dự án' })).toBeInTheDocument()
+    expect(bar.querySelector('label')).toBeNull()
+    expect(within(bar).queryByRole('button', { name: /Thêm công việc/ })).toBeNull()
+  })
+
   it('has no subtitle before a project is chosen either (CPY-03)', async () => {
     listProjectNames.mockResolvedValue([])
     renderScreen('/admin/works')

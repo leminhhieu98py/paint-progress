@@ -2,7 +2,11 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import type { KpiDay } from '../../domain/kpi'
+import { useState } from 'react'
+import { FilterBar } from '../../components/FilterBar'
 import { KpiDashboard, type KpiEntry } from './KpiDashboard'
+import { KpiFilterControls } from './KpiFilterControls'
+import { DEFAULT_KPI_FILTERS, kpiCoatOptions } from './kpiFilters'
 
 // jsdom gives Recharts no size, and the numbers the chart plots are covered in
 // domain/kpi.test.ts against KPI.xlsx itself. What this file checks is which
@@ -46,20 +50,40 @@ const ENTRIES: KpiEntry[] = [
 // exercised by its own tests further down with an earlier todayKey.
 const TODAY = '2026-09-04'
 
+/**
+ * The dashboard as the screen mounts it: the filter bar the screen owns
+ * (FLT-01), then the chart reading what the bar holds.
+ */
+function Harness({ entries, todayKey }: { entries: KpiEntry[]; todayKey: string }) {
+  const [filters, setFilters] = useState(DEFAULT_KPI_FILTERS)
+  const coats = kpiCoatOptions(
+    entries.map((e) => ({ deckId: e.deckId, workName: e.plan.workName, stageName: e.plan.stageName })),
+    filters.deckId,
+  )
+  return (
+    <>
+      <FilterBar>
+        <KpiFilterControls decks={DECKS} coats={coats} value={filters} onChange={setFilters} />
+      </FilterBar>
+      <KpiDashboard entries={entries} decks={DECKS} todayKey={todayKey} filters={filters} />
+    </>
+  )
+}
+
 const renderDash = (entries = ENTRIES, todayKey = TODAY) =>
-  render(<KpiDashboard entries={entries} decks={DECKS} todayKey={todayKey} />)
+  render(<Harness entries={entries} todayKey={todayKey} />)
 
 const chart = () => screen.getByTestId('kpi-chart')
 
 describe('KpiDashboard — empty chart (CPY-01)', () => {
   it('shows the title alone by default', () => {
-    render(<KpiDashboard entries={[]} decks={DECKS} todayKey={TODAY} />)
+    render(<KpiDashboard entries={[]} decks={DECKS} todayKey={TODAY} filters={DEFAULT_KPI_FILTERS} />)
     expect(screen.getByText('Chưa có kế hoạch KPI nào trong phạm vi này')).toBeInTheDocument()
     expect(screen.queryByText(/Biểu đồ vẽ theo/)).toBeNull()
   })
 
   it('adds the hint it is given', () => {
-    render(<KpiDashboard entries={[]} decks={DECKS} todayKey={TODAY} emptyDescription="Gợi ý thử" />)
+    render(<KpiDashboard entries={[]} decks={DECKS} todayKey={TODAY} filters={DEFAULT_KPI_FILTERS} emptyDescription="Gợi ý thử" />)
     expect(screen.getByText('Gợi ý thử')).toBeInTheDocument()
   })
 })

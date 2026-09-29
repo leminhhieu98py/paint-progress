@@ -60,6 +60,17 @@ describe('EmployeesScreen', () => {
     expect(pageSubtitle()).toHaveTextContent(/^1 đang làm · 2 tên trong danh sách$/)
   })
 
+  it('searches from the filter bar under the page title, not from inside the card (FLT-01)', async () => {
+    renderScreen()
+    await screen.findByText('Lê Văn A')
+    const bar = screen.getByRole('search', { name: 'Bộ lọc' })
+    expect(within(bar).getByRole('textbox', { name: 'Tìm nhân viên' })).toHaveAttribute('placeholder', 'Tìm theo mã hoặc tên')
+    const card = screen.getByRole('heading', { name: 'Danh sách nhân viên' }).closest('section') as HTMLElement
+    expect(within(card).queryByRole('textbox', { name: 'Tìm nhân viên' })).toBeNull()
+    // The page actions stay in the title row.
+    expect(within(bar).queryByRole('button', { name: /Thêm nhân viên|Xuất danh sách/ })).toBeNull()
+  })
+
   it('has no subtitle while the roster loads (CPY-03)', async () => {
     listEmployees.mockReturnValue(new Promise(() => {}))
     renderScreen()

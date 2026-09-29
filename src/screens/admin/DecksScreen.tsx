@@ -2,7 +2,7 @@ import {
   ArrowDownOutlined, ArrowRightOutlined, ArrowUpOutlined, CopyOutlined, DeleteOutlined,
   DownloadOutlined, PlusOutlined,
 } from '@ant-design/icons'
-import { Alert, App, Button, Form, Input, Modal, Select, Space, Table, Tooltip, Typography } from 'antd'
+import { Alert, App, Button, Form, Input, Modal, Space, Table, Tooltip, Typography } from 'antd'
 import dayjs from 'dayjs'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
@@ -27,14 +27,15 @@ import { ConsequenceModal } from '../../components/ConsequenceModal'
 import { modalProps } from '../../components/modalChrome'
 import { Donut, type DonutSlice } from '../../components/Donut'
 import { EmptyState } from '../../components/EmptyState'
+import { FilterBar } from '../../components/FilterBar'
 import { InfoTip } from '../../components/InfoTip'
 import { PageBody, PageHeader } from '../../components/PageHeader'
 import { ProgressBar } from '../../components/ProgressBar'
+import { ProjectSelect } from '../../components/ProjectSelect'
 import { RulesDisclosure } from '../../components/RulesDisclosure'
 import { SectionCard } from '../../components/SectionCard'
 import { CategoryBadge } from '../../components/CategoryBadge'
 import type { CategoryValue } from '../../components/categoryTone'
-import { searchSelectProps } from '../../components/searchSelect'
 import { useTablePagination } from '../../components/tablePagination'
 import { roundSharesToTotal } from '../../domain/rounding'
 import { palette, space } from '../../theme'
@@ -431,20 +432,10 @@ export function DecksScreen() {
       <PageHeader
         title="Sàn"
         filters={
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-            <label
-              htmlFor="decks-project"
-              style={{ fontSize: 11, fontWeight: 600, color: palette.textTertiary }}
-            >
-              Dự án
-            </label>
-            <Select
-              id="decks-project"
-              {...searchSelectProps}
-              style={{ width: 260 }}
-              value={projectId ?? undefined}
-              placeholder="Chọn dự án"
-              options={projects.map((p) => ({ value: p.id, label: `${p.name} (${p.code})` }))}
+          <FilterBar>
+            <ProjectSelect
+              projects={projects}
+              value={projectId}
               onChange={(v) => {
                 setProjectId(v)
                 // Replace, not push: switching projects is re-aiming the same
@@ -453,7 +444,7 @@ export function DecksScreen() {
                 setSearchParams({ project: v }, { replace: true })
               }}
             />
-          </div>
+          </FilterBar>
         }
         extra={
           <Button

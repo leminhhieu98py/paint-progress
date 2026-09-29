@@ -1,20 +1,22 @@
-import { Select, Tooltip } from 'antd'
-import { useMemo, useState } from 'react'
+import { Tooltip } from 'antd'
+import { useMemo } from 'react'
 import { EmptyState } from '../../components/EmptyState'
 import { SectionCard } from '../../components/SectionCard'
-import { searchSelectProps } from '../../components/searchSelect'
 import { kpiSeries, plannedAreaM2, type KpiScopeStage } from '../../domain/kpi'
 import { DEFAULT_UNIT, MIXED_QUANTITY_LABEL, MIXED_UNIT_SUM_TOOLTIP, unitOfWorks } from '../../domain/unit'
 import { formatAreaM2 } from '../../lib/format'
 import { palette } from '../../theme'
 import { KpiComboChart } from '../dashboard/charts'
+import { ALL, coatKey, kpiCoatOptions, resolveCoat, type KpiFilters } from './kpiFilters'
 
 /**
  * KPI Plan vs Actual (Feedback Rv5, item 9, rules RV5-26 and RV5-27).
  *
  * Presentational: the planned coats arrive assembled, the same contract
- * `ProductivityDashboard` has, so this file holds the filters and the empty
- * state and nothing about where a plan or an event comes from. Every figure is
+ * `ProductivityDashboard` has, and so does the filter scope -- the controls
+ * are the screen's, in its one filter bar (FLT-01) -- so this file holds the
+ * scoping and the empty state and nothing about where a plan or an event
+ * comes from. Every figure is
  * `domain/kpi.ts`'s, which is the module asserted against `KPI.xlsx` itself.
  *
  * The same component for the admin, the foreman and the viewer: nothing on it
@@ -29,18 +31,11 @@ export interface KpiEntry extends KpiScopeStage {
   unit?: string
 }
 
-/**
- * Postgres text cannot hold a NUL byte, so it cannot appear in a work or coat
- * name and cannot collide -- the same key `domain/today.ts` builds.
- */
-const coatKey = (workName: string, stageName: string) => `${workName}\u0000${stageName}`
-
-const ALL = ''
-
 export function KpiDashboard({
   entries,
   decks,
   todayKey,
+  filters,
   emptyDescription,
 }: {
   entries: KpiEntry[]
@@ -48,43 +43,35 @@ export function KpiDashboard({
   decks: { id: string; name: string; kpiPlanColor: string | null; kpiActualColor: string | null }[]
   /** `effortDayKey(new Date())`, read once at the UI boundary (RV6-09). */
   todayKey: string
+  /** What the screen's filter bar holds (FLT-01). */
+  filters: KpiFilters
   /** The next step under an empty chart, for whoever can take it (the admin); none by default (CPY-01). */
   emptyDescription?: string
 }) {
-  const [deckId, setDeckId] = useState<string>(ALL)
-  const [coat, setCoat] = useState<string>(ALL)
+  const deckId = filters.deckId
 
   const byDeck = useMemo(
     () => (deckId === ALL ? entries : entries.filter((e) => e.deckId === deckId)),
     [entries, deckId],
   )
 
-  /**
-   * The Công đoạn options follow the chosen Sàn (RV5-27's Dự án -> Sàn ->
-   * Công đoạn), so picking a deck cannot leave a coat selected that the deck
-   * does not have.
-   *
-   * Keyed on (work, coat) and not on the coat name alone: two works over one
-   * deck may carry identically-named coats, and RV5-18 already established
-   * that fusing them reads as one coat that does not exist. The label carries
-   * the work name only when there is more than one work in view, so the
-   * ordinary single-work project reads as a plain list of coats.
-   */
-  const coats = useMemo(() => {
-    const works = new Set(byDeck.map((e) => e.plan.workName))
-    const seen = new Map<string, string>()
-    for (const e of byDeck) {
-      const key = coatKey(e.plan.workName, e.plan.stageName)
-      if (!seen.has(key)) {
-        seen.set(key, works.size > 1 ? `${e.plan.workName} · ${e.plan.stageName}` : e.plan.stageName)
-      }
-    }
-    return [...seen].map(([value, label]) => ({ value, label }))
-  }, [byDeck])
+  /** The options the bar offers for this deck (`kpiCoatOptions`), for the label and the fallback. */
+  const coats = useMemo(
+    () => kpiCoatOptions(
+      entries.map((e) => ({ deckId: e.deckId, workName: e.plan.workName, stageName: e.plan.stageName })),
+      deckId,
+    ),
+    [entries, deckId],
+  )
+
+  // A coat the chosen deck no longer has must not stay selected: the filter
+  // would then be narrowing to nothing and the empty state would look like a
+  // deck with no plan.
+  const coatValue = resolveCoat(filters.coat, coats)
 
   const scoped = useMemo(
-    () => (coat === ALL ? byDeck : byDeck.filter((e) => coatKey(e.plan.workName, e.plan.stageName) === coat)),
-    [byDeck, coat],
+    () => (coatValue === ALL ? byDeck : byDeck.filter((e) => coatKey(e.plan.workName, e.plan.stageName) === coatValue)),
+    [byDeck, coatValue],
   )
 
   const series = useMemo(() => kpiSeries(scoped, todayKey), [scoped, todayKey])
@@ -99,10 +86,6 @@ export function KpiDashboard({
    */
   const unit = unitOfWorks(scoped.map((e) => ({ unit: e.unit ?? DEFAULT_UNIT })))
 
-  // A coat the chosen deck no longer has must not stay selected: the filter
-  // would then be narrowing to nothing and the empty state would look like a
-  // deck with no plan.
-  const coatValue = coats.some((c) => c.value === coat) ? coat : ALL
 
   /**
    * RV6-08's caption under the chart: the selected deck's name (or "Tất cả
@@ -139,34 +122,6 @@ export function KpiDashboard({
       }
     >
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-        <div
-          data-testid="kpi-filters"
-          style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}
-        >
-          <Select
-            aria-label="Sàn"
-            {...searchSelectProps}
-            style={{ width: 220 }}
-            value={deckId}
-            onChange={(v) => {
-              setDeckId(v)
-              setCoat(ALL)
-            }}
-            options={[
-              { value: ALL, label: 'Tất cả sàn' },
-              ...decks.map((d) => ({ value: d.id, label: d.name })),
-            ]}
-          />
-          <Select
-            aria-label="Công đoạn"
-            {...searchSelectProps}
-            style={{ width: 240 }}
-            value={coatValue}
-            onChange={setCoat}
-            options={[{ value: ALL, label: 'Tất cả công đoạn' }, ...coats]}
-          />
-        </div>
-
         {series.length === 0 ? (
           <EmptyState
             title="Chưa có kế hoạch KPI nào trong phạm vi này"

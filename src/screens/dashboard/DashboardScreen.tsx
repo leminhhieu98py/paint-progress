@@ -1,15 +1,18 @@
 import { ArrowLeftOutlined } from '@ant-design/icons'
-import { Alert, Button, Layout, Select, Spin } from 'antd'
+import { Alert, Button, Layout, Spin } from 'antd'
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { FilterBar } from '../../components/FilterBar'
 import { PageBody, PageHeader } from '../../components/PageHeader'
-import { searchSelectProps } from '../../components/searchSelect'
+import { ProjectSelect } from '../../components/ProjectSelect'
 import { APP_BASE_PATH } from '../../config'
 import type { DeckEvent, WorkModel } from '../../domain/types'
 import { listProjectEvents, loadProjectModel } from '../../lib/progressApi'
 import { listProjectNames } from '../../lib/projectsApi'
 import { palette, shadowCard } from '../../theme'
 import { ProductivityDashboard } from './ProductivityDashboard'
+import { ProductivityFilterControls } from './ProductivityFilterControls'
+import { DEFAULT_PRODUCTIVITY_FILTERS, dashboardWorkNames, type ProductivityFilters } from './productivityFilters'
 
 /**
  * The route-level half of the productivity dashboard (Feedback Rv2, item 12).
@@ -55,8 +58,26 @@ function useProjectData(projectId: string | null) {
   return { current, retry: () => setAttempt((n) => n + 1) }
 }
 
-function Body({ projectId }: { projectId: string | null }) {
-  const { current, retry } = useProjectData(projectId)
+type Data = ReturnType<typeof useProjectData>
+
+/** The Dự án-independent half of the bar: its options come from what is loaded. */
+function filterOptions(current: Data['current']) {
+  if (current === null || 'error' in current) return { workNames: [], deckNames: [] }
+  return {
+    workNames: dashboardWorkNames(current.models, current.events),
+    deckNames: current.decks.map((d) => d.name),
+  }
+}
+
+function Body({
+  projectId,
+  data: { current, retry },
+  filters,
+}: {
+  projectId: string | null
+  data: Data
+  filters: ProductivityFilters
+}) {
   if (projectId === null) {
     return <Alert type="info" message="Chọn một dự án để xem năng suất" />
   }
@@ -74,7 +95,7 @@ function Body({ projectId }: { projectId: string | null }) {
       />
     )
   }
-  return <ProductivityDashboard events={current.events} models={current.models} decks={current.decks} />
+  return <ProductivityDashboard events={current.events} models={current.models} filters={filters} />
 }
 
 function AdminDashboard() {
@@ -82,6 +103,7 @@ function AdminDashboard() {
   const [projects, setProjects] = useState<Array<{ id: string; name: string; code: string }>>([])
   const [chosen, setChosen] = useState<string | null>(null)
   const [listError, setListError] = useState<string | null>(null)
+  const [filters, setFilters] = useState(DEFAULT_PRODUCTIVITY_FILTERS)
 
   useEffect(() => {
     listProjectNames()
@@ -97,34 +119,33 @@ function AdminDashboard() {
     ?? (projects.some((p) => p.id === requested) ? requested : null)
     ?? projects[0]?.id
     ?? null
+  const data = useProjectData(projectId)
+  const options = filterOptions(data.current)
 
   return (
     <>
       <PageHeader
         title="Năng suất"
         filters={(
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-            <label htmlFor="dashboard-project" style={{ fontSize: 11, fontWeight: 600, color: palette.textTertiary }}>
-              Dự án
-            </label>
-            <Select
-              id="dashboard-project"
-              {...searchSelectProps}
-              style={{ width: 260 }}
-              value={projectId ?? undefined}
-              placeholder="Chọn dự án"
-              options={projects.map((p) => ({ value: p.id, label: `${p.name} (${p.code})` }))}
+          // One bar, the project first (FLT-01).
+          <FilterBar>
+            <ProjectSelect
+              projects={projects}
+              value={projectId}
               onChange={(v) => {
                 setChosen(v)
+                // Another project's works and decks: its own filters start over.
+                setFilters(DEFAULT_PRODUCTIVITY_FILTERS)
                 setSearchParams({ project: v }, { replace: true })
               }}
             />
-          </div>
+            <ProductivityFilterControls {...options} value={filters} onChange={setFilters} />
+          </FilterBar>
         )}
       />
       <PageBody>
         {listError && <Alert type="error" showIcon message="Không tải được danh sách dự án" description={listError} />}
-        <Body projectId={projectId} />
+        <Body projectId={projectId} data={data} filters={filters} />
       </PageBody>
     </>
   )
@@ -133,6 +154,9 @@ function AdminDashboard() {
 function FieldDashboard() {
   const { projectId } = useParams()
   const navigate = useNavigate()
+  const [filters, setFilters] = useState(DEFAULT_PRODUCTIVITY_FILTERS)
+  const data = useProjectData(projectId ?? null)
+  const options = filterOptions(data.current)
   return (
     <Layout style={{ minHeight: '100vh' }}>
       <Layout.Header
@@ -157,8 +181,12 @@ function FieldDashboard() {
         </Button>
         <span style={{ fontWeight: 600, fontSize: 16 }}>Năng suất</span>
       </Layout.Header>
-      <Layout.Content style={{ padding: 16 }}>
-        <Body projectId={projectId ?? null} />
+      <Layout.Content style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 16 }}>
+        {/* The field's bar, first under the title bar (FLT-01 via GS-04). */}
+        <FilterBar>
+          <ProductivityFilterControls {...options} value={filters} onChange={setFilters} />
+        </FilterBar>
+        <Body projectId={projectId ?? null} data={data} filters={filters} />
       </Layout.Content>
     </Layout>
   )

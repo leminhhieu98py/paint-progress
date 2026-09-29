@@ -1,12 +1,11 @@
 import { SearchOutlined } from '@ant-design/icons'
-import { DatePicker, Input, Segmented, Select, Table, Typography } from 'antd'
-import dayjs, { type Dayjs } from 'dayjs'
+import { Input, Table, Typography } from 'antd'
+import dayjs from 'dayjs'
 import { useMemo, useState } from 'react'
 import { EmptyState } from '../../components/EmptyState'
 import { InfoTip } from '../../components/InfoTip'
 import { SectionCard } from '../../components/SectionCard'
 import { StatCard } from '../../components/StatCard'
-import { searchSelectProps } from '../../components/searchSelect'
 import { useTablePagination } from '../../components/tablePagination'
 import {
   NOT_STARTED_STAGE, dailyEffort, deckEffortTotals, effortCoverage, effortDayKey,
@@ -22,6 +21,7 @@ import { formatAreaM2, formatHours, formatMhrPerM2, formatPercent } from '../../
 import { matchesSearch } from '../../lib/search'
 import { fieldError, palette } from '../../theme'
 import { EfficiencyLineChart, HoursBarChart } from './charts'
+import { dashboardWorkNames, resolveWork, type ProductivityFilters } from './productivityFilters'
 
 /**
  * The productivity dashboard (Feedback Rv2, item 12): Mhr/m² by stage, by day
@@ -46,36 +46,23 @@ const ratio = (n: number | null) => (n === null ? dash : formatMhrPerM2(n))
 export function ProductivityDashboard({
   events,
   models,
-  decks,
+  filters,
 }: {
   events: DeckEvent[]
   models: WorkModel[]
-  decks: { id: string; name: string }[]
+  /** What the screen's filter bar holds (FLT-01). */
+  filters: ProductivityFilters
 }) {
-  const workNames = useMemo(() => {
-    const fromModels = [...models]
-      .filter((m) => m.work.kind === 'bays')
-      .sort((a, b) => a.work.seq - b.work.seq)
-      .map((m) => m.work.name)
-    // A work the events remember but the model no longer has (renamed,
-    // deleted) still holds hours somebody typed; it stays selectable.
-    for (const ev of events) {
-      const name = ev.workName ?? ''
-      if (!fromModels.includes(name)) fromModels.push(name)
-    }
-    return fromModels
-  }, [models, events])
-
-  const [workChoice, setWorkChoice] = useState<string | null>(null)
-  const workName = workChoice !== null && workNames.includes(workChoice) ? workChoice : workNames[0] ?? ''
+  const workNames = useMemo(() => dashboardWorkNames(models, events), [models, events])
+  const workName = resolveWork(filters.work, workNames)
   /**
    * One work is always chosen here, so its unit labels every total and
    * efficiency figure (RV6-36). A work the events remember but the model no
    * longer has reads m², as everything did before 0036.
    */
   const unit = models.find((m) => m.work.name === workName)?.work.unit ?? DEFAULT_UNIT
-  const [deckName, setDeckName] = useState<string>('')
-  const [range, setRange] = useState<[Dayjs | null, Dayjs | null]>([null, null])
+  const deckName = filters.deck
+  const range = filters.range
 
   const filtered = useMemo(() => {
     const from = range[0]?.format('YYYY-MM-DD') ?? null
@@ -244,31 +231,6 @@ export function ProductivityDashboard({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <div data-testid="dashboard-filters" style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
-        {workNames.length > 1 && (
-          <Segmented
-            value={workName}
-            onChange={(v) => setWorkChoice(String(v))}
-            options={workNames.map((name) => ({ label: name === '' ? '(không rõ công việc)' : name, value: name }))}
-          />
-        )}
-        <Select
-          aria-label="Sàn"
-          {...searchSelectProps}
-          style={{ width: 220 }}
-          value={deckName}
-          onChange={setDeckName}
-          options={[{ value: '', label: 'Tất cả sàn' }, ...decks.map((d) => ({ value: d.name, label: d.name }))]}
-        />
-        <DatePicker.RangePicker
-          allowEmpty={[true, true]}
-          format="DD/MM/YYYY"
-          placeholder={['Từ ngày', 'Đến ngày']}
-          value={range}
-          onCalendarChange={(dates) => setRange([dates?.[0] ?? null, dates?.[1] ?? null])}
-        />
-      </div>
-
       <div
         data-testid="dashboard-cards"
         style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}

@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -17,8 +17,8 @@ vi.mock('../../lib/projectsApi', () => ({
   listProjectNames: () => listProjectNames(),
 }))
 vi.mock('./ProductivityDashboard', () => ({
-  ProductivityDashboard: ({ events, decks }: { events: unknown[]; decks: { name: string }[] }) => (
-    <div>DASHBOARD {events.length} sự kiện · {decks.map((d) => d.name).join(',')}</div>
+  ProductivityDashboard: ({ events, filters }: { events: unknown[]; filters: { work: string | null; deck: string } }) => (
+    <div>DASHBOARD {events.length} sự kiện · {filters.deck || 'Tất cả sàn'} · {filters.work ?? 'công việc đầu'}</div>
   ),
 }))
 vi.mock('react-router-dom', async () => {
@@ -26,7 +26,15 @@ vi.mock('react-router-dom', async () => {
   return { ...actual, useNavigate: () => navigate }
 })
 
-const MODEL = { models: [], decks: [{ id: 'd1', name: 'Sàn A' }], audit: {} }
+const work = (id: string, seq: number, name: string) => ({
+  work: { id, projectId: 'p1', seq, name, kind: 'bays', weight: 0.5, counts: true, manualProgress: 0, quantityLabel: 'Diện tích', unit: 'm²' },
+  decks: [],
+})
+const MODEL = { models: [work('w1', 1, 'Sơn'), work('w2', 2, 'Tháo giáo')], decks: [{ id: 'd1', name: 'Sàn A' }], audit: {} }
+
+/** The one filter bar under the title (FLT-01). */
+const bar = () => screen.getByRole('search', { name: 'Bộ lọc' })
+const before = (a: Element, b: Element) => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0
 
 beforeEach(() => {
   loadProjectModel.mockReset()
@@ -61,7 +69,7 @@ const renderField = () =>
 describe('DashboardScreen (admin)', () => {
   it('opens on the first project and loads its model and events', async () => {
     renderAdmin()
-    expect(await screen.findByText('DASHBOARD 2 sự kiện · Sàn A')).toBeInTheDocument()
+    expect(await screen.findByText('DASHBOARD 2 sự kiện · Tất cả sàn · công việc đầu')).toBeInTheDocument()
     expect(loadProjectModel).toHaveBeenCalledWith('p1')
     expect(listProjectEvents).toHaveBeenCalledWith('p1')
     // No subtitle listing the cards below; the project is in the select (CPY-01, CPY-03).
@@ -71,17 +79,38 @@ describe('DashboardScreen (admin)', () => {
 
   it('honours ?project= when it names a project that exists', async () => {
     renderAdmin('/admin/dashboard?project=p2')
-    expect(await screen.findByText('DASHBOARD 2 sự kiện · Sàn A')).toBeInTheDocument()
+    expect(await screen.findByText('DASHBOARD 2 sự kiện · Tất cả sàn · công việc đầu')).toBeInTheDocument()
     expect(loadProjectModel).toHaveBeenCalledWith('p2')
     expect(loadProjectModel).not.toHaveBeenCalledWith('p1')
   })
 
   it('reloads for the project picked in the header', async () => {
     renderAdmin()
-    expect(await screen.findByText('DASHBOARD 2 sự kiện · Sàn A')).toBeInTheDocument()
-    await userEvent.click(screen.getByRole('combobox'))
+    expect(await screen.findByText('DASHBOARD 2 sự kiện · Tất cả sàn · công việc đầu')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('combobox', { name: 'Dự án' }))
     await userEvent.click(await screen.findByTitle('Giàn B (GB)'))
     await waitFor(() => expect(loadProjectModel).toHaveBeenCalledWith('p2'))
+  })
+
+  it('holds Dự án, Công việc, Sàn and the dates in one bar under the title, in that order, unlabelled (FLT-01)', async () => {
+    renderAdmin()
+    expect(await screen.findByText(/^DASHBOARD 2 sự kiện/)).toBeInTheDocument()
+    const project = within(bar()).getByRole('combobox', { name: 'Dự án' })
+    const scope = within(bar()).getByRole('radiogroup', { name: 'Công việc' })
+    const deck = within(bar()).getByRole('combobox', { name: 'Sàn' })
+    const from = within(bar()).getByPlaceholderText('Từ ngày')
+    expect(within(bar()).getByPlaceholderText('Đến ngày')).toBeInTheDocument()
+    expect(before(project, scope) && before(scope, deck) && before(deck, from)).toBe(true)
+    // No field label: the only <label>s are the Segmented's own options.
+    expect(bar().querySelector('label:not(.ant-segmented-item)')).toBeNull()
+    expect(screen.getByRole('heading', { level: 1, name: 'Năng suất' })).toBeInTheDocument()
+  })
+
+  it('narrows the dashboard by what the bar holds', async () => {
+    renderAdmin()
+    await screen.findByText(/^DASHBOARD 2 sự kiện/)
+    await userEvent.click(within(bar()).getByText('Tháo giáo'))
+    expect(await screen.findByText('DASHBOARD 2 sự kiện · Tất cả sàn · Tháo giáo')).toBeInTheDocument()
   })
 
   it('reports a failed read and retries on request', async () => {
@@ -89,17 +118,26 @@ describe('DashboardScreen (admin)', () => {
     renderAdmin()
     expect(await screen.findByText('Không tải được số liệu năng suất')).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Thử lại' }))
-    expect(await screen.findByText('DASHBOARD 2 sự kiện · Sàn A')).toBeInTheDocument()
+    expect(await screen.findByText('DASHBOARD 2 sự kiện · Tất cả sàn · công việc đầu')).toBeInTheDocument()
   })
 })
 
 describe('DashboardScreen (gs)', () => {
   it('reads the project from the path and offers the way back to the drawing', async () => {
     renderField()
-    expect(await screen.findByText('DASHBOARD 2 sự kiện · Sàn A')).toBeInTheDocument()
+    expect(await screen.findByText('DASHBOARD 2 sự kiện · Tất cả sàn · công việc đầu')).toBeInTheDocument()
     expect(loadProjectModel).toHaveBeenCalledWith('p2')
     expect(listProjectNames).not.toHaveBeenCalled()
     await userEvent.click(screen.getByRole('button', { name: 'Về bản vẽ' }))
     expect(navigate).toHaveBeenCalledWith('/gs/p2')
+  })
+
+  it('gives the field the same bar without a project select (FLT-01, GS-04)', async () => {
+    renderField()
+    await screen.findByText(/^DASHBOARD 2 sự kiện/)
+    expect(within(bar()).queryByRole('combobox', { name: 'Dự án' })).toBeNull()
+    expect(within(bar()).getByRole('radiogroup', { name: 'Công việc' })).toBeInTheDocument()
+    expect(within(bar()).getByRole('combobox', { name: 'Sàn' })).toBeInTheDocument()
+    expect(within(bar()).getByPlaceholderText('Từ ngày')).toBeInTheDocument()
   })
 })

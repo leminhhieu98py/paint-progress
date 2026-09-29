@@ -2,7 +2,11 @@ import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { EMPTY_EFFORT, type DeckEvent, type Effort, type WorkModel } from '../../domain/types'
+import { useState } from 'react'
+import { FilterBar } from '../../components/FilterBar'
 import { ProductivityDashboard } from './ProductivityDashboard'
+import { ProductivityFilterControls } from './ProductivityFilterControls'
+import { DEFAULT_PRODUCTIVITY_FILTERS, dashboardWorkNames } from './productivityFilters'
 import { expectLeft } from '../../test/alignment'
 
 // jsdom gives Recharts no size; the numbers the charts plot are covered in
@@ -65,8 +69,29 @@ const MODELS: WorkModel[] = [
 ]
 const DECKS = [{ id: 'd1', name: 'Sàn A' }, { id: 'd2', name: 'Sàn B' }]
 
+/**
+ * The dashboard as the screen mounts it: the filter bar the screen owns
+ * (FLT-01), then the dashboard reading what the bar holds.
+ */
+function Harness({ events, models, decks }: { events: DeckEvent[]; models: WorkModel[]; decks: { name: string }[] }) {
+  const [filters, setFilters] = useState(DEFAULT_PRODUCTIVITY_FILTERS)
+  return (
+    <>
+      <FilterBar>
+        <ProductivityFilterControls
+          workNames={dashboardWorkNames(models, events)}
+          deckNames={decks.map((d) => d.name)}
+          value={filters}
+          onChange={setFilters}
+        />
+      </FilterBar>
+      <ProductivityDashboard events={events} models={models} filters={filters} />
+    </>
+  )
+}
+
 const renderDashboard = (events = EVENTS) =>
-  render(<ProductivityDashboard events={events} models={MODELS} decks={DECKS} />)
+  render(<Harness events={events} models={MODELS} decks={DECKS} />)
 
 const cards = () => within(screen.getByTestId('dashboard-cards'))
 const stageRows = () => within(screen.getByTestId('stage-table')).getAllByRole('row').slice(1)
@@ -343,7 +368,7 @@ describe('ProductivityDashboard forecast (Feedback Rv2, item 13)', () => {
       ...m,
       decks: m.decks.map((d) => (d.deck.name === 'Sàn A' ? { ...d, deadline: '2000-01-01' } : d)),
     }))
-    render(<ProductivityDashboard events={EVENTS} models={late} decks={DECKS} />)
+    render(<Harness events={EVENTS} models={late} decks={DECKS} />)
     const rows = within(screen.getByTestId('forecast-table')).getAllByRole('row').slice(1)
     expect(within(rows[0]).getByText(/Trễ \d+ ngày · thiếu/)).toBeInTheDocument()
   })
@@ -352,7 +377,7 @@ describe('ProductivityDashboard forecast (Feedback Rv2, item 13)', () => {
 describe('ProductivityDashboard: the chosen work\'s unit (RV6-36)', () => {
   it('labels the totals, the tables and the efficiency figures in the chosen work\'s unit', async () => {
     const tonnes = MODELS.map((m) => (m.work.id === 'w1' ? { ...m, work: { ...m.work, quantityLabel: 'Khối lượng', unit: 'tấn' } } : m))
-    render(<ProductivityDashboard events={EVENTS} models={tonnes} decks={DECKS} />)
+    render(<Harness events={EVENTS} models={tonnes} decks={DECKS} />)
     expect(cards().getByText('Tổng tấn đã ghi giờ công')).toBeInTheDocument()
     expect(cards().getByText('Mhr/tấn tổng thể')).toBeInTheDocument()
     const headers = within(screen.getByTestId('stage-table')).getAllByRole('columnheader').map((h) => h.textContent)

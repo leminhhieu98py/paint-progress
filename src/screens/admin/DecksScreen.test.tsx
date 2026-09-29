@@ -178,12 +178,22 @@ describe('DecksScreen project selection', () => {
     renderScreen()
     await screen.findByText('Main Deck')
 
-    await userEvent.click(screen.getByLabelText('Dự án'))
+    await userEvent.click(screen.getByRole('combobox', { name: 'Dự án' }))
     await userEvent.click(await screen.findByTitle('Rạng Đông RD-2 (RD2)'))
 
     await waitFor(() =>
       expect(screen.getByTestId('url-search')).toHaveTextContent('project=p2'),
     )
+  })
+
+  it('puts the project select in the filter bar under the title, with no visible label (FLT-01)', async () => {
+    renderScreen()
+    await screen.findByText('Main Deck')
+    const bar = screen.getByRole('search', { name: 'Bộ lọc' })
+    expect(within(bar).getByRole('combobox', { name: 'Dự án' })).toBeInTheDocument()
+    expect(bar.querySelector('label')).toBeNull()
+    // The page action stays in the title row, not in the bar.
+    expect(within(bar).queryByRole('button', { name: /Tạo sàn/ })).toBeNull()
   })
 })
 

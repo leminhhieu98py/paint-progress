@@ -1,5 +1,5 @@
 import { App as AntApp } from 'antd'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { EMPTY_EFFORT, type Cell, type DeckEvent, type Stage, type WorkModel } from '../../domain/types'
@@ -44,10 +44,11 @@ vi.mock('react-router-dom', async () => {
 // table, and what the computed area comes out as -- so the stand-ins print
 // exactly that and nothing else.
 vi.mock('./KpiDashboard', () => ({
-  KpiDashboard: ({ entries, decks, emptyDescription }: {
-    entries: KpiEntry[]; decks: DeckKpiColorRow[]; emptyDescription?: string
+  KpiDashboard: ({ entries, decks, emptyDescription, filters }: {
+    entries: KpiEntry[]; decks: DeckKpiColorRow[]; emptyDescription?: string; filters: { deckId: string; coat: string }
   }) => (
     <div data-testid="kpi-dashboard">
+      {`PHẠM VI ${filters.deckId || 'tất cả'}/${filters.coat || 'tất cả'} | `}
       {emptyDescription !== undefined && `GỢI Ý ${emptyDescription} | `}
       {`CHART ${decks.map((d) => `${d.name}=${d.kpiPlanColor ?? '-'}/${d.kpiActualColor ?? '-'}`).join(',')} | `}
       {entries
@@ -195,6 +196,38 @@ const renderField = () =>
       </MemoryRouter>
     </AntApp>,
   )
+
+/** The one filter bar under the title (FLT-01). */
+const bar = () => screen.getByRole('search', { name: 'Bộ lọc' })
+const before = (a: Element, b: Element) => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0
+
+describe('KpiScreen — one filter bar (FLT-01)', () => {
+  it('holds Dự án, Sàn and Công đoạn in one bar under the title, in that order, unlabelled', async () => {
+    renderAdmin()
+    await screen.findByTestId('kpi-dashboard')
+    const project = within(bar()).getByRole('combobox', { name: 'Dự án' })
+    const deck = within(bar()).getByRole('combobox', { name: 'Sàn' })
+    const coat = within(bar()).getByRole('combobox', { name: 'Công đoạn' })
+    expect(before(project, deck) && before(deck, coat)).toBe(true)
+    expect(bar().querySelector('label')).toBeNull()
+  })
+
+  it('narrows the chart by the deck picked in the bar', async () => {
+    renderAdmin()
+    await screen.findByTestId('kpi-dashboard')
+    await userEvent.click(within(bar()).getByRole('combobox', { name: 'Sàn' }))
+    await userEvent.click(await screen.findByTitle('Sàn A'))
+    expect(await screen.findByText(/PHẠM VI d1\/tất cả/)).toBeInTheDocument()
+  })
+
+  it('gives the field the same bar without a project select (GS-04)', async () => {
+    renderField()
+    await screen.findByTestId('kpi-dashboard')
+    expect(within(bar()).queryByRole('combobox', { name: 'Dự án' })).toBeNull()
+    expect(within(bar()).getByRole('combobox', { name: 'Sàn' })).toBeInTheDocument()
+    expect(within(bar()).getByRole('combobox', { name: 'Công đoạn' })).toBeInTheDocument()
+  })
+})
 
 describe('KpiScreen (admin)', () => {
   it('opens on the first project and makes its three reads', async () => {

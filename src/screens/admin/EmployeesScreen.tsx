@@ -2,6 +2,7 @@ import { DownloadOutlined, PlusOutlined, SearchOutlined } from '@ant-design/icon
 import { Alert, App, Button, Form, Input, Modal, Space, Switch, Table, Tooltip } from 'antd'
 import dayjs from 'dayjs'
 import { useEffect, useMemo, useState } from 'react'
+import { FilterBar } from '../../components/FilterBar'
 import { modalProps } from '../../components/modalChrome'
 import { PageBody, PageHeader } from '../../components/PageHeader'
 import { RulesDisclosure, type Rule } from '../../components/RulesDisclosure'
@@ -128,6 +129,20 @@ export function EmployeesScreen() {
               ? `${active} đang làm · ${shown.length}/${rows.length} tên khớp tìm kiếm`
               : `${active} đang làm · ${rows.length} tên trong danh sách`
         }
+        filters={
+          // One control, so it applies as it is typed (FLT-02 is for bars of more than one).
+          <FilterBar>
+            <Input
+              allowClear
+              aria-label="Tìm nhân viên"
+              placeholder="Tìm theo mã hoặc tên"
+              prefix={<SearchOutlined aria-hidden />}
+              style={{ width: 240 }}
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+          </FilterBar>
+        }
         extra={
           <Space size={12}>
             <Tooltip title="Xuất toàn bộ danh sách · cả người đã nghỉ · .xlsx">
@@ -165,17 +180,6 @@ export function EmployeesScreen() {
           title="Danh sách nhân viên"
           bodyPadding={0}
           footer={<RulesDisclosure rules={ROSTER_RULES} />}
-          extra={
-            <Input
-              allowClear
-              aria-label="Tìm nhân viên"
-              placeholder="Tìm theo mã hoặc tên"
-              prefix={<SearchOutlined aria-hidden />}
-              style={{ width: 240 }}
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-            />
-          }
         >
           <Table<Employee>
             size="small"

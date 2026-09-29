@@ -1,9 +1,10 @@
 import { ArrowLeftOutlined } from '@ant-design/icons'
-import { Alert, App, Button, Layout, Select, Spin } from 'antd'
+import { Alert, App, Button, Layout, Spin } from 'antd'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { FilterBar } from '../../components/FilterBar'
 import { PageBody, PageHeader } from '../../components/PageHeader'
-import { searchSelectProps } from '../../components/searchSelect'
+import { ProjectSelect } from '../../components/ProjectSelect'
 import { APP_BASE_PATH } from '../../config'
 import { effortDayKey } from '../../domain/effort'
 import {
@@ -19,6 +20,8 @@ import { listProjectNames } from '../../lib/projectsApi'
 import { palette, shadowCard } from '../../theme'
 import { DeckKpiColorTable, type DeckKpiColorRow, type DeckKpiColors } from './DeckKpiColorTable'
 import { KpiDashboard, type KpiEntry } from './KpiDashboard'
+import { KpiFilterControls } from './KpiFilterControls'
+import { DEFAULT_KPI_FILTERS, kpiCoatOptions, type KpiFilters } from './kpiFilters'
 import { StagePlanTable, type StagePlanRow, type StagePlanWindow } from './StagePlanTable'
 
 /**
@@ -146,11 +149,13 @@ function useKpiData(projectId: string | null) {
   return { current, reload: () => setAttempt((n) => n + 1) }
 }
 
-function Body({ projectId, variant }: { projectId: string | null; variant: 'admin' | 'gs' }) {
-  const { current, reload } = useKpiData(projectId)
-  const { message } = App.useApp()
-  const [saving, setSaving] = useState(false)
-
+/**
+ * What the loaded project assembles into: the coats, their plans, and the
+ * planned coats the chart and the filter bar's Công đoạn options read. Held by
+ * the page rather than the body, because the bar lives in the page header
+ * (FLT-01).
+ */
+function useKpiEntries(current: Loaded | null) {
   /**
    * Today, in Vietnam, as the one day key the whole app agrees on (RV5-20). It
    * decides which of `remainingAreaOn`'s two sources answers, so it is read
@@ -193,6 +198,32 @@ function Body({ projectId, variant }: { projectId: string | null; variant: 'admi
       }),
     [coats, planByStage, todayKey],
   )
+
+  return { todayKey, coats, planByStage, coatByStage, entries }
+}
+
+type KpiData = ReturnType<typeof useKpiData>
+type KpiModel = ReturnType<typeof useKpiEntries>
+
+/** The Công đoạn options of the bar for the chosen deck (`kpiCoatOptions` over the planned coats). */
+const coatOptionsOf = (entries: KpiEntry[], deckId: string) =>
+  kpiCoatOptions(entries.map((e) => ({ deckId: e.deckId, workName: e.plan.workName, stageName: e.plan.stageName })), deckId)
+
+function Body({
+  projectId,
+  variant,
+  data: { current, reload },
+  model: { todayKey, coats, planByStage, coatByStage, entries },
+  filters,
+}: {
+  projectId: string | null
+  variant: 'admin' | 'gs'
+  data: KpiData
+  model: KpiModel
+  filters: KpiFilters
+}) {
+  const { message } = App.useApp()
+  const [saving, setSaving] = useState(false)
 
   const tableRows: StagePlanRow[] = useMemo(
     () =>
@@ -312,6 +343,7 @@ function Body({ projectId, variant }: { projectId: string | null; variant: 'admi
         entries={entries}
         decks={current.decks}
         todayKey={todayKey}
+        filters={filters}
         emptyDescription={variant === 'admin' ? 'Admin nhập kế hoạch ở bảng Kế hoạch KPI theo công đoạn.' : undefined}
       />
       {/* The write is the admin's alone (RV5-28): the field gets the chart. */}
@@ -337,6 +369,7 @@ function AdminKpi() {
   const [projects, setProjects] = useState<Array<{ id: string; name: string; code: string }>>([])
   const [chosen, setChosen] = useState<string | null>(null)
   const [listError, setListError] = useState<string | null>(null)
+  const [filters, setFilters] = useState(DEFAULT_KPI_FILTERS)
 
   useEffect(() => {
     listProjectNames()
@@ -352,34 +385,39 @@ function AdminKpi() {
     ?? (projects.some((p) => p.id === requested) ? requested : null)
     ?? projects[0]?.id
     ?? null
+  const data = useKpiData(projectId)
+  const model = useKpiEntries(data.current)
+  const decks = data.current !== null && !('error' in data.current) ? data.current.decks : []
 
   return (
     <>
       <PageHeader
         title="KPI"
         filters={(
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-            <label htmlFor="kpi-project" style={{ fontSize: 11, fontWeight: 600, color: palette.textTertiary }}>
-              Dự án
-            </label>
-            <Select
-              id="kpi-project"
-              {...searchSelectProps}
-              style={{ width: 260 }}
-              value={projectId ?? undefined}
-              placeholder="Chọn dự án"
-              options={projects.map((p) => ({ value: p.id, label: `${p.name} (${p.code})` }))}
+          // One bar, the project first (FLT-01).
+          <FilterBar>
+            <ProjectSelect
+              projects={projects}
+              value={projectId}
               onChange={(v) => {
                 setChosen(v)
+                // Another project's decks and coats: its own filters start over.
+                setFilters(DEFAULT_KPI_FILTERS)
                 setSearchParams({ project: v }, { replace: true })
               }}
             />
-          </div>
+            <KpiFilterControls
+              decks={decks}
+              coats={coatOptionsOf(model.entries, filters.deckId)}
+              value={filters}
+              onChange={setFilters}
+            />
+          </FilterBar>
         )}
       />
       <PageBody>
         {listError && <Alert type="error" showIcon message="Không tải được danh sách dự án" description={listError} />}
-        <Body projectId={projectId} variant="admin" />
+        <Body projectId={projectId} variant="admin" data={data} model={model} filters={filters} />
       </PageBody>
     </>
   )
@@ -388,6 +426,10 @@ function AdminKpi() {
 function FieldKpi() {
   const { projectId } = useParams()
   const navigate = useNavigate()
+  const [filters, setFilters] = useState(DEFAULT_KPI_FILTERS)
+  const data = useKpiData(projectId ?? null)
+  const model = useKpiEntries(data.current)
+  const decks = data.current !== null && !('error' in data.current) ? data.current.decks : []
   return (
     <Layout style={{ minHeight: '100vh' }}>
       <Layout.Header
@@ -412,8 +454,17 @@ function FieldKpi() {
         </Button>
         <span style={{ fontWeight: 600, fontSize: 16 }}>KPI</span>
       </Layout.Header>
-      <Layout.Content style={{ padding: 16 }}>
-        <Body projectId={projectId ?? null} variant="gs" />
+      <Layout.Content style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 16 }}>
+        {/* The field's bar, first under the title bar (FLT-01 via GS-04). */}
+        <FilterBar>
+          <KpiFilterControls
+            decks={decks}
+            coats={coatOptionsOf(model.entries, filters.deckId)}
+            value={filters}
+            onChange={setFilters}
+          />
+        </FilterBar>
+        <Body projectId={projectId ?? null} variant="gs" data={data} model={model} filters={filters} />
       </Layout.Content>
     </Layout>
   )

@@ -19,7 +19,9 @@ import {
 } from '../../lib/worksApi'
 import { ConsequenceModal } from '../../components/ConsequenceModal'
 import { EmptyState } from '../../components/EmptyState'
+import { FilterBar } from '../../components/FilterBar'
 import { PageBody, PageHeader } from '../../components/PageHeader'
+import { ProjectSelect } from '../../components/ProjectSelect'
 import { RulesDisclosure } from '../../components/RulesDisclosure'
 import { SectionCard } from '../../components/SectionCard'
 import { searchSelectProps } from '../../components/searchSelect'
@@ -271,23 +273,16 @@ export function WorksScreen() {
       <PageHeader
         title="Công việc"
         filters={
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-            <label htmlFor="works-project" style={{ fontSize: 11, fontWeight: 600, color: palette.textTertiary }}>
-              Dự án
-            </label>
-            <Select
-              id="works-project"
-              {...searchSelectProps}
-              style={{ width: 260 }}
-              value={projectId ?? undefined}
-              placeholder="Chọn dự án"
-              options={projects.map((p) => ({ value: p.id, label: `${p.name} (${p.code})` }))}
+          <FilterBar>
+            <ProjectSelect
+              projects={projects}
+              value={projectId}
               onChange={(v) => {
                 setProjectId(v)
                 setSearchParams({ project: v }, { replace: true })
               }}
             />
-          </div>
+          </FilterBar>
         }
         extra={
           <Space size={12}>
