@@ -148,14 +148,15 @@ describe('ProjectPickerScreen: on the field scale (GS-10)', () => {
     expect(within(card).getByText('BB1').parentElement).toHaveStyle({ fontSize: '12px' })
   })
 
-  it('names who is signed in on the scale, in the account menu: full name bodyStrong, login a caption', async () => {
+  it('names who is signed in on the scale, in a phone\'s account menu: the full name bodyStrong, no login (MOB-04)', async () => {
+    // jsdom reads as a phone, where the trigger is the avatar and the menu names who it is.
     renderPicker()
     await screen.findByRole('link', { name: /BlockB1_CPPTS/ })
     const header = document.querySelector('header') as HTMLElement
     await userEvent.click(within(header).getByRole('button', { name: 'Sếp Một (boss1) · Chỉ xem' }))
     const menu = await screen.findByRole('menu')
     expect(within(menu).getByText('Sếp Một')).toHaveStyle({ fontSize: '14px', fontWeight: '600' })
-    expect(within(menu).getByText('boss1')).toHaveStyle({ fontSize: '12px', fontWeight: '400' })
+    expect(within(menu).queryByText('boss1')).toBeNull()
     expect(within(menu).getByText('Chỉ xem')).toBeInTheDocument()
   })
 })

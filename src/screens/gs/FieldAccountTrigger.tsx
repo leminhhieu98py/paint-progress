@@ -15,9 +15,9 @@ const ellipsis: CSSProperties = { whiteSpace: 'nowrap', overflow: 'hidden', text
 /**
  * Who is signed in, at the right end of a field header (GS-06): avatar, full
  * name and, for a viewer, `Chỉ xem`; its menu (fieldAccountMenuItems) holds
- * who is signed in and Đăng xuất, behind a confirm. The same trigger on the
- * project pages and on the viewer's project picker (M-4). On a phone it folds
- * to the avatar, named for who is signed in.
+ * Đăng xuất, behind a confirm. The same trigger on the project pages and on
+ * the viewer's project picker (M-4). On a phone it folds to the avatar, named
+ * for who is signed in, and the menu names them instead (MOB-04).
  */
 export function FieldAccountTrigger({ consequence }: {
   /** What signing out costs on this page, the confirm's last line. */
@@ -35,8 +35,8 @@ export function FieldAccountTrigger({ consequence }: {
   const who = `${fullName} (${username})`
   const items = fieldAccountMenuItems({
     fullName,
-    username,
     readOnly,
+    phone,
     onLogout: () => {
       setMenuOpen(false)
       setConfirmingOut(true)

@@ -213,14 +213,16 @@ describe('FieldHeader: navigation and the account, nothing else (GS-06)', () => 
     expect(trigger('Nguyễn Văn A (gs1) · Chỉ xem')).toHaveTextContent('Chỉ xem')
   })
 
-  it('opens a menu of who is signed in -- full name, login beneath -- then Đăng xuất', async () => {
+  it('opens a menu that starts with Đăng xuất: the name is on the trigger already, the login nowhere (MOB-04)', async () => {
     renderAt('/gs/p1')
     const menu = await openMenu()
     expect(trigger()).toHaveAttribute('aria-expanded', 'true')
-    expect(within(menu).getByText('Nguyễn Văn A')).toBeInTheDocument()
-    expect(within(menu).getByText('gs1')).toBeInTheDocument()
+    expect(within(menu).queryByText('Nguyễn Văn A')).toBeNull()
+    expect(within(menu).queryByText('gs1')).toBeNull()
+    expect(menu.querySelector('.ant-dropdown-menu-item-group, .ant-dropdown-menu-item-divider')).toBeNull()
     // Only Đăng xuất can be chosen: GS accounts have no self-service (spec §2, §8.1).
     expect(within(menu).getAllByRole('menuitem').map((i) => i.textContent)).toEqual(['Đăng xuất'])
+    expect(menu.firstElementChild).toBe(within(menu).getByRole('menuitem'))
   })
 
   it('asks before signing out, with the same texts, then replaces the page with the login', async () => {
@@ -249,9 +251,11 @@ describe('FieldHeader: navigation and the account, nothing else (GS-06)', () => 
     expect(signOut).not.toHaveBeenCalled()
   })
 
-  it('builds the menu from one items list, the account block first and Đăng xuất last', () => {
-    const items = fieldAccountMenuItems({ fullName: 'Nguyễn Văn A', username: 'gs1', readOnly: false, onLogout: () => {} })
-    expect(items.map((i) => i?.key)).toEqual(['account', 'account-divider', 'logout'])
+  it('builds the menu from one items list: the account block first on a phone only, Đăng xuất last', () => {
+    const items = (phone: boolean) =>
+      fieldAccountMenuItems({ fullName: 'Nguyễn Văn A', readOnly: false, phone, onLogout: () => {} }).map((i) => i?.key)
+    expect(items(true)).toEqual(['account', 'account-divider', 'logout'])
+    expect(items(false)).toEqual(['logout'])
   })
 })
 
@@ -266,8 +270,10 @@ describe('FieldHeader: phone width', () => {
       await userEvent.click(avatar)
       return screen.findByRole('menu')
     })()
+    // The top bar shows the avatar alone, so the menu names who it is: the full name, no login (MOB-04).
     expect(within(menu).getByText('Nguyễn Văn A')).toBeInTheDocument()
-    expect(within(menu).getByText('gs1')).toBeInTheDocument()
+    expect(within(menu).queryByText('gs1')).toBeNull()
+    expect(within(menu).getAllByRole('menuitem').map((i) => i.textContent)).toEqual(['Đăng xuất'])
   })
 
   it('carries a viewer\'s Chỉ xem into the trigger\'s name and the menu, where the badge has no room', async () => {
