@@ -604,11 +604,78 @@ describe('GsScreen', () => {
     expect(await deckOptionTitles()).toEqual(['Cellar Deck · 100,00%', 'Main Deck · 100,00%'])
   })
 
-  it('shows an em dash on a deck whose figure has not arrived', async () => {
-    // A wrong figure on the control you are choosing by is worse than none.
+  it('names each deck alone, the picker spinning, while the figures are on the way', async () => {
+    // A wrong figure on the control you are choosing by is worse than none --
+    // and so is an em dash that reads as "this deck has no figure" when it
+    // simply has not arrived yet.
     listProjectIndex.mockReturnValue(new Promise(() => {}))
     renderScreen()
-    expect(await deckOptionTitles()).toEqual(['Cellar Deck · —', 'Main Deck · —'])
+    expect(await deckOptionTitles()).toEqual(['Cellar Deck', 'Main Deck'])
+    expect((await deckPicker()).closest('.ant-select')?.querySelector('.anticon-loading')).not.toBeNull()
+  })
+
+  it('shows an em dash on a deck whose figure could not be read', async () => {
+    listProjectIndex.mockRejectedValue(new Error('Failed to fetch'))
+    renderScreen()
+    await waitFor(async () =>
+      expect(await deckOptionTitles()).toEqual(['Cellar Deck · —', 'Main Deck · —']))
+    expect((await deckPicker()).closest('.ant-select')?.querySelector('.anticon-loading')).toBeNull()
+  })
+
+  it('draws the stats cards as skeletons while the restored deck loads, never 0,00%', async () => {
+    // The last deck opened, restored on a site tether: its cells, states,
+    // works and events arrive seconds after the page. Meanwhile the cards used
+    // to read "Tiến độ sàn 0,00%" and 0,0 Mhr -- figures, not a load.
+    sessionStorage.setItem('pp:lastDeck:p1', 'd2')
+    let landCells = () => {}
+    listDeckCells.mockReturnValue(new Promise((res) => { landCells = () => res(D2_CELLS) }))
+    let landWorks = () => {}
+    listDeckWorks.mockReturnValue(new Promise((res) => {
+      landWorks = () => res([{ work: WORK, weight: 1, stages: STAGES }])
+    }))
+    let landEvents = () => {}
+    listDeckEvents.mockReturnValue(new Promise((res) => { landEvents = () => res([]) }))
+    renderScreen()
+    await deckPicker()
+    const progress = screen.getByTestId('gs-deck-progress')
+    const today = screen.getByTestId('gs-deck-today')
+    expect(within(progress).getByRole('status', { name: 'Đang tải tiến độ sàn' })).toBeInTheDocument()
+    expect(progress).not.toHaveTextContent('%')
+    expect(within(today).getByRole('status', { name: 'Đang tải thông tin hôm nay' })).toBeInTheDocument()
+    expect(today).not.toHaveTextContent('0,0')
+
+    // The works alone are not the deck: its bays are still on the way.
+    await act(async () => { landWorks() })
+    expect(within(progress).getByRole('status', { name: 'Đang tải tiến độ sàn' })).toBeInTheDocument()
+
+    await act(async () => { landCells() })
+    await waitFor(() => expect(progress).toHaveTextContent('100,00%'))
+    expect(within(progress).queryByRole('status')).toBeNull()
+    // The day's figures are their own read, and still loading.
+    expect(within(today).getByRole('status', { name: 'Đang tải thông tin hôm nay' })).toBeInTheDocument()
+
+    await act(async () => { landEvents() })
+    await waitFor(() => expect(within(today).queryByRole('status')).toBeNull())
+    expect(within(today).getByText('Mhr thực hiện hôm nay')).toBeInTheDocument()
+  })
+
+  it('reads an em dash, not 0,00%, when the deck could not be read at all', async () => {
+    listDeckCells.mockRejectedValue(new Error('Failed to fetch'))
+    renderScreen()
+    const progress = await screen.findByTestId('gs-deck-progress')
+    await waitFor(() => expect(within(progress).queryByRole('status')).toBeNull())
+    expect(within(progress).getByText('—')).toBeInTheDocument()
+    expect(progress).not.toHaveTextContent('%')
+  })
+
+  it('reads an em dash for the day\'s figures when its updates could not be read', async () => {
+    listDeckEvents.mockRejectedValue(new Error('Failed to fetch'))
+    renderScreen()
+    const today = await screen.findByTestId('gs-deck-today')
+    await waitFor(() => expect(within(today).queryByRole('status')).toBeNull())
+    expect(within(today).getByText('Mhr thực hiện hôm nay')).toBeInTheDocument()
+    expect(today).not.toHaveTextContent('0,0')
+    expect(within(today).getAllByText('—').length).toBeGreaterThan(0)
   })
 
   it('offers logout and nothing else about the account', async () => {

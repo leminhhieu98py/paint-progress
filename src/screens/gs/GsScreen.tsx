@@ -35,7 +35,7 @@ import { CellStageModal } from './CellStageModal'
 import { fieldError, fieldType, palette, shadowCard, space } from '../../theme'
 import { CalendarOutlined, EllipsisOutlined, FileExcelOutlined, FolderOpenOutlined, LoadingOutlined } from '@ant-design/icons'
 import { EmptyState } from '../../components/EmptyState'
-import { DeckProgressCard, StageRollupCard } from './DeckStatsCards'
+import { DeckProgressCard, StageRollupCard, type DeckFigureStatus } from './DeckStatsCards'
 import { DeckTodayCard } from './DeckTodayCard'
 import { FieldLayout } from './FieldLayout'
 import { FieldProjectSelect } from './FieldProjectSelect'
@@ -297,6 +297,15 @@ export function GsScreen() {
    */
   const pendingWrites = useRef<Map<string, PendingWrite>>(new Map())
 
+  /**
+   * The deck whose cells and states have been read, and whether that read
+   * succeeded. Until it names the deck on screen the stats cards are loading:
+   * `geometry` is empty on a first load and the previous deck's on a deck
+   * change, and either would be printed as this deck's figure. A failed
+   * re-read after a good one keeps `ok`, as refetchDeck keeps the cells.
+   */
+  const [deckRead, setDeckRead] = useState<{ deckId: string; ok: boolean } | null>(null)
+
   const refetchDeck = useCallback(async (deckId: string) => {
     try {
       const [nextCells, nextStates] = await Promise.all([
@@ -304,6 +313,7 @@ export function GsScreen() {
       ])
       if (wantedDeckId.current !== deckId) return
       setGeometry(nextCells)
+      setDeckRead({ deckId, ok: true })
       setStates((prev) => {
         if (pendingWrites.current.size === 0) return nextStates
         // Keep the optimistic state for any (work, bay) still being written.
@@ -322,6 +332,8 @@ export function GsScreen() {
       // tether is the common case, and blanking the deck would take the drawing
       // and every number away from a foreman whose data is still valid. The
       // load effect owns the empty state; this only ever refreshes.
+      if (wantedDeckId.current !== deckId) return
+      setDeckRead((prev) => (prev?.deckId === deckId && prev.ok ? prev : { deckId, ok: false }))
     }
   }, [])
 
@@ -597,7 +609,8 @@ export function GsScreen() {
    * flight -- a figure quietly describing another deck -- and clearing it from
    * the effect is the setState React would rather be derived at render.
    */
-  const [deckEvents, setDeckEvents] = useState<{ deckId: string; rows: DeckEvent[] } | null>(null)
+  /** `rows` is null when the deck's first read failed: its figures are unknown, not 0. */
+  const [deckEvents, setDeckEvents] = useState<{ deckId: string; rows: DeckEvent[] | null } | null>(null)
   const refreshDeckEvents = useCallback((deckId: string) => {
     listDeckEvents(deckId)
       .then((rows) => {
@@ -605,6 +618,8 @@ export function GsScreen() {
       })
       .catch(() => {
         // See above: the block keeps the figures it already has.
+        if (wantedDeckId.current !== deckId) return
+        setDeckEvents((prev) => (prev?.deckId === deckId && prev.rows ? prev : { deckId, rows: null }))
       })
   }, [])
 
@@ -612,7 +627,22 @@ export function GsScreen() {
     if (activeDeckId) refreshDeckEvents(activeDeckId)
   }, [activeDeckId, refreshDeckEvents])
 
-  const todayEvents = deckEvents?.deckId === activeDeckId ? deckEvents.rows : EMPTY_EVENTS
+  const todayEvents = (deckEvents?.deckId === activeDeckId ? deckEvents.rows : null) ?? EMPTY_EVENTS
+
+  /*
+    What the stats cards may print (see DeckFigureStatus). No deck, nothing
+    to wait for. A failed stage read is not a load: its warning above the
+    drawing says the figures are short, as it always has.
+  */
+  const worksLoading = activeDeckId !== null && works === null && !stagesError
+  const cellsStatus: DeckFigureStatus = activeDeckId === null ? 'ready'
+    : deckRead?.deckId !== activeDeckId ? 'loading'
+      : deckRead.ok ? 'ready' : 'unknown'
+  const eventsStatus: DeckFigureStatus = activeDeckId === null ? 'ready'
+    : deckEvents?.deckId !== activeDeckId ? 'loading'
+      : deckEvents.rows === null ? 'unknown' : 'ready'
+  const progressStatus: DeckFigureStatus = worksLoading ? 'loading' : cellsStatus
+  const todayStatus: DeckFigureStatus = worksLoading ? 'loading' : eventsStatus
 
   /**
    * The Vietnam calendar day, settled once per mount -- the same way
@@ -667,11 +697,16 @@ export function GsScreen() {
   /**
    * prog(D) per deck, for the deck picker.
    *
-   * Empty until the batched read lands, and the option shows an em dash rather
-   * than a 0,00% it does not know yet -- a wrong figure on the control the
-   * foreman is choosing by is worse than no figure.
+   * Empty until the batched read lands. Meanwhile the option is the deck's
+   * name alone, the picker spinning, and after a failed read an em dash --
+   * never a 0,00% it does not know: a wrong figure on the control the foreman
+   * is choosing by is worse than no figure, and "—" while it loads reads as
+   * "no figure" when there simply is not one yet.
    */
   const [deckPercents, setDeckPercents] = useState<Record<string, number>>({})
+  /** The project whose read failed, so the next project's load is not taken for a failure. */
+  const [deckPercentsFailedFor, setDeckPercentsFailedFor] = useState<string | null>(null)
+  const deckPercentsFailed = projectId !== undefined && deckPercentsFailedFor === projectId
 
   useEffect(() => {
     const ids = decks.map((d) => d.id)
@@ -686,11 +721,13 @@ export function GsScreen() {
         setDeckPercents(Object.fromEntries(
           decks.map((d) => [d.id, summariseDeck(d.id, index[d.id] ?? []).progress]),
         ))
+        setDeckPercentsFailedFor(null)
       })
       .catch(() => {
         // The options fall back to an em dash. Nothing else on the screen
         // depends on this, and an error banner for a figure on an option would
         // push the drawing down the page on a tablet.
+        if (!cancelled) setDeckPercentsFailedFor(projectId)
       })
     return () => { cancelled = true }
   }, [projectId, decks, states])
@@ -1145,6 +1182,8 @@ export function GsScreen() {
     // under its key.
     if (projectId) rememberDeck(projectId, id)
   }
+  /** A deck's figure still on the way, and its read has not failed. */
+  const deckPercentsLoading = !deckPercentsFailed && decks.some((d) => deckPercents[d.id] === undefined)
   /** GS-03's deck picker (see the bar below), full width in the phone's row and sheet (FLT-04). */
   const deckSelect = (block: boolean, value: string | null, onChange: (id: string) => void) => decks.length > 0 && (
     <Select
@@ -1153,10 +1192,12 @@ export function GsScreen() {
       {...fullOptions}
       value={value ?? undefined}
       onChange={onChange}
+      loading={deckPercentsLoading}
       style={{ width: block ? '100%' : 320, maxWidth: '100%' }}
       options={decks.map((d) => ({
         value: d.id,
-        label: `${d.name} · ${deckPercents[d.id] === undefined ? '—' : formatPercent(deckPercents[d.id])}`,
+        label: deckPercents[d.id] !== undefined ? `${d.name} · ${formatPercent(deckPercents[d.id])}`
+          : deckPercentsFailed ? `${d.name} · —` : d.name,
         searchKey: d.name,
       }))}
     />
@@ -1659,6 +1700,7 @@ export function GsScreen() {
           }
         >
           <DeckProgressCard
+            status={progressStatus}
             progress={deckSummary?.progress ?? 0}
             totalAreaM2={deck?.totalAreaM2 ?? 0}
             quantityLabel={quantityLabel}
@@ -1667,7 +1709,7 @@ export function GsScreen() {
               id: row.work.id, name: row.work.name, progress: row.progress,
             }))}
           />
-          {cells.length > 0 && (
+          {progressStatus === 'ready' && cells.length > 0 && (
             <StageRollupCard
               stages={stages}
               stageProgress={deckProgress?.stages ?? []}
@@ -1682,7 +1724,7 @@ export function GsScreen() {
             coats listed at 0,00 m² rather than the block disappearing, and a
             deck whose drawing has not been uploaded yet still has coats.
           */}
-          <DeckTodayCard todayKey={todayKey} rows={todayStages} totals={todayTotals} />
+          <DeckTodayCard status={todayStatus} todayKey={todayKey} rows={todayStages} totals={todayTotals} />
         </div>
       </Layout.Content>
 

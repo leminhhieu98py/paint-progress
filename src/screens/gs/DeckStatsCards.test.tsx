@@ -133,6 +133,36 @@ describe('DeckProgressCard', () => {
   })
 })
 
+describe('DeckProgressCard while the deck loads', () => {
+  it('draws a skeleton, never a figure, while the deck is on the way', () => {
+    // The deck's cells, states and works arrive seconds after the page on a
+    // site tether. A 0,00% in the largest type on the screen meanwhile is a
+    // figure the foreman reads out on the radio.
+    render(
+      <DeckProgressCard
+        status="loading"
+        progress={0}
+        totalAreaM2={1000}
+        perWork={[{ id: 'w1', name: 'Sơn', progress: 0 }, { id: 'w2', name: 'Giàn giáo', progress: 0 }]}
+      />,
+    )
+    const card = screen.getByTestId('gs-deck-progress')
+    expect(within(card).getByRole('heading', { level: 2, name: 'Tiến độ sàn' })).toBeInTheDocument()
+    expect(within(card).getByRole('status', { name: 'Đang tải tiến độ sàn' })).toBeInTheDocument()
+    expect(card).not.toHaveTextContent('%')
+    expect(card).not.toHaveTextContent('m²')
+    expect(within(card).queryByText('Sơn')).toBeNull()
+  })
+
+  it('reads an em dash when the deck could not be read, not 0,00%', () => {
+    render(<DeckProgressCard status="unknown" progress={0} totalAreaM2={1000} />)
+    const card = screen.getByTestId('gs-deck-progress')
+    expect(within(card).getByText('—')).toBeInTheDocument()
+    expect(card).not.toHaveTextContent('%')
+    expect(within(card).queryByRole('status')).toBeNull()
+  })
+})
+
 describe('StageRollupCard', () => {
   it('reads each coat as m² done over the deck m², cumulatively', () => {
     // A bay at Coat 2 has been through Coat 1: 700 + 100 = 800 m² have reached

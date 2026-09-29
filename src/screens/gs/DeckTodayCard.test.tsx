@@ -11,6 +11,31 @@ const ONE_WORK = [
 ]
 
 const card = () => screen.getByTestId('gs-deck-today')
+const ZERO = { todayHours: 0, totalHours: 0, todayWasteHours: 0, totalWasteHours: 0 }
+
+describe('DeckTodayCard while the deck loads', () => {
+  it('draws a skeleton, not an empty deck or zero hours, while the deck is on the way', () => {
+    // Before the works land there are no rows, which the ready card reads as
+    // "this deck has no coats"; before the events land every figure is 0.
+    render(<DeckTodayCard status="loading" todayKey="2026-09-09" rows={[]} totals={ZERO} />)
+    expect(within(card()).getByRole('heading', { level: 2, name: 'Thông tin nhanh — Hôm nay' })).toBeInTheDocument()
+    expect(within(card()).getByRole('status', { name: 'Đang tải thông tin hôm nay' })).toBeInTheDocument()
+    expect(card()).not.toHaveTextContent('chưa có công đoạn')
+    expect(card()).not.toHaveTextContent('0,0')
+    expect(within(card()).queryByText('Mhr thực hiện hôm nay')).toBeNull()
+  })
+
+  it('reads an em dash for every figure when today\'s updates could not be read', () => {
+    render(<DeckTodayCard status="unknown" todayKey="2026-09-09" rows={ONE_WORK} totals={ZERO} />)
+    expect(within(card()).getByText('Blast + Coat 1')).toBeInTheDocument()
+    expect(within(card()).getByText('Mhr thực hiện hôm nay')).toBeInTheDocument()
+    // Three coats and four man-hour rows.
+    expect(within(card()).getAllByText('—')).toHaveLength(7)
+    expect(card()).not.toHaveTextContent('0,00 m²')
+    expect(card()).not.toHaveTextContent('320,50')
+    expect(within(card()).queryByRole('status')).toBeNull()
+  })
+})
 
 describe('DeckTodayCard', () => {
   it('lists every coat the deck has, at 0,00 m² where nothing was recorded today', () => {

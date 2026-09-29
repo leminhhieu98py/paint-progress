@@ -1,3 +1,4 @@
+import { Skeleton } from 'antd'
 import { useState, type CSSProperties } from 'react'
 import { Donut } from '../../components/Donut'
 import { InfoTip } from '../../components/InfoTip'
@@ -22,6 +23,22 @@ const COAT_LINE = fieldType.body.fontSize * 1.25
 const ellipsis: CSSProperties = { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }
 
 /**
+ * What a stats card knows about its deck. `loading` while the deck's reads are
+ * in flight, `unknown` when they have settled without an answer; a card never
+ * prints a figure in either, because a 0,00% there reads as data.
+ */
+export type DeckFigureStatus = 'ready' | 'loading' | 'unknown'
+
+/** A card's body while its deck loads: a skeleton, announced as loading. */
+export function CardSkeleton({ label }: { label: string }) {
+  return (
+    <div role="status" aria-label={label}>
+      <Skeleton active title={false} paragraph={{ rows: 3 }} />
+    </div>
+  )
+}
+
+/**
  * The one number the foreman is asked for on the radio.
  *
  * Its own card, in the largest type on the screen. It used to be the middle of
@@ -29,12 +46,15 @@ const ellipsis: CSSProperties = { overflow: 'hidden', textOverflow: 'ellipsis', 
  * reading it -- and left it competing with five stage figures for the eye.
  */
 export function DeckProgressCard({
+  status = 'ready',
   progress,
   totalAreaM2,
   perWork = [],
   quantityLabel = DEFAULT_QUANTITY_LABEL,
   unit = DEFAULT_UNIT,
 }: {
+  /** See DeckFigureStatus. `progress` and `perWork` are read only when ready. */
+  status?: DeckFigureStatus
   /** P_d: the deck across its works, weighted by W·D (0024). */
   progress: number
   totalAreaM2: number
@@ -48,7 +68,7 @@ export function DeckProgressCard({
    */
   perWork?: { id: string; name: string; progress: number }[]
 }) {
-  const several = perWork.length > 1
+  const several = status === 'ready' && perWork.length > 1
   return (
     <div data-testid="gs-deck-progress">
       <SectionCard
@@ -60,14 +80,24 @@ export function DeckProgressCard({
           </>
         )}
       >
-        <div style={{ ...fieldType.display, lineHeight: 1, letterSpacing: '-0.032em' }}>
-          {formatPercent(progress)}
-        </div>
-        <div style={{ marginTop: space.lg }}>
-          {/* No label of its own: the figure is already above it, in the
-              largest type on the screen. */}
-          <ProgressBar ratio={progress} color={palette.accent} height={8} showLabel={false} />
-        </div>
+        {status === 'loading' ? (
+          // Everything below waits for the deck: the unit and the quantity
+          // are the active work's, and the works are part of what is loading.
+          <CardSkeleton label="Đang tải tiến độ sàn" />
+        ) : (
+          <>
+            <div style={{ ...fieldType.display, lineHeight: 1, letterSpacing: '-0.032em' }}>
+              {status === 'unknown' ? '—' : formatPercent(progress)}
+            </div>
+            {status === 'ready' && (
+              <div style={{ marginTop: space.lg }}>
+                {/* No label of its own: the figure is already above it, in the
+                    largest type on the screen. */}
+                <ProgressBar ratio={progress} color={palette.accent} height={8} showLabel={false} />
+              </div>
+            )}
+          </>
+        )}
         {several && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: space.sm, marginTop: space.lg }}>
             {perWork.map((row) => (
@@ -82,12 +112,14 @@ export function DeckProgressCard({
             ))}
           </div>
         )}
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: space.sm, marginTop: space.lg }}>
-          <span style={{ ...fieldType.body, color: palette.textTertiary }}>{`${quantityLabel} sàn`}</span>
-          <span style={{ ...fieldType.bodyStrong, marginLeft: 'auto' }}>
-            {`${formatAreaM2(totalAreaM2)} ${unit}`}
-          </span>
-        </div>
+        {status !== 'loading' && (
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: space.sm, marginTop: space.lg }}>
+            <span style={{ ...fieldType.body, color: palette.textTertiary }}>{`${quantityLabel} sàn`}</span>
+            <span style={{ ...fieldType.bodyStrong, marginLeft: 'auto' }}>
+              {`${formatAreaM2(totalAreaM2)} ${unit}`}
+            </span>
+          </div>
+        )}
       </SectionCard>
     </div>
   )

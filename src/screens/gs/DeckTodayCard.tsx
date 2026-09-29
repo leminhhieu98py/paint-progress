@@ -5,6 +5,7 @@ import type { TodayStageArea } from '../../domain/today'
 import { DEFAULT_UNIT } from '../../domain/unit'
 import { formatAreaM2, formatHours } from '../../lib/format'
 import { fieldType, palette, space } from '../../theme'
+import { CardSkeleton, type DeckFigureStatus } from './DeckStatsCards'
 
 /** 'YYYY-MM-DD' as the paperwork writes it. See lib/format for why VN is a constant. */
 const asVNDate = (dayKey: string): string => {
@@ -41,10 +42,16 @@ const EFFORT_SINCE = '05/09/2026'
  * case -- gets no header: naming the only work there is is chrome.
  */
 export function DeckTodayCard({
+  status = 'ready',
   todayKey,
   rows,
   totals,
 }: {
+  /**
+   * See DeckFigureStatus. Loading until both the deck's works (the rows) and
+   * its events (the figures) are in; unknown when the events could not be read.
+   */
+  status?: DeckFigureStatus
   /** `effortDayKey` of now. Named on the card, so a tablet left open overnight
    *  cannot quietly report yesterday as today. */
   todayKey: string
@@ -82,13 +89,18 @@ export function DeckTodayCard({
     ['Tổng Mhr hao phí đến hôm nay', totals.totalWasteHours, sinceNote],
   ]
 
+  /** A figure as printed, or an em dash where the day could not be read. */
+  const figure = (text: string) => (status === 'unknown' ? '—' : text)
+
   return (
     <div data-testid="gs-deck-today">
       <SectionCard
         title="Thông tin nhanh — Hôm nay"
         extra={<span style={{ ...fieldType.caption, color: palette.textTertiary }}>{asVNDate(todayKey)}</span>}
       >
-        {rows.length === 0 ? (
+        {status === 'loading' ? (
+          <CardSkeleton label="Đang tải thông tin hôm nay" />
+        ) : rows.length === 0 ? (
           <div style={{ ...fieldType.body, color: palette.textTertiary }}>
             Sàn này chưa có công đoạn nào. Quản trị viên cần khai báo công đoạn trước khi ghi tiến độ.
           </div>
@@ -122,7 +134,7 @@ export function DeckTodayCard({
                       {row.stageName}
                     </span>
                     <span style={{ ...fieldType.bodyStrong, marginLeft: 'auto', flex: 'none' }}>
-                      {`${formatAreaM2(row.areaM2)} ${row.unit ?? DEFAULT_UNIT}`}
+                      {figure(`${formatAreaM2(row.areaM2)} ${row.unit ?? DEFAULT_UNIT}`)}
                     </span>
                   </div>
                 ))}
@@ -131,28 +143,30 @@ export function DeckTodayCard({
           </div>
         )}
 
-        <div
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            gap: space.sm,
-            marginTop: space.lg,
-            paddingTop: space.lg,
-            borderTop: `1px solid ${palette.borderSplit}`,
-          }}
-        >
-          {hourRows.map(([label, value, tip]) => (
-            <div key={label} style={{ display: 'flex', alignItems: 'baseline', gap: space.sm, minWidth: 0 }}>
-              <span style={{ ...fieldType.body, color: palette.textTertiary, minWidth: 0 }}>
-                {label}
-                {tip !== undefined && <InfoTip text={tip} />}
-              </span>
-              <span style={{ ...fieldType.bodyStrong, marginLeft: 'auto', flex: 'none' }}>
-                {formatHours(value)}
-              </span>
-            </div>
-          ))}
-        </div>
+        {status !== 'loading' && (
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: space.sm,
+              marginTop: space.lg,
+              paddingTop: space.lg,
+              borderTop: `1px solid ${palette.borderSplit}`,
+            }}
+          >
+            {hourRows.map(([label, value, tip]) => (
+              <div key={label} style={{ display: 'flex', alignItems: 'baseline', gap: space.sm, minWidth: 0 }}>
+                <span style={{ ...fieldType.body, color: palette.textTertiary, minWidth: 0 }}>
+                  {label}
+                  {tip !== undefined && <InfoTip text={tip} />}
+                </span>
+                <span style={{ ...fieldType.bodyStrong, marginLeft: 'auto', flex: 'none' }}>
+                  {figure(formatHours(value))}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
       </SectionCard>
     </div>
   )
