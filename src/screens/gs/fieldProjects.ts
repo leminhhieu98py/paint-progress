@@ -38,6 +38,11 @@ export function cachedProjectName(projectId: string): string | undefined {
   return names.get(projectId)
 }
 
+/** A project's code from the session's list, for the phone's filter summary (M2); undefined until read. */
+export function cachedProjectCode(projectId: string): string | undefined {
+  return list?.find((p) => p.id === projectId)?.code
+}
+
 export function cachedProjectList(): ProjectName[] | undefined {
   return list
 }

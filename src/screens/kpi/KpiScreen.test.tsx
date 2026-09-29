@@ -616,7 +616,7 @@ describe('KpiScreen (gs) on a phone (FLT-04)', () => {
   it('is one row: what is applied, in one line, and the Bộ lọc button', async () => {
     renderField(390)
     await screen.findByTestId('kpi-dashboard')
-    expect(await summary('Giàn B · Tất cả sàn · Tất cả công đoạn')).toBeInTheDocument()
+    expect(await summary('GB · Tất cả sàn · Tất cả công đoạn')).toBeInTheDocument()
     expect(within(bar()).queryByRole('combobox')).toBeNull()
     expect(bar().querySelector('.ant-badge-count')).toBeNull()
   })
@@ -661,7 +661,7 @@ describe('KpiScreen (gs) on a phone (FLT-04)', () => {
     await userEvent.click(tim)
     expect(await screen.findByText(/PHẠM VI d1\/tất cả/)).toBeInTheDocument()
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Bộ lọc' })).toBeNull())
-    expect(await summary('Giàn B · Sàn A · Tất cả công đoạn')).toBeInTheDocument()
+    expect(await summary('GB · Sàn A · Tất cả công đoạn')).toBeInTheDocument()
     expect(bar().querySelector('.ant-badge-count')).toHaveTextContent('1')
     expect(loadProjectModel).toHaveBeenCalledTimes(1)
   })

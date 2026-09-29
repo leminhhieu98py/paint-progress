@@ -442,7 +442,7 @@ describe('DashboardScreen (gs) on a phone (FLT-04)', () => {
   it('is one row: what is applied, in one line, and the Bộ lọc button', async () => {
     renderField()
     await screen.findByText(/^DASHBOARD 2 sự kiện/)
-    expect(await summary('Giàn B · Tất cả sàn · Sơn')).toBeInTheDocument()
+    expect(await summary('GB · Tất cả sàn · Sơn')).toBeInTheDocument()
     expect(within(bar()).getByRole('button', { name: 'Bộ lọc' })).toBeInTheDocument()
     expect(within(bar()).queryByRole('combobox')).toBeNull()
     expect(bar().querySelector('.ant-badge-count')).toBeNull()
@@ -451,7 +451,7 @@ describe('DashboardScreen (gs) on a phone (FLT-04)', () => {
   it('opens the sheet from the summary too, with every control of the bar in order, full width', async () => {
     renderField()
     await screen.findByText(/^DASHBOARD 2 sự kiện/)
-    await userEvent.click(await summary('Giàn B · Tất cả sàn · Sơn'))
+    await userEvent.click(await summary('GB · Tất cả sàn · Sơn'))
     const sheet = await screen.findByRole('dialog', { name: 'Bộ lọc' })
     const boxes = within(sheet).getAllByRole('combobox')
     expect(boxes.map((b) => b.getAttribute('aria-label'))).toEqual(['Dự án', 'Công việc', 'Sàn'])
@@ -472,7 +472,7 @@ describe('DashboardScreen (gs) on a phone (FLT-04)', () => {
     await userEvent.click(tim)
     expect(await screen.findByText('DASHBOARD 2 sự kiện · Sàn A · Tháo giáo')).toBeInTheDocument()
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Bộ lọc' })).toBeNull())
-    expect(await summary('Giàn B · Sàn A · Tháo giáo')).toBeInTheDocument()
+    expect(await summary('GB · Sàn A · Tháo giáo')).toBeInTheDocument()
     expect(bar().querySelector('.ant-badge-count')).toHaveTextContent('2')
     expect(loadProjectModel).toHaveBeenCalledTimes(1)
   })

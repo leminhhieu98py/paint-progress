@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { endSession } from '../../lib/sessionCache'
 import {
-  cachedProjectList, cachedProjectName, fieldProjectList, projectListFor,
+  cachedProjectCode, cachedProjectList, cachedProjectName, fieldProjectList, projectListFor,
   rememberProjectName, seedProjectList,
 } from './fieldProjects'
 
@@ -106,5 +106,15 @@ describe('keeping the viewer\'s list fresh (M-1b)', () => {
   it('reads once, not twice, when nothing is cached yet', async () => {
     await projectListFor('p1')
     expect(listProjectNames).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('a project\'s code, for the phone\'s one-line summary (M2)', () => {
+  it('is unknown until the list is read, then the list\'s code', async () => {
+    rememberProjectName('p2', 'Giàn B')
+    expect(cachedProjectCode('p2')).toBeUndefined()
+    await fieldProjectList()
+    expect(cachedProjectCode('p2')).toBe('GB')
+    expect(cachedProjectCode('gone')).toBeUndefined()
   })
 })

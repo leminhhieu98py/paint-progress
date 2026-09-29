@@ -16,7 +16,7 @@ import { space } from '../../theme'
 import { FieldProjectSelect } from '../gs/FieldProjectSelect'
 import { carryFilters, clearCarried, peekCarried } from '../gs/fieldCarry'
 import { useFieldPhone } from '../gs/fieldSections'
-import { useFieldProjectName } from '../gs/useFieldProjectName'
+import { useFieldProjectCode } from '../gs/useFieldProjectCode'
 import { APP_BASE_PATH } from '../../config'
 import { ProductivityDashboard } from './ProductivityDashboard'
 import { ProductivityFilterControls } from './ProductivityFilterControls'
@@ -253,7 +253,7 @@ function FieldDashboard({ projectId }: { projectId: string | null }) {
   const loading = draftProject === projectId ? data.current === null : other.loading
   const draft = settleDraft(scope, options, settle)
   const phone = useFieldPhone()
-  const projectName = useFieldProjectName(projectId)
+  const projectCode = useFieldProjectCode(projectId)
   // What is applied is the route project's: its works name the summary's work.
   const appliedWorks = (filterOptions(data.current) ?? NO_OPTIONS).workNames
 
@@ -299,7 +299,7 @@ function FieldDashboard({ projectId }: { projectId: string | null }) {
         */}
         {phone ? (
           <FilterSheet
-            summary={productivitySummary(projectName, scope.applied, appliedWorks)}
+            summary={productivitySummary(projectCode, scope.applied, appliedWorks)}
             count={productivityFilterCount(scope.applied, appliedWorks)}
             onApply={apply}
             onReset={scope.reset}

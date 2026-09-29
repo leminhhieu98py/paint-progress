@@ -57,7 +57,7 @@ export function productivityFilterCount(filters: ProductivityFilters, workNames:
 const DAY = 'DD/MM/YYYY'
 
 /**
- * What is applied, in one line, for the phone's bar (FLT-04): project · deck
+ * What is applied, in one line, for the phone's bar (FLT-04): the project's code (M2) · deck
  * · work, then the dates when set. A project or work not known yet is left
  * out rather than guessed.
  */

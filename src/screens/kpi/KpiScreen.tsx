@@ -19,7 +19,7 @@ import { listProjectEvents, loadProjectModel } from '../../lib/progressApi'
 import { listProjectNames } from '../../lib/projectsApi'
 import { FieldLayout } from '../gs/FieldLayout'
 import { useFieldPhone } from '../gs/fieldSections'
-import { useFieldProjectName } from '../gs/useFieldProjectName'
+import { useFieldProjectCode } from '../gs/useFieldProjectCode'
 import { space } from '../../theme'
 import { FieldProjectSelect } from '../gs/FieldProjectSelect'
 import { carryFilters, clearCarried, peekCarried } from '../gs/fieldCarry'
@@ -515,7 +515,7 @@ function FieldKpi({ projectId }: { projectId: string | null }) {
   const draft = settleDraft(scope, options, settle)
   const shown = options ?? NO_OPTIONS
   const phone = useFieldPhone()
-  const projectName = useFieldProjectName(projectId)
+  const projectCode = useFieldProjectCode(projectId)
   // What is applied is the route project's: its decks and coats name the summary.
   const applied = filterOptions(data.current, model.entries) ?? NO_OPTIONS
   const appliedCoats = kpiCoatOptions(applied.coats, scope.applied.deckId)
@@ -563,7 +563,7 @@ function FieldKpi({ projectId }: { projectId: string | null }) {
         */}
         {phone ? (
           <FilterSheet
-            summary={kpiSummary(projectName, scope.applied, applied.decks, appliedCoats)}
+            summary={kpiSummary(projectCode, scope.applied, applied.decks, appliedCoats)}
             count={kpiFilterCount(scope.applied, appliedCoats)}
             onApply={apply}
             onReset={scope.reset}

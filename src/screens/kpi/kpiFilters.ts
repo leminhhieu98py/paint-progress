@@ -55,7 +55,7 @@ export function kpiFilterCount(filters: KpiFilters, coats: { value: string }[]):
 }
 
 /**
- * What is applied, in one line, for the phone's bar (FLT-04): project · deck
+ * What is applied, in one line, for the phone's bar (FLT-04): the project's code (M2) · deck
  * · coat. A project not known yet is left out rather than guessed.
  */
 export function kpiSummary(
