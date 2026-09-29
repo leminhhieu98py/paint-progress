@@ -234,32 +234,48 @@ const ZONE_CELLS_HINT = 'Chọn ô trên bản vẽ rồi quay lại đây để
 
 /** On screen for assistive technology alone. */
 const VISUALLY_HIDDEN = {
-  position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap',
+  position: 'absolute', width: 1, height: 1, padding: 0, margin: -1, border: 0,
+  overflow: 'hidden', clip: 'rect(0, 0, 0, 0)', whiteSpace: 'nowrap',
 } as const
 
 /**
- * One of the zone dialog's add and drop buttons, its reason for being
- * disabled reachable without a pointer (CPY-02). A disabled button takes no
- * focus, so the wrapper the tooltip anchors on joins the tab order while it
- * is disabled, and the tip opens on focus as on hover; the button itself is
- * described by the same words for a screen reader. No sentence on screen.
+ * A button whose tooltip says why it is disabled, reachable without a
+ * pointer (CPY-02, Q2). A disabled button takes no focus, so while it is
+ * disabled the wrapper the tooltip anchors on joins the tab order as a group
+ * named by the button, and the tip opens on focus as on hover; the button
+ * itself is described by the same words for a screen reader. No sentence on
+ * screen. `tip` is the tooltip at any time; it is the reason while disabled.
  */
-function ZoneCellsButton({
-  disabled, onClick, children,
+function HintedButton({
+  label, tip, disabled, onClick, type, icon,
 }: {
+  label: string
+  tip: string | undefined
   disabled: boolean
   onClick: () => void
-  children: ReactNode
+  type?: 'primary'
+  icon?: ReactNode
 }) {
   const hintId = useId()
+  const hinted = disabled && tip !== undefined
   return (
-    <Tooltip title={disabled ? ZONE_CELLS_HINT : undefined} trigger={['hover', 'focus']}>
+    <Tooltip title={tip} trigger={['hover', 'focus']}>
       {/* A span, because antd Tooltip cannot anchor a disabled button. */}
-      <span tabIndex={disabled ? 0 : undefined}>
-        <Button disabled={disabled} aria-describedby={disabled ? hintId : undefined} onClick={onClick}>
-          {children}
+      <span
+        tabIndex={hinted ? 0 : undefined}
+        role={hinted ? 'group' : undefined}
+        aria-label={hinted ? label : undefined}
+      >
+        <Button
+          type={type}
+          icon={icon}
+          disabled={disabled}
+          aria-describedby={hinted ? hintId : undefined}
+          onClick={onClick}
+        >
+          {label}
         </Button>
-        {disabled && <span id={hintId} style={VISUALLY_HIDDEN}>{ZONE_CELLS_HINT}</span>}
+        {hinted && <span id={hintId} style={VISUALLY_HIDDEN}>{tip}</span>}
       </span>
     </Tooltip>
   )
@@ -1658,31 +1674,24 @@ export function DeckProgressPanel({
                       Disabled with the reason on it rather than hidden, for
                       the same reason the empty-selection state is.
                     */}
-                    <Tooltip
-                      title={
+                    <HintedButton
+                      type="primary"
+                      icon={<PlusOutlined aria-hidden />}
+                      label={`Gộp thành zone (${selectedCodes.length})`}
+                      tip={
                         viewA === ALL_STAGES
                           ? 'Chọn một công đoạn để tạo zone'
                           : selectedCodes.length > 0
                             ? 'Gộp các ô đang chọn thành một zone'
                             : 'Chọn ô trên bản vẽ trước — bấm từng ô, hoặc giữ Shift rồi kéo'
                       }
-                    >
-                      {/* A span, because antd Tooltip cannot anchor a disabled button. */}
-                      <span>
-                        <Button
-                          type="primary"
-                          icon={<PlusOutlined aria-hidden />}
-                          disabled={selectedCodes.length === 0 || viewA === ALL_STAGES}
-                          onClick={() => {
-                            setWindows({})
-                            form.resetFields()
-                            setZoneFormOpen(true)
-                          }}
-                        >
-                          {`Gộp thành zone (${selectedCodes.length})`}
-                        </Button>
-                      </span>
-                    </Tooltip>
+                      disabled={selectedCodes.length === 0 || viewA === ALL_STAGES}
+                      onClick={() => {
+                        setWindows({})
+                        form.resetFields()
+                        setZoneFormOpen(true)
+                      }}
+                    />
                   </Space>
                 )}
               </div>
@@ -1964,20 +1973,21 @@ export function DeckProgressPanel({
             <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
               <span style={{ ...type.label, color: palette.textSecondary }}>Ô trong zone</span>
               {/* The reason a button is disabled is on the button, as on
-                  Gộp thành zone (CPY-01). */}
+                  Gộp thành zone, and reachable by keyboard on both (CPY-01,
+                  CPY-02). */}
               <Space wrap>
-                <ZoneCellsButton
+                <HintedButton
+                  label={`Thêm ${selectedCodes.length} ô đã chọn`}
+                  tip={selectedCodes.length === 0 ? ZONE_CELLS_HINT : undefined}
                   disabled={selectedCodes.length === 0}
                   onClick={() => void changeZoneCells(datesFor, 'add')}
-                >
-                  {`Thêm ${selectedCodes.length} ô đã chọn`}
-                </ZoneCellsButton>
-                <ZoneCellsButton
+                />
+                <HintedButton
+                  label={`Bỏ ${selectedCodes.length} ô đã chọn`}
+                  tip={selectedCodes.length === 0 ? ZONE_CELLS_HINT : undefined}
                   disabled={selectedCodes.length === 0}
                   onClick={() => void changeZoneCells(datesFor, 'remove')}
-                >
-                  {`Bỏ ${selectedCodes.length} ô đã chọn`}
-                </ZoneCellsButton>
+                />
               </Space>
             </div>
             <Space>

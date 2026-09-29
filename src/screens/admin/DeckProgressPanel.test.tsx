@@ -599,6 +599,14 @@ describe('DeckProgressPanel — zones', () => {
     const group = screen.getByRole('button', { name: /Gộp thành zone/ })
     expect(group).toBeDisabled()
     expect(screen.queryByRole('button', { name: 'Bỏ chọn' })).not.toBeInTheDocument()
+    // Why it is disabled, without a pointer (Q2): its description, and a
+    // named stop in the tab order that opens the tip.
+    expect(group).toHaveAccessibleDescription('Chọn ô trên bản vẽ trước — bấm từng ô, hoặc giữ Shift rồi kéo')
+    const stop = screen.getByRole('group', { name: 'Gộp thành zone (0)' })
+    expect(stop).toHaveAttribute('tabindex', '0')
+    expect(stop).toContainElement(group)
+    act(() => stop.focus())
+    expect(await screen.findByRole('tooltip')).toHaveTextContent('Chọn ô trên bản vẽ trước')
   })
 
   it('creates one zone per coat that was given dates, from one dialog', async () => {
@@ -810,11 +818,20 @@ describe('DeckProgressPanel — zones', () => {
     expect(add).toHaveAccessibleDescription(hint)
     expect(screen.getByRole('button', { name: 'Bỏ 0 ô đã chọn' })).toHaveAccessibleDescription(hint)
     expect(screen.queryByRole('tooltip')).toBeNull()
-    for (const el of screen.getAllByText(hint)) expect(el).toHaveStyle({ position: 'absolute', width: '1px', overflow: 'hidden' })
+    for (const el of screen.getAllByText(hint)) {
+      expect(el).toHaveStyle({
+        position: 'absolute', width: '1px', height: '1px', padding: '0px', margin: '-1px',
+        overflow: 'hidden', whiteSpace: 'nowrap',
+      })
+      expect(el.style.clip).toMatch(/rect\(0/)
+      expect(el.style.borderStyle === 'none' || el.style.border === '0px').toBe(true)
+    }
     // A disabled button takes no focus, so the tip opens from its wrapper,
-    // which the keyboard reaches while the button is disabled (CPY-02).
+    // which the keyboard reaches while the button is disabled (CPY-02) and
+    // which says what it holds (Q8).
     const wrapper = add.parentElement as HTMLElement
     expect(wrapper).toHaveAttribute('tabindex', '0')
+    expect(wrapper).toBe(screen.getByRole('group', { name: 'Thêm 0 ô đã chọn' }))
     act(() => wrapper.focus())
     expect(await screen.findByRole('tooltip')).toHaveTextContent(hint)
     act(() => wrapper.blur())
@@ -1348,8 +1365,9 @@ describe('DeckProgressPanel — the all-stages layer (RV6-13)', () => {
     // A zone row is one stage_id; there is no coat to write here.
     const make = await screen.findByRole('button', { name: /Gộp thành zone/ })
     expect(make).toBeDisabled()
+    expect(make).toHaveAccessibleDescription('Chọn một công đoạn để tạo zone')
     await userEvent.hover(make.parentElement as HTMLElement)
-    expect(await screen.findByText('Chọn một công đoạn để tạo zone')).toBeInTheDocument()
+    expect(await screen.findByRole('tooltip')).toHaveTextContent('Chọn một công đoạn để tạo zone')
   })
 })
 
