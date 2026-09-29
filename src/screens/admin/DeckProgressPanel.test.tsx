@@ -711,6 +711,9 @@ describe('DeckProgressPanel — zones', () => {
         ? `0 0 0 2px ${palette.bgContainer}, 0 0 0 4px ${palette.text}`
         : '')
     }
+    // The selected ring and the focus ring reach 4 px past a circle: a 10 px
+    // gap keeps either off the next circle (R2).
+    expect(within(screen.getByTestId('zone-color')).getByRole('radiogroup', { name: 'Màu zone' })).toHaveStyle({ gap: '10px' })
   })
 
   it('refuses a zone with no dates at all, rather than writing five empty ones', async () => {

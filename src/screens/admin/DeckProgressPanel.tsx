@@ -69,7 +69,8 @@ function ZoneColorSwatches({
   return (
     <div data-testid="zone-color" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
       <span style={{ ...type.label, color: palette.textSecondary }}>Màu zone</span>
-      <div role="radiogroup" aria-label="Màu zone" style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+      {/* 10, not 8: the selected ring and the focus ring reach 4 px past a circle (R2). */}
+      <div role="radiogroup" aria-label="Màu zone" style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
         {colors.map((c) => {
           const selected = c === value.toLowerCase()
           return (
