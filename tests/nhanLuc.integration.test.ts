@@ -1,4 +1,5 @@
-import { createClient, type SupabaseClient } from '@supabase/supabase-js'
+import { createClient, FunctionsHttpError, type SupabaseClient } from '@supabase/supabase-js'
+import { randomUUID } from 'node:crypto'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { toAuthEmail } from '../src/config'
 
@@ -21,6 +22,22 @@ const configured = Boolean(url && anon && gsUsername && adminUsername && adminPa
 
 /** Every employee this file makes starts with this, so residue is findable. */
 const EMPLOYEE_PREFIX = 'RLS NL '
+
+/** tests/rls-teardown.sql purges accounts by this prefix and this project code. */
+const EF_USERNAME_PREFIX = 'rlstest-ef-'
+const NL_PROJECT_CODE = 'RLSN'
+
+const throwawayPassword = () => `${randomUUID()}${randomUUID()}`.replace(/-/g, '')
+const throwawayUsername = (kind: string) => `${EF_USERNAME_PREFIX}nl-${kind}-${Date.now().toString(36)}`
+
+async function invokeAdminUsers(client: SupabaseClient, body: Record<string, string>) {
+  const { data, error } = await client.functions.invoke('admin-users', { body })
+  if (!error) return { status: 200, body: (data ?? {}) as Record<string, unknown> }
+  if (error instanceof FunctionsHttpError) {
+    return { status: error.context.status, body: (await error.context.json()) as Record<string, unknown> }
+  }
+  throw error
+}
 
 describe.skipIf(!configured)('0037 unique person names, as an admin session', () => {
   let admin: SupabaseClient
@@ -102,5 +119,123 @@ describe.skipIf(!configured)('0037 unique person names, as an admin session', ()
     madeEmployees.push(made.data!.id as string)
     const twice = await admin.from('employees').insert({ full_name: ` ${name.toUpperCase()}` })
     expect(twice.error?.code).toBe('23505')
+  })
+})
+
+/*
+  The admin-users Edge Function after Nhân lực (NL-04, NL-05). Needs the new
+  function deployed to dev. Every account it makes is `rlstest-ef-nl-…`, which
+  tests/rls-teardown.sql removes with the auth users; its employees are
+  removed in afterAll.
+*/
+describe.skipIf(!configured)('admin-users after Nhân lực, as an admin session', () => {
+  let admin: SupabaseClient
+  let projectId: string
+  const stamp = Date.now().toString(36)
+
+  beforeAll(async () => {
+    admin = createClient(url!, anon!, { auth: { persistSession: false } })
+    const signIn = await admin.auth.signInWithPassword({
+      email: toAuthEmail(adminUsername!),
+      password: adminPassword!,
+    })
+    expect(signIn.error).toBeNull()
+    await admin.from('projects').delete().eq('code', NL_PROJECT_CODE)
+    const project = await admin.from('projects').insert({ name: 'RLS Nhân lực Scratch', code: NL_PROJECT_CODE }).select('id').single()
+    expect(project.error).toBeNull()
+    projectId = project.data!.id as string
+  })
+
+  afterAll(async () => {
+    if (!admin) return
+    const employees = await admin.from('employees').delete().like('full_name', `${EMPLOYEE_PREFIX}%`)
+    expect(employees.error).toBeNull()
+    const project = await admin.from('projects').delete().eq('code', NL_PROJECT_CODE)
+    expect(project.error).toBeNull()
+  })
+
+  it('creates a Visitor without a project and writes it no membership (NL-05)', async () => {
+    const made = await invokeAdminUsers(admin, {
+      action: 'create', username: throwawayUsername('visitor'), fullName: `${EMPLOYEE_PREFIX}${stamp} visitor`,
+      password: throwawayPassword(), role: 'viewer',
+    })
+    expect(made.status).toBe(200)
+    const members = await admin.from('project_members').select('project_id').eq('user_id', made.body.userId as string)
+    expect(members.error).toBeNull()
+    expect(members.data ?? []).toEqual([])
+  })
+
+  it('still needs a project for a GS', async () => {
+    const made = await invokeAdminUsers(admin, {
+      action: 'create', username: throwawayUsername('noproj'), fullName: `${EMPLOYEE_PREFIX}${stamp} noproj`,
+      password: throwawayPassword(), role: 'gs',
+    })
+    expect(made.status).toBe(400)
+  })
+
+  it('refuses an account named like an employee, in Vietnamese, and leaves no login behind', async () => {
+    const name = `${EMPLOYEE_PREFIX}${stamp} taken`
+    const employee = await admin.from('employees').insert({ full_name: name }).select('id').single()
+    expect(employee.error).toBeNull()
+    const username = throwawayUsername('taken')
+    const made = await invokeAdminUsers(admin, {
+      action: 'create', username, fullName: name.toUpperCase(), password: throwawayPassword(), role: 'viewer',
+    })
+    expect(made.status).toBe(400)
+    expect(String(made.body.error)).toContain('Đã có nhân viên tên')
+    const profile = await admin.from('profiles').select('id').eq('username', username)
+    expect(profile.data ?? []).toEqual([])
+  })
+
+  it('turns an employee into a Visitor, back into an employee, then into a GS on the same account (NL-04, A1)', async () => {
+    const name = `${EMPLOYEE_PREFIX}${stamp} round trip`
+    const employee = await admin.from('employees').insert({ full_name: name }).select('id').single()
+    expect(employee.error).toBeNull()
+    const username = throwawayUsername('trip')
+
+    const toVisitor = await invokeAdminUsers(admin, {
+      action: 'change_role', kind: 'employee', id: employee.data!.id as string, role: 'viewer',
+      username, password: throwawayPassword(),
+    })
+    expect(toVisitor.status).toBe(200)
+    expect(toVisitor.body.reactivated).toBe(false)
+    const userId = toVisitor.body.userId as string
+    const gone = await admin.from('employees').select('id').eq('id', employee.data!.id as string)
+    expect(gone.data ?? []).toEqual([])
+    const account = await admin.from('profiles').select('full_name, role, active, hidden').eq('id', userId).single()
+    expect(account.data).toEqual({ full_name: name, role: 'viewer', active: true, hidden: false })
+
+    const toEmployee = await invokeAdminUsers(admin, { action: 'change_role', kind: 'account', id: userId, role: 'employee' })
+    expect(toEmployee.status).toBe(200)
+    const parked = await admin.from('profiles').select('active, hidden').eq('id', userId).single()
+    expect(parked.data).toEqual({ active: false, hidden: true })
+    const back = await admin.from('employees').select('full_name, active').eq('id', toEmployee.body.employeeId as string).single()
+    expect(back.data).toEqual({ full_name: name, active: true })
+
+    const toGs = await invokeAdminUsers(admin, {
+      action: 'change_role', kind: 'employee', id: toEmployee.body.employeeId as string, role: 'gs',
+      password: throwawayPassword(), projectId,
+    })
+    expect(toGs.status).toBe(200)
+    expect(toGs.body).toMatchObject({ userId, username, reactivated: true })
+    const reopened = await admin.from('profiles').select('role, active, hidden').eq('id', userId).single()
+    expect(reopened.data).toEqual({ role: 'gs', active: true, hidden: false })
+    const members = await admin.from('project_members').select('project_id').eq('user_id', userId)
+    expect((members.data ?? []).map((m) => m.project_id)).toEqual([projectId])
+  })
+
+  it('refuses Hiện lại on a parked account whose name an employee now carries', async () => {
+    const name = `${EMPLOYEE_PREFIX}${stamp} unhide`
+    const made = await invokeAdminUsers(admin, {
+      action: 'create', username: throwawayUsername('unhide'), fullName: name, password: throwawayPassword(), role: 'viewer',
+    })
+    expect(made.status).toBe(200)
+    const toEmployee = await invokeAdminUsers(admin, {
+      action: 'change_role', kind: 'account', id: made.body.userId as string, role: 'employee',
+    })
+    expect(toEmployee.status).toBe(200)
+    const unhide = await invokeAdminUsers(admin, { action: 'unhide', userId: made.body.userId as string })
+    expect(unhide.status).toBe(400)
+    expect(String(unhide.body.error)).toContain('Đã có nhân viên tên')
   })
 })

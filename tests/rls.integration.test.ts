@@ -1755,8 +1755,9 @@ describe.skipIf(!adminConfigured)('0028: roles and permission per work', () => {
       })
       expect(created.status).toBe(200)
       viewerUserId = created.body.userId as string
-      // `create` always writes one membership; take it away so the account is
-      // assigned to nothing anywhere.
+      // `create` wrote one membership for a viewer before NL-05 and writes
+      // none since; the delete keeps the account assigned to nothing anywhere
+      // against either version of the function.
       const stripped = await admin.from('project_members').delete().eq('user_id', viewerUserId)
       expect(stripped.error).toBeNull()
 
