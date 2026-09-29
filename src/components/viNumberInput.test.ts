@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  parseViDecimal, parseViInteger, viIntegerInputProps, viNumberInputProps,
+  parseViDecimal, parseViInteger, viAreaInputProps, viIntegerInputProps, viNumberInputProps,
 } from './viNumberInput'
 
 describe('parseViDecimal', () => {
@@ -71,10 +71,62 @@ describe('parseViInteger', () => {
   })
 })
 
+describe('parseViDecimal with thousandsDot (area fields)', () => {
+  const area = (t: string | undefined) => parseViDecimal(t, { thousandsDot: true })
+
+  it('reads a dot before exactly three digits as thousands when there is no comma', () => {
+    // The plan-area placeholder itself shows "8.000,00", and an area is
+    // thousands of m2, so "8.000" means eight thousand here.
+    expect(area('8.000')).toBe('8000')
+    expect(area('12.345')).toBe('12345')
+    expect(area('12.345.678')).toBe('12345678')
+  })
+
+  it('ignores the 0 a cleared field puts in front of the typing', () => {
+    // Emptying a field whose onChange stores `n ?? 0` (the deck area) makes
+    // the input show "0" at once, so what the admin types lands after it.
+    expect(Number(area('06.000'))).toBe(6000)
+    expect(Number(area('0.5'))).toBe(0.5)
+  })
+
+  it('still reads a dot before one or two digits as the decimal point', () => {
+    expect(area('8.5')).toBe('8.5')
+    expect(area('8.50')).toBe('8.50')
+  })
+
+  it('does not read a dot as thousands where the grouping is not a real one', () => {
+    // A leading zero or a first group of four digits is not how anyone
+    // groups thousands, so the dot stays the decimal point.
+    expect(area('0.125')).toBe('0.125')
+    expect(area('1234.567')).toBe('1234.567')
+    expect(area('8.0000')).toBe('8.0000')
+  })
+
+  it('keeps the comma rule unchanged', () => {
+    expect(area('8.000,5')).toBe('8000.5')
+    expect(area('2,5')).toBe('2.5')
+  })
+
+  it('leaves the general rule alone when the option is off', () => {
+    expect(parseViDecimal('8.000')).toBe('8.000')
+    expect(parseViDecimal('8.000', { thousandsDot: false })).toBe('8.000')
+  })
+})
+
 describe('the prop bundles', () => {
   it('shows decimals with a comma and parses with the vi rule', () => {
     expect(viNumberInputProps.decimalSeparator).toBe(',')
     expect(viNumberInputProps.parser('1.230,5')).toBe('1230.5')
+  })
+
+  it('reads area fields with the thousands dot and shows decimals with a comma', () => {
+    expect(viAreaInputProps.decimalSeparator).toBe(',')
+    expect(viAreaInputProps.parser('8.000')).toBe('8000')
+    expect(viAreaInputProps.parser('8.5')).toBe('8.5')
+  })
+
+  it('keeps the general rule in the decimal bundle', () => {
+    expect(viNumberInputProps.parser('8.000')).toBe('8.000')
   })
 
   it('pins integer fields to whole numbers', () => {

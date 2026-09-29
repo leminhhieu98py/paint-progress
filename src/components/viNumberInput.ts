@@ -22,6 +22,15 @@
  *  5. More than one "," is left unparseable: the field keeps its last valid
  *     value rather than guessing.
  *
+ * Area fields (`viAreaInputProps`, `thousandsDot: true`) change rule 3 only.
+ * Their values are thousands of m2 and the plan-area placeholder itself
+ * reads "8.000,00", so with no "," a dot before exactly three digits, in a
+ * real grouping (a first group of 1-3 digits not starting with 0, then
+ * groups of three), is a thousands separator: "8.000" -> 8000,
+ * "12.345.678" -> 12345678. Anything else keeps rule 3: "8.5" and "8.50"
+ * -> 8.5, "0.125" -> 0.125, "1234.567" -> 1234.567. Hours, weights and %
+ * keep the general rule: "1.500" Mhr is 1.5 there.
+ *
  * For an integer field (`parseViInteger`), a "." can only be a thousands
  * separator, so "1.230" -> 1230; a "," starts a fraction the field cannot
  * hold, so it and everything after it are dropped: "2,5" -> 2, never 25.
@@ -47,12 +56,24 @@ const NOT_NUMERIC = /[^\w.-]+/g
 /** The same, but a second comma survives it, so rule 5 stays unparseable. */
 const NOT_NUMERIC_OR_COMMA = /[^\w.,-]+/g
 
-export function parseViDecimal(text: string | undefined): string {
+/** "8.000", "12.345.678": thousands grouping with no decimal part. */
+const GROUPED_THOUSANDS = /^-?[1-9]\d{0,2}(\.\d{3})+$/
+/**
+ * Zeros before another digit. A field whose onChange stores `n ?? 0` shows
+ * "0" the moment it is emptied, so "8.000" typed next arrives as "08.000".
+ */
+const LEADING_ZEROS = /^(-?)0+(?=\d)/
+
+export function parseViDecimal(
+  text: string | undefined,
+  options: { thousandsDot?: boolean } = {},
+): string {
   const s = (text ?? '').replace(WHITESPACE, '')
   let normalised: string
   if (s.includes(',')) {
     normalised = s.replace(/\./g, '').replace(',', '.')
-  } else if ((s.match(/\./g) ?? []).length > 1) {
+  } else if ((s.match(/\./g) ?? []).length > 1
+    || (options.thousandsDot === true && GROUPED_THOUSANDS.test(s.replace(LEADING_ZEROS, '$1')))) {
     normalised = s.replace(/\./g, '')
   } else {
     normalised = s
@@ -72,6 +93,12 @@ type NumberParser = (text: string | undefined) => number
 export const viNumberInputProps = {
   decimalSeparator: ',',
   parser: parseViDecimal as unknown as NumberParser,
+} as const
+
+/** Spread onto an InputNumber that holds an area: see the thousandsDot rule. */
+export const viAreaInputProps = {
+  decimalSeparator: ',',
+  parser: ((text: string | undefined) => parseViDecimal(text, { thousandsDot: true })) as unknown as NumberParser,
 } as const
 
 /** Spread onto every InputNumber that holds a whole number. */

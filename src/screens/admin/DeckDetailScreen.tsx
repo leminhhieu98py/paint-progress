@@ -27,7 +27,7 @@ import { ConsequenceModal } from '../../components/ConsequenceModal'
 import { PageBody, PageHeader } from '../../components/PageHeader'
 import { RulesDisclosure } from '../../components/RulesDisclosure'
 import { SectionCard } from '../../components/SectionCard'
-import { viIntegerInputProps, viNumberInputProps } from '../../components/viNumberInput'
+import { viAreaInputProps, viIntegerInputProps } from '../../components/viNumberInput'
 import { formatPercent } from '../../lib/format'
 import { palette } from '../../theme'
 
@@ -394,8 +394,9 @@ export function DeckDetailScreen() {
           // A Vietnamese admin types "5258,5". Without this antd parses that as
           // 5258 and the deck silently loses half a square metre from the
           // denominator of every percentage on the project. The shared props
-          // also read "5.258,5", which decimalSeparator="," alone left at 5.258.
-          {...viNumberInputProps}
+          // also read "5.258,5", which decimalSeparator="," alone left at 5.258,
+          // and "5.258" as thousands, as an area is written.
+          {...viAreaInputProps}
           onChange={(n) => setArea(n ?? 0)}
         />
       </Form.Item>

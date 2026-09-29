@@ -250,6 +250,33 @@ describe('StagePlanTable', () => {
     ))
   })
 
+  it('reads "8.000" as eight thousand m², the way its own placeholder writes areas', async () => {
+    // The placeholder shows "8.000,00". Under the general rule a lone dot is
+    // the decimal point and "8.000" would plan 8 m²; an area field reads a dot
+    // before exactly three digits as thousands instead.
+    const { onSave } = renderTable()
+
+    const area = row('s2').getByLabelText('Diện tích kế hoạch')
+    await userEvent.clear(area)
+    await userEvent.type(area, '8.000')
+    await userEvent.click(saveOf('s2'))
+
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({ stageId: 's2' }),
+      { startDate: '2026-09-09', endDate: '2026-09-16', plannedAreaM2: 8000 },
+    ))
+
+    onSave.mockClear()
+    await userEvent.clear(area)
+    await userEvent.type(area, '8.5')
+    await userEvent.click(saveOf('s2'))
+
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({ stageId: 's2' }),
+      { startDate: '2026-09-09', endDate: '2026-09-16', plannedAreaM2: 8.5 },
+    ))
+  })
+
   it('treats a typed zero as an override of zero, not as an empty field', async () => {
     // The distinction the whole nullable column exists for: 0 says this coat
     // plans no area, empty says work it out for me.

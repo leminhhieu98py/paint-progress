@@ -389,6 +389,19 @@ describe('DeckDetailScreen', () => {
     await waitFor(() => expect(updateDeckArea).toHaveBeenCalledWith('d1', 6000.5, 'prorated'))
   })
 
+  it('reads "6.000" in the area as six thousand m², not six', async () => {
+    renderAt('/decks/d1')
+    await screen.findByRole('heading', { level: 1, name: 'Main Deck' })
+    await userEvent.click(screen.getByText('Sửa'))
+    const area = await screen.findByLabelText('Diện tích sàn (m²)')
+    await userEvent.clear(area)
+    await userEvent.type(area, '6.000')
+    await userEvent.click(screen.getByRole('button', { name: 'Lưu thông tin sàn' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Lưu' }))
+
+    await waitFor(() => expect(updateDeckArea).toHaveBeenCalledWith('d1', 6000, 'prorated'))
+  })
+
   it('says the deck was saved, because the form looks the same afterwards', async () => {
     renderAt('/decks/d1')
     await screen.findByRole('heading', { level: 1, name: 'Main Deck' })

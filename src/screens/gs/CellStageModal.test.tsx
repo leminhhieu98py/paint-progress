@@ -874,6 +874,17 @@ describe('CellStageModal — decimal comma', () => {
     expect(onCommit).toHaveBeenCalledWith('c1', 's3', '', { ...FILLED, workHours: 1230.5 })
   })
 
+  it('keeps a lone dot the decimal point for hours, unlike an area field', async () => {
+    // Hours are single digits: "1.500" from a keypad is one and a half, not
+    // the fifteen hundred an area field would read.
+    renderModal()
+    await chooseStage('Coat 3')
+    await fillRequired('1.500')
+    await userEvent.click(screen.getByRole('button', { name: 'Xác nhận' }))
+
+    expect(onCommit).toHaveBeenCalledWith('c1', 's3', '', { ...FILLED, workHours: 1.5 })
+  })
+
   it('writes 1,5 Mhr lost as 1.5, not 15', async () => {
     renderModal()
     await chooseStage('Coat 3')
