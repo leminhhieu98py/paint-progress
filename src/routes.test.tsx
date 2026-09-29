@@ -308,7 +308,8 @@ describe('AppRoutes: /login is the entry point', () => {
     asRole('admin')
     renderAt('/nope')
     expect(await screen.findByText('Không tìm thấy trang')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Về trang chính' })).toHaveAttribute('href', APP_BASE_PATH || '/')
+    // Straight to the role's own home, as the role gate's page does (N-1).
+    expect(screen.getByRole('link', { name: 'Về trang chính' })).toHaveAttribute('href', `${APP_BASE_PATH}/admin/projects`)
     expect(screen.queryByText('404')).toBeNull()
     expect(screen.queryByText('ADMIN LAYOUT')).toBeNull()
   })
@@ -343,6 +344,25 @@ describe('AppRoutes: /login is the entry point', () => {
     expect(await screen.findByText('Không tìm thấy trang')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Về trang chính' })).toHaveAttribute('href', home)
   })
+
+  it.each([
+    ['admin', `${APP_BASE_PATH}/gs/p1`, `${APP_BASE_PATH}/gs/p1/xyz`],
+    ['admin', `${APP_BASE_PATH}/gs`, `${APP_BASE_PATH}/gsx`],
+    ['viewer', `${APP_BASE_PATH}/admin/users`, `${APP_BASE_PATH}/zzz`],
+    ['gs', `${APP_BASE_PATH}/admin/users`, `${APP_BASE_PATH}/gs/p1/xyz`],
+  ] as const)(
+    'gives a signed-in %s the identical page at a gated route (%s) and at no route at all (%s) (N-1)',
+    async (role, gated, unknown) => {
+      asRole(role)
+      const first = renderAt(gated)
+      expect(await screen.findByText('Không tìm thấy trang')).toBeInTheDocument()
+      const gatedPage = first.container.innerHTML
+      first.unmount()
+      const second = renderAt(unknown)
+      expect(await screen.findByText('Không tìm thấy trang')).toBeInTheDocument()
+      expect(second.container.innerHTML).toBe(gatedPage)
+    },
+  )
 
   it('keeps the bare 404 for a deactivated account, which is not signed in for any purpose', async () => {
     maybeSingle.mockResolvedValue({
