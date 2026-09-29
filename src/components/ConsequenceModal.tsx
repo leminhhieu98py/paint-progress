@@ -181,12 +181,12 @@ export function ConsequenceModal({
                 <span
                   data-testid="consequence-swatch"
                   style={{
+                    // A circle of the colour, nothing else (CLR-01).
                     width: 20,
                     height: 20,
-                    borderRadius: 6,
+                    borderRadius: '50%',
                     flex: 'none',
                     background: it.color,
-                    boxShadow: 'inset 0 0 0 1px #16202B47',
                   }}
                 />
               )}

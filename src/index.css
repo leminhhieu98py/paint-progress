@@ -130,3 +130,34 @@ body {
   color: #5f7183;
   text-wrap: pretty;
 }
+
+/*
+  A colour, drawn as a circle and nothing else (CLR-01): `ColorField`'s native
+  picker and the zone palette's buttons. The native input's grey outline and
+  white inner frame live on pseudo-elements an inline style cannot reach, so
+  they are taken off here; size, shape and fill stay on the element.
+*/
+.pp-swatch::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+.pp-swatch::-webkit-color-swatch {
+  border: none;
+  border-radius: 50%;
+}
+.pp-swatch::-moz-color-swatch {
+  border: none;
+  border-radius: 50%;
+}
+/* Keyboard focus only, outside the circle: a ring on the colour itself
+   would read as part of it. */
+.pp-swatch:focus {
+  outline: none;
+}
+.pp-swatch:focus-visible {
+  outline: 2px solid #0a8175;
+  outline-offset: 2px;
+}
+.pp-swatch:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}

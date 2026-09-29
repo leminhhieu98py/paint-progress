@@ -15,7 +15,7 @@ import {
   listWorkStages, roundStageWeight, saveWorkStages, stagesRemovedBy, STAGE_WEIGHT_EPSILON,
 } from '../../lib/decksApi'
 import { randomUUID } from '../../lib/uuid'
-import { ColorField, HEX_COLOR } from '../../components/ColorField'
+import { ColorField, HEX_COLOR, swatchStyle, useControlHeight } from '../../components/ColorField'
 import { ConsequenceModal } from '../../components/ConsequenceModal'
 import { EmptyState } from '../../components/EmptyState'
 import { InfoTip } from '../../components/InfoTip'
@@ -133,6 +133,8 @@ export function StageConfigPanel({
    * taken against.
    */
   const [draft, setDraft] = useState<Stage[]>([])
+  /** The read-only colour's circle: a table cell's control height (CLR-01). */
+  const swatchDiameter = useControlHeight('small')
   /**
    * The stage list as last read from the database, kept beside the draft so the
    * confirmation dialog can name the rows a save would actually delete. Written
@@ -490,14 +492,7 @@ export function StageConfigPanel({
                   <>
                     <span
                       aria-label={`Màu của ${row.name}`}
-                      style={{
-                        display: 'inline-block',
-                        width: 26,
-                        height: 26,
-                        borderRadius: 8,
-                        background: v,
-                        boxShadow: 'inset 0 0 0 1px #16202B33',
-                      }}
+                      style={{ ...swatchStyle(swatchDiameter), display: 'inline-block', background: v }}
                     />
                     <span style={{ ...type.body, color: palette.textSecondary }}>{v}</span>
                   </>

@@ -69,3 +69,33 @@ describe('index.css table rules', () => {
     expect(inset).toBeDefined()
   })
 })
+
+describe('index.css colour swatch (CLR-01)', () => {
+  const rule = (selector: string) =>
+    Array.from(sheet.sheet!.cssRules)
+      .filter((r): r is CSSStyleRule => r instanceof CSSStyleRule)
+      .find((r) => r.selectorText.split(',').map((s) => s.trim()).includes(selector))
+
+  // jsdom drops rules on vendor pseudo-elements it does not know, so those
+  // are read off the source text rather than the parsed sheet.
+  const block = (selector: string) => {
+    const at = css.indexOf(`${selector} {`)
+    expect(at).toBeGreaterThanOrEqual(0)
+    return css.slice(at, css.indexOf('}', at))
+  }
+
+  it('takes the native swatch\'s frame away and rounds what is left', () => {
+    expect(block('.pp-swatch::-webkit-color-swatch-wrapper')).toMatch(/padding:\s*0/)
+    for (const sel of ['.pp-swatch::-webkit-color-swatch', '.pp-swatch::-moz-color-swatch']) {
+      expect(block(sel)).toMatch(/border:\s*none/)
+      expect(block(sel)).toMatch(/border-radius:\s*50%/)
+    }
+  })
+
+  it('rings the circle on keyboard focus only, outside it', () => {
+    const ring = rule('.pp-swatch:focus-visible')
+    expect(ring).toBeDefined()
+    expect(ring!.style.outline).toMatch(/2px solid/)
+    expect(ring!.style.outlineOffset).toBe('2px')
+  })
+})

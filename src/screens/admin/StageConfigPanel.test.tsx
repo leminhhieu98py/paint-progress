@@ -795,6 +795,16 @@ describe('StageConfigPanel — one control height per row (CTL-01)', () => {
   })
 })
 
+describe('StageConfigPanel — the read-only colour (CLR-01)', () => {
+  it('shows a coat\'s colour as a plain circle, no frame and no shadow', async () => {
+    renderApp(<StageConfigPanel workId="w1" deckId="d1" editable={false} />)
+    const swatch = await screen.findByLabelText('Màu của Blast + Coat 1')
+    expect(swatch).toHaveStyle({ borderRadius: '50%' })
+    expect(swatch.style.boxShadow).toBe('')
+    expect(swatch.style.width).toBe(swatch.style.height)
+  })
+})
+
 describe('StageConfigPanel — alignment (UI-03)', () => {
   it('keeps the coat name left and centres the colour picker itself, not only the cell text', async () => {
     renderApp(<StageConfigPanel workId="w1" deckId="d1" />)

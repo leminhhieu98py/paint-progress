@@ -45,6 +45,13 @@ describe('ConsequenceModal', () => {
     expect(screen.getByTestId('consequence-swatch')).toHaveStyle({ background: '#52c41a' })
   })
 
+  it('draws the swatch as a plain circle, no inset frame (CLR-01)', () => {
+    render(<ConsequenceModal {...base} items={[{ label: 'Coat 3', color: '#52c41a' }]} />)
+    const swatch = screen.getByTestId('consequence-swatch')
+    expect(swatch).toHaveStyle({ borderRadius: '50%' })
+    expect(swatch.style.boxShadow).toBe('')
+  })
+
   it('calls onOk from the confirm button and onCancel from the cancel button', async () => {
     const user = userEvent.setup()
     const onOk = vi.fn()

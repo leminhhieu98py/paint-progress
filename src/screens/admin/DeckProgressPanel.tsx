@@ -28,6 +28,7 @@ import {
 import {
   createZone, deleteZone, listDeckZones, setZoneActual, setZoneCells, updateZone,
 } from '../../lib/zonesApi'
+import { swatchStyle, useControlHeight } from '../../components/ColorField'
 import { ConsequenceModal } from '../../components/ConsequenceModal'
 import { Donut, type DonutSlice } from '../../components/Donut'
 import { legendRowProps } from '../../components/ringHover'
@@ -62,6 +63,8 @@ function ZoneColorSwatches({
   value: string
   onChange: (color: string) => void
 }) {
+  // A dialog line, not a table cell: the default control height (CLR-01).
+  const diameter = useControlHeight()
   return (
     <div data-testid="zone-color" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
       <span style={{ ...type.label, color: palette.textSecondary }}>Màu zone</span>
@@ -77,15 +80,17 @@ function ZoneColorSwatches({
               aria-label={`Màu ${c}`}
               data-color={c}
               onClick={() => onChange(c)}
+              className="pp-swatch"
               style={{
-                width: 28,
-                height: 28,
-                borderRadius: 8,
+                ...swatchStyle(diameter),
                 background: c,
                 cursor: 'pointer',
-                border: selected ? `2px solid ${palette.text}` : '2px solid transparent',
-                boxShadow: 'inset 0 0 0 1px #16202B47',
-                padding: 0,
+                // The pick is a ring apart from the colour, not an outline
+                // drawn on it (CLR-02): a gap in the dialog's own white, then
+                // the ring.
+                boxShadow: selected
+                  ? `0 0 0 2px ${palette.bgContainer}, 0 0 0 4px ${palette.text}`
+                  : undefined,
               }}
             />
           )
@@ -1348,13 +1353,9 @@ export function DeckProgressPanel({
               >
                 <span
                   aria-hidden
-                  style={{
-                    width: 14,
-                    height: 14,
-                    borderRadius: 4,
-                    background: chip.color,
-                    boxShadow: 'inset 0 0 0 1px #16202B47',
-                  }}
+                  data-testid="lens-chip-marker"
+                  // A circle of the coat's colour, nothing else (CLR-03).
+                  style={{ width: 14, height: 14, borderRadius: '50%', background: chip.color }}
                 />
                 <span style={type.micro}>{chip.name}</span>
                 <span style={{ ...type.micro, color: palette.accent }}>
@@ -1387,14 +1388,9 @@ export function DeckProgressPanel({
               <>
                 <span
                   aria-hidden
-                  style={{
-                    width: 15,
-                    height: 15,
-                    borderRadius: 5,
-                    flex: 'none',
-                    background: row.color,
-                    boxShadow: 'inset 0 0 0 1px #16202B47',
-                  }}
+                  data-testid="zone-marker"
+                  // A circle of the zone's colour, nothing else (CLR-03).
+                  style={{ width: 15, height: 15, borderRadius: '50%', flex: 'none', background: row.color }}
                 />
                 <span style={{ ...type.body, flex: 'none' }}>{row.zone.name}</span>
                 <span style={{ ...type.caption, color: palette.textTertiary, flex: 'none' }}>

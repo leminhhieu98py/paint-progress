@@ -1,4 +1,5 @@
-import { Input } from 'antd'
+import { Input, theme } from 'antd'
+import type { CSSProperties } from 'react'
 
 /**
  * Six digits with the hash, which is the only form the native swatch and the
@@ -9,6 +10,31 @@ import { Input } from 'antd'
  * them.
  */
 export const HEX_COLOR = /^#[0-9a-fA-F]{6}$/
+
+/**
+ * A colour as a full circle, nothing else (CLR-01): no border, no frame, no
+ * shadow. `diameter` is the height of the controls in its row (CTL-01).
+ * Paired with the `pp-swatch` class, which strips the native picker's
+ * pseudo-element frame and draws the keyboard focus ring.
+ */
+export function swatchStyle(diameter: number): CSSProperties {
+  return {
+    width: diameter,
+    height: diameter,
+    borderRadius: '50%',
+    border: 'none',
+    padding: 0,
+    appearance: 'none',
+    background: 'none',
+    flex: 'none',
+  }
+}
+
+/** The height of a control at this size under the current theme. */
+export function useControlHeight(size?: 'small'): number {
+  const { token } = theme.useToken()
+  return size === 'small' ? token.controlHeightSM : token.controlHeight
+}
 
 /**
  * A native colour swatch with a typable hex beside it -- the pair
@@ -58,15 +84,18 @@ export function ColorField({
 }) {
   const shown = hex ?? value
   const valid = HEX_COLOR.test(shown)
+  const diameter = useControlHeight(size)
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}>
-      <Input
+      {/* The native picker, bare: it opens on click, Enter and Space, and
+          `pp-swatch` takes its frame off so the colour is the whole control. */}
+      <input
         aria-label={`Chọn màu · ${label}`}
         type="color"
-        size={size}
+        className="pp-swatch"
         value={value}
         disabled={disabled}
-        style={{ width: 44, padding: 2 }}
+        style={{ ...swatchStyle(diameter), cursor: disabled ? 'not-allowed' : 'pointer' }}
         onChange={(e) => {
           (onSwatchColor ?? onColor)(e.target.value)
           onHex(e.target.value)

@@ -654,6 +654,29 @@ describe('DeckProgressPanel — zones', () => {
     await waitFor(() => expect(listDeckZones).toHaveBeenCalledTimes(2))
   })
 
+  it('draws the zone colours as plain circles, the picked one ringed apart from its colour (CLR-01, CLR-02)', async () => {
+    listDeckZones.mockResolvedValue([ZONE])
+    renderPanel()
+    await screen.findByTestId('lens-A')
+    await pickLens('Lớp sơn đang xem', 'Tháo giáo')
+    // The zone's row marker is a circle too (CLR-03, R3-D).
+    const marker = await screen.findByTestId('zone-marker')
+    expect(marker).toHaveStyle({ borderRadius: '50%' })
+    expect(marker.style.boxShadow).toBe('')
+    await userEvent.click(await screen.findByRole('button', { name: 'Mốc ngày của Khu A — Tháo giáo' }))
+    const swatches = within(await screen.findByTestId('zone-color')).getAllByRole('radio')
+    const picked = swatches.filter((sw) => sw.getAttribute('aria-checked') === 'true')
+    expect(picked).toHaveLength(1)
+    for (const sw of swatches) {
+      expect(sw).toHaveClass('pp-swatch')
+      expect(sw).toHaveStyle({ borderRadius: '50%' })
+      expect(sw.style.borderStyle === 'none' || sw.style.border === '0px').toBe(true)
+      expect(sw.style.boxShadow).toBe(sw === picked[0]
+        ? `0 0 0 2px ${palette.bgContainer}, 0 0 0 4px ${palette.text}`
+        : '')
+    }
+  })
+
   it('refuses a zone with no dates at all, rather than writing five empty ones', async () => {
     renderPanel()
     await screen.findByTestId('lens-A')
@@ -1262,6 +1285,11 @@ describe('DeckProgressPanel — the all-stages layer (RV6-13)', () => {
     expect(within(chips).getByText('Blast + Coat 1')).toBeInTheDocument()
     expect(within(chips).getAllByText('100,00%')).toHaveLength(2)
     expect(within(chips).getByText('50,00%')).toBeInTheDocument()
+    // Each chip's colour is a circle, no inset frame (CLR-03, R3-D).
+    for (const m of within(chips).getAllByTestId('lens-chip-marker')) {
+      expect(m).toHaveStyle({ borderRadius: '50%' })
+      expect(m.style.boxShadow).toBe('')
+    }
   })
 
   it('lists the zones of every coat, in coat order then zone order', async () => {
