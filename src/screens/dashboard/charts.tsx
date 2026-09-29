@@ -38,6 +38,27 @@ const TOOLTIP_SEPARATOR = ': '
 const legendText = (value: unknown) => (
   <span style={{ color: palette.textSecondary }}>{String(value)}</span>
 )
+/**
+ * A phone's legend item keeps to one line (M4): a long coat name ellipsises,
+ * its title holding all of it, so every item is exactly the LEGEND_LINE the
+ * chart grew by and the plot never gives up height to a wrapped name. The
+ * wrapper spans the chart, so the item has a width to end at; 24 px is the
+ * marker and its gap.
+ */
+function phoneLegendText(value: unknown) {
+  return (
+    <span
+      title={String(value)}
+      style={{
+        color: palette.textSecondary,
+        display: 'inline-block', maxWidth: 'calc(100% - 24px)', verticalAlign: 'middle',
+        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+      }}
+    >
+      {String(value)}
+    </span>
+  )
+}
 
 /** The series other than the one a hovered legend item names (CHT-03). */
 const DIMMED = 0.3
@@ -57,10 +78,14 @@ const ACTIVE_BAR = { stroke: palette.ink, strokeWidth: 1 }
  * edge -- every chart here has no left margin -- instead of centring it.
  */
 const PHONE_LEGEND = {
-  layout: 'vertical', align: 'center', verticalAlign: 'bottom', wrapperStyle: { left: 0 },
+  layout: 'vertical', align: 'center', verticalAlign: 'bottom', wrapperStyle: { left: 0, width: '100%' },
+  formatter: phoneLegendText,
 } as const
-/** One vertical legend line; the chart grows by one per item past the first, so the plot keeps its height. */
-const LEGEND_LINE = 22
+/**
+ * One vertical legend line as Chromium draws it (24 px, measured at 390); the
+ * chart grows by one per item past the first, so the plot keeps its height.
+ */
+const LEGEND_LINE = 24
 
 /**
  * Hovering a legend item highlights its series (CHT-03): the others dim to
@@ -81,6 +106,7 @@ function useLegendHighlight() {
     },
     opacity: (dataKey: string) => (active === null || active === dataKey ? 1 : DIMMED),
     height: (base: number, items: number) => (phone ? base + Math.max(0, items - 1) * LEGEND_LINE : base),
+    phone,
   }
 }
 
@@ -235,7 +261,7 @@ export function KpiComboChart({
 }) {
   const plan = colors?.plan ?? null
   const actual = colors?.actual ?? null
-  const { legend, opacity, height } = useLegendHighlight()
+  const { legend, opacity, height, phone } = useLegendHighlight()
   return (
     <div data-testid="kpi-chart" style={{ width: '100%', height: height(372, 4) }}>
       <ResponsiveContainer width="100%" height="100%">
@@ -252,6 +278,9 @@ export function KpiComboChart({
           <YAxis
             yAxisId="share"
             orientation="right"
+            // On a phone the plot takes this axis's width (M7): the lines keep
+            // its scale, and the tooltip still reads each share.
+            hide={phone}
             tick={AXIS}
             width={64}
             // Not capped at 1: actual above plan is real and the workbook does

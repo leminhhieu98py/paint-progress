@@ -351,7 +351,7 @@ describe('legends on a phone (MOB-03)', () => {
     // phone; aligned centre it reserves its HEIGHT under the plot instead,
     // and the wrapper is then pinned to the left edge, the card's inset.
     expect(captured.legend).toMatchObject({ layout: 'vertical', align: 'center', verticalAlign: 'bottom' })
-    expect(captured.legend?.wrapperStyle).toEqual({ left: 0 })
+    expect(captured.legend?.wrapperStyle).toEqual({ left: 0, width: '100%' })
     expect(captured.legend?.onMouseEnter).toBeTypeOf('function')
     expect(captured.legend?.onMouseLeave).toBeTypeOf('function')
   })
@@ -368,10 +368,40 @@ describe('legends on a phone (MOB-03)', () => {
     restoreViewport = setViewport(390)
     render(<KpiComboChart data={DATA} />)
     // Four series: three lines more than the one-row legend took.
-    expect(screen.getByTestId('kpi-chart')).toHaveStyle({ height: `${372 + 3 * 22}px` })
+    expect(screen.getByTestId('kpi-chart')).toHaveStyle({ height: `${372 + 3 * 24}px` })
     render(<EfficiencyLineChart data={[{ day: '2026-09-01', 'Coat 1': 0.5 }]} stages={STAGES} />)
-    expect(screen.getByTestId('efficiency-chart')).toHaveStyle({ height: `${280 + 2 * 22}px` })
+    expect(screen.getByTestId('efficiency-chart')).toHaveStyle({ height: `${280 + 2 * 24}px` })
     render(<HoursBarChart data={[{ day: '2026-09-01', hours: 8, wasteHours: 1 }]} />)
-    expect(screen.getByTestId('hours-chart')).toHaveStyle({ height: `${260 + 22}px` })
+    expect(screen.getByTestId('hours-chart')).toHaveStyle({ height: `${260 + 24}px` })
+  })
+
+  it.each(charts)('%s keeps each phone legend item to one line, the full name on its title (M4)', (_, chart) => {
+    restoreViewport = setViewport(390)
+    render(chart())
+    const LONG = 'Coat 2 Intermediate epoxy high-build (Jotun Penguard HB)'
+    const formatter = captured.legend?.formatter as (value: string) => React.ReactNode
+    render(<div data-testid="item">{formatter(LONG)}</div>)
+    const text = within(screen.getByTestId('item')).getByText(LONG)
+    expect(text).toHaveAttribute('title', LONG)
+    expect(text).toHaveStyle({
+      display: 'inline-block', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+      color: palette.textSecondary,
+    })
+    expect(text.style.maxWidth).toBe('calc(100% - 24px)')
+  })
+
+  it('hides the KPI chart\'s % axis on a phone, so the plot takes its width; the tooltip still reads it (M7)', () => {
+    restoreViewport = setViewport(390)
+    render(<KpiComboChart data={DATA} />)
+    expect(captured.yAxes.share.hide).toBe(true)
+    expect(captured.yAxes.m2.hide).toBeFalsy()
+    const formatter = captured.tooltip?.formatter as (value: number, name: string) => string
+    expect(formatter(0.5, 'Luỹ kế kế hoạch')).toBe(formatPercent(0.5))
+  })
+
+  it('keeps the % axis from 768 px', () => {
+    restoreViewport = setViewport(768)
+    render(<KpiComboChart data={DATA} />)
+    expect(captured.yAxes.share.hide).toBeFalsy()
   })
 })
