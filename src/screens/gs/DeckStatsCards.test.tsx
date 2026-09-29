@@ -1,18 +1,36 @@
-import { render, screen, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { DeckProgressCard, StageRollupCard } from './DeckStatsCards'
 import { computeDeckProgress } from '../../domain/progress'
 import type { Cell, Stage } from '../../domain/types'
+import { palette } from '../../theme'
 
-// The ring is a conic-gradient; asserting on that string would pin CSS, not the
-// shares. The double records what the card hands it.
+// Asserting on the ring's SVG would pin geometry, not the shares. The double
+// records what the card hands it, and stands in a button per slice for the
+// ring's own hover (CHT-02), which the real Donut's tests cover.
 vi.mock('../../components/Donut', () => ({
-  Donut: ({ slices, children }: { slices: { label: string; value: number }[]; children?: ReactNode }) => (
+  Donut: ({ slices, children, activeKey, onActiveChange }: {
+    slices: { key?: string; label: string; value: number; detail?: string | string[] }[]
+    children?: ReactNode
+    activeKey?: string | null
+    onActiveChange?: (key: string | null) => void
+  }) => (
     <div
       data-testid="donut"
       data-slices={JSON.stringify(slices.map((s) => [s.label, s.value]))}
+      data-active={activeKey ?? ''}
     >
+      {slices.map((s) => (
+        <button
+          key={s.key ?? s.label}
+          type="button"
+          data-testid={`slice-${s.key}`}
+          data-detail={JSON.stringify(s.detail)}
+          onPointerEnter={() => onActiveChange?.(s.key ?? s.label)}
+          onPointerLeave={() => onActiveChange?.(null)}
+        />
+      ))}
       {children}
     </div>
   ),
@@ -132,6 +150,43 @@ describe('StageRollupCard', () => {
       ['Blast + Coat 1', 0.1],
       ['Coat 2', 0.7],
     ])
+  })
+})
+
+describe('StageRollupCard: the ring and its coat rows (CHT-02)', () => {
+  const rowOf = (name: string) =>
+    screen.getByText(name).closest('[data-testid="gs-stage-row"]') as HTMLElement
+
+  it('makes a hovered or focused coat row\'s slice active, and lets go on leave and blur', () => {
+    renderRollup()
+    const donut = screen.getByTestId('donut')
+    fireEvent.pointerEnter(rowOf('Coat 2'))
+    expect(donut).toHaveAttribute('data-active', 's2')
+    expect(rowOf('Coat 2')).toHaveStyle({ background: palette.bgSubtle })
+    fireEvent.pointerLeave(rowOf('Coat 2'))
+    expect(donut).toHaveAttribute('data-active', '')
+    expect(rowOf('Coat 2')).toHaveAttribute('tabindex', '0')
+    act(() => rowOf('Blast + Coat 1').focus())
+    expect(donut).toHaveAttribute('data-active', 's1')
+    act(() => rowOf('Blast + Coat 1').blur())
+    expect(donut).toHaveAttribute('data-active', '')
+  })
+
+  it('highlights the row of a hovered slice', () => {
+    renderRollup()
+    fireEvent.pointerEnter(screen.getByTestId('slice-s1'))
+    expect(rowOf('Blast + Coat 1')).toHaveStyle({ background: palette.bgSubtle })
+    expect(rowOf('Coat 2').style.background).toBe('')
+  })
+
+  it('gives a slice the area standing at its coat and its row\'s figures as printed', () => {
+    // 100 m² stand at Blast + Coat 1; 800 m² have been through it.
+    renderRollup()
+    expect(JSON.parse(screen.getByTestId('slice-s1').getAttribute('data-detail') ?? 'null')).toEqual([
+      'Đang ở lớp này: 100,00 / 1.000,00 m² · 10,00%',
+      'Cộng dồn: 800,00 / 1.000,00 m² · 80,00%',
+    ])
+    expect(within(rowOf('Blast + Coat 1')).getByText('800,00 / 1.000,00 m² · 80,00%')).toBeInTheDocument()
   })
 })
 

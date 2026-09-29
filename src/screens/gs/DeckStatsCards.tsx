@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { Donut } from '../../components/Donut'
 import { ProgressBar } from '../../components/ProgressBar'
 import { buildStageSlices, NOT_STARTED_KEY, UNMAPPED_KEY } from '../../domain/pieSlices'
@@ -125,16 +126,32 @@ export function StageRollupCard({
   unit?: string
 }) {
   const ordered = [...stages].sort((a, b) => a.seq - b.seq)
+  /** The ring slice and coat row under the pointer or focus (CHT-02). */
+  const [active, setActive] = useState<string | null>(null)
+  /** A coat row's figures, as the row prints them. */
+  const figures = (areaM2: number, ratio: number) =>
+    `${formatAreaM2(areaM2)} / ${formatAreaM2(totalAreaM2)} ${unit} · ${formatPercent(ratio)}`
 
   // Coats only. The not-started and unmapped slices keep the admin's pie on
   // the deck's denominator; here the ring's own remainder plays that part.
+  // Each slice says what stands at its coat now and, as its row prints it,
+  // how much has been through it -- the row is cumulative, the ring is not.
   const ringSlices = buildStageSlices(totalAreaM2, cells, stages)
     .filter((s) => s.key !== NOT_STARTED_KEY && s.key !== UNMAPPED_KEY)
-    .map((s) => ({
-      label: s.label,
-      color: s.color,
-      value: totalAreaM2 > 0 ? s.areaM2 / totalAreaM2 : 0,
-    }))
+    .map((s) => {
+      const value = totalAreaM2 > 0 ? s.areaM2 / totalAreaM2 : 0
+      const sp = stageProgress.find((x) => x.stage.id === s.key)
+      return {
+        key: s.key,
+        label: s.label,
+        color: s.color,
+        value,
+        detail: [
+          `Đang ở lớp này: ${figures(s.areaM2, value)}`,
+          `Cộng dồn: ${figures(sp?.cumulativeAreaM2 ?? 0, sp?.ratio ?? 0)}`,
+        ],
+      }
+    })
     .filter((s) => s.value > 0)
 
   return (
@@ -152,7 +169,14 @@ export function StageRollupCard({
           eventually be the stale one. The area is what the ring is actually
           dividing up.
         */}
-        <Donut label="Diện tích đang dừng ở mỗi lớp" slices={ringSlices} size={132} thickness={24}>
+        <Donut
+          label="Diện tích đang dừng ở mỗi lớp"
+          slices={ringSlices}
+          size={132}
+          thickness={24}
+          activeKey={active}
+          onActiveChange={setActive}
+        >
           <span style={{ fontSize: 17, fontWeight: 700, letterSpacing: '-0.028em' }}>
             {formatAreaM2(totalAreaM2)}
           </span>
@@ -168,7 +192,19 @@ export function StageRollupCard({
             return (
               <div
                 key={stage.id}
-                style={{ display: 'flex', alignItems: 'center', gap: 11, minWidth: 0 }}
+                data-testid="gs-stage-row"
+                tabIndex={0}
+                onPointerEnter={() => setActive(stage.id)}
+                onPointerLeave={() => setActive(null)}
+                onFocus={() => setActive(stage.id)}
+                onBlur={() => setActive(null)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 11, minWidth: 0,
+                  // CHT-02: the highlight's padding comes out of the row gap,
+                  // so the rows do not move.
+                  margin: '-2px -6px', padding: '2px 6px', borderRadius: 6,
+                  background: active === stage.id ? palette.bgSubtle : undefined,
+                }}
               >
                 <span
                   aria-hidden
@@ -194,7 +230,7 @@ export function StageRollupCard({
                     {stage.name}
                   </div>
                   <div style={{ fontSize: 12, color: palette.textTertiary, marginTop: 2 }}>
-                    {`${formatAreaM2(doneM2)} / ${formatAreaM2(totalAreaM2)} ${unit} · ${formatPercent(ratio)}`}
+                    {figures(doneM2, ratio)}
                   </div>
                 </div>
               </div>
