@@ -6,7 +6,7 @@ import { StagePlanTable, type StagePlanRow } from './StagePlanTable'
 import { expectLeft } from '../../test/alignment'
 import { weightOf } from '../../test/typography'
 import { expectAllSmall } from '../../test/controls'
-import { keyFactTexts } from '../../test/copy'
+import { expectHelperText, keyFactTexts, ruleTexts } from '../../test/copy'
 
 const ROWS: StagePlanRow[] = [
   {
@@ -349,17 +349,23 @@ describe('StagePlanTable', () => {
     expect(row('s1').getByText('Sơn')).toBeInTheDocument()
   })
 
-  it('spells out the rules it applies', async () => {
+  it('spells out the rules it applies as helper text (RUL-01)', async () => {
     renderTable()
     await userEvent.click(screen.getByRole('button', { name: /Quy tắc áp dụng/ }))
-    expect(screen.getByText(/chủ nhật/i)).toBeInTheDocument()
+    expect(ruleTexts()).toEqual([
+      'Kế hoạch chia đều cho mọi ngày từ ngày bắt đầu đến ngày kết thúc, kể cả chủ nhật và ngày lễ.',
+      'Để trống diện tích kế hoạch thì hệ thống tự tính phần còn lại của công đoạn từ ngày bắt đầu.',
+      'Số anh gõ ghi đè phần tự tính, nút bỏ ghi đè cạnh ô đưa về số tự tính.',
+      'Gõ 0 nghĩa là không có diện tích kế hoạch, khác với để trống.',
+    ])
+    expectHelperText(ruleTexts())
   })
 
-  it('keys every rule uniquely, so React never warns about the two RV5-23 rules (CPY-05)', async () => {
+  it('keys every rule uniquely, so React never warns about the RV5-23 rules (CPY-05)', async () => {
     const warn = vi.spyOn(console, 'error').mockImplementation(() => {})
     renderTable()
     await userEvent.click(screen.getByRole('button', { name: /Quy tắc áp dụng/ }))
-    expect(screen.getByText(/Gõ số 0 là ghi đè/)).toBeInTheDocument()
+    expect(screen.getByText(/Gõ 0 nghĩa là/)).toBeInTheDocument()
     expect(warn.mock.calls.flat().join(' ')).not.toMatch(/same key/)
     warn.mockRestore()
   })

@@ -22,12 +22,16 @@ import { palette, type } from '../../theme'
  * nothing about where a plan is stored.
  */
 
+/**
+ * Helper text, one sentence each, checked against the code (RUL-01). The flat
+ * daily split (RV5-24) is the first entry's; who may enter a plan (RV5-28) is
+ * left out, since only an admin ever sees this table.
+ */
 const RULES: Rule[] = [
-  { id: 'RV5-22', text: 'Số ngày = ngày kết thúc − ngày bắt đầu + 1, tính cả hai đầu. Chia đều cho mọi ngày, không trừ chủ nhật hay ngày lễ.' },
-  { id: 'RV5-23', text: 'Để trống diện tích kế hoạch thì hệ thống tự tính phần còn lại của công đoạn tính từ ngày bắt đầu. Anh gõ số vào là ghi đè, và hệ thống không tự tính lại nữa. Bấm "Về diện tích tự tính" để bỏ ghi đè.' },
-  { id: 'RV5-23-zero', text: 'Gõ số 0 là ghi đè "không có diện tích kế hoạch", khác với để trống.' },
-  { id: 'RV5-24', text: 'Kế hoạch phẳng: mỗi ngày trong khoảng đều nhận cùng một số m² = diện tích kế hoạch ÷ số ngày.' },
-  { id: 'RV5-28', text: 'Chỉ admin nhập được ngày kế hoạch. Giám sát và người xem đều đọc được biểu đồ KPI.' },
+  { id: 'RV5-22', text: 'Kế hoạch chia đều cho mọi ngày từ ngày bắt đầu đến ngày kết thúc, kể cả chủ nhật và ngày lễ.' },
+  { id: 'RV5-23', text: 'Để trống diện tích kế hoạch thì hệ thống tự tính phần còn lại của công đoạn từ ngày bắt đầu.' },
+  { id: 'RV5-23-override', text: 'Số anh gõ ghi đè phần tự tính, nút bỏ ghi đè cạnh ô đưa về số tự tính.' },
+  { id: 'RV5-23-zero', text: 'Gõ 0 nghĩa là không có diện tích kế hoạch, khác với để trống.' },
 ]
 
 /** One coat of the project, with the window the admin has typed for it so far. */
