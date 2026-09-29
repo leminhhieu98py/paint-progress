@@ -2182,7 +2182,17 @@ function StageRing({
 }) {
   const [active, setActive] = useState<string | null>(null)
   return (
-    <div style={{ padding: `${space.lg}px ${space.xl}px`, display: 'flex', alignItems: 'center', gap: 18 }}>
+    // The ring above its rows, the rows the column's full width (RR-I1): in a
+    // 300-352 px column a 168 px ring left the names about 100 px beside it.
+    <div
+      style={{
+        padding: `${space.lg}px ${space.xl}px`,
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        gap: space.lg,
+      }}
+    >
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 7 }}>
       <Donut
         label="Diện tích đang dừng ở mỗi lớp"
@@ -2224,53 +2234,53 @@ function StageRing({
         ring keeps its own question and now carries a caption
         saying which one it answers.
       */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0 }}>
+      <div
+        data-testid="stage-legend"
+        style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0, alignSelf: 'stretch' }}
+      >
         {stages.map((sp) => (
           <div
             key={sp.stage.id}
             data-testid="stage-legend-row"
             {...legendRowProps(sp.stage.id, active, setActive, {
-              display: 'flex', alignItems: 'center', gap: 9, minWidth: 0,
+              display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0,
             })}
           >
-            <span
-              aria-hidden
-              data-testid="stage-legend-marker"
-              style={{
-                // A circle of the coat's colour, nothing else (CLR-03).
-                width: 15,
-                height: 15,
-                borderRadius: '50%',
-                flex: 'none',
-                background: sp.stage.color,
-              }}
-            />
             {/*
-              Two lines, not three columns: the rail is ~300px
-              and "Blast + Coat 1" beside an area and a percent
-              wrapped word by word over the numbers (seen in
-              Chrome). Name on top, figures beneath it.
+              Two lines: the dot, the name and its percent, then the area.
+              The figures never wrap; a name wraps only when the column's
+              full width cannot hold it.
             */}
-            <div style={{ minWidth: 0, flex: 1 }}>
-              <div style={{ ...type.body, lineHeight: 1.3 }}>
-                {sp.stage.name}
-              </div>
-              <div
+            <div style={{ display: 'flex', alignItems: 'center', gap: 9, minWidth: 0 }}>
+              <span
+                aria-hidden
+                data-testid="stage-legend-marker"
                 style={{
-                  display: 'flex',
-                  gap: 6,
-                  ...type.caption,
-                  color: palette.textTertiary,
-                  lineHeight: 1.3,
-                  marginTop: 1,
+                  // A circle of the coat's colour, nothing else (CLR-03).
+                  width: 15,
+                  height: 15,
+                  borderRadius: '50%',
+                  flex: 'none',
+                  background: sp.stage.color,
                 }}
-              >
-                <span style={{ color: palette.textSecondary, whiteSpace: 'nowrap' }}>
-                  {`${formatAreaM2(sp.cumulativeAreaM2)} / ${formatAreaM2(totalAreaM2)} ${unit}`}
-                </span>
-                <span aria-hidden>·</span>
-                <span>{formatPercent(sp.ratio)}</span>
-              </div>
+              />
+              <span style={{ ...type.body, lineHeight: 1.3, minWidth: 0, flex: 1, overflowWrap: 'break-word' }}>
+                {sp.stage.name}
+              </span>
+              <span style={{ ...type.bodyStrong, flex: 'none', whiteSpace: 'nowrap' }}>
+                {formatPercent(sp.ratio)}
+              </span>
+            </div>
+            <div
+              style={{
+                ...type.caption,
+                color: palette.textSecondary,
+                lineHeight: 1.3,
+                whiteSpace: 'nowrap',
+                paddingInlineStart: 15 + 9,
+              }}
+            >
+              {`${formatAreaM2(sp.cumulativeAreaM2)} / ${formatAreaM2(totalAreaM2)} ${unit}`}
             </div>
           </div>
         ))}

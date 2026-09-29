@@ -312,6 +312,30 @@ describe('DeckProgressPanel', () => {
     expect(within(ring).queryByText(/^Vòng tròn:/)).toBeNull()
   })
 
+  it('stacks the ring above its rows in its 300-352 px column, the rows its full width (RR-I1)', async () => {
+    renderPanel()
+    const ring = await screen.findByTestId('stage-ring')
+    const legend = within(ring).getByTestId('stage-legend')
+    const stack = legend.parentElement as HTMLElement
+    expect(stack).toHaveStyle({ display: 'flex', flexDirection: 'column', alignItems: 'center' })
+    expect(within(stack).getByTestId('ring-figure')).toBeInTheDocument()
+    expect(legend).toHaveStyle({ alignSelf: 'stretch' })
+  })
+
+  it('reads each coat row in two lines: dot, name and percent, then the area (RR-I1)', async () => {
+    renderPanel()
+    const ring = await screen.findByTestId('stage-ring')
+    const row = within(ring).getByText('Coat 2').closest('[data-testid="stage-legend-row"]') as HTMLElement
+    const marker = within(row).getByTestId('stage-legend-marker')
+    const line1 = marker.parentElement as HTMLElement
+    expect(within(line1).getByText('Coat 2')).toBeInTheDocument()
+    // Coat 2 is cumulative: every bay has been through it.
+    expect(within(line1).getByText('100,00%')).toBeInTheDocument()
+    const area = within(row).getByText('1.000,00 / 1.000,00 m²')
+    expect(line1.contains(area)).toBe(false)
+    expect(row.children).toHaveLength(2)
+  })
+
   describe('the ring and its coat rows (CHT-02)', () => {
     // Coat 2 and Tháo giáo each hold 500 m² right now; Blast + Coat 1 holds
     // none (every bay is past it), so it has a row and no slice.
@@ -354,7 +378,8 @@ describe('DeckProgressPanel', () => {
       renderPanel()
       const ring = await screen.findByTestId('stage-ring')
       const row = rowOf(ring, 'Coat 2')
-      expect(row).toHaveTextContent('1.000,00 / 1.000,00 m²·100,00%')
+      // Name and percent on the first line, the area under them (RR-I1).
+      expect(row).toHaveTextContent('Coat 2100,00%1.000,00 / 1.000,00 m²')
       expect(sliceOf(ring, 'Coat 2')).toHaveAccessibleDescription(
         'Đang ở lớp này: 500,00 / 1.000,00 m² · 50,00% Cộng dồn: 1.000,00 / 1.000,00 m² · 100,00%',
       )
