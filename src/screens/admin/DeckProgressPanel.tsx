@@ -1674,7 +1674,7 @@ export function DeckProgressPanel({
                       </div>
                       <div style={{ padding: `${space.lg}px ${space.xl}px`, display: 'flex', alignItems: 'center', gap: 18 }}>
                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 7 }}>
-                        <Donut slices={ringSlices} size={168} thickness={30}>
+                        <Donut label="Diện tích đang dừng ở mỗi lớp" slices={ringSlices} size={168} thickness={30}>
                           <span style={{ fontSize: 10, fontWeight: 600, color: palette.textTertiary }}>
                             Tiến độ sàn
                             <InfoTip text="Vòng tròn: diện tích đang dừng ở mỗi lớp, không cộng dồn" />

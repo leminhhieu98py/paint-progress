@@ -744,7 +744,7 @@ export function DecksScreen() {
                   Tiến độ dự án
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginTop: 14 }}>
-                  <Donut slices={slices}>
+                  <Donut label="Tiến độ dự án" slices={slices}>
                     <span style={{ fontSize: 21, fontWeight: 700, letterSpacing: '-0.028em' }}>
                       {formatPercent(rollup.progress)}
                     </span>

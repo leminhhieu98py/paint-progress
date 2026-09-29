@@ -413,11 +413,10 @@ describe('DecksScreen — the project-wide half of progress', () => {
     expect(within(cdRow).getByText('50,00%')).toBeInTheDocument()
     expect(within(cdRow).getByText('21,25%')).toBeInTheDocument()
 
-    // The arc itself is untouched: the ring's conic-gradient still runs CD's
-    // solid band up to 20.750% (21,25% minus the hairline gap), i.e. weight
-    // × progress, not the 50% shown in the legend.
+    // The arc itself is untouched: CD's slice spans 21,25% of the ring, i.e.
+    // weight × progress, not the 50% shown in the legend.
     const ring = within(donut).getByTestId('donut-ring')
-    expect(ring.style.background).toContain('20.750%')
+    expect(within(ring).getByRole('img', { name: 'CD' })).toHaveAttribute('data-arc', '0.2125')
   })
 
   it('removes the trọng số × tiến độ caption under the legend (RV6-03)', async () => {

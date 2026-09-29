@@ -152,7 +152,7 @@ export function StageRollupCard({
           eventually be the stale one. The area is what the ring is actually
           dividing up.
         */}
-        <Donut slices={ringSlices} size={132} thickness={24}>
+        <Donut label="Diện tích đang dừng ở mỗi lớp" slices={ringSlices} size={132} thickness={24}>
           <span style={{ fontSize: 17, fontWeight: 700, letterSpacing: '-0.028em' }}>
             {formatAreaM2(totalAreaM2)}
           </span>

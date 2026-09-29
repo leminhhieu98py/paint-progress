@@ -1,68 +1,97 @@
-import { render, screen } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
-import { Donut, conicStops } from './Donut'
+import { fireEvent, render, screen } from '@testing-library/react'
+import { describe, expect, it, vi } from 'vitest'
+import { Donut, type DonutSlice } from './Donut'
 
-describe('conicStops', () => {
-  it('lays slices out in order, each followed by a hairline gap', () => {
-    const stops = conicStops([
-      { label: 'a', value: 0.5, color: '#aa0000' },
-      { label: 'b', value: 0.25, color: '#00aa00' },
-    ], '#eeeeee')
-    // The gap is what keeps two adjacent slices of similar colour from reading
-    // as one wedge -- the deck rollup shades three decks of the same hue.
-    expect(stops).toBe(
-      '#aa0000 0.000% 49.500%,#ffffff 49.500% 50.000%,'
-      + '#00aa00 50.000% 74.500%,#ffffff 74.500% 75.000%,'
-      + '#eeeeee 75.000% 100%',
-    )
-  })
+const SLICES: DonutSlice[] = [
+  { key: 'cd', label: 'CD', value: 0.2125, color: '#0A8175', detail: 'Tiến độ 50,00% · Đóng góp 21,25%' },
+  { key: 'wd', label: 'WD', value: 0.1, color: '#88690B', detail: 'Tiến độ 20,00% · Đóng góp 10,00%' },
+  { key: 'td', label: 'TD', value: 0, color: '#2563EB', detail: 'Tiến độ 0,00% · Đóng góp 0,00%' },
+]
 
-  it('skips a zero slice rather than emitting a gap for it', () => {
-    // A deck at 0% contributes nothing, and a bare gap where it should be
-    // reads as a fourth deck that got lost.
-    const stops = conicStops([
-      { label: 'a', value: 0.5, color: '#aa0000' },
-      { label: 'b', value: 0, color: '#00aa00' },
-    ], '#eeeeee')
-    expect(stops).not.toContain('#00aa00')
-  })
-
-  it('leaves no remainder band when the slices already fill the circle', () => {
-    const stops = conicStops([{ label: 'a', value: 1, color: '#aa0000' }], '#eeeeee')
-    expect(stops.endsWith('#eeeeee 100.000% 100%')).toBe(true)
-  })
-
-  it('renders an all-remainder ring for a project with no progress at all', () => {
-    expect(conicStops([], '#eeeeee')).toBe('#eeeeee 0.000% 100%')
-  })
-
-  it('never runs a slice past the full circle', () => {
-    // Reachable through edited stage weights that sum above 1: an unclamped
-    // conic-gradient with stops beyond 100% renders as a solid disc, which
-    // reads as a finished deck.
-    const stops = conicStops([{ label: 'a', value: 1.4, color: '#aa0000' }], '#eeeeee')
-    const percents = [...stops.matchAll(/([\d.]+)%/g)].map((m) => Number(m[1]))
-    expect(Math.max(...percents)).toBe(100)
-  })
-})
+const slice = (name: string) => screen.getByRole('img', { name })
 
 describe('Donut', () => {
   it('renders the centre content over the ring', () => {
     render(
-      <Donut slices={[{ label: 'Main Deck', value: 0.44, color: '#0A8175' }]}>
+      <Donut label="Tiến độ dự án" slices={[{ label: 'Main Deck', value: 0.44, color: '#0A8175' }]}>
         <span>44,38%</span>
       </Donut>,
     )
     expect(screen.getByText('44,38%')).toBeInTheDocument()
   })
 
-  it('keeps the arc keyed to value when a slice also carries a display number (RV6-02)', () => {
-    // `display` is legend-only (DecksScreen prints `display ?? value`); the
-    // ring itself must still size the arc off `value` alone.
-    const stops = conicStops(
-      [{ label: 'a', value: 0.5, display: 0.9, color: '#aa0000' }],
-      '#eeeeee',
+  it('draws one path per slice with an arc, in the slice colour (CHT-02)', () => {
+    render(<Donut label="Tiến độ dự án" slices={SLICES} />)
+    const paths = screen.getAllByTestId('donut-slice')
+    // TD is at zero: no arc, so no path to hover.
+    expect(paths).toHaveLength(2)
+    expect(paths.map((p) => p.getAttribute('fill'))).toEqual(['#0A8175', '#88690B'])
+    expect(paths[0]).toHaveAttribute('data-arc', '0.2125')
+  })
+
+  it('gives the ring an accessible name and each slice its legend figures (CHT-02)', () => {
+    render(<Donut label="Tiến độ dự án" slices={SLICES} />)
+    expect(screen.getByRole('group', { name: 'Tiến độ dự án' })).toBeInTheDocument()
+    expect(slice('CD')).toHaveAccessibleDescription('Tiến độ 50,00% · Đóng góp 21,25%')
+    expect(slice('WD')).toHaveAccessibleDescription('Tiến độ 20,00% · Đóng góp 10,00%')
+  })
+
+  it('reports the slice under the pointer, and nothing once it leaves (CHT-02)', () => {
+    const onActiveChange = vi.fn()
+    render(<Donut label="Tiến độ dự án" slices={SLICES} onActiveChange={onActiveChange} />)
+    fireEvent.pointerEnter(slice('WD'))
+    expect(onActiveChange).toHaveBeenLastCalledWith('wd')
+    fireEvent.pointerLeave(slice('WD'))
+    expect(onActiveChange).toHaveBeenLastCalledWith(null)
+  })
+
+  it('reports a focused slice, and nothing once it blurs (CHT-02)', () => {
+    const onActiveChange = vi.fn()
+    render(<Donut label="Tiến độ dự án" slices={SLICES} onActiveChange={onActiveChange} />)
+    slice('CD').focus()
+    expect(onActiveChange).toHaveBeenLastCalledWith('cd')
+    slice('CD').blur()
+    expect(onActiveChange).toHaveBeenLastCalledWith(null)
+  })
+
+  it('keys a slice by its label when it has no key of its own', () => {
+    const onActiveChange = vi.fn()
+    render(
+      <Donut
+        label="Tiến độ"
+        slices={[{ label: 'Coat 1', value: 0.5, color: '#0A8175' }]}
+        onActiveChange={onActiveChange}
+      />,
     )
-    expect(stops).toBe('#aa0000 0.000% 49.500%,#ffffff 49.500% 50.000%,#eeeeee 50.000% 100%')
+    fireEvent.pointerEnter(slice('Coat 1'))
+    expect(onActiveChange).toHaveBeenLastCalledWith('Coat 1')
+  })
+
+  it('keeps the active slice full and lifted, and dims the others (CHT-02)', () => {
+    const { rerender } = render(<Donut label="Tiến độ dự án" slices={SLICES} activeKey={null} />)
+    for (const p of screen.getAllByTestId('donut-slice')) expect(p).toHaveAttribute('opacity', '1')
+    const idle = slice('CD').getAttribute('d')
+
+    rerender(<Donut label="Tiến độ dự án" slices={SLICES} activeKey="cd" />)
+    expect(slice('CD')).toHaveAttribute('opacity', '1')
+    expect(slice('WD')).toHaveAttribute('opacity', '0.35')
+    // Lifted: the outer edge moves out (150 / 2 = 75 -> 78), the inner one stays.
+    expect(idle).toContain('A75 75')
+    expect(slice('CD').getAttribute('d')).toContain('A78 78')
+    expect(slice('WD').getAttribute('d')).toContain('A75 75')
+  })
+
+  it('shows the slice name and the legend figures in a tooltip while it is hovered (CHT-02)', async () => {
+    render(<Donut label="Tiến độ dự án" slices={SLICES} />)
+    fireEvent.pointerEnter(slice('CD'))
+    const tip = await screen.findByRole('tooltip')
+    expect(tip).toHaveTextContent('CD')
+    expect(tip).toHaveTextContent('Tiến độ 50,00% · Đóng góp 21,25%')
+  })
+
+  it('opens no tooltip when a slice is only made active from outside, by its legend row', () => {
+    // The row the reader is pointing at already prints the same figures.
+    render(<Donut label="Tiến độ dự án" slices={SLICES} activeKey="cd" />)
+    expect(screen.queryByRole('tooltip')).toBeNull()
   })
 })
