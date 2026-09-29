@@ -1,9 +1,10 @@
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
+import { Link, MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { pageSubtitle } from '../../test/copy'
 import { DashboardScreen } from './DashboardScreen'
+import { endSession } from '../../lib/sessionCache'
 
 const loadProjectModel = vi.hoisted(() => vi.fn())
 const listProjectEvents = vi.hoisted(() => vi.fn())
@@ -26,6 +27,19 @@ vi.mock('./ProductivityDashboard', () => ({
   }) => (
     <div data-testid="dashboard-mock" data-version={version}>DASHBOARD {events.length} sự kiện · {filters.deck || 'Tất cả sàn'} · {filters.work ?? 'công việc đầu'}</div>
   ),
+}))
+// The field header (GS-01) on the gs variant: who is signed in, and the
+// foreman's project name.
+const authRole = vi.hoisted(() => ({ value: 'gs' as 'gs' | 'viewer' }))
+vi.mock('../../auth/AuthProvider', () => ({
+  useAuth: () => ({
+    profile: { id: 'u1', username: 'gs1', fullName: 'Nguyễn Văn A', role: authRole.value, active: true },
+    signOut: vi.fn(),
+  }),
+}))
+const loadGsProjectIdentity = vi.hoisted(() => vi.fn())
+vi.mock('../../lib/gsApi', () => ({
+  loadGsProjectIdentity: (id: string) => loadGsProjectIdentity(id),
 }))
 vi.mock('react-router-dom', async () => {
   const actual = await vi.importActual<typeof import('react-router-dom')>('react-router-dom')
@@ -59,6 +73,11 @@ beforeEach(() => {
   listProjectEvents.mockReset()
   listProjectNames.mockReset()
   navigate.mockReset()
+  authRole.value = 'gs'
+  // The field header keeps project names per session; every test is a new one.
+  endSession()
+  loadGsProjectIdentity.mockReset()
+  loadGsProjectIdentity.mockResolvedValue({ code: 'GB', name: 'Giàn B' })
   listWorks.mockReset()
   listDecks.mockReset()
   // Another project's options, read only while it is the DRAFT project (FLT-02).
@@ -89,6 +108,8 @@ const renderAdmin = (path = '/admin/dashboard') =>
 const renderField = () =>
   render(
     <MemoryRouter initialEntries={['/gs/p2/dashboard']}>
+      {/* A real route change, as the viewer's project switch makes one. */}
+      <Link to="/gs/p1/dashboard">sang Giàn A</Link>
       <Routes>
         <Route path="/gs/:projectId/dashboard" element={<DashboardScreen variant="gs" />} />
       </Routes>
@@ -289,13 +310,40 @@ describe('DashboardScreen (admin)', () => {
 })
 
 describe('DashboardScreen (gs)', () => {
-  it('reads the project from the path and offers the way back to the drawing', async () => {
+  it('reads the project from the path, under the field header with Năng suất current (GS-01)', async () => {
     renderField()
     expect(await screen.findByText('DASHBOARD 2 sự kiện · Tất cả sàn · công việc đầu')).toBeInTheDocument()
     expect(loadProjectModel).toHaveBeenCalledWith('p2')
     expect(listProjectNames).not.toHaveBeenCalled()
-    await userEvent.click(screen.getByRole('button', { name: 'Về bản vẽ' }))
-    expect(navigate).toHaveBeenCalledWith('/gs/p2')
+    const nav = screen.getByRole('navigation', { name: 'Điều hướng' })
+    expect(within(nav).getByRole('link', { name: 'Năng suất' })).toHaveAttribute('aria-current', 'page')
+    expect(within(nav).getByRole('link', { name: 'Sàn' })).toHaveAttribute('href', '/gs/p2')
+    expect(await screen.findByText('Giàn B')).toBeInTheDocument()
+  })
+
+  it('has no back button and no title bar of its own: the Sàn tab is the way back (GS-02)', async () => {
+    renderField()
+    await screen.findByText(/^DASHBOARD 2 sự kiện/)
+    expect(screen.queryByRole('button', { name: 'Về bản vẽ' })).toBeNull()
+    // "Năng suất" once: the tab, not a title beside it.
+    expect(screen.getAllByText('Năng suất')).toHaveLength(1)
+    // The filter bar is the first thing under the header.
+    const content = bar().closest('.ant-layout-content') as HTMLElement
+    expect(content.firstElementChild).toBe(bar())
+    expect(before(screen.getByRole('navigation', { name: 'Điều hướng' }), bar())).toBe(true)
+  })
+
+  it('starts another project on its own defaults, not the last project\'s applied filters', async () => {
+    renderField()
+    await screen.findByText(/^DASHBOARD 2 sự kiện/)
+    await userEvent.click(within(bar()).getByRole('combobox', { name: 'Sàn' }))
+    await userEvent.click(await screen.findByTitle('Sàn A'))
+    await pressTim()
+    expect(await screen.findByText('DASHBOARD 2 sự kiện · Sàn A · công việc đầu')).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('link', { name: 'sang Giàn A' }))
+    await waitFor(() => expect(loadProjectModel).toHaveBeenCalledWith('p1'))
+    expect(await screen.findByText('DASHBOARD 2 sự kiện · Tất cả sàn · công việc đầu')).toBeInTheDocument()
   })
 
   it('gives the field the same bar without a project select (FLT-01, GS-04)', async () => {

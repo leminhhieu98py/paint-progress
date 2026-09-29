@@ -1,9 +1,9 @@
 import {
-  Alert, App, Button, Grid, Layout, Segmented, Select, Space, Spin, Tabs,
+  Alert, App, Button, Grid, Layout, Segmented, Select, Space, Spin,
 } from 'antd'
 import dayjs from 'dayjs'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useParams } from 'react-router-dom'
 import { useAuth } from '../../auth/AuthProvider'
 
 import { DrawingCanvas } from '../../canvas/DrawingCanvas'
@@ -17,7 +17,6 @@ import { EMPTY_EFFORT, type Cell, type Deck, type DeckEvent, type Effort, type S
 // One signed-URL helper for both roles: the bucket name and the 3600-second
 // expiry belong in one place, and decksApi is a lib module rather than an admin
 // one. Screens still never touch `supabase` directly.
-import { APP_BASE_PATH, LOGIN_PATH } from '../../config'
 import { getDrawingUrl } from '../../lib/decksApi'
 import { DEFAULT_QUANTITY_LABEL, DEFAULT_UNIT } from '../../domain/unit'
 import { formatAreaM2, formatPercent } from '../../lib/format'
@@ -26,7 +25,6 @@ import {
   loadGsProject, loadGsProjectIdentity, setCellState, subscribeDeckStates,
   type CellStateView, type DeckWork, type GsDeck, type GsRealtimeStatus,
 } from '../../lib/gsApi'
-import { listProjectNames } from '../../lib/projectsApi'
 import { listDeckZones } from '../../lib/zonesApi'
 import { listEmployees } from '../../lib/employeesApi'
 import { listDeckEvents, loadDeckWorks, loadProjectModel } from '../../lib/progressApi'
@@ -34,15 +32,15 @@ import { buildReportWorkbook, reportFileName, type DeckImages, type PlanImage } 
 import { buildProjectReport, downloadWorkbook } from '../../lib/projectReport'
 import { renderDeckDrawing, renderDeckPie, renderPlanDrawing } from '../../canvas/deckSnapshot'
 import { CellStageModal } from './CellStageModal'
-import { ConsequenceModal } from '../../components/ConsequenceModal'
-import { LogoutOutlined } from '@ant-design/icons'
 import { fieldError, palette, shadowCard } from '../../theme'
-import { AreaChartOutlined, CalendarOutlined, DownloadOutlined, LineChartOutlined } from '@ant-design/icons'
+import { CalendarOutlined, DownloadOutlined } from '@ant-design/icons'
 import { EmptyState } from '../../components/EmptyState'
 import { DeckProgressCard, StageRollupCard } from './DeckStatsCards'
 import { DeckTodayCard } from './DeckTodayCard'
+import { FieldHeader } from './FieldHeader'
+import { rememberProjectName } from './fieldProjects'
+import { openingDeckId, rememberDeck } from './lastDeck'
 import { SectionCard } from '../../components/SectionCard'
-import { StatusPill } from '../../components/StatusPill'
 import { searchSelectProps } from '../../components/searchSelect'
 
 /**
@@ -108,8 +106,7 @@ const stateKey = (workId: string, cellId: string) => `${workId}/${cellId}`
 
 export function GsScreen() {
   const { projectId } = useParams()
-  const navigate = useNavigate()
-  const { profile, signOut } = useAuth()
+  const { profile } = useAuth()
   /** A viewer (0028) reads this screen and writes nothing; the database
    *  enforces it, the screen says so and offers no write control. */
   const readOnly = profile?.role === 'viewer'
@@ -149,28 +146,8 @@ export function GsScreen() {
    * refusal can say so, rather than rendering as missing data (see GsProject).
    */
   const [notMember, setNotMember] = useState(false)
-  /**
-   * Every project, for the viewer's switch in the header (RV6-24). Read only
-   * for a viewer -- 0034 gives the role every project and this screen is one
-   * project's, so changing it is a navigation. A foreman has one project and
-   * no list, so nothing is read and nothing is shown.
-   */
-  const [projectOptions, setProjectOptions] = useState<{ value: string; label: string }[]>([])
-
-  useEffect(() => {
-    if (!readOnly) return
-    let cancelled = false
-    listProjectNames()
-      .then((rows) => {
-        if (!cancelled) setProjectOptions(rows.map((p) => ({ value: p.id, label: p.name })))
-      })
-      // Its failure is not the project's: the header keeps the deck tabs and
-      // the switch simply lists the project on screen, which is on the route.
-      .catch(() => {})
-    return () => {
-      cancelled = true
-    }
-  }, [readOnly])
+  /** The project's name, from the row loadGsProject reads anyway: the header's (M-1). */
+  const [projectName, setProjectName] = useState<string | null>(null)
 
   useEffect(() => {
     if (!projectId) return
@@ -178,6 +155,9 @@ export function GsScreen() {
     setLoading(true)
     setProjectError(false)
     setNotMember(false)
+    // Another project's name must never sit over this one's load or its
+    // failure (M-4b).
+    setProjectName(null)
     // Names for the note thread, once per project rather than per bay. Its
     // failure is not the project's: the deck, the drawing and the write carry
     // on, and the thread signs its notes "Không rõ người ghi".
@@ -190,11 +170,16 @@ export function GsScreen() {
       .then((project) => {
         if (cancelled) return
         setNotMember(!project.isMember)
+        setProjectName(project.name ?? null)
+        if (project.name) rememberProjectName(projectId, project.name)
         setDecks(project.decks)
-        setActiveDeckId(project.decks[0]?.id ?? null)
+        // The deck last opened in this project, else the first (GS-02).
+        setActiveDeckId(openingDeckId(projectId, project.decks))
       })
       .catch(() => {
-        if (!cancelled) setProjectError(true)
+        if (cancelled) return
+        setProjectName(null)
+        setProjectError(true)
       })
       .finally(() => {
         if (!cancelled) setLoading(false)
@@ -651,11 +636,11 @@ export function GsScreen() {
   const [exporting, setExporting] = useState(false)
   const [zones, setZones] = useState<Zone[]>([])
   /**
-   * prog(D) per deck, for the tabs.
+   * prog(D) per deck, for the deck picker.
    *
-   * Empty until the batched read lands, and the tab shows an em dash rather
-   * than a 0,00% it does not know yet -- a wrong figure on the tab the foreman
-   * is choosing by is worse than no figure.
+   * Empty until the batched read lands, and the option shows an em dash rather
+   * than a 0,00% it does not know yet -- a wrong figure on the control the
+   * foreman is choosing by is worse than no figure.
    */
   const [deckPercents, setDeckPercents] = useState<Record<string, number>>({})
 
@@ -666,7 +651,7 @@ export function GsScreen() {
     listProjectIndex(projectId, ids)
       .then((index) => {
         if (cancelled) return
-        // Each deck's own works and coats, never the open deck's: the tab
+        // Each deck's own works and coats, never the open deck's: the option
         // carries P_d, the deck across its works (GSW-R3). A deck in no work
         // reads 0, which is what it contributes.
         setDeckPercents(Object.fromEntries(
@@ -674,9 +659,9 @@ export function GsScreen() {
         ))
       })
       .catch(() => {
-        // The tabs fall back to an em dash. Nothing else on the screen depends
-        // on this, and an error banner for a figure on a tab would push the
-        // drawing down the page on a tablet.
+        // The options fall back to an em dash. Nothing else on the screen
+        // depends on this, and an error banner for a figure on an option would
+        // push the drawing down the page on a tablet.
       })
     return () => { cancelled = true }
   }, [projectId, decks, states])
@@ -848,7 +833,6 @@ export function GsScreen() {
     }
   }, [])
   const { message } = App.useApp()
-  const [confirmingOut, setConfirmingOut] = useState(false)
   /**
    * Which of the three shapes this screen is in.
    *
@@ -1050,12 +1034,31 @@ export function GsScreen() {
       })
   }
 
+  /*
+    GS-01: the one field header -- the project, Sàn · Năng suất · KPI, who is
+    signed in and logout -- in EVERY state of this screen (M-4), always the
+    first child of the same Layout, so React keeps the one instance: a
+    viewer's project switch spins the body under a header that stays put, and
+    a refusal or a failed load still offers the tabs and logout. The name is
+    held back while a project loads, so the old project's never shows over
+    the next one's spinner.
+  */
+  const header = projectId
+    ? <FieldHeader projectId={projectId} projectName={loading ? null : projectName} projectNameLoading={loading} />
+    : null
+  const inShell = (body: ReactNode) => (
+    <Layout style={{ minHeight: '100vh' }}>
+      {header}
+      {body}
+    </Layout>
+  )
+
   if (loading) {
-    return <Spin style={{ display: 'block', margin: '25vh auto' }} />
+    return inShell(<Spin style={{ display: 'block', margin: '25vh auto' }} />)
   }
 
   if (projectError) {
-    return (
+    return inShell(
       <div style={{ maxWidth: 360, margin: '25vh auto' }}>
         <Alert
           type="error"
@@ -1067,7 +1070,7 @@ export function GsScreen() {
             </Button>
           }
         />
-      </div>
+      </div>,
     )
   }
 
@@ -1079,112 +1082,21 @@ export function GsScreen() {
   // coming. Same wording as the index route's, in the singular: whatever the
   // cause, the action is to talk to the administrator.
   if (notMember) {
-    return (
+    return inShell(
       <div style={{ maxWidth: 360, margin: '25vh auto' }}>
         <Alert
           type="info"
           message="Không xem được dự án này"
           description="Tài khoản hợp lệ, nhưng chưa được gán vào dự án này. Liên hệ quản trị viên để được thêm vào dự án."
         />
-      </div>
+      </div>,
     )
   }
 
-  return (
-    <Layout style={{ minHeight: '100vh' }}>
-      {/*
-        Deck tabs and who is signed in, in one 48px bar. The drawing is the
-        screen; everything else has to earn its height on a tablet held at
-        arm's length.
-      */}
-      <Layout.Header
-        style={{
-          background: palette.bgContainer,
-          borderBottom: `1px solid ${palette.borderCard}`,
-          display: 'flex',
-          alignItems: 'center',
-          gap: 12,
-          paddingInline: 16,
-          height: 'auto',
-          lineHeight: 'normal',
-        }}
-      >
-        <Tabs
-          style={{ flex: 1, minWidth: 0 }}
-          activeKey={activeDeckId ?? undefined}
-          onChange={(key) => setActiveDeckId(key)}
-          items={decks.map((d) => ({
-            key: d.id,
-            /*
-              Name AND percentage. The foreman picks a deck to work on, and
-              "which one is behind" is the question he picks by -- without a
-              figure the tabs are three names in an order nobody chose. The
-              numbers come from one batched three-column read of the project
-              (listProjectIndex), not from loading each deck in full.
-            */
-            label: (
-              <span style={{ display: 'inline-flex', flexDirection: 'column', gap: 3 }}>
-                <span style={{ fontWeight: 600, lineHeight: 1.2 }}>{d.name}</span>
-                <span style={{ fontSize: 11, fontWeight: 500, opacity: 0.75 }}>
-                  {deckPercents[d.id] === undefined ? '—' : formatPercent(deckPercents[d.id])}
-                </span>
-              </span>
-            ),
-          }))}
-        />
-        {/*
-          RV6-24: a viewer reads every project (0034), so the header names the
-          one on screen and offers the rest. A foreman gets no switch -- their
-          screen is their one project's, as before.
-        */}
-        {readOnly && projectId && (
-          <Select
-            aria-label="Dự án"
-            style={{ width: phone ? 160 : 220, flex: 'none' }}
-            value={projectId}
-            onChange={(id) => navigate(`${APP_BASE_PATH}/gs/${id}`)}
-            {...searchSelectProps}
-            options={projectOptions.some((o) => o.value === projectId)
-              ? projectOptions
-              : [{ value: projectId, label: projectId }, ...projectOptions]}
-          />
-        )}
-        <div style={{ textAlign: 'right', flex: 'none' }}>
-          <div style={{ fontWeight: 600, lineHeight: 1.25 }}>{profile?.fullName}</div>
-          <span style={{ fontSize: 11, color: palette.textTertiary }}>{profile?.username}</span>
-        </div>
-        {readOnly && <StatusPill tone="off">Chỉ xem</StatusPill>}
-        {/*
-          The productivity dashboard (Feedback Rv2, item 12), one tap from the
-          drawing and one tap back. Icon only on a phone: the header is already
-          carrying the deck tabs and the name.
-        */}
-        <Button
-          aria-label="Năng suất"
-          icon={<LineChartOutlined aria-hidden />}
-          onClick={() => navigate(`${APP_BASE_PATH}/gs/${projectId}/dashboard`)}
-        >
-          {phone ? null : 'Năng suất'}
-        </Button>
-        {/*
-          KPI Plan vs Actual (Feedback Rv5, item 9), beside Năng suất and
-          reached the same way. Read-only for everyone here: the plan dates are
-          the admin's (RV5-28) and the viewer reads the chart too (RV5-29).
-        */}
-        <Button
-          aria-label="KPI"
-          icon={<AreaChartOutlined aria-hidden />}
-          onClick={() => navigate(`${APP_BASE_PATH}/gs/${projectId}/kpi`)}
-        >
-          {phone ? null : 'KPI'}
-        </Button>
-        {/* Spec §8.1: no account UI. Logout only. */}
-        <Button
-          aria-label="Đăng xuất"
-          icon={<LogoutOutlined />}
-          onClick={() => setConfirmingOut(true)}
-        />
-      </Layout.Header>
+  // The drawing is the screen; everything under the header has to earn its
+  // height on a tablet held at arm's length.
+  return inShell(
+    <>
 
       {/*
         Full-bleed and dark red, not an inset warning box. This banner means
@@ -1235,6 +1147,39 @@ export function GsScreen() {
           padding: phone ? 12 : 16,
         }}
       >
+        {/*
+          GS-03: the deck, chosen by name, as the first row of the page and
+          across both columns. Name AND percentage on every option: the
+          foreman picks a deck to work on, and "which one is behind" is the
+          question he picks by. The figures come from one batched read of the
+          project (listProjectIndex), not from loading each deck in full.
+          Search is on the name only. Choosing one is the whole deck change:
+          every per-deck read, the realtime channel and the plan's coat follow
+          activeDeckId.
+        */}
+        {decks.length > 0 && (
+          <div style={{ gridColumn: '1 / -1', minWidth: 0 }}>
+            <Select
+              aria-label="Sàn"
+              {...searchSelectProps}
+              value={activeDeckId ?? undefined}
+              onChange={(id) => {
+                setActiveDeckId(id)
+                // Remembered on the choice, never on the load: a project's
+                // first render must not write the previous project's deck
+                // under its key.
+                if (projectId) rememberDeck(projectId, id)
+              }}
+              style={{ width: phone ? '100%' : 320, maxWidth: '100%' }}
+              options={decks.map((d) => ({
+                value: d.id,
+                label: `${d.name} · ${deckPercents[d.id] === undefined ? '—' : formatPercent(deckPercents[d.id])}`,
+                searchKey: d.name,
+              }))}
+            />
+          </div>
+        )}
+
         <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>
           {/*
             GSW-R1: the work the drawing is showing. Hidden with one work, since
@@ -1551,23 +1496,6 @@ export function GsScreen() {
         defaultEffortNames={lastNames}
         employees={employees}
       />
-
-      {/*
-        A foreman in gloves, on a tablet, one button away from the drawing he is
-        working off. Signing out costs him a walk back to whoever holds the
-        password, so it asks first.
-      */}
-      <ConsequenceModal
-        open={confirmingOut}
-        tag="Xác nhận"
-        title="Đăng xuất?"
-        description="Phiên làm việc hiện tại sẽ kết thúc:"
-        items={[{ label: profile?.fullName ?? '', meta: profile?.username ?? '' }]}
-        consequence="Muốn ghi tiếp tiến độ thì phải đăng nhập lại bằng mật khẩu quản trị viên đã giao."
-        okText="Vẫn đăng xuất"
-        onCancel={() => setConfirmingOut(false)}
-        onOk={() => void signOut().then(() => navigate(LOGIN_PATH, { replace: true }))}
-      />
-    </Layout>
+    </>,
   )
 }

@@ -3,8 +3,10 @@ import {
   act, render, screen, waitFor, within,
 } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter, Route, Routes } from 'react-router-dom'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { Link, MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { endSession } from '../../lib/sessionCache'
+import { FieldHeader } from './FieldHeader'
 import { GsScreen } from './GsScreen'
 
 const loadGsProject = vi.hoisted(() => vi.fn())
@@ -224,6 +226,10 @@ const subscribedDecks: string[] = []
 const unsubscribe = vi.fn()
 
 beforeEach(() => {
+  // The last deck per project lives here (GS-02); every test opens a fresh tab.
+  sessionStorage.clear()
+  // And the field header's project names are kept per session.
+  endSession()
   loadGsProject.mockReset()
   listDeckCells.mockReset()
   listProjectIndex.mockReset()
@@ -308,7 +314,7 @@ beforeEach(() => {
     }
   })
   setCellState.mockResolvedValue(undefined)
-  loadGsProject.mockResolvedValue({ decks: DECKS, isMember: true })
+  loadGsProject.mockResolvedValue({ decks: DECKS, isMember: true, name: 'BlockB1_CPPTS' })
   listDeckCells.mockImplementation((deckId: string) =>
     Promise.resolve(deckId === 'd1' ? D1_CELLS : D2_CELLS))
   getDrawingUrl.mockImplementation((path: string) => Promise.resolve(`https://signed/${path}`))
@@ -322,7 +328,7 @@ beforeEach(() => {
  * `findByTitle` reaches into a closed list. Each input names its own listbox
  * through `aria-controls`; that is the only reliable link.
  */
-const chooseIn = async (name: string, option: string) => {
+const chooseIn = async (name: string, option: string | RegExp) => {
   // getByRole, not getByLabelText: antd puts the aria-label on both the
   // wrapper and the inner input, so getByLabelText finds two elements.
   const box = await screen.findByRole('combobox', { name })
@@ -333,6 +339,23 @@ const chooseIn = async (name: string, option: string) => {
     : null
   if (!dropdown) throw new Error(`Select "${name}" opened no dropdown`)
   await userEvent.click(await within(dropdown).findByTitle(option))
+}
+
+/** The deck picker, the first row of the Sàn page (GS-03). */
+const deckPicker = () => screen.findByRole('combobox', { name: 'Sàn' })
+/** Opens a deck the way a foreman does: by its name in the Sàn picker. */
+const pickDeck = (name: string) => chooseIn('Sàn', new RegExp(`^${name} · `))
+/** The picker's option labels, in order, read off its open dropdown. */
+const deckOptionTitles = async () => {
+  const box = await deckPicker()
+  await userEvent.click(box)
+  const listId = box.getAttribute('aria-controls')
+  const dropdown = listId
+    ? (document.getElementById(listId)?.closest('.ant-select-dropdown') as HTMLElement | null)
+    : null
+  if (!dropdown) throw new Error('The Sàn picker opened no dropdown')
+  await waitFor(() => expect(dropdown.querySelector('.ant-select-item-option')).not.toBeNull())
+  return [...dropdown.querySelectorAll('.ant-select-item-option')].map((o) => o.getAttribute('title'))
 }
 
 /** Everything Feedback Rv4 made compulsory, apart from the coat. */
@@ -356,23 +379,22 @@ describe('GsScreen', () => {
     await waitFor(() => expect(loadGsProject).toHaveBeenCalledWith('p1'))
   })
 
-  it('shows one tab per deck and opens the first one', async () => {
+  it('offers every deck in the Sàn picker and opens the first one', async () => {
     renderScreen()
 
-    expect(await screen.findByRole('tab', { name: /^Cellar Deck/ })).toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: new RegExp(`^Main Deck`) })).toBeInTheDocument()
+    expect(await deckOptionTitles()).toEqual(['Cellar Deck · 0,00%', 'Main Deck · 0,00%'])
     // The first deck's cells, not the second's: c3 exists only on d1.
     await waitFor(() => expect(screen.getByRole('button', { name: 'ô R2C1' })).toBeInTheDocument())
   })
 
-  it('loads the selected deck\'s cells and drawing when the tab changes', async () => {
+  it('loads the selected deck\'s cells and drawing when the deck changes', async () => {
     renderScreen()
-    await screen.findByRole('tab', { name: new RegExp(`^Main Deck`) })
+    await deckPicker()
 
-    await userEvent.click(screen.getByRole('tab', { name: new RegExp(`^Main Deck`) }))
+    await pickDeck('Main Deck')
 
     await waitFor(() => expect(listDeckCells).toHaveBeenCalledWith('d2'))
-    // The drawing has to change with the tab. Asserting the URL, not just that
+    // The drawing has to change with the deck. Asserting the URL, not just that
     // getDrawingUrl was called: a screen that fetched the new deck's cells and
     // kept the old deck's image would put the right colours on the wrong plan.
     await waitFor(() =>
@@ -400,7 +422,7 @@ describe('GsScreen', () => {
     // table, so the singular query is ambiguous here rather than absent.
     expect(await screen.findAllByText('Blast + Coat 1')).not.toHaveLength(0)
 
-    await userEvent.click(screen.getByRole('tab', { name: new RegExp(`^Main Deck`) }))
+    await pickDeck('Main Deck')
 
     expect(await screen.findAllByText('Sơn sàn chính')).not.toHaveLength(0)
     expect(screen.queryAllByText('Blast + Coat 1')).toHaveLength(0)
@@ -432,7 +454,7 @@ describe('GsScreen', () => {
         : Promise.resolve(D2_CELLS))
 
     renderScreen()
-    await userEvent.click(await screen.findByRole('tab', { name: new RegExp(`^Main Deck`) }))
+    await pickDeck('Main Deck')
     await waitFor(() => expect(listDeckCells).toHaveBeenCalledWith('d2'))
 
     resolveD1(D1_CELLS)
@@ -495,7 +517,7 @@ describe('GsScreen', () => {
     expect(body).toHaveStyle({ gridTemplateColumns: 'minmax(0,1fr)' })
   })
 
-  it('scores each tab against its own deck\'s coats, not the open deck\'s', async () => {
+  it('scores each deck option against its own deck\'s coats, not the open deck\'s', async () => {
     // Every deck declares its own stage list with its own ids (spec §3.1).
     // Reading deck 2's bays against deck 1's stages counts every bay as not
     // started, and a deck well along reads 0,00% on the control the foreman
@@ -527,15 +549,16 @@ describe('GsScreen', () => {
     // d2 is Main Deck: 500 m² declared, 500 m² of bays at ITS own Coat 1, whose
     // id shares nothing with d1's. Against one shared stage list one of the two
     // reads 0,00%; against their own, both read 100,00%.
-    expect(await screen.findByRole('tab', { name: /^Cellar Deck100,00%/ })).toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: /^Main Deck100,00%/ })).toBeInTheDocument()
+    expect(await screen.findByText('Cellar Deck · 100,00%', { selector: '.ant-select-selection-item' }))
+      .toBeInTheDocument()
+    expect(await deckOptionTitles()).toEqual(['Cellar Deck · 100,00%', 'Main Deck · 100,00%'])
   })
 
-  it('shows an em dash on a tab whose figure has not arrived', async () => {
+  it('shows an em dash on a deck whose figure has not arrived', async () => {
     // A wrong figure on the control you are choosing by is worse than none.
     listProjectIndex.mockReturnValue(new Promise(() => {}))
     renderScreen()
-    expect(await screen.findByRole('tab', { name: /^Cellar Deck—/ })).toBeInTheDocument()
+    expect(await deckOptionTitles()).toEqual(['Cellar Deck · —', 'Main Deck · —'])
   })
 
   it('offers logout and nothing else about the account', async () => {
@@ -620,6 +643,237 @@ describe('GsScreen', () => {
   })
 })
 
+describe('GsScreen: the deck picker (GS-03)', () => {
+  it('is the first row of the page, above the drawing, and the deck tabs are gone', async () => {
+    renderScreen()
+    const box = await deckPicker()
+    const canvas = await screen.findByTestId('canvas')
+    const content = canvas.closest('.ant-layout-content') as HTMLElement
+    expect(content.firstElementChild).toContainElement(box)
+    expect(screen.queryByRole('tab')).toBeNull()
+    expect(screen.queryByRole('tablist')).toBeNull()
+  })
+
+  it('shows the open deck with its figure', async () => {
+    renderScreen()
+    await deckPicker()
+    expect(await screen.findByText('Cellar Deck · 0,00%', { selector: '.ant-select-selection-item' }))
+      .toBeInTheDocument()
+  })
+
+  it('finds a deck by its name, folded the way a foreman types it', async () => {
+    renderScreen()
+    await userEvent.type(await deckPicker(), 'main')
+    const box = await deckPicker()
+    const dropdown = document.getElementById(box.getAttribute('aria-controls') as string)
+      ?.closest('.ant-select-dropdown') as HTMLElement
+    await waitFor(() => expect([...dropdown.querySelectorAll('.ant-select-item-option')]
+      .map((o) => o.getAttribute('title'))).toEqual(['Main Deck · 0,00%']))
+  })
+
+  it('does not match the figure: search is on the name only', async () => {
+    renderScreen()
+    await userEvent.type(await deckPicker(), '0,00')
+    expect(await screen.findByText('Không có kết quả')).toBeInTheDocument()
+  })
+
+  it('opens the chosen deck: its cells, its drawing and its own subscription', async () => {
+    renderScreen()
+    await waitFor(() => expect(subscribedDecks).toEqual(['d1']))
+    await pickDeck('Main Deck')
+    await waitFor(() =>
+      expect(screen.getByTestId('canvas')).toHaveAttribute('data-image', 'https://signed/p1/d2.png'))
+    expect(listDeckCells).toHaveBeenCalledWith('d2')
+    expect(listDeckWorks).toHaveBeenCalledWith('d2')
+    expect(listDeckZones).toHaveBeenCalledWith('d2')
+    await waitFor(() => expect(subscribedDecks).toEqual(['d1', 'd2']))
+    expect(unsubscribe).toHaveBeenCalledWith('d1')
+    expect(await screen.findByText('Main Deck · 0,00%', { selector: '.ant-select-selection-item' }))
+      .toBeInTheDocument()
+  })
+
+  it('puts the plan back on the first coat of the deck it opens', async () => {
+    renderScreen()
+    await screen.findByTestId('canvas')
+    await userEvent.click(screen.getByRole('button', { name: 'Hiện kế hoạch' }))
+    await chooseIn('Công đoạn kế hoạch', 'Coat 4')
+    expect(screen.getByText('Coat 4', { selector: '.ant-select-selection-item' })).toBeInTheDocument()
+
+    await pickDeck('Main Deck')
+    await waitFor(() =>
+      expect(screen.getByTestId('canvas')).toHaveAttribute('data-image', 'https://signed/p1/d2.png'))
+    expect(await screen.findByText('Blast + Coat 1', { selector: '.ant-select-selection-item' }))
+      .toBeInTheDocument()
+  })
+})
+
+describe('GsScreen: the deck last opened in the project (GS-02)', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  const openDeckImage = () => screen.getByTestId('canvas').getAttribute('data-image')
+
+  it('opens the first deck in a fresh session, as a deep link always has', async () => {
+    renderScreen()
+    await waitFor(() => expect(openDeckImage()).toBe('https://signed/p1/d1.png'))
+  })
+
+  it('remembers the deck chosen, for this project', async () => {
+    renderScreen()
+    await pickDeck('Main Deck')
+    expect(sessionStorage.getItem('pp:lastDeck:p1')).toBe('d2')
+  })
+
+  it('reopens the remembered deck', async () => {
+    sessionStorage.setItem('pp:lastDeck:p1', 'd2')
+    renderScreen()
+    await waitFor(() => expect(openDeckImage()).toBe('https://signed/p1/d2.png'))
+    expect(screen.getByText('Main Deck · 0,00%', { selector: '.ant-select-selection-item' })).toBeInTheDocument()
+    expect(listDeckCells).not.toHaveBeenCalledWith('d1')
+  })
+
+  it('ignores another project\'s deck', async () => {
+    sessionStorage.setItem('pp:lastDeck:p9', 'd2')
+    renderScreen()
+    await waitFor(() => expect(openDeckImage()).toBe('https://signed/p1/d1.png'))
+  })
+
+  it('falls back to the first deck when the remembered one is not offered any more', async () => {
+    sessionStorage.setItem('pp:lastDeck:p1', 'gone')
+    renderScreen()
+    await waitFor(() => expect(openDeckImage()).toBe('https://signed/p1/d1.png'))
+  })
+
+  it('carries on with the first deck when the browser refuses storage', async () => {
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new DOMException('denied', 'SecurityError')
+    })
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new DOMException('denied', 'SecurityError')
+    })
+    renderScreen()
+    await waitFor(() => expect(openDeckImage()).toBe('https://signed/p1/d1.png'))
+    await pickDeck('Main Deck')
+    await waitFor(() => expect(openDeckImage()).toBe('https://signed/p1/d2.png'))
+  })
+
+  it('is what the Sàn tab brings the foreman back to', async () => {
+    // The real round trip: another field page under the same header, then Sàn.
+    // GsScreen unmounts on the way out, so only the session remembers the deck.
+    function OtherPage() {
+      return (
+        <>
+          <FieldHeader projectId="p1" />
+          <div data-testid="other-page">{useLocation().pathname}</div>
+        </>
+      )
+    }
+    render(
+      <AntApp>
+        <MemoryRouter initialEntries={['/gs/p1']}>
+          <Routes>
+            <Route path="/gs/:projectId" element={<GsScreen />} />
+            <Route path="/gs/:projectId/kpi" element={<OtherPage />} />
+          </Routes>
+        </MemoryRouter>
+      </AntApp>,
+    )
+    await pickDeck('Main Deck')
+    await waitFor(() => expect(openDeckImage()).toBe('https://signed/p1/d2.png'))
+
+    await userEvent.click(screen.getByRole('link', { name: 'KPI' }))
+    expect(await screen.findByTestId('other-page')).toHaveTextContent('/gs/p1/kpi')
+    expect(screen.queryByTestId('canvas')).toBeNull()
+
+    await userEvent.click(screen.getByRole('link', { name: 'Sàn' }))
+    await waitFor(() => expect(openDeckImage()).toBe('https://signed/p1/d2.png'))
+  })
+})
+
+describe('GsScreen: the header in every state (M-4)', () => {
+  const nav = () => screen.getByRole('navigation', { name: 'Điều hướng' })
+
+  it('keeps the header, tabs and logout while the project loads', async () => {
+    loadGsProject.mockReturnValue(new Promise(() => {}))
+    renderScreen()
+    expect(await screen.findByRole('navigation', { name: 'Điều hướng' })).toBeInTheDocument()
+    expect(within(nav()).getByRole('link', { name: 'KPI' })).toHaveAttribute('href', '/gs/p1/kpi')
+    expect(screen.getByRole('button', { name: 'Đăng xuất' })).toBeInTheDocument()
+    expect(document.querySelector('.ant-spin-spinning')).not.toBeNull()
+    // The name's placeholder, not a read of its own: the row is on its way (M-1, M-3).
+    expect(screen.getByTestId('field-header-project').querySelector('.ant-skeleton')).not.toBeNull()
+    expect(loadGsProjectIdentity).not.toHaveBeenCalled()
+  })
+
+  it('keeps it over a failed project load', async () => {
+    loadGsProject.mockRejectedValue(new Error('permission denied'))
+    renderScreen()
+    expect(await screen.findByText('Không tải được dữ liệu dự án')).toBeInTheDocument()
+    expect(nav()).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Đăng xuất' })).toBeInTheDocument()
+  })
+
+  it('gives "Không xem được dự án này" a way out: the header and its logout', async () => {
+    loadGsProject.mockResolvedValue({ decks: [], isMember: false, name: null })
+    renderScreen()
+    expect(await screen.findByText('Không xem được dự án này')).toBeInTheDocument()
+    expect(nav()).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Đăng xuất' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Vẫn đăng xuất' }))
+    expect(signOut).toHaveBeenCalledTimes(1)
+  })
+
+  it('never names the previous project over the next one\'s failed load (M-4b)', async () => {
+    render(
+      <AntApp>
+        <MemoryRouter initialEntries={['/gs/p1']}>
+          <Link to="/gs/p2">sang dự án khác</Link>
+          <Routes>
+            <Route path="/gs/:projectId" element={<GsScreen />} />
+          </Routes>
+        </MemoryRouter>
+      </AntApp>,
+    )
+    const slot = () => screen.getByTestId('field-header-project')
+    await waitFor(() => expect(slot()).toHaveTextContent('BlockB1_CPPTS'))
+    loadGsProject.mockRejectedValue(new Error('Failed to fetch'))
+
+    await userEvent.click(screen.getByRole('link', { name: 'sang dự án khác' }))
+
+    expect(await screen.findByText('Không tải được dữ liệu dự án')).toBeInTheDocument()
+    expect(slot()).not.toHaveTextContent('BlockB1_CPPTS')
+    expect(within(nav()).getByRole('link', { name: 'Sàn' })).toHaveAttribute('href', '/gs/p2')
+  })
+
+  it('keeps the same header on screen while a viewer\'s next project loads', async () => {
+    authRole.value = 'viewer'
+    render(
+      <AntApp>
+        <MemoryRouter initialEntries={['/gs/p1']}>
+          {/* A real route change, as the header's project switch makes one. */}
+          <Link to="/gs/p2">sang Đại Hùng</Link>
+          <Routes>
+            <Route path="/gs/:projectId" element={<GsScreen />} />
+          </Routes>
+        </MemoryRouter>
+      </AntApp>,
+    )
+    await screen.findByTestId('canvas')
+    const before = nav()
+    loadGsProject.mockReturnValue(new Promise(() => {}))
+
+    await userEvent.click(screen.getByRole('link', { name: 'sang Đại Hùng' }))
+
+    await waitFor(() => expect(loadGsProject).toHaveBeenCalledWith('p2'))
+    expect(document.querySelector('.ant-spin-spinning')).not.toBeNull()
+    expect(screen.queryByTestId('canvas')).toBeNull()
+    // The same element, not a new header drawn after a blank: it never unmounted.
+    expect(nav()).toBe(before)
+    expect(within(nav()).getByRole('link', { name: 'Sàn' })).toHaveAttribute('href', '/gs/p2')
+  })
+})
+
 describe('GsScreen: recording a stage', () => {
   /** A promise whose settlement the test controls, so the window between the
    *  optimistic update and the server's answer can be inspected. */
@@ -640,11 +894,20 @@ describe('GsScreen: recording a stage', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Xác nhận' }))
   }
 
-  it('opens the productivity dashboard of this project from the header (Feedback Rv2, item 12)', async () => {
+  it('draws the field header with Sàn as the current page (GS-01)', async () => {
     renderScreen()
     await screen.findByRole('button', { name: 'ô R1C2' })
-    await userEvent.click(screen.getByRole('button', { name: 'Năng suất' }))
-    expect(navigate).toHaveBeenCalledWith('/gs/p1/dashboard')
+    const nav = screen.getByRole('navigation', { name: 'Điều hướng' })
+    expect(within(nav).getByRole('link', { name: 'Sàn' })).toHaveAttribute('aria-current', 'page')
+    // The field header is the screen's only header: nothing else draws a bar.
+    expect(document.querySelectorAll('header')).toHaveLength(1)
+  })
+
+  it('links the productivity dashboard of this project from the header (Feedback Rv2, item 12)', async () => {
+    renderScreen()
+    await screen.findByRole('button', { name: 'ô R1C2' })
+    const nav = screen.getByRole('navigation', { name: 'Điều hướng' })
+    expect(within(nav).getByRole('link', { name: 'Năng suất' })).toHaveAttribute('href', '/gs/p1/dashboard')
   })
 
   it('gives a viewer a project switch in the header that opens the chosen project (RV6-24)', async () => {
@@ -663,20 +926,23 @@ describe('GsScreen: recording a stage', () => {
     expect(navigate).toHaveBeenCalledWith('/gs/p2')
   })
 
-  it('keeps the header as it is for a foreman: no project switch, no read of the list', async () => {
+  it('names a foreman\'s project in the header: no project switch, no read of the list', async () => {
     renderScreen()
     await screen.findByRole('button', { name: 'ô R1C2' })
+    expect(within(document.querySelector('header') as HTMLElement).getByText('BlockB1_CPPTS')).toBeInTheDocument()
     expect(screen.queryByRole('combobox', { name: 'Dự án' })).toBeNull()
     expect(listProjectNames).not.toHaveBeenCalled()
+    // From the project row the screen already loads, not a read of its own (M-1).
+    expect(loadGsProjectIdentity).not.toHaveBeenCalled()
   })
 
-  it('opens the KPI chart of this project from the header (Feedback Rv5, item 9)', async () => {
+  it('links the KPI chart of this project from the header (Feedback Rv5, item 9)', async () => {
     // Beside Năng suất and reached the same way. Read-only for the field: the
     // plan dates are the admin's (RV5-28).
     renderScreen()
     await screen.findByRole('button', { name: 'ô R1C2' })
-    await userEvent.click(screen.getByRole('button', { name: 'KPI' }))
-    expect(navigate).toHaveBeenCalledWith('/gs/p1/kpi')
+    const nav = screen.getByRole('navigation', { name: 'Điều hướng' })
+    expect(within(nav).getByRole('link', { name: 'KPI' })).toHaveAttribute('href', '/gs/p1/kpi')
   })
 
   it('opens the modal for the tapped cell', async () => {
@@ -972,13 +1238,13 @@ describe('GsScreen: recording a stage', () => {
     await waitFor(() => expect(subscribedDecks).toEqual(['d1']))
   })
 
-  it('closes the old subscription before opening the new one on a tab change', async () => {
+  it('closes the old subscription before opening the new one on a deck change', async () => {
     renderScreen()
-    await screen.findByRole('tab', { name: new RegExp(`^Main Deck`) })
-    await userEvent.click(screen.getByRole('tab', { name: new RegExp(`^Main Deck`) }))
+    await deckPicker()
+    await pickDeck('Main Deck')
 
     await waitFor(() => expect(subscribedDecks).toEqual(['d1', 'd2']))
-    // Without this every visited tab leaves a live socket subscription behind,
+    // Without this every visited deck leaves a live socket subscription behind,
     // and the Cellar Deck's cells keep arriving into the Main Deck's state.
     expect(unsubscribe).toHaveBeenCalledTimes(1)
   })
@@ -1158,10 +1424,10 @@ describe('GsScreen: recording a stage', () => {
     expect(screen.queryByText('Mất kết nối, đang kết nối lại…')).toBeNull()
   })
 
-  it('does not report a disconnect just because a deck tab was left', async () => {
+  it('does not report a disconnect just because a deck was left', async () => {
     renderScreen()
-    await screen.findByRole('tab', { name: new RegExp(`^Main Deck`) })
-    await userEvent.click(screen.getByRole('tab', { name: new RegExp(`^Main Deck`) }))
+    await deckPicker()
+    await pickDeck('Main Deck')
     await waitFor(() => expect(subscribedDecks).toEqual(['d1', 'd2']))
 
     const readsOfD2 = () => listDeckCells.mock.calls.filter(([id]) => id === 'd2').length
@@ -1185,8 +1451,8 @@ describe('GsScreen: recording a stage', () => {
 
   it('ignores a payload from a channel it has already left', async () => {
     renderScreen()
-    await screen.findByRole('tab', { name: new RegExp(`^Main Deck`) })
-    await userEvent.click(screen.getByRole('tab', { name: new RegExp(`^Main Deck`) }))
+    await deckPicker()
+    await pickDeck('Main Deck')
     await waitFor(() => expect(subscribedDecks).toEqual(['d1', 'd2']))
     // getByTestId, not getByText: the Main Deck's one cell sits at the last
     // stage, so 100,00% is also every legend row and every spec-table cell.
@@ -1214,11 +1480,11 @@ describe('GsScreen: recording a stage', () => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
     try {
       renderScreen()
-      await screen.findByRole('tab', { name: new RegExp(`^Main Deck`) })
+      await deckPicker()
       act(() => { liveHandlers?.onStatus('disconnected') })
       expect(await screen.findByText('Mất kết nối, đang kết nối lại…')).toBeInTheDocument()
 
-      await userEvent.click(screen.getByRole('tab', { name: new RegExp(`^Main Deck`) }))
+      await pickDeck('Main Deck')
       await waitFor(() => expect(subscribedDecks).toEqual(['d1', 'd2']))
 
       // The socket is shared across decks and its health does not change because
@@ -1804,8 +2070,10 @@ describe('GsScreen: a viewer (0028)', () => {
   it('says it is read-only, opens bays without a write, and still exports', async () => {
     authRole.value = 'viewer'
     renderScreen()
-    await screen.findByRole('tab', { name: /^Cellar Deck/ })
-    expect(screen.getByText('Chỉ xem')).toBeInTheDocument()
+    await deckPicker()
+    // jsdom reads as a phone, where the header carries Chỉ xem in the avatar
+    // (GS-01); the badge itself is FieldHeader's, tested at tablet width there.
+    expect(screen.getByRole('img', { name: 'Nguyễn Văn A (gs1) · Chỉ xem' })).toBeInTheDocument()
 
     await userEvent.click(await screen.findByRole('button', { name: 'ô R1C2' }))
     expect(await screen.findByText('Ô R1C2 · Sơn')).toBeInTheDocument()
@@ -1817,8 +2085,9 @@ describe('GsScreen: a viewer (0028)', () => {
 
   it('shows no read-only mark to a foreman', async () => {
     renderScreen()
-    await screen.findByRole('tab', { name: /^Cellar Deck/ })
+    await deckPicker()
     expect(screen.queryByText('Chỉ xem')).toBeNull()
+    expect(screen.getByRole('img', { name: 'Nguyễn Văn A (gs1)' })).toBeInTheDocument()
   })
 })
 
@@ -1828,7 +2097,7 @@ describe('signing out', () => {
     // the login form appears under a path they are no longer allowed on -- and
     // a refresh puts them straight back there.
     renderScreen()
-    await screen.findByRole('tab', { name: /^Cellar Deck/ })
+    await deckPicker()
 
     await userEvent.click(screen.getByRole('button', { name: 'Đăng xuất' }))
     await userEvent.click(await screen.findByRole('button', { name: 'Vẫn đăng xuất' }))
@@ -1839,7 +2108,7 @@ describe('signing out', () => {
 
   it('replaces the entry rather than pushing one, so Back cannot return', async () => {
     renderScreen()
-    await screen.findByRole('tab', { name: /^Cellar Deck/ })
+    await deckPicker()
     await userEvent.click(screen.getByRole('button', { name: 'Đăng xuất' }))
     await userEvent.click(await screen.findByRole('button', { name: 'Vẫn đăng xuất' }))
     await waitFor(() => expect(navigate).toHaveBeenCalled())
@@ -1905,7 +2174,7 @@ describe('GsScreen: exporting the open deck', () => {
     })
   })
 
-  it('exports the deck tab that is open, and only it, without the project overview', async () => {
+  it('exports the deck that is open, and only it, without the project overview', async () => {
     // Feedback Rv1, item 6. The same loaders and renderers the admin's export
     // uses, so the two files cannot describe one deck differently -- and
     // scoped to the deck, so no one-row "project total" is printed.

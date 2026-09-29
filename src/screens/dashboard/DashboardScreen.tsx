@@ -1,18 +1,16 @@
-import { ArrowLeftOutlined } from '@ant-design/icons'
 import { Alert, Button, Layout, Spin } from 'antd'
 import { useEffect, useState } from 'react'
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { useParams, useSearchParams } from 'react-router-dom'
 import { settleDraft, useDraftFilters, useProjectOptions } from '../../components/draftFilters'
 import { FilterBar } from '../../components/FilterBar'
 import { PageBody, PageHeader } from '../../components/PageHeader'
 import { ProjectSelect } from '../../components/ProjectSelect'
-import { APP_BASE_PATH } from '../../config'
 import type { DeckEvent, WorkModel } from '../../domain/types'
 import { listProjectEvents, loadProjectModel } from '../../lib/progressApi'
 import { listDecks } from '../../lib/decksApi'
 import { listProjectNames } from '../../lib/projectsApi'
 import { listWorks } from '../../lib/worksApi'
-import { palette, shadowCard } from '../../theme'
+import { FieldHeader } from '../gs/FieldHeader'
 import { ProductivityDashboard } from './ProductivityDashboard'
 import { ProductivityFilterControls } from './ProductivityFilterControls'
 import { DEFAULT_PRODUCTIVITY_FILTERS, dashboardWorkNames, type ProductivityFilters } from './productivityFilters'
@@ -23,7 +21,7 @@ import { DEFAULT_PRODUCTIVITY_FILTERS, dashboardWorkNames, type ProductivityFilt
  * Two variants over one body. The admin picks a project the way the decks
  * list does (`?project=`, first project when absent) under the admin frame;
  * a foreman or viewer arrives from their own project's GS screen with the id
- * in the path, under the field theme, and gets a button back to the drawing.
+ * in the path, under the field theme and the field header (GS-01).
  * The data is the same two reads either way, and RLS decides what each role
  * sees of it.
  */
@@ -223,48 +221,32 @@ function AdminDashboard() {
   )
 }
 
-function FieldDashboard() {
-  const { projectId } = useParams()
-  const navigate = useNavigate()
+function FieldDashboard({ projectId }: { projectId: string | null }) {
   const scope = useDraftFilters(DEFAULT_PRODUCTIVITY_FILTERS)
-  const data = useProjectData(projectId ?? null)
+  const data = useProjectData(projectId)
   const options = filterOptions(data.current)
   const draft = settleDraft(scope, options, settle)
   return (
     <Layout style={{ minHeight: '100vh' }}>
-      <Layout.Header
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 12,
-          paddingInline: 16,
-          background: palette.bgContainer,
-          borderBottom: `1px solid ${palette.borderCard}`,
-          boxShadow: shadowCard,
-          height: 'auto',
-          lineHeight: 'normal',
-          paddingBlock: 10,
-        }}
-      >
-        <Button
-          icon={<ArrowLeftOutlined aria-hidden />}
-          onClick={() => navigate(`${APP_BASE_PATH}/gs/${projectId}`)}
-        >
-          Về bản vẽ
-        </Button>
-        <span style={{ fontWeight: 600, fontSize: 16 }}>Năng suất</span>
-      </Layout.Header>
+      {/* GS-01: the field header is the way between the pages; no back button (GS-02). */}
+      {projectId && <FieldHeader projectId={projectId} />}
       <Layout.Content style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 16 }}>
-        {/* The field's bar, first under the title bar (FLT-01 via GS-04). */}
+        {/* The field's bar, first under the header (FLT-01 via GS-04). */}
         <FilterBar onApply={() => scope.apply(draft)} onReset={scope.reset} applyLoading={data.current === null}>
           <ProductivityFilterControls {...(options ?? NO_OPTIONS)} value={draft} onChange={scope.setDraft} />
         </FilterBar>
-        <Body projectId={projectId ?? null} data={data} filters={scope.applied} version={scope.version} />
+        <Body projectId={projectId} data={data} filters={scope.applied} version={scope.version} />
       </Layout.Content>
     </Layout>
   )
 }
 
 export function DashboardScreen({ variant }: { variant: 'admin' | 'gs' }) {
-  return variant === 'admin' ? <AdminDashboard /> : <FieldDashboard />
+  // Keyed by the path's project: the viewer's switch in the field header
+  // changes it on this page, and a fresh mount is what keeps the last
+  // project's applied filters from narrowing the next project's figures.
+  const { projectId } = useParams()
+  return variant === 'admin'
+    ? <AdminDashboard />
+    : <FieldDashboard key={projectId} projectId={projectId ?? null} />
 }

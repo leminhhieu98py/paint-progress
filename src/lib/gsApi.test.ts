@@ -100,7 +100,7 @@ beforeEach(() => {
  * Stages are not among them: they are declared per deck now, and the GS screen
  * fetches the active deck's own set when the foreman picks one.
  */
-const PROJECT_ROW = [{ id: 'p1' }]
+const PROJECT_ROW = [{ id: 'p1', name: 'BlockB1_CPPTS' }]
 /** Kept under its old name where a test only needs "the second read answered". */
 const MEMBER = PROJECT_ROW
 
@@ -180,6 +180,16 @@ describe('loadGsProject', () => {
     expect(project.eq).toHaveBeenCalledWith('id', 'p1')
   })
 
+  it('names the project from the row it already reads, so the header needs no read of its own', async () => {
+    from.mockImplementationOnce(() => builder({ data: [] }))
+    const project = builder({ data: PROJECT_ROW })
+    from.mockImplementationOnce(() => project)
+    from.mockImplementationOnce(() => builder({ data: [] }))
+
+    expect((await loadGsProject('p1')).name).toBe('BlockB1_CPPTS')
+    expect(project.select).toHaveBeenCalledWith('id, name')
+  })
+
   it('reports no membership when RLS returns nothing, without erroring', async () => {
     // The deep-link case. RLS answers a non-member with zero rows and NO error
     // for both queries, so an empty project and a refusal are identical from the
@@ -191,6 +201,7 @@ describe('loadGsProject', () => {
     const project = await loadGsProject('p9')
 
     expect(project.isMember).toBe(false)
+    expect(project.name).toBeNull()
     expect(project.decks).toEqual([])
   })
 
