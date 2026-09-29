@@ -123,6 +123,8 @@ export function GsScreen() {
   const [works, setWorks] = useState<DeckWork[] | null>(null)
   /** The work the drawing, the cards and the bay modal are scoped to. */
   const [activeWorkId, setActiveWorkId] = useState<string | null>(null)
+  /** The work a Tìm applied together with a new deck, for that deck's load to open on (FLT-08). */
+  const workWithDeck = useRef<string | null>(null)
   /**
    * The bar's draft (FLT-08) and the phone sheet's (FLT-09): a project, a deck
    * or a work picked there and not yet applied by Tìm. Empty is what is
@@ -213,13 +215,32 @@ export function GsScreen() {
     }
     let cancelled = false
     setWorks(null)
-    setActiveWorkId(null)
+    // The work Tìm applied with this deck, else the deck's first (FLT-08).
+    setActiveWorkId(workWithDeck.current)
+    workWithDeck.current = null
     setStagesError(false)
     listDeckWorks(activeDeckId)
       .then((rows) => { if (!cancelled) setWorks(rows) })
       .catch(() => { if (!cancelled) setStagesError(true) })
     return () => { cancelled = true }
   }, [activeDeckId])
+
+  /**
+   * The drafted deck's works, while the bar's draft names another deck than
+   * the one on screen: the work select offers THAT deck's works (FLT-02).
+   * Null while they load; the bar's Tìm waits for them.
+   */
+  const [draftDeckWorks, setDraftDeckWorks] = useState<{ deckId: string; rows: DeckWork[] } | null>(null)
+  useEffect(() => {
+    const deckId = barDraft.deck
+    if (deckId === undefined || deckId === activeDeckId) return
+    let cancelled = false
+    listDeckWorks(deckId)
+      .then((rows) => { if (!cancelled) setDraftDeckWorks({ deckId, rows }) })
+      // Options only: Tìm still opens the deck, on its first work.
+      .catch(() => { if (!cancelled) setDraftDeckWorks({ deckId, rows: [] }) })
+    return () => { cancelled = true }
+  }, [barDraft.deck, activeDeckId])
 
   const deck = decks.find((d) => d.id === activeDeckId) ?? null
   const workList = works ?? EMPTY_WORKS
@@ -1149,7 +1170,9 @@ export function GsScreen() {
     Named by its aria-label, no label on screen (FLT-01); a searchable
     select, as on every screen (FLT-03).
   */
-  const workSelect = (block: boolean, value: string, onChange: (id: string) => void) => workList.length > 1 && (
+  const workSelect = (
+    block: boolean, value: string | undefined, onChange: (id: string) => void, list: DeckWork[] = workList,
+  ) => list.length > 1 && (
     <Select
       aria-label="Công việc"
       {...searchSelectProps}
@@ -1157,7 +1180,7 @@ export function GsScreen() {
       style={{ width: block ? '100%' : WORK_SELECT_WIDTH, maxWidth: '100%' }}
       value={value}
       onChange={onChange}
-      options={workList.map((w) => ({ label: w.work.name, value: w.work.id }))}
+      options={list.map((w) => ({ label: w.work.name, value: w.work.id }))}
     />
   )
   /*
@@ -1181,12 +1204,21 @@ export function GsScreen() {
     Đặt lại · Tìm (FLT-08); Dự án alone applies at once.
   */
   const barIsDraft = Boolean(projectId) && decks.length > 0
+  /** The drafted deck's works: the one on screen's, or the other deck's once read (null meanwhile). */
+  const draftDeckChanged = barDraft.deck !== undefined && barDraft.deck !== activeDeckId
+  const draftWorkList = !draftDeckChanged
+    ? workList
+    : draftDeckWorks !== null && draftDeckWorks.deckId === barDraft.deck ? draftDeckWorks.rows : null
+  /** The drafted work, if the drafted deck has it, else that deck's first. */
+  const draftWorkId = draftWorkList === null
+    ? undefined
+    : (draftWorkList.find((w) => w.work.id === (barDraft.work ?? activeWork?.work.id)) ?? draftWorkList[0])?.work.id
   const barControls = barIsDraft ? (
     <>
       {draftProjectSelect()}
       {onThisProject && deckSelect(false, barDraft.deck ?? activeDeckId, (deck) => setBarDraft((d) => ({ ...d, deck })))}
-      {onThisProject && activeWork
-        && workSelect(false, barDraft.work ?? activeWork.work.id, (work) => setBarDraft((d) => ({ ...d, work })))}
+      {onThisProject && draftWorkList !== null
+        && workSelect(false, draftWorkId, (work) => setBarDraft((d) => ({ ...d, work })), draftWorkList)}
     </>
   ) : (
     projectId && <FieldProjectSelect projectId={projectId} />
@@ -1205,10 +1237,11 @@ export function GsScreen() {
   /** Tìm, in the bar or the sheet: another project opens its page; else the deck and the work apply. */
   const applyBar = () => {
     if (draftProject && !onThisProject) navigate(`${APP_BASE_PATH}/gs/${draftProject}`)
-    else {
-      if (barDraft.deck !== undefined && barDraft.deck !== activeDeckId) chooseDeck(barDraft.deck)
-      if (barDraft.work !== undefined) setActiveWorkId(barDraft.work)
-    }
+    else if (draftDeckChanged && barDraft.deck !== undefined) {
+      // The deck load resets the work: hand it the drafted one to open on.
+      workWithDeck.current = draftWorkId ?? null
+      chooseDeck(barDraft.deck)
+    } else if (barDraft.work !== undefined) setActiveWorkId(barDraft.work)
     setBarDraft({})
   }
   /** Đặt lại: this project, the deck on screen and its first work, applied at once (FLT-08, FLT-09). */
@@ -1313,7 +1346,9 @@ export function GsScreen() {
                   {sheetControls}
                 </FilterSheet>
               ) : barIsDraft ? (
-                <FilterBar onApply={applyBar} onReset={resetBar}>{barControls}</FilterBar>
+                <FilterBar onApply={applyBar} onReset={resetBar} applyLoading={draftWorkList === null}>
+                  {barControls}
+                </FilterBar>
               ) : (
                 <FilterBar>{barControls}</FilterBar>
               )}

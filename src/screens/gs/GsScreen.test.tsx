@@ -1673,6 +1673,26 @@ describe('GsScreen: one filter bar, the project first (GS-07)', () => {
     expect(sessionStorage.getItem('pp:lastDeck:p1')).toBe('d2')
   })
 
+  it('opens the drafted deck on the drafted work in one Tìm, the work offered from that deck (FLT-08)', async () => {
+    restoreViewport = setViewport(1024)
+    const GG = { ...WORK, id: 'w3', seq: 3, name: 'Giàn giáo' }
+    listDeckWorks.mockImplementation((deckId: string) => Promise.resolve(deckId === 'd2'
+      ? [{ work: WORK2, weight: 1, stages: TG_STAGES }, { work: GG, weight: 1, stages: TG_STAGES }]
+      : TWO_WORKS))
+    renderScreen()
+    await screen.findByRole('combobox', { name: 'Công việc' })
+    await pickDeck('Main Deck')
+    // The work select now offers the drafted deck's works, first of them shown.
+    await waitFor(() => expect(within(bars()[0]).getByTitle('Tháo giáo')).toBeInTheDocument())
+    await chooseOption('Công việc', 'Giàn giáo', bars()[0])
+    expect(listDeckCells).not.toHaveBeenCalledWith('d2')
+    await userEvent.click(within(bars()[0]).getByRole('button', { name: /Tìm/ }))
+    await waitFor(() => expect(listDeckCells).toHaveBeenCalledWith('d2'))
+    // On the drafted work, not reset to the deck's first by the deck load.
+    await waitFor(() => expect(within(bars()[0]).getByTitle('Giàn giáo')).toBeInTheDocument())
+    expect(within(bars()[0]).queryByTitle('Tháo giáo')).toBeNull()
+  })
+
   it('applies the work only on Tìm from 768 px, and puts the first work back on Đặt lại (FLT-08)', async () => {
     restoreViewport = setViewport(1024)
     listDeckWorks.mockResolvedValue(TWO_WORKS)
