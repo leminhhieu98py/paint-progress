@@ -49,3 +49,19 @@ if (typeof SVGElement !== 'undefined' && !('getBBox' in SVGElement.prototype)) {
     value: () => ({ x: 0, y: 0, width: 0, height: 0 }),
   })
 }
+
+// The login screen loads lottie-web on mount (LoginIllustration), and every
+// test that shows the login screen would otherwise run the real player in
+// jsdom, which has no canvas or layout for it (it probes a canvas context as
+// it loads). A player that draws nothing stands in everywhere;
+// LoginIllustration.test.tsx replaces it with one it can inspect.
+vi.mock('lottie-web/build/player/lottie_light', () => ({
+  default: {
+    loadAnimation: () => ({
+      addEventListener: () => {},
+      play: () => {},
+      pause: () => {},
+      destroy: () => {},
+    }),
+  },
+}))

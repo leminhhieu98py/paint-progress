@@ -81,6 +81,18 @@ describe('LoginScreen', () => {
     expect(screen.getByText('Construction Management')).toBeInTheDocument()
   })
 
+  it('shows the illustration above the sign-in card on a phone, no taller than 160', () => {
+    // jsdom reports every breakpoint false, so this is the phone layout.
+    render(<LoginScreen />)
+    const illustration = screen.getByTestId('login-illustration')
+    const heading = screen.getByRole('heading', { name: 'Đăng nhập' })
+
+    expect(
+      illustration.compareDocumentPosition(heading) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+    expect(illustration).toHaveStyle({ maxHeight: '160px' })
+  })
+
   it('carries the approved headline in the wide-screen hero', () => {
     // Asserted on Hero directly: antd's breakpoint hook reports every screen
     // false under jsdom, so the wide layout never renders through LoginScreen
