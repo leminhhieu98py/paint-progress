@@ -48,3 +48,23 @@ export function kpiCoatOptions(coats: PlannedCoat[], deckId: string): { value: s
 export function resolveCoat(coat: string, options: { value: string }[]): string {
   return options.some((c) => c.value === coat) ? coat : ALL
 }
+
+/** How many filters are off Tất cả, for the phone's Bộ lọc badge (FLT-04): the deck, the coat. */
+export function kpiFilterCount(filters: KpiFilters, coats: { value: string }[]): number {
+  return [filters.deckId !== ALL, resolveCoat(filters.coat, coats) !== ALL].filter(Boolean).length
+}
+
+/**
+ * What is applied, in one line, for the phone's bar (FLT-04): project · deck
+ * · coat. A project not known yet is left out rather than guessed.
+ */
+export function kpiSummary(
+  project: string | undefined,
+  filters: KpiFilters,
+  decks: { id: string; name: string }[],
+  coats: { value: string; label: string }[],
+): string {
+  const deck = decks.find((d) => d.id === filters.deckId)?.name ?? 'Tất cả sàn'
+  const coat = coats.find((c) => c.value === resolveCoat(filters.coat, coats))?.label ?? 'Tất cả công đoạn'
+  return [project, deck, coat].filter((part) => part !== undefined).join(' · ')
+}

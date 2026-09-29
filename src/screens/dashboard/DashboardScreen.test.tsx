@@ -1,9 +1,10 @@
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Link, MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { pageSubtitle } from '../../test/copy'
 import { chooseOption, optionTitles } from '../../test/select'
+import { setViewport } from '../../test/viewport'
 import { DashboardScreen } from './DashboardScreen'
 import { endSession } from '../../lib/sessionCache'
 
@@ -307,6 +308,11 @@ describe('DashboardScreen (admin)', () => {
 })
 
 describe('DashboardScreen (gs)', () => {
+  // The inline bar, as a tablet or a laptop has it; the phone's sheet is below (FLT-04).
+  let restoreViewport = () => {}
+  beforeEach(() => { restoreViewport = setViewport(1024) })
+  afterEach(() => restoreViewport())
+
   it('reads the project from the path, under the field header with Năng suất current (GS-01)', async () => {
     renderField()
     expect(await screen.findByText('DASHBOARD 2 sự kiện · Tất cả sàn · công việc đầu')).toBeInTheDocument()
@@ -419,5 +425,64 @@ describe('DashboardScreen (gs)', () => {
     expect(screen.getByText('DASHBOARD 2 sự kiện · Tất cả sàn · công việc đầu')).toBeInTheDocument()
     await pressTim()
     expect(await screen.findByText('DASHBOARD 2 sự kiện · Sàn A · công việc đầu')).toBeInTheDocument()
+  })
+})
+
+describe('DashboardScreen (gs) on a phone (FLT-04)', () => {
+  let restoreViewport = () => {}
+  beforeEach(() => { restoreViewport = setViewport(390) })
+  afterEach(() => restoreViewport())
+
+  const summary = (text: string) => within(bar()).findByRole('button', { name: text })
+  const openSheet = async () => {
+    await userEvent.click(within(bar()).getByRole('button', { name: 'Bộ lọc' }))
+    return screen.findByRole('dialog', { name: 'Bộ lọc' })
+  }
+
+  it('is one row: what is applied, in one line, and the Bộ lọc button', async () => {
+    renderField()
+    await screen.findByText(/^DASHBOARD 2 sự kiện/)
+    expect(await summary('Giàn B · Tất cả sàn · Sơn')).toBeInTheDocument()
+    expect(within(bar()).getByRole('button', { name: 'Bộ lọc' })).toBeInTheDocument()
+    expect(within(bar()).queryByRole('combobox')).toBeNull()
+    expect(bar().querySelector('.ant-badge-count')).toBeNull()
+  })
+
+  it('opens the sheet from the summary too, with every control of the bar in order, full width', async () => {
+    renderField()
+    await screen.findByText(/^DASHBOARD 2 sự kiện/)
+    await userEvent.click(await summary('Giàn B · Tất cả sàn · Sơn'))
+    const sheet = await screen.findByRole('dialog', { name: 'Bộ lọc' })
+    const boxes = within(sheet).getAllByRole('combobox')
+    expect(boxes.map((b) => b.getAttribute('aria-label'))).toEqual(['Dự án', 'Công việc', 'Sàn'])
+    for (const box of boxes) expect(box.closest('.ant-select')).toHaveStyle({ width: '100%' })
+    expect(within(sheet).getByPlaceholderText('Từ ngày').closest('.ant-picker')).toHaveStyle({ width: '100%' })
+  })
+
+  it('applies the sheet once on its Tìm and closes it; the summary and the badge follow', async () => {
+    renderField()
+    await screen.findByText(/^DASHBOARD 2 sự kiện/)
+    const sheet = await openSheet()
+    await chooseOption('Sàn', 'Sàn A', sheet)
+    await chooseOption('Công việc', 'Tháo giáo', sheet)
+    // A draft until Tìm (FLT-02).
+    expect(screen.getByText('DASHBOARD 2 sự kiện · Tất cả sàn · công việc đầu')).toBeInTheDocument()
+    const tim = within(sheet).getByRole('button', { name: /Tìm/ })
+    await waitFor(() => expect(tim).not.toHaveClass('ant-btn-loading'))
+    await userEvent.click(tim)
+    expect(await screen.findByText('DASHBOARD 2 sự kiện · Sàn A · Tháo giáo')).toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Bộ lọc' })).toBeNull())
+    expect(await summary('Giàn B · Sàn A · Tháo giáo')).toBeInTheDocument()
+    expect(bar().querySelector('.ant-badge-count')).toHaveTextContent('2')
+    expect(loadProjectModel).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps the inline bar from 768 px, with no sheet', async () => {
+    restoreViewport()
+    restoreViewport = setViewport(768)
+    renderField()
+    await screen.findByText(/^DASHBOARD 2 sự kiện/)
+    expect(within(bar()).getByRole('combobox', { name: 'Dự án' })).toBeInTheDocument()
+    expect(within(bar()).queryByRole('button', { name: 'Bộ lọc' })).toBeNull()
   })
 })

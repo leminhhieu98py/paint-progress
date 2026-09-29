@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { settleDraft, useDraftFilters, useProjectOptions } from '../../components/draftFilters'
 import { FilterBar } from '../../components/FilterBar'
+import { FilterSheet } from '../../components/FilterSheet'
 import { PageBody, PageHeader } from '../../components/PageHeader'
 import { ProjectSelect } from '../../components/ProjectSelect'
 import type { DeckEvent, WorkModel } from '../../domain/types'
@@ -14,10 +15,14 @@ import { FieldLayout } from '../gs/FieldLayout'
 import { space } from '../../theme'
 import { FieldProjectSelect } from '../gs/FieldProjectSelect'
 import { carryFilters, clearCarried, peekCarried } from '../gs/fieldCarry'
+import { useFieldPhone } from '../gs/fieldSections'
+import { useFieldProjectName } from '../gs/useFieldProjectName'
 import { APP_BASE_PATH } from '../../config'
 import { ProductivityDashboard } from './ProductivityDashboard'
 import { ProductivityFilterControls } from './ProductivityFilterControls'
-import { DEFAULT_PRODUCTIVITY_FILTERS, dashboardWorkNames, type ProductivityFilters } from './productivityFilters'
+import {
+  DEFAULT_PRODUCTIVITY_FILTERS, dashboardWorkNames, productivityFilterCount, productivitySummary, type ProductivityFilters,
+} from './productivityFilters'
 
 /**
  * The route-level half of the productivity dashboard (Feedback Rv2, item 12).
@@ -247,6 +252,10 @@ function FieldDashboard({ projectId }: { projectId: string | null }) {
     : other.error !== null ? NO_OPTIONS : other.options
   const loading = draftProject === projectId ? data.current === null : other.loading
   const draft = settleDraft(scope, options, settle)
+  const phone = useFieldPhone()
+  const projectName = useFieldProjectName(projectId)
+  // What is applied is the route project's: its works name the summary's work.
+  const appliedWorks = (filterOptions(data.current) ?? NO_OPTIONS).workNames
 
   const apply = () => {
     if (draftProject !== null && draftProject !== projectId) {
@@ -259,28 +268,50 @@ function FieldDashboard({ projectId }: { projectId: string | null }) {
     scope.apply({ ...draft, project: null })
   }
 
+  /** The bar's controls, full width in the phone's sheet (FLT-04). */
+  const controls = (block: boolean) => (
+    <>
+      {projectId && (
+        <FieldProjectSelect
+          projectId={projectId}
+          width={block ? '100%' : undefined}
+          value={draftProject ?? undefined}
+          onChange={(v) => scope.setDraft({ project: v })}
+        />
+      )}
+      <ProductivityFilterControls
+        {...(options ?? NO_OPTIONS)}
+        block={block}
+        value={draft}
+        onChange={(next) => scope.setDraft({ ...next, project: scope.draft.project })}
+      />
+    </>
+  )
+
   return (
     // GS-06: the field header is the way between the pages; no back button (GS-02).
     <FieldLayout projectId={projectId}>
       <Layout.Content style={{ padding: space.lg, display: 'flex', flexDirection: 'column', gap: space.lg }}>
         {/*
           The field's bar, first under the header, the project first (GS-07),
-          all of it a draft until Tìm (FLT-02, I-1).
+          all of it a draft until Tìm (FLT-02, I-1). On a phone, one row --
+          what is applied, and Bộ lọc -- and the controls in a sheet (FLT-04).
         */}
-        <FilterBar onApply={apply} onReset={scope.reset} applyLoading={loading}>
-          {projectId && (
-            <FieldProjectSelect
-              projectId={projectId}
-              value={draftProject ?? undefined}
-              onChange={(v) => scope.setDraft({ project: v })}
-            />
-          )}
-          <ProductivityFilterControls
-            {...(options ?? NO_OPTIONS)}
-            value={draft}
-            onChange={(next) => scope.setDraft({ ...next, project: scope.draft.project })}
-          />
-        </FilterBar>
+        {phone ? (
+          <FilterSheet
+            summary={productivitySummary(projectName, scope.applied, appliedWorks)}
+            count={productivityFilterCount(scope.applied, appliedWorks)}
+            onApply={apply}
+            onReset={scope.reset}
+            applyLoading={loading}
+          >
+            {controls(true)}
+          </FilterSheet>
+        ) : (
+          <FilterBar onApply={apply} onReset={scope.reset} applyLoading={loading}>
+            {controls(false)}
+          </FilterBar>
+        )}
         {draftProject !== projectId && other.error !== null && (
           <Alert type="error" showIcon message="Không tải được bộ lọc của dự án" description={other.error} />
         )}

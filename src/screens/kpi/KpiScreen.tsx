@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { settleDraft, useDraftFilters, useProjectOptions } from '../../components/draftFilters'
 import { FilterBar } from '../../components/FilterBar'
+import { FilterSheet } from '../../components/FilterSheet'
 import { PageBody, PageHeader } from '../../components/PageHeader'
 import { ProjectSelect } from '../../components/ProjectSelect'
 import { effortDayKey } from '../../domain/effort'
@@ -17,6 +18,8 @@ import { listDecks, setDeckKpiColors } from '../../lib/decksApi'
 import { listProjectEvents, loadProjectModel } from '../../lib/progressApi'
 import { listProjectNames } from '../../lib/projectsApi'
 import { FieldLayout } from '../gs/FieldLayout'
+import { useFieldPhone } from '../gs/fieldSections'
+import { useFieldProjectName } from '../gs/useFieldProjectName'
 import { space } from '../../theme'
 import { FieldProjectSelect } from '../gs/FieldProjectSelect'
 import { carryFilters, clearCarried, peekCarried } from '../gs/fieldCarry'
@@ -25,7 +28,7 @@ import { DeckKpiColorTable, type DeckKpiColorRow, type DeckKpiColors } from './D
 import { KpiDashboard, type KpiEntry } from './KpiDashboard'
 import { KpiFilterControls } from './KpiFilterControls'
 import {
-  ALL, DEFAULT_KPI_FILTERS, kpiCoatOptions, resolveCoat, type KpiFilters, type PlannedCoat,
+  ALL, DEFAULT_KPI_FILTERS, kpiCoatOptions, kpiFilterCount, kpiSummary, resolveCoat, type KpiFilters, type PlannedCoat,
 } from './kpiFilters'
 import { StagePlanTable, type StagePlanRow, type StagePlanWindow } from './StagePlanTable'
 
@@ -511,6 +514,11 @@ function FieldKpi({ projectId }: { projectId: string | null }) {
   const loading = draftProject === projectId ? data.current === null : other.loading
   const draft = settleDraft(scope, options, settle)
   const shown = options ?? NO_OPTIONS
+  const phone = useFieldPhone()
+  const projectName = useFieldProjectName(projectId)
+  // What is applied is the route project's: its decks and coats name the summary.
+  const applied = filterOptions(data.current, model.entries) ?? NO_OPTIONS
+  const appliedCoats = kpiCoatOptions(applied.coats, scope.applied.deckId)
 
   const apply = () => {
     if (draftProject !== null && draftProject !== projectId) {
@@ -523,29 +531,51 @@ function FieldKpi({ projectId }: { projectId: string | null }) {
     scope.apply({ ...draft, project: null })
   }
 
+  /** The bar's controls, full width in the phone's sheet (FLT-04). */
+  const controls = (block: boolean) => (
+    <>
+      {projectId && (
+        <FieldProjectSelect
+          projectId={projectId}
+          width={block ? '100%' : undefined}
+          value={draftProject ?? undefined}
+          onChange={(v) => scope.setDraft({ project: v })}
+        />
+      )}
+      <KpiFilterControls
+        decks={shown.decks}
+        coats={kpiCoatOptions(shown.coats, draft.deckId)}
+        block={block}
+        value={draft}
+        onChange={(next) => scope.setDraft({ ...next, project: scope.draft.project })}
+      />
+    </>
+  )
+
   return (
     // GS-06: the field header is the way between the pages; no back button (GS-02).
     <FieldLayout projectId={projectId}>
       <Layout.Content style={{ padding: space.lg, display: 'flex', flexDirection: 'column', gap: space.lg }}>
         {/*
           The field's bar, first under the header, the project first (GS-07),
-          all of it a draft until Tìm (FLT-02, I-1).
+          all of it a draft until Tìm (FLT-02, I-1). On a phone, one row --
+          what is applied, and Bộ lọc -- and the controls in a sheet (FLT-04).
         */}
-        <FilterBar onApply={apply} onReset={scope.reset} applyLoading={loading}>
-          {projectId && (
-            <FieldProjectSelect
-              projectId={projectId}
-              value={draftProject ?? undefined}
-              onChange={(v) => scope.setDraft({ project: v })}
-            />
-          )}
-          <KpiFilterControls
-            decks={shown.decks}
-            coats={kpiCoatOptions(shown.coats, draft.deckId)}
-            value={draft}
-            onChange={(next) => scope.setDraft({ ...next, project: scope.draft.project })}
-          />
-        </FilterBar>
+        {phone ? (
+          <FilterSheet
+            summary={kpiSummary(projectName, scope.applied, applied.decks, appliedCoats)}
+            count={kpiFilterCount(scope.applied, appliedCoats)}
+            onApply={apply}
+            onReset={scope.reset}
+            applyLoading={loading}
+          >
+            {controls(true)}
+          </FilterSheet>
+        ) : (
+          <FilterBar onApply={apply} onReset={scope.reset} applyLoading={loading}>
+            {controls(false)}
+          </FilterBar>
+        )}
         {draftProject !== projectId && other.error !== null && (
           <Alert type="error" showIcon message="Không tải được bộ lọc của dự án" description={other.error} />
         )}

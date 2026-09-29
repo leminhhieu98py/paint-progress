@@ -39,8 +39,9 @@ import { DeckProgressCard, StageRollupCard } from './DeckStatsCards'
 import { DeckTodayCard } from './DeckTodayCard'
 import { FieldLayout } from './FieldLayout'
 import { FieldProjectSelect } from './FieldProjectSelect'
-import { FIELD_TAB_BAR_SPACE, useFieldFullWidthControls, useFieldPhone } from './fieldSections'
+import { FIELD_TAB_BAR_SPACE, useFieldPhone } from './fieldSections'
 import { FilterBar } from '../../components/FilterBar'
+import { FilterSheet } from '../../components/FilterSheet'
 import { rememberProjectName } from './fieldProjects'
 import { openingDeckId, rememberDeck } from './lastDeck'
 import { SectionCard } from '../../components/SectionCard'
@@ -842,8 +843,6 @@ export function GsScreen() {
   const screens = Grid.useBreakpoint()
   const wide = Boolean(screens.lg)
   const phone = useFieldPhone()
-  /** Under 480 px each bar control takes the row; wider, the bar wraps them as they fit (C2). */
-  const fullWidthControls = useFieldFullWidthControls()
   /** A fixed panel's bottom offset, lifted over the phone's bottom tab bar (GS-06). */
   const overBottomBar = (px: number) => (phone ? `calc(${px}px + ${FIELD_TAB_BAR_SPACE})` : px)
 
@@ -1107,6 +1106,54 @@ export function GsScreen() {
 
   const noWorks = works !== null && workList.length === 0 && !stagesError
 
+  /** GS-03's deck picker (see the bar below), full width in the phone's row and sheet (FLT-04). */
+  const deckSelect = (block: boolean) => decks.length > 0 && (
+    <Select
+      aria-label="Sàn"
+      {...searchSelectProps}
+      value={activeDeckId ?? undefined}
+      onChange={(id) => {
+        setActiveDeckId(id)
+        // Remembered on the choice, never on the load: a project's
+        // first render must not write the previous project's deck
+        // under its key.
+        if (projectId) rememberDeck(projectId, id)
+      }}
+      style={{ width: block ? '100%' : 320, maxWidth: '100%' }}
+      options={decks.map((d) => ({
+        value: d.id,
+        label: `${d.name} · ${deckPercents[d.id] === undefined ? '—' : formatPercent(deckPercents[d.id])}`,
+        searchKey: d.name,
+      }))}
+    />
+  )
+  /** The work the page opens on is the first; another one counts on the phone's Bộ lọc badge (FLT-04). */
+  const workIsDefault = activeWork === null || activeWork.work.id === workList[0]?.work.id
+  /** Every control of the bar, in order: the inline bar's, or the phone sheet's at full width (FLT-04). */
+  const barControls = (block: boolean) => (
+    <>
+      {projectId && <FieldProjectSelect projectId={projectId} width={block ? '100%' : undefined} />}
+      {deckSelect(block)}
+      {/*
+        GSW-R1: the work the drawing is showing. Hidden with one work,
+        since a control with one position is a label pretending to be a
+        choice. Everything below -- colours, cards, plan, the bay modal --
+        follows it. Named by its aria-label, no label on screen (FLT-01);
+        a searchable select, as on every screen (FLT-03).
+      */}
+      {activeWork && workList.length > 1 && (
+        <Select
+          aria-label="Công việc"
+          {...searchSelectProps}
+          style={{ width: block ? '100%' : WORK_SELECT_WIDTH, maxWidth: '100%' }}
+          value={activeWork.work.id}
+          onChange={(id: string) => setActiveWorkId(id)}
+          options={workList.map((w) => ({ label: w.work.name, value: w.work.id }))}
+        />
+      )}
+    </>
+  )
+
   // The drawing is the screen; everything under the header has to earn its
   // height on a tablet held at arm's length.
   return inShell(
@@ -1176,62 +1223,29 @@ export function GsScreen() {
         */}
         <div style={{ gridColumn: '1 / -1', minWidth: 0 }}>
           {/*
-            On a phone the ⋯ stays at the top right and the bar wraps its
-            controls in the width left beside it, two to a row where they fit
-            (C2), each full width only under 480 px; wider, the actions sit at
-            the right end of the row the bar leaves.
+            On a phone one row (FLT-04): the Sàn picker, Bộ lọc -- the rest of
+            the bar, in a sheet -- and the ⋯; wider, the bar wraps its controls
+            at their own widths and the actions sit at the right end of the
+            row it leaves.
           */}
           <div
             data-testid="gs-bar-row"
             style={{
               display: 'flex',
               flexWrap: phone ? 'nowrap' : 'wrap',
-              alignItems: phone ? 'flex-start' : 'center',
+              alignItems: 'center',
               gap: space.md,
               minWidth: 0,
             }}
           >
             <div style={{ flex: '1 1 auto', minWidth: 0 }}>
-              <FilterBar>
-                {projectId && <FieldProjectSelect projectId={projectId} width={fullWidthControls ? '100%' : undefined} />}
-                {decks.length > 0 && (
-                  <Select
-                    aria-label="Sàn"
-                    {...searchSelectProps}
-                    value={activeDeckId ?? undefined}
-                    onChange={(id) => {
-                      setActiveDeckId(id)
-                      // Remembered on the choice, never on the load: a project's
-                      // first render must not write the previous project's deck
-                      // under its key.
-                      if (projectId) rememberDeck(projectId, id)
-                    }}
-                    style={{ width: fullWidthControls ? '100%' : 320, maxWidth: '100%' }}
-                    options={decks.map((d) => ({
-                      value: d.id,
-                      label: `${d.name} · ${deckPercents[d.id] === undefined ? '—' : formatPercent(deckPercents[d.id])}`,
-                      searchKey: d.name,
-                    }))}
-                  />
-                )}
-                {/*
-                  GSW-R1: the work the drawing is showing. Hidden with one work,
-                  since a control with one position is a label pretending to be a
-                  choice. Everything below -- colours, cards, plan, the bay modal --
-                  follows it. Named by its aria-label, no label on screen (FLT-01);
-                  a searchable select, as on every screen (FLT-03).
-                */}
-                {activeWork && workList.length > 1 && (
-                  <Select
-                    aria-label="Công việc"
-                    {...searchSelectProps}
-                    style={{ width: fullWidthControls ? '100%' : WORK_SELECT_WIDTH, maxWidth: '100%' }}
-                    value={activeWork.work.id}
-                    onChange={(id: string) => setActiveWorkId(id)}
-                    options={workList.map((w) => ({ label: w.work.name, value: w.work.id }))}
-                  />
-                )}
-              </FilterBar>
+              {phone ? (
+                <FilterSheet inline={deckSelect(true)} count={workIsDefault ? 0 : 1}>
+                  {barControls(true)}
+                </FilterSheet>
+              ) : (
+                <FilterBar>{barControls(false)}</FilterBar>
+              )}
             </div>
             {/*
               GS-09: the page's actions, at the right end of the bar and outside

@@ -1,6 +1,6 @@
 import { DatePicker, Select } from 'antd'
 import { WORK_SELECT_WIDTH, searchSelectProps } from '../../components/searchSelect'
-import { resolveWork, type ProductivityFilters } from './productivityFilters'
+import { resolveWork, workLabel, type ProductivityFilters } from './productivityFilters'
 
 /**
  * The Năng suất controls of the filter bar, after Dự án (FLT-01): the work
@@ -13,11 +13,14 @@ export function ProductivityFilterControls({
   deckNames,
   value,
   onChange,
+  block = false,
 }: {
   workNames: string[]
   deckNames: string[]
   value: ProductivityFilters
   onChange: (next: ProductivityFilters) => void
+  /** Each control full width, as the phone's sheet stacks them (FLT-04). */
+  block?: boolean
 }) {
   return (
     <>
@@ -25,16 +28,16 @@ export function ProductivityFilterControls({
         <Select
           aria-label="Công việc"
           {...searchSelectProps}
-          style={{ width: WORK_SELECT_WIDTH }}
+          style={{ width: block ? '100%' : WORK_SELECT_WIDTH }}
           value={resolveWork(value.work, workNames)}
           onChange={(work: string) => onChange({ ...value, work })}
-          options={workNames.map((name) => ({ label: name === '' ? '(không rõ công việc)' : name, value: name }))}
+          options={workNames.map((name) => ({ label: workLabel(name), value: name }))}
         />
       )}
       <Select
         aria-label="Sàn"
         {...searchSelectProps}
-        style={{ width: 220 }}
+        style={{ width: block ? '100%' : 220 }}
         value={value.deck}
         onChange={(deck: string) => onChange({ ...value, deck })}
         options={[{ value: '', label: 'Tất cả sàn' }, ...deckNames.map((name) => ({ value: name, label: name }))]}
@@ -43,6 +46,7 @@ export function ProductivityFilterControls({
         allowEmpty={[true, true]}
         format="DD/MM/YYYY"
         placeholder={['Từ ngày', 'Đến ngày']}
+        style={block ? { width: '100%' } : undefined}
         value={value.range}
         onCalendarChange={(dates) => onChange({ ...value, range: [dates?.[0] ?? null, dates?.[1] ?? null] })}
       />

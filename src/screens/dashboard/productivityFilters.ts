@@ -37,3 +37,39 @@ export function dashboardWorkNames(models: WorkModel[], events: DeckEvent[]): st
 export function resolveWork(work: string | null, workNames: string[]): string {
   return work !== null && workNames.includes(work) ? work : workNames[0] ?? ''
 }
+
+/** A work as the bar shows it: the events of a work with no name still count, under this. */
+export function workLabel(name: string): string {
+  return name === '' ? '(không rõ công việc)' : name
+}
+
+/**
+ * How many filters are off their defaults, for the phone's Bộ lọc badge
+ * (FLT-04): a work other than the first, a deck, a date range (once,
+ * whichever end is set).
+ */
+export function productivityFilterCount(filters: ProductivityFilters, workNames: string[]): number {
+  const work = filters.work !== null && resolveWork(filters.work, workNames) !== resolveWork(null, workNames)
+  const dates = filters.range[0] !== null || filters.range[1] !== null
+  return [work, filters.deck !== '', dates].filter(Boolean).length
+}
+
+const DAY = 'DD/MM/YYYY'
+
+/**
+ * What is applied, in one line, for the phone's bar (FLT-04): project · deck
+ * · work, then the dates when set. A project or work not known yet is left
+ * out rather than guessed.
+ */
+export function productivitySummary(project: string | undefined, filters: ProductivityFilters, workNames: string[]): string {
+  const [from, to] = filters.range
+  const dates = from && to
+    ? `${from.format(DAY)} – ${to.format(DAY)}`
+    : from ? `Từ ${from.format(DAY)}` : to ? `Đến ${to.format(DAY)}` : undefined
+  return [
+    project,
+    filters.deck || 'Tất cả sàn',
+    workNames.length > 0 ? workLabel(resolveWork(filters.work, workNames)) : undefined,
+    dates,
+  ].filter((part) => part !== undefined).join(' · ')
+}

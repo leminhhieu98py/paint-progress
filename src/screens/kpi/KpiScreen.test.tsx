@@ -1,10 +1,12 @@
 import { App as AntApp } from 'antd'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { EMPTY_EFFORT, type Cell, type DeckEvent, type Stage, type WorkModel } from '../../domain/types'
 import type { StoredStagePlan } from '../../lib/kpiApi'
 import { pageSubtitle } from '../../test/copy'
+import { chooseOption } from '../../test/select'
+import { setViewport } from '../../test/viewport'
 import { KpiScreen } from './KpiScreen'
 import { endSession } from '../../lib/sessionCache'
 import type { DeckKpiColorRow, DeckKpiColors } from './DeckKpiColorTable'
@@ -201,8 +203,18 @@ const renderAdmin = (path = '/admin/kpi') =>
     </AntApp>,
   )
 
-const renderField = () =>
-  render(
+/**
+ * The field page at `width` px: a tablet's by default, where the bar is
+ * inline; a phone's puts it in a sheet (FLT-04).
+ */
+let restoreViewport = () => {}
+afterEach(() => {
+  restoreViewport()
+  restoreViewport = () => {}
+})
+const renderField = (width = 1024) => {
+  restoreViewport = setViewport(width)
+  return render(
     <AntApp>
       <MemoryRouter initialEntries={['/gs/p2/kpi']}>
         {/* A real route change, as the viewer's project switch makes one. */}
@@ -213,6 +225,7 @@ const renderField = () =>
       </MemoryRouter>
     </AntApp>,
   )
+}
 
 /** The one filter bar under the title (FLT-01). */
 const bar = () => screen.getByRole('search', { name: 'Bộ lọc' })
@@ -594,6 +607,39 @@ describe('KpiScreen (gs)', () => {
     await userEvent.click(screen.getByRole('link', { name: 'sang Giàn A' }))
     await waitFor(() => expect(listStagePlans).toHaveBeenCalledWith('p1'))
     expect(await screen.findByText(/PHẠM VI tất cả\/tất cả/)).toBeInTheDocument()
+  })
+})
+
+describe('KpiScreen (gs) on a phone (FLT-04)', () => {
+  const summary = (text: string) => within(bar()).findByRole('button', { name: text })
+
+  it('is one row: what is applied, in one line, and the Bộ lọc button', async () => {
+    renderField(390)
+    await screen.findByTestId('kpi-dashboard')
+    expect(await summary('Giàn B · Tất cả sàn · Tất cả công đoạn')).toBeInTheDocument()
+    expect(within(bar()).queryByRole('combobox')).toBeNull()
+    expect(bar().querySelector('.ant-badge-count')).toBeNull()
+  })
+
+  it('holds Dự án, Sàn and Công đoạn in the sheet, full width; its Tìm applies once and closes', async () => {
+    renderField(390)
+    await screen.findByTestId('kpi-dashboard')
+    await userEvent.click(within(bar()).getByRole('button', { name: 'Bộ lọc' }))
+    const sheet = await screen.findByRole('dialog', { name: 'Bộ lọc' })
+    const boxes = within(sheet).getAllByRole('combobox')
+    expect(boxes.map((b) => b.getAttribute('aria-label'))).toEqual(['Dự án', 'Sàn', 'Công đoạn'])
+    for (const box of boxes) expect(box.closest('.ant-select')).toHaveStyle({ width: '100%' })
+
+    await chooseOption('Sàn', 'Sàn A', sheet)
+    expect(screen.getByText(/PHẠM VI tất cả\/tất cả/)).toBeInTheDocument()
+    const tim = within(sheet).getByRole('button', { name: /Tìm/ })
+    await waitFor(() => expect(tim).not.toHaveClass('ant-btn-loading'))
+    await userEvent.click(tim)
+    expect(await screen.findByText(/PHẠM VI d1\/tất cả/)).toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Bộ lọc' })).toBeNull())
+    expect(await summary('Giàn B · Sàn A · Tất cả công đoạn')).toBeInTheDocument()
+    expect(bar().querySelector('.ant-badge-count')).toHaveTextContent('1')
+    expect(loadProjectModel).toHaveBeenCalledTimes(1)
   })
 })
 
