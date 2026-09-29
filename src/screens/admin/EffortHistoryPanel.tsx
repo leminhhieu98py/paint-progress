@@ -156,6 +156,8 @@ export function EffortHistoryPanel({
         loading={events === null && !error}
         dataSource={shown}
         pagination={pagination}
+        // Eleven columns: sideways, never a name squeezed to a word per line (I3, MOB-01).
+        scroll={{ x: 'max-content' }}
         locale={{ emptyText: onlyMissing ? 'Mọi lần cập nhật đã có giờ công' : 'Sàn này chưa có lần cập nhật nào' }}
         columns={[
           { title: 'Mã ô', dataIndex: 'cellCode', width: 80 },
@@ -163,17 +165,18 @@ export function EffortHistoryPanel({
           { title: 'Công đoạn', dataIndex: 'toStageName', width: 140, render: (v: string | null) => v ?? 'Chưa bắt đầu' },
           { title: 'Cập nhật lúc', dataIndex: 'at', width: 160, render: (v: string) => formatDateTimeVN(v), align: 'center' },
           { title: 'Bởi', dataIndex: 'byId', width: 140, render: (v: string | null) => (v === null ? '' : names[v] ?? v) },
-          { title: 'Nhóm trưởng', render: (_, ev) => ev.effort.leadName },
-          { title: 'Thợ chính', render: (_, ev) => ev.effort.painterName },
+          { title: 'Nhóm trưởng', width: 180, render: (_, ev) => ev.effort.leadName },
+          { title: 'Thợ chính', width: 180, render: (_, ev) => ev.effort.painterName },
           { title: 'Giờ công', align: 'center', width: 90, render: (_, ev) => hours(ev.effort.workHours) },
           { title: 'Giờ hao phí', align: 'center', width: 100, render: (_, ev) => hours(ev.effort.wasteHours) },
           // A note, not a category (UI-04 amended): plain text, left like every note (UI-03).
-          { title: 'Lý do hao phí', render: (_, ev) => ev.effort.wasteReason },
+          { title: 'Lý do hao phí', width: 220, render: (_, ev) => ev.effort.wasteReason },
           { title: 'Lệnh sản xuất', width: 130, render: (_, ev) => ev.effort.wasteOrder },
           {
             title: '',
             width: 90,
             align: 'center',
+            fixed: 'right',
             render: (_, ev) => (
               <Space size={4}>
                 {ev.effortEditedAt && (

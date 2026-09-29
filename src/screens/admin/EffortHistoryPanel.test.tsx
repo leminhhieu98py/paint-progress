@@ -197,6 +197,21 @@ describe('EffortHistoryPanel — identifiers are text (UI-06)', () => {
     expectLeft(screen.getByText('R1C2').closest('td'))
     expect(th('Giờ công')).toHaveStyle({ textAlign: 'center' })
   })
+
+  it('scrolls sideways rather than squeezing a name to one word per line (I3, MOB-01)', async () => {
+    renderPanel()
+    await screen.findByText('LSX-1')
+    const th = (label: string) => screen.getByRole('columnheader', { name: label })
+    expect(th('Mã ô').closest('table')).toHaveStyle({ width: 'max-content' })
+    const colOf = (label: string) => {
+      const header = th(label)
+      const index = [...(header.parentElement as HTMLElement).children].indexOf(header)
+      return header.closest('table')?.querySelectorAll('colgroup col')[index] as HTMLElement
+    }
+    expect(colOf('Nhóm trưởng')).toHaveStyle({ width: '180px' })
+    expect(colOf('Thợ chính')).toHaveStyle({ width: '180px' })
+    expect(colOf('Lý do hao phí')).toHaveStyle({ width: '220px' })
+  })
 })
 
 describe('EffortHistoryPanel — pager scope (UI-06)', () => {
