@@ -142,7 +142,6 @@ export function DeckKpiColorTable({
       bodyPadding={0}
     >
       <Table<DeckKpiColorRow>
-        className="pp-table"
         rowKey="id"
         size="middle"
         dataSource={decks}

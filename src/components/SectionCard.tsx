@@ -134,6 +134,9 @@ export function SectionCard({
 
       {shown && (
         <div
+          // The hook `index.css` keys on to give a table inside the card the
+          // card's own gutter on its first and last column (LAY-01).
+          className="pp-card"
           style={{
             padding: bodyPadding,
             borderTop: hasHeader ? `1px solid ${palette.borderSplit}` : undefined,

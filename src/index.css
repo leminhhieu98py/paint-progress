@@ -63,18 +63,39 @@ body {
 }
 
 /*
-  Table cells sit flush against the SectionCard edge -- every list on this app
-  is a bodyPadding={0} card -- so the first and last columns carry the card's
-  own 20px gutter. antd's uniform 16px left the first column a few pixels
-  inboard of the card title above it, which reads as a misalignment rather
-  than as a choice.
+  One inset inside a card (LAY-01). `SectionCard` marks its body `.pp-card`;
+  a table inside it sits flush against the card edge (bodyPadding={0}), so the
+  first and last column carry the card's own 20px gutter -- the `space.xl` of
+  the theme, repeated here because a stylesheet cannot import it. Between
+  columns antd's 12px stays. Head, body and summary cells all carry
+  `.ant-table-cell`, so one selector covers the three.
+
+  The selector is this long for specificity, not for scope. antd's small size
+  sets cell padding from `.ant-table-wrapper .ant-table.ant-table-small
+  .ant-table-tbody > tr > td` (0,4,2), injected after this file, and the old
+  `.pp-table .ant-table-cell:first-child` (0,3,0) lost to it -- measured as a
+  9px edge on every `size="small"` table. (0,5,0) wins whichever size the
+  table is.
+
+  Logical properties, so the rule survives a right-to-left context; and only
+  the inline-start/end of the edge cells, so the block padding antd chose for
+  the size stays and a fixed-right column's sticky offset (computed from the
+  column widths, not from cell padding) is untouched.
 */
-.pp-table .ant-table-cell:first-child {
-  padding-left: 20px;
+.pp-card .ant-table-wrapper .ant-table .ant-table-cell:first-child {
+  padding-inline-start: 20px;
 }
 
-.pp-table .ant-table-cell:last-child {
-  padding-right: 20px;
+.pp-card .ant-table-wrapper .ant-table .ant-table-cell:last-child {
+  padding-inline-end: 20px;
+}
+
+/*
+  A paginated table's pager would otherwise sit against the card's right
+  border, since the body it lives in has no padding of its own.
+*/
+.pp-card .ant-table-wrapper .ant-table-pagination.ant-pagination {
+  margin-inline: 20px;
 }
 
 /*

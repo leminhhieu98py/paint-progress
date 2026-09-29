@@ -37,7 +37,7 @@ import { RulesDisclosure } from '../../components/RulesDisclosure'
 import { SectionCard } from '../../components/SectionCard'
 import { StageSpecTable } from '../../components/StageSpecTable'
 import { modalProps } from '../../components/modalChrome'
-import { palette, shadowCard } from '../../theme'
+import { palette, shadowCard, space } from '../../theme'
 import type { Cell } from '../../domain/types'
 
 
@@ -1190,7 +1190,7 @@ export function DeckProgressPanel({
           minWidth: 0,
         }}
       >
-        <div style={{ padding: '13px 14px', display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+        <div style={{ padding: `${space.md}px ${space.xl}px`, display: 'flex', alignItems: 'flex-start', gap: 12 }}>
           <div style={{ minWidth: 0, flex: 1 }}>
             <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600, letterSpacing: '-0.015em' }}>
               {`Tiến độ · ${lens.title}`}
@@ -1252,7 +1252,7 @@ export function DeckProgressPanel({
           the shared row, so nothing moves for the view that had no ambiguity.
         */}
         {splitView && (
-          <div style={{ padding: '0 14px 13px' }}>
+          <div style={{ padding: `0 ${space.xl}px ${space.md}px` }}>
             {renderLayerControls(side === 'A' ? 'a' : 'b')}
           </div>
         )}
@@ -1343,7 +1343,7 @@ export function DeckProgressPanel({
           </div>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 9, padding: '12px 14px 8px' }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 9, padding: `${space.md}px ${space.xl}px ${space.sm}px` }}>
           <span style={{ fontSize: 12, fontWeight: 600, color: palette.textTertiary }}>
             {`Tiến độ từng zone · ${lens.title}`}
           </span>
@@ -1523,7 +1523,7 @@ export function DeckProgressPanel({
       {loading && <Spin style={{ display: 'block', margin: '8vh auto' }} />}
 
       {!loading && (
-        <div style={{ padding: '16px 20px 18px' }}>
+        <div style={{ padding: `${space.lg}px ${space.xl}px ${space.xl}px` }}>
           {error && (
             <Alert
               style={{ marginBottom: 14 }}
@@ -1667,7 +1667,7 @@ export function DeckProgressPanel({
                         overflow: 'hidden',
                       }}
                     >
-                      <div style={{ padding: '13px 15px 12px', borderBottom: `1px solid ${palette.borderSplit}` }}>
+                      <div style={{ padding: `${space.md}px ${space.xl}px`, borderBottom: `1px solid ${palette.borderSplit}` }}>
                         <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600, letterSpacing: '-0.015em' }}>
                           Tiến độ theo công đoạn · cộng dồn
                         </h3>
@@ -1675,7 +1675,7 @@ export function DeckProgressPanel({
                           Ô đã ở lớp sau thì đã qua các lớp trước, nên tính cho cả các lớp đó
                         </div>
                       </div>
-                      <div style={{ padding: '18px 15px', display: 'flex', alignItems: 'center', gap: 18 }}>
+                      <div style={{ padding: `${space.lg}px ${space.xl}px`, display: 'flex', alignItems: 'center', gap: 18 }}>
                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 7 }}>
                         <Donut slices={ringSlices} size={168} thickness={30}>
                           <span style={{ fontSize: 10, fontWeight: 600, color: palette.textTertiary }}>
@@ -1769,7 +1769,7 @@ export function DeckProgressPanel({
                       </div>
                       <div
                         style={{
-                          padding: '12px 15px',
+                          padding: `${space.md}px ${space.xl}px`,
                           borderTop: `1px solid ${palette.borderSplit}`,
                           background: palette.bgSubtle,
                           display: 'flex',
@@ -1805,7 +1805,7 @@ export function DeckProgressPanel({
                     overflow: 'hidden',
                   }}
                 >
-                  <div style={{ padding: '13px 15px 12px', borderBottom: `1px solid ${palette.borderSplit}` }}>
+                  <div style={{ padding: `${space.md}px ${space.xl}px`, borderBottom: `1px solid ${palette.borderSplit}` }}>
                     <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600, letterSpacing: '-0.015em' }}>
                       Sàn này theo từng công việc
                     </h3>
@@ -1817,21 +1817,22 @@ export function DeckProgressPanel({
                     <tbody>
                       {deckSummary.perWork.map((row) => (
                         <tr key={row.work.id} style={{ borderBottom: `1px solid ${palette.borderSplit}` }}>
-                          <td style={{ padding: '9px 15px', fontWeight: 600 }}>{row.work.name}</td>
-                          <td style={{ padding: '9px 8px', color: palette.textTertiary, textAlign: 'right' }}>
+                          {/* Edge cells carry the card gutter, as antd's do under `.pp-card`. */}
+                          <td style={{ padding: `${space.sm}px ${space.md}px ${space.sm}px ${space.xl}px`, fontWeight: 600 }}>{row.work.name}</td>
+                          <td style={{ padding: `${space.sm}px ${space.md}px`, color: palette.textTertiary, textAlign: 'right' }}>
                             {formatWeight(row.weight)}
                           </td>
-                          <td style={{ padding: '9px 15px', textAlign: 'right', fontWeight: 600, minWidth: 72 }}>
+                          <td style={{ padding: `${space.sm}px ${space.xl}px ${space.sm}px ${space.md}px`, textAlign: 'right', fontWeight: 600, minWidth: 72 }}>
                             {formatPercent(row.progress)}
                           </td>
                         </tr>
                       ))}
                       <tr style={{ background: palette.bgSubtle }}>
-                        <td style={{ padding: '10px 15px', fontWeight: 600 }}>Tổng hợp</td>
+                        <td style={{ padding: `${space.sm}px ${space.md}px ${space.sm}px ${space.xl}px`, fontWeight: 600 }}>Tổng hợp</td>
                         {/* Σ W·D is a project-level share, not a deck weight; it
                             belongs on the decks list, not in this column. */}
                         <td />
-                        <td style={{ padding: '10px 15px', textAlign: 'right', fontWeight: 700 }}>
+                        <td style={{ padding: `${space.sm}px ${space.xl}px ${space.sm}px ${space.md}px`, textAlign: 'right', fontWeight: 700 }}>
                           {formatPercent(deckSummary.progress)}
                         </td>
                       </tr>
@@ -2141,7 +2142,6 @@ export function DeckProgressPanel({
 
         <div data-testid="stage-windows">
           <Table
-            className="pp-table"
             size="small"
             rowKey="id"
             pagination={false}

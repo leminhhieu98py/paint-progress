@@ -33,7 +33,7 @@ import { RulesDisclosure } from '../../components/RulesDisclosure'
 import { SectionCard } from '../../components/SectionCard'
 import { StatusPill } from '../../components/StatusPill'
 import { roundSharesToTotal } from '../../domain/rounding'
-import { palette } from '../../theme'
+import { palette, space } from '../../theme'
 
 interface RollupRow {
   key: string
@@ -478,7 +478,6 @@ export function DecksScreen() {
 
         <SectionCard bodyPadding={0}>
           <Table<DeckRow>
-            className="pp-table"
             rowKey="id"
             loading={loading}
             dataSource={decks}
@@ -636,7 +635,6 @@ export function DecksScreen() {
               <div style={{ borderRight: `1px solid ${palette.borderCard}`, minWidth: 0 }}>
                 <div data-testid="project-rollup">
                 <Table<RollupRow>
-                  className="pp-table"
                   size="small"
                   pagination={false}
                   dataSource={visibleRollup}
@@ -691,7 +689,7 @@ export function DecksScreen() {
                 {hiddenDecks > 0 && (
                   <Typography.Text
                     type="secondary"
-                    style={{ display: 'block', fontSize: 12, padding: '8px 12px 10px' }}
+                    style={{ display: 'block', fontSize: 12, padding: `${space.sm}px ${space.xl}px ${space.md}px` }}
                   >
                     {`Đã ẩn ${hiddenDecks} sàn có tỉ trọng 0,00% (không thuộc công việc nào tính vào tổng)`}
                   </Typography.Text>
@@ -707,11 +705,10 @@ export function DecksScreen() {
                   data-testid="project-works"
                   style={{ borderTop: `1px solid ${palette.borderCard}` }}
                 >
-                  <div style={{ padding: '12px 15px 2px', fontSize: 12, fontWeight: 600, color: palette.textTertiary }}>
+                  <div style={{ padding: `${space.md}px ${space.xl}px ${space.xs}px`, fontSize: 12, fontWeight: 600, color: palette.textTertiary }}>
                     Công việc
                   </div>
                   <Table<WorkRow>
-                    className="pp-table"
                     size="small"
                     pagination={false}
                     dataSource={workRows}

@@ -20,6 +20,14 @@ describe('SectionCard', () => {
     expect(screen.getByText('5 lớp · tổng 1,00')).toBeInTheDocument()
   })
 
+  it('marks its body so a stylesheet can inset the tables inside it (LAY-01)', () => {
+    // `.pp-card` is the one hook the global stylesheet keys on to give the
+    // first and last table column the card's own 20px gutter. Without it every
+    // list screen carried its own compensating class or padding.
+    render(<SectionCard title="Danh sách">nội dung</SectionCard>)
+    expect(screen.getByText('nội dung').closest('.pp-card')).not.toBeNull()
+  })
+
   it('has no toggle at all when it is not collapsible', () => {
     render(<SectionCard title="Cấu hình lớp sơn">x</SectionCard>)
     expect(screen.queryByRole('button', { name: 'Cấu hình lớp sơn' })).not.toBeInTheDocument()

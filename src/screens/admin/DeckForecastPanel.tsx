@@ -13,7 +13,7 @@ import { DEFAULT_UNIT, perUnit } from '../../domain/unit'
 import { formatAreaM2, formatHours, formatMhrPerM2 } from '../../lib/format'
 import { loadDeckWorks, type DeckWorks } from '../../lib/progressApi'
 import { setWorkDeckDeadline } from '../../lib/worksApi'
-import { palette } from '../../theme'
+import { palette, space } from '../../theme'
 
 /**
  * What is left on this deck and whether its deadline is reachable (Feedback
@@ -146,7 +146,12 @@ export function DeckForecastPanel({
       : `${activeWork.work.name} · chưa đặt hạn`
 
   return (
-    <SectionCard code="A3.6" title="Dự báo tiến độ" summary={summary}>
+    <SectionCard code="A3.6" title="Dự báo tiến độ" summary={summary} bodyPadding={0}>
+      {/*
+        Flush body, so the table's edge columns carry the card's inset (LAY-01);
+        the blocks above and below it take the same inset themselves.
+      */}
+      <div style={{ padding: `${space.lg}px ${space.xl}px` }}>
       {error && (
         <Alert
           type="error"
@@ -196,7 +201,7 @@ export function DeckForecastPanel({
         </Typography.Text>
       ) : (
         <>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
             <label htmlFor="deck-deadline" style={{ fontSize: 12, fontWeight: 600, color: palette.textTertiary }}>
               Hạn hoàn thành
             </label>
@@ -229,14 +234,19 @@ export function DeckForecastPanel({
               data-testid="forecast-warning"
               type="error"
               showIcon
-              style={{ marginBottom: 14 }}
+              style={{ marginTop: space.lg }}
               message="Cảnh báo không kịp tiến độ"
               description={
                 `Cần thêm ${formatHours(forecast.shortfallMhr ?? 0)} Mhr hoặc ${forecast.lateDays} ngày làm việc.`
               }
             />
           )}
+        </>
+      )}
+      </div>
 
+      {activeWork !== null && (
+        <>
           <Table<StageForecast>
             data-testid="forecast-table"
             size="small"
@@ -295,7 +305,7 @@ export function DeckForecastPanel({
             )}
           />
 
-          <div style={{ marginTop: 10, fontSize: 12, lineHeight: 1.5, color: palette.textTertiary }}>
+          <div style={{ padding: `${space.sm}px ${space.xl}px ${space.xl}px`, fontSize: 12, lineHeight: 1.5, color: palette.textTertiary }}>
             {/*
               Two sentences the numbers cannot say for themselves: why the
               total days is not the sum, and what the totals leave out.

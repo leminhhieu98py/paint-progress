@@ -10,7 +10,7 @@ import { listGsUsers } from '../../lib/adminApi'
 import { listCoworkerNames } from '../../lib/gsApi'
 import { formatDateTimeVN, formatHours } from '../../lib/format'
 import { setCellEventEffort } from '../../lib/progressApi'
-import { palette } from '../../theme'
+import { palette, space } from '../../theme'
 
 /**
  * Every stage change on the deck with the effort recorded against it, and --
@@ -114,6 +114,9 @@ export function EffortHistoryPanel({
       code="A3.5"
       title="Giờ công theo lần cập nhật"
       summary={events === null ? undefined : `${coverage.withHours} / ${coverage.total} lần cập nhật có giờ công`}
+      // Flush, as every list card is: the table's edge columns carry the
+      // card's inset (LAY-01) rather than sitting a cell's padding inboard.
+      bodyPadding={0}
       extra={(
         <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: palette.textTertiary }}>
           <Switch size="small" checked={onlyMissing} onChange={setOnlyMissing} />
@@ -122,14 +125,16 @@ export function EffortHistoryPanel({
       )}
     >
       {error && (
-        <Alert
-          type="error"
-          showIcon
-          message="Không tải được lịch sử cập nhật"
-          description={error}
-          action={<Button size="small" onClick={onRetry}>Thử lại</Button>}
-          style={{ marginBottom: 12 }}
-        />
+        <div style={{ padding: `${space.lg}px ${space.xl}px 0` }}>
+          <Alert
+            type="error"
+            showIcon
+            message="Không tải được lịch sử cập nhật"
+            description={error}
+            action={<Button size="small" onClick={onRetry}>Thử lại</Button>}
+            style={{ marginBottom: space.md }}
+          />
+        </div>
       )}
       <Table<DeckEvent>
         size="small"

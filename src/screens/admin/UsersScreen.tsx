@@ -402,7 +402,6 @@ export function UsersScreen() {
 
         <SectionCard bodyPadding={0} footer={<RulesDisclosure rules={RULES} />}>
           <Table<GsUser>
-            className="pp-table"
             rowKey="id"
             loading={loading}
             dataSource={users}

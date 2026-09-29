@@ -20,7 +20,7 @@ import { ConsequenceModal } from '../../components/ConsequenceModal'
 import { EmptyState } from '../../components/EmptyState'
 import { RulesDisclosure } from '../../components/RulesDisclosure'
 import { SectionCard } from '../../components/SectionCard'
-import { palette } from '../../theme'
+import { palette, space } from '../../theme'
 
 const STAGE_RULES = [
           {
@@ -369,15 +369,14 @@ export function StageConfigPanel({
         </Space>
       }
     >
-    <Space direction="vertical" style={{ width: '100%', padding: '16px 0 4px' }}>
+    <Space direction="vertical" style={{ width: '100%', padding: `${space.lg}px 0 ${space.xs}px` }}>
       {error && (
-        <div style={{ padding: '0 20px' }}>
+        <div style={{ padding: `0 ${space.xl}px` }}>
           <Alert type="error" message={error} closable onClose={() => setError(null)} />
         </div>
       )}
 
       <Table<Stage>
-        className="pp-table"
         // By id, not seq: seq is renumbered under the rows on every reorder and
         // removal, so keying React's reconciliation on it makes a row's identity
         // change out from under it -- the same mistake at the UI level that
@@ -570,7 +569,7 @@ export function StageConfigPanel({
       {/* Inset. The table above is full-bleed inside its card, as tables are,
           but a chip and a bar flush against the card's own border read as
           overflow rather than as content. */}
-      <div style={{ padding: '0 20px' }}>
+      <div style={{ padding: `0 ${space.xl}px` }}>
         <div
           style={{
             display: 'flex',
@@ -604,7 +603,7 @@ export function StageConfigPanel({
       </div>
 
       {hasClash && (
-        <div style={{ padding: '0 20px' }}>
+        <div style={{ padding: `0 ${space.xl}px` }}>
         <Alert
           type="error"
           message="Hai lớp sơn đang trùng nhau"
@@ -623,7 +622,7 @@ export function StageConfigPanel({
             display: 'flex',
             alignItems: 'center',
             gap: 12,
-            padding: '0 20px',
+            padding: `0 ${space.xl}px`,
           }}
         >
           <Button icon={<PlusOutlined aria-hidden />} disabled={busy} onClick={addStage}>

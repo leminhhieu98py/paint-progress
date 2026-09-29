@@ -325,7 +325,6 @@ export function WorksScreen() {
           footer={<RulesDisclosure rules={RULES} />}
         >
           <Table<Work>
-            className="pp-table"
             rowKey="id"
             size="middle"
             loading={loading && draft.length === 0}
@@ -520,7 +519,6 @@ export function WorksScreen() {
           >
             <div>
               <Table<MatrixRow>
-                className="pp-table"
                 rowKey="deckId"
                 size="middle"
                 dataSource={matrix.rows}

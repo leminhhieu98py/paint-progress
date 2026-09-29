@@ -348,7 +348,6 @@ export function StagePlanTable({
       footer={<RulesDisclosure rules={RULES} />}
     >
       <Table<StagePlanRow>
-        className="pp-table"
         rowKey="stageId"
         size="middle"
         dataSource={rows}

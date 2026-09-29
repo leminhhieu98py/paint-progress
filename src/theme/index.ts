@@ -66,6 +66,17 @@ export const palette = {
  */
 export const fieldError = '#A50F0F'
 
+/**
+ * The spacing scale for block padding and gaps inside a card (LAY-02).
+ *
+ * `xl` is the card inset: header, body text, notes, footers and the first and
+ * last table column all start there (see `.pp-card` in `index.css`, which
+ * carries the same 20 because a stylesheet cannot import this file). Pills,
+ * badges and buttons keep their own internal paddings; this scale is for the
+ * blocks they sit in.
+ */
+export const space = { xs: 4, sm: 8, md: 12, lg: 16, xl: 20, xxl: 28 } as const
+
 export const fontFamily =
   "'Be Vietnam Pro', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Helvetica, Arial, sans-serif"
 

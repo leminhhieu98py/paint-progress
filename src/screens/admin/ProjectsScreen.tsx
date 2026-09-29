@@ -237,7 +237,6 @@ export function ProjectsScreen() {
 
         <SectionCard bodyPadding={0}>
           <Table<ProjectRow>
-            className="pp-table"
             rowKey="id"
             loading={loading}
             dataSource={rows}
