@@ -336,3 +336,19 @@ describe('StagePlanTable', () => {
     expect(screen.getByText(/chủ nhật/i)).toBeInTheDocument()
   })
 })
+
+describe('StagePlanTable — alignment (UI-03)', () => {
+  it('centres the area field and the save button in their cells, not only the cell text', () => {
+    renderTable()
+    // The two cells wrap their controls in a flex box, and `text-align` on the
+    // cell does not move a flex item: without its own centring the field and
+    // the button sat at the left of a centred column.
+    const areaCell = row('s1').getByLabelText('Diện tích kế hoạch').closest('td') as HTMLElement
+    expect(areaCell).toHaveStyle({ textAlign: 'center' })
+    expect(areaCell.firstElementChild).toHaveStyle({ justifyContent: 'center' })
+    const saveCell = saveOf('s1').closest('td') as HTMLElement
+    expect(saveCell).toHaveStyle({ textAlign: 'center' })
+    expect(saveCell.firstElementChild).toHaveStyle({ alignItems: 'center' })
+    expect(row('s1').getByText('Công đoạn 1').closest('td')).not.toHaveStyle({ textAlign: 'center' })
+  })
+})

@@ -722,3 +722,19 @@ describe('StageConfigPanel weight bar', () => {
     expect(screen.getByTestId('weight-bar-s1')).toHaveStyle({ width: '100.0000%' })
   })
 })
+
+describe('StageConfigPanel — alignment (UI-03)', () => {
+  it('keeps the coat name left and centres the colour picker itself, not only the cell text', async () => {
+    renderApp(<StageConfigPanel workId="w1" deckId="d1" />)
+    const hex = await screen.findByLabelText('Mã màu · Blast + Coat 1')
+    expect(screen.getByRole('columnheader', { name: 'Tên lớp' })).not.toHaveStyle({ textAlign: 'center' })
+    for (const label of ['Thứ tự', 'Màu', 'Trọng số']) {
+      expect(screen.getByRole('columnheader', { name: label })).toHaveStyle({ textAlign: 'center' })
+    }
+    // The swatch and the hex sit in a flex box, which `text-align` on the
+    // cell does not move: it has to centre its own items.
+    const colourCell = hex.closest('td') as HTMLElement
+    expect(colourCell).toHaveStyle({ textAlign: 'center' })
+    expect(colourCell.firstElementChild).toHaveStyle({ justifyContent: 'center' })
+  })
+})

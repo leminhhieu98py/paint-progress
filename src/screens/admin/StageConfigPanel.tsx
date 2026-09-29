@@ -470,7 +470,7 @@ export function StageConfigPanel({
             dataIndex: 'color',
             width: 180,
             render: (v: string, row, i) => (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
                 {!editable && (
                   <>
                     <span

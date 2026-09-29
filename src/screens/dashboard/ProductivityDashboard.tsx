@@ -328,7 +328,7 @@ export function ProductivityDashboard({
               {
                 title: 'Hạn hoàn thành',
                 align: 'center',
-                // A date, so left like every other date column (TBL-01).
+                // A date, so centred like every other date column (UI-03).
                 render: (_, r) => (r.forecast.deadline === null ? dash : dayjs(r.forecast.deadline).format('DD/MM/YYYY')),
               },
               {

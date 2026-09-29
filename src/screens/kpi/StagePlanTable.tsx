@@ -274,7 +274,7 @@ export function StagePlanTable({
         */
         const computedLabel = computed === null ? undefined : `Tự tính ${formatAreaM2(computed)}${rowUnit(row)}`
         return (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
             <Tooltip title={computedLabel}>
               <InputNumber
                 aria-label="Diện tích kế hoạch"
@@ -320,7 +320,7 @@ export function StagePlanTable({
         const message = errorOf(d)
         const ready = d.startDate !== null && d.endDate !== null && message === null
         return (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
             <Button
               size="small"
               type="primary"
