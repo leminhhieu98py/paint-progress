@@ -1590,10 +1590,14 @@ describe('GsScreen: recording a stage', () => {
     setCellState.mockReturnValue(new Promise<void>((_res, rej) => { reject = rej }))
 
     renderScreen()
-    await userEvent.click(await screen.findByRole('button', { name: 'ô R2C1' }))
-    // Scoped to the dropdown: the coat legend's names carry a title too (M-2).
-    await chooseIn('Công đoạn', 'Tháo giáo')
-    await userEvent.click(screen.getByRole('button', { name: 'Xác nhận' }))
+    // With every field Feedback Rv4 made compulsory: without them Xác nhận
+    // stops at validation, no write is made, and the rollback below is never
+    // exercised -- the test then passes on R2C1's initial colour alone, and the
+    // promise it rejects has no handler.
+    await tapCellAndChoose('R2C1', 'Tháo giáo')
+    expect(setCellState).toHaveBeenCalledTimes(1)
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'ô R2C1' })).toHaveAttribute('data-color', '#722ed1'))
 
     // Another foreman's tick lands while this write is still in flight.
     act(() => {
