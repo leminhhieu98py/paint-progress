@@ -156,8 +156,8 @@ function RoleHome() {
 }
 
 /**
- * The top-level catch-all (QA F2). A stranger, a wrong role and a deactivated
- * profile keep the bare 404 of spec §7.3; an active account gets told and
+ * The top-level catch-all (QA F2). A stranger and a deactivated profile keep
+ * the bare 404 of spec §7.3; an active account gets told and
  * sent to `/`, which RoleHome resolves to its own landing spot. Nothing while
  * the session is still being read, so the bare page never flashes before
  * the signed-in one.
@@ -278,15 +278,15 @@ export function AppRoutes() {
             }
           />
           {/*
-            Only an admin reaches this: the gate above still gives every other
-            role the bare 404 for any /admin path, known or not (QA F2).
+            Only an admin reaches this: the gate above gives every other role
+            the same not-found page for any /admin path, known or not (QA F2).
           */}
           <Route path="*" element={<NotFoundPage home={`${APP_BASE_PATH}/admin/projects`} />} />
         </Route>
         {/*
           The viewer's project picker (RV6-23). The viewer's alone: a foreman
           lands on their own project from RoleHome and has no list to choose
-          from, so the gate gives them the same 404 as any other wrong role.
+          from, so the gate gives them the not-found page any wrong role gets.
           The field theme, because it is the same tablet at the same arm's
           length as the screen it leads to.
         */}
