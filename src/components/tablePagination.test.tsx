@@ -1,5 +1,6 @@
 import { render } from '@testing-library/react'
-import { Table } from 'antd'
+import { ConfigProvider, Table } from 'antd'
+import viVN from 'antd/locale/vi_VN'
 import { describe, expect, it } from 'vitest'
 import { PAGE_SIZES, tablePagination } from './tablePagination'
 
@@ -37,5 +38,18 @@ describe('tablePagination', () => {
     expect(container.querySelectorAll('.ant-table-tbody .ant-table-row')).toHaveLength(10)
     expect(container.querySelector('.ant-pagination')).not.toBeNull()
     expect(container.querySelector('.ant-pagination-options')).not.toBeNull()
+  })
+
+  it('speaks Vietnamese under the app locale and sits bottom-right', () => {
+    // The locale App.tsx wraps every screen in; the pager text comes from it.
+    const { container, getByTitle } = render(
+      <ConfigProvider locale={viVN}>
+        <Table rowKey="id" dataSource={rows(11)} columns={COLUMNS} pagination={tablePagination(11)} />
+      </ConfigProvider>,
+    )
+    expect(getByTitle('10 / trang')).toBeInTheDocument()
+    const pager = container.querySelector('.ant-table-pagination')
+    expect(pager).toHaveClass('ant-pagination-end')
+    expect(pager?.previousElementSibling).toHaveClass('ant-table')
   })
 })
