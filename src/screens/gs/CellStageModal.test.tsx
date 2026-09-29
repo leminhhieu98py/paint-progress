@@ -498,7 +498,7 @@ describe('CellStageModal — kế hoạch', () => {
   })
 })
 
-describe('CellStageModal — chỉ xem', () => {
+describe('CellStageModal — Visitor', () => {
   it('shows the facts and no way to change them for a viewer', () => {
     // Feedback Rv2 item 2: the bosses' account. The database refuses the write
     // anyway; the dialog must not offer one and then fail.

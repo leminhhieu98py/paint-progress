@@ -141,7 +141,7 @@ export function DecksScreen() {
     // table spins on first paint, and with no project to load -- an empty
     // project list, or listProjects throwing -- nothing downstream would ever
     // turn it off again: the admin gets a spinner forever instead of an empty
-    // state. UsersScreen carries a note about the same failure mode.
+    // state. NhanLucScreen carries a note about the same failure mode.
     if (!projectId) {
       setDecks([])
       setLoading(false)

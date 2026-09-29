@@ -59,7 +59,7 @@ export async function myFirstProjectId(): Promise<string | null> {
 }
 
 /**
- * Project names for dropdowns in screens (e.g., UsersScreen, DecksScreen).
+ * Project names for dropdowns in screens (e.g., NhanLucScreen, DecksScreen).
  * Intentionally lean: no stages, decks, or cells — just id, name and code for
  * selector options. DecksScreen used to fill its project picker from
  * `listProjects`, a four-level embed pulling every stage, deck and cell's
