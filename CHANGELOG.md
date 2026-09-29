@@ -10,6 +10,22 @@ own branch, verified against the development Supabase project, and deployed to
 production by the owner. **Database migrations are listed per release and must
 reach production before the app that needs them.**
 
+## [1.7.1] - 2026-09-30
+
+Hotfix: a number typed with a decimal comma lost its comma. No database migration.
+
+### Fixed
+
+- Every number field reads a Vietnamese decimal comma: "2,5" Mhr is 2,5, not 25.
+  Affected since 1.4.0: Mhr thực hiện and Mhr hao phí in the bay dialog, the hour
+  fields of the effort history, the KPI plan area, the work weights and manual %.
+  In the two area fields (KPI plan area, deck area) "8.000" means 8000 m²; type
+  "8,125" for 8,125 m². Elsewhere a dot is read as the decimal point, as phone
+  keypads send it.
+- A read-only report, `supabase/queries/decimal_comma_suspects.sql`, lists stored
+  values that a dropped comma may have inflated or deflated, for the owner to check
+  with the people who typed them. Nothing is changed automatically.
+
 ## [1.7.0] - 2026-09-15
 
 Feedback Rv6 — eight items from Linh after she accepted Rv5, one item the owner
@@ -469,6 +485,7 @@ Level Security.
 
 Production runs its own Supabase project, created empty.
 
+[1.7.1]: https://github.com/leminhhieu98py/paint-progress/compare/v1.7.0...v1.7.1
 [1.7.0]: https://github.com/leminhhieu98py/paint-progress/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/leminhhieu98py/paint-progress/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/leminhhieu98py/paint-progress/compare/v1.4.0...v1.5.0

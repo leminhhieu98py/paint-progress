@@ -4,6 +4,10 @@
 -- nothing here should be "fixed" automatically -- each row is a suspect for
 -- a person to confirm with the foreman or admin who typed it.
 --
+-- Limit: the 0,d check compares with medians. When half or more of a coat's
+-- non-zero waste rows were typed with a dropped comma, the coat median is
+-- inflated too and those rows are not listed.
+--
 -- Why: antd's InputNumber with no `decimalSeparator`/`parser` deletes a
 -- comma instead of reading it, so "2,5" was saved as 25, "0,5" as 5 and
 -- "2,25" as 225 (10x / 100x). A thousands dot was read as a decimal point,
