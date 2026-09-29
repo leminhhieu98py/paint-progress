@@ -140,7 +140,13 @@ export function GsScreen() {
   const [geometry, setGeometry] = useState<Cell[]>([])
   /** states[workId][cellId]; a bay with no entry for a work is not started there. */
   const [states, setStates] = useState<Record<string, Record<string, CellStateView>>>({})
-  const [imageUrl, setImageUrl] = useState<string | null>(null)
+  /**
+   * The signed drawing, with the path it was signed for. Read through
+   * `imageUrl` below, which names it only while that path is the open deck's:
+   * a deck change must never leave the previous deck's drawing under the new
+   * title while the next URL is on the way (I1).
+   */
+  const [drawing, setDrawing] = useState<{ path: string; url: string } | null>(null)
   /** Who may be named beside a note, by user id. See listCoworkerNames. */
   const [authorNames, setAuthorNames] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(true)
@@ -243,6 +249,7 @@ export function GsScreen() {
   }, [barDraft.deck, activeDeckId])
 
   const deck = decks.find((d) => d.id === activeDeckId) ?? null
+  const imageUrl = drawing !== null && drawing.path === deck?.imagePath ? drawing.url : null
   const workList = works ?? EMPTY_WORKS
   /** The chosen work, or the first until the foreman chooses (GSW-R1). */
   const activeWork = workList.find((w) => w.work.id === activeWorkId) ?? workList[0] ?? null
@@ -339,6 +346,11 @@ export function GsScreen() {
 
   useEffect(() => {
     wantedDeckId.current = activeDeckId
+    // The previous deck's bays and states go with it: left in place until the
+    // next read lands, a tap opened the old deck's bay under the new deck's
+    // title and wrote (old bay, new deck) (I1).
+    setGeometry([])
+    setStates({})
     if (!activeDeckId) return
     void refetchDeck(activeDeckId)
     return () => {
@@ -514,7 +526,7 @@ export function GsScreen() {
   useEffect(() => {
     const path = deck?.imagePath
     if (!path) {
-      setImageUrl(null)
+      setDrawing(null)
       setDrawingError(false)
       return
     }
@@ -522,11 +534,11 @@ export function GsScreen() {
     setDrawingError(false)
     getDrawingUrl(path)
       .then((url) => {
-        if (!cancelled) setImageUrl(url)
+        if (!cancelled) setDrawing({ path, url })
       })
       .catch(() => {
         if (cancelled) return
-        setImageUrl(null)
+        setDrawing(null)
         setDrawingError(true)
       })
     return () => {
@@ -1566,6 +1578,10 @@ export function GsScreen() {
                     // No work, nothing to record against: the drawing is a
                     // drawing until the admin assigns the deck.
                     if (!activeWork) return
+                    // Nor before this deck's own read has landed: a bay can
+                    // arrive ahead of it over realtime, with its states not
+                    // read yet, and a tap would record over them (I1).
+                    if (deckRead?.deckId !== activeDeckId) return
                     setSelectedCell(cells.find((c) => c.code === code) ?? null)
                   }}
                 />

@@ -515,6 +515,58 @@ describe('GsScreen', () => {
     expect(screen.queryByRole('button', { name: 'ô R2C1' })).toBeNull()
   })
 
+  it('offers none of the previous deck\'s bays, nor its drawing, while the next deck loads (I1)', async () => {
+    // A tap in that window opened the Cellar Deck's bay under the Main Deck's
+    // title, and its write went out as (old bay, new deck).
+    listDeckCells.mockImplementation((deckId: string) =>
+      deckId === 'd1' ? Promise.resolve(D1_CELLS) : new Promise(() => {}))
+    let resolveDrawing2: (url: string) => void = () => {}
+    getDrawingUrl.mockImplementation((path: string) =>
+      path === 'p1/d1.png'
+        ? Promise.resolve(`https://signed/${path}`)
+        : new Promise((res) => { resolveDrawing2 = res }))
+
+    renderScreen()
+    expect(await screen.findByRole('button', { name: 'ô R2C1' })).toBeInTheDocument()
+    await pickDeck('Main Deck')
+    await waitFor(() => expect(listDeckCells).toHaveBeenCalledWith('d2'))
+    await waitFor(() => expect(listDeckWorks).toHaveBeenCalledWith('d2'))
+
+    // The old drawing is gone with the old deck, not left under the new title.
+    await waitFor(() => expect(screen.queryByTestId('canvas')).toBeNull())
+    resolveDrawing2('https://signed/p1/d2.png')
+    await waitFor(() =>
+      expect(screen.getByTestId('canvas')).toHaveAttribute('data-image', 'https://signed/p1/d2.png'))
+    expect(screen.queryByRole('button', { name: 'ô R2C1' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'ô R1C1' })).toBeNull()
+  })
+
+  it('opens no bay before the deck\'s own read has landed (I1)', async () => {
+    // A bay can reach the drawing ahead of the read, over realtime. Its states
+    // are not read yet, so a tap would record over a stage it cannot show.
+    let resolveD2: (cells: typeof D2_CELLS) => void = () => {}
+    listDeckCells.mockImplementation((deckId: string) =>
+      deckId === 'd1'
+        ? Promise.resolve(D1_CELLS)
+        : new Promise((res) => { resolveD2 = res }))
+
+    renderScreen()
+    expect(await screen.findByRole('button', { name: 'ô R2C1' })).toBeInTheDocument()
+    await pickDeck('Main Deck')
+    await waitFor(() => expect(subscribedDecks).toEqual(['d1', 'd2']))
+    await waitFor(() =>
+      expect(screen.getByTestId('canvas')).toHaveAttribute('data-image', 'https://signed/p1/d2.png'))
+    act(() => liveHandlers?.onCellChange(D2_CELLS[0]))
+
+    await userEvent.click(await screen.findByRole('button', { name: 'ô R1C1' }))
+    expect(screen.queryByText('Ô R1C1 · Sơn')).toBeNull()
+
+    await act(async () => { resolveD2(D2_CELLS) })
+    await userEvent.click(await screen.findByRole('button', { name: 'ô R1C1' }))
+    expect(await screen.findByText('Ô R1C1 · Sơn')).toBeInTheDocument()
+    expect(setCellState).not.toHaveBeenCalled()
+  })
+
   it('colours each cell with its current stage colour', async () => {
     renderScreen()
 
