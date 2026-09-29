@@ -1,4 +1,4 @@
-import { CATEGORY_TONE, wasteReasonTone, type Category } from './categoryTone'
+import { CATEGORY_TONE, type Category } from './categoryTone'
 import { StatusPill, type StatusTone } from './StatusPill'
 
 /**
@@ -12,11 +12,4 @@ import { StatusPill, type StatusTone } from './StatusPill'
 export function CategoryBadge({ category, value }: { category: Category; value: string }) {
   const tones: Record<string, StatusTone> = CATEGORY_TONE[category]
   return <StatusPill tone={tones[value] ?? 'off'}>{value}</StatusPill>
-}
-
-/** The whole reason, coloured by its group; nothing at all for an empty one. */
-export function WasteReasonBadge({ reason }: { reason: string }) {
-  const text = reason.trim()
-  if (text === '') return null
-  return <StatusPill tone={wasteReasonTone(text)}>{text}</StatusPill>
 }

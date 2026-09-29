@@ -5,7 +5,6 @@ import { useMemo, useState } from 'react'
 import { EmptyState } from '../../components/EmptyState'
 import { SectionCard } from '../../components/SectionCard'
 import { StatCard } from '../../components/StatCard'
-import { WasteReasonBadge } from '../../components/CategoryBadge'
 import { searchSelectProps } from '../../components/searchSelect'
 import { tablePagination } from '../../components/tablePagination'
 import {
@@ -411,10 +410,10 @@ export function ProductivityDashboard({
               dataSource={reasons}
               columns={[
                 {
+                  // A note, not a category (UI-04 amended): plain text, left like every note (UI-03).
                   title: 'Lý do',
-                  align: 'center',
                   dataIndex: 'reason',
-                  render: (v: string) => (v === '' ? <span style={{ color: palette.textQuaternary }}>Không ghi lý do</span> : <WasteReasonBadge reason={v} />),
+                  render: (v: string) => (v === '' ? <span style={{ color: palette.textQuaternary }}>Không ghi lý do</span> : v),
                 },
                 { title: 'Giờ', align: 'center', render: (_, r) => formatHours(r.hours) },
                 { title: 'Số lần', dataIndex: 'count', align: 'center' },

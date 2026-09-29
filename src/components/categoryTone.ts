@@ -14,26 +14,3 @@ export const CATEGORY_TONE = {
 } as const satisfies Record<string, Record<string, StatusTone>>
 
 export type Category = keyof typeof CATEGORY_TONE
-
-/**
- * Waste reasons are `<group>.<n> <text>` (domain/effort.ts, 26 of them in 8
- * groups). The palette offers six AA-safe badge tones, so the colour follows
- * the GROUP, and two pairs of groups share: 5 (people) with 6 (rework) as the
- * crew's own causes, 7 (housekeeping) with 8 (weather, outages) as outside
- * causes. A reason without a leading group digit gets the grey tone.
- */
-const WASTE_GROUP_TONE: Record<string, StatusTone> = {
-  '1': 'slate',
-  '2': 'warn',
-  '3': 'accent',
-  '4': 'ok',
-  '5': 'error',
-  '6': 'error',
-  '7': 'off',
-  '8': 'off',
-}
-
-export function wasteReasonTone(reason: string): StatusTone {
-  const group = /^(\d)\./.exec(reason.trim())?.[1]
-  return (group !== undefined && WASTE_GROUP_TONE[group]) || 'off'
-}

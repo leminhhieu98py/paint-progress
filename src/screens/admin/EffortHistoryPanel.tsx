@@ -3,7 +3,6 @@ import {
 } from 'antd'
 import { useEffect, useMemo, useState } from 'react'
 import { SectionCard } from '../../components/SectionCard'
-import { WasteReasonBadge } from '../../components/CategoryBadge'
 import { modalProps } from '../../components/modalChrome'
 import { searchSelectProps } from '../../components/searchSelect'
 import { tablePagination } from '../../components/tablePagination'
@@ -156,7 +155,8 @@ export function EffortHistoryPanel({
           { title: 'Thợ chính', render: (_, ev) => ev.effort.painterName },
           { title: 'Giờ công', align: 'center', width: 90, render: (_, ev) => hours(ev.effort.workHours) },
           { title: 'Giờ hao phí', align: 'center', width: 100, render: (_, ev) => hours(ev.effort.wasteHours) },
-          { title: 'Lý do hao phí', render: (_, ev) => <WasteReasonBadge reason={ev.effort.wasteReason} />, align: 'center' },
+          // A note, not a category (UI-04 amended): plain text, left like every note (UI-03).
+          { title: 'Lý do hao phí', render: (_, ev) => ev.effort.wasteReason },
           { title: 'Lệnh sản xuất', width: 130, render: (_, ev) => ev.effort.wasteOrder, align: 'center' },
           {
             title: '',

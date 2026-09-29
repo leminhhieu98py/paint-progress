@@ -159,3 +159,14 @@ describe('EffortHistoryPanel', () => {
     expect(onRetry).toHaveBeenCalledTimes(1)
   })
 })
+
+describe('EffortHistoryPanel — the waste reason is a note (UI-04 amended, UI-03)', () => {
+  it('prints the reason as plain text in a left-aligned column, not as a badge', async () => {
+    renderPanel()
+    const reason = await screen.findByText('Chờ vật tư')
+    // The text sits in the cell itself: no pill wrapped around it.
+    expect(reason.tagName).toBe('TD')
+    expect(reason).not.toHaveStyle({ textAlign: 'center' })
+    expect(screen.getByRole('columnheader', { name: 'Lý do hao phí' })).not.toHaveStyle({ textAlign: 'center' })
+  })
+})

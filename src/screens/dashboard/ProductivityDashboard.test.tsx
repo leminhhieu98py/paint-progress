@@ -349,7 +349,7 @@ describe('ProductivityDashboard: the chosen work\'s unit (RV6-36)', () => {
 })
 
 describe('ProductivityDashboard — alignment (UI-03)', () => {
-  it('keeps stage and lead names left and centres every figure and the reason badge, header included', () => {
+  it('keeps stage and lead names and the waste reason left and centres every figure, header included', () => {
     renderDashboard()
     const stages = within(screen.getByTestId('stage-table'))
     expect(stages.getByRole('columnheader', { name: 'Công đoạn' })).not.toHaveStyle({ textAlign: 'center' })
@@ -365,8 +365,12 @@ describe('ProductivityDashboard — alignment (UI-03)', () => {
     expect(leads.getByText('Tổ 1').closest('td')).not.toHaveStyle({ textAlign: 'center' })
     expect(leads.getByRole('columnheader', { name: 'Lần cập nhật' })).toHaveStyle({ textAlign: 'center' })
 
+    // The reason reads as a note (UI-04 amended): plain text, left, no pill.
     const waste = within(screen.getByTestId('waste-table'))
-    expect(waste.getByRole('columnheader', { name: 'Lý do' })).toHaveStyle({ textAlign: 'center' })
-    expect(waste.getByText('Mưa').closest('td')).toHaveStyle({ textAlign: 'center' })
+    expect(waste.getByRole('columnheader', { name: 'Lý do' })).not.toHaveStyle({ textAlign: 'center' })
+    const reason = waste.getByText('Mưa')
+    expect(reason.tagName).toBe('TD')
+    expect(reason).not.toHaveStyle({ textAlign: 'center' })
+    expect(waste.getByRole('columnheader', { name: 'Giờ' })).toHaveStyle({ textAlign: 'center' })
   })
 })
