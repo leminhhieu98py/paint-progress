@@ -18,8 +18,8 @@
 --                                                  listed so the admin knows the pair exists
 --
 -- One row per record involved, so the admin sees which rows to rename. Admin
--- accounts are never part of the rule and never listed. No rows at all means
--- 0037 will apply.
+-- accounts are never part of the rule and never listed. No row with
+-- blocks_migration = true means 0037 will apply.
 --
 -- Run it (owner):
 --   npx supabase db query --linked -f supabase/queries/nhan_luc_duplicates.sql

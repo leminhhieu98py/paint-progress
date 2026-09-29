@@ -69,6 +69,11 @@ describe('createEmployee', () => {
     from.mockReturnValue(builder({ error: { code: '23505', message: 'duplicate key value violates unique constraint "employees_name_key"' } }))
     await expect(createEmployee('Lê Văn A')).rejects.toThrow('Đã có nhân viên tên "Lê Văn A".')
   })
+
+  it('says a GS/Visitor account already carries the name (0037, NL-03)', async () => {
+    from.mockReturnValue(builder({ error: { code: 'PPDUP', message: 'duplicate_person_name: Lê Văn A is already the name of an account', details: 'account' } }))
+    await expect(createEmployee('Lê Văn A')).rejects.toThrow('Đã có tài khoản GS/Visitor tên "Lê Văn A".')
+  })
 })
 
 describe('updateEmployee', () => {
@@ -98,5 +103,10 @@ describe('updateEmployee', () => {
 
   it('refuses a blank rename', async () => {
     await expect(updateEmployee('e1', { fullName: ' ' })).rejects.toThrow('không được để trống')
+  })
+
+  it('says a GS/Visitor account already carries the new name (0037, NL-03)', async () => {
+    from.mockReturnValue(builder({ error: { code: 'PPDUP', message: 'duplicate_person_name: x', details: 'account' } }))
+    await expect(updateEmployee('e1', { fullName: 'Trần B' })).rejects.toThrow('Đã có tài khoản GS/Visitor tên "Trần B".')
   })
 })
