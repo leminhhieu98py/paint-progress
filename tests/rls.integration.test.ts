@@ -56,6 +56,14 @@ function throwawayPassword(): string {
   return `${randomUUID()}${randomUUID()}`.replace(/-/g, '')
 }
 
+/**
+ * One stamp per run for the full names of the accounts this suite makes: since
+ * 0037 a name is unique across accounts and employees, so a fixed name left
+ * by a killed run would refuse the next run's account.
+ */
+const RUN = Date.now().toString(36)
+const throwawayName = (label: string) => `${label} ${RUN}`
+
 /** Unique per run, so a leftover account from a crashed run cannot collide. */
 function throwawayUsername(kind: string): string {
   return `${EF_USERNAME_PREFIX}${kind}-${Date.now().toString(36)}`
@@ -1008,12 +1016,12 @@ describe.skipIf(!adminConfigured)('RLS as an admin session', () => {
     try {
       const written = await admin
         .from('profiles')
-        .update({ full_name: 'RLS admin write probe' })
+        .update({ full_name: throwawayName('RLS admin write probe') })
         .eq('id', target.id)
         .select('full_name')
         .single()
       expect(written.error).toBeNull()
-      expect(written.data?.full_name).toBe('RLS admin write probe')
+      expect(written.data?.full_name).toBe(throwawayName('RLS admin write probe'))
 
       // Negative control, mirrored: the GS cannot write the admin's profile.
       // (The GS suite already proves it cannot escalate its own.)
@@ -1177,7 +1185,7 @@ describe.skipIf(!adminConfigured)('admin-users Edge Function', () => {
     const result = await invokeAdminUsers(admin, {
       action: 'create',
       username: efUsername,
-      fullName: 'RLS Edge Function Throwaway',
+      fullName: throwawayName('RLS Edge Function Throwaway'),
       password: efPassword,
       projectId,
     })
@@ -1356,7 +1364,7 @@ describe.skipIf(!adminConfigured)('admin-users Edge Function', () => {
   it('create: a viewer account gets the viewer role and a stored credential', async () => {
     const viewerUsername = throwawayUsername('viewer')
     const result = await invokeAdminUsers(admin, {
-      action: 'create', username: viewerUsername, fullName: 'RLS Viewer Throwaway',
+      action: 'create', username: viewerUsername, fullName: throwawayName('RLS Viewer Throwaway'),
       password: throwawayPassword(), projectId, role: 'viewer',
     })
     expect(result.status).toBe(200)
@@ -1395,7 +1403,7 @@ describe.skipIf(!adminConfigured)('admin-users Edge Function', () => {
     const result = await invokeAdminUsers(admin, {
       action: 'create',
       username: orphanUsername,
-      fullName: 'RLS Edge Function Rollback Probe',
+      fullName: throwawayName('RLS Edge Function Rollback Probe'),
       password: orphanPassword,
       projectId: ABSENT_PROJECT_ID,
     })
@@ -1607,7 +1615,7 @@ describe.skipIf(!adminConfigured)('0028: roles and permission per work', () => {
     const scopedUsername = throwawayUsername('scope')
     const scopedPassword = throwawayPassword()
     const created = await invokeAdminUsers(admin, {
-      action: 'create', username: scopedUsername, fullName: 'RLS Scope Throwaway',
+      action: 'create', username: scopedUsername, fullName: throwawayName('RLS Scope Throwaway'),
       password: scopedPassword, projectId,
     })
     expect(created.status).toBe(200)
@@ -1750,7 +1758,7 @@ describe.skipIf(!adminConfigured)('0028: roles and permission per work', () => {
       const viewerUsername = throwawayUsername('allview')
       const viewerPassword = throwawayPassword()
       const created = await invokeAdminUsers(admin, {
-        action: 'create', username: viewerUsername, fullName: 'RLS All-Projects Viewer',
+        action: 'create', username: viewerUsername, fullName: throwawayName('RLS All-Projects Viewer'),
         password: viewerPassword, projectId, role: 'viewer',
       })
       expect(created.status).toBe(200)
@@ -1906,7 +1914,7 @@ describe.skipIf(!adminConfigured)('0030: effort on bay updates', () => {
     const gsUsername = throwawayUsername('effort')
     const gsPassword = throwawayPassword()
     const created = await invokeAdminUsers(admin, {
-      action: 'create', username: gsUsername, fullName: 'RLS Effort Throwaway',
+      action: 'create', username: gsUsername, fullName: throwawayName('RLS Effort Throwaway'),
       password: gsPassword, projectId,
     })
     expect(created.status).toBe(200)
