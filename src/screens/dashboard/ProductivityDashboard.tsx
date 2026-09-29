@@ -260,7 +260,9 @@ export function ProductivityDashboard({
     { title: 'Tổng Mhr', align: 'center' as const, render: (_: unknown, r: StageEfficiency) => formatHours(r.totalHours) },
     { title: `Tổng ${unit}`, align: 'center' as const, render: (_: unknown, r: StageEfficiency) => formatAreaM2(r.totalAreaM2) },
     {
-      title: <>{`Hiệu suất TB (${perUnit(unit)})`}<InfoTip text={`Hiệu suất trung bình là trung bình cộng của ${perUnit(unit)} từng ngày`} /></>,
+      // A span, not a Fragment (M6): rc-table's measure row, under `scroll.x`,
+      // clones every title with a ref, which a Fragment cannot take.
+      title: <span>{`Hiệu suất TB (${perUnit(unit)})`}<InfoTip text={`Hiệu suất trung bình là trung bình cộng của ${perUnit(unit)} từng ngày`} /></span>,
       align: 'center' as const,
       render: (_: unknown, r: StageEfficiency) => ratio(r.avgMhrPerM2),
     },
@@ -336,7 +338,8 @@ export function ProductivityDashboard({
                 render: (_, r) => (r.forecast.totalMhrNeeded === null ? dash : formatHours(r.forecast.totalMhrNeeded)),
               },
               {
-                title: <>Số ngày cần<InfoTip text="Số ngày của sàn là ngày lớn nhất trong các công đoạn vì các lớp làm song song" /></>,
+                // A span, not a Fragment (M6): the measured table gives its title a ref.
+                title: <span>Số ngày cần<InfoTip text="Số ngày của sàn là ngày lớn nhất trong các công đoạn vì các lớp làm song song" /></span>,
                 align: 'center',
                 render: (_, r) => (r.forecast.daysNeeded === null ? dash : String(r.forecast.daysNeeded)),
               },

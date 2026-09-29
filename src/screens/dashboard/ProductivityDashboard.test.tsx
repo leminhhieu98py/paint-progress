@@ -513,3 +513,15 @@ describe('ProductivityDashboard — stat cards on a phone (MOB-02)', () => {
     expect(cards().getByText('450,0')).toHaveStyle({ fontSize: '32px' })
   })
 })
+
+describe('ProductivityDashboard — measured tables (M6)', () => {
+  it('hands the tables no Fragment titles, which a measured table would give a ref', () => {
+    // rc-table's measure row, under `scroll.x`, clones each title with `ref: null`;
+    // on a Fragment React 19 logs "Invalid prop `ref` supplied to `React.Fragment`".
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    renderDashboard()
+    const fragmentErrors = error.mock.calls.filter((args) => args.some((a) => String(a).includes('React.Fragment')))
+    error.mockRestore()
+    expect(fragmentErrors).toEqual([])
+  })
+})
