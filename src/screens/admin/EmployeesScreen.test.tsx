@@ -195,3 +195,16 @@ describe('EmployeesScreen — search and export (Feedback Rv5, item 4)', () => {
     expect((await screen.findAllByText('hết bộ nhớ')).length).toBeGreaterThan(0)
   })
 })
+
+describe('EmployeesScreen — alignment (UI-03)', () => {
+  it('keeps the person left and centres the switch and the action, header included', async () => {
+    renderScreen()
+    const name = await screen.findByText('Lê Văn A')
+    expect(screen.getByRole('columnheader', { name: 'Họ tên' })).not.toHaveStyle({ textAlign: 'center' })
+    expect(name.closest('td')).not.toHaveStyle({ textAlign: 'center' })
+    expect(screen.getByRole('columnheader', { name: 'Đang làm' })).toHaveStyle({ textAlign: 'center' })
+    const row = name.closest('tr') as HTMLElement
+    expect(within(row).getByRole('switch').closest('td')).toHaveStyle({ textAlign: 'center' })
+    expect(within(row).getByRole('button', { name: 'Sửa tên' }).closest('td')).toHaveStyle({ textAlign: 'center' })
+  })
+})

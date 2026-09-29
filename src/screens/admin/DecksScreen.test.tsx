@@ -796,3 +796,20 @@ describe('DecksScreen: the quantity and unit of the works in scope (RV6-36)', ()
     expect(within(list).getByText('100,00 m²')).toBeInTheDocument()
   })
 })
+
+describe('DecksScreen — alignment (UI-03)', () => {
+  it('keeps the deck name left and centres the code, counts, badge and actions, header included', async () => {
+    renderScreen()
+    const name = await screen.findByText('Main Deck')
+    const list = within(name.closest('table') as HTMLElement)
+    const th = (label: string) => list.getByRole('columnheader', { name: label })
+    expect(th('Tên sàn')).not.toHaveStyle({ textAlign: 'center' })
+    expect(name.closest('td')).not.toHaveStyle({ textAlign: 'center' })
+    for (const label of ['Mã', 'Số ô', 'Bản vẽ', 'Thao tác', 'Thứ tự']) {
+      expect(th(label)).toHaveStyle({ textAlign: 'center' })
+    }
+    const row = within(name.closest('tr') as HTMLElement)
+    expect(row.getByText('24').closest('td')).toHaveStyle({ textAlign: 'center' })
+    expect(row.getByText('Chưa có').closest('td')).toHaveStyle({ textAlign: 'center' })
+  })
+})

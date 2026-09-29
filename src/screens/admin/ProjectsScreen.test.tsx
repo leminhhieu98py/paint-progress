@@ -284,3 +284,18 @@ describe('ProjectsScreen — deleting a project', () => {
       .toBeInTheDocument()
   })
 })
+
+describe('ProjectsScreen — alignment (UI-03)', () => {
+  it('keeps the project name left and centres the figures and actions, header included', async () => {
+    renderScreen()
+    const name = await screen.findByText('BB1 - CPPTS')
+    const th = (label: string) => screen.getByRole('columnheader', { name: label })
+    expect(th('Tên dự án')).not.toHaveStyle({ textAlign: 'center' })
+    expect(name.closest('td')).not.toHaveStyle({ textAlign: 'center' })
+    for (const label of ['Số sàn', 'Tổng diện tích (m²)', 'Tiến độ', 'Thao tác']) {
+      expect(th(label)).toHaveStyle({ textAlign: 'center' })
+    }
+    const row = name.closest('tr') as HTMLElement
+    expect(within(row).getByText('5').closest('td')).toHaveStyle({ textAlign: 'center' })
+  })
+})

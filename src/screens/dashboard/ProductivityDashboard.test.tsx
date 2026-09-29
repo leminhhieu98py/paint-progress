@@ -347,3 +347,26 @@ describe('ProductivityDashboard: the chosen work\'s unit (RV6-36)', () => {
     expect(cards().getByText('Mhr/m² tổng thể')).toBeInTheDocument()
   })
 })
+
+describe('ProductivityDashboard — alignment (UI-03)', () => {
+  it('keeps stage and lead names left and centres every figure and the reason badge, header included', () => {
+    renderDashboard()
+    const stages = within(screen.getByTestId('stage-table'))
+    expect(stages.getByRole('columnheader', { name: 'Công đoạn' })).not.toHaveStyle({ textAlign: 'center' })
+    for (const label of ['Số ngày', 'Tổng Mhr', 'Giờ hao phí']) {
+      expect(stages.getByRole('columnheader', { name: label })).toHaveStyle({ textAlign: 'center' })
+    }
+    const [lop1] = stageRows()
+    expect(within(lop1).getByText('Lớp 1').closest('td')).not.toHaveStyle({ textAlign: 'center' })
+    expect(within(lop1).getByText('340,0').closest('td')).toHaveStyle({ textAlign: 'center' })
+
+    const leads = within(screen.getByTestId('lead-table'))
+    expect(leads.getByRole('columnheader', { name: 'Nhóm trưởng' })).not.toHaveStyle({ textAlign: 'center' })
+    expect(leads.getByText('Tổ 1').closest('td')).not.toHaveStyle({ textAlign: 'center' })
+    expect(leads.getByRole('columnheader', { name: 'Lần cập nhật' })).toHaveStyle({ textAlign: 'center' })
+
+    const waste = within(screen.getByTestId('waste-table'))
+    expect(waste.getByRole('columnheader', { name: 'Lý do' })).toHaveStyle({ textAlign: 'center' })
+    expect(waste.getByText('Mưa').closest('td')).toHaveStyle({ textAlign: 'center' })
+  })
+})
