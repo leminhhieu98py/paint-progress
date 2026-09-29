@@ -1,6 +1,8 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
+import { ConfigProvider } from 'antd'
+import { adminTheme, fieldTheme } from '../theme'
 import { ConsequenceModal } from './ConsequenceModal'
 
 const base = {
@@ -43,6 +45,14 @@ describe('ConsequenceModal', () => {
   it('shows a colour swatch for an item that has one', () => {
     render(<ConsequenceModal {...base} items={[{ label: 'Coat 3', color: '#52c41a' }]} />)
     expect(screen.getByTestId('consequence-swatch')).toHaveStyle({ background: '#52c41a' })
+  })
+
+  it.each([
+    ['admin', adminTheme, '15px'],
+    ['field', fieldTheme, '17px'],
+  ] as const)('titles itself as the %s theme titles every other dialog (Q6)', (_n, t, size) => {
+    render(<ConfigProvider theme={t}><ConsequenceModal {...base} /></ConfigProvider>)
+    expect(screen.getByRole('heading', { level: 3 })).toHaveStyle({ fontSize: size, fontWeight: '600' })
   })
 
   it('draws the swatch as a plain circle, no inset frame (CLR-01)', () => {

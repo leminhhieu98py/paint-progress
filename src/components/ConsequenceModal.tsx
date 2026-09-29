@@ -4,8 +4,8 @@ import {
   InfoCircleFilled,
   WarningFilled,
 } from '@ant-design/icons'
-import { Button, Input, Modal } from 'antd'
-import { useState, type ReactNode } from 'react'
+import { Button, ConfigProvider, Input, Modal, theme } from 'antd'
+import { useContext, useState, type ReactNode } from 'react'
 import { palette, type } from '../theme'
 
 export interface ConsequenceItem {
@@ -72,6 +72,11 @@ export function ConsequenceModal({
   confirmText?: string
 }) {
   const t = TONES[tone]
+  // The size every other dialog under this theme titles itself at: the
+  // theme's Modal title, antd's fontSizeLG when a theme sets none (Q6).
+  const { token } = theme.useToken()
+  const modalTheme = useContext(ConfigProvider.ConfigContext).theme?.components?.Modal
+  const titleFontSize = modalTheme?.titleFontSize ?? token.fontSizeLG
   const [typed, setTyped] = useState('')
   // Reset on every OPENING, whichever way the last one closed -- Huỷ, the X,
   // the mask, Esc, or the parent closing it itself after a successful write.
@@ -136,6 +141,7 @@ export function ConsequenceModal({
             style={{
               margin: '7px 0 0',
               ...type.cardTitle,
+              fontSize: titleFontSize,
               lineHeight: 1.3,
               letterSpacing: '-0.022em',
             }}
