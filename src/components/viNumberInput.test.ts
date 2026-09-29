@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  parseViDecimal, parseViInteger, viAreaInputProps, viIntegerInputProps, viNumberInputProps,
+  formatViGrouped, parseViDecimal, parseViInteger, viAreaInputProps, viIntegerInputProps, viNumberInputProps,
 } from './viNumberInput'
 
 describe('parseViDecimal', () => {
@@ -51,6 +51,52 @@ describe('parseViDecimal', () => {
     // 1230.5 as "1230,5" -- no grouping -- and that must read back unchanged.
     expect(Number(parseViDecimal('1230,5'))).toBe(1230.5)
     expect(Number(parseViDecimal('0,60'))).toBe(0.6)
+  })
+})
+
+describe('parseViDecimal on an English-format paste', () => {
+  it('reads comma thousands before a single decimal dot as English', () => {
+    // A figure pasted from an en-US spreadsheet: under the vi rule the comma
+    // would be the decimal point and "1,230.5" would read as 1.2305.
+    expect(parseViDecimal('1,230.5')).toBe('1230.5')
+    expect(parseViDecimal('1,234,567.89')).toBe('1234567.89')
+    expect(parseViDecimal('1,230.5', { thousandsDot: true })).toBe('1230.5')
+  })
+
+  it('only when the commas are real thousands groups', () => {
+    // "2,5." is a stray dot after a vi decimal, not English.
+    expect(Number(parseViDecimal('2,5.'))).toBe(2.5)
+    expect(parseViDecimal('1.230,5')).toBe('1230.5')
+  })
+})
+
+describe('formatViGrouped (area fields)', () => {
+  const shown = (v: string | number | undefined) => formatViGrouped(v, { userTyping: false, input: '' })
+
+  it('groups thousands with a dot and writes decimals with a comma, like the placeholder', () => {
+    expect(shown(8000)).toBe('8.000')
+    expect(shown('8000.5')).toBe('8.000,5')
+    expect(shown('12345678')).toBe('12.345.678')
+    expect(shown('3300')).toBe('3.300')
+    expect(shown('999')).toBe('999')
+    expect(shown('0.125')).toBe('0,125')
+    expect(shown('0')).toBe('0')
+  })
+
+  it('leaves an empty field empty', () => {
+    expect(shown('')).toBe('')
+    expect(shown(undefined)).toBe('')
+  })
+
+  it('leaves the text alone while the user is typing', () => {
+    expect(formatViGrouped('8000', { userTyping: true, input: '8.000' })).toBe('8.000')
+    expect(formatViGrouped('8', { userTyping: true, input: '8.' })).toBe('8.')
+  })
+
+  it('shows only what the area parser reads back to the same value', () => {
+    for (const v of ['8000', '8000.5', '12345678', '1234.567', '0.125', '8.5', '999', '1000']) {
+      expect(Number(parseViDecimal(shown(v), { thousandsDot: true }))).toBe(Number(v))
+    }
   })
 })
 
@@ -123,6 +169,11 @@ describe('the prop bundles', () => {
     expect(viAreaInputProps.decimalSeparator).toBe(',')
     expect(viAreaInputProps.parser('8.000')).toBe('8000')
     expect(viAreaInputProps.parser('8.5')).toBe('8.5')
+  })
+
+  it('gives area fields the grouping formatter, and no other bundle', () => {
+    expect(viAreaInputProps.formatter(8000, { userTyping: false, input: '' })).toBe('8.000')
+    expect('formatter' in viNumberInputProps).toBe(false)
   })
 
   it('keeps the general rule in the decimal bundle', () => {

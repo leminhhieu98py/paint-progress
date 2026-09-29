@@ -277,6 +277,18 @@ describe('StagePlanTable', () => {
     ))
   })
 
+  it('shows a typed area grouped the way its placeholder is, once the field is left', async () => {
+    renderTable()
+    const area = row('s2').getByLabelText('Diện tích kế hoạch') as HTMLInputElement
+    await userEvent.clear(area)
+    await userEvent.type(area, '8000,5')
+    // While typing, the text is the admin's own.
+    expect(area.value).toBe('8000,5')
+    await userEvent.tab()
+
+    expect(area.value).toBe('8.000,5')
+  })
+
   it('treats a typed zero as an override of zero, not as an empty field', async () => {
     // The distinction the whole nullable column exists for: 0 says this coat
     // plans no area, empty says work it out for me.
@@ -300,7 +312,8 @@ describe('StagePlanTable', () => {
     const { onClearArea } = renderTable()
 
     const area = row('s1').getByLabelText('Diện tích kế hoạch')
-    expect((area as HTMLInputElement).value).toBe('3300')
+    // Grouped like its placeholder and the rest of the app.
+    expect((area as HTMLInputElement).value).toBe('3.300')
 
     await userEvent.click(row('s1').getByRole('button', { name: 'Về diện tích tự tính' }))
 

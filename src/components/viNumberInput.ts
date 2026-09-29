@@ -21,6 +21,10 @@
  *     "1.234.567" -> 1234567 (no decimal number has two points).
  *  5. More than one "," is left unparseable: the field keeps its last valid
  *     value rather than guessing.
+ *  6. The one exception to rule 2: comma thousands groups before a single
+ *     dot are an English-format paste (an en-US spreadsheet): "1,230.5" ->
+ *     1230.5, "1,234,567.89" -> 1234567.89. Only well-formed groups count,
+ *     so a stray dot after a vi decimal, "2,5.", still reads 2.5.
  *
  * Area fields (`viAreaInputProps`, `thousandsDot: true`) change rule 3 only.
  * Their values are thousands of m2 and the plan-area placeholder itself
@@ -35,13 +39,14 @@
  * separator, so "1.230" -> 1230; a "," starts a fraction the field cannot
  * hold, so it and everything after it are dropped: "2,5" -> 2, never 25.
  *
- * Why no custom `formatter`: given `decimalSeparator`, rc-input-number's own
- * formatter already renders 2.5 as "2,5" (the comma the rest of the app
- * shows), and it leaves the text alone while the user is typing. A custom
- * formatter is re-run on every keystroke that changes the value and would
- * have to replicate that. It must also never group thousands without a
- * comma: a displayed "1.230" (the integer 1230) would read back as 1.23
- * under rule 3.
+ * Display. Hours, weights and % use rc-input-number's own formatter, which,
+ * given `decimalSeparator`, renders 2.5 as "2,5" and never groups. They
+ * must never group: a displayed "1.230" (the integer 1230) would read back
+ * as 1.23 under rule 3. Area fields do group, with `formatViGrouped` --
+ * 8000.5 shows as "8.000,5", like their placeholder and the rest of the
+ * app -- which is safe only because the area parser reads a grouped dot as
+ * thousands and the formatter always writes a decimal with a comma. Like
+ * rc's own, it leaves the text alone while the user is typing.
  *
  * The parsers return TEXT, not a number, although the prop's type says the
  * field's value type: rc-input-number hands the result to its own decimal
@@ -50,7 +55,8 @@
  * own `parser` examples use.
  */
 
-const WHITESPACE = /[\s  ]+/g
+/** `\s` covers the non-breaking (U+00A0) and narrow (U+202F) spaces Intl uses. */
+const WHITESPACE = /\s+/g
 /** rc-input-number's own legacy clean-up: drops "$", "%", and the like. */
 const NOT_NUMERIC = /[^\w.-]+/g
 /** The same, but a second comma survives it, so rule 5 stays unparseable. */
@@ -58,6 +64,8 @@ const NOT_NUMERIC_OR_COMMA = /[^\w.,-]+/g
 
 /** "8.000", "12.345.678": thousands grouping with no decimal part. */
 const GROUPED_THOUSANDS = /^-?[1-9]\d{0,2}(\.\d{3})+$/
+/** "1,230.5", "1,234,567.89": rule 6. */
+const ENGLISH_FORMAT = /^-?\d{1,3}(,\d{3})+\.\d*$/
 /**
  * Zeros before another digit. A field whose onChange stores `n ?? 0` shows
  * "0" the moment it is emptied, so "8.000" typed next arrives as "08.000".
@@ -70,7 +78,9 @@ export function parseViDecimal(
 ): string {
   const s = (text ?? '').replace(WHITESPACE, '')
   let normalised: string
-  if (s.includes(',')) {
+  if (ENGLISH_FORMAT.test(s)) {
+    normalised = s.replace(/,/g, '')
+  } else if (s.includes(',')) {
     normalised = s.replace(/\./g, '').replace(',', '.')
   } else if ((s.match(/\./g) ?? []).length > 1
     || (options.thousandsDot === true && GROUPED_THOUSANDS.test(s.replace(LEADING_ZEROS, '$1')))) {
@@ -79,6 +89,22 @@ export function parseViDecimal(
     normalised = s
   }
   return normalised.replace(NOT_NUMERIC_OR_COMMA, '')
+}
+
+/**
+ * The display for area fields: dots between thousands, a comma before the
+ * decimals, the value's own digits otherwise (no rounding, no padding).
+ */
+export function formatViGrouped(
+  value: string | number | undefined,
+  info: { userTyping: boolean; input: string },
+): string {
+  if (info.userTyping) return info.input
+  const str = value === undefined ? '' : String(value)
+  const m = /^(-?)(\d+)(?:\.(\d+))?$/.exec(str)
+  if (m === null) return str
+  const whole = m[2].replace(/\B(?=(\d{3})+(?!\d))/g, '.')
+  return `${m[1]}${whole}${m[3] === undefined ? '' : `,${m[3]}`}`
 }
 
 export function parseViInteger(text: string | undefined): string {
@@ -99,6 +125,7 @@ export const viNumberInputProps = {
 export const viAreaInputProps = {
   decimalSeparator: ',',
   parser: ((text: string | undefined) => parseViDecimal(text, { thousandsDot: true })) as unknown as NumberParser,
+  formatter: formatViGrouped,
 } as const
 
 /** Spread onto every InputNumber that holds a whole number. */

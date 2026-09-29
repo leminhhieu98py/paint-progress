@@ -402,6 +402,14 @@ describe('DeckDetailScreen', () => {
     await waitFor(() => expect(updateDeckArea).toHaveBeenCalledWith('d1', 6000, 'prorated'))
   })
 
+  it('shows the area grouped with thousands dots, as the rest of the app writes it', async () => {
+    renderAt('/decks/d1')
+    await screen.findByRole('heading', { level: 1, name: 'Main Deck' })
+    await userEvent.click(screen.getByText('Sửa'))
+
+    expect(await screen.findByLabelText('Diện tích sàn (m²)')).toHaveValue('5.258,5')
+  })
+
   it('says the deck was saved, because the form looks the same afterwards', async () => {
     renderAt('/decks/d1')
     await screen.findByRole('heading', { level: 1, name: 'Main Deck' })
