@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderApp } from '../../test/renderApp'
 import { ProjectsScreen } from './ProjectsScreen'
 import { expectLeft } from '../../test/alignment'
+import { pageSubtitle } from '../../test/copy'
 
 const latestProgressEvent = vi.hoisted(() => vi.fn())
 vi.mock('../../lib/progressApi', () => ({
@@ -93,6 +94,15 @@ describe('ProjectsScreen header counters', () => {
     expect(await screen.findByText('38.380,95')).toBeInTheDocument()
     expect(screen.getByText('8')).toBeInTheDocument()
     expect(screen.getByText('1.531')).toBeInTheDocument()
+  })
+
+  it('has no subtitle and no caption that repeats its label (CPY-01)', async () => {
+    // The counts the subtitle carried are the stat cards' own figures.
+    renderScreen()
+    expect(await screen.findByText('38.380,95')).toBeInTheDocument()
+    expect(pageSubtitle()).toBeNull()
+    expect(screen.queryByText(/tiến độ theo công việc/)).not.toBeInTheDocument()
+    expect(screen.queryByText('trên toàn bộ bản vẽ')).not.toBeInTheDocument()
   })
 
   it('says how many decks still have no drawing attached', async () => {

@@ -11,3 +11,14 @@ export const SPEC_ID = /\b[A-Z]{3}-R\d+\b|\bRV\d+-\d+\b/
 export function expectNoSpecIds(root: HTMLElement = document.body) {
   expect(root.textContent ?? '').not.toMatch(SPEC_ID)
 }
+
+/**
+ * The subtitle under the page title (PageHeader's `<p>`), or null when the
+ * page has none. CPY-03: a subtitle left empty, or only `<project> ·`, is
+ * dropped entirely.
+ */
+export function pageSubtitle(): HTMLElement | null {
+  const title = document.querySelector('h1')
+  const next = title?.parentElement?.nextElementSibling
+  return next instanceof HTMLParagraphElement ? next : null
+}

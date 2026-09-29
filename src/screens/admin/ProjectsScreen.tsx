@@ -182,7 +182,6 @@ export function ProjectsScreen() {
     <>
       <PageHeader
         title="Dự án"
-        subtitle={`${rows.length} dự án · ${totals.decks} sàn · tiến độ theo công việc`}
         extra={
           /*
             aria-hidden on an icon that sits beside its own visible label.
@@ -225,7 +224,6 @@ export function ProjectsScreen() {
           <StatCard
             label="Ô đã dựng"
             value={COUNT.format(totals.cells)}
-            sub="trên toàn bộ bản vẽ"
           />
           <StatCard
             label="Ghi nhận gần nhất"
