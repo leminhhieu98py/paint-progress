@@ -3,6 +3,7 @@ import { useRef, useState } from 'react'
 import { ColorField, HEX_COLOR } from '../../components/ColorField'
 import { SectionCard } from '../../components/SectionCard'
 import { tablePagination } from '../../components/tablePagination'
+import { type } from '../../theme'
 import { KPI_COLOR_DEFAULTS } from '../dashboard/kpiColors'
 
 /**
@@ -150,7 +151,7 @@ export function DeckKpiColorTable({
         scroll={{ x: true }}
         onRow={(row) => ({ 'data-testid': `deck-color-row-${row.id}` } as React.HTMLAttributes<HTMLElement>)}
         columns={[
-          { title: 'Sàn', dataIndex: 'name', render: (v: string) => <span style={{ fontWeight: 600 }}>{v}</span> },
+          { title: 'Sàn', dataIndex: 'name', render: (v: string) => <span style={type.body}>{v}</span> },
           { title: 'Kế hoạch', key: 'plan', width: 190, render: (_v, row) => field(row, 'plan'), align: 'center' },
           { title: 'Thực hiện', key: 'actual', width: 190, render: (_v, row) => field(row, 'actual'), align: 'center' },
           {

@@ -19,7 +19,7 @@ import type { DeckEvent, WorkModel } from '../../domain/types'
 import { DEFAULT_UNIT, perUnit } from '../../domain/unit'
 import { formatAreaM2, formatHours, formatMhrPerM2, formatPercent } from '../../lib/format'
 import { matchesSearch } from '../../lib/search'
-import { fieldError, palette } from '../../theme'
+import { fieldError, palette, type } from '../../theme'
 import { EfficiencyLineChart, HoursBarChart } from './charts'
 import { dashboardWorkNames, resolveWork, type ProductivityFilters } from './productivityFilters'
 
@@ -317,7 +317,7 @@ export function ProductivityDashboard({
                 render: (_, r) => (r.forecast.lateDays === null
                   ? ''
                   : (
-                    <span style={{ color: fieldError, fontWeight: 600 }}>
+                    <span style={{ ...type.body, color: fieldError }}>
                       {`Trễ ${r.forecast.lateDays} ngày · thiếu ${formatHours(r.forecast.shortfallMhr ?? 0)} Mhr`}
                     </span>
                   )),

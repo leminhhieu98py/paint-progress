@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { StagePlanTable, type StagePlanRow } from './StagePlanTable'
 import { expectLeft } from '../../test/alignment'
+import { weightOf } from '../../test/typography'
 
 const ROWS: StagePlanRow[] = [
   {
@@ -352,6 +353,14 @@ describe('StagePlanTable', () => {
     expect(screen.getByText(/Gõ số 0 là ghi đè/)).toBeInTheDocument()
     expect(warn.mock.calls.flat().join(' ')).not.toMatch(/same key/)
     warn.mockRestore()
+  })
+})
+
+describe('StagePlanTable — type scale (TYP-02)', () => {
+  it('sets the stage name and the plan days as body text, not bold (R3-C)', () => {
+    renderTable()
+    expect(weightOf(row('s1').getByText('Công đoạn 1'))).toBe(400)
+    expect(weightOf(screen.getByTestId('plan-days-s1'))).toBe(400)
   })
 })
 

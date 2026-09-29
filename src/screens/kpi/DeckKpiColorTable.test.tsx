@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { weightOf } from '../../test/typography'
 import { DeckKpiColorTable, type DeckKpiColorRow } from './DeckKpiColorTable'
 
 /**
@@ -27,6 +28,12 @@ const open = async () => {
 }
 
 describe('DeckKpiColorTable', () => {
+  it('sets the deck name as body text, not bold (TYP-02)', async () => {
+    renderTable()
+    await open()
+    expect(weightOf(screen.getByText('Sàn A'))).toBe(400)
+  })
+
   it('is a collapsible section, shut by default, that counts the styled decks', () => {
     renderTable()
     expect(screen.getByRole('heading', { name: 'Màu biểu đồ theo sàn' })).toBeInTheDocument()

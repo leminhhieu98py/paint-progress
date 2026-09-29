@@ -10,7 +10,7 @@ import {
   DEFAULT_QUANTITY_LABEL, DEFAULT_UNIT, labelOfWorks, MIXED_QUANTITY_LABEL, unitOfWorks,
 } from '../../domain/unit'
 import { formatAreaM2 } from '../../lib/format'
-import { palette } from '../../theme'
+import { palette, type } from '../../theme'
 
 /**
  * Kế hoạch KPI — the admin picks one date range per coat, and may override the
@@ -171,7 +171,7 @@ export function StagePlanTable({
       // A floor, not a cap: `Blast + Coat 1` wraps once at most (QA F9).
       width: 140,
       render: (_v: unknown, row: StagePlanRow) => (
-        <span style={{ fontWeight: 600 }}>{row.stageName}</span>
+        <span style={type.body}>{row.stageName}</span>
       ),
     },
     {
@@ -239,7 +239,7 @@ export function StagePlanTable({
             ? String(planDays({ startDate: d.startDate, endDate: d.endDate }))
             : '—'
         return (
-          <span data-testid={`plan-days-${row.stageId}`} style={{ fontWeight: 600 }}>
+          <span data-testid={`plan-days-${row.stageId}`} style={type.body}>
             {shown}
           </span>
         )
@@ -342,7 +342,7 @@ export function StagePlanTable({
               Lưu
             </Button>
             {message !== null && (
-              <span style={{ fontSize: 12, color: palette.error }}>{message}</span>
+              <span style={{ ...type.caption, color: palette.error }}>{message}</span>
             )}
           </div>
         )
