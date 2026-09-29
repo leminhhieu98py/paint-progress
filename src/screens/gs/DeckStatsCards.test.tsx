@@ -4,20 +4,24 @@ import { describe, expect, it, vi } from 'vitest'
 import { DeckProgressCard, StageRollupCard } from './DeckStatsCards'
 import { computeDeckProgress } from '../../domain/progress'
 import type { Cell, Stage } from '../../domain/types'
-import { palette } from '../../theme'
+import { fieldType, palette } from '../../theme'
+import { GS_RING, GS_RING_SIZE, GS_RING_THICKNESS, figureFits, ringFigureStep } from '../../components/ringFit'
 
 // Asserting on the ring's SVG would pin geometry, not the shares. The double
 // records what the card hands it, and stands in a button per slice for the
 // ring's own hover (CHT-02), which the real Donut's tests cover.
 vi.mock('../../components/Donut', () => ({
-  Donut: ({ slices, children, activeKey, onActiveChange }: {
+  Donut: ({ slices, children, activeKey, onActiveChange, size, thickness }: {
     slices: { key?: string; label: string; value: number; detail?: string | string[] }[]
     children?: ReactNode
     activeKey?: string | null
     onActiveChange?: (key: string | null) => void
+    size?: number
+    thickness?: number
   }) => (
     <div
       data-testid="donut"
+      data-size={`${size}/${thickness}`}
       data-slices={JSON.stringify(slices.map((s) => [s.label, s.value]))}
       data-active={activeKey ?? ''}
     >
@@ -184,7 +188,8 @@ describe('StageRollupCard', () => {
     expect(within(card).getByRole('heading', { level: 2, name: 'Tiến độ theo công đoạn · cộng dồn' }))
       .toHaveStyle({ fontSize: '15px', fontWeight: '600' })
     const donut = screen.getByTestId('donut')
-    expect(within(donut).getByText('1.000,00')).toHaveStyle({ fontSize: '21px', fontWeight: '700' })
+    // Four digits do not fit the hole at displaySm; the next step does (I-2).
+    expect(within(donut).getByText('1.000,00')).toHaveStyle({ fontSize: '15px', fontWeight: '600' })
     expect(within(donut).getByText('m² sàn')).toHaveStyle({ fontSize: '12px' })
     expect(within(card).getByText('Coat 2')).toHaveStyle({ fontSize: '14px', fontWeight: '400' })
   })
@@ -222,6 +227,34 @@ describe('StageRollupCard', () => {
       ['Blast + Coat 1', 0.1],
       ['Coat 2', 0.7],
     ])
+  })
+})
+
+describe('StageRollupCard: the ring\'s centre fits its hole (I-2, C1)', () => {
+  const steps = [fieldType.displaySm, fieldType.cardTitle, fieldType.bodyStrong]
+  const renderArea = (totalAreaM2: number) =>
+    render(<StageRollupCard stages={STAGES} stageProgress={progressOf().stages} cells={CELLS} totalAreaM2={totalAreaM2} />)
+
+  it('draws the ring at the size the widest area was fitted to', () => {
+    renderArea(1000)
+    expect(screen.getByTestId('donut')).toHaveAttribute('data-size', `${GS_RING_SIZE}/${GS_RING_THICKNESS}`)
+  })
+
+  it.each([
+    [880, '880,00'],
+    [2880, '2.880,00'],
+    [123456.78, '123.456,78'],
+  ])('sets %s m² in the largest step that fits, with room either side', (area, text) => {
+    renderArea(area)
+    const figure = within(screen.getByTestId('donut')).getByText(text)
+    const step = ringFigureStep(text, steps, GS_RING)
+    expect(figure).toHaveStyle({ fontSize: `${step.fontSize}px` })
+    expect(figureFits(text, step, GS_RING)).toBe(true)
+  })
+
+  it('keeps displaySm for a figure short enough to take it', () => {
+    renderArea(880)
+    expect(within(screen.getByTestId('donut')).getByText('880,00')).toHaveStyle({ fontSize: '21px' })
   })
 })
 

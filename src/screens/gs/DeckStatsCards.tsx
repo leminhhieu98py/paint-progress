@@ -4,6 +4,7 @@ import { InfoTip } from '../../components/InfoTip'
 import { legendRowProps } from '../../components/ringHover'
 import { ProgressBar } from '../../components/ProgressBar'
 import { SectionCard } from '../../components/SectionCard'
+import { GS_RING, GS_RING_SIZE, GS_RING_THICKNESS, ringFigureStep } from '../../components/ringFit'
 import { buildStageSlices, NOT_STARTED_KEY, UNMAPPED_KEY } from '../../domain/pieSlices'
 import type { Cell, Stage, StageProgress } from '../../domain/types'
 import { DEFAULT_QUANTITY_LABEL, DEFAULT_UNIT } from '../../domain/unit'
@@ -143,6 +144,9 @@ export function StageRollupCard({
     })
     .filter((s) => s.value > 0)
 
+  const areaText = formatAreaM2(totalAreaM2)
+  const areaStep = ringFigureStep(areaText, [fieldType.displaySm, fieldType.cardTitle, fieldType.bodyStrong], GS_RING)
+
   return (
     <div data-testid="gs-stage-rollup">
       <SectionCard title="Tiến độ theo công đoạn · cộng dồn">
@@ -159,13 +163,14 @@ export function StageRollupCard({
           <Donut
             label="Diện tích đang dừng ở mỗi lớp"
             slices={ringSlices}
-            size={132}
-            thickness={24}
+            size={GS_RING_SIZE}
+            thickness={GS_RING_THICKNESS}
             activeKey={active}
             onActiveChange={setActive}
           >
-            <span style={{ ...fieldType.displaySm, letterSpacing: '-0.028em' }}>
-              {formatAreaM2(totalAreaM2)}
+            {/* The largest step that fits the hole, down to bodyStrong (I-2). */}
+            <span data-testid="ring-figure" style={{ ...areaStep, letterSpacing: '-0.028em' }}>
+              {areaText}
             </span>
             <span style={{ ...fieldType.caption, color: palette.textTertiary, marginTop: 2 }}>
               {`${unit} sàn`}

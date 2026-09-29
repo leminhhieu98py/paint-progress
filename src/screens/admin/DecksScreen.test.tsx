@@ -7,7 +7,8 @@ import { DecksScreen } from './DecksScreen'
 import { expectLeft } from '../../test/alignment'
 import { weightOf } from '../../test/typography'
 import { pageSubtitle } from '../../test/copy'
-import { palette } from '../../theme'
+import { palette, type } from '../../theme'
+import { ROLLUP_RING, figureFits, ringFigureStep } from '../../components/ringFit'
 
 const listProjectNames = vi.hoisted(() => vi.fn())
 const listDecks = vi.hoisted(() => vi.fn())
@@ -426,6 +427,16 @@ describe('DecksScreen — the project-wide half of progress', () => {
 
     await screen.findByTestId('rollup-donut')
     expect(screen.queryByText(/Mỗi phần là trọng số/)).toBeNull()
+  })
+
+  it('sets the centre figure in the largest step that fits the hole (I-2, C1)', async () => {
+    renderScreen()
+    const donut = await screen.findByTestId('rollup-donut')
+    const figure = await within(donut).findByTestId('ring-figure')
+    const text = figure.textContent ?? ''
+    const step = ringFigureStep(text, [type.displaySm, type.cardTitle, type.bodyStrong], ROLLUP_RING)
+    expect(figure).toHaveStyle({ fontSize: `${step.fontSize}px`, fontWeight: String(step.fontWeight) })
+    expect(figureFits(text, step, ROLLUP_RING)).toBe(true)
   })
 
   describe('the ring and its legend (CHT-01, CHT-02)', () => {

@@ -4,7 +4,8 @@ import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { expectNoSpecIds } from '../../test/copy'
 import { expectOnScale, weightOf } from '../../test/typography'
-import { adminTheme, palette } from '../../theme'
+import { adminTheme, palette, type } from '../../theme'
+import { DECK_RING, figureFits, ringFigureStep } from '../../components/ringFit'
 import { DeckProgressPanel } from './DeckProgressPanel'
 
 const loadDeckWorks = vi.hoisted(() => vi.fn())
@@ -290,6 +291,16 @@ describe('DeckProgressPanel', () => {
     // Once in the ring's centre, once in the footer.
     expect(within(ring).getAllByText('1.000,00 m²')).toHaveLength(2)
     expect(within(ring).queryByText(/\d+ ô/)).toBeNull()
+  })
+
+  it('sets the centre figure in the largest step that fits the hole (I-2, C1)', async () => {
+    renderPanel()
+    const ring = await screen.findByTestId('stage-ring')
+    const figure = within(ring).getByTestId('ring-figure')
+    const text = figure.textContent ?? ''
+    const step = ringFigureStep(text, [type.displaySm, type.cardTitle, type.bodyStrong], DECK_RING)
+    expect(figure).toHaveStyle({ fontSize: `${step.fontSize}px` })
+    expect(figureFits(text, step, DECK_RING)).toBe(true)
   })
 
   it('says what the ring itself answers, so it is not read as the cumulative list', async () => {

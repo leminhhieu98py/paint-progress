@@ -31,6 +31,7 @@ import {
 import { swatchStyle, useControlHeight } from '../../components/swatch'
 import { ConsequenceModal } from '../../components/ConsequenceModal'
 import { Donut, type DonutSlice } from '../../components/Donut'
+import { DECK_RING, ringFigureStep } from '../../components/ringFit'
 import { legendRowProps } from '../../components/ringHover'
 import { EmptyState } from '../../components/EmptyState'
 import { InfoTip } from '../../components/InfoTip'
@@ -2194,9 +2195,11 @@ function StageRing({
           Tiến độ sàn
           <InfoTip text="Vòng tròn: diện tích đang dừng ở mỗi lớp, không cộng dồn" />
         </span>
+        {/* The largest step that fits the hole, down to bodyStrong (I-2). */}
         <span
+          data-testid="ring-figure"
           style={{
-            ...type.displaySm,
+            ...ringFigureStep(formatPercent(progress), [type.displaySm, type.cardTitle, type.bodyStrong], DECK_RING),
             letterSpacing: '-0.03em',
             marginTop: 5,
           }}

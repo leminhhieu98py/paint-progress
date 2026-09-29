@@ -26,6 +26,7 @@ import { NEW_DECK } from '../../config'
 import { ConsequenceModal } from '../../components/ConsequenceModal'
 import { modalProps } from '../../components/modalChrome'
 import { Donut, type DonutSlice } from '../../components/Donut'
+import { ROLLUP_RING, ringFigureStep } from '../../components/ringFit'
 import { legendRowProps } from '../../components/ringHover'
 import { EmptyState } from '../../components/EmptyState'
 import { FilterBar } from '../../components/FilterBar'
@@ -859,7 +860,14 @@ function ProjectRing({
         activeKey={active}
         onActiveChange={setActive}
       >
-        <span style={{ ...type.displaySm, letterSpacing: '-0.028em' }}>
+        {/* The largest step that fits the hole, down to bodyStrong (I-2). */}
+        <span
+          data-testid="ring-figure"
+          style={{
+            ...ringFigureStep(formatPercent(progress), [type.displaySm, type.cardTitle, type.bodyStrong], ROLLUP_RING),
+            letterSpacing: '-0.028em',
+          }}
+        >
           {formatPercent(progress)}
         </span>
         <span style={{ ...type.caption, color: palette.textTertiary, marginTop: 3 }}>
