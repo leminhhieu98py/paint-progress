@@ -16,7 +16,7 @@ import {
   createProject, deleteProject, listProjects, updateProject, type ProjectRow,
 } from '../../lib/projectsApi'
 import { APP_BASE_PATH } from '../../config'
-import { palette } from '../../theme'
+import { palette, type } from '../../theme'
 
 interface CreateValues {
   name: string
@@ -263,8 +263,7 @@ export function ProjectsScreen() {
                         borderRadius: 9,
                         background: palette.bgHover,
                         color: palette.textSecondary,
-                        fontSize: 12,
-                        fontWeight: 600,
+                        ...type.micro,
                         lineHeight: '32px',
                         textAlign: 'center',
                         flex: 'none',
@@ -273,8 +272,8 @@ export function ProjectsScreen() {
                       {row.code.slice(0, 2).toUpperCase()}
                     </span>
                     <div style={{ minWidth: 0 }}>
-                      <div style={{ fontWeight: 600, lineHeight: 1.35 }}>{row.name}</div>
-                      <span style={{ fontSize: 11, color: palette.textTertiary }}>{row.code}</span>
+                      <div style={{ ...type.body, lineHeight: 1.35 }}>{row.name}</div>
+                      <span style={{ ...type.caption, color: palette.textTertiary }}>{row.code}</span>
                     </div>
                   </div>
                 ),

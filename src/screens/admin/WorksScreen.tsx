@@ -25,7 +25,7 @@ import { ProjectSelect } from '../../components/ProjectSelect'
 import { RulesDisclosure } from '../../components/RulesDisclosure'
 import { SectionCard } from '../../components/SectionCard'
 import { searchSelectProps } from '../../components/searchSelect'
-import { palette } from '../../theme'
+import { palette, type } from '../../theme'
 
 type ProjectOption = Awaited<ReturnType<typeof listProjectNames>>[number]
 
@@ -258,8 +258,7 @@ export function WorksScreen() {
         gap: 6,
         padding: '5px 10px',
         borderRadius: 999,
-        fontSize: 12,
-        fontWeight: 600,
+        ...type.micro,
         background: balanced ? palette.accentTint : palette.errorBg,
         color: balanced ? palette.accent : palette.error,
       }}
@@ -453,7 +452,7 @@ export function WorksScreen() {
                     onChange={(n) => patch(i, { manualProgress: (n ?? 0) / 100 })}
                   />
                 ) : (
-                  <span style={{ fontWeight: 600 }}>
+                  <span style={type.body}>
                     {w.id in progressByWork ? formatPercent(progressByWork[w.id]) : '—'}
                   </span>
                 )),

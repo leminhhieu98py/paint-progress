@@ -21,7 +21,7 @@ import { EmptyState } from '../../components/EmptyState'
 import { InfoTip } from '../../components/InfoTip'
 import { RulesDisclosure } from '../../components/RulesDisclosure'
 import { SectionCard } from '../../components/SectionCard'
-import { palette, space } from '../../theme'
+import { palette, space, type } from '../../theme'
 
 /**
  * What deleting a coat does, said once for the rule and the delete dialog
@@ -337,14 +337,14 @@ export function StageConfigPanel({
       }}
     >
       {balanced ? <CheckCircleFilled aria-hidden /> : <CloseCircleFilled aria-hidden />}
-      <span style={{ fontSize: 14, fontWeight: 600 }}>{formatWeight(total)}</span>
+      <span style={type.micro}>{formatWeight(total)}</span>
       {/*
         The target is written as a bare 1, not formatWeight(1). Four zeros on a
         constant add nothing, and repeating the same string the chip's own total
         prints when balanced makes the two indistinguishable to read -- and
         ambiguous to query.
       */}
-      <span style={{ fontSize: 12, opacity: 0.7 }}>/ 1</span>
+      <span style={{ ...type.micro, opacity: 0.7 }}>/ 1</span>
     </span>
   )
 
@@ -474,7 +474,7 @@ export function StageConfigPanel({
                 onChange={(e) => patch(i, { name: e.target.value })}
               />
               ) : (
-                <span style={{ fontWeight: 600 }}>{v}</span>
+                <span style={type.body}>{v}</span>
               )
             ),
           },
@@ -498,7 +498,7 @@ export function StageConfigPanel({
                         boxShadow: 'inset 0 0 0 1px #16202B33',
                       }}
                     />
-                    <span style={{ fontSize: 12, color: palette.textSecondary }}>{v}</span>
+                    <span style={{ ...type.body, color: palette.textSecondary }}>{v}</span>
                   </>
                 )}
                 {editable && (
@@ -520,7 +520,7 @@ export function StageConfigPanel({
             dataIndex: 'weight',
             width: 130,
             render: (v: number, _r, i) => (!editable ? (
-              <div style={{ textAlign: 'center', fontWeight: 600 }}>{formatWeight(v)}</div>
+              <div style={{ textAlign: 'center', ...type.body }}>{formatWeight(v)}</div>
             ) : (
               <InputNumber
                 value={v}
@@ -615,7 +615,7 @@ export function StageConfigPanel({
         {/* Only while it is wrong: the empty state carries the no-coats step,
             and a balanced bar is its own answer (CPY-01). */}
         {draft.length > 0 && !balanced && (
-          <div style={{ marginTop: 8, fontSize: 11, color: palette.textTertiary }}>
+          <div style={{ marginTop: 8, ...type.caption, color: palette.textTertiary }}>
             {`Tổng trọng số các lớp phải bằng 1; hiện tại ${formatWeight(total)}.`}
           </div>
         )}

@@ -3,6 +3,7 @@ import { formatAreaM2 } from '../../lib/format'
 import type { MeshCell } from '../../domain/types'
 import type { ZoneImpact } from '../../lib/decksApi'
 import { modalProps } from '../../components/modalChrome'
+import { type } from '../../theme'
 
 export type EditKind = 'delete' | 'merge' | 'mesh'
 
@@ -121,7 +122,7 @@ export function MeshEditDialog({
           <ul>
             {pending.impact.map((z) => (
               <li key={z.zoneId}>
-                <strong>{z.zoneName}</strong>: {z.cellCodes.join(', ')}
+                <span style={type.bodyStrong}>{z.zoneName}</span>: {z.cellCodes.join(', ')}
               </li>
             ))}
           </ul>
@@ -136,7 +137,7 @@ export function MeshEditDialog({
           <ul>
             {pending.progressLoss.map((p) => (
               <li key={p.code}>
-                <strong>{p.code}</strong> — {p.stageName}
+                <span style={type.bodyStrong}>{p.code}</span> — {p.stageName}
               </li>
             ))}
           </ul>
@@ -159,7 +160,7 @@ export function MeshEditDialog({
           <ul>
             {pending.reshaped.map((r) => (
               <li key={r.code}>
-                <strong>{r.code}</strong> — {r.stageName}: {formatAreaM2(r.fromAreaM2)} → {formatAreaM2(r.toAreaM2)} m²
+                <span style={type.bodyStrong}>{r.code}</span> — {r.stageName}: {formatAreaM2(r.fromAreaM2)} → {formatAreaM2(r.toAreaM2)} m²
               </li>
             ))}
           </ul>

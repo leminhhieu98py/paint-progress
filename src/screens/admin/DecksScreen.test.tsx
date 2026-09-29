@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderApp } from '../../test/renderApp'
 import { DecksScreen } from './DecksScreen'
 import { expectLeft } from '../../test/alignment'
+import { weightOf } from '../../test/typography'
 import { pageSubtitle } from '../../test/copy'
 import { palette } from '../../theme'
 
@@ -476,7 +477,7 @@ describe('DecksScreen — the project-wide half of progress', () => {
       expect(rowOf(donut, 'Chứng từ')).toHaveStyle({ background: palette.bgHover })
       expect(rowOf(donut, 'CD').style.background).toBe('')
       // Text not bolder: the row keeps its weights.
-      expect(within(rowOf(donut, 'Chứng từ')).getByText('Chứng từ')).toHaveStyle({ fontWeight: '500' })
+      expect(within(rowOf(donut, 'Chứng từ')).getByText('Chứng từ')).toHaveStyle({ fontWeight: '400' })
       fireEvent.pointerLeave(sliceOf(donut, 'Chứng từ'))
       expect(rowOf(donut, 'Chứng từ').style.background).toBe('')
     })
@@ -937,6 +938,24 @@ describe('DecksScreen — alignment (UI-03)', () => {
     const row = within(name.closest('tr') as HTMLElement)
     expect(row.getByText('24').closest('td')).toHaveStyle({ textAlign: 'center' })
     expect(row.getByText('Chưa có').closest('td')).toHaveStyle({ textAlign: 'center' })
+  })
+})
+
+describe('DecksScreen — type scale (TYP-02)', () => {
+  it('sets a deck\'s name in the list as body text (R3-C)', async () => {
+    renderScreen()
+    const name = await screen.findByText('Main Deck')
+    expect(weightOf(name)).toBe(400)
+  })
+
+  it('sets the rollup\'s totals rows in bodyStrong, 600, never 700', async () => {
+    renderScreen()
+    const rollup = within(await screen.findByTestId('project-rollup'))
+    const works = within(await screen.findByTestId('project-works'))
+    for (const label of [rollup.getByText('Tổng dự án'), works.getByText('Tổng dự án')]) {
+      expect(weightOf(label)).toBe(600)
+      expect(label).toHaveStyle({ fontSize: '13px' })
+    }
   })
 })
 

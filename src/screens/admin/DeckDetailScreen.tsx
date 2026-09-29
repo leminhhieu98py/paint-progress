@@ -28,7 +28,7 @@ import { PageBody, PageHeader } from '../../components/PageHeader'
 import { InfoTip } from '../../components/InfoTip'
 import { SectionCard } from '../../components/SectionCard'
 import { formatPercent } from '../../lib/format'
-import { palette } from '../../theme'
+import { palette, type } from '../../theme'
 
 /** One read-only fact about the deck, in the card grid of panel A3.1. */
 function IdentityCard({
@@ -54,15 +54,15 @@ function IdentityCard({
         padding: '14px 16px 16px',
       }}
     >
-      <div style={{ fontSize: 12, fontWeight: 600, color: palette.textTertiary }}>
+      <div style={{ ...type.label, color: palette.textTertiary }}>
         {label}
         {tip !== undefined && <InfoTip text={tip} />}
       </div>
-      <div style={{ marginTop: 9, fontSize: dense ? 13 : 16, fontWeight: 600, lineHeight: 1.25, wordBreak: dense ? 'break-all' : 'normal' }}>
+      <div style={{ marginTop: 9, ...(dense ? type.bodyStrong : type.cardTitle), lineHeight: 1.25, wordBreak: dense ? 'break-all' : 'normal' }}>
         {value}
       </div>
       {sub !== undefined && (
-        <div style={{ marginTop: 4, fontSize: 11, lineHeight: 1.4, color: palette.textTertiary }}>
+        <div style={{ marginTop: 4, ...type.caption, lineHeight: 1.4, color: palette.textTertiary }}>
           {sub}
         </div>
       )}
@@ -439,8 +439,7 @@ export function DeckDetailScreen() {
             <FilePdfOutlined style={{ color: palette.textTertiary, flex: 'none' }} />
             <span
               style={{
-                fontSize: 12,
-                fontWeight: 600,
+                ...type.caption,
                 whiteSpace: 'nowrap',
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',
@@ -463,7 +462,7 @@ export function DeckDetailScreen() {
               alignItems: 'flex-start',
               marginTop: 8,
               maxWidth: 520,
-              fontSize: 11,
+              ...type.caption,
               lineHeight: 1.45,
               color: palette.error,
             }}
@@ -544,11 +543,11 @@ export function DeckDetailScreen() {
             <>
               {progress !== null && (
                 <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontSize: 12, fontWeight: 600, color: palette.textTertiary }}>
+                  <div style={{ ...type.label, color: palette.textTertiary }}>
                     Tiến độ sàn
                     <InfoTip text="Tổng hợp các công việc" />
                   </div>
-                  <div style={{ marginTop: 7, fontSize: 23, fontWeight: 700, letterSpacing: '-0.032em' }}>
+                  <div style={{ marginTop: 7, ...type.displaySm, letterSpacing: '-0.032em' }}>
                     {formatPercent(progress)}
                   </div>
                 </div>

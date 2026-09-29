@@ -39,7 +39,7 @@ import { CategoryBadge } from '../../components/CategoryBadge'
 import type { CategoryValue } from '../../components/categoryTone'
 import { useTablePagination } from '../../components/tablePagination'
 import { roundSharesToTotal } from '../../domain/rounding'
-import { categoricalColor, palette, space } from '../../theme'
+import { categoricalColor, palette, space, type } from '../../theme'
 
 interface RollupRow {
   key: string
@@ -482,7 +482,7 @@ export function DecksScreen() {
               {
                 title: 'Tên sàn',
                 dataIndex: 'name',
-                render: (v: string) => <span style={{ fontWeight: 600 }}>{v}</span>,
+                render: (v: string) => <span style={type.body}>{v}</span>,
               },
               { title: 'Mã', dataIndex: 'code', width: 120 },
               { title: 'Số ô', dataIndex: 'cellCount', width: 90, align: 'center' },
@@ -635,19 +635,19 @@ export function DecksScreen() {
                   summary={() => (
                     <Table.Summary.Row>
                       <Table.Summary.Cell index={0}>
-                        <strong>Tổng dự án</strong>
+                        <span style={type.bodyStrong}>Tổng dự án</span>
                       </Table.Summary.Cell>
                       <Table.Summary.Cell index={1} />
                       <Table.Summary.Cell index={2} align="center">
-                        <strong>{formatPercent(effectiveTotal)}</strong>
+                        <span style={type.bodyStrong}>{formatPercent(effectiveTotal)}</span>
                       </Table.Summary.Cell>
                       <Table.Summary.Cell index={3} align="center">
                         {rollupScope.unit === null ? (
                           <Tooltip title={MIXED_UNIT_SUM_TOOLTIP}>
-                            <strong>—</strong>
+                            <span style={type.bodyStrong}>—</span>
                           </Tooltip>
                         ) : (
-                          <strong>{formatAreaM2(totalArea)}</strong>
+                          <span style={type.bodyStrong}>{formatAreaM2(totalArea)}</span>
                         )}
                       </Table.Summary.Cell>
                       <Table.Summary.Cell index={4} align="center">
@@ -659,7 +659,7 @@ export function DecksScreen() {
                 {hiddenDecks > 0 && (
                   <Typography.Text
                     type="secondary"
-                    style={{ display: 'block', fontSize: 12, padding: `${space.sm}px ${space.xl}px ${space.md}px` }}
+                    style={{ display: 'block', ...type.caption, padding: `${space.sm}px ${space.xl}px ${space.md}px` }}
                   >
                     {`Đã ẩn ${hiddenDecks} sàn có tỉ trọng 0,00%`}
                     <InfoTip text="Không thuộc công việc nào tính vào tổng" />
@@ -714,15 +714,15 @@ export function DecksScreen() {
                     summary={() => (
                       <Table.Summary.Row>
                         <Table.Summary.Cell index={0}>
-                          <strong>Tổng dự án</strong>
+                          <span style={type.bodyStrong}>Tổng dự án</span>
                         </Table.Summary.Cell>
                         <Table.Summary.Cell index={1} align="center" />
                         <Table.Summary.Cell index={2} align="center">
-                          <strong>
+                          <span style={type.bodyStrong}>
                             {formatWeight(rollup.works
                               .filter((w) => w.work.counts)
                               .reduce((sum, w) => sum + w.work.weight, 0))}
-                          </strong>
+                          </span>
                         </Table.Summary.Cell>
                         <Table.Summary.Cell index={3} align="center" />
                         <Table.Summary.Cell index={4} align="center">
@@ -741,7 +741,7 @@ export function DecksScreen() {
                 // divider rather than a text line below it (UX-02).
                 style={{ padding: `${space.sm}px ${space.xl}px ${space.xl}px`, background: palette.bgSubtle }}
               >
-                <div style={{ fontSize: 12, fontWeight: 600, color: palette.textTertiary }}>
+                <div style={{ ...type.label, color: palette.textTertiary }}>
                   Tiến độ dự án
                 </div>
                 <ProjectRing
@@ -783,7 +783,7 @@ export function DecksScreen() {
           </Button>,
         ]}
       >
-        <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginTop: 0 }}>
+        <Typography.Paragraph type="secondary" style={{ ...type.caption, marginTop: 0 }}>
           Sao chép bản vẽ, khung và lưới ô. Không sao chép công việc, lớp sơn, tiến độ hay kế hoạch.
         </Typography.Paragraph>
         <Form form={copyForm} layout="vertical" onFinish={(v) => void copyDeck(v)}>
@@ -859,10 +859,10 @@ function ProjectRing({
         activeKey={active}
         onActiveChange={setActive}
       >
-        <span style={{ fontSize: 21, fontWeight: 700, letterSpacing: '-0.028em' }}>
+        <span style={{ ...type.displaySm, letterSpacing: '-0.028em' }}>
           {formatPercent(progress)}
         </span>
-        <span style={{ fontSize: 10, color: palette.textTertiary, marginTop: 3 }}>
+        <span style={{ ...type.caption, color: palette.textTertiary, marginTop: 3 }}>
           toàn dự án
         </span>
       </Donut>
@@ -877,7 +877,7 @@ function ProjectRing({
           and the header says which is which. The contribution column
           sums to P exactly; the progress column is the table's.
         */}
-        <div style={{ fontSize: 11, color: palette.textTertiary, textAlign: 'right' }}>
+        <div style={{ ...type.caption, color: palette.textTertiary, textAlign: 'right' }}>
           Tiến độ · Đóng góp
         </div>
         {slices.map((sl, i) => (
@@ -896,7 +896,7 @@ function ProjectRing({
             />
             <span
               style={{
-                fontSize: 12, fontWeight: 500, minWidth: 0,
+                ...type.body, minWidth: 0,
                 overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
               }}
             >
@@ -905,12 +905,12 @@ function ProjectRing({
             <span
               style={{
                 marginLeft: 'auto', width: 56, textAlign: 'right', flex: 'none',
-                fontSize: 12, fontWeight: 500, color: palette.textSecondary,
+                ...type.body, color: palette.textSecondary,
               }}
             >
               {formatPercent(sl.display ?? sl.value)}
             </span>
-            <span style={{ width: 56, textAlign: 'right', flex: 'none', fontSize: 12, fontWeight: 600 }}>
+            <span style={{ width: 56, textAlign: 'right', flex: 'none', ...type.bodyStrong }}>
               {formatPercent(shownShares[i])}
             </span>
           </div>
@@ -926,13 +926,13 @@ function ProjectRing({
               width: 11, height: 11, borderRadius: '50%', flex: 'none', background: palette.track,
             }}
           />
-          <span style={{ fontSize: 12, fontWeight: 500, color: palette.textTertiary }}>
+          <span style={{ ...type.body, color: palette.textTertiary }}>
             Còn lại
           </span>
           <span
             style={{
               marginLeft: 'auto', width: 56, textAlign: 'right', flex: 'none',
-              fontSize: 12, fontWeight: 600, color: palette.textTertiary,
+              ...type.bodyStrong, color: palette.textTertiary,
             }}
           >
             {formatPercent(shownRemainder)}

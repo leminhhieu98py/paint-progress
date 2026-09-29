@@ -12,7 +12,7 @@ import { listGsUsers } from '../../lib/adminApi'
 import { listCoworkerNames } from '../../lib/gsApi'
 import { formatDateTimeVN, formatHours } from '../../lib/format'
 import { setCellEventEffort } from '../../lib/progressApi'
-import { palette, space } from '../../theme'
+import { palette, space, type } from '../../theme'
 
 /**
  * Every stage change on the deck with the effort recorded against it, and --
@@ -28,7 +28,7 @@ import { palette, space } from '../../theme'
 
 const hours = (n: number | null) => (n === null ? '' : formatHours(n))
 
-const fieldLabel = { display: 'block', marginBottom: 4, fontSize: 12, fontWeight: 600 } as const
+const fieldLabel = { display: 'block', marginBottom: 4, ...type.label } as const
 
 export function EffortHistoryPanel({
   deckId,
@@ -124,7 +124,7 @@ export function EffortHistoryPanel({
       // card's inset (LAY-01) rather than sitting a cell's padding inboard.
       bodyPadding={0}
       extra={(
-        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: palette.textTertiary }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, ...type.body, color: palette.textTertiary }}>
           <Switch size="small" checked={onlyMissing} onChange={setOnlyMissing} />
           Chỉ hiện lần chưa có giờ công
         </label>
@@ -170,7 +170,7 @@ export function EffortHistoryPanel({
               <Space size={4}>
                 {ev.effortEditedAt && (
                   <Tooltip title={`Sửa bởi ${ev.effortEditedByName ?? 'quản trị viên'} lúc ${formatDateTimeVN(ev.effortEditedAt)}`}>
-                    <Typography.Text type="secondary" style={{ fontSize: 11 }}>đã sửa</Typography.Text>
+                    <Typography.Text type="secondary" style={type.caption}>đã sửa</Typography.Text>
                   </Tooltip>
                 )}
                 {editable && <Button size="small" onClick={() => openEdit(ev)}>Sửa</Button>}

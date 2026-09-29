@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderApp } from '../../test/renderApp'
 import { UsersScreen } from './UsersScreen'
 import { expectLeft } from '../../test/alignment'
+import { weightOf } from '../../test/typography'
 import { expectNoSpecIds, pageSubtitle } from '../../test/copy'
 
 const listGsUsers = vi.fn()
@@ -558,6 +559,15 @@ describe('UsersScreen — alignment (UI-03)', () => {
     }
     const cell = screen.getAllByText('Đang dùng')[0].closest('td')
     expect(cell).toHaveStyle({ textAlign: 'center' })
+  })
+})
+
+describe('UsersScreen — type scale (TYP-02)', () => {
+  it('sets the person\'s name as body text: the row is not a heading (R3-C)', async () => {
+    renderApp(<UsersScreen />)
+    const name = await screen.findByText('GS Một')
+    expect(weightOf(name)).toBe(400)
+    expect(name).toHaveStyle({ fontSize: '13px' })
   })
 })
 

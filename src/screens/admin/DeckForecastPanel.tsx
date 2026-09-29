@@ -15,7 +15,7 @@ import { DEFAULT_UNIT, perUnit } from '../../domain/unit'
 import { formatAreaM2, formatHours, formatMhrPerM2 } from '../../lib/format'
 import { loadDeckWorks, type DeckWorks } from '../../lib/progressApi'
 import { setWorkDeckDeadline } from '../../lib/worksApi'
-import { palette, space } from '../../theme'
+import { palette, space, type } from '../../theme'
 
 /** The deck-wide totals' notes, on their labels' (?) (CPY-01). */
 const DECK_WIDE = 'Cả sàn, mọi công việc'
@@ -195,7 +195,7 @@ export function DeckForecastPanel({
 
       {works.length > 1 && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
-          <span style={{ fontSize: 12, fontWeight: 600, color: palette.textTertiary }}>Công việc</span>
+          <span style={{ ...type.label, color: palette.textTertiary }}>Công việc</span>
           <Segmented
             value={activeWork?.work.id}
             onChange={(v) => setWorkId(String(v))}
@@ -211,7 +211,7 @@ export function DeckForecastPanel({
       ) : (
         <>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-            <label htmlFor="deck-deadline" style={{ fontSize: 12, fontWeight: 600, color: palette.textTertiary }}>
+            <label htmlFor="deck-deadline" style={{ ...type.label, color: palette.textTertiary }}>
               Hạn hoàn thành
             </label>
             {editable ? (
@@ -225,12 +225,12 @@ export function DeckForecastPanel({
                 placeholder="Chọn ngày"
               />
             ) : (
-              <span data-testid="deck-deadline-readonly" style={{ fontWeight: 600 }}>
+              <span data-testid="deck-deadline-readonly" style={type.body}>
                 {activeWork.deadline ? dayjs(activeWork.deadline).format('DD/MM/YYYY') : dash}
               </span>
             )}
             {forecast?.daysRemaining !== null && forecast !== null && (
-              <span style={{ fontSize: 12, color: palette.textSecondary }}>
+              <span style={{ ...type.caption, color: palette.textSecondary }}>
                 {forecast.daysRemaining > 0
                   ? <>{`Còn ${forecast.daysRemaining} ngày`}<InfoTip text="Tính cả chủ nhật" /></>
                   : `Đã quá hạn ${1 - forecast.daysRemaining} ngày`}
@@ -295,20 +295,20 @@ export function DeckForecastPanel({
             summary={() => (
               <Table.Summary.Row data-testid="forecast-total">
                 <Table.Summary.Cell index={0}>
-                  <strong>Tổng</strong>
+                  <span style={type.bodyStrong}>Tổng</span>
                 </Table.Summary.Cell>
                 <Table.Summary.Cell index={1} align="center" />
                 <Table.Summary.Cell index={2} align="center" />
                 <Table.Summary.Cell index={3} align="center" />
                 <Table.Summary.Cell index={4} align="center">
-                  <strong>
+                  <span style={type.bodyStrong}>
                     {forecast?.totalMhrNeeded === null || forecast === null
                       ? dash
                       : formatHours(forecast.totalMhrNeeded)}
-                  </strong>
+                  </span>
                 </Table.Summary.Cell>
                 <Table.Summary.Cell index={5} align="center">
-                  <strong>{forecast?.daysNeeded === null || forecast === null ? dash : String(forecast.daysNeeded)}</strong>
+                  <span style={type.bodyStrong}>{forecast?.daysNeeded === null || forecast === null ? dash : String(forecast.daysNeeded)}</span>
                 </Table.Summary.Cell>
               </Table.Summary.Row>
             )}
@@ -319,7 +319,7 @@ export function DeckForecastPanel({
             the total days is not the sum is the Số ngày cần header's (?).
           */}
           {forecast !== null && forecast.stagesWithoutData > 0 && (
-            <div style={{ padding: `${space.sm}px ${space.xl}px ${space.xl}px`, fontSize: 12, lineHeight: 1.5, color: palette.textTertiary }}>
+            <div style={{ padding: `${space.sm}px ${space.xl}px ${space.xl}px`, ...type.caption, lineHeight: 1.5, color: palette.textTertiary }}>
               <div data-testid="forecast-missing">
                 {`${forecast.stagesWithoutData} công đoạn chưa có giờ công nào nên chưa dự báo được; tổng ở trên chưa gồm các công đoạn đó.`}
               </div>

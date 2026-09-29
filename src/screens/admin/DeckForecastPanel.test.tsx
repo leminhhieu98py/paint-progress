@@ -3,6 +3,7 @@ import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { EMPTY_EFFORT, type DeckEvent, type Effort } from '../../domain/types'
+import { weightOf } from '../../test/typography'
 import { DeckForecastPanel } from './DeckForecastPanel'
 
 const loadDeckWorks = vi.hoisted(() => vi.fn())
@@ -131,6 +132,8 @@ describe('DeckForecastPanel', () => {
     const total = within(await screen.findByTestId('forecast-total'))
     expect(total.getByText('1.000,0')).toBeInTheDocument()
     expect(total.getByText('2')).toBeInTheDocument()
+    // The totals row is bodyStrong, not the <strong> 700 it was (TYP-02).
+    for (const text of ['Tổng', '1.000,0', '2']) expect(weightOf(total.getByText(text))).toBe(600)
     // Why, on the column it explains (CPY-01).
     const tip = screen.getByRole('img', { name: /ngày lớn nhất trong các công đoạn, không phải tổng/ })
     expect(tip.closest('th')).toHaveTextContent(/^Số ngày cần$/)

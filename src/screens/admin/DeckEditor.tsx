@@ -23,7 +23,7 @@ import { formatAreaM2, formatPercent } from '../../lib/format'
 import { MeshEditDialog, type EditKind, type PendingEdit } from './MeshEditDialog'
 import { SectionCard } from '../../components/SectionCard'
 import { InfoTip } from '../../components/InfoTip'
-import { palette } from '../../theme'
+import { palette, type } from '../../theme'
 import { DrawingCanvas } from '../../canvas/DrawingCanvas'
 import { detectBaysFromImage } from '../../canvas/rgbFromImage'
 import { useMeshHistory } from './useMeshHistory'
@@ -621,8 +621,7 @@ export function DeckEditor({
                   display: 'inline-flex',
                   alignItems: 'center',
                   gap: 8,
-                  fontSize: 12,
-                  fontWeight: 600,
+                  ...type.micro,
                   color: palette.accent,
                   background: palette.accentTint,
                   padding: '7px 12px',
@@ -759,7 +758,7 @@ export function DeckEditor({
           {/* Only for the mode entered by a key, which has no control to
               hang a tooltip on (CPY-01). */}
           {drawingCell && (
-            <span style={{ marginLeft: 'auto', fontSize: 12, color: palette.textTertiary }}>
+            <span style={{ marginLeft: 'auto', ...type.caption, color: palette.textTertiary }}>
               Kéo một khung vào chỗ còn thiếu ô.
             </span>
           )}

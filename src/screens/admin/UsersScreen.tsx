@@ -38,7 +38,7 @@ import { initialsOf } from '../../lib/initials'
 import { MIN_PASSWORD_LENGTH, generatePassword } from '../../lib/passwordGen'
 import { listProjectNames } from '../../lib/projectsApi'
 import { listWorks } from '../../lib/worksApi'
-import { palette } from '../../theme'
+import { palette, type } from '../../theme'
 
 interface ProjectOption {
   value: string
@@ -225,7 +225,7 @@ function PermissionsDialog({
                 checked={row?.member ?? false}
                 onChange={(e) => patch(p.value, { member: e.target.checked })}
               >
-                <span style={{ fontWeight: 600 }}>{p.label}</span>
+                <span style={type.label}>{p.label}</span>
               </Checkbox>
               {row?.member && (
                 <Space size={12} wrap>
@@ -236,7 +236,7 @@ function PermissionsDialog({
                       checked={row.allWorks}
                       onChange={(on) => patch(p.value, { allWorks: on })}
                     />
-                    <span style={{ fontSize: 12 }}>Tất cả công việc</span>
+                    <span style={type.body}>Tất cả công việc</span>
                   </Space>
                   {!row.allWorks && (
                     <Select
@@ -357,7 +357,7 @@ export function UsersScreen() {
                 checked={showHidden}
                 onChange={setShowHidden}
               />
-              <span style={{ fontSize: 12, color: palette.textSecondary }}>Hiện tài khoản đã ẩn</span>
+              <span style={{ ...type.body, color: palette.textSecondary }}>Hiện tài khoản đã ẩn</span>
             </Space>
             <Button
               type="primary"
@@ -397,8 +397,7 @@ export function UsersScreen() {
                         borderRadius: 10,
                         flex: 'none',
                         textAlign: 'center',
-                        fontSize: 11,
-                        fontWeight: 600,
+                        ...type.micro,
                         lineHeight: '34px',
                         background: user.active ? palette.bgHover : palette.bgApp,
                         color: user.active ? palette.textSecondary : palette.textQuaternary,
@@ -406,7 +405,7 @@ export function UsersScreen() {
                     >
                       {initialsOf(user.fullName)}
                     </span>
-                    <div style={{ minWidth: 0, fontWeight: 600, lineHeight: 1.35 }}>{user.fullName}</div>
+                    <div style={{ minWidth: 0, ...type.body, lineHeight: 1.35 }}>{user.fullName}</div>
                   </div>
                 ),
               },
@@ -592,12 +591,12 @@ export function UsersScreen() {
             copyable={{ text: revealed.password, tooltips: ['Sao chép', 'Đã sao chép'] }}
             style={{ fontFamily: 'inherit' }}
           >
-            <span style={{ fontSize: 16, fontWeight: 600, letterSpacing: '0.06em' }}>
+            <span style={{ ...type.cardTitle, letterSpacing: '0.06em' }}>
               {revealed.password}
             </span>
           </Typography.Text>
         </div>
-        <span style={{ display: 'block', marginTop: 9, fontSize: 11, color: palette.textTertiary }}>
+        <span style={{ display: 'block', marginTop: 9, ...type.caption, color: palette.textTertiary }}>
           {`Đã ghi log · ${revealed.at} · ${profile?.fullName ?? ''} → ${revealed.user.username}`}
         </span>
       </Modal>

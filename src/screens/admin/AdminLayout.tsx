@@ -17,7 +17,7 @@ import { APP_BASE_PATH, LOGIN_PATH } from '../../config'
 import { useAuth } from '../../auth/AuthProvider'
 import { ConsequenceModal } from '../../components/ConsequenceModal'
 import { initialsOf } from '../../lib/initials'
-import { palette } from '../../theme'
+import { palette, type } from '../../theme'
 
 const items = [
   { key: 'projects', label: 'Dự án', icon: <FolderOpenOutlined /> },
@@ -154,8 +154,7 @@ export function AdminLayout() {
                 borderRadius: 10,
                 background: palette.accent,
                 color: '#fff',
-                fontSize: 11,
-                fontWeight: 600,
+                ...type.micro,
                 lineHeight: '34px',
                 textAlign: 'center',
                 flex: 'none',
@@ -167,8 +166,7 @@ export function AdminLayout() {
               <div style={{ minWidth: 0, flex: 1 }}>
                 <div
                   style={{
-                    fontSize: 13,
-                    fontWeight: 600,
+                    ...type.bodyStrong,
                     lineHeight: 1.3,
                     whiteSpace: 'nowrap',
                     overflow: 'hidden',
@@ -177,7 +175,7 @@ export function AdminLayout() {
                 >
                   {profile?.fullName}
                 </div>
-                <div style={{ fontSize: 11, lineHeight: 1.3, color: palette.textTertiary, marginTop: 2 }}>
+                <div style={{ ...type.caption, lineHeight: 1.3, color: palette.textTertiary, marginTop: 2 }}>
                   Quản trị viên
                 </div>
               </div>

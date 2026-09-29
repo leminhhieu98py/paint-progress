@@ -6,6 +6,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderApp } from '../../test/renderApp'
 import { ProjectsScreen } from './ProjectsScreen'
 import { expectLeft } from '../../test/alignment'
+import { weightOf } from '../../test/typography'
+import { palette } from '../../theme'
 import { pageSubtitle } from '../../test/copy'
 
 const latestProgressEvent = vi.hoisted(() => vi.fn())
@@ -293,6 +295,16 @@ describe('ProjectsScreen — deleting a project', () => {
 
     expect(await screen.findByText('Đã xóa, nhưng chưa dọn được file bản vẽ trên kho lưu trữ'))
       .toBeInTheDocument()
+  })
+})
+
+describe('ProjectsScreen — type scale (TYP-02)', () => {
+  it('sets the name as body and the code under it as a caption in textTertiary', async () => {
+    renderScreen()
+    const name = await screen.findByText('BB1 - CPPTS')
+    expect(weightOf(name)).toBe(400)
+    const code = within(name.closest('td') as HTMLElement).getByText('BB1')
+    expect(code).toHaveStyle({ fontSize: '12px', fontWeight: '400', color: palette.textTertiary })
   })
 })
 
