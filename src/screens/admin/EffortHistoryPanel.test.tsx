@@ -19,6 +19,11 @@ const listCoworkerNames = vi.hoisted(() => vi.fn())
 vi.mock('../../lib/gsApi', () => ({
   listCoworkerNames: () => listCoworkerNames(),
 }))
+// The roster the crew names come from, as on the GS's cell dialog (M21).
+const listEmployees = vi.hoisted(() => vi.fn())
+vi.mock('../../lib/employeesApi', () => ({
+  listEmployees: (includeRetired?: boolean) => listEmployees(includeRetired),
+}))
 
 const ev = (over: Partial<DeckEvent> = {}): DeckEvent => ({
   id: 1, deckName: 'Cellar Deck', cellCode: 'R1C1', cellAreaM2: 100, workName: 'Sơn', toStageName: 'Lớp 1',
@@ -65,7 +70,21 @@ beforeEach(() => {
   // u1 is an admin: not on the GS list, named through coworker_names.
   listCoworkerNames.mockReset()
   listCoworkerNames.mockResolvedValue({ u1: 'Lê Văn A' })
+  listEmployees.mockReset()
+  listEmployees.mockResolvedValue([
+    { id: 'e1', fullName: 'Lê Văn A', active: true },
+    { id: 'e2', fullName: 'Nguyễn Văn B', active: true },
+  ])
 })
+
+/** Picks an option in the dropdown of ONE named Select of the dialog. */
+const chooseIn = async (name: string, option: string) => {
+  const box = screen.getByRole('combobox', { name })
+  await userEvent.click(box)
+  const dropdown = document.getElementById(box.getAttribute('aria-controls') ?? '')
+    ?.closest('.ant-select-dropdown') as HTMLElement
+  await userEvent.click(await within(dropdown).findByTitle(option))
+}
 
 describe('EffortHistoryPanel', () => {
   it('carries its page code, after the two progress cards (UX-03)', async () => {
@@ -139,7 +158,8 @@ describe('EffortHistoryPanel', () => {
     const [, legacy] = rows()
     await userEvent.click(within(legacy).getByRole('button', { name: 'Sửa' }))
     expect(await screen.findByText('Giờ công · Ô R1C1 · Lớp 1')).toBeInTheDocument()
-    await userEvent.type(screen.getByLabelText('Nhóm trưởng'), 'Tổ 2')
+    // From the roster, as the GS picks it (M21).
+    await chooseIn('Nhóm trưởng', 'Lê Văn A')
     await userEvent.type(screen.getByLabelText('Số giờ công (Mhr)'), '4')
     // A reason is asked for only once hours were lost.
     expect(screen.queryByRole('combobox', { name: 'Lý do hao phí' })).toBeNull()
@@ -157,12 +177,30 @@ describe('EffortHistoryPanel', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Lưu' }))
 
     await waitFor(() => expect(setCellEventEffort).toHaveBeenCalledWith(1, {
-      leadName: 'Tổ 2', painterName: '', workHours: 4, wasteHours: 1,
+      leadName: 'Lê Văn A', painterName: '', workHours: 4, wasteHours: 1,
       wasteReason: '8.1 Thời tiết', wasteOrder: 'LSX-5',
     }))
     expect((await screen.findAllByText('Đã lưu giờ công')).length).toBeGreaterThan(0)
     // The screen owns the read; the panel only says it should happen again.
     await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1))
+  })
+
+  it('picks the crew from the roster and keeps a name typed before it, marked as such (M21)', async () => {
+    setCellEventEffort.mockResolvedValue(undefined)
+    renderPanel()
+    expect(await screen.findByText('R1C2')).toBeInTheDocument()
+    // Newest first: R1C2 carries "Tổ 1" and "Nam", neither on the roster.
+    await userEvent.click(within(rows()[0]).getByRole('button', { name: 'Sửa' }))
+    await screen.findByText('Giờ công · Ô R1C2 · Lớp 2')
+    expect(listEmployees).toHaveBeenCalled()
+    expect(screen.queryByRole('textbox', { name: 'Nhóm trưởng' })).toBeNull()
+    expect(screen.getByTitle('Tổ 1 (ghi tự do cũ)')).toBeInTheDocument()
+    expect(screen.getByTitle('Nam (ghi tự do cũ)')).toBeInTheDocument()
+    await chooseIn('Thợ chính', 'Nguyễn Văn B')
+    await userEvent.click(screen.getByRole('button', { name: 'Lưu' }))
+    await waitFor(() => expect(setCellEventEffort).toHaveBeenCalledWith(2, expect.objectContaining({
+      leadName: 'Tổ 1', painterName: 'Nguyễn Văn B',
+    })))
   })
 
   it('reports a refused backfill and keeps the dialog open', async () => {

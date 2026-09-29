@@ -9,6 +9,7 @@ import { useTablePagination } from '../../components/tablePagination'
 import { effortCoverage, WASTE_REASONS, wasteReasonLabel } from '../../domain/effort'
 import { type DeckEvent, type Effort } from '../../domain/types'
 import { listGsUsers } from '../../lib/adminApi'
+import { listEmployees } from '../../lib/employeesApi'
 import { listCoworkerNames } from '../../lib/gsApi'
 import { MISSING, formatDateTimeVN, formatHours } from '../../lib/format'
 import { setCellEventEffort } from '../../lib/progressApi'
@@ -61,6 +62,27 @@ export function EffortHistoryPanel({
   const [editing, setEditing] = useState<DeckEvent | null>(null)
   const [draft, setDraft] = useState<Effort | null>(null)
   const [saving, setSaving] = useState(false)
+  /**
+   * The roster the crew names are picked from, active names only, as on the
+   * GS's cell dialog (M21): a typed name the dashboard then groups apart is
+   * how "Tổ 1" and "Tổ 01" became two crews. Its failure is not fatal: the
+   * row's own names stay on offer.
+   */
+  const [roster, setRoster] = useState<string[]>([])
+  useEffect(() => {
+    let cancelled = false
+    listEmployees()
+      .then((rows) => { if (!cancelled) setRoster(rows.map((e) => e.fullName)) })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [])
+  /** The roster, and the row's current name when it is not on it, marked (M21). */
+  const crewOptions = (current: string) => [
+    ...roster.map((name) => ({ value: name, label: name })),
+    ...(current !== '' && !roster.includes(current)
+      ? [{ value: current, label: `${current} (ghi tự do cũ)` }]
+      : []),
+  ]
 
   useEffect(() => {
     let cancelled = false
@@ -207,11 +229,31 @@ export function EffortHistoryPanel({
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px 12px' }}>
             <div>
               <label htmlFor="effort-lead" style={fieldLabel}>Nhóm trưởng</label>
-              <Input id="effort-lead" value={draft.leadName} onChange={(e) => setDraft({ ...draft, leadName: e.target.value })} />
+              <Select
+                id="effort-lead"
+                aria-label="Nhóm trưởng"
+                {...searchSelectProps}
+                allowClear
+                style={{ width: '100%' }}
+                placeholder="Gõ để tìm tên"
+                value={draft.leadName === '' ? undefined : draft.leadName}
+                onChange={(v) => setDraft({ ...draft, leadName: v ?? '' })}
+                options={crewOptions(draft.leadName)}
+              />
             </div>
             <div>
               <label htmlFor="effort-painter" style={fieldLabel}>Thợ chính</label>
-              <Input id="effort-painter" value={draft.painterName} onChange={(e) => setDraft({ ...draft, painterName: e.target.value })} />
+              <Select
+                id="effort-painter"
+                aria-label="Thợ chính"
+                {...searchSelectProps}
+                allowClear
+                style={{ width: '100%' }}
+                placeholder="Gõ để tìm tên"
+                value={draft.painterName === '' ? undefined : draft.painterName}
+                onChange={(v) => setDraft({ ...draft, painterName: v ?? '' })}
+                options={crewOptions(draft.painterName)}
+              />
             </div>
             <div>
               <label htmlFor="effort-work-hours" style={fieldLabel}>Số giờ công (Mhr)</label>
