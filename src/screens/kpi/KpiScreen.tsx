@@ -1,12 +1,10 @@
-import { ArrowLeftOutlined } from '@ant-design/icons'
 import { Alert, App, Button, Layout, Spin } from 'antd'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { useParams, useSearchParams } from 'react-router-dom'
 import { settleDraft, useDraftFilters, useProjectOptions } from '../../components/draftFilters'
 import { FilterBar } from '../../components/FilterBar'
 import { PageBody, PageHeader } from '../../components/PageHeader'
 import { ProjectSelect } from '../../components/ProjectSelect'
-import { APP_BASE_PATH } from '../../config'
 import { effortDayKey } from '../../domain/effort'
 import {
   actualByDay, remainingAreaOn, type ActualStageDay, type DeckPlanScope,
@@ -18,7 +16,7 @@ import {
 import { listDecks, setDeckKpiColors } from '../../lib/decksApi'
 import { listProjectEvents, loadProjectModel } from '../../lib/progressApi'
 import { listProjectNames } from '../../lib/projectsApi'
-import { palette, shadowCard } from '../../theme'
+import { FieldHeader } from '../gs/FieldHeader'
 import { DeckKpiColorTable, type DeckKpiColorRow, type DeckKpiColors } from './DeckKpiColorTable'
 import { KpiDashboard, type KpiEntry } from './KpiDashboard'
 import { KpiFilterControls } from './KpiFilterControls'
@@ -487,41 +485,19 @@ function AdminKpi() {
   )
 }
 
-function FieldKpi() {
-  const { projectId } = useParams()
-  const navigate = useNavigate()
+function FieldKpi({ projectId }: { projectId: string | null }) {
   const scope = useDraftFilters(DEFAULT_KPI_FILTERS)
-  const data = useKpiData(projectId ?? null)
+  const data = useKpiData(projectId)
   const model = useKpiEntries(data.current)
   const options = filterOptions(data.current, model.entries)
   const draft = settleDraft(scope, options, settle)
   const shown = options ?? NO_OPTIONS
   return (
     <Layout style={{ minHeight: '100vh' }}>
-      <Layout.Header
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 12,
-          paddingInline: 16,
-          background: palette.bgContainer,
-          borderBottom: `1px solid ${palette.borderCard}`,
-          boxShadow: shadowCard,
-          height: 'auto',
-          lineHeight: 'normal',
-          paddingBlock: 10,
-        }}
-      >
-        <Button
-          icon={<ArrowLeftOutlined aria-hidden />}
-          onClick={() => navigate(`${APP_BASE_PATH}/gs/${projectId}`)}
-        >
-          Về bản vẽ
-        </Button>
-        <span style={{ fontWeight: 600, fontSize: 16 }}>KPI</span>
-      </Layout.Header>
+      {/* GS-01: the field header is the way between the pages; no back button (GS-02). */}
+      {projectId && <FieldHeader projectId={projectId} />}
       <Layout.Content style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 16 }}>
-        {/* The field's bar, first under the title bar (FLT-01 via GS-04). */}
+        {/* The field's bar, first under the header (FLT-01 via GS-04). */}
         <FilterBar onApply={() => scope.apply(draft)} onReset={scope.reset} applyLoading={data.current === null}>
           <KpiFilterControls
             decks={shown.decks}
@@ -530,12 +506,18 @@ function FieldKpi() {
             onChange={scope.setDraft}
           />
         </FilterBar>
-        <Body projectId={projectId ?? null} variant="gs" data={data} model={model} filters={scope.applied} />
+        <Body projectId={projectId} variant="gs" data={data} model={model} filters={scope.applied} />
       </Layout.Content>
     </Layout>
   )
 }
 
 export function KpiScreen({ variant }: { variant: 'admin' | 'gs' }) {
-  return variant === 'admin' ? <AdminKpi /> : <FieldKpi />
+  // Keyed by the path's project, as DashboardScreen is: the viewer's switch in
+  // the field header changes it on this page, and a fresh mount keeps the last
+  // project's applied filters off the next project's chart.
+  const { projectId } = useParams()
+  return variant === 'admin'
+    ? <AdminKpi />
+    : <FieldKpi key={projectId} projectId={projectId ?? null} />
 }

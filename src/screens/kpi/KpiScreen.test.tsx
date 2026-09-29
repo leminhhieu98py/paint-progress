@@ -36,6 +36,18 @@ vi.mock('../../lib/decksApi', () => ({
   setDeckKpiColors: (id: string, colors: unknown) => setDeckKpiColors(id, colors),
   listDecks: (id: string) => listDecks(id),
 }))
+// The field header (GS-01) on the gs variant: who is signed in, and the
+// foreman's project name.
+vi.mock('../../auth/AuthProvider', () => ({
+  useAuth: () => ({
+    profile: { id: 'u1', username: 'gs1', fullName: 'Nguyễn Văn A', role: 'gs', active: true },
+    signOut: vi.fn(),
+  }),
+}))
+const loadGsProjectIdentity = vi.hoisted(() => vi.fn())
+vi.mock('../../lib/gsApi', () => ({
+  loadGsProjectIdentity: (id: string) => loadGsProjectIdentity(id),
+}))
 vi.mock('react-router-dom', async () => {
   const actual = await vi.importActual<typeof import('react-router-dom')>('react-router-dom')
   return { ...actual, useNavigate: () => navigate }
@@ -164,6 +176,8 @@ beforeEach(() => {
   clearStagePlanArea.mockReset()
   setDeckKpiColors.mockReset()
   navigate.mockReset()
+  loadGsProjectIdentity.mockReset()
+  loadGsProjectIdentity.mockResolvedValue({ code: 'GB', name: 'Giàn B' })
   listDecks.mockReset()
   // Another project's decks, read only while it is the DRAFT project (FLT-02).
   listDecks.mockResolvedValue([{ id: 'd9', name: 'Sàn Z' }])
@@ -178,7 +192,7 @@ beforeEach(() => {
   ])
 })
 
-const { MemoryRouter, Route, Routes } = await vi.importActual<typeof import('react-router-dom')>('react-router-dom')
+const { Link, MemoryRouter, Route, Routes } = await vi.importActual<typeof import('react-router-dom')>('react-router-dom')
 
 const renderAdmin = (path = '/admin/kpi') =>
   render(
@@ -195,6 +209,8 @@ const renderField = () =>
   render(
     <AntApp>
       <MemoryRouter initialEntries={['/gs/p2/kpi']}>
+        {/* A real route change, as the viewer's project switch makes one. */}
+        <Link to="/gs/p1/kpi">sang Giàn A</Link>
         <Routes>
           <Route path="/gs/:projectId/kpi" element={<KpiScreen variant="gs" />} />
         </Routes>
@@ -508,13 +524,39 @@ describe('KpiScreen (gs)', () => {
     expect(chart.textContent).toContain('CHART Sàn A=#aaaaaa/-')
   })
 
-  it('reads the project from the path and offers the way back to the drawing', async () => {
+  it('reads the project from the path, under the field header with KPI current (GS-01)', async () => {
     renderField()
     await screen.findByTestId('kpi-dashboard')
     expect(listStagePlans).toHaveBeenCalledWith('p2')
     expect(listProjectNames).not.toHaveBeenCalled()
-    await userEvent.click(screen.getByRole('button', { name: 'Về bản vẽ' }))
-    expect(navigate).toHaveBeenCalledWith('/gs/p2')
+    const nav = screen.getByRole('navigation', { name: 'Điều hướng' })
+    expect(within(nav).getByRole('link', { name: 'KPI' })).toHaveAttribute('aria-current', 'page')
+    expect(within(nav).getByRole('link', { name: 'Sàn' })).toHaveAttribute('href', '/gs/p2')
+    expect(await screen.findByText('Giàn B')).toBeInTheDocument()
+  })
+
+  it('has no back button and no title bar of its own: the Sàn tab is the way back (GS-02)', async () => {
+    renderField()
+    await screen.findByTestId('kpi-dashboard')
+    expect(screen.queryByRole('button', { name: 'Về bản vẽ' })).toBeNull()
+    // "KPI" once: the tab, not a title beside it.
+    expect(screen.getAllByText('KPI')).toHaveLength(1)
+    const content = bar().closest('.ant-layout-content') as HTMLElement
+    expect(content.firstElementChild).toBe(bar())
+    expect(before(screen.getByRole('navigation', { name: 'Điều hướng' }), bar())).toBe(true)
+  })
+
+  it('starts another project on its own defaults, not the last project\'s applied filters', async () => {
+    renderField()
+    await screen.findByTestId('kpi-dashboard')
+    await userEvent.click(within(bar()).getByRole('combobox', { name: 'Sàn' }))
+    await userEvent.click(await screen.findByTitle('Sàn A'))
+    await pressTim()
+    expect(await screen.findByText(/PHẠM VI d1\/tất cả/)).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('link', { name: 'sang Giàn A' }))
+    await waitFor(() => expect(listStagePlans).toHaveBeenCalledWith('p1'))
+    expect(await screen.findByText(/PHẠM VI tất cả\/tất cả/)).toBeInTheDocument()
   })
 })
 

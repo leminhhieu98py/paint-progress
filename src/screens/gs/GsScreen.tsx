@@ -3,7 +3,7 @@ import {
 } from 'antd'
 import dayjs from 'dayjs'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useParams } from 'react-router-dom'
 import { useAuth } from '../../auth/AuthProvider'
 
 import { DrawingCanvas } from '../../canvas/DrawingCanvas'
@@ -17,7 +17,6 @@ import { EMPTY_EFFORT, type Cell, type Deck, type DeckEvent, type Effort, type S
 // One signed-URL helper for both roles: the bucket name and the 3600-second
 // expiry belong in one place, and decksApi is a lib module rather than an admin
 // one. Screens still never touch `supabase` directly.
-import { APP_BASE_PATH, LOGIN_PATH } from '../../config'
 import { getDrawingUrl } from '../../lib/decksApi'
 import { DEFAULT_QUANTITY_LABEL, DEFAULT_UNIT } from '../../domain/unit'
 import { formatAreaM2, formatPercent } from '../../lib/format'
@@ -26,7 +25,6 @@ import {
   loadGsProject, loadGsProjectIdentity, setCellState, subscribeDeckStates,
   type CellStateView, type DeckWork, type GsDeck, type GsRealtimeStatus,
 } from '../../lib/gsApi'
-import { listProjectNames } from '../../lib/projectsApi'
 import { listDeckZones } from '../../lib/zonesApi'
 import { listEmployees } from '../../lib/employeesApi'
 import { listDeckEvents, loadDeckWorks, loadProjectModel } from '../../lib/progressApi'
@@ -34,15 +32,13 @@ import { buildReportWorkbook, reportFileName, type DeckImages, type PlanImage } 
 import { buildProjectReport, downloadWorkbook } from '../../lib/projectReport'
 import { renderDeckDrawing, renderDeckPie, renderPlanDrawing } from '../../canvas/deckSnapshot'
 import { CellStageModal } from './CellStageModal'
-import { ConsequenceModal } from '../../components/ConsequenceModal'
-import { LogoutOutlined } from '@ant-design/icons'
 import { fieldError, palette, shadowCard } from '../../theme'
-import { AreaChartOutlined, CalendarOutlined, DownloadOutlined, LineChartOutlined } from '@ant-design/icons'
+import { CalendarOutlined, DownloadOutlined } from '@ant-design/icons'
 import { EmptyState } from '../../components/EmptyState'
 import { DeckProgressCard, StageRollupCard } from './DeckStatsCards'
 import { DeckTodayCard } from './DeckTodayCard'
+import { FieldHeader } from './FieldHeader'
 import { SectionCard } from '../../components/SectionCard'
-import { StatusPill } from '../../components/StatusPill'
 import { searchSelectProps } from '../../components/searchSelect'
 
 /**
@@ -108,8 +104,7 @@ const stateKey = (workId: string, cellId: string) => `${workId}/${cellId}`
 
 export function GsScreen() {
   const { projectId } = useParams()
-  const navigate = useNavigate()
-  const { profile, signOut } = useAuth()
+  const { profile } = useAuth()
   /** A viewer (0028) reads this screen and writes nothing; the database
    *  enforces it, the screen says so and offers no write control. */
   const readOnly = profile?.role === 'viewer'
@@ -149,28 +144,6 @@ export function GsScreen() {
    * refusal can say so, rather than rendering as missing data (see GsProject).
    */
   const [notMember, setNotMember] = useState(false)
-  /**
-   * Every project, for the viewer's switch in the header (RV6-24). Read only
-   * for a viewer -- 0034 gives the role every project and this screen is one
-   * project's, so changing it is a navigation. A foreman has one project and
-   * no list, so nothing is read and nothing is shown.
-   */
-  const [projectOptions, setProjectOptions] = useState<{ value: string; label: string }[]>([])
-
-  useEffect(() => {
-    if (!readOnly) return
-    let cancelled = false
-    listProjectNames()
-      .then((rows) => {
-        if (!cancelled) setProjectOptions(rows.map((p) => ({ value: p.id, label: p.name })))
-      })
-      // Its failure is not the project's: the header keeps the deck tabs and
-      // the switch simply lists the project on screen, which is on the route.
-      .catch(() => {})
-    return () => {
-      cancelled = true
-    }
-  }, [readOnly])
 
   useEffect(() => {
     if (!projectId) return
@@ -848,7 +821,6 @@ export function GsScreen() {
     }
   }, [])
   const { message } = App.useApp()
-  const [confirmingOut, setConfirmingOut] = useState(false)
   /**
    * Which of the three shapes this screen is in.
    *
@@ -1093,76 +1065,11 @@ export function GsScreen() {
   return (
     <Layout style={{ minHeight: '100vh' }}>
       {/*
-        Who is signed in, in one 48px bar. The drawing is the screen;
-        everything else has to earn its height on a tablet held at arm's
-        length.
+        GS-01: the one field header -- the project, Sàn · Năng suất · KPI, who
+        is signed in and logout. The drawing is the screen; everything else
+        has to earn its height on a tablet held at arm's length.
       */}
-      <Layout.Header
-        style={{
-          background: palette.bgContainer,
-          borderBottom: `1px solid ${palette.borderCard}`,
-          display: 'flex',
-          alignItems: 'center',
-          gap: 12,
-          paddingInline: 16,
-          height: 'auto',
-          lineHeight: 'normal',
-        }}
-      >
-        <div style={{ flex: 1, minWidth: 0 }} />
-        {/*
-          RV6-24: a viewer reads every project (0034), so the header names the
-          one on screen and offers the rest. A foreman gets no switch -- their
-          screen is their one project's, as before.
-        */}
-        {readOnly && projectId && (
-          <Select
-            aria-label="Dự án"
-            style={{ width: phone ? 160 : 220, flex: 'none' }}
-            value={projectId}
-            onChange={(id) => navigate(`${APP_BASE_PATH}/gs/${id}`)}
-            {...searchSelectProps}
-            options={projectOptions.some((o) => o.value === projectId)
-              ? projectOptions
-              : [{ value: projectId, label: projectId }, ...projectOptions]}
-          />
-        )}
-        <div style={{ textAlign: 'right', flex: 'none' }}>
-          <div style={{ fontWeight: 600, lineHeight: 1.25 }}>{profile?.fullName}</div>
-          <span style={{ fontSize: 11, color: palette.textTertiary }}>{profile?.username}</span>
-        </div>
-        {readOnly && <StatusPill tone="off">Chỉ xem</StatusPill>}
-        {/*
-          The productivity dashboard (Feedback Rv2, item 12), one tap from the
-          drawing and one tap back. Icon only on a phone: the header is already
-          carrying the deck tabs and the name.
-        */}
-        <Button
-          aria-label="Năng suất"
-          icon={<LineChartOutlined aria-hidden />}
-          onClick={() => navigate(`${APP_BASE_PATH}/gs/${projectId}/dashboard`)}
-        >
-          {phone ? null : 'Năng suất'}
-        </Button>
-        {/*
-          KPI Plan vs Actual (Feedback Rv5, item 9), beside Năng suất and
-          reached the same way. Read-only for everyone here: the plan dates are
-          the admin's (RV5-28) and the viewer reads the chart too (RV5-29).
-        */}
-        <Button
-          aria-label="KPI"
-          icon={<AreaChartOutlined aria-hidden />}
-          onClick={() => navigate(`${APP_BASE_PATH}/gs/${projectId}/kpi`)}
-        >
-          {phone ? null : 'KPI'}
-        </Button>
-        {/* Spec §8.1: no account UI. Logout only. */}
-        <Button
-          aria-label="Đăng xuất"
-          icon={<LogoutOutlined />}
-          onClick={() => setConfirmingOut(true)}
-        />
-      </Layout.Header>
+      {projectId && <FieldHeader projectId={projectId} />}
 
       {/*
         Full-bleed and dark red, not an inset warning box. This banner means
@@ -1555,23 +1462,6 @@ export function GsScreen() {
         readOnly={readOnly}
         defaultEffortNames={lastNames}
         employees={employees}
-      />
-
-      {/*
-        A foreman in gloves, on a tablet, one button away from the drawing he is
-        working off. Signing out costs him a walk back to whoever holds the
-        password, so it asks first.
-      */}
-      <ConsequenceModal
-        open={confirmingOut}
-        tag="Xác nhận"
-        title="Đăng xuất?"
-        description="Phiên làm việc hiện tại sẽ kết thúc:"
-        items={[{ label: profile?.fullName ?? '', meta: profile?.username ?? '' }]}
-        consequence="Muốn ghi tiếp tiến độ thì phải đăng nhập lại bằng mật khẩu quản trị viên đã giao."
-        okText="Vẫn đăng xuất"
-        onCancel={() => setConfirmingOut(false)}
-        onOk={() => void signOut().then(() => navigate(LOGIN_PATH, { replace: true }))}
       />
     </Layout>
   )

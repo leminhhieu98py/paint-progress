@@ -721,11 +721,20 @@ describe('GsScreen: recording a stage', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Xác nhận' }))
   }
 
-  it('opens the productivity dashboard of this project from the header (Feedback Rv2, item 12)', async () => {
+  it('draws the field header with Sàn as the current page (GS-01)', async () => {
     renderScreen()
     await screen.findByRole('button', { name: 'ô R1C2' })
-    await userEvent.click(screen.getByRole('button', { name: 'Năng suất' }))
-    expect(navigate).toHaveBeenCalledWith('/gs/p1/dashboard')
+    const nav = screen.getByRole('navigation', { name: 'Điều hướng' })
+    expect(within(nav).getByRole('link', { name: 'Sàn' })).toHaveAttribute('aria-current', 'page')
+    // The field header is the screen's only header: nothing else draws a bar.
+    expect(document.querySelectorAll('header')).toHaveLength(1)
+  })
+
+  it('links the productivity dashboard of this project from the header (Feedback Rv2, item 12)', async () => {
+    renderScreen()
+    await screen.findByRole('button', { name: 'ô R1C2' })
+    const nav = screen.getByRole('navigation', { name: 'Điều hướng' })
+    expect(within(nav).getByRole('link', { name: 'Năng suất' })).toHaveAttribute('href', '/gs/p1/dashboard')
   })
 
   it('gives a viewer a project switch in the header that opens the chosen project (RV6-24)', async () => {
@@ -744,20 +753,21 @@ describe('GsScreen: recording a stage', () => {
     expect(navigate).toHaveBeenCalledWith('/gs/p2')
   })
 
-  it('keeps the header as it is for a foreman: no project switch, no read of the list', async () => {
+  it('names a foreman\'s project in the header: no project switch, no read of the list', async () => {
     renderScreen()
     await screen.findByRole('button', { name: 'ô R1C2' })
+    expect(within(document.querySelector('header') as HTMLElement).getByText('BlockB1_CPPTS')).toBeInTheDocument()
     expect(screen.queryByRole('combobox', { name: 'Dự án' })).toBeNull()
     expect(listProjectNames).not.toHaveBeenCalled()
   })
 
-  it('opens the KPI chart of this project from the header (Feedback Rv5, item 9)', async () => {
+  it('links the KPI chart of this project from the header (Feedback Rv5, item 9)', async () => {
     // Beside Năng suất and reached the same way. Read-only for the field: the
     // plan dates are the admin's (RV5-28).
     renderScreen()
     await screen.findByRole('button', { name: 'ô R1C2' })
-    await userEvent.click(screen.getByRole('button', { name: 'KPI' }))
-    expect(navigate).toHaveBeenCalledWith('/gs/p1/kpi')
+    const nav = screen.getByRole('navigation', { name: 'Điều hướng' })
+    expect(within(nav).getByRole('link', { name: 'KPI' })).toHaveAttribute('href', '/gs/p1/kpi')
   })
 
   it('opens the modal for the tapped cell', async () => {
@@ -1886,7 +1896,9 @@ describe('GsScreen: a viewer (0028)', () => {
     authRole.value = 'viewer'
     renderScreen()
     await deckPicker()
-    expect(screen.getByText('Chỉ xem')).toBeInTheDocument()
+    // jsdom reads as a phone, where the header carries Chỉ xem in the avatar
+    // (GS-01); the badge itself is FieldHeader's, tested at tablet width there.
+    expect(screen.getByRole('img', { name: 'Nguyễn Văn A (gs1) · Chỉ xem' })).toBeInTheDocument()
 
     await userEvent.click(await screen.findByRole('button', { name: 'ô R1C2' }))
     expect(await screen.findByText('Ô R1C2 · Sơn')).toBeInTheDocument()
@@ -1900,6 +1912,7 @@ describe('GsScreen: a viewer (0028)', () => {
     renderScreen()
     await deckPicker()
     expect(screen.queryByText('Chỉ xem')).toBeNull()
+    expect(screen.getByRole('img', { name: 'Nguyễn Văn A (gs1)' })).toBeInTheDocument()
   })
 })
 
