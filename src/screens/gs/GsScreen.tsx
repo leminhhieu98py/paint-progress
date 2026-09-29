@@ -38,6 +38,7 @@ import { EmptyState } from '../../components/EmptyState'
 import { DeckProgressCard, StageRollupCard } from './DeckStatsCards'
 import { DeckTodayCard } from './DeckTodayCard'
 import { FieldHeader } from './FieldHeader'
+import { openingDeckId, rememberDeck } from './lastDeck'
 import { SectionCard } from '../../components/SectionCard'
 import { searchSelectProps } from '../../components/searchSelect'
 
@@ -164,7 +165,8 @@ export function GsScreen() {
         if (cancelled) return
         setNotMember(!project.isMember)
         setDecks(project.decks)
-        setActiveDeckId(project.decks[0]?.id ?? null)
+        // The deck last opened in this project, else the first (GS-02).
+        setActiveDeckId(openingDeckId(projectId, project.decks))
       })
       .catch(() => {
         if (!cancelled) setProjectError(true)
@@ -1136,7 +1138,13 @@ export function GsScreen() {
               aria-label="Sàn"
               {...searchSelectProps}
               value={activeDeckId ?? undefined}
-              onChange={(id) => setActiveDeckId(id)}
+              onChange={(id) => {
+                setActiveDeckId(id)
+                // Remembered on the choice, never on the load: a project's
+                // first render must not write the previous project's deck
+                // under its key.
+                if (projectId) rememberDeck(projectId, id)
+              }}
               style={{ width: phone ? '100%' : 320, maxWidth: '100%' }}
               options={decks.map((d) => ({
                 value: d.id,

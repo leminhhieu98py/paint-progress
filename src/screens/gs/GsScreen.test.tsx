@@ -3,8 +3,9 @@ import {
   act, render, screen, waitFor, within,
 } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter, Route, Routes } from 'react-router-dom'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { FieldHeader } from './FieldHeader'
 import { GsScreen } from './GsScreen'
 
 const loadGsProject = vi.hoisted(() => vi.fn())
@@ -224,6 +225,8 @@ const subscribedDecks: string[] = []
 const unsubscribe = vi.fn()
 
 beforeEach(() => {
+  // The last deck per project lives here (GS-02); every test opens a fresh tab.
+  sessionStorage.clear()
   loadGsProject.mockReset()
   listDeckCells.mockReset()
   listProjectIndex.mockReset()
@@ -698,6 +701,90 @@ describe('GsScreen: the deck picker (GS-03)', () => {
       expect(screen.getByTestId('canvas')).toHaveAttribute('data-image', 'https://signed/p1/d2.png'))
     expect(await screen.findByText('Blast + Coat 1', { selector: '.ant-select-selection-item' }))
       .toBeInTheDocument()
+  })
+})
+
+describe('GsScreen: the deck last opened in the project (GS-02)', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  const openDeckImage = () => screen.getByTestId('canvas').getAttribute('data-image')
+
+  it('opens the first deck in a fresh session, as a deep link always has', async () => {
+    renderScreen()
+    await waitFor(() => expect(openDeckImage()).toBe('https://signed/p1/d1.png'))
+  })
+
+  it('remembers the deck chosen, for this project', async () => {
+    renderScreen()
+    await pickDeck('Main Deck')
+    expect(sessionStorage.getItem('pp:lastDeck:p1')).toBe('d2')
+  })
+
+  it('reopens the remembered deck', async () => {
+    sessionStorage.setItem('pp:lastDeck:p1', 'd2')
+    renderScreen()
+    await waitFor(() => expect(openDeckImage()).toBe('https://signed/p1/d2.png'))
+    expect(screen.getByText('Main Deck · 0,00%', { selector: '.ant-select-selection-item' })).toBeInTheDocument()
+    expect(listDeckCells).not.toHaveBeenCalledWith('d1')
+  })
+
+  it('ignores another project\'s deck', async () => {
+    sessionStorage.setItem('pp:lastDeck:p9', 'd2')
+    renderScreen()
+    await waitFor(() => expect(openDeckImage()).toBe('https://signed/p1/d1.png'))
+  })
+
+  it('falls back to the first deck when the remembered one is not offered any more', async () => {
+    sessionStorage.setItem('pp:lastDeck:p1', 'gone')
+    renderScreen()
+    await waitFor(() => expect(openDeckImage()).toBe('https://signed/p1/d1.png'))
+  })
+
+  it('carries on with the first deck when the browser refuses storage', async () => {
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new DOMException('denied', 'SecurityError')
+    })
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new DOMException('denied', 'SecurityError')
+    })
+    renderScreen()
+    await waitFor(() => expect(openDeckImage()).toBe('https://signed/p1/d1.png'))
+    await pickDeck('Main Deck')
+    await waitFor(() => expect(openDeckImage()).toBe('https://signed/p1/d2.png'))
+  })
+
+  it('is what the Sàn tab brings the foreman back to', async () => {
+    // The real round trip: another field page under the same header, then Sàn.
+    // GsScreen unmounts on the way out, so only the session remembers the deck.
+    function OtherPage() {
+      return (
+        <>
+          <FieldHeader projectId="p1" />
+          <div data-testid="other-page">{useLocation().pathname}</div>
+        </>
+      )
+    }
+    render(
+      <AntApp>
+        <MemoryRouter initialEntries={['/gs/p1']}>
+          <Routes>
+            <Route path="/gs/:projectId" element={<GsScreen />} />
+            <Route path="/gs/:projectId/kpi" element={<OtherPage />} />
+          </Routes>
+        </MemoryRouter>
+      </AntApp>,
+    )
+    await pickDeck('Main Deck')
+    await waitFor(() => expect(openDeckImage()).toBe('https://signed/p1/d2.png'))
+
+    await userEvent.click(screen.getByRole('link', { name: 'KPI' }))
+    expect(await screen.findByTestId('other-page')).toHaveTextContent('/gs/p1/kpi')
+    expect(screen.queryByTestId('canvas')).toBeNull()
+
+    await userEvent.click(screen.getByRole('link', { name: 'Sàn' }))
+    await waitFor(() => expect(openDeckImage()).toBe('https://signed/p1/d2.png'))
   })
 })
 
