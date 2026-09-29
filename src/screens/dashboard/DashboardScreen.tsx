@@ -2,13 +2,16 @@ import { ArrowLeftOutlined } from '@ant-design/icons'
 import { Alert, Button, Layout, Spin } from 'antd'
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { useDraftFilters, useProjectOptions } from '../../components/draftFilters'
 import { FilterBar } from '../../components/FilterBar'
 import { PageBody, PageHeader } from '../../components/PageHeader'
 import { ProjectSelect } from '../../components/ProjectSelect'
 import { APP_BASE_PATH } from '../../config'
 import type { DeckEvent, WorkModel } from '../../domain/types'
 import { listProjectEvents, loadProjectModel } from '../../lib/progressApi'
+import { listDecks } from '../../lib/decksApi'
 import { listProjectNames } from '../../lib/projectsApi'
+import { listWorks } from '../../lib/worksApi'
 import { palette, shadowCard } from '../../theme'
 import { ProductivityDashboard } from './ProductivityDashboard'
 import { ProductivityFilterControls } from './ProductivityFilterControls'
@@ -60,23 +63,58 @@ function useProjectData(projectId: string | null) {
 
 type Data = ReturnType<typeof useProjectData>
 
-/** The Dự án-independent half of the bar: its options come from what is loaded. */
-function filterOptions(current: Data['current']) {
-  if (current === null || 'error' in current) return { workNames: [], deckNames: [] }
+interface FilterOptions {
+  workNames: string[]
+  deckNames: string[]
+}
+
+const NO_OPTIONS: FilterOptions = { workNames: [], deckNames: [] }
+
+/** The bar's options for the loaded project: its works (with the ones only its events remember) and decks. */
+function filterOptions(current: Data['current']): FilterOptions {
+  if (current === null || 'error' in current) return NO_OPTIONS
   return {
     workNames: dashboardWorkNames(current.models, current.events),
     deckNames: current.decks.map((d) => d.name),
   }
 }
 
+/** The bar's options for a DRAFT project the screen has not loaded (FLT-02): two light reads. */
+async function loadFilterOptions(projectId: string): Promise<FilterOptions> {
+  const [works, decks] = await Promise.all([listWorks(projectId), listDecks(projectId)])
+  return {
+    workNames: works.filter((w) => w.kind === 'bays').sort((a, b) => a.seq - b.seq).map((w) => w.name),
+    deckNames: decks.map((d) => d.name),
+  }
+}
+
+/**
+ * The draft as the options have it: a Sàn the draft project does not have is
+ * Tất cả sàn again, and a work it does not have is its first work (FLT-02).
+ */
+function settle<T extends ProductivityFilters>(draft: T, options: FilterOptions): T {
+  return {
+    ...draft,
+    work: draft.work !== null && options.workNames.includes(draft.work) ? draft.work : null,
+    deck: options.deckNames.includes(draft.deck) ? draft.deck : '',
+  }
+}
+
+/** The admin bar's draft: the project (null is the one in the address) and the dashboard's filters. */
+type AdminScope = ProductivityFilters & { project: string | null }
+const DEFAULT_ADMIN_SCOPE: AdminScope = { project: null, ...DEFAULT_PRODUCTIVITY_FILTERS }
+
 function Body({
   projectId,
   data: { current, retry },
   filters,
+  version,
 }: {
   projectId: string | null
   data: Data
   filters: ProductivityFilters
+  /** Counts the bar's applies, so the tables go back to page 1 on each (FLT-02). */
+  version: number
 }) {
   if (projectId === null) {
     return <Alert type="info" message="Chọn một dự án để xem năng suất" />
@@ -95,7 +133,7 @@ function Body({
       />
     )
   }
-  return <ProductivityDashboard events={current.events} models={current.models} filters={filters} />
+  return <ProductivityDashboard events={current.events} models={current.models} filters={filters} version={version} />
 }
 
 function AdminDashboard() {
@@ -103,7 +141,7 @@ function AdminDashboard() {
   const [projects, setProjects] = useState<Array<{ id: string; name: string; code: string }>>([])
   const [chosen, setChosen] = useState<string | null>(null)
   const [listError, setListError] = useState<string | null>(null)
-  const [filters, setFilters] = useState(DEFAULT_PRODUCTIVITY_FILTERS)
+  const scope = useDraftFilters(DEFAULT_ADMIN_SCOPE)
 
   useEffect(() => {
     listProjectNames()
@@ -120,32 +158,45 @@ function AdminDashboard() {
     ?? projects[0]?.id
     ?? null
   const data = useProjectData(projectId)
-  const options = filterOptions(data.current)
+
+  // The options follow the DRAFT (FLT-02): the loaded project's own, or a
+  // light read of the project picked but not yet applied.
+  const draftProject = scope.draft.project ?? projectId
+  const otherOptions = useProjectOptions(draftProject === projectId ? null : draftProject, loadFilterOptions)
+  const options = draftProject === projectId ? filterOptions(data.current) : otherOptions ?? NO_OPTIONS
+  const draft = settle(scope.draft, options)
+
+  const apply = () => {
+    if (draftProject !== null && draftProject !== projectId) {
+      setChosen(draftProject)
+      setSearchParams({ project: draftProject }, { replace: true })
+    }
+    scope.apply({ ...draft, project: null })
+  }
 
   return (
     <>
       <PageHeader
         title="Năng suất"
         filters={(
-          // One bar, the project first (FLT-01).
-          <FilterBar>
+          // One bar, the project first (FLT-01); a draft until Tìm (FLT-02).
+          <FilterBar onApply={apply} onReset={scope.reset}>
             <ProjectSelect
               projects={projects}
-              value={projectId}
-              onChange={(v) => {
-                setChosen(v)
-                // Another project's works and decks: its own filters start over.
-                setFilters(DEFAULT_PRODUCTIVITY_FILTERS)
-                setSearchParams({ project: v }, { replace: true })
-              }}
+              value={draftProject}
+              onChange={(v) => scope.setDraft({ project: v })}
             />
-            <ProductivityFilterControls {...options} value={filters} onChange={setFilters} />
+            <ProductivityFilterControls
+              {...options}
+              value={draft}
+              onChange={(next) => scope.setDraft({ ...next, project: scope.draft.project })}
+            />
           </FilterBar>
         )}
       />
       <PageBody>
         {listError && <Alert type="error" showIcon message="Không tải được danh sách dự án" description={listError} />}
-        <Body projectId={projectId} data={data} filters={filters} />
+        <Body projectId={projectId} data={data} filters={scope.applied} version={scope.version} />
       </PageBody>
     </>
   )
@@ -154,9 +205,10 @@ function AdminDashboard() {
 function FieldDashboard() {
   const { projectId } = useParams()
   const navigate = useNavigate()
-  const [filters, setFilters] = useState(DEFAULT_PRODUCTIVITY_FILTERS)
+  const scope = useDraftFilters(DEFAULT_PRODUCTIVITY_FILTERS)
   const data = useProjectData(projectId ?? null)
   const options = filterOptions(data.current)
+  const draft = settle(scope.draft, options)
   return (
     <Layout style={{ minHeight: '100vh' }}>
       <Layout.Header
@@ -183,10 +235,10 @@ function FieldDashboard() {
       </Layout.Header>
       <Layout.Content style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 16 }}>
         {/* The field's bar, first under the title bar (FLT-01 via GS-04). */}
-        <FilterBar>
-          <ProductivityFilterControls {...options} value={filters} onChange={setFilters} />
+        <FilterBar onApply={() => scope.apply(draft)} onReset={scope.reset}>
+          <ProductivityFilterControls {...options} value={draft} onChange={scope.setDraft} />
         </FilterBar>
-        <Body projectId={projectId ?? null} data={data} filters={filters} />
+        <Body projectId={projectId ?? null} data={data} filters={scope.applied} version={scope.version} />
       </Layout.Content>
     </Layout>
   )

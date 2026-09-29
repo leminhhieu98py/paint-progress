@@ -47,11 +47,14 @@ export function ProductivityDashboard({
   events,
   models,
   filters,
+  version = 0,
 }: {
   events: DeckEvent[]
   models: WorkModel[]
-  /** What the screen's filter bar holds (FLT-01). */
+  /** What the screen's filter bar has applied (FLT-01, FLT-02). */
   filters: ProductivityFilters
+  /** Counts the bar's applies: every apply sends the tables back to page 1 (FLT-02). */
+  version?: number
 }) {
   const workNames = useMemo(() => dashboardWorkNames(models, events), [models, events])
   const workName = resolveWork(filters.work, workNames)
@@ -196,10 +199,10 @@ export function ProductivityDashboard({
       .map((name, i) => ({ name, color: colors.get(name) ?? FALLBACK_COLORS[i % FALLBACK_COLORS.length] }))
   }, [models, workName, order, stages])
 
-  // Any filter above the tables sends each of them back to page 1.
-  const filterKey = [workName, deckName, range[0]?.format('YYYY-MM-DD'), range[1]?.format('YYYY-MM-DD')].join('|')
+  // Any filter above the tables, and any apply of the bar, sends each of them back to page 1.
+  const filterKey = [version, workName, deckName, range[0]?.format('YYYY-MM-DD'), range[1]?.format('YYYY-MM-DD')].join('|')
   const stagePagination = useTablePagination(visibleStages.length, filterKey)
-  const forecastPagination = useTablePagination(forecasts.length, `${workName}|${deckName}`)
+  const forecastPagination = useTablePagination(forecasts.length, `${version}|${workName}|${deckName}`)
   const leadPagination = useTablePagination(visibleLeads.length, `${filterKey}|${leadQuery}`)
   const reasonPagination = useTablePagination(reasons.length, filterKey)
 

@@ -9,6 +9,10 @@ const loadProjectModel = vi.hoisted(() => vi.fn())
 const listProjectEvents = vi.hoisted(() => vi.fn())
 const listProjectNames = vi.hoisted(() => vi.fn())
 const navigate = vi.hoisted(() => vi.fn())
+const listWorks = vi.hoisted(() => vi.fn())
+const listDecks = vi.hoisted(() => vi.fn())
+vi.mock('../../lib/worksApi', () => ({ listWorks: (id: string) => listWorks(id) }))
+vi.mock('../../lib/decksApi', () => ({ listDecks: (id: string) => listDecks(id) }))
 vi.mock('../../lib/progressApi', () => ({
   loadProjectModel: (id: string) => loadProjectModel(id),
   listProjectEvents: (id: string) => listProjectEvents(id),
@@ -41,6 +45,11 @@ beforeEach(() => {
   listProjectEvents.mockReset()
   listProjectNames.mockReset()
   navigate.mockReset()
+  listWorks.mockReset()
+  listDecks.mockReset()
+  // Another project's options, read only while it is the DRAFT project (FLT-02).
+  listWorks.mockResolvedValue([{ ...work('w9', 1, 'Giàn giáo').work, projectId: 'p2' }])
+  listDecks.mockResolvedValue([{ id: 'd9', name: 'Sàn Z' }])
   loadProjectModel.mockResolvedValue(MODEL)
   listProjectEvents.mockResolvedValue([{ id: 1 }, { id: 2 }])
   listProjectNames.mockResolvedValue([
@@ -89,6 +98,7 @@ describe('DashboardScreen (admin)', () => {
     expect(await screen.findByText('DASHBOARD 2 sự kiện · Tất cả sàn · công việc đầu')).toBeInTheDocument()
     await userEvent.click(screen.getByRole('combobox', { name: 'Dự án' }))
     await userEvent.click(await screen.findByTitle('Giàn B (GB)'))
+    await userEvent.click(within(bar()).getByRole('button', { name: 'Tìm' }))
     await waitFor(() => expect(loadProjectModel).toHaveBeenCalledWith('p2'))
   })
 
@@ -106,11 +116,58 @@ describe('DashboardScreen (admin)', () => {
     expect(screen.getByRole('heading', { level: 1, name: 'Năng suất' })).toBeInTheDocument()
   })
 
-  it('narrows the dashboard by what the bar holds', async () => {
+  it('narrows the dashboard by what the bar holds, once Tìm is pressed (FLT-02)', async () => {
     renderAdmin()
     await screen.findByText(/^DASHBOARD 2 sự kiện/)
     await userEvent.click(within(bar()).getByText('Tháo giáo'))
+    expect(screen.getByText('DASHBOARD 2 sự kiện · Tất cả sàn · công việc đầu')).toBeInTheDocument()
+    await userEvent.click(within(bar()).getByRole('button', { name: 'Tìm' }))
     expect(await screen.findByText('DASHBOARD 2 sự kiện · Tất cả sàn · Tháo giáo')).toBeInTheDocument()
+  })
+
+  it('queries nothing while two filters change, then exactly once on Tìm (FLT-02)', async () => {
+    renderAdmin()
+    await screen.findByText(/^DASHBOARD 2 sự kiện/)
+    expect(loadProjectModel).toHaveBeenCalledTimes(1)
+    await userEvent.click(within(bar()).getByRole('combobox', { name: 'Sàn' }))
+    await userEvent.click(await screen.findByTitle('Sàn A'))
+    await userEvent.click(within(bar()).getByRole('combobox', { name: 'Dự án' }))
+    await userEvent.click(await screen.findByTitle('Giàn B (GB)'))
+    expect(loadProjectModel).toHaveBeenCalledTimes(1)
+    expect(listProjectEvents).toHaveBeenCalledTimes(1)
+    await userEvent.click(within(bar()).getByRole('button', { name: 'Tìm' }))
+    await waitFor(() => expect(loadProjectModel).toHaveBeenCalledTimes(2))
+    expect(loadProjectModel).toHaveBeenLastCalledWith('p2')
+    expect(listProjectEvents).toHaveBeenCalledTimes(2)
+  })
+
+  it('offers the draft project\'s decks, and drops a draft deck that project does not have (FLT-02)', async () => {
+    renderAdmin()
+    await screen.findByText(/^DASHBOARD 2 sự kiện/)
+    await userEvent.click(within(bar()).getByRole('combobox', { name: 'Sàn' }))
+    await userEvent.click(await screen.findByTitle('Sàn A'))
+    await userEvent.click(within(bar()).getByRole('combobox', { name: 'Dự án' }))
+    await userEvent.click(await screen.findByTitle('Giàn B (GB)'))
+    await waitFor(() => expect(listDecks).toHaveBeenCalledWith('p2'))
+    // Sàn A is Giàn A's: the draft falls back to Tất cả sàn.
+    await waitFor(() => expect(within(bar()).getByTitle('Tất cả sàn')).toBeInTheDocument())
+    await userEvent.click(within(bar()).getByRole('combobox', { name: 'Sàn' }))
+    expect(await screen.findByTitle('Sàn Z')).toBeInTheDocument()
+    expect(screen.queryByTitle('Sàn A')).toBeNull()
+    // And the draft project's works replace the scope switch's options.
+    expect(within(bar()).queryByRole('radiogroup', { name: 'Công việc' })).toBeNull()
+  })
+
+  it('puts the defaults back and applies them on Đặt lại (FLT-02)', async () => {
+    renderAdmin()
+    await screen.findByText(/^DASHBOARD 2 sự kiện/)
+    await userEvent.click(within(bar()).getByText('Tháo giáo'))
+    await userEvent.click(within(bar()).getByRole('button', { name: 'Tìm' }))
+    expect(await screen.findByText('DASHBOARD 2 sự kiện · Tất cả sàn · Tháo giáo')).toBeInTheDocument()
+    await userEvent.click(within(bar()).getByRole('button', { name: 'Đặt lại' }))
+    expect(await screen.findByText('DASHBOARD 2 sự kiện · Tất cả sàn · công việc đầu')).toBeInTheDocument()
+    // The project stays: the address carries it.
+    expect(loadProjectModel).toHaveBeenCalledTimes(1)
   })
 
   it('reports a failed read and retries on request', async () => {
@@ -139,5 +196,15 @@ describe('DashboardScreen (gs)', () => {
     expect(within(bar()).getByRole('radiogroup', { name: 'Công việc' })).toBeInTheDocument()
     expect(within(bar()).getByRole('combobox', { name: 'Sàn' })).toBeInTheDocument()
     expect(within(bar()).getByPlaceholderText('Từ ngày')).toBeInTheDocument()
+  })
+
+  it('holds the field\'s draft until Tìm too (FLT-02)', async () => {
+    renderField()
+    await screen.findByText(/^DASHBOARD 2 sự kiện/)
+    await userEvent.click(within(bar()).getByRole('combobox', { name: 'Sàn' }))
+    await userEvent.click(await screen.findByTitle('Sàn A'))
+    expect(screen.getByText('DASHBOARD 2 sự kiện · Tất cả sàn · công việc đầu')).toBeInTheDocument()
+    await userEvent.click(within(bar()).getByRole('button', { name: 'Tìm' }))
+    expect(await screen.findByText('DASHBOARD 2 sự kiện · Sàn A · công việc đầu')).toBeInTheDocument()
   })
 })

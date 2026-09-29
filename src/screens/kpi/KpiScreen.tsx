@@ -2,6 +2,7 @@ import { ArrowLeftOutlined } from '@ant-design/icons'
 import { Alert, App, Button, Layout, Spin } from 'antd'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { useDraftFilters, useProjectOptions } from '../../components/draftFilters'
 import { FilterBar } from '../../components/FilterBar'
 import { PageBody, PageHeader } from '../../components/PageHeader'
 import { ProjectSelect } from '../../components/ProjectSelect'
@@ -14,14 +15,16 @@ import type { DeckEvent, WorkModel } from '../../domain/types'
 import {
   clearStagePlanArea, listStagePlans, saveStagePlan, type StoredStagePlan,
 } from '../../lib/kpiApi'
-import { setDeckKpiColors } from '../../lib/decksApi'
+import { listDecks, setDeckKpiColors } from '../../lib/decksApi'
 import { listProjectEvents, loadProjectModel } from '../../lib/progressApi'
 import { listProjectNames } from '../../lib/projectsApi'
 import { palette, shadowCard } from '../../theme'
 import { DeckKpiColorTable, type DeckKpiColorRow, type DeckKpiColors } from './DeckKpiColorTable'
 import { KpiDashboard, type KpiEntry } from './KpiDashboard'
 import { KpiFilterControls } from './KpiFilterControls'
-import { DEFAULT_KPI_FILTERS, kpiCoatOptions, type KpiFilters } from './kpiFilters'
+import {
+  ALL, DEFAULT_KPI_FILTERS, kpiCoatOptions, resolveCoat, type KpiFilters, type PlannedCoat,
+} from './kpiFilters'
 import { StagePlanTable, type StagePlanRow, type StagePlanWindow } from './StagePlanTable'
 
 /**
@@ -205,9 +208,45 @@ function useKpiEntries(current: Loaded | null) {
 type KpiData = ReturnType<typeof useKpiData>
 type KpiModel = ReturnType<typeof useKpiEntries>
 
-/** The Công đoạn options of the bar for the chosen deck (`kpiCoatOptions` over the planned coats). */
-const coatOptionsOf = (entries: KpiEntry[], deckId: string) =>
-  kpiCoatOptions(entries.map((e) => ({ deckId: e.deckId, workName: e.plan.workName, stageName: e.plan.stageName })), deckId)
+/** What the bar's Sàn and Công đoạn options are built from. */
+interface FilterOptions {
+  decks: { id: string; name: string }[]
+  coats: PlannedCoat[]
+}
+
+const NO_OPTIONS: FilterOptions = { decks: [], coats: [] }
+
+/** The bar's options for the loaded project: its decks, and the coats the chart can show. */
+function filterOptions(current: Loaded | null, entries: KpiEntry[]): FilterOptions {
+  if (current === null || 'error' in current) return NO_OPTIONS
+  return {
+    decks: current.decks,
+    coats: entries.map((e) => ({ deckId: e.deckId, workName: e.plan.workName, stageName: e.plan.stageName })),
+  }
+}
+
+/** The bar's options for a DRAFT project the screen has not loaded (FLT-02): two light reads. */
+async function loadFilterOptions(projectId: string): Promise<FilterOptions> {
+  const [decks, plans] = await Promise.all([listDecks(projectId), listStagePlans(projectId)])
+  return {
+    decks: decks.map((d) => ({ id: d.id, name: d.name })),
+    coats: plans.map((p) => ({ deckId: p.deckId, workName: p.workName, stageName: p.stageName })),
+  }
+}
+
+/**
+ * The draft as the options have it (FLT-02): a Sàn the draft project does not
+ * have is Tất cả sàn again, and a Công đoạn the draft Sàn does not have is
+ * Tất cả công đoạn.
+ */
+function settle<T extends KpiFilters>(draft: T, options: FilterOptions): T {
+  const deckId = options.decks.some((d) => d.id === draft.deckId) ? draft.deckId : ALL
+  return { ...draft, deckId, coat: resolveCoat(draft.coat, kpiCoatOptions(options.coats, deckId)) }
+}
+
+/** The admin bar's draft: the project (null is the one in the address) and the chart's scope. */
+type AdminScope = KpiFilters & { project: string | null }
+const DEFAULT_ADMIN_SCOPE: AdminScope = { project: null, ...DEFAULT_KPI_FILTERS }
 
 function Body({
   projectId,
@@ -369,7 +408,7 @@ function AdminKpi() {
   const [projects, setProjects] = useState<Array<{ id: string; name: string; code: string }>>([])
   const [chosen, setChosen] = useState<string | null>(null)
   const [listError, setListError] = useState<string | null>(null)
-  const [filters, setFilters] = useState(DEFAULT_KPI_FILTERS)
+  const scope = useDraftFilters(DEFAULT_ADMIN_SCOPE)
 
   useEffect(() => {
     listProjectNames()
@@ -387,37 +426,46 @@ function AdminKpi() {
     ?? null
   const data = useKpiData(projectId)
   const model = useKpiEntries(data.current)
-  const decks = data.current !== null && !('error' in data.current) ? data.current.decks : []
+
+  // The options follow the DRAFT (FLT-02): the loaded project's own, or a
+  // light read of the project picked but not yet applied.
+  const draftProject = scope.draft.project ?? projectId
+  const otherOptions = useProjectOptions(draftProject === projectId ? null : draftProject, loadFilterOptions)
+  const options = draftProject === projectId ? filterOptions(data.current, model.entries) : otherOptions ?? NO_OPTIONS
+  const draft = settle(scope.draft, options)
+
+  const apply = () => {
+    if (draftProject !== null && draftProject !== projectId) {
+      setChosen(draftProject)
+      setSearchParams({ project: draftProject }, { replace: true })
+    }
+    scope.apply({ ...draft, project: null })
+  }
 
   return (
     <>
       <PageHeader
         title="KPI"
         filters={(
-          // One bar, the project first (FLT-01).
-          <FilterBar>
+          // One bar, the project first (FLT-01); a draft until Tìm (FLT-02).
+          <FilterBar onApply={apply} onReset={scope.reset}>
             <ProjectSelect
               projects={projects}
-              value={projectId}
-              onChange={(v) => {
-                setChosen(v)
-                // Another project's decks and coats: its own filters start over.
-                setFilters(DEFAULT_KPI_FILTERS)
-                setSearchParams({ project: v }, { replace: true })
-              }}
+              value={draftProject}
+              onChange={(v) => scope.setDraft({ project: v })}
             />
             <KpiFilterControls
-              decks={decks}
-              coats={coatOptionsOf(model.entries, filters.deckId)}
-              value={filters}
-              onChange={setFilters}
+              decks={options.decks}
+              coats={kpiCoatOptions(options.coats, draft.deckId)}
+              value={draft}
+              onChange={(next) => scope.setDraft({ ...next, project: scope.draft.project })}
             />
           </FilterBar>
         )}
       />
       <PageBody>
         {listError && <Alert type="error" showIcon message="Không tải được danh sách dự án" description={listError} />}
-        <Body projectId={projectId} variant="admin" data={data} model={model} filters={filters} />
+        <Body projectId={projectId} variant="admin" data={data} model={model} filters={scope.applied} />
       </PageBody>
     </>
   )
@@ -426,10 +474,11 @@ function AdminKpi() {
 function FieldKpi() {
   const { projectId } = useParams()
   const navigate = useNavigate()
-  const [filters, setFilters] = useState(DEFAULT_KPI_FILTERS)
+  const scope = useDraftFilters(DEFAULT_KPI_FILTERS)
   const data = useKpiData(projectId ?? null)
   const model = useKpiEntries(data.current)
-  const decks = data.current !== null && !('error' in data.current) ? data.current.decks : []
+  const options = filterOptions(data.current, model.entries)
+  const draft = settle(scope.draft, options)
   return (
     <Layout style={{ minHeight: '100vh' }}>
       <Layout.Header
@@ -456,15 +505,15 @@ function FieldKpi() {
       </Layout.Header>
       <Layout.Content style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 16 }}>
         {/* The field's bar, first under the title bar (FLT-01 via GS-04). */}
-        <FilterBar>
+        <FilterBar onApply={() => scope.apply(draft)} onReset={scope.reset}>
           <KpiFilterControls
-            decks={decks}
-            coats={coatOptionsOf(model.entries, filters.deckId)}
-            value={filters}
-            onChange={setFilters}
+            decks={options.decks}
+            coats={kpiCoatOptions(options.coats, draft.deckId)}
+            value={draft}
+            onChange={scope.setDraft}
           />
         </FilterBar>
-        <Body projectId={projectId ?? null} variant="gs" data={data} model={model} filters={filters} />
+        <Body projectId={projectId ?? null} variant="gs" data={data} model={model} filters={scope.applied} />
       </Layout.Content>
     </Layout>
   )

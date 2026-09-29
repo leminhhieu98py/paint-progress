@@ -18,6 +18,7 @@ const saveStagePlan = vi.hoisted(() => vi.fn())
 const clearStagePlanArea = vi.hoisted(() => vi.fn())
 const setDeckKpiColors = vi.hoisted(() => vi.fn())
 const navigate = vi.hoisted(() => vi.fn())
+const listDecks = vi.hoisted(() => vi.fn())
 
 vi.mock('../../lib/progressApi', () => ({
   loadProjectModel: (id: string) => loadProjectModel(id),
@@ -33,6 +34,7 @@ vi.mock('../../lib/kpiApi', () => ({
 }))
 vi.mock('../../lib/decksApi', () => ({
   setDeckKpiColors: (id: string, colors: unknown) => setDeckKpiColors(id, colors),
+  listDecks: (id: string) => listDecks(id),
 }))
 vi.mock('react-router-dom', async () => {
   const actual = await vi.importActual<typeof import('react-router-dom')>('react-router-dom')
@@ -162,6 +164,9 @@ beforeEach(() => {
   clearStagePlanArea.mockReset()
   setDeckKpiColors.mockReset()
   navigate.mockReset()
+  listDecks.mockReset()
+  // Another project's decks, read only while it is the DRAFT project (FLT-02).
+  listDecks.mockResolvedValue([{ id: 'd9', name: 'Sàn Z' }])
   loadProjectModel.mockResolvedValue(MODEL)
   listProjectEvents.mockResolvedValue(EVENTS)
   listStagePlans.mockResolvedValue(PLANS)
@@ -212,11 +217,62 @@ describe('KpiScreen — one filter bar (FLT-01)', () => {
     expect(bar().querySelector('label')).toBeNull()
   })
 
-  it('narrows the chart by the deck picked in the bar', async () => {
+  it('narrows the chart by the deck picked in the bar, once Tìm is pressed (FLT-02)', async () => {
     renderAdmin()
     await screen.findByTestId('kpi-dashboard')
     await userEvent.click(within(bar()).getByRole('combobox', { name: 'Sàn' }))
     await userEvent.click(await screen.findByTitle('Sàn A'))
+    expect(screen.getByText(/PHẠM VI tất cả\/tất cả/)).toBeInTheDocument()
+    await userEvent.click(within(bar()).getByRole('button', { name: 'Tìm' }))
+    expect(await screen.findByText(/PHẠM VI d1\/tất cả/)).toBeInTheDocument()
+  })
+
+  it('queries nothing while two filters change, then exactly once on Tìm (FLT-02)', async () => {
+    renderAdmin()
+    await screen.findByTestId('kpi-dashboard')
+    await userEvent.click(within(bar()).getByRole('combobox', { name: 'Sàn' }))
+    await userEvent.click(await screen.findByTitle('Sàn A'))
+    await userEvent.click(within(bar()).getByRole('combobox', { name: 'Dự án' }))
+    await userEvent.click(await screen.findByTitle('Giàn B (GB)'))
+    expect(loadProjectModel).toHaveBeenCalledTimes(1)
+    expect(listProjectEvents).toHaveBeenCalledTimes(1)
+    await userEvent.click(within(bar()).getByRole('button', { name: 'Tìm' }))
+    await waitFor(() => expect(loadProjectModel).toHaveBeenCalledTimes(2))
+    expect(loadProjectModel).toHaveBeenLastCalledWith('p2')
+    expect(listProjectEvents).toHaveBeenCalledTimes(2)
+  })
+
+  it('offers the draft project\'s decks, and drops a draft deck that project does not have (FLT-02)', async () => {
+    renderAdmin()
+    await screen.findByTestId('kpi-dashboard')
+    await userEvent.click(within(bar()).getByRole('combobox', { name: 'Sàn' }))
+    await userEvent.click(await screen.findByTitle('Sàn A'))
+    await userEvent.click(within(bar()).getByRole('combobox', { name: 'Dự án' }))
+    await userEvent.click(await screen.findByTitle('Giàn B (GB)'))
+    await waitFor(() => expect(listDecks).toHaveBeenCalledWith('p2'))
+    await waitFor(() => expect(within(bar()).getByTitle('Tất cả sàn')).toBeInTheDocument())
+    await userEvent.click(within(bar()).getByRole('combobox', { name: 'Sàn' }))
+    expect(await screen.findByTitle('Sàn Z')).toBeInTheDocument()
+  })
+
+  it('puts the defaults back and applies them on Đặt lại (FLT-02)', async () => {
+    renderAdmin()
+    await screen.findByTestId('kpi-dashboard')
+    await userEvent.click(within(bar()).getByRole('combobox', { name: 'Sàn' }))
+    await userEvent.click(await screen.findByTitle('Sàn A'))
+    await userEvent.click(within(bar()).getByRole('button', { name: 'Tìm' }))
+    expect(await screen.findByText(/PHẠM VI d1\/tất cả/)).toBeInTheDocument()
+    await userEvent.click(within(bar()).getByRole('button', { name: 'Đặt lại' }))
+    expect(await screen.findByText(/PHẠM VI tất cả\/tất cả/)).toBeInTheDocument()
+  })
+
+  it('holds the field\'s draft until Tìm too (FLT-02)', async () => {
+    renderField()
+    await screen.findByTestId('kpi-dashboard')
+    await userEvent.click(within(bar()).getByRole('combobox', { name: 'Sàn' }))
+    await userEvent.click(await screen.findByTitle('Sàn A'))
+    expect(screen.getByText(/PHẠM VI tất cả\/tất cả/)).toBeInTheDocument()
+    await userEvent.click(within(bar()).getByRole('button', { name: 'Tìm' }))
     expect(await screen.findByText(/PHẠM VI d1\/tất cả/)).toBeInTheDocument()
   })
 

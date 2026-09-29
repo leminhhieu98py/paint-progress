@@ -1,6 +1,6 @@
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { Select } from 'antd'
+import { Input, Select } from 'antd'
 import { describe, expect, it, vi } from 'vitest'
 import { space } from '../theme'
 import { FilterBar } from './FilterBar'
@@ -45,5 +45,50 @@ describe('ProjectSelect (FLT-01)', () => {
     await userEvent.type(screen.getByRole('combobox', { name: 'Dự án' }), 'gian b')
     await userEvent.click(await screen.findByTitle('Giàn B (GB)'))
     expect(onChange).toHaveBeenCalledWith('p2')
+  })
+})
+
+describe('FilterBar with more than one control (FLT-02)', () => {
+  const renderBar = () => {
+    const onApply = vi.fn()
+    const onReset = vi.fn()
+    render(
+      <FilterBar onApply={onApply} onReset={onReset}>
+        <Input aria-label="Tìm" />
+        <Select aria-label="Sàn" options={[{ value: 'a', label: 'Sàn A' }]} />
+      </FilterBar>,
+    )
+    return { onApply, onReset, bar: screen.getByRole('search', { name: 'Bộ lọc' }) }
+  }
+
+  it('ends with Đặt lại, then Tìm as the primary button with a search icon', () => {
+    const { bar } = renderBar()
+    const buttons = within(bar).getAllByRole('button')
+    expect(buttons.map((b) => b.textContent)).toEqual(['Đặt lại', 'Tìm'])
+    expect(buttons[1]).toHaveClass('ant-btn-primary')
+    expect(buttons[1].querySelector('.anticon-search')).not.toBeNull()
+    expect(buttons[0]).toHaveClass('ant-btn-text')
+    expect(bar.lastElementChild).toBe(buttons[1])
+  })
+
+  it('applies on Tìm and resets on Đặt lại', async () => {
+    const { onApply, onReset } = renderBar()
+    await userEvent.click(screen.getByRole('button', { name: 'Tìm' }))
+    expect(onApply).toHaveBeenCalledOnce()
+    await userEvent.click(screen.getByRole('button', { name: 'Đặt lại' }))
+    expect(onReset).toHaveBeenCalledOnce()
+  })
+
+  it('applies on Enter in a text field of the bar, not on Enter in a select', async () => {
+    const { onApply } = renderBar()
+    await userEvent.type(screen.getByRole('textbox', { name: 'Tìm' }), 'abc{Enter}')
+    expect(onApply).toHaveBeenCalledOnce()
+    await userEvent.type(screen.getByRole('combobox', { name: 'Sàn' }), '{Enter}')
+    expect(onApply).toHaveBeenCalledOnce()
+  })
+
+  it('has no buttons when it holds one control and applies as it changes', () => {
+    render(<FilterBar><Input aria-label="Tìm" /></FilterBar>)
+    expect(within(screen.getByRole('search', { name: 'Bộ lọc' })).queryByRole('button')).toBeNull()
   })
 })
