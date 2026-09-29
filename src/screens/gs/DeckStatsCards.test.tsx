@@ -155,14 +155,41 @@ describe('StageRollupCard', () => {
     expect(within(row).getByText('Blast + Coat 1').parentElement).toBe(percent.parentElement)
   })
 
-  it('lets a long coat name wrap to a second line rather than cut it, the whole name in its title (M-2)', () => {
+  it('lets a coat name wrap only when the full width cannot hold it, never cut, the whole name in its title (M-2, C4)', () => {
     const stages = [{ ...STAGES[0], name: 'Blast + Coat 1 (Primer, epoxy zinc-rich)' }, STAGES[1]]
     renderRollup(stages, computeDeckProgress(DECK, stages))
     const name = screen.getByText('Blast + Coat 1 (Primer, epoxy zinc-rich)')
     expect(name.style.whiteSpace).toBe('')
     expect(name.style.textOverflow).toBe('')
-    expect(name).toHaveStyle({ WebkitLineClamp: '2' })
+    // No clamp and no break inside a word: it wraps at spaces, as text does.
+    expect(name.style.getPropertyValue('-webkit-line-clamp')).toBe('')
+    expect(name.style.overflowWrap).toBe('break-word')
     expect(name).toHaveAttribute('title', 'Blast + Coat 1 (Primer, epoxy zinc-rich)')
+  })
+
+  it('stacks the ring above its legend, the legend the card\'s full width (RR-I1, C4)', () => {
+    renderRollup()
+    const donut = screen.getByTestId('donut')
+    const legend = screen.getByTestId('gs-stage-legend')
+    const stack = donut.parentElement as HTMLElement
+    expect(stack).toBe(legend.parentElement)
+    expect(stack).toHaveStyle({ display: 'flex', flexDirection: 'column', alignItems: 'center' })
+    expect(Array.from(stack.children).indexOf(donut)).toBeLessThan(Array.from(stack.children).indexOf(legend))
+    expect(legend).toHaveStyle({ alignSelf: 'stretch' })
+    expect(legend.style.minWidth).not.toBe('168px')
+  })
+
+  it('reads each row in two lines: dot, name and percent, then the area (RR-I1)', () => {
+    renderRollup()
+    const row = rowOf('Coat 2')
+    const marker = row.querySelector('[data-testid="gs-stage-marker"]') as HTMLElement
+    const percent = row.querySelector('[data-testid="gs-stage-percent"]') as HTMLElement
+    const area = row.querySelector('[data-testid="gs-stage-area"]') as HTMLElement
+    const line1 = marker.parentElement as HTMLElement
+    expect(within(line1).getByText('Coat 2')).toBeInTheDocument()
+    expect(percent.parentElement).toBe(line1)
+    expect(line1.contains(area)).toBe(false)
+    expect(Array.from(row.children)).toEqual([line1, area])
   })
 
   it('keeps the figures of a coat with no area standing at it on its row, where the ring has no slice (M-2)', () => {

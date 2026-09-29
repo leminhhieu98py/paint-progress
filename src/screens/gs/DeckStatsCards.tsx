@@ -11,6 +11,9 @@ import { DEFAULT_QUANTITY_LABEL, DEFAULT_UNIT } from '../../domain/unit'
 import { formatAreaM2, formatPercent } from '../../lib/format'
 import { fieldType, palette, space } from '../../theme'
 
+/** The coat legend's colour dot, the admin legends' size (CLR-03). */
+const MARKER = 11
+
 const ellipsis: CSSProperties = { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }
 
 /**
@@ -150,7 +153,12 @@ export function StageRollupCard({
   return (
     <div data-testid="gs-stage-rollup">
       <SectionCard title="Tiến độ theo công đoạn · cộng dồn">
-        <div style={{ display: 'flex', alignItems: 'center', gap: space.lg, flexWrap: 'wrap' }}>
+        {/*
+          The ring above its legend, the legend the card's full width (RR-I1,
+          C4): beside a 144 px ring in a 320-372 px rail the names had about
+          90 px and wrapped even when short.
+        */}
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: space.lg }}>
           {/*
             The deck area in the middle, not the deck percentage.
 
@@ -176,7 +184,10 @@ export function StageRollupCard({
               {`${unit} sàn`}
             </span>
           </Donut>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: space.md, flex: 1, minWidth: 168 }}>
+          <div
+            data-testid="gs-stage-legend"
+            style={{ display: 'flex', flexDirection: 'column', gap: space.md, alignSelf: 'stretch', minWidth: 0 }}
+          >
             {ordered.map((stage) => {
               const sp = stageProgress.find((x) => x.stage.id === stage.id)
               const doneM2 = sp?.cumulativeAreaM2 ?? 0
@@ -186,54 +197,47 @@ export function StageRollupCard({
                   key={stage.id}
                   data-testid="gs-stage-row"
                   {...legendRowProps(stage.id, active, setActive, {
-                    display: 'flex', alignItems: 'baseline', gap: 9, minWidth: 0,
+                    display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0,
                   })}
                 >
-                  {/* The coat's colour as a plain circle, as every legend in the app (CLR-03). */}
-                  <span
-                    aria-hidden
-                    data-testid="gs-stage-marker"
-                    style={{ width: 11, height: 11, flex: 'none', borderRadius: '50%', background: stage.color }}
-                  />
                   {/*
-                    The name and its percent, then the area, in a 320px rail
-                    (baseline notes). The figures never wrap; a long name may
-                    take a second line.
+                    Two lines: the dot, the name and its percent, then the area.
+                    The figures never wrap; a name wraps only when the whole
+                    width cannot hold it, and its title holds all of it.
                   */}
-                  <div style={{ minWidth: 0, flex: 1 }}>
-                    <div style={{ display: 'flex', alignItems: 'baseline', gap: space.sm, minWidth: 0 }}>
-                      {/*
-                        A long name takes a second line rather than being cut
-                        (M-2); past two, the title holds the whole of it.
-                      */}
-                      <span
-                        title={stage.name}
-                        style={{
-                          ...fieldType.body,
-                          minWidth: 0,
-                          lineHeight: 1.25,
-                          overflowWrap: 'anywhere',
-                          display: '-webkit-box',
-                          WebkitBoxOrient: 'vertical',
-                          WebkitLineClamp: 2,
-                          overflow: 'hidden',
-                        }}
-                      >
-                        {stage.name}
-                      </span>
-                      <span
-                        data-testid="gs-stage-percent"
-                        style={{ ...fieldType.bodyStrong, marginLeft: 'auto', flex: 'none', whiteSpace: 'nowrap' }}
-                      >
-                        {formatPercent(ratio)}
-                      </span>
-                    </div>
-                    <div
-                      data-testid="gs-stage-area"
-                      style={{ ...fieldType.caption, ...ellipsis, color: palette.textTertiary, marginTop: 2 }}
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: space.sm, minWidth: 0 }}>
+                    {/* The coat's colour as a plain circle, as every legend in the app (CLR-03). */}
+                    <span
+                      aria-hidden
+                      data-testid="gs-stage-marker"
+                      style={{
+                        width: MARKER, height: MARKER, flex: 'none', borderRadius: '50%', background: stage.color,
+                        alignSelf: 'center',
+                      }}
+                    />
+                    <span
+                      title={stage.name}
+                      style={{ ...fieldType.body, minWidth: 0, flex: 1, lineHeight: 1.25, overflowWrap: 'break-word' }}
                     >
-                      {`${formatAreaM2(doneM2)} / ${formatAreaM2(totalAreaM2)} ${unit}`}
-                    </div>
+                      {stage.name}
+                    </span>
+                    <span
+                      data-testid="gs-stage-percent"
+                      style={{ ...fieldType.bodyStrong, flex: 'none', whiteSpace: 'nowrap' }}
+                    >
+                      {formatPercent(ratio)}
+                    </span>
+                  </div>
+                  <div
+                    data-testid="gs-stage-area"
+                    style={{
+                      ...fieldType.caption,
+                      ...ellipsis,
+                      color: palette.textTertiary,
+                      paddingInlineStart: MARKER + space.sm,
+                    }}
+                  >
+                    {`${formatAreaM2(doneM2)} / ${formatAreaM2(totalAreaM2)} ${unit}`}
                   </div>
                 </div>
               )
