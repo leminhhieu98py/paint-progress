@@ -357,7 +357,10 @@ export function StagePlanTable({
   return (
     <SectionCard
       title="Kế hoạch KPI theo công đoạn"
-      summary={`${rows.length} công đoạn · ${rows.filter((r) => r.plan !== null).length} đã có kế hoạch`}
+      facts={[
+        { value: rows.length, label: 'công đoạn' },
+        { value: rows.filter((r) => r.plan !== null).length, label: 'đã có kế hoạch' },
+      ]}
       bodyPadding={0}
       footer={<RulesDisclosure rules={RULES} />}
     >

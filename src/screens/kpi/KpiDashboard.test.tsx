@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest'
 import type { KpiDay } from '../../domain/kpi'
 import { useState } from 'react'
 import { FilterBar } from '../../components/FilterBar'
+import { keyFactTexts } from '../../test/copy'
 import { KpiDashboard, type KpiEntry } from './KpiDashboard'
 import { KpiFilterControls } from './KpiFilterControls'
 import { DEFAULT_KPI_FILTERS, kpiCoatOptions } from './kpiFilters'
@@ -157,7 +158,7 @@ describe('KpiDashboard', () => {
 
   it('totals the planned and the actual area in the card header', () => {
     renderDash()
-    expect(screen.getByText(/kế hoạch 600,00 m² · thực hiện 100,00 m²/)).toBeInTheDocument()
+    expect(keyFactTexts().slice(1)).toEqual(['kế hoạch 600,00 m²', 'thực hiện 100,00 m²'])
   })
 
   it('labels a coat with its work when more than one work is in view', async () => {
@@ -241,14 +242,14 @@ describe('KpiDashboard', () => {
     // 2026-09-04 day is null, and the header total must not read it as 0 lost
     // out of a real number either -- it is simply not summed.
     renderDash(ENTRIES, '2026-09-03')
-    expect(screen.getByText(/kế hoạch 600,00 m² · thực hiện 100,00 m²/)).toBeInTheDocument()
+    expect(keyFactTexts().slice(1)).toEqual(['kế hoạch 600,00 m²', 'thực hiện 100,00 m²'])
   })
 })
 
 describe('KpiDashboard: the work\'s unit (RV6-35)', () => {
   it('sums and charts in the one unit the scoped coats share', () => {
     renderDash(ENTRIES.map((e) => ({ ...e, unit: 'tấn' })))
-    expect(screen.getByText(/kế hoạch 600,00 tấn · thực hiện 100,00 tấn/)).toBeInTheDocument()
+    expect(keyFactTexts().slice(1)).toEqual(['kế hoạch 600,00 tấn', 'thực hiện 100,00 tấn'])
     expect(chart()).toHaveAttribute('data-unit', 'tấn')
   })
 
@@ -261,14 +262,14 @@ describe('KpiDashboard: the work\'s unit (RV6-35)', () => {
 describe('KpiDashboard: coats of different units under Tất cả công đoạn (RV6-36)', () => {
   it('refuses to sum across units and charts under Số lượng', async () => {
     renderDash([{ ...ENTRIES[0], unit: 'm²' }, { ...ENTRIES[1], unit: 'tấn' }])
-    const header = screen.getByText(/2 công đoạn · kế hoạch — · thực hiện —/)
-    expect(header).toBeInTheDocument()
+    expect(keyFactTexts()).toEqual(['2 công đoạn', 'kế hoạch —', 'thực hiện —'])
     expect(chart()).toHaveAttribute('data-unit', 'Số lượng')
-    await userEvent.hover(header)
+    // Why there is no sum: a (?) on the facts, not a sentence (HLT-01).
+    await userEvent.hover(screen.getByRole('img', { name: 'Các sàn dùng đơn vị khác nhau, không cộng được' }))
     expect(await screen.findByRole('tooltip')).toHaveTextContent('Các sàn dùng đơn vị khác nhau, không cộng được')
     // Narrowed to one coat, the sum and the unit are that coat's again.
     await pick('Công đoạn', 'Công đoạn 2')
-    await waitFor(() => expect(screen.getByText(/kế hoạch 400,00 tấn · thực hiện 0,00 tấn/)).toBeInTheDocument())
+    await waitFor(() => expect(keyFactTexts()).toEqual(['1 công đoạn', 'kế hoạch 400,00 tấn', 'thực hiện 0,00 tấn']))
     expect(chart()).toHaveAttribute('data-unit', 'tấn')
   })
 

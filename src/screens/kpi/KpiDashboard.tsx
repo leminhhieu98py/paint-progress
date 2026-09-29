@@ -1,4 +1,3 @@
-import { Tooltip } from 'antd'
 import { useMemo } from 'react'
 import { EmptyState } from '../../components/EmptyState'
 import { SectionCard } from '../../components/SectionCard'
@@ -102,18 +101,22 @@ export function KpiDashboard({
   return (
     <SectionCard
       title="KPI kế hoạch so với thực hiện"
-      summary={
+      facts={
         scoped.length === 0
           ? undefined
           : unit === null
             // RV6-36: `Tất cả công đoạn` over works of different units has no
             // sum to print; the figures per coat are one filter away.
-            ? (
-              <Tooltip title={MIXED_UNIT_SUM_TOOLTIP}>
-                <span>{`${scoped.length} công đoạn · kế hoạch — · thực hiện —`}</span>
-              </Tooltip>
-            )
-            : `${scoped.length} công đoạn · kế hoạch ${formatAreaM2(totalPlanned)} ${unit} · thực hiện ${formatAreaM2(totalActual)} ${unit}`
+            ? [
+              { value: scoped.length, label: 'công đoạn' },
+              { prefix: 'kế hoạch', value: '—' },
+              { prefix: 'thực hiện', value: '—', info: MIXED_UNIT_SUM_TOOLTIP },
+            ]
+            : [
+              { value: scoped.length, label: 'công đoạn' },
+              { prefix: 'kế hoạch', value: formatAreaM2(totalPlanned), label: unit },
+              { prefix: 'thực hiện', value: formatAreaM2(totalActual), label: unit },
+            ]
       }
     >
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>

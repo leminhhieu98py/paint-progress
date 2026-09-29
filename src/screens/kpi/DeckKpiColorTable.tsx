@@ -139,7 +139,7 @@ export function DeckKpiColorTable({
   return (
     <SectionCard
       title="Màu biểu đồ theo sàn"
-      summary={`${decks.length} sàn · ${styled} sàn có màu riêng`}
+      facts={[{ value: decks.length, label: 'sàn' }, { value: styled, label: 'sàn có màu riêng' }]}
       collapsible
       defaultOpen={false}
       bodyPadding={0}

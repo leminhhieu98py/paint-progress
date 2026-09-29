@@ -6,6 +6,7 @@ import { StagePlanTable, type StagePlanRow } from './StagePlanTable'
 import { expectLeft } from '../../test/alignment'
 import { weightOf } from '../../test/typography'
 import { expectAllSmall } from '../../test/controls'
+import { keyFactTexts } from '../../test/copy'
 
 const ROWS: StagePlanRow[] = [
   {
@@ -33,6 +34,13 @@ const ROWS: StagePlanRow[] = [
 
 /** Remaining area is the screen's to compute; here it is a fixed answer per coat. */
 const COMPUTED: Record<string, number> = { s1: 5000, s2: 8000, s3: 16000 }
+
+describe('StagePlanTable — facts (HLT-01)', () => {
+  it('counts the coats and the planned ones beside the title as KeyFacts', () => {
+    renderTable()
+    expect(keyFactTexts()).toEqual(['3 công đoạn', '2 đã có kế hoạch'])
+  })
+})
 
 describe('StagePlanTable — empty (CPY-01)', () => {
   it('names the step to take first, without the sentence on how plans are entered', () => {

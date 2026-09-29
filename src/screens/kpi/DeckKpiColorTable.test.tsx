@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { weightOf } from '../../test/typography'
 import { expectAllSmall } from '../../test/controls'
 import { DeckKpiColorTable, type DeckKpiColorRow } from './DeckKpiColorTable'
+import { keyFactTexts } from '../../test/copy'
 
 /**
  * RV6-28's admin table and RV6-31's rule on a bad hex. The two fields are
@@ -44,7 +45,7 @@ describe('DeckKpiColorTable', () => {
   it('is a collapsible section, shut by default, that counts the styled decks', () => {
     renderTable()
     expect(screen.getByRole('heading', { name: 'Màu biểu đồ theo sàn' })).toBeInTheDocument()
-    expect(screen.getByText('2 sàn · 1 sàn có màu riêng')).toBeInTheDocument()
+    expect(keyFactTexts()).toEqual(['2 sàn', '1 sàn có màu riêng'])
     expect(screen.getByRole('button', { name: 'Màu biểu đồ theo sàn' })).toHaveAttribute('aria-expanded', 'false')
     expect(screen.queryByLabelText('Mã màu · Kế hoạch · Sàn A')).toBeNull()
   })
