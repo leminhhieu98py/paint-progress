@@ -256,6 +256,17 @@ function staffPorts(key: CryptoKey): StaffPorts {
         .upsert({ user_id: userId, secret: await encryptSecret(key, password) })
       return error
     },
+    async readCredential(userId) {
+      const { data, error } = await admin.from('gs_credentials').select('secret').eq('user_id', userId).maybeSingle()
+      if (error) return { password: null, error }
+      if (!data) return { password: null, error: null }
+      try {
+        return { password: await decryptSecret(key, data.secret), error: null }
+      } catch {
+        // Never the secret or the key in a message: a fixed sentence.
+        return { password: null, error: { message: 'stored credential could not be decrypted' } }
+      }
+    },
     async addMembership(userId, projectId) {
       // An existing membership is kept as it is, with its work restriction.
       const { error } = await admin
@@ -272,8 +283,9 @@ function staffPorts(key: CryptoKey): StaffPorts {
       return { id: data?.id ?? null, error }
     },
     async deleteEmployee(id) {
-      const { error } = await admin.from('employees').delete().eq('id', id)
-      return error
+      // The ids that went: none means someone else converted the row first.
+      const { data, error } = await admin.from('employees').delete().eq('id', id).select('id')
+      return { deleted: (data ?? []).length > 0, error }
     },
   }
 }

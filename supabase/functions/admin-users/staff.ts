@@ -144,10 +144,13 @@ export interface StaffPorts {
   updateProfile(id: string, patch: { role?: string; active?: boolean; hidden?: boolean }): Promise<DbError | null>
   /** Encrypts and upserts the stored password. */
   storeCredential(userId: string, password: string): Promise<DbError | null>
+  /** The stored password, decrypted; null when none is stored. */
+  readCredential(userId: string): Promise<{ password: string | null; error: DbError | null }>
   /** Adds the project unless the account is already in it (memberships kept). */
   addMembership(userId: string, projectId: string): Promise<DbError | null>
   insertEmployee(fullName: string, active: boolean): Promise<{ id: string | null; error: DbError | null }>
-  deleteEmployee(id: string): Promise<DbError | null>
+  /** `deleted` false: the row was already gone (someone else converted it). */
+  deleteEmployee(id: string): Promise<{ deleted: boolean; error: DbError | null }>
 }
 
 export interface Outcome {
@@ -238,6 +241,12 @@ export async function changeRole(ports: StaffPorts, input: ChangeRoleInput): Pro
   return switchAccountRole(ports, account, input.role, input.projectId ?? '')
 }
 
+/** What a caller is told when the employee row went away under it (review minor 7). */
+export const STALE_EMPLOYEE = 'Nhân viên này đã có người khác đổi; tải lại danh sách rồi thử lại.'
+
+const halfWay = (problems: string[]) =>
+  fail(500, `Đổi phân quyền thất bại nửa chừng: ${problems.join('; ')}. Chi tiết đã được ghi vào log máy chủ.`)
+
 async function employeeToAccount(ports: StaffPorts, input: ChangeRoleInput, role: ManagedRole): Promise<Outcome> {
   const password = input.password ?? ''
   const projectId = input.projectId ?? ''
@@ -259,46 +268,7 @@ async function employeeToAccount(ports: StaffPorts, input: ChangeRoleInput, role
     return error ? `nhân viên «${employee.fullName}» đã bị xoá và chưa thêm lại được` : null
   }
 
-  if (parked) {
-    const deleted = await ports.deleteEmployee(employee.id)
-    if (deleted) return fail(500, safeError('Không xoá được dòng nhân viên', deleted.message))
-
-    const undo = async (message: string): Promise<Outcome> => {
-      const problems: string[] = []
-      if (await ports.setBanned(parked.id, true)) problems.push('tài khoản chưa khoá lại được')
-      if (await ports.updateProfile(parked.id, { role: parked.role, active: false, hidden: true })) {
-        problems.push('tài khoản chưa ẩn lại được')
-      }
-      const lost = await restoreEmployee()
-      if (lost) problems.push(lost)
-      if (problems.length > 0) {
-        return fail(500, `Đổi phân quyền thất bại nửa chừng: ${problems.join('; ')}. Chi tiết đã được ghi vào log máy chủ.`)
-      }
-      return fail(500, message)
-    }
-
-    // Still locked while it changes: nobody signs in to a half-restored account.
-    const shown = await ports.updateProfile(parked.id, { role, active: false, hidden: false })
-    if (shown) {
-      const lost = await restoreEmployee()
-      const named = duplicateNameMessage(shown, employee.fullName)
-      if (lost) return fail(500, `Đổi phân quyền thất bại nửa chừng: ${lost}. Chi tiết đã được ghi vào log máy chủ.`)
-      return fail(named ? 400 : 500, named ?? safeError('Không mở lại được tài khoản cũ', shown.message))
-    }
-    const stored = await ports.storeCredential(parked.id, password)
-    if (stored) return undo(safeError('Không lưu được mật khẩu mới', stored.message))
-    const passworded = await ports.setAuthPassword(parked.id, password)
-    if (passworded) return undo(safeError('Không đổi được mật khẩu', passworded.message))
-    if (role === 'gs') {
-      const member = await ports.addMembership(parked.id, projectId)
-      if (member) return undo(safeError('Không gán được dự án cho tài khoản', member.message))
-    }
-    const unbanned = await ports.setBanned(parked.id, false)
-    if (unbanned) return undo(safeError('Không mở khoá được tài khoản', unbanned.message))
-    const active = await ports.updateProfile(parked.id, { active: true })
-    if (active) return undo(safeError('Không đánh dấu được tài khoản là đang dùng', active.message))
-    return ok({ userId: parked.id, username: parked.username, reactivated: true })
-  }
+  if (parked) return reopenParked(ports, parked, employee, role, password, projectId, restoreEmployee)
 
   const username = input.username ?? ''
   if (!username) return fail(400, 'username is required')
@@ -307,12 +277,14 @@ async function employeeToAccount(ports: StaffPorts, input: ChangeRoleInput, role
   const { userId, error: createError } = await ports.createAuthUser(username, password)
   if (createError || !userId) return fail(400, safeError('Không tạo được tài khoản', createError?.message))
 
-  const deleted = await ports.deleteEmployee(employee.id)
-  if (deleted) {
+  const { deleted, error: deleteError } = await ports.deleteEmployee(employee.id)
+  if (deleteError || !deleted) {
     if (await ports.deleteAuthUser(userId)) {
       return fail(500, `Account setup failed and cleanup also failed -- auth user ${userId} is orphaned and needs manual deletion`)
     }
-    return fail(500, safeError('Không xoá được dòng nhân viên', deleted.message))
+    return deleteError
+      ? fail(500, safeError('Không xoá được dòng nhân viên', deleteError.message))
+      : fail(409, STALE_EMPLOYEE)
   }
 
   /** Removes the new auth user (its profile and credential go with it) and restores the employee. */
@@ -321,10 +293,7 @@ async function employeeToAccount(ports: StaffPorts, input: ChangeRoleInput, role
     if (await ports.deleteAuthUser(userId)) problems.push(`auth user ${userId} is orphaned and needs manual deletion`)
     const lost = await restoreEmployee()
     if (lost) problems.push(lost)
-    if (problems.length > 0) {
-      return fail(500, `Đổi phân quyền thất bại nửa chừng: ${problems.join('; ')}. Chi tiết đã được ghi vào log máy chủ.`)
-    }
-    return fail(status, message)
+    return problems.length > 0 ? halfWay(problems) : fail(status, message)
   }
 
   const profile = await ports.insertProfile({ id: userId, username, fullName: employee.fullName, role })
@@ -339,6 +308,79 @@ async function employeeToAccount(ports: StaffPorts, input: ChangeRoleInput, role
     if (member) return rollback(400, safeError('Không gán được dự án cho tài khoản', member.message))
   }
   return ok({ userId, username, reactivated: false })
+}
+
+/**
+ * Re-opens the hidden account an earlier account → employee parked (A1).
+ *
+ * The real password is set before the stored one, as set-password does, and
+ * the old one is read first so an undo can put BOTH back: "Xem mật khẩu" on a
+ * re-parked account never shows a password that does not work (review
+ * minor 1). With nothing stored before, the undo stores the new one instead,
+ * so the two still agree.
+ */
+async function reopenParked(
+  ports: StaffPorts,
+  parked: AccountRow,
+  employee: EmployeeRow,
+  role: ManagedRole,
+  password: string,
+  projectId: string,
+  restoreEmployee: () => Promise<string | null>,
+): Promise<Outcome> {
+  const { password: previous, error: readError } = await ports.readCredential(parked.id)
+  if (readError) return fail(500, safeError('Không đọc được mật khẩu hiện tại', readError.message))
+
+  const { deleted, error: deleteError } = await ports.deleteEmployee(employee.id)
+  if (deleteError) return fail(500, safeError('Không xoá được dòng nhân viên', deleteError.message))
+  if (!deleted) return fail(409, STALE_EMPLOYEE)
+
+  /** How far the password got: untouched, the real one set, or both set. */
+  let changed: 'none' | 'auth' | 'both' = 'none'
+  const undo = async (message: string): Promise<Outcome> => {
+    const problems: string[] = []
+    if (await ports.setBanned(parked.id, true)) problems.push('tài khoản chưa khoá lại được')
+    if (await ports.updateProfile(parked.id, { role: parked.role, active: false, hidden: true })) {
+      problems.push('tài khoản chưa ẩn lại được')
+    }
+    if (previous !== null) {
+      if (changed !== 'none' && (await ports.setAuthPassword(parked.id, previous))) {
+        problems.push('mật khẩu cũ chưa đặt lại được')
+      }
+      if (changed === 'both' && (await ports.storeCredential(parked.id, previous))) {
+        problems.push('mật khẩu đã lưu chưa trả lại được')
+      }
+    } else if (changed === 'auth' && (await ports.storeCredential(parked.id, password))) {
+      problems.push('mật khẩu mới chưa lưu được')
+    }
+    const lost = await restoreEmployee()
+    if (lost) problems.push(lost)
+    return problems.length > 0 ? halfWay(problems) : fail(500, message)
+  }
+
+  // Still locked while it changes: nobody signs in to a half-restored account.
+  const shown = await ports.updateProfile(parked.id, { role, active: false, hidden: false })
+  if (shown) {
+    const lost = await restoreEmployee()
+    const named = duplicateNameMessage(shown, employee.fullName)
+    if (lost) return halfWay([lost])
+    return fail(named ? 400 : 500, named ?? safeError('Không mở lại được tài khoản cũ', shown.message))
+  }
+  const passworded = await ports.setAuthPassword(parked.id, password)
+  if (passworded) return undo(safeError('Không đổi được mật khẩu', passworded.message))
+  changed = 'auth'
+  const stored = await ports.storeCredential(parked.id, password)
+  if (stored) return undo(safeError('Không lưu được mật khẩu mới', stored.message))
+  changed = 'both'
+  if (role === 'gs') {
+    const member = await ports.addMembership(parked.id, projectId)
+    if (member) return undo(safeError('Không gán được dự án cho tài khoản', member.message))
+  }
+  const unbanned = await ports.setBanned(parked.id, false)
+  if (unbanned) return undo(safeError('Không mở khoá được tài khoản', unbanned.message))
+  const active = await ports.updateProfile(parked.id, { active: true })
+  if (active) return undo(safeError('Không đánh dấu được tài khoản là đang dùng', active.message))
+  return ok({ userId: parked.id, username: parked.username, reactivated: true })
 }
 
 async function accountToEmployee(ports: StaffPorts, account: AccountRow): Promise<Outcome> {

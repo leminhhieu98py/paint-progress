@@ -115,7 +115,8 @@ interface World {
 
 const key = personNameKey
 
-function makePorts(world: World, failing: Partial<Record<PortName, DbError>> = {}) {
+/** `vanished`: the employee row is gone by the time it is deleted (a concurrent conversion). */
+function makePorts(world: World, failing: Partial<Record<PortName, DbError>> = {}, opts: { vanished?: boolean } = {}) {
   let seq = 0
   const calls: PortName[] = []
   const failOnce = (name: PortName): DbError | null => {
@@ -221,10 +222,17 @@ function makePorts(world: World, failing: Partial<Record<PortName, DbError>> = {
       world.employees.push({ id, fullName, active })
       return { id, error: null }
     },
+    async readCredential(userId) {
+      const error = failOnce('readCredential')
+      return { password: error ? null : world.credentials.get(userId) ?? null, error }
+    },
     async deleteEmployee(id) {
       const error = failOnce('deleteEmployee')
-      if (!error) world.employees = world.employees.filter((e) => e.id !== id)
-      return error
+      if (error) return { deleted: false, error }
+      if (opts.vanished) world.employees = world.employees.filter((e) => e.id !== id)
+      const before = world.employees.length
+      world.employees = world.employees.filter((e) => e.id !== id)
+      return { deleted: world.employees.length < before, error: null }
     },
   }
   return { ports, calls }
@@ -245,8 +253,8 @@ function freshWorld(): World {
       { id: 'u-admin', username: 'admin', fullName: 'Quản trị', role: 'admin', active: true, hidden: false },
     ],
     banned: new Set(['u-parked']),
-    passwords: new Map(),
-    credentials: new Map(),
+    passwords: new Map([['u-parked', 'mat-khau-cu-12']]),
+    credentials: new Map([['u-parked', 'mat-khau-cu-12']]),
     members: [{ userId: 'u-gs', projectId: 'p1' }],
     authUsers: new Set(['u-gs', 'u-view', 'u-parked', 'u-admin']),
   }
@@ -329,6 +337,19 @@ describe('changeRole: employee → GS/Visitor, a new account (NL-04)', () => {
     expect(world).toEqual(freshWorld())
   })
 
+  it.each([
+    ['a new account', { kind: 'employee' as const, id: 'e-hai', role: 'viewer' as const, username: 'hai.xem', password: PW }],
+    ['a re-opened account', { kind: 'employee' as const, id: 'e-lan', role: 'viewer' as const, password: PW }],
+  ])('says to reload, not "half-way", when someone else converted the employee first (%s)', async (_what, input) => {
+    const world = freshWorld()
+    const { ports } = makePorts(world, {}, { vanished: true })
+    const out = await changeRole(ports, input)
+    expect(out).toEqual({ status: 409, body: { error: 'Nhân viên này đã có người khác đổi; tải lại danh sách rồi thử lại.' } })
+    const fresh = freshWorld()
+    expect(world.accounts).toEqual(fresh.accounts)
+    expect(world.authUsers).toEqual(fresh.authUsers)
+  })
+
   it('says plainly when the undo fails too', async () => {
     const world = freshWorld()
     const { ports } = makePorts(world, { storeCredential: { message: 'boom' }, insertEmployee: { message: 'boom' } })
@@ -359,6 +380,47 @@ describe('changeRole: employee → GS/Visitor, re-opening a parked account (A1, 
     const { ports } = makePorts(freshWorld())
     const out = await changeRole(ports, { kind: 'employee', id: 'e-lan', role: 'viewer', password: PW })
     expect(out.status).toBe(200)
+  })
+
+  it('sets the real password before it stores it', async () => {
+    const { ports, calls } = makePorts(freshWorld())
+    await changeRole(ports, { kind: 'employee', id: 'e-lan', role: 'viewer', password: PW })
+    expect(calls.indexOf('setAuthPassword')).toBeLessThan(calls.indexOf('storeCredential'))
+    expect(calls.indexOf('readCredential')).toBeLessThan(calls.indexOf('deleteEmployee'))
+  })
+
+  it.each([
+    ['storeCredential'],
+    ['addMembership'],
+  ] as const)('puts the old password back, real and stored, when %s fails', async (port) => {
+    const world = freshWorld()
+    const { ports } = makePorts(world, { [port]: { message: 'boom' } })
+    const out = await changeRole(ports, { kind: 'employee', id: 'e-lan', role: 'gs', password: PW, projectId: 'p3' })
+    expect(out.status).toBe(500)
+    expect(world.passwords.get('u-parked')).toBe('mat-khau-cu-12')
+    expect(world.credentials.get('u-parked')).toBe('mat-khau-cu-12')
+    const fresh = freshWorld()
+    expect(world.accounts).toEqual(fresh.accounts)
+    expect(world.banned).toEqual(fresh.banned)
+    expect(world.members).toEqual(fresh.members)
+    // Back under a new id: nothing references employee ids.
+    expect(world.employees.map((e) => [e.fullName, e.active])).toEqual(fresh.employees.map((e) => [e.fullName, e.active]))
+  })
+
+  it('keeps the real and the stored password equal when there was no stored one to go back to', async () => {
+    const world = freshWorld()
+    world.credentials.delete('u-parked')
+    const { ports } = makePorts(world, { storeCredential: { message: 'boom' } })
+    const out = await changeRole(ports, { kind: 'employee', id: 'e-lan', role: 'viewer', password: PW })
+    expect(out.status).toBe(500)
+    expect(world.credentials.get('u-parked')).toBe(world.passwords.get('u-parked'))
+  })
+
+  it('changes nothing when the stored password cannot be read', async () => {
+    const world = freshWorld()
+    const { ports } = makePorts(world, { readCredential: { message: 'boom' } })
+    expect((await changeRole(ports, { kind: 'employee', id: 'e-lan', role: 'viewer', password: PW })).status).toBe(500)
+    expect(world).toEqual(freshWorld())
   })
 
   it('parks the account again and puts the employee back when a step fails', async () => {
