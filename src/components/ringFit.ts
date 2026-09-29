@@ -37,8 +37,12 @@ const HALF_GLYPH_EM = 0.36
 /** A 12 px caption line at antd's line height, plus its margin above. */
 const CAPTION_LINE = 19
 
-/** The field coat ring (StageRollupCard): 144 px, 22 thick, `m² sàn` under the figure. */
-export const GS_RING_SIZE = 144
+/**
+ * The field coat ring (StageRollupCard): 160 px, 22 thick, `m² sàn` under the
+ * figure. 160, not 144, now that it stands above its legend (RR2-M2): a
+ * four-digit area keeps displaySm, as on the admin rings, with 4 px clear.
+ */
+export const GS_RING_SIZE = 160
 export const GS_RING_THICKNESS = 22
 export const GS_RING: RingGeometry = {
   holeDiameter: GS_RING_SIZE - 2 * GS_RING_THICKNESS,

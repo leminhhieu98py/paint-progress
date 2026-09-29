@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { fieldType, type } from '../theme'
-import { DECK_RING, GS_RING, ROLLUP_RING, ROLLUP_RING_SIZE, ROLLUP_RING_THICKNESS, figureChord, figureFits, ringFigureStep, textWidthEstimate } from './ringFit'
+import {
+  DECK_RING, GS_RING, GS_RING_SIZE, GS_RING_THICKNESS, ROLLUP_RING, ROLLUP_RING_SIZE, ROLLUP_RING_THICKNESS,
+  figureChord, figureFits, ringFigureStep, textWidthEstimate,
+} from './ringFit'
 
 /**
  * Widths Chromium draws with Be Vietnam Pro loaded, at 21/700 and the rings'
@@ -37,6 +40,26 @@ describe('real clearance (RR-M1)', () => {
   })
 })
 
+describe('the field coat ring (RR2-M2)', () => {
+  const steps = [fieldType.displaySm, fieldType.cardTitle, fieldType.bodyStrong] as const
+
+  it('is 160 across and 22 thick, as the admin rings are about', () => {
+    expect([GS_RING_SIZE, GS_RING_THICKNESS]).toEqual([160, 22])
+  })
+
+  it.each(['2.880,00', '3.250,00', '9.999,99'])('shows the four-digit %s at displaySm, 4 px clear of the real web font', (text) => {
+    expect(ringFigureStep(text, steps, GS_RING)).toBe(fieldType.displaySm)
+    expect((figureChord(fieldType.displaySm, GS_RING) - REAL_21_700[text]) / 2).toBeGreaterThanOrEqual(4)
+  })
+
+  it.each(['880,00', '2.880,00', '9.999,99', '123.456,78'])('leaves %s at least 4 px of real clearance at the step it takes', (text) => {
+    const step = ringFigureStep(text, steps, GS_RING)
+    // The real width at 21 px, scaled to the step: a face scales with its size.
+    const real = (REAL_21_700[text] * step.fontSize) / 21
+    expect((figureChord(step, GS_RING) - real) / 2).toBeGreaterThanOrEqual(4)
+  })
+})
+
 describe('ringFigureStep (I-2)', () => {
   const steps = [type.displaySm, type.cardTitle, type.bodyStrong] as const
 
@@ -45,9 +68,9 @@ describe('ringFigureStep (I-2)', () => {
   })
 
   it('steps down for a figure the hole cannot take at the largest size', () => {
-    const step = ringFigureStep('2.880,00', [fieldType.displaySm, fieldType.cardTitle, fieldType.bodyStrong], GS_RING)
+    const step = ringFigureStep('123.456,78', [fieldType.displaySm, fieldType.cardTitle, fieldType.bodyStrong], GS_RING)
     expect(step).not.toBe(fieldType.displaySm)
-    expect(figureFits('2.880,00', step, GS_RING)).toBe(true)
+    expect(figureFits('123.456,78', step, GS_RING)).toBe(true)
   })
 
   it.each([

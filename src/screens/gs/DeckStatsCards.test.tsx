@@ -230,8 +230,8 @@ describe('StageRollupCard', () => {
     expect(within(card).getByRole('heading', { level: 2, name: 'Tiến độ theo công đoạn · cộng dồn' }))
       .toHaveStyle({ fontSize: '15px', fontWeight: '600' })
     const donut = screen.getByTestId('donut')
-    // Four digits do not fit the hole at displaySm; the next step does (I-2).
-    expect(within(donut).getByText('1.000,00')).toHaveStyle({ fontSize: '15px', fontWeight: '600' })
+    // Four digits take displaySm in the 160 px ring, as on the admin rings (RR2-M2).
+    expect(within(donut).getByText('1.000,00')).toHaveStyle({ fontSize: '21px', fontWeight: '700' })
     expect(within(donut).getByText('m² sàn')).toHaveStyle({ fontSize: '12px' })
     expect(within(card).getByText('Coat 2')).toHaveStyle({ fontSize: '14px', fontWeight: '400' })
   })
@@ -280,6 +280,7 @@ describe('StageRollupCard: the ring\'s centre fits its hole (I-2, C1)', () => {
   it('draws the ring at the size the widest area was fitted to', () => {
     renderArea(1000)
     expect(screen.getByTestId('donut')).toHaveAttribute('data-size', `${GS_RING_SIZE}/${GS_RING_THICKNESS}`)
+    expect(screen.getByTestId('donut')).toHaveAttribute('data-size', '160/22')
   })
 
   it.each([
