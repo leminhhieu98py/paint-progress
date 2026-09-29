@@ -191,13 +191,29 @@ export function StageRollupCard({
                     style={{ width: 11, height: 11, flex: 'none', borderRadius: '50%', background: stage.color }}
                   />
                   {/*
-                    Two lines at most in a 320px rail (baseline notes): the name
-                    and its percent, then the area. Neither wraps; a long name
-                    ellipsises, the figures never do.
+                    The name and its percent, then the area, in a 320px rail
+                    (baseline notes). The figures never wrap; a long name may
+                    take a second line.
                   */}
                   <div style={{ minWidth: 0, flex: 1 }}>
                     <div style={{ display: 'flex', alignItems: 'baseline', gap: space.sm, minWidth: 0 }}>
-                      <span style={{ ...fieldType.body, ...ellipsis, minWidth: 0, lineHeight: 1.25 }}>
+                      {/*
+                        A long name takes a second line rather than being cut
+                        (M-2); past two, the title holds the whole of it.
+                      */}
+                      <span
+                        title={stage.name}
+                        style={{
+                          ...fieldType.body,
+                          minWidth: 0,
+                          lineHeight: 1.25,
+                          overflowWrap: 'anywhere',
+                          display: '-webkit-box',
+                          WebkitBoxOrient: 'vertical',
+                          WebkitLineClamp: 2,
+                          overflow: 'hidden',
+                        }}
+                      >
                         {stage.name}
                       </span>
                       <span

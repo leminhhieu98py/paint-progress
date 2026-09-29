@@ -139,7 +139,7 @@ describe('StageRollupCard', () => {
     expect(figuresOf('Coat 2')).toEqual({ area: '700,00 / 1.000,00 m²', percent: '70,00%' })
   })
 
-  it('keeps a coat row to two lines: name and percent, then the area, neither wrapping', () => {
+  it('never wraps the figures: the percent beside the name, the area on its own line', () => {
     // Baseline: "2.880,00 / 2.880,00 m² · 100,00%" wrapped a 325px rail row to three lines.
     renderRollup()
     const row = rowOf('Blast + Coat 1')
@@ -147,9 +147,27 @@ describe('StageRollupCard', () => {
     const percent = row.querySelector('[data-testid="gs-stage-percent"]') as HTMLElement
     expect(area).toHaveStyle({ whiteSpace: 'nowrap' })
     expect(percent).toHaveStyle({ whiteSpace: 'nowrap', flexShrink: '0' })
-    expect(within(row).getByText('Blast + Coat 1')).toHaveStyle({ whiteSpace: 'nowrap' })
     // The name and the percent share the first line.
     expect(within(row).getByText('Blast + Coat 1').parentElement).toBe(percent.parentElement)
+  })
+
+  it('lets a long coat name wrap to a second line rather than cut it, the whole name in its title (M-2)', () => {
+    const stages = [{ ...STAGES[0], name: 'Blast + Coat 1 (Primer, epoxy zinc-rich)' }, STAGES[1]]
+    renderRollup(stages, computeDeckProgress(DECK, stages))
+    const name = screen.getByText('Blast + Coat 1 (Primer, epoxy zinc-rich)')
+    expect(name.style.whiteSpace).toBe('')
+    expect(name.style.textOverflow).toBe('')
+    expect(name).toHaveStyle({ WebkitLineClamp: '2' })
+    expect(name).toHaveAttribute('title', 'Blast + Coat 1 (Primer, epoxy zinc-rich)')
+  })
+
+  it('keeps the figures of a coat with no area standing at it on its row, where the ring has no slice (M-2)', () => {
+    // Coat 1's bays have all moved on to Coat 2 here: no slice, but 800 m² went through it.
+    const cells = CELLS.map((c) => (c.stageId === 's1' ? { ...c, stageId: 's2' } : c))
+    const deck = { ...DECK, cells }
+    render(<StageRollupCard stages={STAGES} stageProgress={computeDeckProgress(deck, STAGES).stages} cells={cells} totalAreaM2={1000} />)
+    expect(screen.queryByTestId('slice-s1')).toBeNull()
+    expect(figuresOf('Blast + Coat 1')).toEqual({ area: '800,00 / 1.000,00 m²', percent: '80,00%' })
   })
 
   it('marks each coat with a plain circle of its colour, as the admin legends do (CLR-03)', () => {
