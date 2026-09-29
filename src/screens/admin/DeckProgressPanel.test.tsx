@@ -336,6 +336,19 @@ describe('DeckProgressPanel', () => {
     expect(row.children).toHaveLength(2)
   })
 
+  it('keeps the dot on the first line of a wrapped coat name, beside the percent (RR2-M1)', async () => {
+    renderPanel()
+    const ring = await screen.findByTestId('stage-ring')
+    const row = within(ring).getByText('Coat 2').closest('[data-testid="stage-legend-row"]') as HTMLElement
+    const marker = within(row).getByTestId('stage-legend-marker')
+    const line1 = marker.parentElement as HTMLElement
+    expect(line1).toHaveStyle({ alignItems: 'flex-start' })
+    expect(within(line1).getByText('Coat 2')).toHaveStyle({ lineHeight: '17px' })
+    expect(within(line1).getByText('100,00%')).toHaveStyle({ lineHeight: '17px' })
+    // The 15 px dot centred on the 17 px first line.
+    expect(marker).toHaveStyle({ marginTop: '1px' })
+  })
+
   describe('the ring and its coat rows (CHT-02)', () => {
     // Coat 2 and Tháo giáo each hold 500 m² right now; Blast + Coat 1 holds
     // none (every bay is past it), so it has a row and no slice.

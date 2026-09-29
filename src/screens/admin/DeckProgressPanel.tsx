@@ -2160,6 +2160,9 @@ export function DeckProgressPanel({
   )
 }
 
+/** A coat row's first line, the name's and its percent's (RR2-M1): 13 px at about 1,3. */
+const COAT_LINE = 17
+
 /**
  * The deck's coat ring and its cumulative rows, with the coat under the
  * pointer or focus (CHT-02). Its own component so that hovering re-renders
@@ -2251,7 +2254,11 @@ function StageRing({
               The figures never wrap; a name wraps only when the column's
               full width cannot hold it.
             */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 9, minWidth: 0 }}>
+            {/*
+              From the top, on one first line the name and its percent share,
+              so a wrapped name keeps its dot and its percent on it (RR2-M1).
+            */}
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 9, minWidth: 0 }}>
               <span
                 aria-hidden
                 data-testid="stage-legend-marker"
@@ -2262,12 +2269,13 @@ function StageRing({
                   borderRadius: '50%',
                   flex: 'none',
                   background: sp.stage.color,
+                  marginTop: (COAT_LINE - 15) / 2,
                 }}
               />
-              <span style={{ ...type.body, lineHeight: 1.3, minWidth: 0, flex: 1, overflowWrap: 'break-word' }}>
+              <span style={{ ...type.body, lineHeight: `${COAT_LINE}px`, minWidth: 0, flex: 1, overflowWrap: 'break-word' }}>
                 {sp.stage.name}
               </span>
-              <span style={{ ...type.bodyStrong, flex: 'none', whiteSpace: 'nowrap' }}>
+              <span style={{ ...type.bodyStrong, lineHeight: `${COAT_LINE}px`, flex: 'none', whiteSpace: 'nowrap' }}>
                 {formatPercent(sp.ratio)}
               </span>
             </div>

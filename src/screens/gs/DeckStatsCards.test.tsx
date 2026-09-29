@@ -192,6 +192,21 @@ describe('StageRollupCard', () => {
     expect(Array.from(row.children)).toEqual([line1, area])
   })
 
+  it('keeps the dot on the first line of a wrapped name, beside the percent (RR2-M1)', () => {
+    renderRollup()
+    const row = rowOf('Coat 2')
+    const marker = row.querySelector('[data-testid="gs-stage-marker"]') as HTMLElement
+    const percent = row.querySelector('[data-testid="gs-stage-percent"]') as HTMLElement
+    const line1 = marker.parentElement as HTMLElement
+    // Every item from the top of the line, on one 17,5 px first line (14 × 1,25).
+    expect(line1).toHaveStyle({ alignItems: 'flex-start' })
+    expect(within(line1).getByText('Coat 2')).toHaveStyle({ lineHeight: '17.5px' })
+    expect(percent).toHaveStyle({ lineHeight: '17.5px' })
+    // The 11 px dot centred on that first line, not on the whole wrapped name.
+    expect(marker).toHaveStyle({ marginTop: '3.25px' })
+    expect(marker.style.alignSelf).toBe('')
+  })
+
   it('keeps the figures of a coat with no area standing at it on its row, where the ring has no slice (M-2)', () => {
     // Coat 1's bays have all moved on to Coat 2 here: no slice, but 800 m² went through it.
     const cells = CELLS.map((c) => (c.stageId === 's1' ? { ...c, stageId: 's2' } : c))

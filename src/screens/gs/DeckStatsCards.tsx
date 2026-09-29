@@ -13,6 +13,11 @@ import { fieldType, palette, space } from '../../theme'
 
 /** The coat legend's colour dot, the admin legends' size (CLR-03). */
 const MARKER = 11
+/**
+ * A coat row's first line: the name's line height, which the percent shares,
+ * so a wrapped name keeps its dot and its percent on its first line (RR2-M1).
+ */
+const COAT_LINE = fieldType.body.fontSize * 1.25
 
 const ellipsis: CSSProperties = { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }
 
@@ -205,25 +210,25 @@ export function StageRollupCard({
                     The figures never wrap; a name wraps only when the whole
                     width cannot hold it, and its title holds all of it.
                   */}
-                  <div style={{ display: 'flex', alignItems: 'baseline', gap: space.sm, minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: space.sm, minWidth: 0 }}>
                     {/* The coat's colour as a plain circle, as every legend in the app (CLR-03). */}
                     <span
                       aria-hidden
                       data-testid="gs-stage-marker"
                       style={{
                         width: MARKER, height: MARKER, flex: 'none', borderRadius: '50%', background: stage.color,
-                        alignSelf: 'center',
+                        marginTop: (COAT_LINE - MARKER) / 2,
                       }}
                     />
                     <span
                       title={stage.name}
-                      style={{ ...fieldType.body, minWidth: 0, flex: 1, lineHeight: 1.25, overflowWrap: 'break-word' }}
+                      style={{ ...fieldType.body, minWidth: 0, flex: 1, lineHeight: `${COAT_LINE}px`, overflowWrap: 'break-word' }}
                     >
                       {stage.name}
                     </span>
                     <span
                       data-testid="gs-stage-percent"
-                      style={{ ...fieldType.bodyStrong, flex: 'none', whiteSpace: 'nowrap' }}
+                      style={{ ...fieldType.bodyStrong, lineHeight: `${COAT_LINE}px`, flex: 'none', whiteSpace: 'nowrap' }}
                     >
                       {formatPercent(ratio)}
                     </span>
