@@ -285,7 +285,11 @@ export function StagePlanTable({
                 onChange={(n) => patch(row, { plannedAreaM2: n === null ? null : Number(n) })}
               />
             </Tooltip>
-            {d.plannedAreaM2 !== null && (
+            {/* Always laid out, shown only on an override: the group is
+                centred, so a button that appeared on the first keystroke
+                re-centred it and moved the field under the caret. Hidden,
+                it is out of the tab order and the accessibility tree. */}
+            <span style={{ visibility: d.plannedAreaM2 !== null ? 'visible' : 'hidden' }}>
               <Tooltip title="Bỏ ghi đè, để hệ thống tự tính lại phần còn lại từ ngày bắt đầu">
                 <Button
                   size="small"
@@ -302,7 +306,7 @@ export function StagePlanTable({
                   Tự tính
                 </Button>
               </Tooltip>
-            )}
+            </span>
           </div>
         )
       },

@@ -353,3 +353,23 @@ describe('StagePlanTable — alignment (UI-03)', () => {
     expectLeft(row('s1').getByText('Công đoạn 1').closest('td'))
   })
 })
+
+describe('StagePlanTable — the area field holds still (UI-06 review I6)', () => {
+  it('keeps the Tự tính slot laid out on every row, shown only on an override', async () => {
+    renderTable()
+    // The field and the button are centred as a group, so a button that
+    // appeared on the first keystroke re-centred the group and moved the
+    // field under the caret. The slot is always there; only its visibility
+    // follows the override.
+    const group = (stageId: string) =>
+      (row(stageId).getByLabelText('Diện tích kế hoạch').closest('td') as HTMLElement).firstElementChild as HTMLElement
+    const slot = (stageId: string) => group(stageId).lastElementChild as HTMLElement
+    expect(group('s2').childElementCount).toBe(group('s1').childElementCount)
+    expect(slot('s1')).toHaveStyle({ visibility: 'visible' })
+    expect(slot('s2')).toHaveStyle({ visibility: 'hidden' })
+
+    await userEvent.type(row('s2').getByLabelText('Diện tích kế hoạch'), '1')
+    await waitFor(() => expect(slot('s2')).toHaveStyle({ visibility: 'visible' }))
+    expect(group('s2').childElementCount).toBe(group('s1').childElementCount)
+  })
+})
