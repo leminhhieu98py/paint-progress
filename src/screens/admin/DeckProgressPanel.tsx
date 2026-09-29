@@ -1854,6 +1854,7 @@ export function DeckProgressPanel({
                         progress={progress?.progress ?? 0}
                         totalAreaM2={entry.deck.totalAreaM2}
                         unit={unit}
+                        workName={activeWork.work.name}
                       />
                       <div
                         style={{
@@ -1865,8 +1866,9 @@ export function DeckProgressPanel({
                           gap: 9,
                         }}
                       >
+                        {/* The active work's figure: "Tiến độ sàn" is the header's, over every work (I4). */}
                         <span style={{ ...type.label, color: palette.textSecondary }}>
-                          Tiến độ sàn
+                          {`Tiến độ · ${activeWork.work.name}`}
                         </span>
                         <span
                           style={{ marginLeft: 'auto', ...type.caption, color: palette.textTertiary }}
@@ -2280,8 +2282,11 @@ function StageRing({
   progress,
   totalAreaM2,
   unit,
+  workName,
 }: {
   slices: DonutSlice[]
+  /** The work the ring is of, named on its centre label (I4). */
+  workName: string
   /** Cumulative, per coat in seq order: the rows. */
   stages: StageProgress[]
   /** The deck figure in the ring's centre. */
@@ -2311,8 +2316,14 @@ function StageRing({
         activeKey={active}
         onActiveChange={setActive}
       >
-        <span style={{ ...type.micro, color: palette.textTertiary }}>
-          Tiến độ sàn
+        {/* One line in the hole; a long work name is cut here and named in full in the footer (I4). */}
+        <span style={{ ...type.micro, color: palette.textTertiary, display: 'flex', alignItems: 'center', maxWidth: 88 }}>
+          <span
+            title={`Tiến độ · ${workName}`}
+            style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+          >
+            {`Tiến độ · ${workName}`}
+          </span>
           <InfoTip text="Vòng tròn: diện tích đang dừng ở mỗi lớp, không cộng dồn" />
         </span>
         {/* The largest step that fits the hole, down to bodyStrong (I-2). */}

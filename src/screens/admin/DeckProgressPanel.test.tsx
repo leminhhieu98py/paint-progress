@@ -329,8 +329,16 @@ describe('DeckProgressPanel', () => {
     const ring = await screen.findByTestId('stage-ring')
     // On the (?) of the ring's centre label, not as a caption under it (CPY-01).
     const tip = within(ring).getByRole('img', { name: 'Vòng tròn: diện tích đang dừng ở mỗi lớp, không cộng dồn' })
-    expect(tip.parentElement).toHaveTextContent(/^Tiến độ sàn$/)
+    expect(tip.parentElement).toHaveTextContent(/^Tiến độ · Công việc chính$/)
     expect(within(ring).queryByText(/^Vòng tròn:/)).toBeNull()
+  })
+
+  it('labels its figures with the work, leaving "Tiến độ sàn" to the all-works figure (I4)', async () => {
+    renderPanel()
+    const ring = await screen.findByTestId('stage-ring')
+    // Once in the ring's centre, once in the footer.
+    expect(within(ring).getAllByText('Tiến độ · Công việc chính')).toHaveLength(2)
+    expect(within(ring).queryByText(/Tiến độ sàn/)).toBeNull()
   })
 
   it('stacks the ring above its rows in its 300-352 px column, the rows its full width (RR-I1)', async () => {
