@@ -1,8 +1,9 @@
 import { App as AntApp } from 'antd'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { expectNoSpecIds } from '../../test/copy'
+import { palette } from '../../theme'
 import { DeckProgressPanel } from './DeckProgressPanel'
 
 const loadDeckWorks = vi.hoisted(() => vi.fn())
@@ -274,6 +275,66 @@ describe('DeckProgressPanel', () => {
     const tip = within(ring).getByRole('img', { name: 'Vòng tròn: diện tích đang dừng ở mỗi lớp, không cộng dồn' })
     expect(tip.parentElement).toHaveTextContent(/^Tiến độ sàn$/)
     expect(within(ring).queryByText(/^Vòng tròn:/)).toBeNull()
+  })
+
+  describe('the ring and its coat rows (CHT-02)', () => {
+    // Coat 2 and Tháo giáo each hold 500 m² right now; Blast + Coat 1 holds
+    // none (every bay is past it), so it has a row and no slice.
+    const rowOf = (ring: HTMLElement, name: string) =>
+      within(ring).getByText(name).closest('[data-testid="stage-legend-row"]') as HTMLElement
+    const sliceOf = (ring: HTMLElement, name: string) =>
+      within(within(ring).getByRole('group', { name: 'Diện tích đang dừng ở mỗi lớp' })).getByRole('img', { name })
+
+    it('lights up the slice of a hovered coat row, and highlights the row of a hovered slice', async () => {
+      renderPanel()
+      const ring = await screen.findByTestId('stage-ring')
+      fireEvent.pointerEnter(rowOf(ring, 'Coat 2'))
+      expect(sliceOf(ring, 'Coat 2')).toHaveAttribute('opacity', '1')
+      expect(sliceOf(ring, 'Tháo giáo')).toHaveAttribute('opacity', '0.35')
+      expect(rowOf(ring, 'Coat 2')).toHaveStyle({ background: palette.bgSubtle })
+      fireEvent.pointerLeave(rowOf(ring, 'Coat 2'))
+      expect(sliceOf(ring, 'Tháo giáo')).toHaveAttribute('opacity', '1')
+
+      fireEvent.pointerEnter(sliceOf(ring, 'Tháo giáo'))
+      expect(rowOf(ring, 'Tháo giáo')).toHaveStyle({ background: palette.bgSubtle })
+      expect(rowOf(ring, 'Coat 2').style.background).toBe('')
+      fireEvent.pointerLeave(sliceOf(ring, 'Tháo giáo'))
+      expect(rowOf(ring, 'Tháo giáo').style.background).toBe('')
+    })
+
+    it('puts the rows in the tab order, and a focused row lights its slice', async () => {
+      renderPanel()
+      const ring = await screen.findByTestId('stage-ring')
+      const rows = within(ring).getAllByTestId('stage-legend-row')
+      expect(rows.map((r) => r.getAttribute('tabindex'))).toEqual(['0', '0', '0'])
+      act(() => rowOf(ring, 'Tháo giáo').focus())
+      expect(sliceOf(ring, 'Coat 2')).toHaveAttribute('opacity', '0.35')
+      act(() => rowOf(ring, 'Tháo giáo').blur())
+      expect(sliceOf(ring, 'Coat 2')).toHaveAttribute('opacity', '1')
+    })
+
+    it('describes a slice by the area standing at its coat and by its row\'s cumulative figures', async () => {
+      // The row is cumulative and the ring is not (Feedback Rv3, item 1), so
+      // the slice says both, the row's figures exactly as the row prints them.
+      renderPanel()
+      const ring = await screen.findByTestId('stage-ring')
+      const row = rowOf(ring, 'Coat 2')
+      expect(row).toHaveTextContent('1.000,00 / 1.000,00 m²·100,00%')
+      expect(sliceOf(ring, 'Coat 2')).toHaveAccessibleDescription(
+        'Đang ở lớp này: 500,00 / 1.000,00 m² · 50,00% Cộng dồn: 1.000,00 / 1.000,00 m² · 100,00%',
+      )
+      expect(sliceOf(ring, 'Tháo giáo')).toHaveAccessibleDescription(
+        'Đang ở lớp này: 500,00 / 1.000,00 m² · 50,00% Cộng dồn: 500,00 / 1.000,00 m² · 50,00%',
+      )
+    })
+
+    it('draws each coat marker as a circle of the coat\'s colour (CLR-03)', async () => {
+      renderPanel()
+      const ring = await screen.findByTestId('stage-ring')
+      const marker = within(rowOf(ring, 'Tháo giáo')).getByTestId('stage-legend-marker')
+      expect(marker).toHaveStyle({ borderRadius: '50%', background: '#722ed1', width: '15px', height: '15px' })
+      expect(marker.style.boxShadow).toBe('')
+    })
   })
 
   it('explains cộng dồn on the card title\'s (?), not in a subtitle (CPY-01)', async () => {

@@ -89,6 +89,20 @@ describe('Donut', () => {
     expect(tip).toHaveTextContent('Tiến độ 50,00% · Đóng góp 21,25%')
   })
 
+  it('puts each line of a several-line detail on a line of its own', async () => {
+    render(
+      <Donut
+        label="Tiến độ"
+        slices={[{ label: 'Coat 2', value: 0.5, color: '#bfbfbf', detail: ['Đang ở lớp này: 50,00%', 'Cộng dồn: 100,00%'] }]}
+      />,
+    )
+    expect(slice('Coat 2')).toHaveAccessibleDescription('Đang ở lớp này: 50,00% Cộng dồn: 100,00%')
+    fireEvent.pointerEnter(slice('Coat 2'))
+    const tip = await screen.findByRole('tooltip')
+    expect([...tip.querySelectorAll('div')].map((d) => d.textContent).filter((x) => x?.startsWith('Đang') || x?.startsWith('Cộng')))
+      .toEqual(['Đang ở lớp này: 50,00%', 'Cộng dồn: 100,00%'])
+  })
+
   it('opens no tooltip when a slice is only made active from outside, by its legend row', () => {
     // The row the reader is pointing at already prints the same figures.
     render(<Donut label="Tiến độ dự án" slices={SLICES} activeKey="cd" />)

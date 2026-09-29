@@ -22,11 +22,11 @@ export interface DonutSlice {
   display?: number
   /**
    * The legend's figures for this slice, exactly as the legend prints them
-   * (CHT-02). The tooltip shows them under the label, and they are the
-   * slice's accessible description, so the ring never states a number the
-   * legend beside it does not.
+   * (CHT-02). The tooltip shows them under the label, a line each when there
+   * are several, and they are the slice's accessible description, so the
+   * ring never states a number the legend beside it does not.
    */
-  detail?: string
+  detail?: string | readonly string[]
   color: string
 }
 
@@ -34,6 +34,9 @@ export interface DonutSlice {
 const LIFT = 3
 /** The other slices while one is active (CHT-02). */
 const DIM = 0.35
+
+const linesOf = (detail: DonutSlice['detail']): readonly string[] =>
+  detail === undefined ? [] : typeof detail === 'string' ? [detail] : detail
 
 /**
  * A ring with something written in the middle of it.
@@ -124,7 +127,7 @@ export function Donut({
               title={(
                 <>
                   <div>{s.label}</div>
-                  {s.detail && <div>{s.detail}</div>}
+                  {linesOf(s.detail).map((line) => <div key={line}>{line}</div>)}
                 </>
               )}
             >
@@ -134,7 +137,7 @@ export function Donut({
                   data-arc={String(seg.arc)}
                   role="img"
                   aria-label={s.label}
-                  aria-describedby={s.detail ? `${id}-${seg.index}` : undefined}
+                  aria-describedby={linesOf(s.detail).length > 0 ? `${id}-${seg.index}` : undefined}
                   tabIndex={0}
                   d={sectorPath(c, c, active ? c + LIFT : c, rInner, seg.from, seg.solidTo)}
                   fill={s.color}
@@ -153,8 +156,8 @@ export function Donut({
         <circle cx={c} cy={c} r={c - 0.5} fill="none" stroke="#16202B14" strokeWidth={1} pointerEvents="none" />
       </svg>
       <div hidden>
-        {segments.map((seg) => slices[seg.index].detail && (
-          <span key={seg.index} id={`${id}-${seg.index}`}>{slices[seg.index].detail}</span>
+        {segments.map((seg) => linesOf(slices[seg.index].detail).length > 0 && (
+          <span key={seg.index} id={`${id}-${seg.index}`}>{linesOf(slices[seg.index].detail).join(' ')}</span>
         ))}
       </div>
       <div

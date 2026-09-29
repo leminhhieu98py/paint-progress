@@ -759,15 +759,39 @@ export function DeckProgressPanel({
    */
   const ringSlices = useMemo(() => {
     if (!entry) return []
-    return buildStageSlices(entry.deck.totalAreaM2, entry.deck.cells, entry.stages)
+    const total = entry.deck.totalAreaM2
+    /** A coat row's figures, as the row prints them. */
+    const figures = (areaM2: number, ratio: number) =>
+      `${formatAreaM2(areaM2)} / ${formatAreaM2(total)} ${unit} · ${formatPercent(ratio)}`
+    return buildStageSlices(total, entry.deck.cells, entry.stages)
       .filter((sl) => sl.areaM2 > 0)
-      .map((sl) => ({
-        label: sl.label,
-        areaM2: sl.areaM2,
-        value: entry.deck.totalAreaM2 > 0 ? sl.areaM2 / entry.deck.totalAreaM2 : 0,
-        color: sl.color,
-      }))
-  }, [entry])
+      .map((sl) => {
+        const value = total > 0 ? sl.areaM2 / total : 0
+        const row = progress?.stages.find((sp) => sp.stage.id === sl.key)
+        return {
+          key: sl.key,
+          label: sl.label,
+          areaM2: sl.areaM2,
+          value,
+          color: sl.color,
+          /*
+            The slice is the area standing at the coat now; its row beside the
+            ring is cumulative (Feedback Rv3, item 1). The tooltip says both,
+            the row's figures exactly as the row prints them, so hovering a
+            half-ring slice beside a row reading 100% explains itself. Chưa
+            bắt đầu and Chưa chia ô have no row, only their own figure.
+          */
+          detail: row
+            ? [
+                `Đang ở lớp này: ${figures(sl.areaM2, value)}`,
+                `Cộng dồn: ${figures(row.cumulativeAreaM2, row.ratio)}`,
+              ]
+            : figures(sl.areaM2, value),
+        }
+      })
+  }, [entry, progress, unit])
+  /** The ring slice and coat row under the pointer or focus (CHT-02). */
+  const [activeRing, setActiveRing] = useState<string | null>(null)
 
   /**
    * Bays carrying a note, by code.
@@ -1674,7 +1698,14 @@ export function DeckProgressPanel({
                       </div>
                       <div style={{ padding: `${space.lg}px ${space.xl}px`, display: 'flex', alignItems: 'center', gap: 18 }}>
                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 7 }}>
-                        <Donut label="Diện tích đang dừng ở mỗi lớp" slices={ringSlices} size={168} thickness={30}>
+                        <Donut
+                          label="Diện tích đang dừng ở mỗi lớp"
+                          slices={ringSlices}
+                          size={168}
+                          thickness={30}
+                          activeKey={activeRing}
+                          onActiveChange={setActiveRing}
+                        >
                           <span style={{ fontSize: 10, fontWeight: 600, color: palette.textTertiary }}>
                             Tiến độ sàn
                             <InfoTip text="Vòng tròn: diện tích đang dừng ở mỗi lớp, không cộng dồn" />
@@ -1710,17 +1741,30 @@ export function DeckProgressPanel({
                           {(progress?.stages ?? []).map((sp) => (
                             <div
                               key={sp.stage.id}
-                              style={{ display: 'flex', alignItems: 'center', gap: 9, minWidth: 0 }}
+                              data-testid="stage-legend-row"
+                              tabIndex={0}
+                              onPointerEnter={() => setActiveRing(sp.stage.id)}
+                              onPointerLeave={() => setActiveRing(null)}
+                              onFocus={() => setActiveRing(sp.stage.id)}
+                              onBlur={() => setActiveRing(null)}
+                              style={{
+                                display: 'flex', alignItems: 'center', gap: 9, minWidth: 0,
+                                // CHT-02: the highlight's padding comes out of
+                                // the row gap, so the rows do not move.
+                                margin: '-2px -6px', padding: '2px 6px', borderRadius: 6,
+                                background: activeRing === sp.stage.id ? palette.bgSubtle : undefined,
+                              }}
                             >
                               <span
                                 aria-hidden
+                                data-testid="stage-legend-marker"
                                 style={{
+                                  // A circle of the coat's colour, nothing else (CLR-03).
                                   width: 15,
                                   height: 15,
-                                  borderRadius: 5,
+                                  borderRadius: '50%',
                                   flex: 'none',
                                   background: sp.stage.color,
-                                  boxShadow: 'inset 0 0 0 1px #16202B47',
                                 }}
                               />
                               {/*
