@@ -14,3 +14,6 @@ export const CATEGORY_TONE = {
 } as const satisfies Record<string, Record<string, StatusTone>>
 
 export type Category = keyof typeof CATEGORY_TONE
+
+/** The labels a category knows, e.g. `'GS' | 'Chỉ xem'` for `role`. */
+export type CategoryValue<C extends Category> = C extends Category ? keyof (typeof CATEGORY_TONE)[C] & string : never

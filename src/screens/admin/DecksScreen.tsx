@@ -32,6 +32,7 @@ import { ProgressBar } from '../../components/ProgressBar'
 import { RulesDisclosure } from '../../components/RulesDisclosure'
 import { SectionCard } from '../../components/SectionCard'
 import { CategoryBadge } from '../../components/CategoryBadge'
+import type { CategoryValue } from '../../components/categoryTone'
 import { searchSelectProps } from '../../components/searchSelect'
 import { useTablePagination } from '../../components/tablePagination'
 import { roundSharesToTotal } from '../../domain/rounding'
@@ -56,7 +57,7 @@ interface WorkRow {
   progress: number
 }
 
-const WORK_KIND_LABEL: Record<WorkKind, string> = { bays: 'Theo ô', manual: 'Nhập tay' }
+const WORK_KIND_LABEL = { bays: 'Theo ô', manual: 'Nhập tay' } as const satisfies Record<WorkKind, CategoryValue<'workKind'>>
 
 /**
  * Three shades of the one accent, cycled.

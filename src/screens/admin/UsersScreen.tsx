@@ -15,6 +15,7 @@ import { RulesDisclosure } from '../../components/RulesDisclosure'
 import { SectionCard } from '../../components/SectionCard'
 import { modalProps } from '../../components/modalChrome'
 import { CategoryBadge } from '../../components/CategoryBadge'
+import type { CategoryValue } from '../../components/categoryTone'
 import { searchSelectProps } from '../../components/searchSelect'
 import { useTablePagination } from '../../components/tablePagination'
 import {
@@ -51,7 +52,7 @@ interface CreateValues {
   role: AccountRole
 }
 
-const ROLE_LABEL: Record<AccountRole, string> = { gs: 'GS', viewer: 'Chỉ xem' }
+const ROLE_LABEL = { gs: 'GS', viewer: 'Chỉ xem' } as const satisfies Record<AccountRole, CategoryValue<'role'>>
 
 const RULES = [
   {

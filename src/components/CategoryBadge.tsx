@@ -1,4 +1,4 @@
-import { CATEGORY_TONE, type Category } from './categoryTone'
+import { CATEGORY_TONE, type Category, type CategoryValue } from './categoryTone'
 import { StatusPill, type StatusTone } from './StatusPill'
 
 /**
@@ -8,8 +8,10 @@ import { StatusPill, type StatusTone } from './StatusPill'
  * stale row must still render.
  *
  * Editable cells keep their Select or Switch; this is for read-only cells.
+ * `value` is typed by the category, so a screen label renamed away from the
+ * map is a type error rather than a silent grey badge.
  */
-export function CategoryBadge({ category, value }: { category: Category; value: string }) {
+export function CategoryBadge<C extends Category>({ category, value }: { category: C; value: CategoryValue<C> }) {
   const tones: Record<string, StatusTone> = CATEGORY_TONE[category]
   return <StatusPill tone={tones[value] ?? 'off'}>{value}</StatusPill>
 }
