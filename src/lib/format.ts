@@ -42,6 +42,12 @@ const WEIGHT = new Intl.NumberFormat('vi-VN', { minimumFractionDigits: 2, maximu
 const HOURS = new Intl.NumberFormat('vi-VN', { minimumFractionDigits: 1, maximumFractionDigits: 2 })
 /** Mhr/m²: three places, since the customer's workbook compares 1,149 with 1,161. */
 const MHR_PER_M2 = new Intl.NumberFormat('vi-VN', { minimumFractionDigits: 3, maximumFractionDigits: 3 })
+/**
+ * A chart axis tick (R5-C2): the Vietnamese separators like every other
+ * number on screen, but no padding -- an axis reads 0 · 0,35 · 0,7 · 1,05 or
+ * 1.350 · 1.800 · 2.200, not 0,00 · 1.800,00. Two decimals at most.
+ */
+const AXIS = new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 2 })
 
 /**
  * Two decimals for any quantity a work is measured in. Named for the m² it
@@ -55,6 +61,7 @@ export const formatPercent = (n: number): string => PERCENT.format(n)
 export const formatWeight = (n: number): string => WEIGHT.format(n)
 export const formatHours = (n: number): string => HOURS.format(n)
 export const formatMhrPerM2 = (n: number): string => MHR_PER_M2.format(n)
+export const formatAxisNumber = (n: number): string => AXIS.format(n)
 
 /**
  * Vietnam is UTC+7 all year and has been since 1975 -- no daylight saving, no

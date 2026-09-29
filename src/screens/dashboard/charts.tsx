@@ -6,7 +6,7 @@ import {
 import type { KpiDay } from '../../domain/kpi'
 import { palette } from '../../theme'
 import { DEFAULT_UNIT, perUnit, rateUnit } from '../../domain/unit'
-import { formatAreaM2, formatHours, formatMhrPerM2, formatPercent } from '../../lib/format'
+import { formatAreaM2, formatAxisNumber, formatHours, formatMhrPerM2, formatPercent } from '../../lib/format'
 import { KPI_COLOR_DEFAULTS } from './kpiColors'
 
 /**
@@ -23,6 +23,10 @@ import { KPI_COLOR_DEFAULTS } from './kpiColors'
 const dayLabel = (day: string) => `${day.slice(8, 10)}/${day.slice(5, 7)}`
 
 const AXIS = { fontSize: 12, fill: palette.textTertiary }
+/** Numeric ticks in the app's Vietnamese format (R5-C2): 0,35 and 1.800, not 0.35 and 1800. */
+const axisTick = (v: number) => formatAxisNumber(v)
+/** Recharts' default is " : ", a space before the colon (R5-C3). */
+const TOOLTIP_SEPARATOR = ': '
 
 /**
  * Recharts paints a legend entry's TEXT in its series colour, so a yellow or
@@ -79,9 +83,11 @@ export function EfficiencyLineChart({
           <YAxis
             tick={AXIS}
             width={56}
+            tickFormatter={axisTick}
             label={{ value: perUnit(unit), angle: -90, position: 'insideLeft', style: AXIS }}
           />
           <Tooltip
+            separator={TOOLTIP_SEPARATOR}
             labelFormatter={(day) => dayLabel(String(day))}
             formatter={(value) => (typeof value === 'number' ? formatMhrPerM2(value) : '')}
           />
@@ -120,8 +126,14 @@ export function HoursBarChart({
         <BarChart data={data} margin={{ top: 8, right: 16, bottom: 0, left: 0 }}>
           <CartesianGrid stroke={palette.borderSplit} vertical={false} />
           <XAxis dataKey="day" tickFormatter={dayLabel} tick={AXIS} />
-          <YAxis tick={AXIS} width={56} label={{ value: 'Mhr', angle: -90, position: 'insideLeft', style: AXIS }} />
+          <YAxis
+            tick={AXIS}
+            width={56}
+            tickFormatter={axisTick}
+            label={{ value: 'Mhr', angle: -90, position: 'insideLeft', style: AXIS }}
+          />
           <Tooltip
+            separator={TOOLTIP_SEPARATOR}
             labelFormatter={(day) => dayLabel(String(day))}
             formatter={(value) => (typeof value === 'number' ? formatHours(value) : '')}
           />
@@ -212,6 +224,7 @@ export function KpiComboChart({
             yAxisId="m2"
             tick={AXIS}
             width={72}
+            tickFormatter={axisTick}
             label={{ value: rateUnit(unit), angle: -90, position: 'insideLeft', style: AXIS }}
           />
           <YAxis
@@ -224,6 +237,7 @@ export function KpiComboChart({
             tickFormatter={(v: number) => formatPercent(v)}
           />
           <Tooltip
+            separator={TOOLTIP_SEPARATOR}
             labelFormatter={(day) => dayLabel(String(day))}
             formatter={(value, name) => {
               if (typeof value !== 'number') return ''

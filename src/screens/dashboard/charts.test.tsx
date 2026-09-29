@@ -20,6 +20,8 @@ import { EfficiencyLineChart, HoursBarChart, KpiComboChart } from './charts'
 const captured = vi.hoisted(() => ({
   legend: null as null | Record<string, unknown>,
   tooltip: null as null | Record<string, unknown>,
+  /** Every YAxis of the last chart rendered, by yAxisId ('0' when it has none). */
+  yAxes: {} as Record<string, Record<string, unknown>>,
 }))
 
 vi.mock('recharts', async (importOriginal) => {
@@ -41,7 +43,10 @@ vi.mock('recharts', async (importOriginal) => {
     ),
     CartesianGrid: () => null,
     XAxis: () => null,
-    YAxis: () => null,
+    YAxis: (props: Record<string, unknown>) => {
+      captured.yAxes[String(props.yAxisId ?? 0)] = props
+      return null
+    },
     Tooltip: (props: Record<string, unknown>) => {
       captured.tooltip = props
       return null
@@ -295,5 +300,30 @@ describe('KpiComboChart: legend hover and active marks (CHT-03)', () => {
     render(<KpiComboChart data={DATA} />)
     expect(format(0.5, 'Luỹ kế kế hoạch')).toBe(formatPercent(0.5))
     expect(format(100, 'Kế hoạch (m²/ngày)')).toBe(formatAreaM2(100))
+  })
+})
+
+describe('axes and tooltips in the app\'s number format (R5-C2, R5-C3)', () => {
+  const tick = (axis: string, value: number) =>
+    propOf<(v: number) => string>(captured.yAxes[axis], 'tickFormatter')(value)
+  const separator = () => captured.tooltip?.separator
+
+  it('reads the Mhr/m² axis with a decimal comma, and the tooltip as "name: value"', () => {
+    render(<EfficiencyLineChart data={[{ day: '2026-09-01', 'Coat 1': 0.5 }]} stages={[{ name: 'Coat 1', color: '#fadb14' }]} />)
+    expect([1.05, 0.7, 0.35].map((v) => tick('0', v))).toEqual(['1,05', '0,7', '0,35'])
+    expect(separator()).toBe(': ')
+  })
+
+  it('reads the hours axis the same way', () => {
+    render(<HoursBarChart data={[{ day: '2026-09-01', hours: 8, wasteHours: 1 }]} />)
+    expect([1.5, 12].map((v) => tick('0', v))).toEqual(['1,5', '12'])
+    expect(separator()).toBe(': ')
+  })
+
+  it('reads the KPI quantity axis with a thousands dot, and keeps the share axis in percent', () => {
+    render(<KpiComboChart data={DATA} />)
+    expect([1800, 1350, 2200].map((v) => tick('m2', v))).toEqual(['1.800', '1.350', '2.200'])
+    expect(tick('share', 0.5)).toBe(formatPercent(0.5))
+    expect(separator()).toBe(': ')
   })
 })
