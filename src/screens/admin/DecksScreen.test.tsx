@@ -6,7 +6,7 @@ import { renderApp } from '../../test/renderApp'
 import { DecksScreen } from './DecksScreen'
 import { expectLeft } from '../../test/alignment'
 import { weightOf } from '../../test/typography'
-import { expectHelperText, pageSubtitle, ruleTexts } from '../../test/copy'
+import { consequenceItems, expectHelperText, pageSubtitle, ruleTexts } from '../../test/copy'
 import { palette, type } from '../../theme'
 import { ROLLUP_RING, figureFits, ringFigureStep } from '../../components/ringFit'
 
@@ -673,7 +673,7 @@ describe('DecksScreen — the project-wide half of progress', () => {
     await userEvent.click(screen.getByRole('button', { name: /Xuất báo cáo/ }))
     const dialog = await screen.findByRole('dialog')
     expect(within(dialog).getByText('Xuất báo cáo dự án?')).toBeInTheDocument()
-    expect(within(dialog).getByText('Có thể mất một lúc với dự án nhiều sàn.')).toBeInTheDocument()
+    expect(consequenceItems(dialog)).toEqual(['Có thể mất một lúc với dự án nhiều sàn'])
     expect(within(dialog).queryByText(/lần lượt|tuần tự|song song/)).toBeNull()
   })
 })
@@ -692,7 +692,8 @@ describe('DecksScreen — deleting a deck', () => {
     const dialog = await openDelete()
     expect(within(dialog).getByText('Xóa sàn Main Deck?')).toBeInTheDocument()
     // Present tense, one sentence (RUL-01).
-    expect(within(dialog).getByText('Máy tính bảng đang mở sàn này không ghi được nữa cho tới khi tải lại.')).toBeInTheDocument()
+    expect(within(dialog).getByText('Mất vĩnh viễn theo sàn:')).toBeInTheDocument()
+    expect(consequenceItems(dialog)).toEqual(['Không khôi phục được', 'Máy tính bảng đang mở sàn này không ghi được nữa cho tới khi tải lại'])
     for (const item of [
       'Toàn bộ ô và lịch sử công đoạn', 'Zone và kế hoạch', 'Ghi chú của GS', 'Bản vẽ đã tải lên',
     ]) expect(within(dialog).getByText(item)).toBeInTheDocument()

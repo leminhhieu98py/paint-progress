@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { AdminLayout } from './AdminLayout'
+import { consequenceItems } from '../../test/copy'
 
 const signOut = vi.hoisted(() => vi.fn())
 const profile = vi.hoisted(() => ({ current: null as unknown }))
@@ -102,7 +103,8 @@ describe('AdminLayout', () => {
     renderAt('/admin/projects')
     await user.click(screen.getByRole('button', { name: 'Đăng xuất' }))
     // The data-loss consequence, without the aside on what lives where (CPY-01).
-    expect(await screen.findByText('Thay đổi chưa lưu ở màn đang mở bị mất.')).toBeInTheDocument()
+    expect(await screen.findByText('Thay đổi chưa lưu ở màn đang mở bị mất')).toBeInTheDocument()
+    expect(consequenceItems()).toEqual(['Thay đổi chưa lưu ở màn đang mở bị mất'])
     await user.click(await screen.findByRole('button', { name: 'Vẫn đăng xuất' }))
     expect(signOut).toHaveBeenCalledOnce()
     // Navigating is the point: without it the session goes but the URL stays

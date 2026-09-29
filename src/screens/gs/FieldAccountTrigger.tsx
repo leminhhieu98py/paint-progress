@@ -19,9 +19,9 @@ const ellipsis: CSSProperties = { whiteSpace: 'nowrap', overflow: 'hidden', text
  * the viewer's project picker (M-4). On a phone it folds to the avatar, named
  * for who is signed in, and the menu names them instead (MOB-04).
  */
-export function FieldAccountTrigger({ consequence }: {
-  /** What signing out costs on this page, the confirm's last line. */
-  consequence: string
+export function FieldAccountTrigger({ consequences }: {
+  /** What signing out costs on this page, one confirm item each (RUL-01). */
+  consequences: string[]
 }) {
   const navigate = useNavigate()
   const { profile, signOut } = useAuth()
@@ -99,7 +99,7 @@ export function FieldAccountTrigger({ consequence }: {
         title="Đăng xuất?"
         description="Phiên làm việc hiện tại kết thúc:"
         items={[{ label: fullName, meta: username }]}
-        consequence={consequence}
+        consequences={consequences}
         okText="Vẫn đăng xuất"
         onCancel={() => setConfirmingOut(false)}
         onOk={() => void signOut().then(() => navigate(LOGIN_PATH, { replace: true }))}

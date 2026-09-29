@@ -25,8 +25,8 @@ import { SectionCard } from '../../components/SectionCard'
 import { palette, space, type } from '../../theme'
 
 /**
- * What deleting a coat does, said once for the rule and the delete dialog
- * (CPY-05), as the database carries it out when saveWorkStages deletes the
+ * What deleting a coat does, as the rule says it (the delete dialog lists the
+ * same three facts as items, STAGE_DELETE_ITEMS), as the database carries it out when saveWorkStages deletes the
  * deck_stages row: every bay AT the coat goes back to not started
  * (cell_states.stage_id ON DELETE SET NULL, 0024); the coat's zones and KPI
  * plan go (zones.stage_id and stage_plans.stage_id ON DELETE CASCADE, 0003 and
@@ -36,6 +36,13 @@ import { palette, space, type } from '../../theme'
  */
 const STAGE_DELETE_EFFECT =
   'Xoá một lớp đưa các ô đang ở lớp đó về “Chưa bắt đầu” và xoá zone, kế hoạch KPI của lớp, còn lịch sử cập nhật giữ nguyên.'
+
+/** STAGE_DELETE_EFFECT's three consequences, as the delete dialog lists them. */
+const STAGE_DELETE_ITEMS = [
+  'Các ô đang ở lớp đó về “Chưa bắt đầu”',
+  'Zone và kế hoạch KPI của lớp đó bị xoá',
+  'Lịch sử cập nhật giữ nguyên',
+]
 
 /** Helper text, one sentence each, checked against the code (RUL-01). */
 const STAGE_RULES = [
@@ -678,11 +685,8 @@ export function StageConfigPanel({
                   color: st.color,
                 }))
           }
-          consequence={
-            removed.length > 0
-              ? STAGE_DELETE_EFFECT
-              : undefined
-          }
+          // STAGE_DELETE_EFFECT, one item per consequence (RUL-01).
+          consequences={removed.length > 0 ? STAGE_DELETE_ITEMS : undefined}
           okText={removed.length > 0 ? 'Vẫn lưu' : 'Lưu'}
           confirmLoading={busy}
           onCancel={() => setConfirming(false)}

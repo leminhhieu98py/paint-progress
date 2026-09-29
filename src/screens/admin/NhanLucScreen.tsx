@@ -741,14 +741,16 @@ export function NhanLucScreen() {
                   label: offTarget.fullName,
                   meta: offTarget.projects.map((p) => p.name).join(' · ') || 'chưa gán dự án',
                 },
-                // Each consequence its own item (RUL-01): member policies stop granting
-                // on the spot (admin-users lockAccount), an open tablet included.
-                { label: 'Mất quyền truy cập ngay, cả tablet đang mở cũng ngừng ghi tiến độ' },
-                { label: 'Dự án và công việc đã gán giữ nguyên cho lần mở khoá' },
-                { label: 'Lịch sử ghi nhận vẫn mang tên người này' },
               ]
             : []
         }
+        // Each consequence its own item (RUL-01): member policies stop granting
+        // on the spot (admin-users lockAccount), an open tablet included.
+        consequences={[
+          'Mất quyền truy cập ngay, cả tablet đang mở cũng ngừng ghi tiến độ',
+          'Dự án và công việc đã gán giữ nguyên cho lần mở khoá',
+          'Lịch sử ghi nhận vẫn mang tên người này',
+        ]}
         okText="Vẫn khoá"
         onCancel={() => setOffTarget(null)}
         onOk={() =>
@@ -774,12 +776,14 @@ export function NhanLucScreen() {
                   label: hideTarget.fullName,
                   meta: hideTarget.projects.map((p) => p.name).join(' · ') || 'chưa gán dự án',
                 },
-                { label: 'Mất quyền truy cập ngay, cả tablet đang mở cũng ngừng ghi tiến độ' },
-                { label: 'Lịch sử ghi nhận vẫn mang tên người này' },
-                { label: 'Tìm lại bằng Trạng thái «Đã ẩn»' },
               ]
             : []
         }
+        consequences={[
+          'Mất quyền truy cập ngay, cả tablet đang mở cũng ngừng ghi tiến độ',
+          'Lịch sử ghi nhận vẫn mang tên người này',
+          'Tìm lại bằng Trạng thái «Đã ẩn»',
+        ]}
         okText="Vẫn ẩn"
         onCancel={() => setHideTarget(null)}
         onOk={() =>
@@ -959,11 +963,10 @@ export function NhanLucScreen() {
                   label: pwPending.user.fullName,
                   meta: pwPending.user.projects.map((p) => p.name).join(' · ') || 'chưa gán dự án',
                 },
-                { label: 'GS không nhận được thông báo nào' },
-                { label: 'Anh tự giao mật khẩu mới, hiện ra ngay sau bước này' },
               ]
             : []
         }
+        consequences={['GS không nhận được thông báo nào', 'Anh tự giao mật khẩu mới, hiện ra ngay sau bước này']}
         okText="Vẫn đổi"
         onCancel={() => setPwPending(null)}
         onOk={() =>

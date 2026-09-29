@@ -116,7 +116,7 @@ export function FieldHeader({ projectId }: { projectId: string }) {
         )}
 
         <FieldAccountTrigger
-          consequence="Muốn ghi tiếp tiến độ thì phải đăng nhập lại bằng mật khẩu quản trị viên đã giao."
+          consequences={['Ghi tiếp tiến độ cần đăng nhập lại bằng mật khẩu quản trị viên đã giao']}
         />
       </Layout.Header>
 

@@ -743,18 +743,10 @@ export function DeckDetailScreen() {
         title="Lưu thay đổi cho sàn này?"
         description="Ngoài tên và mã, lần lưu này còn:"
         items={saveConsequences}
-        consequence={
-          [
-            pdf
-              ? 'Ô đã dựng giữ vị trí cũ trên bản vẽ mới và cần kiểm tra lại ở Phân ô.'
-              : '',
-            deck && area !== deck.totalAreaM2
-              ? 'Diện tích từng ô được chia lại theo con số mới.'
-              : '',
-          ]
-            .filter(Boolean)
-            .join(' ')
-        }
+        consequences={[
+          ...(pdf ? ['Ô đã dựng giữ vị trí cũ trên bản vẽ mới, cần kiểm tra lại ở Phân ô'] : []),
+          ...(deck && area !== deck.totalAreaM2 ? ['Diện tích từng ô được chia lại theo con số mới'] : []),
+        ]}
         okText="Lưu"
         confirmLoading={saving}
         onCancel={() => setConfirmingSave(false)}

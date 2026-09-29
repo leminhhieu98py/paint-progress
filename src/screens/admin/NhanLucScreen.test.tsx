@@ -5,7 +5,7 @@ import { renderApp } from '../../test/renderApp'
 import { NhanLucScreen } from './NhanLucScreen'
 import { expectLeft } from '../../test/alignment'
 import { weightOf } from '../../test/typography'
-import { expectHelperText, expectNoSpecIds, keyFactTexts, pageSubtitle, ruleTexts } from '../../test/copy'
+import { consequenceItems, expectHelperText, expectNoSpecIds, keyFactTexts, pageSubtitle, ruleTexts } from '../../test/copy'
 import { chooseOption, optionTitles } from '../../test/select'
 
 const listGsUsers = vi.fn()
@@ -411,6 +411,11 @@ describe('NhanLucScreen — accounts, as before (USR)', () => {
     expect(deactivateGsUser).not.toHaveBeenCalled()
     // Each consequence its own item, not prose (RUL-01).
     expect(await screen.findByText('Mất quyền truy cập ngay, cả tablet đang mở cũng ngừng ghi tiến độ')).toBeInTheDocument()
+    expect(consequenceItems()).toEqual([
+      'Mất quyền truy cập ngay, cả tablet đang mở cũng ngừng ghi tiến độ',
+      'Dự án và công việc đã gán giữ nguyên cho lần mở khoá',
+      'Lịch sử ghi nhận vẫn mang tên người này',
+    ])
     expect(screen.getByText('Dự án và công việc đã gán giữ nguyên cho lần mở khoá')).toBeInTheDocument()
     expect(screen.getByText('Lịch sử ghi nhận vẫn mang tên người này')).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: /Vẫn khoá/ }))
@@ -450,7 +455,7 @@ describe('NhanLucScreen — accounts, as before (USR)', () => {
     await userEvent.type(screen.getByLabelText('Mật khẩu mới'), 'Bh7@Deck2026')
     await userEvent.click(screen.getByRole('button', { name: 'Lưu' }))
     expect(await screen.findByText('Đổi mật khẩu cho gs1?')).toBeInTheDocument()
-    expect(screen.getByText('GS không nhận được thông báo nào')).toBeInTheDocument()
+    expect(consequenceItems()).toEqual(['GS không nhận được thông báo nào', 'Anh tự giao mật khẩu mới, hiện ra ngay sau bước này'])
     expect(screen.getByText('Anh tự giao mật khẩu mới, hiện ra ngay sau bước này')).toBeInTheDocument()
     expect(setPassword).not.toHaveBeenCalled()
     await userEvent.click(screen.getByRole('button', { name: 'Vẫn đổi' }))

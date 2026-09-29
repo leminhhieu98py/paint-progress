@@ -5,7 +5,7 @@ import { renderApp } from '../../test/renderApp'
 import { StageConfigPanel } from './StageConfigPanel'
 import { expectLeft } from '../../test/alignment'
 import { expectAllSmall } from '../../test/controls'
-import { expectHelperText, keyFactTexts, ruleTexts } from '../../test/copy'
+import { consequenceItems, expectHelperText, keyFactTexts, ruleTexts } from '../../test/copy'
 
 const listWorkStages = vi.hoisted(() => vi.fn())
 const saveWorkStages = vi.hoisted(() => vi.fn())
@@ -252,8 +252,12 @@ describe('StageConfigPanel', () => {
     // SET NULL), its zones and KPI plan go (zones, stage_plans CASCADE), and
     // the history stays (cell_events has no FK on the stage and snapshots its
     // name; the deletion trigger adds a back-to-not-started row per bay).
-    // One sentence, in the rule's own words; the list says the loss is for good (RUL-01).
-    expect(within(dialog).getByText(STAGE_DELETE_EFFECT)).toBeInTheDocument()
+    // Each consequence its own item, in the rule's words (RUL-01, CPY-05).
+    expect(consequenceItems(dialog)).toEqual([
+      'Các ô đang ở lớp đó về “Chưa bắt đầu”',
+      'Zone và kế hoạch KPI của lớp đó bị xoá',
+      'Lịch sử cập nhật giữ nguyên',
+    ])
     expect(within(dialog).getByText('Các lớp sơn sau bị xoá vĩnh viễn khỏi cấu hình:')).toBeInTheDocument()
     // Not the aside about what renaming keeps (CPY-01).
     expect(within(dialog).queryByText(/Đổi tên, đổi trọng số/)).toBeNull()

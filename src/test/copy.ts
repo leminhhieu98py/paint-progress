@@ -56,3 +56,9 @@ export function expectHelperText(texts: string[]) {
     expect(text).not.toMatch(/(^|\s)(vì|nên|sẽ)\s/i)
   }
 }
+
+/** The consequence items of an open ConsequenceModal under `root`, in order (RUL-01). */
+export function consequenceItems(root: HTMLElement = document.body): string[] {
+  return within(root).getAllByRole('listitem').filter((li) => li.closest('ul[aria-label="Hệ quả"]') !== null)
+    .map((li) => li.textContent ?? '')
+}

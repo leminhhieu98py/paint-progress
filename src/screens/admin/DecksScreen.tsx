@@ -766,7 +766,7 @@ export function DecksScreen() {
           label: d.name,
           meta: `${d.cellCount} ô`,
         }))}
-        consequence="Có thể mất một lúc với dự án nhiều sàn."
+        consequences={['Có thể mất một lúc với dự án nhiều sàn']}
         okText="Xuất"
         confirmLoading={exporting}
         onCancel={() => setConfirmingExport(false)}
@@ -815,14 +815,14 @@ export function DecksScreen() {
         tone="danger"
         tag="Thao tác phá huỷ"
         title={`Xóa sàn ${removingDeck?.name ?? ''}?`}
-        description="Xóa vĩnh viễn, không khôi phục được. Mất theo sàn:"
+        description="Mất vĩnh viễn theo sàn:"
         items={[
           { label: 'Toàn bộ ô và lịch sử công đoạn', meta: removingDeck ? `${removingDeck.cellCount} ô` : undefined },
           { label: 'Zone và kế hoạch' },
           { label: 'Ghi chú của GS' },
           { label: 'Bản vẽ đã tải lên', meta: removingDeck?.imagePath ? 'Đã có' : 'Chưa có' },
         ]}
-        consequence="Máy tính bảng đang mở sàn này không ghi được nữa cho tới khi tải lại."
+        consequences={['Không khôi phục được', 'Máy tính bảng đang mở sàn này không ghi được nữa cho tới khi tải lại']}
         okText="Xóa sàn"
         confirmText={removingDeck?.name}
         confirmLoading={removing}

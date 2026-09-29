@@ -295,7 +295,7 @@ function HintedButton({
   )
 }
 
-/** What deleting a zone does, in the rules and in its dialog alike (CPY-05). */
+/** What deleting a zone does, as the rule says it; its dialog lists the kept progress as an item. */
 const ZONE_DELETE_EFFECT = 'Xoá zone chỉ xoá kế hoạch và giữ nguyên tiến độ đã ghi trên các ô.'
 
 /**
@@ -2131,7 +2131,7 @@ export function DeckProgressPanel({
             ? [{ label: removingZone.name, meta: `${removingZone.cellIds.length} ô` }]
             : []
         }
-        consequence={ZONE_DELETE_EFFECT}
+        consequences={['Tiến độ đã ghi trên các ô giữ nguyên']}
         okText="Vẫn xoá"
         onCancel={() => setRemovingZone(null)}
         onOk={() =>

@@ -7,6 +7,7 @@ import { fieldAccountMenuItems } from './fieldAccountMenu'
 import { FieldHeader } from './FieldHeader'
 import { FieldLayout } from './FieldLayout'
 import { useTypeScale } from '../../components/typeScale'
+import { consequenceItems } from '../../test/copy'
 
 const listProjectNames = vi.hoisted(() => vi.fn())
 vi.mock('../../lib/projectsApi', () => ({
@@ -232,9 +233,7 @@ describe('FieldHeader: navigation and the account, nothing else (GS-06)', () => 
     const dialog = await screen.findByRole('dialog')
     expect(within(dialog).getByText('Đăng xuất?')).toBeInTheDocument()
     expect(within(dialog).getByText('Phiên làm việc hiện tại kết thúc:')).toBeInTheDocument()
-    expect(within(dialog).getByText(
-      'Muốn ghi tiếp tiến độ thì phải đăng nhập lại bằng mật khẩu quản trị viên đã giao.',
-    )).toBeInTheDocument()
+    expect(consequenceItems(dialog)).toEqual(['Ghi tiếp tiến độ cần đăng nhập lại bằng mật khẩu quản trị viên đã giao'])
     expect(signOut).not.toHaveBeenCalled()
 
     await userEvent.click(within(dialog).getByRole('button', { name: 'Vẫn đăng xuất' }))

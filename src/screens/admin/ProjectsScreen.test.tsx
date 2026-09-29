@@ -8,7 +8,7 @@ import { ProjectsScreen } from './ProjectsScreen'
 import { expectLeft } from '../../test/alignment'
 import { weightOf } from '../../test/typography'
 import { palette } from '../../theme'
-import { pageSubtitle } from '../../test/copy'
+import { consequenceItems, pageSubtitle } from '../../test/copy'
 
 const latestProgressEvent = vi.hoisted(() => vi.fn())
 vi.mock('../../lib/progressApi', () => ({
@@ -272,7 +272,8 @@ describe('ProjectsScreen — deleting a project', () => {
     const dialog = await screen.findByRole('dialog')
     expect(within(dialog).getByText('Xóa dự án BB1 - CPPTS?')).toBeInTheDocument()
     // Present tense, one sentence (RUL-01).
-    expect(within(dialog).getByText('GS đang mở dự án này trên máy tính bảng không ghi được nữa cho tới khi tải lại.')).toBeInTheDocument()
+    expect(within(dialog).getByText('Mất vĩnh viễn theo dự án:')).toBeInTheDocument()
+    expect(consequenceItems(dialog)).toEqual(['Không khôi phục được', 'GS đang mở dự án này trên máy tính bảng không ghi được nữa cho tới khi tải lại'])
     expect(within(dialog).getByText('5 sàn')).toBeInTheDocument()
     expect(within(dialog).getByText('Phân quyền GS vào dự án')).toBeInTheDocument()
     const ok = within(dialog).getByRole('button', { name: /Xóa dự án/ })

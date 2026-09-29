@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderApp } from '../../test/renderApp'
 import { expectLeft } from '../../test/alignment'
 import { expectAllSmall } from '../../test/controls'
-import { expectHelperText, keyFactTexts, pageSubtitle, ruleTexts } from '../../test/copy'
+import { consequenceItems, expectHelperText, keyFactTexts, pageSubtitle, ruleTexts } from '../../test/copy'
 import type { Work, WorkModel } from '../../domain/types'
 import { WorksScreen } from './WorksScreen'
 
@@ -149,6 +149,9 @@ describe('WorksScreen', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Lưu công việc' }))
     const dialog = await screen.findByRole('dialog')
     expect(within(dialog).getByText(/Lưu công việc/)).toBeInTheDocument()
+    // One lead sentence, the consequence its own item (RUL-01).
+    expect(within(dialog).getByText('Lưu các công việc sau:')).toBeInTheDocument()
+    expect(consequenceItems(dialog)).toEqual(['Tiến độ dự án và báo cáo tính lại theo trọng số mới'])
     await userEvent.click(within(dialog).getByRole('button', { name: 'Lưu' }))
 
     await waitFor(() => expect(saveWorks).toHaveBeenCalledTimes(1))
@@ -245,8 +248,9 @@ describe('WorksScreen', () => {
 
     await userEvent.click(within(matrix).getByRole('button', { name: 'Lưu sàn tham gia' }))
     const dialog = await screen.findByRole('dialog')
-    // Present tense, one sentence (RUL-01).
-    expect(within(dialog).getByText('Sàn bị bỏ ra khỏi công việc mất lớp sơn và vị trí ô của công việc đó.')).toBeInTheDocument()
+    // One lead sentence, each consequence its own item (RUL-01).
+    expect(within(dialog).getByText('Lưu các sàn tham gia sau:')).toBeInTheDocument()
+    expect(consequenceItems(dialog)).toEqual(['Sàn bị bỏ ra khỏi công việc mất lớp sơn và vị trí ô của công việc đó'])
     await userEvent.click(within(dialog).getByRole('button', { name: 'Lưu' }))
     await waitFor(() => expect(saveWorkDecks).toHaveBeenCalledWith('w1', [
       { deckId: 'd1', weight: 0.25 }, { deckId: 'd2', weight: 0.75 },
@@ -277,7 +281,8 @@ describe('WorksScreen', () => {
     const ok = within(dialog).getByRole('button', { name: /Xóa công việc/ })
     expect(ok).toBeDisabled()
     // What survives, in the admin's words: no table name (CPY-01).
-    expect(within(dialog).getByText('Lịch sử cập nhật vẫn giữ tên công việc này.')).toBeInTheDocument()
+    expect(within(dialog).getByText('Mất vĩnh viễn theo công việc:')).toBeInTheDocument()
+    expect(consequenceItems(dialog)).toEqual(['Không khôi phục được', 'Lịch sử cập nhật vẫn giữ tên công việc này'])
     expect(within(dialog).queryByText(/cell_events/)).not.toBeInTheDocument()
     await userEvent.type(within(dialog).getByLabelText('Gõ đúng tên để xác nhận'), 'Tháo giáo')
     await userEvent.click(ok)

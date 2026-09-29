@@ -85,7 +85,7 @@ export function ProjectPickerScreen() {
             signed in, Visitor, and Đăng xuất behind its confirm.
           */}
           <FieldAccountTrigger
-            consequence="Muốn xem tiếp thì phải đăng nhập lại bằng mật khẩu quản trị viên đã giao."
+            consequences={['Xem tiếp cần đăng nhập lại bằng mật khẩu quản trị viên đã giao']}
           />
         </Layout.Header>
 

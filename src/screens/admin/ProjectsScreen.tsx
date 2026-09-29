@@ -339,7 +339,7 @@ export function ProjectsScreen() {
         tone="danger"
         tag="Thao tác phá huỷ"
         title={`Xóa dự án ${removingProject?.name ?? ''}?`}
-        description="Xóa vĩnh viễn, không khôi phục được. Mất theo dự án:"
+        description="Mất vĩnh viễn theo dự án:"
         items={[
           { label: `${removingProject?.deckCount ?? 0} sàn`, meta: removingProject ? `${formatAreaM2(removingProject.totalAreaM2)} m²` : undefined },
           { label: 'Toàn bộ ô và lịch sử công đoạn', meta: removingProject ? `${removingProject.cellCount} ô` : undefined },
@@ -348,7 +348,7 @@ export function ProjectsScreen() {
           { label: 'Bản vẽ đã tải lên' },
           { label: 'Phân quyền GS vào dự án' },
         ]}
-        consequence="GS đang mở dự án này trên máy tính bảng không ghi được nữa cho tới khi tải lại."
+        consequences={['Không khôi phục được', 'GS đang mở dự án này trên máy tính bảng không ghi được nữa cho tới khi tải lại']}
         okText="Xóa dự án"
         confirmText={removingProject?.name}
         confirmLoading={removing}

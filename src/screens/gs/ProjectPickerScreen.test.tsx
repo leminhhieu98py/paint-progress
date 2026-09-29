@@ -5,7 +5,7 @@ import { MemoryRouter, Route, Routes, useParams } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { endSession } from '../../lib/sessionCache'
 import { cachedProjectList } from './fieldProjects'
-import { keyFactTexts } from '../../test/copy'
+import { consequenceItems, keyFactTexts } from '../../test/copy'
 import { ProjectPickerScreen } from './ProjectPickerScreen'
 
 const listProjectCards = vi.hoisted(() => vi.fn())
@@ -118,7 +118,8 @@ describe('ProjectPickerScreen', () => {
     expect(within(menu).getAllByRole('menuitem').map((i) => i.textContent)).toEqual(['Đăng xuất'])
     await userEvent.click(within(menu).getByRole('menuitem', { name: /Đăng xuất/ }))
     expect(signOut).not.toHaveBeenCalled()
-    expect(await screen.findByText('Muốn xem tiếp thì phải đăng nhập lại bằng mật khẩu quản trị viên đã giao.')).toBeInTheDocument()
+    expect(await screen.findByText('Xem tiếp cần đăng nhập lại bằng mật khẩu quản trị viên đã giao')).toBeInTheDocument()
+    expect(consequenceItems()).toEqual(['Xem tiếp cần đăng nhập lại bằng mật khẩu quản trị viên đã giao'])
     await userEvent.click(await screen.findByRole('button', { name: 'Vẫn đăng xuất' }))
     expect(signOut).toHaveBeenCalledTimes(1)
     expect(await screen.findByText('LOGIN')).toBeInTheDocument()

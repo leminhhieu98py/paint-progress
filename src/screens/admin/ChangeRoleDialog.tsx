@@ -23,8 +23,10 @@ interface Pending {
   tone: ConsequenceTone
   title: string
   description: string
-  /** The subject first, then each consequence as its own item (RUL-01). */
+  /** Who or what the change is about. */
   items: ConsequenceItem[]
+  /** What happens on confirm, one item each (RUL-01). */
+  consequences: string[]
 }
 
 /**
@@ -84,9 +86,11 @@ export function ChangeRoleDialog({
             description: 'Dòng nhân viên được thay bằng tài khoản đã ẩn cùng tên:',
             items: [
               { label: `Mở lại tài khoản ${parked.username}`, meta: scope },
-              { label: 'Tài khoản cũ mở khoá với mật khẩu mới' },
-              { label: 'Không còn trong ô chọn nhóm trưởng, thợ chính của GS' },
-              { label: 'Các lần cập nhật đã ghi vẫn giữ tên' },
+            ],
+            consequences: [
+              'Tài khoản cũ mở khoá với mật khẩu mới',
+              'Không còn trong ô chọn nhóm trưởng, thợ chính của GS',
+              'Các lần cập nhật đã ghi vẫn giữ tên',
             ],
           }
         : {
@@ -95,9 +99,11 @@ export function ChangeRoleDialog({
             description: 'Dòng nhân viên được thay bằng tài khoản:',
             items: [
               { label: `Tài khoản mới ${request.username}`, meta: scope },
-              { label: 'Đăng nhập được bằng tài khoản mới' },
-              { label: 'Không còn trong ô chọn nhóm trưởng, thợ chính của GS' },
-              { label: 'Các lần cập nhật đã ghi vẫn giữ tên' },
+            ],
+            consequences: [
+              'Đăng nhập được bằng tài khoản mới',
+              'Không còn trong ô chọn nhóm trưởng, thợ chính của GS',
+              'Các lần cập nhật đã ghi vẫn giữ tên',
             ],
           })
       return
@@ -108,12 +114,12 @@ export function ChangeRoleDialog({
         request, tone: 'danger',
         title: `Đổi ${row.account.username} thành Nhân viên?`,
         description: 'Tài khoản bị khoá và ẩn, không bị xoá:',
-        items: [
-          who,
-          { label: 'Không đăng nhập được nữa' },
-          { label: 'Lịch sử ghi nhận vẫn mang tên người này' },
-          { label: 'Một nhân viên đang làm cùng tên vào ô chọn của GS' },
-          { label: 'Đổi lại thành GS hoặc Visitor là mở lại đúng tài khoản này' },
+        items: [who],
+        consequences: [
+          'Không đăng nhập được nữa',
+          'Lịch sử ghi nhận vẫn mang tên người này',
+          'Một nhân viên đang làm cùng tên vào ô chọn của GS',
+          'Đổi lại thành GS hoặc Visitor là mở lại đúng tài khoản này',
         ],
       })
     } else if (role === 'viewer') {
@@ -121,12 +127,12 @@ export function ChangeRoleDialog({
         request, tone: 'warn',
         title: `Đổi ${row.account.username} thành Visitor?`,
         description: 'Phân quyền của tài khoản đổi thành Visitor:',
-        items: [
-          who,
-          { label: 'Xem được mọi dự án và công việc' },
-          { label: 'Không ghi được tiến độ nữa' },
+        items: [who],
+        consequences: [
+          'Xem được mọi dự án và công việc',
+          'Không ghi được tiến độ nữa',
           // Memberships are kept across GS ↔ Visitor, unused while a Visitor.
-          { label: 'Dự án đã gán được giữ lại, không dùng khi là Visitor' },
+          'Dự án đã gán được giữ lại, không dùng khi là Visitor',
         ],
       })
     } else {
@@ -145,11 +151,11 @@ export function ChangeRoleDialog({
         request, tone: 'warn',
         title: `Đổi ${row.account.username} thành GS?`,
         description: 'Tài khoản thành GS, ghi được tiến độ ở các dự án này:',
-        items: [
-          ...items,
+        items,
+        consequences: [
           // A Visitor sees every project (0034); a GS only its own.
-          { label: 'Không còn xem được dự án ngoài các dự án trên' },
-          { label: 'Bỏ bớt dự án bằng nút «Dự án và công việc» sau khi đổi' },
+          'Không còn xem được dự án ngoài các dự án trên',
+          'Bỏ bớt dự án bằng nút «Dự án và công việc» sau khi đổi',
         ],
       })
     }
@@ -249,6 +255,7 @@ export function ChangeRoleDialog({
         title={pending?.title ?? ''}
         description={pending?.description}
         items={pending?.items ?? []}
+        consequences={pending?.consequences}
         okText="Vẫn đổi"
         confirmLoading={saving}
         onCancel={() => setPending(null)}

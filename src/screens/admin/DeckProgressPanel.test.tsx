@@ -2,7 +2,7 @@ import { App as AntApp, theme } from 'antd'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { expectHelperText, expectNoSpecIds, keyFactTexts, ruleTexts } from '../../test/copy'
+import { consequenceItems, expectHelperText, expectNoSpecIds, keyFactTexts, ruleTexts } from '../../test/copy'
 import { expectOnScale, weightOf } from '../../test/typography'
 import { adminTheme, palette, type } from '../../theme'
 import { DECK_RING, figureFits, ringFigureStep } from '../../components/ringFit'
@@ -937,8 +937,8 @@ describe('DeckProgressPanel — zones', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Xoá zone' }))
 
     expect(await screen.findByText('Xoá zone Khu A — Tháo giáo?')).toBeInTheDocument()
-    // In the same words as the rule (CPY-05, RUL-01).
-    expect(screen.getByText('Xoá zone chỉ xoá kế hoạch và giữ nguyên tiến độ đã ghi trên các ô.')).toBeInTheDocument()
+    // Each consequence its own item (RUL-01).
+    expect(consequenceItems()).toEqual(['Tiến độ đã ghi trên các ô giữ nguyên'])
     expect(screen.getByText('Kế hoạch của zone này bị xoá:')).toBeInTheDocument()
     // The consequence reads as a sentence, not a reference into the spec (CPY-04).
     expectNoSpecIds()

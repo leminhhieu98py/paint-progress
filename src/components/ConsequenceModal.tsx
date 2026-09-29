@@ -30,7 +30,7 @@ const TONES: Record<ConsequenceTone, { fg: string; bg: string; icon: ReactNode }
  * `Modal.confirm`'s "Bạn có chắc không?" is a speed bump: it tells the admin
  * nothing they did not know when they clicked. This asks for the two things
  * that actually inform the decision -- the exact rows about to be affected
- * (`items`), and what the crew on the deck loses afterwards (`consequence`).
+ * (`items`), and what happens afterwards (`consequences`, one item each).
  *
  * Every destructive path in this app goes through it: replacing a drawing,
  * clearing a bay grid, deleting a stage, deactivating an account, resetting a
@@ -44,7 +44,6 @@ export function ConsequenceModal({
   description,
   items,
   consequences,
-  consequence,
   okText = 'Xác nhận',
   cancelText = 'Huỷ',
   confirmLoading = false,
@@ -63,7 +62,6 @@ export function ConsequenceModal({
    * `items` and apart from them by one hairline.
    */
   consequences?: string[]
-  consequence?: ReactNode
   okText?: string
   cancelText?: string
   confirmLoading?: boolean
@@ -111,7 +109,7 @@ export function ConsequenceModal({
       centered
       destroyOnHidden
       styles={{ content: { overflow: 'hidden' } }}
-      width={items?.length || consequences?.length || consequence ? 520 : 480}
+      width={items?.length || consequences?.length ? 520 : 480}
     >
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14 }}>
         <span
@@ -172,7 +170,7 @@ export function ConsequenceModal({
         </div>
       </div>
 
-      {(items?.length || consequences?.length || consequence !== undefined) && (
+      {(Boolean(items?.length) || Boolean(consequences?.length)) && (
         <div
           style={{
             marginTop: 16,
@@ -234,19 +232,6 @@ export function ConsequenceModal({
             >
               {consequences.map((c) => <li key={c}>{c}</li>)}
             </ul>
-          )}
-          {consequence !== undefined && (
-            <div
-              style={{
-                padding: '13px 14px',
-                ...type.body,
-                lineHeight: 1.55,
-                color: palette.textSecondary,
-                background: tone === 'danger' ? palette.errorBg : palette.bgSubtle,
-              }}
-            >
-              {consequence}
-            </div>
           )}
         </div>
       )}

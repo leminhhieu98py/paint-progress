@@ -594,7 +594,8 @@ export function WorksScreen() {
         tone="accent"
         tag="Xác nhận"
         title="Lưu công việc?"
-        description="Trọng số công việc đổi là con số tiến độ dự án và báo cáo đổi theo."
+        description="Lưu các công việc sau:"
+        consequences={['Tiến độ dự án và báo cáo tính lại theo trọng số mới']}
         items={draft.map((w) => ({
           label: w.name.trim() || '(chưa đặt tên)',
           meta: w.counts ? `trọng số ${formatWeight(w.weight)}` : 'không tính vào tổng',
@@ -610,7 +611,8 @@ export function WorksScreen() {
         tone="accent"
         tag="Xác nhận"
         title="Lưu sàn tham gia?"
-        description="Sàn bị bỏ ra khỏi công việc mất lớp sơn và vị trí ô của công việc đó."
+        description="Lưu các sàn tham gia sau:"
+        consequences={['Sàn bị bỏ ra khỏi công việc mất lớp sơn và vị trí ô của công việc đó']}
         items={matrixOn.map((r) => ({ label: r.name, meta: `trọng số ${formatWeight(r.weight)}` }))}
         okText="Lưu"
         confirmLoading={matrixSaving}
@@ -623,14 +625,14 @@ export function WorksScreen() {
         tone="danger"
         tag="Thao tác phá huỷ"
         title={`Xóa công việc ${removingWork?.name ?? ''}?`}
-        description="Xóa vĩnh viễn, không khôi phục được. Mất theo công việc:"
+        description="Mất vĩnh viễn theo công việc:"
         items={[
           { label: 'Sàn tham gia và trọng số sàn' },
           { label: 'Lớp sơn của công việc này trên mọi sàn' },
           { label: 'Vị trí và ghi chú của từng ô cho công việc này' },
           { label: 'Zone lập trên các lớp đó' },
         ]}
-        consequence="Lịch sử cập nhật vẫn giữ tên công việc này."
+        consequences={['Không khôi phục được', 'Lịch sử cập nhật vẫn giữ tên công việc này']}
         okText="Xóa công việc"
         confirmText={removingWork?.name}
         confirmLoading={removing}
