@@ -1031,12 +1031,31 @@ describe('DeckProgressPanel — the all-stages layer (RV6-13)', () => {
     await screen.findByTestId('lens-B')
 
     const coats = ['Blast + Coat 1', 'Coat 2', 'Tháo giáo']
-    await userEvent.click(screen.getByLabelText('Lớp bên trái'))
+    await userEvent.click(within(screen.getByTestId('lens-A')).getByLabelText('Công đoạn'))
     expect(optionLabels('lens-a-stage')).toEqual(['Tất cả công đoạn', ...coats])
     await userEvent.keyboard('{Escape}')
 
-    await userEvent.click(screen.getByLabelText('Lớp bên phải'))
+    await userEvent.click(within(screen.getByTestId('lens-B')).getByLabelText('Công đoạn'))
     expect(optionLabels('lens-b-stage')).toEqual(['Tất cả công đoạn', ...coats])
+  })
+
+  it('labels each pane\'s select by what it picks, not by the side the subtitle already names (QA F6)', async () => {
+    // "Lớp bên trái" sat directly under a subtitle reading "Lớp bên trái",
+    // and the select picks a coat, not a layer.
+    renderPanel()
+    await screen.findByTestId('lens-A')
+    expect(screen.getByLabelText('Lớp sơn đang xem')).toHaveAttribute('id', 'lens-a-stage')
+
+    await userEvent.click(screen.getByText('So sánh hai lớp'))
+    const lensA = await screen.findByTestId('lens-A')
+    const lensB = await screen.findByTestId('lens-B')
+    expect(within(lensA).getByLabelText('Công đoạn')).toHaveAttribute('id', 'lens-a-stage')
+    expect(within(lensB).getByLabelText('Công đoạn')).toHaveAttribute('id', 'lens-b-stage')
+    expect(screen.queryByLabelText('Lớp bên trái')).toBeNull()
+    expect(screen.queryByLabelText('Lớp bên phải')).toBeNull()
+    // The subtitles still name the sides.
+    expect(within(lensA).getByText('Lớp bên trái')).toBeInTheDocument()
+    expect(within(lensB).getByText(/Lớp bên phải/)).toBeInTheDocument()
   })
 
   it('colours every bay by the furthest coat it has reached, with no plan overlay', async () => {
@@ -1437,7 +1456,7 @@ describe('DeckProgressPanel — each layer\'s controls above its own drawing (RV
 
     // The controls still work from their new place: the right layer moves
     // to another coat without touching the left one.
-    await userEvent.click(screen.getByLabelText('Lớp bên phải'))
+    await userEvent.click(within(lensB).getByLabelText('Công đoạn'))
     await userEvent.click(await screen.findByTitle('Coat 2'))
     expect(within(lensB).getByText('Tiến độ · Coat 2')).toBeInTheDocument()
     expect(within(lensA).getByText('Tiến độ · Blast + Coat 1')).toBeInTheDocument()

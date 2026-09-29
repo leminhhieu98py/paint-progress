@@ -1112,8 +1112,13 @@ export function DeckProgressPanel({
     return (
       <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+          {/*
+            In the split view the pane's subtitle already names the side, and
+            the select picks a coat -- so its label says that, once, rather
+            than repeating "Lớp bên trái" directly under it (QA F6).
+          */}
           <label htmlFor={`lens-${side}-stage`} style={labelStyle}>
-            {isA ? (splitView ? 'Lớp bên trái' : 'Lớp sơn đang xem') : 'Lớp bên phải'}
+            {splitView ? 'Công đoạn' : 'Lớp sơn đang xem'}
           </label>
           {/*
             `Tất cả công đoạn` first, above the coats (RV6-13): it is the
