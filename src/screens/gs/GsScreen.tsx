@@ -1,5 +1,5 @@
 import {
-  Alert, App, Button, Grid, Layout, Segmented, Select, Space, Spin,
+  Alert, App, Button, Dropdown, Grid, Layout, Segmented, Select, Space, Spin, Tooltip,
 } from 'antd'
 import dayjs from 'dayjs'
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
@@ -32,8 +32,8 @@ import { buildReportWorkbook, reportFileName, type DeckImages, type PlanImage } 
 import { buildProjectReport, downloadWorkbook } from '../../lib/projectReport'
 import { renderDeckDrawing, renderDeckPie, renderPlanDrawing } from '../../canvas/deckSnapshot'
 import { CellStageModal } from './CellStageModal'
-import { fieldError, palette, shadowCard } from '../../theme'
-import { CalendarOutlined, DownloadOutlined } from '@ant-design/icons'
+import { fieldError, palette, shadowCard, space } from '../../theme'
+import { CalendarOutlined, EllipsisOutlined, FileExcelOutlined, FolderOpenOutlined } from '@ant-design/icons'
 import { EmptyState } from '../../components/EmptyState'
 import { DeckProgressCard, StageRollupCard } from './DeckStatsCards'
 import { DeckTodayCard } from './DeckTodayCard'
@@ -1169,44 +1169,127 @@ export function GsScreen() {
           activeDeckId.
         */}
         <div style={{ gridColumn: '1 / -1', minWidth: 0 }}>
-          <FilterBar>
-            {projectId && <FieldProjectSelect projectId={projectId} />}
-            {decks.length > 0 && (
-              <Select
-                aria-label="Sàn"
-                {...searchSelectProps}
-                value={activeDeckId ?? undefined}
-                onChange={(id) => {
-                  setActiveDeckId(id)
-                  // Remembered on the choice, never on the load: a project's
-                  // first render must not write the previous project's deck
-                  // under its key.
-                  if (projectId) rememberDeck(projectId, id)
-                }}
-                style={{ width: phone ? '100%' : 320, maxWidth: '100%' }}
-                options={decks.map((d) => ({
-                  value: d.id,
-                  label: `${d.name} · ${deckPercents[d.id] === undefined ? '—' : formatPercent(deckPercents[d.id])}`,
-                  searchKey: d.name,
-                }))}
-              />
-            )}
+          {/*
+            On a phone the bar's controls stack full width and the ⋯ stays at
+            the top right, beside the first; wider, the actions sit at the
+            right end of the row the bar leaves.
+          */}
+          <div
+            data-testid="gs-bar-row"
+            style={{
+              display: 'flex',
+              flexWrap: phone ? 'nowrap' : 'wrap',
+              alignItems: phone ? 'flex-start' : 'center',
+              gap: space.md,
+              minWidth: 0,
+            }}
+          >
+            <div style={{ flex: '1 1 auto', minWidth: 0 }}>
+              <FilterBar>
+                {projectId && <FieldProjectSelect projectId={projectId} width={phone ? '100%' : undefined} />}
+                {decks.length > 0 && (
+                  <Select
+                    aria-label="Sàn"
+                    {...searchSelectProps}
+                    value={activeDeckId ?? undefined}
+                    onChange={(id) => {
+                      setActiveDeckId(id)
+                      // Remembered on the choice, never on the load: a project's
+                      // first render must not write the previous project's deck
+                      // under its key.
+                      if (projectId) rememberDeck(projectId, id)
+                    }}
+                    style={{ width: phone ? '100%' : 320, maxWidth: '100%' }}
+                    options={decks.map((d) => ({
+                      value: d.id,
+                      label: `${d.name} · ${deckPercents[d.id] === undefined ? '—' : formatPercent(deckPercents[d.id])}`,
+                      searchKey: d.name,
+                    }))}
+                  />
+                )}
+                {/*
+                  GSW-R1: the work the drawing is showing. Hidden with one work,
+                  since a control with one position is a label pretending to be a
+                  choice. Everything below -- colours, cards, plan, the bay modal --
+                  follows it. Named by its aria-label, no label on screen (FLT-01).
+                */}
+                {activeWork && workList.length > 1 && (
+                  <Segmented
+                    data-testid="gs-work-picker"
+                    aria-label="Công việc"
+                    value={activeWork.work.id}
+                    onChange={(id) => setActiveWorkId(String(id))}
+                    options={workList.map((w) => ({ label: w.work.name, value: w.work.id }))}
+                  />
+                )}
+              </FilterBar>
+            </div>
             {/*
-              GSW-R1: the work the drawing is showing. Hidden with one work,
-              since a control with one position is a label pretending to be a
-              choice. Everything below -- colours, cards, plan, the bay modal --
-              follows it. Named by its aria-label, no label on screen (FLT-01).
+              GS-09: the page's actions, at the right end of the bar and outside
+              its search landmark: they act, they do not filter. Two different
+              icons for "this deck's file" and "every deck". On a phone there is
+              no hover to name an icon, so both fold into one ⋯ menu that
+              spells them out.
             */}
-            {activeWork && workList.length > 1 && (
-              <Segmented
-                data-testid="gs-work-picker"
-                aria-label="Công việc"
-                value={activeWork.work.id}
-                onChange={(id) => setActiveWorkId(String(id))}
-                options={workList.map((w) => ({ label: w.work.name, value: w.work.id }))}
-              />
-            )}
-          </FilterBar>
+            <div style={{ marginInlineStart: 'auto', display: 'flex', gap: space.sm, flex: 'none' }}>
+              {phone ? (
+                <Dropdown
+                  trigger={['click']}
+                  placement="bottomRight"
+                  menu={{
+                    items: [
+                      {
+                        key: 'deck',
+                        icon: <FileExcelOutlined aria-hidden />,
+                        label: 'Xuất báo cáo',
+                        disabled: exporting,
+                        onClick: () => { void exportDeck() },
+                      },
+                      {
+                        key: 'project',
+                        icon: <FolderOpenOutlined aria-hidden />,
+                        label: 'Xuất cả dự án',
+                        disabled: exportingProject,
+                        onClick: () => { void exportProject() },
+                      },
+                    ],
+                  }}
+                >
+                  <Button
+                    aria-label="Thêm thao tác"
+                    aria-haspopup="menu"
+                    icon={<EllipsisOutlined aria-hidden />}
+                    loading={exporting || exportingProject}
+                  />
+                </Dropdown>
+              ) : (
+                <>
+                  <Tooltip title="Xuất báo cáo">
+                    <Button
+                      aria-label="Xuất báo cáo"
+                      icon={<FileExcelOutlined aria-hidden />}
+                      loading={exporting}
+                      onClick={() => { void exportDeck() }}
+                    />
+                  </Tooltip>
+                  {/*
+                    Every deck in one file (Feedback Rv4). Linh: the bosses were
+                    asking for the admin build purely to download a report over
+                    all the decks. RLS decides what lands in it, so a foreman
+                    held to one work gets that work's decks and no others.
+                  */}
+                  <Tooltip title="Xuất cả dự án">
+                    <Button
+                      aria-label="Xuất cả dự án"
+                      icon={<FolderOpenOutlined aria-hidden />}
+                      loading={exportingProject}
+                      onClick={() => { void exportProject() }}
+                    />
+                  </Tooltip>
+                </>
+              )}
+            </div>
+          </div>
         </div>
 
         {/*
@@ -1279,28 +1362,6 @@ export function GsScreen() {
                     options={stages.map((st) => ({ value: st.id, label: st.name }))}
                   />
                 )}
-                <Button
-                  icon={<DownloadOutlined aria-hidden />}
-                  aria-label="Xuất báo cáo"
-                  loading={exporting}
-                  onClick={() => { void exportDeck() }}
-                >
-                  {phone ? null : 'Xuất báo cáo'}
-                </Button>
-                {/*
-                  Every deck in one file (Feedback Rv4). Linh: the bosses were
-                  asking for the admin build purely to download a report over
-                  all the decks. RLS decides what lands in it, so a foreman
-                  held to one work gets that work's decks and no others.
-                */}
-                <Button
-                  icon={<DownloadOutlined aria-hidden />}
-                  aria-label="Xuất cả dự án"
-                  loading={exportingProject}
-                  onClick={() => { void exportProject() }}
-                >
-                  {phone ? null : 'Xuất cả dự án'}
-                </Button>
               </Space>
             }
           >

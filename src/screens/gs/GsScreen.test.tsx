@@ -346,6 +346,14 @@ const chooseLogout = async () => {
   await userEvent.click(await screen.findByRole('button', { name: /^Nguyễn Văn A \(gs1\)/ }))
   await userEvent.click(await screen.findByRole('menuitem', { name: /Đăng xuất/ }))
 }
+/**
+ * An export, the way a phone reaches it: jsdom answers every width query as a
+ * phone, where both exports sit in the bar's ⋯ menu (GS-09).
+ */
+const chooseExport = async (name: 'Xuất báo cáo' | 'Xuất cả dự án') => {
+  await userEvent.click(screen.getByRole('button', { name: 'Thêm thao tác' }))
+  await userEvent.click(await screen.findByRole('menuitem', { name: new RegExp(name) }))
+}
 /** The Dự án switch, first in the Sàn page's bar (GS-07). */
 const projectSwitch = () => screen.findByRole('combobox', { name: 'Dự án' })
 
@@ -2189,7 +2197,8 @@ describe('GsScreen: a viewer (0028)', () => {
     expect(screen.queryByRole('button', { name: 'Xác nhận' })).toBeNull()
     expect(screen.queryByRole('combobox', { name: 'Công đoạn' })).toBeNull()
     expect(screen.getByRole('button', { name: 'Đóng' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Xuất báo cáo' })).toBeEnabled()
+    await userEvent.click(screen.getByRole('button', { name: 'Thêm thao tác' }))
+    expect(await screen.findByRole('menuitem', { name: /Xuất báo cáo/ })).not.toHaveAttribute('aria-disabled', 'true')
   })
 
   it('shows no read-only mark to a foreman', async () => {
@@ -2292,7 +2301,7 @@ describe('GsScreen: exporting the open deck', () => {
     renderScreen()
     await screen.findByRole('button', { name: 'ô R1C1' })
 
-    await userEvent.click(screen.getByRole('button', { name: 'Xuất báo cáo' }))
+    await chooseExport('Xuất báo cáo')
 
     await waitFor(() => expect(buildReportWorkbook).toHaveBeenCalledTimes(1))
     const [input] = buildReportWorkbook.mock.calls[0]
@@ -2324,7 +2333,7 @@ describe('GsScreen: exporting the open deck', () => {
     renderScreen()
     await screen.findByRole('button', { name: 'ô R1C1' })
 
-    await userEvent.click(screen.getByRole('button', { name: 'Xuất báo cáo' }))
+    await chooseExport('Xuất báo cáo')
 
     await waitFor(() => expect(buildReportWorkbook).toHaveBeenCalledTimes(1))
     const [input] = buildReportWorkbook.mock.calls[0]
@@ -2344,7 +2353,7 @@ describe('GsScreen: exporting the open deck', () => {
     renderScreen()
     await screen.findByRole('button', { name: 'ô R1C1' })
 
-    await userEvent.click(screen.getByRole('button', { name: 'Xuất báo cáo' }))
+    await chooseExport('Xuất báo cáo')
 
     expect(await screen.findByText(/out of memory/)).toBeInTheDocument()
   })
@@ -2356,7 +2365,7 @@ describe('GsScreen: the whole project in one file (Feedback Rv4)', () => {
     // report over every deck. RLS decides what lands in it.
     renderScreen()
     await screen.findByRole('button', { name: 'ô R1C1' })
-    await userEvent.click(screen.getByRole('button', { name: 'Xuất cả dự án' }))
+    await chooseExport('Xuất cả dự án')
 
     await waitFor(() => expect(buildProjectReport).toHaveBeenCalled())
     expect(buildProjectReport.mock.calls[0][0]).toMatchObject({
@@ -2370,7 +2379,7 @@ describe('GsScreen: the whole project in one file (Feedback Rv4)', () => {
     loadProjectModel.mockResolvedValue({ models: [], decks: [], audit: {} })
     renderScreen()
     await screen.findByRole('button', { name: 'ô R1C1' })
-    await userEvent.click(screen.getByRole('button', { name: 'Xuất cả dự án' }))
+    await chooseExport('Xuất cả dự án')
 
     expect(
       (await screen.findAllByText('Chưa có sàn nào bạn được phân quyền trong dự án này.')).length,
@@ -2382,7 +2391,96 @@ describe('GsScreen: the whole project in one file (Feedback Rv4)', () => {
     authRole.value = 'viewer'
     renderScreen()
     await screen.findByRole('button', { name: 'ô R1C1' })
-    expect(screen.getByRole('button', { name: 'Xuất cả dự án' })).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Thêm thao tác' }))
+    expect(await screen.findByRole('menuitem', { name: /Xuất cả dự án/ })).toBeInTheDocument()
+  })
+})
+
+describe('GsScreen: the exports are bar actions (GS-09)', () => {
+  const original = window.matchMedia
+  /** A viewport of `width` px for antd's breakpoints, as FieldHeader.test does it. */
+  const setViewport = (width: number) => {
+    window.matchMedia = ((query: string) => {
+      const min = /min-width:\s*([\d.]+)px/.exec(query)
+      const max = /max-width:\s*([\d.]+)px/.exec(query)
+      return {
+        matches: (!min || width >= Number(min[1])) && (!max || width <= Number(max[1])),
+        media: query,
+        onchange: null,
+        addListener: () => {},
+        removeListener: () => {},
+        addEventListener: () => {},
+        removeEventListener: () => {},
+        dispatchEvent: () => false,
+      }
+    }) as typeof window.matchMedia
+  }
+  afterEach(() => {
+    window.matchMedia = original
+  })
+  /** The row that holds the filter bar and, at its right end, the page's actions. */
+  const barRow = () => screen.getByTestId('gs-bar-row')
+  const card = () => screen.getByTestId('canvas').closest('.pp-card')?.parentElement as HTMLElement
+
+  it.each([1280, 768])('puts both as icon buttons at the right end of the bar at %s px, with their own icons', async (width) => {
+    setViewport(width)
+    renderScreen()
+    await screen.findByTestId('canvas')
+    const deck = within(barRow()).getByRole('button', { name: 'Xuất báo cáo' })
+    const project = within(barRow()).getByRole('button', { name: 'Xuất cả dự án' })
+    // Icon buttons: no text on the button, the aria-label and tooltip carry it.
+    expect(deck).toHaveTextContent(/^$/)
+    expect(project).toHaveTextContent(/^$/)
+    expect(deck.querySelector('.anticon-file-excel')).not.toBeNull()
+    expect(project.querySelector('.anticon-folder-open')).not.toBeNull()
+    // Outside the search landmark: they act, they do not filter.
+    expect(within(screen.getByRole('search', { name: 'Bộ lọc' })).queryByRole('button', { name: /Xuất/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Thêm thao tác' })).toBeNull()
+  })
+
+  it('names each in a tooltip with today\'s text', async () => {
+    setViewport(1280)
+    renderScreen()
+    await screen.findByTestId('canvas')
+    await userEvent.hover(within(barRow()).getByRole('button', { name: 'Xuất cả dự án' }))
+    expect(await screen.findByRole('tooltip')).toHaveTextContent('Xuất cả dự án')
+  })
+
+  it('leaves the card header with Hiện kế hoạch only', async () => {
+    setViewport(1280)
+    renderScreen()
+    await screen.findByTestId('canvas')
+    const header = card()
+    expect(within(header).getByRole('button', { name: 'Hiện kế hoạch' })).toBeInTheDocument()
+    expect(within(header).queryByRole('button', { name: /Xuất/ })).toBeNull()
+  })
+
+  it('exports the open deck and the project from the icon buttons, as before', async () => {
+    setViewport(1280)
+    Object.defineProperty(URL, 'createObjectURL', { value: () => 'blob:x', configurable: true })
+    Object.defineProperty(URL, 'revokeObjectURL', { value: () => {}, configurable: true })
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    renderScreen()
+    await screen.findByTestId('canvas')
+    await userEvent.click(within(barRow()).getByRole('button', { name: 'Xuất báo cáo' }))
+    await waitFor(() => expect(buildReportWorkbook).toHaveBeenCalledTimes(1))
+    expect(buildReportWorkbook.mock.calls[0][0].scope).toBe('deck')
+    await userEvent.click(within(barRow()).getByRole('button', { name: 'Xuất cả dự án' }))
+    await waitFor(() => expect(buildProjectReport).toHaveBeenCalledTimes(1))
+  })
+
+  it('folds both into one ⋯ menu on a phone, icon and full text each', async () => {
+    setViewport(390)
+    renderScreen()
+    await screen.findByTestId('canvas')
+    expect(within(barRow()).queryByRole('button', { name: 'Xuất báo cáo' })).toBeNull()
+    const more = within(barRow()).getByRole('button', { name: 'Thêm thao tác' })
+    expect(more.querySelector('.anticon-ellipsis')).not.toBeNull()
+    await userEvent.click(more)
+    const items = within(await screen.findByRole('menu')).getAllByRole('menuitem')
+    expect(items.map((i) => i.textContent)).toEqual(['Xuất báo cáo', 'Xuất cả dự án'])
+    expect(items[0].querySelector('.anticon-file-excel')).not.toBeNull()
+    expect(items[1].querySelector('.anticon-folder-open')).not.toBeNull()
   })
 })
 
