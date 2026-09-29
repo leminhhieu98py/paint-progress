@@ -39,6 +39,14 @@ export function clearOnTapElsewhere(el: Element, clear: () => void): void {
   document.addEventListener('pointerdown', onDown, true)
 }
 
+/** Drops the listener `clearOnTapElsewhere` left waiting for `el`, when `el` is tapped off itself (Q4). */
+export function cancelTapElsewhere(el: Element): void {
+  const listener = waiting.get(el)
+  if (listener === undefined) return
+  document.removeEventListener('pointerdown', listener, true)
+  waiting.delete(el)
+}
+
 /**
  * The props of one focusable legend row for `key`, its own layout in `base`.
  *
@@ -72,6 +80,7 @@ export function legendRowProps(
       if (e.pointerType !== 'touch') return
       if (active === key) {
         setActive(null)
+        cancelTapElsewhere(e.currentTarget)
       } else {
         setActive(key)
         clearOnTapElsewhere(e.currentTarget, () => setActive(null))

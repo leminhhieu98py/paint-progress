@@ -2,7 +2,7 @@ import { Tooltip } from 'antd'
 import { useId, useState, type CSSProperties, type ReactNode } from 'react'
 import { palette } from '../theme'
 import { ringSegments, sectorPath } from './donutGeometry'
-import { clearOnTapElsewhere } from './ringHover'
+import { cancelTapElsewhere, clearOnTapElsewhere } from './ringHover'
 
 export interface DonutSlice {
   /**
@@ -179,6 +179,7 @@ export function Donut({
                       if (e.pointerType !== 'touch') return
                       if (tipKey === key) {
                         leave()
+                        cancelTapElsewhere(e.currentTarget)
                       } else {
                         enter(key)
                         clearOnTapElsewhere(e.currentTarget, leave)

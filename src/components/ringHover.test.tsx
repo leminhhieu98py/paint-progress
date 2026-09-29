@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { useState } from 'react'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { palette } from '../theme'
 import { LEGEND_ACTIVE_BG, legendRowProps } from './ringHover'
 
@@ -62,6 +62,20 @@ describe('legendRowProps', () => {
     tap(row('a'))
     tap(row('b'))
     expect(active()).toBe('b')
+  })
+
+  it('drops its waiting listener when the row is tapped off, not only on a tap elsewhere (Q4)', () => {
+    render(<Legend />)
+    const add = vi.spyOn(document, 'addEventListener')
+    const remove = vi.spyOn(document, 'removeEventListener')
+    tap(row('a'))
+    const listener = add.mock.calls.find(([type]) => type === 'pointerdown')?.[1]
+    expect(listener).toBeDefined()
+    tap(row('a'))
+    expect(active()).toBe('')
+    expect(remove).toHaveBeenCalledWith('pointerdown', listener, true)
+    add.mockRestore()
+    remove.mockRestore()
   })
 
   it('still clears on a tap elsewhere after a touch on the active row turned into a scroll (CHT-02)', () => {
