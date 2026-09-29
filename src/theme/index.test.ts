@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { adminTheme, categoricalColor, palette, type } from '.'
+import { adminTheme, categoricalColor, fieldTheme, fieldType, palette, type } from '.'
 
 /** WCAG relative luminance of a `#rrggbb` colour. */
 function luminance(hex: string): number {
@@ -97,5 +97,20 @@ describe('type (TYP-01)', () => {
     expect(adminTheme.token?.fontWeightStrong).toBe(type.bodyStrong.fontWeight)
     expect(adminTheme.components?.Card?.headerFontSize).toBe(type.cardTitle.fontSize)
     expect(adminTheme.components?.Modal?.titleFontSize).toBe(type.cardTitle.fontSize)
+  })
+})
+
+describe('fieldType (GS-04, GS-10)', () => {
+  it('is the same scale on the field theme\'s base of 14: body, bodyStrong and label move, nothing else', () => {
+    expect(fieldType).toEqual({
+      ...type,
+      body: { fontSize: 14, fontWeight: 400 },
+      bodyStrong: { fontSize: 14, fontWeight: 600 },
+      label: { fontSize: 14, fontWeight: 600 },
+    })
+  })
+
+  it('agrees with the field theme: its base size is body', () => {
+    expect(fieldTheme.token?.fontSize).toBe(fieldType.body.fontSize)
   })
 })

@@ -6,7 +6,7 @@ import { useAuth } from '../../auth/AuthProvider'
 import { ConsequenceModal } from '../../components/ConsequenceModal'
 import { StatusPill } from '../../components/StatusPill'
 import { APP_BASE_PATH, LOGIN_PATH } from '../../config'
-import { palette, space, type } from '../../theme'
+import { fieldType, palette, space, type } from '../../theme'
 import { fieldAccountMenuItems } from './fieldAccountMenu'
 import {
   FIELD_SAFE_AREA_BOTTOM, FIELD_SECTIONS, FIELD_TAB_BAR_SPACE, fieldSectionOf, useFieldPhone, type FieldSection,
@@ -87,8 +87,8 @@ export function FieldHeader({ projectId }: { projectId: string }) {
             gap: 2,
             textDecoration: 'none',
             whiteSpace: 'nowrap',
+            // One weight under the icon: the colour and the top rule mark the page.
             ...type.caption,
-            fontWeight: active ? 600 : 500,
             color: active ? palette.accent : palette.textSecondary,
             borderTop: `2px solid ${active ? palette.accent : 'transparent'}`,
           }
@@ -98,7 +98,7 @@ export function FieldHeader({ projectId }: { projectId: string }) {
             paddingInline: space.md,
             whiteSpace: 'nowrap',
             textDecoration: 'none',
-            fontWeight: active ? 600 : 500,
+            ...(active ? fieldType.bodyStrong : fieldType.body),
             color: active ? palette.accent : palette.textSecondary,
             borderBottom: `2px solid ${active ? palette.accent : 'transparent'}`,
             borderTop: '2px solid transparent',
@@ -168,7 +168,7 @@ export function FieldHeader({ projectId }: { projectId: string }) {
             </Avatar>
             {!phone && (
               <>
-                <span style={{ ...ellipsis, fontWeight: 600, minWidth: 0, maxWidth: 200 }}>
+                <span style={{ ...ellipsis, ...fieldType.bodyStrong, minWidth: 0, maxWidth: 200 }}>
                   {fullName}
                 </span>
                 {readOnly && <StatusPill tone="off">Chỉ xem</StatusPill>}

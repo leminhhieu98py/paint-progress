@@ -3,7 +3,8 @@ import dayjs from 'dayjs'
 import { EmptyState } from './EmptyState'
 import { initialsOf } from '../lib/initials'
 import type { CellNote } from '../lib/progressApi'
-import { palette, type } from '../theme'
+import { palette } from '../theme'
+import { useTypeScale } from './typeScale'
 
 /**
  * Every note left on one bay, as a thread.
@@ -40,6 +41,8 @@ export function NoteThread({
   onEditReport?: (note: CellNote) => void
   onToggleHidden?: (note: CellNote) => void
 }) {
+  // The scale of the page this is on: the field's 14 on a field page (GS-10).
+  const type = useTypeScale()
   /** "Đoàn Công Linh · 02.09.2026 10:00" -- who last touched the report copy. */
   const stamp = (n: CellNote) =>
     [

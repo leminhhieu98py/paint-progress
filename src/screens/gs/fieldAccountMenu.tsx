@@ -1,7 +1,7 @@
 import { LogoutOutlined } from '@ant-design/icons'
 import type { MenuProps } from 'antd'
 import { StatusPill } from '../../components/StatusPill'
-import { palette, space, type } from '../../theme'
+import { fieldType, palette, space, type } from '../../theme'
 
 /**
  * The account menu, as one list (GS-06): who is signed in, then what they can
@@ -21,7 +21,7 @@ export function fieldAccountMenuItems({ fullName, username, readOnly, onLogout }
       type: 'group',
       label: (
         <div style={{ color: palette.text }}>
-          <div style={{ fontWeight: 600 }}>{fullName}</div>
+          <div style={fieldType.bodyStrong}>{fullName}</div>
           <div style={{ ...type.caption, color: palette.textTertiary }}>{username}</div>
           {readOnly && <div style={{ marginTop: space.xs }}><StatusPill tone="off">Chỉ xem</StatusPill></div>}
         </div>

@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
-import { palette, type } from '../theme'
+import { palette } from '../theme'
+import { useTypeScale } from './typeScale'
 
 /**
  * An empty state that says what is missing AND what it blocks.
@@ -22,6 +23,8 @@ export function EmptyState({
   action?: ReactNode
   tone?: 'default' | 'error'
 }) {
+  // The scale of the page this is on: the field's 14 on a field page (GS-10).
+  const type = useTypeScale()
   return (
     <div style={{ padding: '52px 28px 56px', textAlign: 'center' }}>
       <div

@@ -6,6 +6,7 @@ import { endSession } from '../../lib/sessionCache'
 import { fieldAccountMenuItems } from './fieldAccountMenu'
 import { FieldHeader } from './FieldHeader'
 import { FieldLayout } from './FieldLayout'
+import { useTypeScale } from '../../components/typeScale'
 
 const listProjectNames = vi.hoisted(() => vi.fn())
 vi.mock('../../lib/projectsApi', () => ({
@@ -339,6 +340,18 @@ describe('FieldLayout: nothing hides behind the bottom bar', () => {
     const layout = screen.getByText('nội dung').parentElement as HTMLElement
     expect(layout.style.paddingBottom).toBe('calc(56px + env(safe-area-inset-bottom, 0px))')
     expect(layout.firstElementChild?.tagName).toBe('HEADER')
+  })
+
+  it('sets the page on the field\'s type scale (GS-10)', () => {
+    function Probe() {
+      return <span data-testid="probe">{useTypeScale().body.fontSize}</span>
+    }
+    render(
+      <MemoryRouter initialEntries={['/gs/p1']}>
+        <FieldLayout projectId="p1"><Probe /></FieldLayout>
+      </MemoryRouter>,
+    )
+    expect(screen.getByTestId('probe')).toHaveTextContent('14')
   })
 
   it('adds nothing from 768 px up, where the tabs are in the header', () => {

@@ -1,5 +1,7 @@
 import { Layout } from 'antd'
 import type { ReactNode } from 'react'
+import { TypeScaleProvider } from '../../components/typeScale'
+import { fieldType } from '../../theme'
 import { FieldHeader } from './FieldHeader'
 import { FIELD_TAB_BAR_SPACE, useFieldPhone } from './fieldSections'
 
@@ -10,6 +12,8 @@ import { FIELD_TAB_BAR_SPACE, useFieldPhone } from './fieldSections'
  *
  * The header is always the first child of the same Layout, so a host that
  * swaps its body (loading, a failure, the next project) keeps one header.
+ * Everything inside is on the field's type scale (GS-10): a shared component
+ * sets its running text at the field's 14, not the admin's 13.
  */
 export function FieldLayout({ projectId, children }: {
   projectId: string | null | undefined
@@ -17,9 +21,11 @@ export function FieldLayout({ projectId, children }: {
 }) {
   const phone = useFieldPhone()
   return (
-    <Layout style={{ minHeight: '100vh', paddingBottom: phone ? FIELD_TAB_BAR_SPACE : undefined }}>
-      {projectId ? <FieldHeader projectId={projectId} /> : null}
-      {children}
-    </Layout>
+    <TypeScaleProvider value={fieldType}>
+      <Layout style={{ minHeight: '100vh', paddingBottom: phone ? FIELD_TAB_BAR_SPACE : undefined }}>
+        {projectId ? <FieldHeader projectId={projectId} /> : null}
+        {children}
+      </Layout>
+    </TypeScaleProvider>
   )
 }

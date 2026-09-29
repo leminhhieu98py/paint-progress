@@ -6,7 +6,8 @@ import {
 } from '@ant-design/icons'
 import { Button, Input, Modal } from 'antd'
 import { useState, type ReactNode } from 'react'
-import { palette, type } from '../theme'
+import { palette } from '../theme'
+import { useTypeScale } from './typeScale'
 
 export interface ConsequenceItem {
   label: string
@@ -71,6 +72,8 @@ export function ConsequenceModal({
    */
   confirmText?: string
 }) {
+  // The scale of the page this is on: the field's 14 on a field page (GS-10).
+  const type = useTypeScale()
   const t = TONES[tone]
   const [typed, setTyped] = useState('')
   // Reset on every OPENING, whichever way the last one closed -- Huỷ, the X,
