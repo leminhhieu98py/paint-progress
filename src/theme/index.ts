@@ -64,14 +64,16 @@ export const palette = {
    * an admin configures (coats, KPI per deck, zones) stay as configured.
    *
    * Okabe–Ito's order, rotated to start at the accent -- bluish green,
-   * yellow, blue, vermillion, reddish purple, grey, orange, sky blue -- each
+   * yellow, blue, vermillion, reddish purple, rose, orange, sky blue -- each
    * hue darkened until it holds 3:1 against white, and tuned so that under
    * protanopia, deuteranopia and tritanopia (Machado 2009) no two of the
-   * eight fall below ΔE2000 11.6. Past eight, `categoricalColor` repeats them
-   * in a lighter tint.
+   * eight fall below ΔE2000 11.6. Rose stands where Okabe–Ito has grey: a
+   * grey slice beside the grey remainder track read as work left, or as a
+   * disabled deck. Past eight, `categoricalColor` repeats them in a lighter
+   * tint.
    */
   categorical: [
-    '#0A8175', '#88690B', '#2563EB', '#8F1D21', '#A13A97', '#8C93A1', '#CF813A', '#1E9DD1',
+    '#0A8175', '#88690B', '#2563EB', '#8F1D21', '#A13A97', '#D22766', '#CF813A', '#1E9DD1',
   ],
 } as const
 

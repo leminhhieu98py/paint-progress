@@ -25,6 +25,22 @@ describe('palette.categorical (CHT-01)', () => {
     }
   })
 
+  it('has no grey, which a ring reads as its remainder track (m-5)', () => {
+    // HSL saturation: the slate the palette once had is 0,10; the track is a
+    // grey too. Every hue here is a colour, well clear of both.
+    const saturation = (hex: string) => {
+      const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255)
+      const max = Math.max(r, g, b)
+      const min = Math.min(r, g, b)
+      const l = (max + min) / 2
+      return max === min ? 0 : (max - min) / (1 - Math.abs(2 * l - 1))
+    }
+    expect(saturation(palette.track)).toBeLessThan(0.4)
+    for (const c of palette.categorical) {
+      expect({ colour: c, saturated: saturation(c) >= 0.4 }).toEqual({ colour: c, saturated: true })
+    }
+  })
+
   it('starts on the accent, so a one-slice ring reads as it always has', () => {
     expect(palette.categorical[0]).toBe(palette.accent)
   })
