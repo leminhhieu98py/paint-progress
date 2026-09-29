@@ -285,9 +285,41 @@ describe('AppRoutes: /login is the entry point', () => {
     expect(await screen.findByText('EMPLOYEES SCREEN')).toBeInTheDocument()
   })
 
-  it('gives a path that is not a route the bare 404, as spec §7.3 asks', async () => {
-    asRole('admin')
+  // -------------------------------------------------------------------
+  // QA F2 -- a path that is not a route
+  // -------------------------------------------------------------------
+
+  it('gives a stranger at a path that is not a route the bare 404, as spec §7.3 asks', async () => {
+    getSession.mockResolvedValue({ data: { session: null } })
     renderAt('/nope')
     expect(await screen.findByText('404')).toBeInTheDocument()
+    expect(screen.queryByText('Không tìm thấy trang')).toBeNull()
+  })
+
+  it('tells a signed-in account at a path that is not a route so, with a way home', async () => {
+    // Nothing to hide from an account that is already in: the bare 404 left
+    // a mistyped URL as a blank page with no way back.
+    asRole('admin')
+    renderAt('/nope')
+    expect(await screen.findByText('Không tìm thấy trang')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Về trang chính' })).toHaveAttribute('href', APP_BASE_PATH || '/')
+    expect(screen.queryByText('404')).toBeNull()
+    expect(screen.queryByText('ADMIN LAYOUT')).toBeNull()
+  })
+
+  it('keeps an admin inside the admin shell at an unknown admin path, with a way to Dự án', async () => {
+    asRole('admin')
+    renderAt(`${APP_BASE_PATH}/admin/productivity`)
+    expect(await screen.findByText('Không tìm thấy trang')).toBeInTheDocument()
+    expect(screen.getByText('ADMIN LAYOUT')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Về trang chính' })).toHaveAttribute('href', `${APP_BASE_PATH}/admin/projects`)
+    expect(screen.queryByText('404')).toBeNull()
+  })
+
+  it('still gives the wrong role the bare 404 at an unknown admin path -- the gate reveals nothing', async () => {
+    asRole('gs')
+    renderAt(`${APP_BASE_PATH}/admin/productivity`)
+    expect(await screen.findByText('404')).toBeInTheDocument()
+    expect(screen.queryByText('Không tìm thấy trang')).toBeNull()
   })
 })

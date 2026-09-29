@@ -6,6 +6,7 @@ import { RequireRole } from './auth/RequireRole'
 import { APP_BASE_PATH } from './config'
 import { myFirstProjectId } from './lib/projectsApi'
 import { NotFound } from './screens/NotFound'
+import { NotFoundPage } from './screens/NotFoundPage'
 import { fieldTheme } from './theme'
 
 // Every screen behind a role gate is React.lazy, and for two different reasons.
@@ -154,6 +155,20 @@ function RoleHome() {
   return <NotFound />
 }
 
+/**
+ * The top-level catch-all (QA F2). A stranger, a wrong role and a deactivated
+ * profile keep the bare 404 of spec §7.3; an active account gets told and
+ * sent to `/`, which RoleHome resolves to its own landing spot. Nothing while
+ * the session is still being read, so the bare page never flashes before
+ * the signed-in one.
+ */
+function StrayPath() {
+  const { session, profile, loading } = useAuth()
+  if (loading) return null
+  if (!session || !profile?.active) return <NotFound />
+  return <NotFoundPage home={APP_BASE_PATH || '/'} />
+}
+
 export function AppRoutes() {
   return (
     <Routes>
@@ -262,6 +277,11 @@ export function AppRoutes() {
               </LazySuspense>
             }
           />
+          {/*
+            Only an admin reaches this: the gate above still gives every other
+            role the bare 404 for any /admin path, known or not (QA F2).
+          */}
+          <Route path="*" element={<NotFoundPage home={`${APP_BASE_PATH}/admin/projects`} />} />
         </Route>
         {/*
           The viewer's project picker (RV6-23). The viewer's alone: a foreman
@@ -338,7 +358,7 @@ export function AppRoutes() {
           }
         />
       </Route>
-      <Route path="*" element={<NotFound />} />
+      <Route path="*" element={<StrayPath />} />
     </Routes>
   )
 }
