@@ -1550,8 +1550,8 @@ describe('GsScreen: recording a stage', () => {
 
     renderScreen()
     await userEvent.click(await screen.findByRole('button', { name: 'ô R2C1' }))
-    await userEvent.click(await screen.findByRole('combobox', { name: 'Công đoạn' }))
-    await userEvent.click(await screen.findByTitle('Tháo giáo'))
+    // Scoped to the dropdown: the coat legend's names carry a title too (M-2).
+    await chooseIn('Công đoạn', 'Tháo giáo')
     await userEvent.click(screen.getByRole('button', { name: 'Xác nhận' }))
 
     // Another foreman's tick lands while this write is still in flight.
