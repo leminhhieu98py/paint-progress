@@ -355,7 +355,7 @@ export function StageConfigPanel({
     <SectionCard
       code="A3.2"
       title="Cấu hình lớp sơn"
-      summary={`${draft.length} lớp · tổng ${formatWeight(total)}`}
+      facts={[{ value: draft.length, label: 'lớp' }, { prefix: 'tổng', value: formatWeight(total) }]}
       collapsible
       bodyPadding={0}
       footer={<RulesDisclosure rules={STAGE_RULES} />}

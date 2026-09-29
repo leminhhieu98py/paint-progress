@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderApp } from '../../test/renderApp'
 import { expectLeft } from '../../test/alignment'
 import { expectAllSmall } from '../../test/controls'
-import { pageSubtitle } from '../../test/copy'
+import { keyFactTexts, pageSubtitle } from '../../test/copy'
 import type { Work, WorkModel } from '../../domain/types'
 import { WorksScreen } from './WorksScreen'
 
@@ -92,6 +92,22 @@ describe('WorksScreen', () => {
     // 0.6 + 0.4; Marking does not count and stays out of the sum.
     expect(screen.getByTestId('works-sum')).toHaveTextContent('1,00')
     expect(screen.getByRole('button', { name: 'Lưu công việc' })).toBeEnabled()
+  })
+
+  it('shows the list\'s facts beside the card title as KeyFacts pills (HLT-01)', async () => {
+    renderScreen()
+    await screen.findByDisplayValue('Sơn')
+    const card = screen.getByRole('heading', { name: 'Công việc của dự án' }).parentElement as HTMLElement
+    expect(keyFactTexts(card)).toEqual(['3 công việc', '2 tính vào tổng'])
+  })
+
+  it('shows the deck matrix\'s facts beside its title as KeyFacts pills (HLT-01)', async () => {
+    renderScreen()
+    await screen.findByDisplayValue('Sơn')
+    await userEvent.click(within(rowOf('Sơn')).getByRole('button', { name: 'Sàn tham gia' }))
+    const matrix = await screen.findByTestId('work-decks-w1')
+    await within(matrix).findByLabelText('Trọng số Cellar Deck')
+    expect(keyFactTexts(matrix)).toEqual(['2 / 2 sàn', 'Σ trọng số sàn 1,00'])
   })
 
   it('shows a bays work\'s computed progress and lets a manual work\'s be typed', async () => {

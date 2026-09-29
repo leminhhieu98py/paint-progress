@@ -5,6 +5,7 @@ import { renderApp } from '../../test/renderApp'
 import { StageConfigPanel } from './StageConfigPanel'
 import { expectLeft } from '../../test/alignment'
 import { expectAllSmall } from '../../test/controls'
+import { keyFactTexts } from '../../test/copy'
 
 const listWorkStages = vi.hoisted(() => vi.fn())
 const saveWorkStages = vi.hoisted(() => vi.fn())
@@ -85,10 +86,10 @@ describe('StageConfigPanel', () => {
     // mocked listWorkStages promise rather than testing the settled total.
     await screen.findByDisplayValue('Blast + Coat 1')
     // vi-VN formatting: comma decimal separator, matching the paperwork the
-    // operators already read from. Twice on purpose: the section summary
-    // survives the panel being collapsed, the chip beside Lưu does not.
-    expect(await screen.findByText('2 lớp · tổng 1,00')).toBeInTheDocument()
-    expect(screen.getByText('1,00')).toBeInTheDocument()
+    // operators already read from. Twice on purpose: the section's facts
+    // survive the panel being collapsed, the chip beside Lưu does not.
+    await waitFor(() => expect(keyFactTexts()).toEqual(['2 lớp', 'tổng 1,00']))
+    expect(screen.getAllByText('1,00')).toHaveLength(2)
   })
 
   it('blocks save when the weights do not sum to 1', async () => {
@@ -460,8 +461,8 @@ describe('StageConfigPanel', () => {
 
     await waitFor(() => expect(screen.getByDisplayValue('0,33333')).toBeInTheDocument())
     expect(screen.queryByDisplayValue('0,333333')).toBeNull()
-    // 0.4 + 0.33333, not 0.4 + 0.333333.
-    expect(screen.getByText('0,73')).toBeInTheDocument()
+    // 0.4 + 0.33333, not 0.4 + 0.333333 -- on the chip and in the card's facts.
+    expect(screen.getAllByText('0,73')).toHaveLength(2)
   })
 
   it('saves the three-way split that used to disable its own Save button', async () => {
@@ -498,7 +499,8 @@ describe('StageConfigPanel', () => {
     // rounds away and it reads 1,00. That is precisely why the epsilon has to
     // forgive it: at 1e-6 the banner appeared next to a total the admin reads as
     // exactly 1,00, saying "Tổng trọng số phải bằng 1 — hiện tại 1,00".
-    expect(screen.getByText('1,00')).toBeInTheDocument()
+    // On the chip and in the card's facts.
+    expect(screen.getAllByText('1,00')).toHaveLength(2)
     expect(screen.queryByText(/Tổng trọng số phải bằng/)).toBeNull()
 
     expect(screen.getByRole('button', { name: 'Lưu cấu hình lớp sơn' })).toBeEnabled()
@@ -569,7 +571,8 @@ describe('StageConfigPanel', () => {
     const names = screen.getAllByLabelText('Tên lớp sơn').map((i) => (i as HTMLInputElement).value)
     expect(names).toEqual(['Coat 2', 'Blast + Coat 1'])
     // Cumulative progress reads stages by seq, so gaps or ties would corrupt it.
-    expect(screen.getAllByText(/^[12]$/).map((n) => n.textContent)).toEqual(['1', '2'])
+    const seqs = screen.getAllByText(/^[12]$/).filter((n) => n.closest('[data-testid="key-facts"]') === null)
+    expect(seqs.map((n) => n.textContent)).toEqual(['1', '2'])
   })
 
   it('refuses to save two stages under one name or one colour', async () => {
@@ -760,7 +763,7 @@ describe('StageConfigPanel weight bar', () => {
     // "0,7000" has to be read and compared against a number that is not there.
     expect(screen.getByTestId('weight-bar-s1')).toHaveStyle({ width: '60.0000%' })
     expect(screen.getByTestId('weight-bar-s2')).toHaveStyle({ width: '10.0000%' })
-    expect(screen.getByText('0,70')).toBeInTheDocument()
+    expect(screen.getAllByText('0,70')).toHaveLength(2)
     // The validation hint, without the rationale after it (CPY-01).
     expect(screen.getByText('Tổng trọng số các lớp phải bằng 1; hiện tại 0,70.')).toBeInTheDocument()
   })

@@ -312,7 +312,7 @@ export function WorksScreen() {
 
         <SectionCard
           title="Công việc của dự án"
-          summary={`${draft.length} công việc · ${counted.length} tính vào tổng`}
+          facts={[{ value: draft.length, label: 'công việc' }, { value: counted.length, label: 'tính vào tổng' }]}
           bodyPadding={0}
           footer={<RulesDisclosure rules={RULES} />}
         >
@@ -500,7 +500,10 @@ export function WorksScreen() {
           <div data-testid={`work-decks-${matrix.workId}`}>
           <SectionCard
             title={`Sàn tham gia · ${matrixWork.name || 'công việc mới'}`}
-            summary={`${matrixOn.length} / ${matrix.rows.length} sàn · Σ trọng số sàn ${formatWeight(matrixOn.reduce((s, r) => s + r.weight, 0))}`}
+            facts={[
+              { value: `${matrixOn.length} / ${matrix.rows.length}`, label: 'sàn' },
+              { prefix: 'Σ trọng số sàn', value: formatWeight(matrixOn.reduce((s, r) => s + r.weight, 0)) },
+            ]}
             bodyPadding={0}
             extra={
               <Space size={8}>

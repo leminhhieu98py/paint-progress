@@ -22,3 +22,11 @@ export function pageSubtitle(): HTMLElement | null {
   const next = title?.parentElement?.nextElementSibling
   return next instanceof HTMLParagraphElement ? next : null
 }
+
+/**
+ * The texts of the KeyFacts pills (HLT-01) under `root` -- the facts beside a
+ * card or page title -- in order, e.g. `['2 lớp', 'tổng 1,00']`.
+ */
+export function keyFactTexts(root: ParentNode = document): string[] {
+  return Array.from(root.querySelectorAll('[data-testid="key-fact"]'), (el) => el.textContent ?? '')
+}
