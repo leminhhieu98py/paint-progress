@@ -6,7 +6,8 @@ import {
 } from '@ant-design/icons'
 import { Button, ConfigProvider, Input, Modal, theme } from 'antd'
 import { useContext, useState, type ReactNode } from 'react'
-import { palette, type } from '../theme'
+import { palette } from '../theme'
+import { useTypeScale } from './typeScale'
 
 export interface ConsequenceItem {
   label: string
@@ -71,6 +72,8 @@ export function ConsequenceModal({
    */
   confirmText?: string
 }) {
+  // The scale of the page this is on: the field's 14 on a field page (GS-10).
+  const type = useTypeScale()
   const t = TONES[tone]
   // The size every other dialog under this theme titles itself at: the
   // theme's Modal title, antd's fontSizeLG when a theme sets none (Q6).

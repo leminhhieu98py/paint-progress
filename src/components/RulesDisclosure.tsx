@@ -1,6 +1,7 @@
 import { DownOutlined, InfoCircleOutlined } from '@ant-design/icons'
 import { useState } from 'react'
-import { palette, type } from '../theme'
+import { palette } from '../theme'
+import { useTypeScale } from './typeScale'
 
 export interface Rule {
   /**
@@ -25,6 +26,8 @@ export interface Rule {
  * and expanded by default they would push the actual work below the fold.
  */
 export function RulesDisclosure({ rules }: { rules: Rule[] }) {
+  // The scale of the page this is on: the field's 14 on a field page (GS-10).
+  const type = useTypeScale()
   const [open, setOpen] = useState(false)
   if (rules.length === 0) return null
 

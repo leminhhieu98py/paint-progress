@@ -1,6 +1,6 @@
 import { Alert, Button, Input, InputNumber, Modal, Select, Space, Typography } from 'antd'
 import { modalProps } from '../../components/modalChrome'
-import { fieldError, palette } from '../../theme'
+import { fieldError, fieldType, palette } from '../../theme'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { describeZone } from '../../domain/plan'
 import { WASTE_REASONS, wasteReasonLabel } from '../../domain/effort'
@@ -22,7 +22,8 @@ export const NOT_STARTED_VALUE = '__not-started__'
 const NOT_STARTED_LABEL = 'Chưa bắt đầu'
 
 const EMPTY_NAMES = { leadName: '', painterName: '' }
-const effortLabel = { display: 'block', marginBottom: 4, fontSize: 12, fontWeight: 600 } as const
+/** Every field's label, one step for all of them (TYP-01 on the field scale, GS-10). */
+const fieldLabel = { display: 'block', marginBottom: 4, ...fieldType.label } as const
 
 /** The red star every compulsory field carries (Feedback Rv4). */
 function Required() {
@@ -33,7 +34,7 @@ function Required() {
 function FieldError({ text }: { text?: string }) {
   if (!text) return null
   return (
-    <div role="alert" style={{ marginTop: 3, fontSize: 11, lineHeight: 1.35, color: fieldError }}>
+    <div role="alert" style={{ marginTop: 3, ...fieldType.caption, lineHeight: 1.35, color: fieldError }}>
       {text}
     </div>
   )
@@ -330,13 +331,12 @@ export function CellStageModal({
           */}
           {!readOnly && (
           <div>
-            <label htmlFor="cell-stage" style={effortLabel}>
+            <label htmlFor="cell-stage" style={fieldLabel}>
               Công đoạn <Required />
             </label>
             <Select
               id="cell-stage"
               aria-label="Công đoạn"
-              size="large"
               {...searchSelectProps}
               style={{ width: '100%' }}
               status={errorOf('stage') ? 'error' : undefined}
@@ -379,7 +379,7 @@ export function CellStageModal({
               )}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 12px' }}>
                 <div>
-                  <label htmlFor="cell-lead" style={effortLabel}>Nhóm trưởng <Required /></label>
+                  <label htmlFor="cell-lead" style={fieldLabel}>Nhóm trưởng <Required /></label>
                   <Select
                     id="cell-lead"
                     aria-label="Nhóm trưởng"
@@ -395,7 +395,7 @@ export function CellStageModal({
                   <FieldError text={errorOf('lead')} />
                 </div>
                 <div>
-                  <label htmlFor="cell-painter" style={effortLabel}>Thợ chính <Required /></label>
+                  <label htmlFor="cell-painter" style={fieldLabel}>Thợ chính <Required /></label>
                   <Select
                     id="cell-painter"
                     aria-label="Thợ chính"
@@ -411,7 +411,7 @@ export function CellStageModal({
                   <FieldError text={errorOf('painter')} />
                 </div>
                 <div>
-                  <label htmlFor="cell-work-hours" style={effortLabel}>
+                  <label htmlFor="cell-work-hours" style={fieldLabel}>
                     Số giờ công (Mhr) <Required />
                   </label>
                   <InputNumber
@@ -426,7 +426,7 @@ export function CellStageModal({
                   <FieldError text={errorOf('workHours')} />
                 </div>
                 <div>
-                  <label htmlFor="cell-waste-hours" style={effortLabel}>
+                  <label htmlFor="cell-waste-hours" style={fieldLabel}>
                     Giờ hao phí (Mhr) <Required />
                   </label>
                   <InputNumber
@@ -440,7 +440,7 @@ export function CellStageModal({
                   />
                   <FieldError text={errorOf('wasteHours')} />
                   {effort.wasteHours === null && errorOf('wasteHours') === undefined && (
-                    <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+                    <Typography.Text type="secondary" style={fieldType.caption}>
                       Không hao phí thì nhập 0
                     </Typography.Text>
                   )}
@@ -452,7 +452,7 @@ export function CellStageModal({
               {wasteHours > 0 && (
                 <>
                   <div style={{ marginTop: 8 }}>
-                    <label htmlFor="cell-waste-order" style={effortLabel}>
+                    <label htmlFor="cell-waste-order" style={fieldLabel}>
                       Lệnh sản xuất ghi nhận hao phí <Required />
                     </label>
                     <Input
@@ -465,7 +465,7 @@ export function CellStageModal({
                     <FieldError text={errorOf('wasteOrder')} />
                   </div>
                   <div style={{ marginTop: 8 }}>
-                    <label htmlFor="cell-waste-reason" style={effortLabel}>
+                    <label htmlFor="cell-waste-reason" style={fieldLabel}>
                       Lý do hao phí <Required />
                     </label>
                     <Select
@@ -521,7 +521,7 @@ export function CellStageModal({
             {notesFailed && (
               <Typography.Text
                 type="secondary"
-                style={{ display: 'block', marginBottom: 12, fontSize: 12 }}
+                style={{ display: 'block', marginBottom: 12, ...fieldType.caption }}
               >
                 Không tải được ghi chú cũ
               </Typography.Text>
@@ -530,10 +530,10 @@ export function CellStageModal({
             <>
             <label
               htmlFor="cell-note"
-              style={{ display: 'block', marginBottom: 6, fontWeight: 600 }}
+              style={fieldLabel}
             >
               Ghi chú cho quản trị viên{' '}
-              <Typography.Text type="secondary" style={{ fontWeight: 400 }}>
+              <Typography.Text type="secondary" style={{ fontWeight: fieldType.body.fontWeight }}>
                 không bắt buộc
               </Typography.Text>
             </label>

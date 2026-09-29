@@ -1,5 +1,5 @@
 import {
-  Alert, App, Button, Grid, Layout, Segmented, Select, Space, Spin,
+  Alert, App, Button, Dropdown, Grid, Layout, Segmented, Select, Space, Spin, Tooltip,
 } from 'antd'
 import dayjs from 'dayjs'
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
@@ -32,12 +32,15 @@ import { buildReportWorkbook, reportFileName, type DeckImages, type PlanImage } 
 import { buildProjectReport, downloadWorkbook } from '../../lib/projectReport'
 import { renderDeckDrawing, renderDeckPie, renderPlanDrawing } from '../../canvas/deckSnapshot'
 import { CellStageModal } from './CellStageModal'
-import { fieldError, palette, shadowCard } from '../../theme'
-import { CalendarOutlined, DownloadOutlined } from '@ant-design/icons'
+import { fieldError, fieldType, palette, shadowCard, space } from '../../theme'
+import { CalendarOutlined, EllipsisOutlined, FileExcelOutlined, FolderOpenOutlined } from '@ant-design/icons'
 import { EmptyState } from '../../components/EmptyState'
 import { DeckProgressCard, StageRollupCard } from './DeckStatsCards'
 import { DeckTodayCard } from './DeckTodayCard'
-import { FieldHeader } from './FieldHeader'
+import { FieldLayout } from './FieldLayout'
+import { FieldProjectSelect } from './FieldProjectSelect'
+import { FIELD_TAB_BAR_SPACE, useFieldPhone } from './fieldSections'
+import { FilterBar } from '../../components/FilterBar'
 import { rememberProjectName } from './fieldProjects'
 import { openingDeckId, rememberDeck } from './lastDeck'
 import { SectionCard } from '../../components/SectionCard'
@@ -146,8 +149,6 @@ export function GsScreen() {
    * refusal can say so, rather than rendering as missing data (see GsProject).
    */
   const [notMember, setNotMember] = useState(false)
-  /** The project's name, from the row loadGsProject reads anyway: the header's (M-1). */
-  const [projectName, setProjectName] = useState<string | null>(null)
 
   useEffect(() => {
     if (!projectId) return
@@ -155,9 +156,6 @@ export function GsScreen() {
     setLoading(true)
     setProjectError(false)
     setNotMember(false)
-    // Another project's name must never sit over this one's load or its
-    // failure (M-4b).
-    setProjectName(null)
     // Names for the note thread, once per project rather than per bay. Its
     // failure is not the project's: the deck, the drawing and the write carry
     // on, and the thread signs its notes "Không rõ người ghi".
@@ -170,7 +168,7 @@ export function GsScreen() {
       .then((project) => {
         if (cancelled) return
         setNotMember(!project.isMember)
-        setProjectName(project.name ?? null)
+        // The name the Dự án switch shows while its list is on the way (M-1).
         if (project.name) rememberProjectName(projectId, project.name)
         setDecks(project.decks)
         // The deck last opened in this project, else the first (GS-02).
@@ -178,7 +176,6 @@ export function GsScreen() {
       })
       .catch(() => {
         if (cancelled) return
-        setProjectName(null)
         setProjectError(true)
       })
       .finally(() => {
@@ -837,13 +834,16 @@ export function GsScreen() {
    * Which of the three shapes this screen is in.
    *
    * `lg` is where a drawing and a 372px rail both fit without the drawing
-   * losing the width its tap targets need; `sm` is where a phone stops being a
-   * phone. antd's own breakpoints, so this agrees with every Grid on the admin
-   * side rather than inventing a second set.
+   * losing the width its tap targets need; below 768 is a phone, the one
+   * breakpoint of every field screen (useFieldPhone, GS-06). antd's own
+   * breakpoints, so this agrees with every Grid on the admin side rather than
+   * inventing a second set.
    */
   const screens = Grid.useBreakpoint()
   const wide = Boolean(screens.lg)
-  const phone = !screens.sm
+  const phone = useFieldPhone()
+  /** A fixed panel's bottom offset, lifted over the phone's bottom tab bar (GS-06). */
+  const overBottomBar = (px: number) => (phone ? `calc(${px}px + ${FIELD_TAB_BAR_SPACE})` : px)
 
   /**
    * The XLSX for THIS deck (Feedback Rv1, item 6), through the same loaders
@@ -1035,43 +1035,49 @@ export function GsScreen() {
   }
 
   /*
-    GS-01: the one field header -- the project, Sàn · Năng suất · KPI, who is
-    signed in and logout -- in EVERY state of this screen (M-4), always the
-    first child of the same Layout, so React keeps the one instance: a
-    viewer's project switch spins the body under a header that stays put, and
-    a refusal or a failed load still offers the tabs and logout. The name is
-    held back while a project loads, so the old project's never shows over
-    the next one's spinner.
+    GS-06: the one field header -- Sàn · Năng suất · KPI and the account
+    menu -- in EVERY state of this screen (M-4), from the same FieldLayout,
+    so React keeps the one instance: a project switch spins the body under a
+    header that stays put, and a refusal or a failed load still offers the
+    tabs and logout.
   */
-  const header = projectId
-    ? <FieldHeader projectId={projectId} projectName={loading ? null : projectName} projectNameLoading={loading} />
-    : null
-  const inShell = (body: ReactNode) => (
-    <Layout style={{ minHeight: '100vh' }}>
-      {header}
+  const inShell = (body: ReactNode) => <FieldLayout projectId={projectId}>{body}</FieldLayout>
+  /*
+    GS-07: the project switch, first in the page's bar, also while a project
+    loads, fails or refuses: it is the way to another project from all three.
+    Its value is the route's id, so the previous project's name can never sit
+    over the next one's load or failure (M-4b).
+  */
+  const projectBar = (body: ReactNode) => (
+    <>
+      {projectId && (
+        <div style={{ padding: phone ? space.md : space.lg, paddingBottom: 0 }}>
+          <FilterBar><FieldProjectSelect projectId={projectId} /></FilterBar>
+        </div>
+      )}
       {body}
-    </Layout>
+    </>
   )
 
   if (loading) {
-    return inShell(<Spin style={{ display: 'block', margin: '25vh auto' }} />)
+    return inShell(projectBar(<Spin style={{ display: 'block', margin: '25vh auto' }} />))
   }
 
   if (projectError) {
-    return inShell(
+    return inShell(projectBar(
       <div style={{ maxWidth: 360, margin: '25vh auto' }}>
         <Alert
           type="error"
           message="Không tải được dữ liệu dự án"
           description="Kiểm tra kết nối mạng rồi thử lại."
           action={
-            <Button size="small" onClick={() => window.location.reload()}>
+            <Button onClick={() => window.location.reload()}>
               Thử lại
             </Button>
           }
         />
       </div>,
-    )
+    ))
   }
 
   // A refusal, rendered as a refusal. Before this the screen showed the same
@@ -1082,7 +1088,7 @@ export function GsScreen() {
   // coming. Same wording as the index route's, in the singular: whatever the
   // cause, the action is to talk to the administrator.
   if (notMember) {
-    return inShell(
+    return inShell(projectBar(
       <div style={{ maxWidth: 360, margin: '25vh auto' }}>
         <Alert
           type="info"
@@ -1090,8 +1096,10 @@ export function GsScreen() {
           description="Tài khoản hợp lệ, nhưng chưa được gán vào dự án này. Liên hệ quản trị viên để được thêm vào dự án."
         />
       </div>,
-    )
+    ))
   }
+
+  const noWorks = works !== null && workList.length === 0 && !stagesError
 
   // The drawing is the screen; everything under the header has to earn its
   // height on a tablet held at arm's length.
@@ -1110,18 +1118,18 @@ export function GsScreen() {
           style={{
             display: 'flex',
             alignItems: 'center',
-            gap: 13,
+            gap: space.md,
             background: fieldError,
             color: '#fff',
-            padding: '14px 20px',
+            padding: `${space.lg}px ${space.xl}px`,
           }}
         >
           <span
             style={{ width: 10, height: 10, borderRadius: '50%', background: '#fff', flex: 'none' }}
           />
           <div style={{ minWidth: 0 }}>
-            <div style={{ fontWeight: 600, lineHeight: 1.3 }}>Mất kết nối, đang kết nối lại…</div>
-            <div style={{ fontSize: 12, lineHeight: 1.3, opacity: 0.85, marginTop: 2 }}>
+            <div style={{ ...fieldType.bodyStrong, lineHeight: 1.3 }}>Mất kết nối, đang kết nối lại…</div>
+            <div style={{ ...fieldType.caption, lineHeight: 1.3, opacity: 0.85, marginTop: 2 }}>
               Số liệu trên màn hình có thể chưa cập nhật. Ghi tiến độ vẫn được lưu khi có mạng trở lại.
             </div>
           </div>
@@ -1142,93 +1150,185 @@ export function GsScreen() {
             glove -- so the rail goes underneath instead.
           */
           gridTemplateColumns: wide ? 'minmax(0,1fr) minmax(320px,372px)' : 'minmax(0,1fr)',
-          gap: wide ? 16 : 12,
+          gap: wide ? space.lg : space.md,
           alignItems: 'start',
-          padding: phone ? 12 : 16,
+          padding: phone ? space.md : space.lg,
         }}
       >
         {/*
-          GS-03: the deck, chosen by name, as the first row of the page and
-          across both columns. Name AND percentage on every option: the
-          foreman picks a deck to work on, and "which one is behind" is the
-          question he picks by. The figures come from one batched read of the
+          GS-07: the page's one filter bar, first and across both columns:
+          Dự án · Sàn · the work. Each applies at once -- they choose what is
+          on screen, they do not query it -- so there is no Tìm here.
+
+          GS-03: the deck, chosen by name. Name AND percentage on every
+          option: the foreman picks a deck to work on, and "which one is
+          behind" is the question he picks by. The figures come from one batched read of the
           project (listProjectIndex), not from loading each deck in full.
           Search is on the name only. Choosing one is the whole deck change:
           every per-deck read, the realtime channel and the plan's coat follow
           activeDeckId.
         */}
-        {decks.length > 0 && (
-          <div style={{ gridColumn: '1 / -1', minWidth: 0 }}>
-            <Select
-              aria-label="Sàn"
-              {...searchSelectProps}
-              value={activeDeckId ?? undefined}
-              onChange={(id) => {
-                setActiveDeckId(id)
-                // Remembered on the choice, never on the load: a project's
-                // first render must not write the previous project's deck
-                // under its key.
-                if (projectId) rememberDeck(projectId, id)
-              }}
-              style={{ width: phone ? '100%' : 320, maxWidth: '100%' }}
-              options={decks.map((d) => ({
-                value: d.id,
-                label: `${d.name} · ${deckPercents[d.id] === undefined ? '—' : formatPercent(deckPercents[d.id])}`,
-                searchKey: d.name,
-              }))}
-            />
+        <div style={{ gridColumn: '1 / -1', minWidth: 0 }}>
+          {/*
+            On a phone the bar's controls stack full width and the ⋯ stays at
+            the top right, beside the first; wider, the actions sit at the
+            right end of the row the bar leaves.
+          */}
+          <div
+            data-testid="gs-bar-row"
+            style={{
+              display: 'flex',
+              flexWrap: phone ? 'nowrap' : 'wrap',
+              alignItems: phone ? 'flex-start' : 'center',
+              gap: space.md,
+              minWidth: 0,
+            }}
+          >
+            <div style={{ flex: '1 1 auto', minWidth: 0 }}>
+              <FilterBar>
+                {projectId && <FieldProjectSelect projectId={projectId} width={phone ? '100%' : undefined} />}
+                {decks.length > 0 && (
+                  <Select
+                    aria-label="Sàn"
+                    {...searchSelectProps}
+                    value={activeDeckId ?? undefined}
+                    onChange={(id) => {
+                      setActiveDeckId(id)
+                      // Remembered on the choice, never on the load: a project's
+                      // first render must not write the previous project's deck
+                      // under its key.
+                      if (projectId) rememberDeck(projectId, id)
+                    }}
+                    style={{ width: phone ? '100%' : 320, maxWidth: '100%' }}
+                    options={decks.map((d) => ({
+                      value: d.id,
+                      label: `${d.name} · ${deckPercents[d.id] === undefined ? '—' : formatPercent(deckPercents[d.id])}`,
+                      searchKey: d.name,
+                    }))}
+                  />
+                )}
+                {/*
+                  GSW-R1: the work the drawing is showing. Hidden with one work,
+                  since a control with one position is a label pretending to be a
+                  choice. Everything below -- colours, cards, plan, the bay modal --
+                  follows it. Named by its aria-label, no label on screen (FLT-01).
+                */}
+                {activeWork && workList.length > 1 && (
+                  <Segmented
+                    data-testid="gs-work-picker"
+                    aria-label="Công việc"
+                    value={activeWork.work.id}
+                    onChange={(id) => setActiveWorkId(String(id))}
+                    options={workList.map((w) => ({ label: w.work.name, value: w.work.id }))}
+                  />
+                )}
+              </FilterBar>
+            </div>
+            {/*
+              GS-09: the page's actions, at the right end of the bar and outside
+              its search landmark: they act, they do not filter. Two different
+              icons for "this deck's file" and "every deck". On a phone there is
+              no hover to name an icon, so both fold into one ⋯ menu that
+              spells them out.
+            */}
+            <div style={{ marginInlineStart: 'auto', display: 'flex', gap: space.sm, flex: 'none' }}>
+              {phone ? (
+                <Dropdown
+                  trigger={['click']}
+                  placement="bottomRight"
+                  menu={{
+                    items: [
+                      {
+                        key: 'deck',
+                        icon: <FileExcelOutlined aria-hidden />,
+                        label: 'Xuất báo cáo',
+                        disabled: exporting,
+                        onClick: () => { void exportDeck() },
+                      },
+                      {
+                        key: 'project',
+                        icon: <FolderOpenOutlined aria-hidden />,
+                        label: 'Xuất cả dự án',
+                        disabled: exportingProject,
+                        onClick: () => { void exportProject() },
+                      },
+                    ],
+                  }}
+                >
+                  <Button
+                    aria-label="Thêm thao tác"
+                    aria-haspopup="menu"
+                    icon={<EllipsisOutlined aria-hidden />}
+                    loading={exporting || exportingProject}
+                  />
+                </Dropdown>
+              ) : (
+                <>
+                  <Tooltip title="Xuất báo cáo">
+                    <Button
+                      aria-label="Xuất báo cáo"
+                      icon={<FileExcelOutlined aria-hidden />}
+                      loading={exporting}
+                      onClick={() => { void exportDeck() }}
+                    />
+                  </Tooltip>
+                  {/*
+                    Every deck in one file (Feedback Rv4). Linh: the bosses were
+                    asking for the admin build purely to download a report over
+                    all the decks. RLS decides what lands in it, so a foreman
+                    held to one work gets that work's decks and no others.
+                  */}
+                  <Tooltip title="Xuất cả dự án">
+                    <Button
+                      aria-label="Xuất cả dự án"
+                      icon={<FolderOpenOutlined aria-hidden />}
+                      loading={exportingProject}
+                      onClick={() => { void exportProject() }}
+                    />
+                  </Tooltip>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/*
+          GS-08: notices about the deck are a row of their own across both
+          columns, so the drawing card and the stats beside it start on one
+          line.
+        */}
+        {(noWorks || stagesError || drawingError) && (
+          <div style={{ gridColumn: '1 / -1', minWidth: 0, display: 'flex', flexDirection: 'column', gap: space.md }}>
+            {noWorks && (
+              <Alert
+                type="info"
+                showIcon
+                message="Sàn này chưa được gán công việc nào"
+                description="Nhờ quản trị viên gán sàn vào một công việc ở mục Công việc; tới lúc đó bản vẽ chỉ để xem."
+              />
+            )}
+
+            {stagesError && (
+              <Alert
+                type="warning"
+                showIcon
+                message="Không tải được lớp sơn của sàn"
+                description="Phần trăm bên dưới đang tính thiếu. Thử lại sau khi có mạng."
+              />
+            )}
+
+            {drawingError && (
+              <Alert
+                type="warning"
+                showIcon
+                message="Không tải được bản vẽ"
+                description="Số liệu bên dưới vẫn đúng. Thử lại sau khi có mạng."
+              />
+            )}
           </div>
         )}
 
-        <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {/*
-            GSW-R1: the work the drawing is showing. Hidden with one work, since
-            a control with one position is a label pretending to be a choice.
-            Everything below -- colours, cards, plan, the bay modal -- follows it.
-          */}
-          {activeWork && workList.length > 1 && (
-            <div
-              data-testid="gs-work-picker"
-              style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}
-            >
-              <span style={{ fontSize: 12, fontWeight: 600, color: palette.textTertiary }}>
-                Công việc
-              </span>
-              <Segmented
-                value={activeWork.work.id}
-                onChange={(id) => setActiveWorkId(String(id))}
-                options={workList.map((w) => ({ label: w.work.name, value: w.work.id }))}
-              />
-            </div>
-          )}
-
-          {works !== null && workList.length === 0 && !stagesError && (
-            <Alert
-              type="info"
-              showIcon
-              message="Sàn này chưa được gán công việc nào"
-              description="Nhờ quản trị viên gán sàn vào một công việc ở mục Công việc; tới lúc đó bản vẽ chỉ để xem."
-            />
-          )}
-
-          {stagesError && (
-            <Alert
-              type="warning"
-              showIcon
-              message="Không tải được lớp sơn của sàn"
-              description="Phần trăm bên dưới đang tính thiếu. Thử lại sau khi có mạng."
-            />
-          )}
-
-          {drawingError && (
-            <Alert
-              type="warning"
-              showIcon
-              message="Không tải được bản vẽ"
-              description="Số liệu bên dưới vẫn đúng. Thử lại sau khi có mạng."
-            />
-          )}
-
+        <div style={{ minWidth: 0 }}>
           <SectionCard
             title={deck?.name}
             summary={deck ? `${formatAreaM2(deck.totalAreaM2)} ${unit}` : undefined}
@@ -1262,28 +1362,6 @@ export function GsScreen() {
                     options={stages.map((st) => ({ value: st.id, label: st.name }))}
                   />
                 )}
-                <Button
-                  icon={<DownloadOutlined aria-hidden />}
-                  aria-label="Xuất báo cáo"
-                  loading={exporting}
-                  onClick={() => { void exportDeck() }}
-                >
-                  {phone ? null : 'Xuất báo cáo'}
-                </Button>
-                {/*
-                  Every deck in one file (Feedback Rv4). Linh: the bosses were
-                  asking for the admin build purely to download a report over
-                  all the decks. RLS decides what lands in it, so a foreman
-                  held to one work gets that work's decks and no others.
-                */}
-                <Button
-                  icon={<DownloadOutlined aria-hidden />}
-                  aria-label="Xuất cả dự án"
-                  loading={exportingProject}
-                  onClick={() => { void exportProject() }}
-                >
-                  {phone ? null : 'Xuất cả dự án'}
-                </Button>
               </Space>
             }
           >
@@ -1322,7 +1400,7 @@ export function GsScreen() {
                       position: 'fixed',
                       zIndex: 4,
                       right: 24,
-                      bottom: 24,
+                      bottom: overBottomBar(24),
                       pointerEvents: 'none',
                       background: '#FFFFFFF5',
                       border: `1px solid ${palette.borderCard}`,
@@ -1339,18 +1417,11 @@ export function GsScreen() {
                       <div key={z.id} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                         <span
                           aria-hidden
-                          style={{
-                            width: 12,
-                            height: 12,
-                            flex: 'none',
-                            borderRadius: 4,
-                            background: planColors[z.id],
-                            boxShadow: 'inset 0 0 0 1px #16202B47',
-                          }}
+                          style={{ width: 12, height: 12, flex: 'none', borderRadius: '50%', background: planColors[z.id] }}
                         />
                         {/* One line, and the coat dropped when the zone's own
                             name already carries it (Feedback Rv3, item 3). */}
-                        <span style={{ fontSize: 13, fontWeight: 600 }}>
+                        <span style={fieldType.body}>
                           {describeZone(
                             z.name,
                             stageNameOf(z.stageId),
@@ -1378,7 +1449,7 @@ export function GsScreen() {
                       position: 'fixed',
                       zIndex: 4,
                       left: 24,
-                      bottom: 24,
+                      bottom: overBottomBar(24),
                       // Never in the way of a bay underneath it: this is a
                       // legend, and every tap belongs to the drawing.
                       pointerEvents: 'none',
@@ -1400,20 +1471,13 @@ export function GsScreen() {
                       >
                         <span
                           aria-hidden
-                          style={{
-                            width: 15,
-                            height: 15,
-                            flex: 'none',
-                            borderRadius: 5,
-                            background: planColors[z.id],
-                            boxShadow: 'inset 0 0 0 1px #16202B47',
-                          }}
+                          style={{ width: 15, height: 15, flex: 'none', borderRadius: '50%', background: planColors[z.id] }}
                         />
-                        <span style={{ fontSize: 13, fontWeight: 600, flex: 'none' }}>{z.name}</span>
+                        <span style={{ ...fieldType.body, flex: 'none' }}>{z.name}</span>
                         <span
                           style={{
                             marginLeft: 'auto',
-                            fontSize: 12,
+                            ...fieldType.caption,
                             color: palette.textSecondary,
                             whiteSpace: 'nowrap',
                           }}
@@ -1445,11 +1509,11 @@ export function GsScreen() {
           data-testid="gs-chart-region"
           style={
             wide
-              ? { display: 'flex', flexDirection: 'column', gap: 14, minWidth: 0 }
+              ? { display: 'flex', flexDirection: 'column', gap: space.lg, minWidth: 0 }
               : {
                 display: 'grid',
                 gridTemplateColumns: phone ? 'minmax(0,1fr)' : 'repeat(auto-fit,minmax(300px,1fr))',
-                gap: 12,
+                gap: space.md,
               }
           }
         >

@@ -147,6 +147,21 @@ export const type = {
   micro: { fontSize: 11, fontWeight: 600 },
 } as const
 
+/** A type scale: one size and weight per role of `type`. */
+export type TypeScale = Readonly<Record<keyof typeof type, { readonly fontSize: number; readonly fontWeight: number }>>
+
+/**
+ * The same scale on the field screens (GS-04, GS-10). The field theme's base is
+ * 14, read at arm's length off a scaffold, so running text, a line's figure and
+ * a label are 14; every other step keeps its size, the titles included.
+ */
+export const fieldType: TypeScale = {
+  ...type,
+  body: { fontSize: 14, fontWeight: 400 },
+  bodyStrong: { fontSize: 14, fontWeight: 600 },
+  label: { fontSize: 14, fontWeight: 600 },
+}
+
 export const fontFamily =
   "'Be Vietnam Pro', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Helvetica, Arial, sans-serif"
 

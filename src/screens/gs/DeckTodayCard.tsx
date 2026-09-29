@@ -1,18 +1,10 @@
 import { InfoTip } from '../../components/InfoTip'
+import { SectionCard } from '../../components/SectionCard'
 import type { DeckEffortTotals } from '../../domain/effort'
 import type { TodayStageArea } from '../../domain/today'
 import { DEFAULT_UNIT } from '../../domain/unit'
 import { formatAreaM2, formatHours } from '../../lib/format'
-import { palette, shadowCard } from '../../theme'
-
-/** DeckStatsCards' chrome, so the rail reads as one stack of cards. */
-const cardStyle = {
-  background: palette.bgContainer,
-  border: `1px solid ${palette.borderCard}`,
-  borderRadius: 14,
-  boxShadow: shadowCard,
-  padding: '18px 20px 20px',
-} as const
+import { fieldType, palette, space } from '../../theme'
 
 /** 'YYYY-MM-DD' as the paperwork writes it. See lib/format for why VN is a constant. */
 const asVNDate = (dayKey: string): string => {
@@ -91,81 +83,77 @@ export function DeckTodayCard({
   ]
 
   return (
-    <div data-testid="gs-deck-today" style={cardStyle}>
-      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 14 }}>
-        <span style={{ fontSize: 12, fontWeight: 600, color: palette.textTertiary }}>
-          Thông tin nhanh — Hôm nay
-        </span>
-        <span style={{ marginLeft: 'auto', fontSize: 12, color: palette.textQuaternary }}>
-          {asVNDate(todayKey)}
-        </span>
-      </div>
-
-      {rows.length === 0 ? (
-        <div style={{ fontSize: 13, color: palette.textTertiary }}>
-          Sàn này chưa có công đoạn nào. Quản trị viên cần khai báo công đoạn trước khi ghi tiến độ.
-        </div>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 11 }}>
-          {groups.map((group) => (
-            <div
-              key={group.workName}
-              style={{ display: 'flex', flexDirection: 'column', gap: 11, minWidth: 0 }}
-            >
-              {grouped && (
-                <div style={{ fontSize: 12, fontWeight: 600, color: palette.textSecondary }}>
-                  {group.workName}
-                </div>
-              )}
-              {group.rows.map((row) => (
-                <div
-                  key={`${row.workName}/${row.stageName}`}
-                  style={{ display: 'flex', alignItems: 'baseline', gap: 8, minWidth: 0 }}
-                >
-                  <span
-                    style={{
-                      fontSize: 13,
-                      color: palette.textSecondary,
-                      minWidth: 0,
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                    }}
+    <div data-testid="gs-deck-today">
+      <SectionCard
+        title="Thông tin nhanh — Hôm nay"
+        extra={<span style={{ ...fieldType.caption, color: palette.textTertiary }}>{asVNDate(todayKey)}</span>}
+      >
+        {rows.length === 0 ? (
+          <div style={{ ...fieldType.body, color: palette.textTertiary }}>
+            Sàn này chưa có công đoạn nào. Quản trị viên cần khai báo công đoạn trước khi ghi tiến độ.
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: space.md }}>
+            {groups.map((group) => (
+              <div
+                key={group.workName}
+                style={{ display: 'flex', flexDirection: 'column', gap: space.md, minWidth: 0 }}
+              >
+                {grouped && (
+                  <div style={{ ...fieldType.label, color: palette.textSecondary }}>
+                    {group.workName}
+                  </div>
+                )}
+                {group.rows.map((row) => (
+                  <div
+                    key={`${row.workName}/${row.stageName}`}
+                    style={{ display: 'flex', alignItems: 'baseline', gap: space.sm, minWidth: 0 }}
                   >
-                    {row.stageName}
-                  </span>
-                  <span style={{ marginLeft: 'auto', fontSize: 13, fontWeight: 600, flex: 'none' }}>
-                    {`${formatAreaM2(row.areaM2)} ${row.unit ?? DEFAULT_UNIT}`}
-                  </span>
-                </div>
-              ))}
+                    <span
+                      style={{
+                        ...fieldType.body,
+                        color: palette.textSecondary,
+                        minWidth: 0,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {row.stageName}
+                    </span>
+                    <span style={{ ...fieldType.bodyStrong, marginLeft: 'auto', flex: 'none' }}>
+                      {`${formatAreaM2(row.areaM2)} ${row.unit ?? DEFAULT_UNIT}`}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: space.sm,
+            marginTop: space.lg,
+            paddingTop: space.lg,
+            borderTop: `1px solid ${palette.borderSplit}`,
+          }}
+        >
+          {hourRows.map(([label, value, tip]) => (
+            <div key={label} style={{ display: 'flex', alignItems: 'baseline', gap: space.sm, minWidth: 0 }}>
+              <span style={{ ...fieldType.body, color: palette.textTertiary, minWidth: 0 }}>
+                {label}
+                {tip !== undefined && <InfoTip text={tip} />}
+              </span>
+              <span style={{ ...fieldType.bodyStrong, marginLeft: 'auto', flex: 'none' }}>
+                {formatHours(value)}
+              </span>
             </div>
           ))}
         </div>
-      )}
-
-      <div
-        style={{
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 9,
-          marginTop: 16,
-          paddingTop: 14,
-          borderTop: `1px solid ${palette.borderSplit}`,
-        }}
-      >
-        {hourRows.map(([label, value, tip]) => (
-          <div key={label} style={{ display: 'flex', alignItems: 'baseline', gap: 8, minWidth: 0 }}>
-            <span style={{ fontSize: 13, color: palette.textTertiary, minWidth: 0 }}>
-              {label}
-              {tip !== undefined && <InfoTip text={tip} />}
-            </span>
-            <span style={{ marginLeft: 'auto', fontSize: 13, fontWeight: 600, flex: 'none' }}>
-              {formatHours(value)}
-            </span>
-          </div>
-        ))}
-      </div>
+      </SectionCard>
     </div>
   )
 }

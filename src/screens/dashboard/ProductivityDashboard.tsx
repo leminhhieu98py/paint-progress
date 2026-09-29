@@ -19,7 +19,8 @@ import type { DeckEvent, WorkModel } from '../../domain/types'
 import { DEFAULT_UNIT, perUnit } from '../../domain/unit'
 import { formatAreaM2, formatHours, formatMhrPerM2, formatPercent } from '../../lib/format'
 import { matchesSearch } from '../../lib/search'
-import { fieldError, palette, type } from '../../theme'
+import { fieldError, palette } from '../../theme'
+import { useTypeScale } from '../../components/typeScale'
 import { EfficiencyLineChart, HoursBarChart } from './charts'
 import { dashboardWorkNames, resolveWork, type ProductivityFilters } from './productivityFilters'
 
@@ -56,6 +57,8 @@ export function ProductivityDashboard({
   /** Counts the bar's applies: every apply sends the tables back to page 1 (FLT-02). */
   version?: number
 }) {
+  // The scale of the page this is on: the field's 14 on a field page (GS-10).
+  const type = useTypeScale()
   const workNames = useMemo(() => dashboardWorkNames(models, events), [models, events])
   const workName = resolveWork(filters.work, workNames)
   /**

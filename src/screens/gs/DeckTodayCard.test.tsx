@@ -24,6 +24,16 @@ describe('DeckTodayCard', () => {
     expect(within(card()).getAllByText('0,00 m²')).toHaveLength(2)
   })
 
+  it('is titled like every admin card, its rows on the field scale (GS-10)', () => {
+    render(<DeckTodayCard todayKey="2026-09-09" rows={ONE_WORK} totals={TOTALS} />)
+    expect(within(card()).getByRole('heading', { level: 2, name: 'Thông tin nhanh — Hôm nay' }))
+      .toHaveStyle({ fontSize: '15px', fontWeight: '600' })
+    expect(within(card()).getByText('09/09/2026')).toHaveStyle({ fontSize: '12px', fontWeight: '400' })
+    expect(within(card()).getByText('Blast + Coat 1')).toHaveStyle({ fontSize: '14px', fontWeight: '400' })
+    expect(within(card()).getByText('320,50 m²')).toHaveStyle({ fontSize: '14px', fontWeight: '600' })
+    expect(within(card()).getByText('Mhr thực hiện hôm nay')).toHaveStyle({ fontSize: '14px', fontWeight: '400' })
+  })
+
   it('names the Vietnam day it is reporting, so a tablet left open overnight says so', () => {
     // RV5-20: "hôm nay" is the Vietnam calendar day. A card that only says
     // "Hôm nay" cannot be caught being a day stale.

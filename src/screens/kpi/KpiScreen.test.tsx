@@ -37,17 +37,12 @@ vi.mock('../../lib/decksApi', () => ({
   setDeckKpiColors: (id: string, colors: unknown) => setDeckKpiColors(id, colors),
   listDecks: (id: string) => listDecks(id),
 }))
-// The field header (GS-01) on the gs variant: who is signed in, and the
-// foreman's project name.
+// The field header (GS-06) on the gs variant: who is signed in.
 vi.mock('../../auth/AuthProvider', () => ({
   useAuth: () => ({
     profile: { id: 'u1', username: 'gs1', fullName: 'Nguyễn Văn A', role: 'gs', active: true },
     signOut: vi.fn(),
   }),
-}))
-const loadGsProjectIdentity = vi.hoisted(() => vi.fn())
-vi.mock('../../lib/gsApi', () => ({
-  loadGsProjectIdentity: (id: string) => loadGsProjectIdentity(id),
 }))
 vi.mock('react-router-dom', async () => {
   const actual = await vi.importActual<typeof import('react-router-dom')>('react-router-dom')
@@ -177,10 +172,8 @@ beforeEach(() => {
   clearStagePlanArea.mockReset()
   setDeckKpiColors.mockReset()
   navigate.mockReset()
-  // The field header keeps project names per session; every test is a new one.
+  // The field's Dự án switch keeps project names per session; every test is a new one.
   endSession()
-  loadGsProjectIdentity.mockReset()
-  loadGsProjectIdentity.mockResolvedValue({ code: 'GB', name: 'Giàn B' })
   listDecks.mockReset()
   // Another project's decks, read only while it is the DRAFT project (FLT-02).
   listDecks.mockResolvedValue([{ id: 'd9', name: 'Sàn Z' }])
@@ -354,12 +347,20 @@ describe('KpiScreen — one filter bar (FLT-01)', () => {
     expect(await screen.findByText(/PHẠM VI d1\/tất cả/)).toBeInTheDocument()
   })
 
-  it('gives the field the same bar without a project select (GS-04)', async () => {
+  it('gives the field the same bar, the project first (GS-07)', async () => {
     renderField()
     await screen.findByTestId('kpi-dashboard')
-    expect(within(bar()).queryByRole('combobox', { name: 'Dự án' })).toBeNull()
-    expect(within(bar()).getByRole('combobox', { name: 'Sàn' })).toBeInTheDocument()
-    expect(within(bar()).getByRole('combobox', { name: 'Công đoạn' })).toBeInTheDocument()
+    expect(within(bar()).getAllByRole('combobox').map((c) => c.getAttribute('aria-label')))
+      .toEqual(['Dự án', 'Sàn', 'Công đoạn'])
+    expect(within(bar()).getByRole('button', { name: 'Đặt lại' })).toBeInTheDocument()
+  })
+
+  it('opens this page of another project at once from Dự án: navigation, not a draft (GS-07)', async () => {
+    renderField()
+    await screen.findByTestId('kpi-dashboard')
+    await userEvent.click(within(bar()).getByRole('combobox', { name: 'Dự án' }))
+    await userEvent.click(await screen.findByTitle('Giàn A'))
+    expect(navigate).toHaveBeenCalledWith('/gs/p1/kpi')
   })
 })
 
@@ -531,19 +532,19 @@ describe('KpiScreen (gs)', () => {
     renderField()
     await screen.findByTestId('kpi-dashboard')
     expect(listStagePlans).toHaveBeenCalledWith('p2')
-    expect(listProjectNames).not.toHaveBeenCalled()
     const nav = screen.getByRole('navigation', { name: 'Điều hướng' })
     expect(within(nav).getByRole('link', { name: 'KPI' })).toHaveAttribute('aria-current', 'page')
     expect(within(nav).getByRole('link', { name: 'Sàn' })).toHaveAttribute('href', '/gs/p2')
-    expect(await screen.findByText('Giàn B')).toBeInTheDocument()
+    expect(await within(bar()).findByText('Giàn B', { selector: '.ant-select-selection-item' })).toBeInTheDocument()
   })
 
   it('has no back button and no title bar of its own: the Sàn tab is the way back (GS-02)', async () => {
     renderField()
     await screen.findByTestId('kpi-dashboard')
     expect(screen.queryByRole('button', { name: 'Về bản vẽ' })).toBeNull()
-    // "KPI" once: the tab, not a title beside it.
-    expect(screen.getAllByText('KPI')).toHaveLength(1)
+    // "KPI" only in the field header: the tab, and on a phone the top
+    // bar's title (GS-06); the page draws no title of its own.
+    expect(screen.getAllByText('KPI').every((e) => e.closest('header, nav') !== null)).toBe(true)
     const content = bar().closest('.ant-layout-content') as HTMLElement
     expect(content.firstElementChild).toBe(bar())
     expect(before(screen.getByRole('navigation', { name: 'Điều hướng' }), bar())).toBe(true)

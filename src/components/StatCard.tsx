@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
-import { palette, shadowCard, type } from '../theme'
+import { palette, shadowCard } from '../theme'
+import { useTypeScale } from './typeScale'
 
 /**
  * One number, large, with what it is above it and what it is out of below.
@@ -22,6 +23,8 @@ export function StatCard({
   tone?: 'default' | 'accent'
   live?: boolean
 }) {
+  // The scale of the page this is on: the field's 14 on a field page (GS-10).
+  const type = useTypeScale()
   const accent = tone === 'accent'
   return (
     <div

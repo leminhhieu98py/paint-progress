@@ -76,7 +76,7 @@ vi.mock('../../lib/zonesApi', () => ({
 vi.mock('../../lib/decksApi', () => ({
   getDrawingUrl: (path: string) => getDrawingUrl(path),
 }))
-// The viewer's project switch in the header (RV6-24) reads every project name.
+// The Dự án switch of the bar (RV6-24, GS-07) reads the projects this account can open.
 const listProjectNames = vi.hoisted(() => vi.fn())
 vi.mock('../../lib/projectsApi', () => ({
   listProjectNames: () => listProjectNames(),
@@ -228,7 +228,7 @@ const unsubscribe = vi.fn()
 beforeEach(() => {
   // The last deck per project lives here (GS-02); every test opens a fresh tab.
   sessionStorage.clear()
-  // And the field header's project names are kept per session.
+  // And the field's project names are kept per session.
   endSession()
   loadGsProject.mockReset()
   listDeckCells.mockReset()
@@ -340,6 +340,22 @@ const chooseIn = async (name: string, option: string | RegExp) => {
   if (!dropdown) throw new Error(`Select "${name}" opened no dropdown`)
   await userEvent.click(await within(dropdown).findByTitle(option))
 }
+
+/** Đăng xuất, from the field header's account menu (GS-06). */
+const chooseLogout = async () => {
+  await userEvent.click(await screen.findByRole('button', { name: /^Nguyễn Văn A \(gs1\)/ }))
+  await userEvent.click(await screen.findByRole('menuitem', { name: /Đăng xuất/ }))
+}
+/**
+ * An export, the way a phone reaches it: jsdom answers every width query as a
+ * phone, where both exports sit in the bar's ⋯ menu (GS-09).
+ */
+const chooseExport = async (name: 'Xuất báo cáo' | 'Xuất cả dự án') => {
+  await userEvent.click(screen.getByRole('button', { name: 'Thêm thao tác' }))
+  await userEvent.click(await screen.findByRole('menuitem', { name: new RegExp(name) }))
+}
+/** The Dự án switch, first in the Sàn page's bar (GS-07). */
+const projectSwitch = () => screen.findByRole('combobox', { name: 'Dự án' })
 
 /** The deck picker, the first row of the Sàn page (GS-03). */
 const deckPicker = () => screen.findByRole('combobox', { name: 'Sàn' })
@@ -564,20 +580,25 @@ describe('GsScreen', () => {
   it('offers logout and nothing else about the account', async () => {
     renderScreen()
 
-    await userEvent.click(await screen.findByRole('button', { name: 'Đăng xuất' }))
-    await userEvent.click(await screen.findByRole('button', { name: 'Vẫn đăng xuất' }))
-
-    expect(signOut).toHaveBeenCalledTimes(1)
+    await userEvent.click(await screen.findByRole('button', { name: /^Nguyễn Văn A \(gs1\)/ }))
     // Spec §8.1: "No account UI. Logout only." GS accounts have no
-    // self-service by design (spec §2), so any of these would be a dead end.
+    // self-service by design (spec §2), so any other entry would be a dead
+    // end: the account menu (GS-06) says who is signed in and offers logout.
+    const menu = await screen.findByRole('menu')
+    expect(within(menu).getAllByRole('menuitem').map((i) => i.textContent)).toEqual(['Đăng xuất'])
     expect(screen.queryByRole('button', { name: /đổi mật khẩu/i })).toBeNull()
-    expect(screen.queryByRole('button', { name: /tài khoản/i })).toBeNull()
+
+    await userEvent.click(within(menu).getByRole('menuitem', { name: /Đăng xuất/ }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Vẫn đăng xuất' }))
+    expect(signOut).toHaveBeenCalledTimes(1)
   })
 
   it('explains a failed project load instead of rendering an empty screen', async () => {
     loadGsProject.mockRejectedValue(new Error('permission denied'))
     renderScreen()
     expect(await screen.findByText('Không tải được dữ liệu dự án')).toBeInTheDocument()
+    // Outside a table cell a control is the default size (CTL-01 via GS-10).
+    expect(screen.getByRole('button', { name: 'Thử lại' })).not.toHaveClass('ant-btn-sm')
   })
 
   it('explains a failed drawing load but still shows the numbers', async () => {
@@ -794,32 +815,37 @@ describe('GsScreen: the deck last opened in the project (GS-02)', () => {
 describe('GsScreen: the header in every state (M-4)', () => {
   const nav = () => screen.getByRole('navigation', { name: 'Điều hướng' })
 
-  it('keeps the header, tabs and logout while the project loads', async () => {
+  it('keeps the header, tabs, the account and the Dự án switch while the project loads', async () => {
     loadGsProject.mockReturnValue(new Promise(() => {}))
     renderScreen()
     expect(await screen.findByRole('navigation', { name: 'Điều hướng' })).toBeInTheDocument()
     expect(within(nav()).getByRole('link', { name: 'KPI' })).toHaveAttribute('href', '/gs/p1/kpi')
-    expect(screen.getByRole('button', { name: 'Đăng xuất' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^Nguyễn Văn A \(gs1\)/ })).toBeInTheDocument()
     expect(document.querySelector('.ant-spin-spinning')).not.toBeNull()
-    // The name's placeholder, not a read of its own: the row is on its way (M-1, M-3).
-    expect(screen.getByTestId('field-header-project').querySelector('.ant-skeleton')).not.toBeNull()
+    expect(await projectSwitch()).toBeInTheDocument()
+    expect(await screen.findByText('BlockB1_CPPTS', { selector: '.ant-select-selection-item' })).toBeInTheDocument()
     expect(loadGsProjectIdentity).not.toHaveBeenCalled()
   })
 
-  it('keeps it over a failed project load', async () => {
+  it('keeps it over a failed project load, with a way to another project', async () => {
     loadGsProject.mockRejectedValue(new Error('permission denied'))
     renderScreen()
     expect(await screen.findByText('Không tải được dữ liệu dự án')).toBeInTheDocument()
     expect(nav()).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Đăng xuất' })).toBeInTheDocument()
+    expect(await projectSwitch()).toBeInTheDocument()
+    await chooseLogout()
+    expect(await screen.findByRole('button', { name: 'Vẫn đăng xuất' })).toBeInTheDocument()
   })
 
-  it('gives "Không xem được dự án này" a way out: the header and its logout', async () => {
+  it('gives "Không xem được dự án này" a way out: the header, its logout and the Dự án switch', async () => {
     loadGsProject.mockResolvedValue({ decks: [], isMember: false, name: null })
     renderScreen()
     expect(await screen.findByText('Không xem được dự án này')).toBeInTheDocument()
     expect(nav()).toBeInTheDocument()
-    await userEvent.click(screen.getByRole('button', { name: 'Đăng xuất' }))
+    await userEvent.click(await projectSwitch())
+    await userEvent.click(await screen.findByTitle('Đại Hùng'))
+    expect(navigate).toHaveBeenCalledWith('/gs/p2')
+    await chooseLogout()
     await userEvent.click(await screen.findByRole('button', { name: 'Vẫn đăng xuất' }))
     expect(signOut).toHaveBeenCalledTimes(1)
   })
@@ -835,14 +861,17 @@ describe('GsScreen: the header in every state (M-4)', () => {
         </MemoryRouter>
       </AntApp>,
     )
-    const slot = () => screen.getByTestId('field-header-project')
-    await waitFor(() => expect(slot()).toHaveTextContent('BlockB1_CPPTS'))
+    const shown = () => document.querySelector('.ant-select-selection-item[title]')?.getAttribute('title')
+    await screen.findByTestId('canvas')
+    await waitFor(() => expect(within(screen.getByRole('search', { name: 'Bộ lọc' })).getByText('BlockB1_CPPTS')).toBeInTheDocument())
     loadGsProject.mockRejectedValue(new Error('Failed to fetch'))
 
     await userEvent.click(screen.getByRole('link', { name: 'sang dự án khác' }))
 
     expect(await screen.findByText('Không tải được dữ liệu dự án')).toBeInTheDocument()
-    expect(slot()).not.toHaveTextContent('BlockB1_CPPTS')
+    // The switch shows the route's project, p2, never the one before it.
+    await waitFor(() => expect(shown()).toBe('Đại Hùng'))
+    expect(screen.queryByText('BlockB1_CPPTS')).toBeNull()
     expect(within(nav()).getByRole('link', { name: 'Sàn' })).toHaveAttribute('href', '/gs/p2')
   })
 
@@ -851,7 +880,7 @@ describe('GsScreen: the header in every state (M-4)', () => {
     render(
       <AntApp>
         <MemoryRouter initialEntries={['/gs/p1']}>
-          {/* A real route change, as the header's project switch makes one. */}
+          {/* A real route change, as the Dự án switch makes one. */}
           <Link to="/gs/p2">sang Đại Hùng</Link>
           <Routes>
             <Route path="/gs/:projectId" element={<GsScreen />} />
@@ -910,15 +939,15 @@ describe('GsScreen: recording a stage', () => {
     expect(within(nav).getByRole('link', { name: 'Năng suất' })).toHaveAttribute('href', '/gs/p1/dashboard')
   })
 
-  it('gives a viewer a project switch in the header that opens the chosen project (RV6-24)', async () => {
-    // 0034: the viewer reads every project, so the header names the one on
+  it('gives a viewer a project switch in the bar that opens the chosen project (RV6-24, GS-07)', async () => {
+    // 0034: the viewer reads every project, so the switch names the one on
     // screen and offers the rest. Changing it is a navigation, not a filter --
     // the whole screen is one project's.
     authRole.value = 'viewer'
     renderScreen()
     await screen.findByRole('button', { name: 'ô R1C2' })
 
-    const box = await screen.findByRole('combobox', { name: 'Dự án' })
+    const box = await projectSwitch()
     expect(screen.getByText('BlockB1_CPPTS', { selector: '.ant-select-selection-item' })).toBeInTheDocument()
     await userEvent.click(box)
     await userEvent.click(await screen.findByTitle('Đại Hùng'))
@@ -926,13 +955,15 @@ describe('GsScreen: recording a stage', () => {
     expect(navigate).toHaveBeenCalledWith('/gs/p2')
   })
 
-  it('names a foreman\'s project in the header: no project switch, no read of the list', async () => {
+  it('gives a foreman the same Dự án switch, over his memberships, and no project in the header (GS-06, GS-07)', async () => {
     renderScreen()
     await screen.findByRole('button', { name: 'ô R1C2' })
-    expect(within(document.querySelector('header') as HTMLElement).getByText('BlockB1_CPPTS')).toBeInTheDocument()
-    expect(screen.queryByRole('combobox', { name: 'Dự án' })).toBeNull()
-    expect(listProjectNames).not.toHaveBeenCalled()
-    // From the project row the screen already loads, not a read of its own (M-1).
+    const box = await projectSwitch()
+    expect(within(screen.getByRole('search', { name: 'Bộ lọc' })).getAllByRole('combobox')[0]).toBe(box)
+    expect(await screen.findByText('BlockB1_CPPTS', { selector: '.ant-select-selection-item' })).toBeInTheDocument()
+    expect(within(document.querySelector('header') as HTMLElement).queryByText('BlockB1_CPPTS')).toBeNull()
+    // RLS answers the one list read with his memberships; no read of the name of its own (M-1).
+    expect(listProjectNames).toHaveBeenCalledTimes(1)
     expect(loadGsProjectIdentity).not.toHaveBeenCalled()
   })
 
@@ -1339,6 +1370,9 @@ describe('GsScreen: recording a stage', () => {
     act(() => { liveHandlers?.onStatus('disconnected') })
 
     expect(await screen.findByText('Mất kết nối, đang kết nối lại…')).toBeInTheDocument()
+    // On the field scale (GS-10): the line that matters in bodyStrong, the reassurance a caption.
+    expect(screen.getByText('Mất kết nối, đang kết nối lại…')).toHaveStyle({ fontSize: '14px', fontWeight: '600' })
+    expect(screen.getByText(/Số liệu trên màn hình có thể chưa cập nhật/)).toHaveStyle({ fontSize: '12px' })
   })
 
   it('re-reads the deck shortly after subscribing, to cover the registration lag', async () => {
@@ -1530,6 +1564,79 @@ describe('GsScreen: recording a stage', () => {
   })
 })
 
+describe('GsScreen: one filter bar, the project first (GS-07)', () => {
+  const bars = () => screen.getAllByRole('search', { name: 'Bộ lọc' })
+  const TWO_WORKS = [
+    { work: WORK, weight: 1, stages: STAGES },
+    { work: WORK2, weight: 1, stages: TG_STAGES },
+  ]
+
+  it('holds Dự án, Sàn and the work switch in that order, in one bar', async () => {
+    listDeckWorks.mockResolvedValue(TWO_WORKS)
+    renderScreen()
+    await screen.findByRole('button', { name: 'ô R1C1' })
+    await screen.findByTestId('gs-work-picker')
+    expect(bars()).toHaveLength(1)
+    const bar = bars()[0]
+    const project = within(bar).getByRole('combobox', { name: 'Dự án' })
+    const deck = within(bar).getByRole('combobox', { name: 'Sàn' })
+    const work = within(bar).getByTestId('gs-work-picker')
+    const follows = (a: Element, b: Element) => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0
+    expect(follows(project, deck) && follows(deck, work)).toBe(true)
+    expect(work).toHaveAttribute('aria-label', 'Công việc')
+  })
+
+  it('floats no Công việc label over the work switch (FLT-01)', async () => {
+    listDeckWorks.mockResolvedValue(TWO_WORKS)
+    renderScreen()
+    await screen.findByTestId('gs-work-picker')
+    expect(screen.queryByText('Công việc', { exact: true })).toBeNull()
+  })
+
+  it('switches the deck at once: navigation, so no Tìm and no Đặt lại', async () => {
+    renderScreen()
+    await screen.findByRole('button', { name: 'ô R1C1' })
+    expect(within(bars()[0]).queryByRole('button', { name: /Tìm/ })).toBeNull()
+    expect(within(bars()[0]).queryByRole('button', { name: 'Đặt lại' })).toBeNull()
+  })
+
+  it('still shows Dự án, with one option, to a foreman on one project', async () => {
+    listProjectNames.mockResolvedValue([{ id: 'p1', name: 'BlockB1_CPPTS', code: 'BB1' }])
+    renderScreen()
+    await screen.findByRole('button', { name: 'ô R1C1' })
+    await userEvent.click(await projectSwitch())
+    expect(await screen.findAllByRole('option')).toHaveLength(1)
+  })
+})
+
+describe('GsScreen: the drawing and the stats start on one line (GS-08)', () => {
+  /** The grid's items that are not full-width rows: the two columns. */
+  const columns = () => {
+    const grid = screen.getByTestId('gs-chart-region').parentElement as HTMLElement
+    return Array.from(grid.children).filter((c) => (c as HTMLElement).style.gridColumn !== '1 / -1')
+  }
+
+  it('puts the drawing card alone at the top of the left column, the stats beside it', async () => {
+    renderScreen()
+    const canvas = await screen.findByTestId('canvas')
+    const [drawing, rail] = columns()
+    expect(columns()).toHaveLength(2)
+    expect(drawing.contains(canvas)).toBe(true)
+    expect(drawing.children).toHaveLength(1)
+    expect(rail).toBe(screen.getByTestId('gs-chart-region'))
+  })
+
+  it('gives a notice about the deck a full-width row, never a row above one column', async () => {
+    listDeckWorks.mockResolvedValue([])
+    renderScreen()
+    const notice = await screen.findByText('Sàn này chưa được gán công việc nào')
+    const row = Array.from((screen.getByTestId('gs-chart-region').parentElement as HTMLElement).children)
+      .find((c) => c.contains(notice)) as HTMLElement
+    expect(row.style.gridColumn).toBe('1 / -1')
+    expect(columns()[0].children).toHaveLength(1)
+  })
+})
+
 describe('GsScreen: công việc', () => {
   const TWO_WORKS = [
     { work: WORK, weight: 1, stages: STAGES },
@@ -1597,7 +1704,8 @@ describe('GsScreen: công việc', () => {
     // = 30,00%. Tổng hợp with W .6/.4 and D 1/1: .6·.155 + .4·.3 = 21,30%.
     const card = await screen.findByTestId('gs-deck-progress')
     await waitFor(() => expect(within(card).getByText('21,30%')).toBeInTheDocument())
-    expect(within(card).getByText('tổng hợp')).toBeInTheDocument()
+    // tổng hợp is the title's (?) now (round 4 via GS-10), not a caption.
+    expect(within(card).getByRole('img', { name: 'Tổng hợp các công việc' })).toBeInTheDocument()
     expect(within(card).getByText('15,50%')).toBeInTheDocument()
     expect(within(card).getByText('30,00%')).toBeInTheDocument()
   })
@@ -1650,7 +1758,8 @@ describe('GsScreen: a deck its cells over-cover', () => {
     // banner goes.
     const rollup = () => within(screen.getByTestId('gs-stage-rollup'))
     await waitFor(() =>
-      expect(rollup().getAllByText('300,00 / 500,00 m² · 60,00%').length).toBeGreaterThan(0))
+      expect(rollup().getAllByText('300,00 / 500,00 m²').length).toBeGreaterThan(0))
+    expect(rollup().getAllByText('60,00%').length).toBeGreaterThan(0)
     expect(rollup().queryByText(/42,86%/)).toBeNull()
     expect(screen.queryByText('Diện tích các ô vượt diện tích sàn khai báo')).toBeNull()
     expect(screen.queryByText(/Các ô cộng lại/)).toBeNull()
@@ -1875,6 +1984,11 @@ describe('GsScreen: the plan overlay', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Hiện kế hoạch' }))
     const legend = await screen.findByTestId('gs-zone-legend')
     expect(within(legend).getByText('Khu A — Blast')).toBeInTheDocument()
+    // CLR-03, and names in body (TYP-02 via GS-10).
+    const dot = legend.querySelector('[aria-hidden]') as HTMLElement
+    expect(dot).toHaveStyle({ width: '15px', height: '15px', borderRadius: '50%' })
+    expect(dot.style.boxShadow).toBe('')
+    expect(within(legend).getByText('Khu A — Blast')).toHaveStyle({ fontSize: '14px', fontWeight: '400' })
     expect(within(legend).queryByText('Khu A — Coat 4')).toBeNull()
 
     await chooseIn('Công đoạn kế hoạch', 'Coat 4')
@@ -1987,6 +2101,11 @@ describe('GsScreen: the plan overlay', () => {
 
     await userEvent.hover(screen.getByRole('button', { name: 'ô R1C1' }))
     const hint = await screen.findByTestId('gs-zone-hint')
+    // A zone's colour is a plain circle, as every swatch in the app (CLR-03).
+    const dot = hint.querySelector('[aria-hidden]') as HTMLElement
+    expect(dot).toHaveStyle({ width: '12px', height: '12px', borderRadius: '50%' })
+    expect(dot.style.boxShadow).toBe('')
+    expect(within(hint).getByText(/Khu A — Tháo giáo/)).toHaveStyle({ fontSize: '14px', fontWeight: '400' })
     expect(hint).toHaveTextContent('Khu A — Tháo giáo')
     expect(hint).toHaveTextContent('Tháo giáo')
     expect(hint).toHaveTextContent('13/08 – 19/08')
@@ -2048,6 +2167,20 @@ describe('GsScreen: the plan overlay', () => {
     expect(screen.getByRole('button', { name: 'ô R1C1' })).toHaveAttribute('data-color', '#fadb14')
   })
 
+  it('keeps the plan\'s key clear of the phone\'s bottom tab bar (GS-06)', async () => {
+    // jsdom answers every width query as a phone.
+    listDeckZones.mockResolvedValue([{
+      id: 'z1', name: 'Zone 1', stageId: 's5',
+      startDate: '2026-08-13', finishDate: '2026-08-19',
+      cellIds: ['c1'],
+    }])
+    renderScreen()
+    await userEvent.click(await screen.findByRole('button', { name: 'Hiện kế hoạch' }))
+    await chooseIn('Công đoạn kế hoạch', 'Tháo giáo')
+    const legend = await screen.findByTestId('gs-zone-legend')
+    expect(legend.style.bottom).toBe('calc(24px + calc(56px + env(safe-area-inset-bottom, 0px)))')
+  })
+
   it('puts the coats back when switched off again', async () => {
     listDeckZones.mockResolvedValue([{
       id: 'z1', name: 'Zone 1', stageId: 's5',
@@ -2072,22 +2205,24 @@ describe('GsScreen: a viewer (0028)', () => {
     renderScreen()
     await deckPicker()
     // jsdom reads as a phone, where the header carries Chỉ xem in the avatar
-    // (GS-01); the badge itself is FieldHeader's, tested at tablet width there.
-    expect(screen.getByRole('img', { name: 'Nguyễn Văn A (gs1) · Chỉ xem' })).toBeInTheDocument()
+    // trigger's name (GS-06); the badge itself is FieldHeader's, tested at
+    // tablet width there.
+    expect(screen.getByRole('button', { name: 'Nguyễn Văn A (gs1) · Chỉ xem' })).toBeInTheDocument()
 
     await userEvent.click(await screen.findByRole('button', { name: 'ô R1C2' }))
     expect(await screen.findByText('Ô R1C2 · Sơn')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Xác nhận' })).toBeNull()
     expect(screen.queryByRole('combobox', { name: 'Công đoạn' })).toBeNull()
     expect(screen.getByRole('button', { name: 'Đóng' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Xuất báo cáo' })).toBeEnabled()
+    await userEvent.click(screen.getByRole('button', { name: 'Thêm thao tác' }))
+    expect(await screen.findByRole('menuitem', { name: /Xuất báo cáo/ })).not.toHaveAttribute('aria-disabled', 'true')
   })
 
   it('shows no read-only mark to a foreman', async () => {
     renderScreen()
     await deckPicker()
     expect(screen.queryByText('Chỉ xem')).toBeNull()
-    expect(screen.getByRole('img', { name: 'Nguyễn Văn A (gs1)' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Nguyễn Văn A (gs1)' })).toBeInTheDocument()
   })
 })
 
@@ -2099,7 +2234,7 @@ describe('signing out', () => {
     renderScreen()
     await deckPicker()
 
-    await userEvent.click(screen.getByRole('button', { name: 'Đăng xuất' }))
+    await chooseLogout()
     await userEvent.click(await screen.findByRole('button', { name: 'Vẫn đăng xuất' }))
 
     await waitFor(() => expect(signOut).toHaveBeenCalled())
@@ -2109,7 +2244,7 @@ describe('signing out', () => {
   it('replaces the entry rather than pushing one, so Back cannot return', async () => {
     renderScreen()
     await deckPicker()
-    await userEvent.click(screen.getByRole('button', { name: 'Đăng xuất' }))
+    await chooseLogout()
     await userEvent.click(await screen.findByRole('button', { name: 'Vẫn đăng xuất' }))
     await waitFor(() => expect(navigate).toHaveBeenCalled())
     expect(navigate.mock.calls[0][1]).toEqual({ replace: true })
@@ -2183,7 +2318,7 @@ describe('GsScreen: exporting the open deck', () => {
     renderScreen()
     await screen.findByRole('button', { name: 'ô R1C1' })
 
-    await userEvent.click(screen.getByRole('button', { name: 'Xuất báo cáo' }))
+    await chooseExport('Xuất báo cáo')
 
     await waitFor(() => expect(buildReportWorkbook).toHaveBeenCalledTimes(1))
     const [input] = buildReportWorkbook.mock.calls[0]
@@ -2215,7 +2350,7 @@ describe('GsScreen: exporting the open deck', () => {
     renderScreen()
     await screen.findByRole('button', { name: 'ô R1C1' })
 
-    await userEvent.click(screen.getByRole('button', { name: 'Xuất báo cáo' }))
+    await chooseExport('Xuất báo cáo')
 
     await waitFor(() => expect(buildReportWorkbook).toHaveBeenCalledTimes(1))
     const [input] = buildReportWorkbook.mock.calls[0]
@@ -2235,7 +2370,7 @@ describe('GsScreen: exporting the open deck', () => {
     renderScreen()
     await screen.findByRole('button', { name: 'ô R1C1' })
 
-    await userEvent.click(screen.getByRole('button', { name: 'Xuất báo cáo' }))
+    await chooseExport('Xuất báo cáo')
 
     expect(await screen.findByText(/out of memory/)).toBeInTheDocument()
   })
@@ -2247,7 +2382,7 @@ describe('GsScreen: the whole project in one file (Feedback Rv4)', () => {
     // report over every deck. RLS decides what lands in it.
     renderScreen()
     await screen.findByRole('button', { name: 'ô R1C1' })
-    await userEvent.click(screen.getByRole('button', { name: 'Xuất cả dự án' }))
+    await chooseExport('Xuất cả dự án')
 
     await waitFor(() => expect(buildProjectReport).toHaveBeenCalled())
     expect(buildProjectReport.mock.calls[0][0]).toMatchObject({
@@ -2261,7 +2396,7 @@ describe('GsScreen: the whole project in one file (Feedback Rv4)', () => {
     loadProjectModel.mockResolvedValue({ models: [], decks: [], audit: {} })
     renderScreen()
     await screen.findByRole('button', { name: 'ô R1C1' })
-    await userEvent.click(screen.getByRole('button', { name: 'Xuất cả dự án' }))
+    await chooseExport('Xuất cả dự án')
 
     expect(
       (await screen.findAllByText('Chưa có sàn nào bạn được phân quyền trong dự án này.')).length,
@@ -2273,7 +2408,96 @@ describe('GsScreen: the whole project in one file (Feedback Rv4)', () => {
     authRole.value = 'viewer'
     renderScreen()
     await screen.findByRole('button', { name: 'ô R1C1' })
-    expect(screen.getByRole('button', { name: 'Xuất cả dự án' })).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Thêm thao tác' }))
+    expect(await screen.findByRole('menuitem', { name: /Xuất cả dự án/ })).toBeInTheDocument()
+  })
+})
+
+describe('GsScreen: the exports are bar actions (GS-09)', () => {
+  const original = window.matchMedia
+  /** A viewport of `width` px for antd's breakpoints, as FieldHeader.test does it. */
+  const setViewport = (width: number) => {
+    window.matchMedia = ((query: string) => {
+      const min = /min-width:\s*([\d.]+)px/.exec(query)
+      const max = /max-width:\s*([\d.]+)px/.exec(query)
+      return {
+        matches: (!min || width >= Number(min[1])) && (!max || width <= Number(max[1])),
+        media: query,
+        onchange: null,
+        addListener: () => {},
+        removeListener: () => {},
+        addEventListener: () => {},
+        removeEventListener: () => {},
+        dispatchEvent: () => false,
+      }
+    }) as typeof window.matchMedia
+  }
+  afterEach(() => {
+    window.matchMedia = original
+  })
+  /** The row that holds the filter bar and, at its right end, the page's actions. */
+  const barRow = () => screen.getByTestId('gs-bar-row')
+  const card = () => screen.getByTestId('canvas').closest('.pp-card')?.parentElement as HTMLElement
+
+  it.each([1280, 768])('puts both as icon buttons at the right end of the bar at %s px, with their own icons', async (width) => {
+    setViewport(width)
+    renderScreen()
+    await screen.findByTestId('canvas')
+    const deck = within(barRow()).getByRole('button', { name: 'Xuất báo cáo' })
+    const project = within(barRow()).getByRole('button', { name: 'Xuất cả dự án' })
+    // Icon buttons: no text on the button, the aria-label and tooltip carry it.
+    expect(deck).toHaveTextContent(/^$/)
+    expect(project).toHaveTextContent(/^$/)
+    expect(deck.querySelector('.anticon-file-excel')).not.toBeNull()
+    expect(project.querySelector('.anticon-folder-open')).not.toBeNull()
+    // Outside the search landmark: they act, they do not filter.
+    expect(within(screen.getByRole('search', { name: 'Bộ lọc' })).queryByRole('button', { name: /Xuất/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Thêm thao tác' })).toBeNull()
+  })
+
+  it('names each in a tooltip with today\'s text', async () => {
+    setViewport(1280)
+    renderScreen()
+    await screen.findByTestId('canvas')
+    await userEvent.hover(within(barRow()).getByRole('button', { name: 'Xuất cả dự án' }))
+    expect(await screen.findByRole('tooltip')).toHaveTextContent('Xuất cả dự án')
+  })
+
+  it('leaves the card header with Hiện kế hoạch only', async () => {
+    setViewport(1280)
+    renderScreen()
+    await screen.findByTestId('canvas')
+    const header = card()
+    expect(within(header).getByRole('button', { name: 'Hiện kế hoạch' })).toBeInTheDocument()
+    expect(within(header).queryByRole('button', { name: /Xuất/ })).toBeNull()
+  })
+
+  it('exports the open deck and the project from the icon buttons, as before', async () => {
+    setViewport(1280)
+    Object.defineProperty(URL, 'createObjectURL', { value: () => 'blob:x', configurable: true })
+    Object.defineProperty(URL, 'revokeObjectURL', { value: () => {}, configurable: true })
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    renderScreen()
+    await screen.findByTestId('canvas')
+    await userEvent.click(within(barRow()).getByRole('button', { name: 'Xuất báo cáo' }))
+    await waitFor(() => expect(buildReportWorkbook).toHaveBeenCalledTimes(1))
+    expect(buildReportWorkbook.mock.calls[0][0].scope).toBe('deck')
+    await userEvent.click(within(barRow()).getByRole('button', { name: 'Xuất cả dự án' }))
+    await waitFor(() => expect(buildProjectReport).toHaveBeenCalledTimes(1))
+  })
+
+  it('folds both into one ⋯ menu on a phone, icon and full text each', async () => {
+    setViewport(390)
+    renderScreen()
+    await screen.findByTestId('canvas')
+    expect(within(barRow()).queryByRole('button', { name: 'Xuất báo cáo' })).toBeNull()
+    const more = within(barRow()).getByRole('button', { name: 'Thêm thao tác' })
+    expect(more.querySelector('.anticon-ellipsis')).not.toBeNull()
+    await userEvent.click(more)
+    const items = within(await screen.findByRole('menu')).getAllByRole('menuitem')
+    expect(items.map((i) => i.textContent)).toEqual(['Xuất báo cáo', 'Xuất cả dự án'])
+    expect(items[0].querySelector('.anticon-file-excel')).not.toBeNull()
+    expect(items[1].querySelector('.anticon-folder-open')).not.toBeNull()
   })
 })
 

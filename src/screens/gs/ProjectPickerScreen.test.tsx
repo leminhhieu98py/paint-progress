@@ -1,5 +1,5 @@
 import { App as AntApp } from 'antd'
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes, useParams } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -13,8 +13,6 @@ vi.mock('../../lib/projectsApi', () => ({
   listProjectCards: () => listProjectCards(),
   listProjectNames: () => listProjectNames(),
 }))
-// The field header's name cache (fieldProjects) imports it; nothing here reads it.
-vi.mock('../../lib/gsApi', () => ({ loadGsProjectIdentity: vi.fn() }))
 
 const signOut = vi.hoisted(() => vi.fn())
 vi.mock('../../auth/AuthProvider', () => ({
@@ -122,8 +120,8 @@ describe('ProjectPickerScreen', () => {
   })
 })
 
-describe('ProjectPickerScreen: the header\'s project list (M-1b)', () => {
-  it('hands its fresh read to the field header\'s session list, so a new project is in the switch', async () => {
+describe('ProjectPickerScreen: the Dự án switch\'s project list (M-1b)', () => {
+  it('hands its fresh read to the Dự án switch\'s session list, so a new project is in it', async () => {
     renderPicker()
     await screen.findByText('Đại Hùng')
     expect(cachedProjectList()).toEqual([
@@ -131,5 +129,25 @@ describe('ProjectPickerScreen: the header\'s project list (M-1b)', () => {
       { id: 'p2', name: 'Đại Hùng', code: 'DH' },
     ])
     expect(listProjectNames).not.toHaveBeenCalled()
+  })
+})
+
+describe('ProjectPickerScreen: on the field scale (GS-10)', () => {
+  it('titles the page as a page and each card as a card', async () => {
+    renderPicker()
+    const card = await screen.findByRole('link', { name: /BlockB1_CPPTS/ })
+    expect(screen.getByRole('heading', { level: 1, name: 'Chọn dự án' })).toHaveStyle({ fontSize: '20px', fontWeight: '600' })
+    expect(within(card).getByText('BlockB1_CPPTS')).toHaveStyle({ fontSize: '15px', fontWeight: '600' })
+    // The sub-line under a name is a caption; the code is set apart by colour, not weight.
+    expect(within(card).getByText('BB1')).toHaveStyle({ fontWeight: '400' })
+    expect(within(card).getByText('BB1').parentElement).toHaveStyle({ fontSize: '12px' })
+  })
+
+  it('names who is signed in on the scale: full name bodyStrong, login a caption', async () => {
+    renderPicker()
+    await screen.findByRole('link', { name: /BlockB1_CPPTS/ })
+    const header = document.querySelector('header') as HTMLElement
+    expect(within(header).getByText('Sếp Một')).toHaveStyle({ fontSize: '14px', fontWeight: '600' })
+    expect(within(header).getByText('boss1')).toHaveStyle({ fontSize: '12px', fontWeight: '400' })
   })
 })

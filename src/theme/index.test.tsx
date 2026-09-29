@@ -1,7 +1,7 @@
 import { render } from '@testing-library/react'
 import { Alert, ConfigProvider, theme } from 'antd'
 import { describe, expect, it } from 'vitest'
-import { adminTheme, categoricalColor, fieldTheme, palette, type } from '.'
+import { adminTheme, categoricalColor, fieldTheme, fieldType, palette, type } from '.'
 
 /** WCAG relative luminance of a `#rrggbb` colour. */
 function luminance(hex: string): number {
@@ -138,5 +138,20 @@ describe('antd\'s derived type steps (TYP-01, S1)', () => {
     )
     const title = container.querySelector('.ant-alert-message') as HTMLElement
     expect(getComputedStyle(title).fontSize).toBe(`${type.cardTitle.fontSize}px`)
+  })
+})
+
+describe('fieldType (GS-04, GS-10)', () => {
+  it('is the same scale on the field theme\'s base of 14: body, bodyStrong and label move, nothing else', () => {
+    expect(fieldType).toEqual({
+      ...type,
+      body: { fontSize: 14, fontWeight: 400 },
+      bodyStrong: { fontSize: 14, fontWeight: 600 },
+      label: { fontSize: 14, fontWeight: 600 },
+    })
+  })
+
+  it('agrees with the field theme: its base size is body', () => {
+    expect(fieldTheme.token?.fontSize).toBe(fieldType.body.fontSize)
   })
 })
