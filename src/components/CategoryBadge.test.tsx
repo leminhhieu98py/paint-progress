@@ -17,13 +17,14 @@ describe('CategoryBadge', () => {
   )
 
   it('renders the value as its label', () => {
-    render(<CategoryBadge category="role" value="Chỉ xem" />)
-    expect(screen.getByText('Chỉ xem')).toBeInTheDocument()
+    render(<CategoryBadge category="role" value="Visitor" />)
+    expect(screen.getByText('Visitor')).toBeInTheDocument()
   })
 
   it('covers the fixed sets the screens show', () => {
-    expect(Object.keys(CATEGORY_TONE.role)).toEqual(['GS', 'Chỉ xem'])
+    expect(Object.keys(CATEGORY_TONE.role)).toEqual(['Nhân viên', 'GS', 'Visitor'])
     expect(Object.keys(CATEGORY_TONE.accountStatus)).toEqual(['Đang dùng', 'Đã khoá', 'Đã ẩn'])
+    expect(Object.keys(CATEGORY_TONE.employeeStatus)).toEqual(['Đang làm', 'Đã nghỉ'])
     expect(Object.keys(CATEGORY_TONE.workKind)).toEqual(['Theo ô', 'Nhập tay'])
     expect(Object.keys(CATEGORY_TONE.counts)).toEqual(['Có', 'Không'])
     expect(Object.keys(CATEGORY_TONE.drawing)).toEqual(['Đã có', 'Chưa có'])

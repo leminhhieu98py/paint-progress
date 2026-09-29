@@ -1319,6 +1319,59 @@ begin
     pol, idx_ok, cols, coalesce(fn_ok, false), anon_ok, coalesce(guard_ok, false));
 end $$;
 
+create or replace function _verify_nhan_luc_names() returns setof text language plpgsql as $$
+declare
+  fns int; emp_trg boolean; prof_trg boolean; coded int; guarded int; grants_ok boolean;
+  account_clashes int; cross_clashes int;
+begin
+  -- 46. 0037: one person, one row across GS/Visitor accounts and employees.
+  -- Both name checks are pinned definers raising PPDUP, both BEFORE row
+  -- triggers sit on the events the rule needs, and the data obeys the rule.
+  select count(*) into fns from pg_proc
+   where pronamespace = 'public'::regnamespace
+     and proname in ('employees_assert_unique_name', 'profiles_assert_unique_name')
+     and prosecdef and proconfig @> array['search_path=public, pg_temp'];
+  select count(*) into coded from pg_proc
+   where pronamespace = 'public'::regnamespace
+     and proname in ('employees_assert_unique_name', 'profiles_assert_unique_name')
+     and prosrc like '%PPDUP%';
+  -- I-1: anon and non-admin sessions never reach the lookup, and cannot insert
+  -- where the grant already says no.
+  select count(*) into guarded from pg_proc
+   where pronamespace = 'public'::regnamespace
+     and proname in ('employees_assert_unique_name', 'profiles_assert_unique_name')
+     and prosrc like '%current_setting(''role'', true) in (''anon'', ''authenticated'') and not is_admin() then%'
+     and prosrc like '%raise exception ''new row violates row-level security policy%'
+     and prosrc like '%errcode = ''insufficient_privilege''%';
+  grants_ok := not has_table_privilege('anon', 'public.profiles', 'insert')
+    and not has_table_privilege('authenticated', 'public.profiles', 'insert')
+    and not has_table_privilege('anon', 'public.employees', 'insert')
+    and has_table_privilege('authenticated', 'public.employees', 'insert')
+    and has_table_privilege('service_role', 'public.profiles', 'insert');
+  emp_trg := exists (
+    select 1 from pg_trigger
+     where tgrelid = 'public.employees'::regclass and tgname = 'employees_assert_unique_name'
+       and tgenabled = 'O'
+       and pg_get_triggerdef(oid) like '%BEFORE INSERT OR UPDATE OF full_name ON %employees FOR EACH ROW%');
+  prof_trg := exists (
+    select 1 from pg_trigger
+     where tgrelid = 'public.profiles'::regclass and tgname = 'profiles_assert_unique_name'
+       and tgenabled = 'O'
+       and pg_get_triggerdef(oid) like '%BEFORE INSERT OR UPDATE OF full_name, role, hidden ON %profiles FOR EACH ROW%');
+  select count(*) into account_clashes from (
+    select 1 from profiles where role in ('gs', 'viewer')
+     group by lower(btrim(full_name)) having count(*) > 1) d;
+  select count(*) into cross_clashes from employees e
+    join profiles p on lower(btrim(p.full_name)) = lower(btrim(e.full_name))
+                   and p.role in ('gs', 'viewer') and not p.hidden;
+  return next format(
+    '%s 0037 unique person names: pinned definers %s (need 2), raising PPDUP %s (need 2), lookup only for admin/service %s (need 2), insert grants narrowed %s, employees trigger %s, profiles trigger %s, account name clashes %s (need 0), employee/visible-account clashes %s (need 0)',
+    case when fns = 2 and coded = 2 and guarded = 2 and grants_ok and emp_trg and prof_trg
+              and account_clashes = 0 and cross_clashes = 0
+         then 'PASS' else 'FAIL' end,
+    fns, coded, guarded, grants_ok, emp_trg, prof_trg, account_clashes, cross_clashes);
+end $$;
+
 -- A single top-level SELECT: `supabase db query -f` surfaces only the last
 -- result set a multi-statement file produces, so the checks are combined
 -- here with UNION ALL rather than issued as separate SELECTs.
@@ -1350,7 +1403,9 @@ select * from _verify_effort()
 union all
 select * from _verify_deadline()
 union all
-select * from _verify_employees();
+select * from _verify_employees()
+union all
+select * from _verify_nhan_luc_names();
 
 drop function _verify_triggers();
 drop function _verify_rls();
@@ -1365,3 +1420,4 @@ drop function _verify_report_notes();
 drop function _verify_work_items();
 drop function _verify_roles_and_work_members();
 drop function _verify_seed_work(uuid, uuid);
+drop function _verify_nhan_luc_names();

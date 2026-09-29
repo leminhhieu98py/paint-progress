@@ -498,7 +498,7 @@ describe('CellStageModal — kế hoạch', () => {
   })
 })
 
-describe('CellStageModal — chỉ xem', () => {
+describe('CellStageModal — Visitor', () => {
   it('shows the facts and no way to change them for a viewer', () => {
     // Feedback Rv2 item 2: the bosses' account. The database refuses the write
     // anyway; the dialog must not offer one and then fail.
@@ -555,6 +555,8 @@ describe('CellStageModal effort (Feedback Rv2 item 11, tightened by Rv4)', () =>
   it('says so when the roster is empty rather than offering an empty box', async () => {
     renderModal(CELL, { employees: [] })
     expect(await screen.findByText('Chưa có nhân viên nào trong danh sách')).toBeInTheDocument()
+    // NL-07: the roster now lives under the Nhân lực menu item.
+    expect(screen.getByText('Nhờ quản trị viên thêm nhân viên ở mục Nhân lực; chưa có thì không ghi được tiến độ.')).toBeInTheDocument()
   })
 
   it('hides the effort block from a viewer', async () => {

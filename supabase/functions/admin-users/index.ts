@@ -15,6 +15,17 @@
 */
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.112.3'
 import { decryptSecret, encryptSecret, importKey } from './crypto.ts'
+import {
+  changeRole,
+  duplicateNameMessage,
+  parseChangeRole,
+  safeError,
+  USERNAME_PATTERN,
+  USERNAME_RULE,
+  validateCreate,
+  type AccountRow,
+  type StaffPorts,
+} from './staff.ts'
 
 const AUTH_EMAIL_SUFFIX = '@app.local'
 
@@ -105,17 +116,8 @@ async function refuseAdminTarget(userId: string): Promise<Response | null> {
   return null
 }
 
-/** The roles `create` may hand out. An admin is never created here. */
-const MANAGED_ROLES = ['gs', 'viewer'] as const
-type ManagedRole = (typeof MANAGED_ROLES)[number]
-
-/**
- * The login name, as stored: trimmed, lower-cased, and only the characters a
- * foreman can read out over a radio. It is also the local part of the auth
- * email, so the set stays inside what an email address accepts.
- */
-const USERNAME_PATTERN = /^[a-z0-9._-]{3,32}$/
-const USERNAME_RULE = 'Tên đăng nhập chỉ gồm chữ thường, số, dấu chấm, gạch ngang, gạch dưới (3-32 ký tự)'
+// MANAGED_ROLES, USERNAME_PATTERN, USERNAME_RULE and safeError live in
+// staff.ts since Nhân lực (NL-04), so its unit tests cover them.
 
 /**
  * Locks an account: no new sign-in, and `active = false` so every member
@@ -161,28 +163,6 @@ async function lockAccount(userId: string): Promise<Response | null> {
 const REVEAL_LIMIT_PER_HOUR = 20
 
 /**
- * What the caller is told when a database or auth call fails.
- *
- * The raw message carries table names, constraint names and schema detail, and
- * every branch here used to return it verbatim -- the final catch block was the
- * only one that did not. This surface is admin-only, so it is not an open door;
- * it is free reconnaissance for anyone who reaches it, and it is unreadable for
- * the admin who does belong here.
- *
- * The one case worth translating is a duplicate username, because that is a
- * thing the admin can fix by typing something else. Everything else becomes a
- * fixed sentence, with the detail written to the function log where an operator
- * can read it and an attacker cannot.
- */
-function safeError(context: string, raw: string | undefined): string {
-  console.error(`admin-users: ${context}: ${raw ?? '(no message)'}`)
-  if (raw && /duplicate key|already (been )?registered|unique constraint/i.test(raw)) {
-    return 'Tên đăng nhập này đã có người dùng'
-  }
-  return `${context}. Chi tiết đã được ghi vào log máy chủ.`
-}
-
-/**
  * Deletes the just-created auth user after a downstream insert fails, so a
  * partial account never lingers. If the delete itself fails, the account is
  * stuck with a confirmed email and a working password but no profile -- and
@@ -201,6 +181,118 @@ async function rollbackCreatedUser(userId: string, insertErrorMessage: string): 
     )
   }
   return json({ error: insertErrorMessage }, 400)
+}
+
+const ACCOUNT_COLUMNS = 'id, username, full_name, role, active, hidden'
+
+// deno-lint-ignore no-explicit-any
+const toAccount = (row: any): AccountRow => ({
+  id: row.id,
+  username: row.username,
+  fullName: row.full_name,
+  role: row.role,
+  active: row.active,
+  hidden: Boolean(row.hidden),
+})
+
+/**
+ * `change_role`'s view of the world (staff.ts), on the service_role client.
+ * Each write answers with its error or null; the flow and its undo steps are
+ * in staff.ts, where they are unit-tested.
+ */
+function staffPorts(key: CryptoKey): StaffPorts {
+  return {
+    async readEmployee(id) {
+      const { data, error } = await admin.from('employees').select('id, full_name, active').eq('id', id).maybeSingle()
+      return { row: data ? { id: data.id, fullName: data.full_name, active: data.active } : null, error }
+    },
+    async readAccount(id) {
+      const { data, error } = await admin.from('profiles').select(ACCOUNT_COLUMNS).eq('id', id).maybeSingle()
+      return { row: data ? toAccount(data) : null, error }
+    },
+    async listHiddenAccounts() {
+      const { data, error } = await admin
+        .from('profiles')
+        .select(ACCOUNT_COLUMNS)
+        .eq('hidden', true)
+        .in('role', ['gs', 'viewer'])
+      return { rows: (data ?? []).map(toAccount), error }
+    },
+    async createAuthUser(username, password) {
+      const { data, error } = await admin.auth.admin.createUser({
+        email: `${username}${AUTH_EMAIL_SUFFIX}`,
+        password,
+        email_confirm: true,
+      })
+      return { userId: data?.user?.id ?? null, error }
+    },
+    async deleteAuthUser(userId) {
+      const { error } = await admin.auth.admin.deleteUser(userId)
+      return error
+    },
+    async setAuthPassword(userId, password) {
+      const { error } = await admin.auth.admin.updateUserById(userId, { password })
+      return error
+    },
+    async setBanned(userId, banned) {
+      const { error } = await admin.auth.admin.updateUserById(userId, {
+        ban_duration: banned ? '876000h' : 'none',
+      })
+      return error
+    },
+    async insertProfile(row) {
+      const { error } = await admin
+        .from('profiles')
+        .insert({ id: row.id, username: row.username, full_name: row.fullName, role: row.role })
+      return error
+    },
+    async updateProfile(id, patch) {
+      const { error } = await admin.from('profiles').update(patch).eq('id', id)
+      return error
+    },
+    async storeCredential(userId, password) {
+      const { error } = await admin
+        .from('gs_credentials')
+        .upsert({ user_id: userId, secret: await encryptSecret(key, password) })
+      return error
+    },
+    async readCredential(userId) {
+      const { data, error } = await admin.from('gs_credentials').select('secret').eq('user_id', userId).maybeSingle()
+      if (error) return { password: null, error }
+      if (!data) return { password: null, error: null }
+      try {
+        return { password: await decryptSecret(key, data.secret), error: null }
+      } catch {
+        // A rotated or damaged key: re-open treats it as no stored password
+        // (review N-2). Nothing of the secret goes anywhere.
+        return { password: null, error: null, unreadable: true }
+      }
+    },
+    async deleteCredential(userId) {
+      const { error } = await admin.from('gs_credentials').delete().eq('user_id', userId)
+      return error
+    },
+    async addMembership(userId, projectId) {
+      // An existing membership is kept as it is, with its work restriction.
+      const { error } = await admin
+        .from('project_members')
+        .upsert({ project_id: projectId, user_id: userId }, { onConflict: 'project_id,user_id', ignoreDuplicates: true })
+      return error
+    },
+    async insertEmployee(fullName, active) {
+      const { data, error } = await admin
+        .from('employees')
+        .insert({ full_name: fullName, active })
+        .select('id')
+        .single()
+      return { id: data?.id ?? null, error }
+    },
+    async deleteEmployee(id) {
+      // The ids that went: none means someone else converted the row first.
+      const { data, error } = await admin.from('employees').delete().eq('id', id).select('id')
+      return { deleted: (data ?? []).length > 0, error }
+    },
+  }
 }
 
 Deno.serve(async (req) => {
@@ -225,18 +317,12 @@ Deno.serve(async (req) => {
 
     switch (body.action) {
       case 'create': {
-        const { fullName, password, projectId } = body
-        const username = (body.username ?? '').trim().toLowerCase()
         // Default gs: the app before Feedback Rv2 never sent a role, and a
-        // missing field must keep meaning what it always meant.
-        const role = (body.role ?? 'gs') as ManagedRole
-        if (!username || !fullName || !password || !projectId) {
-          return json({ error: 'username, fullName, password, projectId are required' }, 400)
-        }
-        if (!USERNAME_PATTERN.test(username)) return json({ error: USERNAME_RULE }, 400)
-        if (!MANAGED_ROLES.includes(role)) {
-          return json({ error: 'role must be gs or viewer' }, 400)
-        }
+        // missing field must keep meaning what it always meant. A GS needs a
+        // project; a Visitor gets none (NL-05, see validateCreate).
+        const checked = validateCreate(body)
+        if (!checked.ok) return json({ error: checked.error }, 400)
+        const { username, fullName, password, projectId, role } = checked.value
 
         const { data: created, error: createError } = await admin.auth.admin.createUser({
           email: `${username}${AUTH_EMAIL_SUFFIX}`,
@@ -252,7 +338,12 @@ Deno.serve(async (req) => {
           .from('profiles')
           .insert({ id: userId, username, full_name: fullName, role })
         if (profileError) {
-          return await rollbackCreatedUser(userId, safeError('Không tạo được hồ sơ người dùng', profileError.message))
+          // 0037: the name is already on the Nhân lực list.
+          return await rollbackCreatedUser(
+            userId,
+            duplicateNameMessage(profileError, fullName)
+              ?? safeError('Không tạo được hồ sơ người dùng', profileError.message),
+          )
         }
 
         // gs_credentials before project_members: it is the irreplaceable row --
@@ -266,11 +357,14 @@ Deno.serve(async (req) => {
           return await rollbackCreatedUser(userId, safeError('Không lưu được thông tin đăng nhập', credError.message))
         }
 
-        const { error: memberError } = await admin
-          .from('project_members')
-          .insert({ project_id: projectId, user_id: userId })
-        if (memberError) {
-          return await rollbackCreatedUser(userId, safeError('Không gán được dự án cho tài khoản', memberError.message))
+        // A Visitor reads every project since 0034; no membership row (NL-05).
+        if (projectId !== null) {
+          const { error: memberError } = await admin
+            .from('project_members')
+            .insert({ project_id: projectId, user_id: userId })
+          if (memberError) {
+            return await rollbackCreatedUser(userId, safeError('Không gán được dự án cho tài khoản', memberError.message))
+          }
         }
 
         return json({ userId })
@@ -473,8 +567,26 @@ Deno.serve(async (req) => {
         const wrongTarget = await refuseAdminTarget(body.userId)
         if (wrongTarget) return wrongTarget
         const { error } = await admin.from('profiles').update({ hidden: false }).eq('id', body.userId)
-        if (error) return json({ error: safeError('Không hiện lại được tài khoản', error.message) }, 500)
+        if (error) {
+          // 0037: an employee now carries this name; "Đổi phân quyền" on that
+          // employee is what brings the account back.
+          if (error.code === 'PPDUP') {
+            const { data: target } = await admin.from('profiles').select('full_name').eq('id', body.userId).maybeSingle()
+            const named = duplicateNameMessage(error, target?.full_name ?? '')
+            if (named) return json({ error: named }, 400)
+          }
+          return json({ error: safeError('Không hiện lại được tài khoản', error.message) }, 500)
+        }
         return json({ ok: true })
+      }
+
+      case 'change_role': {
+        // NL-04: Nhân viên ↔ GS/Visitor, and GS ↔ Visitor. The flow, its
+        // ordering around 0037 and its undo steps: staff.ts changeRole.
+        const parsed = parseChangeRole(body)
+        if (!parsed.ok) return json({ error: parsed.error }, 400)
+        const outcome = await changeRole(staffPorts(key), parsed.value)
+        return json(outcome.body, outcome.status)
       }
 
       default:

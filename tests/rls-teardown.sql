@@ -61,7 +61,12 @@ delete from auth.users where email like 'rlstest-ef-%@app.local';
 delete from profiles where username like 'rlstest-ef-%';
 
 -- 4. The scratch projects, in case a run was killed before afterAll.
-delete from projects where code in ('RLSX', 'RLSY', 'RLSE', 'RLSW', 'RLSH');
+delete from projects where code in ('RLSX', 'RLSY', 'RLSE', 'RLSW', 'RLSH', 'RLSN');
+
+-- 4b. The employees the suites add (the 0032 roster case, and
+-- tests/nhanLuc.integration.test.ts), in case a run was killed before its
+-- afterAll. Since 0037 a name left behind blocks the same name as an account.
+delete from employees where full_name like 'RLS Nhân viên %' or full_name like 'RLS NL %';
 
 -- 5. The admin fixture must be able to act as an admin on the next run. The
 -- inactive-admin test flips this flag and restores it in a `finally`, and
@@ -161,8 +166,13 @@ begin
   return next format('%s no Edge Function credential rows survive: %s found, expected 0',
                      case when n = 0 then 'PASS' else 'FAIL' end, n);
 
-  select count(*) into n from projects where code in ('RLSX', 'RLSY', 'RLSE', 'RLSW', 'RLSH');
+  select count(*) into n from projects where code in ('RLSX', 'RLSY', 'RLSE', 'RLSW', 'RLSH', 'RLSN');
   return next format('%s no scratch projects survive: %s found, expected 0',
+                     case when n = 0 then 'PASS' else 'FAIL' end, n);
+
+  select count(*) into n from employees
+  where full_name like 'RLS Nhân viên %' or full_name like 'RLS NL %';
+  return next format('%s no test employees survive: %s found, expected 0',
                      case when n = 0 then 'PASS' else 'FAIL' end, n);
 
   -- A null on either column means a profile was deleted while a log row still

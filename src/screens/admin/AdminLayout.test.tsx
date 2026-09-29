@@ -19,10 +19,9 @@ function renderAt(path: string) {
           <Route path="projects" element={<div>nội dung dự án</div>} />
           <Route path="decks" element={<div>nội dung sàn</div>} />
         <Route path="decks/:deckId" element={<div>nội dung một sàn</div>} />
-          <Route path="users" element={<div>nội dung người dùng</div>} />
+          <Route path="users" element={<div>nội dung nhân lực</div>} />
           <Route path="dashboard" element={<div>nội dung năng suất</div>} />
           <Route path="kpi" element={<div>nội dung KPI</div>} />
-          <Route path="employees" element={<div>nội dung nhân viên</div>} />
           <Route path="*" element={<div>không tìm thấy</div>} />
         </Route>
         <Route path="/login" element={<div>màn đăng nhập</div>} />
@@ -49,8 +48,14 @@ describe('AdminLayout', () => {
     expect(screen.getByRole('link', { name: /Sàn/ })).toHaveAttribute('href', '/admin/decks')
     expect(screen.getByRole('link', { name: /Năng suất/ })).toHaveAttribute('href', '/admin/dashboard')
     expect(screen.getByRole('link', { name: /KPI/ })).toHaveAttribute('href', '/admin/kpi')
-    expect(screen.getByRole('link', { name: /Người dùng/ })).toHaveAttribute('href', '/admin/users')
-    expect(screen.getByRole('link', { name: /Nhân viên/ })).toHaveAttribute('href', '/admin/employees')
+    expect(screen.getByRole('link', { name: /Nhân lực/ })).toHaveAttribute('href', '/admin/users')
+  })
+
+  it('offers accounts and employees as one item, Nhân lực (NL-01)', () => {
+    renderAt('/admin/users')
+    expect(screen.queryByRole('link', { name: /Người dùng/ })).toBeNull()
+    expect(screen.queryByRole('link', { name: /Nhân viên/ })).toBeNull()
+    expect(screen.getByRole('menuitem', { name: /Nhân lực/ })).toHaveClass('ant-menu-item-selected')
   })
 
   it('puts KPI immediately after Năng suất (Feedback Rv5, item 9)', () => {

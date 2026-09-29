@@ -31,7 +31,7 @@ export interface MembershipDraft {
 
 type Action =
   | 'create' | 'reveal' | 'set-password' | 'deactivate'
-  | 'reactivate' | 'rename' | 'hide' | 'unhide'
+  | 'reactivate' | 'rename' | 'hide' | 'unhide' | 'change_role'
 
 async function call<T>(action: Action, payload: Record<string, string>): Promise<T> {
   const { data, error } = await supabase.functions.invoke('admin-users', {
@@ -63,15 +63,42 @@ async function call<T>(action: Action, payload: Record<string, string>): Promise
   return data as T
 }
 
+/** A GS needs `projectId`; a Visitor is created without one (NL-05). */
 export async function createGsUser(input: {
   username: string
   fullName: string
   password: string
-  projectId: string
+  projectId?: string
   role: AccountRole
 }): Promise<string> {
-  const { userId } = await call<{ userId: string }>('create', input)
+  const { projectId, ...rest } = input
+  const { userId } = await call<{ userId: string }>('create', projectId ? { ...rest, projectId } : rest)
   return userId
+}
+
+/** What a row of Nhân lực can become (NL-04). */
+export type StaffRole = AccountRole | 'employee'
+
+/**
+ * Moves one person between Nhân viên, GS and Visitor (NL-04). The Edge
+ * Function does the whole move, undoing its own steps on a failure: an
+ * employee becoming an account re-opens a hidden account of the same name if
+ * there is one (`reactivated`), otherwise creates one; an account becoming an
+ * employee is locked and hidden, never deleted.
+ */
+export async function changeRole(input: {
+  kind: 'employee' | 'account'
+  id: string
+  role: StaffRole
+  username?: string
+  password?: string
+  projectId?: string
+}): Promise<{ userId?: string; username?: string; reactivated?: boolean; employeeId?: string; ok?: boolean }> {
+  const payload: Record<string, string> = { kind: input.kind, id: input.id, role: input.role }
+  if (input.username) payload.username = input.username
+  if (input.password) payload.password = input.password
+  if (input.projectId) payload.projectId = input.projectId
+  return call('change_role', payload)
 }
 
 export async function revealPassword(userId: string): Promise<string> {

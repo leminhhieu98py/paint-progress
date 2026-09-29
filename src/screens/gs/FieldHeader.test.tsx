@@ -204,13 +204,13 @@ describe('FieldHeader: navigation and the account, nothing else (GS-06)', () => 
     expect(trigger()).toHaveTextContent('Nguyễn Văn A')
     expect(trigger()).toHaveAttribute('aria-haspopup', 'menu')
     expect(screen.queryByRole('button', { name: 'Đăng xuất' })).toBeNull()
-    expect(screen.queryByText('Chỉ xem')).toBeNull()
+    expect(screen.queryByText('Visitor')).toBeNull()
   })
 
-  it('adds the Chỉ xem badge to a viewer\'s trigger', () => {
+  it('adds the Visitor badge to a viewer\'s trigger', () => {
     authRole.value = 'viewer'
     renderAt('/gs/p1')
-    expect(trigger('Nguyễn Văn A (gs1) · Chỉ xem')).toHaveTextContent('Chỉ xem')
+    expect(trigger('Nguyễn Văn A (gs1) · Visitor')).toHaveTextContent('Visitor')
   })
 
   it('opens a menu that starts with Đăng xuất: the name is on the trigger already, the login nowhere (MOB-04)', async () => {
@@ -276,13 +276,13 @@ describe('FieldHeader: phone width', () => {
     expect(within(menu).getAllByRole('menuitem').map((i) => i.textContent)).toEqual(['Đăng xuất'])
   })
 
-  it('carries a viewer\'s Chỉ xem into the trigger\'s name and the menu, where the badge has no room', async () => {
+  it('carries a viewer\'s Visitor into the trigger\'s name and the menu, where the badge has no room', async () => {
     authRole.value = 'viewer'
     renderAt('/gs/p1')
-    const avatar = screen.getByRole('button', { name: 'Nguyễn Văn A (gs1) · Chỉ xem' })
-    expect(avatar).not.toHaveTextContent('Chỉ xem')
+    const avatar = screen.getByRole('button', { name: 'Nguyễn Văn A (gs1) · Visitor' })
+    expect(avatar).not.toHaveTextContent('Visitor')
     await userEvent.click(avatar)
-    expect(within(await screen.findByRole('menu')).getByText('Chỉ xem')).toBeInTheDocument()
+    expect(within(await screen.findByRole('menu')).getByText('Visitor')).toBeInTheDocument()
   })
 })
 

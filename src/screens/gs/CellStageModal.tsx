@@ -374,7 +374,7 @@ export function CellStageModal({
                   showIcon
                   style={{ marginBottom: 10 }}
                   message="Chưa có nhân viên nào trong danh sách"
-                  description="Nhờ quản trị viên thêm nhân viên ở mục Nhân viên; chưa có thì không ghi được tiến độ."
+                  description="Nhờ quản trị viên thêm nhân viên ở mục Nhân lực; chưa có thì không ghi được tiến độ."
                 />
               )}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 12px' }}>

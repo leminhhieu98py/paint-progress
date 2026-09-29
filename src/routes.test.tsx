@@ -55,11 +55,8 @@ vi.mock('./screens/admin/ProjectsScreen', () => ({
 vi.mock('./screens/admin/DecksScreen', () => ({
   DecksScreen: () => <div>DECKS SCREEN</div>,
 }))
-vi.mock('./screens/admin/UsersScreen', () => ({
-  UsersScreen: () => <div>USERS SCREEN</div>,
-}))
-vi.mock('./screens/admin/EmployeesScreen', () => ({
-  EmployeesScreen: () => <div>EMPLOYEES SCREEN</div>,
+vi.mock('./screens/admin/NhanLucScreen', () => ({
+  NhanLucScreen: () => <div>NHAN LUC SCREEN</div>,
 }))
 // Konva, and its own data fetching. This file is about which route
 // a signed-in profile lands on, not what the destination renders. The projectId
@@ -285,10 +282,17 @@ describe('AppRoutes: /login is the entry point', () => {
     expect(screen.queryByText('ADMIN LAYOUT')).toBeNull()
   })
 
-  it('gives an admin the shared staff roster (Feedback Rv4)', async () => {
+  it('gives an admin Nhân lực at the users address (NL-01)', async () => {
+    asRole('admin')
+    renderAt(`${APP_BASE_PATH}/admin/users`)
+    expect(await screen.findByText('NHAN LUC SCREEN')).toBeInTheDocument()
+  })
+
+  it('sends the old staff roster address to Nhân lực, so a bookmark still lands (NL-01)', async () => {
     asRole('admin')
     renderAt(`${APP_BASE_PATH}/admin/employees`)
-    expect(await screen.findByText('EMPLOYEES SCREEN')).toBeInTheDocument()
+    expect(await screen.findByText('NHAN LUC SCREEN')).toBeInTheDocument()
+    expect(screen.queryByText('Không tìm thấy trang')).toBeNull()
   })
 
   // -------------------------------------------------------------------
@@ -332,7 +336,7 @@ describe('AppRoutes: /login is the entry point', () => {
     const unknown = renderAt(`${APP_BASE_PATH}/admin/productivity`)
     expect(await screen.findByText('Không tìm thấy trang')).toBeInTheDocument()
     expect(unknown.container.innerHTML).toBe(knownPage)
-    expect(screen.queryByText('USERS SCREEN')).toBeNull()
+    expect(screen.queryByText('NHAN LUC SCREEN')).toBeNull()
   })
 
   it.each([

@@ -66,7 +66,8 @@ npx supabase db query --linked -f supabase/verify_schema.sql
 ```
 
 Every returned row must begin with `PASS` — 45 rows in a passing run against
-a project with `0001`–`0032` applied (measured 2026-09-07 on dev).
+a project with `0001`–`0032` applied (measured 2026-09-07 on dev); row 46
+arrives with `0037` and reports `FAIL` until it is applied.
 
 The `0019` note check reports `FAIL` until that migration is applied, and the
 three note tests in `tests/rls.integration.test.ts` are `it.skip`ped for the
@@ -186,6 +187,36 @@ database). Apply `0036` first, deploy the app second. The `mapWork` defaults
 only cover a row that lacks the fields, which a 400 never produces. No new
 `tests/rls.integration.test.ts` case: the policies are unchanged and their
 `works` cases already run.
+
+`0037` (two BEFORE row triggers, `employees_assert_unique_name` and
+`profiles_assert_unique_name` — one person, one row on the Nhân lực screen,
+rules NL-03/NL-06) is **not yet applied to dev or production**. Names compare
+as `lower(btrim(full_name))`, as `employees_name_key` does: two GS/Visitor
+accounts never share a name (hidden ones included), and an employee never
+shares one with a visible GS/Visitor account (a hidden one is allowed: that is
+an account parked by "Đổi phân quyền" to Nhân viên). Admin accounts are outside
+the rule. A refusal is SQLSTATE `PPDUP` with DETAIL `account`, `hidden_account`,
+`employee` or `retired_employee`, which the app and the `admin-users` Edge Function translate. The lookup runs
+only for an admin, the service role and SQL sessions: a BEFORE trigger fires
+before RLS checks the new row, so for anon or a GS it would confirm that a
+name exists; those callers are refused first with RLS's own 42501, which also
+stops a security definer function they call from writing a name around the
+rule. For the same
+reason `0037` revokes INSERT on `profiles` from `anon` and `authenticated`
+(only the Edge Function creates accounts) and on `employees` from `anon`.
+**It changes no row.** Before the push, run the read-only report
+`supabase/queries/nhan_luc_duplicates.sql`; every row with
+`blocks_migration = true` must be renamed or merged by hand first, because the
+migration's first block raises (before creating anything) while one exists.
+Its closing `do $$ ... $$` block raises if either function is not a pinned
+definer raising `PPDUP`, if either trigger is missing, disabled or on other
+events, if `employees_name_key` is gone, or if the data breaks the rule;
+`verify_schema.sql` row 46 re-checks the same on demand. Deploy order:
+`0037`, then the Edge Function (its `create`, `unhide` and new `change_role`
+translate the refusal and order their writes around it), then the app. The
+deployed app keeps working against `0037` alone; a refused write shows the
+database's English message until the new app ships. The owner-run cases are in
+`tests/nhanLuc.integration.test.ts`.
 
 `supabase/scripts/purge_user.sql` removes one test account together with the
 bays it ticked (owner request, 2026-09-04). It is a dry run until its

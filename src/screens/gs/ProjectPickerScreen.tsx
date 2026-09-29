@@ -19,7 +19,7 @@ import { seedProjectList } from './fieldProjects'
  * screen. One project is not a choice, so it redirects straight there.
  *
  * Read-only and nothing else: the GS screen this leads to already says
- * "Chỉ xem" and offers no write control, and the header here carries that
+ * "Visitor" and offers no write control, and the header here carries that
  * screen's account trigger and menu -- who is signed in, and logout.
  */
 export function ProjectPickerScreen() {
@@ -81,7 +81,7 @@ export function ProjectPickerScreen() {
           <h1 style={{ flex: 1, minWidth: 0, margin: 0, ...fieldType.pageTitle }}>Chọn dự án</h1>
           {/*
             The project pages' account trigger and menu (GS-06, M-4): who is
-            signed in, Chỉ xem, and Đăng xuất behind its confirm.
+            signed in, Visitor, and Đăng xuất behind its confirm.
           */}
           <FieldAccountTrigger
             consequence="Muốn xem tiếp thì phải đăng nhập lại bằng mật khẩu quản trị viên đã giao."

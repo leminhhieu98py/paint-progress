@@ -6,8 +6,10 @@ import type { StatusTone } from './StatusPill'
  * from it so the maps can be imported without a component in the way.
  */
 export const CATEGORY_TONE = {
-  role: { GS: 'accent', 'Chỉ xem': 'off' },
+  role: { 'Nhân viên': 'slate', GS: 'accent', Visitor: 'off' },
   accountStatus: { 'Đang dùng': 'ok', 'Đã khoá': 'warn', 'Đã ẩn': 'off' },
+  // Nhân lực (NL-01): an employee's Trạng thái, in the same column as an account's.
+  employeeStatus: { 'Đang làm': 'ok', 'Đã nghỉ': 'off' },
   workKind: { 'Theo ô': 'accent', 'Nhập tay': 'slate' },
   counts: { Có: 'ok', Không: 'off' },
   drawing: { 'Đã có': 'ok', 'Chưa có': 'warn' },
@@ -15,5 +17,5 @@ export const CATEGORY_TONE = {
 
 export type Category = keyof typeof CATEGORY_TONE
 
-/** The labels a category knows, e.g. `'GS' | 'Chỉ xem'` for `role`. */
+/** The labels a category knows, e.g. `'GS' | 'Visitor'` for `role`. */
 export type CategoryValue<C extends Category> = C extends Category ? keyof (typeof CATEGORY_TONE)[C] & string : never
