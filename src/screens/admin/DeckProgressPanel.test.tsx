@@ -787,10 +787,22 @@ describe('DeckProgressPanel — zones', () => {
     const add = await screen.findByRole('button', { name: 'Thêm 0 ô đã chọn' })
     expect(add).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Bỏ 0 ô đã chọn' })).toBeDisabled()
-    // The reason is on the disabled buttons, like Gộp thành zone (CPY-01).
-    expect(screen.queryByText('Chọn ô trên bản vẽ rồi quay lại đây để thêm hoặc bỏ.')).toBeNull()
-    await userEvent.hover(add.parentElement as HTMLElement)
-    expect(await screen.findByText('Chọn ô trên bản vẽ rồi quay lại đây để thêm hoặc bỏ.')).toBeInTheDocument()
+    // The reason is on the disabled buttons, like Gộp thành zone (CPY-01):
+    // their description, never a sentence on screen.
+    const hint = 'Chọn ô trên bản vẽ rồi quay lại đây để thêm hoặc bỏ.'
+    expect(add).toHaveAccessibleDescription(hint)
+    expect(screen.getByRole('button', { name: 'Bỏ 0 ô đã chọn' })).toHaveAccessibleDescription(hint)
+    expect(screen.queryByRole('tooltip')).toBeNull()
+    for (const el of screen.getAllByText(hint)) expect(el).toHaveStyle({ position: 'absolute', width: '1px', overflow: 'hidden' })
+    // A disabled button takes no focus, so the tip opens from its wrapper,
+    // which the keyboard reaches while the button is disabled (CPY-02).
+    const wrapper = add.parentElement as HTMLElement
+    expect(wrapper).toHaveAttribute('tabindex', '0')
+    act(() => wrapper.focus())
+    expect(await screen.findByRole('tooltip')).toHaveTextContent(hint)
+    act(() => wrapper.blur())
+    await userEvent.hover(wrapper)
+    expect(await screen.findByRole('tooltip')).toHaveTextContent(hint)
     // And the intro keeps its data, not the obvious second sentence.
     const dialog = screen.getByRole('dialog')
     expect(within(dialog).getByText('Tháo giáo · 1 ô')).toBeInTheDocument()
@@ -1025,8 +1037,12 @@ describe('DeckProgressPanel — the report copy of a note (0023)', () => {
     const box = await screen.findByLabelText('Bản cho báo cáo')
     // What the field is for is its label's (?); the restore button says the
     // rest (CPY-01).
-    expect(screen.getByRole('img', { name: 'Chỉ file Excel in bản này. GS và màn hình này vẫn thấy ghi chú gốc.' })).toBeInTheDocument()
+    const tip = screen.getByRole('img', { name: 'Chỉ file Excel in bản này. GS và màn hình này vẫn thấy ghi chú gốc.' })
     expect(screen.queryByText(/^Chỉ file Excel in bản này/)).toBeNull()
+    // Beside the label, not in it: inside, a click on the (?) focused the
+    // field and the tip joined the field's name (CPY-02).
+    expect(tip.closest('label')).toBeNull()
+    expect(screen.getByRole('textbox', { name: 'Bản cho báo cáo' })).toBe(box)
     // Prefilled with what will otherwise print, so the admin edits rather
     // than retypes.
     expect(box).toHaveValue('Bề mặt còn ẩm, hoãn sơn sang mai')

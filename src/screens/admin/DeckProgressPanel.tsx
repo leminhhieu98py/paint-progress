@@ -4,7 +4,7 @@ import {
   Select, Space, Spin, Switch, Table, Tooltip, Typography,
 } from 'antd'
 import dayjs from 'dayjs'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
 import { DrawingCanvas } from '../../canvas/DrawingCanvas'
 import { cellStagesAsOf, HISTORY_FROM_LABEL } from '../../domain/asOf'
 import { effortDayKey } from '../../domain/effort'
@@ -231,6 +231,39 @@ const EMPTY_LENS: Lens = {
 
 /** Why the zone dialog's add and drop buttons are disabled. */
 const ZONE_CELLS_HINT = 'Chọn ô trên bản vẽ rồi quay lại đây để thêm hoặc bỏ.'
+
+/** On screen for assistive technology alone. */
+const VISUALLY_HIDDEN = {
+  position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap',
+} as const
+
+/**
+ * One of the zone dialog's add and drop buttons, its reason for being
+ * disabled reachable without a pointer (CPY-02). A disabled button takes no
+ * focus, so the wrapper the tooltip anchors on joins the tab order while it
+ * is disabled, and the tip opens on focus as on hover; the button itself is
+ * described by the same words for a screen reader. No sentence on screen.
+ */
+function ZoneCellsButton({
+  disabled, onClick, children,
+}: {
+  disabled: boolean
+  onClick: () => void
+  children: ReactNode
+}) {
+  const hintId = useId()
+  return (
+    <Tooltip title={disabled ? ZONE_CELLS_HINT : undefined} trigger={['hover', 'focus']}>
+      {/* A span, because antd Tooltip cannot anchor a disabled button. */}
+      <span tabIndex={disabled ? 0 : undefined}>
+        <Button disabled={disabled} aria-describedby={disabled ? hintId : undefined} onClick={onClick}>
+          {children}
+        </Button>
+        {disabled && <span id={hintId} style={VISUALLY_HIDDEN}>{ZONE_CELLS_HINT}</span>}
+      </span>
+    </Tooltip>
+  )
+}
 
 const PROGRESS_RULES = [
   {
@@ -1836,10 +1869,12 @@ export function DeckProgressPanel({
             >
               {reportEdit.note}
             </Typography.Paragraph>
-            <label htmlFor="report-note" style={{ display: 'block', marginBottom: 6, ...type.label }}>
-              Bản cho báo cáo
+            {/* The (?) beside the label, outside it: inside, a click would move
+                focus to the field and the tip would join the field's name. */}
+            <div style={{ marginBottom: 6 }}>
+              <label htmlFor="report-note" style={type.label}>Bản cho báo cáo</label>
               <InfoTip text="Chỉ file Excel in bản này. GS và màn hình này vẫn thấy ghi chú gốc." />
-            </label>
+            </div>
             <Input.TextArea
               id="report-note"
               rows={3}
@@ -1924,29 +1959,20 @@ export function DeckProgressPanel({
             <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
               <span style={{ ...type.label, color: palette.textSecondary }}>Ô trong zone</span>
               {/* The reason a button is disabled is on the button, as on
-                  Gộp thành zone; a span, because antd Tooltip cannot anchor
-                  a disabled button (CPY-01). */}
+                  Gộp thành zone (CPY-01). */}
               <Space wrap>
-                <Tooltip title={selectedCodes.length === 0 ? ZONE_CELLS_HINT : undefined}>
-                  <span>
-                    <Button
-                      disabled={selectedCodes.length === 0}
-                      onClick={() => void changeZoneCells(datesFor, 'add')}
-                    >
-                      {`Thêm ${selectedCodes.length} ô đã chọn`}
-                    </Button>
-                  </span>
-                </Tooltip>
-                <Tooltip title={selectedCodes.length === 0 ? ZONE_CELLS_HINT : undefined}>
-                  <span>
-                    <Button
-                      disabled={selectedCodes.length === 0}
-                      onClick={() => void changeZoneCells(datesFor, 'remove')}
-                    >
-                      {`Bỏ ${selectedCodes.length} ô đã chọn`}
-                    </Button>
-                  </span>
-                </Tooltip>
+                <ZoneCellsButton
+                  disabled={selectedCodes.length === 0}
+                  onClick={() => void changeZoneCells(datesFor, 'add')}
+                >
+                  {`Thêm ${selectedCodes.length} ô đã chọn`}
+                </ZoneCellsButton>
+                <ZoneCellsButton
+                  disabled={selectedCodes.length === 0}
+                  onClick={() => void changeZoneCells(datesFor, 'remove')}
+                >
+                  {`Bỏ ${selectedCodes.length} ô đã chọn`}
+                </ZoneCellsButton>
               </Space>
             </div>
             <Space>
