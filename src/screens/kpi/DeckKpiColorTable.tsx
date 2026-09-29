@@ -155,6 +155,7 @@ export function DeckKpiColorTable({
           {
             key: 'reset',
             width: 110,
+            align: 'right',
             render: (_v, row) => (
               <Button
                 type="link"

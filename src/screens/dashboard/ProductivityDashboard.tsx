@@ -323,7 +323,7 @@ export function ProductivityDashboard({
               },
               {
                 title: 'Hạn hoàn thành',
-                align: 'right',
+                // A date, so left like every other date column (TBL-01).
                 render: (_, r) => (r.forecast.deadline === null ? dash : dayjs(r.forecast.deadline).format('DD/MM/YYYY')),
               },
               {

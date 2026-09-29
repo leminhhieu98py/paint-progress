@@ -91,6 +91,16 @@ body {
 }
 
 /*
+  One vertical axis per row (TBL-02). Stated rather than left to the UA
+  default so a cell that wraps -- a long stage name beside a picker and a
+  button -- keeps its neighbours on its centre line, whatever antd's cell
+  styles inherit.
+*/
+.pp-card .ant-table-wrapper .ant-table .ant-table-tbody > tr > td {
+  vertical-align: middle;
+}
+
+/*
   A paginated table's pager would otherwise sit against the card's right
   border, since the body it lives in has no padding of its own.
 */

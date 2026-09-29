@@ -158,6 +158,7 @@ export function EffortHistoryPanel({
           {
             title: '',
             width: 90,
+            align: 'right',
             render: (_, ev) => (
               <Space size={4}>
                 {ev.effortEditedAt && (

@@ -227,6 +227,7 @@ export function StagePlanTable({
       title: 'Số ngày',
       key: 'days',
       width: 90,
+      align: 'right' as const,
       render: (_v: unknown, row: StagePlanRow) => {
         const d = draft(row)
         const shown =
@@ -259,45 +260,46 @@ export function StagePlanTable({
           says so, so the branch turns on the DATE and never on the value.
         */
         const computed = d.startDate === null ? null : computedAreaFor(row, d.startDate)
+        /*
+          The computed figure lives in the placeholder and its tooltip, not on
+          a line under the field (TBL-02). The helper line made this cell two
+          lines tall while the picker and Lưu beside it stayed one, so the
+          three controls of a row sat on three different axes. The
+          placeholder says what the system will use while the field is empty;
+          the tooltip keeps the figure readable once a value is typed over it.
+          No placeholder at all while there is no figure to show.
+        */
+        const computedLabel = computed === null ? undefined : `Tự tính ${formatAreaM2(computed)}${rowUnit(row)}`
         return (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <Tooltip title={computedLabel}>
               <InputNumber
                 aria-label="Diện tích kế hoạch"
-                // The computed figure as the placeholder, so an empty field
-                // shows what the system will use instead of showing nothing --
-                // and no placeholder at all while there is no figure to show.
-                placeholder={computed === null ? undefined : formatAreaM2(computed)}
+                placeholder={computedLabel}
                 value={d.plannedAreaM2}
                 disabled={saving}
                 style={{ width: 130 }}
                 onChange={(n) => patch(row, { plannedAreaM2: n === null ? null : Number(n) })}
               />
-              {d.plannedAreaM2 !== null && (
-                <Tooltip title="Bỏ ghi đè, để hệ thống tự tính lại phần còn lại từ ngày bắt đầu">
-                  <Button
-                    size="small"
-                    aria-label="Về diện tích tự tính"
-                    disabled={saving}
-                    onClick={() => {
-                      // Cleared locally as well as on the server, so the field
-                      // shows the computed placeholder at once rather than
-                      // waiting for a reload to catch up.
-                      patch(row, { plannedAreaM2: null })
-                      void onClearArea(row.stageId)
-                    }}
-                  >
-                    Tự tính
-                  </Button>
-                </Tooltip>
-              )}
-            </div>
-            <span
-              data-testid={`plan-computed-${row.stageId}`}
-              style={{ fontSize: 12, color: palette.textQuaternary }}
-            >
-              {computed === null ? '—' : `Tự tính: ${formatAreaM2(computed)}${rowUnit(row)}`}
-            </span>
+            </Tooltip>
+            {d.plannedAreaM2 !== null && (
+              <Tooltip title="Bỏ ghi đè, để hệ thống tự tính lại phần còn lại từ ngày bắt đầu">
+                <Button
+                  size="small"
+                  aria-label="Về diện tích tự tính"
+                  disabled={saving}
+                  onClick={() => {
+                    // Cleared locally as well as on the server, so the field
+                    // shows the computed placeholder at once rather than
+                    // waiting for a reload to catch up.
+                    patch(row, { plannedAreaM2: null })
+                    void onClearArea(row.stageId)
+                  }}
+                >
+                  Tự tính
+                </Button>
+              </Tooltip>
+            )}
           </div>
         )
       },
@@ -309,6 +311,7 @@ export function StagePlanTable({
       // Pinned: the table scrolls sideways at tablet widths (QA F9) and a
       // row's Lưu must stay in view with the dates it saves.
       fixed: 'right' as const,
+      align: 'right' as const,
       render: (_v: unknown, row: StagePlanRow) => {
         const d = draft(row)
         const message = errorOf(d)

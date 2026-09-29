@@ -355,7 +355,7 @@ export function WorksScreen() {
                 width: 34,
                 render: () => <HolderOutlined style={{ color: palette.textTertiary, cursor: 'grab' }} />,
               },
-              { title: 'Thứ tự', dataIndex: 'seq', width: 72 },
+              { title: 'Thứ tự', dataIndex: 'seq', width: 72, align: 'right' },
               {
                 title: 'Tên công việc',
                 dataIndex: 'name',
@@ -435,6 +435,7 @@ export function WorksScreen() {
                 title: 'Tính vào tổng',
                 dataIndex: 'counts',
                 width: 130,
+                align: 'center',
                 render: (v: boolean, _w, i) => (
                   <Switch aria-label="Tính vào tổng" checked={v} onChange={(on) => patch(i, { counts: on })} />
                 ),
@@ -535,6 +536,7 @@ export function WorksScreen() {
                     title: 'Tham gia',
                     dataIndex: 'on',
                     width: 110,
+                    align: 'center',
                     render: (v: boolean, r) => (
                       <Switch
                         aria-label={`${r.name} tham gia`}

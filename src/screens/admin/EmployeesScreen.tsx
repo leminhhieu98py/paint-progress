@@ -189,6 +189,7 @@ export function EmployeesScreen() {
               {
                 title: 'Đang làm',
                 width: 120,
+                align: 'center',
                 render: (_, row) => (
                   <Switch
                     size="small"
@@ -204,6 +205,7 @@ export function EmployeesScreen() {
               {
                 title: '',
                 width: 90,
+                align: 'right',
                 render: (_, row) => (
                   <Button
                     size="small"

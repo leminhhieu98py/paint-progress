@@ -174,8 +174,10 @@ describe('StagePlanTable', () => {
     renderTable()
     const area = row('s2').getByLabelText('Diện tích kế hoạch')
     expect((area as HTMLInputElement).value).toBe('')
-    expect(area).toHaveAttribute('placeholder', '8.000,00')
-    expect(row('s2').getByTestId('plan-computed-s2')).toHaveTextContent('8.000,00')
+    // In the placeholder and nowhere under it (TBL-02): a helper line beneath
+    // the field pushed the input, the picker and Lưu off one axis.
+    expect(area).toHaveAttribute('placeholder', 'Tự tính 8.000,00')
+    expect(row('s2').queryByTestId('plan-computed-s2')).toBeNull()
   })
 
   /** Mirrors `KpiScreen.computedAreaFor`, which short-circuits to 0 with no
@@ -188,23 +190,20 @@ describe('StagePlanTable', () => {
     // there is nothing to compute from, and `Tự tính: 0,00` reads as "the
     // system worked out zero" -- a different statement.
     renderTable({ computedAreaFor: asOfStart })
-    const computed = row('s3').getByTestId('plan-computed-s3')
-    expect(computed).toHaveTextContent('—')
-    expect(computed).not.toHaveTextContent('0,00')
-    // And no zero placeholder standing in for a figure that does not exist.
+    // No zero placeholder standing in for a figure that does not exist.
     const area = row('s3').getByLabelText('Diện tích kế hoạch') as HTMLInputElement
     expect(area.value).toBe('')
     expect(area.placeholder).toBe('')
     // The rows that do have a window are untouched.
-    expect(row('s2').getByTestId('plan-computed-s2')).toHaveTextContent('8.000,00')
+    expect(row('s2').getByLabelText('Diện tích kế hoạch'))
+      .toHaveAttribute('placeholder', 'Tự tính 8.000,00')
   })
 
   it('shows the computed figure as soon as a start date is entered', async () => {
     renderTable({ computedAreaFor: asOfStart })
     await retype(startOf('s3'), '01/10/2026')
-    await waitFor(() => expect(row('s3').getByTestId('plan-computed-s3')).toHaveTextContent('16.000,00'))
-    expect(row('s3').getByLabelText('Diện tích kế hoạch'))
-      .toHaveAttribute('placeholder', '16.000,00')
+    await waitFor(() => expect(row('s3').getByLabelText('Diện tích kế hoạch'))
+      .toHaveAttribute('placeholder', 'Tự tính 16.000,00'))
   })
 
   it('still prints a computed zero, which is not the same as no figure at all', () => {
@@ -213,8 +212,8 @@ describe('StagePlanTable', () => {
     // DATE and never on the value -- here every figure is zero and the two
     // rows must still read differently.
     renderTable({ computedAreaFor: () => 0 })
-    expect(row('s2').getByTestId('plan-computed-s2')).toHaveTextContent('Tự tính: 0,00')
-    expect(row('s3').getByTestId('plan-computed-s3')).toHaveTextContent('—')
+    expect(row('s2').getByLabelText('Diện tích kế hoạch')).toHaveAttribute('placeholder', 'Tự tính 0,00')
+    expect((row('s3').getByLabelText('Diện tích kế hoạch') as HTMLInputElement).placeholder).toBe('')
   })
 
   it('sends the computed figure as null so the system keeps computing it', async () => {
@@ -273,7 +272,7 @@ describe('StagePlanTable', () => {
     expect(onClearArea).toHaveBeenCalledWith('s1')
     await waitFor(() => expect((row('s1').getByLabelText('Diện tích kế hoạch') as HTMLInputElement).value).toBe(''))
     expect(row('s1').getByLabelText('Diện tích kế hoạch'))
-      .toHaveAttribute('placeholder', '5.000,00')
+      .toHaveAttribute('placeholder', 'Tự tính 5.000,00')
   })
 
   it('offers no clear button on a row that carries no override', () => {

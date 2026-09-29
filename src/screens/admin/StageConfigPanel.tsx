@@ -428,6 +428,7 @@ export function StageConfigPanel({
             title: 'Thứ tự',
             dataIndex: 'seq',
             width: 80,
+            align: 'right',
             // Plain `dataIndex` rendering left the seq cell with no handle a
             // test could target unambiguously from other numeric text on the
             // page (e.g. the weight total). A gap or tie here would corrupt
@@ -533,6 +534,7 @@ export function StageConfigPanel({
             title: '',
             key: 'actions',
             width: 72,
+            align: 'right',
             render: (_v, _r, i) => (!editable ? null : (
               <Tooltip title="Xoá lớp sơn">
                 {/* A span, because antd Tooltip cannot anchor a disabled button. */}
