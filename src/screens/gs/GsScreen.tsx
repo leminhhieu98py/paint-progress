@@ -1,5 +1,5 @@
 import {
-  Alert, App, Button, Grid, Layout, Segmented, Select, Space, Spin, Tabs,
+  Alert, App, Button, Grid, Layout, Segmented, Select, Space, Spin,
 } from 'antd'
 import dayjs from 'dayjs'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -651,11 +651,11 @@ export function GsScreen() {
   const [exporting, setExporting] = useState(false)
   const [zones, setZones] = useState<Zone[]>([])
   /**
-   * prog(D) per deck, for the tabs.
+   * prog(D) per deck, for the deck picker.
    *
-   * Empty until the batched read lands, and the tab shows an em dash rather
-   * than a 0,00% it does not know yet -- a wrong figure on the tab the foreman
-   * is choosing by is worse than no figure.
+   * Empty until the batched read lands, and the option shows an em dash rather
+   * than a 0,00% it does not know yet -- a wrong figure on the control the
+   * foreman is choosing by is worse than no figure.
    */
   const [deckPercents, setDeckPercents] = useState<Record<string, number>>({})
 
@@ -666,7 +666,7 @@ export function GsScreen() {
     listProjectIndex(projectId, ids)
       .then((index) => {
         if (cancelled) return
-        // Each deck's own works and coats, never the open deck's: the tab
+        // Each deck's own works and coats, never the open deck's: the option
         // carries P_d, the deck across its works (GSW-R3). A deck in no work
         // reads 0, which is what it contributes.
         setDeckPercents(Object.fromEntries(
@@ -674,9 +674,9 @@ export function GsScreen() {
         ))
       })
       .catch(() => {
-        // The tabs fall back to an em dash. Nothing else on the screen depends
-        // on this, and an error banner for a figure on a tab would push the
-        // drawing down the page on a tablet.
+        // The options fall back to an em dash. Nothing else on the screen
+        // depends on this, and an error banner for a figure on an option would
+        // push the drawing down the page on a tablet.
       })
     return () => { cancelled = true }
   }, [projectId, decks, states])
@@ -1093,9 +1093,9 @@ export function GsScreen() {
   return (
     <Layout style={{ minHeight: '100vh' }}>
       {/*
-        Deck tabs and who is signed in, in one 48px bar. The drawing is the
-        screen; everything else has to earn its height on a tablet held at
-        arm's length.
+        Who is signed in, in one 48px bar. The drawing is the screen;
+        everything else has to earn its height on a tablet held at arm's
+        length.
       */}
       <Layout.Header
         style={{
@@ -1109,29 +1109,7 @@ export function GsScreen() {
           lineHeight: 'normal',
         }}
       >
-        <Tabs
-          style={{ flex: 1, minWidth: 0 }}
-          activeKey={activeDeckId ?? undefined}
-          onChange={(key) => setActiveDeckId(key)}
-          items={decks.map((d) => ({
-            key: d.id,
-            /*
-              Name AND percentage. The foreman picks a deck to work on, and
-              "which one is behind" is the question he picks by -- without a
-              figure the tabs are three names in an order nobody chose. The
-              numbers come from one batched three-column read of the project
-              (listProjectIndex), not from loading each deck in full.
-            */
-            label: (
-              <span style={{ display: 'inline-flex', flexDirection: 'column', gap: 3 }}>
-                <span style={{ fontWeight: 600, lineHeight: 1.2 }}>{d.name}</span>
-                <span style={{ fontSize: 11, fontWeight: 500, opacity: 0.75 }}>
-                  {deckPercents[d.id] === undefined ? '—' : formatPercent(deckPercents[d.id])}
-                </span>
-              </span>
-            ),
-          }))}
-        />
+        <div style={{ flex: 1, minWidth: 0 }} />
         {/*
           RV6-24: a viewer reads every project (0034), so the header names the
           one on screen and offers the rest. A foreman gets no switch -- their
@@ -1235,6 +1213,33 @@ export function GsScreen() {
           padding: phone ? 12 : 16,
         }}
       >
+        {/*
+          GS-03: the deck, chosen by name, as the first row of the page and
+          across both columns. Name AND percentage on every option: the
+          foreman picks a deck to work on, and "which one is behind" is the
+          question he picks by. The figures come from one batched read of the
+          project (listProjectIndex), not from loading each deck in full.
+          Search is on the name only. Choosing one is the whole deck change:
+          every per-deck read, the realtime channel and the plan's coat follow
+          activeDeckId.
+        */}
+        {decks.length > 0 && (
+          <div style={{ gridColumn: '1 / -1', minWidth: 0 }}>
+            <Select
+              aria-label="Sàn"
+              {...searchSelectProps}
+              value={activeDeckId ?? undefined}
+              onChange={(id) => setActiveDeckId(id)}
+              style={{ width: phone ? '100%' : 320, maxWidth: '100%' }}
+              options={decks.map((d) => ({
+                value: d.id,
+                label: `${d.name} · ${deckPercents[d.id] === undefined ? '—' : formatPercent(deckPercents[d.id])}`,
+                searchKey: d.name,
+              }))}
+            />
+          </div>
+        )}
+
         <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>
           {/*
             GSW-R1: the work the drawing is showing. Hidden with one work, since

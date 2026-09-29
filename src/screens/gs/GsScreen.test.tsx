@@ -322,7 +322,7 @@ beforeEach(() => {
  * `findByTitle` reaches into a closed list. Each input names its own listbox
  * through `aria-controls`; that is the only reliable link.
  */
-const chooseIn = async (name: string, option: string) => {
+const chooseIn = async (name: string, option: string | RegExp) => {
   // getByRole, not getByLabelText: antd puts the aria-label on both the
   // wrapper and the inner input, so getByLabelText finds two elements.
   const box = await screen.findByRole('combobox', { name })
@@ -333,6 +333,23 @@ const chooseIn = async (name: string, option: string) => {
     : null
   if (!dropdown) throw new Error(`Select "${name}" opened no dropdown`)
   await userEvent.click(await within(dropdown).findByTitle(option))
+}
+
+/** The deck picker, the first row of the Sàn page (GS-03). */
+const deckPicker = () => screen.findByRole('combobox', { name: 'Sàn' })
+/** Opens a deck the way a foreman does: by its name in the Sàn picker. */
+const pickDeck = (name: string) => chooseIn('Sàn', new RegExp(`^${name} · `))
+/** The picker's option labels, in order, read off its open dropdown. */
+const deckOptionTitles = async () => {
+  const box = await deckPicker()
+  await userEvent.click(box)
+  const listId = box.getAttribute('aria-controls')
+  const dropdown = listId
+    ? (document.getElementById(listId)?.closest('.ant-select-dropdown') as HTMLElement | null)
+    : null
+  if (!dropdown) throw new Error('The Sàn picker opened no dropdown')
+  await waitFor(() => expect(dropdown.querySelector('.ant-select-item-option')).not.toBeNull())
+  return [...dropdown.querySelectorAll('.ant-select-item-option')].map((o) => o.getAttribute('title'))
 }
 
 /** Everything Feedback Rv4 made compulsory, apart from the coat. */
@@ -356,23 +373,22 @@ describe('GsScreen', () => {
     await waitFor(() => expect(loadGsProject).toHaveBeenCalledWith('p1'))
   })
 
-  it('shows one tab per deck and opens the first one', async () => {
+  it('offers every deck in the Sàn picker and opens the first one', async () => {
     renderScreen()
 
-    expect(await screen.findByRole('tab', { name: /^Cellar Deck/ })).toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: new RegExp(`^Main Deck`) })).toBeInTheDocument()
+    expect(await deckOptionTitles()).toEqual(['Cellar Deck · 0,00%', 'Main Deck · 0,00%'])
     // The first deck's cells, not the second's: c3 exists only on d1.
     await waitFor(() => expect(screen.getByRole('button', { name: 'ô R2C1' })).toBeInTheDocument())
   })
 
-  it('loads the selected deck\'s cells and drawing when the tab changes', async () => {
+  it('loads the selected deck\'s cells and drawing when the deck changes', async () => {
     renderScreen()
-    await screen.findByRole('tab', { name: new RegExp(`^Main Deck`) })
+    await deckPicker()
 
-    await userEvent.click(screen.getByRole('tab', { name: new RegExp(`^Main Deck`) }))
+    await pickDeck('Main Deck')
 
     await waitFor(() => expect(listDeckCells).toHaveBeenCalledWith('d2'))
-    // The drawing has to change with the tab. Asserting the URL, not just that
+    // The drawing has to change with the deck. Asserting the URL, not just that
     // getDrawingUrl was called: a screen that fetched the new deck's cells and
     // kept the old deck's image would put the right colours on the wrong plan.
     await waitFor(() =>
@@ -400,7 +416,7 @@ describe('GsScreen', () => {
     // table, so the singular query is ambiguous here rather than absent.
     expect(await screen.findAllByText('Blast + Coat 1')).not.toHaveLength(0)
 
-    await userEvent.click(screen.getByRole('tab', { name: new RegExp(`^Main Deck`) }))
+    await pickDeck('Main Deck')
 
     expect(await screen.findAllByText('Sơn sàn chính')).not.toHaveLength(0)
     expect(screen.queryAllByText('Blast + Coat 1')).toHaveLength(0)
@@ -432,7 +448,7 @@ describe('GsScreen', () => {
         : Promise.resolve(D2_CELLS))
 
     renderScreen()
-    await userEvent.click(await screen.findByRole('tab', { name: new RegExp(`^Main Deck`) }))
+    await pickDeck('Main Deck')
     await waitFor(() => expect(listDeckCells).toHaveBeenCalledWith('d2'))
 
     resolveD1(D1_CELLS)
@@ -495,7 +511,7 @@ describe('GsScreen', () => {
     expect(body).toHaveStyle({ gridTemplateColumns: 'minmax(0,1fr)' })
   })
 
-  it('scores each tab against its own deck\'s coats, not the open deck\'s', async () => {
+  it('scores each deck option against its own deck\'s coats, not the open deck\'s', async () => {
     // Every deck declares its own stage list with its own ids (spec §3.1).
     // Reading deck 2's bays against deck 1's stages counts every bay as not
     // started, and a deck well along reads 0,00% on the control the foreman
@@ -527,15 +543,16 @@ describe('GsScreen', () => {
     // d2 is Main Deck: 500 m² declared, 500 m² of bays at ITS own Coat 1, whose
     // id shares nothing with d1's. Against one shared stage list one of the two
     // reads 0,00%; against their own, both read 100,00%.
-    expect(await screen.findByRole('tab', { name: /^Cellar Deck100,00%/ })).toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: /^Main Deck100,00%/ })).toBeInTheDocument()
+    expect(await screen.findByText('Cellar Deck · 100,00%', { selector: '.ant-select-selection-item' }))
+      .toBeInTheDocument()
+    expect(await deckOptionTitles()).toEqual(['Cellar Deck · 100,00%', 'Main Deck · 100,00%'])
   })
 
-  it('shows an em dash on a tab whose figure has not arrived', async () => {
+  it('shows an em dash on a deck whose figure has not arrived', async () => {
     // A wrong figure on the control you are choosing by is worse than none.
     listProjectIndex.mockReturnValue(new Promise(() => {}))
     renderScreen()
-    expect(await screen.findByRole('tab', { name: /^Cellar Deck—/ })).toBeInTheDocument()
+    expect(await deckOptionTitles()).toEqual(['Cellar Deck · —', 'Main Deck · —'])
   })
 
   it('offers logout and nothing else about the account', async () => {
@@ -617,6 +634,70 @@ describe('GsScreen', () => {
 
     expect(await screen.findByText('Sàn này chưa có bản vẽ')).toBeInTheDocument()
     expect(screen.queryByText('Không xem được dự án này')).toBeNull()
+  })
+})
+
+describe('GsScreen: the deck picker (GS-03)', () => {
+  it('is the first row of the page, above the drawing, and the deck tabs are gone', async () => {
+    renderScreen()
+    const box = await deckPicker()
+    const canvas = await screen.findByTestId('canvas')
+    const content = canvas.closest('.ant-layout-content') as HTMLElement
+    expect(content.firstElementChild).toContainElement(box)
+    expect(screen.queryByRole('tab')).toBeNull()
+    expect(screen.queryByRole('tablist')).toBeNull()
+  })
+
+  it('shows the open deck with its figure', async () => {
+    renderScreen()
+    await deckPicker()
+    expect(await screen.findByText('Cellar Deck · 0,00%', { selector: '.ant-select-selection-item' }))
+      .toBeInTheDocument()
+  })
+
+  it('finds a deck by its name, folded the way a foreman types it', async () => {
+    renderScreen()
+    await userEvent.type(await deckPicker(), 'main')
+    const box = await deckPicker()
+    const dropdown = document.getElementById(box.getAttribute('aria-controls') as string)
+      ?.closest('.ant-select-dropdown') as HTMLElement
+    await waitFor(() => expect([...dropdown.querySelectorAll('.ant-select-item-option')]
+      .map((o) => o.getAttribute('title'))).toEqual(['Main Deck · 0,00%']))
+  })
+
+  it('does not match the figure: search is on the name only', async () => {
+    renderScreen()
+    await userEvent.type(await deckPicker(), '0,00')
+    expect(await screen.findByText('Không có kết quả')).toBeInTheDocument()
+  })
+
+  it('opens the chosen deck: its cells, its drawing and its own subscription', async () => {
+    renderScreen()
+    await waitFor(() => expect(subscribedDecks).toEqual(['d1']))
+    await pickDeck('Main Deck')
+    await waitFor(() =>
+      expect(screen.getByTestId('canvas')).toHaveAttribute('data-image', 'https://signed/p1/d2.png'))
+    expect(listDeckCells).toHaveBeenCalledWith('d2')
+    expect(listDeckWorks).toHaveBeenCalledWith('d2')
+    expect(listDeckZones).toHaveBeenCalledWith('d2')
+    await waitFor(() => expect(subscribedDecks).toEqual(['d1', 'd2']))
+    expect(unsubscribe).toHaveBeenCalledWith('d1')
+    expect(await screen.findByText('Main Deck · 0,00%', { selector: '.ant-select-selection-item' }))
+      .toBeInTheDocument()
+  })
+
+  it('puts the plan back on the first coat of the deck it opens', async () => {
+    renderScreen()
+    await screen.findByTestId('canvas')
+    await userEvent.click(screen.getByRole('button', { name: 'Hiện kế hoạch' }))
+    await chooseIn('Công đoạn kế hoạch', 'Coat 4')
+    expect(screen.getByText('Coat 4', { selector: '.ant-select-selection-item' })).toBeInTheDocument()
+
+    await pickDeck('Main Deck')
+    await waitFor(() =>
+      expect(screen.getByTestId('canvas')).toHaveAttribute('data-image', 'https://signed/p1/d2.png'))
+    expect(await screen.findByText('Blast + Coat 1', { selector: '.ant-select-selection-item' }))
+      .toBeInTheDocument()
   })
 })
 
@@ -972,13 +1053,13 @@ describe('GsScreen: recording a stage', () => {
     await waitFor(() => expect(subscribedDecks).toEqual(['d1']))
   })
 
-  it('closes the old subscription before opening the new one on a tab change', async () => {
+  it('closes the old subscription before opening the new one on a deck change', async () => {
     renderScreen()
-    await screen.findByRole('tab', { name: new RegExp(`^Main Deck`) })
-    await userEvent.click(screen.getByRole('tab', { name: new RegExp(`^Main Deck`) }))
+    await deckPicker()
+    await pickDeck('Main Deck')
 
     await waitFor(() => expect(subscribedDecks).toEqual(['d1', 'd2']))
-    // Without this every visited tab leaves a live socket subscription behind,
+    // Without this every visited deck leaves a live socket subscription behind,
     // and the Cellar Deck's cells keep arriving into the Main Deck's state.
     expect(unsubscribe).toHaveBeenCalledTimes(1)
   })
@@ -1158,10 +1239,10 @@ describe('GsScreen: recording a stage', () => {
     expect(screen.queryByText('Mất kết nối, đang kết nối lại…')).toBeNull()
   })
 
-  it('does not report a disconnect just because a deck tab was left', async () => {
+  it('does not report a disconnect just because a deck was left', async () => {
     renderScreen()
-    await screen.findByRole('tab', { name: new RegExp(`^Main Deck`) })
-    await userEvent.click(screen.getByRole('tab', { name: new RegExp(`^Main Deck`) }))
+    await deckPicker()
+    await pickDeck('Main Deck')
     await waitFor(() => expect(subscribedDecks).toEqual(['d1', 'd2']))
 
     const readsOfD2 = () => listDeckCells.mock.calls.filter(([id]) => id === 'd2').length
@@ -1185,8 +1266,8 @@ describe('GsScreen: recording a stage', () => {
 
   it('ignores a payload from a channel it has already left', async () => {
     renderScreen()
-    await screen.findByRole('tab', { name: new RegExp(`^Main Deck`) })
-    await userEvent.click(screen.getByRole('tab', { name: new RegExp(`^Main Deck`) }))
+    await deckPicker()
+    await pickDeck('Main Deck')
     await waitFor(() => expect(subscribedDecks).toEqual(['d1', 'd2']))
     // getByTestId, not getByText: the Main Deck's one cell sits at the last
     // stage, so 100,00% is also every legend row and every spec-table cell.
@@ -1214,11 +1295,11 @@ describe('GsScreen: recording a stage', () => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
     try {
       renderScreen()
-      await screen.findByRole('tab', { name: new RegExp(`^Main Deck`) })
+      await deckPicker()
       act(() => { liveHandlers?.onStatus('disconnected') })
       expect(await screen.findByText('Mất kết nối, đang kết nối lại…')).toBeInTheDocument()
 
-      await userEvent.click(screen.getByRole('tab', { name: new RegExp(`^Main Deck`) }))
+      await pickDeck('Main Deck')
       await waitFor(() => expect(subscribedDecks).toEqual(['d1', 'd2']))
 
       // The socket is shared across decks and its health does not change because
@@ -1804,7 +1885,7 @@ describe('GsScreen: a viewer (0028)', () => {
   it('says it is read-only, opens bays without a write, and still exports', async () => {
     authRole.value = 'viewer'
     renderScreen()
-    await screen.findByRole('tab', { name: /^Cellar Deck/ })
+    await deckPicker()
     expect(screen.getByText('Chỉ xem')).toBeInTheDocument()
 
     await userEvent.click(await screen.findByRole('button', { name: 'ô R1C2' }))
@@ -1817,7 +1898,7 @@ describe('GsScreen: a viewer (0028)', () => {
 
   it('shows no read-only mark to a foreman', async () => {
     renderScreen()
-    await screen.findByRole('tab', { name: /^Cellar Deck/ })
+    await deckPicker()
     expect(screen.queryByText('Chỉ xem')).toBeNull()
   })
 })
@@ -1828,7 +1909,7 @@ describe('signing out', () => {
     // the login form appears under a path they are no longer allowed on -- and
     // a refresh puts them straight back there.
     renderScreen()
-    await screen.findByRole('tab', { name: /^Cellar Deck/ })
+    await deckPicker()
 
     await userEvent.click(screen.getByRole('button', { name: 'Đăng xuất' }))
     await userEvent.click(await screen.findByRole('button', { name: 'Vẫn đăng xuất' }))
@@ -1839,7 +1920,7 @@ describe('signing out', () => {
 
   it('replaces the entry rather than pushing one, so Back cannot return', async () => {
     renderScreen()
-    await screen.findByRole('tab', { name: /^Cellar Deck/ })
+    await deckPicker()
     await userEvent.click(screen.getByRole('button', { name: 'Đăng xuất' }))
     await userEvent.click(await screen.findByRole('button', { name: 'Vẫn đăng xuất' }))
     await waitFor(() => expect(navigate).toHaveBeenCalled())
@@ -1905,7 +1986,7 @@ describe('GsScreen: exporting the open deck', () => {
     })
   })
 
-  it('exports the deck tab that is open, and only it, without the project overview', async () => {
+  it('exports the deck that is open, and only it, without the project overview', async () => {
     // Feedback Rv1, item 6. The same loaders and renderers the admin's export
     // uses, so the two files cannot describe one deck differently -- and
     // scoped to the deck, so no one-row "project total" is printed.
