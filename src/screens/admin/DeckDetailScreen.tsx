@@ -37,14 +37,12 @@ function IdentityCard({
   value,
   sub,
   tip,
-  dense = false,
 }: {
   label: string
   value: string
   sub?: string
   /** What the figure means, on the label's (?) (CPY-02). */
   tip?: string
-  dense?: boolean
 }) {
   return (
     <div
@@ -59,7 +57,9 @@ function IdentityCard({
         {label}
         {tip !== undefined && <InfoTip text={tip} />}
       </div>
-      <div style={{ marginTop: 9, ...(dense ? type.bodyStrong : type.cardTitle), lineHeight: 1.25, wordBreak: dense ? 'break-all' : 'normal' }}>
+      {/* One size for every value, and a long code or file name wraps where it
+          must rather than mid-word everywhere (M4). */}
+      <div style={{ marginTop: 9, ...type.cardTitle, lineHeight: 1.25, overflowWrap: 'anywhere' }}>
         {value}
       </div>
       {sub !== undefined && (
@@ -609,7 +609,7 @@ export function DeckDetailScreen() {
               }}
             >
               <IdentityCard label="Tên sàn" value={deck?.name ?? ''} />
-              <IdentityCard label="Mã sàn" value={deck?.code ?? ''} dense />
+              <IdentityCard label="Mã sàn" value={deck?.code ?? ''} />
               <IdentityCard
                 label={quantityTitle}
                 value={formatAreaM2(deck?.totalAreaM2 ?? 0)}
@@ -619,7 +619,6 @@ export function DeckDetailScreen() {
               <IdentityCard
                 label="Bản vẽ (PDF)"
                 value={drawingLabel}
-                dense
                 sub={deck?.imagePath ? undefined : 'Cần tải PDF trước khi dựng ô'}
               />
             </div>

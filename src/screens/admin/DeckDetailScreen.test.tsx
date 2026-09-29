@@ -184,6 +184,21 @@ describe('DeckDetailScreen', () => {
     expect(within(identity).getByText('ban-ve.pdf')).toBeInTheDocument()
   })
 
+  it('sets every identity value at one size, and wraps a file name between words (M4)', async () => {
+    getDeck.mockResolvedValue({ ...DECK, drawingName: 'ban-ve.pdf', drawingPage: null })
+    renderAt('/decks/d1')
+    const identity = await screen.findByTestId('deck-identity')
+    const values = [
+      within(identity).getByText('Main Deck'),
+      within(identity).getByText(DECK.code),
+      within(identity).getByText('ban-ve.pdf'),
+    ]
+    for (const v of values) {
+      expect(v).toHaveStyle({ fontSize: '15px', fontWeight: '600', overflowWrap: 'anywhere' })
+      expect(v.style.wordBreak).not.toBe('break-all')
+    }
+  })
+
   it('says which page of a multi-page file was taken', async () => {
     getDeck.mockResolvedValue({ ...DECK, drawingName: 'ban-ve.pdf', drawingPage: 3 })
     renderAt('/decks/d1')
