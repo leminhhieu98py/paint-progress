@@ -417,8 +417,10 @@ describe('ProductivityDashboard — alignment (UI-03)', () => {
     // The reason reads as a note (UI-04 amended): plain text, left, no pill.
     const waste = within(screen.getByTestId('waste-table'))
     expectLeft(waste.getByRole('columnheader', { name: 'Lý do' }))
-    const reason = waste.getByText('Mưa')
-    expect(reason.tagName).toBe('TD')
+    // On a phone the text sits in its 160 px wrap (I5), still no pill.
+    const reason = waste.getByText('Mưa').closest('td') as HTMLElement
+    expect(reason).toHaveTextContent(/^Mưa$/)
+    expect(reason.querySelector('.ant-tag')).toBeNull()
     expectLeft(reason)
     expect(waste.getByRole('columnheader', { name: 'Giờ' })).toHaveStyle({ textAlign: 'center' })
   })
@@ -455,6 +457,23 @@ describe('ProductivityDashboard — tables on a phone (MOB-01)', () => {
       expect(table.querySelector('table')?.getAttribute('style')).toContain('width: max-content')
       // The first column, the row's name, stays in view as the rest scrolls under it.
       expect(table).toHaveClass('ant-table-has-fix-left')
+    }
+  })
+
+  it('pins only the first column, and wraps the text columns at 160 px so the figures stay in reach (I5)', () => {
+    restoreViewport = setViewport(390)
+    renderDashboard()
+    for (const id of TABLES) {
+      const pinned = screen.getByTestId(id).querySelectorAll('thead th.ant-table-cell-fix-left')
+      expect(pinned).toHaveLength(1)
+      expect(pinned[0]).toBe(screen.getByTestId(id).querySelector('thead th'))
+    }
+    // The stage table leads with the work, then the coat: the coat wraps but scrolls.
+    const stages = within(screen.getByTestId('stage-table'))
+    for (const header of ['Công việc', 'Công đoạn']) expect(stages.getByRole('columnheader', { name: header })).toBeInTheDocument()
+    const wrapOf = (text: string, id: string) => within(screen.getByTestId(id)).getAllByText(text)[0]
+    for (const [text, id] of [['Lớp 1', 'stage-table'], ['Tổ 1', 'lead-table'], ['Mưa', 'waste-table'], ['Sàn A', 'forecast-table']] as const) {
+      expect(wrapOf(text, id)).toHaveStyle({ maxWidth: '160px', whiteSpace: 'normal', overflowWrap: 'anywhere' })
     }
   })
 

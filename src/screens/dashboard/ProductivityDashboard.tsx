@@ -1,7 +1,7 @@
 import { SearchOutlined } from '@ant-design/icons'
 import { Input, Table, Typography } from 'antd'
 import dayjs from 'dayjs'
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import { EmptyState } from '../../components/EmptyState'
 import { InfoTip } from '../../components/InfoTip'
 import { SectionCard } from '../../components/SectionCard'
@@ -49,6 +49,15 @@ const ratio = (n: number | null) => (n === null ? dash : formatMhrPerM2(n))
  * phone the table scrolls sideways inside its card rather than squeezing.
  */
 const TABLE_SCROLL = { x: 'max-content' } as const
+/**
+ * On a phone a text column -- a coat, a crew, a reason -- wraps at 160 px
+ * instead of stretching to its longest value (I5): pinned or not, a
+ * max-content name column could hide every figure beside it.
+ */
+const PHONE_TEXT_MAX = 160
+const wrapped = (node: ReactNode) => (
+  <div style={{ maxWidth: PHONE_TEXT_MAX, whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{node}</div>
+)
 
 export function ProductivityDashboard({
   events,
@@ -68,6 +77,8 @@ export function ProductivityDashboard({
   const phone = useFieldPhone()
   /** On a phone the name column stays in view while the figures scroll under it (MOB-01). */
   const pin = phone ? ('left' as const) : undefined
+  /** A text cell, wrapped at 160 px on a phone (I5). */
+  const text = (node: ReactNode) => (phone ? wrapped(node) : node)
   const narrowPhone = useFieldNarrowPhone()
   /** On a phone the cards go two to a row, one under 360 px (MOB-02). */
   const cardColumns = !phone
@@ -235,9 +246,16 @@ export function ProductivityDashboard({
   }
 
   const stageColumns = [
-    // With the work beside it, the two name the row together, and both stay pinned.
-    ...(workNames.length > 1 ? [{ title: 'Công việc', dataIndex: 'workName' as const, fixed: pin }] : []),
-    { title: 'Công đoạn', dataIndex: 'stageName' as const, fixed: pin },
+    // Only the first column is pinned (I5): the work when it shows, else the coat.
+    ...(workNames.length > 1
+      ? [{ title: 'Công việc', dataIndex: 'workName' as const, fixed: pin, render: (v: string) => text(v) }]
+      : []),
+    {
+      title: 'Công đoạn',
+      dataIndex: 'stageName' as const,
+      fixed: workNames.length > 1 ? undefined : pin,
+      render: (v: string) => text(v),
+    },
     { title: 'Số ngày', dataIndex: 'days' as const, align: 'center' as const },
     { title: 'Tổng Mhr', align: 'center' as const, render: (_: unknown, r: StageEfficiency) => formatHours(r.totalHours) },
     { title: `Tổng ${unit}`, align: 'center' as const, render: (_: unknown, r: StageEfficiency) => formatAreaM2(r.totalAreaM2) },
@@ -311,7 +329,7 @@ export function ProductivityDashboard({
             scroll={TABLE_SCROLL}
             locale={{ emptyText: 'Chưa có sàn nào trong công việc này' }}
             columns={[
-              { title: 'Sàn', dataIndex: 'deckName', fixed: pin },
+              { title: 'Sàn', dataIndex: 'deckName', fixed: pin, render: (v: string) => text(v) },
               {
                 title: 'Mhr còn cần',
                 align: 'center',
@@ -389,7 +407,7 @@ export function ProductivityDashboard({
               scroll={TABLE_SCROLL}
               locale={{ emptyText: 'Không có nhóm trưởng nào khớp' }}
               columns={[
-                { title: 'Nhóm trưởng', dataIndex: 'leadName', fixed: pin },
+                { title: 'Nhóm trưởng', dataIndex: 'leadName', fixed: pin, render: (v: string) => text(v) },
                 { title: 'Lần cập nhật', dataIndex: 'updates', align: 'center' },
                 { title: 'Tổng Mhr', align: 'center', render: (_, r) => formatHours(r.totalHours) },
                 { title: `Tổng ${unit}`, align: 'center', render: (_, r) => formatAreaM2(r.totalAreaM2) },
@@ -413,7 +431,7 @@ export function ProductivityDashboard({
                   title: 'Lý do',
                   dataIndex: 'reason',
                   fixed: pin,
-                  render: (v: string) => (v === '' ? <span style={{ color: palette.textQuaternary }}>Không ghi lý do</span> : v),
+                  render: (v: string) => text(v === '' ? <span style={{ color: palette.textQuaternary }}>Không ghi lý do</span> : v),
                 },
                 { title: 'Giờ', align: 'center', render: (_, r) => formatHours(r.hours) },
                 { title: 'Số lần', dataIndex: 'count', align: 'center' },
