@@ -47,19 +47,30 @@ export const FIELD_TAB_BAR_SPACE = `calc(${FIELD_TAB_BAR_HEIGHT}px + ${FIELD_SAF
 const FULL_WIDTH_QUERY = '(max-width: 479.98px)'
 
 /**
+ * Subscribes to the full-width query: module scope, so useSyncExternalStore
+ * keeps one subscription across renders (RR-M4) rather than re-subscribing on
+ * every GsScreen render. `addListener` where a media list has no
+ * `addEventListener`, as antd's own media-query helper still allows.
+ */
+function subscribeFullWidth(onChange: () => void): () => void {
+  const mq = window.matchMedia(FULL_WIDTH_QUERY)
+  if (typeof mq.addEventListener === 'function') {
+    mq.addEventListener('change', onChange)
+    return () => mq.removeEventListener('change', onChange)
+  }
+  mq.addListener(onChange)
+  return () => mq.removeListener(onChange)
+}
+
+const fullWidthNow = () => window.matchMedia(FULL_WIDTH_QUERY).matches
+const fullWidthOnServer = () => false
+
+/**
  * A screen too narrow for two bar controls side by side (< 480 px), where each
  * takes the full width. Between 480 and 768 the controls keep their widths and
  * the bar wraps them as they fit. antd's breakpoints have no step here, so it
  * asks the browser directly.
  */
 export function useFieldFullWidthControls(): boolean {
-  return useSyncExternalStore(
-    (onChange) => {
-      const mq = window.matchMedia(FULL_WIDTH_QUERY)
-      mq.addEventListener('change', onChange)
-      return () => mq.removeEventListener('change', onChange)
-    },
-    () => window.matchMedia(FULL_WIDTH_QUERY).matches,
-    () => false,
-  )
+  return useSyncExternalStore(subscribeFullWidth, fullWidthNow, fullWidthOnServer)
 }
