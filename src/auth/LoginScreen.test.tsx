@@ -1,6 +1,7 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
+import lottie from 'lottie-web/build/player/lottie_light'
 import { Hero, LoginScreen } from './LoginScreen'
 
 const signIn = vi.fn()
@@ -91,6 +92,23 @@ describe('LoginScreen', () => {
       illustration.compareDocumentPosition(heading) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy()
     expect(illustration).toHaveStyle({ maxHeight: '160px' })
+  })
+
+  // The player here is the shared stub from test-setup.ts, which records what
+  // the screen asks of it.
+  it('starts the animation in the illustration and destroys it with the screen', async () => {
+    const loadAnimation = vi.mocked(lottie.loadAnimation)
+    loadAnimation.mockClear()
+    const { unmount } = render(<LoginScreen />)
+    await act(async () => {
+      await vi.dynamicImportSettled()
+    })
+
+    expect(loadAnimation).toHaveBeenCalledTimes(1)
+    expect(loadAnimation.mock.calls[0][0].container).toBe(screen.getByTestId('login-animation'))
+    const animation = loadAnimation.mock.results[0].value
+    unmount()
+    expect(animation.destroy).toHaveBeenCalledTimes(1)
   })
 
   it('carries the approved headline in the wide-screen hero', () => {
