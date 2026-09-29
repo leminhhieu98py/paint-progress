@@ -428,25 +428,16 @@ export function UsersScreen() {
                     >
                       {initialsOf(user.fullName)}
                     </span>
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ fontWeight: 600, lineHeight: 1.35 }}>{user.fullName}</div>
-                      <span style={{ fontSize: 11, color: palette.textTertiary }}>
-                        {user.username}
-                        <Button
-                          type="text"
-                          size="small"
-                          aria-label="Đổi tên đăng nhập"
-                          icon={<EditOutlined style={{ fontSize: 11 }} />}
-                          style={{ marginLeft: 2, height: 18, width: 18, minWidth: 18 }}
-                          onClick={() => {
-                            renameForm.setFieldsValue({ username: user.username })
-                            setRenameTarget(user)
-                          }}
-                        />
-                      </span>
-                    </div>
+                    <div style={{ minWidth: 0, fontWeight: 600, lineHeight: 1.35 }}>{user.fullName}</div>
                   </div>
                 ),
+              },
+              {
+                title: 'Tên đăng nhập',
+                dataIndex: 'username',
+                key: 'username',
+                width: 150,
+                align: 'center',
               },
               {
                 title: 'Loại',
@@ -474,6 +465,17 @@ export function UsersScreen() {
                 align: 'center',
                 render: (_v, user) => (
                   <div style={{ display: 'flex', gap: 7, justifyContent: 'center' }}>
+                    <Tooltip title="Đổi tên đăng nhập">
+                      <Button
+                        size="small"
+                        aria-label="Đổi tên đăng nhập"
+                        icon={<EditOutlined />}
+                        onClick={() => {
+                          renameForm.setFieldsValue({ username: user.username })
+                          setRenameTarget(user)
+                        }}
+                      />
+                    </Tooltip>
                     <Tooltip title="Phân quyền dự án và công việc">
                       <Button
                         size="small"

@@ -351,7 +351,7 @@ describe('UsersScreen — Feedback Rv2 (0028)', () => {
     })))
   })
 
-  it('renames a login from the pencil beside it', async () => {
+  it('renames a login from the pencil in the actions column', async () => {
     renderApp(<UsersScreen />)
     await screen.findByText('gs1')
     await userEvent.click(screen.getAllByRole('button', { name: 'Đổi tên đăng nhập' })[0])
@@ -467,10 +467,33 @@ describe('UsersScreen — alignment (UI-03)', () => {
     const th = (label: string) => screen.getByRole('columnheader', { name: label })
     expect(th('Người dùng')).not.toHaveStyle({ textAlign: 'center' })
     expect(th('Dự án')).not.toHaveStyle({ textAlign: 'center' })
-    for (const label of ['Loại', 'Trạng thái', 'Thao tác']) {
+    for (const label of ['Tên đăng nhập', 'Loại', 'Trạng thái', 'Thao tác']) {
       expect(th(label)).toHaveStyle({ textAlign: 'center' })
     }
     const cell = screen.getAllByText('Đang dùng')[0].closest('td')
     expect(cell).toHaveStyle({ textAlign: 'center' })
+  })
+})
+
+describe('UsersScreen — login name column (UI-01)', () => {
+  it('lists the login name in its own column, right after the person', async () => {
+    renderApp(<UsersScreen />)
+    await screen.findByText('GS Một')
+    const headers = screen.getAllByRole('columnheader').map((th) => th.textContent)
+    expect(headers).toEqual(['Người dùng', 'Tên đăng nhập', 'Loại', 'Dự án', 'Trạng thái', 'Thao tác'])
+    const nameCell = screen.getByText('GS Một').closest('td')!
+    expect(nameCell).not.toHaveTextContent('gs1')
+    expect(screen.getByText('gs1').closest('td')).not.toBe(nameCell)
+  })
+
+  it('keeps the rename pencil among the other action buttons, not beside the name', async () => {
+    renderApp(<UsersScreen />)
+    await screen.findByText('GS Một')
+    const rename = screen.getAllByRole('button', { name: 'Đổi tên đăng nhập' })[0]
+    const actionsCell = screen.getAllByRole('button', { name: 'Phân quyền' })[0].closest('td')
+    expect(rename.closest('td')).toBe(actionsCell)
+    expect(screen.getByText('GS Một').closest('td')).not.toContainElement(rename)
+    await userEvent.hover(rename)
+    expect(await screen.findByRole('tooltip')).toHaveTextContent('Đổi tên đăng nhập')
   })
 })
