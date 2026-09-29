@@ -49,6 +49,10 @@ const dragRow = (from: number, to: number) => {
   fireEvent.drop(rows[to])
 }
 
+/** What deleting a coat does, as both the STG-R4 rule and the delete dialog say it (CPY-05). */
+const STAGE_DELETE_EFFECT =
+  'Xoá một lớp sẽ đưa mọi ô đang ở lớp đó về “Chưa bắt đầu”, xoá các zone và kế hoạch KPI của lớp đó; lịch sử ghi nhận vẫn giữ nguyên.'
+
 const saveConfig = async () => {
   await userEvent.click(screen.getByRole('button', { name: 'Lưu cấu hình lớp sơn' }))
   const removal = screen.queryByRole('button', { name: 'Vẫn lưu' })
@@ -241,10 +245,12 @@ describe('StageConfigPanel', () => {
     // is renumbered from 3 to 2. Naming it here is precisely the old defect.
     expect(within(dialog).queryByText('Tháo giáo')).toBeNull()
     expect(within(dialog).queryByText('Blast + Coat 1')).toBeNull()
-    // Both consequences of the delete, named: the cells at that stage are reset,
-    // and the zones planned against it go with it.
-    expect(within(dialog).getByText(/trở về trạng thái chưa bắt đầu/)).toBeInTheDocument()
-    expect(within(dialog).getByText(/xoá luôn các zone đã lên kế hoạch/)).toBeInTheDocument()
+    // Every consequence of the delete, named as the database carries it out
+    // (CPY-05): the bays at that stage go back to not started (cell_states
+    // SET NULL), its zones and KPI plan go (zones, stage_plans CASCADE), and
+    // the history stays (cell_events has no FK on the stage and snapshots its
+    // name; the deletion trigger adds a back-to-not-started row per bay).
+    expect(within(dialog).getByText(new RegExp(`^${STAGE_DELETE_EFFECT}`))).toBeInTheDocument()
     // Not the aside about what renaming keeps (CPY-01).
     expect(within(dialog).queryByText(/Đổi tên, đổi trọng số/)).toBeNull()
     expect(saveWorkStages).not.toHaveBeenCalled()
@@ -711,6 +717,13 @@ describe('StageConfigPanel — explanatory copy (CPY-01)', () => {
     const dialog = await screen.findByRole('dialog')
     expect(within(dialog).getByText('Cấu hình này chỉ áp cho sàn đang mở:')).toBeInTheDocument()
     expect(within(dialog).queryByText(/Mọi phần trăm tiến độ của sàn này tính lại/)).toBeNull()
+  })
+
+  it('states the coat-delete rule in the same words as the delete dialog (CPY-05)', async () => {
+    renderApp(<StageConfigPanel workId="w1" deckId="d1" />)
+    await screen.findByDisplayValue('Blast + Coat 1')
+    await userEvent.click(screen.getByRole('button', { name: /Quy tắc áp dụng/ }))
+    expect(screen.getByText(STAGE_DELETE_EFFECT)).toBeInTheDocument()
   })
 
   it('states the no-clash rule without the reason after it', async () => {

@@ -25,7 +25,7 @@ import { palette } from '../../theme'
 const RULES: Rule[] = [
   { id: 'RV5-22', text: 'Số ngày = ngày kết thúc − ngày bắt đầu + 1, tính cả hai đầu. Chia đều cho mọi ngày, không trừ chủ nhật hay ngày lễ.' },
   { id: 'RV5-23', text: 'Để trống diện tích kế hoạch thì hệ thống tự tính phần còn lại của công đoạn tính từ ngày bắt đầu. Anh gõ số vào là ghi đè, và hệ thống không tự tính lại nữa. Bấm "Về diện tích tự tính" để bỏ ghi đè.' },
-  { id: 'RV5-23', text: 'Gõ số 0 là ghi đè "không có diện tích kế hoạch", khác với để trống.' },
+  { id: 'RV5-23-zero', text: 'Gõ số 0 là ghi đè "không có diện tích kế hoạch", khác với để trống.' },
   { id: 'RV5-24', text: 'Kế hoạch phẳng: mỗi ngày trong khoảng đều nhận cùng một số m² = diện tích kế hoạch ÷ số ngày.' },
   { id: 'RV5-28', text: 'Chỉ admin nhập được ngày kế hoạch. Giám sát và người xem đều đọc được biểu đồ KPI.' },
 ]

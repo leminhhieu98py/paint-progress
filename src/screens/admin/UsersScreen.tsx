@@ -66,7 +66,8 @@ const RULES = [
   },
   {
     id: 'USR-R8',
-    text: 'Tài khoản Chỉ xem đọc được đúng những gì một GS cùng dự án đọc được, tải được báo cáo, nhưng không ghi được gì.',
+    // RV6-21/RV6-25: a viewer reads every project and every work (0034).
+    text: 'Tài khoản Chỉ xem đọc được mọi dự án và mọi công việc, tải được báo cáo, nhưng không ghi được gì.',
   },
   {
     id: 'USR-R9',

@@ -506,6 +506,16 @@ describe('UsersScreen — explanatory copy (CPY-01)', () => {
   })
 })
 
+describe('UsersScreen — rules (CPY-05)', () => {
+  it('says a Chỉ xem account reads every project, as it has since RV6-21', async () => {
+    renderApp(<UsersScreen />)
+    await screen.findByText('gs1')
+    await userEvent.click(screen.getByRole('button', { name: /Quy tắc áp dụng/ }))
+    expect(screen.getByText('Tài khoản Chỉ xem đọc được mọi dự án và mọi công việc, tải được báo cáo, nhưng không ghi được gì.')).toBeInTheDocument()
+    expect(screen.queryByText(/một GS cùng dự án/)).toBeNull()
+  })
+})
+
 describe('UsersScreen — pagination (UI-05)', () => {
   it('shows no pager under a short list', async () => {
     renderApp(<UsersScreen />)

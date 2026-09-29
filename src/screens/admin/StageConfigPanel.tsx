@@ -23,6 +23,19 @@ import { RulesDisclosure } from '../../components/RulesDisclosure'
 import { SectionCard } from '../../components/SectionCard'
 import { palette, space } from '../../theme'
 
+/**
+ * What deleting a coat does, said once for the rule and the delete dialog
+ * (CPY-05), as the database carries it out when saveWorkStages deletes the
+ * deck_stages row: every bay AT the coat goes back to not started
+ * (cell_states.stage_id ON DELETE SET NULL, 0024); the coat's zones and KPI
+ * plan go (zones.stage_id and stage_plans.stage_id ON DELETE CASCADE, 0003 and
+ * 0033); the history stays (cell_events holds no FK on a stage since 0005 and
+ * snapshots its name, and deck_stages_log_deletion adds one back-to-not-
+ * started event per bay, 0026). Bays past the coat keep their stage.
+ */
+const STAGE_DELETE_EFFECT =
+  'Xoá một lớp sẽ đưa mọi ô đang ở lớp đó về “Chưa bắt đầu”, xoá các zone và kế hoạch KPI của lớp đó; lịch sử ghi nhận vẫn giữ nguyên.'
+
 const STAGE_RULES = [
           {
             id: 'STG-R1',
@@ -38,7 +51,7 @@ const STAGE_RULES = [
           },
           {
             id: 'STG-R4',
-            text: 'Xoá một lớp sẽ đưa mọi ô đang ở lớp đó về “Chưa bắt đầu”; lịch sử ghi nhận vẫn giữ nguyên.',
+            text: STAGE_DELETE_EFFECT,
           },
         ]
 
@@ -675,7 +688,7 @@ export function StageConfigPanel({
           }
           consequence={
             removed.length > 0
-              ? 'Xoá một lớp sẽ xoá tiến độ đã ghi của mọi ô đang ở lớp đó — các ô đó trở về trạng thái chưa bắt đầu — và xoá luôn các zone đã lên kế hoạch cho lớp đó. Các lớp bị xoá ở trên mất vĩnh viễn.'
+              ? `${STAGE_DELETE_EFFECT} Các lớp bị xoá ở trên mất vĩnh viễn.`
               : undefined
           }
           okText={removed.length > 0 ? 'Vẫn lưu' : 'Lưu'}

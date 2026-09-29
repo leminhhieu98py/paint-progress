@@ -344,6 +344,15 @@ describe('StagePlanTable', () => {
     await userEvent.click(screen.getByRole('button', { name: /Quy tắc áp dụng/ }))
     expect(screen.getByText(/chủ nhật/i)).toBeInTheDocument()
   })
+
+  it('keys every rule uniquely, so React never warns about the two RV5-23 rules (CPY-05)', async () => {
+    const warn = vi.spyOn(console, 'error').mockImplementation(() => {})
+    renderTable()
+    await userEvent.click(screen.getByRole('button', { name: /Quy tắc áp dụng/ }))
+    expect(screen.getByText(/Gõ số 0 là ghi đè/)).toBeInTheDocument()
+    expect(warn.mock.calls.flat().join(' ')).not.toMatch(/same key/)
+    warn.mockRestore()
+  })
 })
 
 describe('StagePlanTable — alignment (UI-03)', () => {
