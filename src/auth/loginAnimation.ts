@@ -10,8 +10,13 @@
  * frames are raster images, embedded in the JSON as data URIs, with their
  * colours as published (owner, 2026-09-30).
  *
- * The light build of lottie-web: SVG renderer only, no expressions. It draws
- * image layers, which are all this animation has.
+ * The light build of lottie-web: SVG renderer only, no expressions engine. It
+ * draws image layers, which are all this animation has. The published file
+ * swung eight of their transforms with `loopOut('pingpong')` expressions,
+ * which the light build ignores (it would hold them still from frame 61 on);
+ * scripts/bake-lottie-pingpong.mjs has written those out as plain keyframes
+ * across the whole loop, so the file needs no expressions. Rerun it on any
+ * replacement file: it refuses expressions it cannot bake.
  */
 import lottie from 'lottie-web/build/player/lottie_light'
 import type { AnimationItem } from 'lottie-web/build/player/lottie_light'
