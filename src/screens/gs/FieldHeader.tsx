@@ -109,22 +109,29 @@ export function FieldHeader({ projectId }: { projectId: string }) {
         overflow: 'hidden',
       }}
     >
-      {readOnly ? (
-        <Select
-          aria-label="Dự án"
-          style={{ width: phone ? 140 : 220, minWidth: 0, flex: '0 1 auto' }}
-          value={projectId}
-          onChange={(id) => navigate(`${APP_BASE_PATH}/gs/${id}${section.suffix}`)}
-          {...searchSelectProps}
-          options={projectOptions.some((o) => o.value === projectId)
-            ? projectOptions
-            : [{ value: projectId, label: projectId }, ...projectOptions]}
-        />
-      ) : (
-        <div style={{ ...ellipsis, flex: '0 1 auto', minWidth: 0, maxWidth: 280, fontWeight: 600 }}>
-          {projectName}
-        </div>
-      )}
+      {/*
+        The one item that gives up width when the row is short (the name
+        ellipsises, the Select narrows). Everything else is flex: none, so on a
+        phone logout can never be pushed past the header's clip edge.
+      */}
+      <div data-testid="field-header-project" style={{ flex: '0 1 auto', minWidth: 0 }}>
+        {readOnly ? (
+          <Select
+            aria-label="Dự án"
+            style={{ width: phone ? 140 : 220, maxWidth: '100%' }}
+            value={projectId}
+            onChange={(id) => navigate(`${APP_BASE_PATH}/gs/${id}${section.suffix}`)}
+            {...searchSelectProps}
+            options={projectOptions.some((o) => o.value === projectId)
+              ? projectOptions
+              : [{ value: projectId, label: projectId }, ...projectOptions]}
+          />
+        ) : (
+          <div style={{ ...ellipsis, maxWidth: 280, fontWeight: 600 }}>
+            {projectName}
+          </div>
+        )}
+      </div>
 
       <nav aria-label="Điều hướng" style={{ display: 'flex', alignSelf: 'stretch', flex: 'none' }}>
         {SECTIONS.map((s) => (
@@ -157,7 +164,10 @@ export function FieldHeader({ projectId }: { projectId: string }) {
           display: 'flex',
           alignItems: 'center',
           gap: phone ? space.sm : space.md,
-          flex: '0 1 auto',
+          // On a phone the block is an avatar and a button, neither of which
+          // can shrink, so the block must not either. Wider, the name inside
+          // it ellipsises, so it may.
+          flex: phone ? 'none' : '0 1 auto',
           minWidth: 0,
         }}
       >

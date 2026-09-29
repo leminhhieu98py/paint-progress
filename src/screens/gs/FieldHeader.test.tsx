@@ -285,6 +285,20 @@ describe('FieldHeader: phone width', () => {
     expect(await screen.findByRole('tooltip')).toHaveTextContent('Nguyễn Văn A')
   })
 
+  it.each(['gs', 'viewer'] as const)(
+    'gives up width only from the project slot, never from the tabs, avatar or logout (%s)',
+    (role) => {
+      authRole.value = role
+      renderAt('/gs/p1')
+      // flex: none on everything but the project slot: an overflowing row
+      // shrinks the name or the Select (ellipsis), and logout stays on screen.
+      const right = screen.getByRole('button', { name: 'Đăng xuất' }).parentElement as HTMLElement
+      expect(right).toHaveStyle({ flexGrow: '0', flexShrink: '0' })
+      expect(nav()).toHaveStyle({ flexShrink: '0' })
+      expect(screen.getByTestId('field-header-project')).toHaveStyle({ flexShrink: '1', minWidth: '0px' })
+    },
+  )
+
   it('keeps the tab labels', () => {
     renderAt('/gs/p1')
     expect(within(nav()).getAllByRole('link').map((l) => l.textContent)).toEqual(['Sàn', 'Năng suất', 'KPI'])
