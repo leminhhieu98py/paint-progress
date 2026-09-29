@@ -370,7 +370,7 @@ function Body({
         showIcon
         message="Không tải được số liệu KPI"
         description={current.error}
-        action={<Button size="small" onClick={reload}>Thử lại</Button>}
+        action={<Button onClick={reload}>Thử lại</Button>}
       />
     )
   }

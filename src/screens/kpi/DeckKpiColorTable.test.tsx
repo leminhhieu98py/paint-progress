@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { weightOf } from '../../test/typography'
+import { expectAllSmall } from '../../test/controls'
 import { DeckKpiColorTable, type DeckKpiColorRow } from './DeckKpiColorTable'
 
 /**
@@ -28,6 +29,12 @@ const open = async () => {
 }
 
 describe('DeckKpiColorTable', () => {
+  it('sizes the colour fields and Mặc định small, as a table row\'s controls are (CTL-01)', async () => {
+    renderTable()
+    await open()
+    expectAllSmall(screen.getByTestId('deck-color-row-d1'))
+  })
+
   it('sets the deck name as body text, not bold (TYP-02)', async () => {
     renderTable()
     await open()

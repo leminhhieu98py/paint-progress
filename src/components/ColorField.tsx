@@ -30,6 +30,7 @@ export function ColorField({
   label,
   value,
   hex,
+  size,
   disabled = false,
   onColor,
   onHex,
@@ -43,6 +44,8 @@ export function ColorField({
   value: string
   /** The hex field's text while it is not yet a colour; `undefined` shows `value`. */
   hex?: string
+  /** `small` in a table cell, where every control is (CTL-01). */
+  size?: 'small'
   disabled?: boolean
   /** A complete colour, lowercased. */
   onColor: (color: string) => void
@@ -60,6 +63,7 @@ export function ColorField({
       <Input
         aria-label={`Chọn màu · ${label}`}
         type="color"
+        size={size}
         value={value}
         disabled={disabled}
         style={{ width: 44, padding: 2 }}
@@ -81,6 +85,7 @@ export function ColorField({
         aria-invalid={valid ? undefined : true}
         placeholder="#RRGGBB"
         maxLength={7}
+        size={size}
         status={valid ? undefined : 'error'}
         value={shown}
         disabled={disabled}

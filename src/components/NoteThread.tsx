@@ -203,12 +203,12 @@ export function NoteThread({
               {(onEditReport || onToggleHidden) && (
                 <div style={{ marginTop: 8, display: 'flex', gap: 4, marginLeft: -8 }}>
                   {onEditReport && (
-                    <Button type="link" size="small" onClick={() => onEditReport(n)}>
+                    <Button type="link" onClick={() => onEditReport(n)}>
                       Sửa cho báo cáo
                     </Button>
                   )}
                   {onToggleHidden && (
-                    <Button type="link" size="small" onClick={() => onToggleHidden(n)}>
+                    <Button type="link" onClick={() => onToggleHidden(n)}>
                       {n.reportHidden ? 'Hiện lại trong báo cáo' : 'Ẩn khỏi báo cáo'}
                     </Button>
                   )}

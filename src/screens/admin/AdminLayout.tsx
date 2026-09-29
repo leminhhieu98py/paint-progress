@@ -106,7 +106,6 @@ export function AdminLayout() {
             )}
             <Button
               type="text"
-              size="small"
               aria-label={collapsed ? 'Mở rộng thanh điều hướng' : 'Thu gọn thanh điều hướng'}
               icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
               onClick={() => setCollapsed((v) => !v)}

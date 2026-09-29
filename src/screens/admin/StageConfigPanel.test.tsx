@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderApp } from '../../test/renderApp'
 import { StageConfigPanel } from './StageConfigPanel'
 import { expectLeft } from '../../test/alignment'
+import { expectAllSmall } from '../../test/controls'
 
 const listWorkStages = vi.hoisted(() => vi.fn())
 const saveWorkStages = vi.hoisted(() => vi.fn())
@@ -783,6 +784,14 @@ describe('StageConfigPanel weight bar', () => {
     await screen.findByDisplayValue('Blast + Coat 1')
 
     expect(screen.getByTestId('weight-bar-s1')).toHaveStyle({ width: '100.0000%' })
+  })
+})
+
+describe('StageConfigPanel — one control height per row (CTL-01)', () => {
+  it('sizes the name, colour and weight fields and the row actions small', async () => {
+    renderApp(<StageConfigPanel workId="w1" deckId="d1" />)
+    const hex = await screen.findByLabelText('Mã màu · Blast + Coat 1')
+    expectAllSmall(hex.closest('tr') as HTMLElement)
   })
 })
 

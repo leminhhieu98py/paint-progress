@@ -4,6 +4,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderApp } from '../../test/renderApp'
 import { expectLeft } from '../../test/alignment'
+import { expectAllSmall } from '../../test/controls'
 import { pageSubtitle } from '../../test/copy'
 import type { Work, WorkModel } from '../../domain/types'
 import { WorksScreen } from './WorksScreen'
@@ -300,6 +301,23 @@ describe('WorksScreen — alignment (UI-06)', () => {
     for (const label of ['Tên công việc', 'Đại lượng', 'Đơn vị']) expectLeft(th(label))
     expectLeft(within(rowOf('Sơn')).getAllByLabelText('Đơn vị')[0].closest('td'))
     expect(th('Trọng số')).toHaveStyle({ textAlign: 'center' })
+  })
+})
+
+describe('WorksScreen — one control height per row (CTL-01)', () => {
+  it('sizes every field and button in a work row small', async () => {
+    renderScreen()
+    await screen.findByDisplayValue('Sơn')
+    expectAllSmall(rowOf('Sơn'))
+  })
+
+  it('sizes the deck weight field in the matrix small', async () => {
+    renderScreen()
+    await screen.findByDisplayValue('Sơn')
+    await userEvent.click(within(rowOf('Sơn')).getByRole('button', { name: 'Sàn tham gia' }))
+    const matrix = await screen.findByTestId('work-decks-w1')
+    const weight = (await within(matrix).findAllByRole('spinbutton'))[0]
+    expectAllSmall(weight.closest('tr') as HTMLElement)
   })
 })
 

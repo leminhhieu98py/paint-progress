@@ -139,7 +139,7 @@ function Body({
         showIcon
         message="Không tải được số liệu năng suất"
         description={current.error}
-        action={<Button size="small" onClick={retry}>Thử lại</Button>}
+        action={<Button onClick={retry}>Thử lại</Button>}
       />
     )
   }

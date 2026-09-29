@@ -116,6 +116,7 @@ export function DeckKpiColorTable({
       : (stored(row, family) ?? KPI_COLOR_DEFAULTS[family]).toLowerCase()
     return (
       <ColorField
+        size="small"
         label={`${FAMILY_LABEL[family]} · ${row.name}`}
         value={shown}
         hex={draft}

@@ -172,7 +172,7 @@ export function EmployeesScreen() {
             showIcon
             message="Không tải được danh sách nhân viên"
             description={error}
-            action={<Button size="small" onClick={reload}>Thử lại</Button>}
+            action={<Button onClick={reload}>Thử lại</Button>}
           />
         )}
         <SectionCard

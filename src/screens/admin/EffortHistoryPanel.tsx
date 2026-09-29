@@ -137,7 +137,7 @@ export function EffortHistoryPanel({
             showIcon
             message="Không tải được lịch sử cập nhật"
             description={error}
-            action={<Button size="small" onClick={onRetry}>Thử lại</Button>}
+            action={<Button onClick={onRetry}>Thử lại</Button>}
             style={{ marginBottom: space.md }}
           />
         </div>

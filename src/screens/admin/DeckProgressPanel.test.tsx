@@ -1135,6 +1135,16 @@ describe('DeckProgressPanel — công việc', () => {
     expect(weightOf(within(table).getByText('42,00%'))).toBe(600)
   })
 
+  it('gives the header toolbar and the notes button the default height: they sit outside a table (CTL-01)', async () => {
+    renderPanel()
+    await screen.findByTestId('lens-A')
+    const segmented = screen.getByText('So sánh hai lớp').closest('.ant-segmented')
+    expect(segmented).not.toHaveClass('ant-segmented-sm')
+    for (const name of ['Thu nhỏ', 'Phóng to', 'Vừa khung', /^Ghi chú \(/]) {
+      expect(screen.getByRole('button', { name })).not.toHaveClass('ant-btn-sm')
+    }
+  })
+
   it('sets every hand-set text in the panel on the type scale (TYP-01)', async () => {
     const { container } = renderPanel(false)
     await screen.findByTestId('deck-works-table')

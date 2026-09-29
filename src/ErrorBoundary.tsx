@@ -46,7 +46,7 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, State> {
             message="Đã xảy ra lỗi"
             description="Không thể tải màn hình này. Ứng dụng có thể vừa được cập nhật. Tải lại trang để tiếp tục."
             action={
-              <Button size="small" onClick={() => window.location.reload()}>
+              <Button onClick={() => window.location.reload()}>
                 Tải lại trang
               </Button>
             }

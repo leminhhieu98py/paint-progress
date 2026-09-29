@@ -142,6 +142,12 @@ describe('NoteThread — the report copy (0023)', () => {
     expect(onToggleHidden).toHaveBeenCalledWith(n)
   })
 
+  it('gives the report actions the default height: they sit outside a table (CTL-01)', () => {
+    render(<NoteThread notes={[note()]} onEditReport={vi.fn()} onToggleHidden={vi.fn()} />)
+    expect(screen.getByRole('button', { name: 'Sửa cho báo cáo' })).not.toHaveClass('ant-btn-sm')
+    expect(screen.getByRole('button', { name: 'Ẩn khỏi báo cáo' })).not.toHaveClass('ant-btn-sm')
+  })
+
   it('offers to bring a hidden note back, since hiding is reversible', () => {
     render(
       <NoteThread

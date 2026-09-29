@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { StagePlanTable, type StagePlanRow } from './StagePlanTable'
 import { expectLeft } from '../../test/alignment'
 import { weightOf } from '../../test/typography'
+import { expectAllSmall } from '../../test/controls'
 
 const ROWS: StagePlanRow[] = [
   {
@@ -361,6 +362,15 @@ describe('StagePlanTable — type scale (TYP-02)', () => {
     renderTable()
     expect(weightOf(row('s1').getByText('Công đoạn 1'))).toBe(400)
     expect(weightOf(screen.getByTestId('plan-days-s1'))).toBe(400)
+  })
+})
+
+describe('StagePlanTable — one control height per row (CTL-01)', () => {
+  it('sizes the picker, the area field, Tự tính and Lưu small, as a table row\'s controls are', async () => {
+    renderTable()
+    // s1 carries an override, so its Tự tính button is laid out and visible.
+    expectAllSmall(screen.getByTestId('plan-row-s1'))
+    expectAllSmall(screen.getByTestId('plan-row-s2'))
   })
 })
 

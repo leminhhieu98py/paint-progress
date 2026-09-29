@@ -457,6 +457,7 @@ export function StageConfigPanel({
             render: (v: string, _r, i) => (
               editable ? (
               <Input
+                size="small"
                 // Stable across a rename, unlike the colour fields beside it:
                 // this IS the field the name is typed into, so labelling it
                 // with the name would rename the control under the cursor.
@@ -503,6 +504,7 @@ export function StageConfigPanel({
                 )}
                 {editable && (
                   <ColorField
+                    size="small"
                     label={row.name}
                     value={v}
                     hex={hexDraft[row.id]}
@@ -523,6 +525,7 @@ export function StageConfigPanel({
               <div style={{ textAlign: 'center', ...type.body }}>{formatWeight(v)}</div>
             ) : (
               <InputNumber
+                size="small"
                 value={v}
                 min={0}
                 max={1}

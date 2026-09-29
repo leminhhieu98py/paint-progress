@@ -1257,7 +1257,6 @@ export function DeckProgressPanel({
           */}
           {side === 'A' && (
             <Button
-              size="small"
               disabled={notedCodes.length === 0}
               onClick={() => setNotesListOpen(true)}
             >
@@ -1495,7 +1494,6 @@ export function DeckProgressPanel({
               </span>
             </Space>
             <Segmented
-              size="small"
               value={splitView ? 'split' : 'single'}
               onChange={(v) => setSplitView(v === 'split')}
               options={[
@@ -1503,17 +1501,10 @@ export function DeckProgressPanel({
                 { value: 'split', label: 'So sánh hai lớp' },
               ]}
             />
-            <Space
-              size={4}
-              style={{
-                background: palette.bgSubtle,
-                border: `1px solid ${palette.borderSplit}`,
-                borderRadius: 10,
-                padding: 4,
-              }}
-            >
+            {/* Bare, not framed: a frame's padding stood the default-height
+                buttons 10px taller than the Segmented beside them (CTL-01). */}
+            <Space size={4}>
               <Button
-                size="small"
                 aria-label="Thu nhỏ"
                 icon={<MinusOutlined aria-hidden />}
                 onClick={() => setZoom((z) => Math.max(1, z - 0.5))}
@@ -1530,13 +1521,11 @@ export function DeckProgressPanel({
                 {`${Math.round(zoom * 100)}%`}
               </span>
               <Button
-                size="small"
                 aria-label="Phóng to"
                 icon={<PlusOutlined aria-hidden />}
                 onClick={() => setZoom((z) => Math.min(4, z + 0.5))}
               />
               <Button
-                size="small"
                 aria-label="Vừa khung"
                 icon={<ExpandOutlined aria-hidden />}
                 onClick={() => setZoom(1)}

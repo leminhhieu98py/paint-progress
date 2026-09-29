@@ -167,7 +167,7 @@ export function DeckForecastPanel({
           showIcon
           message="Không tải được công việc của sàn"
           description={error}
-          action={<Button size="small" onClick={() => setAttempt((n) => n + 1)}>Thử lại</Button>}
+          action={<Button onClick={() => setAttempt((n) => n + 1)}>Thử lại</Button>}
           style={{ marginBottom: 12 }}
         />
       )}

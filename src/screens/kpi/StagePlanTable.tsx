@@ -205,6 +205,7 @@ export function StagePlanTable({
         const d = draft(row)
         return (
           <DatePicker.RangePicker
+            size="small"
             data-testid={`plan-range-${row.stageId}`}
             format="DD/MM/YYYY"
             // Room for `DD/MM/YYYY → DD/MM/YYYY` (QA F9): squeezed, the
@@ -277,6 +278,7 @@ export function StagePlanTable({
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
             <Tooltip title={computedLabel}>
               <InputNumber
+                size="small"
                 aria-label="Diện tích kế hoạch"
                 placeholder={computedLabel}
                 value={d.plannedAreaM2}
