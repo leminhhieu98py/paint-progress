@@ -306,6 +306,9 @@ export function StagePlanTable({
       title: '',
       key: 'save',
       width: 120,
+      // Pinned: the table scrolls sideways at tablet widths (QA F9) and a
+      // row's Lưu must stay in view with the dates it saves.
+      fixed: 'right' as const,
       render: (_v: unknown, row: StagePlanRow) => {
         const d = draft(row)
         const message = errorOf(d)

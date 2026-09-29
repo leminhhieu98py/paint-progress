@@ -529,6 +529,9 @@ export function DecksScreen() {
                 title: 'Thao tác',
                 key: 'actions',
                 width: 170,
+                // Pinned: the list scrolls sideways below ~1100px (QA F8) and
+                // the row's actions must not scroll out of the card with it.
+                fixed: 'right',
                 align: 'right',
                 render: (_v, deck) => (
                   <Space size={6}>
@@ -567,6 +570,7 @@ export function DecksScreen() {
                 title: 'Thứ tự',
                 key: 'reorder',
                 width: 90,
+                fixed: 'right',
                 align: 'right',
                 // Order everywhere else follows `seq`, i.e. this list's own
                 // order (`listDecks` already sorts by it) -- so the row

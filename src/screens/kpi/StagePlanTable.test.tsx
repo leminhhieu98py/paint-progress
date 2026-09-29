@@ -88,6 +88,14 @@ describe('StagePlanTable', () => {
     expect(picker).toHaveStyle({ minWidth: '250px' })
   })
 
+  it('keeps Lưu in view while the table scrolls sideways (QA F9 follow-up)', () => {
+    // Seen at 1024px after F9: the scrolling table pushed every row's Lưu past
+    // the card's right edge. The save column is pinned to the right instead.
+    renderTable()
+    const save = row('s1').getByRole('button', { name: 'Lưu kế hoạch' })
+    expect(save.closest('td')).toHaveClass('ant-table-cell-fix-right')
+  })
+
   it('holds the window in one Khoảng kế hoạch column (Feedback Rv5, RV5-38)', () => {
     // The app already had a settled answer for a per-coat date range and this
     // table did not use it: DeckProgressPanel.tsx:582, "One RangePicker per

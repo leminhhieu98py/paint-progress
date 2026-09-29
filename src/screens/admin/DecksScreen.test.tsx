@@ -605,6 +605,16 @@ describe('DecksScreen — reordering decks (RV6-05, RV6-06)', () => {
     listDecks.mockResolvedValue(THREE_DECKS)
   })
 
+  it('keeps the row actions and the order arrows in view while the list scrolls sideways (QA F8 follow-up)', async () => {
+    // Seen at 1024px after F8: the list scrolled sideways and took Mở, Nhân
+    // bản, Xoá and Lên/Xuống past the card's right edge. Both columns are pinned.
+    renderScreen()
+    await screen.findByText('First Deck')
+    expect(screen.getAllByRole('button', { name: 'Lên' })[0].closest('td'))
+      .toHaveClass('ant-table-cell-fix-right')
+    expect(screen.getByRole('columnheader', { name: 'Thao tác' })).toHaveClass('ant-table-cell-fix-right')
+  })
+
   it('disables Lên on the first row and Xuống on the last, leaving the rest enabled', async () => {
     renderScreen()
     await screen.findByText('First Deck')
