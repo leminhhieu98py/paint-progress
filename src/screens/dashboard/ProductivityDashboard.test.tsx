@@ -1,6 +1,6 @@
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { EMPTY_EFFORT, type DeckEvent, type Effort, type WorkModel } from '../../domain/types'
 import { useState } from 'react'
 import { FilterBar } from '../../components/FilterBar'
@@ -9,6 +9,7 @@ import { ProductivityFilterControls } from './ProductivityFilterControls'
 import { DEFAULT_PRODUCTIVITY_FILTERS, dashboardWorkNames } from './productivityFilters'
 import { expectLeft } from '../../test/alignment'
 import { chooseOption } from '../../test/select'
+import { setViewport } from '../../test/viewport'
 
 // jsdom gives Recharts no size; the numbers the charts plot are covered in
 // domain/effort.test.ts, and the wrappers are what this file checks for.
@@ -435,5 +436,34 @@ describe('ProductivityDashboard — Tìm and the pagers (FLT-02)', () => {
     expect(pager.getByTitle('2')).toHaveClass('ant-pagination-item-active')
     rerender(<ProductivityDashboard events={events} models={MODELS} filters={DEFAULT_PRODUCTIVITY_FILTERS} version={2} />)
     expect(within(screen.getByTestId('lead-table')).getByTitle('1')).toHaveClass('ant-pagination-item-active')
+  })
+})
+
+describe('ProductivityDashboard — tables on a phone (MOB-01)', () => {
+  const TABLES = ['stage-table', 'forecast-table', 'lead-table', 'waste-table']
+  const tableIn = (id: string) => screen.getByTestId(id).querySelector('.ant-table') as HTMLElement
+  let restoreViewport = () => {}
+  afterEach(() => restoreViewport())
+
+  it('sizes every table to its content and scrolls it sideways in its card, the name column pinned', () => {
+    restoreViewport = setViewport(390)
+    renderDashboard()
+    for (const id of TABLES) {
+      const table = tableIn(id)
+      // One line per header: the table is as wide as its content asks, and the card scrolls it.
+      expect(table).toHaveClass('ant-table-scroll-horizontal')
+      expect(table.querySelector('table')?.getAttribute('style')).toContain('width: max-content')
+      // The first column, the row's name, stays in view as the rest scrolls under it.
+      expect(table).toHaveClass('ant-table-has-fix-left')
+    }
+  })
+
+  it('keeps the scroll but pins nothing from 768 px, where the columns fit', () => {
+    restoreViewport = setViewport(1280)
+    renderDashboard()
+    for (const id of TABLES) {
+      expect(tableIn(id)).toHaveClass('ant-table-scroll-horizontal')
+      expect(tableIn(id)).not.toHaveClass('ant-table-has-fix-left')
+    }
   })
 })

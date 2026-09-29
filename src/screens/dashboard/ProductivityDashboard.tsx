@@ -21,6 +21,7 @@ import { formatAreaM2, formatHours, formatMhrPerM2, formatPercent } from '../../
 import { matchesSearch } from '../../lib/search'
 import { fieldError, palette } from '../../theme'
 import { useTypeScale } from '../../components/typeScale'
+import { useFieldPhone } from '../gs/fieldSections'
 import { EfficiencyLineChart, HoursBarChart } from './charts'
 import { dashboardWorkNames, resolveWork, type ProductivityFilters } from './productivityFilters'
 
@@ -43,6 +44,11 @@ const FALLBACK_COLORS = ['#0A8175', '#F97316', '#2563EB', '#7C3AED', '#DB2777', 
 
 const dash = '—'
 const ratio = (n: number | null) => (n === null ? dash : formatMhrPerM2(n))
+/**
+ * Every table as wide as its content (MOB-01): a header never wraps, and on a
+ * phone the table scrolls sideways inside its card rather than squeezing.
+ */
+const TABLE_SCROLL = { x: 'max-content' } as const
 
 export function ProductivityDashboard({
   events,
@@ -59,6 +65,8 @@ export function ProductivityDashboard({
 }) {
   // The scale of the page this is on: the field's 14 on a field page (GS-10).
   const type = useTypeScale()
+  /** On a phone the name column stays in view while the figures scroll under it (MOB-01). */
+  const pin = useFieldPhone() ? ('left' as const) : undefined
   const workNames = useMemo(() => dashboardWorkNames(models, events), [models, events])
   const workName = resolveWork(filters.work, workNames)
   /**
@@ -221,8 +229,9 @@ export function ProductivityDashboard({
   }
 
   const stageColumns = [
-    ...(workNames.length > 1 ? [{ title: 'Công việc', dataIndex: 'workName' as const }] : []),
-    { title: 'Công đoạn', dataIndex: 'stageName' as const },
+    // With the work beside it, the two name the row together, and both stay pinned.
+    ...(workNames.length > 1 ? [{ title: 'Công việc', dataIndex: 'workName' as const, fixed: pin }] : []),
+    { title: 'Công đoạn', dataIndex: 'stageName' as const, fixed: pin },
     { title: 'Số ngày', dataIndex: 'days' as const, align: 'center' as const },
     { title: 'Tổng Mhr', align: 'center' as const, render: (_: unknown, r: StageEfficiency) => formatHours(r.totalHours) },
     { title: `Tổng ${unit}`, align: 'center' as const, render: (_: unknown, r: StageEfficiency) => formatAreaM2(r.totalAreaM2) },
@@ -274,6 +283,7 @@ export function ProductivityDashboard({
             rowKey={(r) => `${r.workName}/${r.stageName}`}
             pagination={stagePagination}
             dataSource={visibleStages}
+            scroll={TABLE_SCROLL}
             columns={stageColumns}
             locale={{ emptyText: 'Không có lần cập nhật nào trong khoảng đã chọn' }}
           />
@@ -290,9 +300,10 @@ export function ProductivityDashboard({
             rowKey="deckName"
             pagination={forecastPagination}
             dataSource={forecasts}
+            scroll={TABLE_SCROLL}
             locale={{ emptyText: 'Chưa có sàn nào trong công việc này' }}
             columns={[
-              { title: 'Sàn', dataIndex: 'deckName' },
+              { title: 'Sàn', dataIndex: 'deckName', fixed: pin },
               {
                 title: 'Mhr còn cần',
                 align: 'center',
@@ -367,9 +378,10 @@ export function ProductivityDashboard({
               rowKey="leadName"
               pagination={leadPagination}
               dataSource={visibleLeads}
+              scroll={TABLE_SCROLL}
               locale={{ emptyText: 'Không có nhóm trưởng nào khớp' }}
               columns={[
-                { title: 'Nhóm trưởng', dataIndex: 'leadName' },
+                { title: 'Nhóm trưởng', dataIndex: 'leadName', fixed: pin },
                 { title: 'Lần cập nhật', dataIndex: 'updates', align: 'center' },
                 { title: 'Tổng Mhr', align: 'center', render: (_, r) => formatHours(r.totalHours) },
                 { title: `Tổng ${unit}`, align: 'center', render: (_, r) => formatAreaM2(r.totalAreaM2) },
@@ -386,11 +398,13 @@ export function ProductivityDashboard({
               rowKey="reason"
               pagination={reasonPagination}
               dataSource={reasons}
+              scroll={TABLE_SCROLL}
               columns={[
                 {
                   // A note, not a category (UI-04 amended): plain text, left like every note (UI-03).
                   title: 'Lý do',
                   dataIndex: 'reason',
+                  fixed: pin,
                   render: (v: string) => (v === '' ? <span style={{ color: palette.textQuaternary }}>Không ghi lý do</span> : v),
                 },
                 { title: 'Giờ', align: 'center', render: (_, r) => formatHours(r.hours) },
