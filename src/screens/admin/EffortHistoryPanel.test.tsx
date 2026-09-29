@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { EMPTY_EFFORT, type DeckEvent } from '../../domain/types'
 import { EffortHistoryPanel } from './EffortHistoryPanel'
+import { expectLeft } from '../../test/alignment'
 
 const setCellEventEffort = vi.hoisted(() => vi.fn())
 const listGsUsers = vi.hoisted(() => vi.fn())
@@ -166,7 +167,7 @@ describe('EffortHistoryPanel — the waste reason is a note (UI-04 amended, UI-0
     const reason = await screen.findByText('Chờ vật tư')
     // The text sits in the cell itself: no pill wrapped around it.
     expect(reason.tagName).toBe('TD')
-    expect(reason).not.toHaveStyle({ textAlign: 'center' })
-    expect(screen.getByRole('columnheader', { name: 'Lý do hao phí' })).not.toHaveStyle({ textAlign: 'center' })
+    expectLeft(reason)
+    expectLeft(screen.getByRole('columnheader', { name: 'Lý do hao phí' }))
   })
 })

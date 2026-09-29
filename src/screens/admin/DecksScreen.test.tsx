@@ -4,6 +4,7 @@ import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderApp } from '../../test/renderApp'
 import { DecksScreen } from './DecksScreen'
+import { expectLeft } from '../../test/alignment'
 
 const listProjectNames = vi.hoisted(() => vi.fn())
 const listDecks = vi.hoisted(() => vi.fn())
@@ -803,8 +804,8 @@ describe('DecksScreen — alignment (UI-03)', () => {
     const name = await screen.findByText('Main Deck')
     const list = within(name.closest('table') as HTMLElement)
     const th = (label: string) => list.getByRole('columnheader', { name: label })
-    expect(th('Tên sàn')).not.toHaveStyle({ textAlign: 'center' })
-    expect(name.closest('td')).not.toHaveStyle({ textAlign: 'center' })
+    expectLeft(th('Tên sàn'))
+    expectLeft(name.closest('td'))
     for (const label of ['Mã', 'Số ô', 'Bản vẽ', 'Thao tác', 'Thứ tự']) {
       expect(th(label)).toHaveStyle({ textAlign: 'center' })
     }

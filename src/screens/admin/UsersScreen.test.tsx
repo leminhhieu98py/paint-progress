@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderApp } from '../../test/renderApp'
 import { UsersScreen } from './UsersScreen'
+import { expectLeft } from '../../test/alignment'
 
 const listGsUsers = vi.fn()
 const revealPassword = vi.fn()
@@ -465,8 +466,8 @@ describe('UsersScreen — alignment (UI-03)', () => {
     renderApp(<UsersScreen />)
     await screen.findByText('GS Một')
     const th = (label: string) => screen.getByRole('columnheader', { name: label })
-    expect(th('Người dùng')).not.toHaveStyle({ textAlign: 'center' })
-    expect(th('Dự án')).not.toHaveStyle({ textAlign: 'center' })
+    expectLeft(th('Người dùng'))
+    expectLeft(th('Dự án'))
     for (const label of ['Tên đăng nhập', 'Loại', 'Trạng thái', 'Thao tác']) {
       expect(th(label)).toHaveStyle({ textAlign: 'center' })
     }

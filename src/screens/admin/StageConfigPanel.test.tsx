@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderApp } from '../../test/renderApp'
 import { StageConfigPanel } from './StageConfigPanel'
+import { expectLeft } from '../../test/alignment'
 
 const listWorkStages = vi.hoisted(() => vi.fn())
 const saveWorkStages = vi.hoisted(() => vi.fn())
@@ -727,7 +728,7 @@ describe('StageConfigPanel — alignment (UI-03)', () => {
   it('keeps the coat name left and centres the colour picker itself, not only the cell text', async () => {
     renderApp(<StageConfigPanel workId="w1" deckId="d1" />)
     const hex = await screen.findByLabelText('Mã màu · Blast + Coat 1')
-    expect(screen.getByRole('columnheader', { name: 'Tên lớp' })).not.toHaveStyle({ textAlign: 'center' })
+    expectLeft(screen.getByRole('columnheader', { name: 'Tên lớp' }))
     for (const label of ['Thứ tự', 'Màu', 'Trọng số']) {
       expect(screen.getByRole('columnheader', { name: label })).toHaveStyle({ textAlign: 'center' })
     }

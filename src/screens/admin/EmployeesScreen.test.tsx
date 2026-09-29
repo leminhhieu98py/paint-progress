@@ -3,6 +3,7 @@ import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { EmployeesScreen } from './EmployeesScreen'
+import { expectLeft } from '../../test/alignment'
 
 const listEmployees = vi.hoisted(() => vi.fn())
 const createEmployee = vi.hoisted(() => vi.fn())
@@ -200,8 +201,8 @@ describe('EmployeesScreen — alignment (UI-03)', () => {
   it('keeps the person left and centres the switch and the action, header included', async () => {
     renderScreen()
     const name = await screen.findByText('Lê Văn A')
-    expect(screen.getByRole('columnheader', { name: 'Họ tên' })).not.toHaveStyle({ textAlign: 'center' })
-    expect(name.closest('td')).not.toHaveStyle({ textAlign: 'center' })
+    expectLeft(screen.getByRole('columnheader', { name: 'Họ tên' }))
+    expectLeft(name.closest('td'))
     expect(screen.getByRole('columnheader', { name: 'Đang làm' })).toHaveStyle({ textAlign: 'center' })
     const row = name.closest('tr') as HTMLElement
     expect(within(row).getByRole('switch').closest('td')).toHaveStyle({ textAlign: 'center' })

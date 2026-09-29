@@ -3,6 +3,7 @@ import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { StagePlanTable, type StagePlanRow } from './StagePlanTable'
+import { expectLeft } from '../../test/alignment'
 
 const ROWS: StagePlanRow[] = [
   {
@@ -349,6 +350,6 @@ describe('StagePlanTable — alignment (UI-03)', () => {
     const saveCell = saveOf('s1').closest('td') as HTMLElement
     expect(saveCell).toHaveStyle({ textAlign: 'center' })
     expect(saveCell.firstElementChild).toHaveStyle({ alignItems: 'center' })
-    expect(row('s1').getByText('Công đoạn 1').closest('td')).not.toHaveStyle({ textAlign: 'center' })
+    expectLeft(row('s1').getByText('Công đoạn 1').closest('td'))
   })
 })

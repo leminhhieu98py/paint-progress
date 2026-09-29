@@ -5,6 +5,7 @@ import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderApp } from '../../test/renderApp'
 import { ProjectsScreen } from './ProjectsScreen'
+import { expectLeft } from '../../test/alignment'
 
 const latestProgressEvent = vi.hoisted(() => vi.fn())
 vi.mock('../../lib/progressApi', () => ({
@@ -290,8 +291,8 @@ describe('ProjectsScreen — alignment (UI-03)', () => {
     renderScreen()
     const name = await screen.findByText('BB1 - CPPTS')
     const th = (label: string) => screen.getByRole('columnheader', { name: label })
-    expect(th('Tên dự án')).not.toHaveStyle({ textAlign: 'center' })
-    expect(name.closest('td')).not.toHaveStyle({ textAlign: 'center' })
+    expectLeft(th('Tên dự án'))
+    expectLeft(name.closest('td'))
     for (const label of ['Số sàn', 'Tổng diện tích (m²)', 'Tiến độ', 'Thao tác']) {
       expect(th(label)).toHaveStyle({ textAlign: 'center' })
     }

@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { EMPTY_EFFORT, type DeckEvent, type Effort, type WorkModel } from '../../domain/types'
 import { ProductivityDashboard } from './ProductivityDashboard'
+import { expectLeft } from '../../test/alignment'
 
 // jsdom gives Recharts no size; the numbers the charts plot are covered in
 // domain/effort.test.ts, and the wrappers are what this file checks for.
@@ -352,25 +353,25 @@ describe('ProductivityDashboard — alignment (UI-03)', () => {
   it('keeps stage and lead names and the waste reason left and centres every figure, header included', () => {
     renderDashboard()
     const stages = within(screen.getByTestId('stage-table'))
-    expect(stages.getByRole('columnheader', { name: 'Công đoạn' })).not.toHaveStyle({ textAlign: 'center' })
+    expectLeft(stages.getByRole('columnheader', { name: 'Công đoạn' }))
     for (const label of ['Số ngày', 'Tổng Mhr', 'Giờ hao phí']) {
       expect(stages.getByRole('columnheader', { name: label })).toHaveStyle({ textAlign: 'center' })
     }
     const [lop1] = stageRows()
-    expect(within(lop1).getByText('Lớp 1').closest('td')).not.toHaveStyle({ textAlign: 'center' })
+    expectLeft(within(lop1).getByText('Lớp 1').closest('td'))
     expect(within(lop1).getByText('340,0').closest('td')).toHaveStyle({ textAlign: 'center' })
 
     const leads = within(screen.getByTestId('lead-table'))
-    expect(leads.getByRole('columnheader', { name: 'Nhóm trưởng' })).not.toHaveStyle({ textAlign: 'center' })
-    expect(leads.getByText('Tổ 1').closest('td')).not.toHaveStyle({ textAlign: 'center' })
+    expectLeft(leads.getByRole('columnheader', { name: 'Nhóm trưởng' }))
+    expectLeft(leads.getByText('Tổ 1').closest('td'))
     expect(leads.getByRole('columnheader', { name: 'Lần cập nhật' })).toHaveStyle({ textAlign: 'center' })
 
     // The reason reads as a note (UI-04 amended): plain text, left, no pill.
     const waste = within(screen.getByTestId('waste-table'))
-    expect(waste.getByRole('columnheader', { name: 'Lý do' })).not.toHaveStyle({ textAlign: 'center' })
+    expectLeft(waste.getByRole('columnheader', { name: 'Lý do' }))
     const reason = waste.getByText('Mưa')
     expect(reason.tagName).toBe('TD')
-    expect(reason).not.toHaveStyle({ textAlign: 'center' })
+    expectLeft(reason)
     expect(waste.getByRole('columnheader', { name: 'Giờ' })).toHaveStyle({ textAlign: 'center' })
   })
 })
