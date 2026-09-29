@@ -388,6 +388,32 @@ describe('WorksScreen', () => {
 })
 
 describe('WorksScreen — alignment (UI-06)', () => {
+  it('gives the work name room, the table scrolling sideways rather than clipping it (M18)', async () => {
+    renderScreen()
+    await screen.findByDisplayValue('Sơn')
+    const header = screen.getByRole('columnheader', { name: 'Tên công việc' })
+    const index = [...(header.parentElement as HTMLElement).children].indexOf(header)
+    const table = header.closest('table') as HTMLElement
+    expect(table).toHaveStyle({ width: 'max-content' })
+    expect(table.querySelectorAll('colgroup col')[index]).toHaveStyle({ width: '260px' })
+  })
+
+  it('marks the manual progress % as a suffix, with no deprecated addon warning (M17)', async () => {
+    const warn = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const warn2 = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      renderScreen()
+      const pct = await within(await waitFor(() => rowOf('Marking'))).findByLabelText('Tiến độ (%)')
+      const box = pct.closest('.ant-input-number-affix-wrapper') as HTMLElement
+      expect(within(box).getByText('%')).toHaveClass('ant-input-number-suffix')
+      const said = [...warn.mock.calls, ...warn2.mock.calls].flat().join(' ')
+      expect(said).not.toMatch(/addonAfter/)
+    } finally {
+      warn.mockRestore()
+      warn2.mockRestore()
+    }
+  })
+
   it('names its drag handle column for a screen reader, not with an empty header (M20)', async () => {
     renderScreen()
     await screen.findByDisplayValue('Sơn')

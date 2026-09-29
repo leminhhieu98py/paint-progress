@@ -335,6 +335,7 @@ export function WorksScreen() {
                 />
               ),
             }}
+            scroll={{ x: 'max-content' }}
             onRow={(_row, index) => ({
               draggable: !saving,
               onDragStart: () => { dragging.current = index ?? null },
@@ -353,6 +354,9 @@ export function WorksScreen() {
               {
                 title: 'Tên công việc',
                 dataIndex: 'name',
+                // Room for "CAM Under Deck Giàn giáo"; the table scrolls sideways
+                // rather than clipping it (M18).
+                width: 260,
                 render: (v: string, _w, i) => (
                   <Input
                     size="small"
@@ -454,7 +458,8 @@ export function WorksScreen() {
                     value={Math.round(w.manualProgress * 10000) / 100}
                     min={0}
                     max={100}
-                    addonAfter="%"
+                    // A suffix, not the addon antd deprecates (M17).
+                    suffix="%"
                     style={{ width: 120 }}
                     onChange={(n) => patch(i, { manualProgress: (n ?? 0) / 100 })}
                   />
