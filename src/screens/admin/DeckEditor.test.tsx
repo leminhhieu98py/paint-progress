@@ -824,7 +824,7 @@ await userEvent.click(screen.getByRole('button', { name: 'chọn R1C1' }))
     // Idle: the clauses that belong to one button each are on that button.
     expect(screen.queryByText(/Bấm Hiệu chỉnh để/)).toBeNull()
     await userEvent.hover(screen.getByRole('button', { name: 'Tự động dò ô từ bản vẽ' }))
-    expect(await screen.findByText(/Dò ô sẽ thay toàn bộ ô đang có/)).toBeInTheDocument()
+    expect(await screen.findByText('Tự động dò ô từ bản vẽ và thay toàn bộ ô đang có.')).toBeInTheDocument()
     await userEvent.hover(screen.getByRole('button', { name: 'Hiệu chỉnh ô' }))
     expect(await screen.findByText(/gộp \/ xoá \/ vẽ ô bằng phím tắt/)).toBeInTheDocument()
     // Editing: the shortcut table is right below, so no line repeats it.
@@ -849,7 +849,7 @@ await userEvent.click(screen.getByRole('button', { name: 'chọn R1C1' }))
     ])
     renderInApp({ ...deck, totalAreaM2: 0 })
 
-    expect(await screen.findByText(/Chưa khai báo diện tích sàn/)).toBeInTheDocument()
+    expect(await screen.findByText('Tiến độ của sàn là 0% cho tới khi nhập diện tích sàn.')).toBeInTheDocument()
 
     await saveDeck()
 

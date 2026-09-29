@@ -676,7 +676,7 @@ export function DeckEditor({
       {undeclaredArea && (
         <Alert
           type="error"
-          message="Chưa khai báo diện tích sàn. Tiến độ của sàn này sẽ luôn là 0% cho tới khi nhập diện tích."
+          message="Tiến độ của sàn là 0% cho tới khi nhập diện tích sàn."
         />
       )}
 
@@ -730,7 +730,7 @@ export function DeckEditor({
             borderBottom: `1px solid ${palette.borderSplit}`,
           }}
         >
-          <Tooltip title="Tự động dò ô từ bản vẽ. Dò ô sẽ thay toàn bộ ô đang có.">
+          <Tooltip title="Tự động dò ô từ bản vẽ và thay toàn bộ ô đang có.">
             <span>
               <Button
                 aria-label="Tự động dò ô từ bản vẽ"
