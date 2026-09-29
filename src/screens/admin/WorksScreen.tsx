@@ -23,7 +23,6 @@ import { PageBody, PageHeader } from '../../components/PageHeader'
 import { RulesDisclosure } from '../../components/RulesDisclosure'
 import { SectionCard } from '../../components/SectionCard'
 import { searchSelectProps } from '../../components/searchSelect'
-import { tablePagination } from '../../components/tablePagination'
 import { palette } from '../../theme'
 
 type ProjectOption = Awaited<ReturnType<typeof listProjectNames>>[number]
@@ -531,7 +530,10 @@ export function WorksScreen() {
                 rowKey="deckId"
                 size="middle"
                 dataSource={matrix.rows}
-                pagination={tablePagination(matrix.rows.length)}
+                // Not paged (UI-06): the weights balance as a set and `Chia theo
+                // m²` rewrites every row, so a pager would hide rows the total
+                // depends on.
+                pagination={false}
                 columns={[
                   { title: 'Sàn', dataIndex: 'name' },
                   {

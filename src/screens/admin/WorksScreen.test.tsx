@@ -274,3 +274,19 @@ describe('WorksScreen — alignment (UI-06)', () => {
     expect(th('Trọng số')).toHaveStyle({ textAlign: 'center' })
   })
 })
+
+describe('WorksScreen — the deck weight matrix is one set (UI-06)', () => {
+  it('shows every deck on one page: the weights must balance, and a pager would hide some of them', async () => {
+    const many = Array.from({ length: 12 }, (_, i) => ({
+      ...DECKS[0], id: `d${i + 1}`, seq: i + 1, name: `Sàn ${i + 1}`, code: `S${i + 1}`,
+    }))
+    listDecks.mockResolvedValue(many)
+    listWorkDecks.mockResolvedValue(many.map((d) => ({ deckId: d.id, weight: 1 / 12 })))
+    renderScreen()
+    await screen.findByDisplayValue('Sơn')
+    await userEvent.click(within(rowOf('Sơn')).getByRole('button', { name: 'Sàn tham gia' }))
+    const matrix = within(await screen.findByTestId('work-decks-w1'))
+    await waitFor(() => expect(matrix.getAllByRole('switch')).toHaveLength(12))
+    expect(screen.getByTestId('work-decks-w1').querySelector('.ant-pagination')).toBeNull()
+  })
+})
