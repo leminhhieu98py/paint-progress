@@ -322,13 +322,17 @@ describe('DeckDetailScreen', () => {
     renderAt('/decks/d1')
     await screen.findByRole('heading', { level: 1, name: 'Main Deck' })
     await userEvent.click(screen.getByText('Sửa'))
+    // Said before a file is chosen, and true of the code: the image is
+    // replaced, the bays stay (uploadDrawing touches no cell) (RUL-01).
+    expect(screen.getByText('Tệp mới thay bản vẽ hiện tại và giữ nguyên các ô đã dựng.')).toBeInTheDocument()
+    expect(screen.queryByText(/xoá bản vẽ hiện tại và toàn bộ hình học ô/)).toBeNull()
     await userEvent.upload(await screen.findByLabelText('Bản vẽ (PDF)'), pdfFile())
     await userEvent.click(screen.getByRole('button', { name: 'Lưu thông tin sàn' }))
 
     expect(await screen.findByText('Lưu thay đổi cho sàn này?')).toBeInTheDocument()
     // One helper sentence, no reasoning (RUL-01); the panel named as the admin
     // sees it, not by its mockup code (CPY-04).
-    expect(screen.getByText('Ô đã dựng giữ vị trí cũ trên bản vẽ mới, kiểm tra lại ở Phân ô.')).toBeInTheDocument()
+    expect(screen.getByText('Ô đã dựng giữ vị trí cũ trên bản vẽ mới và cần kiểm tra lại ở Phân ô.')).toBeInTheDocument()
     expect(screen.queryByText(/A3\.3/)).not.toBeInTheDocument()
     expect(uploadDrawing).not.toHaveBeenCalled()
 

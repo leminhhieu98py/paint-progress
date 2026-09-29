@@ -125,8 +125,7 @@ export function DeckDetailScreen() {
     antd deletes `id` from the props it hands rc-upload (upload/Upload.js:331)
     and puts it on the wrapper instead, so the real <input type=file> ends up
     with no id and no label pointing at it -- no accessible name at all. On the
-    one control that attaches a deck's drawing, and whose replacement wipes
-    every bay on it, that is not a name worth losing.
+    one control that attaches a deck's drawing, that is not a name worth losing.
 
     Set here rather than worked around in the tests, because a test that
     reaches the input by tag name would be agreeing that it has no name.
@@ -461,9 +460,10 @@ export function DeckDetailScreen() {
           </div>
         )}
         {/*
-          Said before the picker is used, not after. Replacing the drawing
-          drops every bay on the deck, which takes the recorded progress with
-          it -- and the picker gives no second chance once a file is chosen.
+          Said before the picker is used, not after. A new file replaces the
+          image only (uploadDrawing upserts the PNG and the decks row; nothing
+          touches cells), so the bays stay where they were on the sheet and
+          may need checking in Phân ô -- as the Lưu dialog says too.
         */}
         {!creating && deck?.imagePath && (
           <div
@@ -475,11 +475,11 @@ export function DeckDetailScreen() {
               maxWidth: 520,
               ...type.caption,
               lineHeight: 1.45,
-              color: palette.error,
+              color: palette.warning,
             }}
           >
             <WarningOutlined style={{ marginTop: 2, flex: 'none' }} />
-            <span>Chọn tệp mới sẽ xoá bản vẽ hiện tại và toàn bộ hình học ô của sàn này.</span>
+            <span>Tệp mới thay bản vẽ hiện tại và giữ nguyên các ô đã dựng.</span>
           </div>
         )}
         {pages > 1 && (
@@ -743,7 +743,7 @@ export function DeckDetailScreen() {
         consequence={
           [
             pdf
-              ? 'Ô đã dựng giữ vị trí cũ trên bản vẽ mới, kiểm tra lại ở Phân ô.'
+              ? 'Ô đã dựng giữ vị trí cũ trên bản vẽ mới và cần kiểm tra lại ở Phân ô.'
               : '',
             deck && area !== deck.totalAreaM2
               ? 'Diện tích từng ô được chia lại theo con số mới.'
