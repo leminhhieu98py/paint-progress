@@ -21,7 +21,7 @@ import { formatAreaM2, formatHours, formatMhrPerM2, formatPercent } from '../../
 import { matchesSearch } from '../../lib/search'
 import { fieldError, palette } from '../../theme'
 import { useTypeScale } from '../../components/typeScale'
-import { useFieldPhone } from '../gs/fieldSections'
+import { useFieldNarrowPhone, useFieldPhone } from '../gs/fieldSections'
 import { EfficiencyLineChart, HoursBarChart } from './charts'
 import { dashboardWorkNames, resolveWork, type ProductivityFilters } from './productivityFilters'
 
@@ -65,8 +65,14 @@ export function ProductivityDashboard({
 }) {
   // The scale of the page this is on: the field's 14 on a field page (GS-10).
   const type = useTypeScale()
+  const phone = useFieldPhone()
   /** On a phone the name column stays in view while the figures scroll under it (MOB-01). */
-  const pin = useFieldPhone() ? ('left' as const) : undefined
+  const pin = phone ? ('left' as const) : undefined
+  const narrowPhone = useFieldNarrowPhone()
+  /** On a phone the cards go two to a row, one under 360 px (MOB-02). */
+  const cardColumns = !phone
+    ? 'repeat(auto-fit, minmax(200px, 1fr))'
+    : narrowPhone ? 'minmax(0, 1fr)' : 'repeat(2, minmax(0, 1fr))'
   const workNames = useMemo(() => dashboardWorkNames(models, events), [models, events])
   const workName = resolveWork(filters.work, workNames)
   /**
@@ -248,20 +254,22 @@ export function ProductivityDashboard({
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <div
         data-testid="dashboard-cards"
-        style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}
+        style={{ display: 'grid', gridTemplateColumns: cardColumns, gap: 12 }}
       >
-        <StatCard label="Tổng Mhr thực hiện" value={formatHours(totalHours)} />
-        <StatCard label={`Tổng ${unit} đã ghi giờ công`} value={formatAreaM2(totalAreaM2)} sub={unit} />
+        <StatCard compact={phone} label="Tổng Mhr thực hiện" value={formatHours(totalHours)} />
+        <StatCard compact={phone} label={`Tổng ${unit} đã ghi giờ công`} value={formatAreaM2(totalAreaM2)} sub={unit} />
         <StatCard
+          compact={phone}
           label={<>{`${perUnit(unit)} tổng thể`}<InfoTip text={`Tổng Mhr chia tổng ${unit}, khác với hiệu suất trung bình theo ngày`} /></>}
           value={ratio(overall)}
           tone="accent"
         />
         {/* Today, beside the totals (Linh, 2026-09-05): the same two figures
             for the day the reader is standing in. */}
-        <StatCard label="Mhr thực hiện hôm nay" value={formatHours(todayTotals.todayHours)} />
-        <StatCard label="Mhr hao phí hôm nay" value={formatHours(todayTotals.todayWasteHours)} />
+        <StatCard compact={phone} label="Mhr thực hiện hôm nay" value={formatHours(todayTotals.todayHours)} />
+        <StatCard compact={phone} label="Mhr hao phí hôm nay" value={formatHours(todayTotals.todayWasteHours)} />
         <StatCard
+          compact={phone}
           label="Giờ hao phí"
           value={formatHours(wasteHours)}
           sub={wasteShare === null ? dash : `${formatPercent(wasteShare)} tổng giờ`}

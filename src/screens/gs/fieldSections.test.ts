@@ -1,6 +1,6 @@
 import { act, renderHook } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { useFieldFullWidthControls } from './fieldSections'
+import { useFieldNarrowPhone } from './fieldSections'
 
 const original = window.matchMedia
 afterEach(() => {
@@ -26,10 +26,20 @@ function fakeMedia(api: 'modern' | 'legacy', matches = false) {
   return { list, flip }
 }
 
-describe('useFieldFullWidthControls (C2, RR-M4)', () => {
+describe('useFieldNarrowPhone (MOB-02, RR-M4)', () => {
+  it('asks for a screen under 360 px', () => {
+    const queries: string[] = []
+    window.matchMedia = ((q: string) => {
+      queries.push(q)
+      return { matches: false, media: q, addEventListener: () => {}, removeEventListener: () => {} }
+    }) as unknown as typeof window.matchMedia
+    renderHook(() => useFieldNarrowPhone())
+    expect(new Set(queries)).toEqual(new Set(['(max-width: 359.98px)']))
+  })
+
   it('subscribes once, not on every render', () => {
     const { list } = fakeMedia('modern')
-    const { rerender } = renderHook(() => useFieldFullWidthControls())
+    const { rerender } = renderHook(() => useFieldNarrowPhone())
     rerender()
     rerender()
     expect(list.addEventListener).toHaveBeenCalledTimes(1)
@@ -38,7 +48,7 @@ describe('useFieldFullWidthControls (C2, RR-M4)', () => {
 
   it('follows the query as it changes', () => {
     const { flip } = fakeMedia('modern', false)
-    const { result } = renderHook(() => useFieldFullWidthControls())
+    const { result } = renderHook(() => useFieldNarrowPhone())
     expect(result.current).toBe(false)
     act(() => flip(true))
     expect(result.current).toBe(true)
@@ -46,7 +56,7 @@ describe('useFieldFullWidthControls (C2, RR-M4)', () => {
 
   it('falls back to addListener where a browser has no addEventListener on a media list', () => {
     const { list, flip } = fakeMedia('legacy', false)
-    const { result, unmount } = renderHook(() => useFieldFullWidthControls())
+    const { result, unmount } = renderHook(() => useFieldNarrowPhone())
     expect(list.addListener).toHaveBeenCalledTimes(1)
     act(() => flip(true))
     expect(result.current).toBe(true)

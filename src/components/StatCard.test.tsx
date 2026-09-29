@@ -1,5 +1,6 @@
 import { render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
+import { palette } from '../theme'
 import { StatCard } from './StatCard'
 
 describe('StatCard', () => {
@@ -38,5 +39,20 @@ describe('StatCard', () => {
     expect(screen.getByText('27.482,75')).toHaveStyle({ fontSize: '32px', fontWeight: '700' })
     expect(screen.getByText('Tổng diện tích')).toHaveStyle({ fontSize: '13px', fontWeight: '600' })
     expect(screen.getByText('m²')).toHaveStyle({ fontSize: '12px', fontWeight: '400' })
+  })
+
+  it('is compact on a phone: caption label, displaySm figure, micro sub-line, md padding (MOB-02)', () => {
+    render(<StatCard label="Tổng diện tích" value="27.482,75" sub="m²" compact />)
+    expect(screen.getByText('27.482,75')).toHaveStyle({ fontSize: '21px', fontWeight: '700' })
+    expect(screen.getByText('Tổng diện tích')).toHaveStyle({ fontSize: '12px', fontWeight: '400', color: palette.textTertiary })
+    expect(screen.getByText('m²')).toHaveStyle({ fontSize: '11px', fontWeight: '600' })
+    const card = screen.getByText('Tổng diện tích').closest('[data-testid="stat-card"]') as HTMLElement
+    expect(card).toHaveStyle({ padding: '12px' })
+  })
+
+  it('keeps the highlighted card\'s tint when compact (MOB-02)', () => {
+    render(<StatCard label="Mhr/m² tổng thể" value="1,125" tone="accent" compact />)
+    const card = screen.getByText('Mhr/m² tổng thể').closest('[data-testid="stat-card"]') as HTMLElement
+    expect(card).toHaveStyle({ background: palette.accentTint })
   })
 })

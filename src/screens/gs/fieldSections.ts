@@ -43,17 +43,17 @@ export const FIELD_SAFE_AREA_BOTTOM = 'env(safe-area-inset-bottom, 0px)'
 /** What the bottom tab bar covers of the page: its height and the safe area under it. */
 export const FIELD_TAB_BAR_SPACE = `calc(${FIELD_TAB_BAR_HEIGHT}px + ${FIELD_SAFE_AREA_BOTTOM})`
 
-/** Below this a bar control takes the whole row; above it the bar wraps by itself (C2). */
-const FULL_WIDTH_QUERY = '(max-width: 479.98px)'
+/** Below this a phone is too narrow for two stat cards side by side (MOB-02). */
+const NARROW_PHONE_QUERY = '(max-width: 359.98px)'
 
 /**
- * Subscribes to the full-width query: module scope, so useSyncExternalStore
+ * Subscribes to the narrow-phone query: module scope, so useSyncExternalStore
  * keeps one subscription across renders (RR-M4) rather than re-subscribing on
- * every GsScreen render. `addListener` where a media list has no
- * `addEventListener`, as antd's own media-query helper still allows.
+ * every render. `addListener` where a media list has no `addEventListener`,
+ * as antd's own media-query helper still allows.
  */
-function subscribeFullWidth(onChange: () => void): () => void {
-  const mq = window.matchMedia(FULL_WIDTH_QUERY)
+function subscribeNarrowPhone(onChange: () => void): () => void {
+  const mq = window.matchMedia(NARROW_PHONE_QUERY)
   if (typeof mq.addEventListener === 'function') {
     mq.addEventListener('change', onChange)
     return () => mq.removeEventListener('change', onChange)
@@ -62,15 +62,14 @@ function subscribeFullWidth(onChange: () => void): () => void {
   return () => mq.removeListener(onChange)
 }
 
-const fullWidthNow = () => window.matchMedia(FULL_WIDTH_QUERY).matches
-const fullWidthOnServer = () => false
+const narrowPhoneNow = () => window.matchMedia(NARROW_PHONE_QUERY).matches
+const narrowPhoneOnServer = () => false
 
 /**
- * A screen too narrow for two bar controls side by side (< 480 px), where each
- * takes the full width. Between 480 and 768 the controls keep their widths and
- * the bar wraps them as they fit. antd's breakpoints have no step here, so it
- * asks the browser directly.
+ * A phone under 360 px, where the stat cards go one to a row instead of two
+ * (MOB-02). antd's breakpoints have no step here, so it asks the browser
+ * directly.
  */
-export function useFieldFullWidthControls(): boolean {
-  return useSyncExternalStore(subscribeFullWidth, fullWidthNow, fullWidthOnServer)
+export function useFieldNarrowPhone(): boolean {
+  return useSyncExternalStore(subscribeNarrowPhone, narrowPhoneNow, narrowPhoneOnServer)
 }

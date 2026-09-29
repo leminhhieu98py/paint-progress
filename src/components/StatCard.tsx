@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { palette, shadowCard } from '../theme'
+import { palette, shadowCard, space } from '../theme'
 import { useTypeScale } from './typeScale'
 
 /**
@@ -16,32 +16,39 @@ export function StatCard({
   sub,
   tone = 'default',
   live = false,
+  compact = false,
 }: {
   label: ReactNode
   value: ReactNode
   sub?: ReactNode
   tone?: 'default' | 'accent'
   live?: boolean
+  /**
+   * A phone's card (MOB-02): the label a caption, the number at displaySm,
+   * the sub-line micro, a tighter inset, so six cards fill three short rows.
+   */
+  compact?: boolean
 }) {
   // The scale of the page this is on: the field's 14 on a field page (GS-10).
   const type = useTypeScale()
   const accent = tone === 'accent'
   return (
     <div
+      data-testid="stat-card"
       style={{
         position: 'relative',
         overflow: 'hidden',
         background: accent ? palette.accentTint : palette.bgContainer,
         border: `1px solid ${accent ? '#CFEAE5' : palette.borderCard}`,
         borderRadius: 14,
-        padding: '18px 20px 20px',
+        padding: compact ? space.md : '18px 20px 20px',
         boxShadow: shadowCard,
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
         <span
           style={{
-            ...type.label,
+            ...(compact ? type.caption : type.label),
             lineHeight: 1,
             color: accent ? palette.accentHover : palette.textTertiary,
           }}
@@ -65,14 +72,14 @@ export function StatCard({
         )}
       </div>
       <div
-        style={{ marginTop: 12, ...type.display, lineHeight: 1, letterSpacing: '-0.03em' }}
+        style={{ marginTop: compact ? space.sm : 12, ...(compact ? type.displaySm : type.display), lineHeight: 1, letterSpacing: '-0.03em' }}
       >
         {value}
       </div>
       {sub !== undefined && (
         <div
           data-testid="stat-sub"
-          style={{ marginTop: 7, ...type.caption, lineHeight: 1, color: palette.textTertiary }}
+          style={{ marginTop: compact ? space.xs : 7, ...(compact ? type.micro : type.caption), lineHeight: 1, color: palette.textTertiary }}
         >
           {sub}
         </div>

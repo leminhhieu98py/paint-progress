@@ -467,3 +467,30 @@ describe('ProductivityDashboard — tables on a phone (MOB-01)', () => {
     }
   })
 })
+
+describe('ProductivityDashboard — stat cards on a phone (MOB-02)', () => {
+  const grid = () => screen.getByTestId('dashboard-cards')
+  let restoreViewport = () => {}
+  afterEach(() => restoreViewport())
+
+  it('lays the six cards two to a row, compact, under 768 px', () => {
+    restoreViewport = setViewport(390)
+    renderDashboard()
+    expect(grid()).toHaveStyle({ gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' })
+    expect(grid().children).toHaveLength(6)
+    expect(cards().getByText('450,0')).toHaveStyle({ fontSize: '21px' })
+  })
+
+  it('stacks them one to a row only under 360 px', () => {
+    restoreViewport = setViewport(340)
+    renderDashboard()
+    expect(grid()).toHaveStyle({ gridTemplateColumns: 'minmax(0, 1fr)' })
+  })
+
+  it('keeps the wide cards from 768 px', () => {
+    restoreViewport = setViewport(1280)
+    renderDashboard()
+    expect(grid()).toHaveStyle({ gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))' })
+    expect(cards().getByText('450,0')).toHaveStyle({ fontSize: '32px' })
+  })
+})
