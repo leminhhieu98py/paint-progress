@@ -938,6 +938,7 @@ describe('DeckProgressPanel — zones', () => {
     expect(await screen.findByText('Xoá zone Khu A — Tháo giáo?')).toBeInTheDocument()
     // In the same words as the rule (CPY-05, RUL-01).
     expect(screen.getByText('Xoá zone chỉ xoá kế hoạch, tiến độ đã ghi trên các ô vẫn giữ nguyên.')).toBeInTheDocument()
+    expect(screen.getByText('Kế hoạch của zone này bị xoá:')).toBeInTheDocument()
     // The consequence reads as a sentence, not a reference into the spec (CPY-04).
     expectNoSpecIds()
     expect(deleteZone).not.toHaveBeenCalled()

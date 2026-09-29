@@ -97,7 +97,7 @@ export function FieldAccountTrigger({ consequence }: {
         open={confirmingOut}
         tag="Xác nhận"
         title="Đăng xuất?"
-        description="Phiên làm việc hiện tại sẽ kết thúc:"
+        description="Phiên làm việc hiện tại kết thúc:"
         items={[{ label: fullName, meta: username }]}
         consequence={consequence}
         okText="Vẫn đăng xuất"

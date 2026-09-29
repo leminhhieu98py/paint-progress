@@ -231,7 +231,7 @@ describe('FieldHeader: navigation and the account, nothing else (GS-06)', () => 
     await userEvent.click(within(menu).getByRole('menuitem', { name: /Đăng xuất/ }))
     const dialog = await screen.findByRole('dialog')
     expect(within(dialog).getByText('Đăng xuất?')).toBeInTheDocument()
-    expect(within(dialog).getByText('Phiên làm việc hiện tại sẽ kết thúc:')).toBeInTheDocument()
+    expect(within(dialog).getByText('Phiên làm việc hiện tại kết thúc:')).toBeInTheDocument()
     expect(within(dialog).getByText(
       'Muốn ghi tiếp tiến độ thì phải đăng nhập lại bằng mật khẩu quản trị viên đã giao.',
     )).toBeInTheDocument()

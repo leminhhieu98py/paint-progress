@@ -245,6 +245,8 @@ describe('WorksScreen', () => {
 
     await userEvent.click(within(matrix).getByRole('button', { name: 'Lưu sàn tham gia' }))
     const dialog = await screen.findByRole('dialog')
+    // Present tense, one sentence (RUL-01).
+    expect(within(dialog).getByText('Sàn bị bỏ ra khỏi công việc mất lớp sơn và vị trí ô của công việc đó.')).toBeInTheDocument()
     await userEvent.click(within(dialog).getByRole('button', { name: 'Lưu' }))
     await waitFor(() => expect(saveWorkDecks).toHaveBeenCalledWith('w1', [
       { deckId: 'd1', weight: 0.25 }, { deckId: 'd2', weight: 0.75 },

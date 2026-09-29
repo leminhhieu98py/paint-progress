@@ -610,7 +610,7 @@ export function WorksScreen() {
         tone="accent"
         tag="Xác nhận"
         title="Lưu sàn tham gia?"
-        description="Sàn bị bỏ ra khỏi công việc sẽ mất lớp sơn và vị trí ô của công việc đó."
+        description="Sàn bị bỏ ra khỏi công việc mất lớp sơn và vị trí ô của công việc đó."
         items={matrixOn.map((r) => ({ label: r.name, meta: `trọng số ${formatWeight(r.weight)}` }))}
         okText="Lưu"
         confirmLoading={matrixSaving}

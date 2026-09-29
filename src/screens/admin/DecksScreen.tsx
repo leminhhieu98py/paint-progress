@@ -822,7 +822,7 @@ export function DecksScreen() {
           { label: 'Ghi chú của GS' },
           { label: 'Bản vẽ đã tải lên', meta: removingDeck?.imagePath ? 'Đã có' : 'Chưa có' },
         ]}
-        consequence="Máy tính bảng đang mở sàn này sẽ không ghi được nữa cho tới khi tải lại."
+        consequence="Máy tính bảng đang mở sàn này không ghi được nữa cho tới khi tải lại."
         okText="Xóa sàn"
         confirmText={removingDeck?.name}
         confirmLoading={removing}

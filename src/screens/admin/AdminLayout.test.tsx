@@ -102,7 +102,7 @@ describe('AdminLayout', () => {
     renderAt('/admin/projects')
     await user.click(screen.getByRole('button', { name: 'Đăng xuất' }))
     // The data-loss consequence, without the aside on what lives where (CPY-01).
-    expect(await screen.findByText('Thay đổi chưa lưu ở màn đang mở sẽ mất.')).toBeInTheDocument()
+    expect(await screen.findByText('Thay đổi chưa lưu ở màn đang mở bị mất.')).toBeInTheDocument()
     await user.click(await screen.findByRole('button', { name: 'Vẫn đăng xuất' }))
     expect(signOut).toHaveBeenCalledOnce()
     // Navigating is the point: without it the session goes but the URL stays

@@ -655,7 +655,7 @@ export function StageConfigPanel({
           }
           description={
             removed.length > 0
-              ? 'Các lớp sơn sau sẽ bị xoá khỏi cấu hình:'
+              ? 'Các lớp sơn sau bị xoá vĩnh viễn khỏi cấu hình:'
               : `Cấu hình này chỉ áp cho sàn đang mở:`
           }
           /*
@@ -676,7 +676,7 @@ export function StageConfigPanel({
           }
           consequence={
             removed.length > 0
-              ? `${STAGE_DELETE_EFFECT} Các lớp bị xoá ở trên mất vĩnh viễn.`
+              ? STAGE_DELETE_EFFECT
               : undefined
           }
           okText={removed.length > 0 ? 'Vẫn lưu' : 'Lưu'}

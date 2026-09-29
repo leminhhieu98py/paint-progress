@@ -348,7 +348,7 @@ export function ProjectsScreen() {
           { label: 'Bản vẽ đã tải lên' },
           { label: 'Phân quyền GS vào dự án' },
         ]}
-        consequence="GS đang mở dự án này trên máy tính bảng sẽ không ghi được nữa cho tới khi tải lại."
+        consequence="GS đang mở dự án này trên máy tính bảng không ghi được nữa cho tới khi tải lại."
         okText="Xóa dự án"
         confirmText={removingProject?.name}
         confirmLoading={removing}

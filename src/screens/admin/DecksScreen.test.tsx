@@ -691,6 +691,8 @@ describe('DecksScreen — deleting a deck', () => {
     // what stands between a misclick and 184 bays of history.
     const dialog = await openDelete()
     expect(within(dialog).getByText('Xóa sàn Main Deck?')).toBeInTheDocument()
+    // Present tense, one sentence (RUL-01).
+    expect(within(dialog).getByText('Máy tính bảng đang mở sàn này không ghi được nữa cho tới khi tải lại.')).toBeInTheDocument()
     for (const item of [
       'Toàn bộ ô và lịch sử công đoạn', 'Zone và kế hoạch', 'Ghi chú của GS', 'Bản vẽ đã tải lên',
     ]) expect(within(dialog).getByText(item)).toBeInTheDocument()

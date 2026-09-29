@@ -211,9 +211,9 @@ export function AdminLayout() {
         open={confirmingOut}
         tag="Xác nhận"
         title="Đăng xuất?"
-        description="Phiên làm việc hiện tại sẽ kết thúc:"
+        description="Phiên làm việc hiện tại kết thúc:"
         items={[{ label: profile?.fullName ?? '', meta: 'Quản trị viên' }]}
-        consequence="Thay đổi chưa lưu ở màn đang mở sẽ mất."
+        consequence="Thay đổi chưa lưu ở màn đang mở bị mất."
         okText="Vẫn đăng xuất"
         onCancel={() => setConfirmingOut(false)}
         onOk={() => void signOut().then(() => navigate(LOGIN_PATH, { replace: true }))}

@@ -252,7 +252,9 @@ describe('StageConfigPanel', () => {
     // SET NULL), its zones and KPI plan go (zones, stage_plans CASCADE), and
     // the history stays (cell_events has no FK on the stage and snapshots its
     // name; the deletion trigger adds a back-to-not-started row per bay).
-    expect(within(dialog).getByText(new RegExp(`^${STAGE_DELETE_EFFECT}`))).toBeInTheDocument()
+    // One sentence, in the rule's own words; the list says the loss is for good (RUL-01).
+    expect(within(dialog).getByText(STAGE_DELETE_EFFECT)).toBeInTheDocument()
+    expect(within(dialog).getByText('Các lớp sơn sau bị xoá vĩnh viễn khỏi cấu hình:')).toBeInTheDocument()
     // Not the aside about what renaming keeps (CPY-01).
     expect(within(dialog).queryByText(/Đổi tên, đổi trọng số/)).toBeNull()
     expect(saveWorkStages).not.toHaveBeenCalled()

@@ -2124,7 +2124,7 @@ export function DeckProgressPanel({
         tone="danger"
         tag="Thao tác phá huỷ"
         title={`Xoá zone ${removingZone?.name ?? ''}?`}
-        description="Kế hoạch của zone này sẽ bị xoá:"
+        description="Kế hoạch của zone này bị xoá:"
         items={
           removingZone
             ? [{ label: removingZone.name, meta: `${removingZone.cellIds.length} ô` }]
