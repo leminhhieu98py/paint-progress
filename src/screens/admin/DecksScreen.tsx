@@ -703,11 +703,11 @@ export function DecksScreen() {
                 */}
                 <div
                   data-testid="project-works"
-                  style={{ borderTop: `1px solid ${palette.borderCard}` }}
+                  // A hairline between the two tables and nothing else: the
+                  // table's own first header says `Công việc`, and a label
+                  // above it saying the same read as a second heading (TBL-03).
+                  style={{ borderTop: `1px solid ${palette.borderSplit}` }}
                 >
-                  <div style={{ padding: `${space.md}px ${space.xl}px ${space.xs}px`, fontSize: 12, fontWeight: 600, color: palette.textTertiary }}>
-                    Công việc
-                  </div>
                   <Table<WorkRow>
                     size="small"
                     pagination={false}
@@ -762,7 +762,10 @@ export function DecksScreen() {
 
               <div
                 data-testid="rollup-donut"
-                style={{ padding: '18px 20px 20px', background: palette.bgSubtle }}
+                // Top padding equal to the small table's header cell padding,
+                // so `Tiến độ dự án` sits on the line of `Sàn` across the
+                // divider rather than a text line below it (UX-02).
+                style={{ padding: `${space.sm}px ${space.xl}px ${space.xl}px`, background: palette.bgSubtle }}
               >
                 <div style={{ fontSize: 12, fontWeight: 600, color: palette.textTertiary }}>
                   Tiến độ dự án

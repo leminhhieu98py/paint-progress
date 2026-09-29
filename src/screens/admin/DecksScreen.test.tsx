@@ -335,6 +335,15 @@ describe('DecksScreen — the project-wide half of progress', () => {
     expect(within(rollup).queryByText('25,00%')).toBeNull()
   })
 
+  it('does not echo the works table header as a label above it (TBL-03)', async () => {
+    renderScreen()
+    const works = await screen.findByTestId('project-works')
+    await waitFor(() => expect(within(works).getByText('Sơn')).toBeInTheDocument())
+    // Once, as the column header. The sub-label that repeated it read as a
+    // second heading for the same table; a divider separates the two now.
+    expect(within(works).getAllByText('Công việc')).toHaveLength(1)
+  })
+
   it('lists every work with its kind, weight and P_w under the deck table, then P', async () => {
     renderScreen()
 
