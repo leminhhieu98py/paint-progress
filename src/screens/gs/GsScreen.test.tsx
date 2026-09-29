@@ -1551,6 +1551,51 @@ describe('GsScreen: recording a stage', () => {
   })
 })
 
+describe('GsScreen: one filter bar, the project first (GS-07)', () => {
+  const bars = () => screen.getAllByRole('search', { name: 'Bộ lọc' })
+  const TWO_WORKS = [
+    { work: WORK, weight: 1, stages: STAGES },
+    { work: WORK2, weight: 1, stages: TG_STAGES },
+  ]
+
+  it('holds Dự án, Sàn and the work switch in that order, in one bar', async () => {
+    listDeckWorks.mockResolvedValue(TWO_WORKS)
+    renderScreen()
+    await screen.findByRole('button', { name: 'ô R1C1' })
+    await screen.findByTestId('gs-work-picker')
+    expect(bars()).toHaveLength(1)
+    const bar = bars()[0]
+    const project = within(bar).getByRole('combobox', { name: 'Dự án' })
+    const deck = within(bar).getByRole('combobox', { name: 'Sàn' })
+    const work = within(bar).getByTestId('gs-work-picker')
+    const follows = (a: Element, b: Element) => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0
+    expect(follows(project, deck) && follows(deck, work)).toBe(true)
+    expect(work).toHaveAttribute('aria-label', 'Công việc')
+  })
+
+  it('floats no Công việc label over the work switch (FLT-01)', async () => {
+    listDeckWorks.mockResolvedValue(TWO_WORKS)
+    renderScreen()
+    await screen.findByTestId('gs-work-picker')
+    expect(screen.queryByText('Công việc', { exact: true })).toBeNull()
+  })
+
+  it('switches the deck at once: navigation, so no Tìm and no Đặt lại', async () => {
+    renderScreen()
+    await screen.findByRole('button', { name: 'ô R1C1' })
+    expect(within(bars()[0]).queryByRole('button', { name: /Tìm/ })).toBeNull()
+    expect(within(bars()[0]).queryByRole('button', { name: 'Đặt lại' })).toBeNull()
+  })
+
+  it('still shows Dự án, with one option, to a foreman on one project', async () => {
+    listProjectNames.mockResolvedValue([{ id: 'p1', name: 'BlockB1_CPPTS', code: 'BB1' }])
+    renderScreen()
+    await screen.findByRole('button', { name: 'ô R1C1' })
+    await userEvent.click(await projectSwitch())
+    expect(await screen.findAllByRole('option')).toHaveLength(1)
+  })
+})
+
 describe('GsScreen: công việc', () => {
   const TWO_WORKS = [
     { work: WORK, weight: 1, stages: STAGES },

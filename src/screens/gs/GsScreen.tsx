@@ -1154,10 +1154,13 @@ export function GsScreen() {
         }}
       >
         {/*
-          GS-03: the deck, chosen by name, as the first row of the page and
-          across both columns. Name AND percentage on every option: the
-          foreman picks a deck to work on, and "which one is behind" is the
-          question he picks by. The figures come from one batched read of the
+          GS-07: the page's one filter bar, first and across both columns:
+          Dự án · Sàn · the work. Each applies at once -- they choose what is
+          on screen, they do not query it -- so there is no Tìm here.
+
+          GS-03: the deck, chosen by name. Name AND percentage on every
+          option: the foreman picks a deck to work on, and "which one is
+          behind" is the question he picks by. The figures come from one batched read of the
           project (listProjectIndex), not from loading each deck in full.
           Search is on the name only. Choosing one is the whole deck change:
           every per-deck read, the realtime channel and the plan's coat follow
@@ -1186,31 +1189,25 @@ export function GsScreen() {
                 }))}
               />
             )}
-          </FilterBar>
-        </div>
-
-        <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {/*
-            GSW-R1: the work the drawing is showing. Hidden with one work, since
-            a control with one position is a label pretending to be a choice.
-            Everything below -- colours, cards, plan, the bay modal -- follows it.
-          */}
-          {activeWork && workList.length > 1 && (
-            <div
-              data-testid="gs-work-picker"
-              style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}
-            >
-              <span style={{ fontSize: 12, fontWeight: 600, color: palette.textTertiary }}>
-                Công việc
-              </span>
+            {/*
+              GSW-R1: the work the drawing is showing. Hidden with one work,
+              since a control with one position is a label pretending to be a
+              choice. Everything below -- colours, cards, plan, the bay modal --
+              follows it. Named by its aria-label, no label on screen (FLT-01).
+            */}
+            {activeWork && workList.length > 1 && (
               <Segmented
+                data-testid="gs-work-picker"
+                aria-label="Công việc"
                 value={activeWork.work.id}
                 onChange={(id) => setActiveWorkId(String(id))}
                 options={workList.map((w) => ({ label: w.work.name, value: w.work.id }))}
               />
-            </div>
-          )}
+            )}
+          </FilterBar>
+        </div>
 
+        <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>
           {works !== null && workList.length === 0 && !stagesError && (
             <Alert
               type="info"
