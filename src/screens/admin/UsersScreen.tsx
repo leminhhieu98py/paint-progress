@@ -10,6 +10,7 @@ import dayjs from 'dayjs'
 import { useCallback, useEffect, useState } from 'react'
 import { useAuth } from '../../auth/AuthProvider'
 import { ConsequenceModal } from '../../components/ConsequenceModal'
+import { InfoTip } from '../../components/InfoTip'
 import { PageBody, PageHeader } from '../../components/PageHeader'
 import { RulesDisclosure } from '../../components/RulesDisclosure'
 import { SectionCard } from '../../components/SectionCard'
@@ -203,9 +204,6 @@ function PermissionsDialog({
         <Button key="ok" type="primary" loading={saving} onClick={() => void save()}>Lưu quyền</Button>,
       ]}
     >
-      <Typography.Text type="secondary" style={{ display: 'block', marginBottom: 12, fontSize: 12 }}>
-        Tick dự án tài khoản được vào. Trong mỗi dự án, để «Tất cả công việc» hoặc chọn đúng những công việc được thấy.
-      </Typography.Text>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         {projects.map((p) => {
           const row = rows[p.value]
@@ -349,7 +347,6 @@ export function UsersScreen() {
     <>
       <PageHeader
         title="Người dùng"
-        subtitle="Cấp tài khoản GS và Chỉ xem, gán dự án và công việc, giao mật khẩu. Khoá hoặc ẩn, không xoá."
         extra={
           <Space size={12}>
             <Space size={6}>
@@ -569,9 +566,6 @@ export function UsersScreen() {
         cancelButtonProps={{ style: { display: 'none' } }}
         {...modalProps}
       >
-        <p style={{ marginTop: 0, fontSize: 13, lineHeight: 1.5, color: palette.textSecondary }}>
-          Mỗi lần xem đều được ghi log kèm tên bạn, tài khoản đích và thời điểm. Log chỉ ghi thêm.
-        </p>
         <div
           style={{
             minHeight: 52,
@@ -740,8 +734,7 @@ export function UsersScreen() {
         >
           <Form.Item
             name="role"
-            label="Loại tài khoản"
-            extra="GS ghi tiến độ trên tablet. Chỉ xem dành cho người chỉ cần theo dõi và tải báo cáo."
+            label={<>Loại tài khoản<InfoTip text="GS ghi tiến độ trên tablet. Chỉ xem dành cho người chỉ cần theo dõi và tải báo cáo." /></>}
           >
             <Segmented
               options={[
@@ -770,7 +763,6 @@ export function UsersScreen() {
               { required: true, message: 'Nhập mật khẩu' },
               { min: MIN_PASSWORD_LENGTH, message: `Tối thiểu ${MIN_PASSWORD_LENGTH} ký tự` },
             ]}
-            extra="Bạn giao mật khẩu này cho GS. Xem lại được, nhưng mỗi lần xem đều ghi log."
           >
             <Input
               placeholder="Nhập mật khẩu"
@@ -835,7 +827,6 @@ export function UsersScreen() {
               { required: true, message: 'Nhập mật khẩu mới' },
               { min: MIN_PASSWORD_LENGTH, message: `Tối thiểu ${MIN_PASSWORD_LENGTH} ký tự` },
             ]}
-            extra="Mật khẩu cũ ngừng hiệu lực ngay. GS không đăng nhập được cho tới khi bạn giao mật khẩu mới."
           >
             <Input
               placeholder="Nhập mật khẩu mới"

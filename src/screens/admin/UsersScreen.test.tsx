@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderApp } from '../../test/renderApp'
 import { UsersScreen } from './UsersScreen'
 import { expectLeft } from '../../test/alignment'
-import { expectNoSpecIds } from '../../test/copy'
+import { expectNoSpecIds, pageSubtitle } from '../../test/copy'
 
 const listGsUsers = vi.fn()
 const revealPassword = vi.fn()
@@ -457,6 +457,52 @@ describe('UsersScreen — Feedback Rv2 (0028)', () => {
     await waitFor(() =>
       expect(screen.queryByText('Tài khoản chỉ xem thấy mọi dự án và mọi công việc.')).toBeNull())
     expect(setMemberships).not.toHaveBeenCalled()
+  })
+})
+
+describe('UsersScreen — explanatory copy (CPY-01)', () => {
+  it('has no subtitle listing what the screen can do', async () => {
+    renderApp(<UsersScreen />)
+    await screen.findByText('gs1')
+    expect(pageSubtitle()).toBeNull()
+    expect(screen.queryByText(/Cấp tài khoản GS và Chỉ xem/)).toBeNull()
+  })
+
+  it('opens the permission dialog on its controls, with no paragraph explaining them', async () => {
+    renderApp(<UsersScreen />)
+    await screen.findByText('gs1')
+    await userEvent.click(screen.getAllByRole('button', { name: 'Phân quyền' })[0])
+    expect(await screen.findByRole('button', { name: 'Lưu quyền' })).toBeInTheDocument()
+    expect(screen.queryByText(/Tick dự án tài khoản được vào/)).toBeNull()
+  })
+
+  it('shows a revealed password without repeating that the reveal is logged', async () => {
+    revealPassword.mockResolvedValue('s3cret')
+    renderApp(<UsersScreen />)
+    await screen.findByText('gs1')
+    await userEvent.click(screen.getAllByRole('button', { name: 'Xem mật khẩu' })[0])
+    await waitFor(() => expect(screen.getByText('s3cret')).toBeInTheDocument())
+    expect(screen.queryByText(/Log chỉ ghi thêm/)).toBeNull()
+  })
+
+  it('explains the account types on the label\'s (?), and drops the obvious password notes', async () => {
+    renderApp(<UsersScreen />)
+    await screen.findByText('gs1')
+    await userEvent.click(screen.getByRole('button', { name: 'Tạo tài khoản' }))
+    const tip = await screen.findByRole('img', {
+      name: 'GS ghi tiến độ trên tablet. Chỉ xem dành cho người chỉ cần theo dõi và tải báo cáo.',
+    })
+    expect(tip.closest('label')).toHaveTextContent(/^Loại tài khoản$/)
+    expect(screen.queryByText(/^GS ghi tiến độ trên tablet/)).toBeNull()
+    expect(screen.queryByText(/Bạn giao mật khẩu này cho GS/)).toBeNull()
+  })
+
+  it('leaves the reset warning to the confirm dialog that follows', async () => {
+    renderApp(<UsersScreen />)
+    await screen.findByText('gs1')
+    await userEvent.click(screen.getAllByRole('button', { name: 'Đổi mật khẩu' })[0])
+    expect(await screen.findByLabelText('Mật khẩu mới')).toBeInTheDocument()
+    expect(screen.queryByText(/GS không đăng nhập được cho tới khi bạn giao mật khẩu mới/)).toBeNull()
   })
 })
 
