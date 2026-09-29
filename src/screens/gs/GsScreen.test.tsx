@@ -1650,7 +1650,58 @@ describe('GsScreen: one filter bar, the project first (GS-07)', () => {
     expect(screen.queryByText('Công việc', { exact: true })).toBeNull()
   })
 
-  it('switches the deck at once: navigation, so no Tìm and no Đặt lại', async () => {
+  it('holds the inline bar as a draft from 768 px, ending Đặt lại · Tìm at its right end (FLT-08)', async () => {
+    restoreViewport = setViewport(1024)
+    listDeckWorks.mockResolvedValue(TWO_WORKS)
+    renderScreen()
+    await screen.findByRole('combobox', { name: 'Công việc' })
+    const bar = bars()[0]
+    const buttons = within(bar).getAllByRole('button')
+    expect(buttons.slice(-2).map((b) => b.textContent)).toEqual(['Đặt lại', 'Tìm'])
+  })
+
+  it('switches the deck only on Tìm from 768 px (FLT-08)', async () => {
+    restoreViewport = setViewport(1024)
+    renderScreen()
+    await screen.findByRole('button', { name: 'ô R1C1' })
+    await pickDeck('Main Deck')
+    // Not yet: the draft only.
+    expect(listDeckCells).not.toHaveBeenCalledWith('d2')
+    expect(sessionStorage.getItem('pp:lastDeck:p1')).not.toBe('d2')
+    await userEvent.click(within(bars()[0]).getByRole('button', { name: /Tìm/ }))
+    await waitFor(() => expect(listDeckCells).toHaveBeenCalledWith('d2'))
+    expect(sessionStorage.getItem('pp:lastDeck:p1')).toBe('d2')
+  })
+
+  it('applies the work only on Tìm from 768 px, and puts the first work back on Đặt lại (FLT-08)', async () => {
+    restoreViewport = setViewport(1024)
+    listDeckWorks.mockResolvedValue(TWO_WORKS)
+    listDeckStates.mockResolvedValue({ w1: { c1: { stageId: 's1', note: '' } }, w2: { c1: { stageId: 't1', note: '' } } })
+    renderScreen()
+    expect(await screen.findByRole('button', { name: 'ô R1C1' })).toHaveAttribute('data-color', '#fadb14')
+    await chooseOption('Công việc', 'Tháo giáo', bars()[0])
+    expect(screen.getByRole('button', { name: 'ô R1C1' })).toHaveAttribute('data-color', '#fadb14')
+    await userEvent.click(within(bars()[0]).getByRole('button', { name: /Tìm/ }))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'ô R1C1' })).toHaveAttribute('data-color', '#8B5CF6'))
+    await userEvent.click(within(bars()[0]).getByRole('button', { name: 'Đặt lại' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'ô R1C1' })).toHaveAttribute('data-color', '#fadb14'))
+    expect(within(bars()[0]).getByTitle('Sơn')).toBeInTheDocument()
+  })
+
+  it('opens another project only on Tìm from 768 px, this project\'s Sàn and works hidden meanwhile (FLT-08)', async () => {
+    restoreViewport = setViewport(1024)
+    listDeckWorks.mockResolvedValue(TWO_WORKS)
+    renderScreen()
+    await screen.findByRole('combobox', { name: 'Công việc' })
+    await chooseOption('Dự án', 'Đại Hùng', bars()[0])
+    expect(navigate).not.toHaveBeenCalled()
+    expect(within(bars()[0]).queryByRole('combobox', { name: 'Sàn' })).toBeNull()
+    expect(within(bars()[0]).queryByRole('combobox', { name: 'Công việc' })).toBeNull()
+    await userEvent.click(within(bars()[0]).getByRole('button', { name: /Tìm/ }))
+    expect(navigate).toHaveBeenCalledWith('/gs/p2')
+  })
+
+  it('switches the deck at once on a phone: the inline Sàn has no Tìm and no Đặt lại (FLT-09)', async () => {
     renderScreen()
     await screen.findByRole('button', { name: 'ô R1C1' })
     expect(within(bars()[0]).queryByRole('button', { name: /Tìm/ })).toBeNull()

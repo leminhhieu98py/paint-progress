@@ -124,10 +124,11 @@ export function GsScreen() {
   /** The work the drawing, the cards and the bay modal are scoped to. */
   const [activeWorkId, setActiveWorkId] = useState<string | null>(null)
   /**
-   * The phone sheet's draft (FLT-09): a project or a work picked there and
-   * not yet applied by Tìm. Empty is what is applied.
+   * The bar's draft (FLT-08) and the phone sheet's (FLT-09): a project, a deck
+   * or a work picked there and not yet applied by Tìm. Empty is what is
+   * applied. The phone's sheet holds no deck: its inline Sàn applies at once.
    */
-  const [sheetDraft, setSheetDraft] = useState<{ project?: string; work?: string }>({})
+  const [barDraft, setBarDraft] = useState<{ project?: string; deck?: string; work?: string }>({})
   const navigate = useNavigate()
   /** The bar's and the plan's selects read their options in full (FLT-04, M3). */
   const fullOptions = useFullOptionsProps()
@@ -1115,20 +1116,22 @@ export function GsScreen() {
 
   const noWorks = works !== null && workList.length === 0 && !stagesError
 
+  /** Opens a deck: every per-deck read follows `activeDeckId`. */
+  const chooseDeck = (id: string) => {
+    setActiveDeckId(id)
+    // Remembered on the choice, never on the load: a project's
+    // first render must not write the previous project's deck
+    // under its key.
+    if (projectId) rememberDeck(projectId, id)
+  }
   /** GS-03's deck picker (see the bar below), full width in the phone's row and sheet (FLT-04). */
-  const deckSelect = (block: boolean) => decks.length > 0 && (
+  const deckSelect = (block: boolean, value: string | null, onChange: (id: string) => void) => decks.length > 0 && (
     <Select
       aria-label="Sàn"
       {...searchSelectProps}
       {...fullOptions}
-      value={activeDeckId ?? undefined}
-      onChange={(id) => {
-        setActiveDeckId(id)
-        // Remembered on the choice, never on the load: a project's
-        // first render must not write the previous project's deck
-        // under its key.
-        if (projectId) rememberDeck(projectId, id)
-      }}
+      value={value ?? undefined}
+      onChange={onChange}
       style={{ width: block ? '100%' : 320, maxWidth: '100%' }}
       options={decks.map((d) => ({
         value: d.id,
@@ -1157,43 +1160,60 @@ export function GsScreen() {
       options={workList.map((w) => ({ label: w.work.name, value: w.work.id }))}
     />
   )
-  /** The inline bar (768 px and wider): each control applies at once. */
-  const barControls = (
+  /*
+    The draft's project. The deck's and the work's options are this
+    project's, so both wait for Tìm on another project to open that one's
+    page, hidden while it is the draft.
+  */
+  const draftProject = barDraft.project ?? projectId
+  const onThisProject = draftProject === projectId
+  const draftProjectSelect = (width?: string) => projectId && (
+    <FieldProjectSelect
+      projectId={projectId}
+      width={width}
+      value={draftProject ?? undefined}
+      onChange={(project) => setBarDraft((d) => ({ ...d, project }))}
+    />
+  )
+  /*
+    The inline bar (768 px and wider). With more than one control -- Dự án
+    and Sàn, and the work when the deck is in several -- it is a draft ending
+    Đặt lại · Tìm (FLT-08); Dự án alone applies at once.
+  */
+  const barIsDraft = Boolean(projectId) && decks.length > 0
+  const barControls = barIsDraft ? (
     <>
-      {projectId && <FieldProjectSelect projectId={projectId} />}
-      {deckSelect(false)}
-      {activeWork && workSelect(false, activeWork.work.id, setActiveWorkId)}
+      {draftProjectSelect()}
+      {onThisProject && deckSelect(false, barDraft.deck ?? activeDeckId, (deck) => setBarDraft((d) => ({ ...d, deck })))}
+      {onThisProject && activeWork
+        && workSelect(false, barDraft.work ?? activeWork.work.id, (work) => setBarDraft((d) => ({ ...d, work })))}
     </>
+  ) : (
+    projectId && <FieldProjectSelect projectId={projectId} />
   )
   /*
     The phone's sheet (FLT-04, FLT-09): Dự án and the work, a draft until Tìm.
-    Sàn is not repeated here: it stays in the row and applies at once. The
-    work's options are this project's, so it waits for Tìm on another
-    project to open that one's page.
+    Sàn is not repeated here: it stays in the row and applies at once.
   */
-  const sheetProject = sheetDraft.project ?? projectId
   const sheetControls = (
     <>
-      {projectId && (
-        <FieldProjectSelect
-          projectId={projectId}
-          width="100%"
-          value={sheetProject ?? undefined}
-          onChange={(project) => setSheetDraft((d) => ({ ...d, project }))}
-        />
-      )}
-      {activeWork && sheetProject === projectId
-        && workSelect(true, sheetDraft.work ?? activeWork.work.id, (work) => setSheetDraft((d) => ({ ...d, work })))}
+      {draftProjectSelect('100%')}
+      {activeWork && onThisProject
+        && workSelect(true, barDraft.work ?? activeWork.work.id, (work) => setBarDraft((d) => ({ ...d, work })))}
     </>
   )
-  const applySheet = () => {
-    if (sheetProject && sheetProject !== projectId) navigate(`${APP_BASE_PATH}/gs/${sheetProject}`)
-    else if (sheetDraft.work !== undefined) setActiveWorkId(sheetDraft.work)
-    setSheetDraft({})
+  /** Tìm, in the bar or the sheet: another project opens its page; else the deck and the work apply. */
+  const applyBar = () => {
+    if (draftProject && !onThisProject) navigate(`${APP_BASE_PATH}/gs/${draftProject}`)
+    else {
+      if (barDraft.deck !== undefined && barDraft.deck !== activeDeckId) chooseDeck(barDraft.deck)
+      if (barDraft.work !== undefined) setActiveWorkId(barDraft.work)
+    }
+    setBarDraft({})
   }
-  /** Đặt lại: this project and its first work, applied at once (FLT-09). */
-  const resetSheet = () => {
-    setSheetDraft({})
+  /** Đặt lại: this project, the deck on screen and its first work, applied at once (FLT-08, FLT-09). */
+  const resetBar = () => {
+    setBarDraft({})
     setActiveWorkId(null)
   }
 
@@ -1253,8 +1273,8 @@ export function GsScreen() {
       >
         {/*
           GS-07: the page's one filter bar, first and across both columns:
-          Dự án · Sàn · the work. Each applies at once -- they choose what is
-          on screen, they do not query it -- so there is no Tìm here.
+          Dự án · Sàn · the work, a draft that Tìm applies (FLT-08); on a
+          phone the inline Sàn still applies at once (FLT-09).
 
           GS-03: the deck, chosen by name. Name AND percentage on every
           option: the foreman picks a deck to work on, and "which one is
@@ -1284,14 +1304,16 @@ export function GsScreen() {
             <div style={{ flex: '1 1 auto', minWidth: 0 }}>
               {phone ? (
                 <FilterSheet
-                  inline={deckSelect(true)}
+                  inline={deckSelect(true, activeDeckId, chooseDeck)}
                   count={workIsDefault ? 0 : 1}
-                  onApply={applySheet}
-                  onReset={resetSheet}
-                  onDiscard={() => setSheetDraft({})}
+                  onApply={applyBar}
+                  onReset={resetBar}
+                  onDiscard={() => setBarDraft({})}
                 >
                   {sheetControls}
                 </FilterSheet>
+              ) : barIsDraft ? (
+                <FilterBar onApply={applyBar} onReset={resetBar}>{barControls}</FilterBar>
               ) : (
                 <FilterBar>{barControls}</FilterBar>
               )}
