@@ -409,7 +409,10 @@ describe('NhanLucScreen — accounts, as before (USR)', () => {
     await screen.findByText('gs1')
     await userEvent.click(within(rowOf('GS Một')).getByRole('button', { name: 'Khoá tài khoản' }))
     expect(deactivateGsUser).not.toHaveBeenCalled()
-    expect(await screen.findByText(/cho lần mở khoá/)).toBeInTheDocument()
+    // Each consequence its own item, not prose (RUL-01).
+    expect(await screen.findByText('Mất quyền truy cập ngay, cả tablet đang mở cũng ngừng ghi tiến độ')).toBeInTheDocument()
+    expect(screen.getByText('Dự án và công việc đã gán giữ nguyên cho lần mở khoá')).toBeInTheDocument()
+    expect(screen.getByText('Lịch sử ghi nhận vẫn mang tên người này')).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: /Vẫn khoá/ }))
     await waitFor(() => expect(deactivateGsUser).toHaveBeenCalledWith('u7'))
     expect(await screen.findByText('Đã khoá tài khoản')).toBeInTheDocument()
@@ -417,7 +420,7 @@ describe('NhanLucScreen — accounts, as before (USR)', () => {
 
   it.each([
     ['Khoá tài khoản', /cho lần mở khoá/],
-    ['Ẩn tài khoản', /Trạng thái «Đã ẩn» là tìm lại/],
+    ['Ẩn tài khoản', /Tìm lại bằng Trạng thái «Đã ẩn»/],
     ['Dự án và công việc', /Lưu quyền/],
     ['Đổi phân quyền', /Tiếp tục/],
   ])('names no spec id in the %s dialog (CPY-04)', async (action, marker) => {
@@ -447,6 +450,8 @@ describe('NhanLucScreen — accounts, as before (USR)', () => {
     await userEvent.type(screen.getByLabelText('Mật khẩu mới'), 'Bh7@Deck2026')
     await userEvent.click(screen.getByRole('button', { name: 'Lưu' }))
     expect(await screen.findByText('Đổi mật khẩu cho gs1?')).toBeInTheDocument()
+    expect(screen.getByText('GS không nhận được thông báo nào')).toBeInTheDocument()
+    expect(screen.getByText('Anh tự giao mật khẩu mới, hiện ra ngay sau bước này')).toBeInTheDocument()
     expect(setPassword).not.toHaveBeenCalled()
     await userEvent.click(screen.getByRole('button', { name: 'Vẫn đổi' }))
     await waitFor(() => expect(setPassword).toHaveBeenCalledWith('u7', 'Bh7@Deck2026'))
@@ -487,6 +492,9 @@ describe('NhanLucScreen — accounts, as before (USR)', () => {
     await screen.findByText('gs1')
     await userEvent.click(within(rowOf('GS Một')).getByRole('button', { name: 'Ẩn tài khoản' }))
     expect(hideUser).not.toHaveBeenCalled()
+    expect(await screen.findByText('Tìm lại bằng Trạng thái «Đã ẩn»')).toBeInTheDocument()
+    expect(screen.getByText('Mất quyền truy cập ngay, cả tablet đang mở cũng ngừng ghi tiến độ')).toBeInTheDocument()
+    expect(screen.getByText('Lịch sử ghi nhận vẫn mang tên người này')).toBeInTheDocument()
     listGsUsers.mockResolvedValue([account({ active: false, hidden: true })])
     await userEvent.click(await screen.findByRole('button', { name: 'Vẫn ẩn' }))
     await waitFor(() => expect(hideUser).toHaveBeenCalledWith('u7'))
@@ -750,7 +758,9 @@ describe('NhanLucScreen — Đổi phân quyền (NL-04)', () => {
 
     expect(await screen.findByText('Đổi Lê Văn A thành GS?')).toBeInTheDocument()
     expect(screen.getByText('Tài khoản mới gs.a')).toBeInTheDocument()
-    expect(screen.getByText('Người này đăng nhập bằng tài khoản mới và rời ô chọn nhóm trưởng, thợ chính của GS.')).toBeInTheDocument()
+    expect(screen.getByText('Đăng nhập được bằng tài khoản mới')).toBeInTheDocument()
+    expect(screen.getByText('Không còn trong ô chọn nhóm trưởng, thợ chính của GS')).toBeInTheDocument()
+    expect(screen.getByText('Các lần cập nhật đã ghi vẫn giữ tên')).toBeInTheDocument()
     expect(changeRole).not.toHaveBeenCalled()
     await userEvent.click(screen.getByRole('button', { name: 'Vẫn đổi' }))
     await waitFor(() => expect(changeRole).toHaveBeenCalledWith({
@@ -772,7 +782,9 @@ describe('NhanLucScreen — Đổi phân quyền (NL-04)', () => {
     await userEvent.type(within(dialog).getByLabelText('Mật khẩu'), 'Bh7@Deck2026')
     await next(dialog)
     expect(await screen.findByText('Mở lại tài khoản a.cu')).toBeInTheDocument()
-    expect(screen.getByText('Tài khoản cũ mở khoá với mật khẩu mới và người này rời ô chọn nhóm trưởng, thợ chính của GS.')).toBeInTheDocument()
+    expect(screen.getByText('Tài khoản cũ mở khoá với mật khẩu mới')).toBeInTheDocument()
+    expect(screen.getByText('Không còn trong ô chọn nhóm trưởng, thợ chính của GS')).toBeInTheDocument()
+    expect(screen.getByText('Các lần cập nhật đã ghi vẫn giữ tên')).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Vẫn đổi' }))
     await waitFor(() => expect(changeRole).toHaveBeenCalledWith({
       kind: 'employee', id: 'e1', role: 'viewer', password: 'Bh7@Deck2026',
@@ -789,7 +801,10 @@ describe('NhanLucScreen — Đổi phân quyền (NL-04)', () => {
     expect(within(dialog).queryByLabelText('Mật khẩu')).toBeNull()
     await next(dialog)
     expect(await screen.findByText('Tài khoản bị khoá và ẩn, không bị xoá:')).toBeInTheDocument()
-    expect(screen.getByText('Một nhân viên đang làm cùng tên được thêm vào ô chọn của GS.')).toBeInTheDocument()
+    expect(screen.getByText('Không đăng nhập được nữa')).toBeInTheDocument()
+    expect(screen.getByText('Lịch sử ghi nhận vẫn mang tên người này')).toBeInTheDocument()
+    expect(screen.getByText('Một nhân viên đang làm cùng tên vào ô chọn của GS')).toBeInTheDocument()
+    expect(screen.getByText('Đổi lại thành GS hoặc Visitor là mở lại đúng tài khoản này')).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Vẫn đổi' }))
     await waitFor(() => expect(changeRole).toHaveBeenCalledWith({ kind: 'account', id: 'u7', role: 'employee' }))
     expect(await screen.findByText('Đã chuyển thành nhân viên')).toBeInTheDocument()
@@ -802,7 +817,9 @@ describe('NhanLucScreen — Đổi phân quyền (NL-04)', () => {
     const dialog = await openChange('GS Một')
     await pickNew(dialog, 'Visitor')
     await next(dialog)
-    expect(await screen.findByText('Tài khoản xem được mọi dự án và công việc nhưng không ghi tiến độ nữa.')).toBeInTheDocument()
+    expect(await screen.findByText('Xem được mọi dự án và công việc')).toBeInTheDocument()
+    expect(screen.getByText('Không ghi được tiến độ nữa')).toBeInTheDocument()
+    expect(screen.getByText('Dự án đã gán được giữ lại, không dùng khi là Visitor')).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Vẫn đổi' }))
     await waitFor(() => expect(changeRole).toHaveBeenCalledWith({ kind: 'account', id: 'u7', role: 'viewer' }))
     expect(await screen.findByText('Đã đổi phân quyền')).toBeInTheDocument()
@@ -826,7 +843,8 @@ describe('NhanLucScreen — Đổi phân quyền (NL-04)', () => {
     expect(within(confirm).getByText('mới gán')).toBeInTheDocument()
     expect(within(confirm).getByText('BB2')).toBeInTheDocument()
     expect(within(confirm).getByText('giữ lại · mọi công việc')).toBeInTheDocument()
-    expect(within(confirm).getByText('Nút «Dự án và công việc» bỏ bớt được các dự án trên sau khi đổi.')).toBeInTheDocument()
+    expect(within(confirm).getByText('Không còn xem được dự án ngoài các dự án trên')).toBeInTheDocument()
+    expect(within(confirm).getByText('Bỏ bớt dự án bằng nút «Dự án và công việc» sau khi đổi')).toBeInTheDocument()
     await userEvent.click(within(confirm).getByRole('button', { name: 'Vẫn đổi' }))
     await waitFor(() => expect(changeRole).toHaveBeenCalledWith({ kind: 'account', id: 'u9', role: 'gs', projectId: 'p1' }))
   })
