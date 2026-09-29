@@ -47,6 +47,13 @@ const WIDE_OPTIONS = {
 } satisfies SelectProps
 
 /**
+ * The class every popup of `searchSelectProps` carries. `index.css` places it
+ * on a phone -- the screen less 16 px a side -- by a media query, so a Select
+ * in a dialog, which spreads no hook, sits like a page's (M6b).
+ */
+export const SELECT_POPUP_CLASS = 'pp-select-popup'
+
+/**
  * Spread onto every Select. It also reads its options in full (M6): the popup
  * is at least the select's width and grows to the longest option, up to the
  * screen less 16 px a side, and a longer one wraps instead of ellipsising.
@@ -58,6 +65,7 @@ export const searchSelectProps = {
   filterOption: (input: string, option?: SearchableOption) => matchesSearch(searchKeyOf(option), input),
   notFoundContent: NOT_FOUND_TEXT,
   ...WIDE_OPTIONS,
+  classNames: { popup: { root: SELECT_POPUP_CLASS } },
 } satisfies SelectProps
 
 /**

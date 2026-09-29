@@ -110,6 +110,24 @@ describe('index.css colour swatch (CLR-01)', () => {
   })
 })
 
+describe('index.css Select popup on a phone (M6b)', () => {
+  it('spans the screen less 16 px a side under 768 px, over the inline position rc-trigger sets', () => {
+    const media = Array.from(sheet.sheet!.cssRules)
+      .filter((r): r is CSSMediaRule => r instanceof CSSMediaRule)
+      .find((r) => /max-width:\s*767\.98px/.test(r.conditionText))
+    expect(media).toBeDefined()
+    const rule = Array.from(media!.cssRules)
+      .filter((r): r is CSSStyleRule => r instanceof CSSStyleRule)
+      .find((r) => r.selectorText.includes('.pp-select-popup'))
+    expect(rule).toBeDefined()
+    const s = rule!.style
+    expect([s.getPropertyValue('left'), s.getPropertyPriority('left')]).toEqual(['16px', 'important'])
+    expect(s.getPropertyValue('right')).toBe('auto')
+    expect(s.getPropertyValue('width')).toBe('calc(100vw - 32px)')
+    expect(s.getPropertyValue('max-width')).toBe('calc(100vw - 32px)')
+  })
+})
+
 describe('index.css Alert title (M3, TYP-01)', () => {
   it('sets an Alert\'s title over its description as a card title, 15/600, on both themes', () => {
     for (const theme of [adminTheme, fieldTheme]) {

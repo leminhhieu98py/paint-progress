@@ -178,3 +178,19 @@ body {
 .ant-alert.ant-alert-with-description .ant-alert-message {
   font-weight: 600;
 }
+
+/*
+  Every searchable Select's popup on a phone: the screen less 16 px a side,
+  wherever its select sits (M6b). A media query rather than a hook, so a
+  Select in a dialog -- the cell modal, Đổi phân quyền -- gets it like the
+  page bars do. `!important` because rc-trigger writes the popup's position
+  inline.
+*/
+@media (max-width: 767.98px) {
+  .ant-select-dropdown.pp-select-popup {
+    left: 16px !important;
+    right: auto !important;
+    width: calc(100vw - 32px) !important;
+    max-width: calc(100vw - 32px) !important;
+  }
+}

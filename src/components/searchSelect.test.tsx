@@ -1,9 +1,9 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { Select } from 'antd'
+import { Modal, Select } from 'antd'
 import { useState } from 'react'
 import { afterEach, describe, expect, it } from 'vitest'
-import { searchKeyOf, searchSelectProps, useFullOptionsProps } from './searchSelect'
+import { SELECT_POPUP_CLASS, searchKeyOf, searchSelectProps, useFullOptionsProps } from './searchSelect'
 import { setViewport } from '../test/viewport'
 
 const OPTIONS = [
@@ -104,6 +104,19 @@ describe('searchSelectProps reads options in full on its own (M6)', () => {
     const option = await screen.findByTitle(LONG)
     const text = option.querySelector('.ant-select-item-option-content > span') as HTMLElement
     expect(text).toHaveStyle({ whiteSpace: 'normal', overflowWrap: 'anywhere' })
+  })
+})
+
+describe('searchSelectProps places a dialog\'s popup like a page\'s on a phone (M6b)', () => {
+  it('marks every popup it opens, inside a modal too, for the phone rule in index.css', async () => {
+    render(
+      <Modal open title="Ô R1C1">
+        <Select aria-label="Công đoạn" {...searchSelectProps} options={[{ value: 'a', label: 'Coat 2' }]} />
+      </Modal>,
+    )
+    await userEvent.click(await screen.findByRole('combobox', { name: 'Công đoạn' }))
+    const popup = document.querySelector('.ant-select-dropdown') as HTMLElement
+    expect(popup).toHaveClass(SELECT_POPUP_CLASS)
   })
 })
 
