@@ -763,8 +763,25 @@ export function DecksScreen() {
                     </span>
                   </Donut>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0, flex: 1 }}>
+                    {/*
+                      Two numbers per row (RV6-40, Linh's review of v1.7.0). RV6-02
+                      put the deck's own progress here so the legend agreed with
+                      the table; she then read `83,22%` beside an arc a fifth of
+                      the ring and asked why the five numbers do not add up to the
+                      centre. They never did -- the arc is weight × progress -- so
+                      that figure now stands beside the progress, in its own column,
+                      and the header says which is which. The contribution column
+                      sums to P exactly; the progress column is the table's.
+                    */}
+                    <div style={{ fontSize: 11, color: palette.textTertiary, textAlign: 'right' }}>
+                      Tiến độ · Đóng góp
+                    </div>
                     {slices.map((sl) => (
-                      <div key={sl.label} style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+                      <div
+                        key={sl.label}
+                        data-testid="legend-row"
+                        style={{ display: 'flex', alignItems: 'center', gap: 9 }}
+                      >
                         <span
                           style={{
                             width: 11, height: 11, borderRadius: 4, flex: 'none', background: sl.color,
@@ -778,8 +795,16 @@ export function DecksScreen() {
                         >
                           {sl.label}
                         </span>
-                        <span style={{ marginLeft: 'auto', fontSize: 12, fontWeight: 600, flex: 'none' }}>
+                        <span
+                          style={{
+                            marginLeft: 'auto', width: 56, textAlign: 'right', flex: 'none',
+                            fontSize: 12, fontWeight: 500, color: palette.textSecondary,
+                          }}
+                        >
                           {formatPercent(sl.display ?? sl.value)}
+                        </span>
+                        <span style={{ width: 56, textAlign: 'right', flex: 'none', fontSize: 12, fontWeight: 600 }}>
+                          {formatPercent(sl.value)}
                         </span>
                       </div>
                     ))}
@@ -799,7 +824,8 @@ export function DecksScreen() {
                       </span>
                       <span
                         style={{
-                          marginLeft: 'auto', fontSize: 12, fontWeight: 600, color: palette.textTertiary,
+                          marginLeft: 'auto', width: 56, textAlign: 'right', flex: 'none',
+                          fontSize: 12, fontWeight: 600, color: palette.textTertiary,
                         }}
                       >
                         {formatPercent(1 - rollup.progress)}

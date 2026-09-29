@@ -364,7 +364,7 @@ describe('DecksScreen — the project-wide half of progress', () => {
   })
 
   it('labels deck slices by code and shows each one\'s own progress in the legend, ' +
-    'while the arc keeps weight × progress (RV6-01, RV6-02)', async () => {
+    'and the contribution beside it, while the arc keeps weight × progress (RV6-01, RV6-02, RV6-40)', async () => {
     renderScreen()
 
     const rollup = await screen.findByTestId('project-rollup')
@@ -378,11 +378,16 @@ describe('DecksScreen — the project-wide half of progress', () => {
     expect(within(donut).queryByText('Cellar Deck')).toBeNull()
     expect(within(donut).queryByText('Weather Deck')).toBeNull()
 
-    // RV6-02: the legend number beside CD is its own progress, 50,00% -- the
-    // same figure the rollup table's Tiến độ column reads for CD, not the
-    // 21,25% contribution (.425 effective weight × 50%) the arc is sized by.
+    // RV6-02: the first number beside CD is its own progress, 50,00% -- the
+    // same figure the rollup table's Tiến độ column reads for CD. RV6-40
+    // (Linh's review of v1.7.0): the second number is the contribution the
+    // arc is sized by, 21,25% (.425 effective weight × 50%), so the column
+    // adds up to the centre figure; the legend says which is which.
     expect(within(rollup).getByText('50,00%')).toBeInTheDocument()
-    expect(within(donut).queryByText('21,25%')).toBeNull()
+    expect(within(donut).getByText('Tiến độ · Đóng góp')).toBeInTheDocument()
+    const cdRow = within(donut).getByText('CD').closest('[data-testid="legend-row"]') as HTMLElement
+    expect(within(cdRow).getByText('50,00%')).toBeInTheDocument()
+    expect(within(cdRow).getByText('21,25%')).toBeInTheDocument()
 
     // The arc itself is untouched: the ring's conic-gradient still runs CD's
     // solid band up to 20.750% (21,25% minus the hairline gap), i.e. weight
