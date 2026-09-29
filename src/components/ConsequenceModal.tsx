@@ -43,6 +43,7 @@ export function ConsequenceModal({
   title,
   description,
   items,
+  consequences,
   consequence,
   okText = 'Xác nhận',
   cancelText = 'Huỷ',
@@ -57,6 +58,11 @@ export function ConsequenceModal({
   title: ReactNode
   description?: ReactNode
   items?: ConsequenceItem[]
+  /**
+   * What happens on confirm, one item each (RUL-01), below the subjects in
+   * `items` and apart from them by one hairline.
+   */
+  consequences?: string[]
   consequence?: ReactNode
   okText?: string
   cancelText?: string
@@ -105,7 +111,7 @@ export function ConsequenceModal({
       centered
       destroyOnHidden
       styles={{ content: { overflow: 'hidden' } }}
-      width={items?.length || consequence ? 520 : 480}
+      width={items?.length || consequences?.length || consequence ? 520 : 480}
     >
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14 }}>
         <span
@@ -166,7 +172,7 @@ export function ConsequenceModal({
         </div>
       </div>
 
-      {(items?.length || consequence !== undefined) && (
+      {(items?.length || consequences?.length || consequence !== undefined) && (
         <div
           style={{
             marginTop: 16,
@@ -175,7 +181,7 @@ export function ConsequenceModal({
             overflow: 'hidden',
           }}
         >
-          {items?.map((it) => (
+          {items?.map((it, i) => (
             <div
               key={it.label}
               style={{
@@ -183,7 +189,9 @@ export function ConsequenceModal({
                 alignItems: 'center',
                 gap: 11,
                 padding: '11px 14px',
-                borderBottom: `1px solid ${palette.borderSplit}`,
+                // Between rows only: under the last one the frame, or the
+                // consequences' own divider, is the line.
+                ...(i < items.length - 1 ? { borderBottom: `1px solid ${palette.borderSplit}` } : {}),
               }}
             >
               {it.color !== undefined && (
@@ -207,6 +215,26 @@ export function ConsequenceModal({
               )}
             </div>
           ))}
+          {consequences !== undefined && consequences.length > 0 && (
+            <ul
+              aria-label="Hệ quả"
+              style={{
+                margin: 0,
+                padding: '11px 14px 11px 32px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 6,
+                ...type.body,
+                lineHeight: 1.45,
+                color: palette.textSecondary,
+                background: tone === 'danger' ? palette.errorBg : palette.bgSubtle,
+                // The one line between who or what it is about and what happens.
+                ...(items?.length ? { borderTop: `1px solid ${palette.borderSplit}` } : {}),
+              }}
+            >
+              {consequences.map((c) => <li key={c}>{c}</li>)}
+            </ul>
+          )}
           {consequence !== undefined && (
             <div
               style={{

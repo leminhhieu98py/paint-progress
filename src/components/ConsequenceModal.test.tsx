@@ -1,8 +1,8 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { ConfigProvider } from 'antd'
-import { adminTheme, fieldTheme } from '../theme'
+import { adminTheme, fieldTheme, palette } from '../theme'
 import { ConsequenceModal } from './ConsequenceModal'
 
 const base = {
@@ -29,17 +29,40 @@ describe('ConsequenceModal', () => {
     expect(screen.getByText('3 zone')).toBeInTheDocument()
   })
 
-  it('states the consequence, not just the action', () => {
+  it('states each consequence as its own item, not just the action (RUL-01)', () => {
     // The whole point of this component over Modal.confirm: "are you sure?"
     // tells an admin nothing they did not already know. What the paint crew
     // loses is the decision they are actually making.
     render(
       <ConsequenceModal
         {...base}
-        consequence="Toàn bộ hình học ô phải dựng lại từ đầu."
+        consequences={['Toàn bộ hình học ô phải dựng lại', 'Không khôi phục được']}
       />,
     )
-    expect(screen.getByText('Toàn bộ hình học ô phải dựng lại từ đầu.')).toBeInTheDocument()
+    const list = screen.getByRole('list', { name: 'Hệ quả' })
+    expect(within(list).getAllByRole('listitem').map((i) => i.textContent))
+      .toEqual(['Toàn bộ hình học ô phải dựng lại', 'Không khôi phục được'])
+  })
+
+  it('draws one hairline between who or what it is about and what happens (RUL-01)', () => {
+    render(
+      <ConsequenceModal
+        {...base}
+        items={[{ label: 'GS Một', meta: 'gs1' }, { label: 'GS Hai', meta: 'gs2' }]}
+        consequences={['Không đăng nhập được nữa']}
+      />,
+    )
+    const list = screen.getByRole('list', { name: 'Hệ quả' })
+    expect(list).toHaveStyle({ borderTop: `1px solid ${palette.borderSplit}` })
+    // The last subject row draws no line of its own, so the divider is one line.
+    const last = screen.getByText('GS Hai').parentElement as HTMLElement
+    expect(last.style.borderBottom).toBe('')
+    expect((screen.getByText('GS Một').parentElement as HTMLElement).style.borderBottom).not.toBe('')
+  })
+
+  it('draws no divider when there is nothing above the consequences', () => {
+    render(<ConsequenceModal {...base} consequences={['Không khôi phục được']} />)
+    expect(screen.getByRole('list', { name: 'Hệ quả' }).style.borderTop).toBe('')
   })
 
   it('shows a colour swatch for an item that has one', () => {
