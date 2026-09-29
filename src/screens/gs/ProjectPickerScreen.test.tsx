@@ -110,10 +110,15 @@ describe('ProjectPickerScreen', () => {
   it('offers logout, after a confirmation, and nothing else about the account', async () => {
     renderPicker()
     await screen.findByRole('link', { name: /BlockB1_CPPTS/ })
-    expect(screen.getByText('Sếp Một')).toBeInTheDocument()
 
-    await userEvent.click(screen.getByRole('button', { name: 'Đăng xuất' }))
+    // The project pages' account trigger and menu (GS-06, M-4), not a button of its own.
+    expect(screen.queryByRole('button', { name: 'Đăng xuất' })).toBeNull()
+    await userEvent.click(screen.getByRole('button', { name: 'Sếp Một (boss1) · Chỉ xem' }))
+    const menu = await screen.findByRole('menu')
+    expect(within(menu).getAllByRole('menuitem').map((i) => i.textContent)).toEqual(['Đăng xuất'])
+    await userEvent.click(within(menu).getByRole('menuitem', { name: /Đăng xuất/ }))
     expect(signOut).not.toHaveBeenCalled()
+    expect(await screen.findByText('Muốn xem tiếp thì phải đăng nhập lại bằng mật khẩu quản trị viên đã giao.')).toBeInTheDocument()
     await userEvent.click(await screen.findByRole('button', { name: 'Vẫn đăng xuất' }))
     expect(signOut).toHaveBeenCalledTimes(1)
     expect(await screen.findByText('LOGIN')).toBeInTheDocument()
@@ -143,11 +148,14 @@ describe('ProjectPickerScreen: on the field scale (GS-10)', () => {
     expect(within(card).getByText('BB1').parentElement).toHaveStyle({ fontSize: '12px' })
   })
 
-  it('names who is signed in on the scale: full name bodyStrong, login a caption', async () => {
+  it('names who is signed in on the scale, in the account menu: full name bodyStrong, login a caption', async () => {
     renderPicker()
     await screen.findByRole('link', { name: /BlockB1_CPPTS/ })
     const header = document.querySelector('header') as HTMLElement
-    expect(within(header).getByText('Sếp Một')).toHaveStyle({ fontSize: '14px', fontWeight: '600' })
-    expect(within(header).getByText('boss1')).toHaveStyle({ fontSize: '12px', fontWeight: '400' })
+    await userEvent.click(within(header).getByRole('button', { name: 'Sếp Một (boss1) · Chỉ xem' }))
+    const menu = await screen.findByRole('menu')
+    expect(within(menu).getByText('Sếp Một')).toHaveStyle({ fontSize: '14px', fontWeight: '600' })
+    expect(within(menu).getByText('boss1')).toHaveStyle({ fontSize: '12px', fontWeight: '400' })
+    expect(within(menu).getByText('Chỉ xem')).toBeInTheDocument()
   })
 })

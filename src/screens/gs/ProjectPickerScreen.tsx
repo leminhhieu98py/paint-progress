@@ -1,14 +1,12 @@
-import { LogoutOutlined, RightOutlined } from '@ant-design/icons'
-import { Alert, Button, Layout, Spin } from 'antd'
+import { RightOutlined } from '@ant-design/icons'
+import { Alert, Layout, Spin } from 'antd'
 import { useEffect, useState } from 'react'
-import { Link, Navigate, useNavigate } from 'react-router-dom'
-import { useAuth } from '../../auth/AuthProvider'
-import { ConsequenceModal } from '../../components/ConsequenceModal'
-import { StatusPill } from '../../components/StatusPill'
-import { APP_BASE_PATH, LOGIN_PATH } from '../../config'
+import { Link, Navigate } from 'react-router-dom'
+import { APP_BASE_PATH } from '../../config'
 import { listProjectCards, type ProjectCard } from '../../lib/projectsApi'
 import { TypeScaleProvider } from '../../components/typeScale'
 import { fieldType, palette, shadowCard, space } from '../../theme'
+import { FieldAccountTrigger } from './FieldAccountTrigger'
 import { seedProjectList } from './fieldProjects'
 
 /**
@@ -21,14 +19,11 @@ import { seedProjectList } from './fieldProjects'
  * screen. One project is not a choice, so it redirects straight there.
  *
  * Read-only and nothing else: the GS screen this leads to already says
- * "Chỉ xem" and offers no write control, and the header here is the same
- * shape as that screen's -- who is signed in, and logout.
+ * "Chỉ xem" and offers no write control, and the header here carries that
+ * screen's account trigger and menu -- who is signed in, and logout.
  */
 export function ProjectPickerScreen() {
-  const navigate = useNavigate()
-  const { profile, signOut } = useAuth()
   const [cards, setCards] = useState<ProjectCard[] | 'loading' | 'error'>('loading')
-  const [confirmingOut, setConfirmingOut] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -84,16 +79,12 @@ export function ProjectPickerScreen() {
           }}
         >
           <h1 style={{ flex: 1, minWidth: 0, margin: 0, ...fieldType.pageTitle }}>Chọn dự án</h1>
-          <div style={{ textAlign: 'right', flex: 'none' }}>
-            <div style={{ ...fieldType.bodyStrong, lineHeight: 1.25 }}>{profile?.fullName}</div>
-            <span style={{ ...fieldType.caption, color: palette.textTertiary }}>{profile?.username}</span>
-          </div>
-          <StatusPill tone="off">Chỉ xem</StatusPill>
-          {/* Spec §8.1: no account UI. Logout only, as on the GS screen. */}
-          <Button
-            aria-label="Đăng xuất"
-            icon={<LogoutOutlined />}
-            onClick={() => setConfirmingOut(true)}
+          {/*
+            The project pages' account trigger and menu (GS-06, M-4): who is
+            signed in, Chỉ xem, and Đăng xuất behind its confirm.
+          */}
+          <FieldAccountTrigger
+            consequence="Muốn xem tiếp thì phải đăng nhập lại bằng mật khẩu quản trị viên đã giao."
           />
         </Layout.Header>
 
@@ -157,17 +148,6 @@ export function ProjectPickerScreen() {
           )}
         </Layout.Content>
 
-        <ConsequenceModal
-          open={confirmingOut}
-          tag="Xác nhận"
-          title="Đăng xuất?"
-          description="Phiên làm việc hiện tại sẽ kết thúc:"
-          items={[{ label: profile?.fullName ?? '', meta: profile?.username ?? '' }]}
-          consequence="Muốn xem tiếp thì phải đăng nhập lại bằng mật khẩu quản trị viên đã giao."
-          okText="Vẫn đăng xuất"
-          onCancel={() => setConfirmingOut(false)}
-          onOk={() => void signOut().then(() => navigate(LOGIN_PATH, { replace: true }))}
-        />
       </Layout>
     </TypeScaleProvider>
   )
