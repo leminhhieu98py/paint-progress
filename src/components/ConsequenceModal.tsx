@@ -4,7 +4,7 @@ import {
   InfoCircleFilled,
   WarningFilled,
 } from '@ant-design/icons'
-import { Button, ConfigProvider, Input, Modal, theme } from 'antd'
+import { Alert, Button, ConfigProvider, Input, Modal, theme } from 'antd'
 import { useContext, useState, type ReactNode } from 'react'
 import { palette } from '../theme'
 import { useTypeScale } from './typeScale'
@@ -50,6 +50,7 @@ export function ConsequenceModal({
   onOk,
   onCancel,
   confirmText,
+  error,
 }: {
   open: boolean
   tone?: ConsequenceTone
@@ -75,6 +76,11 @@ export function ConsequenceModal({
    * cleared on every close so the next delete is never one click.
    */
   confirmText?: string
+  /**
+   * A refused confirm, said inside the dialog the admin is looking at rather
+   * than on the page behind its mask (M8). The dialog stays open to retry.
+   */
+  error?: string | null
 }) {
   // The scale of the page this is on: the field's 14 on a field page (GS-10).
   const type = useTypeScale()
@@ -254,6 +260,8 @@ export function ConsequenceModal({
           />
         </div>
       )}
+
+      {error && <Alert type="error" showIcon message={error} style={{ marginTop: 16 }} />}
 
       <div style={{ display: 'flex', gap: 9, justifyContent: 'flex-end', marginTop: 20 }}>
         <Button onClick={onCancel}>{cancelText}</Button>

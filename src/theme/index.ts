@@ -54,6 +54,9 @@ export const palette = {
   success: '#15803D',
   successBg: '#E7F8EF',
   warning: '#B45309',
+  /** A neutral category with a colour of its own (the Visitor role, M15): not a verdict. */
+  info: '#1D4ED8',
+  infoBg: '#EFF4FF',
   warningBg: '#FFFAEB',
   /** The warn tone's icon tile, a step deeper than warningBg (ConsequenceModal). */
   warningTint: '#FDF0D5',

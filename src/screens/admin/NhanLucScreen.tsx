@@ -1,12 +1,12 @@
 import {
   DownloadOutlined, EditOutlined, EyeInvisibleOutlined, EyeOutlined, KeyOutlined, LockOutlined,
-  SearchOutlined, SwapOutlined, TeamOutlined, UnlockOutlined, UserAddOutlined,
+  RollbackOutlined, SearchOutlined, SwapOutlined, TeamOutlined, UnlockOutlined, UserAddOutlined,
 } from '@ant-design/icons'
 import {
   Alert, App, Button, Checkbox, Form, Input, Modal, Select, Space, Switch, Table, Tooltip, Typography,
 } from 'antd'
 import dayjs from 'dayjs'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../../auth/AuthProvider'
 import { CategoryBadge } from '../../components/CategoryBadge'
 import { ConsequenceModal } from '../../components/ConsequenceModal'
@@ -95,6 +95,14 @@ function ProjectList({ user }: { user: GsUser }) {
   return <span style={projectTextStyle(user)}>{user.projects.map(labelOf).join(', ')}</span>
 }
 
+/**
+ * The projects an account covers, as a confirm dialog names them: the list's
+ * own rule, a Visitor reading every project whatever it still holds (M9).
+ */
+const projectsText = (user: GsUser) => (user.role === 'viewer'
+  ? 'Mọi dự án'
+  : user.projects.map((p) => p.name).join(' · ') || 'chưa gán dự án')
+
 interface PermissionRow {
   member: boolean
   allWorks: boolean
@@ -110,13 +118,12 @@ interface PermissionRow {
  * two halves disagreeing when the tether drops mid-way.
  */
 function PermissionsDialog({
-  user, projects, onClose, onSaved, onError,
+  user, projects, onClose, onSaved,
 }: {
   user: GsUser
   projects: ProjectOption[]
   onClose: () => void
   onSaved: () => Promise<void>
-  onError: (message: string) => void
 }) {
   const [rows, setRows] = useState<Record<string, PermissionRow>>(() =>
     Object.fromEntries(projects.map((p) => {
@@ -130,6 +137,8 @@ function PermissionsDialog({
   )
   const [works, setWorks] = useState<Record<string, { value: string; label: string }[]>>({})
   const [saving, setSaving] = useState(false)
+  /** A failed read or save, said in this dialog rather than behind its mask (M8). */
+  const [failure, setFailure] = useState<string | null>(null)
   /**
    * RV6-25: since 0034 the database gives a viewer every project and every
    * work and no longer consults project_members for the role, so a matrix here
@@ -148,9 +157,9 @@ function PermissionsDialog({
           pairs.map(([id, list]) => [id, list.map((w) => ({ value: w.id, label: w.name }))]),
         ))
       })
-      .catch((e) => onError((e as Error).message))
+      .catch((e) => { if (!cancelled) setFailure((e as Error).message) })
     return () => { cancelled = true }
-  }, [projects, onError, viewer])
+  }, [projects, viewer])
 
   const patch = (projectId: string, change: Partial<PermissionRow>) =>
     setRows((prev) => ({ ...prev, [projectId]: { ...prev[projectId], ...change } }))
@@ -168,7 +177,7 @@ function PermissionsDialog({
       await setMemberships(user.id, drafts)
       await onSaved()
     } catch (e) {
-      onError((e as Error).message)
+      setFailure((e as Error).message)
     } finally {
       setSaving(false)
     }
@@ -201,6 +210,7 @@ function PermissionsDialog({
         <Button key="ok" type="primary" loading={saving} onClick={() => void save()}>Lưu quyền</Button>,
       ]}
     >
+      {failure && <Alert type="error" showIcon message={failure} style={{ marginBottom: 12 }} />}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         {projects.map((p) => {
           const row = rows[p.value]
@@ -353,7 +363,30 @@ export function NhanLucScreen() {
       setError((e as Error).message)
     }
   }
-  const reportError = useCallback((m: string) => setError(m), [])
+  /**
+   * The write behind the open dialog: its button spins while it runs, and a
+   * refusal is said inside that dialog, which stays open to retry, rather
+   * than on the page Alert behind its mask (M8). One pair, as one dialog is
+   * open at a time; every close clears it.
+   */
+  const [dialogBusy, setDialogBusy] = useState(false)
+  const [dialogError, setDialogError] = useState<string | null>(null)
+  const runInDialog = async (fn: () => Promise<void>) => {
+    setDialogBusy(true)
+    try {
+      await fn()
+      setDialogError(null)
+    } catch (e) {
+      setDialogError((e as Error).message)
+    } finally {
+      setDialogBusy(false)
+    }
+  }
+  /** Closes a dialog and forgets its refusal. */
+  const closing = (close: () => void) => () => {
+    setDialogError(null)
+    close()
+  }
 
   /**
    * Employees only, retired included, never the filtered view (RV5-08): the
@@ -389,7 +422,7 @@ export function NhanLucScreen() {
       <Tooltip title="Dự án và công việc">
         <Button size="small" aria-label="Dự án và công việc" icon={<TeamOutlined />} onClick={() => setPermTarget(user)} />
       </Tooltip>
-      <Tooltip title="Đặt lại mật khẩu">
+      <Tooltip title="Đổi mật khẩu">
         <Button
           size="small"
           aria-label="Đổi mật khẩu"
@@ -420,37 +453,41 @@ export function NhanLucScreen() {
             onClick={() => setOffTarget(user)}
           />
         </Tooltip>
+      ) : user.hidden ? (
+        // The lock's slot, kept: every account row has its buttons at the same x (M7).
+        <Button size="small" aria-hidden tabIndex={-1} icon={<LockOutlined />} style={{ visibility: 'hidden' }} />
       ) : (
-        !user.hidden && (
-          <Tooltip title="Mở khoá · đăng nhập lại được, dự án giữ nguyên">
-            <Button
-              size="small"
-              aria-label="Mở khoá"
-              icon={<UnlockOutlined />}
-              onClick={() =>
-                void run(async () => {
-                  await reactivateUser(user.id)
-                  reload()
-                  message.success('Đã mở khoá tài khoản')
-                })
-              }
-            />
-          </Tooltip>
-        )
+        <Tooltip title="Mở khoá · đăng nhập lại được, dự án giữ nguyên">
+          <Button
+            size="small"
+            aria-label="Mở khoá"
+            icon={<UnlockOutlined />}
+            onClick={() =>
+              void run(async () => {
+                await reactivateUser(user.id)
+                reload()
+                message.success('Đã mở khoá tài khoản')
+              })
+            }
+          />
+        </Tooltip>
       )}
       {user.hidden ? (
-        <Button
-          size="small"
-          onClick={() =>
-            void run(async () => {
-              await unhideUser(user.id)
-              reload()
-              message.success('Đã hiện lại tài khoản')
-            })
-          }
-        >
-          Hiện lại
-        </Button>
+        // An icon like every other action in the row (M7).
+        <Tooltip title="Hiện lại trong danh sách · vẫn khoá">
+          <Button
+            size="small"
+            aria-label="Hiện lại"
+            icon={<RollbackOutlined />}
+            onClick={() =>
+              void run(async () => {
+                await unhideUser(user.id)
+                reload()
+                message.success('Đã hiện lại tài khoản')
+              })
+            }
+          />
+        </Tooltip>
       ) : (
         <Tooltip title="Ẩn khỏi danh sách · không xoá">
           <Button
@@ -506,7 +543,7 @@ export function NhanLucScreen() {
             <Input
               allowClear
               aria-label="Tìm nhân lực"
-              placeholder="Tìm theo tên hoặc tên đăng nhập"
+              placeholder="Tìm tên, tên đăng nhập"
               prefix={<SearchOutlined aria-hidden />}
               style={{ width: 260 }}
               value={filters.draft.query}
@@ -654,7 +691,9 @@ export function NhanLucScreen() {
                 fixed: 'right',
                 align: 'center',
                 render: (_v, row) => (
-                  <div style={{ display: 'flex', gap: 7, justifyContent: 'center', alignItems: 'center' }}>
+                  // Right-aligned, in one slot order, Đổi phân quyền last: it
+                  // then sits at one x on every row, account or employee (M7).
+                  <div style={{ display: 'flex', gap: 7, justifyContent: 'flex-end', alignItems: 'center' }}>
                     {row.kind === 'account' ? accountActions(row.account) : employeeActions(row)}
                     <Tooltip title="Đổi phân quyền · Nhân viên, GS, Visitor">
                       <Button
@@ -738,10 +777,7 @@ export function NhanLucScreen() {
         items={
           offTarget
             ? [
-                {
-                  label: offTarget.fullName,
-                  meta: offTarget.projects.map((p) => p.name).join(' · ') || 'chưa gán dự án',
-                },
+                { label: offTarget.fullName, meta: projectsText(offTarget) },
               ]
             : []
         }
@@ -753,9 +789,11 @@ export function NhanLucScreen() {
           'Lịch sử ghi nhận vẫn mang tên người này',
         ]}
         okText="Vẫn khoá"
-        onCancel={() => setOffTarget(null)}
+        confirmLoading={dialogBusy}
+        error={dialogError}
+        onCancel={closing(() => setOffTarget(null))}
         onOk={() =>
-          void run(async () => {
+          void runInDialog(async () => {
             await deactivateGsUser(offTarget!.id)
             setOffTarget(null)
             reload()
@@ -773,10 +811,7 @@ export function NhanLucScreen() {
         items={
           hideTarget
             ? [
-                {
-                  label: hideTarget.fullName,
-                  meta: hideTarget.projects.map((p) => p.name).join(' · ') || 'chưa gán dự án',
-                },
+                { label: hideTarget.fullName, meta: projectsText(hideTarget) },
               ]
             : []
         }
@@ -786,9 +821,11 @@ export function NhanLucScreen() {
           'Tìm lại bằng Trạng thái «Đã ẩn»',
         ]}
         okText="Vẫn ẩn"
-        onCancel={() => setHideTarget(null)}
+        confirmLoading={dialogBusy}
+        error={dialogError}
+        onCancel={closing(() => setHideTarget(null))}
         onOk={() =>
-          void run(async () => {
+          void runInDialog(async () => {
             await hideUser(hideTarget!.id)
             setHideTarget(null)
             reload()
@@ -799,19 +836,20 @@ export function NhanLucScreen() {
 
       <Modal
         open={renameTarget !== null}
-        title={`Đổi tên đăng nhập — ${renameTarget?.username ?? ''}`}
-        onCancel={() => setRenameTarget(null)}
+        title={`Đổi tên đăng nhập · ${renameTarget?.username ?? ''}`}
+        onCancel={closing(() => setRenameTarget(null))}
         {...modalProps}
         footer={[
-          <Button key="cancel" onClick={() => setRenameTarget(null)}>Huỷ</Button>,
-          <Button key="ok" type="primary" onClick={() => renameForm.submit()}>Lưu</Button>,
+          <Button key="cancel" onClick={closing(() => setRenameTarget(null))}>Huỷ</Button>,
+          <Button key="ok" type="primary" loading={dialogBusy} onClick={() => renameForm.submit()}>Lưu</Button>,
         ]}
       >
+        {dialogError && <Alert type="error" showIcon message={dialogError} style={{ marginBottom: 12 }} />}
         <Form<{ username: string }>
           form={renameForm}
           layout="vertical"
           onFinish={({ username }) =>
-            void run(async () => {
+            void runInDialog(async () => {
               await renameUser(renameTarget!.id, username.trim().toLowerCase())
               setRenameTarget(null)
               reload()
@@ -838,7 +876,6 @@ export function NhanLucScreen() {
           user={permTarget}
           projects={projects}
           onClose={() => setPermTarget(null)}
-          onError={reportError}
           onSaved={async () => {
             setPermTarget(null)
             reload()
@@ -876,18 +913,19 @@ export function NhanLucScreen() {
       <Modal
         open={renaming !== null}
         title={`Sửa tên · ${renaming?.fullName ?? ''}`}
-        onCancel={() => setRenaming(null)}
+        onCancel={closing(() => setRenaming(null))}
         {...modalProps}
         footer={[
-          <Button key="cancel" onClick={() => setRenaming(null)}>Huỷ</Button>,
-          <Button key="ok" type="primary" onClick={() => employeeForm.submit()}>Lưu</Button>,
+          <Button key="cancel" onClick={closing(() => setRenaming(null))}>Huỷ</Button>,
+          <Button key="ok" type="primary" loading={dialogBusy} onClick={() => employeeForm.submit()}>Lưu</Button>,
         ]}
       >
+        {dialogError && <Alert type="error" showIcon message={dialogError} style={{ marginBottom: 12 }} />}
         <Form<{ fullName: string }>
           form={employeeForm}
           layout="vertical"
           onFinish={({ fullName }) =>
-            void run(async () => {
+            void runInDialog(async () => {
               await updateEmployee(renaming!.id, { fullName })
               setRenaming(null)
               reload()
@@ -910,7 +948,7 @@ export function NhanLucScreen() {
 
       <Modal
         open={pwTarget !== null}
-        title={`Đổi mật khẩu — ${pwTarget?.username ?? ''}`}
+        title={`Đổi mật khẩu · ${pwTarget?.username ?? ''}`}
         onCancel={closePw}
         {...modalProps}
         footer={[
@@ -960,25 +998,25 @@ export function NhanLucScreen() {
         items={
           pwPending
             ? [
-                {
-                  label: pwPending.user.fullName,
-                  meta: pwPending.user.projects.map((p) => p.name).join(' · ') || 'chưa gán dự án',
-                },
+                { label: pwPending.user.fullName, meta: projectsText(pwPending.user) },
               ]
             : []
         }
-        consequences={['GS không nhận được thông báo nào', 'Anh tự giao mật khẩu mới, hiện ra ngay sau bước này']}
+        // "Người dùng": the account may be a Visitor as well as a GS (M9).
+        consequences={['Người dùng không nhận được thông báo nào', 'Anh tự giao mật khẩu mới, hiện ra ngay sau bước này']}
         okText="Vẫn đổi"
-        onCancel={() => setPwPending(null)}
+        confirmLoading={dialogBusy}
+        error={dialogError}
+        onCancel={closing(() => setPwPending(null))}
         onOk={() =>
-          void run(async () => {
+          void runInDialog(async () => {
             const { user, password } = pwPending!
             await setPassword(user.id, password)
             setPwPending(null)
             // Straight into the reveal modal: the admin has to read this value
             // out to the foreman, and it appears nowhere else.
             setRevealed({ user, password, at: dayjs().format('DD.MM.YYYY HH:mm') })
-            message.success('Đã đặt lại mật khẩu')
+            message.success('Đã đổi mật khẩu')
           })
         }
       />

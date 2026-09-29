@@ -16,6 +16,17 @@ describe('CategoryBadge', () => {
     },
   )
 
+  it('gives Visitor a tone of its own, not the grey of a hidden, retired or "Không" row (M15)', () => {
+    render(<>
+      <CategoryBadge category="role" value="Visitor" />
+      <CategoryBadge category="accountStatus" value="Đã ẩn" />
+      <CategoryBadge category="employeeStatus" value="Đã nghỉ" />
+      <CategoryBadge category="counts" value="Không" />
+    </>)
+    const visitor = paint(screen.getByText('Visitor'))
+    for (const off of ['Đã ẩn', 'Đã nghỉ', 'Không']) expect(paint(screen.getByText(off))).not.toBe(visitor)
+  })
+
   it('renders the value as its label', () => {
     render(<CategoryBadge category="role" value="Visitor" />)
     expect(screen.getByText('Visitor')).toBeInTheDocument()

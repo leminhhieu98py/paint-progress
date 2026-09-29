@@ -6,7 +6,9 @@ import type { StatusTone } from './StatusPill'
  * from it so the maps can be imported without a component in the way.
  */
 export const CATEGORY_TONE = {
-  role: { 'Nhân viên': 'slate', GS: 'accent', Visitor: 'off' },
+  // Visitor is a role, not an absence: its own colour, never the grey of
+  // Đã ẩn, Đã nghỉ or Không (M15).
+  role: { 'Nhân viên': 'slate', GS: 'accent', Visitor: 'info' },
   accountStatus: { 'Đang dùng': 'ok', 'Đã khoá': 'warn', 'Đã ẩn': 'off' },
   // Nhân lực (NL-01): an employee's Trạng thái, in the same column as an account's.
   employeeStatus: { 'Đang làm': 'ok', 'Đã nghỉ': 'off' },
