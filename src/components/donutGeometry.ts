@@ -63,7 +63,9 @@ export function sectorPath(
     const a = 2 * Math.PI * f
     return `${num(cx + r * Math.sin(a))} ${num(cy - r * Math.cos(a))}`
   }
-  if (to - from >= 1) {
+  // A sector within a hair of the full circle has both ends on one point once
+  // rounded, and an arc from a point to itself draws nothing (m-1).
+  if (to - from >= 1 || (to - from > 0.5 && at(rOuter, from) === at(rOuter, to))) {
     // One arc cannot end where it starts, so a whole ring is two halves, and
     // the hole is the inner circle drawn the other way round.
     return `M${at(rOuter, 0)}A${num(rOuter)} ${num(rOuter)} 0 1 1 ${at(rOuter, 0.5)}`

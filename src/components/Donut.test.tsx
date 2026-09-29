@@ -103,6 +103,32 @@ describe('Donut', () => {
       .toEqual(['Đang ở lớp này: 50,00%', 'Cộng dồn: 100,00%'])
   })
 
+  it('gives a slice no wider than its gap no path, so no tab stop and no tooltip (m-2)', () => {
+    render(
+      <Donut
+        label="Tiến độ dự án"
+        slices={[...SLICES.slice(0, 2), { key: 'hd', label: 'HD', value: 0.004, color: '#A13A97', detail: 'x' }]}
+      />,
+    )
+    expect(screen.queryByRole('img', { name: 'HD' })).toBeNull()
+    expect(screen.getAllByTestId('donut-slice')).toHaveLength(2)
+  })
+
+  it('dims nothing when the active key has no visible slice: a 0% row or a sliver (m-7)', () => {
+    const slices = [...SLICES, { key: 'hd', label: 'HD', value: 0.004, color: '#A13A97' }]
+    const { rerender } = render(<Donut label="Tiến độ dự án" slices={slices} activeKey="td" />)
+    for (const p of screen.getAllByTestId('donut-slice')) expect(p).toHaveAttribute('opacity', '1')
+    rerender(<Donut label="Tiến độ dự án" slices={slices} activeKey="hd" />)
+    for (const p of screen.getAllByTestId('donut-slice')) expect(p).toHaveAttribute('opacity', '1')
+  })
+
+  it('still draws the whole remainder track when the slices sum to next to nothing (m-1)', () => {
+    render(<Donut label="Tiến độ dự án" slices={[{ label: 'a', value: 1e-7, color: '#0A8175' }]} />)
+    const track = screen.getByTestId('donut-remainder')
+    // Two half arcs outside, two inside: the full annulus.
+    expect(track.getAttribute('d')?.match(/A/g)).toHaveLength(4)
+  })
+
   it('opens no tooltip when a slice is only made active from outside, by its legend row', () => {
     // The row the reader is pointing at already prints the same figures.
     render(<Donut label="Tiến độ dự án" slices={SLICES} activeKey="cd" />)

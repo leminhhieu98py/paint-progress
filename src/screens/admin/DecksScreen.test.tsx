@@ -463,6 +463,13 @@ describe('DecksScreen — the project-wide half of progress', () => {
       expect(rowOf(donut, 'CD').style.background).toBe('')
     })
 
+    it('dims nothing for the row of a deck at 0%, which has no slice to point at (m-7)', async () => {
+      const donut = await openDonut()
+      fireEvent.pointerEnter(rowOf(donut, 'WD'))
+      expect(sliceOf(donut, 'CD')).toHaveAttribute('opacity', '1')
+      expect(sliceOf(donut, 'Chứng từ')).toHaveAttribute('opacity', '1')
+    })
+
     it('highlights the legend row of a hovered slice', async () => {
       const donut = await openDonut()
       fireEvent.pointerEnter(sliceOf(donut, 'Chứng từ'))

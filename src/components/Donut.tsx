@@ -79,7 +79,10 @@ export function Donut({
   const id = useId()
   /** The slice the pointer or focus is on, which alone opens a tooltip. */
   const [tipKey, setTipKey] = useState<string | null>(null)
-  const { segments, remainderFrom } = ringSegments(slices)
+  const { segments: laidOut, remainderFrom } = ringSegments(slices)
+  // A slice no wider than its gap has no colour to show: no path, so no tab
+  // stop and no tooltip on nothing (m-2). Its legend row still answers.
+  const segments = laidOut.filter((seg) => seg.solidTo > seg.from)
   const c = size / 2
   const rInner = c - thickness
   const keyOf = (s: DonutSlice) => s.key ?? s.label
@@ -87,6 +90,9 @@ export function Donut({
     setTipKey(key)
     onActiveChange?.(key)
   }
+  // A key with no slice on the ring -- a 0% row, a sliver -- dims nothing:
+  // there is nothing to point the reader at (m-7).
+  const dimming = activeKey !== null && segments.some((seg) => keyOf(slices[seg.index]) === activeKey)
   const leave = () => {
     setTipKey(null)
     onActiveChange?.(null)
@@ -107,6 +113,7 @@ export function Donut({
         <path d={sectorPath(c, c, c, rInner, 0, 1)} fill="#ffffff" fillRule="evenodd" pointerEvents="none" />
         {remainderFrom < 1 && (
           <path
+            data-testid="donut-remainder"
             d={sectorPath(c, c, c, rInner, remainderFrom, 1)}
             fill={remainderColor}
             fillRule="evenodd"
@@ -141,7 +148,7 @@ export function Donut({
                   tabIndex={0}
                   d={sectorPath(c, c, active ? c + LIFT : c, rInner, seg.from, seg.solidTo)}
                   fill={s.color}
-                  opacity={activeKey !== null && !active ? DIM : 1}
+                  opacity={dimming && !active ? DIM : 1}
                   style={{ outline: 'none', cursor: 'default', transition: 'opacity 120ms' }}
                   onPointerEnter={() => enter(key)}
                   onPointerLeave={leave}

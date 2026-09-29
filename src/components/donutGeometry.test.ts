@@ -61,6 +61,14 @@ describe('sectorPath', () => {
     expect(sectorPath(50, 50, 50, 30, 0, 0.75)).toContain('A50 50 0 1 1')
   })
 
+  it('draws a whole ring for a sector too close to the full circle to have two ends (m-1)', () => {
+    // A remainder from 1e-7 to 1: both ends round to the same point, and an
+    // SVG arc between one point and itself draws nothing -- the track vanished.
+    const whole = sectorPath(50, 50, 50, 30, 0, 1)
+    expect(sectorPath(50, 50, 50, 30, 1e-7, 1)).toBe(whole)
+    expect(sectorPath(50, 50, 50, 30, 1e-6, 1)).toBe(whole)
+  })
+
   it('draws a whole ring as two halves, since one arc cannot end where it starts', () => {
     const d = sectorPath(50, 50, 50, 30, 0, 1)
     expect(d).toBe('M50 0A50 50 0 1 1 50 100A50 50 0 1 1 50 0ZM50 20A30 30 0 1 0 50 80A30 30 0 1 0 50 20Z')
