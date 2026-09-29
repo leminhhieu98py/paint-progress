@@ -542,8 +542,9 @@ describe('KpiScreen (gs)', () => {
     renderField()
     await screen.findByTestId('kpi-dashboard')
     expect(screen.queryByRole('button', { name: 'Về bản vẽ' })).toBeNull()
-    // "KPI" once: the tab, not a title beside it.
-    expect(screen.getAllByText('KPI')).toHaveLength(1)
+    // "KPI" only in the field header: the tab, and on a phone the top
+    // bar's title (GS-06); the page draws no title of its own.
+    expect(screen.getAllByText('KPI').every((e) => e.closest('header, nav') !== null)).toBe(true)
     const content = bar().closest('.ant-layout-content') as HTMLElement
     expect(content.firstElementChild).toBe(bar())
     expect(before(screen.getByRole('navigation', { name: 'Điều hướng' }), bar())).toBe(true)

@@ -16,7 +16,7 @@ import {
 import { listDecks, setDeckKpiColors } from '../../lib/decksApi'
 import { listProjectEvents, loadProjectModel } from '../../lib/progressApi'
 import { listProjectNames } from '../../lib/projectsApi'
-import { FieldHeader } from '../gs/FieldHeader'
+import { FieldLayout } from '../gs/FieldLayout'
 import { FieldProjectSelect } from '../gs/FieldProjectSelect'
 import { DeckKpiColorTable, type DeckKpiColorRow, type DeckKpiColors } from './DeckKpiColorTable'
 import { KpiDashboard, type KpiEntry } from './KpiDashboard'
@@ -494,9 +494,8 @@ function FieldKpi({ projectId }: { projectId: string | null }) {
   const draft = settleDraft(scope, options, settle)
   const shown = options ?? NO_OPTIONS
   return (
-    <Layout style={{ minHeight: '100vh' }}>
-      {/* GS-06: the field header is the way between the pages; no back button (GS-02). */}
-      {projectId && <FieldHeader projectId={projectId} />}
+    // GS-06: the field header is the way between the pages; no back button (GS-02).
+    <FieldLayout projectId={projectId}>
       <Layout.Content style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 16 }}>
         {/*
           The field's bar, first under the header, the project first (GS-07).
@@ -514,7 +513,7 @@ function FieldKpi({ projectId }: { projectId: string | null }) {
         </FilterBar>
         <Body projectId={projectId} variant="gs" data={data} model={model} filters={scope.applied} />
       </Layout.Content>
-    </Layout>
+    </FieldLayout>
   )
 }
 

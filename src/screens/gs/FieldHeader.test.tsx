@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { endSession } from '../../lib/sessionCache'
 import { fieldAccountMenuItems } from './fieldAccountMenu'
 import { FieldHeader } from './FieldHeader'
+import { FieldLayout } from './FieldLayout'
 
 const listProjectNames = vi.hoisted(() => vi.fn())
 vi.mock('../../lib/projectsApi', () => ({
@@ -275,5 +276,75 @@ describe('FieldHeader: phone width', () => {
     expect(avatar).not.toHaveTextContent('Chỉ xem')
     await userEvent.click(avatar)
     expect(within(await screen.findByRole('menu')).getByText('Chỉ xem')).toBeInTheDocument()
+  })
+})
+
+describe('FieldHeader: a bottom tab bar on phones (GS-06)', () => {
+  const header = () => document.querySelector('header') as HTMLElement
+
+  it.each([
+    ['/gs/p1', 'Sàn'],
+    ['/gs/p1/dashboard', 'Năng suất'],
+    ['/gs/p1/kpi', 'KPI'],
+  ])('titles the top bar with the page on screen, beside the avatar, on %s', (path, title) => {
+    setViewport(390)
+    renderAt(path)
+    expect(within(header()).getByRole('heading', { level: 1 })).toHaveTextContent(new RegExp(`^${title}$`))
+    expect(within(header()).queryByRole('navigation')).toBeNull()
+    expect(within(header()).getByRole('button', { name: 'Nguyễn Văn A (gs1)' })).toBeInTheDocument()
+  })
+
+  it('moves the three tabs to a bar fixed to the bottom, over the safe area', () => {
+    setViewport(390)
+    renderAt('/gs/p1/dashboard')
+    expect(header().contains(nav())).toBe(false)
+    expect(nav()).toHaveStyle({ position: 'fixed', bottom: '0px', left: '0px', right: '0px' })
+    expect(nav().style.height).toBe('calc(56px + env(safe-area-inset-bottom, 0px))')
+    expect(nav().style.paddingBottom).toBe('calc(env(safe-area-inset-bottom, 0px))')
+    const links = within(nav()).getAllByRole('link')
+    expect(links.map((l) => l.textContent)).toEqual(['Sàn', 'Năng suất', 'KPI'])
+    // An icon above each label, drawn for the eye only: the label names the link.
+    for (const l of links) expect(l.querySelector('[role="img"][aria-hidden="true"], svg')).not.toBeNull()
+    expect(tab('Năng suất')).toHaveAttribute('aria-current', 'page')
+    expect(tab('Sàn')).not.toHaveAttribute('aria-current')
+  })
+
+  it('still goes where a tab points from the bottom bar', async () => {
+    setViewport(390)
+    renderAt('/gs/p1')
+    await userEvent.click(tab('KPI'))
+    expect(screen.getByTestId('path')).toHaveTextContent('/gs/p1/kpi')
+    expect(within(header()).getByRole('heading', { level: 1 })).toHaveTextContent('KPI')
+  })
+
+  it.each([[767, 'bottom'], [768, 'top']] as const)('puts the tabs at the %s px width at the %s', (width, where) => {
+    setViewport(width)
+    renderAt('/gs/p1')
+    expect(header().contains(nav())).toBe(where === 'top')
+    if (where === 'top') expect(within(header()).queryByRole('heading', { level: 1 })).toBeNull()
+  })
+})
+
+describe('FieldLayout: nothing hides behind the bottom bar', () => {
+  const renderLayout = () =>
+    render(
+      <MemoryRouter initialEntries={['/gs/p1']}>
+        <FieldLayout projectId="p1"><div>nội dung</div></FieldLayout>
+      </MemoryRouter>,
+    )
+
+  it('pads the page by the bar and the safe area on a phone', () => {
+    setViewport(390)
+    renderLayout()
+    const layout = screen.getByText('nội dung').parentElement as HTMLElement
+    expect(layout.style.paddingBottom).toBe('calc(56px + env(safe-area-inset-bottom, 0px))')
+    expect(layout.firstElementChild?.tagName).toBe('HEADER')
+  })
+
+  it('adds nothing from 768 px up, where the tabs are in the header', () => {
+    setViewport(768)
+    renderLayout()
+    const layout = screen.getByText('nội dung').parentElement as HTMLElement
+    expect(layout.style.paddingBottom).toBe('')
   })
 })

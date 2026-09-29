@@ -2069,6 +2069,20 @@ describe('GsScreen: the plan overlay', () => {
     expect(screen.getByRole('button', { name: 'ô R1C1' })).toHaveAttribute('data-color', '#fadb14')
   })
 
+  it('keeps the plan\'s key clear of the phone\'s bottom tab bar (GS-06)', async () => {
+    // jsdom answers every width query as a phone.
+    listDeckZones.mockResolvedValue([{
+      id: 'z1', name: 'Zone 1', stageId: 's5',
+      startDate: '2026-08-13', finishDate: '2026-08-19',
+      cellIds: ['c1'],
+    }])
+    renderScreen()
+    await userEvent.click(await screen.findByRole('button', { name: 'Hiện kế hoạch' }))
+    await chooseIn('Công đoạn kế hoạch', 'Tháo giáo')
+    const legend = await screen.findByTestId('gs-zone-legend')
+    expect(legend.style.bottom).toBe('calc(24px + calc(56px + env(safe-area-inset-bottom, 0px)))')
+  })
+
   it('puts the coats back when switched off again', async () => {
     listDeckZones.mockResolvedValue([{
       id: 'z1', name: 'Zone 1', stageId: 's5',

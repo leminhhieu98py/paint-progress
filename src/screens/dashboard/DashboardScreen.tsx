@@ -10,7 +10,7 @@ import { listProjectEvents, loadProjectModel } from '../../lib/progressApi'
 import { listDecks } from '../../lib/decksApi'
 import { listProjectNames } from '../../lib/projectsApi'
 import { listWorks } from '../../lib/worksApi'
-import { FieldHeader } from '../gs/FieldHeader'
+import { FieldLayout } from '../gs/FieldLayout'
 import { FieldProjectSelect } from '../gs/FieldProjectSelect'
 import { ProductivityDashboard } from './ProductivityDashboard'
 import { ProductivityFilterControls } from './ProductivityFilterControls'
@@ -228,9 +228,8 @@ function FieldDashboard({ projectId }: { projectId: string | null }) {
   const options = filterOptions(data.current)
   const draft = settleDraft(scope, options, settle)
   return (
-    <Layout style={{ minHeight: '100vh' }}>
-      {/* GS-06: the field header is the way between the pages; no back button (GS-02). */}
-      {projectId && <FieldHeader projectId={projectId} />}
+    // GS-06: the field header is the way between the pages; no back button (GS-02).
+    <FieldLayout projectId={projectId}>
       <Layout.Content style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 16 }}>
         {/*
           The field's bar, first under the header, the project first (GS-07).
@@ -243,7 +242,7 @@ function FieldDashboard({ projectId }: { projectId: string | null }) {
         </FilterBar>
         <Body projectId={projectId} data={data} filters={scope.applied} version={scope.version} />
       </Layout.Content>
-    </Layout>
+    </FieldLayout>
   )
 }
 

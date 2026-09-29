@@ -37,8 +37,9 @@ import { CalendarOutlined, DownloadOutlined } from '@ant-design/icons'
 import { EmptyState } from '../../components/EmptyState'
 import { DeckProgressCard, StageRollupCard } from './DeckStatsCards'
 import { DeckTodayCard } from './DeckTodayCard'
-import { FieldHeader } from './FieldHeader'
+import { FieldLayout } from './FieldLayout'
 import { FieldProjectSelect } from './FieldProjectSelect'
+import { FIELD_TAB_BAR_SPACE, useFieldPhone } from './fieldSections'
 import { FilterBar } from '../../components/FilterBar'
 import { rememberProjectName } from './fieldProjects'
 import { openingDeckId, rememberDeck } from './lastDeck'
@@ -833,13 +834,16 @@ export function GsScreen() {
    * Which of the three shapes this screen is in.
    *
    * `lg` is where a drawing and a 372px rail both fit without the drawing
-   * losing the width its tap targets need; `sm` is where a phone stops being a
-   * phone. antd's own breakpoints, so this agrees with every Grid on the admin
-   * side rather than inventing a second set.
+   * losing the width its tap targets need; below 768 is a phone, the one
+   * breakpoint of every field screen (useFieldPhone, GS-06). antd's own
+   * breakpoints, so this agrees with every Grid on the admin side rather than
+   * inventing a second set.
    */
   const screens = Grid.useBreakpoint()
   const wide = Boolean(screens.lg)
-  const phone = !screens.sm
+  const phone = useFieldPhone()
+  /** A fixed panel's bottom offset, lifted over the phone's bottom tab bar (GS-06). */
+  const overBottomBar = (px: number) => (phone ? `calc(${px}px + ${FIELD_TAB_BAR_SPACE})` : px)
 
   /**
    * The XLSX for THIS deck (Feedback Rv1, item 6), through the same loaders
@@ -1032,18 +1036,12 @@ export function GsScreen() {
 
   /*
     GS-06: the one field header -- Sàn · Năng suất · KPI and the account
-    menu -- in EVERY state of this screen (M-4), always the first child of
-    the same Layout, so React keeps the one instance: a project switch spins
-    the body under a header that stays put, and a refusal or a failed load
-    still offers the tabs and logout.
+    menu -- in EVERY state of this screen (M-4), from the same FieldLayout,
+    so React keeps the one instance: a project switch spins the body under a
+    header that stays put, and a refusal or a failed load still offers the
+    tabs and logout.
   */
-  const header = projectId ? <FieldHeader projectId={projectId} /> : null
-  const inShell = (body: ReactNode) => (
-    <Layout style={{ minHeight: '100vh' }}>
-      {header}
-      {body}
-    </Layout>
-  )
+  const inShell = (body: ReactNode) => <FieldLayout projectId={projectId}>{body}</FieldLayout>
   /*
     GS-07: the project switch, first in the page's bar, also while a project
     loads, fails or refuses: it is the way to another project from all three.
@@ -1333,7 +1331,7 @@ export function GsScreen() {
                       position: 'fixed',
                       zIndex: 4,
                       right: 24,
-                      bottom: 24,
+                      bottom: overBottomBar(24),
                       pointerEvents: 'none',
                       background: '#FFFFFFF5',
                       border: `1px solid ${palette.borderCard}`,
@@ -1389,7 +1387,7 @@ export function GsScreen() {
                       position: 'fixed',
                       zIndex: 4,
                       left: 24,
-                      bottom: 24,
+                      bottom: overBottomBar(24),
                       // Never in the way of a bay underneath it: this is a
                       // legend, and every tap belongs to the drawing.
                       pointerEvents: 'none',

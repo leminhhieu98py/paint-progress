@@ -317,8 +317,9 @@ describe('DashboardScreen (gs)', () => {
     renderField()
     await screen.findByText(/^DASHBOARD 2 sự kiện/)
     expect(screen.queryByRole('button', { name: 'Về bản vẽ' })).toBeNull()
-    // "Năng suất" once: the tab, not a title beside it.
-    expect(screen.getAllByText('Năng suất')).toHaveLength(1)
+    // "Năng suất" only in the field header: the tab, and on a phone the top
+    // bar's title (GS-06); the page draws no title of its own.
+    expect(screen.getAllByText('Năng suất').every((e) => e.closest('header, nav') !== null)).toBe(true)
     // The filter bar is the first thing under the header.
     const content = bar().closest('.ant-layout-content') as HTMLElement
     expect(content.firstElementChild).toBe(bar())
