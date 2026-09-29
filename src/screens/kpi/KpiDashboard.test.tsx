@@ -51,6 +51,19 @@ const renderDash = (entries = ENTRIES, todayKey = TODAY) =>
 
 const chart = () => screen.getByTestId('kpi-chart')
 
+describe('KpiDashboard — empty chart (CPY-01)', () => {
+  it('shows the title alone by default', () => {
+    render(<KpiDashboard entries={[]} decks={DECKS} todayKey={TODAY} />)
+    expect(screen.getByText('Chưa có kế hoạch KPI nào trong phạm vi này')).toBeInTheDocument()
+    expect(screen.queryByText(/Biểu đồ vẽ theo/)).toBeNull()
+  })
+
+  it('adds the hint it is given', () => {
+    render(<KpiDashboard entries={[]} decks={DECKS} todayKey={TODAY} emptyDescription="Gợi ý thử" />)
+    expect(screen.getByText('Gợi ý thử')).toBeInTheDocument()
+  })
+})
+
 /**
  * antd Select: open it by its combobox role, then pick the option by title.
  * `getByRole('combobox', { name })` and not `getByLabelText`, which antd's

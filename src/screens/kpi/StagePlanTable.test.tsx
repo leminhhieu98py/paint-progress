@@ -32,6 +32,14 @@ const ROWS: StagePlanRow[] = [
 /** Remaining area is the screen's to compute; here it is a fixed answer per coat. */
 const COMPUTED: Record<string, number> = { s1: 5000, s2: 8000, s3: 16000 }
 
+describe('StagePlanTable — empty (CPY-01)', () => {
+  it('names the step to take first, without the sentence on how plans are entered', () => {
+    renderTable({ rows: [] })
+    expect(screen.getByText('Thêm công việc và công đoạn cho sàn trước, rồi quay lại đây.')).toBeInTheDocument()
+    expect(screen.queryByText(/Kế hoạch KPI được nhập theo từng công đoạn/)).toBeNull()
+  })
+})
+
 function renderTable(over: Partial<Parameters<typeof StagePlanTable>[0]> = {}) {
   const onSave = vi.fn()
   const onClearArea = vi.fn()

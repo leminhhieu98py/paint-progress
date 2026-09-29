@@ -41,12 +41,15 @@ export function KpiDashboard({
   entries,
   decks,
   todayKey,
+  emptyDescription,
 }: {
   entries: KpiEntry[]
   /** Every deck of the project with its KPI colours (RV6-29); null is the chart's default. */
   decks: { id: string; name: string; kpiPlanColor: string | null; kpiActualColor: string | null }[]
   /** `effortDayKey(new Date())`, read once at the UI boundary (RV6-09). */
   todayKey: string
+  /** The next step under an empty chart, for whoever can take it (the admin); none by default (CPY-01). */
+  emptyDescription?: string
 }) {
   const [deckId, setDeckId] = useState<string>(ALL)
   const [coat, setCoat] = useState<string>(ALL)
@@ -167,7 +170,7 @@ export function KpiDashboard({
         {series.length === 0 ? (
           <EmptyState
             title="Chưa có kế hoạch KPI nào trong phạm vi này"
-            description="Biểu đồ vẽ theo các công đoạn đã được nhập ngày bắt đầu và ngày kết thúc. Admin nhập kế hoạch ở bảng Kế hoạch KPI theo công đoạn."
+            description={emptyDescription}
           />
         ) : (
           <>

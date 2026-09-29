@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { EMPTY_EFFORT, type Cell, type DeckEvent, type Stage, type WorkModel } from '../../domain/types'
 import type { StoredStagePlan } from '../../lib/kpiApi'
+import { pageSubtitle } from '../../test/copy'
 import { KpiScreen } from './KpiScreen'
 import type { DeckKpiColorRow, DeckKpiColors } from './DeckKpiColorTable'
 import type { KpiEntry } from './KpiDashboard'
@@ -43,8 +44,11 @@ vi.mock('react-router-dom', async () => {
 // table, and what the computed area comes out as -- so the stand-ins print
 // exactly that and nothing else.
 vi.mock('./KpiDashboard', () => ({
-  KpiDashboard: ({ entries, decks }: { entries: KpiEntry[]; decks: DeckKpiColorRow[] }) => (
+  KpiDashboard: ({ entries, decks, emptyDescription }: {
+    entries: KpiEntry[]; decks: DeckKpiColorRow[]; emptyDescription?: string
+  }) => (
     <div data-testid="kpi-dashboard">
+      {emptyDescription !== undefined && `GỢI Ý ${emptyDescription} | `}
       {`CHART ${decks.map((d) => `${d.name}=${d.kpiPlanColor ?? '-'}/${d.kpiActualColor ?? '-'}`).join(',')} | `}
       {entries
         .map((e) => `${e.deckName}/${e.plan.stageName}@${e.plan.startDate} tt=${e.computedAreaM2} th=${e.actual.length} đv=${e.unit}`)
@@ -199,7 +203,16 @@ describe('KpiScreen (admin)', () => {
     expect(loadProjectModel).toHaveBeenCalledWith('p1')
     expect(listProjectEvents).toHaveBeenCalledWith('p1')
     expect(listStagePlans).toHaveBeenCalledWith('p1')
-    expect(screen.getByText(/Giàn A · kế hoạch so với thực hiện/)).toBeInTheDocument()
+    // No subtitle: the card title and the Dự án select say it (CPY-01, CPY-03).
+    expect(pageSubtitle()).toBeNull()
+    expect(screen.queryByText(/kế hoạch so với thực hiện theo ngày/)).toBeNull()
+  })
+
+  it('tells the admin, and only the admin, where the plan is entered when the chart is empty (CPY-01)', async () => {
+    renderAdmin()
+    const chart = await screen.findByTestId('kpi-dashboard')
+    expect(chart.textContent).toContain('GỢI Ý Admin nhập kế hoạch ở bảng Kế hoạch KPI theo công đoạn.')
+    expect(chart.textContent).not.toContain('Biểu đồ vẽ theo')
   })
 
   it('honours ?project= when it names a project that exists', async () => {
@@ -333,6 +346,12 @@ describe('KpiScreen (gs)', () => {
     // And no colour table either (RV6-28: admin only); the colours still reach
     // the chart through `decks`.
     expect(screen.queryByTestId('deck-color-table')).toBeNull()
+  })
+
+  it('gives the field chart no empty-state hint: the title is enough there (CPY-01)', async () => {
+    renderField()
+    const chart = await screen.findByTestId('kpi-dashboard')
+    expect(chart.textContent).not.toContain('GỢI Ý')
   })
 
   it('still hands the chart the deck colours, so the field sees the admin\'s choice (RV6-29)', async () => {

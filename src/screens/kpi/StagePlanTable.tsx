@@ -373,7 +373,7 @@ export function StagePlanTable({
           emptyText: (
             <EmptyState
               title="Dự án chưa có công đoạn nào"
-              description="Kế hoạch KPI được nhập theo từng công đoạn của từng sàn. Thêm công việc và công đoạn cho sàn trước, rồi quay lại đây."
+              description="Thêm công việc và công đoạn cho sàn trước, rồi quay lại đây."
             />
           ),
         }}

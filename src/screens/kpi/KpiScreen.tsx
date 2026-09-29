@@ -308,7 +308,12 @@ function Body({ projectId, variant }: { projectId: string | null; variant: 'admi
         table under it runs to 20+ rows -- above the chart it pushed the answer
         below the fold on every visit.
       */}
-      <KpiDashboard entries={entries} decks={current.decks} todayKey={todayKey} />
+      <KpiDashboard
+        entries={entries}
+        decks={current.decks}
+        todayKey={todayKey}
+        emptyDescription={variant === 'admin' ? 'Admin nhập kế hoạch ở bảng Kế hoạch KPI theo công đoạn.' : undefined}
+      />
       {/* The write is the admin's alone (RV5-28): the field gets the chart. */}
       {variant === 'admin' && (
         <StagePlanTable
@@ -347,17 +352,11 @@ function AdminKpi() {
     ?? (projects.some((p) => p.id === requested) ? requested : null)
     ?? projects[0]?.id
     ?? null
-  const project = projects.find((p) => p.id === projectId)
 
   return (
     <>
       <PageHeader
         title="KPI"
-        subtitle={
-          project
-            ? `${project.name} · kế hoạch so với thực hiện theo ngày`
-            : 'Chọn một dự án'
-        }
         filters={(
           <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
             <label htmlFor="kpi-project" style={{ fontSize: 11, fontWeight: 600, color: palette.textTertiary }}>
