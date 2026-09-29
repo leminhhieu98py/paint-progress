@@ -6,7 +6,7 @@ import { searchSelectProps } from '../../components/searchSelect'
 import { changeRole, type StaffRole } from '../../lib/adminApi'
 import { generatePassword } from '../../lib/passwordGen'
 import { PasswordInput } from './PasswordInput'
-import { ROLE_DESCRIPTION, ROLE_LABEL, loginClash, parkedAccountFor, type StaffRow } from './nhanLuc'
+import { ROLE_DESCRIPTION, ROLE_LABEL, loginClash, nameClash, parkedAccountFor, type StaffRow } from './nhanLuc'
 import { PASSWORD_RULES, RADIOGROUP, ROLE_RADIOS, USERNAME_RULES, clashRule, type ProjectOption } from './nhanLucForm'
 
 interface ChangeValues {
@@ -34,27 +34,37 @@ interface Pending {
  * password (and a project for a GS) -- or only the password when a hidden
  * account of the same name is waiting to be re-opened (ruling A1).
  * GS/Visitor → Nhân viên asks nothing: the account is locked and hidden.
- * Visitor → GS asks for a project.
+ * Visitor → GS asks for a project, and its confirmation names every project
+ * the account will write to, the memberships it keeps included.
+ *
+ * A refusal from the server brings the admin back to the first step with
+ * everything still typed and the reason at the top (review minor 4).
  */
 export function ChangeRoleDialog({
-  row, rows, projects, onClose, onDone, onError,
+  row, rows, projects, onClose, onDone,
 }: {
   row: StaffRow
   rows: StaffRow[]
   projects: ProjectOption[]
   onClose: () => void
   onDone: (message: string) => void
-  onError: (message: string) => void
 }) {
   const [form] = Form.useForm<ChangeValues>()
   const target: StaffRole = Form.useWatch('role', form) ?? row.role
   const [pending, setPending] = useState<Pending | null>(null)
   const [saving, setSaving] = useState(false)
+  const [failure, setFailure] = useState<string | null>(null)
 
   const becomesAccount = row.kind === 'employee' && target !== 'employee'
   const parked = becomesAccount ? parkedAccountFor(rows, row.fullName) : null
   const needsProject = target === 'gs' && (row.kind === 'employee' || row.role === 'viewer')
   const projectName = (id?: string) => projects.find((p) => p.value === id)?.label ?? ''
+  // An account can only become an employee whose name is free (0037); only a
+  // hidden account can meet one, so say it here rather than after the round
+  // trip (review minor 3).
+  const employeeClash = row.kind === 'account' && target === 'employee'
+    ? nameClash(rows, row.fullName, 'employee', row.key)
+    : null
 
   const confirm = (values: ChangeValues) => {
     const role = values.role
@@ -102,12 +112,23 @@ export function ChangeRoleDialog({
         consequence: 'Tài khoản xem được mọi dự án và mọi công việc nhưng không ghi được tiến độ nữa. Dự án đã gán được giữ lại cho lần đổi về GS.',
       })
     } else {
+      // Memberships are kept across GS ↔ Visitor, so a Visitor becoming a GS
+      // writes again to every project it ever held -- listed, not implied
+      // (review minor 2).
+      const kept = row.account.projects
+      const items: ConsequenceItem[] = [
+        ...(kept.some((p) => p.id === values.projectId) ? [] : [{ label: scope, meta: 'mới gán' }]),
+        ...kept.map((p) => ({
+          label: p.name,
+          meta: p.allWorks ? 'giữ lại · mọi công việc' : `giữ lại · ${p.workIds.length}/${p.workCount} công việc`,
+        })),
+      ]
       setPending({
         request, tone: 'warn',
         title: `Đổi ${row.account.username} thành GS?`,
-        description: 'Phân quyền của tài khoản đổi thành GS:',
-        items: [{ label: row.fullName, meta: scope }],
-        consequence: `Tài khoản ghi được tiến độ và chỉ còn thấy các dự án được gán, trong đó có ${scope}.`,
+        description: 'Tài khoản thành GS, ghi được tiến độ ở các dự án này:',
+        items,
+        consequence: 'Tài khoản không còn xem được mọi dự án. Bỏ bớt dự án bằng nút «Dự án và công việc» sau khi đổi.',
       })
     }
   }
@@ -115,6 +136,7 @@ export function ChangeRoleDialog({
   const write = async () => {
     if (!pending) return
     setSaving(true)
+    setFailure(null)
     try {
       const result = await changeRole(pending.request)
       const { role } = pending.request
@@ -124,7 +146,8 @@ export function ChangeRoleDialog({
           : role === 'employee' ? 'Đã chuyển thành nhân viên' : 'Đã đổi phân quyền',
       )
     } catch (e) {
-      onError((e as Error).message)
+      setPending(null)
+      setFailure((e as Error).message)
     } finally {
       setSaving(false)
     }
@@ -142,11 +165,17 @@ export function ChangeRoleDialog({
         destroyOnHidden={false}
         footer={[
           <Button key="cancel" onClick={onClose}>Huỷ</Button>,
-          <Button key="ok" type="primary" disabled={target === row.role} onClick={() => form.submit()}>
+          <Button
+            key="ok"
+            type="primary"
+            disabled={target === row.role || employeeClash !== null}
+            onClick={() => form.submit()}
+          >
             Tiếp tục
           </Button>,
         ]}
       >
+        {failure && <Alert type="error" showIcon message={failure} style={{ marginBottom: 12 }} />}
         <Form<ChangeValues>
           form={form}
           layout="vertical"
@@ -156,6 +185,7 @@ export function ChangeRoleDialog({
           <Form.Item name="role" label="Phân quyền mới" extra={ROLE_DESCRIPTION[target]}>
             <Radio.Group {...RADIOGROUP} aria-label="Phân quyền mới" options={ROLE_RADIOS} />
           </Form.Item>
+          {employeeClash && <Alert type="error" showIcon message={employeeClash} style={{ marginBottom: 16 }} />}
           {becomesAccount && (
             <>
               {parked ? (

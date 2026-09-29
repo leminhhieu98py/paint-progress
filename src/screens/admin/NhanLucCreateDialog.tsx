@@ -96,6 +96,8 @@ export function NhanLucCreateDialog({
         <Form.Item
           name="fullName"
           label="Họ tên"
+          // Which list the name must be free in follows the role (review minor 5).
+          dependencies={['role']}
           rules={[
             { required: true, whitespace: true, message: 'Nhập họ tên' },
             clashRule((v) => nameClash(rows, v, role === 'employee' ? 'employee' : 'account')),

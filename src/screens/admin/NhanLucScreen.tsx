@@ -633,7 +633,14 @@ export function NhanLucScreen() {
                 key: 'role',
                 align: 'center',
                 width: 110,
-                render: (_v, row) => <CategoryBadge category="role" value={ROLE_LABEL[row.role]} />,
+                // The role's meaning on hover, in the dialogs' own words (NL-01).
+                render: (_v, row) => (
+                  <Tooltip title={ROLE_DESCRIPTION[row.role]}>
+                    <span>
+                      <CategoryBadge category="role" value={ROLE_LABEL[row.role]} />
+                    </span>
+                  </Tooltip>
+                ),
               },
               {
                 title: 'Dự án',
@@ -863,10 +870,6 @@ export function NhanLucScreen() {
             setChangeTarget(null)
             reload()
             message.success(done)
-          }}
-          onError={(problem) => {
-            setChangeTarget(null)
-            setError(problem)
           }}
         />
       )}

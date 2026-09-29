@@ -155,6 +155,9 @@ describe('NhanLucScreen — one list (NL-01)', () => {
     expect(within(rowOf('GS Hai')).getByText('Visitor')).toBeInTheDocument()
     const employee = rowOf('Lê Văn A')
     expect(within(employee).getByText('Nhân viên')).toBeInTheDocument()
+    // The badge says what the role means, in the dialogs' own words (NL-01 amendment).
+    await userEvent.hover(within(rowOf('GS Một')).getByText('GS'))
+    expect(await screen.findByRole('tooltip')).toHaveTextContent('GS đăng nhập trên tablet và ghi tiến độ ở các dự án được gán.')
     expect(within(employee).getAllByText('-')).toHaveLength(2)
     expect(within(employee).getByText('Đang làm')).toBeInTheDocument()
   })
@@ -693,6 +696,19 @@ describe('NhanLucScreen — Thêm nhân lực (NL-02)', () => {
     expect(String(sent.password).length).toBeGreaterThanOrEqual(12)
   })
 
+  it('drops a name error that no longer applies when the role changes (review minor 5)', async () => {
+    listGsUsers.mockResolvedValue([...ACCOUNTS, account({ id: 'u5', username: 'an.cu', fullName: 'Người Ẩn', role: 'viewer', active: false, hidden: true })])
+    renderScreen()
+    const dialog = await open()
+    await pick('GS')
+    await userEvent.type(within(dialog).getByLabelText('Họ tên'), 'người ẩn')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Thêm' }))
+    expect(await within(dialog).findByText('Đã có tài khoản GS/Visitor tên "người ẩn" (đã ẩn; chọn Trạng thái «Đã ẩn» để thấy).')).toBeInTheDocument()
+    // An employee may share a hidden account's name (A1): the error goes.
+    await pick('Nhân viên')
+    await waitFor(() => expect(within(dialog).queryByText(/Đã có tài khoản GS\/Visitor tên "người ẩn"/)).toBeNull())
+  })
+
   it('refuses a login or a name an account already has', async () => {
     renderScreen()
     const dialog = await open()
@@ -799,21 +815,48 @@ describe('NhanLucScreen — Đổi phân quyền (NL-04)', () => {
     await pickNew(dialog, 'GS')
     await next(dialog)
     await waitFor(() => expect(errorsIn(dialog)).toEqual(['Chọn dự án']))
-    await chooseOption('Dự án', 'BB2', dialog)
+    await chooseOption('Dự án', 'BB1', dialog)
     await next(dialog)
-    await userEvent.click(await screen.findByRole('button', { name: 'Vẫn đổi' }))
-    await waitFor(() => expect(changeRole).toHaveBeenCalledWith({ kind: 'account', id: 'u9', role: 'gs', projectId: 'p2' }))
+    // Every project the account will write to is named, the kept ones too (review minor 2).
+    const confirm = (await screen.findByText('Tài khoản thành GS, ghi được tiến độ ở các dự án này:')).closest('.ant-modal') as HTMLElement
+    expect(within(confirm).getByText('Đổi gs2 thành GS?')).toBeInTheDocument()
+    expect(within(confirm).getByText('BB1')).toBeInTheDocument()
+    expect(within(confirm).getByText('mới gán')).toBeInTheDocument()
+    expect(within(confirm).getByText('BB2')).toBeInTheDocument()
+    expect(within(confirm).getByText('giữ lại · mọi công việc')).toBeInTheDocument()
+    expect(within(confirm).getByText(/nút «Dự án và công việc»/)).toBeInTheDocument()
+    await userEvent.click(within(confirm).getByRole('button', { name: 'Vẫn đổi' }))
+    await waitFor(() => expect(changeRole).toHaveBeenCalledWith({ kind: 'account', id: 'u9', role: 'gs', projectId: 'p1' }))
   })
 
-  it('shows the server\'s refusal and changes nothing on screen', async () => {
-    changeRole.mockRejectedValue(new Error('Đổi phân quyền thất bại nửa chừng: tài khoản chưa ẩn lại được.'))
+  it('refuses turning a hidden account into an employee whose name is taken, before asking the server (review minor 3)', async () => {
+    listGsUsers.mockResolvedValue([...ACCOUNTS, account({ id: 'u5', username: 'b.cu', fullName: 'trần thị b', role: 'viewer', active: false, hidden: true })])
     renderScreen()
     await screen.findByText('gs1')
-    const dialog = await openChange('GS Một')
+    await chooseOption('Trạng thái', 'Đã ẩn', bar())
+    await apply()
+    const dialog = await openChange('trần thị b')
     await pickNew(dialog, 'Nhân viên')
+    expect(within(dialog).getByText('Đã có nhân viên tên "trần thị b" (đã nghỉ; chọn Trạng thái «Đã nghỉ» để thấy).')).toBeInTheDocument()
+    expect(within(dialog).getByRole('button', { name: 'Tiếp tục' })).toBeDisabled()
+    expect(changeRole).not.toHaveBeenCalled()
+  })
+
+  it('shows the server\'s refusal inside the dialog, which stays open with what was typed (review minor 4)', async () => {
+    changeRole.mockRejectedValue(new Error('Tên đăng nhập này đã có người dùng'))
+    renderScreen()
+    await screen.findByText('Lê Văn A')
+    const dialog = await openChange('Lê Văn A')
+    await pickNew(dialog, 'Visitor')
+    await userEvent.type(within(dialog).getByLabelText('Tên đăng nhập'), 'da.co')
+    await userEvent.type(within(dialog).getByLabelText('Mật khẩu'), 'Bh7@Deck2026')
     await next(dialog)
     await userEvent.click(await screen.findByRole('button', { name: 'Vẫn đổi' }))
-    expect(await screen.findByText('Đổi phân quyền thất bại nửa chừng: tài khoản chưa ẩn lại được.')).toBeInTheDocument()
+    expect(await within(dialog).findByText('Tên đăng nhập này đã có người dùng')).toBeInTheDocument()
+    expect(dialog).toBeInTheDocument()
+    expect(within(dialog).getByRole('button', { name: 'Tiếp tục' })).toBeEnabled()
+    expect(within(dialog).getByLabelText('Tên đăng nhập')).toHaveValue('da.co')
+    expect(within(dialog).getByLabelText('Mật khẩu')).toHaveValue('Bh7@Deck2026')
   })
 })
 
