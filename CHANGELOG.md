@@ -22,6 +22,14 @@ Linh's review of v1.7.0, one item.
   arc is sized by. The contribution column adds up to the centre exactly;
   1.7.0 showed only the progress, so `83,22%` sat beside an arc a fifth of the
   ring and the numbers did not add up to `42,91%`. No number changed.
+- **The login screen's picture moves**: "Free construction Animation" by
+  Lakhwinder, from LottieFiles
+  (https://lottiefiles.com/free-animation/construction-eQrfqkSdBo), under the
+  Lottie Simple License (https://lottiefiles.com/page/license), in its
+  original colours, played by `lottie-web` (new dependency). It is loaded only
+  by the login screen, is shown on phones too (above the card, 160 px tall at
+  most), and pauses while the page is hidden. The drawn platform stays for
+  visitors who ask for reduced motion and whenever the animation cannot load.
 
 ### Operational
 
