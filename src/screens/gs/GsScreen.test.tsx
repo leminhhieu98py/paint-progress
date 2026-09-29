@@ -5,6 +5,7 @@ import {
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { endSession } from '../../lib/sessionCache'
 import { FieldHeader } from './FieldHeader'
 import { GsScreen } from './GsScreen'
 
@@ -227,6 +228,8 @@ const unsubscribe = vi.fn()
 beforeEach(() => {
   // The last deck per project lives here (GS-02); every test opens a fresh tab.
   sessionStorage.clear()
+  // And the field header's project names are kept per session.
+  endSession()
   loadGsProject.mockReset()
   listDeckCells.mockReset()
   listProjectIndex.mockReset()
@@ -311,7 +314,7 @@ beforeEach(() => {
     }
   })
   setCellState.mockResolvedValue(undefined)
-  loadGsProject.mockResolvedValue({ decks: DECKS, isMember: true })
+  loadGsProject.mockResolvedValue({ decks: DECKS, isMember: true, name: 'BlockB1_CPPTS' })
   listDeckCells.mockImplementation((deckId: string) =>
     Promise.resolve(deckId === 'd1' ? D1_CELLS : D2_CELLS))
   getDrawingUrl.mockImplementation((path: string) => Promise.resolve(`https://signed/${path}`))
@@ -846,6 +849,8 @@ describe('GsScreen: recording a stage', () => {
     expect(within(document.querySelector('header') as HTMLElement).getByText('BlockB1_CPPTS')).toBeInTheDocument()
     expect(screen.queryByRole('combobox', { name: 'Dự án' })).toBeNull()
     expect(listProjectNames).not.toHaveBeenCalled()
+    // From the project row the screen already loads, not a read of its own (M-1).
+    expect(loadGsProjectIdentity).not.toHaveBeenCalled()
   })
 
   it('links the KPI chart of this project from the header (Feedback Rv5, item 9)', async () => {

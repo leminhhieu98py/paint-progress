@@ -7,9 +7,8 @@ import { ConsequenceModal } from '../../components/ConsequenceModal'
 import { searchSelectProps } from '../../components/searchSelect'
 import { StatusPill } from '../../components/StatusPill'
 import { APP_BASE_PATH, LOGIN_PATH } from '../../config'
-import { loadGsProjectIdentity } from '../../lib/gsApi'
-import { listProjectNames } from '../../lib/projectsApi'
 import { palette, space } from '../../theme'
+import { cachedProjectList, cachedProjectName, fieldProjectList, fieldProjectName } from './fieldProjects'
 import { initialsOf } from './initials'
 
 /**
@@ -43,7 +42,15 @@ const ellipsis: CSSProperties = { whiteSpace: 'nowrap', overflow: 'hidden', text
  * avatar whose tooltip gives both, and a viewer's `Chỉ xem` goes with them:
  * at 390px the badge would leave the project switch no width to show a name.
  */
-export function FieldHeader({ projectId }: { projectId: string }) {
+export function FieldHeader({ projectId, projectName: givenName }: {
+  projectId: string
+  /**
+   * The foreman's project name when the host already read the project row
+   * (GsScreen), so the header reads nothing; null when that row had none.
+   * Omitted, the header takes it from the session or reads it once.
+   */
+  projectName?: string | null
+}) {
   const navigate = useNavigate()
   const { pathname } = useLocation()
   const { profile, signOut } = useAuth()
@@ -53,20 +60,25 @@ export function FieldHeader({ projectId }: { projectId: string }) {
   const [confirmingOut, setConfirmingOut] = useState(false)
 
   /**
-   * The project's name for a foreman, the list for a viewer. Either failure
-   * leaves the header working: the foreman loses a label, and the viewer's
-   * switch lists the project on screen, which is on the route.
+   * The project's name for a foreman, the list for a viewer, both kept for the
+   * session (fieldProjects) because this header remounts on every page and
+   * every project switch. Either failure leaves the header working: the
+   * foreman loses a label, and the viewer's switch lists the project on
+   * screen, which is on the route.
    */
   const [identity, setIdentity] = useState<{ projectId: string; name: string } | null>(null)
-  const projectName = identity?.projectId === projectId ? identity.name : null
-  const [projectOptions, setProjectOptions] = useState<{ value: string; label: string }[]>([])
-  // The list once per mount: it does not change with the project on screen.
+  const nameGiven = givenName !== undefined
+  const projectName = nameGiven
+    ? givenName
+    : (identity?.projectId === projectId ? identity.name : cachedProjectName(projectId) ?? null)
+  const [projectList, setProjectList] = useState(cachedProjectList)
+  const projectOptions = (projectList ?? []).map((p) => ({ value: p.id, label: p.name }))
   useEffect(() => {
-    if (!readOnly) return
+    if (!readOnly || cachedProjectList() !== undefined) return
     let cancelled = false
-    listProjectNames()
+    fieldProjectList()
       .then((rows) => {
-        if (!cancelled) setProjectOptions(rows.map((p) => ({ value: p.id, label: p.name })))
+        if (!cancelled) setProjectList(rows)
       })
       .catch(() => {})
     return () => {
@@ -74,17 +86,17 @@ export function FieldHeader({ projectId }: { projectId: string }) {
     }
   }, [readOnly])
   useEffect(() => {
-    if (readOnly) return
+    if (readOnly || nameGiven || cachedProjectName(projectId) !== undefined) return
     let cancelled = false
-    loadGsProjectIdentity(projectId)
-      .then((p) => {
-        if (!cancelled) setIdentity({ projectId, name: p.name })
+    fieldProjectName(projectId)
+      .then((name) => {
+        if (!cancelled) setIdentity({ projectId, name })
       })
       .catch(() => {})
     return () => {
       cancelled = true
     }
-  }, [readOnly, projectId])
+  }, [readOnly, nameGiven, projectId])
 
   const base = `${APP_BASE_PATH}/gs/${projectId}`
   /**

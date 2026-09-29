@@ -2,6 +2,7 @@ import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { endSession } from '../../lib/sessionCache'
 import { FieldHeader } from './FieldHeader'
 
 const listProjectNames = vi.hoisted(() => vi.fn())
@@ -82,6 +83,8 @@ const nav = () => screen.getByRole('navigation', { name: 'Điều hướng' })
 const tab = (name: string) => within(nav()).getByRole('link', { name })
 
 beforeEach(() => {
+  // Project names are kept per session (fieldProjects); every test is a new one.
+  endSession()
   authRole.value = 'gs'
   setViewport(1280)
   navigate.mockReset()
@@ -198,18 +201,45 @@ describe('FieldHeader: the project', () => {
     expect(navigate).toHaveBeenCalledWith(to)
   })
 
-  it('reads a viewer\'s list once, not again for every project switched to', async () => {
+  it('reads a viewer\'s list once per session, across remounts and project switches (M-1)', async () => {
+    // The header remounts on every field page and every project switch, so
+    // "once" has to hold across mounts, not only across rerenders.
     authRole.value = 'viewer'
-    const view = (id: string) => (
-      <MemoryRouter initialEntries={[`/gs/${id}`]}>
-        <FieldHeader projectId={id} />
-      </MemoryRouter>
-    )
-    const { rerender } = render(view('p1'))
+    const first = renderAt('/gs/p1')
     expect(await screen.findByText('BlockB1_CPPTS', { selector: '.ant-select-selection-item' })).toBeInTheDocument()
-    rerender(view('p2'))
-    expect(await screen.findByText('Đại Hùng', { selector: '.ant-select-selection-item' })).toBeInTheDocument()
+    first.unmount()
+    renderAt('/gs/p1/kpi')
+    expect(screen.getByText('BlockB1_CPPTS', { selector: '.ant-select-selection-item' })).toBeInTheDocument()
     expect(listProjectNames).toHaveBeenCalledTimes(1)
+  })
+
+  it('reads the viewer\'s list again after the session ends', async () => {
+    authRole.value = 'viewer'
+    const first = renderAt('/gs/p1')
+    await screen.findByText('BlockB1_CPPTS', { selector: '.ant-select-selection-item' })
+    first.unmount()
+    endSession()
+    renderAt('/gs/p1')
+    await waitFor(() => expect(listProjectNames).toHaveBeenCalledTimes(2))
+  })
+
+  it('takes a foreman\'s project name from its host, with no read of its own', () => {
+    render(
+      <MemoryRouter initialEntries={['/gs/p1']}>
+        <FieldHeader projectId="p1" projectName="Giàn đã đọc" />
+      </MemoryRouter>,
+    )
+    expect(screen.getByText('Giàn đã đọc')).toBeInTheDocument()
+    expect(loadGsProjectIdentity).not.toHaveBeenCalled()
+  })
+
+  it('reads a foreman\'s project name once per session, not on every page', async () => {
+    const first = renderAt('/gs/p1/kpi')
+    expect(await screen.findByText('BlockB1_CPPTS')).toBeInTheDocument()
+    first.unmount()
+    renderAt('/gs/p1/dashboard')
+    expect(screen.getByText('BlockB1_CPPTS')).toBeInTheDocument()
+    expect(loadGsProjectIdentity).toHaveBeenCalledTimes(1)
   })
 
   it('names the new project, never the old one, when a foreman\'s project changes', async () => {

@@ -6,6 +6,7 @@ import { EMPTY_EFFORT, type Cell, type DeckEvent, type Stage, type WorkModel } f
 import type { StoredStagePlan } from '../../lib/kpiApi'
 import { pageSubtitle } from '../../test/copy'
 import { KpiScreen } from './KpiScreen'
+import { endSession } from '../../lib/sessionCache'
 import type { DeckKpiColorRow, DeckKpiColors } from './DeckKpiColorTable'
 import type { KpiEntry } from './KpiDashboard'
 import type { StagePlanRow } from './StagePlanTable'
@@ -176,6 +177,8 @@ beforeEach(() => {
   clearStagePlanArea.mockReset()
   setDeckKpiColors.mockReset()
   navigate.mockReset()
+  // The field header keeps project names per session; every test is a new one.
+  endSession()
   loadGsProjectIdentity.mockReset()
   loadGsProjectIdentity.mockResolvedValue({ code: 'GB', name: 'Giàn B' })
   listDecks.mockReset()

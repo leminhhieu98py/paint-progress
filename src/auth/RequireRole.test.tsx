@@ -4,6 +4,7 @@ import { act, useEffect } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { AuthProvider, useAuth } from './AuthProvider'
 import { RequireRole } from './RequireRole'
+import { onSessionEnd } from '../lib/sessionCache'
 
 const getSession = vi.fn()
 const onAuthStateChange = vi.fn((_cb?: (event: string, next: Session | null) => void) => ({
@@ -167,5 +168,50 @@ describe('RequireRole with a real AuthProvider', () => {
     // A token refresh says nothing about the profiles row, so re-reading it is
     // a round trip bought for nothing.
     expect(maybeSingle.mock.calls.length).toBe(profileReads)
+  })
+})
+
+describe('AuthProvider: what one account read is forgotten when it leaves (M-1)', () => {
+  const setUp = async () => {
+    getSession.mockResolvedValue({ data: { session: fakeSession } })
+    maybeSingle.mockResolvedValue({
+      data: { id: 'user-1', username: 'linh', full_name: 'Linh', role: 'admin', active: true },
+      error: null,
+    })
+    let authCallback: ((event: string, next: Session | null) => void) | undefined
+    onAuthStateChange.mockImplementation((cb?: (event: string, next: Session | null) => void) => {
+      authCallback = cb
+      return { data: { subscription: { unsubscribe: vi.fn() } } }
+    })
+    const cleared = vi.fn()
+    onSessionEnd(cleared)
+    render(
+      <AuthProvider>
+        <RequireRole role="admin">
+          <div>Protected content</div>
+        </RequireRole>
+      </AuthProvider>,
+    )
+    await screen.findByText('Protected content')
+    cleared.mockClear()
+    return { cleared, emit: (event: string, next: Session | null) => act(() => authCallback?.(event, next)) }
+  }
+
+  it('ends the session cache on sign-out', async () => {
+    const { cleared, emit } = await setUp()
+    emit('SIGNED_OUT', null)
+    expect(cleared).toHaveBeenCalledTimes(1)
+  })
+
+  it('ends it when another account signs in on the same tab', async () => {
+    const { cleared, emit } = await setUp()
+    emit('SIGNED_IN', { access_token: 'other', user: { id: 'user-2' } } as unknown as Session)
+    expect(cleared).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps it across a token refresh for the same account', async () => {
+    const { cleared, emit } = await setUp()
+    emit('TOKEN_REFRESHED', { ...fakeSession, access_token: 'fresher' } as Session)
+    expect(cleared).not.toHaveBeenCalled()
   })
 })

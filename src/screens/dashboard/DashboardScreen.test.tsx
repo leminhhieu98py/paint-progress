@@ -4,6 +4,7 @@ import { Link, MemoryRouter, Route, Routes, useLocation } from 'react-router-dom
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { pageSubtitle } from '../../test/copy'
 import { DashboardScreen } from './DashboardScreen'
+import { endSession } from '../../lib/sessionCache'
 
 const loadProjectModel = vi.hoisted(() => vi.fn())
 const listProjectEvents = vi.hoisted(() => vi.fn())
@@ -73,6 +74,8 @@ beforeEach(() => {
   listProjectNames.mockReset()
   navigate.mockReset()
   authRole.value = 'gs'
+  // The field header keeps project names per session; every test is a new one.
+  endSession()
   loadGsProjectIdentity.mockReset()
   loadGsProjectIdentity.mockResolvedValue({ code: 'GB', name: 'Giàn B' })
   listWorks.mockReset()

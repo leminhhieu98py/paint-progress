@@ -1,6 +1,7 @@
 import { isAuthRetryableFetchError, type Session } from '@supabase/supabase-js'
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { toAuthEmail } from '../config'
+import { endSession } from '../lib/sessionCache'
 import { supabase } from '../lib/supabase'
 
 /**
@@ -91,7 +92,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // arrival order, so the last event always wins here regardless of how
         // the awaited fetch below resolves.
         setSession(next)
-        currentUserId = next?.user?.id ?? null
+        const nextUserId = next?.user?.id ?? null
+        // Another account (or none): whatever the last one read for the
+        // session is not this one's to see (sessionCache).
+        if (nextUserId !== currentUserId) endSession()
+        currentUserId = nextUserId
         const nextProfile = next?.user ? await fetchProfile(next.user.id) : null
         if (isCurrent()) setProfile(nextProfile)
       } catch {
@@ -116,6 +121,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // a spinner, which is the bug this whole round exists to close.
         if (cancelled) return
         setSession(null)
+        if (currentUserId !== null) endSession()
         currentUserId = null
         setProfile(null)
         setLoading(false)

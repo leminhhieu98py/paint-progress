@@ -38,6 +38,7 @@ import { EmptyState } from '../../components/EmptyState'
 import { DeckProgressCard, StageRollupCard } from './DeckStatsCards'
 import { DeckTodayCard } from './DeckTodayCard'
 import { FieldHeader } from './FieldHeader'
+import { rememberProjectName } from './fieldProjects'
 import { openingDeckId, rememberDeck } from './lastDeck'
 import { SectionCard } from '../../components/SectionCard'
 import { searchSelectProps } from '../../components/searchSelect'
@@ -145,6 +146,8 @@ export function GsScreen() {
    * refusal can say so, rather than rendering as missing data (see GsProject).
    */
   const [notMember, setNotMember] = useState(false)
+  /** The project's name, from the row loadGsProject reads anyway: the header's (M-1). */
+  const [projectName, setProjectName] = useState<string | null>(null)
 
   useEffect(() => {
     if (!projectId) return
@@ -164,6 +167,8 @@ export function GsScreen() {
       .then((project) => {
         if (cancelled) return
         setNotMember(!project.isMember)
+        setProjectName(project.name ?? null)
+        if (project.name) rememberProjectName(projectId, project.name)
         setDecks(project.decks)
         // The deck last opened in this project, else the first (GS-02).
         setActiveDeckId(openingDeckId(projectId, project.decks))
@@ -1071,7 +1076,7 @@ export function GsScreen() {
         is signed in and logout. The drawing is the screen; everything else
         has to earn its height on a tablet held at arm's length.
       */}
-      {projectId && <FieldHeader projectId={projectId} />}
+      {projectId && <FieldHeader projectId={projectId} projectName={projectName} />}
 
       {/*
         Full-bleed and dark red, not an inset warning box. This banner means
