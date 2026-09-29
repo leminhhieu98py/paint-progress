@@ -60,21 +60,27 @@ export function FieldHeader({ projectId }: { projectId: string }) {
   const [identity, setIdentity] = useState<{ projectId: string; name: string } | null>(null)
   const projectName = identity?.projectId === projectId ? identity.name : null
   const [projectOptions, setProjectOptions] = useState<{ value: string; label: string }[]>([])
+  // The list once per mount: it does not change with the project on screen.
   useEffect(() => {
+    if (!readOnly) return
     let cancelled = false
-    if (readOnly) {
-      listProjectNames()
-        .then((rows) => {
-          if (!cancelled) setProjectOptions(rows.map((p) => ({ value: p.id, label: p.name })))
-        })
-        .catch(() => {})
-    } else {
-      loadGsProjectIdentity(projectId)
-        .then((p) => {
-          if (!cancelled) setIdentity({ projectId, name: p.name })
-        })
-        .catch(() => {})
+    listProjectNames()
+      .then((rows) => {
+        if (!cancelled) setProjectOptions(rows.map((p) => ({ value: p.id, label: p.name })))
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
     }
+  }, [readOnly])
+  useEffect(() => {
+    if (readOnly) return
+    let cancelled = false
+    loadGsProjectIdentity(projectId)
+      .then((p) => {
+        if (!cancelled) setIdentity({ projectId, name: p.name })
+      })
+      .catch(() => {})
     return () => {
       cancelled = true
     }

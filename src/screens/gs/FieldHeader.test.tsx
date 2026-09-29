@@ -194,6 +194,35 @@ describe('FieldHeader: the project', () => {
     expect(navigate).toHaveBeenCalledWith(to)
   })
 
+  it('reads a viewer\'s list once, not again for every project switched to', async () => {
+    authRole.value = 'viewer'
+    const view = (id: string) => (
+      <MemoryRouter initialEntries={[`/gs/${id}`]}>
+        <FieldHeader projectId={id} />
+      </MemoryRouter>
+    )
+    const { rerender } = render(view('p1'))
+    expect(await screen.findByText('BlockB1_CPPTS', { selector: '.ant-select-selection-item' })).toBeInTheDocument()
+    rerender(view('p2'))
+    expect(await screen.findByText('Đại Hùng', { selector: '.ant-select-selection-item' })).toBeInTheDocument()
+    expect(listProjectNames).toHaveBeenCalledTimes(1)
+  })
+
+  it('names the new project, never the old one, when a foreman\'s project changes', async () => {
+    loadGsProjectIdentity.mockImplementation((id: string) =>
+      Promise.resolve(id === 'p1' ? { code: 'BB1', name: 'BlockB1_CPPTS' } : { code: 'DH', name: 'Đại Hùng' }))
+    const view = (id: string) => (
+      <MemoryRouter initialEntries={[`/gs/${id}`]}>
+        <FieldHeader projectId={id} />
+      </MemoryRouter>
+    )
+    const { rerender } = render(view('p1'))
+    expect(await screen.findByText('BlockB1_CPPTS')).toBeInTheDocument()
+    rerender(view('p2'))
+    expect(screen.queryByText('BlockB1_CPPTS')).toBeNull()
+    expect(await screen.findByText('Đại Hùng')).toBeInTheDocument()
+  })
+
   it('keeps the project on screen in the switch when the list cannot be read', async () => {
     authRole.value = 'viewer'
     listProjectNames.mockRejectedValue(new Error('Failed to fetch'))
