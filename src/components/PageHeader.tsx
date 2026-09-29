@@ -13,7 +13,7 @@ export interface Crumb {
  * looking at, and what you can do to it.
  *
  * The slot order is fixed across screens on purpose -- crumbs, then title with
- * its badge, then subtitle, then actions right, then filters underneath. An
+ * its badge and facts, then actions right, then filters underneath. An
  * admin moving between Projects, Decks and a deck should find the create
  * button in the same place every time rather than re-reading the header.
  *
@@ -24,29 +24,21 @@ export function PageHeader({
   title,
   badge,
   facts,
-  subtitle,
   breadcrumbs,
   onBack,
   extra,
   filters,
   sticky = false,
-  reserveSubtitle = false,
 }: {
   title: ReactNode
   badge?: ReactNode
   /** The facts beside the title (HLT-01), on its line after the badge. */
   facts?: ReadonlyArray<KeyFact | false | null | undefined>
-  subtitle?: ReactNode
   breadcrumbs?: Crumb[]
   onBack?: () => void
   extra?: ReactNode
   filters?: ReactNode
   sticky?: boolean
-  /**
-   * Holds the subtitle's line, empty, while the subtitle is not there yet (a
-   * count that arrives with the data), so its arrival grows nothing (R1).
-   */
-  reserveSubtitle?: boolean
 }) {
   return (
     <div
@@ -98,7 +90,7 @@ export function PageHeader({
 
       {/* Top-aligned, with the title on a line of a control's height: the
           title then sits at one y whether the row carries 38px actions or
-          none, and whether a subtitle is under it or arrives with the data
+          none, and whether its facts are there or arrive with the data
           (R3-A, S2). Centring the row moved it by half of either. */}
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16 }}>
         {onBack !== undefined && (
@@ -152,16 +144,6 @@ export function PageHeader({
             )}
             {facts !== undefined && <KeyFacts facts={facts} />}
           </div>
-          {(subtitle !== undefined || reserveSubtitle) && (
-            // -1.5px: the title line is 38 and the title 25 of it, so this
-            // keeps the 5px the subtitle always had under the text.
-            <p
-              aria-hidden={subtitle === undefined ? true : undefined}
-              style={{ margin: '-1.5px 0 0', ...type.caption, lineHeight: 1.35, color: palette.textTertiary }}
-            >
-              {subtitle ?? '\u00a0'}
-            </p>
-          )}
         </div>
 
         {extra !== undefined && (

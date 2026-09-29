@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { GsUser } from '../../lib/adminApi'
 import type { Employee } from '../../lib/employeesApi'
 import {
-  DEFAULT_FILTERS, ROLE_DESCRIPTION, ROLE_LABEL, buildRows, countsLine, filterRows, isFiltered,
+  DEFAULT_FILTERS, ROLE_DESCRIPTION, ROLE_LABEL, buildRows, countFacts, filterRows, isFiltered,
   loginClash, nameClash, parkedAccountFor,
 } from './nhanLuc'
 
@@ -75,15 +75,19 @@ describe('filterRows (NL-01, FLT-02)', () => {
   })
 })
 
-describe('countsLine', () => {
+describe('countFacts (HLT-01)', () => {
   const rows = buildRows(ACCOUNTS, EMPLOYEES)
 
   it('counts the accounts and employees on screen', () => {
-    expect(countsLine(rows, filterRows(rows, DEFAULT_FILTERS), false)).toBe('2 tài khoản · 2 nhân viên')
+    expect(countFacts(rows, filterRows(rows, DEFAULT_FILTERS), false)).toEqual([
+      { value: 2, label: 'tài khoản' },
+      { value: 2, label: 'nhân viên' },
+    ])
   })
 
   it('says how many of the whole list a filter kept', () => {
-    expect(countsLine(rows, filterRows(rows, { ...DEFAULT_FILTERS, role: 'gs' }), true)).toBe('1/6 dòng khớp bộ lọc')
+    expect(countFacts(rows, filterRows(rows, { ...DEFAULT_FILTERS, role: 'gs' }), true))
+      .toEqual([{ value: '1/6', label: 'dòng khớp bộ lọc' }])
   })
 })
 

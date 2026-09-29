@@ -44,7 +44,7 @@ import { NhanLucCreateDialog } from './NhanLucCreateDialog'
 import { PasswordInput } from './PasswordInput'
 import {
   DEFAULT_FILTERS, ROLE_DESCRIPTION, ROLE_LABEL, ROLE_OPTIONS, STATUS_OPTIONS,
-  buildRows, countsLine, filterRows, isFiltered, nameClash, type StaffRow,
+  buildRows, countFacts, filterRows, isFiltered, nameClash, type StaffRow,
 } from './nhanLuc'
 import { PASSWORD_RULES, clashRule, type ProjectOption } from './nhanLucForm'
 
@@ -511,9 +511,8 @@ export function NhanLucScreen() {
     <>
       <PageHeader
         title="Nhân lực"
-        // The counts arrive with the lists: their line is held meanwhile (R1).
-        reserveSubtitle
-        subtitle={loaded ? countsLine(rows, shown, filtered) : undefined}
+        // The counts arrive with the lists, on the title's own line (HLT-01).
+        facts={loaded ? countFacts(rows, shown, filtered) : undefined}
         filters={
           // Three controls: a draft, applied by Tìm or Enter (FLT-02, FLT-08).
           <FilterBar onApply={() => filters.apply()} onReset={filters.reset}>

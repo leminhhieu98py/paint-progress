@@ -5,7 +5,7 @@ import { renderApp } from '../../test/renderApp'
 import { NhanLucScreen } from './NhanLucScreen'
 import { expectLeft } from '../../test/alignment'
 import { weightOf } from '../../test/typography'
-import { expectNoSpecIds, pageSubtitle } from '../../test/copy'
+import { expectNoSpecIds, keyFactTexts, pageSubtitle } from '../../test/copy'
 import { chooseOption, optionTitles } from '../../test/select'
 
 const listGsUsers = vi.fn()
@@ -133,18 +133,20 @@ describe('NhanLucScreen — one list (NL-01)', () => {
     expect(screen.queryByText('Trần Thị B')).toBeNull()
   })
 
-  it('counts what is on screen beside the title, and keeps the line while loading', async () => {
+  it('counts what is on screen beside the title as KeyFacts, with no subtitle line (HLT-01)', async () => {
     listEmployees.mockReturnValue(new Promise(() => {}))
     const { unmount } = renderScreen()
-    const line = pageSubtitle() as HTMLElement
-    expect(line).toHaveAttribute('aria-hidden', 'true')
-    expect(line.textContent?.trim()).toBe('')
+    // Nothing yet, and no line held under the title: the facts sit on its line.
+    expect(keyFactTexts()).toEqual([])
+    expect(pageSubtitle()).toBeNull()
     unmount()
 
     listEmployees.mockResolvedValue(EMPLOYEES)
     renderScreen()
     await screen.findByText('gs1')
-    expect(pageSubtitle()).toHaveTextContent(/^2 tài khoản · 1 nhân viên$/)
+    const titleLine = screen.getByRole('heading', { level: 1, name: 'Nhân lực' }).parentElement as HTMLElement
+    expect(keyFactTexts(titleLine)).toEqual(['2 tài khoản', '1 nhân viên'])
+    expect(pageSubtitle()).toBeNull()
   })
 
   it('names each row\'s Phân quyền, and puts "-" where an employee has no data', async () => {
@@ -239,7 +241,7 @@ describe('NhanLucScreen — filter bar (FLT-01, FLT-02, FLT-08)', () => {
     expect(shownNames()).toHaveLength(3)
     await apply()
     expect(shownNames()).toEqual(['Lê Văn A'])
-    expect(pageSubtitle()).toHaveTextContent('1/4 dòng khớp bộ lọc')
+    expect(keyFactTexts()).toEqual(['1/4 dòng khớp bộ lọc'])
   })
 
   it('applies on Enter in the search box, and matches the login as well as the name', async () => {

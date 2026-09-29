@@ -2,7 +2,6 @@ import { render, screen } from '@testing-library/react'
 import type { ReactElement } from 'react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
-import { palette } from '../theme'
 import { pageSubtitle } from '../test/copy'
 import { PageHeader } from './PageHeader'
 
@@ -12,10 +11,10 @@ describe('PageHeader', () => {
     expect(screen.getByRole('heading', { level: 1, name: 'Dự án' })).toBeInTheDocument()
   })
 
-  it('shows the badge and subtitle when given', () => {
-    render(<PageHeader title="Main Deck" badge="MD-01" subtitle="184 ô · 5.258,50 m²" />)
+  it('shows the badge when given, and never a line of prose under the title (HLT-01, CPY-01)', () => {
+    render(<PageHeader title="Main Deck" badge="MD-01" facts={[{ value: 184, label: 'ô' }]} />)
     expect(screen.getByText('MD-01')).toBeInTheDocument()
-    expect(screen.getByText('184 ô · 5.258,50 m²')).toBeInTheDocument()
+    expect(pageSubtitle()).toBeNull()
   })
 
   it('shows the facts right after the title and badge, on the title\'s line, as KeyFacts pills (HLT-01)', () => {
@@ -67,32 +66,16 @@ describe('PageHeader', () => {
     expect(screen.getByText('Dự án')).toBeInTheDocument()
   })
 
-  it('can hold the subtitle\'s line empty, so a subtitle that arrives with the data grows nothing (R1)', () => {
-    const { rerender } = render(<PageHeader title="Nhân viên" reserveSubtitle />)
-    const line = pageSubtitle() as HTMLElement
-    expect(line).toHaveAttribute('aria-hidden', 'true')
-    expect(line.textContent).toBe('\u00a0')
-    rerender(<PageHeader title="Nhân viên" reserveSubtitle subtitle="1 đang làm" />)
-    expect(pageSubtitle()).toBe(line)
-    expect(line).toHaveTextContent('1 đang làm')
-    expect(line).not.toHaveAttribute('aria-hidden')
-  })
-
-  it('sets title, badge and subtitle on the type scale (TYP-01, TYP-03)', () => {
-    render(<PageHeader title="Main Deck" badge="MD-01" subtitle="184 ô" />)
+  it('sets title and badge on the type scale (TYP-01, TYP-03)', () => {
+    render(<PageHeader title="Main Deck" badge="MD-01" />)
     expect(screen.getByRole('heading', { level: 1 })).toHaveStyle({ fontSize: '20px', fontWeight: '600' })
     expect(screen.getByText('MD-01')).toHaveStyle({ fontSize: '11px', fontWeight: '600' })
-    expect(screen.getByText('184 ô')).toHaveStyle({
-      fontSize: '12px',
-      fontWeight: '400',
-      color: palette.textTertiary,
-    })
   })
 
-  it('puts the title on the same line with or without a subtitle or actions (R3-A, S2)', () => {
+  it('puts the title on the same line with or without facts or actions (R3-A, S2)', () => {
     // jsdom has no layout, so this reads what decides the title's y: every
     // box from the heading up to the header, and whatever sits above the
-    // heading in each. Those must not change with the subtitle (which a
+    // heading in each. Those must not change with the facts (which a
     // screen may fill in once its data loads) or the actions.
     const chain = (ui: ReactElement) => {
       const { container, unmount } = render(ui)
@@ -107,14 +90,14 @@ describe('PageHeader', () => {
       return boxes
     }
     const bare = chain(<PageHeader title="Năng suất" />)
-    expect(chain(<PageHeader title="Nhân viên" subtitle="12 người" />)).toEqual(bare)
+    expect(chain(<PageHeader title="Nhân lực" facts={[{ value: 12, label: 'người' }]} />)).toEqual(bare)
     expect(chain(<PageHeader title="Người dùng" extra={<button type="button">Tạo</button>} />)).toEqual(bare)
     expect(chain(<PageHeader title="Sàn" facts={[{ value: 184, label: 'ô' }]} />)).toEqual(bare)
-    expect(chain(<PageHeader title="Sàn" subtitle="184 ô" extra={<button type="button">Tạo</button>} />)).toEqual(bare)
+    expect(chain(<PageHeader title="Sàn" facts={[{ value: 184, label: 'ô' }]} extra={<button type="button">Tạo</button>} />)).toEqual(bare)
     // The title's line is a control's height with the title centred in it,
     // and the row aligns its items to the top rather than centring them: a
-    // taller column (a subtitle) or 38px actions then move nothing above.
-    render(<PageHeader title="Sàn" subtitle="184 ô" extra={<button type="button">Tạo</button>} />)
+    // taller column or 38px actions then move nothing above.
+    render(<PageHeader title="Sàn" facts={[{ value: 184, label: 'ô' }]} extra={<button type="button">Tạo</button>} />)
     const line = screen.getByRole('heading', { level: 1 }).parentElement!
     expect(line).toHaveStyle({ minHeight: '38px', alignItems: 'center' })
     expect(line.parentElement!.parentElement).toHaveStyle({ alignItems: 'flex-start' })

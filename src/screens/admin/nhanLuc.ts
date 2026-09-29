@@ -1,4 +1,5 @@
 import type { CategoryValue } from '../../components/categoryTone'
+import type { KeyFact } from '../../components/KeyFacts'
 import type { AccountRole, GsUser, StaffRole } from '../../lib/adminApi'
 import type { Employee } from '../../lib/employeesApi'
 import { nameTakenMessage, personNameKey } from '../../lib/personName'
@@ -101,11 +102,11 @@ export function filterRows(rows: StaffRow[], f: StaffFilters): StaffRow[] {
 export const isFiltered = (f: StaffFilters) =>
   f.query.trim() !== '' || f.role !== DEFAULT_FILTERS.role || f.status !== DEFAULT_FILTERS.status
 
-/** The counts beside the title: what is on screen, or how much of the whole a filter kept. */
-export function countsLine(all: StaffRow[], shown: StaffRow[], filtered: boolean): string {
-  if (filtered) return `${shown.length}/${all.length} dòng khớp bộ lọc`
+/** The facts beside the title (HLT-01): what is on screen, or how much of the whole a filter kept. */
+export function countFacts(all: StaffRow[], shown: StaffRow[], filtered: boolean): KeyFact[] {
+  if (filtered) return [{ value: `${shown.length}/${all.length}`, label: 'dòng khớp bộ lọc' }]
   const accounts = shown.filter((r) => r.kind === 'account').length
-  return `${accounts} tài khoản · ${shown.length - accounts} nhân viên`
+  return [{ value: accounts, label: 'tài khoản' }, { value: shown.length - accounts, label: 'nhân viên' }]
 }
 
 /**

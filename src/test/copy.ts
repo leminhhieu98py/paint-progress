@@ -14,9 +14,9 @@ export function expectNoSpecIds(root: HTMLElement = document.body) {
 }
 
 /**
- * The subtitle under the page title (PageHeader's `<p>`), or null when the
- * page has none. CPY-03: a subtitle left empty, or only `<project> ·`, is
- * dropped entirely.
+ * A line of prose under the page title (a `<p>` after the title line), or
+ * null. PageHeader has no subtitle any more (HLT-01: facts sit on the title's
+ * line); this guards against one coming back (CPY-01, CPY-03).
  */
 export function pageSubtitle(): HTMLElement | null {
   const title = document.querySelector('h1')
