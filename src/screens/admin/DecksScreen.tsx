@@ -483,6 +483,11 @@ export function DecksScreen() {
             loading={loading}
             dataSource={decks}
             pagination={false}
+            // Sized to its content, as StageSpecTable is (QA F8): every
+            // other column has a fixed width, so at 1024px the name was left
+            // ~66px and "Otis Test Deck" wrapped to three lines under a
+            // two-line header. Now the card scrolls sideways instead.
+            scroll={{ x: 'max-content' }}
             locale={{
               emptyText: (
                 <EmptyState

@@ -680,6 +680,17 @@ describe('DecksScreen — reordering decks (RV6-05, RV6-06)', () => {
   })
 })
 
+describe('DecksScreen: the deck list at a narrow window (QA F8)', () => {
+  it('lets the list scroll sideways rather than squeezing the name column', async () => {
+    // Every other column has a fixed width, so at 1024px the name was left
+    // ~66px and "Otis Test Deck" wrapped to three lines under a two-line
+    // header. Sized to its content like StageSpecTable, the card scrolls.
+    renderScreen()
+    const header = await screen.findByRole('columnheader', { name: 'Tên sàn' })
+    expect(header.closest('table')).toHaveStyle({ width: 'max-content' })
+  })
+})
+
 describe('DecksScreen: the quantity and unit of the works in scope (RV6-36)', () => {
   const tonnes = { quantityLabel: 'Khối lượng', unit: 'tấn' }
   const headersOf = (table: HTMLElement) =>
