@@ -53,9 +53,15 @@ export const DECK_RING: RingGeometry = {
   below: CAPTION_LINE + 3,
   letterSpacingEm: -0.03,
 }
-/** The project rollup ring (DecksScreen): Donut's default 150 px, 27 thick, `toàn dự án` under. */
+/**
+ * The project rollup ring (DecksScreen): 160 px, 27 thick, `toàn dự án` under.
+ * 160, not Donut's 150, so every percent up to 100,00% keeps displaySm with
+ * 4 px clear (RR-M2): the figure does not shrink as the project completes.
+ */
+export const ROLLUP_RING_SIZE = 160
+export const ROLLUP_RING_THICKNESS = 27
 export const ROLLUP_RING: RingGeometry = {
-  holeDiameter: 150 - 2 * 27,
+  holeDiameter: ROLLUP_RING_SIZE - 2 * ROLLUP_RING_THICKNESS,
   above: 0,
   below: CAPTION_LINE + 3,
   letterSpacingEm: -0.028,

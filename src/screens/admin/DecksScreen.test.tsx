@@ -439,6 +439,14 @@ describe('DecksScreen — the project-wide half of progress', () => {
     expect(figureFits(text, step, ROLLUP_RING)).toBe(true)
   })
 
+  it('draws the ring 160 across, so every percent keeps displaySm (RR-M2)', async () => {
+    renderScreen()
+    const donut = await screen.findByTestId('rollup-donut')
+    const ring = within(donut).getByTestId('donut-ring')
+    expect(ring).toHaveAttribute('width', '160')
+    expect(within(donut).getByTestId('ring-figure')).toHaveStyle({ fontSize: '21px' })
+  })
+
   describe('the ring and its legend (CHT-01, CHT-02)', () => {
     // In the fixture CD and Chứng từ have an arc; WD is at 0% and has none.
     const rowOf = (donut: HTMLElement, name: string) =>

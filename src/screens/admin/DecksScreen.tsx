@@ -26,7 +26,7 @@ import { NEW_DECK } from '../../config'
 import { ConsequenceModal } from '../../components/ConsequenceModal'
 import { modalProps } from '../../components/modalChrome'
 import { Donut, type DonutSlice } from '../../components/Donut'
-import { ROLLUP_RING, ringFigureStep } from '../../components/ringFit'
+import { ROLLUP_RING, ROLLUP_RING_SIZE, ROLLUP_RING_THICKNESS, ringFigureStep } from '../../components/ringFit'
 import { legendRowProps } from '../../components/ringHover'
 import { EmptyState } from '../../components/EmptyState'
 import { FilterBar } from '../../components/FilterBar'
@@ -857,6 +857,8 @@ function ProjectRing({
       <Donut
         label="Tiến độ dự án"
         slices={slices}
+        size={ROLLUP_RING_SIZE}
+        thickness={ROLLUP_RING_THICKNESS}
         activeKey={active}
         onActiveChange={setActive}
       >

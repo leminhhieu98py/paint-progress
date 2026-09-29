@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { fieldType, type } from '../theme'
-import { DECK_RING, GS_RING, ROLLUP_RING, figureChord, figureFits, ringFigureStep, textWidthEstimate } from './ringFit'
+import { DECK_RING, GS_RING, ROLLUP_RING, ROLLUP_RING_SIZE, ROLLUP_RING_THICKNESS, figureChord, figureFits, ringFigureStep, textWidthEstimate } from './ringFit'
 
 /**
  * Widths Chromium draws with Be Vietnam Pro loaded, at 21/700 and the rings'
@@ -69,5 +69,22 @@ describe('ringFigureStep (I-2)', () => {
 
   it('falls back to the smallest step rather than to nothing', () => {
     expect(ringFigureStep('888.888.888,88', steps, ROLLUP_RING)).toBe(type.bodyStrong)
+  })
+})
+
+describe('the project rollup ring (RR-M2)', () => {
+  const steps = [type.displaySm, type.cardTitle, type.bodyStrong] as const
+
+  it('is 160 across, 27 thick', () => {
+    expect([ROLLUP_RING_SIZE, ROLLUP_RING_THICKNESS]).toEqual([160, 27])
+    expect(ROLLUP_RING.holeDiameter).toBe(106)
+  })
+
+  it.each(['0,00%', '9,50%', '86,39%', '99,99%', '100,00%'])('keeps %s at displaySm', (text) => {
+    expect(ringFigureStep(text, steps, ROLLUP_RING)).toBe(type.displaySm)
+  })
+
+  it.each(['99,99%', '100,00%'])('leaves %s at least 4 px of the ring either side, at its real width', (text) => {
+    expect((figureChord(type.displaySm, ROLLUP_RING) - REAL_21_700[text]) / 2).toBeGreaterThanOrEqual(4)
   })
 })
