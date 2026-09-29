@@ -506,19 +506,21 @@ export function DecksScreen() {
               },
               {
                 title: 'Mã',
+                align: 'center',
                 dataIndex: 'code',
                 width: 120,
               },
-              { title: 'Số ô', dataIndex: 'cellCount', width: 90, align: 'right' },
+              { title: 'Số ô', dataIndex: 'cellCount', width: 90, align: 'center' },
               {
                 title: listScope.title,
                 dataIndex: 'totalAreaM2',
                 width: 160,
-                align: 'right',
+                align: 'center',
                 render: (v: number, deck) => listScope.cell(deck.id, v),
               },
               {
                 title: 'Bản vẽ',
+                align: 'center',
                 key: 'drawing',
                 width: 130,
                 render: (_v, deck) => (
@@ -532,7 +534,7 @@ export function DecksScreen() {
                 // Pinned: the list scrolls sideways below ~1100px (QA F8) and
                 // the row's actions must not scroll out of the card with it.
                 fixed: 'right',
-                align: 'right',
+                align: 'center',
                 render: (_v, deck) => (
                   <Space size={6}>
                     <Tooltip title="Mở sàn">
@@ -571,7 +573,7 @@ export function DecksScreen() {
                 key: 'reorder',
                 width: 90,
                 fixed: 'right',
-                align: 'right',
+                align: 'center',
                 // Order everywhere else follows `seq`, i.e. this list's own
                 // order (`listDecks` already sorts by it) -- so the row
                 // before/after in `decks` IS the neighbour to swap with.
@@ -643,20 +645,22 @@ export function DecksScreen() {
                     { title: 'Sàn', dataIndex: 'name', key: 'name' },
                     {
                       title: 'Mã',
+                      align: 'center',
                       dataIndex: 'code',
                       key: 'code',
                       width: 100,
                     },
-                    { title: 'Tỉ trọng', dataIndex: 'share', key: 'share', width: 110, align: 'right' },
+                    { title: 'Tỉ trọng', dataIndex: 'share', key: 'share', width: 110, align: 'center' },
                     {
                       title: rollupScope.title,
                       dataIndex: 'totalAreaM2',
                       key: 'totalAreaM2',
                       width: 150,
-                      align: 'right',
+                      align: 'center',
                     },
                     {
                       title: 'Tiến độ',
+                      align: 'center',
                       dataIndex: 'progress',
                       key: 'progress',
                       width: 220,
@@ -668,11 +672,11 @@ export function DecksScreen() {
                       <Table.Summary.Cell index={0}>
                         <strong>Tổng dự án</strong>
                       </Table.Summary.Cell>
-                      <Table.Summary.Cell index={1} />
-                      <Table.Summary.Cell index={2} align="right">
+                      <Table.Summary.Cell index={1} align="center" />
+                      <Table.Summary.Cell index={2} align="center">
                         <strong>{formatPercent(effectiveTotal)}</strong>
                       </Table.Summary.Cell>
-                      <Table.Summary.Cell index={3} align="right">
+                      <Table.Summary.Cell index={3} align="center">
                         {rollupScope.unit === null ? (
                           <Tooltip title={MIXED_UNIT_SUM_TOOLTIP}>
                             <strong>—</strong>
@@ -681,7 +685,7 @@ export function DecksScreen() {
                           <strong>{formatAreaM2(totalArea)}</strong>
                         )}
                       </Table.Summary.Cell>
-                      <Table.Summary.Cell index={4}>
+                      <Table.Summary.Cell index={4} align="center">
                         <ProgressBar ratio={rollup.progress} height={8} />
                       </Table.Summary.Cell>
                     </Table.Summary.Row>
@@ -717,14 +721,16 @@ export function DecksScreen() {
                       { title: 'Công việc', dataIndex: 'name', key: 'name' },
                       {
                         title: 'Loại',
+                        align: 'center',
                         dataIndex: 'kind',
                         key: 'kind',
                         width: 100,
                         render: (k: WorkKind) => <CategoryBadge category="workKind" value={WORK_KIND_LABEL[k]} />,
                       },
-                      { title: 'Trọng số', dataIndex: 'weight', key: 'weight', width: 110, align: 'right' },
+                      { title: 'Trọng số', dataIndex: 'weight', key: 'weight', width: 110, align: 'center' },
                       {
                         title: 'Tính vào tổng',
+                        align: 'center',
                         dataIndex: 'counts',
                         key: 'counts',
                         width: 150,
@@ -732,6 +738,7 @@ export function DecksScreen() {
                       },
                       {
                         title: 'Tiến độ',
+                        align: 'center',
                         dataIndex: 'progress',
                         key: 'progress',
                         width: 220,
@@ -743,16 +750,16 @@ export function DecksScreen() {
                         <Table.Summary.Cell index={0}>
                           <strong>Tổng dự án</strong>
                         </Table.Summary.Cell>
-                        <Table.Summary.Cell index={1} />
-                        <Table.Summary.Cell index={2} align="right">
+                        <Table.Summary.Cell index={1} align="center" />
+                        <Table.Summary.Cell index={2} align="center">
                           <strong>
                             {formatWeight(rollup.works
                               .filter((w) => w.work.counts)
                               .reduce((sum, w) => sum + w.work.weight, 0))}
                           </strong>
                         </Table.Summary.Cell>
-                        <Table.Summary.Cell index={3} />
-                        <Table.Summary.Cell index={4}>
+                        <Table.Summary.Cell index={3} align="center" />
+                        <Table.Summary.Cell index={4} align="center">
                           <ProgressBar ratio={rollup.progress} height={8} />
                         </Table.Summary.Cell>
                       </Table.Summary.Row>

@@ -281,16 +281,17 @@ export function ProjectsScreen() {
                   </div>
                 ),
               },
-              { title: 'Số sàn', dataIndex: 'deckCount', width: 100, align: 'right' },
+              { title: 'Số sàn', dataIndex: 'deckCount', width: 100, align: 'center' },
               {
                 title: 'Tổng diện tích (m²)',
                 dataIndex: 'totalAreaM2',
                 width: 180,
-                align: 'right',
+                align: 'center',
                 render: (v: number) => formatAreaM2(v),
               },
               {
                 title: 'Tiến độ',
+                align: 'center',
                 dataIndex: 'progress',
                 width: 240,
                 render: (v: number) => <ProgressBar ratio={v} />,
@@ -299,7 +300,7 @@ export function ProjectsScreen() {
                 title: 'Thao tác',
                 key: 'actions',
                 width: 140,
-                align: 'right',
+                align: 'center',
                 render: (_v, row) => (
                   <Space size={6}>
                     <Tooltip title="Sửa dự án">

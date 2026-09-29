@@ -151,12 +151,12 @@ export function DeckKpiColorTable({
         onRow={(row) => ({ 'data-testid': `deck-color-row-${row.id}` } as React.HTMLAttributes<HTMLElement>)}
         columns={[
           { title: 'Sàn', dataIndex: 'name', render: (v: string) => <span style={{ fontWeight: 600 }}>{v}</span> },
-          { title: 'Kế hoạch', key: 'plan', width: 190, render: (_v, row) => field(row, 'plan') },
-          { title: 'Thực hiện', key: 'actual', width: 190, render: (_v, row) => field(row, 'actual') },
+          { title: 'Kế hoạch', key: 'plan', width: 190, render: (_v, row) => field(row, 'plan'), align: 'center' },
+          { title: 'Thực hiện', key: 'actual', width: 190, render: (_v, row) => field(row, 'actual'), align: 'center' },
           {
             key: 'reset',
             width: 110,
-            align: 'right',
+            align: 'center',
             render: (_v, row) => (
               <Button
                 type="link"

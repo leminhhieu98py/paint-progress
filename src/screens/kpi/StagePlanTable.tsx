@@ -198,6 +198,7 @@ export function StagePlanTable({
         KPI window with one end is not a plan.
       */
       title: 'Khoảng kế hoạch',
+      align: 'center' as const,
       key: 'window',
       width: 280,
       render: (_v: unknown, row: StagePlanRow) => {
@@ -228,7 +229,7 @@ export function StagePlanTable({
       title: 'Số ngày',
       key: 'days',
       width: 90,
-      align: 'right' as const,
+      align: 'center' as const,
       render: (_v: unknown, row: StagePlanRow) => {
         const d = draft(row)
         const shown =
@@ -246,6 +247,7 @@ export function StagePlanTable({
     },
     {
       title: areaTitle,
+      align: 'center' as const,
       key: 'area',
       width: 220,
       render: (_v: unknown, row: StagePlanRow) => {
@@ -312,7 +314,7 @@ export function StagePlanTable({
       // Pinned: the table scrolls sideways at tablet widths (QA F9) and a
       // row's Lưu must stay in view with the dates it saves.
       fixed: 'right' as const,
-      align: 'right' as const,
+      align: 'center' as const,
       render: (_v: unknown, row: StagePlanRow) => {
         const d = draft(row)
         const message = errorOf(d)

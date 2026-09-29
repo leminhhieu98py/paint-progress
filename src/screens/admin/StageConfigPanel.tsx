@@ -419,6 +419,7 @@ export function StageConfigPanel({
             // discoverable at all.
             title: '',
             key: 'handle',
+            align: 'center',
             width: 34,
             render: () => (!editable ? null : (
               <HolderOutlined style={{ color: '#647688', cursor: busy ? 'not-allowed' : 'grab' }} />
@@ -428,7 +429,7 @@ export function StageConfigPanel({
             title: 'Thứ tự',
             dataIndex: 'seq',
             width: 80,
-            align: 'right',
+            align: 'center',
             // Plain `dataIndex` rendering left the seq cell with no handle a
             // test could target unambiguously from other numeric text on the
             // page (e.g. the weight total). A gap or tie here would corrupt
@@ -465,6 +466,7 @@ export function StageConfigPanel({
           },
           {
             title: 'Màu',
+            align: 'center',
             dataIndex: 'color',
             width: 180,
             render: (v: string, row, i) => (
@@ -500,10 +502,11 @@ export function StageConfigPanel({
           },
           {
             title: 'Trọng số',
+            align: 'center',
             dataIndex: 'weight',
             width: 130,
             render: (v: number, _r, i) => (!editable ? (
-              <div style={{ textAlign: 'right', fontWeight: 600 }}>{formatWeight(v)}</div>
+              <div style={{ textAlign: 'center', fontWeight: 600 }}>{formatWeight(v)}</div>
             ) : (
               <InputNumber
                 value={v}
@@ -534,7 +537,7 @@ export function StageConfigPanel({
             title: '',
             key: 'actions',
             width: 72,
-            align: 'right',
+            align: 'center',
             render: (_v, _r, i) => (!editable ? null : (
               <Tooltip title="Xoá lớp sơn">
                 {/* A span, because antd Tooltip cannot anchor a disabled button. */}

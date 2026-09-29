@@ -450,6 +450,7 @@ export function UsersScreen() {
               },
               {
                 title: 'Loại',
+                align: 'center',
                 dataIndex: 'role',
                 width: 90,
                 render: (role: AccountRole) => <CategoryBadge category="role" value={ROLE_LABEL[role]} />,
@@ -461,6 +462,7 @@ export function UsersScreen() {
               },
               {
                 title: 'Trạng thái',
+                align: 'center',
                 key: 'status',
                 width: 120,
                 render: (_v, user) => statusOf(user),
@@ -469,9 +471,9 @@ export function UsersScreen() {
                 title: 'Thao tác',
                 key: 'actions',
                 width: 220,
-                align: 'right',
+                align: 'center',
                 render: (_v, user) => (
-                  <div style={{ display: 'flex', gap: 7, justifyContent: 'flex-end' }}>
+                  <div style={{ display: 'flex', gap: 7, justifyContent: 'center' }}>
                     <Tooltip title="Phân quyền dự án và công việc">
                       <Button
                         size="small"

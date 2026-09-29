@@ -206,7 +206,7 @@ export function EmployeesScreen() {
               {
                 title: '',
                 width: 90,
-                align: 'right',
+                align: 'center',
                 render: (_, row) => (
                   <Button
                     size="small"

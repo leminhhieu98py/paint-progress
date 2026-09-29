@@ -147,21 +147,21 @@ export function EffortHistoryPanel({
         pagination={tablePagination(shown.length)}
         locale={{ emptyText: onlyMissing ? 'Mọi lần cập nhật đã có giờ công' : 'Sàn này chưa có lần cập nhật nào' }}
         columns={[
-          { title: 'Mã ô', dataIndex: 'cellCode', width: 80 },
+          { title: 'Mã ô', dataIndex: 'cellCode', width: 80, align: 'center' },
           { title: 'Công việc', dataIndex: 'workName', width: 120, render: (v: string | null) => v ?? '' },
           { title: 'Công đoạn', dataIndex: 'toStageName', width: 140, render: (v: string | null) => v ?? 'Chưa bắt đầu' },
-          { title: 'Cập nhật lúc', dataIndex: 'at', width: 160, render: (v: string) => formatDateTimeVN(v) },
+          { title: 'Cập nhật lúc', dataIndex: 'at', width: 160, render: (v: string) => formatDateTimeVN(v), align: 'center' },
           { title: 'Bởi', dataIndex: 'byId', width: 140, render: (v: string | null) => (v === null ? '' : names[v] ?? v) },
           { title: 'Nhóm trưởng', render: (_, ev) => ev.effort.leadName },
           { title: 'Thợ chính', render: (_, ev) => ev.effort.painterName },
-          { title: 'Giờ công', align: 'right', width: 90, render: (_, ev) => hours(ev.effort.workHours) },
-          { title: 'Giờ hao phí', align: 'right', width: 100, render: (_, ev) => hours(ev.effort.wasteHours) },
-          { title: 'Lý do hao phí', render: (_, ev) => <WasteReasonBadge reason={ev.effort.wasteReason} /> },
-          { title: 'Lệnh sản xuất', width: 130, render: (_, ev) => ev.effort.wasteOrder },
+          { title: 'Giờ công', align: 'center', width: 90, render: (_, ev) => hours(ev.effort.workHours) },
+          { title: 'Giờ hao phí', align: 'center', width: 100, render: (_, ev) => hours(ev.effort.wasteHours) },
+          { title: 'Lý do hao phí', render: (_, ev) => <WasteReasonBadge reason={ev.effort.wasteReason} />, align: 'center' },
+          { title: 'Lệnh sản xuất', width: 130, render: (_, ev) => ev.effort.wasteOrder, align: 'center' },
           {
             title: '',
             width: 90,
-            align: 'right',
+            align: 'center',
             render: (_, ev) => (
               <Space size={4}>
                 {ev.effortEditedAt && (

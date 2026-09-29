@@ -355,10 +355,11 @@ export function WorksScreen() {
               {
                 title: '',
                 key: 'handle',
+                align: 'center',
                 width: 34,
                 render: () => <HolderOutlined style={{ color: palette.textTertiary, cursor: 'grab' }} />,
               },
-              { title: 'Thứ tự', dataIndex: 'seq', width: 72, align: 'right' },
+              { title: 'Thứ tự', dataIndex: 'seq', width: 72, align: 'center' },
               {
                 title: 'Tên công việc',
                 dataIndex: 'name',
@@ -392,6 +393,7 @@ export function WorksScreen() {
               },
               {
                 title: 'Đơn vị',
+                align: 'center',
                 dataIndex: 'unit',
                 width: 110,
                 render: (v: string, _w, i) => (
@@ -407,6 +409,7 @@ export function WorksScreen() {
               },
               {
                 title: 'Loại',
+                align: 'center',
                 dataIndex: 'kind',
                 width: 140,
                 render: (v: WorkKind, _w, i) => (
@@ -422,6 +425,7 @@ export function WorksScreen() {
               },
               {
                 title: 'Trọng số',
+                align: 'center',
                 dataIndex: 'weight',
                 width: 120,
                 render: (v: number, _w, i) => (
@@ -446,6 +450,7 @@ export function WorksScreen() {
               },
               {
                 title: 'Tiến độ',
+                align: 'center',
                 key: 'progress',
                 width: 150,
                 render: (_v, w, i) => (w.kind === 'manual' ? (
@@ -468,7 +473,7 @@ export function WorksScreen() {
                 title: 'Thao tác',
                 key: 'actions',
                 width: 120,
-                align: 'right',
+                align: 'center',
                 render: (_v, w) => (
                   <Space size={6}>
                     {w.kind === 'bays' && (
@@ -533,7 +538,7 @@ export function WorksScreen() {
                   {
                     title: 'Diện tích (m²)',
                     dataIndex: 'totalAreaM2',
-                    align: 'right',
+                    align: 'center',
                     render: (v: number) => formatAreaM2(v),
                   },
                   {
@@ -554,6 +559,7 @@ export function WorksScreen() {
                   },
                   {
                     title: 'Trọng số sàn',
+                    align: 'center',
                     dataIndex: 'weight',
                     width: 140,
                     render: (v: number, r) => (

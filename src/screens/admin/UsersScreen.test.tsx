@@ -459,3 +459,18 @@ describe('UsersScreen — pagination (UI-05)', () => {
     expect(document.querySelector('.ant-pagination-options')).not.toBeNull()
   })
 })
+
+describe('UsersScreen — alignment (UI-03)', () => {
+  it('keeps the name column left and centres everything else, header included', async () => {
+    renderApp(<UsersScreen />)
+    await screen.findByText('GS Một')
+    const th = (label: string) => screen.getByRole('columnheader', { name: label })
+    expect(th('Người dùng')).not.toHaveStyle({ textAlign: 'center' })
+    expect(th('Dự án')).not.toHaveStyle({ textAlign: 'center' })
+    for (const label of ['Loại', 'Trạng thái', 'Thao tác']) {
+      expect(th(label)).toHaveStyle({ textAlign: 'center' })
+    }
+    const cell = screen.getAllByText('Đang dùng')[0].closest('td')
+    expect(cell).toHaveStyle({ textAlign: 'center' })
+  })
+})

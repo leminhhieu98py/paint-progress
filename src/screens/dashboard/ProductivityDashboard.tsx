@@ -223,12 +223,12 @@ export function ProductivityDashboard({
   const stageColumns = [
     ...(workNames.length > 1 ? [{ title: 'Công việc', dataIndex: 'workName' as const }] : []),
     { title: 'Công đoạn', dataIndex: 'stageName' as const },
-    { title: 'Số ngày', dataIndex: 'days' as const, align: 'right' as const },
-    { title: 'Tổng Mhr', align: 'right' as const, render: (_: unknown, r: StageEfficiency) => formatHours(r.totalHours) },
-    { title: `Tổng ${unit}`, align: 'right' as const, render: (_: unknown, r: StageEfficiency) => formatAreaM2(r.totalAreaM2) },
-    { title: `Hiệu suất TB (${perUnit(unit)})`, align: 'right' as const, render: (_: unknown, r: StageEfficiency) => ratio(r.avgMhrPerM2) },
-    { title: 'Mhr TB/ngày', align: 'right' as const, render: (_: unknown, r: StageEfficiency) => (r.avgHoursPerDay === null ? dash : formatHours(r.avgHoursPerDay)) },
-    { title: 'Giờ hao phí', align: 'right' as const, render: (_: unknown, r: StageEfficiency) => formatHours(r.wasteHours) },
+    { title: 'Số ngày', dataIndex: 'days' as const, align: 'center' as const },
+    { title: 'Tổng Mhr', align: 'center' as const, render: (_: unknown, r: StageEfficiency) => formatHours(r.totalHours) },
+    { title: `Tổng ${unit}`, align: 'center' as const, render: (_: unknown, r: StageEfficiency) => formatAreaM2(r.totalAreaM2) },
+    { title: `Hiệu suất TB (${perUnit(unit)})`, align: 'center' as const, render: (_: unknown, r: StageEfficiency) => ratio(r.avgMhrPerM2) },
+    { title: 'Mhr TB/ngày', align: 'center' as const, render: (_: unknown, r: StageEfficiency) => (r.avgHoursPerDay === null ? dash : formatHours(r.avgHoursPerDay)) },
+    { title: 'Giờ hao phí', align: 'center' as const, render: (_: unknown, r: StageEfficiency) => formatHours(r.wasteHours) },
   ]
 
   return (
@@ -317,26 +317,28 @@ export function ProductivityDashboard({
               { title: 'Sàn', dataIndex: 'deckName' },
               {
                 title: 'Mhr còn cần',
-                align: 'right',
+                align: 'center',
                 render: (_, r) => (r.forecast.totalMhrNeeded === null ? dash : formatHours(r.forecast.totalMhrNeeded)),
               },
               {
                 title: 'Số ngày cần',
-                align: 'right',
+                align: 'center',
                 render: (_, r) => (r.forecast.daysNeeded === null ? dash : String(r.forecast.daysNeeded)),
               },
               {
                 title: 'Hạn hoàn thành',
+                align: 'center',
                 // A date, so left like every other date column (TBL-01).
                 render: (_, r) => (r.forecast.deadline === null ? dash : dayjs(r.forecast.deadline).format('DD/MM/YYYY')),
               },
               {
                 title: 'Ngày còn lại',
-                align: 'right',
+                align: 'center',
                 render: (_, r) => (r.forecast.daysRemaining === null ? dash : String(r.forecast.daysRemaining)),
               },
               {
                 title: 'Cảnh báo',
+                align: 'center',
                 render: (_, r) => (r.forecast.lateDays === null
                   ? ''
                   : (
@@ -391,11 +393,11 @@ export function ProductivityDashboard({
               locale={{ emptyText: 'Không có nhóm trưởng nào khớp' }}
               columns={[
                 { title: 'Nhóm trưởng', dataIndex: 'leadName' },
-                { title: 'Lần cập nhật', dataIndex: 'updates', align: 'right' },
-                { title: 'Tổng Mhr', align: 'right', render: (_, r) => formatHours(r.totalHours) },
-                { title: `Tổng ${unit}`, align: 'right', render: (_, r) => formatAreaM2(r.totalAreaM2) },
-                { title: perUnit(unit), align: 'right', render: (_, r) => ratio(r.mhrPerM2) },
-                { title: 'Giờ hao phí', align: 'right', render: (_, r) => formatHours(r.wasteHours) },
+                { title: 'Lần cập nhật', dataIndex: 'updates', align: 'center' },
+                { title: 'Tổng Mhr', align: 'center', render: (_, r) => formatHours(r.totalHours) },
+                { title: `Tổng ${unit}`, align: 'center', render: (_, r) => formatAreaM2(r.totalAreaM2) },
+                { title: perUnit(unit), align: 'center', render: (_, r) => ratio(r.mhrPerM2) },
+                { title: 'Giờ hao phí', align: 'center', render: (_, r) => formatHours(r.wasteHours) },
               ]}
             />
           </div>
@@ -410,11 +412,12 @@ export function ProductivityDashboard({
               columns={[
                 {
                   title: 'Lý do',
+                  align: 'center',
                   dataIndex: 'reason',
                   render: (v: string) => (v === '' ? <span style={{ color: palette.textQuaternary }}>Không ghi lý do</span> : <WasteReasonBadge reason={v} />),
                 },
-                { title: 'Giờ', align: 'right', render: (_, r) => formatHours(r.hours) },
-                { title: 'Số lần', dataIndex: 'count', align: 'right' },
+                { title: 'Giờ', align: 'center', render: (_, r) => formatHours(r.hours) },
+                { title: 'Số lần', dataIndex: 'count', align: 'center' },
               ]}
               locale={{ emptyText: 'Chưa ghi giờ hao phí nào' }}
             />

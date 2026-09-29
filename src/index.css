@@ -96,7 +96,7 @@ body {
   button -- keeps its neighbours on its centre line, whatever antd's cell
   styles inherit.
 */
-.pp-card .ant-table-wrapper .ant-table .ant-table-tbody > tr > td {
+.ant-table-wrapper .ant-table .ant-table-tbody > tr > td {
   vertical-align: middle;
 }
 

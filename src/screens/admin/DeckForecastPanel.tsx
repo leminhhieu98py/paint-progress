@@ -260,27 +260,27 @@ export function DeckForecastPanel({
               { title: 'Công đoạn', dataIndex: 'stageName' },
               {
                 title: `${unit} còn lại`,
-                align: 'right',
+                align: 'center',
                 render: (_, r) => formatAreaM2(r.remainingAreaM2),
               },
               {
                 title: `Hiệu suất TB (${perUnit(unit)})`,
-                align: 'right',
+                align: 'center',
                 render: (_, r) => (r.avgMhrPerM2 === null ? dash : formatMhrPerM2(r.avgMhrPerM2)),
               },
               {
                 title: 'Mhr TB/ngày',
-                align: 'right',
+                align: 'center',
                 render: (_, r) => (r.avgHoursPerDay === null ? dash : formatHours(r.avgHoursPerDay)),
               },
               {
                 title: 'Mhr còn cần',
-                align: 'right',
+                align: 'center',
                 render: (_, r) => (r.mhrNeeded === null ? dash : formatHours(r.mhrNeeded)),
               },
               {
                 title: 'Số ngày cần',
-                align: 'right',
+                align: 'center',
                 render: (_, r) => (r.daysNeeded === null ? dash : String(r.daysNeeded)),
               },
             ]}
@@ -289,17 +289,17 @@ export function DeckForecastPanel({
                 <Table.Summary.Cell index={0}>
                   <strong>Tổng</strong>
                 </Table.Summary.Cell>
-                <Table.Summary.Cell index={1} align="right" />
-                <Table.Summary.Cell index={2} align="right" />
-                <Table.Summary.Cell index={3} align="right" />
-                <Table.Summary.Cell index={4} align="right">
+                <Table.Summary.Cell index={1} align="center" />
+                <Table.Summary.Cell index={2} align="center" />
+                <Table.Summary.Cell index={3} align="center" />
+                <Table.Summary.Cell index={4} align="center">
                   <strong>
                     {forecast?.totalMhrNeeded === null || forecast === null
                       ? dash
                       : formatHours(forecast.totalMhrNeeded)}
                   </strong>
                 </Table.Summary.Cell>
-                <Table.Summary.Cell index={5} align="right">
+                <Table.Summary.Cell index={5} align="center">
                   <strong>{forecast?.daysNeeded === null || forecast === null ? dash : String(forecast.daysNeeded)}</strong>
                 </Table.Summary.Cell>
               </Table.Summary.Row>

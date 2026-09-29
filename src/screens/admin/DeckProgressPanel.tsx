@@ -2107,6 +2107,7 @@ export function DeckProgressPanel({
               { title: 'Công đoạn', dataIndex: 'name', key: 'name' },
               {
                 title: 'Thời gian',
+                align: 'center',
                 key: 'window',
                 render: (_, st: Stage) => (
                   <DatePicker.RangePicker
@@ -2147,8 +2148,8 @@ export function DeckProgressPanel({
             <thead>
               <tr style={{ background: palette.bgSubtleAlt, borderBottom: `1px solid ${palette.borderSplit}` }}>
                 <th style={{ padding: `${space.sm}px ${space.md}px ${space.sm}px ${space.xl}px`, textAlign: 'left', fontWeight: 600, fontSize: 12, color: palette.textTertiary }}>Công việc</th>
-                <th style={{ padding: `${space.sm}px ${space.md}px`, textAlign: 'right', fontWeight: 600, fontSize: 12, color: palette.textTertiary }}>Trọng số sàn</th>
-                <th style={{ padding: `${space.sm}px ${space.xl}px ${space.sm}px ${space.md}px`, textAlign: 'right', fontWeight: 600, fontSize: 12, color: palette.textTertiary }}>Tiến độ</th>
+                <th style={{ padding: `${space.sm}px ${space.md}px`, textAlign: 'center', fontWeight: 600, fontSize: 12, color: palette.textTertiary }}>Trọng số sàn</th>
+                <th style={{ padding: `${space.sm}px ${space.xl}px ${space.sm}px ${space.md}px`, textAlign: 'center', fontWeight: 600, fontSize: 12, color: palette.textTertiary }}>Tiến độ</th>
               </tr>
             </thead>
             <tbody>
@@ -2156,10 +2157,10 @@ export function DeckProgressPanel({
                 <tr key={row.work.id} style={{ borderBottom: `1px solid ${palette.borderSplit}` }}>
                   {/* Edge cells carry the card gutter, as antd's do under `.pp-card`. */}
                   <td style={{ padding: `${space.sm}px ${space.md}px ${space.sm}px ${space.xl}px`, fontWeight: 600 }}>{row.work.name}</td>
-                  <td style={{ padding: `${space.sm}px ${space.md}px`, color: palette.textTertiary, textAlign: 'right' }}>
+                  <td style={{ padding: `${space.sm}px ${space.md}px`, color: palette.textTertiary, textAlign: 'center' }}>
                     {formatWeight(row.weight)}
                   </td>
-                  <td style={{ padding: `${space.sm}px ${space.xl}px ${space.sm}px ${space.md}px`, textAlign: 'right', fontWeight: 600, minWidth: 72 }}>
+                  <td style={{ padding: `${space.sm}px ${space.xl}px ${space.sm}px ${space.md}px`, textAlign: 'center', fontWeight: 600, minWidth: 72 }}>
                     {formatPercent(row.progress)}
                   </td>
                 </tr>
@@ -2169,7 +2170,7 @@ export function DeckProgressPanel({
                 {/* Σ W·D is a project-level share, not a deck weight; it
                     belongs on the decks list, not in this column. */}
                 <td />
-                <td style={{ padding: `${space.sm}px ${space.xl}px ${space.sm}px ${space.md}px`, textAlign: 'right', fontWeight: 700 }}>
+                <td style={{ padding: `${space.sm}px ${space.xl}px ${space.sm}px ${space.md}px`, textAlign: 'center', fontWeight: 700 }}>
                   {formatPercent(deckSummary.progress)}
                 </td>
               </tr>

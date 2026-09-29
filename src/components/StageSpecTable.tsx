@@ -34,7 +34,7 @@ export function StageSpecTable({ stages, unit = DEFAULT_UNIT }: {
       title: sp.stage.name,
       dataIndex: sp.stage.id,
       key: sp.stage.id,
-      align: 'right' as const,
+      align: 'center' as const,
     })),
   ]
 
