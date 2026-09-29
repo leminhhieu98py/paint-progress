@@ -117,6 +117,36 @@ export const fieldError = '#A50F0F'
  */
 export const space = { xs: 4, sm: 8, md: 12, lg: 16, xl: 20, xxl: 28 } as const
 
+/**
+ * The type scale (TYP-01): every size and weight a screen sets by hand is one
+ * of these roles, spread into its style (`...type.body`). antd's own text
+ * follows the same steps through the tokens below -- `fontSize` is `body`,
+ * table headers and field labels (`fontWeightStrong`) are `label`, card and
+ * dialog titles are `cardTitle`.
+ *
+ * Nothing goes below `micro`, and 700 belongs to the two display sizes alone:
+ * the stat numbers and the figure in a ring's centre. The sidebar's product
+ * name (14/600) is the one size outside the scale.
+ */
+export const type = {
+  /** Stat numbers. */
+  display: { fontSize: 32, fontWeight: 700 },
+  /** The figure in a ring's centre. */
+  displaySm: { fontSize: 21, fontWeight: 700 },
+  pageTitle: { fontSize: 20, fontWeight: 600 },
+  cardTitle: { fontSize: 15, fontWeight: 600 },
+  /** Running text and every table cell, names included. */
+  body: { fontSize: 13, fontWeight: 400 },
+  /** A totals row; a figure that is the point of its line. */
+  bodyStrong: { fontSize: 13, fontWeight: 600 },
+  /** Table headers and field labels. */
+  label: { fontSize: 13, fontWeight: 600 },
+  /** A sub-line under a name, a card summary, a page subtitle. */
+  caption: { fontSize: 12, fontWeight: 400 },
+  /** Badges, pills, section codes. */
+  micro: { fontSize: 11, fontWeight: 600 },
+} as const
+
 export const fontFamily =
   "'Be Vietnam Pro', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Helvetica, Arial, sans-serif"
 
@@ -153,7 +183,7 @@ const sharedTokens = {
   // The prototypes use one weight for headings (600) and never go heavier than
   // 700, which is reserved for the two or three numbers per screen that are the
   // point of the screen.
-  fontWeightStrong: 600,
+  fontWeightStrong: type.label.fontWeight,
 
   wireframe: false,
 }
@@ -168,7 +198,7 @@ const sharedTokens = {
 export const adminTheme: ThemeConfig = {
   token: {
     ...sharedTokens,
-    fontSize: 13,
+    fontSize: type.body.fontSize,
     controlHeight: 38,
     borderRadius: 10,
     borderRadiusLG: 14,
@@ -211,7 +241,7 @@ export const adminTheme: ThemeConfig = {
     },
     Card: {
       headerBg: 'transparent',
-      headerFontSize: 15,
+      headerFontSize: type.cardTitle.fontSize,
       paddingLG: 20,
       colorBorderSecondary: palette.borderCard,
     },
@@ -225,7 +255,7 @@ export const adminTheme: ThemeConfig = {
     },
     Modal: {
       borderRadiusLG: 18,
-      titleFontSize: 17,
+      titleFontSize: type.cardTitle.fontSize,
       headerBg: palette.bgContainer,
       footerBg: palette.bgSubtle,
       contentBg: palette.bgContainer,

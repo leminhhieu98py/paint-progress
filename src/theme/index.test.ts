@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { categoricalColor, palette } from '.'
+import { adminTheme, categoricalColor, palette, type } from '.'
 
 /** WCAG relative luminance of a `#rrggbb` colour. */
 function luminance(hex: string): number {
@@ -67,5 +67,35 @@ describe('categoricalColor (CHT-01)', () => {
       const ring = Array.from({ length: n }, (_, i) => categoricalColor(i))
       ring.forEach((c, i) => expect(c).not.toBe(ring[(i + 1) % n]))
     }
+  })
+})
+
+describe('type (TYP-01)', () => {
+  it('is the one scale, size and weight per role', () => {
+    expect(type).toEqual({
+      display: { fontSize: 32, fontWeight: 700 },
+      displaySm: { fontSize: 21, fontWeight: 700 },
+      pageTitle: { fontSize: 20, fontWeight: 600 },
+      cardTitle: { fontSize: 15, fontWeight: 600 },
+      body: { fontSize: 13, fontWeight: 400 },
+      bodyStrong: { fontSize: 13, fontWeight: 600 },
+      label: { fontSize: 13, fontWeight: 600 },
+      caption: { fontSize: 12, fontWeight: 400 },
+      micro: { fontSize: 11, fontWeight: 600 },
+    })
+  })
+
+  it('goes no smaller than 11 and no heavier than 600 outside the two display sizes', () => {
+    for (const [role, t] of Object.entries(type)) {
+      expect({ role, ok: t.fontSize >= 11 && Number.isInteger(t.fontSize) }).toEqual({ role, ok: true })
+      if (!role.startsWith('display')) expect({ role, weight: t.fontWeight <= 600 }).toEqual({ role, weight: true })
+    }
+  })
+
+  it('agrees with the admin theme: base size is body, card and dialog titles are cardTitle', () => {
+    expect(adminTheme.token?.fontSize).toBe(type.body.fontSize)
+    expect(adminTheme.token?.fontWeightStrong).toBe(type.bodyStrong.fontWeight)
+    expect(adminTheme.components?.Card?.headerFontSize).toBe(type.cardTitle.fontSize)
+    expect(adminTheme.components?.Modal?.titleFontSize).toBe(type.cardTitle.fontSize)
   })
 })
