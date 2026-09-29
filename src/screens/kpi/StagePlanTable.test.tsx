@@ -277,16 +277,29 @@ describe('StagePlanTable', () => {
     ))
   })
 
-  it('shows a typed area grouped the way its placeholder is, once the field is left', async () => {
-    renderTable()
-    const area = row('s2').getByLabelText('Diện tích kế hoạch') as HTMLInputElement
-    await userEvent.clear(area)
-    await userEvent.type(area, '8000,5')
-    // While typing, the text is the admin's own.
-    expect(area.value).toBe('8000,5')
-    await userEvent.tab()
+  it('edits a stored area in place by one digit at its real magnitude', async () => {
+    // The field shows 3300 ungrouped on purpose. Grouped as "3.300", adding
+    // a digit at the end gave "3.3000" and deleting one gave "3.30" -- no
+    // longer a thousands group, so both saved 3.3 m².
+    const { onSave } = renderTable()
+    const area = row('s1').getByLabelText('Diện tích kế hoạch') as HTMLInputElement
+    expect(area.value).toBe('3300')
 
-    expect(area.value).toBe('8.000,5')
+    // userEvent.type puts the caret at the end of the current text.
+    await userEvent.type(area, '0')
+    await userEvent.click(saveOf('s1'))
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({ stageId: 's1' }),
+      { startDate: '2026-09-01', endDate: '2026-09-12', plannedAreaM2: 33000 },
+    ))
+
+    onSave.mockClear()
+    await userEvent.type(area, '{Backspace}{Backspace}')
+    await userEvent.click(saveOf('s1'))
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({ stageId: 's1' }),
+      { startDate: '2026-09-01', endDate: '2026-09-12', plannedAreaM2: 330 },
+    ))
   })
 
   it('treats a typed zero as an override of zero, not as an empty field', async () => {
@@ -312,8 +325,7 @@ describe('StagePlanTable', () => {
     const { onClearArea } = renderTable()
 
     const area = row('s1').getByLabelText('Diện tích kế hoạch')
-    // Grouped like its placeholder and the rest of the app.
-    expect((area as HTMLInputElement).value).toBe('3.300')
+    expect((area as HTMLInputElement).value).toBe('3300')
 
     await userEvent.click(row('s1').getByRole('button', { name: 'Về diện tích tự tính' }))
 
