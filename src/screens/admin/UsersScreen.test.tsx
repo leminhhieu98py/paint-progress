@@ -586,4 +586,15 @@ describe('UsersScreen — narrow screens (review I7)', () => {
     expect(actions).toHaveClass('ant-table-cell-fix-right')
     expect(actions.closest('table')).toHaveStyle({ width: 'max-content' })
   })
+
+  it('gives the project list a fixed 280 px column, so a long list wraps instead of widening the table (UI-06)', async () => {
+    // Under scroll.x max-content, rc-table sizes an unsized column to its
+    // longest line: the plain-text project list never wrapped.
+    renderApp(<UsersScreen />)
+    await screen.findByText('GS Một')
+    const header = screen.getByRole('columnheader', { name: 'Dự án' })
+    const index = [...(header.parentElement as HTMLElement).children].indexOf(header)
+    const col = header.closest('table')?.querySelectorAll('colgroup col')[index] as HTMLElement
+    expect(col).toHaveStyle({ width: '280px' })
+  })
 })

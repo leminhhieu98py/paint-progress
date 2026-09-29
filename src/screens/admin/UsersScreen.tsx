@@ -426,6 +426,9 @@ export function UsersScreen() {
               {
                 title: 'Dự án',
                 key: 'projects',
+                // Fixed, so the list wraps: under scroll.x max-content an
+                // unsized column grows to its longest line (UI-06).
+                width: 280,
                 render: (_v, user) => <ProjectList user={user} />,
               },
               {
