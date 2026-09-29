@@ -5,6 +5,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderApp } from '../../test/renderApp'
 import { keyFactTexts, pageSubtitle } from '../../test/copy'
+import { chooseOption, optionTitles } from '../../test/select'
 import { DeckDetailScreen } from './DeckDetailScreen'
 
 const getDeck = vi.hoisted(() => vi.fn())
@@ -48,7 +49,7 @@ vi.mock('./StageConfigPanel', () => ({
     <div>{`stages ${workId} ${deckId} ${editable ? 'sửa' : 'xem'}`}</div>
   ),
 }))
-// The works the deck is part of, which is what A3.2 tabs over since 0024.
+// The works the deck is part of, which A3.2 chooses between since 0024.
 const listDeckWorks = vi.hoisted(() => vi.fn())
 vi.mock('../../lib/gsApi', () => ({ listDeckWorks: (id: string) => listDeckWorks(id) }))
 const WORK1 = {
@@ -471,19 +472,32 @@ describe('DeckDetailScreen', () => {
 })
 
 describe('DeckDetailScreen — công việc', () => {
-  it('shows one work\'s coats without tabs', async () => {
+  it('shows one work\'s coats with nothing to choose', async () => {
     renderAt('/decks/d1')
     expect(await screen.findByText('stages w1 d1 xem')).toBeInTheDocument()
     expect(screen.queryByRole('tab')).toBeNull()
+    expect(screen.queryByRole('combobox', { name: 'Công việc' })).toBeNull()
   })
 
-  it('tabs the coat configuration by work when the deck is in several', async () => {
+  it('chooses the work of the coat configuration from a searchable select when the deck is in several (FLT-07)', async () => {
     listDeckWorks.mockResolvedValue([{ work: WORK1, weight: 1, stages: [] }, { work: WORK2, weight: 1, stages: [] }])
     renderAt('/decks/d1')
     expect(await screen.findByText('stages w1 d1 xem')).toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: 'Sơn' })).toBeInTheDocument()
-    await userEvent.click(screen.getByRole('tab', { name: 'Tháo giáo' }))
-    expect(await screen.findByText('stages w2 d1 xem')).toBeInTheDocument()
+    // A select, not a row of tabs.
+    expect(screen.queryByRole('tab')).toBeNull()
+    expect(screen.getByRole('combobox', { name: 'Công việc' })).toBeInTheDocument()
+    // Searchable, tones ignored (UI-02).
+    await userEvent.type(screen.getByRole('combobox', { name: 'Công việc' }), 'thao')
+    expect(await optionTitles('Công việc')).toEqual(['Tháo giáo'])
+    await userEvent.keyboard('{Escape}')
+    await chooseOption('Công việc', 'Tháo giáo')
+    expect(await screen.findByText('stages w2 d1 xem')).toBeVisible()
+    // The first work's panel stays mounted, hidden, so an unsaved draft
+    // survives switching back, as it did under the tabs.
+    expect(screen.getByText('stages w1 d1 xem')).not.toBeVisible()
+    await chooseOption('Công việc', 'Sơn')
+    expect(screen.getByText('stages w1 d1 xem')).toBeVisible()
+    expect(screen.getByText('stages w2 d1 xem')).not.toBeVisible()
   })
 
   it('points at the Công việc screen when the deck is in no work', async () => {

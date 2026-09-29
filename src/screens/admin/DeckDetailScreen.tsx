@@ -1,6 +1,6 @@
 import { FilePdfOutlined, UploadOutlined, WarningOutlined } from '@ant-design/icons'
 import {
-  Alert, App, Button, Form, Input, InputNumber, Segmented, Space, Spin, Tabs, Typography, Upload,
+  Alert, App, Button, Form, Input, InputNumber, Segmented, Select, Space, Spin, Typography, Upload,
 } from 'antd'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
@@ -27,8 +27,9 @@ import { ConsequenceModal } from '../../components/ConsequenceModal'
 import { PageBody, PageHeader } from '../../components/PageHeader'
 import { InfoTip } from '../../components/InfoTip'
 import { SectionCard } from '../../components/SectionCard'
+import { WORK_SELECT_WIDTH, searchSelectProps, useFullOptionsProps } from '../../components/searchSelect'
 import { formatPercent } from '../../lib/format'
-import { palette, type } from '../../theme'
+import { palette, space, type } from '../../theme'
 
 /** One read-only fact about the deck, in the card grid of panel A3.1. */
 function IdentityCard({
@@ -178,6 +179,16 @@ export function DeckDetailScreen() {
    */
   const [works, setWorks] = useState<DeckWork[] | null>(null)
   const [worksError, setWorksError] = useState<string | null>(null)
+  /**
+   * Which work's coats A3.2 shows when the deck is in several: a searchable
+   * select (FLT-07), the first work until one is chosen. Every work shown once
+   * stays mounted, hidden, so an unsaved draft survives switching away and
+   * back, as it did when this was a row of tabs.
+   */
+  const [stageWorkId, setStageWorkId] = useState<string | null>(null)
+  const [seenStageWorks, setSeenStageWorks] = useState<string[]>([])
+  const fullOptions = useFullOptionsProps()
+  const activeStageWork = works?.find((w) => w.work.id === stageWorkId)?.work.id ?? works?.[0]?.work.id
   /**
    * RV6-36: the deck's quantity is its works'. One work, or several agreeing:
    * `Khối lượng sàn (tấn)`. Works that disagree: `Số lượng sàn`, no unit, and
@@ -652,21 +663,34 @@ export function DeckDetailScreen() {
           <StageConfigPanel workId={works[0].work.id} deckId={deck.id} editable={editing} onSaved={() => void load()} />
         )}
         {deck && works !== null && works.length > 1 && (
-          <Tabs
-            items={works.map((w) => ({
-              key: w.work.id,
-              label: w.work.name,
-              children: (
-                <StageConfigPanel
-                  key={w.work.id}
-                  workId={w.work.id}
-                  deckId={deck.id}
-                  editable={editing}
-                  onSaved={() => void load()}
-                />
-              ),
-            }))}
-          />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: space.md }}>
+            <Select
+              aria-label="Công việc"
+              {...searchSelectProps}
+              {...fullOptions}
+              style={{ width: WORK_SELECT_WIDTH }}
+              value={activeStageWork}
+              onChange={(id: string) => {
+                if (activeStageWork !== undefined) {
+                  setSeenStageWorks((seen) => (seen.includes(activeStageWork) ? seen : [...seen, activeStageWork]))
+                }
+                setStageWorkId(id)
+              }}
+              options={works.map((w) => ({ label: w.work.name, value: w.work.id }))}
+            />
+            {works
+              .filter((w) => w.work.id === activeStageWork || seenStageWorks.includes(w.work.id))
+              .map((w) => (
+                <div key={w.work.id} hidden={w.work.id !== activeStageWork}>
+                  <StageConfigPanel
+                    workId={w.work.id}
+                    deckId={deck.id}
+                    editable={editing}
+                    onSaved={() => void load()}
+                  />
+                </div>
+              ))}
+          </div>
         )}
 
         {deck && (
