@@ -351,6 +351,9 @@ export function GsScreen() {
     // title and wrote (old bay, new deck) (I1).
     setGeometry([])
     setStates({})
+    // And the read that named them: A -> B -> A must not print A's emptied
+    // bays as 0,00% before A's re-read lands (R1). Loading, and taps gated.
+    setDeckRead(null)
     if (!activeDeckId) return
     void refetchDeck(activeDeckId)
     return () => {

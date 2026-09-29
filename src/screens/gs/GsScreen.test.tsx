@@ -567,6 +567,25 @@ describe('GsScreen', () => {
     expect(screen.queryByRole('button', { name: 'ô R1C1' })).toBeNull()
   })
 
+  it('shows the skeleton, never 0,00%, on a deck opened again before its re-read lands (R1)', async () => {
+    // A -> B -> A: A's first read named A, the reset emptied its bays, and the
+    // stale "read" made the empty deck print as 0,00% until the re-read landed.
+    let d1Reads = 0
+    listDeckCells.mockImplementation((deckId: string) => {
+      if (deckId === 'd1' && d1Reads++ === 0) return Promise.resolve(D1_CELLS)
+      return new Promise(() => {})
+    })
+    renderScreen()
+    expect(await screen.findByRole('button', { name: 'ô R2C1' })).toBeInTheDocument()
+    await pickDeck('Main Deck')
+    await waitFor(() => expect(listDeckCells).toHaveBeenCalledWith('d2'))
+    await pickDeck('Cellar Deck')
+    await waitFor(() => expect(d1Reads).toBe(2))
+    const progress = screen.getByTestId('gs-deck-progress')
+    expect(within(progress).getByRole('status', { name: 'Đang tải tiến độ sàn' })).toBeInTheDocument()
+    expect(progress.textContent).not.toMatch(/0,00%/)
+  })
+
   it('opens no bay before the deck\'s own read has landed (I1)', async () => {
     // A bay can reach the drawing ahead of the read, over realtime. Its states
     // are not read yet, so a tap would record over a stage it cannot show.
