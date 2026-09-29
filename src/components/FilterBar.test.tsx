@@ -23,7 +23,17 @@ describe('FilterBar (FLT-01)', () => {
     const bar = screen.getByRole('search', { name: 'Bộ lọc' })
     expect(within(bar).getByRole('combobox', { name: 'Sàn' })).toBeInTheDocument()
     expect(within(bar).getByRole('combobox', { name: 'Công đoạn' })).toBeInTheDocument()
-    expect(bar).toHaveStyle({ display: 'flex', flexWrap: 'wrap', gap: `${space.md}px` })
+    expect(bar).toHaveStyle({ display: 'flex', flexWrap: 'wrap', gap: `${space.md}px`, alignItems: 'center' })
+  })
+
+  it('lines its items up at the bottom for controls with a label above them, and takes its own name', () => {
+    render(
+      <FilterBar align="end" label="Bộ lọc bên phải" onApply={() => {}} onReset={() => {}}>
+        <Select aria-label="Công đoạn" options={[]} />
+      </FilterBar>,
+    )
+    const bar = screen.getByRole('search', { name: 'Bộ lọc bên phải' })
+    expect(bar).toHaveStyle({ alignItems: 'flex-end' })
   })
 })
 

@@ -34,6 +34,7 @@ import { Donut, type DonutSlice } from '../../components/Donut'
 import { DECK_RING, ringFigureStep } from '../../components/ringFit'
 import { legendRowProps } from '../../components/ringHover'
 import { EmptyState } from '../../components/EmptyState'
+import { FilterBar } from '../../components/FilterBar'
 import { InfoTip } from '../../components/InfoTip'
 import { NoteThread } from '../../components/NoteThread'
 import { ProgressBar } from '../../components/ProgressBar'
@@ -144,6 +145,16 @@ const REFRESH_DEBOUNCE_MS = 400
  * and never neither -- and the select needs no special-casing to hold it.
  */
 const ALL_STAGES = '__all__'
+
+/** The lens bars' draft (FLT-08): what is picked and not yet applied, for one deck. */
+type LensDraft = {
+  deckId: string
+  workId?: string
+  viewA?: string | null
+  viewB?: string | null
+  dateA?: dayjs.Dayjs | null
+  dateB?: dayjs.Dayjs | null
+}
 
 /**
  * The day one layer is pinned to, if any (RV6-14..16).
@@ -375,6 +386,12 @@ export function DeckProgressPanel({
     a: dayjs.Dayjs | null
     b: dayjs.Dayjs | null
   }>({ deckId, a: null, b: null })
+  /**
+   * The lens bars' draft (FLT-08): a work, a coat or a day picked and not yet
+   * applied by Tìm. A key that is absent is what is applied. The deck id
+   * travels with it as with the dates, so another deck starts with no draft.
+   */
+  const [lensDraftState, setLensDraft] = useState<LensDraft>({ deckId })
   /**
    * The deck's whole history, read once and kept.
    *
@@ -622,6 +639,70 @@ export function DeckProgressPanel({
       return side === 'a' ? { ...base, deckId, a: date } : { ...base, deckId, b: date }
     })
     if (date) void ensureHistory()
+  }
+
+  /*
+    The lens bars (FLT-08). On one layer the bar holds the work (when the deck
+    is in several), the coat and the day; comparing two, each layer's pane
+    holds its own coat and day, and the work, alone in the shared row,
+    applies at once. The coats on offer are the DRAFT work's (FLT-02).
+  */
+  const lensDraft: LensDraft = lensDraftState.deckId === deckId ? lensDraftState : { deckId }
+  const draftWork = (lensDraft.workId !== undefined
+    ? deckWorks?.works.find((w) => w.work.id === lensDraft.workId)
+    : undefined) ?? activeWork
+  const draftStages = draftWork?.stages ?? []
+  const draftView = (side: 'a' | 'b') => {
+    const key = side === 'a' ? 'viewA' : 'viewB'
+    return key in lensDraft ? (lensDraft[key] ?? null) : (side === 'a' ? viewA : viewB)
+  }
+  const draftDate = (side: 'a' | 'b') => {
+    const key = side === 'a' ? 'dateA' : 'dateB'
+    return key in lensDraft ? (lensDraft[key] ?? null) : (side === 'a' ? dateA : dateB)
+  }
+  /** The draft's coat of one layer, resolved as `stageA`/`stageB` are: first on A, last on B. */
+  const draftStageValue = (side: 'a' | 'b') => {
+    const view = draftView(side)
+    if (view === ALL_STAGES) return ALL_STAGES
+    return (draftStages.find((st) => st.id === view) ?? (side === 'a' ? draftStages[0] : draftStages[draftStages.length - 1]))?.id
+  }
+  const editLensDraft = (next: Omit<LensDraft, 'deckId'>) => setLensDraft({ ...lensDraft, ...next, deckId })
+  /** Drops a layer's keys (and, on one layer, the work's) from the draft. */
+  const withoutSide = (side: 'a' | 'b', dropWork: boolean): LensDraft => {
+    const next: LensDraft = { ...lensDraft, deckId }
+    delete next[side === 'a' ? 'viewA' : 'viewB']
+    delete next[side === 'a' ? 'dateA' : 'dateB']
+    if (dropWork) delete next.workId
+    return next
+  }
+  /** Tìm on one layer's bar: its work (on one layer), coat and day. */
+  const applyLens = (side: 'a' | 'b') => {
+    const withWork = !splitView
+    if (withWork && lensDraft.workId !== undefined && lensDraft.workId !== activeWork?.work.id) {
+      setWorkId(lensDraft.workId)
+      // Coat ids belong to a (work, deck): the other layer's names none of this work's.
+      setViewB(null)
+      setViewA(null)
+    }
+    const viewKey = side === 'a' ? 'viewA' : 'viewB'
+    if (viewKey in lensDraft) {
+      if (side === 'a') setViewA(lensDraft[viewKey] ?? null)
+      else setViewB(lensDraft[viewKey] ?? null)
+    }
+    const dateKey = side === 'a' ? 'dateA' : 'dateB'
+    if (dateKey in lensDraft) setLayerDate(side, lensDraft[dateKey] ?? null)
+    setLensDraft(withoutSide(side, withWork))
+  }
+  /** Đặt lại on one layer's bar: the first work (on one layer), the layer's default coat, today; applied at once. */
+  const resetLens = (side: 'a' | 'b') => {
+    if (!splitView && deckWorks && activeWork && activeWork.work.id !== deckWorks.works[0]?.work.id) {
+      setWorkId(null)
+      setViewB(null)
+    }
+    if (side === 'a') setViewA(null)
+    else setViewB(null)
+    setLayerDate(side, null)
+    setLensDraft(withoutSide(side, !splitView))
   }
 
   /**
@@ -1186,11 +1267,29 @@ export function DeckProgressPanel({
    * history has nothing to say about them, and a layer "as of next week"
    * would draw today's deck under tomorrow's date.
    */
+  /** The work the lenses are scoped to, when the deck is in several. */
+  const lensWorkSelect = (value: string, onChange: (id: string) => void) => deckWorks && (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+      <label
+        htmlFor="lens-work"
+        style={{ ...type.label, color: palette.textTertiary }}
+      >
+        Công việc
+      </label>
+      <Select
+        id="lens-work"
+        {...searchSelectProps}
+        style={{ minWidth: 170 }}
+        value={value}
+        onChange={onChange}
+        options={deckWorks.works.map((w) => ({ value: w.work.id, label: w.work.name }))}
+      />
+    </div>
+  )
+
   const renderLayerControls = (side: 'a' | 'b') => {
     if (!entry) return null
     const isA = side === 'a'
-    const picked = isA ? viewA : viewB
-    const stage = isA ? stageA : stageB
     const labelStyle = { ...type.label, color: palette.textTertiary }
     return (
       <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' }}>
@@ -1213,11 +1312,11 @@ export function DeckProgressPanel({
             id={`lens-${side}-stage`}
             {...searchSelectProps}
             style={{ minWidth: 190 }}
-            value={picked === ALL_STAGES ? ALL_STAGES : stage?.id}
-            onChange={isA ? setViewA : setViewB}
+            value={draftStageValue(side)}
+            onChange={(v: string) => editLensDraft(isA ? { viewA: v } : { viewB: v })}
             options={[
               { value: ALL_STAGES, label: 'Tất cả công đoạn' },
-              ...entry.stages.map((st) => ({ value: st.id, label: st.name })),
+              ...draftStages.map((st) => ({ value: st.id, label: st.name })),
             ]}
           />
         </div>
@@ -1237,12 +1336,12 @@ export function DeckProgressPanel({
             format="DD/MM/YYYY"
             allowClear
             placeholder="Hôm nay"
-            value={isA ? dateA : dateB}
+            value={draftDate(side)}
             // "Today" is the Vietnam day (effortDayKey, RV5-20), as on every
             // other figure here -- not the browser's clock, which on a machine
             // west of UTC+7 would still refuse a day the site is already working.
             disabledDate={(d) => d.format('YYYY-MM-DD') > effortDayKey(new Date().toISOString())}
-            onChange={(d) => setLayerDate(side, d)}
+            onChange={(d) => editLensDraft(isA ? { dateA: d } : { dateB: d })}
           />
         </div>
       </div>
@@ -1336,7 +1435,14 @@ export function DeckProgressPanel({
         */}
         {splitView && (
           <div style={{ padding: `0 ${space.xl}px ${space.md}px` }}>
-            {renderLayerControls(side === 'A' ? 'a' : 'b')}
+            <FilterBar
+              align="end"
+              label={side === 'A' ? 'Bộ lọc bên trái' : 'Bộ lọc bên phải'}
+              onApply={() => applyLens(side === 'A' ? 'a' : 'b')}
+              onReset={() => resetLens(side === 'A' ? 'a' : 'b')}
+            >
+              {renderLayerControls(side === 'A' ? 'a' : 'b')}
+            </FilterBar>
           </div>
         )}
 
@@ -1547,7 +1653,11 @@ export function DeckProgressPanel({
             </Space>
             <Segmented
               value={splitView ? 'split' : 'single'}
-              onChange={(v) => setSplitView(v === 'split')}
+              onChange={(v) => {
+                setSplitView(v === 'split')
+                // The bars change shape with the view; what was drafted goes.
+                setLensDraft({ deckId })
+              }}
               options={[
                 { value: 'single', label: 'Một lớp' },
                 { value: 'split', label: 'So sánh hai lớp' },
@@ -1636,41 +1746,39 @@ export function DeckProgressPanel({
           {entry && entry.imagePath && imageUrl && activeWork && (
             <>
               <div style={{ display: 'flex', gap: 14, alignItems: 'flex-end', marginBottom: 16 }}>
-                {deckWorks && deckWorks.works.length > 1 ? (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-                    <label
-                      htmlFor="lens-work"
-                      style={{ ...type.label, color: palette.textTertiary }}
-                    >
-                      Công việc
-                    </label>
-                    <Select
-                      id="lens-work"
-                      {...searchSelectProps}
-                      style={{ minWidth: 170 }}
-                      value={activeWork.work.id}
-                      onChange={(id) => {
-                        setWorkId(id)
-                        // Coat ids belong to a (work, deck); the last work's
-                        // selection would name a coat this one does not have.
-                        setViewA(null)
-                        setViewB(null)
-                      }}
-                      options={deckWorks.works.map((w) => ({ value: w.work.id, label: w.work.name }))}
-                    />
-                  </div>
-                ) : (
+                {!(deckWorks && deckWorks.works.length > 1) && (
                   <span style={{ ...type.caption, color: palette.textTertiary, alignSelf: 'center' }}>
                     {`Công việc: ${activeWork.work.name}`}
                   </span>
                 )}
                 {/*
-                  On a single layer the pair lives here, in the row it always
-                  did. Comparing two, each layer's pair moves into its own pane
-                  above its drawing (RV6-17), and this row keeps only what is
-                  common to both.
+                  On a single layer the work and the layer's pair are one bar
+                  here, in the row they always were, a draft until Tìm
+                  (FLT-08). Comparing two, each layer's pair moves into its own
+                  pane above its drawing (RV6-17), and this row keeps only what
+                  is common to both: the work, alone, so it applies at once.
                 */}
-                {!splitView && renderLayerControls('a')}
+                {splitView ? (
+                  deckWorks && deckWorks.works.length > 1 && lensWorkSelect(activeWork.work.id, (id) => {
+                    setWorkId(id)
+                    // Coat ids belong to a (work, deck); the last work's
+                    // selection would name a coat this one does not have.
+                    setViewA(null)
+                    setViewB(null)
+                    setLensDraft({ deckId })
+                  })
+                ) : (
+                  <div style={{ flex: '1 1 auto', minWidth: 0 }}>
+                    <FilterBar align="end" onApply={() => applyLens('a')} onReset={() => resetLens('a')}>
+                      {deckWorks && deckWorks.works.length > 1 && lensWorkSelect(
+                        draftWork?.work.id ?? activeWork.work.id,
+                        // A new work's coats start at their defaults, as on Tìm.
+                        (id) => editLensDraft({ workId: id, viewA: null, viewB: null }),
+                      )}
+                      {renderLayerControls('a')}
+                    </FilterBar>
+                  </div>
+                )}
                 {/*
                   Always on screen in Sửa, disabled rather than hidden. Hiding
                   it until bays are picked takes away the only thing on the

@@ -172,10 +172,17 @@ const startInputOf = (stageName: string) =>
     within(screen.getByTestId('stage-windows')).getByRole('row', { name: new RegExp(stageName) }),
   ).getByPlaceholderText('Bắt đầu')
 
-/** The stage the left lens is showing, by name. */
+/** Tìm in the bar that holds `el`: the lens bar is a draft (FLT-08). */
+const applyBarOf = async (el: HTMLElement) => {
+  const bar = el.closest('[role="search"]') as HTMLElement
+  await userEvent.click(within(bar).getByRole('button', { name: /Tìm/ }))
+}
+
+/** A lens bar's select, by its label, set to `name` and applied with Tìm. */
 const pickLens = async (label: string, name: string) => {
   await userEvent.click(screen.getByLabelText(label))
   await userEvent.click(await screen.findByTitle(name))
+  await applyBarOf(screen.getByLabelText(label))
 }
 
 describe('DeckProgressPanel', () => {
@@ -1198,21 +1205,21 @@ describe('DeckProgressPanel — the report copy of a note (0023)', () => {
   })
 })
 
-describe('DeckProgressPanel — công việc', () => {
-  const GG = {
-    id: 'w2', projectId: 'p1', seq: 2, name: 'Tháo giáo', kind: 'bays' as const,
-    weight: 0.4, counts: true, manualProgress: 0,
-  }
-  const GG_STAGES = [{ id: 't1', seq: 1, name: 'Tháo giáo lửng', color: '#333333', weight: 1 }]
-  /** The same deck in two works: Sơn (W .6, D 1, at 70%) and Tháo giáo (W .4, D 1, untouched). */
-  const TWO_WORKS = {
-    ...ENTRY,
-    works: [
-      { work: { ...WORK, name: 'Sơn', weight: 0.6 }, weight: 1, stages: STAGES, cells: CELLS, audit: {} },
-      { work: GG, weight: 1, stages: GG_STAGES, cells: CELLS.map((c) => ({ ...c, stageId: null })), audit: {} },
-    ],
-  }
+const GG = {
+  id: 'w2', projectId: 'p1', seq: 2, name: 'Tháo giáo', kind: 'bays' as const,
+  weight: 0.4, counts: true, manualProgress: 0,
+}
+const GG_STAGES = [{ id: 't1', seq: 1, name: 'Tháo giáo lửng', color: '#333333', weight: 1 }]
+/** The same deck in two works: Sơn (W .6, D 1, at 70%) and Tháo giáo (W .4, D 1, untouched). */
+const TWO_WORKS = {
+  ...ENTRY,
+  works: [
+    { work: { ...WORK, name: 'Sơn', weight: 0.6 }, weight: 1, stages: STAGES, cells: CELLS, audit: {} },
+    { work: GG, weight: 1, stages: GG_STAGES, cells: CELLS.map((c) => ({ ...c, stageId: null })), audit: {} },
+  ],
+}
 
+describe('DeckProgressPanel — công việc', () => {
   beforeEach(() => {
     loadDeckWorks.mockResolvedValue(TWO_WORKS)
   })
@@ -1618,6 +1625,7 @@ describe('DeckProgressPanel — comparing two dates (RV6-14..16)', () => {
   const pickDate = async (side: 'a' | 'b', text: string) => {
     await userEvent.type(dateInput(side), text)
     await userEvent.keyboard('{Enter}')
+    await applyBarOf(dateInput(side))
   }
 
   it('gives every layer a date picker, empty for the live state', async () => {
@@ -1700,6 +1708,7 @@ describe('DeckProgressPanel — comparing two dates (RV6-14..16)', () => {
     await userEvent.click(
       screen.getByTestId('lens-a-date').querySelector('.ant-picker-clear') as HTMLElement,
     )
+    await applyBarOf(dateInput('a'))
 
     await waitFor(() =>
       expect(screen.getByTestId('cell-R1C2')).toHaveAttribute('data-color', '#fadb14'))
@@ -1789,8 +1798,86 @@ describe('DeckProgressPanel — each layer\'s controls above its own drawing (RV
     // to another coat without touching the left one.
     await userEvent.click(within(lensB).getByLabelText('Công đoạn'))
     await userEvent.click(await screen.findByTitle('Coat 2'))
+    await applyBarOf(within(lensB).getByLabelText('Công đoạn'))
     expect(within(lensB).getByText('Tiến độ · Coat 2')).toBeInTheDocument()
     expect(within(lensA).getByText('Tiến độ · Blast + Coat 1')).toBeInTheDocument()
+  })
+})
+
+describe('DeckProgressPanel — the lens bar is a draft, applied on Tìm (FLT-08)', () => {
+  /** The bar that holds a control. */
+  const barOf = (el: HTMLElement) => el.closest('[role="search"]') as HTMLElement
+
+  it('ends the single layer\'s bar with Đặt lại · Tìm, and changes the lens only on Tìm', async () => {
+    renderPanel()
+    const lens = await screen.findByTestId('lens-A')
+    const bar = barOf(screen.getByLabelText('Lớp sơn đang xem'))
+    expect(bar).toContainElement(screen.getByTestId('lens-a-date'))
+    const buttons = within(bar).getAllByRole('button').filter((b) => /Đặt lại|Tìm/.test(b.textContent ?? ''))
+    expect(buttons.map((b) => b.textContent)).toEqual(['Đặt lại', 'Tìm'])
+
+    await userEvent.click(screen.getByLabelText('Lớp sơn đang xem'))
+    await userEvent.click(await screen.findByTitle('Coat 2'))
+    // Not yet: the draft only.
+    expect(within(lens).getByText('Tiến độ · Blast + Coat 1')).toBeInTheDocument()
+    await userEvent.click(within(bar).getByRole('button', { name: /Tìm/ }))
+    expect(await within(lens).findByText('Tiến độ · Coat 2')).toBeInTheDocument()
+  })
+
+  it('puts the first coat and today back, applied at once, on Đặt lại', async () => {
+    listDeckEvents.mockResolvedValue([])
+    renderPanel()
+    const lens = await screen.findByTestId('lens-A')
+    await pickLens('Lớp sơn đang xem', 'Coat 2')
+    expect(await within(lens).findByText('Tiến độ · Coat 2')).toBeInTheDocument()
+    await userEvent.click(within(barOf(screen.getByLabelText('Lớp sơn đang xem'))).getByRole('button', { name: 'Đặt lại' }))
+    expect(await within(lens).findByText('Tiến độ · Blast + Coat 1')).toBeInTheDocument()
+    expect(within(screen.getByTestId('lens-a-date')).getByPlaceholderText('Hôm nay')).toHaveValue('')
+  })
+
+  it('offers the draft work\'s coats before Tìm, and applies the work with them', async () => {
+    loadDeckWorks.mockResolvedValue(TWO_WORKS)
+    renderPanel(false)
+    const lens = await screen.findByTestId('lens-A')
+    await userEvent.click(screen.getByLabelText('Công việc'))
+    await userEvent.click(await screen.findByTitle('Tháo giáo'))
+    // The lens still shows the first work; the coat select already offers the second's.
+    expect(within(lens).getByText('Tiến độ · Blast + Coat 1')).toBeInTheDocument()
+    await userEvent.click(screen.getByLabelText('Lớp sơn đang xem'))
+    const coatOptions = () => Array.from(
+      (document.getElementById('lens-a-stage_list') as HTMLElement).closest('.ant-select-dropdown')!
+        .querySelectorAll('.ant-select-item-option'),
+      (el) => el.getAttribute('title'),
+    )
+    await waitFor(() => expect(coatOptions()).toEqual(['Tất cả công đoạn', 'Tháo giáo lửng']))
+    await userEvent.keyboard('{Escape}')
+    await applyBarOf(screen.getByLabelText('Công việc'))
+    expect(await within(lens).findByText('Tiến độ · Tháo giáo lửng')).toBeInTheDocument()
+  })
+
+  it('gives each layer its own bar when comparing: Tìm on one leaves the other\'s draft alone', async () => {
+    renderPanel()
+    await screen.findByTestId('lens-A')
+    await userEvent.click(screen.getByText('So sánh hai lớp'))
+    const lensB = await screen.findByTestId('lens-B')
+    const lensA = screen.getByTestId('lens-A')
+    const barA = barOf(within(lensA).getByLabelText('Công đoạn'))
+    const barB = barOf(within(lensB).getByLabelText('Công đoạn'))
+    expect(barA).not.toBe(barB)
+    expect(barA).toHaveAccessibleName('Bộ lọc bên trái')
+    expect(barB).toHaveAccessibleName('Bộ lọc bên phải')
+
+    await userEvent.click(within(lensA).getByLabelText('Công đoạn'))
+    await userEvent.click(await screen.findByTitle('Coat 2'))
+    await userEvent.click(within(lensB).getByLabelText('Công đoạn'))
+    const popups = document.querySelectorAll<HTMLElement>('.ant-select-dropdown:not(.ant-select-dropdown-hidden)')
+    await userEvent.click(within(popups[popups.length - 1]).getByTitle('Blast + Coat 1'))
+    await userEvent.click(within(barB).getByRole('button', { name: /Tìm/ }))
+    expect(await within(lensB).findByText('Tiến độ · Blast + Coat 1')).toBeInTheDocument()
+    // A's pick is still a draft.
+    expect(within(lensA).getByText('Tiến độ · Blast + Coat 1')).toBeInTheDocument()
+    await userEvent.click(within(barA).getByRole('button', { name: /Tìm/ }))
+    expect(await within(lensA).findByText('Tiến độ · Coat 2')).toBeInTheDocument()
   })
 })
 

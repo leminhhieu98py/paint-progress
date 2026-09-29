@@ -27,11 +27,20 @@ export function FilterBar({
   onApply,
   onReset,
   applyLoading = false,
+  align = 'center',
+  label = 'Bộ lọc',
 }: {
   children: ReactNode
   onApply?: () => void
   onReset?: () => void
   applyLoading?: boolean
+  /**
+   * `end` for a card's bar whose controls carry a label above them: the
+   * items line up at the bottom, so Đặt lại · Tìm sit on the controls' line.
+   */
+  align?: 'center' | 'end'
+  /** The landmark's name, for a screen that holds two bars side by side. */
+  label?: string
 }) {
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
     if (onApply === undefined || applyLoading || e.key !== 'Enter') return
@@ -45,9 +54,9 @@ export function FilterBar({
   return (
     <div
       role="search"
-      aria-label="Bộ lọc"
+      aria-label={label}
       onKeyDown={onKeyDown}
-      style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: space.md, minWidth: 0, width: '100%' }}
+      style={{ display: 'flex', flexWrap: 'wrap', alignItems: align === 'end' ? 'flex-end' : 'center', gap: space.md, minWidth: 0, width: '100%' }}
     >
       {children}
       {onApply !== undefined && (
