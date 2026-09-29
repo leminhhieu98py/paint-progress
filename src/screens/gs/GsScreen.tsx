@@ -155,6 +155,9 @@ export function GsScreen() {
     setLoading(true)
     setProjectError(false)
     setNotMember(false)
+    // Another project's name must never sit over this one's load or its
+    // failure (M-4b).
+    setProjectName(null)
     // Names for the note thread, once per project rather than per bay. Its
     // failure is not the project's: the deck, the drawing and the write carry
     // on, and the thread signs its notes "Không rõ người ghi".
@@ -174,7 +177,9 @@ export function GsScreen() {
         setActiveDeckId(openingDeckId(projectId, project.decks))
       })
       .catch(() => {
-        if (!cancelled) setProjectError(true)
+        if (cancelled) return
+        setProjectName(null)
+        setProjectError(true)
       })
       .finally(() => {
         if (!cancelled) setLoading(false)

@@ -824,6 +824,28 @@ describe('GsScreen: the header in every state (M-4)', () => {
     expect(signOut).toHaveBeenCalledTimes(1)
   })
 
+  it('never names the previous project over the next one\'s failed load (M-4b)', async () => {
+    render(
+      <AntApp>
+        <MemoryRouter initialEntries={['/gs/p1']}>
+          <Link to="/gs/p2">sang dự án khác</Link>
+          <Routes>
+            <Route path="/gs/:projectId" element={<GsScreen />} />
+          </Routes>
+        </MemoryRouter>
+      </AntApp>,
+    )
+    const slot = () => screen.getByTestId('field-header-project')
+    await waitFor(() => expect(slot()).toHaveTextContent('BlockB1_CPPTS'))
+    loadGsProject.mockRejectedValue(new Error('Failed to fetch'))
+
+    await userEvent.click(screen.getByRole('link', { name: 'sang dự án khác' }))
+
+    expect(await screen.findByText('Không tải được dữ liệu dự án')).toBeInTheDocument()
+    expect(slot()).not.toHaveTextContent('BlockB1_CPPTS')
+    expect(within(nav()).getByRole('link', { name: 'Sàn' })).toHaveAttribute('href', '/gs/p2')
+  })
+
   it('keeps the same header on screen while a viewer\'s next project loads', async () => {
     authRole.value = 'viewer'
     render(
