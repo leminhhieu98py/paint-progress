@@ -294,19 +294,16 @@ function HintedButton({
   )
 }
 
+/** What deleting a zone does, in the rules and in its dialog alike (CPY-05). */
+const ZONE_DELETE_EFFECT = 'Xoá zone chỉ xoá kế hoạch, tiến độ đã ghi trên các ô vẫn giữ nguyên.'
+
+/**
+ * Helper text, one sentence each, checked against the code (RUL-01). The map
+ * legend (LNS-R1) is not repeated here: the (?) beside each lens title gives it.
+ */
 const PROGRESS_RULES = [
-  {
-    id: 'ZON-R5',
-    text: 'Xoá zone chỉ xoá kế hoạch; tiến độ đã ghi trên các ô vẫn giữ nguyên.',
-  },
-  {
-    id: 'LNS-R1',
-    text: 'Ô đã đạt lớp tô đặc theo màu zone (hoặc màu lớp nếu chưa có zone). Ô có kế hoạch nhưng chưa đạt lớp tô nhạt và viền đứt theo màu zone. Ô chưa đạt và chưa có kế hoạch để trống.',
-  },
-  {
-    id: 'ZON-R6',
-    text: 'Màu zone do quản trị viên chọn và không bao giờ trùng màu một lớp sơn ở Cấu hình lớp sơn của cùng công việc, sàn.',
-  },
+  { id: 'ZON-R5', text: ZONE_DELETE_EFFECT },
+  { id: 'ZON-R6', text: 'Màu zone chọn trong bảng màu đã bỏ các màu lớp sơn của công việc trên sàn này.' },
 ]
 
 export function DeckProgressPanel({
@@ -2133,7 +2130,7 @@ export function DeckProgressPanel({
             ? [{ label: removingZone.name, meta: `${removingZone.cellIds.length} ô` }]
             : []
         }
-        consequence="Chỉ kế hoạch bị xoá. Tiến độ GS đã ghi trên các ô vẫn giữ nguyên, và các ô đó quay về trạng thái chưa được lên kế hoạch cho lớp sơn này."
+        consequence={ZONE_DELETE_EFFECT}
         okText="Vẫn xoá"
         onCancel={() => setRemovingZone(null)}
         onOk={() =>

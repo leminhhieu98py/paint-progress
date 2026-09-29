@@ -2,7 +2,7 @@ import { App as AntApp, theme } from 'antd'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { expectNoSpecIds, keyFactTexts } from '../../test/copy'
+import { expectHelperText, expectNoSpecIds, keyFactTexts, ruleTexts } from '../../test/copy'
 import { expectOnScale, weightOf } from '../../test/typography'
 import { adminTheme, palette, type } from '../../theme'
 import { DECK_RING, figureFits, ringFigureStep } from '../../components/ringFit'
@@ -201,11 +201,15 @@ describe('DeckProgressPanel', () => {
     expect(zones).toBe('1 zone')
   })
 
-  it('names the coat panel by its title in the rules, and no spec id (CPY-04)', async () => {
+  it('states its rules as helper text, with no spec id and no legend the lens (?) already gives (CPY-04, RUL-01)', async () => {
     renderPanel()
     await screen.findByTestId('lens-A')
     await userEvent.click(screen.getByRole('button', { name: /Quy tắc áp dụng/ }))
-    expect(screen.getByText(/một lớp sơn ở Cấu hình lớp sơn của cùng công việc/)).toBeInTheDocument()
+    expect(ruleTexts()).toEqual([
+      'Xoá zone chỉ xoá kế hoạch, tiến độ đã ghi trên các ô vẫn giữ nguyên.',
+      'Màu zone chọn trong bảng màu đã bỏ các màu lớp sơn của công việc trên sàn này.',
+    ])
+    expectHelperText(ruleTexts())
     expect(screen.queryByText(/A3\.2/)).not.toBeInTheDocument()
     expectNoSpecIds()
   })
@@ -932,7 +936,8 @@ describe('DeckProgressPanel — zones', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Xoá zone' }))
 
     expect(await screen.findByText('Xoá zone Khu A — Tháo giáo?')).toBeInTheDocument()
-    expect(screen.getByText(/Tiến độ GS đã ghi trên các ô vẫn giữ nguyên/)).toBeInTheDocument()
+    // In the same words as the rule (CPY-05, RUL-01).
+    expect(screen.getByText('Xoá zone chỉ xoá kế hoạch, tiến độ đã ghi trên các ô vẫn giữ nguyên.')).toBeInTheDocument()
     // The consequence reads as a sentence, not a reference into the spec (CPY-04).
     expectNoSpecIds()
     expect(deleteZone).not.toHaveBeenCalled()

@@ -5,7 +5,7 @@ import { renderApp } from '../../test/renderApp'
 import { StageConfigPanel } from './StageConfigPanel'
 import { expectLeft } from '../../test/alignment'
 import { expectAllSmall } from '../../test/controls'
-import { keyFactTexts } from '../../test/copy'
+import { expectHelperText, keyFactTexts, ruleTexts } from '../../test/copy'
 
 const listWorkStages = vi.hoisted(() => vi.fn())
 const saveWorkStages = vi.hoisted(() => vi.fn())
@@ -53,7 +53,7 @@ const dragRow = (from: number, to: number) => {
 
 /** What deleting a coat does, as both the STG-R4 rule and the delete dialog say it (CPY-05). */
 const STAGE_DELETE_EFFECT =
-  'Xoá một lớp sẽ đưa mọi ô đang ở lớp đó về “Chưa bắt đầu”, xoá các zone và kế hoạch KPI của lớp đó; lịch sử ghi nhận vẫn giữ nguyên.'
+  'Xoá một lớp đưa các ô đang ở lớp đó về “Chưa bắt đầu” và xoá zone, kế hoạch KPI của lớp, còn lịch sử cập nhật giữ nguyên.'
 
 const saveConfig = async () => {
   await userEvent.click(screen.getByRole('button', { name: 'Lưu cấu hình lớp sơn' }))
@@ -730,11 +730,17 @@ describe('StageConfigPanel — explanatory copy (CPY-01)', () => {
     expect(screen.getByText(STAGE_DELETE_EFFECT)).toBeInTheDocument()
   })
 
-  it('states the no-clash rule without the reason after it', async () => {
+  it('states its rules as helper text, the no-clash rule without the reason after it (RUL-01)', async () => {
     renderApp(<StageConfigPanel workId="w1" deckId="d1" />)
     await screen.findByDisplayValue('Blast + Coat 1')
     await userEvent.click(screen.getByRole('button', { name: /Quy tắc áp dụng/ }))
-    expect(screen.getByText('Không hai lớp trùng tên hoặc trùng màu.')).toBeInTheDocument()
+    expect(ruleTexts()).toEqual([
+      'Lưu được khi tổng trọng số các lớp bằng 1.',
+      'Lưu được khi không có hai lớp trùng tên hoặc trùng màu.',
+      'Cấu hình chỉ áp cho sàn đang mở.',
+      'Xoá một lớp đưa các ô đang ở lớp đó về “Chưa bắt đầu” và xoá zone, kế hoạch KPI của lớp, còn lịch sử cập nhật giữ nguyên.',
+    ])
+    expectHelperText(ruleTexts())
   })
 })
 

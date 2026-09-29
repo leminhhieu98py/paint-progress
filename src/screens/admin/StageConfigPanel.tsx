@@ -35,26 +35,15 @@ import { palette, space, type } from '../../theme'
  * started event per bay, 0026). Bays past the coat keep their stage.
  */
 const STAGE_DELETE_EFFECT =
-  'Xoá một lớp sẽ đưa mọi ô đang ở lớp đó về “Chưa bắt đầu”, xoá các zone và kế hoạch KPI của lớp đó; lịch sử ghi nhận vẫn giữ nguyên.'
+  'Xoá một lớp đưa các ô đang ở lớp đó về “Chưa bắt đầu” và xoá zone, kế hoạch KPI của lớp, còn lịch sử cập nhật giữ nguyên.'
 
+/** Helper text, one sentence each, checked against the code (RUL-01). */
 const STAGE_RULES = [
-          {
-            id: 'STG-R1',
-            text: 'Tổng trọng số phải đúng bằng 1; chưa đúng thì nút Lưu bị khoá.',
-          },
-          {
-            id: 'STG-R2',
-            text: 'Không hai lớp trùng tên hoặc trùng màu.',
-          },
-          {
-            id: 'STG-R3',
-            text: 'Cấu hình này chỉ áp cho sàn đang mở. Sàn khác trong cùng dự án không bị ảnh hưởng.',
-          },
-          {
-            id: 'STG-R4',
-            text: STAGE_DELETE_EFFECT,
-          },
-        ]
+  { id: 'STG-R1', text: 'Lưu được khi tổng trọng số các lớp bằng 1.' },
+  { id: 'STG-R2', text: 'Lưu được khi không có hai lớp trùng tên hoặc trùng màu.' },
+  { id: 'STG-R3', text: 'Cấu hình chỉ áp cho sàn đang mở.' },
+  { id: 'STG-R4', text: STAGE_DELETE_EFFECT },
+]
 
 /**
  * saveWorkStages' own guard errors, in the admin's language.

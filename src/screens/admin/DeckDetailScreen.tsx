@@ -743,10 +743,10 @@ export function DeckDetailScreen() {
         consequence={
           [
             pdf
-              ? 'Ô đã dựng vẫn giữ nguyên vị trí theo tỉ lệ trên khung bản vẽ, nên nếu bản vẽ mới lệch khung so với bản cũ thì lưới ô sẽ nằm sai chỗ. Kiểm tra lại ở Phân ô và dò lại ô nếu cần.'
+              ? 'Ô đã dựng giữ vị trí cũ trên bản vẽ mới, kiểm tra lại ở Phân ô.'
               : '',
             deck && area !== deck.totalAreaM2
-              ? 'Diện tích từng ô được chia lại từ con số mới. Mọi phần trăm của sàn — và số tiền tính theo nó — đều lấy con số này làm mẫu số.'
+              ? 'Diện tích từng ô được chia lại theo con số mới.'
               : '',
           ]
             .filter(Boolean)

@@ -326,9 +326,9 @@ describe('DeckDetailScreen', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Lưu thông tin sàn' }))
 
     expect(await screen.findByText('Lưu thay đổi cho sàn này?')).toBeInTheDocument()
-    expect(screen.getByText(/Ô đã dựng vẫn giữ nguyên vị trí/)).toBeInTheDocument()
-    // The panel is named as the admin sees it, not by its mockup code (CPY-04).
-    expect(screen.getByText(/Kiểm tra lại ở Phân ô/)).toBeInTheDocument()
+    // One helper sentence, no reasoning (RUL-01); the panel named as the admin
+    // sees it, not by its mockup code (CPY-04).
+    expect(screen.getByText('Ô đã dựng giữ vị trí cũ trên bản vẽ mới, kiểm tra lại ở Phân ô.')).toBeInTheDocument()
     expect(screen.queryByText(/A3\.3/)).not.toBeInTheDocument()
     expect(uploadDrawing).not.toHaveBeenCalled()
 
@@ -346,7 +346,8 @@ describe('DeckDetailScreen', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Lưu thông tin sàn' }))
 
     expect(await screen.findByText('Lưu thay đổi cho sàn này?')).toBeInTheDocument()
-    expect(screen.getByText(/Diện tích từng ô được chia lại từ con số mới\./)).toBeInTheDocument()
+    expect(screen.getByText('Diện tích từng ô được chia lại theo con số mới.')).toBeInTheDocument()
+    expect(screen.queryByText(/mẫu số/)).toBeNull()
     expect(screen.queryByText(/pixel/)).not.toBeInTheDocument()
     expect(updateDeckArea).not.toHaveBeenCalled()
 
