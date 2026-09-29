@@ -477,6 +477,19 @@ describe('DashboardScreen (gs) on a phone (FLT-04)', () => {
     expect(loadProjectModel).toHaveBeenCalledTimes(1)
   })
 
+  it('throws the draft away when the sheet closes without Tìm: reopened, it shows what is applied (FLT-09)', async () => {
+    renderField()
+    await screen.findByText(/^DASHBOARD 2 sự kiện/)
+    const sheet = await openSheet()
+    await chooseOption('Sàn', 'Sàn A', sheet)
+    await userEvent.click(within(sheet).getByRole('button', { name: /Close|Đóng/ }))
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Bộ lọc' })).toBeNull())
+    const again = await openSheet()
+    expect(within(again).getByTitle('Tất cả sàn')).toBeInTheDocument()
+    expect(within(again).queryByTitle('Sàn A')).toBeNull()
+    expect(screen.getByText('DASHBOARD 2 sự kiện · Tất cả sàn · công việc đầu')).toBeInTheDocument()
+  })
+
   it('opens every select of the sheet with its options in full', async () => {
     renderField()
     await screen.findByText(/^DASHBOARD 2 sự kiện/)

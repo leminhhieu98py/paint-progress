@@ -567,6 +567,8 @@ function FieldKpi({ projectId }: { projectId: string | null }) {
             count={kpiFilterCount(scope.applied, appliedCoats)}
             onApply={apply}
             onReset={scope.reset}
+            // Closed without Tìm: the draft goes back to what is applied (FLT-09).
+            onDiscard={() => scope.setDraft(scope.applied)}
             applyLoading={loading}
           >
             {controls(true)}

@@ -8,19 +8,22 @@ const ellipsis: CSSProperties = { whiteSpace: 'nowrap', overflow: 'hidden', text
 const half: CSSProperties = { flex: '1 1 0', minWidth: 0 }
 
 /**
- * A filter bar on a phone (FLT-04): one row, and the controls in a sheet.
+ * A filter bar on a phone (FLT-04, FLT-09): one row, and the controls in a
+ * sheet.
  *
  * The row holds either the one control used most (`inline`, the Sàn page's
- * deck) or a one-line `summary` of what is applied, then a `Bộ lọc` button
- * badged with how many filters are off their defaults (`count`). The button
- * -- and the summary -- open a bottom sheet with every control of the bar
- * (`children`), stacked; each control is given full width by its screen, so
- * they all line up.
+ * deck, which still applies at once) or a one-line `summary` of what is
+ * applied, then a `Bộ lọc` button badged with how many filters are off their
+ * defaults (`count`). The button -- and the summary -- open a bottom sheet
+ * with the rest of the bar's controls (`children`), stacked; each control is
+ * given full width by its screen, so they all line up.
  *
- * A draft bar (FLT-02) passes `onApply` and `onReset`: the sheet ends with
- * `Đặt lại` and `Tìm`, half the row each, and Tìm applies and closes. A bar
- * whose controls apply at once passes neither, and the sheet ends with Xong.
- * At 768 px and wider the screens use FilterBar instead.
+ * Inside the sheet the controls are a draft, on every screen alike: it ends
+ * with `Đặt lại` and `Tìm`, half the row each. Tìm applies (`onApply`) and
+ * closes; Đặt lại puts the defaults back and applies them (`onReset`, the
+ * screen's), the sheet staying open; closing it any other way -- its X, Esc,
+ * a tap on the mask -- throws the draft away (`onDiscard`), so reopening shows
+ * what is applied. At 768 px and wider the screens use FilterBar instead.
  */
 export function FilterSheet({
   children,
@@ -29,6 +32,7 @@ export function FilterSheet({
   summary,
   onApply,
   onReset,
+  onDiscard,
   applyLoading = false,
 }: {
   children: ReactNode
@@ -38,31 +42,14 @@ export function FilterSheet({
   inline?: ReactNode
   /** What is applied, in one line, when no control stays in the row. */
   summary?: string
-  onApply?: () => void
-  onReset?: () => void
+  onApply: () => void
+  onReset: () => void
+  /** The sheet closed without Tìm: the draft goes back to what is applied. */
+  onDiscard: () => void
   applyLoading?: boolean
 }) {
   const [open, setOpen] = useState(false)
-
-  const footer = onApply !== undefined
-    ? (
-      <div style={{ display: 'flex', gap: space.sm }}>
-        <Button style={half} onClick={onReset}>Đặt lại</Button>
-        <Button
-          type="primary"
-          style={half}
-          icon={<SearchOutlined aria-hidden />}
-          loading={applyLoading}
-          onClick={() => {
-            onApply()
-            setOpen(false)
-          }}
-        >
-          Tìm
-        </Button>
-      </div>
-    )
-    : <Button type="primary" block onClick={() => setOpen(false)}>Xong</Button>
+  const trigger = { 'aria-haspopup': 'dialog' as const, 'aria-expanded': open, onClick: () => setOpen(true) }
 
   return (
     <>
@@ -73,39 +60,60 @@ export function FilterSheet({
       >
         {summary !== undefined && inline === undefined
           ? (
-            <Button
-              aria-haspopup="dialog"
-              style={{ flex: '1 1 auto', minWidth: 0, justifyContent: 'flex-start' }}
-              onClick={() => setOpen(true)}
-            >
+            <Button {...trigger} style={{ flex: '1 1 auto', minWidth: 0, justifyContent: 'flex-start' }}>
               <span style={{ ...ellipsis, minWidth: 0 }}>{summary}</span>
             </Button>
           )
           : <div style={{ flex: '1 1 auto', minWidth: 0 }}>{inline}</div>}
         <Badge count={count} size="small">
-          <Button
-            aria-label="Bộ lọc"
-            aria-haspopup="dialog"
-            aria-expanded={open}
-            icon={<FilterOutlined aria-hidden />}
-            onClick={() => setOpen(true)}
-          />
+          <Button {...trigger} aria-label="Bộ lọc" icon={<FilterOutlined aria-hidden />} />
         </Badge>
       </div>
       <Drawer
         title="Bộ lọc"
         placement="bottom"
         open={open}
-        onClose={() => setOpen(false)}
+        onClose={() => {
+          onDiscard()
+          setOpen(false)
+        }}
         height="auto"
         destroyOnHidden
         styles={{
-          wrapper: { maxHeight: '80vh' },
-          body: { display: 'flex', flexDirection: 'column', gap: space.md },
-          // Clear of a home indicator, where the device has one.
-          footer: { paddingBottom: `calc(${space.md}px + env(safe-area-inset-bottom, 0px))` },
+          // The panel is capped, not only its wrapper (I4): a column in which
+          // the body gives way and scrolls, so Tìm stays on a short screen.
+          content: { maxHeight: '80vh', display: 'flex', flexDirection: 'column' },
+          body: {
+            flex: '1 1 auto', minHeight: 0, overflowY: 'auto',
+            display: 'flex', flexDirection: 'column', gap: space.md,
+            paddingLeft: space.xl, paddingRight: space.xl,
+          },
+          // The controls' inset (M1), and clear of a home indicator where the device has one.
+          footer: {
+            flexShrink: 0,
+            paddingTop: space.md,
+            paddingLeft: space.xl,
+            paddingRight: space.xl,
+            paddingBottom: `calc(${space.md}px + env(safe-area-inset-bottom, 0px))`,
+          },
         }}
-        footer={footer}
+        footer={(
+          <div style={{ display: 'flex', gap: space.sm }}>
+            <Button style={half} onClick={onReset}>Đặt lại</Button>
+            <Button
+              type="primary"
+              style={half}
+              icon={<SearchOutlined aria-hidden />}
+              loading={applyLoading}
+              onClick={() => {
+                onApply()
+                setOpen(false)
+              }}
+            >
+              Tìm
+            </Button>
+          </div>
+        )}
       >
         {children}
       </Drawer>

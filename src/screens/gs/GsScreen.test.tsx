@@ -359,16 +359,22 @@ const chooseExport = async (name: 'Xuất báo cáo' | 'Xuất cả dự án') =
 /**
  * The phone's Bộ lọc sheet, opened (FLT-04). jsdom answers every width query
  * as a phone, where the loaded Sàn page keeps Sàn in its one-row bar and puts
- * the rest of the bar -- Dự án, Sàn, the work -- in the sheet.
+ * Dự án and the work in the sheet, a draft until Tìm (FLT-09).
  */
 const openFilterSheet = async () => {
   await userEvent.click(await screen.findByRole('button', { name: 'Bộ lọc' }))
   return screen.findByRole('dialog', { name: 'Bộ lọc' })
 }
-/** Xong, and the sheet gone. */
-const closeFilterSheet = async () => {
-  await userEvent.click(within(screen.getByRole('dialog', { name: 'Bộ lọc' })).getByRole('button', { name: 'Xong' }))
-  await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Bộ lọc' })).toBeNull())
+const sheetGone = () => waitFor(() => expect(screen.queryByRole('dialog', { name: 'Bộ lọc' })).toBeNull())
+/** Tìm in the sheet: the draft applied, the sheet gone. */
+const applyFilterSheet = async () => {
+  await userEvent.click(within(screen.getByRole('dialog', { name: 'Bộ lọc' })).getByRole('button', { name: /Tìm/ }))
+  await sheetGone()
+}
+/** The sheet's X: the draft thrown away, the sheet gone. */
+const dismissFilterSheet = async () => {
+  await userEvent.click(within(screen.getByRole('dialog', { name: 'Bộ lọc' })).getByRole('button', { name: /Close|Đóng/ }))
+  await sheetGone()
 }
 /**
  * The Dự án switch, first in the Sàn page's bar (GS-07): in the bar while the
@@ -378,10 +384,10 @@ const projectSwitch = async () => {
   if (screen.queryByRole('button', { name: 'Bộ lọc' }) === null) return screen.findByRole('combobox', { name: 'Dự án' })
   return within(await openFilterSheet()).findByRole('combobox', { name: 'Dự án' })
 }
-/** The work, from its searchable select (FLT-03), in the phone's sheet (FLT-04). */
+/** The work, from its searchable select (FLT-03), in the phone's sheet and applied by Tìm (FLT-09). */
 const pickWork = async (name: string) => {
   await chooseOption('Công việc', name, await openFilterSheet())
-  await closeFilterSheet()
+  await applyFilterSheet()
 }
 
 /** The deck picker, the first row of the Sàn page (GS-03). */
@@ -900,7 +906,7 @@ describe('GsScreen: the header in every state (M-4)', () => {
     // On a phone the loaded page keeps the switch in its Bộ lọc sheet (FLT-04).
     const sheet = await openFilterSheet()
     await waitFor(() => expect(within(sheet).getByText('BlockB1_CPPTS')).toBeInTheDocument())
-    await closeFilterSheet()
+    await dismissFilterSheet()
     loadGsProject.mockRejectedValue(new Error('Failed to fetch'))
 
     await userEvent.click(screen.getByRole('link', { name: 'sang dự án khác' }))
@@ -988,6 +994,9 @@ describe('GsScreen: recording a stage', () => {
     expect(screen.getByText('BlockB1_CPPTS', { selector: '.ant-select-selection-item' })).toBeInTheDocument()
     await userEvent.click(box)
     await userEvent.click(await screen.findByTitle('Đại Hùng'))
+    // On a phone the sheet is a draft: Tìm opens it (FLT-09).
+    expect(navigate).not.toHaveBeenCalled()
+    await applyFilterSheet()
 
     expect(navigate).toHaveBeenCalledWith('/gs/p2')
   })
@@ -1677,22 +1686,69 @@ describe('GsScreen: the phone\'s bar is one row, the rest in a sheet (FLT-04)', 
     expect(within(bar()).getByRole('combobox', { name: 'Sàn' }).closest('.ant-select')).toHaveStyle({ width: '100%' })
   })
 
-  it('holds Dự án, Sàn and the work in the sheet, full width, each applying at once; Xong closes it', async () => {
+  it('holds Dự án and the work in the sheet, full width -- not Sàn, which stays in the row (I1)', async () => {
+    listDeckWorks.mockResolvedValue(TWO_WORKS)
+    renderScreen()
+    await screen.findByRole('button', { name: 'ô R1C1' })
+    const sheet = await openFilterSheet()
+    const boxes = within(sheet).getAllByRole('combobox')
+    expect(boxes.map((b) => b.getAttribute('aria-label'))).toEqual(['Dự án', 'Công việc'])
+    for (const box of boxes) expect(box.closest('.ant-select')).toHaveStyle({ width: '100%' })
+    expect(screen.getAllByRole('combobox', { name: 'Sàn' })).toHaveLength(1)
+  })
+
+  it('holds the work as a draft: Tìm applies it and closes the sheet (FLT-09)', async () => {
     listDeckWorks.mockResolvedValue(TWO_WORKS)
     // R1C1 at Coat 1 in Sơn, at its one coat in Tháo giáo.
     listDeckStates.mockResolvedValue({ w1: { c1: { stageId: 's1', note: '' } }, w2: { c1: { stageId: 't1', note: '' } } })
     renderScreen()
     expect(await screen.findByRole('button', { name: 'ô R1C1' })).toHaveAttribute('data-color', '#fadb14')
     const sheet = await openFilterSheet()
-    const boxes = within(sheet).getAllByRole('combobox')
-    expect(boxes.map((b) => b.getAttribute('aria-label'))).toEqual(['Dự án', 'Sàn', 'Công việc'])
-    for (const box of boxes) expect(box.closest('.ant-select')).toHaveStyle({ width: '100%' })
-    expect(within(sheet).queryByRole('button', { name: /Tìm/ })).toBeNull()
-
+    const footer = sheet.querySelector('.ant-drawer-footer') as HTMLElement
+    expect(within(footer).getAllByRole('button').map((b) => b.textContent)).toEqual(['Đặt lại', 'Tìm'])
     await chooseOption('Công việc', 'Tháo giáo', sheet)
-    // At once, with the sheet still open: choosing is what the page shows.
+    // Not yet: the drawing still shows Sơn while the sheet is open.
+    expect(screen.getByRole('button', { name: 'ô R1C1' })).toHaveAttribute('data-color', '#fadb14')
+    await applyFilterSheet()
     await waitFor(() => expect(screen.getByRole('button', { name: 'ô R1C1' })).toHaveAttribute('data-color', '#8B5CF6'))
-    await closeFilterSheet()
+  })
+
+  it('throws the draft away when the sheet closes without Tìm: reopened, it shows what is applied (FLT-09)', async () => {
+    listDeckWorks.mockResolvedValue(TWO_WORKS)
+    renderScreen()
+    await screen.findByRole('button', { name: 'ô R1C1' })
+    await chooseOption('Công việc', 'Tháo giáo', await openFilterSheet())
+    await dismissFilterSheet()
+    expect(screen.getByRole('button', { name: 'ô R1C1' })).toHaveAttribute('data-color', '#fadb14')
+    const again = await openFilterSheet()
+    expect(within(again).getByTitle('Sơn')).toBeInTheDocument()
+    expect(within(again).queryByTitle('Tháo giáo')).toBeNull()
+  })
+
+  it('opens another project only on Tìm, and hides this project\'s works while that one is the draft (FLT-09)', async () => {
+    listDeckWorks.mockResolvedValue(TWO_WORKS)
+    renderScreen()
+    await screen.findByRole('button', { name: 'ô R1C1' })
+    const sheet = await openFilterSheet()
+    await chooseOption('Dự án', 'Đại Hùng', sheet)
+    expect(navigate).not.toHaveBeenCalled()
+    expect(within(sheet).queryByRole('combobox', { name: 'Công việc' })).toBeNull()
+    await applyFilterSheet()
+    expect(navigate).toHaveBeenCalledWith('/gs/p2')
+  })
+
+  it('puts the first work back and applies it on Đặt lại, the sheet still open (FLT-09)', async () => {
+    listDeckWorks.mockResolvedValue(TWO_WORKS)
+    renderScreen()
+    await screen.findByRole('button', { name: 'ô R1C1' })
+    await pickWork('Tháo giáo')
+    expect(bar().querySelector('.ant-badge-count')).toHaveTextContent('1')
+    const sheet = await openFilterSheet()
+    await userEvent.click(within(sheet).getByRole('button', { name: 'Đặt lại' }))
+    await waitFor(() => expect(bar().querySelector('.ant-badge-count[data-show="true"]')).toBeNull())
+    expect(within(sheet).getByTitle('Sơn')).toBeInTheDocument()
+    expect(screen.getByRole('dialog', { name: 'Bộ lọc' })).toBeInTheDocument()
+    expect(navigate).not.toHaveBeenCalled()
   })
 
   it('opens every select of the row and the sheet with its options in full', async () => {
@@ -1701,7 +1757,7 @@ describe('GsScreen: the phone\'s bar is one row, the rest in a sheet (FLT-04)', 
     await screen.findByRole('button', { name: 'ô R1C1' })
     expect((await openDropdown('Sàn', bar())).style.maxWidth).toBe('calc(100vw - 32px)')
     const sheet = await openFilterSheet()
-    for (const name of ['Dự án', 'Sàn', 'Công việc']) {
+    for (const name of ['Dự án', 'Công việc']) {
       expect((await openDropdown(name, sheet)).style.maxWidth).toBe('calc(100vw - 32px)')
     }
   })
@@ -1761,7 +1817,7 @@ describe('GsScreen: công việc', () => {
     renderScreen()
     await screen.findByRole('button', { name: 'ô R1C1' })
     const sheet = await openFilterSheet()
-    expect(within(sheet).getByRole('combobox', { name: 'Sàn' })).toBeInTheDocument()
+    expect(within(sheet).getByRole('combobox', { name: 'Dự án' })).toBeInTheDocument()
     expect(screen.queryByRole('combobox', { name: 'Công việc' })).toBeNull()
   })
 
@@ -2646,10 +2702,10 @@ describe('GsScreen: the exports are bar actions (GS-09)', () => {
     setViewport(767)
     renderScreen()
     await screen.findByTestId('canvas')
+    const inlineDeck = within(screen.getByRole('search', { name: 'Bộ lọc' })).getByRole('combobox', { name: 'Sàn' })
+    expect((inlineDeck.closest('.ant-select') as HTMLElement).style.width).toBe('100%')
     const sheet = await openFilterSheet()
-    for (const name of ['Dự án', 'Sàn']) {
-      expect((within(sheet).getByRole('combobox', { name }).closest('.ant-select') as HTMLElement).style.width).toBe('100%')
-    }
+    expect((within(sheet).getByRole('combobox', { name: 'Dự án' }).closest('.ant-select') as HTMLElement).style.width).toBe('100%')
   })
 
   it('says whether the ⋯ menu is open, and stays openable while an export runs (M-3)', async () => {

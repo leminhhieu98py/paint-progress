@@ -3,7 +3,7 @@ import {
 } from 'antd'
 import dayjs from 'dayjs'
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { useParams } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import { useAuth } from '../../auth/AuthProvider'
 
 import { DrawingCanvas } from '../../canvas/DrawingCanvas'
@@ -42,6 +42,7 @@ import { FieldProjectSelect } from './FieldProjectSelect'
 import { FIELD_TAB_BAR_SPACE, useFieldPhone } from './fieldSections'
 import { FilterBar } from '../../components/FilterBar'
 import { FilterSheet } from '../../components/FilterSheet'
+import { APP_BASE_PATH } from '../../config'
 import { rememberProjectName } from './fieldProjects'
 import { openingDeckId, rememberDeck } from './lastDeck'
 import { SectionCard } from '../../components/SectionCard'
@@ -122,6 +123,12 @@ export function GsScreen() {
   const [works, setWorks] = useState<DeckWork[] | null>(null)
   /** The work the drawing, the cards and the bay modal are scoped to. */
   const [activeWorkId, setActiveWorkId] = useState<string | null>(null)
+  /**
+   * The phone sheet's draft (FLT-09): a project or a work picked there and
+   * not yet applied by Tìm. Empty is what is applied.
+   */
+  const [sheetDraft, setSheetDraft] = useState<{ project?: string; work?: string }>({})
+  const navigate = useNavigate()
   const [decks, setDecks] = useState<GsDeck[]>([])
   const [activeDeckId, setActiveDeckId] = useState<string | null>(null)
   /** The deck's mesh, geometry only. Where each bay stands is in `states`. */
@@ -1130,31 +1137,63 @@ export function GsScreen() {
   )
   /** The work the page opens on is the first; another one counts on the phone's Bộ lọc badge (FLT-04). */
   const workIsDefault = activeWork === null || activeWork.work.id === workList[0]?.work.id
-  /** Every control of the bar, in order: the inline bar's, or the phone sheet's at full width (FLT-04). */
-  const barControls = (block: boolean) => (
+  /*
+    GSW-R1: the work the drawing is showing. Hidden with one work, since a
+    control with one position is a label pretending to be a choice.
+    Everything below -- colours, cards, plan, the bay modal -- follows it.
+    Named by its aria-label, no label on screen (FLT-01); a searchable
+    select, as on every screen (FLT-03).
+  */
+  const workSelect = (block: boolean, value: string, onChange: (id: string) => void) => workList.length > 1 && (
+    <Select
+      aria-label="Công việc"
+      {...searchSelectProps}
+      {...fullOptionsProps}
+      style={{ width: block ? '100%' : WORK_SELECT_WIDTH, maxWidth: '100%' }}
+      value={value}
+      onChange={onChange}
+      options={workList.map((w) => ({ label: w.work.name, value: w.work.id }))}
+    />
+  )
+  /** The inline bar (768 px and wider): each control applies at once. */
+  const barControls = (
     <>
-      {projectId && <FieldProjectSelect projectId={projectId} width={block ? '100%' : undefined} />}
-      {deckSelect(block)}
-      {/*
-        GSW-R1: the work the drawing is showing. Hidden with one work,
-        since a control with one position is a label pretending to be a
-        choice. Everything below -- colours, cards, plan, the bay modal --
-        follows it. Named by its aria-label, no label on screen (FLT-01);
-        a searchable select, as on every screen (FLT-03).
-      */}
-      {activeWork && workList.length > 1 && (
-        <Select
-          aria-label="Công việc"
-          {...searchSelectProps}
-          {...fullOptionsProps}
-          style={{ width: block ? '100%' : WORK_SELECT_WIDTH, maxWidth: '100%' }}
-          value={activeWork.work.id}
-          onChange={(id: string) => setActiveWorkId(id)}
-          options={workList.map((w) => ({ label: w.work.name, value: w.work.id }))}
-        />
-      )}
+      {projectId && <FieldProjectSelect projectId={projectId} />}
+      {deckSelect(false)}
+      {activeWork && workSelect(false, activeWork.work.id, setActiveWorkId)}
     </>
   )
+  /*
+    The phone's sheet (FLT-04, FLT-09): Dự án and the work, a draft until Tìm.
+    Sàn is not repeated here: it stays in the row and applies at once. The
+    work's options are this project's, so it waits for Tìm on another
+    project to open that one's page.
+  */
+  const sheetProject = sheetDraft.project ?? projectId
+  const sheetControls = (
+    <>
+      {projectId && (
+        <FieldProjectSelect
+          projectId={projectId}
+          width="100%"
+          value={sheetProject ?? undefined}
+          onChange={(project) => setSheetDraft((d) => ({ ...d, project }))}
+        />
+      )}
+      {activeWork && sheetProject === projectId
+        && workSelect(true, sheetDraft.work ?? activeWork.work.id, (work) => setSheetDraft((d) => ({ ...d, work })))}
+    </>
+  )
+  const applySheet = () => {
+    if (sheetProject && sheetProject !== projectId) navigate(`${APP_BASE_PATH}/gs/${sheetProject}`)
+    else if (sheetDraft.work !== undefined) setActiveWorkId(sheetDraft.work)
+    setSheetDraft({})
+  }
+  /** Đặt lại: this project and its first work, applied at once (FLT-09). */
+  const resetSheet = () => {
+    setSheetDraft({})
+    setActiveWorkId(null)
+  }
 
   // The drawing is the screen; everything under the header has to earn its
   // height on a tablet held at arm's length.
@@ -1242,11 +1281,17 @@ export function GsScreen() {
           >
             <div style={{ flex: '1 1 auto', minWidth: 0 }}>
               {phone ? (
-                <FilterSheet inline={deckSelect(true)} count={workIsDefault ? 0 : 1}>
-                  {barControls(true)}
+                <FilterSheet
+                  inline={deckSelect(true)}
+                  count={workIsDefault ? 0 : 1}
+                  onApply={applySheet}
+                  onReset={resetSheet}
+                  onDiscard={() => setSheetDraft({})}
+                >
+                  {sheetControls}
                 </FilterSheet>
               ) : (
-                <FilterBar>{barControls(false)}</FilterBar>
+                <FilterBar>{barControls}</FilterBar>
               )}
             </div>
             {/*

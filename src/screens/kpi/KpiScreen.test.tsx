@@ -621,6 +621,20 @@ describe('KpiScreen (gs) on a phone (FLT-04)', () => {
     expect(bar().querySelector('.ant-badge-count')).toBeNull()
   })
 
+  it('throws the draft away when the sheet closes without Tìm: reopened, it shows what is applied (FLT-09)', async () => {
+    renderField(390)
+    await screen.findByTestId('kpi-dashboard')
+    await userEvent.click(within(bar()).getByRole('button', { name: 'Bộ lọc' }))
+    const sheet = await screen.findByRole('dialog', { name: 'Bộ lọc' })
+    await chooseOption('Sàn', 'Sàn A', sheet)
+    await userEvent.click(document.querySelector('.ant-drawer-mask') as HTMLElement)
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Bộ lọc' })).toBeNull())
+    await userEvent.click(within(bar()).getByRole('button', { name: 'Bộ lọc' }))
+    const again = await screen.findByRole('dialog', { name: 'Bộ lọc' })
+    expect(within(again).getByTitle('Tất cả sàn')).toBeInTheDocument()
+    expect(within(again).queryByTitle('Sàn A')).toBeNull()
+  })
+
   it('opens every select of the sheet with its options in full', async () => {
     renderField(390)
     await screen.findByTestId('kpi-dashboard')
