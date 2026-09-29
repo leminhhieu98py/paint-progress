@@ -86,7 +86,9 @@ export function PageHeader({
         </div>
       )}
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+      {/* At least a control's height, so the title sits on the same line
+          whether the row carries 38px actions or none (R3-A). */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 16, minHeight: 38 }}>
         {onBack !== undefined && (
           <button
             type="button"

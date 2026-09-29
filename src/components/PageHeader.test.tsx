@@ -59,4 +59,16 @@ describe('PageHeader', () => {
       color: palette.textTertiary,
     })
   })
+
+  it('gives the title row one height with or without actions (R3-A)', () => {
+    // A row of 38px actions is taller than the title alone; without a floor
+    // the title sat 6px higher on a screen with no actions than on one with.
+    const { unmount } = render(<PageHeader title="Năng suất" />)
+    const bare = screen.getByRole('heading', { level: 1 }).parentElement!.parentElement!.parentElement!
+    expect(bare).toHaveStyle({ minHeight: '38px' })
+    unmount()
+    render(<PageHeader title="Người dùng" extra={<button type="button">Tạo</button>} />)
+    const withActions = screen.getByRole('heading', { level: 1 }).parentElement!.parentElement!.parentElement!
+    expect(withActions).toHaveStyle({ minHeight: '38px' })
+  })
 })
