@@ -14,7 +14,7 @@ import {
   wasteReasons, type LeadEfficiency, type StageEfficiency, type WasteReason,
 } from '../../domain/effort'
 import { padDays } from '../../domain/daySeries'
-import { deckForecast, type DeckForecast } from '../../domain/forecast'
+import { DAYS_NEEDED_TIP, deckForecast, type DeckForecast } from '../../domain/forecast'
 import { computeDeckProgress } from '../../domain/progress'
 import type { DeckEvent, WorkModel } from '../../domain/types'
 import { DEFAULT_UNIT, perUnit } from '../../domain/unit'
@@ -353,7 +353,7 @@ export function ProductivityDashboard({
               },
               {
                 // A span, not a Fragment (M6): the measured table gives its title a ref.
-                title: <span>Số ngày cần<InfoTip text="Số ngày của sàn là ngày lớn nhất trong các công đoạn vì các lớp làm song song" /></span>,
+                title: <span>Số ngày cần<InfoTip text={DAYS_NEEDED_TIP} /></span>,
                 align: 'center',
                 render: (_, r) => (r.forecast.daysNeeded === null ? dash : String(r.forecast.daysNeeded)),
               },

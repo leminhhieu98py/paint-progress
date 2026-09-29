@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { EMPTY_EFFORT, type DeckEvent, type Effort, type WorkModel } from '../../domain/types'
 import { useState } from 'react'
 import { FilterBar } from '../../components/FilterBar'
+import { DAYS_NEEDED_TIP } from '../../domain/forecast'
 import { ProductivityDashboard } from './ProductivityDashboard'
 import { ProductivityFilterControls } from './ProductivityFilterControls'
 import { DEFAULT_PRODUCTIVITY_FILTERS, dashboardWorkNames } from './productivityFilters'
@@ -135,8 +136,10 @@ describe('ProductivityDashboard', () => {
 
   it('explains the two computed columns on their headers, not in card summaries (CPY-01)', () => {
     renderDashboard()
-    const days = within(screen.getByTestId('forecast-table')).getByRole('img', { name: /ngày lớn nhất trong các công đoạn/ })
+    // The one wording A3.8 uses too, with no "vì" rationale (M16, RUL-01).
+    const days = within(screen.getByTestId('forecast-table')).getByRole('img', { name: DAYS_NEEDED_TIP })
     expect(days.closest('th')).toHaveTextContent(/^Số ngày cần$/)
+    expect(DAYS_NEEDED_TIP).not.toMatch(/(^|\s)vì\s|:/)
     const mean = within(screen.getByTestId('stage-table')).getByRole('img', { name: /trung bình cộng/ })
     expect(mean.closest('th')).toHaveTextContent(/^Hiệu suất TB \(Mhr\/m²\)$/)
     expect(screen.queryByText(/Còn lại bao nhiêu và có kịp hạn không/)).toBeNull()

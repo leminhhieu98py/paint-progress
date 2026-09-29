@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { EMPTY_EFFORT, type DeckEvent, type Effort } from '../../domain/types'
 import { weightOf } from '../../test/typography'
+import { DAYS_NEEDED_TIP } from '../../domain/forecast'
 import { DeckForecastPanel } from './DeckForecastPanel'
 import { keyFactTexts } from '../../test/copy'
 
@@ -138,7 +139,8 @@ describe('DeckForecastPanel', () => {
     // The totals row is bodyStrong, not the <strong> 700 it was (TYP-02).
     for (const text of ['Tổng', '1.000,00', '2']) expect(weightOf(total.getByText(text))).toBe(600)
     // Why, on the column it explains (CPY-01).
-    const tip = screen.getByRole('img', { name: /ngày lớn nhất trong các công đoạn, không phải tổng/ })
+    // The one wording the dashboard uses too (M16).
+    const tip = screen.getByRole('img', { name: DAYS_NEEDED_TIP })
     expect(tip.closest('th')).toHaveTextContent(/^Số ngày cần$/)
     expect(screen.queryByText(/ngày lớn nhất trong các công đoạn, không phải tổng/)).toBeNull()
   })

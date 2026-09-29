@@ -9,7 +9,7 @@ import { useTablePagination } from '../../components/tablePagination'
 import {
   dailyEffort, deckEffortTotals, effortDayKey, stageEfficiency, stageOrder,
 } from '../../domain/effort'
-import { deckForecast, type StageForecast } from '../../domain/forecast'
+import { DAYS_NEEDED_TIP, deckForecast, type StageForecast } from '../../domain/forecast'
 import { computeDeckProgress } from '../../domain/progress'
 import type { DeckEvent, WorkModel } from '../../domain/types'
 import { DEFAULT_UNIT, perUnit } from '../../domain/unit'
@@ -297,7 +297,7 @@ export function DeckForecastPanel({
                 render: (_, r) => (r.mhrNeeded === null ? dash : formatHours(r.mhrNeeded)),
               },
               {
-                title: <>Số ngày cần<InfoTip text="Số ngày của sàn là ngày lớn nhất trong các công đoạn, không phải tổng: các lớp thi công song song." /></>,
+                title: <>Số ngày cần<InfoTip text={DAYS_NEEDED_TIP} /></>,
                 align: 'center',
                 render: (_, r) => (r.daysNeeded === null ? dash : String(r.daysNeeded)),
               },

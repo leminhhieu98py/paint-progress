@@ -147,3 +147,9 @@ export function deckForecast(input: {
     shortfallMhr,
   }
 }
+
+/**
+ * The (?) on every "Số ngày cần" column (A3.8, Năng suất): one wording, a
+ * statement of what the figure is, no rationale after it (M16, RUL-01).
+ */
+export const DAYS_NEEDED_TIP = 'Số ngày của sàn là số ngày lớn nhất trong các công đoạn, không phải tổng.'
