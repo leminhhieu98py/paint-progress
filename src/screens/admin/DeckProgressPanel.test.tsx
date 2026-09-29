@@ -180,9 +180,11 @@ const applyBarOf = async (el: HTMLElement) => {
 
 /** A lens bar's select, by its label, set to `name` and applied with Tìm. */
 const pickLens = async (label: string, name: string) => {
-  await userEvent.click(screen.getByLabelText(label))
+  // By role: the controls name themselves by aria-label (M14), which antd
+  // puts on the select's wrapper as well as its input.
+  await userEvent.click(screen.getByRole('combobox', { name: label }))
   await userEvent.click(await screen.findByTitle(name))
-  await applyBarOf(screen.getByLabelText(label))
+  await applyBarOf(screen.getByRole('combobox', { name: label }))
 }
 
 describe('DeckProgressPanel', () => {
@@ -1065,7 +1067,7 @@ describe('DeckProgressPanel — the foreman\'s note', () => {
     // things at Blast + Coat 1 and at Tháo giáo.
     expect(within(dialog).getByText('Tháo giáo')).toBeInTheDocument()
     expect(within(dialog).getByText('Blast + Coat 1')).toBeInTheDocument()
-    expect(within(dialog).getByText(/29\.08\.2026/)).toBeInTheDocument()
+    expect(within(dialog).getByText(/29\/08\/2026/)).toBeInTheDocument()
     // And which of them the drawing's flag is showing.
     expect(within(dialog).getByText('Đang hiện trên bản vẽ')).toBeInTheDocument()
   })
@@ -1242,7 +1244,6 @@ describe('DeckProgressPanel — công việc', () => {
   it('offers the works the deck is part of, opening on the first', async () => {
     renderPanel(false)
     await screen.findByTestId('lens-A')
-    expect(screen.getByLabelText('Công việc')).toBeInTheDocument()
     // Named by its card, apart from the deck page's other work selects (M7).
     expect(screen.getByRole('combobox', { name: 'Công việc · Tiến độ theo lớp sơn' })).toBeInTheDocument()
     expect(within(screen.getByTestId('lens-A')).getByText('Tiến độ · Blast + Coat 1')).toBeInTheDocument()
@@ -1251,9 +1252,9 @@ describe('DeckProgressPanel — công việc', () => {
   it('switching the work switches the coats on offer, and the lens with them', async () => {
     renderPanel(false)
     await screen.findByTestId('lens-A')
-    await pickLens('Công việc', 'Tháo giáo')
+    await pickLens('Công việc · Tiến độ theo lớp sơn', 'Tháo giáo')
     expect(await within(screen.getByTestId('lens-A')).findByText('Tiến độ · Tháo giáo lửng')).toBeInTheDocument()
-    await userEvent.click(screen.getByLabelText('Lớp sơn đang xem'))
+    await userEvent.click(screen.getByRole('combobox', { name: 'Lớp sơn đang xem' }))
     expect(screen.queryByTitle('Coat 2')).toBeNull()
   })
 
@@ -1326,7 +1327,7 @@ describe('DeckProgressPanel — công việc', () => {
     loadDeckWorks.mockResolvedValue(ENTRY)
     renderPanel(false)
     await screen.findByTestId('lens-A')
-    expect(screen.queryByLabelText('Công việc')).toBeNull()
+    expect(screen.queryByRole('combobox', { name: 'Công việc · Tiến độ theo lớp sơn' })).toBeNull()
     expect(screen.getByText('Công việc: Công việc chính')).toBeInTheDocument()
   })
 
@@ -1377,12 +1378,24 @@ describe('DeckProgressPanel — the all-stages layer (RV6-13)', () => {
     await screen.findByTestId('lens-B')
 
     const coats = ['Blast + Coat 1', 'Coat 2', 'Tháo giáo']
-    await userEvent.click(within(screen.getByTestId('lens-A')).getByLabelText('Công đoạn'))
+    await userEvent.click(within(screen.getByTestId('lens-A')).getByRole('combobox', { name: 'Công đoạn' }))
     expect(optionLabels('lens-a-stage')).toEqual(['Tất cả công đoạn', ...coats])
     await userEvent.keyboard('{Escape}')
 
-    await userEvent.click(within(screen.getByTestId('lens-B')).getByLabelText('Công đoạn'))
+    await userEvent.click(within(screen.getByTestId('lens-B')).getByRole('combobox', { name: 'Công đoạn' }))
     expect(optionLabels('lens-b-stage')).toEqual(['Tất cả công đoạn', ...coats])
+  })
+
+  it('names the lens bar\'s controls by aria-label, with no visible label over them (FLT-01, M14)', async () => {
+    loadDeckWorks.mockResolvedValue(TWO_WORKS)
+    renderPanel(false)
+    const stage = await screen.findByRole('combobox', { name: 'Lớp sơn đang xem' })
+    const bar = stage.closest('[role="search"]') as HTMLElement
+    expect(within(bar).getByRole('combobox', { name: 'Công việc · Tiến độ theo lớp sơn' })).toBeInTheDocument()
+    expect(within(bar).getByRole('textbox', { name: 'Ngày' })).toBeInTheDocument()
+    expect(bar.querySelectorAll('label')).toHaveLength(0)
+    expect(within(bar).queryByText('Lớp sơn đang xem')).toBeNull()
+    expect(within(bar).queryByText('Ngày')).toBeNull()
   })
 
   it('labels each pane\'s select by what it picks, not by the side the subtitle already names (QA F6)', async () => {
@@ -1390,13 +1403,13 @@ describe('DeckProgressPanel — the all-stages layer (RV6-13)', () => {
     // and the select picks a coat, not a layer.
     renderPanel()
     await screen.findByTestId('lens-A')
-    expect(screen.getByLabelText('Lớp sơn đang xem')).toHaveAttribute('id', 'lens-a-stage')
+    expect(screen.getByRole('combobox', { name: 'Lớp sơn đang xem' })).toHaveAttribute('id', 'lens-a-stage')
 
     await userEvent.click(screen.getByText('So sánh hai lớp'))
     const lensA = await screen.findByTestId('lens-A')
     const lensB = await screen.findByTestId('lens-B')
-    expect(within(lensA).getByLabelText('Công đoạn')).toHaveAttribute('id', 'lens-a-stage')
-    expect(within(lensB).getByLabelText('Công đoạn')).toHaveAttribute('id', 'lens-b-stage')
+    expect(within(lensA).getByRole('combobox', { name: 'Công đoạn' })).toHaveAttribute('id', 'lens-a-stage')
+    expect(within(lensB).getByRole('combobox', { name: 'Công đoạn' })).toHaveAttribute('id', 'lens-b-stage')
     expect(screen.queryByLabelText('Lớp bên trái')).toBeNull()
     expect(screen.queryByLabelText('Lớp bên phải')).toBeNull()
     // Nor does a subtitle name the sides any more: the position is obvious (CPY-01).
@@ -1796,7 +1809,7 @@ describe('DeckProgressPanel — each layer\'s controls above its own drawing (RV
     expect(lens).not.toContainElement(document.getElementById('lens-a-stage'))
     expect(lens).not.toContainElement(screen.getByTestId('lens-a-date'))
     // ...and they are still on the panel, reachable by their labels.
-    expect(screen.getByLabelText('Lớp sơn đang xem')).toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: 'Lớp sơn đang xem' })).toBeInTheDocument()
   })
 
   it('puts each layer\'s stage select and date picker in its own pane when comparing', async () => {
@@ -1813,9 +1826,9 @@ describe('DeckProgressPanel — each layer\'s controls above its own drawing (RV
 
     // The controls still work from their new place: the right layer moves
     // to another coat without touching the left one.
-    await userEvent.click(within(lensB).getByLabelText('Công đoạn'))
+    await userEvent.click(within(lensB).getByRole('combobox', { name: 'Công đoạn' }))
     await userEvent.click(await screen.findByTitle('Coat 2'))
-    await applyBarOf(within(lensB).getByLabelText('Công đoạn'))
+    await applyBarOf(within(lensB).getByRole('combobox', { name: 'Công đoạn' }))
     expect(within(lensB).getByText('Tiến độ · Coat 2')).toBeInTheDocument()
     expect(within(lensA).getByText('Tiến độ · Blast + Coat 1')).toBeInTheDocument()
   })
@@ -1828,12 +1841,12 @@ describe('DeckProgressPanel — the lens bar is a draft, applied on Tìm (FLT-08
   it('ends the single layer\'s bar with Đặt lại · Tìm, and changes the lens only on Tìm', async () => {
     renderPanel()
     const lens = await screen.findByTestId('lens-A')
-    const bar = barOf(screen.getByLabelText('Lớp sơn đang xem'))
+    const bar = barOf(screen.getByRole('combobox', { name: 'Lớp sơn đang xem' }))
     expect(bar).toContainElement(screen.getByTestId('lens-a-date'))
     const buttons = within(bar).getAllByRole('button').filter((b) => /Đặt lại|Tìm/.test(b.textContent ?? ''))
     expect(buttons.map((b) => b.textContent)).toEqual(['Đặt lại', 'Tìm'])
 
-    await userEvent.click(screen.getByLabelText('Lớp sơn đang xem'))
+    await userEvent.click(screen.getByRole('combobox', { name: 'Lớp sơn đang xem' }))
     await userEvent.click(await screen.findByTitle('Coat 2'))
     // Not yet: the draft only.
     expect(within(lens).getByText('Tiến độ · Blast + Coat 1')).toBeInTheDocument()
@@ -1847,7 +1860,7 @@ describe('DeckProgressPanel — the lens bar is a draft, applied on Tìm (FLT-08
     const lens = await screen.findByTestId('lens-A')
     await pickLens('Lớp sơn đang xem', 'Coat 2')
     expect(await within(lens).findByText('Tiến độ · Coat 2')).toBeInTheDocument()
-    await userEvent.click(within(barOf(screen.getByLabelText('Lớp sơn đang xem'))).getByRole('button', { name: 'Đặt lại' }))
+    await userEvent.click(within(barOf(screen.getByRole('combobox', { name: 'Lớp sơn đang xem' }))).getByRole('button', { name: 'Đặt lại' }))
     expect(await within(lens).findByText('Tiến độ · Blast + Coat 1')).toBeInTheDocument()
     expect(within(screen.getByTestId('lens-a-date')).getByPlaceholderText('Hôm nay')).toHaveValue('')
   })
@@ -1856,11 +1869,11 @@ describe('DeckProgressPanel — the lens bar is a draft, applied on Tìm (FLT-08
     loadDeckWorks.mockResolvedValue(TWO_WORKS)
     renderPanel(false)
     const lens = await screen.findByTestId('lens-A')
-    await userEvent.click(screen.getByLabelText('Công việc'))
+    await userEvent.click(screen.getByRole('combobox', { name: 'Công việc · Tiến độ theo lớp sơn' }))
     await userEvent.click(await screen.findByTitle('Tháo giáo'))
     // The lens still shows the first work; the coat select already offers the second's.
     expect(within(lens).getByText('Tiến độ · Blast + Coat 1')).toBeInTheDocument()
-    await userEvent.click(screen.getByLabelText('Lớp sơn đang xem'))
+    await userEvent.click(screen.getByRole('combobox', { name: 'Lớp sơn đang xem' }))
     const coatOptions = () => Array.from(
       (document.getElementById('lens-a-stage_list') as HTMLElement).closest('.ant-select-dropdown')!
         .querySelectorAll('.ant-select-item-option'),
@@ -1868,7 +1881,7 @@ describe('DeckProgressPanel — the lens bar is a draft, applied on Tìm (FLT-08
     )
     await waitFor(() => expect(coatOptions()).toEqual(['Tất cả công đoạn', 'Tháo giáo lửng']))
     await userEvent.keyboard('{Escape}')
-    await applyBarOf(screen.getByLabelText('Công việc'))
+    await applyBarOf(screen.getByRole('combobox', { name: 'Công việc · Tiến độ theo lớp sơn' }))
     expect(await within(lens).findByText('Tiến độ · Tháo giáo lửng')).toBeInTheDocument()
   })
 
@@ -1878,15 +1891,15 @@ describe('DeckProgressPanel — the lens bar is a draft, applied on Tìm (FLT-08
     await userEvent.click(screen.getByText('So sánh hai lớp'))
     const lensB = await screen.findByTestId('lens-B')
     const lensA = screen.getByTestId('lens-A')
-    const barA = barOf(within(lensA).getByLabelText('Công đoạn'))
-    const barB = barOf(within(lensB).getByLabelText('Công đoạn'))
+    const barA = barOf(within(lensA).getByRole('combobox', { name: 'Công đoạn' }))
+    const barB = barOf(within(lensB).getByRole('combobox', { name: 'Công đoạn' }))
     expect(barA).not.toBe(barB)
     expect(barA).toHaveAccessibleName('Bộ lọc bên trái')
     expect(barB).toHaveAccessibleName('Bộ lọc bên phải')
 
-    await userEvent.click(within(lensA).getByLabelText('Công đoạn'))
+    await userEvent.click(within(lensA).getByRole('combobox', { name: 'Công đoạn' }))
     await userEvent.click(await screen.findByTitle('Coat 2'))
-    await userEvent.click(within(lensB).getByLabelText('Công đoạn'))
+    await userEvent.click(within(lensB).getByRole('combobox', { name: 'Công đoạn' }))
     const popups = document.querySelectorAll<HTMLElement>('.ant-select-dropdown:not(.ant-select-dropdown-hidden)')
     await userEvent.click(within(popups[popups.length - 1]).getByTitle('Blast + Coat 1'))
     await userEvent.click(within(barB).getByRole('button', { name: /Tìm/ }))

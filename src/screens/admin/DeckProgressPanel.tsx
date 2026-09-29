@@ -1266,72 +1266,59 @@ export function DeckProgressPanel({
    * would draw today's deck under tomorrow's date.
    */
   /** The work the lenses are scoped to, when the deck is in several. */
+  // No visible label (FLT-01, M14): the select names itself by aria-label and
+  // shows its value, like every other bar in the app.
   const lensWorkSelect = (value: string, onChange: (id: string) => void) => deckWorks && (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-      <label
-        htmlFor="lens-work"
-        style={{ ...type.label, color: palette.textTertiary }}
-      >
-        Công việc
-      </label>
-      <Select
-        id="lens-work"
-        // Named by its card, apart from the deck page's other work selects (M7).
-        aria-label="Công việc · Tiến độ theo lớp sơn"
-        {...searchSelectProps}
-        style={{ minWidth: 170 }}
-        value={value}
-        onChange={onChange}
-        options={deckWorks.works.map((w) => ({ value: w.work.id, label: w.work.name }))}
-      />
-    </div>
+    <Select
+      id="lens-work"
+      // Named by its card, apart from the deck page's other work selects (M7).
+      aria-label="Công việc · Tiến độ theo lớp sơn"
+      {...searchSelectProps}
+      style={{ minWidth: 170 }}
+      value={value}
+      onChange={onChange}
+      options={deckWorks.works.map((w) => ({ value: w.work.id, label: w.work.name }))}
+    />
   )
 
   const renderLayerControls = (side: 'a' | 'b') => {
     if (!entry) return null
     const isA = side === 'a'
-    const labelStyle = { ...type.label, color: palette.textTertiary }
+    // No visible labels (FLT-01, M14): each control names itself by aria-label.
     return (
-      <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-          {/*
-            In the split view the pane's subtitle already names the side, and
-            the select picks a coat -- so its label says that, once, rather
-            than repeating "Lớp bên trái" directly under it (QA F6).
-          */}
-          <label htmlFor={`lens-${side}-stage`} style={labelStyle}>
-            {splitView ? 'Công đoạn' : 'Lớp sơn đang xem'}
-          </label>
-          {/*
-            `Tất cả công đoạn` first, above the coats (RV6-13): it is the
-            whole deck, and the coats below it are the ways of slicing that.
-            Same list on both layers, so the split view can hold one coat
-            against the whole picture.
-          */}
-          <Select
-            id={`lens-${side}-stage`}
-            {...searchSelectProps}
-            style={{ minWidth: 190 }}
-            value={draftStageValue(side)}
-            onChange={(v: string) => editLensDraft(isA ? { viewA: v } : { viewB: v })}
-            options={[
-              { value: ALL_STAGES, label: 'Tất cả công đoạn' },
-              ...draftStages.map((st) => ({ value: st.id, label: st.name })),
-            ]}
-          />
-        </div>
+      <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+        {/*
+          In the split view the pane's subtitle already names the side, and
+          the select picks a coat -- so its name says that, once, rather
+          than repeating "Lớp bên trái" (QA F6).
+        */}
+        {/*
+          `Tất cả công đoạn` first, above the coats (RV6-13): it is the
+          whole deck, and the coats below it are the ways of slicing that.
+          Same list on both layers, so the split view can hold one coat
+          against the whole picture.
+        */}
+        <Select
+          id={`lens-${side}-stage`}
+          aria-label={splitView ? 'Công đoạn' : 'Lớp sơn đang xem'}
+          {...searchSelectProps}
+          style={{ minWidth: 190 }}
+          value={draftStageValue(side)}
+          onChange={(v: string) => editLensDraft(isA ? { viewA: v } : { viewB: v })}
+          options={[
+            { value: ALL_STAGES, label: 'Tất cả công đoạn' },
+            ...draftStages.map((st) => ({ value: st.id, label: st.name })),
+          ]}
+        />
         {/*
           The test id sits on the column, not the picker: antd hands a
           `data-*` prop to the INPUT, and the clear button beside it would
           then be outside the element the id names.
         */}
-        <div
-          data-testid={`lens-${side}-date`}
-          style={{ display: 'flex', flexDirection: 'column', gap: 7 }}
-        >
-          <label htmlFor={`lens-${side}-date-input`} style={labelStyle}>Ngày</label>
+        <div data-testid={`lens-${side}-date`} style={{ display: 'flex' }}>
           <DatePicker
             id={`lens-${side}-date-input`}
+            aria-label="Ngày"
             style={{ width: 150 }}
             format="DD/MM/YYYY"
             allowClear
@@ -1769,7 +1756,7 @@ export function DeckProgressPanel({
                   })
                 ) : (
                   <div style={{ flex: '1 1 auto', minWidth: 0 }}>
-                    <FilterBar align="end" onApply={() => applyLens('a')} onReset={() => resetLens('a')}>
+                    <FilterBar onApply={() => applyLens('a')} onReset={() => resetLens('a')}>
                       {deckWorks && deckWorks.works.length > 1 && lensWorkSelect(
                         draftWork?.work.id ?? activeWork.work.id,
                         // A new work's coats start at their defaults, as on Tìm.
