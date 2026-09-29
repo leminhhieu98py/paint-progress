@@ -8,7 +8,7 @@ import { searchSelectProps } from '../../components/searchSelect'
 import { StatusPill } from '../../components/StatusPill'
 import { APP_BASE_PATH, LOGIN_PATH } from '../../config'
 import { palette, space } from '../../theme'
-import { cachedProjectList, cachedProjectName, fieldProjectList, fieldProjectName } from './fieldProjects'
+import { cachedProjectList, cachedProjectName, fieldProjectName, projectListFor } from './fieldProjects'
 import { initialsOf } from './initials'
 
 /**
@@ -78,9 +78,11 @@ export function FieldHeader({ projectId, projectName: givenName, projectNameLoad
   const [projectList, setProjectList] = useState(cachedProjectList)
   const projectOptions = (projectList ?? []).map((p) => ({ value: p.id, label: p.name }))
   useEffect(() => {
-    if (!readOnly || cachedProjectList() !== undefined) return
+    if (!readOnly || cachedProjectList()?.some((p) => p.id === projectId)) return
     let cancelled = false
-    fieldProjectList()
+    // Nothing cached yet, or a cached list without the project on screen
+    // (created since, M-1b): projectListFor re-reads once, then settles.
+    projectListFor(projectId)
       .then((rows) => {
         if (!cancelled) setProjectList(rows)
       })
@@ -88,7 +90,7 @@ export function FieldHeader({ projectId, projectName: givenName, projectNameLoad
     return () => {
       cancelled = true
     }
-  }, [readOnly])
+  }, [readOnly, projectId])
   useEffect(() => {
     if (readOnly || nameGiven || cachedProjectName(projectId) !== undefined) return
     let cancelled = false

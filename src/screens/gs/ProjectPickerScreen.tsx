@@ -8,6 +8,7 @@ import { StatusPill } from '../../components/StatusPill'
 import { APP_BASE_PATH, LOGIN_PATH } from '../../config'
 import { listProjectCards, type ProjectCard } from '../../lib/projectsApi'
 import { palette, shadowCard } from '../../theme'
+import { seedProjectList } from './fieldProjects'
 
 /**
  * Where a viewer lands (Feedback Rv6 item 7, RV6-23).
@@ -32,7 +33,11 @@ export function ProjectPickerScreen() {
     let cancelled = false
     listProjectCards()
       .then((rows) => {
-        if (!cancelled) setCards(rows)
+        if (cancelled) return
+        setCards(rows)
+        // The freshest list of this session: the field header's switch takes
+        // it, so a project created since the header last read is in it (M-1b).
+        seedProjectList(rows)
       })
       .catch(() => {
         if (!cancelled) setCards('error')

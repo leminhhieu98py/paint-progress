@@ -213,6 +213,26 @@ describe('FieldHeader: the project', () => {
     expect(listProjectNames).toHaveBeenCalledTimes(1)
   })
 
+  it('re-reads a cached list once when it lacks the project on screen (M-1b)', async () => {
+    // A project created after the list was cached, opened from the picker.
+    authRole.value = 'viewer'
+    const first = renderAt('/gs/p1')
+    await screen.findByText('BlockB1_CPPTS', { selector: '.ant-select-selection-item' })
+    first.unmount()
+    listProjectNames.mockResolvedValue([
+      { id: 'p1', name: 'BlockB1_CPPTS', code: 'BB1' },
+      { id: 'p2', name: 'Đại Hùng', code: 'DH' },
+      { id: 'p9', name: 'Giàn mới', code: 'GM' },
+    ])
+    render(
+      <MemoryRouter initialEntries={['/gs/p9']}>
+        <FieldHeader projectId="p9" />
+      </MemoryRouter>,
+    )
+    expect(await screen.findByText('Giàn mới', { selector: '.ant-select-selection-item' })).toBeInTheDocument()
+    expect(listProjectNames).toHaveBeenCalledTimes(2)
+  })
+
   it('reads the viewer\'s list again after the session ends', async () => {
     authRole.value = 'viewer'
     const first = renderAt('/gs/p1')

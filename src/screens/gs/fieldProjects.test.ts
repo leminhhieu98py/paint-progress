@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { endSession } from '../../lib/sessionCache'
 import {
-  cachedProjectList, cachedProjectName, fieldProjectList, fieldProjectName, rememberProjectName,
+  cachedProjectList, cachedProjectName, fieldProjectList, fieldProjectName, projectListFor,
+  rememberProjectName, seedProjectList,
 } from './fieldProjects'
 
 const listProjectNames = vi.hoisted(() => vi.fn())
@@ -84,5 +85,41 @@ describe('the field\'s project names, once per session (M-1)', () => {
     await stale
     expect(cachedProjectList()).toBeUndefined()
     expect(cachedProjectName('p1')).toBeUndefined()
+  })
+})
+
+describe('keeping the viewer\'s list fresh (M-1b)', () => {
+  it('takes the picker\'s fresh read as the list, with no read of its own', async () => {
+    seedProjectList([{ id: 'p9', name: 'Giàn mới', code: 'GM' }])
+    expect(cachedProjectList()).toEqual([{ id: 'p9', name: 'Giàn mới', code: 'GM' }])
+    expect(cachedProjectName('p9')).toBe('Giàn mới')
+    await fieldProjectList()
+    expect(listProjectNames).not.toHaveBeenCalled()
+  })
+
+  it('answers from the cache when it holds the project on screen', async () => {
+    await fieldProjectList()
+    await expect(projectListFor('p2')).resolves.toEqual(ROWS)
+    expect(listProjectNames).toHaveBeenCalledTimes(1)
+  })
+
+  it('re-reads once when the project on screen is not in the cache, then stops asking', async () => {
+    await fieldProjectList()
+    const fresh = [...ROWS, { id: 'p9', name: 'Giàn mới', code: 'GM' }]
+    listProjectNames.mockResolvedValue(fresh)
+    await expect(projectListFor('p9')).resolves.toEqual(fresh)
+    expect(cachedProjectName('p9')).toBe('Giàn mới')
+    expect(listProjectNames).toHaveBeenCalledTimes(2)
+
+    // An id the fresh list does not have either (deleted, mistyped): one
+    // refresh per session, not one per mount.
+    await projectListFor('gone')
+    await projectListFor('gone')
+    expect(listProjectNames).toHaveBeenCalledTimes(3)
+  })
+
+  it('reads once, not twice, when nothing is cached yet', async () => {
+    await projectListFor('p1')
+    expect(listProjectNames).toHaveBeenCalledTimes(1)
   })
 })

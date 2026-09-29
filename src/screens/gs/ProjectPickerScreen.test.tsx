@@ -3,12 +3,18 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes, useParams } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { endSession } from '../../lib/sessionCache'
+import { cachedProjectList } from './fieldProjects'
 import { ProjectPickerScreen } from './ProjectPickerScreen'
 
 const listProjectCards = vi.hoisted(() => vi.fn())
+const listProjectNames = vi.hoisted(() => vi.fn())
 vi.mock('../../lib/projectsApi', () => ({
   listProjectCards: () => listProjectCards(),
+  listProjectNames: () => listProjectNames(),
 }))
+// The field header's name cache (fieldProjects) imports it; nothing here reads it.
+vi.mock('../../lib/gsApi', () => ({ loadGsProjectIdentity: vi.fn() }))
 
 const signOut = vi.hoisted(() => vi.fn())
 vi.mock('../../auth/AuthProvider', () => ({
@@ -42,6 +48,8 @@ const CARDS = [
 ]
 
 beforeEach(() => {
+  endSession()
+  listProjectNames.mockReset()
   listProjectCards.mockReset()
   listProjectCards.mockResolvedValue(CARDS)
   signOut.mockReset()
@@ -111,5 +119,17 @@ describe('ProjectPickerScreen', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Vẫn đăng xuất' }))
     expect(signOut).toHaveBeenCalledTimes(1)
     expect(await screen.findByText('LOGIN')).toBeInTheDocument()
+  })
+})
+
+describe('ProjectPickerScreen: the header\'s project list (M-1b)', () => {
+  it('hands its fresh read to the field header\'s session list, so a new project is in the switch', async () => {
+    renderPicker()
+    await screen.findByText('Đại Hùng')
+    expect(cachedProjectList()).toEqual([
+      { id: 'p1', name: 'BlockB1_CPPTS', code: 'BB1' },
+      { id: 'p2', name: 'Đại Hùng', code: 'DH' },
+    ])
+    expect(listProjectNames).not.toHaveBeenCalled()
   })
 })
