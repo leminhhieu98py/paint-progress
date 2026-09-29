@@ -1321,7 +1321,8 @@ end $$;
 
 create or replace function _verify_nhan_luc_names() returns setof text language plpgsql as $$
 declare
-  fns int; emp_trg boolean; prof_trg boolean; coded int; account_clashes int; cross_clashes int;
+  fns int; emp_trg boolean; prof_trg boolean; coded int; guarded int; grants_ok boolean;
+  account_clashes int; cross_clashes int;
 begin
   -- 46. 0037: one person, one row across GS/Visitor accounts and employees.
   -- Both name checks are pinned definers raising PPDUP, both BEFORE row
@@ -1334,6 +1335,17 @@ begin
    where pronamespace = 'public'::regnamespace
      and proname in ('employees_assert_unique_name', 'profiles_assert_unique_name')
      and prosrc like '%PPDUP%';
+  -- I-1: anon and non-admin sessions never reach the lookup, and cannot insert
+  -- where the grant already says no.
+  select count(*) into guarded from pg_proc
+   where pronamespace = 'public'::regnamespace
+     and proname in ('employees_assert_unique_name', 'profiles_assert_unique_name')
+     and prosrc like '%current_setting(''role'', true) in (''anon'', ''authenticated'') and not is_admin()%';
+  grants_ok := not has_table_privilege('anon', 'public.profiles', 'insert')
+    and not has_table_privilege('authenticated', 'public.profiles', 'insert')
+    and not has_table_privilege('anon', 'public.employees', 'insert')
+    and has_table_privilege('authenticated', 'public.employees', 'insert')
+    and has_table_privilege('service_role', 'public.profiles', 'insert');
   emp_trg := exists (
     select 1 from pg_trigger
      where tgrelid = 'public.employees'::regclass and tgname = 'employees_assert_unique_name'
@@ -1351,10 +1363,11 @@ begin
     join profiles p on lower(btrim(p.full_name)) = lower(btrim(e.full_name))
                    and p.role in ('gs', 'viewer') and not p.hidden;
   return next format(
-    '%s 0037 unique person names: pinned definers %s (need 2), raising PPDUP %s (need 2), employees trigger %s, profiles trigger %s, account name clashes %s (need 0), employee/visible-account clashes %s (need 0)',
-    case when fns = 2 and coded = 2 and emp_trg and prof_trg and account_clashes = 0 and cross_clashes = 0
+    '%s 0037 unique person names: pinned definers %s (need 2), raising PPDUP %s (need 2), lookup only for admin/service %s (need 2), insert grants narrowed %s, employees trigger %s, profiles trigger %s, account name clashes %s (need 0), employee/visible-account clashes %s (need 0)',
+    case when fns = 2 and coded = 2 and guarded = 2 and grants_ok and emp_trg and prof_trg
+              and account_clashes = 0 and cross_clashes = 0
          then 'PASS' else 'FAIL' end,
-    fns, coded, emp_trg, prof_trg, account_clashes, cross_clashes);
+    fns, coded, guarded, grants_ok, emp_trg, prof_trg, account_clashes, cross_clashes);
 end $$;
 
 -- A single top-level SELECT: `supabase db query -f` surfaces only the last

@@ -196,8 +196,13 @@ accounts never share a name (hidden ones included), and an employee never
 shares one with a visible GS/Visitor account (a hidden one is allowed: that is
 an account parked by "Đổi phân quyền" to Nhân viên). Admin accounts are outside
 the rule. A refusal is SQLSTATE `PPDUP` with DETAIL `account` or `employee`,
-which the app and the `admin-users` Edge Function translate. **It changes no
-row.** Before the push, run the read-only report
+which the app and the `admin-users` Edge Function translate. The lookup runs
+only for an admin, the service role and SQL sessions: a BEFORE trigger fires
+before RLS checks the new row, so for anon or a GS it would confirm that a
+name exists; those callers skip it and get the plain RLS refusal. For the same
+reason `0037` revokes INSERT on `profiles` from `anon` and `authenticated`
+(only the Edge Function creates accounts) and on `employees` from `anon`.
+**It changes no row.** Before the push, run the read-only report
 `supabase/queries/nhan_luc_duplicates.sql`; every row with
 `blocks_migration = true` must be renamed or merged by hand first, because the
 migration's first block raises (before creating anything) while one exists.

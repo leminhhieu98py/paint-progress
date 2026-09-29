@@ -15,6 +15,7 @@ import { toAuthEmail } from '../src/config'
 const url = process.env.VITE_SUPABASE_URL
 const anon = process.env.VITE_SUPABASE_ANON_KEY
 const gsUsername = process.env.RLS_TEST_GS_USERNAME
+const gsPassword = process.env.RLS_TEST_GS_PASSWORD
 const adminUsername = process.env.RLS_TEST_ADMIN_USERNAME
 const adminPassword = process.env.RLS_TEST_ADMIN_PASSWORD
 
@@ -237,5 +238,62 @@ describe.skipIf(!configured)('admin-users after Nhân lực, as an admin session
     const unhide = await invokeAdminUsers(admin, { action: 'unhide', userId: made.body.userId as string })
     expect(unhide.status).toBe(400)
     expect(String(unhide.body.error)).toContain('Đã có nhân viên tên')
+  })
+})
+
+/*
+  Review I-1: a BEFORE trigger runs before RLS checks the new row, so 0037's
+  lookup must never answer anyone who may not write the row. anon and a GS
+  get the same refusal for a name that exists as for one that does not --
+  never PPDUP.
+*/
+describe.skipIf(!configured || !gsPassword)('0037 tells anon and a GS nothing about names', () => {
+  let admin: SupabaseClient
+  let gs: SupabaseClient
+  let anonClient: SupabaseClient
+  let known: string
+  const unknown = `${EMPLOYEE_PREFIX}${Date.now().toString(36)} nobody`
+
+  beforeAll(async () => {
+    admin = createClient(url!, anon!, { auth: { persistSession: false } })
+    expect((await admin.auth.signInWithPassword({ email: toAuthEmail(adminUsername!), password: adminPassword! })).error).toBeNull()
+    gs = createClient(url!, anon!, { auth: { persistSession: false } })
+    expect((await gs.auth.signInWithPassword({ email: toAuthEmail(gsUsername!), password: gsPassword! })).error).toBeNull()
+    anonClient = createClient(url!, anon!, { auth: { persistSession: false } })
+    const fixture = await admin.from('profiles').select('full_name').eq('username', gsUsername!).single()
+    expect(fixture.error).toBeNull()
+    known = fixture.data!.full_name as string
+  })
+
+  afterAll(async () => {
+    if (!admin) return
+    // Nothing should have been written; this only guards a regression.
+    await admin.from('employees').delete().like('full_name', `${EMPLOYEE_PREFIX}%`)
+  })
+
+  const refusal = (error: { code?: string; message?: string } | null) => {
+    expect(error).not.toBeNull()
+    expect(error?.code).toBe('42501')
+    expect(error?.message ?? '').not.toContain('duplicate_person_name')
+    return error?.message
+  }
+
+  it.each([
+    ['anon', () => anonClient],
+    ['a GS session', () => gs],
+  ])('gives %s the same refusal for an existing and an unknown employee name', async (_who, client) => {
+    const existing = await client().from('employees').insert({ full_name: known.toUpperCase() })
+    const missing = await client().from('employees').insert({ full_name: unknown })
+    expect(refusal(existing.error)).toBe(refusal(missing.error))
+  })
+
+  it.each([
+    ['anon', () => anonClient],
+    ['a GS session', () => gs],
+  ])('refuses %s any insert into profiles on the grant, before any name is looked at', async (_who, client) => {
+    const existing = await client().from('profiles').insert({ id: randomUUID(), username: 'rlstest-nl-probe', full_name: known, role: 'gs' })
+    const missing = await client().from('profiles').insert({ id: randomUUID(), username: 'rlstest-nl-probe2', full_name: unknown, role: 'gs' })
+    expect(refusal(existing.error)).toMatch(/permission denied/)
+    expect(refusal(missing.error)).toMatch(/permission denied/)
   })
 })

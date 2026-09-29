@@ -46,10 +46,15 @@
 -- clash; `supabase/queries/nhan_luc_duplicates.sql` (read-only) lists them.
 -- The admin renames or merges those rows by hand, then the push is repeated.
 --
--- RLS: nothing to add or change. Both functions are security definer with a
--- pinned search_path so the check sees every row whoever writes -- the admin
--- through PostgREST, or the Edge Function's service_role -- and they return
--- nothing but the refusal.
+-- RLS: no policy changes. Both functions are security definer with a pinned
+-- search_path so the check sees every row whoever writes -- the admin through
+-- PostgREST, or the Edge Function's service_role. Because a BEFORE trigger
+-- runs before RLS checks the new row, the lookup is done only for those
+-- callers (and SQL sessions); anon and non-admin sessions skip it and are
+-- refused by RLS as before, so no name is ever confirmed to them (review
+-- I-1). The same reason revokes INSERT on profiles from anon and
+-- authenticated (only the Edge Function creates accounts) and on employees
+-- from anon.
 --
 -- Deploy order: this migration, then the Edge Function, then the app. The
 -- deployed app keeps working against it: its writes that the rule refuses come
@@ -93,6 +98,15 @@ as $$
 declare
   name_key text := lower(btrim(new.full_name));
 begin
+  -- Only an admin, the service role (the admin-users Edge Function) or a SQL
+  -- session is told a name is taken. anon and every other signed-in session
+  -- return here untouched and meet RLS, which refuses them without a name
+  -- ever being looked up: a PPDUP answer to them would say whether a person
+  -- exists (review I-1). `role` is the role PostgREST set for the request;
+  -- security definer changes the user, not that setting.
+  if current_setting('role', true) in ('anon', 'authenticated') and not is_admin() then
+    return new;
+  end if;
   perform pg_advisory_xact_lock(hashtext('nhan_luc_person_name'), hashtext(name_key));
   if exists (
     select 1 from profiles p
@@ -117,6 +131,15 @@ declare
   name_key text := lower(btrim(new.full_name));
 begin
   if new.role not in ('gs', 'viewer') then
+    return new;
+  end if;
+  -- Only an admin, the service role (the admin-users Edge Function) or a SQL
+  -- session is told a name is taken. anon and every other signed-in session
+  -- return here untouched and meet RLS, which refuses them without a name
+  -- ever being looked up: a PPDUP answer to them would say whether a person
+  -- exists (review I-1). `role` is the role PostgREST set for the request;
+  -- security definer changes the user, not that setting.
+  if current_setting('role', true) in ('anon', 'authenticated') and not is_admin() then
     return new;
   end if;
   perform pg_advisory_xact_lock(hashtext('nhan_luc_person_name'), hashtext(name_key));
@@ -147,6 +170,14 @@ create trigger employees_assert_unique_name
 create trigger profiles_assert_unique_name
   before insert or update of full_name, role, hidden on profiles
   for each row execute function profiles_assert_unique_name();
+
+-- Nobody but the Edge Function (service_role) creates an account: the app
+-- never inserts into profiles, and create_admin.sql runs as postgres. An
+-- employee is added by an admin session (authenticated), never by anon. The
+-- grants say so too, so an insert from those roles fails on the privilege,
+-- before any trigger runs (review I-1).
+revoke insert on public.profiles from anon, authenticated;
+revoke insert on public.employees from anon;
 
 comment on function employees_assert_unique_name() is
   'Nhân lực (0037): tên nhân viên không trùng tên tài khoản GS/Visitor đang hiện. So sánh lower(btrim()).';
@@ -186,6 +217,27 @@ begin
       and pg_get_triggerdef(oid) like '%BEFORE INSERT OR UPDATE OF full_name, role, hidden ON %profiles FOR EACH ROW%'
   ) then
     raise exception '0037: profiles_assert_unique_name is missing, disabled, or not BEFORE INSERT OR UPDATE OF full_name, role, hidden FOR EACH ROW';
+  end if;
+
+  -- Only admins, the service role and SQL sessions reach the lookup (I-1).
+  select count(*) into n from pg_proc
+  where pronamespace = 'public'::regnamespace
+    and proname in ('employees_assert_unique_name', 'profiles_assert_unique_name')
+    and prosrc like '%current_setting(''role'', true) in (''anon'', ''authenticated'') and not is_admin()%';
+  if n <> 2 then
+    raise exception '0037: a name check looks names up for callers other than admins and the service role (found % of 2 guarded)', n;
+  end if;
+  if has_table_privilege('anon', 'public.profiles', 'insert')
+     or has_table_privilege('authenticated', 'public.profiles', 'insert')
+     or has_table_privilege('anon', 'public.employees', 'insert') then
+    raise exception '0037: anon or authenticated still holds INSERT on profiles, or anon on employees';
+  end if;
+  -- The writers that remain: the Edge Function on both tables, admins on employees.
+  if not (has_table_privilege('service_role', 'public.profiles', 'insert')
+          and has_table_privilege('service_role', 'public.employees', 'insert')
+          and has_table_privilege('service_role', 'public.employees', 'delete')
+          and has_table_privilege('authenticated', 'public.employees', 'insert')) then
+    raise exception '0037: service_role lost INSERT on profiles/employees or DELETE on employees, or authenticated lost INSERT on employees';
   end if;
 
   -- The refusal carries the code the app and the Edge Function look for.
