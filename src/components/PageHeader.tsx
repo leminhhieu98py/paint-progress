@@ -86,9 +86,11 @@ export function PageHeader({
         </div>
       )}
 
-      {/* At least a control's height, so the title sits on the same line
-          whether the row carries 38px actions or none (R3-A). */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 16, minHeight: 38 }}>
+      {/* Top-aligned, with the title on a line of a control's height: the
+          title then sits at one y whether the row carries 38px actions or
+          none, and whether a subtitle is under it or arrives with the data
+          (R3-A, S2). Centring the row moved it by half of either. */}
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16 }}>
         {onBack !== undefined && (
           <button
             type="button"
@@ -113,7 +115,7 @@ export function PageHeader({
         )}
 
         <div style={{ minWidth: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 11, minHeight: 38 }}>
             <h1
               style={{
                 margin: 0,
@@ -140,14 +142,16 @@ export function PageHeader({
             )}
           </div>
           {subtitle !== undefined && (
-            <p style={{ margin: '5px 0 0', ...type.caption, lineHeight: 1.35, color: palette.textTertiary }}>
+            // -1.5px: the title line is 38 and the title 25 of it, so this
+            // keeps the 5px the subtitle always had under the text.
+            <p style={{ margin: '-1.5px 0 0', ...type.caption, lineHeight: 1.35, color: palette.textTertiary }}>
               {subtitle}
             </p>
           )}
         </div>
 
         {extra !== undefined && (
-          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 14 }}>
+          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 14, minHeight: 38 }}>
             {extra}
           </div>
         )}

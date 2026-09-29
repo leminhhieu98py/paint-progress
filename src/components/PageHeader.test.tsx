@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react'
+import type { ReactElement } from 'react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { palette } from '../theme'
@@ -60,15 +61,34 @@ describe('PageHeader', () => {
     })
   })
 
-  it('gives the title row one height with or without actions (R3-A)', () => {
-    // A row of 38px actions is taller than the title alone; without a floor
-    // the title sat 6px higher on a screen with no actions than on one with.
-    const { unmount } = render(<PageHeader title="Năng suất" />)
-    const bare = screen.getByRole('heading', { level: 1 }).parentElement!.parentElement!.parentElement!
-    expect(bare).toHaveStyle({ minHeight: '38px' })
-    unmount()
-    render(<PageHeader title="Người dùng" extra={<button type="button">Tạo</button>} />)
-    const withActions = screen.getByRole('heading', { level: 1 }).parentElement!.parentElement!.parentElement!
-    expect(withActions).toHaveStyle({ minHeight: '38px' })
+  it('puts the title on the same line with or without a subtitle or actions (R3-A, S2)', () => {
+    // jsdom has no layout, so this reads what decides the title's y: every
+    // box from the heading up to the header, and whatever sits above the
+    // heading in each. Those must not change with the subtitle (which a
+    // screen may fill in once its data loads) or the actions.
+    const chain = (ui: ReactElement) => {
+      const { container, unmount } = render(ui)
+      const root = container.firstElementChild as HTMLElement
+      const boxes: string[] = []
+      for (let el: HTMLElement = screen.getByRole('heading', { level: 1 }); el !== root; el = el.parentElement!) {
+        const parent = el.parentElement!
+        const above = Array.from(parent.children).slice(0, Array.from(parent.children).indexOf(el))
+        boxes.push(`${parent.getAttribute('style')} | above: ${above.map((a) => a.tagName).join(',')}`)
+      }
+      unmount()
+      return boxes
+    }
+    const bare = chain(<PageHeader title="Năng suất" />)
+    expect(chain(<PageHeader title="Nhân viên" subtitle="12 người" />)).toEqual(bare)
+    expect(chain(<PageHeader title="Người dùng" extra={<button type="button">Tạo</button>} />)).toEqual(bare)
+    expect(chain(<PageHeader title="Sàn" subtitle="184 ô" extra={<button type="button">Tạo</button>} />)).toEqual(bare)
+    // The title's line is a control's height with the title centred in it,
+    // and the row aligns its items to the top rather than centring them: a
+    // taller column (a subtitle) or 38px actions then move nothing above.
+    render(<PageHeader title="Sàn" subtitle="184 ô" extra={<button type="button">Tạo</button>} />)
+    const line = screen.getByRole('heading', { level: 1 }).parentElement!
+    expect(line).toHaveStyle({ minHeight: '38px', alignItems: 'center' })
+    expect(line.parentElement!.parentElement).toHaveStyle({ alignItems: 'flex-start' })
+    expect(screen.getByRole('button', { name: 'Tạo' }).parentElement).toHaveStyle({ minHeight: '38px', alignItems: 'center' })
   })
 })
