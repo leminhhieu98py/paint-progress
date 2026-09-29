@@ -2507,6 +2507,25 @@ describe('GsScreen: the exports are bar actions (GS-09)', () => {
     expect(items[1].querySelector('.anticon-folder-open')).not.toBeNull()
   })
 
+  const widthOf = (name: string) =>
+    (within(barRow()).getByRole('combobox', { name }).closest('.ant-select') as HTMLElement).style.width
+
+  it('lets the bar wrap by itself on a narrow screen: controls keep their width while two fit (C2)', async () => {
+    setViewport(764)
+    renderScreen()
+    await screen.findByTestId('canvas')
+    expect(widthOf('Dự án')).toBe('260px')
+    expect(widthOf('Sàn')).toBe('320px')
+  })
+
+  it('gives each control the full width only under 480 px (C2)', async () => {
+    setViewport(390)
+    renderScreen()
+    await screen.findByTestId('canvas')
+    expect(widthOf('Dự án')).toBe('100%')
+    expect(widthOf('Sàn')).toBe('100%')
+  })
+
   it('says whether the ⋯ menu is open, and stays openable while an export runs (M-3)', async () => {
     setViewport(390)
     Object.defineProperty(URL, 'createObjectURL', { value: () => 'blob:x', configurable: true })

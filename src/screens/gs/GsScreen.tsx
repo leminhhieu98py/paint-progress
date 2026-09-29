@@ -39,7 +39,7 @@ import { DeckProgressCard, StageRollupCard } from './DeckStatsCards'
 import { DeckTodayCard } from './DeckTodayCard'
 import { FieldLayout } from './FieldLayout'
 import { FieldProjectSelect } from './FieldProjectSelect'
-import { FIELD_TAB_BAR_SPACE, useFieldPhone } from './fieldSections'
+import { FIELD_TAB_BAR_SPACE, useFieldFullWidthControls, useFieldPhone } from './fieldSections'
 import { FilterBar } from '../../components/FilterBar'
 import { rememberProjectName } from './fieldProjects'
 import { openingDeckId, rememberDeck } from './lastDeck'
@@ -842,6 +842,8 @@ export function GsScreen() {
   const screens = Grid.useBreakpoint()
   const wide = Boolean(screens.lg)
   const phone = useFieldPhone()
+  /** Under 480 px each bar control takes the row; wider, the bar wraps them as they fit (C2). */
+  const fullWidthControls = useFieldFullWidthControls()
   /** A fixed panel's bottom offset, lifted over the phone's bottom tab bar (GS-06). */
   const overBottomBar = (px: number) => (phone ? `calc(${px}px + ${FIELD_TAB_BAR_SPACE})` : px)
 
@@ -1174,9 +1176,10 @@ export function GsScreen() {
         */}
         <div style={{ gridColumn: '1 / -1', minWidth: 0 }}>
           {/*
-            On a phone the bar's controls stack full width and the ⋯ stays at
-            the top right, beside the first; wider, the actions sit at the
-            right end of the row the bar leaves.
+            On a phone the ⋯ stays at the top right and the bar wraps its
+            controls in the width left beside it, two to a row where they fit
+            (C2), each full width only under 480 px; wider, the actions sit at
+            the right end of the row the bar leaves.
           */}
           <div
             data-testid="gs-bar-row"
@@ -1190,7 +1193,7 @@ export function GsScreen() {
           >
             <div style={{ flex: '1 1 auto', minWidth: 0 }}>
               <FilterBar>
-                {projectId && <FieldProjectSelect projectId={projectId} width={phone ? '100%' : undefined} />}
+                {projectId && <FieldProjectSelect projectId={projectId} width={fullWidthControls ? '100%' : undefined} />}
                 {decks.length > 0 && (
                   <Select
                     aria-label="Sàn"
@@ -1203,7 +1206,7 @@ export function GsScreen() {
                       // under its key.
                       if (projectId) rememberDeck(projectId, id)
                     }}
-                    style={{ width: phone ? '100%' : 320, maxWidth: '100%' }}
+                    style={{ width: fullWidthControls ? '100%' : 320, maxWidth: '100%' }}
                     options={decks.map((d) => ({
                       value: d.id,
                       label: `${d.name} · ${deckPercents[d.id] === undefined ? '—' : formatPercent(deckPercents[d.id])}`,

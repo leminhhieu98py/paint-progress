@@ -1,4 +1,5 @@
 import { Grid } from 'antd'
+import { useSyncExternalStore } from 'react'
 import { matchPath } from 'react-router-dom'
 import { APP_BASE_PATH } from '../../config'
 
@@ -41,3 +42,24 @@ export const FIELD_TAB_BAR_HEIGHT = 56
 export const FIELD_SAFE_AREA_BOTTOM = 'env(safe-area-inset-bottom, 0px)'
 /** What the bottom tab bar covers of the page: its height and the safe area under it. */
 export const FIELD_TAB_BAR_SPACE = `calc(${FIELD_TAB_BAR_HEIGHT}px + ${FIELD_SAFE_AREA_BOTTOM})`
+
+/** Below this a bar control takes the whole row; above it the bar wraps by itself (C2). */
+const FULL_WIDTH_QUERY = '(max-width: 479.98px)'
+
+/**
+ * A screen too narrow for two bar controls side by side (< 480 px), where each
+ * takes the full width. Between 480 and 768 the controls keep their widths and
+ * the bar wraps them as they fit. antd's breakpoints have no step here, so it
+ * asks the browser directly.
+ */
+export function useFieldFullWidthControls(): boolean {
+  return useSyncExternalStore(
+    (onChange) => {
+      const mq = window.matchMedia(FULL_WIDTH_QUERY)
+      mq.addEventListener('change', onChange)
+      return () => mq.removeEventListener('change', onChange)
+    },
+    () => window.matchMedia(FULL_WIDTH_QUERY).matches,
+    () => false,
+  )
+}
