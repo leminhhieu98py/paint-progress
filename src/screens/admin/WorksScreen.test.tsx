@@ -4,6 +4,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderApp } from '../../test/renderApp'
 import { expectLeft } from '../../test/alignment'
+import { pageSubtitle } from '../../test/copy'
 import type { Work, WorkModel } from '../../domain/types'
 import { WorksScreen } from './WorksScreen'
 
@@ -248,12 +249,30 @@ describe('WorksScreen', () => {
     expect(within(dialog).getByText('Xóa công việc Tháo giáo?')).toBeInTheDocument()
     const ok = within(dialog).getByRole('button', { name: /Xóa công việc/ })
     expect(ok).toBeDisabled()
+    // What survives, in the admin's words: no table name (CPY-01).
+    expect(within(dialog).getByText('Lịch sử cập nhật vẫn giữ tên công việc này.')).toBeInTheDocument()
+    expect(within(dialog).queryByText(/cell_events/)).not.toBeInTheDocument()
     await userEvent.type(within(dialog).getByLabelText('Gõ đúng tên để xác nhận'), 'Tháo giáo')
     await userEvent.click(ok)
 
     await waitFor(() => expect(deleteWork).toHaveBeenCalledWith('w2'))
     expect(await screen.findByText('Đã xóa công việc Tháo giáo')).toBeInTheDocument()
     await waitFor(() => expect(listWorks).toHaveBeenCalledTimes(2))
+  })
+
+  it('has no subtitle: the project is in the Dự án select, the formula in the rules (CPY-01, CPY-03)', async () => {
+    renderScreen()
+    await screen.findByDisplayValue('Sơn')
+    expect(pageSubtitle()).toBeNull()
+    expect(screen.queryByText(/tiến độ dự án =/)).not.toBeInTheDocument()
+  })
+
+  it('has no subtitle before a project is chosen either (CPY-03)', async () => {
+    listProjectNames.mockResolvedValue([])
+    renderScreen('/admin/works')
+    expect(await screen.findByRole('heading', { level: 1, name: 'Công việc' })).toBeInTheDocument()
+    expect(pageSubtitle()).toBeNull()
+    expect(screen.queryByText('Chọn một dự án để xem các công việc của nó')).not.toBeInTheDocument()
   })
 
   it('says so when the project has no works yet', async () => {

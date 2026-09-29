@@ -246,7 +246,6 @@ export function WorksScreen() {
   }
 
   const matrixWork = matrix ? draft.find((w) => w.id === matrix.workId) : undefined
-  const projectName = projects.find((p) => p.id === projectId)?.name ?? ''
 
   const sumChip = (
     <span
@@ -271,9 +270,6 @@ export function WorksScreen() {
     <>
       <PageHeader
         title="Công việc"
-        subtitle={projectName
-          ? `${projectName} · tiến độ dự án = Σ trọng số × tiến độ từng công việc tính vào tổng`
-          : 'Chọn một dự án để xem các công việc của nó'}
         filters={
           <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
             <label htmlFor="works-project" style={{ fontSize: 11, fontWeight: 600, color: palette.textTertiary }}>
@@ -627,7 +623,7 @@ export function WorksScreen() {
           { label: 'Vị trí và ghi chú của từng ô cho công việc này' },
           { label: 'Zone lập trên các lớp đó' },
         ]}
-        consequence="Lịch sử cập nhật (cell_events) giữ lại tên công việc, chỉ mất liên kết."
+        consequence="Lịch sử cập nhật vẫn giữ tên công việc này."
         okText="Xóa công việc"
         confirmText={removingWork?.name}
         confirmLoading={removing}
