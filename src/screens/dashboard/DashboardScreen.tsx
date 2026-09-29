@@ -11,6 +11,7 @@ import { listDecks } from '../../lib/decksApi'
 import { listProjectNames } from '../../lib/projectsApi'
 import { listWorks } from '../../lib/worksApi'
 import { FieldHeader } from '../gs/FieldHeader'
+import { FieldProjectSelect } from '../gs/FieldProjectSelect'
 import { ProductivityDashboard } from './ProductivityDashboard'
 import { ProductivityFilterControls } from './ProductivityFilterControls'
 import { DEFAULT_PRODUCTIVITY_FILTERS, dashboardWorkNames, type ProductivityFilters } from './productivityFilters'
@@ -228,11 +229,16 @@ function FieldDashboard({ projectId }: { projectId: string | null }) {
   const draft = settleDraft(scope, options, settle)
   return (
     <Layout style={{ minHeight: '100vh' }}>
-      {/* GS-01: the field header is the way between the pages; no back button (GS-02). */}
+      {/* GS-06: the field header is the way between the pages; no back button (GS-02). */}
       {projectId && <FieldHeader projectId={projectId} />}
       <Layout.Content style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 16 }}>
-        {/* The field's bar, first under the header (FLT-01 via GS-04). */}
+        {/*
+          The field's bar, first under the header, the project first (GS-07).
+          The project is navigation, not part of the draft: choosing one opens
+          this page of that project at once, on a fresh mount.
+        */}
         <FilterBar onApply={() => scope.apply(draft)} onReset={scope.reset} applyLoading={data.current === null}>
+          {projectId && <FieldProjectSelect projectId={projectId} />}
           <ProductivityFilterControls {...(options ?? NO_OPTIONS)} value={draft} onChange={scope.setDraft} />
         </FilterBar>
         <Body projectId={projectId} data={data} filters={scope.applied} version={scope.version} />
@@ -242,7 +248,7 @@ function FieldDashboard({ projectId }: { projectId: string | null }) {
 }
 
 export function DashboardScreen({ variant }: { variant: 'admin' | 'gs' }) {
-  // Keyed by the path's project: the viewer's switch in the field header
+  // Keyed by the path's project: the Dự án switch in the field filter bar
   // changes it on this page, and a fresh mount is what keeps the last
   // project's applied filters from narrowing the next project's figures.
   const { projectId } = useParams()

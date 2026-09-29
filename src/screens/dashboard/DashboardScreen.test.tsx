@@ -28,18 +28,13 @@ vi.mock('./ProductivityDashboard', () => ({
     <div data-testid="dashboard-mock" data-version={version}>DASHBOARD {events.length} sự kiện · {filters.deck || 'Tất cả sàn'} · {filters.work ?? 'công việc đầu'}</div>
   ),
 }))
-// The field header (GS-01) on the gs variant: who is signed in, and the
-// foreman's project name.
+// The field header (GS-06) on the gs variant: who is signed in.
 const authRole = vi.hoisted(() => ({ value: 'gs' as 'gs' | 'viewer' }))
 vi.mock('../../auth/AuthProvider', () => ({
   useAuth: () => ({
     profile: { id: 'u1', username: 'gs1', fullName: 'Nguyễn Văn A', role: authRole.value, active: true },
     signOut: vi.fn(),
   }),
-}))
-const loadGsProjectIdentity = vi.hoisted(() => vi.fn())
-vi.mock('../../lib/gsApi', () => ({
-  loadGsProjectIdentity: (id: string) => loadGsProjectIdentity(id),
 }))
 vi.mock('react-router-dom', async () => {
   const actual = await vi.importActual<typeof import('react-router-dom')>('react-router-dom')
@@ -74,10 +69,8 @@ beforeEach(() => {
   listProjectNames.mockReset()
   navigate.mockReset()
   authRole.value = 'gs'
-  // The field header keeps project names per session; every test is a new one.
+  // The field's Dự án switch keeps project names per session; every test is a new one.
   endSession()
-  loadGsProjectIdentity.mockReset()
-  loadGsProjectIdentity.mockResolvedValue({ code: 'GB', name: 'Giàn B' })
   listWorks.mockReset()
   listDecks.mockReset()
   // Another project's options, read only while it is the DRAFT project (FLT-02).
@@ -314,11 +307,10 @@ describe('DashboardScreen (gs)', () => {
     renderField()
     expect(await screen.findByText('DASHBOARD 2 sự kiện · Tất cả sàn · công việc đầu')).toBeInTheDocument()
     expect(loadProjectModel).toHaveBeenCalledWith('p2')
-    expect(listProjectNames).not.toHaveBeenCalled()
     const nav = screen.getByRole('navigation', { name: 'Điều hướng' })
     expect(within(nav).getByRole('link', { name: 'Năng suất' })).toHaveAttribute('aria-current', 'page')
     expect(within(nav).getByRole('link', { name: 'Sàn' })).toHaveAttribute('href', '/gs/p2')
-    expect(await screen.findByText('Giàn B')).toBeInTheDocument()
+    expect(await within(bar()).findByText('Giàn B', { selector: '.ant-select-selection-item' })).toBeInTheDocument()
   })
 
   it('has no back button and no title bar of its own: the Sàn tab is the way back (GS-02)', async () => {
@@ -346,13 +338,24 @@ describe('DashboardScreen (gs)', () => {
     expect(await screen.findByText('DASHBOARD 2 sự kiện · Tất cả sàn · công việc đầu')).toBeInTheDocument()
   })
 
-  it('gives the field the same bar without a project select (FLT-01, GS-04)', async () => {
+  it('gives the field the same bar, the project first (FLT-01, GS-07)', async () => {
     renderField()
     await screen.findByText(/^DASHBOARD 2 sự kiện/)
-    expect(within(bar()).queryByRole('combobox', { name: 'Dự án' })).toBeNull()
-    expect(within(bar()).getByRole('radiogroup', { name: 'Công việc' })).toBeInTheDocument()
-    expect(within(bar()).getByRole('combobox', { name: 'Sàn' })).toBeInTheDocument()
-    expect(within(bar()).getByPlaceholderText('Từ ngày')).toBeInTheDocument()
+    const project = within(bar()).getByRole('combobox', { name: 'Dự án' })
+    const work = within(bar()).getByRole('radiogroup', { name: 'Công việc' })
+    const deck = within(bar()).getByRole('combobox', { name: 'Sàn' })
+    const from = within(bar()).getByPlaceholderText('Từ ngày')
+    const tim = within(bar()).getByRole('button', { name: /Tìm/ })
+    expect(before(project, work) && before(work, deck) && before(deck, from) && before(from, tim)).toBe(true)
+    expect(within(bar()).getAllByRole('combobox')[0]).toBe(project)
+  })
+
+  it('opens this page of another project at once from Dự án: navigation, not a draft (GS-07)', async () => {
+    renderField()
+    await screen.findByText(/^DASHBOARD 2 sự kiện/)
+    await userEvent.click(within(bar()).getByRole('combobox', { name: 'Dự án' }))
+    await userEvent.click(await screen.findByTitle('Giàn A'))
+    expect(navigate).toHaveBeenCalledWith('/gs/p1/dashboard')
   })
 
   it('holds the field\'s draft until Tìm too (FLT-02)', async () => {

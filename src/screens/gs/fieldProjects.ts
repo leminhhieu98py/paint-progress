@@ -1,15 +1,15 @@
-import { loadGsProjectIdentity } from '../../lib/gsApi'
 import { listProjectNames } from '../../lib/projectsApi'
 import { onSessionEnd } from '../../lib/sessionCache'
 
 /**
- * Project names for the field header, read once per session (M-1).
+ * Project names for the field's Dự án switch, read once per session (M-1).
  *
- * The header remounts on every field page and every project switch, so a read
- * of its own would run each time. Instead: GsScreen hands over the name from
- * the project row it already loads (`rememberProjectName`), the viewer's list
- * is read once and shared, and only a page opened cold (Năng suất or KPI by
- * deep link) reads one name. Forgotten when the session ends.
+ * The switch remounts on every field page and every project switch, so a read
+ * of its own would run each time. Instead the list -- a foreman's memberships,
+ * a viewer's every project, as RLS answers it -- is read once and shared, and
+ * GsScreen hands over the name from the project row it already loads
+ * (`rememberProjectName`) for the moment before the list lands. Forgotten when
+ * the session ends.
  */
 type ProjectName = { id: string; name: string; code: string }
 
@@ -29,7 +29,7 @@ onSessionEnd(() => {
   generation += 1
 })
 
-/** A name a screen already has, so the header need not read it. */
+/** A name a screen already has, for the switch to show before its list lands. */
 export function rememberProjectName(projectId: string, name: string): void {
   names.set(projectId, name)
 }
@@ -40,16 +40,6 @@ export function cachedProjectName(projectId: string): string | undefined {
 
 export function cachedProjectList(): ProjectName[] | undefined {
   return list
-}
-
-/** The project's name: from the session when known, else one read, then kept. */
-export async function fieldProjectName(projectId: string): Promise<string> {
-  const known = names.get(projectId)
-  if (known !== undefined) return known
-  const mine = generation
-  const { name } = await loadGsProjectIdentity(projectId)
-  if (mine === generation) names.set(projectId, name)
-  return name
 }
 
 /**
@@ -68,7 +58,7 @@ export function fieldProjectList(): Promise<ProjectName[]> {
 }
 
 /**
- * The list, for a header showing `projectId`. A cached list without it is
+ * The list, for a switch showing `projectId`. A cached list without it is
  * stale (a project created since it was read, M-1b), so it is re-read -- once
  * per project per session, so an id that is gone for good does not cost a
  * read on every page.

@@ -1,17 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { endSession } from '../../lib/sessionCache'
 import {
-  cachedProjectList, cachedProjectName, fieldProjectList, fieldProjectName, projectListFor,
+  cachedProjectList, cachedProjectName, fieldProjectList, projectListFor,
   rememberProjectName, seedProjectList,
 } from './fieldProjects'
 
 const listProjectNames = vi.hoisted(() => vi.fn())
 vi.mock('../../lib/projectsApi', () => ({
   listProjectNames: () => listProjectNames(),
-}))
-const loadGsProjectIdentity = vi.hoisted(() => vi.fn())
-vi.mock('../../lib/gsApi', () => ({
-  loadGsProjectIdentity: (id: string) => loadGsProjectIdentity(id),
 }))
 
 const ROWS = [{ id: 'p1', name: 'Giàn A', code: 'GA' }, { id: 'p2', name: 'Giàn B', code: 'GB' }]
@@ -20,8 +16,6 @@ beforeEach(() => {
   endSession()
   listProjectNames.mockReset()
   listProjectNames.mockResolvedValue(ROWS)
-  loadGsProjectIdentity.mockReset()
-  loadGsProjectIdentity.mockResolvedValue({ code: 'GA', name: 'Giàn A' })
 })
 
 describe('the field\'s project names, once per session (M-1)', () => {
@@ -49,21 +43,12 @@ describe('the field\'s project names, once per session (M-1)', () => {
   it('knows every listed project\'s name without another read', async () => {
     await fieldProjectList()
     expect(cachedProjectName('p2')).toBe('Giàn B')
-    await expect(fieldProjectName('p2')).resolves.toBe('Giàn B')
-    expect(loadGsProjectIdentity).not.toHaveBeenCalled()
   })
 
-  it('takes a name a screen already read, without a read of its own', async () => {
+  it('takes a name a screen already read, without a read of its own', () => {
     rememberProjectName('p1', 'Giàn A')
-    await expect(fieldProjectName('p1')).resolves.toBe('Giàn A')
-    expect(loadGsProjectIdentity).not.toHaveBeenCalled()
-  })
-
-  it('reads a name it does not have once, then keeps it', async () => {
-    await expect(fieldProjectName('p1')).resolves.toBe('Giàn A')
-    await fieldProjectName('p1')
-    expect(loadGsProjectIdentity).toHaveBeenCalledTimes(1)
     expect(cachedProjectName('p1')).toBe('Giàn A')
+    expect(listProjectNames).not.toHaveBeenCalled()
   })
 
   it('forgets everything when the session ends, so the next account reads its own', async () => {

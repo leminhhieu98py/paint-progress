@@ -38,6 +38,8 @@ import { EmptyState } from '../../components/EmptyState'
 import { DeckProgressCard, StageRollupCard } from './DeckStatsCards'
 import { DeckTodayCard } from './DeckTodayCard'
 import { FieldHeader } from './FieldHeader'
+import { FieldProjectSelect } from './FieldProjectSelect'
+import { FilterBar } from '../../components/FilterBar'
 import { rememberProjectName } from './fieldProjects'
 import { openingDeckId, rememberDeck } from './lastDeck'
 import { SectionCard } from '../../components/SectionCard'
@@ -146,8 +148,6 @@ export function GsScreen() {
    * refusal can say so, rather than rendering as missing data (see GsProject).
    */
   const [notMember, setNotMember] = useState(false)
-  /** The project's name, from the row loadGsProject reads anyway: the header's (M-1). */
-  const [projectName, setProjectName] = useState<string | null>(null)
 
   useEffect(() => {
     if (!projectId) return
@@ -155,9 +155,6 @@ export function GsScreen() {
     setLoading(true)
     setProjectError(false)
     setNotMember(false)
-    // Another project's name must never sit over this one's load or its
-    // failure (M-4b).
-    setProjectName(null)
     // Names for the note thread, once per project rather than per bay. Its
     // failure is not the project's: the deck, the drawing and the write carry
     // on, and the thread signs its notes "Không rõ người ghi".
@@ -170,7 +167,7 @@ export function GsScreen() {
       .then((project) => {
         if (cancelled) return
         setNotMember(!project.isMember)
-        setProjectName(project.name ?? null)
+        // The name the Dự án switch shows while its list is on the way (M-1).
         if (project.name) rememberProjectName(projectId, project.name)
         setDecks(project.decks)
         // The deck last opened in this project, else the first (GS-02).
@@ -178,7 +175,6 @@ export function GsScreen() {
       })
       .catch(() => {
         if (cancelled) return
-        setProjectName(null)
         setProjectError(true)
       })
       .finally(() => {
@@ -1035,30 +1031,42 @@ export function GsScreen() {
   }
 
   /*
-    GS-01: the one field header -- the project, Sàn · Năng suất · KPI, who is
-    signed in and logout -- in EVERY state of this screen (M-4), always the
-    first child of the same Layout, so React keeps the one instance: a
-    viewer's project switch spins the body under a header that stays put, and
-    a refusal or a failed load still offers the tabs and logout. The name is
-    held back while a project loads, so the old project's never shows over
-    the next one's spinner.
+    GS-06: the one field header -- Sàn · Năng suất · KPI and the account
+    menu -- in EVERY state of this screen (M-4), always the first child of
+    the same Layout, so React keeps the one instance: a project switch spins
+    the body under a header that stays put, and a refusal or a failed load
+    still offers the tabs and logout.
   */
-  const header = projectId
-    ? <FieldHeader projectId={projectId} projectName={loading ? null : projectName} projectNameLoading={loading} />
-    : null
+  const header = projectId ? <FieldHeader projectId={projectId} /> : null
   const inShell = (body: ReactNode) => (
     <Layout style={{ minHeight: '100vh' }}>
       {header}
       {body}
     </Layout>
   )
+  /*
+    GS-07: the project switch, first in the page's bar, also while a project
+    loads, fails or refuses: it is the way to another project from all three.
+    Its value is the route's id, so the previous project's name can never sit
+    over the next one's load or failure (M-4b).
+  */
+  const projectBar = (body: ReactNode) => (
+    <>
+      {projectId && (
+        <div style={{ padding: phone ? 12 : 16, paddingBottom: 0 }}>
+          <FilterBar><FieldProjectSelect projectId={projectId} /></FilterBar>
+        </div>
+      )}
+      {body}
+    </>
+  )
 
   if (loading) {
-    return inShell(<Spin style={{ display: 'block', margin: '25vh auto' }} />)
+    return inShell(projectBar(<Spin style={{ display: 'block', margin: '25vh auto' }} />))
   }
 
   if (projectError) {
-    return inShell(
+    return inShell(projectBar(
       <div style={{ maxWidth: 360, margin: '25vh auto' }}>
         <Alert
           type="error"
@@ -1071,7 +1079,7 @@ export function GsScreen() {
           }
         />
       </div>,
-    )
+    ))
   }
 
   // A refusal, rendered as a refusal. Before this the screen showed the same
@@ -1082,7 +1090,7 @@ export function GsScreen() {
   // coming. Same wording as the index route's, in the singular: whatever the
   // cause, the action is to talk to the administrator.
   if (notMember) {
-    return inShell(
+    return inShell(projectBar(
       <div style={{ maxWidth: 360, margin: '25vh auto' }}>
         <Alert
           type="info"
@@ -1090,7 +1098,7 @@ export function GsScreen() {
           description="Tài khoản hợp lệ, nhưng chưa được gán vào dự án này. Liên hệ quản trị viên để được thêm vào dự án."
         />
       </div>,
-    )
+    ))
   }
 
   // The drawing is the screen; everything under the header has to earn its
@@ -1157,28 +1165,31 @@ export function GsScreen() {
           every per-deck read, the realtime channel and the plan's coat follow
           activeDeckId.
         */}
-        {decks.length > 0 && (
-          <div style={{ gridColumn: '1 / -1', minWidth: 0 }}>
-            <Select
-              aria-label="Sàn"
-              {...searchSelectProps}
-              value={activeDeckId ?? undefined}
-              onChange={(id) => {
-                setActiveDeckId(id)
-                // Remembered on the choice, never on the load: a project's
-                // first render must not write the previous project's deck
-                // under its key.
-                if (projectId) rememberDeck(projectId, id)
-              }}
-              style={{ width: phone ? '100%' : 320, maxWidth: '100%' }}
-              options={decks.map((d) => ({
-                value: d.id,
-                label: `${d.name} · ${deckPercents[d.id] === undefined ? '—' : formatPercent(deckPercents[d.id])}`,
-                searchKey: d.name,
-              }))}
-            />
-          </div>
-        )}
+        <div style={{ gridColumn: '1 / -1', minWidth: 0 }}>
+          <FilterBar>
+            {projectId && <FieldProjectSelect projectId={projectId} />}
+            {decks.length > 0 && (
+              <Select
+                aria-label="Sàn"
+                {...searchSelectProps}
+                value={activeDeckId ?? undefined}
+                onChange={(id) => {
+                  setActiveDeckId(id)
+                  // Remembered on the choice, never on the load: a project's
+                  // first render must not write the previous project's deck
+                  // under its key.
+                  if (projectId) rememberDeck(projectId, id)
+                }}
+                style={{ width: phone ? '100%' : 320, maxWidth: '100%' }}
+                options={decks.map((d) => ({
+                  value: d.id,
+                  label: `${d.name} · ${deckPercents[d.id] === undefined ? '—' : formatPercent(deckPercents[d.id])}`,
+                  searchKey: d.name,
+                }))}
+              />
+            )}
+          </FilterBar>
+        </div>
 
         <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>
           {/*

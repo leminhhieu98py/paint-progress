@@ -1,8 +1,9 @@
-import { act, render, screen, waitFor, within } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { endSession } from '../../lib/sessionCache'
+import { fieldAccountMenuItems } from './fieldAccountMenu'
 import { FieldHeader } from './FieldHeader'
 
 const listProjectNames = vi.hoisted(() => vi.fn())
@@ -160,196 +161,70 @@ describe('FieldHeader: navigation (GS-01)', () => {
   })
 })
 
-describe('FieldHeader: the project', () => {
-  it('names a foreman\'s project as text, with no switch and no read of the list', async () => {
+describe('FieldHeader: navigation and the account, nothing else (GS-06)', () => {
+  const trigger = (name = 'Nguyễn Văn A (gs1)') => screen.getByRole('button', { name })
+  const openMenu = async (name?: string) => {
+    await userEvent.click(trigger(name))
+    return screen.findByRole('menu')
+  }
+
+  it('has no project in it: no switch, no name, no read of either', async () => {
     renderAt('/gs/p1')
-    expect(await screen.findByText('BlockB1_CPPTS')).toBeInTheDocument()
-    expect(loadGsProjectIdentity).toHaveBeenCalledWith('p1')
     expect(screen.queryByRole('combobox', { name: 'Dự án' })).toBeNull()
+    expect(screen.queryByText('BlockB1_CPPTS')).toBeNull()
+    await Promise.resolve()
     expect(listProjectNames).not.toHaveBeenCalled()
+    expect(loadGsProjectIdentity).not.toHaveBeenCalled()
+  })
+
+  it('puts the tabs first and the account trigger last', () => {
+    renderAt('/gs/p1')
+    const header = nav().closest('header') as HTMLElement
+    const focusable = Array.from(header.querySelectorAll('a, button'))
+    expect(focusable.map((e) => e.textContent)).toEqual(['Sàn', 'Năng suất', 'KPI', expect.stringContaining('Nguyễn Văn A')])
+  })
+
+  it('reaches the account trigger from the keyboard, after the tabs', async () => {
+    renderAt('/gs/p1')
+    const user = userEvent.setup()
+    await user.tab()
+    await user.tab()
+    await user.tab()
+    await user.tab()
+    expect(trigger()).toHaveFocus()
+    await user.keyboard('{Enter}')
+    expect(await screen.findByRole('menu')).toBeInTheDocument()
+  })
+
+  it('shows an avatar of initials and the full name on the trigger, and no logout button', () => {
+    renderAt('/gs/p1')
+    expect(trigger()).toHaveTextContent('NA')
+    expect(trigger()).toHaveTextContent('Nguyễn Văn A')
+    expect(trigger()).toHaveAttribute('aria-haspopup', 'menu')
+    expect(screen.queryByRole('button', { name: 'Đăng xuất' })).toBeNull()
     expect(screen.queryByText('Chỉ xem')).toBeNull()
   })
 
-  it('still renders the rest of the header when the project name cannot be read', async () => {
-    loadGsProjectIdentity.mockRejectedValue(new Error('Failed to fetch'))
-    renderAt('/gs/p1')
-    await waitFor(() => expect(loadGsProjectIdentity).toHaveBeenCalled())
-    expect(tab('Sàn')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Đăng xuất' })).toBeInTheDocument()
-  })
-
-  it('gives a viewer the searchable project switch, on the project on screen (RV6-24)', async () => {
+  it('adds the Chỉ xem badge to a viewer\'s trigger', () => {
     authRole.value = 'viewer'
     renderAt('/gs/p1')
-    const box = await screen.findByRole('combobox', { name: 'Dự án' })
-    expect(await screen.findByText('BlockB1_CPPTS', { selector: '.ant-select-selection-item' })).toBeInTheDocument()
-    expect(loadGsProjectIdentity).not.toHaveBeenCalled()
-    await userEvent.type(box, 'dai')
-    expect(await screen.findByTitle('Đại Hùng')).toBeInTheDocument()
-    expect(screen.getByText('Chỉ xem')).toBeInTheDocument()
+    expect(trigger('Nguyễn Văn A (gs1) · Chỉ xem')).toHaveTextContent('Chỉ xem')
   })
 
-  it.each([
-    ['/gs/p1', '/gs/p2'],
-    ['/gs/p1/dashboard', '/gs/p2/dashboard'],
-    ['/gs/p1/kpi', '/gs/p2/kpi'],
-  ])('switches a viewer on %s to the same page of the chosen project', async (from, to) => {
-    authRole.value = 'viewer'
-    renderAt(from)
-    await userEvent.click(await screen.findByRole('combobox', { name: 'Dự án' }))
-    await userEvent.click(await screen.findByTitle('Đại Hùng'))
-    expect(navigate).toHaveBeenCalledWith(to)
-  })
-
-  it('reads a viewer\'s list once per session, across remounts and project switches (M-1)', async () => {
-    // The header remounts on every field page and every project switch, so
-    // "once" has to hold across mounts, not only across rerenders.
-    authRole.value = 'viewer'
-    const first = renderAt('/gs/p1')
-    expect(await screen.findByText('BlockB1_CPPTS', { selector: '.ant-select-selection-item' })).toBeInTheDocument()
-    first.unmount()
-    renderAt('/gs/p1/kpi')
-    expect(screen.getByText('BlockB1_CPPTS', { selector: '.ant-select-selection-item' })).toBeInTheDocument()
-    expect(listProjectNames).toHaveBeenCalledTimes(1)
-  })
-
-  it('re-reads a cached list once when it lacks the project on screen (M-1b)', async () => {
-    // A project created after the list was cached, opened from the picker.
-    authRole.value = 'viewer'
-    const first = renderAt('/gs/p1')
-    await screen.findByText('BlockB1_CPPTS', { selector: '.ant-select-selection-item' })
-    first.unmount()
-    listProjectNames.mockResolvedValue([
-      { id: 'p1', name: 'BlockB1_CPPTS', code: 'BB1' },
-      { id: 'p2', name: 'Đại Hùng', code: 'DH' },
-      { id: 'p9', name: 'Giàn mới', code: 'GM' },
-    ])
-    render(
-      <MemoryRouter initialEntries={['/gs/p9']}>
-        <FieldHeader projectId="p9" />
-      </MemoryRouter>,
-    )
-    expect(await screen.findByText('Giàn mới', { selector: '.ant-select-selection-item' })).toBeInTheDocument()
-    expect(listProjectNames).toHaveBeenCalledTimes(2)
-  })
-
-  it('reads the viewer\'s list again after the session ends', async () => {
-    authRole.value = 'viewer'
-    const first = renderAt('/gs/p1')
-    await screen.findByText('BlockB1_CPPTS', { selector: '.ant-select-selection-item' })
-    first.unmount()
-    endSession()
+  it('opens a menu of who is signed in -- full name, login beneath -- then Đăng xuất', async () => {
     renderAt('/gs/p1')
-    await waitFor(() => expect(listProjectNames).toHaveBeenCalledTimes(2))
+    const menu = await openMenu()
+    expect(trigger()).toHaveAttribute('aria-expanded', 'true')
+    expect(within(menu).getByText('Nguyễn Văn A')).toBeInTheDocument()
+    expect(within(menu).getByText('gs1')).toBeInTheDocument()
+    // Only Đăng xuất can be chosen: GS accounts have no self-service (spec §2, §8.1).
+    expect(within(menu).getAllByRole('menuitem').map((i) => i.textContent)).toEqual(['Đăng xuất'])
   })
 
-  it('takes a foreman\'s project name from its host, with no read of its own', () => {
-    render(
-      <MemoryRouter initialEntries={['/gs/p1']}>
-        <FieldHeader projectId="p1" projectName="Giàn đã đọc" />
-      </MemoryRouter>,
-    )
-    expect(screen.getByText('Giàn đã đọc')).toBeInTheDocument()
-    expect(loadGsProjectIdentity).not.toHaveBeenCalled()
-  })
-
-  it('reads a foreman\'s project name once per session, not on every page', async () => {
-    const first = renderAt('/gs/p1/kpi')
-    expect(await screen.findByText('BlockB1_CPPTS')).toBeInTheDocument()
-    first.unmount()
-    renderAt('/gs/p1/dashboard')
-    expect(screen.getByText('BlockB1_CPPTS')).toBeInTheDocument()
-    expect(loadGsProjectIdentity).toHaveBeenCalledTimes(1)
-  })
-
-  it('names the new project, never the old one, when a foreman\'s project changes', async () => {
-    loadGsProjectIdentity.mockImplementation((id: string) =>
-      Promise.resolve(id === 'p1' ? { code: 'BB1', name: 'BlockB1_CPPTS' } : { code: 'DH', name: 'Đại Hùng' }))
-    const view = (id: string) => (
-      <MemoryRouter initialEntries={[`/gs/${id}`]}>
-        <FieldHeader projectId={id} />
-      </MemoryRouter>
-    )
-    const { rerender } = render(view('p1'))
-    expect(await screen.findByText('BlockB1_CPPTS')).toBeInTheDocument()
-    rerender(view('p2'))
-    expect(screen.queryByText('BlockB1_CPPTS')).toBeNull()
-    expect(await screen.findByText('Đại Hùng')).toBeInTheDocument()
-  })
-
-  it('keeps the project on screen in the switch when the list cannot be read', async () => {
-    authRole.value = 'viewer'
-    listProjectNames.mockRejectedValue(new Error('Failed to fetch'))
+  it('asks before signing out, with the same texts, then replaces the page with the login', async () => {
     renderAt('/gs/p1')
-    expect(await screen.findByRole('combobox', { name: 'Dự án' })).toBeInTheDocument()
-    expect(screen.getByText('p1', { selector: '.ant-select-selection-item' })).toBeInTheDocument()
-  })
-})
-
-describe('FieldHeader: a project slot that does not move the tabs (M-3)', () => {
-  const slot = () => screen.getByTestId('field-header-project')
-  const skeleton = () => slot().querySelector('.ant-skeleton')
-
-  it('holds one width while the name loads, once it lands, and for the viewer\'s switch', async () => {
-    let release: (v: { code: string; name: string }) => void = () => {}
-    loadGsProjectIdentity.mockReturnValue(new Promise((r) => { release = r }))
-    const view = renderAt('/gs/p1/kpi')
-    expect(slot()).toHaveStyle({ width: '220px' })
-    expect(skeleton()).not.toBeNull()
-    expect(slot()).toHaveAttribute('aria-busy', 'true')
-
-    await act(async () => release({ code: 'BB1', name: 'BlockB1_CPPTS' }))
-    expect(await screen.findByText('BlockB1_CPPTS')).toBeInTheDocument()
-    expect(skeleton()).toBeNull()
-    expect(slot()).not.toHaveAttribute('aria-busy')
-    expect(slot()).toHaveStyle({ width: '220px' })
-    view.unmount()
-
-    authRole.value = 'viewer'
-    renderAt('/gs/p1')
-    await screen.findByRole('combobox', { name: 'Dự án' })
-    expect(slot()).toHaveStyle({ width: '220px' })
-  })
-
-  it('is narrower on a phone, the same for both roles', async () => {
-    setViewport(390)
-    const view = renderAt('/gs/p1')
-    expect(slot()).toHaveStyle({ width: '140px' })
-    view.unmount()
-    authRole.value = 'viewer'
-    renderAt('/gs/p1')
-    expect(slot()).toHaveStyle({ width: '140px' })
-  })
-
-  it('shows the placeholder while the host is still loading the name, and reads nothing', () => {
-    render(
-      <MemoryRouter initialEntries={['/gs/p1']}>
-        <FieldHeader projectId="p1" projectName={null} projectNameLoading />
-      </MemoryRouter>,
-    )
-    expect(skeleton()).not.toBeNull()
-    expect(loadGsProjectIdentity).not.toHaveBeenCalled()
-  })
-
-  it('stops the placeholder when the name cannot be read, keeping the width', async () => {
-    loadGsProjectIdentity.mockRejectedValue(new Error('Failed to fetch'))
-    renderAt('/gs/p1/kpi')
-    await waitFor(() => expect(skeleton()).toBeNull())
-    expect(slot()).toHaveStyle({ width: '220px' })
-  })
-})
-
-describe('FieldHeader: who is signed in', () => {
-  it('shows the full name with the login beneath it', () => {
-    renderAt('/gs/p1')
-    expect(screen.getByText('Nguyễn Văn A')).toBeInTheDocument()
-    expect(screen.getByText('gs1')).toBeInTheDocument()
-    expect(screen.queryByRole('img', { name: 'Nguyễn Văn A (gs1)' })).toBeNull()
-  })
-
-  it('asks before signing out, then replaces the page with the login', async () => {
-    renderAt('/gs/p1')
-    await userEvent.click(screen.getByRole('button', { name: 'Đăng xuất' }))
+    const menu = await openMenu()
+    await userEvent.click(within(menu).getByRole('menuitem', { name: /Đăng xuất/ }))
     const dialog = await screen.findByRole('dialog')
     expect(within(dialog).getByText('Đăng xuất?')).toBeInTheDocument()
     expect(within(dialog).getByText('Phiên làm việc hiện tại sẽ kết thúc:')).toBeInTheDocument()
@@ -365,59 +240,40 @@ describe('FieldHeader: who is signed in', () => {
 
   it('stays signed in when the confirm is cancelled', async () => {
     renderAt('/gs/p1')
-    await userEvent.click(screen.getByRole('button', { name: 'Đăng xuất' }))
+    const menu = await openMenu()
+    await userEvent.click(within(menu).getByRole('menuitem', { name: /Đăng xuất/ }))
     const dialog = await screen.findByRole('dialog')
     await userEvent.click(within(dialog).getByRole('button', { name: 'Huỷ' }))
     expect(signOut).not.toHaveBeenCalled()
+  })
+
+  it('builds the menu from one items list, the account block first and Đăng xuất last', () => {
+    const items = fieldAccountMenuItems({ fullName: 'Nguyễn Văn A', username: 'gs1', readOnly: false, onLogout: () => {} })
+    expect(items.map((i) => i?.key)).toEqual(['account', 'account-divider', 'logout'])
   })
 })
 
 describe('FieldHeader: phone width', () => {
   beforeEach(() => setViewport(390))
 
-  it('folds the name block into an avatar of initials whose tooltip gives name and login', async () => {
+  it('folds the trigger to the avatar, named for who is signed in', async () => {
     renderAt('/gs/p1')
-    const avatar = screen.getByRole('img', { name: 'Nguyễn Văn A (gs1)' })
-    expect(avatar).toHaveTextContent('NA')
-    expect(screen.queryByText('Nguyễn Văn A')).toBeNull()
-    await userEvent.hover(avatar)
-    const tip = await screen.findByRole('tooltip')
-    expect(tip).toHaveTextContent('Nguyễn Văn A')
-    expect(tip).toHaveTextContent('gs1')
+    const avatar = screen.getByRole('button', { name: 'Nguyễn Văn A (gs1)' })
+    expect(avatar).toHaveTextContent(/^NA$/)
+    const menu = await (async () => {
+      await userEvent.click(avatar)
+      return screen.findByRole('menu')
+    })()
+    expect(within(menu).getByText('Nguyễn Văn A')).toBeInTheDocument()
+    expect(within(menu).getByText('gs1')).toBeInTheDocument()
   })
 
-  it('opens the avatar tooltip from the keyboard too', async () => {
-    renderAt('/gs/p1')
-    screen.getByRole('img', { name: 'Nguyễn Văn A (gs1)' }).focus()
-    expect(await screen.findByRole('tooltip')).toHaveTextContent('Nguyễn Văn A')
-  })
-
-  it.each(['gs', 'viewer'] as const)(
-    'gives up width only from the project slot, never from the tabs, avatar or logout (%s)',
-    (role) => {
-      authRole.value = role
-      renderAt('/gs/p1')
-      // flex: none on everything but the project slot: an overflowing row
-      // shrinks the name or the Select (ellipsis), and logout stays on screen.
-      const right = screen.getByRole('button', { name: 'Đăng xuất' }).parentElement as HTMLElement
-      expect(right).toHaveStyle({ flexGrow: '0', flexShrink: '0' })
-      expect(nav()).toHaveStyle({ flexShrink: '0' })
-      expect(screen.getByTestId('field-header-project')).toHaveStyle({ flexShrink: '1', minWidth: '0px' })
-    },
-  )
-
-  it('keeps the tab labels', () => {
-    renderAt('/gs/p1')
-    expect(within(nav()).getAllByRole('link').map((l) => l.textContent)).toEqual(['Sàn', 'Năng suất', 'KPI'])
-  })
-
-  it('carries a viewer\'s Chỉ xem into the avatar, where the badge has no room', async () => {
+  it('carries a viewer\'s Chỉ xem into the trigger\'s name and the menu, where the badge has no room', async () => {
     authRole.value = 'viewer'
     renderAt('/gs/p1')
-    expect(await screen.findByRole('combobox', { name: 'Dự án' })).toBeInTheDocument()
-    expect(screen.queryByText('Chỉ xem')).toBeNull()
-    const avatar = screen.getByRole('img', { name: 'Nguyễn Văn A (gs1) · Chỉ xem' })
-    await userEvent.hover(avatar)
-    expect(await screen.findByRole('tooltip')).toHaveTextContent('Chỉ xem')
+    const avatar = screen.getByRole('button', { name: 'Nguyễn Văn A (gs1) · Chỉ xem' })
+    expect(avatar).not.toHaveTextContent('Chỉ xem')
+    await userEvent.click(avatar)
+    expect(within(await screen.findByRole('menu')).getByText('Chỉ xem')).toBeInTheDocument()
   })
 })
