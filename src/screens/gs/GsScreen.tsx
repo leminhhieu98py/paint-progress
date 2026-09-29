@@ -2,7 +2,7 @@ import {
   Alert, App, Button, Grid, Layout, Segmented, Select, Space, Spin,
 } from 'antd'
 import dayjs from 'dayjs'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useParams } from 'react-router-dom'
 import { useAuth } from '../../auth/AuthProvider'
 
@@ -1029,12 +1029,31 @@ export function GsScreen() {
       })
   }
 
+  /*
+    GS-01: the one field header -- the project, Sàn · Năng suất · KPI, who is
+    signed in and logout -- in EVERY state of this screen (M-4), always the
+    first child of the same Layout, so React keeps the one instance: a
+    viewer's project switch spins the body under a header that stays put, and
+    a refusal or a failed load still offers the tabs and logout. The name is
+    held back while a project loads, so the old project's never shows over
+    the next one's spinner.
+  */
+  const header = projectId
+    ? <FieldHeader projectId={projectId} projectName={loading ? null : projectName} />
+    : null
+  const inShell = (body: ReactNode) => (
+    <Layout style={{ minHeight: '100vh' }}>
+      {header}
+      {body}
+    </Layout>
+  )
+
   if (loading) {
-    return <Spin style={{ display: 'block', margin: '25vh auto' }} />
+    return inShell(<Spin style={{ display: 'block', margin: '25vh auto' }} />)
   }
 
   if (projectError) {
-    return (
+    return inShell(
       <div style={{ maxWidth: 360, margin: '25vh auto' }}>
         <Alert
           type="error"
@@ -1046,7 +1065,7 @@ export function GsScreen() {
             </Button>
           }
         />
-      </div>
+      </div>,
     )
   }
 
@@ -1058,25 +1077,21 @@ export function GsScreen() {
   // coming. Same wording as the index route's, in the singular: whatever the
   // cause, the action is to talk to the administrator.
   if (notMember) {
-    return (
+    return inShell(
       <div style={{ maxWidth: 360, margin: '25vh auto' }}>
         <Alert
           type="info"
           message="Không xem được dự án này"
           description="Tài khoản hợp lệ, nhưng chưa được gán vào dự án này. Liên hệ quản trị viên để được thêm vào dự án."
         />
-      </div>
+      </div>,
     )
   }
 
-  return (
-    <Layout style={{ minHeight: '100vh' }}>
-      {/*
-        GS-01: the one field header -- the project, Sàn · Năng suất · KPI, who
-        is signed in and logout. The drawing is the screen; everything else
-        has to earn its height on a tablet held at arm's length.
-      */}
-      {projectId && <FieldHeader projectId={projectId} projectName={projectName} />}
+  // The drawing is the screen; everything under the header has to earn its
+  // height on a tablet held at arm's length.
+  return inShell(
+    <>
 
       {/*
         Full-bleed and dark red, not an inset warning box. This banner means
@@ -1476,6 +1491,6 @@ export function GsScreen() {
         defaultEffortNames={lastNames}
         employees={employees}
       />
-    </Layout>
+    </>,
   )
 }

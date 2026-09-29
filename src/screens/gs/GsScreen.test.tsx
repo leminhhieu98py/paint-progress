@@ -3,7 +3,7 @@ import {
   act, render, screen, waitFor, within,
 } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
+import { Link, MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { endSession } from '../../lib/sessionCache'
 import { FieldHeader } from './FieldHeader'
@@ -788,6 +788,64 @@ describe('GsScreen: the deck last opened in the project (GS-02)', () => {
 
     await userEvent.click(screen.getByRole('link', { name: 'Sàn' }))
     await waitFor(() => expect(openDeckImage()).toBe('https://signed/p1/d2.png'))
+  })
+})
+
+describe('GsScreen: the header in every state (M-4)', () => {
+  const nav = () => screen.getByRole('navigation', { name: 'Điều hướng' })
+
+  it('keeps the header, tabs and logout while the project loads', async () => {
+    loadGsProject.mockReturnValue(new Promise(() => {}))
+    renderScreen()
+    expect(await screen.findByRole('navigation', { name: 'Điều hướng' })).toBeInTheDocument()
+    expect(within(nav()).getByRole('link', { name: 'KPI' })).toHaveAttribute('href', '/gs/p1/kpi')
+    expect(screen.getByRole('button', { name: 'Đăng xuất' })).toBeInTheDocument()
+    expect(document.querySelector('.ant-spin-spinning')).not.toBeNull()
+  })
+
+  it('keeps it over a failed project load', async () => {
+    loadGsProject.mockRejectedValue(new Error('permission denied'))
+    renderScreen()
+    expect(await screen.findByText('Không tải được dữ liệu dự án')).toBeInTheDocument()
+    expect(nav()).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Đăng xuất' })).toBeInTheDocument()
+  })
+
+  it('gives "Không xem được dự án này" a way out: the header and its logout', async () => {
+    loadGsProject.mockResolvedValue({ decks: [], isMember: false, name: null })
+    renderScreen()
+    expect(await screen.findByText('Không xem được dự án này')).toBeInTheDocument()
+    expect(nav()).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Đăng xuất' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Vẫn đăng xuất' }))
+    expect(signOut).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps the same header on screen while a viewer\'s next project loads', async () => {
+    authRole.value = 'viewer'
+    render(
+      <AntApp>
+        <MemoryRouter initialEntries={['/gs/p1']}>
+          {/* A real route change, as the header's project switch makes one. */}
+          <Link to="/gs/p2">sang Đại Hùng</Link>
+          <Routes>
+            <Route path="/gs/:projectId" element={<GsScreen />} />
+          </Routes>
+        </MemoryRouter>
+      </AntApp>,
+    )
+    await screen.findByTestId('canvas')
+    const before = nav()
+    loadGsProject.mockReturnValue(new Promise(() => {}))
+
+    await userEvent.click(screen.getByRole('link', { name: 'sang Đại Hùng' }))
+
+    await waitFor(() => expect(loadGsProject).toHaveBeenCalledWith('p2'))
+    expect(document.querySelector('.ant-spin-spinning')).not.toBeNull()
+    expect(screen.queryByTestId('canvas')).toBeNull()
+    // The same element, not a new header drawn after a blank: it never unmounted.
+    expect(nav()).toBe(before)
+    expect(within(nav()).getByRole('link', { name: 'Sàn' })).toHaveAttribute('href', '/gs/p2')
   })
 })
 
