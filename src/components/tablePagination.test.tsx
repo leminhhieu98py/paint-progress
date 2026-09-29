@@ -1,8 +1,9 @@
-import { render } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { ConfigProvider, Table } from 'antd'
 import viVN from 'antd/locale/vi_VN'
 import { describe, expect, it } from 'vitest'
-import { PAGE_SIZES, tablePagination } from './tablePagination'
+import { PAGE_SIZES, tablePagination, useTablePagination } from './tablePagination'
 
 const rows = (n: number) => Array.from({ length: n }, (_, i) => ({ id: `r${i}`, name: `Row ${i}` }))
 const COLUMNS = [{ title: 'Tên', dataIndex: 'name' }]
@@ -51,5 +52,38 @@ describe('tablePagination', () => {
     const pager = container.querySelector('.ant-table-pagination')
     expect(pager).toHaveClass('ant-pagination-end')
     expect(pager?.previousElementSibling).toHaveClass('ant-table')
+  })
+})
+
+/** A table whose rows are narrowed by `filter`, paged through the hook. */
+function Filtered({ n, filter }: { n: number; filter: string }) {
+  const data = rows(n).filter((r) => r.name.includes(filter))
+  return <Table rowKey="id" dataSource={data} columns={COLUMNS} pagination={useTablePagination(data.length, filter)} />
+}
+
+describe('useTablePagination', () => {
+  it('pages like tablePagination and is off at ten rows or fewer', () => {
+    const { container, rerender } = render(<Filtered n={10} filter="" />)
+    expect(container.querySelector('.ant-pagination')).toBeNull()
+    rerender(<Filtered n={25} filter="" />)
+    expect(container.querySelectorAll('.ant-table-tbody .ant-table-row')).toHaveLength(10)
+    expect(container.querySelector('.ant-pagination-options')).not.toBeNull()
+  })
+
+  it('goes back to page 1 when the filter changes', async () => {
+    const { rerender } = render(<Filtered n={40} filter="" />)
+    await userEvent.click(screen.getByTitle('3'))
+    expect(screen.getByText('Row 20')).toBeInTheDocument()
+    // "Row 1" matches Row 1 and Row 10-19: eleven rows, two pages.
+    rerender(<Filtered n={40} filter="Row 1" />)
+    expect(screen.getByText('Row 1')).toBeInTheDocument()
+    expect(screen.getByTitle('1')).toHaveClass('ant-pagination-item-active')
+  })
+
+  it('keeps the page while the filter stays the same', async () => {
+    const { rerender } = render(<Filtered n={40} filter="" />)
+    await userEvent.click(screen.getByTitle('3'))
+    rerender(<Filtered n={40} filter="" />)
+    expect(screen.getByTitle('3')).toHaveClass('ant-pagination-item-active')
   })
 })

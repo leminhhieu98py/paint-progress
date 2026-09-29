@@ -33,7 +33,7 @@ import { RulesDisclosure } from '../../components/RulesDisclosure'
 import { SectionCard } from '../../components/SectionCard'
 import { CategoryBadge } from '../../components/CategoryBadge'
 import { searchSelectProps } from '../../components/searchSelect'
-import { tablePagination } from '../../components/tablePagination'
+import { useTablePagination } from '../../components/tablePagination'
 import { roundSharesToTotal } from '../../domain/rounding'
 import { palette, space } from '../../theme'
 
@@ -276,6 +276,9 @@ export function DecksScreen() {
     counts: w.work.counts,
     progress: w.progress,
   }))
+  // Switching project is re-aiming the same screen: both tables start again at page 1.
+  const rollupPagination = useTablePagination(visibleRollup.length, projectId)
+  const workPagination = useTablePagination(workRows.length, projectId)
   /** What the decks carry of P; the rest sits in manual works. */
   const effectiveTotal = summaries.reduce((sum, d) => sum + d.effectiveWeight, 0)
 
@@ -634,7 +637,7 @@ export function DecksScreen() {
                 <div data-testid="project-rollup">
                 <Table<RollupRow>
                   size="small"
-                  pagination={tablePagination(visibleRollup.length)}
+                  pagination={rollupPagination}
                   dataSource={visibleRollup}
                   columns={[
                     { title: 'Sàn', dataIndex: 'name', key: 'name' },
@@ -704,7 +707,7 @@ export function DecksScreen() {
                 >
                   <Table<WorkRow>
                     size="small"
-                    pagination={tablePagination(workRows.length)}
+                    pagination={workPagination}
                     dataSource={workRows}
                     columns={[
                       { title: 'Công việc', dataIndex: 'name', key: 'name' },

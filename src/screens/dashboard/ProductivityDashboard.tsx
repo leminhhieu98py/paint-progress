@@ -6,7 +6,7 @@ import { EmptyState } from '../../components/EmptyState'
 import { SectionCard } from '../../components/SectionCard'
 import { StatCard } from '../../components/StatCard'
 import { searchSelectProps } from '../../components/searchSelect'
-import { tablePagination } from '../../components/tablePagination'
+import { useTablePagination } from '../../components/tablePagination'
 import {
   NOT_STARTED_STAGE, dailyEffort, deckEffortTotals, effortCoverage, effortDayKey,
   efficiencySeries, hoursSeries, leadEfficiency, recordsWorkOnACoat, stageEfficiency, stageOrder,
@@ -208,6 +208,13 @@ export function ProductivityDashboard({
       .map((name, i) => ({ name, color: colors.get(name) ?? FALLBACK_COLORS[i % FALLBACK_COLORS.length] }))
   }, [models, workName, order, stages])
 
+  // Any filter above the tables sends each of them back to page 1.
+  const filterKey = [workName, deckName, range[0]?.format('YYYY-MM-DD'), range[1]?.format('YYYY-MM-DD')].join('|')
+  const stagePagination = useTablePagination(visibleStages.length, filterKey)
+  const forecastPagination = useTablePagination(forecasts.length, `${workName}|${deckName}`)
+  const leadPagination = useTablePagination(visibleLeads.length, `${filterKey}|${leadQuery}`)
+  const reasonPagination = useTablePagination(reasons.length, filterKey)
+
   // Nothing recorded anywhere in the project: say what to do, not "no data".
   const anyEffort = events.some((ev) => ev.effort.workHours !== null || (ev.effort.wasteHours ?? 0) > 0)
   if (!anyEffort) {
@@ -292,7 +299,7 @@ export function ProductivityDashboard({
           <Table<StageEfficiency>
             size="small"
             rowKey={(r) => `${r.workName}/${r.stageName}`}
-            pagination={tablePagination(visibleStages.length)}
+            pagination={stagePagination}
             dataSource={visibleStages}
             columns={stageColumns}
             locale={{ emptyText: 'Không có lần cập nhật nào trong khoảng đã chọn' }}
@@ -309,7 +316,7 @@ export function ProductivityDashboard({
           <Table<{ deckName: string; forecast: DeckForecast }>
             size="small"
             rowKey="deckName"
-            pagination={tablePagination(forecasts.length)}
+            pagination={forecastPagination}
             dataSource={forecasts}
             locale={{ emptyText: 'Chưa có sàn nào trong công việc này' }}
             columns={[
@@ -387,7 +394,7 @@ export function ProductivityDashboard({
             <Table<LeadEfficiency>
               size="small"
               rowKey="leadName"
-              pagination={tablePagination(visibleLeads.length)}
+              pagination={leadPagination}
               dataSource={visibleLeads}
               locale={{ emptyText: 'Không có nhóm trưởng nào khớp' }}
               columns={[
@@ -406,7 +413,7 @@ export function ProductivityDashboard({
             <Table<WasteReason>
               size="small"
               rowKey="reason"
-              pagination={tablePagination(reasons.length)}
+              pagination={reasonPagination}
               dataSource={reasons}
               columns={[
                 {

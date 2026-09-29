@@ -16,7 +16,7 @@ import { SectionCard } from '../../components/SectionCard'
 import { modalProps } from '../../components/modalChrome'
 import { CategoryBadge } from '../../components/CategoryBadge'
 import { searchSelectProps } from '../../components/searchSelect'
-import { tablePagination } from '../../components/tablePagination'
+import { useTablePagination } from '../../components/tablePagination'
 import {
   createGsUser,
   deactivateGsUser,
@@ -275,6 +275,7 @@ export function UsersScreen() {
   const [permTarget, setPermTarget] = useState<GsUser | null>(null)
   /** Hidden accounts (0028) stay out of the list until asked for. */
   const [showHidden, setShowHidden] = useState(false)
+  const pagination = useTablePagination(users.length, showHidden)
   /**
    * A reset the admin has typed but not yet confirmed.
    *
@@ -378,7 +379,7 @@ export function UsersScreen() {
             rowKey="id"
             loading={loading}
             dataSource={users}
-            pagination={tablePagination(users.length)}
+            pagination={pagination}
             columns={[
               {
                 title: 'Người dùng',

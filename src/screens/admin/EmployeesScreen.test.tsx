@@ -209,3 +209,29 @@ describe('EmployeesScreen — alignment (UI-03)', () => {
     expect(within(row).getByRole('button', { name: 'Sửa tên' }).closest('td')).toHaveStyle({ textAlign: 'center' })
   })
 })
+
+describe('EmployeesScreen — the pager follows the search (UI-06)', () => {
+  // 30 names: the first 12 carry "Hải", the other 18 do not. Sorted as the
+  // list shows them, so page 3 holds rows 21-30, none of them a match.
+  const ROSTER = Array.from({ length: 30 }, (_, i) => ({
+    id: `e${i}`,
+    fullName: `NV${String(i).padStart(2, '0')} - ${i < 12 ? 'Cao Minh Hải' : 'Trần Văn Bình'}`,
+    active: true,
+  }))
+  const shownNames = () =>
+    screen.getAllByRole('switch').map((s) => s.getAttribute('aria-label')?.replace('Đang làm · ', ''))
+
+  beforeEach(() => listEmployees.mockResolvedValue(ROSTER))
+
+  it('goes back to page 1 when the search changes, so the first matches are not hidden', async () => {
+    renderScreen()
+    await screen.findByText('NV00 - Cao Minh Hải')
+    await userEvent.click(screen.getByTitle('3'))
+    expect(await screen.findByText('NV20 - Trần Văn Bình')).toBeInTheDocument()
+
+    await userEvent.type(screen.getByRole('textbox', { name: 'Tìm nhân viên' }), 'hai')
+    await waitFor(() => expect(shownNames()[0]).toBe('NV00 - Cao Minh Hải'))
+    expect(shownNames()).toHaveLength(10)
+    expect(screen.getByTitle('1')).toHaveClass('ant-pagination-item-active')
+  })
+})

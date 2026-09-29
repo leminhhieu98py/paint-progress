@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { modalProps } from '../../components/modalChrome'
 import { PageBody, PageHeader } from '../../components/PageHeader'
 import { SectionCard } from '../../components/SectionCard'
-import { tablePagination } from '../../components/tablePagination'
+import { useTablePagination } from '../../components/tablePagination'
 import { createEmployee, listEmployees, updateEmployee, type Employee } from '../../lib/employeesApi'
 import { buildEmployeesXlsx, employeesFileName } from '../../lib/employeesXlsx'
 import { downloadWorkbook } from '../../lib/projectReport'
@@ -67,6 +67,7 @@ export function EmployeesScreen() {
   )
   const searching = query.trim() !== ''
   const active = useMemo(() => shown.filter((r) => r.active).length, [shown])
+  const pagination = useTablePagination(shown.length, query)
 
   /**
    * The WHOLE roster, retired names included, never `shown` (RV5-08): the file
@@ -171,7 +172,7 @@ export function EmployeesScreen() {
             rowKey="id"
             loading={rows === null && error === null}
             dataSource={shown}
-            pagination={tablePagination(shown.length)}
+            pagination={pagination}
             locale={{
               // Two different nothings: a roster nobody has filled in yet is a
               // job to do, a search that matched nothing is not.
