@@ -335,6 +335,15 @@ describe('DeckProgressPanel', () => {
     expect(within(ring).queryByText(/^Vòng tròn:/)).toBeNull()
   })
 
+  it('keeps the footer figure and its unit on one line, the long work name cut with a title (R4)', async () => {
+    renderPanel()
+    const footer = await screen.findByTestId('ring-footer')
+    const label = within(footer).getByText('Tiến độ · Công việc chính')
+    expect(label).toHaveAttribute('title', 'Tiến độ · Công việc chính')
+    expect(label).toHaveStyle({ minWidth: '0px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' })
+    expect(within(footer).getByText('1.000,00 m²')).toHaveStyle({ whiteSpace: 'nowrap', flex: 'none' })
+  })
+
   it('labels its figures with the work, leaving "Tiến độ sàn" to the all-works figure (I4)', async () => {
     renderPanel()
     const ring = await screen.findByTestId('stage-ring')

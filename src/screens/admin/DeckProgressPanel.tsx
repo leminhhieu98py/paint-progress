@@ -1844,6 +1844,7 @@ export function DeckProgressPanel({
                         workName={activeWork.work.name}
                       />
                       <div
+                        data-testid="ring-footer"
                         style={{
                           padding: `${space.md}px ${space.xl}px`,
                           borderTop: `1px solid ${palette.borderSplit}`,
@@ -1853,16 +1854,34 @@ export function DeckProgressPanel({
                           gap: 9,
                         }}
                       >
-                        {/* The active work's figure: "Tiến độ sàn" is the header's, over every work (I4). */}
-                        <span style={{ ...type.label, color: palette.textSecondary }}>
+                        {/* The active work's figure: "Tiến độ sàn" is the header's, over every work (I4).
+                            A long work name is cut, with a title; the area and its unit, and the
+                            percent, never wrap apart (R4). */}
+                        <span
+                          title={`Tiến độ · ${activeWork.work.name}`}
+                          style={{
+                            ...type.label,
+                            color: palette.textSecondary,
+                            minWidth: 0,
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
                           {`Tiến độ · ${activeWork.work.name}`}
                         </span>
                         <span
-                          style={{ marginLeft: 'auto', ...type.caption, color: palette.textTertiary }}
+                          style={{
+                            marginLeft: 'auto',
+                            ...type.caption,
+                            color: palette.textTertiary,
+                            whiteSpace: 'nowrap',
+                            flex: 'none',
+                          }}
                         >
                           {`${formatAreaM2(entry.deck.totalAreaM2)} ${unit}`}
                         </span>
-                        <span style={{ ...type.displaySm, letterSpacing: '-0.025em' }}>
+                        <span style={{ ...type.displaySm, letterSpacing: '-0.025em', whiteSpace: 'nowrap', flex: 'none' }}>
                           {formatPercent(progress?.progress ?? 0)}
                         </span>
                       </div>
