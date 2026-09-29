@@ -105,6 +105,8 @@ describe('listStagePlans', () => {
     expect((error as Error).message).not.toMatch(/phân trang|truy vấn/)
     expect((error as Error).message).toMatch(/biểu đồ sẽ thiếu công đoạn/)
     expect(log).toHaveBeenCalledWith(expect.stringMatching(/PLAN_ROW_CAP/))
+    // The log line carries no spec ids either (cleanup rule).
+    expect(String(log.mock.calls[0][0])).not.toMatch(SPEC_ID)
     log.mockRestore()
   })
 
