@@ -1,17 +1,11 @@
+import { InfoTip } from '../../components/InfoTip'
+import { SectionCard } from '../../components/SectionCard'
 import type { DeckEffortTotals } from '../../domain/effort'
 import type { TodayStageArea } from '../../domain/today'
 import { DEFAULT_UNIT } from '../../domain/unit'
-import { formatAreaM2, formatHours } from '../../lib/format'
-import { palette, shadowCard } from '../../theme'
-
-/** DeckStatsCards' chrome, so the rail reads as one stack of cards. */
-const cardStyle = {
-  background: palette.bgContainer,
-  border: `1px solid ${palette.borderCard}`,
-  borderRadius: 14,
-  boxShadow: shadowCard,
-  padding: '18px 20px 20px',
-} as const
+import { MISSING, formatAreaM2, formatHours } from '../../lib/format'
+import { fieldType, palette, space } from '../../theme'
+import { CardSkeleton, type DeckFigureStatus } from './DeckStatsCards'
 
 /** 'YYYY-MM-DD' as the paperwork writes it. See lib/format for why VN is a constant. */
 const asVNDate = (dayKey: string): string => {
@@ -48,10 +42,18 @@ const EFFORT_SINCE = '05/09/2026'
  * case -- gets no header: naming the only work there is is chrome.
  */
 export function DeckTodayCard({
+  status = 'ready',
   todayKey,
   rows,
   totals,
+  emptyText = 'Sàn này chưa có công đoạn nào. Quản trị viên cần khai báo công đoạn trước khi ghi tiến độ.',
+  totalsStatus = status,
 }: {
+  /**
+   * See DeckFigureStatus. Loading until both the deck's works (the rows) and
+   * its events (the figures) are in; unknown when the events could not be read.
+   */
+  status?: DeckFigureStatus
   /** `effortDayKey` of now. Named on the card, so a tablet left open overnight
    *  cannot quietly report yesterday as today. */
   todayKey: string
@@ -63,6 +65,18 @@ export function DeckTodayCard({
   rows: (TodayStageArea & { unit?: string })[]
   /** The four figures of RV5-19, straight from `deckEffortTotals`. */
   totals: DeckEffortTotals
+  /**
+   * What the card says with no rows. The default is for a deck whose works
+   * have no coats; the caller names a failed read or a deck in no work, which
+   * an admin's coat list would not fix (I2).
+   */
+  emptyText?: string
+  /**
+   * The four man-hour figures' own status, when it differs from the coats':
+   * they come from the updates alone, so a failed stage read leaves them
+   * readable (R2). Defaults to `status`.
+   */
+  totalsStatus?: DeckFigureStatus
 }) {
   /** Preserves `rows`' order; the caller owns seq order. */
   const groups: { workName: string; rows: (TodayStageArea & { unit?: string })[] }[] = []
@@ -73,98 +87,102 @@ export function DeckTodayCard({
   }
   const grouped = new Set(rows.map((r) => r.workName)).size > 1
 
-  const hourRows: [string, number][] = [
-    ['Mhr thực hiện hôm nay', totals.todayHours],
-    ['Mhr hao phí hôm nay', totals.todayWasteHours],
-    ['Tổng Mhr đã thực hiện đến hôm nay', totals.totalHours],
-    ['Tổng Mhr hao phí đến hôm nay', totals.totalWasteHours],
+  /*
+    RV5-21. Man-hours only exist from 0030, so the two cumulative figures are
+    totals over the updates that CARRY hours, not over everything this deck
+    has had done. Said on those two rows' (?) rather than left to be
+    discovered (CPY-01): a foreman comparing "Tổng Mhr" against a deck that is
+    visibly 60% painted would otherwise conclude the figure is broken.
+  */
+  const sinceNote = `Giờ công chỉ được ghi từ ngày ${EFFORT_SINCE}. Số tổng này là tổng của những lần `
+    + 'cập nhật có ghi giờ, không phải toàn bộ công việc đã làm trên sàn.'
+  const hourRows: [string, number, string | undefined][] = [
+    ['Mhr thực hiện hôm nay', totals.todayHours, undefined],
+    ['Mhr hao phí hôm nay', totals.todayWasteHours, undefined],
+    ['Tổng Mhr đã thực hiện đến hôm nay', totals.totalHours, sinceNote],
+    ['Tổng Mhr hao phí đến hôm nay', totals.totalWasteHours, sinceNote],
   ]
 
+  /** A figure as printed, or the missing mark where the day could not be read. */
+  const figure = (text: string) => (status === 'unknown' ? MISSING : text)
+  const hourFigure = (text: string) => (totalsStatus === 'unknown' ? MISSING : text)
+
   return (
-    <div data-testid="gs-deck-today" style={cardStyle}>
-      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 14 }}>
-        <span style={{ fontSize: 12, fontWeight: 600, color: palette.textTertiary }}>
-          Thông tin nhanh — Hôm nay
-        </span>
-        <span style={{ marginLeft: 'auto', fontSize: 12, color: palette.textQuaternary }}>
-          {asVNDate(todayKey)}
-        </span>
-      </div>
-
-      {rows.length === 0 ? (
-        <div style={{ fontSize: 13, color: palette.textTertiary }}>
-          Sàn này chưa có công đoạn nào. Quản trị viên cần khai báo công đoạn trước khi ghi tiến độ.
-        </div>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 11 }}>
-          {groups.map((group) => (
-            <div
-              key={group.workName}
-              style={{ display: 'flex', flexDirection: 'column', gap: 11, minWidth: 0 }}
-            >
-              {grouped && (
-                <div style={{ fontSize: 12, fontWeight: 600, color: palette.textSecondary }}>
-                  {group.workName}
-                </div>
-              )}
-              {group.rows.map((row) => (
-                <div
-                  key={`${row.workName}/${row.stageName}`}
-                  style={{ display: 'flex', alignItems: 'baseline', gap: 8, minWidth: 0 }}
-                >
-                  <span
-                    style={{
-                      fontSize: 13,
-                      color: palette.textSecondary,
-                      minWidth: 0,
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    {row.stageName}
-                  </span>
-                  <span style={{ marginLeft: 'auto', fontSize: 13, fontWeight: 600, flex: 'none' }}>
-                    {`${formatAreaM2(row.areaM2)} ${row.unit ?? DEFAULT_UNIT}`}
-                  </span>
-                </div>
-              ))}
-            </div>
-          ))}
-        </div>
-      )}
-
-      <div
-        style={{
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 9,
-          marginTop: 16,
-          paddingTop: 14,
-          borderTop: `1px solid ${palette.borderSplit}`,
-        }}
+    <div data-testid="gs-deck-today">
+      <SectionCard
+        title="Thông tin nhanh — Hôm nay"
+        extra={<span style={{ ...fieldType.caption, color: palette.textTertiary }}>{asVNDate(todayKey)}</span>}
       >
-        {hourRows.map(([label, value]) => (
-          <div key={label} style={{ display: 'flex', alignItems: 'baseline', gap: 8, minWidth: 0 }}>
-            <span style={{ fontSize: 13, color: palette.textTertiary, minWidth: 0 }}>{label}</span>
-            <span style={{ marginLeft: 'auto', fontSize: 13, fontWeight: 600, flex: 'none' }}>
-              {formatHours(value)}
-            </span>
+        {status === 'loading' ? (
+          <CardSkeleton label="Đang tải thông tin hôm nay" />
+        ) : rows.length === 0 ? (
+          <div style={{ ...fieldType.body, color: palette.textTertiary }}>{emptyText}</div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: space.md }}>
+            {groups.map((group) => (
+              <div
+                key={group.workName}
+                style={{ display: 'flex', flexDirection: 'column', gap: space.md, minWidth: 0 }}
+              >
+                {grouped && (
+                  <div style={{ ...fieldType.label, color: palette.textSecondary }}>
+                    {group.workName}
+                  </div>
+                )}
+                {group.rows.map((row) => (
+                  <div
+                    key={`${row.workName}/${row.stageName}`}
+                    style={{ display: 'flex', alignItems: 'baseline', gap: space.sm, minWidth: 0 }}
+                  >
+                    <span
+                      style={{
+                        ...fieldType.body,
+                        color: palette.textSecondary,
+                        minWidth: 0,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {row.stageName}
+                    </span>
+                    <span style={{ ...fieldType.bodyStrong, marginLeft: 'auto', flex: 'none' }}>
+                      {figure(`${formatAreaM2(row.areaM2)} ${row.unit ?? DEFAULT_UNIT}`)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
+        )}
 
-      {/*
-        RV5-21. Man-hours only exist from 0030, so the two cumulative figures are
-        totals over the updates that CARRY hours, not over everything this deck
-        has had done. Said on the card rather than left to be discovered: a
-        foreman comparing "Tổng Mhr" against a deck that is visibly 60% painted
-        would otherwise conclude the figure is broken.
-      */}
-      <div style={{ fontSize: 11, lineHeight: 1.45, color: palette.textQuaternary, marginTop: 12 }}>
-        {`Giờ công chỉ được ghi từ ngày ${EFFORT_SINCE}. Hai số tổng ở trên là tổng của những lần `
-        + 'cập nhật có ghi giờ, không phải toàn bộ công việc đã làm trên sàn.'}
-      </div>
+        {status !== 'loading' && (
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: space.sm,
+              marginTop: space.lg,
+              paddingTop: space.lg,
+              borderTop: `1px solid ${palette.borderSplit}`,
+            }}
+          >
+            {totalsStatus === 'loading' ? (
+              <CardSkeleton label="Đang tải giờ công hôm nay" />
+            ) : hourRows.map(([label, value, tip]) => (
+              <div key={label} style={{ display: 'flex', alignItems: 'baseline', gap: space.sm, minWidth: 0 }}>
+                <span style={{ ...fieldType.body, color: palette.textTertiary, minWidth: 0 }}>
+                  {label}
+                  {tip !== undefined && <InfoTip text={tip} />}
+                </span>
+                <span style={{ ...fieldType.bodyStrong, marginLeft: 'auto', flex: 'none' }}>
+                  {hourFigure(formatHours(value))}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </SectionCard>
     </div>
   )
 }

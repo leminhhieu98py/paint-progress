@@ -1,9 +1,4 @@
-import {
-  ClearOutlined, ControlOutlined, SaveOutlined, ThunderboltOutlined,
-} from '@ant-design/icons'
-import {
-  Alert, App, Button, Descriptions, Space, Tooltip,
-} from 'antd'
+import { Alert, App, Descriptions, Space } from 'antd'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   AREA_DIVERGENCE_THRESHOLD, areaDivergence, cellReshaped,
@@ -20,9 +15,11 @@ import {
   listDeckStates, listDeckWorks, type CellStateView, type DeckWork,
 } from '../../lib/gsApi'
 import { formatAreaM2, formatPercent } from '../../lib/format'
+import { IconAction } from '../../components/IconAction'
 import { MeshEditDialog, type EditKind, type PendingEdit } from './MeshEditDialog'
 import { SectionCard } from '../../components/SectionCard'
-import { palette } from '../../theme'
+import { InfoTip } from '../../components/InfoTip'
+import { palette, type } from '../../theme'
 import { DrawingCanvas } from '../../canvas/DrawingCanvas'
 import { detectBaysFromImage } from '../../canvas/rgbFromImage'
 import { useMeshHistory } from './useMeshHistory'
@@ -608,7 +605,7 @@ export function DeckEditor({
     <SectionCard
       code="A3.3"
       title="Phân ô"
-      summary={cells.length > 0 ? `${cells.length} ô đã dựng` : 'chưa dựng ô'}
+      facts={[cells.length > 0 ? { value: cells.length, label: 'ô đã dựng' } : { label: 'chưa dựng ô' }]}
       collapsible
       bodyPadding="16px 20px 20px"
       extra={
@@ -620,8 +617,7 @@ export function DeckEditor({
                   display: 'inline-flex',
                   alignItems: 'center',
                   gap: 8,
-                  fontSize: 12,
-                  fontWeight: 600,
+                  ...type.micro,
                   color: palette.accent,
                   background: palette.accentTint,
                   padding: '7px 12px',
@@ -635,28 +631,21 @@ export function DeckEditor({
                 {`${selected.length} ô đang chọn`}
               </span>
             )}
-            <Tooltip title="Xoá toàn bộ lưới ô">
-              <span>
-                <Button
-                  danger
-                  aria-label="Xoá toàn bộ lưới ô"
-                  icon={<ClearOutlined aria-hidden />}
-                  disabled={busy || cells.length === 0}
-                  onClick={() => void reviewEdit('mesh', [])}
-                />
-              </span>
-            </Tooltip>
-            <Tooltip title="Lưu hình học ô">
-              <span>
-                <Button
-                  type="primary"
-                  aria-label="Lưu hình học ô"
-                  icon={<SaveOutlined aria-hidden />}
-                  loading={busy}
-                  onClick={() => void reviewEdit('mesh', cells)}
-                />
-              </span>
-            </Tooltip>
+            {/* Icon actions (ACT-01). */}
+            <IconAction
+              verb="clear"
+              label="Xoá toàn bộ lưới ô"
+              danger
+              disabled={busy || cells.length === 0}
+              onClick={() => void reviewEdit('mesh', [])}
+            />
+            <IconAction
+              verb="save"
+              label="Lưu hình học ô"
+              type="primary"
+              loading={busy}
+              onClick={() => void reviewEdit('mesh', cells)}
+            />
           </Space>
         ) : undefined
       }
@@ -676,7 +665,7 @@ export function DeckEditor({
       {undeclaredArea && (
         <Alert
           type="error"
-          message="Chưa khai báo diện tích sàn. Tiến độ của sàn này sẽ luôn là 0% cho tới khi nhập diện tích."
+          message="Tiến độ của sàn là 0% cho tới khi nhập diện tích sàn."
         />
       )}
 
@@ -687,8 +676,15 @@ export function DeckEditor({
           // declared area (thiếu = short), negative means they over-cover it
           // (vượt = exceeds). Naming the direction here means the admin does
           // not have to open the description to know which way to correct.
-          message={`Tổng diện tích các ô ${divergence > 0 ? 'thiếu' : 'vượt'} ${formatPercent(Math.abs(divergence))} so với diện tích sàn`}
-          description={`Các ô cộng lại ${formatAreaM2(sumCellArea)}${unitSuffix}, sàn khai báo ${formatAreaM2(totalArea)}${unitSuffix}. Lệch quá ${formatPercent(AREA_DIVERGENCE_THRESHOLD)} thường là do nhập sai khoảng cách guide — nhưng sàn thật vẫn có thể lệch vì có opening hoặc E-house không phải là ô, nên đây chỉ là cảnh báo.`}
+          message={
+            <>
+              {`Tổng diện tích các ô ${divergence > 0 ? 'thiếu' : 'vượt'} ${formatPercent(Math.abs(divergence))} so với diện tích sàn`}
+              <InfoTip
+                text={`Kiểm tra khoảng cách đường chia khi lệch quá ${formatPercent(AREA_DIVERGENCE_THRESHOLD)}, trừ khi sàn có opening hoặc E-house không phải ô.`}
+              />
+            </>
+          }
+          description={`Các ô cộng lại ${formatAreaM2(sumCellArea)}${unitSuffix}, sàn khai báo ${formatAreaM2(totalArea)}${unitSuffix}.`}
         />
       )}
 
@@ -723,38 +719,34 @@ export function DeckEditor({
             borderBottom: `1px solid ${palette.borderSplit}`,
           }}
         >
-          <Tooltip title="Tự động dò ô từ bản vẽ">
-            <span>
-              <Button
-                aria-label="Tự động dò ô từ bản vẽ"
-                icon={<ThunderboltOutlined aria-hidden />}
-                loading={detecting}
-                disabled={!imageUrl || shortcuts}
-                onClick={() => void detectGrid()}
-              />
-            </span>
-          </Tooltip>
+          <IconAction
+            verb="detect"
+            label="Tự động dò ô từ bản vẽ"
+            tooltip="Tự động dò ô từ bản vẽ và thay toàn bộ ô đang có."
+            loading={detecting}
+            disabled={!imageUrl || shortcuts}
+            onClick={() => void detectGrid()}
+          />
           {/*
             One button for the whole working session. Off, it is the way in; on,
             it is the way out -- and the way out is the save in the header, so
             there is no third state where the admin has been editing and has
             nowhere to put it.
           */}
-          <Tooltip title={shortcuts ? 'Đang hiệu chỉnh — bấm để thoát' : 'Hiệu chỉnh ô'}>
-            <Button
-              aria-label={shortcuts ? 'Thoát hiệu chỉnh ô' : 'Hiệu chỉnh ô'}
-              type={shortcuts ? 'primary' : 'default'}
-              icon={<ControlOutlined aria-hidden />}
-              onClick={() => setShortcuts((on) => !on)}
-            />
-          </Tooltip>
-          <span style={{ marginLeft: 'auto', fontSize: 12, color: palette.textTertiary }}>
-            {drawingCell
-              ? 'Kéo một khung vào chỗ còn thiếu ô. Cạnh nào gần ô có sẵn sẽ tự dính vào cạnh đó.'
-              : shortcuts
-                ? 'Dùng phím tắt bên dưới để gộp / xoá / vẽ ô. Lưu bằng nút ở góc trên.'
-                : 'Bấm Hiệu chỉnh để gộp / xoá / vẽ ô bằng phím tắt. Dò ô sẽ thay toàn bộ ô đang có.'}
-          </span>
+          <IconAction
+            verb="editMode"
+            label={shortcuts ? 'Thoát hiệu chỉnh ô' : 'Hiệu chỉnh ô'}
+            tooltip={shortcuts ? 'Đang hiệu chỉnh — bấm để thoát' : 'Hiệu chỉnh ô: gộp / xoá / vẽ ô bằng phím tắt'}
+            type={shortcuts ? 'primary' : 'default'}
+            onClick={() => setShortcuts((on) => !on)}
+          />
+          {/* Only for the mode entered by a key, which has no control to
+              hang a tooltip on (CPY-01). */}
+          {drawingCell && (
+            <span style={{ marginLeft: 'auto', ...type.caption, color: palette.textTertiary }}>
+              Kéo một khung vào chỗ còn thiếu ô.
+            </span>
+          )}
         </div>
       )}
 
@@ -810,7 +802,7 @@ export function DeckEditor({
           }
         />
       ) : (
-        <Alert type="info" message="Sàn này chưa có bản vẽ. Upload PDF hoặc ảnh trước khi dò ô." />
+        <Alert type="info" message="Sàn này chưa có bản vẽ. Tải PDF lên trước khi dò ô." />
       )}
 
 

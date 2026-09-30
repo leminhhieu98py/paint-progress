@@ -1,23 +1,30 @@
 import { SearchOutlined } from '@ant-design/icons'
-import { DatePicker, Input, Segmented, Select, Table, Typography } from 'antd'
-import dayjs, { type Dayjs } from 'dayjs'
-import { useMemo, useState } from 'react'
+import { Grid, Input, Table } from 'antd'
+import dayjs from 'dayjs'
+import { useMemo, useState, type ReactNode } from 'react'
 import { EmptyState } from '../../components/EmptyState'
+import { InfoTip } from '../../components/InfoTip'
+import { useDebouncedValue } from '../../components/useDebouncedValue'
 import { SectionCard } from '../../components/SectionCard'
 import { StatCard } from '../../components/StatCard'
+import { useTablePagination } from '../../components/tablePagination'
 import {
   NOT_STARTED_STAGE, dailyEffort, deckEffortTotals, effortCoverage, effortDayKey,
   efficiencySeries, hoursSeries, leadEfficiency, recordsWorkOnACoat, stageEfficiency, stageOrder,
   wasteReasons, type LeadEfficiency, type StageEfficiency, type WasteReason,
 } from '../../domain/effort'
-import { deckForecast, type DeckForecast } from '../../domain/forecast'
+import { padDays } from '../../domain/daySeries'
+import { DAYS_NEEDED_TIP, deckForecast, type DeckForecast } from '../../domain/forecast'
 import { computeDeckProgress } from '../../domain/progress'
 import type { DeckEvent, WorkModel } from '../../domain/types'
 import { DEFAULT_UNIT, perUnit } from '../../domain/unit'
-import { formatAreaM2, formatHours, formatMhrPerM2, formatPercent } from '../../lib/format'
+import { MISSING, formatAreaM2, formatHours, formatMhrPerM2, formatPercent } from '../../lib/format'
 import { matchesSearch } from '../../lib/search'
 import { fieldError, palette } from '../../theme'
+import { useTypeScale } from '../../components/typeScale'
+import { useFieldNarrowPhone, useFieldPhone } from '../gs/fieldSections'
 import { EfficiencyLineChart, HoursBarChart } from './charts'
+import { dashboardWorkNames, resolveWork, type ProductivityFilters } from './productivityFilters'
 
 /**
  * The productivity dashboard (Feedback Rv2, item 12): Mhr/m² by stage, by day
@@ -36,42 +43,64 @@ import { EfficiencyLineChart, HoursBarChart } from './charts'
 
 const FALLBACK_COLORS = ['#0A8175', '#F97316', '#2563EB', '#7C3AED', '#DB2777', '#65A30D']
 
-const dash = '—'
+const dash = MISSING
 const ratio = (n: number | null) => (n === null ? dash : formatMhrPerM2(n))
+/**
+ * Every table as wide as its content (MOB-01): a header never wraps, and on a
+ * phone the table scrolls sideways inside its card rather than squeezing.
+ */
+const TABLE_SCROLL = { x: 'max-content' } as const
+/**
+ * On a phone a text column -- a coat, a crew, a reason -- wraps at 160 px
+ * instead of stretching to its longest value (I5): pinned or not, a
+ * max-content name column could hide every figure beside it.
+ */
+const PHONE_TEXT_MAX = 160
+const wrapStyle = { maxWidth: PHONE_TEXT_MAX, whiteSpace: 'normal', overflowWrap: 'anywhere' } as const
+const wrapped = (node: ReactNode) => <div style={wrapStyle}>{node}</div>
 
 export function ProductivityDashboard({
   events,
   models,
-  decks,
+  filters,
+  version = 0,
 }: {
   events: DeckEvent[]
   models: WorkModel[]
-  decks: { id: string; name: string }[]
+  /** What the screen's filter bar has applied (FLT-01, FLT-02). */
+  filters: ProductivityFilters
+  /** Counts the bar's applies: every apply sends the tables back to page 1 (FLT-02). */
+  version?: number
 }) {
-  const workNames = useMemo(() => {
-    const fromModels = [...models]
-      .filter((m) => m.work.kind === 'bays')
-      .sort((a, b) => a.work.seq - b.work.seq)
-      .map((m) => m.work.name)
-    // A work the events remember but the model no longer has (renamed,
-    // deleted) still holds hours somebody typed; it stays selectable.
-    for (const ev of events) {
-      const name = ev.workName ?? ''
-      if (!fromModels.includes(name)) fromModels.push(name)
-    }
-    return fromModels
-  }, [models, events])
-
-  const [workChoice, setWorkChoice] = useState<string | null>(null)
-  const workName = workChoice !== null && workNames.includes(workChoice) ? workChoice : workNames[0] ?? ''
+  // The scale of the page this is on: the field's 14 on a field page (GS-10).
+  const type = useTypeScale()
+  const phone = useFieldPhone()
+  /** On a phone the name column stays in view while the figures scroll under it (MOB-01). */
+  const pin = phone ? ('left' as const) : undefined
+  /** A text cell, wrapped at 160 px on a phone (I5). */
+  const text = (node: ReactNode) => (phone ? wrapped(node) : node)
+  const narrowPhone = useFieldNarrowPhone()
+  const screens = Grid.useBreakpoint()
+  const lg = screens.lg === true
+  const xl = screens.xl === true
+  /**
+   * On a phone the cards go two to a row, one under 360 px (MOB-02). Wider,
+   * the six go three to a row from 992 px and two below it, so no row holds
+   * one orphan card as auto-fit left at 1512 (M19).
+   */
+  const cardColumns = !phone
+    ? (lg ? 'repeat(3, minmax(0, 1fr))' : 'repeat(2, minmax(0, 1fr))')
+    : narrowPhone ? 'minmax(0, 1fr)' : 'repeat(2, minmax(0, 1fr))'
+  const workNames = useMemo(() => dashboardWorkNames(models, events), [models, events])
+  const workName = resolveWork(filters.work, workNames)
   /**
    * One work is always chosen here, so its unit labels every total and
    * efficiency figure (RV6-36). A work the events remember but the model no
    * longer has reads m², as everything did before 0036.
    */
   const unit = models.find((m) => m.work.name === workName)?.work.unit ?? DEFAULT_UNIT
-  const [deckName, setDeckName] = useState<string>('')
-  const [range, setRange] = useState<[Dayjs | null, Dayjs | null]>([null, null])
+  const deckName = filters.deck
+  const range = filters.range
 
   const filtered = useMemo(() => {
     const from = range[0]?.format('YYYY-MM-DD') ?? null
@@ -153,9 +182,11 @@ export function ProductivityDashboard({
   const wasteShare = totalHours + wasteHours > 0 ? wasteHours / (totalHours + wasteHours) : null
 
   const [leadQuery, setLeadQuery] = useState('')
+  /** The search box is the card's one control: it applies as it changes, debounced (FLT-08). */
+  const leadFilter = useDebouncedValue(leadQuery)
   const visibleLeads = useMemo(
-    () => leads.filter((l) => l.leadName !== '' && matchesSearch(l.leadName, leadQuery)),
-    [leads, leadQuery],
+    () => leads.filter((l) => l.leadName !== '' && matchesSearch(l.leadName, leadFilter)),
+    [leads, leadFilter],
   )
 
   /**
@@ -205,6 +236,13 @@ export function ProductivityDashboard({
       .map((name, i) => ({ name, color: colors.get(name) ?? FALLBACK_COLORS[i % FALLBACK_COLORS.length] }))
   }, [models, workName, order, stages])
 
+  // Any filter above the tables, and any apply of the bar, sends each of them back to page 1.
+  const filterKey = [version, workName, deckName, range[0]?.format('YYYY-MM-DD'), range[1]?.format('YYYY-MM-DD')].join('|')
+  const stagePagination = useTablePagination(visibleStages.length, filterKey)
+  const forecastPagination = useTablePagination(forecasts.length, `${version}|${workName}|${deckName}`)
+  const leadPagination = useTablePagination(visibleLeads.length, `${filterKey}|${leadFilter}`)
+  const reasonPagination = useTablePagination(reasons.length, filterKey)
+
   // Nothing recorded anywhere in the project: say what to do, not "no data".
   const anyEffort = events.some((ev) => ev.effort.workHours !== null || (ev.effort.wasteHours ?? 0) > 0)
   if (!anyEffort) {
@@ -217,79 +255,75 @@ export function ProductivityDashboard({
   }
 
   const stageColumns = [
-    ...(workNames.length > 1 ? [{ title: 'Công việc', dataIndex: 'workName' as const }] : []),
-    { title: 'Công đoạn', dataIndex: 'stageName' as const },
-    { title: 'Số ngày', dataIndex: 'days' as const, align: 'right' as const },
-    { title: 'Tổng Mhr', align: 'right' as const, render: (_: unknown, r: StageEfficiency) => formatHours(r.totalHours) },
-    { title: `Tổng ${unit}`, align: 'right' as const, render: (_: unknown, r: StageEfficiency) => formatAreaM2(r.totalAreaM2) },
-    { title: `Hiệu suất TB (${perUnit(unit)})`, align: 'right' as const, render: (_: unknown, r: StageEfficiency) => ratio(r.avgMhrPerM2) },
-    { title: 'Mhr TB/ngày', align: 'right' as const, render: (_: unknown, r: StageEfficiency) => (r.avgHoursPerDay === null ? dash : formatHours(r.avgHoursPerDay)) },
-    { title: 'Giờ hao phí', align: 'right' as const, render: (_: unknown, r: StageEfficiency) => formatHours(r.wasteHours) },
+    // No work column, nor a work caption under the coat on a phone: one work
+    // is always applied, and it filled every row with the same name (M19).
+    // The coat is the one pinned column on a phone and names the row.
+    {
+      title: 'Công đoạn',
+      dataIndex: 'stageName' as const,
+      fixed: pin,
+      render: (v: string) => text(v),
+    },
+    { title: 'Số ngày', dataIndex: 'days' as const, align: 'center' as const },
+    { title: 'Tổng Mhr', align: 'center' as const, render: (_: unknown, r: StageEfficiency) => formatHours(r.totalHours) },
+    { title: `Tổng ${unit}`, align: 'center' as const, render: (_: unknown, r: StageEfficiency) => formatAreaM2(r.totalAreaM2) },
+    {
+      // A span, not a Fragment (M6): rc-table's measure row, under `scroll.x`,
+      // clones every title with a ref, which a Fragment cannot take.
+      title: <span>{`Hiệu suất TB (${perUnit(unit)})`}<InfoTip text={`Hiệu suất trung bình là trung bình cộng của ${perUnit(unit)} từng ngày`} /></span>,
+      align: 'center' as const,
+      render: (_: unknown, r: StageEfficiency) => ratio(r.avgMhrPerM2),
+    },
+    { title: 'Mhr TB/ngày', align: 'center' as const, render: (_: unknown, r: StageEfficiency) => (r.avgHoursPerDay === null ? dash : formatHours(r.avgHoursPerDay)) },
+    { title: 'Giờ hao phí', align: 'center' as const, render: (_: unknown, r: StageEfficiency) => formatHours(r.wasteHours) },
   ]
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <div data-testid="dashboard-filters" style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
-        {workNames.length > 1 && (
-          <Segmented
-            value={workName}
-            onChange={(v) => setWorkChoice(String(v))}
-            options={workNames.map((name) => ({ label: name === '' ? '(không rõ công việc)' : name, value: name }))}
-          />
-        )}
-        <Select
-          aria-label="Sàn"
-          style={{ width: 220 }}
-          value={deckName}
-          onChange={setDeckName}
-          options={[{ value: '', label: 'Tất cả sàn' }, ...decks.map((d) => ({ value: d.name, label: d.name }))]}
-        />
-        <DatePicker.RangePicker
-          allowEmpty={[true, true]}
-          format="DD/MM/YYYY"
-          placeholder={['Từ ngày', 'Đến ngày']}
-          value={range}
-          onCalendarChange={(dates) => setRange([dates?.[0] ?? null, dates?.[1] ?? null])}
-        />
-      </div>
-
       <div
         data-testid="dashboard-cards"
-        style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}
+        style={{ display: 'grid', gridTemplateColumns: cardColumns, gap: 12 }}
       >
-        <StatCard label="Tổng Mhr thực hiện" value={formatHours(totalHours)} sub="giờ công đã ghi" />
-        <StatCard label={`Tổng ${unit} đã ghi giờ công`} value={formatAreaM2(totalAreaM2)} sub={unit} />
+        <StatCard compact={phone} label="Tổng Mhr thực hiện" value={formatHours(totalHours)} />
+        <StatCard compact={phone} label={`Tổng ${unit} đã ghi giờ công`} value={formatAreaM2(totalAreaM2)} sub={unit} />
         <StatCard
-          label={`${perUnit(unit)} tổng thể`}
+          compact={phone}
+          label={<>{`${perUnit(unit)} tổng thể`}<InfoTip text={`Tổng Mhr chia tổng ${unit}, khác với hiệu suất trung bình theo ngày`} /></>}
           value={ratio(overall)}
-          sub={`tổng Mhr chia tổng ${unit}, khác với hiệu suất trung bình theo ngày`}
           tone="accent"
         />
         {/* Today, beside the totals (Linh, 2026-09-05): the same two figures
             for the day the reader is standing in. */}
-        <StatCard label="Mhr thực hiện hôm nay" value={formatHours(todayTotals.todayHours)} sub="theo bộ lọc trên" />
-        <StatCard label="Mhr hao phí hôm nay" value={formatHours(todayTotals.todayWasteHours)} sub="theo bộ lọc trên" />
+        <StatCard compact={phone} label="Mhr thực hiện hôm nay" value={formatHours(todayTotals.todayHours)} />
+        <StatCard compact={phone} label="Mhr hao phí hôm nay" value={formatHours(todayTotals.todayWasteHours)} />
         <StatCard
+          compact={phone}
           label="Giờ hao phí"
           value={formatHours(wasteHours)}
           sub={wasteShare === null ? dash : `${formatPercent(wasteShare)} tổng giờ`}
         />
       </div>
 
-      <Typography.Text
-        data-testid="dashboard-coverage"
-        type={coverage.withHours < coverage.total ? 'warning' : 'secondary'}
+      <SectionCard
+        title="Hiệu suất theo công đoạn"
+        // How much of the history the ratios stand on; missing hours are a
+        // data-quality warning (HLT-01).
+        facts={[{
+          value: `${coverage.withHours} / ${coverage.total}`,
+          label: 'lần cập nhật có ghi giờ công',
+          ...(coverage.withHours < coverage.total
+            ? { tone: 'warning' as const, info: 'Các lần chưa ghi không tính vào hiệu suất.' }
+            : {}),
+        }]}
+        bodyPadding={0}
       >
-        {`${coverage.withHours} / ${coverage.total} lần cập nhật có ghi giờ công. Các lần chưa ghi không tính vào hiệu suất.`}
-      </Typography.Text>
-
-      <SectionCard title="Hiệu suất theo công đoạn" bodyPadding={0}>
         <div data-testid="stage-table">
           <Table<StageEfficiency>
             size="small"
             rowKey={(r) => `${r.workName}/${r.stageName}`}
-            pagination={false}
+            pagination={stagePagination}
             dataSource={visibleStages}
+            scroll={TABLE_SCROLL}
             columns={stageColumns}
             locale={{ emptyText: 'Không có lần cập nhật nào trong khoảng đã chọn' }}
           />
@@ -298,44 +332,47 @@ export function ProductivityDashboard({
 
       <SectionCard
         title="Dự báo tiến độ"
-        summary="Còn lại bao nhiêu và có kịp hạn không; số ngày của sàn là ngày lớn nhất trong các công đoạn vì các lớp làm song song"
         bodyPadding={0}
       >
         <div data-testid="forecast-table">
           <Table<{ deckName: string; forecast: DeckForecast }>
             size="small"
             rowKey="deckName"
-            pagination={false}
+            pagination={forecastPagination}
             dataSource={forecasts}
+            scroll={TABLE_SCROLL}
             locale={{ emptyText: 'Chưa có sàn nào trong công việc này' }}
             columns={[
-              { title: 'Sàn', dataIndex: 'deckName' },
+              { title: 'Sàn', dataIndex: 'deckName', fixed: pin, render: (v: string) => text(v) },
               {
                 title: 'Mhr còn cần',
-                align: 'right',
+                align: 'center',
                 render: (_, r) => (r.forecast.totalMhrNeeded === null ? dash : formatHours(r.forecast.totalMhrNeeded)),
               },
               {
-                title: 'Số ngày cần',
-                align: 'right',
+                // A span, not a Fragment (M6): the measured table gives its title a ref.
+                title: <span>Số ngày cần<InfoTip text={DAYS_NEEDED_TIP} /></span>,
+                align: 'center',
                 render: (_, r) => (r.forecast.daysNeeded === null ? dash : String(r.forecast.daysNeeded)),
               },
               {
                 title: 'Hạn hoàn thành',
-                align: 'right',
+                align: 'center',
+                // A date, so centred like every other date column (UI-03).
                 render: (_, r) => (r.forecast.deadline === null ? dash : dayjs(r.forecast.deadline).format('DD/MM/YYYY')),
               },
               {
                 title: 'Ngày còn lại',
-                align: 'right',
+                align: 'center',
                 render: (_, r) => (r.forecast.daysRemaining === null ? dash : String(r.forecast.daysRemaining)),
               },
               {
                 title: 'Cảnh báo',
+                align: 'center',
                 render: (_, r) => (r.forecast.lateDays === null
-                  ? ''
+                  ? dash
                   : (
-                    <span style={{ color: fieldError, fontWeight: 600 }}>
+                    <span style={{ ...type.body, color: fieldError }}>
                       {`Trễ ${r.forecast.lateDays} ngày · thiếu ${formatHours(r.forecast.shortfallMhr ?? 0)} Mhr`}
                     </span>
                   )),
@@ -347,16 +384,33 @@ export function ProductivityDashboard({
 
       <SectionCard
         title="Hiệu suất theo ngày"
-        summary={`${perUnit(unit)} của từng công đoạn theo ngày; hiệu suất trung bình là trung bình cộng của các điểm này`}
       >
-        <EfficiencyLineChart data={efficiencySeries(daily)} stages={stageColors} unit={unit} />
+        {/*
+          Padded to every calendar day (QA F4): the series only has the days
+          with data, and an axis of those alone spaced 27/08, 30/08 and 05/09
+          evenly. The tables above keep the unpadded figures.
+        */}
+        <EfficiencyLineChart data={padDays(efficiencySeries(daily))} stages={stageColors} unit={unit} />
       </SectionCard>
 
-      <SectionCard title="Giờ công theo ngày" summary="Giờ thực hiện và giờ hao phí, cộng dồn mọi công đoạn">
-        <HoursBarChart data={hoursSeries(daily)} />
+      <SectionCard title="Giờ công theo ngày">
+        <HoursBarChart data={padDays(hoursSeries(daily))} />
       </SectionCard>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 16 }}>
+      {/*
+        Uneven from 1200 px (AD9): the crew table's six columns take two
+        thirds and fit without scrolling from 1280 (604 px of content; three
+        fifths left 579 there, review M9); the three short columns of Lý do
+        hao phí take one. Narrower, the pair wraps and scrolls as before.
+      */}
+      <div
+        data-testid="lead-waste-pair"
+        style={{
+          display: 'grid',
+          gridTemplateColumns: xl ? 'minmax(0, 2fr) minmax(0, 1fr)' : 'repeat(auto-fit, minmax(320px, 1fr))',
+          gap: 16,
+        }}
+      >
         <SectionCard
           title="Theo nhóm trưởng"
           bodyPadding={0}
@@ -376,16 +430,17 @@ export function ProductivityDashboard({
             <Table<LeadEfficiency>
               size="small"
               rowKey="leadName"
-              pagination={false}
+              pagination={leadPagination}
               dataSource={visibleLeads}
+              scroll={TABLE_SCROLL}
               locale={{ emptyText: 'Không có nhóm trưởng nào khớp' }}
               columns={[
-                { title: 'Nhóm trưởng', dataIndex: 'leadName' },
-                { title: 'Lần cập nhật', dataIndex: 'updates', align: 'right' },
-                { title: 'Tổng Mhr', align: 'right', render: (_, r) => formatHours(r.totalHours) },
-                { title: `Tổng ${unit}`, align: 'right', render: (_, r) => formatAreaM2(r.totalAreaM2) },
-                { title: perUnit(unit), align: 'right', render: (_, r) => ratio(r.mhrPerM2) },
-                { title: 'Giờ hao phí', align: 'right', render: (_, r) => formatHours(r.wasteHours) },
+                { title: 'Nhóm trưởng', dataIndex: 'leadName', fixed: pin, render: (v: string) => text(v) },
+                { title: 'Lần cập nhật', dataIndex: 'updates', align: 'center' },
+                { title: 'Tổng Mhr', align: 'center', render: (_, r) => formatHours(r.totalHours) },
+                { title: `Tổng ${unit}`, align: 'center', render: (_, r) => formatAreaM2(r.totalAreaM2) },
+                { title: perUnit(unit), align: 'center', render: (_, r) => ratio(r.mhrPerM2) },
+                { title: 'Giờ hao phí', align: 'center', render: (_, r) => formatHours(r.wasteHours) },
               ]}
             />
           </div>
@@ -395,16 +450,19 @@ export function ProductivityDashboard({
             <Table<WasteReason>
               size="small"
               rowKey="reason"
-              pagination={false}
+              pagination={reasonPagination}
               dataSource={reasons}
+              scroll={TABLE_SCROLL}
               columns={[
                 {
+                  // A note, not a category (UI-04 amended): plain text, left like every note (UI-03).
                   title: 'Lý do',
                   dataIndex: 'reason',
-                  render: (v: string) => (v === '' ? <span style={{ color: palette.textQuaternary }}>Không ghi lý do</span> : v),
+                  fixed: pin,
+                  render: (v: string) => text(v === '' ? <span style={{ color: palette.textQuaternary }}>Không ghi lý do</span> : v),
                 },
-                { title: 'Giờ', align: 'right', render: (_, r) => formatHours(r.hours) },
-                { title: 'Số lần', dataIndex: 'count', align: 'right' },
+                { title: 'Giờ', align: 'center', render: (_, r) => formatHours(r.hours) },
+                { title: 'Số lần', dataIndex: 'count', align: 'center' },
               ]}
               locale={{ emptyText: 'Chưa ghi giờ hao phí nào' }}
             />

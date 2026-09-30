@@ -1,4 +1,5 @@
 import { FunctionsHttpError } from '@supabase/supabase-js'
+import { duplicateNameMessage } from './personName'
 import { supabase } from './supabase'
 
 /** The roles the admin hands out. An admin account is never made here. */
@@ -31,7 +32,35 @@ export interface MembershipDraft {
 
 type Action =
   | 'create' | 'reveal' | 'set-password' | 'deactivate'
-  | 'reactivate' | 'rename' | 'hide' | 'unhide'
+  | 'reactivate' | 'rename' | 'hide' | 'unhide' | 'change_role'
+
+/**
+ * admin-users' English refusals, as the admin reads them (M2). The Edge
+ * Function is not redeployed for this, so the client says them in Vietnamese.
+ */
+const SERVER_MESSAGES: Record<string, string> = {
+  'username is required': 'Cần tên đăng nhập cho tài khoản mới.',
+  'password is required': 'Cần mật khẩu cho tài khoản.',
+  'projectId is required for a GS account': 'Tài khoản GS cần một dự án.',
+  'This row is already an employee': 'Người này đã là nhân viên.',
+  'This action is only available for GS and viewer accounts': 'Thao tác này chỉ dành cho tài khoản GS và Visitor.',
+  'No such account': 'Không tìm thấy tài khoản này.',
+  'Could not read the target account': 'Không đọc được tài khoản này.',
+  'Could not check the access log; reveal aborted': 'Không kiểm tra được nhật ký xem mật khẩu, nên chưa hiện mật khẩu.',
+  'Could not record credential access; reveal aborted': 'Không ghi được nhật ký xem mật khẩu, nên chưa hiện mật khẩu.',
+  'Too many password reveals in the last hour. Try again later.': 'Đã xem mật khẩu quá nhiều lần trong một giờ qua. Thử lại sau.',
+  'No stored credential': 'Tài khoản này chưa có mật khẩu được lưu.',
+  Forbidden: 'Chỉ quản trị viên được làm việc này.',
+  'Internal error': 'Máy chủ gặp lỗi. Thử lại sau.',
+}
+
+/** Any other message with no Vietnamese in it is English, and not for the admin. */
+export function serverMessage(raw: string): string {
+  const known = SERVER_MESSAGES[raw.trim()]
+  if (known) return known
+  if (raw.startsWith('Failed to send a request')) return 'Không kết nối được máy chủ. Kiểm tra mạng rồi thử lại.'
+  return /[^\x20-\x7E\s]/.test(raw) ? raw : 'Máy chủ từ chối thao tác này. Thử lại sau.'
+}
 
 async function call<T>(action: Action, payload: Record<string, string>): Promise<T> {
   const { data, error } = await supabase.functions.invoke('admin-users', {
@@ -53,25 +82,52 @@ async function call<T>(action: Action, payload: Record<string, string>): Promise
       } catch {
         // Body wasn't JSON (or already consumed) -- fall back to the generic message.
       }
-      throw new Error(message)
+      throw new Error(serverMessage(message))
     }
-    throw new Error(error.message)
+    throw new Error(serverMessage(error.message))
   }
   if (data && typeof data === 'object' && 'error' in data) {
-    throw new Error(String((data as { error: unknown }).error))
+    throw new Error(serverMessage(String((data as { error: unknown }).error)))
   }
   return data as T
 }
 
+/** A GS needs `projectId`; a Visitor is created without one (NL-05). */
 export async function createGsUser(input: {
   username: string
   fullName: string
   password: string
-  projectId: string
+  projectId?: string
   role: AccountRole
 }): Promise<string> {
-  const { userId } = await call<{ userId: string }>('create', input)
+  const { projectId, ...rest } = input
+  const { userId } = await call<{ userId: string }>('create', projectId ? { ...rest, projectId } : rest)
   return userId
+}
+
+/** What a row of Nhân lực can become (NL-04). */
+export type StaffRole = AccountRole | 'employee'
+
+/**
+ * Moves one person between Nhân viên, GS and Visitor (NL-04). The Edge
+ * Function does the whole move, undoing its own steps on a failure: an
+ * employee becoming an account re-opens a hidden account of the same name if
+ * there is one (`reactivated`), otherwise creates one; an account becoming an
+ * employee is locked and hidden, never deleted.
+ */
+export async function changeRole(input: {
+  kind: 'employee' | 'account'
+  id: string
+  role: StaffRole
+  username?: string
+  password?: string
+  projectId?: string
+}): Promise<{ userId?: string; username?: string; reactivated?: boolean; employeeId?: string; ok?: boolean }> {
+  const payload: Record<string, string> = { kind: input.kind, id: input.id, role: input.role }
+  if (input.username) payload.username = input.username
+  if (input.password) payload.password = input.password
+  if (input.projectId) payload.projectId = input.projectId
+  return call('change_role', payload)
 }
 
 export async function revealPassword(userId: string): Promise<string> {
@@ -94,6 +150,23 @@ export async function reactivateUser(userId: string): Promise<void> {
 
 export async function renameUser(userId: string, username: string): Promise<void> {
   await call<{ ok: true }>('rename', { userId, username })
+}
+
+/**
+ * An account's full name (NL-09's edit dialog). Written directly under the
+ * admin RLS policy on profiles -- no privileged step, so no Edge Function --
+ * and 0037's trigger refuses a name another person holds (PPDUP), said here
+ * in Vietnamese.
+ */
+export async function renameAccount(userId: string, fullName: string): Promise<void> {
+  const name = fullName.trim()
+  if (name === '') throw new Error('Họ tên không được để trống.')
+  const { data, error } = await supabase.from('profiles').update({ full_name: name }).eq('id', userId).select('id')
+  if (error) throw new Error(duplicateNameMessage(error, name) ?? error.message)
+  // No row back: the account is gone, or RLS hid it -- not a success (M4).
+  if (!data || data.length === 0) {
+    throw new Error('Không đổi được họ tên: tài khoản không còn, hoặc anh không có quyền sửa.')
+  }
 }
 
 /** Locks and hides. The row and every history line naming it stay. */

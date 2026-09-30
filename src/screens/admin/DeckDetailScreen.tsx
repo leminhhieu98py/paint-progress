@@ -1,6 +1,6 @@
 import { FilePdfOutlined, UploadOutlined, WarningOutlined } from '@ant-design/icons'
 import {
-  Alert, App, Button, Form, Input, InputNumber, Segmented, Space, Spin, Tabs, Typography, Upload,
+  Alert, App, Button, Form, Input, InputNumber, Segmented, Select, Space, Spin, Typography, Upload,
 } from 'antd'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
@@ -15,7 +15,7 @@ import { formatAreaM2 } from '../../lib/format'
 import { listDeckEvents } from '../../lib/progressApi'
 import type { DeckEvent } from '../../domain/types'
 import {
-  DEFAULT_QUANTITY_LABEL, DEFAULT_UNIT, labelOfWorks, MIXED_QUANTITY_LABEL, unitOfWorks,
+  DEFAULT_QUANTITY_LABEL, deckUnitOf, labelOfWorks, MIXED_QUANTITY_LABEL, unitOfWorks,
 } from '../../domain/unit'
 import { pdfPageCount, renderPdfPage } from '../../lib/pdfToPng'
 import { DeckEditor } from './DeckEditor'
@@ -25,33 +25,25 @@ import { EffortHistoryPanel } from './EffortHistoryPanel'
 import { DeckForecastPanel } from './DeckForecastPanel'
 import { ConsequenceModal } from '../../components/ConsequenceModal'
 import { PageBody, PageHeader } from '../../components/PageHeader'
-import { RulesDisclosure } from '../../components/RulesDisclosure'
+import { InfoTip } from '../../components/InfoTip'
 import { SectionCard } from '../../components/SectionCard'
+import { WORK_SELECT_WIDTH, searchSelectProps, useFullOptionsProps } from '../../components/searchSelect'
+import { viAreaInputProps, viIntegerInputProps } from '../../components/viNumberInput'
 import { formatPercent } from '../../lib/format'
-import { palette } from '../../theme'
-
-const IDENTITY_RULES = [
-  {
-    id: 'IDN-R5',
-    text: 'Diện tích nhận dấu phẩy thập phân: 5258,5 phải vào đúng là 5258,5 chứ không thành 5258.',
-  },
-  {
-    id: 'IDN-R4',
-    text: 'Tên tệp và trang của bản vẽ hiện tại luôn hiện trước nút chọn tệp, vì chọn tệp mới là thao tác phá huỷ.',
-  },
-]
+import { palette, type } from '../../theme'
 
 /** One read-only fact about the deck, in the card grid of panel A3.1. */
 function IdentityCard({
   label,
   value,
   sub,
-  dense = false,
+  tip,
 }: {
   label: string
   value: string
   sub?: string
-  dense?: boolean
+  /** What the figure means, on the label's (?) (CPY-02). */
+  tip?: string
 }) {
   return (
     <div
@@ -62,12 +54,17 @@ function IdentityCard({
         padding: '14px 16px 16px',
       }}
     >
-      <div style={{ fontSize: 12, fontWeight: 600, color: palette.textTertiary }}>{label}</div>
-      <div style={{ marginTop: 9, fontSize: dense ? 13 : 16, fontWeight: 600, lineHeight: 1.25, wordBreak: dense ? 'break-all' : 'normal' }}>
+      <div style={{ ...type.label, color: palette.textTertiary }}>
+        {label}
+        {tip !== undefined && <InfoTip text={tip} />}
+      </div>
+      {/* One size for every value, and a long code or file name wraps where it
+          must rather than mid-word everywhere (M4). */}
+      <div style={{ marginTop: 9, ...type.cardTitle, lineHeight: 1.25, overflowWrap: 'anywhere' }}>
         {value}
       </div>
       {sub !== undefined && (
-        <div style={{ marginTop: 4, fontSize: 11, lineHeight: 1.4, color: palette.textTertiary }}>
+        <div style={{ marginTop: 4, ...type.caption, lineHeight: 1.4, color: palette.textTertiary }}>
           {sub}
         </div>
       )}
@@ -129,8 +126,7 @@ export function DeckDetailScreen() {
     antd deletes `id` from the props it hands rc-upload (upload/Upload.js:331)
     and puts it on the wrapper instead, so the real <input type=file> ends up
     with no id and no label pointing at it -- no accessible name at all. On the
-    one control that attaches a deck's drawing, and whose replacement wipes
-    every bay on it, that is not a name worth losing.
+    one control that attaches a deck's drawing, that is not a name worth losing.
 
     Set here rather than worked around in the tests, because a test that
     reaches the input by tag name would be agreeing that it has no name.
@@ -184,19 +180,31 @@ export function DeckDetailScreen() {
   const [works, setWorks] = useState<DeckWork[] | null>(null)
   const [worksError, setWorksError] = useState<string | null>(null)
   /**
+   * Which work's coats A3.2 shows when the deck is in several: a searchable
+   * select (FLT-07), the first work until one is chosen. Every work shown once
+   * stays mounted, hidden, so an unsaved draft survives switching away and
+   * back, as it did when this was a row of tabs.
+   */
+  const [stageWorkId, setStageWorkId] = useState<string | null>(null)
+  const [seenStageWorks, setSeenStageWorks] = useState<string[]>([])
+  const fullOptions = useFullOptionsProps()
+  const activeStageWork = works?.find((w) => w.work.id === stageWorkId)?.work.id ?? works?.[0]?.work.id
+  /**
    * RV6-36: the deck's quantity is its works'. One work, or several agreeing:
    * `Khối lượng sàn (tấn)`. Works that disagree: `Số lượng sàn`, no unit, and
    * the figure printed bare. A deck in no work yet -- or one whose works have
    * not loaded -- keeps `Diện tích sàn (m²)`.
    */
-  const unit: string | null = works === null || works.length === 0
-    ? DEFAULT_UNIT
-    : unitOfWorks(works.map((w) => w.work))
+  // AD4: never a bare figure. Works that disagree keep `Số lượng sàn` and
+  // print their first work's unit (`deckUnitOf`).
+  const unit: string = deckUnitOf((works ?? []).map((w) => w.work))
   const quantityLabel = works === null || works.length === 0
     ? DEFAULT_QUANTITY_LABEL
-    : (unit === null ? MIXED_QUANTITY_LABEL : labelOfWorks(works.map((w) => w.work)) ?? MIXED_QUANTITY_LABEL)
-  const quantityTitle = unit === null ? `${quantityLabel} sàn` : `${quantityLabel} sàn (${unit})`
-  const withUnit = (n: number) => (unit === null ? formatAreaM2(n) : `${formatAreaM2(n)} ${unit}`)
+    : (unitOfWorks(works.map((w) => w.work)) === null
+      ? MIXED_QUANTITY_LABEL
+      : labelOfWorks(works.map((w) => w.work)) ?? MIXED_QUANTITY_LABEL)
+  const quantityTitle = `${quantityLabel} sàn (${unit})`
+  const withUnit = (n: number) => `${formatAreaM2(n)} ${unit}`
 
   const load = useCallback(async () => {
     if (creating || !deckId) return
@@ -392,8 +400,10 @@ export function DeckDetailScreen() {
           step={10}
           // A Vietnamese admin types "5258,5". Without this antd parses that as
           // 5258 and the deck silently loses half a square metre from the
-          // denominator of every percentage on the project.
-          decimalSeparator=","
+          // denominator of every percentage on the project. The shared props
+          // also read "5.258,5", which decimalSeparator="," alone left at 5.258,
+          // and "5.258" as thousands, as an area is written.
+          {...viAreaInputProps}
           onChange={(n) => setArea(n ?? 0)}
         />
       </Form.Item>
@@ -444,8 +454,7 @@ export function DeckDetailScreen() {
             <FilePdfOutlined style={{ color: palette.textTertiary, flex: 'none' }} />
             <span
               style={{
-                fontSize: 12,
-                fontWeight: 600,
+                ...type.caption,
                 whiteSpace: 'nowrap',
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',
@@ -456,9 +465,10 @@ export function DeckDetailScreen() {
           </div>
         )}
         {/*
-          Said before the picker is used, not after. Replacing the drawing
-          drops every bay on the deck, which takes the recorded progress with
-          it -- and the picker gives no second chance once a file is chosen.
+          Said before the picker is used, not after. A new file replaces the
+          image only (uploadDrawing upserts the PNG and the decks row; nothing
+          touches cells), so the bays stay where they were on the sheet and
+          may need checking in Phân ô -- as the Lưu dialog says too.
         */}
         {!creating && deck?.imagePath && (
           <div
@@ -468,13 +478,13 @@ export function DeckDetailScreen() {
               alignItems: 'flex-start',
               marginTop: 8,
               maxWidth: 520,
-              fontSize: 11,
+              ...type.caption,
               lineHeight: 1.45,
-              color: palette.error,
+              color: palette.warning,
             }}
           >
             <WarningOutlined style={{ marginTop: 2, flex: 'none' }} />
-            <span>Chọn tệp mới sẽ xoá bản vẽ hiện tại và toàn bộ hình học ô của sàn này.</span>
+            <span>Tệp mới thay bản vẽ hiện tại và giữ nguyên các ô đã dựng.</span>
           </div>
         )}
         {pages > 1 && (
@@ -484,6 +494,8 @@ export function DeckDetailScreen() {
               id="deck-page"
               min={1}
               max={pages}
+              // A whole page: "1.230" is page 1230, never 1.23.
+              {...viIntegerInputProps}
               value={page}
               onChange={(n) => setPage(n ?? 1)}
             />
@@ -537,10 +549,13 @@ export function DeckDetailScreen() {
         sticky
         title={creating ? 'Sàn mới' : (deck?.name ?? '')}
         badge={creating ? undefined : deck?.code}
-        subtitle={
+        facts={
           creating
-            ? 'Đặt tên, mã và diện tích trước, rồi tải bản vẽ lên.'
-            : `${deck?.cellCount ? `${deck.cellCount} ô` : 'chưa dựng ô'} · ${withUnit(deck?.totalAreaM2 ?? 0)}`
+            ? undefined
+            : [
+              deck?.cellCount ? { value: deck.cellCount, label: 'ô' } : { label: 'chưa dựng ô' },
+              { value: formatAreaM2(deck?.totalAreaM2 ?? 0), label: unit ?? undefined },
+            ]
         }
         breadcrumbs={[{ label: 'Sàn', onClick: () => navigate('..', { relative: 'path' }) }]}
         onBack={() => navigate('..', { relative: 'path' })}
@@ -549,14 +564,12 @@ export function DeckDetailScreen() {
             <>
               {progress !== null && (
                 <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontSize: 12, fontWeight: 600, color: palette.textTertiary }}>
+                  <div style={{ ...type.label, color: palette.textTertiary }}>
                     Tiến độ sàn
+                    <InfoTip text="Tổng hợp các công việc" />
                   </div>
-                  <div style={{ marginTop: 7, fontSize: 23, fontWeight: 700, letterSpacing: '-0.032em' }}>
+                  <div style={{ marginTop: 7, ...type.displaySm, letterSpacing: '-0.032em' }}>
                     {formatPercent(progress)}
-                  </div>
-                  <div style={{ marginTop: 3, fontSize: 11, color: palette.textTertiary }}>
-                    tổng hợp các công việc
                   </div>
                 </div>
               )}
@@ -584,9 +597,8 @@ export function DeckDetailScreen() {
         <SectionCard
           code="A3.1"
           title="Thông tin sàn & bản vẽ"
-          summary={creating ? 'Sàn chưa được tạo' : drawingLabel}
+          facts={creating ? undefined : [{ value: drawingLabel }]}
           collapsible
-          footer={<RulesDisclosure rules={IDENTITY_RULES} />}
         >
           {/*
             The read-only cards are NOT an alternative to the form -- they sit
@@ -604,17 +616,16 @@ export function DeckDetailScreen() {
               }}
             >
               <IdentityCard label="Tên sàn" value={deck?.name ?? ''} />
-              <IdentityCard label="Mã sàn" value={deck?.code ?? ''} dense />
+              <IdentityCard label="Mã sàn" value={deck?.code ?? ''} />
               <IdentityCard
                 label={quantityTitle}
                 value={formatAreaM2(deck?.totalAreaM2 ?? 0)}
-                sub="Mẫu số của mọi phần trăm trên sàn"
+                tip="Mẫu số của mọi phần trăm trên sàn"
               />
               <IdentityCard label="Số ô" value={String(deck?.cellCount ?? 0)} />
               <IdentityCard
                 label="Bản vẽ (PDF)"
                 value={drawingLabel}
-                dense
                 sub={deck?.imagePath ? undefined : 'Cần tải PDF trước khi dựng ô'}
               />
             </div>
@@ -643,10 +654,10 @@ export function DeckDetailScreen() {
           cells for them to work on.
         */}
         {deck && works !== null && works.length === 0 && (
-          <SectionCard code="A3.2" title="Cấu hình lớp sơn" summary="Sàn chưa thuộc công việc nào">
+          <SectionCard code="A3.2" title="Cấu hình lớp sơn">
             <EmptyState
               title="Sàn này chưa thuộc công việc nào"
-              description="Lớp sơn thuộc về từng công việc trên sàn. Gán sàn vào một công việc trước, rồi quay lại đây cấu hình lớp sơn."
+              description="Gán sàn vào một công việc trước, rồi quay lại đây cấu hình lớp sơn."
             />
             <div style={{ textAlign: 'center', marginTop: 12 }}>
               <Link to={`${APP_BASE_PATH}/admin/works?project=${deck.projectId}`}>Mở Công việc</Link>
@@ -658,21 +669,37 @@ export function DeckDetailScreen() {
           <StageConfigPanel workId={works[0].work.id} deckId={deck.id} editable={editing} onSaved={() => void load()} />
         )}
         {deck && works !== null && works.length > 1 && (
-          <Tabs
-            items={works.map((w) => ({
-              key: w.work.id,
-              label: w.work.name,
-              children: (
-                <StageConfigPanel
-                  key={w.work.id}
-                  workId={w.work.id}
-                  deckId={deck.id}
-                  editable={editing}
-                  onSaved={() => void load()}
-                />
-              ),
-            }))}
-          />
+          <div>
+            {works
+              .filter((w) => w.work.id === activeStageWork || seenStageWorks.includes(w.work.id))
+              .map((w) => (
+                <div key={w.work.id} hidden={w.work.id !== activeStageWork}>
+                  <StageConfigPanel
+                    workId={w.work.id}
+                    deckId={deck.id}
+                    editable={editing}
+                    onSaved={() => void load()}
+                    // In the visible card's header, named by the card (M7).
+                    workSelect={w.work.id === activeStageWork && (
+                      <Select
+                        aria-label="Công việc · Cấu hình lớp sơn"
+                        {...searchSelectProps}
+                        {...fullOptions}
+                        style={{ width: WORK_SELECT_WIDTH }}
+                        value={activeStageWork}
+                        onChange={(id: string) => {
+                          if (activeStageWork !== undefined) {
+                            setSeenStageWorks((seen) => (seen.includes(activeStageWork) ? seen : [...seen, activeStageWork]))
+                          }
+                          setStageWorkId(id)
+                        }}
+                        options={works.map((x) => ({ label: x.work.name, value: x.work.id }))}
+                      />
+                    )}
+                  />
+                </div>
+              ))}
+          </div>
         )}
 
         {deck && (
@@ -702,6 +729,7 @@ export function DeckDetailScreen() {
             on one screen is a second of the admin's time for nothing. */}
         {deck && (
           <EffortHistoryPanel
+            deckId={deck.id}
             editable={editing}
             events={events}
             error={eventsError}
@@ -721,18 +749,14 @@ export function DeckDetailScreen() {
         title="Lưu thay đổi cho sàn này?"
         description="Ngoài tên và mã, lần lưu này còn:"
         items={saveConsequences}
-        consequence={
-          [
-            pdf
-              ? 'Ô đã dựng vẫn giữ nguyên vị trí theo tỉ lệ trên khung bản vẽ, nên nếu bản vẽ mới lệch khung so với bản cũ thì lưới ô sẽ nằm sai chỗ. Kiểm tra lại ở A3.3 và dò lại ô nếu cần.'
-              : '',
-            deck && area !== deck.totalAreaM2
-              ? 'Diện tích từng ô được chia lại theo tỉ lệ pixel từ con số mới. Mọi phần trăm của sàn — và số tiền tính theo nó — đều lấy con số này làm mẫu số.'
-              : '',
-          ]
-            .filter(Boolean)
-            .join(' ')
-        }
+        consequences={[
+          ...(pdf ? ['Ô đã dựng giữ vị trí cũ trên bản vẽ mới, cần kiểm tra lại ở Phân ô'] : []),
+          // reprorateDeckCells rewrites every bay's area_m2, which the done m²,
+          // the KPI actuals (progressApi reads cell.area_m2) and the report sum.
+          ...(deck && area !== deck.totalAreaM2
+            ? ['Diện tích từng ô được chia lại theo con số mới', 'Diện tích đã làm, KPI thực hiện và báo cáo tính theo diện tích sàn mới']
+            : []),
+        ]}
         okText="Lưu"
         confirmLoading={saving}
         onCancel={() => setConfirmingSave(false)}

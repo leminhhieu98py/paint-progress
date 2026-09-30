@@ -1,15 +1,16 @@
-import { Button, DatePicker, InputNumber, Table, Tooltip } from 'antd'
+import { DatePicker, InputNumber, Table, Tooltip } from 'antd'
 import dayjs, { type Dayjs } from 'dayjs'
 import { useState } from 'react'
 import { EmptyState } from '../../components/EmptyState'
+import { IconAction } from '../../components/IconAction'
 import { RulesDisclosure, type Rule } from '../../components/RulesDisclosure'
 import { SectionCard } from '../../components/SectionCard'
+import { useTablePagination, type PaginationResetKey } from '../../components/tablePagination'
+import { viAreaInputProps } from '../../components/viNumberInput'
 import { planDays, type StagePlan } from '../../domain/kpi'
-import {
-  DEFAULT_QUANTITY_LABEL, DEFAULT_UNIT, labelOfWorks, MIXED_QUANTITY_LABEL, unitOfWorks,
-} from '../../domain/unit'
-import { formatAreaM2 } from '../../lib/format'
-import { palette } from '../../theme'
+import { DEFAULT_UNIT, unitOfWorks } from '../../domain/unit'
+import { MISSING, formatAreaM2 } from '../../lib/format'
+import { palette, type } from '../../theme'
 
 /**
  * Kế hoạch KPI — the admin picks one date range per coat, and may override the
@@ -21,12 +22,16 @@ import { palette } from '../../theme'
  * nothing about where a plan is stored.
  */
 
+/**
+ * Helper text, one sentence each, checked against the code (RUL-01). The flat
+ * daily split (RV5-24) is the first entry's; who may enter a plan (RV5-28) is
+ * left out, since only an admin ever sees this table.
+ */
 const RULES: Rule[] = [
-  { id: 'RV5-22', text: 'Số ngày = ngày kết thúc − ngày bắt đầu + 1, tính cả hai đầu. Chia đều cho mọi ngày, không trừ chủ nhật hay ngày lễ.' },
-  { id: 'RV5-23', text: 'Để trống diện tích kế hoạch thì hệ thống tự tính phần còn lại của công đoạn tính từ ngày bắt đầu. Anh gõ số vào là ghi đè, và hệ thống không tự tính lại nữa. Bấm "Về diện tích tự tính" để bỏ ghi đè.' },
-  { id: 'RV5-23', text: 'Gõ số 0 là ghi đè "không có diện tích kế hoạch", khác với để trống.' },
-  { id: 'RV5-24', text: 'Kế hoạch phẳng: mỗi ngày trong khoảng đều nhận cùng một số m² = diện tích kế hoạch ÷ số ngày.' },
-  { id: 'RV5-28', text: 'Chỉ admin nhập được ngày kế hoạch. Giám sát và người xem đều đọc được biểu đồ KPI.' },
+  { id: 'RV5-22', text: 'Kế hoạch chia đều cho mọi ngày từ ngày bắt đầu đến ngày kết thúc, kể cả chủ nhật và ngày lễ.' },
+  { id: 'RV5-23', text: 'Để trống diện tích kế hoạch thì hệ thống tự tính phần còn lại của công đoạn từ ngày bắt đầu.' },
+  { id: 'RV5-23-override', text: 'Số anh gõ ghi đè diện tích tự tính cho tới khi bấm Tự động tính cạnh Lưu.' },
+  { id: 'RV5-23-zero', text: 'Gõ 0 nghĩa là không có diện tích kế hoạch, khác với để trống.' },
 ]
 
 /** One coat of the project, with the window the admin has typed for it so far. */
@@ -83,6 +88,7 @@ export function StagePlanTable({
   onSave,
   onClearArea,
   saving = false,
+  scopeKey = null,
 }: {
   rows: StagePlanRow[]
   /**
@@ -94,21 +100,20 @@ export function StagePlanTable({
   onSave: (row: StagePlanRow, window: StagePlanWindow) => void | Promise<void>
   onClearArea: (stageId: string) => void | Promise<void>
   saving?: boolean
+  /**
+   * What the rows are of: the project and the count of the bar's applies.
+   * When it changes the pager goes back to page 1 and the drafts typed under
+   * the scope before are dropped (M10, UI-05).
+   */
+  scopeKey?: PaginationResetKey
 }) {
   /**
-   * The heading names the quantity when every row's work agrees on it --
-   * `Diện tích kế hoạch (m²)` -- and falls back to `Số lượng kế hoạch` with
-   * the unit on each row when the works differ (RV6-35, RV6-36).
+   * The column is Diện tích (AD18), with the unit when every row's work
+   * shares one (RV6-35); with mixed units each row's Tự động tính tooltip
+   * names its own (RV6-36).
    */
-  const quantities = rows.map((r) => ({
-    quantityLabel: r.quantityLabel ?? DEFAULT_QUANTITY_LABEL, unit: r.unit ?? DEFAULT_UNIT,
-  }))
-  const sharedUnit = unitOfWorks(quantities)
-  const sharedLabel = labelOfWorks(quantities)
-  const areaTitle = sharedUnit === null
-    ? `${MIXED_QUANTITY_LABEL} kế hoạch`
-    : `${sharedLabel ?? MIXED_QUANTITY_LABEL} kế hoạch (${sharedUnit})`
-  const rowUnit = (row: StagePlanRow) => (sharedUnit === null ? ` ${row.unit ?? DEFAULT_UNIT}` : '')
+  const sharedUnit = unitOfWorks(rows.map((r) => ({ unit: r.unit ?? DEFAULT_UNIT })))
+  const areaTitle = sharedUnit === null ? 'Diện tích' : `Diện tích (${sharedUnit})`
 
   /**
    * Drafts by stage id, holding only the rows the admin has touched.
@@ -120,7 +125,22 @@ export function StagePlanTable({
    * showing the old dates after the write landed.
    */
   const [drafts, setDrafts] = useState<Record<string, Draft>>({})
+  // Dropped on a new scope, during render rather than in an effect (React's
+  // "state from the previous render" pattern), so no frame shows them (M10).
+  const [draftScope, setDraftScope] = useState(scopeKey)
+  if (scopeKey !== draftScope) {
+    setDraftScope(scopeKey)
+    setDrafts({})
+  }
+  const pagination = useTablePagination(rows.length, scopeKey)
   const draft = (row: StagePlanRow): Draft => drafts[row.stageId] ?? draftOf(row)
+  /** Whether the row on screen differs from what is stored: Lưu has something to write (M10). */
+  const dirty = (row: StagePlanRow): boolean => {
+    const d = drafts[row.stageId]
+    if (d === undefined) return false
+    const s = draftOf(row)
+    return d.startDate !== s.startDate || d.endDate !== s.endDate || d.plannedAreaM2 !== s.plannedAreaM2
+  }
   const patch = (row: StagePlanRow, over: Partial<Draft>) =>
     setDrafts((d) => ({ ...d, [row.stageId]: { ...draft(row), ...over } }))
 
@@ -136,16 +156,12 @@ export function StagePlanTable({
    * real guard; this is what keeps the admin from meeting it as a raw write
    * failure.
    */
-  const errorOf = (d: Draft): string | null => {
-    if (d.startDate !== null && d.endDate !== null && d.endDate < d.startDate) {
-      // Date-only 'YYYY-MM-DD' strings compare correctly as strings.
-      return 'Ngày kết thúc không được trước ngày bắt đầu.'
-    }
-    if (d.plannedAreaM2 !== null && !(d.plannedAreaM2 >= 0)) {
-      return 'Diện tích kế hoạch không được âm.'
-    }
-    return null
-  }
+  const DATE_ERROR = 'Ngày kết thúc không được trước ngày bắt đầu.'
+  const AREA_ERROR = 'Diện tích kế hoạch không được âm.'
+  // Date-only 'YYYY-MM-DD' strings compare correctly as strings.
+  const datesWrong = (d: Draft) => d.startDate !== null && d.endDate !== null && d.endDate < d.startDate
+  const areaWrong = (d: Draft) => d.plannedAreaM2 !== null && !(d.plannedAreaM2 >= 0)
+  const errorOf = (d: Draft): string | null => (datesWrong(d) ? DATE_ERROR : areaWrong(d) ? AREA_ERROR : null)
 
   const columns = [
     {
@@ -153,7 +169,8 @@ export function StagePlanTable({
       key: 'deck',
       width: 150,
       render: (_v: unknown, row: StagePlanRow) => (
-        <span style={{ color: palette.textSecondary }}>{row.deckName}</span>
+        // Sàn, Công việc, Công đoạn: three names, one class, one colour (AD5, UI-06).
+        <span style={{ ...type.body, color: palette.text }}>{row.deckName}</span>
       ),
     },
     {
@@ -161,14 +178,16 @@ export function StagePlanTable({
       key: 'work',
       width: 130,
       render: (_v: unknown, row: StagePlanRow) => (
-        <span style={{ color: palette.textSecondary }}>{row.workName}</span>
+        <span style={{ ...type.body, color: palette.text }}>{row.workName}</span>
       ),
     },
     {
       title: 'Công đoạn',
       key: 'stage',
+      // A floor, not a cap: `Blast + Coat 1` wraps once at most (QA F9).
+      width: 140,
       render: (_v: unknown, row: StagePlanRow) => (
-        <span style={{ fontWeight: 600 }}>{row.stageName}</span>
+        <span style={{ ...type.body, color: palette.text }}>{row.stageName}</span>
       ),
     },
     {
@@ -194,27 +213,36 @@ export function StagePlanTable({
         (RV5-39). Unlike a zone, whose finish may legitimately be unknown, a
         KPI window with one end is not a plan.
       */
-      title: 'Khoảng kế hoạch',
+      title: 'Dự kiến triển khai',
+      align: 'center' as const,
       key: 'window',
       width: 280,
       render: (_v: unknown, row: StagePlanRow) => {
         const d = draft(row)
+        // The refusal is the picker's own: its error status and its tooltip,
+        // never a caption that makes the row two lines tall (M10, TBL-02).
         return (
-          <DatePicker.RangePicker
-            data-testid={`plan-range-${row.stageId}`}
-            format="DD/MM/YYYY"
-            allowEmpty={[true, true]}
-            placeholder={['Bắt đầu', 'Kết thúc']}
-            disabled={saving}
-            value={[d.startDate ? dayjs(d.startDate) : null, d.endDate ? dayjs(d.endDate) : null]}
-            onCalendarChange={(v) => {
-              const range = v as [Dayjs | null, Dayjs | null] | null
-              patch(row, {
-                startDate: dateKey(range?.[0] ?? null),
-                endDate: dateKey(range?.[1] ?? null),
-              })
-            }}
-          />
+          <Tooltip title={datesWrong(d) ? DATE_ERROR : undefined}>
+            <DatePicker.RangePicker
+              data-testid={`plan-range-${row.stageId}`}
+              format="DD/MM/YYYY"
+              status={datesWrong(d) ? 'error' : undefined}
+              // Room for `DD/MM/YYYY → DD/MM/YYYY` (QA F9): squeezed, the
+              // picker cut the year off both ends.
+              style={{ minWidth: 250 }}
+              allowEmpty={[true, true]}
+              placeholder={['Bắt đầu', 'Kết thúc']}
+              disabled={saving}
+              value={[d.startDate ? dayjs(d.startDate) : null, d.endDate ? dayjs(d.endDate) : null]}
+              onCalendarChange={(v) => {
+                const range = v as [Dayjs | null, Dayjs | null] | null
+                patch(row, {
+                  startDate: dateKey(range?.[0] ?? null),
+                  endDate: dateKey(range?.[1] ?? null),
+                })
+              }}
+            />
+          </Tooltip>
         )
       },
     },
@@ -222,6 +250,7 @@ export function StagePlanTable({
       title: 'Số ngày',
       key: 'days',
       width: 90,
+      align: 'center' as const,
       render: (_v: unknown, row: StagePlanRow) => {
         const d = draft(row)
         const shown =
@@ -229,9 +258,9 @@ export function StagePlanTable({
             // `planDays` and not a subtraction here, so Số ngày on screen and
             // the divisor the chart uses cannot drift apart.
             ? String(planDays({ startDate: d.startDate, endDate: d.endDate }))
-            : '—'
+            : MISSING
         return (
-          <span data-testid={`plan-days-${row.stageId}`} style={{ fontWeight: 600 }}>
+          <span data-testid={`plan-days-${row.stageId}`} style={type.body}>
             {shown}
           </span>
         )
@@ -239,8 +268,9 @@ export function StagePlanTable({
     },
     {
       title: areaTitle,
+      align: 'center' as const,
       key: 'area',
-      width: 220,
+      width: 240,
       render: (_v: unknown, row: StagePlanRow) => {
         const d = draft(row)
         /*
@@ -253,64 +283,72 @@ export function StagePlanTable({
           coat that genuinely has nothing left still computes 0,00 and still
           says so, so the branch turns on the DATE and never on the value.
         */
-        const computed = d.startDate === null ? null : computedAreaFor(row, d.startDate)
+        /*
+          No placeholder (AD18): an empty field means the automatic figure,
+          which Tự động tính's tooltip names, beside Lưu. The field takes the
+          column's width; no slot is kept beside it any more.
+        */
         return (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Tooltip title={areaWrong(d) ? AREA_ERROR : undefined}>
               <InputNumber
                 aria-label="Diện tích kế hoạch"
-                // The computed figure as the placeholder, so an empty field
-                // shows what the system will use instead of showing nothing --
-                // and no placeholder at all while there is no figure to show.
-                placeholder={computed === null ? undefined : formatAreaM2(computed)}
+                status={areaWrong(d) ? 'error' : undefined}
                 value={d.plannedAreaM2}
                 disabled={saving}
-                style={{ width: 130 }}
+                style={{ width: '100%' }}
+                // "1.234,5" m², not 1.2345, and "8.000" as eight thousand:
+                // see viNumberInput for the rule.
+                {...viAreaInputProps}
                 onChange={(n) => patch(row, { plannedAreaM2: n === null ? null : Number(n) })}
               />
-              {d.plannedAreaM2 !== null && (
-                <Tooltip title="Bỏ ghi đè, để hệ thống tự tính lại phần còn lại từ ngày bắt đầu">
-                  <Button
-                    size="small"
-                    aria-label="Về diện tích tự tính"
-                    disabled={saving}
-                    onClick={() => {
-                      // Cleared locally as well as on the server, so the field
-                      // shows the computed placeholder at once rather than
-                      // waiting for a reload to catch up.
-                      patch(row, { plannedAreaM2: null })
-                      void onClearArea(row.stageId)
-                    }}
-                  >
-                    Tự tính
-                  </Button>
-                </Tooltip>
-              )}
-            </div>
-            <span
-              data-testid={`plan-computed-${row.stageId}`}
-              style={{ fontSize: 12, color: palette.textQuaternary }}
-            >
-              {computed === null ? '—' : `Tự tính: ${formatAreaM2(computed)}${rowUnit(row)}`}
-            </span>
+            </Tooltip>
           </div>
         )
       },
     },
     {
-      title: '',
+      title: 'Thao tác',
       key: 'save',
-      width: 120,
+      width: 130,
+      // Pinned: the table scrolls sideways at tablet widths (QA F9) and a
+      // row's Lưu must stay in view with the dates it saves.
+      fixed: 'right' as const,
+      align: 'center' as const,
       render: (_v: unknown, row: StagePlanRow) => {
         const d = draft(row)
-        const message = errorOf(d)
-        const ready = d.startDate !== null && d.endDate !== null && message === null
+        // Complete, valid, and changed: an untouched row has nothing to write (M10).
+        const ready = d.startDate !== null && d.endDate !== null && errorOf(d) === null && dirty(row)
+        /*
+          Null: there is no figure, as opposed to a figure of zero. The
+          computed area is what remains ON the start date (RV5-23), so with no
+          start date there is nothing to compute from -- `computedAreaFor`
+          returns 0 there as a sentinel. A coat with genuinely nothing left
+          still names 0,00, so the branch turns on the DATE, not the value.
+        */
+        const computed = d.startDate === null ? null : computedAreaFor(row, d.startDate)
+        const autoTip = computed === null
+          ? 'Tự động tính'
+          : `Tự động tính · ${formatAreaM2(computed)} ${row.unit ?? DEFAULT_UNIT}`
         return (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            <Button
-              size="small"
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+            {/* One fixed slot on every row (AD18), disabled with its tooltip
+                while the row has no override; enabled, it resets the override,
+                locally at once and on the server. */}
+            <IconAction
+              verb="recompute"
+              label="Tự động tính"
+              tooltip={autoTip}
+              disabled={saving || d.plannedAreaM2 === null}
+              onClick={() => {
+                patch(row, { plannedAreaM2: null })
+                void onClearArea(row.stageId)
+              }}
+            />
+            <IconAction
+              verb="save"
+              label="Lưu"
               type="primary"
-              aria-label="Lưu kế hoạch"
               disabled={saving || !ready}
               onClick={() => {
                 if (!ready) return
@@ -320,12 +358,7 @@ export function StagePlanTable({
                   plannedAreaM2: d.plannedAreaM2,
                 })
               }}
-            >
-              Lưu
-            </Button>
-            {message !== null && (
-              <span style={{ fontSize: 12, color: palette.error }}>{message}</span>
-            )}
+            />
           </div>
         )
       },
@@ -335,23 +368,30 @@ export function StagePlanTable({
   return (
     <SectionCard
       title="Kế hoạch KPI theo công đoạn"
-      summary={`${rows.length} công đoạn · ${rows.filter((r) => r.plan !== null).length} đã có kế hoạch`}
+      facts={[
+        { value: rows.length, label: 'công đoạn' },
+        { value: rows.filter((r) => r.plan !== null).length, label: 'đã có kế hoạch' },
+      ]}
       bodyPadding={0}
       footer={<RulesDisclosure rules={RULES} />}
     >
       <Table<StagePlanRow>
-        className="pp-table"
         rowKey="stageId"
         size="middle"
         dataSource={rows}
-        pagination={false}
-        scroll={{ x: true }}
+        pagination={pagination}
+        // `max-content`, not `true` (QA F9): with `true` antd lets the table
+        // shrink to the card and the column widths become hints, which is how
+        // the picker lost its years and "Số ngày" wrapped at 1024px. Sized to
+        // its content, the card scrolls sideways and every column keeps the
+        // width it asked for.
+        scroll={{ x: 'max-content' }}
         onRow={(row) => ({ 'data-testid': `plan-row-${row.stageId}` } as React.HTMLAttributes<HTMLElement>)}
         locale={{
           emptyText: (
             <EmptyState
               title="Dự án chưa có công đoạn nào"
-              description="Kế hoạch KPI được nhập theo từng công đoạn của từng sàn. Thêm công việc và công đoạn cho sàn trước, rồi quay lại đây."
+              description="Thêm công việc và công đoạn cho sàn trước, rồi quay lại đây."
             />
           ),
         }}

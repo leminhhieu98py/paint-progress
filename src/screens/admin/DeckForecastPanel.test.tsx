@@ -3,7 +3,10 @@ import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { EMPTY_EFFORT, type DeckEvent, type Effort } from '../../domain/types'
+import { weightOf } from '../../test/typography'
+import { DAYS_NEEDED_TIP } from '../../domain/forecast'
 import { DeckForecastPanel } from './DeckForecastPanel'
+import { keyFactTexts } from '../../test/copy'
 
 const loadDeckWorks = vi.hoisted(() => vi.fn())
 const setWorkDeckDeadline = vi.hoisted(() => vi.fn())
@@ -87,6 +90,11 @@ afterEach(() => {
 })
 
 describe('DeckForecastPanel', () => {
+  it('carries its page code, last on the deck page (UX-03)', async () => {
+    renderPanel()
+    expect(await screen.findByText('A3.8')).toBeInTheDocument()
+  })
+
   it('shows the deck\'s hours today and in total, worked and lost', async () => {
     // Linh, 2026-09-05: four lines beside the deck. Nothing was recorded on the
     // 5th, so today is zero while the totals are not -- which is the whole
@@ -94,9 +102,13 @@ describe('DeckForecastPanel', () => {
     renderPanel()
     const totals = within(await screen.findByTestId('deck-effort-totals'))
     expect(totals.getByText('Mhr thực hiện hôm nay')).toBeInTheDocument()
-    expect(totals.getAllByText('0,0')).toHaveLength(2)
-    expect(totals.getByText('2.000,0')).toBeInTheDocument()
-    expect(totals.getByText('2,0')).toBeInTheDocument()
+    expect(totals.getAllByText('0,00')).toHaveLength(2)
+    expect(totals.getByText('2.000,00')).toBeInTheDocument()
+    expect(totals.getByText('2,00')).toBeInTheDocument()
+    // The scope and calculation notes are the labels' (?), not captions (CPY-01).
+    expect(totals.getAllByRole('img', { name: 'Cả sàn, mọi công việc' })).toHaveLength(2)
+    expect(totals.getAllByRole('img', { name: 'Không tính vào hiệu suất' })).toHaveLength(2)
+    expect(totals.queryAllByTestId('stat-sub')).toHaveLength(0)
   })
 
   it('forecasts each coat from what is left and what it has been costing', async () => {
@@ -106,29 +118,37 @@ describe('DeckForecastPanel', () => {
 
     // Lớp 1: every bay has been through it, so nothing is left and no days.
     expect(within(lop1).getByText('Lớp 1')).toBeInTheDocument()
-    expect(within(lop1).getByText('0,00')).toBeInTheDocument()
+    // m² left and Mhr needed, both nothing; hours print at two decimals like m² (M11).
+    expect(within(lop1).getAllByText('0,00')).toHaveLength(2)
     expect(within(lop1).getByText('1,000')).toBeInTheDocument()
 
     // Lớp 2: 500 m² left at 2 Mhr/m² is 1.000 Mhr, and at 500 Mhr a day, 2 days.
     expect(within(lop2).getByText('Lớp 2')).toBeInTheDocument()
-    expect(within(lop2).getByText('500,00')).toBeInTheDocument()
+    // 500 m² left, and 500 Mhr a day.
+    expect(within(lop2).getAllByText('500,00')).toHaveLength(2)
     expect(within(lop2).getByText('2,000')).toBeInTheDocument()
-    expect(within(lop2).getByText('1.000,0')).toBeInTheDocument()
+    expect(within(lop2).getByText('1.000,00')).toBeInTheDocument()
     expect(within(lop2).getByText('2')).toBeInTheDocument()
   })
 
   it('totals the Mhr and takes the largest number of days, and says why', async () => {
     renderPanel()
     const total = within(await screen.findByTestId('forecast-total'))
-    expect(total.getByText('1.000,0')).toBeInTheDocument()
+    expect(total.getByText('1.000,00')).toBeInTheDocument()
     expect(total.getByText('2')).toBeInTheDocument()
-    expect(screen.getByText(/ngày lớn nhất trong các công đoạn, không phải tổng/)).toBeInTheDocument()
+    // The totals row is bodyStrong, not the <strong> 700 it was (TYP-02).
+    for (const text of ['Tổng', '1.000,00', '2']) expect(weightOf(total.getByText(text))).toBe(600)
+    // Why, on the column it explains (CPY-01).
+    // The one wording the dashboard uses too (M16).
+    const tip = screen.getByRole('img', { name: DAYS_NEEDED_TIP })
+    expect(tip.closest('th')).toHaveTextContent(/^Số ngày cần$/)
+    expect(screen.queryByText(/ngày lớn nhất trong các công đoạn, không phải tổng/)).toBeNull()
   })
 
   it('says nothing about being late when no deadline is set', async () => {
     renderPanel()
     await screen.findByRole('table')
-    expect(screen.getByText('Sơn · chưa đặt hạn')).toBeInTheDocument()
+    expect(keyFactTexts()).toEqual(['Sơn', 'chưa đặt hạn'])
     expect(screen.queryByTestId('forecast-warning')).toBeNull()
   })
 
@@ -138,7 +158,8 @@ describe('DeckForecastPanel', () => {
     }))
     renderPanel()
     // 05/09 to 10/09 inclusive is six days, against two needed.
-    expect(await screen.findByText('Còn 6 ngày (tính cả chủ nhật)')).toBeInTheDocument()
+    const left = await screen.findByText('Còn 6 ngày')
+    expect(within(left).getByRole('img', { name: 'Tính cả chủ nhật' })).toBeInTheDocument()
     expect(screen.queryByTestId('forecast-warning')).toBeNull()
   })
 
@@ -150,7 +171,7 @@ describe('DeckForecastPanel', () => {
     const warning = within(await screen.findByTestId('forecast-warning'))
     expect(warning.getByText('Cảnh báo không kịp tiến độ')).toBeInTheDocument()
     // One day left, two needed; Lớp 2 gets through 500 of its 1.000 Mhr.
-    expect(warning.getByText('Cần thêm 500,0 Mhr hoặc 1 ngày làm việc.')).toBeInTheDocument()
+    expect(warning.getByText('Cần thêm 500,00 Mhr hoặc 1 ngày làm việc.')).toBeInTheDocument()
   })
 
   it('says how far past the deadline the deck already is', async () => {
@@ -180,7 +201,7 @@ describe('DeckForecastPanel', () => {
     await waitFor(() => expect(setWorkDeckDeadline).toHaveBeenCalledWith('w1', 'd1', '2026-09-10'))
     expect((await screen.findAllByText('Đã lưu hạn hoàn thành')).length).toBeGreaterThan(0)
     await waitFor(() => expect(loadDeckWorks).toHaveBeenCalledTimes(2))
-    expect(await screen.findByText('Sơn · hạn 10/09/2026')).toBeInTheDocument()
+    await waitFor(() => expect(keyFactTexts()).toEqual(['Sơn', 'hạn 10/09/2026']))
     // And no loop: the reloaded value must not trigger another write.
     expect(setWorkDeckDeadline).toHaveBeenCalledTimes(1)
   })
@@ -198,18 +219,18 @@ describe('DeckForecastPanel', () => {
     renderPanel({ events: EVENTS.filter((e) => e.toStageName === 'Lớp 1') })
     await screen.findByRole('table')
     expect(screen.getByTestId('forecast-missing')).toHaveTextContent(
-      '1 công đoạn chưa có giờ công nào nên chưa dự báo được',
+      'Tổng ở trên chưa gồm 1 công đoạn chưa có giờ công nào.',
     )
     // Lớp 1 has nothing left to do, so the total is 0 Mhr over 0 days.
     const total = within(screen.getByTestId('forecast-total'))
-    expect(total.getByText('0,0')).toBeInTheDocument()
+    expect(total.getByText('0,00')).toBeInTheDocument()
   })
 
   it('tells the admin when the deck belongs to no work at all', async () => {
     loadDeckWorks.mockResolvedValue(deckWorks({ works: [] }))
     renderPanel()
     expect(
-      await screen.findByText('Sàn này chưa thuộc công việc nào, nên chưa có gì để dự báo.'),
+      await screen.findByText('Sàn này chưa thuộc công việc nào.'),
     ).toBeInTheDocument()
   })
 
@@ -233,5 +254,54 @@ describe('DeckForecastPanel: the work\'s unit (RV6-35)', () => {
     expect(headers).toContain('tấn còn lại')
     expect(headers).toContain('Hiệu suất TB (Mhr/tấn)')
     expect(headers.some((h) => /m²/.test(h ?? ''))).toBe(false)
+  })
+})
+
+describe('DeckForecastPanel — pager scope (UI-06)', () => {
+  it('goes back to page 1 when the deck changes under it, with the same work', async () => {
+    // One work spans every deck, so the work id alone does not change with
+    // the deck; the deck screen keeps this panel mounted from one to the next.
+    const many = Array.from({ length: 12 }, (_, i) => ({ id: `s${i}`, seq: i + 1, name: `Lớp ${i + 1}`, color: '#fadb14', weight: 1 / 12 }))
+    loadDeckWorks.mockResolvedValue(deckWorks({
+      works: [{ work: WORK, weight: 1, deadline: null, stages: many, cells: CELLS, audit: {} }],
+    }))
+    const panel = (deckId: string) => (
+      <AntApp><DeckForecastPanel deckId={deckId} editable events={EVENTS} /></AntApp>
+    )
+    const { rerender } = render(panel('d1'))
+    await userEvent.click(await screen.findByTitle('2'))
+    expect(screen.getByTitle('2')).toHaveClass('ant-pagination-item-active')
+    rerender(panel('d2'))
+    await waitFor(() => expect(loadDeckWorks).toHaveBeenCalledWith('d2'))
+    expect(await screen.findByTitle('1')).toHaveClass('ant-pagination-item-active')
+  })
+})
+
+describe('DeckForecastPanel: the work switch (FLT-03)', () => {
+  const WORK2 = { ...WORK, id: 'w2', seq: 2, name: 'Tháo giáo' }
+  const TG_STAGES = [{ id: 't1', seq: 1, name: 'Tháo giáo lửng', color: '#8B5CF6', weight: 1 }]
+
+  it('chooses the work from a searchable select named Công việc, with no label on screen', async () => {
+    loadDeckWorks.mockResolvedValue(deckWorks({
+      works: [
+        { work: WORK, weight: 0.5, deadline: null, stages: STAGES, cells: CELLS, audit: {} },
+        { work: WORK2, weight: 0.5, deadline: null, stages: TG_STAGES, cells: CELLS, audit: {} },
+      ],
+    }))
+    renderPanel()
+    const work = await screen.findByRole('combobox', { name: 'Công việc · Dự báo tiến độ' })
+    expect(screen.queryByRole('radiogroup')).toBeNull()
+    expect(screen.queryByText('Công việc', { exact: true })).toBeNull()
+    expect(within(screen.getByRole('table')).getByText('Lớp 1')).toBeInTheDocument()
+
+    // Its options read in full, as every work select's (M5).
+    await userEvent.click(work)
+    const popup = [...document.querySelectorAll<HTMLElement>('.ant-select-dropdown:not(.ant-select-dropdown-hidden)')].at(-1) as HTMLElement
+    expect(popup.style.maxWidth).toBe('calc(100vw - 32px)')
+    expect(within(popup).getByTitle('Tháo giáo').querySelector('.ant-select-item-option-content > span')).toHaveStyle({ whiteSpace: 'normal' })
+    await userEvent.type(work, 'thao')
+    await userEvent.click(await screen.findByTitle('Tháo giáo'))
+    await waitFor(() => expect(within(screen.getByRole('table')).getByText('Tháo giáo lửng')).toBeInTheDocument())
+    expect(within(screen.getByRole('table')).queryByText('Lớp 1')).toBeNull()
   })
 })

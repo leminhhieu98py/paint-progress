@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { describeZone, formatPlanRange, zoneColorConflict, zoneLabelBoxes } from './plan'
+import { describeZone, formatPlanRange, spreadLabelBoxes, zoneColorConflict, zoneLabelBoxes } from './plan'
 import type { Stage, Zone } from './types'
 
 describe('formatPlanRange', () => {
@@ -110,5 +110,59 @@ describe('describeZone', () => {
   it('drops the empty parts instead of printing bare separators', () => {
     expect(describeZone('Khu A', '', '')).toBe('Khu A')
     expect(describeZone('Khu A', 'Coat 2', '')).toBe('Khu A · Coat 2')
+  })
+})
+
+describe('spreadLabelBoxes (QA F7)', () => {
+  const box = (id: string, x: number, y: number, w = 100, h = 30) => ({ id, x, y, w, h })
+  const HEIGHT = 500
+
+  it('leaves boxes that do not touch where they are', () => {
+    const boxes = [box('a', 0, 0), box('b', 200, 0), box('c', 0, 100)]
+    expect(spreadLabelBoxes(boxes, HEIGHT)).toEqual(boxes)
+  })
+
+  it('moves the later box down to just below the one it covers', () => {
+    // Zone 1's label sat almost entirely under Zone 2's: two overlapping zone
+    // boxes put both cards at nearly the same centre.
+    expect(spreadLabelBoxes([box('a', 0, 100), box('b', 10, 110)], HEIGHT)).toEqual([
+      box('a', 0, 100),
+      box('b', 10, 130),
+    ])
+  })
+
+  it('never moves the earlier box: the order is the zone order and it is stable', () => {
+    const [first] = spreadLabelBoxes([box('a', 0, 100), box('b', 0, 100)], HEIGHT)
+    expect(first).toEqual(box('a', 0, 100))
+  })
+
+  it('keeps moving a box that lands on a third one', () => {
+    expect(spreadLabelBoxes([box('a', 0, 100), box('b', 0, 130), box('c', 0, 110)], HEIGHT)).toEqual([
+      box('a', 0, 100),
+      box('b', 0, 130),
+      box('c', 0, 160),
+    ])
+  })
+
+  it('moves up instead when going down would leave the drawing', () => {
+    expect(spreadLabelBoxes([box('a', 0, 470), box('b', 0, 475)], HEIGHT)).toEqual([
+      box('a', 0, 470),
+      box('b', 0, 440),
+    ])
+  })
+
+  it('does not count boxes that only share an edge as overlapping', () => {
+    const boxes = [box('a', 0, 100), box('b', 0, 130), box('c', 100, 100)]
+    expect(spreadLabelBoxes(boxes, HEIGHT)).toEqual(boxes)
+  })
+
+  it('leaves a box where it was when neither direction fits, rather than off the drawing', () => {
+    // A visible overlap over a label that has been pushed out of sight.
+    const boxes = [box('a', 0, 0, 100, 60), box('b', 0, 10, 100, 60)]
+    expect(spreadLabelBoxes(boxes, 60)).toEqual(boxes)
+  })
+
+  it('keeps a gap between the boxes when asked', () => {
+    expect(spreadLabelBoxes([box('a', 0, 100), box('b', 0, 100)], HEIGHT, 4)[1]).toEqual(box('b', 0, 134))
   })
 })

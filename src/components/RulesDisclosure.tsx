@@ -1,9 +1,15 @@
 import { DownOutlined, InfoCircleOutlined } from '@ant-design/icons'
 import { useState } from 'react'
 import { palette } from '../theme'
+import { useTypeScale } from './typeScale'
 
 export interface Rule {
-  /** The spec's own id, e.g. STG-R1. Same name on screen and in the spec. */
+  /**
+   * The spec's own id, e.g. STG-R1, or a descriptive key where the spec names
+   * none: the React key, and the name to look the rule up by. Never rendered
+   * (CPY-04) -- on screen it read as the developer's vocabulary, not the
+   * admin's.
+   */
   id: string
   text: string
 }
@@ -20,6 +26,8 @@ export interface Rule {
  * and expanded by default they would push the actual work below the fold.
  */
 export function RulesDisclosure({ rules }: { rules: Rule[] }) {
+  // The scale of the page this is on: the field's 14 on a field page (GS-10).
+  const type = useTypeScale()
   const [open, setOpen] = useState(false)
   if (rules.length === 0) return null
 
@@ -48,11 +56,10 @@ export function RulesDisclosure({ rules }: { rules: Rule[] }) {
         }}
       >
         <InfoCircleOutlined style={{ color: palette.accent }} />
-        <span style={{ fontSize: 12, fontWeight: 600 }}>Quy tắc áp dụng</span>
+        <span style={type.label}>Quy tắc áp dụng</span>
         <span
           style={{
-            fontSize: 11,
-            fontWeight: 600,
+            ...type.micro,
             lineHeight: 1,
             color: palette.accent,
             background: palette.accentTint,
@@ -79,30 +86,11 @@ export function RulesDisclosure({ rules }: { rules: Rule[] }) {
             <div
               key={r.id}
               style={{
-                display: 'flex',
-                gap: 12,
-                alignItems: 'flex-start',
                 padding: '9px 0',
                 borderTop: `1px solid ${palette.borderSplit}`,
               }}
             >
-              <span
-                style={{
-                  fontSize: 10,
-                  fontWeight: 600,
-                  lineHeight: 1,
-                  color: palette.accent,
-                  background: palette.accentTint,
-                  padding: '5px 6px',
-                  borderRadius: 6,
-                  flex: 'none',
-                  minWidth: 58,
-                  textAlign: 'center',
-                }}
-              >
-                {r.id}
-              </span>
-              <span style={{ fontSize: 13, lineHeight: 1.5, color: palette.textSecondary }}>
+              <span style={{ ...type.body, lineHeight: 1.5, color: palette.textSecondary }}>
                 {r.text}
               </span>
             </div>

@@ -1,9 +1,11 @@
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { useEffect } from 'react'
+import { useEffect, type ReactNode } from 'react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderApp } from '../../test/renderApp'
+import { consequenceItems, keyFactTexts, pageSubtitle } from '../../test/copy'
+import { chooseOption, optionTitles } from '../../test/select'
 import { DeckDetailScreen } from './DeckDetailScreen'
 
 const getDeck = vi.hoisted(() => vi.fn())
@@ -43,11 +45,16 @@ vi.mock('./DeckEditor', () => ({
 // form, and the panel has its own test file. Left real it would pull decksApi's
 // stage exports through a mock that does not carry them.
 vi.mock('./StageConfigPanel', () => ({
-  StageConfigPanel: ({ workId, deckId, editable }: { workId: string; deckId: string; editable?: boolean }) => (
-    <div>{`stages ${workId} ${deckId} ${editable ? 'sửa' : 'xem'}`}</div>
+  StageConfigPanel: ({ workId, deckId, editable, workSelect }: {
+    workId: string; deckId: string; editable?: boolean; workSelect?: ReactNode
+  }) => (
+    <div data-testid={`stage-panel-${workId}`}>
+      <span>{`stages ${workId} ${deckId} ${editable ? 'sửa' : 'xem'}`}</span>
+      {workSelect}
+    </div>
   ),
 }))
-// The works the deck is part of, which is what A3.2 tabs over since 0024.
+// The works the deck is part of, which A3.2 chooses between since 0024.
 const listDeckWorks = vi.hoisted(() => vi.fn())
 vi.mock('../../lib/gsApi', () => ({ listDeckWorks: (id: string) => listDeckWorks(id) }))
 const WORK1 = {
@@ -122,6 +129,11 @@ const renderAt = (path: string) =>
 
 const pdfFile = () => new File(['%PDF-1.4'], 'deck.pdf', { type: 'application/pdf' })
 
+/** The facts beside the page title (HLT-01). */
+const headerFacts = () => keyFactTexts(screen.getByRole('heading', { level: 1 }).parentElement as HTMLElement)
+/** The card a heading titles. */
+const cardOf = (title: string) => screen.getByRole('heading', { level: 2, name: title }).closest('section') as HTMLElement
+
 describe('DeckDetailScreen', () => {
   it('opens the deck named in the URL, so a reload keeps it', async () => {
     renderAt('/decks/d1')
@@ -172,12 +184,29 @@ describe('DeckDetailScreen', () => {
     expect(within(identity).getByText('ban-ve.pdf')).toBeInTheDocument()
   })
 
+  it('sets every identity value at one size, and wraps a file name between words (M4)', async () => {
+    getDeck.mockResolvedValue({ ...DECK, drawingName: 'ban-ve.pdf', drawingPage: null })
+    renderAt('/decks/d1')
+    const identity = await screen.findByTestId('deck-identity')
+    const values = [
+      within(identity).getByText('Main Deck'),
+      within(identity).getByText(DECK.code),
+      within(identity).getByText('ban-ve.pdf'),
+    ]
+    for (const v of values) {
+      expect(v).toHaveStyle({ fontSize: '15px', fontWeight: '600', overflowWrap: 'anywhere' })
+      expect(v.style.wordBreak).not.toBe('break-all')
+    }
+  })
+
   it('says which page of a multi-page file was taken', async () => {
     getDeck.mockResolvedValue({ ...DECK, drawingName: 'ban-ve.pdf', drawingPage: 3 })
     renderAt('/decks/d1')
 
     const identity = await screen.findByTestId('deck-identity')
     expect(within(identity).getByText('ban-ve.pdf (trang 3)')).toBeInTheDocument()
+    // The card's fact names the same file (HLT-01).
+    expect(keyFactTexts(cardOf('Thông tin sàn & bản vẽ'))).toEqual(['ban-ve.pdf (trang 3)'])
   })
 
   it('admits it does not know, on a deck whose drawing predates recording it', async () => {
@@ -211,6 +240,38 @@ describe('DeckDetailScreen', () => {
 
     await waitFor(() => expect(uploadDrawing).toHaveBeenCalled())
     expect(uploadDrawing.mock.calls[0][5]).toEqual({ name: 'deck.pdf', page: null })
+  })
+
+  it('reads a dot in the page number as a thousands separator, not a decimal point', async () => {
+    // With no parser antd read "1.230" as page 1.23, a page that does not exist.
+    pdfPageCount.mockResolvedValue(2000)
+    renderAt('/decks/new?project=p1')
+
+    await userEvent.type(await screen.findByLabelText('Tên sàn'), 'Cellar Deck')
+    await userEvent.type(screen.getByLabelText('Mã sàn'), 'CD')
+    await userEvent.upload(screen.getByLabelText('Bản vẽ (PDF)'), pdfFile())
+    await screen.findByText('Tệp có 2000 trang')
+    await userEvent.type(screen.getByLabelText('Trang'), '{Backspace}1.230')
+    await userEvent.click(screen.getByRole('button', { name: 'Tạo sàn' }))
+
+    await waitFor(() => expect(uploadDrawing).toHaveBeenCalled())
+    expect(uploadDrawing.mock.calls[0][5]).toEqual({ name: 'deck.pdf', page: 1230 })
+  })
+
+  it('keeps the page whole when a comma is typed in it', async () => {
+    // "2,5" used to lose its comma and read as page 25.
+    pdfPageCount.mockResolvedValue(30)
+    renderAt('/decks/new?project=p1')
+
+    await userEvent.type(await screen.findByLabelText('Tên sàn'), 'Cellar Deck')
+    await userEvent.type(screen.getByLabelText('Mã sàn'), 'CD')
+    await userEvent.upload(screen.getByLabelText('Bản vẽ (PDF)'), pdfFile())
+    await screen.findByText('Tệp có 30 trang')
+    await userEvent.type(screen.getByLabelText('Trang'), '{Backspace}2,5')
+    await userEvent.click(screen.getByRole('button', { name: 'Tạo sàn' }))
+
+    await waitFor(() => expect(uploadDrawing).toHaveBeenCalled())
+    expect(uploadDrawing.mock.calls[0][5]).toEqual({ name: 'deck.pdf', page: 2 })
   })
 
   it('records the page too, when the file had more than one', async () => {
@@ -313,11 +374,18 @@ describe('DeckDetailScreen', () => {
     renderAt('/decks/d1')
     await screen.findByRole('heading', { level: 1, name: 'Main Deck' })
     await userEvent.click(screen.getByText('Sửa'))
+    // Said before a file is chosen, and true of the code: the image is
+    // replaced, the bays stay (uploadDrawing touches no cell) (RUL-01).
+    expect(screen.getByText('Tệp mới thay bản vẽ hiện tại và giữ nguyên các ô đã dựng.')).toBeInTheDocument()
+    expect(screen.queryByText(/xoá bản vẽ hiện tại và toàn bộ hình học ô/)).toBeNull()
     await userEvent.upload(await screen.findByLabelText('Bản vẽ (PDF)'), pdfFile())
     await userEvent.click(screen.getByRole('button', { name: 'Lưu thông tin sàn' }))
 
     expect(await screen.findByText('Lưu thay đổi cho sàn này?')).toBeInTheDocument()
-    expect(screen.getByText(/Ô đã dựng vẫn giữ nguyên vị trí/)).toBeInTheDocument()
+    // One helper sentence, no reasoning (RUL-01); the panel named as the admin
+    // sees it, not by its mockup code (CPY-04).
+    expect(consequenceItems()).toEqual(['Ô đã dựng giữ vị trí cũ trên bản vẽ mới, cần kiểm tra lại ở Phân ô'])
+    expect(screen.queryByText(/A3\.3/)).not.toBeInTheDocument()
     expect(uploadDrawing).not.toHaveBeenCalled()
 
     await userEvent.click(screen.getByRole('button', { name: 'Lưu' }))
@@ -334,11 +402,54 @@ describe('DeckDetailScreen', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Lưu thông tin sàn' }))
 
     expect(await screen.findByText('Lưu thay đổi cho sàn này?')).toBeInTheDocument()
-    expect(screen.getByText(/chia lại theo tỉ lệ pixel/)).toBeInTheDocument()
+    expect(consequenceItems()).toEqual([
+      'Diện tích từng ô được chia lại theo con số mới',
+      // The done m², the KPI actuals and the report read the cells' areas.
+      'Diện tích đã làm, KPI thực hiện và báo cáo tính theo diện tích sàn mới',
+    ])
+    expect(screen.queryByText(/mẫu số/)).toBeNull()
+    expect(screen.queryByText(/pixel/)).not.toBeInTheDocument()
     expect(updateDeckArea).not.toHaveBeenCalled()
 
     await userEvent.click(screen.getByRole('button', { name: 'Lưu' }))
     await waitFor(() => expect(updateDeckArea).toHaveBeenCalledWith('d1', 6000, 'prorated'))
+  })
+
+  it('reads an area typed with thousands dots and a decimal comma', async () => {
+    // decimalSeparator="," alone replaced the comma but kept the dots, so
+    // "6.000,5" never parsed and the field kept the "6.000" it had read on
+    // the way -- a deck of 6 m² instead of 6000.5.
+    renderAt('/decks/d1')
+    await screen.findByRole('heading', { level: 1, name: 'Main Deck' })
+    await userEvent.click(screen.getByText('Sửa'))
+    const area = await screen.findByLabelText('Diện tích sàn (m²)')
+    await userEvent.clear(area)
+    await userEvent.type(area, '6.000,5')
+    await userEvent.click(screen.getByRole('button', { name: 'Lưu thông tin sàn' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Lưu' }))
+
+    await waitFor(() => expect(updateDeckArea).toHaveBeenCalledWith('d1', 6000.5, 'prorated'))
+  })
+
+  it('reads "6.000" in the area as six thousand m², not six', async () => {
+    renderAt('/decks/d1')
+    await screen.findByRole('heading', { level: 1, name: 'Main Deck' })
+    await userEvent.click(screen.getByText('Sửa'))
+    const area = await screen.findByLabelText('Diện tích sàn (m²)')
+    await userEvent.clear(area)
+    await userEvent.type(area, '6.000')
+    await userEvent.click(screen.getByRole('button', { name: 'Lưu thông tin sàn' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Lưu' }))
+
+    await waitFor(() => expect(updateDeckArea).toHaveBeenCalledWith('d1', 6000, 'prorated'))
+  })
+
+  it('shows the area with a decimal comma and no grouping, so an edit keeps its magnitude', async () => {
+    renderAt('/decks/d1')
+    await screen.findByRole('heading', { level: 1, name: 'Main Deck' })
+    await userEvent.click(screen.getByText('Sửa'))
+
+    expect(await screen.findByLabelText('Diện tích sàn (m²)')).toHaveValue('5258,5')
   })
 
   it('says the deck was saved, because the form looks the same afterwards', async () => {
@@ -459,19 +570,34 @@ describe('DeckDetailScreen', () => {
 })
 
 describe('DeckDetailScreen — công việc', () => {
-  it('shows one work\'s coats without tabs', async () => {
+  it('shows one work\'s coats with nothing to choose', async () => {
     renderAt('/decks/d1')
     expect(await screen.findByText('stages w1 d1 xem')).toBeInTheDocument()
     expect(screen.queryByRole('tab')).toBeNull()
+    expect(screen.queryByRole('combobox', { name: 'Công việc · Cấu hình lớp sơn' })).toBeNull()
   })
 
-  it('tabs the coat configuration by work when the deck is in several', async () => {
+  it('chooses the work of the coat configuration from a searchable select when the deck is in several (FLT-07)', async () => {
     listDeckWorks.mockResolvedValue([{ work: WORK1, weight: 1, stages: [] }, { work: WORK2, weight: 1, stages: [] }])
     renderAt('/decks/d1')
     expect(await screen.findByText('stages w1 d1 xem')).toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: 'Sơn' })).toBeInTheDocument()
-    await userEvent.click(screen.getByRole('tab', { name: 'Tháo giáo' }))
-    expect(await screen.findByText('stages w2 d1 xem')).toBeInTheDocument()
+    // A select, not a row of tabs.
+    expect(screen.queryByRole('tab')).toBeNull()
+    // Named by its card, apart from the other cards' work selects, and inside
+    // the card it switches (M7).
+    expect(within(screen.getByTestId('stage-panel-w1')).getByRole('combobox', { name: 'Công việc · Cấu hình lớp sơn' })).toBeInTheDocument()
+    // Searchable, tones ignored (UI-02).
+    await userEvent.type(screen.getByRole('combobox', { name: 'Công việc · Cấu hình lớp sơn' }), 'thao')
+    expect(await optionTitles('Công việc · Cấu hình lớp sơn')).toEqual(['Tháo giáo'])
+    await userEvent.keyboard('{Escape}')
+    await chooseOption('Công việc · Cấu hình lớp sơn', 'Tháo giáo')
+    expect(await screen.findByText('stages w2 d1 xem')).toBeVisible()
+    // The first work's panel stays mounted, hidden, so an unsaved draft
+    // survives switching back, as it did under the tabs.
+    expect(screen.getByText('stages w1 d1 xem')).not.toBeVisible()
+    await chooseOption('Công việc · Cấu hình lớp sơn', 'Sơn')
+    expect(screen.getByText('stages w1 d1 xem')).toBeVisible()
+    expect(screen.getByText('stages w2 d1 xem')).not.toBeVisible()
   })
 
   it('points at the Công việc screen when the deck is in no work', async () => {
@@ -479,6 +605,9 @@ describe('DeckDetailScreen — công việc', () => {
     renderAt('/decks/d1')
     expect(await screen.findByText('Sàn này chưa thuộc công việc nào')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /Công việc/ })).toHaveAttribute('href', expect.stringContaining('/admin/works?project=p1'))
+    // The next step only; no summary that repeats the title beside it (CPY-01).
+    expect(screen.getByText('Gán sàn vào một công việc trước, rồi quay lại đây cấu hình lớp sơn.')).toBeInTheDocument()
+    expect(screen.queryByText('Sàn chưa thuộc công việc nào')).not.toBeInTheDocument()
   })
 
   it('labels the header figure as the deck\'s tổng hợp across works', async () => {
@@ -486,7 +615,28 @@ describe('DeckDetailScreen — công việc', () => {
     await screen.findByRole('heading', { level: 1, name: 'Main Deck' })
     // The figure arrives one effect after the panel mounts, so wait for it.
     expect(await screen.findByText('44,38%')).toBeInTheDocument()
-    expect(screen.getByText(/tổng hợp các công việc/)).toBeInTheDocument()
+    // On the label's (?) rather than as a caption read on every visit (CPY-01).
+    expect(screen.getByRole('img', { name: 'Tổng hợp các công việc' }).parentElement).toHaveTextContent(/^Tiến độ sàn$/)
+    expect(screen.queryByText(/^tổng hợp các công việc$/)).not.toBeInTheDocument()
+  })
+
+  it('explains the area on its label, and has no rules footer left under A3.1 (CPY-01)', async () => {
+    renderAt('/decks/d1')
+    await screen.findByRole('heading', { level: 1, name: 'Main Deck' })
+    const identity = screen.getByTestId('deck-identity')
+    const tip = within(identity).getByRole('img', { name: 'Mẫu số của mọi phần trăm trên sàn' })
+    expect(tip.parentElement).toHaveTextContent(/^Diện tích sàn \(m²\)$/)
+    // IDN-R4 and IDN-R5 were rationale, and with both gone the footer goes.
+    expect(screen.queryByRole('button', { name: /Quy tắc áp dụng/ })).not.toBeInTheDocument()
+  })
+
+  it('has no subtitle and no summary while a deck is being created (CPY-01, CPY-03)', async () => {
+    renderAt('/decks/new?project=p1')
+    expect(await screen.findByRole('heading', { level: 1, name: 'Sàn mới' })).toBeInTheDocument()
+    expect(pageSubtitle()).toBeNull()
+    expect(keyFactTexts()).toEqual([])
+    expect(screen.queryByText(/Đặt tên, mã và diện tích trước/)).not.toBeInTheDocument()
+    expect(screen.queryByText('Sàn chưa được tạo')).not.toBeInTheDocument()
   })
 
   it('reads the deck history once and hands it to both panels (Feedback Rv2, items 11 and 13)', async () => {
@@ -503,7 +653,7 @@ describe('DeckDetailScreen: the quantity and unit of the deck\'s works (RV6-36)'
     listDeckWorks.mockResolvedValue([{ work: { ...WORK1, quantityLabel: 'Khối lượng', unit: 'tấn' }, weight: 1, stages: [] }])
     renderAt('/decks/d1')
     await screen.findByRole('heading', { level: 1, name: 'Main Deck' })
-    await waitFor(() => expect(screen.getByText(/24 ô · 5\.258,50 tấn/)).toBeInTheDocument())
+    await waitFor(() => expect(headerFacts()).toEqual(['24 ô', '5.258,50 tấn']))
     expect(screen.getByText('Khối lượng sàn (tấn)')).toBeInTheDocument()
     expect(screen.getByText('editor MD xem Khối lượng/tấn')).toBeInTheDocument()
     await userEvent.click(screen.getByText('Sửa'))
@@ -511,16 +661,17 @@ describe('DeckDetailScreen: the quantity and unit of the deck\'s works (RV6-36)'
     expect(screen.queryByText(/m²/)).toBeNull()
   })
 
-  it('reads Số lượng with no unit when the deck\'s works disagree', async () => {
+  it('reads Số lượng with its first work\'s unit when the deck\'s works disagree, never a bare figure (AD4)', async () => {
     listDeckWorks.mockResolvedValue([
       { work: WORK1, weight: 1, stages: [] },
       { work: { ...WORK2, quantityLabel: 'Khối lượng', unit: 'tấn' }, weight: 1, stages: [] },
     ])
     renderAt('/decks/d1')
     await screen.findByRole('heading', { level: 1, name: 'Main Deck' })
-    await waitFor(() => expect(screen.getByText('Số lượng sàn')).toBeInTheDocument())
-    expect(screen.getByText(/24 ô · 5\.258,50$/)).toBeInTheDocument()
-    expect(screen.getByText('editor MD xem Số lượng/none')).toBeInTheDocument()
+    // Sơn (m², seq 1) and Tháo giáo (tấn, seq 2): the deck's figure names Sơn's unit.
+    await waitFor(() => expect(screen.getByText('Số lượng sàn (m²)')).toBeInTheDocument())
+    expect(headerFacts()).toEqual(['24 ô', '5.258,50 m²'])
+    expect(screen.getByText('editor MD xem Số lượng/m²')).toBeInTheDocument()
   })
 
   it('keeps Diện tích sàn (m²) for a deck in no work yet', async () => {
@@ -529,6 +680,6 @@ describe('DeckDetailScreen: the quantity and unit of the deck\'s works (RV6-36)'
     await screen.findByRole('heading', { level: 1, name: 'Main Deck' })
     await waitFor(() => expect(screen.getByText('editor MD xem Diện tích/m²')).toBeInTheDocument())
     expect(screen.getByText('Diện tích sàn (m²)')).toBeInTheDocument()
-    expect(screen.getByText(/24 ô · 5\.258,50 m²/)).toBeInTheDocument()
+    expect(headerFacts()).toEqual(['24 ô', '5.258,50 m²'])
   })
 })

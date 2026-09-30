@@ -2,7 +2,12 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import type { KpiDay } from '../../domain/kpi'
+import { useState } from 'react'
+import { FilterBar } from '../../components/FilterBar'
+import { keyFactTexts } from '../../test/copy'
 import { KpiDashboard, type KpiEntry } from './KpiDashboard'
+import { KpiFilterControls } from './KpiFilterControls'
+import { DEFAULT_KPI_FILTERS, kpiCoatOptions } from './kpiFilters'
 
 // jsdom gives Recharts no size, and the numbers the chart plots are covered in
 // domain/kpi.test.ts against KPI.xlsx itself. What this file checks is which
@@ -46,10 +51,43 @@ const ENTRIES: KpiEntry[] = [
 // exercised by its own tests further down with an earlier todayKey.
 const TODAY = '2026-09-04'
 
+/**
+ * The dashboard as the screen mounts it: the filter bar the screen owns
+ * (FLT-01), then the chart reading what the bar holds.
+ */
+function Harness({ entries, todayKey }: { entries: KpiEntry[]; todayKey: string }) {
+  const [filters, setFilters] = useState(DEFAULT_KPI_FILTERS)
+  const coats = kpiCoatOptions(
+    entries.map((e) => ({ deckId: e.deckId, workName: e.plan.workName, stageName: e.plan.stageName })),
+    filters.deckId,
+  )
+  return (
+    <>
+      <FilterBar>
+        <KpiFilterControls decks={DECKS} coats={coats} value={filters} onChange={setFilters} />
+      </FilterBar>
+      <KpiDashboard entries={entries} decks={DECKS} todayKey={todayKey} filters={filters} />
+    </>
+  )
+}
+
 const renderDash = (entries = ENTRIES, todayKey = TODAY) =>
-  render(<KpiDashboard entries={entries} decks={DECKS} todayKey={todayKey} />)
+  render(<Harness entries={entries} todayKey={todayKey} />)
 
 const chart = () => screen.getByTestId('kpi-chart')
+
+describe('KpiDashboard — empty chart (CPY-01)', () => {
+  it('shows the title alone by default', () => {
+    render(<KpiDashboard entries={[]} decks={DECKS} todayKey={TODAY} filters={DEFAULT_KPI_FILTERS} />)
+    expect(screen.getByText('Chưa có kế hoạch KPI nào trong phạm vi này')).toBeInTheDocument()
+    expect(screen.queryByText(/Biểu đồ vẽ theo/)).toBeNull()
+  })
+
+  it('adds the hint it is given', () => {
+    render(<KpiDashboard entries={[]} decks={DECKS} todayKey={TODAY} filters={DEFAULT_KPI_FILTERS} emptyDescription="Gợi ý thử" />)
+    expect(screen.getByText('Gợi ý thử')).toBeInTheDocument()
+  })
+})
 
 /**
  * antd Select: open it by its combobox role, then pick the option by title.
@@ -120,7 +158,7 @@ describe('KpiDashboard', () => {
 
   it('totals the planned and the actual area in the card header', () => {
     renderDash()
-    expect(screen.getByText(/kế hoạch 600,00 m² · thực hiện 100,00 m²/)).toBeInTheDocument()
+    expect(keyFactTexts().slice(1)).toEqual(['kế hoạch 600,00 m²', 'thực hiện 100,00 m²'])
   })
 
   it('labels a coat with its work when more than one work is in view', async () => {
@@ -140,34 +178,27 @@ describe('KpiDashboard', () => {
   })
 
   // ---------------------------------------------------------------------
-  // RV6-08 — the chart title under the legend
+  // RV6-08, withdrawn by R5-C4 — no caption under the chart
   // ---------------------------------------------------------------------
 
-  describe('the chart title (RV6-08)', () => {
-    const title = () => screen.getByTestId('kpi-chart-title')
+  describe('no caption under the chart (R5-C4)', () => {
+    // The filter bar above already says which deck and which coat the chart
+    // is scoped to; a caption repeating it is a second copy to read.
+    it('prints no "Tất cả sàn" under the chart with every deck in view', () => {
+      renderDash()
+      expect(chart()).toBeInTheDocument()
+      expect(screen.queryByTestId('kpi-chart-title')).toBeNull()
+      expect(screen.queryByText(/^Tất cả sàn/, { selector: 'p' })).toBeNull()
+    })
 
-    it('reads the deck name and the coat label when both are chosen', async () => {
+    it('prints no deck name or coat label under it when one of each is chosen', async () => {
       renderDash()
       await pick('Sàn', 'Sàn A')
       await pick('Công đoạn', 'Công đoạn 1')
-      await waitFor(() => expect(title()).toHaveTextContent('Sàn A — Công đoạn 1'))
-    })
-
-    it('reads only the deck name when no coat is chosen', async () => {
-      renderDash()
-      await pick('Sàn', 'Sàn A')
-      expect(title()).toHaveTextContent('Sàn A')
-    })
-
-    it('reads "Tất cả sàn" plus the coat label when every deck is in view', async () => {
-      renderDash()
-      await pick('Công đoạn', 'Công đoạn 2')
-      await waitFor(() => expect(title()).toHaveTextContent('Tất cả sàn — Công đoạn 2'))
-    })
-
-    it('reads plain "Tất cả sàn" with nothing chosen', () => {
-      renderDash()
-      expect(title()).toHaveTextContent('Tất cả sàn')
+      await waitFor(() => expect(chart()).toHaveAttribute('data-colors', '#123abc/null'))
+      expect(screen.queryByTestId('kpi-chart-title')).toBeNull()
+      expect(screen.queryByText(/Sàn A — Công đoạn 1/)).toBeNull()
+      expect(screen.queryByText('Sàn A', { selector: 'p' })).toBeNull()
     })
   })
 
@@ -211,14 +242,14 @@ describe('KpiDashboard', () => {
     // 2026-09-04 day is null, and the header total must not read it as 0 lost
     // out of a real number either -- it is simply not summed.
     renderDash(ENTRIES, '2026-09-03')
-    expect(screen.getByText(/kế hoạch 600,00 m² · thực hiện 100,00 m²/)).toBeInTheDocument()
+    expect(keyFactTexts().slice(1)).toEqual(['kế hoạch 600,00 m²', 'thực hiện 100,00 m²'])
   })
 })
 
 describe('KpiDashboard: the work\'s unit (RV6-35)', () => {
   it('sums and charts in the one unit the scoped coats share', () => {
     renderDash(ENTRIES.map((e) => ({ ...e, unit: 'tấn' })))
-    expect(screen.getByText(/kế hoạch 600,00 tấn · thực hiện 100,00 tấn/)).toBeInTheDocument()
+    expect(keyFactTexts().slice(1)).toEqual(['kế hoạch 600,00 tấn', 'thực hiện 100,00 tấn'])
     expect(chart()).toHaveAttribute('data-unit', 'tấn')
   })
 
@@ -231,14 +262,25 @@ describe('KpiDashboard: the work\'s unit (RV6-35)', () => {
 describe('KpiDashboard: coats of different units under Tất cả công đoạn (RV6-36)', () => {
   it('refuses to sum across units and charts under Số lượng', async () => {
     renderDash([{ ...ENTRIES[0], unit: 'm²' }, { ...ENTRIES[1], unit: 'tấn' }])
-    const header = screen.getByText(/2 công đoạn · kế hoạch — · thực hiện —/)
-    expect(header).toBeInTheDocument()
+    expect(keyFactTexts()).toEqual(['2 công đoạn', 'kế hoạch -', 'thực hiện -'])
     expect(chart()).toHaveAttribute('data-unit', 'Số lượng')
-    await userEvent.hover(header)
+    // Why there is no sum: a (?) on the facts, not a sentence (HLT-01).
+    await userEvent.hover(screen.getByRole('img', { name: 'Các sàn dùng đơn vị khác nhau, không cộng được' }))
     expect(await screen.findByRole('tooltip')).toHaveTextContent('Các sàn dùng đơn vị khác nhau, không cộng được')
     // Narrowed to one coat, the sum and the unit are that coat's again.
     await pick('Công đoạn', 'Công đoạn 2')
-    await waitFor(() => expect(screen.getByText(/kế hoạch 400,00 tấn · thực hiện 0,00 tấn/)).toBeInTheDocument())
+    await waitFor(() => expect(keyFactTexts()).toEqual(['1 công đoạn', 'kế hoạch 400,00 tấn', 'thực hiện 0,00 tấn']))
     expect(chart()).toHaveAttribute('data-unit', 'tấn')
+  })
+
+  it('filters the Sàn options by what the user types, tones ignored (UI-02)', async () => {
+    renderDash()
+    await userEvent.click(combobox('Sàn'))
+    expect(await screen.findByTitle('Sàn A')).toBeInTheDocument()
+    await userEvent.type(combobox('Sàn'), 'san b')
+    expect(await screen.findByTitle('Sàn B')).toBeInTheDocument()
+    // The option list only; the closed picker still shows its own value.
+    const shown = () => Array.from(document.querySelectorAll('.ant-select-item-option')).map((el) => el.getAttribute('title'))
+    expect(shown()).toEqual(['Sàn B'])
   })
 })

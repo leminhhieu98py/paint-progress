@@ -1,10 +1,9 @@
-import { ExpandOutlined, MinusOutlined, PlusOutlined } from '@ant-design/icons'
 import {
-  Alert, App, Button, DatePicker, Form, Input, Modal, Segmented,
+  Alert, App, Badge, Button, DatePicker, Form, Input, Modal, Segmented,
   Select, Space, Spin, Switch, Table, Tooltip, Typography,
 } from 'antd'
 import dayjs from 'dayjs'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { DrawingCanvas } from '../../canvas/DrawingCanvas'
 import { cellStagesAsOf, HISTORY_FROM_LABEL } from '../../domain/asOf'
 import { effortDayKey } from '../../domain/effort'
@@ -16,10 +15,10 @@ import { zoneLabelBoxes, type ZoneLabel } from '../../domain/plan'
 import { buildStageSlices } from '../../domain/pieSlices'
 import { formatPlanRange } from '../../domain/plan'
 import { computeDeckProgress, summariseDeck } from '../../domain/progress'
-import type { DeckEvent, Stage, WorkModel, Zone } from '../../domain/types'
+import type { DeckEvent, Stage, StageProgress, WorkModel, Zone } from '../../domain/types'
 import { getDrawingUrl } from '../../lib/decksApi'
 import { DEFAULT_UNIT } from '../../domain/unit'
-import { formatAreaM2, formatPercent, formatWeight } from '../../lib/format'
+import { MISSING, formatAreaM2, formatPercent, formatWeight } from '../../lib/format'
 import { subscribeDeckStates } from '../../lib/gsApi'
 import {
   listCellNotes, listDeckEvents, loadDeckWorks, setReportNote,
@@ -28,16 +27,26 @@ import {
 import {
   createZone, deleteZone, listDeckZones, setZoneActual, setZoneCells, updateZone,
 } from '../../lib/zonesApi'
+import { swatchStyle, useControlHeight } from '../../components/swatch'
 import { ConsequenceModal } from '../../components/ConsequenceModal'
-import { Donut } from '../../components/Donut'
+import { Donut, type DonutSlice } from '../../components/Donut'
+import { DECK_RING, ringFigureStep } from '../../components/ringFit'
+import { legendRowProps } from '../../components/ringHover'
 import { EmptyState } from '../../components/EmptyState'
+import { IconAction } from '../../components/IconAction'
+import { ACTION_ICONS, type ActionVerb } from '../../components/actionIcons'
+import { FilterBar } from '../../components/FilterBar'
+import { KeyFacts } from '../../components/KeyFacts'
+import { InfoTip } from '../../components/InfoTip'
 import { NoteThread } from '../../components/NoteThread'
 import { ProgressBar } from '../../components/ProgressBar'
 import { RulesDisclosure } from '../../components/RulesDisclosure'
 import { SectionCard } from '../../components/SectionCard'
 import { StageSpecTable } from '../../components/StageSpecTable'
 import { modalProps } from '../../components/modalChrome'
-import { palette, shadowCard } from '../../theme'
+import { searchSelectProps } from '../../components/searchSelect'
+import { tablePagination } from '../../components/tablePagination'
+import { palette, shadowCard, space, type } from '../../theme'
 import type { Cell } from '../../domain/types'
 
 
@@ -58,10 +67,13 @@ function ZoneColorSwatches({
   value: string
   onChange: (color: string) => void
 }) {
+  // A dialog line, not a table cell: the default control height (CLR-01).
+  const diameter = useControlHeight()
   return (
     <div data-testid="zone-color" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-      <span style={{ fontSize: 12, fontWeight: 600, color: palette.textSecondary }}>Màu zone</span>
-      <div role="radiogroup" aria-label="Màu zone" style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+      <span style={{ ...type.label, color: palette.textSecondary }}>Màu zone</span>
+      {/* 10, not 8: the selected ring and the focus ring reach 4 px past a circle (R2). */}
+      <div role="radiogroup" aria-label="Màu zone" style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
         {colors.map((c) => {
           const selected = c === value.toLowerCase()
           return (
@@ -73,15 +85,17 @@ function ZoneColorSwatches({
               aria-label={`Màu ${c}`}
               data-color={c}
               onClick={() => onChange(c)}
+              className="pp-swatch"
               style={{
-                width: 28,
-                height: 28,
-                borderRadius: 8,
+                ...swatchStyle(diameter),
                 background: c,
                 cursor: 'pointer',
-                border: selected ? `2px solid ${palette.text}` : '2px solid transparent',
-                boxShadow: 'inset 0 0 0 1px #16202B47',
-                padding: 0,
+                // The pick is a ring apart from the colour, not an outline
+                // drawn on it (CLR-02): a gap in the dialog's own white, then
+                // the ring.
+                boxShadow: selected
+                  ? `0 0 0 2px ${palette.bgContainer}, 0 0 0 4px ${palette.text}`
+                  : undefined,
               }}
             />
           )
@@ -133,6 +147,16 @@ const REFRESH_DEBOUNCE_MS = 400
  * and never neither -- and the select needs no special-casing to hold it.
  */
 const ALL_STAGES = '__all__'
+
+/** The lens bars' draft (FLT-08): what is picked and not yet applied, for one deck. */
+type LensDraft = {
+  deckId: string
+  workId?: string
+  viewA?: string | null
+  viewB?: string | null
+  dateA?: dayjs.Dayjs | null
+  dateB?: dayjs.Dayjs | null
+}
 
 /**
  * The day one layer is pinned to, if any (RV6-14..16).
@@ -220,23 +244,70 @@ const EMPTY_LENS: Lens = {
   labels: [], zones: [], zoneColors: {}, chips: [], reachedAreaM2: 0,
 }
 
+/** Why the zone dialog's add and drop buttons are disabled. */
+const ZONE_CELLS_HINT = 'Chọn ô trên bản vẽ rồi quay lại đây để thêm hoặc bỏ.'
+
+/** On screen for assistive technology alone. */
+const VISUALLY_HIDDEN = {
+  position: 'absolute', width: 1, height: 1, padding: 0, margin: -1, border: 0,
+  overflow: 'hidden', clip: 'rect(0, 0, 0, 0)', whiteSpace: 'nowrap',
+} as const
+
+/**
+ * A button whose tooltip says why it is disabled, reachable without a
+ * pointer (CPY-02, Q2). A disabled button takes no focus, so while it is
+ * disabled the wrapper the tooltip anchors on joins the tab order as a group
+ * named by the button, and the tip opens on focus as on hover; the button
+ * itself is described by the same words for a screen reader. No sentence on
+ * screen. `tip` is the tooltip at any time; it is the reason while disabled.
+ */
+function HintedButton({
+  label, tip, disabled, onClick, verb,
+}: {
+  label: string
+  tip: string | undefined
+  disabled: boolean
+  onClick: () => void
+  /** An icon action (ACT-01): the icon alone, named by `label`, its tooltip led by it. */
+  verb?: ActionVerb
+}) {
+  const hintId = useId()
+  const hinted = disabled && tip !== undefined
+  const Icon = verb ? ACTION_ICONS[verb] : null
+  const title = Icon && tip !== undefined ? `${label} · ${tip}` : tip ?? (Icon ? label : undefined)
+  return (
+    <Tooltip title={title} trigger={['hover', 'focus']}>
+      {/* A span, because antd Tooltip cannot anchor a disabled button. */}
+      <span
+        tabIndex={hinted ? 0 : undefined}
+        role={hinted ? 'group' : undefined}
+        aria-label={hinted ? label : undefined}
+      >
+        <Button
+          icon={Icon ? <Icon aria-hidden /> : undefined}
+          aria-label={Icon ? label : undefined}
+          disabled={disabled}
+          aria-describedby={hinted ? hintId : undefined}
+          onClick={onClick}
+        >
+          {Icon ? null : label}
+        </Button>
+        {hinted && <span id={hintId} style={VISUALLY_HIDDEN}>{tip}</span>}
+      </span>
+    </Tooltip>
+  )
+}
+
+/** What deleting a zone does, as the rule says it; its dialog lists the kept progress as an item. */
+const ZONE_DELETE_EFFECT = 'Xoá zone chỉ xoá kế hoạch và giữ nguyên tiến độ đã ghi trên các ô.'
+
+/**
+ * Helper text, one sentence each, checked against the code (RUL-01). The map
+ * legend (LNS-R1) is not repeated here: the (?) beside each lens title gives it.
+ */
 const PROGRESS_RULES = [
-  {
-    id: 'ZON-R5',
-    text: 'Xoá zone chỉ xoá kế hoạch; tiến độ đã ghi trên các ô vẫn giữ nguyên.',
-  },
-  {
-    id: 'LNS-R1',
-    text: 'Ô đã đạt lớp tô đặc theo màu zone (hoặc màu lớp nếu chưa có zone). Ô có kế hoạch nhưng chưa đạt lớp tô nhạt và viền đứt theo màu zone. Ô chưa đạt và chưa có kế hoạch để trống.',
-  },
-  {
-    id: 'ZON-R6',
-    text: 'Màu zone do quản trị viên chọn và không bao giờ trùng màu một lớp sơn ở A3.2 của cùng công việc, sàn.',
-  },
-  {
-    id: 'LNS-R2',
-    text: 'Panel tự làm mới khi GS ghi tiến độ: số liệu ở đây bám theo dữ liệu thật, không cần tải lại trang.',
-  },
+  { id: 'ZON-R5', text: ZONE_DELETE_EFFECT },
+  { id: 'ZON-R6', text: 'Màu zone chọn trong bảng màu đã bỏ các màu lớp sơn của công việc trên sàn này.' },
 ]
 
 export function DeckProgressPanel({
@@ -265,6 +336,8 @@ export function DeckProgressPanel({
 }) {
   /** The deck with one view per bays work it is part of (0024). */
   const [deckWorks, setDeckWorks] = useState<DeckWorks | null>(null)
+  /** A lens header's floor: Ghi chú (n) is in A's alone, and B's must match it (Q1). */
+  const controlHeight = useControlHeight()
   /** The work the lens, ring, zones and notes are scoped to. */
   const [workId, setWorkId] = useState<string | null>(null)
   const [imageUrl, setImageUrl] = useState<string | null>(null)
@@ -314,6 +387,12 @@ export function DeckProgressPanel({
     a: dayjs.Dayjs | null
     b: dayjs.Dayjs | null
   }>({ deckId, a: null, b: null })
+  /**
+   * The lens bars' draft (FLT-08): a work, a coat or a day picked and not yet
+   * applied by Tìm. A key that is absent is what is applied. The deck id
+   * travels with it as with the dates, so another deck starts with no draft.
+   */
+  const [lensDraftState, setLensDraft] = useState<LensDraft>({ deckId })
   /**
    * The deck's whole history, read once and kept.
    *
@@ -563,6 +642,70 @@ export function DeckProgressPanel({
     if (date) void ensureHistory()
   }
 
+  /*
+    The lens bars (FLT-08). On one layer the bar holds the work (when the deck
+    is in several), the coat and the day; comparing two, each layer's pane
+    holds its own coat and day, and the work, alone in the shared row,
+    applies at once. The coats on offer are the DRAFT work's (FLT-02).
+  */
+  const lensDraft: LensDraft = lensDraftState.deckId === deckId ? lensDraftState : { deckId }
+  const draftWork = (lensDraft.workId !== undefined
+    ? deckWorks?.works.find((w) => w.work.id === lensDraft.workId)
+    : undefined) ?? activeWork
+  const draftStages = draftWork?.stages ?? []
+  const draftView = (side: 'a' | 'b') => {
+    const key = side === 'a' ? 'viewA' : 'viewB'
+    return key in lensDraft ? (lensDraft[key] ?? null) : (side === 'a' ? viewA : viewB)
+  }
+  const draftDate = (side: 'a' | 'b') => {
+    const key = side === 'a' ? 'dateA' : 'dateB'
+    return key in lensDraft ? (lensDraft[key] ?? null) : (side === 'a' ? dateA : dateB)
+  }
+  /** The draft's coat of one layer, resolved as `stageA`/`stageB` are: first on A, last on B. */
+  const draftStageValue = (side: 'a' | 'b') => {
+    const view = draftView(side)
+    if (view === ALL_STAGES) return ALL_STAGES
+    return (draftStages.find((st) => st.id === view) ?? (side === 'a' ? draftStages[0] : draftStages[draftStages.length - 1]))?.id
+  }
+  const editLensDraft = (next: Omit<LensDraft, 'deckId'>) => setLensDraft({ ...lensDraft, ...next, deckId })
+  /** Drops a layer's keys (and, on one layer, the work's) from the draft. */
+  const withoutSide = (side: 'a' | 'b', dropWork: boolean): LensDraft => {
+    const next: LensDraft = { ...lensDraft, deckId }
+    delete next[side === 'a' ? 'viewA' : 'viewB']
+    delete next[side === 'a' ? 'dateA' : 'dateB']
+    if (dropWork) delete next.workId
+    return next
+  }
+  /** Tìm on one layer's bar: its work (on one layer), coat and day. */
+  const applyLens = (side: 'a' | 'b') => {
+    const withWork = !splitView
+    if (withWork && lensDraft.workId !== undefined && lensDraft.workId !== activeWork?.work.id) {
+      setWorkId(lensDraft.workId)
+      // Coat ids belong to a (work, deck): the other layer's names none of this work's.
+      setViewB(null)
+      setViewA(null)
+    }
+    const viewKey = side === 'a' ? 'viewA' : 'viewB'
+    if (viewKey in lensDraft) {
+      if (side === 'a') setViewA(lensDraft[viewKey] ?? null)
+      else setViewB(lensDraft[viewKey] ?? null)
+    }
+    const dateKey = side === 'a' ? 'dateA' : 'dateB'
+    if (dateKey in lensDraft) setLayerDate(side, lensDraft[dateKey] ?? null)
+    setLensDraft(withoutSide(side, withWork))
+  }
+  /** Đặt lại on one layer's bar: the first work (on one layer), the layer's default coat, today; applied at once. */
+  const resetLens = (side: 'a' | 'b') => {
+    if (!splitView && deckWorks && activeWork && activeWork.work.id !== deckWorks.works[0]?.work.id) {
+      setWorkId(null)
+      setViewB(null)
+    }
+    if (side === 'a') setViewA(null)
+    else setViewB(null)
+    setLayerDate(side, null)
+    setLensDraft(withoutSide(side, !splitView))
+  }
+
   /**
    * The deck as it stood at the end of one day, or nothing while that cannot
    * be answered yet -- no date, or the history still in flight.
@@ -757,15 +900,37 @@ export function DeckProgressPanel({
    */
   const ringSlices = useMemo(() => {
     if (!entry) return []
-    return buildStageSlices(entry.deck.totalAreaM2, entry.deck.cells, entry.stages)
+    const total = entry.deck.totalAreaM2
+    /** A coat row's figures, as the row prints them. */
+    const figures = (areaM2: number, ratio: number) =>
+      `${formatAreaM2(areaM2)} / ${formatAreaM2(total)} ${unit} · ${formatPercent(ratio)}`
+    return buildStageSlices(total, entry.deck.cells, entry.stages)
       .filter((sl) => sl.areaM2 > 0)
-      .map((sl) => ({
-        label: sl.label,
-        areaM2: sl.areaM2,
-        value: entry.deck.totalAreaM2 > 0 ? sl.areaM2 / entry.deck.totalAreaM2 : 0,
-        color: sl.color,
-      }))
-  }, [entry])
+      .map((sl) => {
+        const value = total > 0 ? sl.areaM2 / total : 0
+        const row = progress?.stages.find((sp) => sp.stage.id === sl.key)
+        return {
+          key: sl.key,
+          label: sl.label,
+          areaM2: sl.areaM2,
+          value,
+          color: sl.color,
+          /*
+            The slice is the area standing at the coat now; its row beside the
+            ring is cumulative (Feedback Rv3, item 1). The tooltip says both,
+            the row's figures exactly as the row prints them, so hovering a
+            half-ring slice beside a row reading 100% explains itself. Chưa
+            bắt đầu and Chưa chia ô have no row, only their own figure.
+          */
+          detail: row
+            ? [
+                `Đang ở lớp này: ${figures(sl.areaM2, value)}`,
+                `Cộng dồn: ${figures(row.cumulativeAreaM2, row.ratio)}`,
+              ]
+            : figures(sl.areaM2, value),
+        }
+      })
+  }, [entry, progress, unit])
 
   /**
    * Bays carrying a note, by code.
@@ -1080,7 +1245,7 @@ export function DeckProgressPanel({
     }
   }
 
-  const stageName = (id: string) => entry?.stages.find((st: Stage) => st.id === id)?.name ?? '—'
+  const stageName = (id: string) => entry?.stages.find((st: Stage) => st.id === id)?.name ?? MISSING
 
   if (loading) return <Spin style={{ display: 'block', margin: '8vh auto' }} />
 
@@ -1103,57 +1268,70 @@ export function DeckProgressPanel({
    * history has nothing to say about them, and a layer "as of next week"
    * would draw today's deck under tomorrow's date.
    */
+  /** The work the lenses are scoped to, when the deck is in several. */
+  // No visible label (FLT-01, M14): the select names itself by aria-label and
+  // shows its value, like every other bar in the app.
+  const lensWorkSelect = (value: string, onChange: (id: string) => void) => deckWorks && (
+    <Select
+      id="lens-work"
+      // Named by its card, apart from the deck page's other work selects (M7).
+      aria-label="Công việc · Tiến độ theo lớp sơn"
+      {...searchSelectProps}
+      style={{ minWidth: 170 }}
+      value={value}
+      onChange={onChange}
+      options={deckWorks.works.map((w) => ({ value: w.work.id, label: w.work.name }))}
+    />
+  )
+
   const renderLayerControls = (side: 'a' | 'b') => {
     if (!entry) return null
     const isA = side === 'a'
-    const picked = isA ? viewA : viewB
-    const stage = isA ? stageA : stageB
-    const labelStyle = { fontSize: 11, fontWeight: 600, color: palette.textTertiary }
+    // No visible labels (FLT-01, M14): each control names itself by aria-label.
     return (
-      <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-          <label htmlFor={`lens-${side}-stage`} style={labelStyle}>
-            {isA ? (splitView ? 'Lớp bên trái' : 'Lớp sơn đang xem') : 'Lớp bên phải'}
-          </label>
-          {/*
-            `Tất cả công đoạn` first, above the coats (RV6-13): it is the
-            whole deck, and the coats below it are the ways of slicing that.
-            Same list on both layers, so the split view can hold one coat
-            against the whole picture.
-          */}
-          <Select
-            id={`lens-${side}-stage`}
-            style={{ minWidth: 190 }}
-            value={picked === ALL_STAGES ? ALL_STAGES : stage?.id}
-            onChange={isA ? setViewA : setViewB}
-            options={[
-              { value: ALL_STAGES, label: 'Tất cả công đoạn' },
-              ...entry.stages.map((st) => ({ value: st.id, label: st.name })),
-            ]}
-          />
-        </div>
+      <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+        {/*
+          In the split view the pane's subtitle already names the side, and
+          the select picks a coat -- so its name says that, once, rather
+          than repeating "Lớp bên trái" (QA F6).
+        */}
+        {/*
+          `Tất cả công đoạn` first, above the coats (RV6-13): it is the
+          whole deck, and the coats below it are the ways of slicing that.
+          Same list on both layers, so the split view can hold one coat
+          against the whole picture.
+        */}
+        <Select
+          id={`lens-${side}-stage`}
+          aria-label={splitView ? 'Công đoạn' : 'Lớp sơn đang xem'}
+          {...searchSelectProps}
+          style={{ minWidth: 190 }}
+          value={draftStageValue(side)}
+          onChange={(v: string) => editLensDraft(isA ? { viewA: v } : { viewB: v })}
+          options={[
+            { value: ALL_STAGES, label: 'Tất cả công đoạn' },
+            ...draftStages.map((st) => ({ value: st.id, label: st.name })),
+          ]}
+        />
         {/*
           The test id sits on the column, not the picker: antd hands a
           `data-*` prop to the INPUT, and the clear button beside it would
           then be outside the element the id names.
         */}
-        <div
-          data-testid={`lens-${side}-date`}
-          style={{ display: 'flex', flexDirection: 'column', gap: 7 }}
-        >
-          <label htmlFor={`lens-${side}-date-input`} style={labelStyle}>Ngày</label>
+        <div data-testid={`lens-${side}-date`} style={{ display: 'flex' }}>
           <DatePicker
             id={`lens-${side}-date-input`}
+            aria-label="Ngày"
             style={{ width: 150 }}
             format="DD/MM/YYYY"
             allowClear
             placeholder="Hôm nay"
-            value={isA ? dateA : dateB}
+            value={draftDate(side)}
             // "Today" is the Vietnam day (effortDayKey, RV5-20), as on every
             // other figure here -- not the browser's clock, which on a machine
             // west of UTC+7 would still refuse a day the site is already working.
             disabledDate={(d) => d.format('YYYY-MM-DD') > effortDayKey(new Date().toISOString())}
-            onChange={(d) => setLayerDate(side, d)}
+            onChange={(d) => editLensDraft(isA ? { dateA: d } : { dateB: d })}
           />
         </div>
       </div>
@@ -1185,16 +1363,16 @@ export function DeckProgressPanel({
           minWidth: 0,
         }}
       >
-        <div style={{ padding: '13px 14px', display: 'flex', alignItems: 'flex-start', gap: 12 }}>
-          <div style={{ minWidth: 0, flex: 1 }}>
-            <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600, letterSpacing: '-0.015em' }}>
+        <div style={{ padding: `${space.md}px ${space.xl}px`, display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+          {/* At least a control's height on both lenses, so B's drawing
+              starts on the line of A's, whose header also carries the
+              default-height Ghi chú button (Q1). */}
+          <div style={{ minWidth: 0, flex: 1, minHeight: controlHeight }}>
+            <h3 style={{ margin: 0, ...type.cardTitle, letterSpacing: '-0.015em' }}>
               {`Tiến độ · ${lens.title}`}
+              {/* The map legend: needed once, not read every visit (CPY-01). */}
+              <InfoTip text={legend} />
             </h3>
-            <div style={{ fontSize: 12, lineHeight: 1.35, color: palette.textTertiary, marginTop: 4 }}>
-              {splitView
-                ? (side === 'A' ? 'Lớp bên trái' : 'Lớp bên phải · cùng mức zoom để so sánh')
-                : legend}
-            </div>
             {/*
               A layer pinned to a day says so under its title (RV6-16), and
               says how far back the record it was built from goes (RV6-15):
@@ -1206,9 +1384,10 @@ export function DeckProgressPanel({
               rather than letting the date above stand over today's colours.
             */}
             {lens.view.day && (
-              <div style={{ marginTop: 6, fontSize: 12, lineHeight: 1.35 }}>
-                <div style={{ fontWeight: 600, color: palette.textSecondary }}>
+              <div style={{ marginTop: 6, ...type.caption, lineHeight: 1.35 }}>
+                <div style={{ color: palette.textSecondary }}>
                   {`Trạng thái ngày ${lens.view.day}`}
+                  <InfoTip text={HISTORY_FROM_LABEL} />
                 </div>
                 {!lens.view.cells && (
                   <div style={{ color: palette.textTertiary, marginTop: 2 }}>
@@ -1217,7 +1396,6 @@ export function DeckProgressPanel({
                       : 'Chưa đọc được lịch sử — đang hiện trạng thái hôm nay'}
                   </div>
                 )}
-                <div style={{ color: palette.textTertiary, marginTop: 2 }}>{HISTORY_FROM_LABEL}</div>
               </div>
             )}
           </div>
@@ -1228,13 +1406,15 @@ export function DeckProgressPanel({
             lens, so the split view does not grow two of them.
           */}
           {side === 'A' && (
-            <Button
-              size="small"
-              disabled={notedCodes.length === 0}
-              onClick={() => setNotesListOpen(true)}
-            >
-              {`Ghi chú (${notedCodes.length})`}
-            </Button>
+            // An icon action, its count on a badge and in its name (ACT-01).
+            <Badge count={notedCodes.length} size="small" color={palette.accent}>
+              <IconAction
+                verb="notes"
+                label={`Ghi chú (${notedCodes.length})`}
+                disabled={notedCodes.length === 0}
+                onClick={() => setNotesListOpen(true)}
+              />
+            </Badge>
           )}
         </div>
 
@@ -1247,8 +1427,15 @@ export function DeckProgressPanel({
           the shared row, so nothing moves for the view that had no ambiguity.
         */}
         {splitView && (
-          <div style={{ padding: '0 14px 13px' }}>
-            {renderLayerControls(side === 'A' ? 'a' : 'b')}
+          <div style={{ padding: `0 ${space.xl}px ${space.md}px` }}>
+            <FilterBar
+              align="end"
+              label={side === 'A' ? 'Bộ lọc bên trái' : 'Bộ lọc bên phải'}
+              onApply={() => applyLens(side === 'A' ? 'a' : 'b')}
+              onReset={() => resetLens(side === 'A' ? 'a' : 'b')}
+            >
+              {renderLayerControls(side === 'A' ? 'a' : 'b')}
+            </FilterBar>
           </div>
         )}
 
@@ -1321,16 +1508,12 @@ export function DeckProgressPanel({
               >
                 <span
                   aria-hidden
-                  style={{
-                    width: 14,
-                    height: 14,
-                    borderRadius: 4,
-                    background: chip.color,
-                    boxShadow: 'inset 0 0 0 1px #16202B47',
-                  }}
+                  data-testid="lens-chip-marker"
+                  // A circle of the coat's colour, nothing else (CLR-03).
+                  style={{ width: 14, height: 14, borderRadius: '50%', background: chip.color }}
                 />
-                <span style={{ fontSize: 12, fontWeight: 600 }}>{chip.name}</span>
-                <span style={{ fontSize: 12, fontWeight: 600, color: palette.accent }}>
+                <span style={type.micro}>{chip.name}</span>
+                <span style={{ ...type.micro, color: palette.accent }}>
                   {formatPercent(chip.ratio)}
                 </span>
               </span>
@@ -1338,18 +1521,18 @@ export function DeckProgressPanel({
           </div>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 9, padding: '12px 14px 8px' }}>
-          <span style={{ fontSize: 12, fontWeight: 600, color: palette.textTertiary }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 9, padding: `${space.md}px ${space.xl}px ${space.sm}px` }}>
+          <span style={{ ...type.label, color: palette.textTertiary }}>
             {`Tiến độ từng zone · ${lens.title}`}
           </span>
-          <span style={{ marginLeft: 'auto', fontSize: 12, color: palette.textTertiary }}>
+          <span style={{ marginLeft: 'auto', ...type.caption, color: palette.textTertiary }}>
             {`${formatAreaM2(lens.reachedAreaM2)} / ${formatAreaM2(entry.deck.totalAreaM2)} ${unit}`}
           </span>
         </div>
 
         <div style={{ padding: '0 10px 10px', display: 'flex', flexDirection: 'column', gap: 6 }}>
           {lens.zones.length === 0 && (
-            <div style={{ padding: '7px 9px', fontSize: 12, color: palette.textTertiary }}>
+            <div style={{ padding: '7px 9px', ...type.caption, color: palette.textTertiary }}>
               Lớp sơn này chưa có zone nào được lên kế hoạch.
             </div>
           )}
@@ -1360,30 +1543,25 @@ export function DeckProgressPanel({
               <>
                 <span
                   aria-hidden
-                  style={{
-                    width: 15,
-                    height: 15,
-                    borderRadius: 5,
-                    flex: 'none',
-                    background: row.color,
-                    boxShadow: 'inset 0 0 0 1px #16202B47',
-                  }}
+                  data-testid="zone-marker"
+                  // A circle of the zone's colour, nothing else (CLR-03).
+                  style={{ width: 15, height: 15, borderRadius: '50%', flex: 'none', background: row.color }}
                 />
-                <span style={{ fontSize: 12, fontWeight: 600, flex: 'none' }}>{row.zone.name}</span>
-                <span style={{ fontSize: 11, color: palette.textTertiary, flex: 'none' }}>
+                <span style={{ ...type.body, flex: 'none' }}>{row.zone.name}</span>
+                <span style={{ ...type.caption, color: palette.textTertiary, flex: 'none' }}>
                   {`${formatAreaM2(row.doneM2)} / ${formatAreaM2(row.totalM2)} ${unit}`}
                 </span>
                 <span style={{ flex: 1, minWidth: 24 }}>
                   <ProgressBar ratio={zonePct} color={row.color} height={5} />
                 </span>
                 <span
-                  style={{ fontSize: 12, fontWeight: 600, flex: 'none', minWidth: 44, textAlign: 'right' }}
+                  style={{ ...type.body, flex: 'none', minWidth: 44, textAlign: 'right' }}
                 >
                   {formatPercent(zonePct)}
                 </span>
                 <span
                   style={{
-                    fontSize: 11,
+                    ...type.caption,
                     color: planned ? palette.textTertiary : palette.accent,
                     minWidth: 116,
                     textAlign: 'right',
@@ -1429,15 +1607,19 @@ export function DeckProgressPanel({
     )
   }
 
-  const summary = progress
-    ? `${formatPercent(progress.progress)} · ${zones.length} zone`
+  const facts = progress
+    ? [{ value: formatPercent(progress.progress) }, { value: zones.length, label: 'zone' }]
     : undefined
 
   return (
+    <>
+    {/* Three cards, not one: the drawing panel, then the deck across its works
+        and per coat as A3.5 and A3.6 (UX-03). Kept at this indentation so the
+        panel's 700 lines did not all move for a wrapper. */}
     <SectionCard
       code="A3.4"
       title="Tiến độ theo lớp sơn"
-      summary={summary}
+      facts={facts}
       collapsible
       bodyPadding={0}
       footer={<RulesDisclosure rules={PROGRESS_RULES} />}
@@ -1458,58 +1640,39 @@ export function DeckProgressPanel({
                 checked={showPlan}
                 onChange={setShowPlan}
               />
-              <span style={{ fontSize: 12, fontWeight: 600, color: palette.textSecondary }}>
+              <span style={{ ...type.body, color: palette.textSecondary }}>
                 Hiện kế hoạch
               </span>
             </Space>
             <Segmented
-              size="small"
               value={splitView ? 'split' : 'single'}
-              onChange={(v) => setSplitView(v === 'split')}
+              onChange={(v) => {
+                setSplitView(v === 'split')
+                // The bars change shape with the view; what was drafted goes.
+                setLensDraft({ deckId })
+              }}
               options={[
                 { value: 'single', label: 'Một lớp' },
                 { value: 'split', label: 'So sánh hai lớp' },
               ]}
             />
-            <Space
-              size={4}
-              style={{
-                background: palette.bgSubtle,
-                border: `1px solid ${palette.borderSplit}`,
-                borderRadius: 10,
-                padding: 4,
-              }}
-            >
-              <Button
-                size="small"
-                aria-label="Thu nhỏ"
-                icon={<MinusOutlined aria-hidden />}
-                onClick={() => setZoom((z) => Math.max(1, z - 0.5))}
-              />
+            {/* The zoom buttons at the theme's one height, the Segmented's
+                beside them (CTL-02): no frame to pad small buttons up to it. */}
+            <Space size={4} data-testid="zoom-group">
+              <IconAction verb="zoomOut" label="Thu nhỏ" onClick={() => setZoom((z) => Math.max(1, z - 0.5))} />
               <span
                 style={{
                   display: 'inline-flex',
                   justifyContent: 'center',
                   minWidth: 50,
-                  fontSize: 12,
-                  fontWeight: 600,
+                  ...type.body,
                   color: palette.textSecondary,
                 }}
               >
                 {`${Math.round(zoom * 100)}%`}
               </span>
-              <Button
-                size="small"
-                aria-label="Phóng to"
-                icon={<PlusOutlined aria-hidden />}
-                onClick={() => setZoom((z) => Math.min(4, z + 0.5))}
-              />
-              <Button
-                size="small"
-                aria-label="Vừa khung"
-                icon={<ExpandOutlined aria-hidden />}
-                onClick={() => setZoom(1)}
-              />
+              <IconAction verb="zoomIn" label="Phóng to" onClick={() => setZoom((z) => Math.min(4, z + 0.5))} />
+              <IconAction verb="fit" label="Vừa khung" onClick={() => setZoom(1)} />
             </Space>
           </Space>
         ) : undefined
@@ -1518,7 +1681,7 @@ export function DeckProgressPanel({
       {loading && <Spin style={{ display: 'block', margin: '8vh auto' }} />}
 
       {!loading && (
-        <div style={{ padding: '16px 20px 18px' }}>
+        <div style={{ padding: `${space.lg}px ${space.xl}px ${space.xl}px` }}>
           {error && (
             <Alert
               style={{ marginBottom: 14 }}
@@ -1545,47 +1708,46 @@ export function DeckProgressPanel({
           {deckWorks && deckWorks.works.length === 0 && entry?.imagePath && (
             <EmptyState
               title="Sàn này chưa thuộc công việc nào"
-              description="Tiến độ được ghi theo từng công việc. Gán sàn vào một công việc ở mục Công việc, rồi cấu hình lớp sơn cho nó."
+              description="Gán sàn vào một công việc ở mục Công việc, rồi cấu hình lớp sơn cho nó."
             />
           )}
 
           {entry && entry.imagePath && imageUrl && activeWork && (
             <>
               <div style={{ display: 'flex', gap: 14, alignItems: 'flex-end', marginBottom: 16 }}>
-                {deckWorks && deckWorks.works.length > 1 ? (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-                    <label
-                      htmlFor="lens-work"
-                      style={{ fontSize: 11, fontWeight: 600, color: palette.textTertiary }}
-                    >
-                      Công việc
-                    </label>
-                    <Select
-                      id="lens-work"
-                      style={{ minWidth: 170 }}
-                      value={activeWork.work.id}
-                      onChange={(id) => {
-                        setWorkId(id)
-                        // Coat ids belong to a (work, deck); the last work's
-                        // selection would name a coat this one does not have.
-                        setViewA(null)
-                        setViewB(null)
-                      }}
-                      options={deckWorks.works.map((w) => ({ value: w.work.id, label: w.work.name }))}
-                    />
-                  </div>
-                ) : (
-                  <span style={{ fontSize: 12, color: palette.textTertiary, alignSelf: 'center' }}>
+                {!(deckWorks && deckWorks.works.length > 1) && (
+                  <span style={{ ...type.caption, color: palette.textTertiary, alignSelf: 'center' }}>
                     {`Công việc: ${activeWork.work.name}`}
                   </span>
                 )}
                 {/*
-                  On a single layer the pair lives here, in the row it always
-                  did. Comparing two, each layer's pair moves into its own pane
-                  above its drawing (RV6-17), and this row keeps only what is
-                  common to both.
+                  On a single layer the work and the layer's pair are one bar
+                  here, in the row they always were, a draft until Tìm
+                  (FLT-08). Comparing two, each layer's pair moves into its own
+                  pane above its drawing (RV6-17), and this row keeps only what
+                  is common to both: the work, alone, so it applies at once.
                 */}
-                {!splitView && renderLayerControls('a')}
+                {splitView ? (
+                  deckWorks && deckWorks.works.length > 1 && lensWorkSelect(activeWork.work.id, (id) => {
+                    setWorkId(id)
+                    // Coat ids belong to a (work, deck); the last work's
+                    // selection would name a coat this one does not have.
+                    setViewA(null)
+                    setViewB(null)
+                    setLensDraft({ deckId })
+                  })
+                ) : (
+                  <div style={{ flex: '1 1 auto', minWidth: 0 }}>
+                    <FilterBar onApply={() => applyLens('a')} onReset={() => resetLens('a')}>
+                      {deckWorks && deckWorks.works.length > 1 && lensWorkSelect(
+                        draftWork?.work.id ?? activeWork.work.id,
+                        // A new work's coats start at their defaults, as on Tìm.
+                        (id) => editLensDraft({ workId: id, viewA: null, viewB: null }),
+                      )}
+                      {renderLayerControls('a')}
+                    </FilterBar>
+                  </div>
+                )}
                 {/*
                   Always on screen in Sửa, disabled rather than hidden. Hiding
                   it until bays are picked takes away the only thing on the
@@ -1595,7 +1757,7 @@ export function DeckProgressPanel({
                 {editable && (
                   <Space style={{ marginLeft: 'auto' }}>
                     {selectedCodes.length > 0 && (
-                      <Button onClick={() => setSelectedCodes([])}>Bỏ chọn</Button>
+                      <IconAction verb="deselect" label="Bỏ chọn" onClick={() => setSelectedCodes([])} />
                     )}
                     {/*
                       A zone row IS one stage_id, so there is no coat to write
@@ -1603,40 +1765,29 @@ export function DeckProgressPanel({
                       Disabled with the reason on it rather than hidden, for
                       the same reason the empty-selection state is.
                     */}
-                    <Tooltip
-                      title={
-                        viewA === ALL_STAGES
-                          ? 'Chọn một công đoạn để tạo zone'
-                          : selectedCodes.length > 0
-                            ? 'Gộp các ô đang chọn thành một zone'
-                            : 'Chọn ô trên bản vẽ trước — bấm từng ô, hoặc giữ Shift rồi kéo'
-                      }
-                    >
-                      {/* A span, because antd Tooltip cannot anchor a disabled button. */}
-                      <span>
-                        <Button
-                          type="primary"
-                          icon={<PlusOutlined aria-hidden />}
-                          disabled={selectedCodes.length === 0 || viewA === ALL_STAGES}
-                          onClick={() => {
-                            setWindows({})
-                            form.resetFields()
-                            setZoneFormOpen(true)
-                          }}
-                        >
-                          {`Gộp thành zone (${selectedCodes.length})`}
-                        </Button>
-                      </span>
-                    </Tooltip>
+                    {/* An icon action, its count on a badge and in its name, as Ghi chú (ACT-01). */}
+                    <Badge count={selectedCodes.length} size="small" color={palette.accent}>
+                      <HintedButton
+                        verb="mergeZone"
+                        label={`Gộp thành zone (${selectedCodes.length})`}
+                        tip={
+                          viewA === ALL_STAGES
+                            ? 'Chọn một công đoạn để tạo zone'
+                            : selectedCodes.length > 0
+                              ? 'Gộp các ô đang chọn thành một zone'
+                              : 'Chọn ô trên bản vẽ trước — bấm từng ô, hoặc giữ Shift rồi kéo'
+                        }
+                        disabled={selectedCodes.length === 0 || viewA === ALL_STAGES}
+                        onClick={() => {
+                          setWindows({})
+                          form.resetFields()
+                          setZoneFormOpen(true)
+                        }}
+                      />
+                    </Badge>
                   </Space>
                 )}
               </div>
-
-              {editable && (
-                <div style={{ fontSize: 12, color: palette.textTertiary, marginBottom: 12 }}>
-                  Giữ Shift rồi kéo trên bản vẽ để quét chọn nhiều ô, hoặc bấm từng ô.
-                </div>
-              )}
 
               <div
                 style={{
@@ -1662,109 +1813,24 @@ export function DeckProgressPanel({
                         overflow: 'hidden',
                       }}
                     >
-                      <div style={{ padding: '13px 15px 12px', borderBottom: `1px solid ${palette.borderSplit}` }}>
-                        <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600, letterSpacing: '-0.015em' }}>
+                      <div style={{ padding: `${space.md}px ${space.xl}px`, borderBottom: `1px solid ${palette.borderSplit}` }}>
+                        <h3 style={{ margin: 0, ...type.cardTitle, letterSpacing: '-0.015em' }}>
                           Tiến độ theo công đoạn · cộng dồn
+                          <InfoTip text="Ô đã ở lớp sau được tính cho cả các lớp trước." />
                         </h3>
-                        <div style={{ fontSize: 12, lineHeight: 1.4, color: palette.textTertiary, marginTop: 4 }}>
-                          Ô đã ở lớp sau thì đã qua các lớp trước, nên tính cho cả các lớp đó
-                        </div>
                       </div>
-                      <div style={{ padding: '18px 15px', display: 'flex', alignItems: 'center', gap: 18 }}>
-                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 7 }}>
-                        <Donut slices={ringSlices} size={168} thickness={30}>
-                          <span style={{ fontSize: 10, fontWeight: 600, color: palette.textTertiary }}>
-                            Tiến độ sàn
-                          </span>
-                          <span
-                            style={{
-                              fontSize: 24,
-                              fontWeight: 700,
-                              letterSpacing: '-0.03em',
-                              marginTop: 5,
-                            }}
-                          >
-                            {formatPercent(progress?.progress ?? 0)}
-                          </span>
-                          <span style={{ fontSize: 10, color: palette.textTertiary, marginTop: 3 }}>
-                            {`${formatAreaM2(entry.deck.totalAreaM2)} ${unit}`}
-                          </span>
-                        </Donut>
-                        <span
-                          style={{
-                            fontSize: 10,
-                            lineHeight: 1.35,
-                            color: palette.textTertiary,
-                            textAlign: 'center',
-                            maxWidth: 168,
-                          }}
-                        >
-                          Vòng tròn: diện tích đang dừng ở mỗi lớp, không cộng dồn
-                        </span>
-                        </div>
-                        {/*
-                          CUMULATIVE, and the ring beside it is not (Feedback
-                          Rv3, item 1). Linh read "Blast + Coat 1 · 10,05%" off
-                          this list on a deck where 90,54% of the area had been
-                          through Blast + Coat 1, because the list was the
-                          ring's own non-cumulative slices. A bay at Coat 3 has
-                          been through Coat 2, and the customer is billed on
-                          the cumulative figure -- so that is what the rows say,
-                          exactly as the GS screen's rollup card says it. The
-                          ring keeps its own question and now carries a caption
-                          saying which one it answers.
-                        */}
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0 }}>
-                          {(progress?.stages ?? []).map((sp) => (
-                            <div
-                              key={sp.stage.id}
-                              style={{ display: 'flex', alignItems: 'center', gap: 9, minWidth: 0 }}
-                            >
-                              <span
-                                aria-hidden
-                                style={{
-                                  width: 15,
-                                  height: 15,
-                                  borderRadius: 5,
-                                  flex: 'none',
-                                  background: sp.stage.color,
-                                  boxShadow: 'inset 0 0 0 1px #16202B47',
-                                }}
-                              />
-                              {/*
-                                Two lines, not three columns: the rail is ~300px
-                                and "Blast + Coat 1" beside an area and a percent
-                                wrapped word by word over the numbers (seen in
-                                Chrome). Name on top, figures beneath it.
-                              */}
-                              <div style={{ minWidth: 0, flex: 1 }}>
-                                <div style={{ fontSize: 12, fontWeight: 600, lineHeight: 1.3 }}>
-                                  {sp.stage.name}
-                                </div>
-                                <div
-                                  style={{
-                                    display: 'flex',
-                                    gap: 6,
-                                    fontSize: 12,
-                                    color: palette.textTertiary,
-                                    lineHeight: 1.3,
-                                    marginTop: 1,
-                                  }}
-                                >
-                                  <span style={{ color: palette.textSecondary, whiteSpace: 'nowrap' }}>
-                                    {`${formatAreaM2(sp.cumulativeAreaM2)} / ${formatAreaM2(entry.deck.totalAreaM2)} ${unit}`}
-                                  </span>
-                                  <span aria-hidden>·</span>
-                                  <span>{formatPercent(sp.ratio)}</span>
-                                </div>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
+                      <StageRing
+                        slices={ringSlices}
+                        stages={progress?.stages ?? []}
+                        progress={progress?.progress ?? 0}
+                        totalAreaM2={entry.deck.totalAreaM2}
+                        unit={unit}
+                        workName={activeWork.work.name}
+                      />
                       <div
+                        data-testid="ring-footer"
                         style={{
-                          padding: '12px 15px',
+                          padding: `${space.md}px ${space.xl}px`,
                           borderTop: `1px solid ${palette.borderSplit}`,
                           background: palette.bgSubtle,
                           display: 'flex',
@@ -1772,15 +1838,34 @@ export function DeckProgressPanel({
                           gap: 9,
                         }}
                       >
-                        <span style={{ fontSize: 12, fontWeight: 500, color: palette.textSecondary }}>
-                          Tiến độ sàn
+                        {/* The active work's figure: "Tiến độ sàn" is the header's, over every work (I4).
+                            A long work name is cut, with a title; the area and its unit, and the
+                            percent, never wrap apart (R4). */}
+                        <span
+                          title={`Tiến độ · ${activeWork.work.name}`}
+                          style={{
+                            ...type.label,
+                            color: palette.textSecondary,
+                            minWidth: 0,
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          {`Tiến độ · ${activeWork.work.name}`}
                         </span>
                         <span
-                          style={{ marginLeft: 'auto', fontSize: 11, color: palette.textTertiary }}
+                          style={{
+                            marginLeft: 'auto',
+                            ...type.caption,
+                            color: palette.textTertiary,
+                            whiteSpace: 'nowrap',
+                            flex: 'none',
+                          }}
                         >
                           {`${formatAreaM2(entry.deck.totalAreaM2)} ${unit}`}
                         </span>
-                        <span style={{ fontSize: 18, fontWeight: 700, letterSpacing: '-0.025em' }}>
+                        <span style={{ ...type.displaySm, letterSpacing: '-0.025em', whiteSpace: 'nowrap', flex: 'none' }}>
                           {formatPercent(progress?.progress ?? 0)}
                         </span>
                       </div>
@@ -1788,56 +1873,6 @@ export function DeckProgressPanel({
                   )}
               </div>
 
-              {deckSummary && (
-                <div
-                  data-testid="deck-works-table"
-                  style={{
-                    marginTop: 18,
-                    border: `1px solid ${palette.borderCard}`,
-                    borderRadius: 14,
-                    background: palette.bgContainer,
-                    boxShadow: shadowCard,
-                    overflow: 'hidden',
-                  }}
-                >
-                  <div style={{ padding: '13px 15px 12px', borderBottom: `1px solid ${palette.borderSplit}` }}>
-                    <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600, letterSpacing: '-0.015em' }}>
-                      Sàn này theo từng công việc
-                    </h3>
-                    <div style={{ fontSize: 12, lineHeight: 1.4, color: palette.textTertiary, marginTop: 4 }}>
-                      Trọng số sàn trong công việc · tiến độ của sàn ở công việc đó
-                    </div>
-                  </div>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-                    <tbody>
-                      {deckSummary.perWork.map((row) => (
-                        <tr key={row.work.id} style={{ borderBottom: `1px solid ${palette.borderSplit}` }}>
-                          <td style={{ padding: '9px 15px', fontWeight: 600 }}>{row.work.name}</td>
-                          <td style={{ padding: '9px 8px', color: palette.textTertiary, textAlign: 'right' }}>
-                            {formatWeight(row.weight)}
-                          </td>
-                          <td style={{ padding: '9px 15px', textAlign: 'right', fontWeight: 600, minWidth: 72 }}>
-                            {formatPercent(row.progress)}
-                          </td>
-                        </tr>
-                      ))}
-                      <tr style={{ background: palette.bgSubtle }}>
-                        <td style={{ padding: '10px 15px', fontWeight: 600 }}>Tổng hợp</td>
-                        {/* Σ W·D is a project-level share, not a deck weight; it
-                            belongs on the decks list, not in this column. */}
-                        <td />
-                        <td style={{ padding: '10px 15px', textAlign: 'right', fontWeight: 700 }}>
-                          {formatPercent(deckSummary.progress)}
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              )}
-
-              <div data-testid="deck-spec" style={{ marginTop: 18 }}>
-                <StageSpecTable stages={progress?.stages ?? []} unit={unit} />
-              </div>
             </>
           )}
         </div>
@@ -1915,7 +1950,7 @@ export function DeckProgressPanel({
                   openNote(c.code)
                 }}
               >
-                <span style={{ fontWeight: 600, marginRight: 8 }}>{c.code}</span>
+                <span style={{ ...type.bodyStrong, marginRight: 8 }}>{c.code}</span>
                 <span style={{ color: palette.textSecondary, whiteSpace: 'normal' }}>
                   {(c.note ?? '').trim()}
                 </span>
@@ -1948,7 +1983,7 @@ export function DeckProgressPanel({
       >
         {reportEdit && (
           <>
-            <div style={{ fontSize: 12, color: palette.textTertiary, marginBottom: 10 }}>
+            <div style={{ ...type.caption, color: palette.textTertiary, marginBottom: 10 }}>
               {`Ghi chú gốc của GS · ${reportEdit.stageName ?? 'Trả về chưa bắt đầu'}`}
             </div>
             <Typography.Paragraph
@@ -1962,18 +1997,18 @@ export function DeckProgressPanel({
             >
               {reportEdit.note}
             </Typography.Paragraph>
-            <label htmlFor="report-note" style={{ display: 'block', marginBottom: 6, fontWeight: 600 }}>
-              Bản cho báo cáo
-            </label>
+            {/* The (?) beside the label, outside it: inside, a click would move
+                focus to the field and the tip would join the field's name. */}
+            <div style={{ marginBottom: 6 }}>
+              <label htmlFor="report-note" style={type.label}>Bản cho báo cáo</label>
+              <InfoTip text="Chỉ file Excel in bản này. GS và màn hình này vẫn thấy ghi chú gốc." />
+            </div>
             <Input.TextArea
               id="report-note"
               rows={3}
               value={reportDraft}
               onChange={(e) => setReportDraft(e.target.value)}
             />
-            <Typography.Text type="secondary" style={{ display: 'block', marginTop: 8, fontSize: 12 }}>
-              Chỉ file Excel in bản này. GS và màn hình này vẫn thấy ghi chú gốc. Để trống rồi lưu để in lại bản gốc.
-            </Typography.Text>
           </>
         )}
       </Modal>
@@ -1998,9 +2033,7 @@ export function DeckProgressPanel({
       >
         {datesFor && (
           <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-              {`${stageName(datesFor.stageId)} · ${datesFor.cellIds.length} ô. Để trống nghĩa là chưa lên kế hoạch.`}
-            </Typography.Text>
+            <KeyFacts facts={[{ value: stageName(datesFor.stageId) }, { value: datesFor.cellIds.length, label: 'ô' }]} />
             {/*
               The name, above the dates (RV6-11). Prefilled with the base, not
               the stored string: the coat suffix is `createZone`'s doing and is
@@ -2009,7 +2042,7 @@ export function DeckProgressPanel({
             <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
               <label
                 htmlFor="zone-name"
-                style={{ fontSize: 12, fontWeight: 600, color: palette.textSecondary }}
+                style={{ ...type.label, color: palette.textSecondary }}
               >
                 Tên zone
               </label>
@@ -2022,7 +2055,7 @@ export function DeckProgressPanel({
               />
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-              <span style={{ fontSize: 12, fontWeight: 600, color: palette.textSecondary }}>Thời gian</span>
+              <span style={{ ...type.label, color: palette.textSecondary }}>Thời gian</span>
               {/*
                 One range, not two dates (owner request, 2026-09-05). Either
                 end may be empty -- a zone whose finish has slipped keeps its
@@ -2050,26 +2083,24 @@ export function DeckProgressPanel({
                 selection on the drawing behind this dialog, so the count is
                 named rather than left to be guessed at. */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-              <span style={{ fontSize: 12, fontWeight: 600, color: palette.textSecondary }}>Ô trong zone</span>
+              <span style={{ ...type.label, color: palette.textSecondary }}>Ô trong zone</span>
+              {/* The reason a button is disabled is on the button, as on
+                  Gộp thành zone, and reachable by keyboard on both (CPY-01,
+                  CPY-02). */}
               <Space wrap>
-                <Button
+                <HintedButton
+                  label={`Thêm ${selectedCodes.length} ô đã chọn`}
+                  tip={selectedCodes.length === 0 ? ZONE_CELLS_HINT : undefined}
                   disabled={selectedCodes.length === 0}
                   onClick={() => void changeZoneCells(datesFor, 'add')}
-                >
-                  {`Thêm ${selectedCodes.length} ô đã chọn`}
-                </Button>
-                <Button
+                />
+                <HintedButton
+                  label={`Bỏ ${selectedCodes.length} ô đã chọn`}
+                  tip={selectedCodes.length === 0 ? ZONE_CELLS_HINT : undefined}
                   disabled={selectedCodes.length === 0}
                   onClick={() => void changeZoneCells(datesFor, 'remove')}
-                >
-                  {`Bỏ ${selectedCodes.length} ô đã chọn`}
-                </Button>
+                />
               </Space>
-              {selectedCodes.length === 0 && (
-                <Typography.Text type="secondary" style={{ fontSize: 11 }}>
-                  Chọn ô trên bản vẽ rồi quay lại đây để thêm hoặc bỏ.
-                </Typography.Text>
-              )}
             </div>
             <Space>
               <Button onClick={() => void applyZone(datesFor)}>Ghi thực tế</Button>
@@ -2086,13 +2117,13 @@ export function DeckProgressPanel({
         tone="danger"
         tag="Thao tác phá huỷ"
         title={`Xoá zone ${removingZone?.name ?? ''}?`}
-        description="Kế hoạch của zone này sẽ bị xoá:"
+        description="Kế hoạch của zone này bị xoá:"
         items={
           removingZone
             ? [{ label: removingZone.name, meta: `${removingZone.cellIds.length} ô` }]
             : []
         }
-        consequence="Chỉ kế hoạch bị xoá. Tiến độ GS đã ghi trên các ô vẫn giữ nguyên, và các ô đó quay về trạng thái chưa được lên kế hoạch cho lớp sơn này (ZON-R5)."
+        consequences={['Tiến độ đã ghi trên các ô giữ nguyên']}
         okText="Vẫn xoá"
         onCancel={() => setRemovingZone(null)}
         onOk={() =>
@@ -2130,25 +2161,20 @@ export function DeckProgressPanel({
           onChange={setZoneColor}
         />
 
-        <Typography.Text type="secondary" style={{ display: 'block', marginBottom: 8 }}>
-          Đặt ngày cho từng công đoạn. Công đoạn để trống nghĩa là chưa lên kế hoạch.
-        </Typography.Text>
-
         <div data-testid="stage-windows">
           <Table
-            className="pp-table"
             size="small"
             rowKey="id"
-            pagination={false}
+            pagination={tablePagination(entry?.stages.length ?? 0)}
             dataSource={entry?.stages ?? []}
             columns={[
               { title: 'Công đoạn', dataIndex: 'name', key: 'name' },
               {
                 title: 'Thời gian',
+                align: 'center',
                 key: 'window',
                 render: (_, st: Stage) => (
                   <DatePicker.RangePicker
-                    size="small"
                     format="DD/MM/YYYY"
                     allowEmpty={[true, true]}
                     placeholder={['Bắt đầu', 'Kết thúc']}
@@ -2163,5 +2189,216 @@ export function DeckProgressPanel({
       </Modal>
       )}
     </SectionCard>
+
+    {/*
+      The deck across its works, and per coat: boxes inside A3.4 until UX-03,
+      which made them the only sections of the deck page without a code. As
+      cards of their own the page reads as one ordered list, and each takes
+      the card inset (LAY-01). Same guard as the drawing above -- there is
+      nothing to sum before the deck has a drawing and cells.
+    */}
+    {!loading && entry && entry.imagePath && imageUrl && activeWork && deckSummary && (
+      <SectionCard
+        code="A3.5"
+        title="Sàn này theo từng công việc"
+        bodyPadding={0}
+      >
+        <div data-testid="deck-works-table">
+          <table style={{ width: '100%', borderCollapse: 'collapse', ...type.body }}>
+            {/* Labelled columns: the weight used to sit mid-row with nothing
+                saying what it was. Same header look as the antd tables. */}
+            <thead>
+              <tr style={{ background: palette.bgSubtleAlt, borderBottom: `1px solid ${palette.borderSplit}` }}>
+                <th style={{ padding: `${space.sm}px ${space.md}px ${space.sm}px ${space.xl}px`, textAlign: 'left', ...type.label, color: palette.textTertiary }}>Công việc</th>
+                <th style={{ padding: `${space.sm}px ${space.md}px`, textAlign: 'center', ...type.label, color: palette.textTertiary }}>Trọng số sàn</th>
+                <th style={{ padding: `${space.sm}px ${space.xl}px ${space.sm}px ${space.md}px`, textAlign: 'center', ...type.label, color: palette.textTertiary }}>Tiến độ</th>
+              </tr>
+            </thead>
+            <tbody>
+              {deckSummary.perWork.map((row) => (
+                <tr key={row.work.id} style={{ borderBottom: `1px solid ${palette.borderSplit}` }}>
+                  {/* Edge cells carry the card gutter, as antd's do under `.pp-card`. */}
+                  <td style={{ padding: `${space.sm}px ${space.md}px ${space.sm}px ${space.xl}px` }}>{row.work.name}</td>
+                  <td style={{ padding: `${space.sm}px ${space.md}px`, color: palette.textTertiary, textAlign: 'center' }}>
+                    {formatWeight(row.weight)}
+                  </td>
+                  <td style={{ padding: `${space.sm}px ${space.xl}px ${space.sm}px ${space.md}px`, textAlign: 'center', minWidth: 72 }}>
+                    {formatPercent(row.progress)}
+                  </td>
+                </tr>
+              ))}
+              <tr style={{ background: palette.bgSubtle }}>
+                <td style={{ padding: `${space.sm}px ${space.md}px ${space.sm}px ${space.xl}px`, ...type.bodyStrong }}>Tổng hợp</td>
+                {/* Σ W·D is a project-level share, not a deck weight; it
+                    belongs on the decks list, not in this column. */}
+                <td />
+                <td style={{ padding: `${space.sm}px ${space.xl}px ${space.sm}px ${space.md}px`, textAlign: 'center', ...type.bodyStrong }}>
+                  {formatPercent(deckSummary.progress)}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </SectionCard>
+    )}
+
+    {!loading && entry && entry.imagePath && imageUrl && activeWork && (
+      <SectionCard
+        code="A3.6"
+        title="Diện tích cộng dồn theo công đoạn"
+        bodyPadding={0}
+      >
+        <div data-testid="deck-spec">
+          <StageSpecTable stages={progress?.stages ?? []} unit={unit} />
+        </div>
+      </SectionCard>
+    )}
+    </>
+  )
+}
+
+/** A coat row's first line, the name's and its percent's (RR2-M1): 13 px at about 1,3. */
+const COAT_LINE = 17
+
+/**
+ * The deck's coat ring and its cumulative rows, with the coat under the
+ * pointer or focus (CHT-02). Its own component so that hovering re-renders
+ * the ring and the rows, not the panel and its two Konva canvases (m-4).
+ */
+function StageRing({
+  slices,
+  stages,
+  progress,
+  totalAreaM2,
+  unit,
+  workName,
+}: {
+  slices: DonutSlice[]
+  /** The work the ring is of, named on its centre label (I4). */
+  workName: string
+  /** Cumulative, per coat in seq order: the rows. */
+  stages: StageProgress[]
+  /** The deck figure in the ring's centre. */
+  progress: number
+  totalAreaM2: number
+  unit: string
+}) {
+  const [active, setActive] = useState<string | null>(null)
+  return (
+    // The ring above its rows, the rows the column's full width (RR-I1): in a
+    // 300-352 px column a 168 px ring left the names about 100 px beside it.
+    <div
+      style={{
+        padding: `${space.lg}px ${space.xl}px`,
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        gap: space.lg,
+      }}
+    >
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 7 }}>
+      <Donut
+        label="Diện tích đang dừng ở mỗi lớp"
+        slices={slices}
+        size={168}
+        thickness={30}
+        activeKey={active}
+        onActiveChange={setActive}
+      >
+        {/* One line in the hole; a long work name is cut here and named in full in the footer (I4). */}
+        <span style={{ ...type.micro, color: palette.textTertiary, display: 'flex', alignItems: 'center', maxWidth: 88 }}>
+          <span
+            title={`Tiến độ · ${workName}`}
+            style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+          >
+            {`Tiến độ · ${workName}`}
+          </span>
+          <InfoTip text="Vòng tròn: diện tích đang dừng ở mỗi lớp, không cộng dồn" />
+        </span>
+        {/* The largest step that fits the hole, down to bodyStrong (I-2). */}
+        <span
+          data-testid="ring-figure"
+          style={{
+            ...ringFigureStep(formatPercent(progress), [type.displaySm, type.cardTitle, type.bodyStrong], DECK_RING),
+            letterSpacing: '-0.03em',
+            marginTop: 5,
+          }}
+        >
+          {formatPercent(progress)}
+        </span>
+        <span style={{ ...type.caption, color: palette.textTertiary, marginTop: 3 }}>
+          {`${formatAreaM2(totalAreaM2)} ${unit}`}
+        </span>
+      </Donut>
+      </div>
+      {/*
+        CUMULATIVE, and the ring beside it is not (Feedback
+        Rv3, item 1). Linh read "Blast + Coat 1 · 10,05%" off
+        this list on a deck where 90,54% of the area had been
+        through Blast + Coat 1, because the list was the
+        ring's own non-cumulative slices. A bay at Coat 3 has
+        been through Coat 2, and the customer is billed on
+        the cumulative figure -- so that is what the rows say,
+        exactly as the GS screen's rollup card says it. The
+        ring keeps its own question and now carries a caption
+        saying which one it answers.
+      */}
+      <div
+        data-testid="stage-legend"
+        style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0, alignSelf: 'stretch' }}
+      >
+        {stages.map((sp) => (
+          <div
+            key={sp.stage.id}
+            data-testid="stage-legend-row"
+            {...legendRowProps(sp.stage.id, active, setActive, {
+              display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0,
+            })}
+          >
+            {/*
+              Two lines: the dot, the name and its percent, then the area.
+              The figures never wrap; a name wraps only when the column's
+              full width cannot hold it.
+            */}
+            {/*
+              From the top, on one first line the name and its percent share,
+              so a wrapped name keeps its dot and its percent on it (RR2-M1).
+            */}
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 9, minWidth: 0 }}>
+              <span
+                aria-hidden
+                data-testid="stage-legend-marker"
+                style={{
+                  // A circle of the coat's colour, nothing else (CLR-03).
+                  width: 15,
+                  height: 15,
+                  borderRadius: '50%',
+                  flex: 'none',
+                  background: sp.stage.color,
+                  marginTop: (COAT_LINE - 15) / 2,
+                }}
+              />
+              <span style={{ ...type.body, lineHeight: `${COAT_LINE}px`, minWidth: 0, flex: 1, overflowWrap: 'break-word' }}>
+                {sp.stage.name}
+              </span>
+              <span style={{ ...type.bodyStrong, lineHeight: `${COAT_LINE}px`, flex: 'none', whiteSpace: 'nowrap' }}>
+                {formatPercent(sp.ratio)}
+              </span>
+            </div>
+            <div
+              style={{
+                ...type.caption,
+                color: palette.textSecondary,
+                lineHeight: 1.3,
+                whiteSpace: 'nowrap',
+                paddingInlineStart: 15 + 9,
+              }}
+            >
+              {`${formatAreaM2(sp.cumulativeAreaM2)} / ${formatAreaM2(totalAreaM2)} ${unit}`}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
   )
 }

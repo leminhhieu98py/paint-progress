@@ -52,6 +52,12 @@ export interface GsProject {
    * get the same message, so nothing leaks about which ids exist.
    */
   isMember: boolean
+  /**
+   * The project's name, from the same row `isMember` is read from; null when
+   * that row is not readable. The field header shows it, so it needs no read
+   * of its own (M-1).
+   */
+  name: string | null
 }
 
 export type GsRealtimeStatus = 'subscribed' | 'disconnected'
@@ -105,7 +111,7 @@ export async function loadGsProject(projectId: string): Promise<GsProject> {
       .order('seq'),
     supabase
       .from('projects')
-      .select('id')
+      .select('id, name')
       .eq('id', projectId)
       .limit(1),
     // The decks this session may actually work on (Feedback Rv4).
@@ -133,8 +139,10 @@ export async function loadGsProject(projectId: string): Promise<GsProject> {
     ((coveredResult.data ?? []) as { deck_id: string }[]).map((r) => r.deck_id),
   )
 
+  const projectRow = ((membershipResult.data ?? []) as { id: string; name: string }[])[0]
   return {
-    isMember: (membershipResult.data ?? []).length > 0,
+    isMember: projectRow !== undefined,
+    name: projectRow?.name ?? null,
     decks: (decksResult.data ?? []).filter((d) => covered.has(d.id as string)).map((d) => ({
       id: d.id as string,
       seq: d.seq as number,

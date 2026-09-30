@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Group, Image as KonvaImage, Layer, Line, Rect, Stage, Text } from 'react-konva'
 import useImage from 'use-image'
 import type { MeshCell } from '../domain/types'
-import type { ZoneLabel } from '../domain/plan'
+import { spreadLabelBoxes, type ZoneLabel } from '../domain/plan'
 import {
   clampStagePan, clampZoom, boxFromDrag, fitLabelFontSize,
   MIN_ZOOM, WHEEL_ZOOM_STEP, ZOOM_STEP,
@@ -355,6 +355,27 @@ export function DrawingCanvas({
     }
   }
 
+  /**
+   * Every zone's card, sized and placed, then moved apart so none covers
+   * another (QA F7): two zones over overlapping bays put both cards at nearly
+   * the same centre. The pass runs in pixels, after the fit, because only
+   * here is a card's real size known; a 2px gap keeps the borders from
+   * touching. Memoised on what decides it, so a pan or a hover does not
+   * re-lay the cards.
+   */
+  const zoneCards = useMemo(() => {
+    const sized = (zoneLabels ?? []).flatMap((label) => {
+      const card = zoneCard(label)
+      if (card === null) return []
+      const cx = (label.x + label.w / 2) * width
+      const cy = (label.y + label.h / 2) * height
+      return [{ label, ...card, x: cx - card.cardW / 2, y: cy - card.cardH / 2, w: card.cardW, h: card.cardH }]
+    })
+    return spreadLabelBoxes(sized, height, 2)
+    // zoneCard reads only width and height beyond its argument.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [zoneLabels, width, height])
+
   const dragHandlers = banding
     ? {
         onMouseDown: (e: Konva.KonvaEventObject<MouseEvent>) => {
@@ -703,37 +724,31 @@ export function DrawingCanvas({
           the deck.
         */}
         <Layer name="plan" listening={false}>
-          {(zoneLabels ?? []).map((label) => {
-            const card = zoneCard(label)
-            if (card === null) return null
-            const cx = (label.x + label.w / 2) * width
-            const cy = (label.y + label.h / 2) * height
-            return (
-              <Group key={`zone-label-${label.id}`} name={`zone-label-${label.id}`}>
-                <Rect
-                  x={cx - card.cardW / 2}
-                  y={cy - card.cardH / 2}
-                  width={card.cardW}
-                  height={card.cardH}
-                  fill={ZONE_LABEL_FILL}
-                  stroke={ZONE_LABEL_STROKE}
-                  strokeWidth={1}
-                  cornerRadius={3}
-                />
-                <Text
-                  x={cx - card.cardW / 2}
-                  y={cy - card.textH / 2}
-                  width={card.cardW}
-                  align="center"
-                  lineHeight={1.25}
-                  text={label.range === '' ? label.name : `${label.name}\n${label.range}`}
-                  fontSize={card.font}
-                  fontStyle="600"
-                  fill="#16202B"
-                />
-              </Group>
-            )
-          })}
+          {zoneCards.map(({ label, ...card }) => (
+            <Group key={`zone-label-${label.id}`} name={`zone-label-${label.id}`}>
+              <Rect
+                x={card.x}
+                y={card.y}
+                width={card.w}
+                height={card.h}
+                fill={ZONE_LABEL_FILL}
+                stroke={ZONE_LABEL_STROKE}
+                strokeWidth={1}
+                cornerRadius={3}
+              />
+              <Text
+                x={card.x}
+                y={card.y + (card.h - card.textH) / 2}
+                width={card.w}
+                align="center"
+                lineHeight={1.25}
+                text={label.range === '' ? label.name : `${label.name}\n${label.range}`}
+                fontSize={card.font}
+                fontStyle="600"
+                fill="#16202B"
+              />
+            </Group>
+          ))}
         </Layer>
 
 

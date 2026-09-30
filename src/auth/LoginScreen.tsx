@@ -1,6 +1,7 @@
 import { Alert, Button, Form, Grid, Input } from 'antd'
-import { useState } from 'react'
-import { palette, shadowCard } from '../theme'
+import type { AnimationItem } from 'lottie-web/build/player/lottie_light'
+import { useEffect, useRef, useState } from 'react'
+import { palette, shadowCard, type } from '../theme'
 import { useAuth } from './AuthProvider'
 
 interface Values {
@@ -49,13 +50,13 @@ export function Hero() {
           background: '#0A817517',
         }}
       />
-      <Platform />
+      <LoginIllustration />
       <h2
         style={{
           position: 'relative',
           margin: '28px 0 0',
-          fontSize: 19,
-          fontWeight: 600,
+          // On the scale (TYP-01, M3): it was 19/600.
+          ...type.cardTitle,
           lineHeight: 1.35,
           letterSpacing: '-0.024em',
           maxWidth: 300,
@@ -63,6 +64,86 @@ export function Hero() {
       >
         Quản lý tiến độ thi công ngay trên bản vẽ.
       </h2>
+    </div>
+  )
+}
+
+/**
+ * The login screen's picture: a construction animation (see loginAnimation.ts
+ * for its source and licence), with the drawn platform below standing in for
+ * it until the animation has drawn its first frame, instead of it when the
+ * visitor asks for reduced motion, and for good if the player fails to load.
+ *
+ * The player and the animation are one dynamic import, made only here, so
+ * they are their own chunk and only the login screen downloads them. The
+ * animation is destroyed with the screen and paused while the page is hidden,
+ * so nothing keeps drawing once the visitor has signed in or looked away.
+ *
+ * Wide screens: the hero's slot, 372 px wide at most, which also keeps the
+ * raster frames (750 px wide) from ever being upscaled. Phones (`compact`):
+ * above the sign-in card, 160 px tall at most, in the page's flow so that it
+ * scrolls away under the on-screen keyboard rather than covering the inputs.
+ *
+ * Purely decorative, so `aria-hidden`, as the drawn platform always was.
+ */
+export function LoginIllustration({ compact = false }: { compact?: boolean }) {
+  const host = useRef<HTMLDivElement>(null)
+  const [motion] = useState(
+    () => !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches,
+  )
+  const [failed, setFailed] = useState(false)
+  const [drawn, setDrawn] = useState(false)
+
+  useEffect(() => {
+    if (!motion) return
+    let gone = false
+    let animation: AnimationItem | undefined
+    const onVisibility = () => {
+      if (document.hidden) animation?.pause()
+      else animation?.play()
+    }
+    import('./loginAnimation')
+      .then(({ playLoginAnimation }) => {
+        if (gone || !host.current) return
+        animation = playLoginAnimation(host.current)
+        animation.addEventListener('DOMLoaded', () => {
+          if (!gone) setDrawn(true)
+        })
+        document.addEventListener('visibilitychange', onVisibility)
+        if (document.hidden) animation.pause()
+      })
+      .catch(() => {
+        if (!gone) setFailed(true)
+      })
+    return () => {
+      gone = true
+      document.removeEventListener('visibilitychange', onVisibility)
+      animation?.destroy()
+    }
+  }, [motion])
+
+  return (
+    <div
+      data-testid="login-illustration"
+      aria-hidden
+      style={{
+        position: 'relative',
+        width: '100%',
+        aspectRatio: '750 / 500',
+        ...(compact
+          ? { maxWidth: 240, maxHeight: 160, margin: '0 auto 16px' }
+          // Grows with the viewport beside the wide hero column (owner 2026-09-30).
+          : { maxWidth: 'clamp(372px, 42vw, 720px)' }),
+      }}
+    >
+      {!drawn && <Platform />}
+      {motion && !failed && (
+        <div
+          ref={host}
+          data-testid="login-animation"
+          style={{ position: 'absolute', inset: 0, display: drawn ? 'block' : 'none' }}
+        />
+      )}
     </div>
   )
 }
@@ -91,7 +172,9 @@ function Platform() {
     <svg
       viewBox="0 0 360 250"
       width="100%"
-      style={{ position: 'relative', maxWidth: 372, height: 'auto', display: 'block' }}
+      // Fills LoginIllustration's box, centred in it: the box is the
+      // animation's 3:2, this drawing is a little narrower.
+      style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', display: 'block' }}
       aria-hidden
       focusable="false"
     >
@@ -224,8 +307,8 @@ export function LoginScreen() {
       <h1
         style={{
           margin: '20px 0 22px',
-          fontSize: 21,
-          fontWeight: 600,
+          // The page title's step (TYP-01, M3): it was 21/600.
+          ...type.pageTitle,
           lineHeight: 1.25,
           letterSpacing: '-0.028em',
         }}
@@ -235,7 +318,7 @@ export function LoginScreen() {
 
       {error && <Alert type="error" message={error} style={{ marginBottom: 16 }} />}
 
-      <Form<Values> layout="vertical" onFinish={onFinish} requiredMark={false} size="large">
+      <Form<Values> layout="vertical" onFinish={onFinish} requiredMark={false}>
         <Form.Item
           name="identifier"
           label="Tên đăng nhập"
@@ -267,12 +350,14 @@ export function LoginScreen() {
         style={{
           minHeight: '100vh',
           display: 'flex',
+          flexDirection: 'column',
           alignItems: 'center',
           justifyContent: 'center',
           padding: '24px 18px',
           background: palette.bgPage,
         }}
       >
+        <LoginIllustration compact />
         {form}
       </div>
     )

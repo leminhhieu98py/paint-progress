@@ -305,7 +305,7 @@ describe('zone colour (0027)', () => {
     // Item 6: a zone in Coat 4's colour reads as Coat 4 on the drawing. The
     // message names the stage so the admin knows which preset to avoid.
     await expect(createZone('d1', { ...DRAFT, color: '#1677FF' }, ['c1'], STAGES))
-      .rejects.toThrow('Màu này đang dùng cho lớp «Coat 4» ở A3.2, chọn màu khác')
+      .rejects.toThrow('Màu này đang dùng cho lớp «Coat 4» ở Cấu hình lớp sơn, chọn màu khác')
     expect(from).not.toHaveBeenCalled()
   })
 

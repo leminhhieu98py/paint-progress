@@ -1,21 +1,23 @@
-import { DeleteOutlined, EditOutlined, PlusOutlined } from '@ant-design/icons'
-import { Alert, App, Button, Form, Input, Modal, Space, Table, Tooltip } from 'antd'
+import { PlusOutlined } from '@ant-design/icons'
+import { Alert, App, Button, Form, Input, Modal, Space, Table } from 'antd'
 import dayjs from 'dayjs'
 import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ConsequenceModal } from '../../components/ConsequenceModal'
+import { IconAction } from '../../components/IconAction'
+import { NameWithCode } from '../../components/NameWithCode'
 import { PageBody, PageHeader } from '../../components/PageHeader'
-import { ProgressBar } from '../../components/ProgressBar'
 import { SectionCard } from '../../components/SectionCard'
 import { modalProps } from '../../components/modalChrome'
 import { StatCard } from '../../components/StatCard'
-import { formatAreaM2 } from '../../lib/format'
+import { tablePagination } from '../../components/tablePagination'
+import { MISSING, formatAreaM2, formatPercent } from '../../lib/format'
 import { latestProgressEvent, type ProgressEvent } from '../../lib/progressApi'
 import {
   createProject, deleteProject, listProjects, updateProject, type ProjectRow,
 } from '../../lib/projectsApi'
 import { APP_BASE_PATH } from '../../config'
-import { palette } from '../../theme'
+import { type } from '../../theme'
 
 interface CreateValues {
   name: string
@@ -32,16 +34,20 @@ const COUNT = new Intl.NumberFormat('vi-VN')
  * that matters more: nothing has been recorded in three weeks, and "09:42"
  * reads as though the site is busy.
  */
+/**
+ * The card's value: the time alone, at the numbers' size like every value in
+ * the row (owner 2026-09-30, AD1). Its date is the first thing on the line
+ * beneath, today's included, so an old event never reads as this morning's.
+ */
 function eventTime(iso: string): string {
-  const at = dayjs(iso)
-  return at.isSame(dayjs(), 'day') ? at.format('HH:mm') : at.format('DD.MM · HH:mm')
+  return dayjs(iso).format('HH:mm')
 }
 
 function eventDetail(e: ProgressEvent): string {
   const who = e.byUsername ?? e.byName ?? 'không rõ'
   // A null stage is a bay sent back to the start -- a real and consequential
   // thing a foreman does. Printing "R7C11 → " would read as a rendering bug.
-  return `${who} · ${e.cellCode} → ${e.toStageName ?? 'Chưa bắt đầu'}`
+  return `${dayjs(e.at).format('DD/MM/YYYY')} · ${who} · ${e.cellCode} → ${e.toStageName ?? 'Chưa bắt đầu'}`
 }
 
 export function ProjectsScreen() {
@@ -181,7 +187,6 @@ export function ProjectsScreen() {
     <>
       <PageHeader
         title="Dự án"
-        subtitle={`${rows.length} dự án · ${totals.decks} sàn · tiến độ theo công việc`}
         extra={
           /*
             aria-hidden on an icon that sits beside its own visible label.
@@ -224,24 +229,22 @@ export function ProjectsScreen() {
           <StatCard
             label="Ô đã dựng"
             value={COUNT.format(totals.cells)}
-            sub="trên toàn bộ bản vẽ"
           />
           <StatCard
             label="Ghi nhận gần nhất"
             tone="accent"
             live={event !== null}
-            value={event ? eventTime(event.at) : '—'}
+            value={event ? eventTime(event.at) : MISSING}
             sub={event ? eventDetail(event) : 'Chưa có ghi nhận nào'}
           />
         </div>
 
         <SectionCard bodyPadding={0}>
           <Table<ProjectRow>
-            className="pp-table"
             rowKey="id"
             loading={loading}
             dataSource={rows}
-            pagination={false}
+            pagination={tablePagination(rows.length)}
             /*
               The whole row opens the project. The decks screen has its own
               project picker, so the id travels in the query string rather than
@@ -256,78 +259,54 @@ export function ProjectsScreen() {
               {
                 title: 'Tên dự án',
                 dataIndex: 'name',
-                render: (_v, row) => (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                    <span
-                      style={{
-                        width: 32,
-                        height: 32,
-                        borderRadius: 9,
-                        background: palette.bgHover,
-                        color: palette.textSecondary,
-                        fontSize: 12,
-                        fontWeight: 600,
-                        lineHeight: '32px',
-                        textAlign: 'center',
-                        flex: 'none',
-                      }}
-                    >
-                      {row.code.slice(0, 2).toUpperCase()}
-                    </span>
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ fontWeight: 600, lineHeight: 1.35 }}>{row.name}</div>
-                      <span style={{ fontSize: 11, color: palette.textTertiary }}>{row.code}</span>
-                    </div>
-                  </div>
-                ),
+                // "Name (CODE)" in one column, as the deck list (RLP-01): no
+                // initials avatar, which is for people only (AD8).
+                render: (_v, row) => <NameWithCode name={row.name} code={row.code} />,
               },
-              { title: 'Số sàn', dataIndex: 'deckCount', width: 100, align: 'right' },
+              { title: 'Số sàn', dataIndex: 'deckCount', width: 100, align: 'center' },
               {
                 title: 'Tổng diện tích (m²)',
                 dataIndex: 'totalAreaM2',
                 width: 180,
-                align: 'right',
+                align: 'center',
                 render: (v: number) => formatAreaM2(v),
               },
               {
                 title: 'Tiến độ',
+                align: 'center',
                 dataIndex: 'progress',
-                width: 240,
-                render: (v: number) => <ProgressBar ratio={v} />,
+                width: 120,
+                // The percentage alone, centred like any figure (PRG-01).
+                render: (v: number) => <span style={type.body}>{formatPercent(v)}</span>,
               },
               {
                 title: 'Thao tác',
                 key: 'actions',
                 width: 140,
-                align: 'right',
+                align: 'center',
                 render: (_v, row) => (
                   <Space size={6}>
-                    <Tooltip title="Sửa dự án">
-                      <Button
-                        size="small"
-                        aria-label="Sửa"
-                        icon={<EditOutlined />}
-                        onClick={(e) => {
-                          // The button sits inside a row that navigates. Without
-                          // this, editing also opens the project's decks behind
-                          // the modal, and closing it strands the admin there.
-                          e.stopPropagation()
-                          openDialog(row)
-                        }}
-                      />
-                    </Tooltip>
-                    <Tooltip title="Xóa dự án">
-                      <Button
-                        size="small"
-                        danger
-                        aria-label="Xóa dự án"
-                        icon={<DeleteOutlined />}
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          setRemovingProject(row)
-                        }}
-                      />
-                    </Tooltip>
+                    {/* Icon actions (ACT-01). They sit inside a row that
+                        navigates: without stopPropagation, editing also opens
+                        the project's decks behind the modal. */}
+                    <IconAction
+                      verb="edit"
+                      label="Sửa"
+                      tooltip="Sửa dự án"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        openDialog(row)
+                      }}
+                    />
+                    <IconAction
+                      verb="delete"
+                      label="Xóa dự án"
+                      danger
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setRemovingProject(row)
+                      }}
+                    />
                   </Space>
                 ),
               },
@@ -341,7 +320,7 @@ export function ProjectsScreen() {
         tone="danger"
         tag="Thao tác phá huỷ"
         title={`Xóa dự án ${removingProject?.name ?? ''}?`}
-        description="Xóa vĩnh viễn, không khôi phục được. Mất theo dự án:"
+        description="Mất vĩnh viễn theo dự án:"
         items={[
           { label: `${removingProject?.deckCount ?? 0} sàn`, meta: removingProject ? `${formatAreaM2(removingProject.totalAreaM2)} m²` : undefined },
           { label: 'Toàn bộ ô và lịch sử công đoạn', meta: removingProject ? `${removingProject.cellCount} ô` : undefined },
@@ -350,7 +329,7 @@ export function ProjectsScreen() {
           { label: 'Bản vẽ đã tải lên' },
           { label: 'Phân quyền GS vào dự án' },
         ]}
-        consequence="GS đang mở dự án này trên máy tính bảng sẽ không ghi được nữa cho tới khi tải lại."
+        consequences={['Không khôi phục được', 'GS đang mở dự án này trên máy tính bảng không ghi được nữa cho tới khi tải lại']}
         okText="Xóa dự án"
         confirmText={removingProject?.name}
         confirmLoading={removing}

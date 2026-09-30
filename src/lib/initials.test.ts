@@ -1,22 +1,29 @@
 import { describe, expect, it } from 'vitest'
-import { initialsOf } from './initials'
+import { initialsOf, nameWords } from './initials'
 
-describe('initialsOf', () => {
-  it('takes the first and last name, which is how a Vietnamese name is read', () => {
-    // "Nguyễn Thị Linh" is surname · middle · given. The two that identify a
-    // person in conversation are the surname and the given name, so the middle
-    // one is what drops -- taking the last two would give TL and read as a
-    // different person.
-    expect(initialsOf('Nguyễn Thị Linh')).toBe('NL')
-    expect(initialsOf('Lê Trung Hiếu')).toBe('LH')
-  })
-
-  it('uses both letters of a two-part name', () => {
+describe('initialsOf (AD2, owner-amended)', () => {
+  it('takes the first letter of each of the last two words', () => {
+    expect(initialsOf('Nguyễn Thị Linh')).toBe('TL')
+    expect(initialsOf('Lê Trung Hiếu')).toBe('TH')
+    expect(initialsOf('Linh Linh')).toBe('LL')
     expect(initialsOf('Trần Long')).toBe('TL')
   })
 
-  it('doubles a single-word name rather than returning one lonely letter', () => {
-    expect(initialsOf('Linh')).toBe('LI')
+  it('reads one letter for a one-word name', () => {
+    expect(initialsOf('Linh')).toBe('L')
+  })
+
+  it('drops a bracketed note and any word with no letter before it counts', () => {
+    expect(initialsOf('Phạm Đức Long (demo)')).toBe('ĐL')
+    expect(initialsOf('Bùi Quang Huy (demo)')).toBe('QH')
+    expect(initialsOf('Châu Văn Đạt [test]')).toBe('VĐ')
+    expect(initialsOf('Lê Văn A 2')).toBe('VA')
+    expect(initialsOf('(demo)')).toBe('')
+  })
+
+  it('keeps Vietnamese letters when it upper-cases', () => {
+    expect(initialsOf('đặng thị hoa')).toBe('TH')
+    expect(initialsOf('phạm đức long')).toBe('ĐL')
   })
 
   it('survives the empty and whitespace cases without throwing', () => {
@@ -27,10 +34,12 @@ describe('initialsOf', () => {
   })
 
   it('collapses runs of whitespace instead of reading them as names', () => {
-    expect(initialsOf('  Nguyễn   Thị  Linh ')).toBe('NL')
+    expect(initialsOf('  Nguyễn   Thị  Linh ')).toBe('TL')
   })
+})
 
-  it('upper-cases, so a lower-case profile name still reads as an avatar', () => {
-    expect(initialsOf('nguyễn linh')).toBe('NL')
+describe('nameWords', () => {
+  it('keeps each word to its letters and drops bracketed notes', () => {
+    expect(nameWords('Đỗ Minh, Tổ 2 (demo)')).toEqual(['Đỗ', 'Minh', 'Tổ'])
   })
 })

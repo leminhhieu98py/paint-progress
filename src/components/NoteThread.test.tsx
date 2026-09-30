@@ -24,6 +24,8 @@ describe('NoteThread', () => {
   it('says the bay has nothing rather than showing an empty box', () => {
     render(<NoteThread notes={[]} />)
     expect(screen.getByText('Ô này chưa có ghi chú nào')).toBeInTheDocument()
+    // The title says it; no paragraph on how notes get here (CPY-01).
+    expect(screen.queryByText(/GS ghi chú khi ghi công đoạn/)).toBeNull()
   })
 
   it('names the coat each note was recorded against', () => {
@@ -93,7 +95,8 @@ describe('NoteThread — the report copy (0023)', () => {
     reportEditedByName: 'Đoàn Công Linh',
     reportEditedAt: '2026-09-02T03:00:00Z',
   }
-  const STAMP = /Đoàn Công Linh · \d{2}\.\d{2}\.\d{4} \d{2}:\d{2}/
+  // The one date-time form (M12): HH:mm DD/MM/YYYY.
+  const STAMP = /Đoàn Công Linh · \d{2}:\d{2} \d{2}\/\d{2}\/\d{4}/
 
   it('shows the report version beside the original, with who set it and when', () => {
     // The foreman's sentence is never replaced on screen. The admin's version
@@ -138,6 +141,12 @@ describe('NoteThread — the report copy (0023)', () => {
     expect(onEditReport).toHaveBeenCalledWith(n)
     await userEvent.click(screen.getByRole('button', { name: 'Ẩn khỏi báo cáo' }))
     expect(onToggleHidden).toHaveBeenCalledWith(n)
+  })
+
+  it('gives the report actions the default height: they sit outside a table (CTL-01)', () => {
+    render(<NoteThread notes={[note()]} onEditReport={vi.fn()} onToggleHidden={vi.fn()} />)
+    expect(screen.getByRole('button', { name: 'Sửa cho báo cáo' })).not.toHaveClass('ant-btn-sm')
+    expect(screen.getByRole('button', { name: 'Ẩn khỏi báo cáo' })).not.toHaveClass('ant-btn-sm')
   })
 
   it('offers to bring a hidden note back, since hiding is reversible', () => {

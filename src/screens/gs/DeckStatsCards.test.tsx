@@ -1,18 +1,40 @@
-import { render, screen, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { DeckProgressCard, StageRollupCard } from './DeckStatsCards'
 import { computeDeckProgress } from '../../domain/progress'
 import type { Cell, Stage } from '../../domain/types'
+import { fieldType, palette } from '../../theme'
+import { GS_RING, GS_RING_SIZE, GS_RING_THICKNESS, figureFits, ringFigureStep } from '../../components/ringFit'
 
-// The ring is a conic-gradient; asserting on that string would pin CSS, not the
-// shares. The double records what the card hands it.
+// Asserting on the ring's SVG would pin geometry, not the shares. The double
+// records what the card hands it, and stands in a button per slice for the
+// ring's own hover (CHT-02), which the real Donut's tests cover.
 vi.mock('../../components/Donut', () => ({
-  Donut: ({ slices, children }: { slices: { label: string; value: number }[]; children?: ReactNode }) => (
+  Donut: ({ slices, children, activeKey, onActiveChange, size, thickness }: {
+    slices: { key?: string; label: string; value: number; detail?: string | string[] }[]
+    children?: ReactNode
+    activeKey?: string | null
+    onActiveChange?: (key: string | null) => void
+    size?: number
+    thickness?: number
+  }) => (
     <div
       data-testid="donut"
+      data-size={`${size}/${thickness}`}
       data-slices={JSON.stringify(slices.map((s) => [s.label, s.value]))}
+      data-active={activeKey ?? ''}
     >
+      {slices.map((s) => (
+        <button
+          key={s.key ?? s.label}
+          type="button"
+          data-testid={`slice-${s.key}`}
+          data-detail={JSON.stringify(s.detail)}
+          onPointerEnter={() => onActiveChange?.(s.key ?? s.label)}
+          onPointerLeave={() => onActiveChange?.(null)}
+        />
+      ))}
       {children}
     </div>
   ),
@@ -35,6 +57,18 @@ const DECK = { id: 'd1', code: 'CD', name: 'Cellar Deck', totalAreaM2: 1000, cel
 
 const progressOf = () => computeDeckProgress(DECK, STAGES)
 
+/** A coat row, found by the coat's name. */
+const rowOf = (name: string) =>
+  screen.getByText(name).closest('[data-testid="gs-stage-row"]') as HTMLElement
+/** A coat row's two figures as printed: the area line and the percentage. */
+const figuresOf = (name: string) => {
+  const row = rowOf(name)
+  return {
+    area: row.querySelector('[data-testid="gs-stage-area"]')?.textContent,
+    percent: row.querySelector('[data-testid="gs-stage-percent"]')?.textContent,
+  }
+}
+
 const renderRollup = (stages = STAGES, p = progressOf()) =>
   render(
     <StageRollupCard
@@ -52,6 +86,15 @@ describe('DeckProgressCard', () => {
     expect(screen.getByText('5.258,50 m²')).toBeInTheDocument()
   })
 
+  it('is titled like every admin card, on the field scale (GS-10)', () => {
+    render(<DeckProgressCard progress={0.4438} totalAreaM2={5258.5} />)
+    const card = screen.getByTestId('gs-deck-progress')
+    expect(within(card).getByRole('heading', { level: 2, name: 'Tiến độ sàn' })).toHaveStyle({ fontSize: '15px', fontWeight: '600' })
+    expect(within(card).getByText('44,38%')).toHaveStyle({ fontSize: '32px', fontWeight: '700' })
+    expect(within(card).getByText('Diện tích sàn')).toHaveStyle({ fontSize: '14px', fontWeight: '400' })
+    expect(within(card).getByText('5.258,50 m²')).toHaveStyle({ fontSize: '14px', fontWeight: '600' })
+  })
+
   it('heads a deck in several works with its tổng hợp, then a row per work', () => {
     render(
       <DeckProgressCard
@@ -65,7 +108,10 @@ describe('DeckProgressCard', () => {
     )
     const card = screen.getByTestId('gs-deck-progress')
     expect(within(card).getByText('21,30%')).toBeInTheDocument()
-    expect(within(card).getByText('tổng hợp')).toBeInTheDocument()
+    // Round 4: the qualifier explains the figure, so it is the title's (?).
+    expect(within(card).queryByText('tổng hợp')).toBeNull()
+    const heading = within(card).getByRole('heading', { level: 2 })
+    expect(within(heading).getByRole('img', { name: 'Tổng hợp các công việc' })).toBeInTheDocument()
     expect(within(card).getByText('Sơn')).toBeInTheDocument()
     expect(within(card).getByText('15,50%')).toBeInTheDocument()
     expect(within(card).getByText('Tháo giáo')).toBeInTheDocument()
@@ -82,7 +128,38 @@ describe('DeckProgressCard', () => {
     )
     expect(screen.getByText('44,38%')).toBeInTheDocument()
     expect(screen.queryByText('tổng hợp')).toBeNull()
+    expect(screen.queryByRole('img', { name: 'Tổng hợp các công việc' })).toBeNull()
     expect(screen.queryByText('Sơn')).toBeNull()
+  })
+})
+
+describe('DeckProgressCard while the deck loads', () => {
+  it('draws a skeleton, never a figure, while the deck is on the way', () => {
+    // The deck's cells, states and works arrive seconds after the page on a
+    // site tether. A 0,00% in the largest type on the screen meanwhile is a
+    // figure the foreman reads out on the radio.
+    render(
+      <DeckProgressCard
+        status="loading"
+        progress={0}
+        totalAreaM2={1000}
+        perWork={[{ id: 'w1', name: 'Sơn', progress: 0 }, { id: 'w2', name: 'Giàn giáo', progress: 0 }]}
+      />,
+    )
+    const card = screen.getByTestId('gs-deck-progress')
+    expect(within(card).getByRole('heading', { level: 2, name: 'Tiến độ sàn' })).toBeInTheDocument()
+    expect(within(card).getByRole('status', { name: 'Đang tải tiến độ sàn' })).toBeInTheDocument()
+    expect(card).not.toHaveTextContent('%')
+    expect(card).not.toHaveTextContent('m²')
+    expect(within(card).queryByText('Sơn')).toBeNull()
+  })
+
+  it('reads the missing mark "-" when the deck could not be read, not 0,00%', () => {
+    render(<DeckProgressCard status="unknown" progress={0} totalAreaM2={1000} />)
+    const card = screen.getByTestId('gs-deck-progress')
+    expect(within(card).getByText('-')).toBeInTheDocument()
+    expect(card).not.toHaveTextContent('%')
+    expect(within(card).queryByRole('status')).toBeNull()
   })
 })
 
@@ -92,17 +169,107 @@ describe('StageRollupCard', () => {
     // Coat 1, 700 m² have reached Coat 2. Same denominator as the percent, so
     // the three figures on a row cannot disagree with each other.
     renderRollup()
+    expect(figuresOf('Blast + Coat 1')).toEqual({ area: '800,00 / 1.000,00 m²', percent: '80,00%' })
+    expect(figuresOf('Coat 2')).toEqual({ area: '700,00 / 1.000,00 m²', percent: '70,00%' })
+  })
+
+  it('never wraps the figures: the percent beside the name, the area on its own line', () => {
+    // Baseline: "2.880,00 / 2.880,00 m² · 100,00%" wrapped a 325px rail row to three lines.
+    renderRollup()
+    const row = rowOf('Blast + Coat 1')
+    const area = row.querySelector('[data-testid="gs-stage-area"]') as HTMLElement
+    const percent = row.querySelector('[data-testid="gs-stage-percent"]') as HTMLElement
+    expect(area).toHaveStyle({ whiteSpace: 'nowrap' })
+    expect(percent).toHaveStyle({ whiteSpace: 'nowrap', flexShrink: '0' })
+    // The name and the percent share the first line.
+    expect(within(row).getByText('Blast + Coat 1').parentElement).toBe(percent.parentElement)
+  })
+
+  it('lets a coat name wrap only when the full width cannot hold it, never cut, the whole name in its title (M-2, C4)', () => {
+    const stages = [{ ...STAGES[0], name: 'Blast + Coat 1 (Primer, epoxy zinc-rich)' }, STAGES[1]]
+    renderRollup(stages, computeDeckProgress(DECK, stages))
+    const name = screen.getByText('Blast + Coat 1 (Primer, epoxy zinc-rich)')
+    expect(name.style.whiteSpace).toBe('')
+    expect(name.style.textOverflow).toBe('')
+    // No clamp and no break inside a word: it wraps at spaces, as text does.
+    expect(name.style.getPropertyValue('-webkit-line-clamp')).toBe('')
+    expect(name.style.overflowWrap).toBe('break-word')
+    expect(name).toHaveAttribute('title', 'Blast + Coat 1 (Primer, epoxy zinc-rich)')
+  })
+
+  it('stacks the ring above its legend, the legend the card\'s full width (RR-I1, C4)', () => {
+    renderRollup()
+    const donut = screen.getByTestId('donut')
+    const legend = screen.getByTestId('gs-stage-legend')
+    const stack = donut.parentElement as HTMLElement
+    expect(stack).toBe(legend.parentElement)
+    expect(stack).toHaveStyle({ display: 'flex', flexDirection: 'column', alignItems: 'center' })
+    expect(Array.from(stack.children).indexOf(donut)).toBeLessThan(Array.from(stack.children).indexOf(legend))
+    expect(legend).toHaveStyle({ alignSelf: 'stretch' })
+    expect(legend.style.minWidth).not.toBe('168px')
+  })
+
+  it('reads each row in two lines: dot, name and percent, then the area (RR-I1)', () => {
+    renderRollup()
+    const row = rowOf('Coat 2')
+    const marker = row.querySelector('[data-testid="gs-stage-marker"]') as HTMLElement
+    const percent = row.querySelector('[data-testid="gs-stage-percent"]') as HTMLElement
+    const area = row.querySelector('[data-testid="gs-stage-area"]') as HTMLElement
+    const line1 = marker.parentElement as HTMLElement
+    expect(within(line1).getByText('Coat 2')).toBeInTheDocument()
+    expect(percent.parentElement).toBe(line1)
+    expect(line1.contains(area)).toBe(false)
+    expect(Array.from(row.children)).toEqual([line1, area])
+  })
+
+  it('keeps the dot on the first line of a wrapped name, beside the percent (RR2-M1)', () => {
+    renderRollup()
+    const row = rowOf('Coat 2')
+    const marker = row.querySelector('[data-testid="gs-stage-marker"]') as HTMLElement
+    const percent = row.querySelector('[data-testid="gs-stage-percent"]') as HTMLElement
+    const line1 = marker.parentElement as HTMLElement
+    // Every item from the top of the line, on one 17,5 px first line (14 × 1,25).
+    expect(line1).toHaveStyle({ alignItems: 'flex-start' })
+    expect(within(line1).getByText('Coat 2')).toHaveStyle({ lineHeight: '17.5px' })
+    expect(percent).toHaveStyle({ lineHeight: '17.5px' })
+    // The 11 px dot centred on that first line, not on the whole wrapped name.
+    expect(marker).toHaveStyle({ marginTop: '3.25px' })
+    expect(marker.style.alignSelf).toBe('')
+  })
+
+  it('keeps the figures of a coat with no area standing at it on its row, where the ring has no slice (M-2)', () => {
+    // Coat 1's bays have all moved on to Coat 2 here: no slice, but 800 m² went through it.
+    const cells = CELLS.map((c) => (c.stageId === 's1' ? { ...c, stageId: 's2' } : c))
+    const deck = { ...DECK, cells }
+    render(<StageRollupCard stages={STAGES} stageProgress={computeDeckProgress(deck, STAGES).stages} cells={cells} totalAreaM2={1000} />)
+    expect(screen.queryByTestId('slice-s1')).toBeNull()
+    expect(figuresOf('Blast + Coat 1')).toEqual({ area: '800,00 / 1.000,00 m²', percent: '80,00%' })
+  })
+
+  it('marks each coat with a plain circle of its colour, as the admin legends do (CLR-03)', () => {
+    renderRollup()
+    const marker = rowOf('Coat 2').querySelector('[data-testid="gs-stage-marker"]') as HTMLElement
+    expect(marker).toHaveStyle({ width: '11px', height: '11px', borderRadius: '50%', background: '#bfbfbf' })
+    expect(marker.style.boxShadow).toBe('')
+    expect(marker).toHaveTextContent(/^$/)
+  })
+
+  it('is titled like every admin card, the ring\'s centre on the scale (GS-10)', () => {
+    renderRollup()
     const card = screen.getByTestId('gs-stage-rollup')
-    expect(within(card).getByText('800,00 / 1.000,00 m² · 80,00%')).toBeInTheDocument()
-    expect(within(card).getByText('700,00 / 1.000,00 m² · 70,00%')).toBeInTheDocument()
+    expect(within(card).getByRole('heading', { level: 2, name: 'Tiến độ theo công đoạn · cộng dồn' }))
+      .toHaveStyle({ fontSize: '15px', fontWeight: '600' })
+    const donut = screen.getByTestId('donut')
+    // Four digits take displaySm in the 160 px ring, as on the admin rings (RR2-M2).
+    expect(within(donut).getByText('1.000,00')).toHaveStyle({ fontSize: '21px', fontWeight: '700' })
+    expect(within(donut).getByText('m² sàn')).toHaveStyle({ fontSize: '12px' })
+    expect(within(card).getByText('Coat 2')).toHaveStyle({ fontSize: '14px', fontWeight: '400' })
   })
 
   it('names every coat, including one nothing has reached yet', () => {
     const stages = [...STAGES, { id: 's3', seq: 3, name: 'Tháo giáo', color: '#722ed1', weight: 0 }]
     renderRollup(stages, computeDeckProgress(DECK, stages))
-    const card = screen.getByTestId('gs-stage-rollup')
-    expect(within(card).getByText('Tháo giáo')).toBeInTheDocument()
-    expect(within(card).getByText('0,00 / 1.000,00 m² · 0,00%')).toBeInTheDocument()
+    expect(figuresOf('Tháo giáo')).toEqual({ area: '0,00 / 1.000,00 m²', percent: '0,00%' })
   })
 
   it('shows no bay count anywhere on the card', () => {
@@ -135,6 +302,70 @@ describe('StageRollupCard', () => {
   })
 })
 
+describe('StageRollupCard: the ring\'s centre fits its hole (I-2, C1)', () => {
+  const steps = [fieldType.displaySm, fieldType.cardTitle, fieldType.bodyStrong]
+  const renderArea = (totalAreaM2: number) =>
+    render(<StageRollupCard stages={STAGES} stageProgress={progressOf().stages} cells={CELLS} totalAreaM2={totalAreaM2} />)
+
+  it('draws the ring at the size the widest area was fitted to', () => {
+    renderArea(1000)
+    expect(screen.getByTestId('donut')).toHaveAttribute('data-size', `${GS_RING_SIZE}/${GS_RING_THICKNESS}`)
+    expect(screen.getByTestId('donut')).toHaveAttribute('data-size', '160/22')
+  })
+
+  it.each([
+    [880, '880,00'],
+    [2880, '2.880,00'],
+    [123456.78, '123.456,78'],
+  ])('sets %s m² in the largest step that fits, with room either side', (area, text) => {
+    renderArea(area)
+    const figure = within(screen.getByTestId('donut')).getByText(text)
+    const step = ringFigureStep(text, steps, GS_RING)
+    expect(figure).toHaveStyle({ fontSize: `${step.fontSize}px` })
+    expect(figureFits(text, step, GS_RING)).toBe(true)
+  })
+
+  it('keeps displaySm for a figure short enough to take it', () => {
+    renderArea(880)
+    expect(within(screen.getByTestId('donut')).getByText('880,00')).toHaveStyle({ fontSize: '21px' })
+  })
+})
+
+describe('StageRollupCard: the ring and its coat rows (CHT-02)', () => {
+  it('makes a hovered or focused coat row\'s slice active, and lets go on leave and blur', () => {
+    renderRollup()
+    const donut = screen.getByTestId('donut')
+    fireEvent.pointerEnter(rowOf('Coat 2'))
+    expect(donut).toHaveAttribute('data-active', 's2')
+    expect(rowOf('Coat 2')).toHaveStyle({ background: palette.bgHover })
+    fireEvent.pointerLeave(rowOf('Coat 2'))
+    expect(donut).toHaveAttribute('data-active', '')
+    expect(rowOf('Coat 2')).toHaveAttribute('tabindex', '0')
+    act(() => rowOf('Blast + Coat 1').focus())
+    expect(donut).toHaveAttribute('data-active', 's1')
+    act(() => rowOf('Blast + Coat 1').blur())
+    expect(donut).toHaveAttribute('data-active', '')
+  })
+
+  it('highlights the row of a hovered slice', () => {
+    renderRollup()
+    fireEvent.pointerEnter(screen.getByTestId('slice-s1'))
+    expect(rowOf('Blast + Coat 1')).toHaveStyle({ background: palette.bgHover })
+    expect(rowOf('Coat 2').style.background).toBe('')
+  })
+
+  it('gives a slice the area standing at its coat and its row\'s figures as printed', () => {
+    // 100 m² stand at Blast + Coat 1; 800 m² have been through it.
+    renderRollup()
+    expect(JSON.parse(screen.getByTestId('slice-s1').getAttribute('data-detail') ?? 'null')).toEqual([
+      'Đang ở lớp này: 100,00 / 1.000,00 m² · 10,00%',
+      'Cộng dồn: 800,00 / 1.000,00 m² · 80,00%',
+    ])
+    const { area, percent } = figuresOf('Blast + Coat 1')
+    expect(`Cộng dồn: ${area} · ${percent}`).toBe('Cộng dồn: 800,00 / 1.000,00 m² · 80,00%')
+  })
+})
+
 describe('the work\'s quantity and unit (RV6-35)', () => {
   it('DeckProgressCard names the quantity and the unit of the active work', () => {
     render(<DeckProgressCard progress={0.4438} totalAreaM2={5258.5} quantityLabel="Khối lượng" unit="tấn" />)
@@ -148,7 +379,7 @@ describe('the work\'s quantity and unit (RV6-35)', () => {
       <StageRollupCard stages={STAGES} stageProgress={progressOf().stages} cells={CELLS} totalAreaM2={DECK.totalAreaM2} unit="tấn" />,
     )
     const card = screen.getByTestId('gs-stage-rollup')
-    expect(within(card).getByText('800,00 / 1.000,00 tấn · 80,00%')).toBeInTheDocument()
+    expect(figuresOf('Blast + Coat 1')).toEqual({ area: '800,00 / 1.000,00 tấn', percent: '80,00%' })
     expect(within(screen.getByTestId('donut')).getByText('tấn sàn')).toBeInTheDocument()
     expect(within(card).queryByText(/m²/)).toBeNull()
   })

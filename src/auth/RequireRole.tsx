@@ -1,8 +1,10 @@
 import { Alert, Button, Spin } from 'antd'
 import type { ReactNode } from 'react'
 import { NotFound } from '../screens/NotFound'
+import { NotFoundPage } from '../screens/NotFoundPage'
 import { useAuth, type Role } from './AuthProvider'
 import { LoginScreen } from './LoginScreen'
+import { roleHome } from './roleHome'
 
 export function RequireRole({
   role,
@@ -39,7 +41,7 @@ export function RequireRole({
           message="Không tải được thông tin tài khoản"
           description="Kiểm tra kết nối mạng rồi thử lại."
           action={
-            <Button size="small" onClick={() => window.location.reload()}>
+            <Button onClick={() => window.location.reload()}>
               Thử lại
             </Button>
           }
@@ -47,12 +49,18 @@ export function RequireRole({
       </div>
     )
   }
-  // A signed-in account with the wrong role, no profile, or a deactivated
-  // profile gets the same bare 404 as a stranger — no information leak about
-  // which paths exist. When `role` is omitted, any active profile passes:
-  // the caller (the base-path index route) reads profile.role itself.
-  if (!profile || !profile.active || (allowed && !allowed.includes(profile.role))) {
+  // No profile, or a deactivated one, is not signed in for any purpose: the
+  // same bare 404 as a stranger (spec §7.3), nothing about which paths exist.
+  if (!profile || !profile.active) {
     return <NotFound />
+  }
+  // An active account at another role's route is already in, so the bare
+  // page only strands it. It gets the branded not-found page with a way to
+  // its own home -- the same page an unknown path gives it, so a known route
+  // and a typo still cannot be told apart. When `role` is omitted, any active
+  // profile passes: the caller (the base-path index route) reads the role.
+  if (allowed && !allowed.includes(profile.role)) {
+    return <NotFoundPage home={roleHome(profile.role)} />
   }
   return <>{children}</>
 }

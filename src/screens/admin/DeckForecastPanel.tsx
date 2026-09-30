@@ -1,19 +1,26 @@
-import { Alert, App, Button, DatePicker, Segmented, Table, Typography } from 'antd'
+import { Alert, App, Button, DatePicker, Select, Table, Typography } from 'antd'
 import dayjs, { type Dayjs } from 'dayjs'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { SectionCard } from '../../components/SectionCard'
+import { InfoTip } from '../../components/InfoTip'
+import { WORK_SELECT_WIDTH, searchSelectProps, useFullOptionsProps } from '../../components/searchSelect'
 import { StatCard } from '../../components/StatCard'
+import { useTablePagination } from '../../components/tablePagination'
 import {
   dailyEffort, deckEffortTotals, effortDayKey, stageEfficiency, stageOrder,
 } from '../../domain/effort'
-import { deckForecast, type StageForecast } from '../../domain/forecast'
+import { DAYS_NEEDED_TIP, deckForecast, type StageForecast } from '../../domain/forecast'
 import { computeDeckProgress } from '../../domain/progress'
 import type { DeckEvent, WorkModel } from '../../domain/types'
 import { DEFAULT_UNIT, perUnit } from '../../domain/unit'
-import { formatAreaM2, formatHours, formatMhrPerM2 } from '../../lib/format'
+import { MISSING, formatAreaM2, formatHours, formatMhrPerM2 } from '../../lib/format'
 import { loadDeckWorks, type DeckWorks } from '../../lib/progressApi'
 import { setWorkDeckDeadline } from '../../lib/worksApi'
-import { palette } from '../../theme'
+import { palette, space, type } from '../../theme'
+
+/** The deck-wide totals' notes, on their labels' (?) (CPY-01). */
+const DECK_WIDE = 'Cả sàn, mọi công việc'
+const NOT_IN_EFFICIENCY = 'Không tính vào hiệu suất'
 
 /**
  * What is left on this deck and whether its deadline is reachable (Feedback
@@ -29,7 +36,7 @@ import { palette } from '../../theme'
  * exposes the deadline.
  */
 
-const dash = '—'
+const dash = MISSING
 
 export function DeckForecastPanel({
   deckId,
@@ -42,6 +49,8 @@ export function DeckForecastPanel({
   events: DeckEvent[] | null
 }) {
   const { message } = App.useApp()
+  // The work select's options read in full, as every work select's (M5).
+  const fullOptions = useFullOptionsProps()
   const [deckWorks, setDeckWorks] = useState<DeckWorks | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [workId, setWorkId] = useState<string | null>(null)
@@ -139,21 +148,32 @@ export function DeckForecastPanel({
     }
   }
 
-  const summary = activeWork === null
+  // The deck is part of the scope: one work spans every deck, and this panel
+  // stays mounted from one deck to the next.
+  const pagination = useTablePagination(forecast?.stages.length ?? 0, `${deckId}|${activeWork?.work.id ?? ''}`)
+  const facts = activeWork === null
     ? undefined
-    : activeWork.deadline
-      ? `${activeWork.work.name} · hạn ${dayjs(activeWork.deadline).format('DD/MM/YYYY')}`
-      : `${activeWork.work.name} · chưa đặt hạn`
+    : [
+      { value: activeWork.work.name },
+      activeWork.deadline
+        ? { prefix: 'hạn', value: dayjs(activeWork.deadline).format('DD/MM/YYYY') }
+        : { label: 'chưa đặt hạn' },
+    ]
 
   return (
-    <SectionCard code="A3.6" title="Dự báo tiến độ" summary={summary}>
+    <SectionCard code="A3.8" title="Dự báo tiến độ" facts={facts} bodyPadding={0}>
+      {/*
+        Flush body, so the table's edge columns carry the card's inset (LAY-01);
+        the blocks above and below it take the same inset themselves.
+      */}
+      <div style={{ padding: `${space.lg}px ${space.xl}px` }}>
       {error && (
         <Alert
           type="error"
           showIcon
           message="Không tải được công việc của sàn"
           description={error}
-          action={<Button size="small" onClick={() => setAttempt((n) => n + 1)}>Thử lại</Button>}
+          action={<Button onClick={() => setAttempt((n) => n + 1)}>Thử lại</Button>}
           style={{ marginBottom: 12 }}
         />
       )}
@@ -173,18 +193,22 @@ export function DeckForecastPanel({
           marginBottom: 16,
         }}
       >
-        <StatCard label="Mhr thực hiện hôm nay" value={formatHours(totals.todayHours)} sub="cả sàn, mọi công việc" tone="accent" />
-        <StatCard label="Mhr thực hiện đến nay" value={formatHours(totals.totalHours)} sub="cả sàn, mọi công việc" />
-        <StatCard label="Mhr hao phí hôm nay" value={formatHours(totals.todayWasteHours)} sub="không tính vào hiệu suất" />
-        <StatCard label="Mhr hao phí đến nay" value={formatHours(totals.totalWasteHours)} sub="không tính vào hiệu suất" />
+        <StatCard label={<>Mhr thực hiện hôm nay<InfoTip text={DECK_WIDE} /></>} value={formatHours(totals.todayHours)} tone="accent" />
+        <StatCard label={<>Mhr thực hiện đến nay<InfoTip text={DECK_WIDE} /></>} value={formatHours(totals.totalHours)} />
+        <StatCard label={<>Mhr hao phí hôm nay<InfoTip text={NOT_IN_EFFICIENCY} /></>} value={formatHours(totals.todayWasteHours)} />
+        <StatCard label={<>Mhr hao phí đến nay<InfoTip text={NOT_IN_EFFICIENCY} /></>} value={formatHours(totals.totalWasteHours)} />
       </div>
 
+      {/* The work, from a searchable select named by its aria-label (FLT-01, FLT-03). */}
       {works.length > 1 && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
-          <span style={{ fontSize: 12, fontWeight: 600, color: palette.textTertiary }}>Công việc</span>
-          <Segmented
+          <Select
+            aria-label="Công việc · Dự báo tiến độ"
+            {...searchSelectProps}
+            {...fullOptions}
+            style={{ width: WORK_SELECT_WIDTH }}
             value={activeWork?.work.id}
-            onChange={(v) => setWorkId(String(v))}
+            onChange={(id: string) => setWorkId(id)}
             options={works.map((w) => ({ label: w.work.name, value: w.work.id }))}
           />
         </div>
@@ -192,12 +216,12 @@ export function DeckForecastPanel({
 
       {activeWork === null ? (
         <Typography.Text type="secondary">
-          Sàn này chưa thuộc công việc nào, nên chưa có gì để dự báo.
+          Sàn này chưa thuộc công việc nào.
         </Typography.Text>
       ) : (
         <>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
-            <label htmlFor="deck-deadline" style={{ fontSize: 12, fontWeight: 600, color: palette.textTertiary }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+            <label htmlFor="deck-deadline" style={{ ...type.label, color: palette.textTertiary }}>
               Hạn hoàn thành
             </label>
             {editable ? (
@@ -211,14 +235,14 @@ export function DeckForecastPanel({
                 placeholder="Chọn ngày"
               />
             ) : (
-              <span data-testid="deck-deadline-readonly" style={{ fontWeight: 600 }}>
+              <span data-testid="deck-deadline-readonly" style={type.body}>
                 {activeWork.deadline ? dayjs(activeWork.deadline).format('DD/MM/YYYY') : dash}
               </span>
             )}
             {forecast?.daysRemaining !== null && forecast !== null && (
-              <span style={{ fontSize: 12, color: palette.textSecondary }}>
+              <span style={{ ...type.caption, color: palette.textSecondary }}>
                 {forecast.daysRemaining > 0
-                  ? `Còn ${forecast.daysRemaining} ngày (tính cả chủ nhật)`
+                  ? <>{`Còn ${forecast.daysRemaining} ngày`}<InfoTip text="Tính cả chủ nhật" /></>
                   : `Đã quá hạn ${1 - forecast.daysRemaining} ngày`}
               </span>
             )}
@@ -229,19 +253,24 @@ export function DeckForecastPanel({
               data-testid="forecast-warning"
               type="error"
               showIcon
-              style={{ marginBottom: 14 }}
+              style={{ marginTop: space.lg }}
               message="Cảnh báo không kịp tiến độ"
               description={
                 `Cần thêm ${formatHours(forecast.shortfallMhr ?? 0)} Mhr hoặc ${forecast.lateDays} ngày làm việc.`
               }
             />
           )}
+        </>
+      )}
+      </div>
 
+      {activeWork !== null && (
+        <>
           <Table<StageForecast>
             data-testid="forecast-table"
             size="small"
             rowKey="stageId"
-            pagination={false}
+            pagination={pagination}
             loading={events === null}
             dataSource={forecast?.stages ?? []}
             locale={{ emptyText: 'Công việc này chưa có công đoạn nào trên sàn' }}
@@ -249,66 +278,63 @@ export function DeckForecastPanel({
               { title: 'Công đoạn', dataIndex: 'stageName' },
               {
                 title: `${unit} còn lại`,
-                align: 'right',
+                align: 'center',
                 render: (_, r) => formatAreaM2(r.remainingAreaM2),
               },
               {
                 title: `Hiệu suất TB (${perUnit(unit)})`,
-                align: 'right',
+                align: 'center',
                 render: (_, r) => (r.avgMhrPerM2 === null ? dash : formatMhrPerM2(r.avgMhrPerM2)),
               },
               {
                 title: 'Mhr TB/ngày',
-                align: 'right',
+                align: 'center',
                 render: (_, r) => (r.avgHoursPerDay === null ? dash : formatHours(r.avgHoursPerDay)),
               },
               {
                 title: 'Mhr còn cần',
-                align: 'right',
+                align: 'center',
                 render: (_, r) => (r.mhrNeeded === null ? dash : formatHours(r.mhrNeeded)),
               },
               {
-                title: 'Số ngày cần',
-                align: 'right',
+                title: <>Số ngày cần<InfoTip text={DAYS_NEEDED_TIP} /></>,
+                align: 'center',
                 render: (_, r) => (r.daysNeeded === null ? dash : String(r.daysNeeded)),
               },
             ]}
             summary={() => (
               <Table.Summary.Row data-testid="forecast-total">
                 <Table.Summary.Cell index={0}>
-                  <strong>Tổng</strong>
+                  <span style={type.bodyStrong}>Tổng</span>
                 </Table.Summary.Cell>
-                <Table.Summary.Cell index={1} align="right" />
-                <Table.Summary.Cell index={2} align="right" />
-                <Table.Summary.Cell index={3} align="right" />
-                <Table.Summary.Cell index={4} align="right">
-                  <strong>
+                <Table.Summary.Cell index={1} align="center" />
+                <Table.Summary.Cell index={2} align="center" />
+                <Table.Summary.Cell index={3} align="center" />
+                <Table.Summary.Cell index={4} align="center">
+                  <span style={type.bodyStrong}>
                     {forecast?.totalMhrNeeded === null || forecast === null
                       ? dash
                       : formatHours(forecast.totalMhrNeeded)}
-                  </strong>
+                  </span>
                 </Table.Summary.Cell>
-                <Table.Summary.Cell index={5} align="right">
-                  <strong>{forecast?.daysNeeded === null || forecast === null ? dash : String(forecast.daysNeeded)}</strong>
+                <Table.Summary.Cell index={5} align="center">
+                  <span style={type.bodyStrong}>{forecast?.daysNeeded === null || forecast === null ? dash : String(forecast.daysNeeded)}</span>
                 </Table.Summary.Cell>
               </Table.Summary.Row>
             )}
           />
 
-          <div style={{ marginTop: 10, fontSize: 12, lineHeight: 1.5, color: palette.textTertiary }}>
-            {/*
-              Two sentences the numbers cannot say for themselves: why the
-              total days is not the sum, and what the totals leave out.
-            */}
-            <div>
-              Số ngày của sàn là ngày lớn nhất trong các công đoạn, không phải tổng: các lớp thi công song song.
-            </div>
-            {forecast !== null && forecast.stagesWithoutData > 0 && (
-              <div data-testid="forecast-missing" style={{ marginTop: 3 }}>
-                {`${forecast.stagesWithoutData} công đoạn chưa có giờ công nào nên chưa dự báo được; tổng ở trên chưa gồm các công đoạn đó.`}
+          {/*
+            What the totals leave out, only when they leave something out. Why
+            the total days is not the sum is the Số ngày cần header's (?).
+          */}
+          {forecast !== null && forecast.stagesWithoutData > 0 && (
+            <div style={{ padding: `${space.sm}px ${space.xl}px ${space.xl}px`, ...type.caption, lineHeight: 1.5, color: palette.textTertiary }}>
+              <div data-testid="forecast-missing">
+                {`Tổng ở trên chưa gồm ${forecast.stagesWithoutData} công đoạn chưa có giờ công nào.`}
               </div>
-            )}
-          </div>
+            </div>
+          )}
         </>
       )}
     </SectionCard>

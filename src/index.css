@@ -63,18 +63,49 @@ body {
 }
 
 /*
-  Table cells sit flush against the SectionCard edge -- every list on this app
-  is a bodyPadding={0} card -- so the first and last columns carry the card's
-  own 20px gutter. antd's uniform 16px left the first column a few pixels
-  inboard of the card title above it, which reads as a misalignment rather
-  than as a choice.
+  One inset inside a card (LAY-01). `SectionCard` marks its body `.pp-card`;
+  a table inside it sits flush against the card edge (bodyPadding={0}), so the
+  first and last column carry the card's own 20px gutter -- the `space.xl` of
+  the theme, repeated here because a stylesheet cannot import it. Between
+  columns antd's 12px stays. Head, body and summary cells all carry
+  `.ant-table-cell`, so one selector covers the three.
+
+  The selector is this long for specificity, not for scope. antd's small size
+  sets cell padding from `.ant-table-wrapper .ant-table.ant-table-small
+  .ant-table-tbody > tr > td` (0,4,2), injected after this file, and the old
+  `.pp-table .ant-table-cell:first-child` (0,3,0) lost to it -- measured as a
+  9px edge on every `size="small"` table. (0,5,0) wins whichever size the
+  table is.
+
+  Logical properties, so the rule survives a right-to-left context; and only
+  the inline-start/end of the edge cells, so the block padding antd chose for
+  the size stays and a fixed-right column's sticky offset (computed from the
+  column widths, not from cell padding) is untouched.
 */
-.pp-table .ant-table-cell:first-child {
-  padding-left: 20px;
+.pp-card .ant-table-wrapper .ant-table .ant-table-cell:first-child {
+  padding-inline-start: 20px;
 }
 
-.pp-table .ant-table-cell:last-child {
-  padding-right: 20px;
+.pp-card .ant-table-wrapper .ant-table .ant-table-cell:last-child {
+  padding-inline-end: 20px;
+}
+
+/*
+  One vertical axis per row (TBL-02). Stated rather than left to the UA
+  default so a cell that wraps -- a long stage name beside a picker and a
+  button -- keeps its neighbours on its centre line, whatever antd's cell
+  styles inherit.
+*/
+.ant-table-wrapper .ant-table .ant-table-tbody > tr > td {
+  vertical-align: middle;
+}
+
+/*
+  A paginated table's pager would otherwise sit against the card's right
+  border, since the body it lives in has no padding of its own.
+*/
+.pp-card .ant-table-wrapper .ant-table-pagination.ant-pagination {
+  margin-inline: 20px;
 }
 
 /*
@@ -98,4 +129,81 @@ body {
   line-height: 1.55;
   color: #5f7183;
   text-wrap: pretty;
+}
+
+/*
+  A colour, drawn as a circle and nothing else (CLR-01): `ColorField`'s native
+  picker and the zone palette's buttons. The native input's grey outline and
+  white inner frame live on pseudo-elements an inline style cannot reach, so
+  they are taken off here; size, shape and fill stay on the element.
+*/
+.pp-swatch::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+.pp-swatch::-webkit-color-swatch {
+  border: none;
+  border-radius: 50%;
+}
+.pp-swatch::-moz-color-swatch {
+  border: none;
+  border-radius: 50%;
+}
+/* Keyboard focus only, outside the circle: a ring on the colour itself
+   would read as part of it. */
+.pp-swatch:focus {
+  outline: none;
+}
+.pp-swatch:focus-visible {
+  outline: 2px solid #0a8175;
+  outline-offset: 2px;
+}
+/* A picked swatch already wears a 2px gap and a 2px ring (CLR-02); the
+   focus ring goes outside both, with a gap of its own, so a focused pick
+   still reads as picked. */
+.pp-swatch[aria-checked="true"]:focus-visible {
+  outline-offset: 6px;
+}
+.pp-swatch:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+/*
+  An Alert's title over its description is a card title, 15/600 (TYP-01, M3).
+  antd sets its size from fontSizeLG, which the themes pin to 15, but has no
+  token for its weight and draws it at 400 -- a step the scale does not have.
+  Two class names ahead of antd's own zero-specificity rule, like the table
+  rules above.
+*/
+.ant-alert.ant-alert-with-description .ant-alert-message {
+  font-weight: 600;
+}
+
+/*
+  Every searchable Select's popup on a phone: the screen less 16 px a side,
+  wherever its select sits (M6b). A media query rather than a hook, so a
+  Select in a dialog -- the cell modal, Đổi phân quyền -- gets it like the
+  page bars do. `!important` because rc-trigger writes the popup's position
+  inline.
+*/
+@media (max-width: 767.98px) {
+  .ant-select-dropdown.pp-select-popup {
+    left: 16px !important;
+    right: auto !important;
+    width: calc(100vw - 32px) !important;
+    max-width: calc(100vw - 32px) !important;
+  }
+}
+
+/* A collapsible card's toggle (COL-01): the keyboard's way in, a visible ring. */
+.pp-card-toggle:focus-visible {
+  outline: 2px solid #0a8175;
+  outline-offset: 2px;
+}
+
+/* A deck's drag handle (ORD-01): focusable for Alt+↑/↓, with a visible ring. */
+.pp-drag-handle:focus-visible {
+  outline: 2px solid #0a8175;
+  outline-offset: 2px;
+  border-radius: 6px;
 }

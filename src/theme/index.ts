@@ -30,6 +30,8 @@ export const palette = {
   textSecondary: '#4A5A6B',
   textTertiary: '#5F7183',
   textQuaternary: '#8698AA',
+  /** A glyph that points or grips rather than reads: a crumb chevron, a drag handle. */
+  iconMuted: '#647688',
 
   bgApp: '#F8FAFC',
   /** Outside the app frame: the login page, the area around a device mock. */
@@ -39,6 +41,12 @@ export const palette = {
   bgSubtle: '#FCFDFE',
   bgSubtleAlt: '#F9FBFD',
   bgHover: '#F1F6FA',
+  /**
+   * A table's header band (RLP-01): a clear step darker than the body so a
+   * header reads as a header -- 1.27:1 against white (#EDF1F5 was 1.14:1, a
+   * tint) -- its label textSecondary at 5.58:1 on it.
+   */
+  bgTableHeader: '#DFE5EC',
 
   border: '#D5DFE9',
   borderCard: '#E8EEF4',
@@ -47,17 +55,66 @@ export const palette = {
   error: '#B42318',
   errorBg: '#FEF3F2',
   errorBorder: '#FECDCA',
+  /** The danger tone's icon tile, a step deeper than errorBg (ConsequenceModal). */
+  errorTint: '#FEE4E2',
   success: '#15803D',
   successBg: '#E7F8EF',
   warning: '#B45309',
+  /** A neutral category with a colour of its own (the Visitor role, M15): not a verdict. */
+  info: '#1D4ED8',
+  infoBg: '#EFF4FF',
   warningBg: '#FFFAEB',
+  /** The warn tone's icon tile, a step deeper than warningBg (ConsequenceModal). */
+  warningTint: '#FDF0D5',
+  /** The hairline around a warning pill (HLT-01), so its amber reads on white. */
+  warningBorder: '#FEDF89',
 
   /** Tooltips and the "destructive" toggle, both near-black rather than black. */
   ink: '#1D2A38',
 
   /** The bar a progress track sits in. */
   track: '#E9EFF5',
+
+  /**
+   * Series colours the app picks itself (CHT-01): one per deck on the project
+   * ring, one per Recharts series that has no colour an admin chose. Colours
+   * an admin configures (coats, KPI per deck, zones) stay as configured.
+   *
+   * Okabe–Ito's order, rotated to start at the accent -- bluish green,
+   * yellow, blue, vermillion, reddish purple, rose, orange, sky blue -- each
+   * hue darkened until it holds 3:1 against white, and tuned so that under
+   * protanopia, deuteranopia and tritanopia (Machado 2009) no two of the
+   * eight fall below ΔE2000 11.6. Rose stands where Okabe–Ito has grey: a
+   * grey slice beside the grey remainder track read as work left, or as a
+   * disabled deck. Past eight, `categoricalColor` repeats them in a lighter
+   * tint.
+   */
+  categorical: [
+    '#0A8175', '#88690B', '#2563EB', '#8F1D21', '#A13A97', '#D22766', '#CF813A', '#1E9DD1',
+  ],
 } as const
+
+/** How much white each lap past the palette mixes in: a tint, then a paler one. */
+const CATEGORICAL_TINTS = [0, 0.35, 0.6] as const
+
+/**
+ * The colour of the `index`-th item in a list the app colours itself.
+ *
+ * Neighbours never share a colour, a ring's last slice and its first
+ * included: two neighbours are always one slot of the palette apart, and a
+ * last slice that wraps onto the first slot is a lap later, so a tint of it.
+ */
+export function categoricalColor(index: number): string {
+  const base = palette.categorical[index % palette.categorical.length]
+  const lap = Math.floor(index / palette.categorical.length)
+  const white = CATEGORICAL_TINTS[Math.min(lap, CATEGORICAL_TINTS.length - 1)]
+  if (white === 0) return base
+  const channel = (i: number) => {
+    const c = parseInt(base.slice(i, i + 2), 16)
+    return Math.round(c + (255 - c) * white).toString(16).padStart(2, '0')
+  }
+  return `#${channel(1)}${channel(3)}${channel(5)}`.toUpperCase()
+}
 
 /**
  * Field red is darker than admin red. On a tablet in sun the admin's #B42318
@@ -66,13 +123,94 @@ export const palette = {
  */
 export const fieldError = '#A50F0F'
 
+/**
+ * The spacing scale for block padding and gaps inside a card (LAY-02).
+ *
+ * `xl` is the card inset: header, body text, notes, footers and the first and
+ * last table column all start there (see `.pp-card` in `index.css`, which
+ * carries the same 20 because a stylesheet cannot import this file). Pills,
+ * badges and buttons keep their own internal paddings; this scale is for the
+ * blocks they sit in.
+ */
+export const space = { xs: 4, sm: 8, md: 12, lg: 16, xl: 20, xxl: 28 } as const
+
+/**
+ * The type scale (TYP-01): every size and weight a screen sets by hand is one
+ * of these roles, spread into its style (`...type.body`). antd's own text
+ * follows the same steps through the tokens below -- `fontSize` is `body`,
+ * table headers and field labels (`fontWeightStrong`) are `label`, card and
+ * dialog titles are `cardTitle`.
+ *
+ * Nothing goes below `micro`, and 700 belongs to the two display sizes alone:
+ * the stat numbers and the figure in a ring's centre. The sidebar's product
+ * name (14/600) is the one size outside the scale.
+ */
+export const type = {
+  /** Stat numbers. */
+  display: { fontSize: 32, fontWeight: 700 },
+  /** The figure in a ring's centre. */
+  displaySm: { fontSize: 21, fontWeight: 700 },
+  pageTitle: { fontSize: 20, fontWeight: 600 },
+  cardTitle: { fontSize: 15, fontWeight: 600 },
+  /** Running text and every table cell, names included. */
+  body: { fontSize: 13, fontWeight: 400 },
+  /** A totals row; a figure that is the point of its line. */
+  bodyStrong: { fontSize: 13, fontWeight: 600 },
+  /** Table headers and field labels. */
+  label: { fontSize: 13, fontWeight: 600 },
+  /** A sub-line under a name, a card summary, a page subtitle. */
+  caption: { fontSize: 12, fontWeight: 400 },
+  /** Badges, pills, section codes. */
+  micro: { fontSize: 11, fontWeight: 600 },
+} as const
+
+/** A type scale: one size and weight per role of `type`. */
+export type TypeScale = Readonly<Record<keyof typeof type, { readonly fontSize: number; readonly fontWeight: number }>>
+
+/**
+ * The same scale on the field screens (GS-04, GS-10). The field theme's base is
+ * 14, read at arm's length off a scaffold, so running text, a line's figure and
+ * a label are 14; every other step keeps its size, the titles included.
+ */
+export const fieldType: TypeScale = {
+  ...type,
+  body: { fontSize: 14, fontWeight: 400 },
+  bodyStrong: { fontSize: 14, fontWeight: 600 },
+  label: { fontSize: 14, fontWeight: 600 },
+}
+
 export const fontFamily =
   "'Be Vietnam Pro', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Helvetica, Arial, sans-serif"
+
+/** On screen for assistive technology alone: a column header a drag handle has no room to show (M20). */
+export const visuallyHidden = {
+  position: 'absolute', width: 1, height: 1, padding: 0, margin: -1, border: 0,
+  overflow: 'hidden', clip: 'rect(0, 0, 0, 0)', whiteSpace: 'nowrap',
+} as const
 
 /** Cards and panels. */
 export const shadowCard = '0 1px 2px #16202B0A, 0 6px 18px -8px #16202B14'
 /** Modals, popovers, toasts — anything that floats over the page. */
 export const shadowPop = '0 28px 56px -18px #16202B38, 0 4px 12px #16202B0D'
+
+/**
+ * antd's derived type steps, pinned to the scale (TYP-01). antd works them
+ * out from the base size -- at 13 that gave 10, 14 and 18, and an Alert's
+ * title over its description rendered at 14. `body` is the theme's base: 13
+ * on the admin, 14 in the field (GS-04), where every other step keeps its
+ * relation. `fontSizeIcon` follows `fontSizeSM`.
+ */
+const derivedTypeSteps = (body: number) => ({
+  fontSize: body,
+  fontSizeSM: type.caption.fontSize,
+  fontSizeLG: type.cardTitle.fontSize,
+  fontSizeXL: type.pageTitle.fontSize,
+  fontSizeHeading1: type.display.fontSize,
+  fontSizeHeading2: type.displaySm.fontSize,
+  fontSizeHeading3: type.pageTitle.fontSize,
+  fontSizeHeading4: type.cardTitle.fontSize,
+  fontSizeHeading5: body,
+})
 
 const sharedTokens = {
   colorPrimary: palette.accent,
@@ -102,7 +240,7 @@ const sharedTokens = {
   // The prototypes use one weight for headings (600) and never go heavier than
   // 700, which is reserved for the two or three numbers per screen that are the
   // point of the screen.
-  fontWeightStrong: 600,
+  fontWeightStrong: type.label.fontWeight,
 
   wireframe: false,
 }
@@ -117,7 +255,7 @@ const sharedTokens = {
 export const adminTheme: ThemeConfig = {
   token: {
     ...sharedTokens,
-    fontSize: 13,
+    ...derivedTypeSteps(type.body.fontSize),
     controlHeight: 38,
     borderRadius: 10,
     borderRadiusLG: 14,
@@ -148,10 +286,11 @@ export const adminTheme: ThemeConfig = {
       activeBarBorderWidth: 0,
     },
     Table: {
-      headerBg: palette.bgSubtleAlt,
-      headerColor: palette.textTertiary,
+      // A band a step darker than the body, its label and hairline to match (RLP-01).
+      headerBg: palette.bgTableHeader,
+      headerColor: palette.textSecondary,
       headerSplitColor: 'transparent',
-      borderColor: palette.borderSplit,
+      borderColor: palette.borderCard,
       rowHoverBg: palette.bgApp,
       cellPaddingBlock: 13,
       cellPaddingInline: 12,
@@ -160,7 +299,7 @@ export const adminTheme: ThemeConfig = {
     },
     Card: {
       headerBg: 'transparent',
-      headerFontSize: 15,
+      headerFontSize: type.cardTitle.fontSize,
       paddingLG: 20,
       colorBorderSecondary: palette.borderCard,
     },
@@ -174,7 +313,7 @@ export const adminTheme: ThemeConfig = {
     },
     Modal: {
       borderRadiusLG: 18,
-      titleFontSize: 17,
+      titleFontSize: type.cardTitle.fontSize,
       headerBg: palette.bgContainer,
       footerBg: palette.bgSubtle,
       contentBg: palette.bgContainer,
@@ -209,7 +348,7 @@ export const fieldTheme: ThemeConfig = {
   token: {
     ...sharedTokens,
     colorError: fieldError,
-    fontSize: 14,
+    ...derivedTypeSteps(14),
     controlHeight: 48,
     controlHeightSM: 40,
     borderRadius: 12,
@@ -232,9 +371,10 @@ export const fieldTheme: ThemeConfig = {
     Select: { optionSelectedBg: palette.accentTint, optionHeight: 48, optionPadding: '12px 13px' },
     Tabs: { horizontalItemPadding: '12px 0' },
     Table: {
-      headerBg: palette.bgSubtleAlt,
-      headerColor: palette.textTertiary,
-      borderColor: palette.borderSplit,
+      // The admin's header band, on the field too (RLP-01).
+      headerBg: palette.bgTableHeader,
+      headerColor: palette.textSecondary,
+      borderColor: palette.borderCard,
       cellPaddingBlock: 14,
     },
     Progress: { defaultColor: palette.accent, remainingColor: palette.track },

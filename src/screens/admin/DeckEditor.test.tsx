@@ -1,10 +1,11 @@
 import { App as AntApp } from 'antd'
 import type { ComponentProps } from 'react'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { DeckEditor } from './DeckEditor'
 import { mergeErrorInVietnamese } from './meshErrors'
+import { consequenceItems, keyFactTexts } from '../../test/copy'
 
 const listCells = vi.hoisted(() => vi.fn())
 const syncCells = vi.hoisted(() => vi.fn())
@@ -117,8 +118,9 @@ const deck = {
  * Comparing the item's full textContent pins the assertion on the warning list
  * and on the code/stage pairing together.
  */
+/** A subject row of the mesh dialog (ConsequenceModal's items), by its label. */
 const listItem = (text: string) => (_content: string, el: Element | null) =>
-  el?.tagName === 'LI' && el.textContent === text
+  el?.tagName === 'SPAN' && el.textContent === text && el.closest('.ant-modal') !== null
 
 
 /**
@@ -241,14 +243,11 @@ describe('DeckEditor', () => {
     ])
     renderInApp(deck)
     // 100 m² of cells against a 5258.5 m² deck is far beyond the threshold.
-    // The warning's message and description are separate DOM nodes and both
-    // contain the word "lệch", so a singular findByText is ambiguous here;
-    // findAllByText plus a non-empty check still fails if the banner never
-    // renders at all.
-    expect((await screen.findAllByText(/lệch/i)).length).toBeGreaterThan(0)
     // vi-VN throughout: a dot would read as a thousands separator here.
     // "thiếu" because the cells (100 m²) under-cover the declared 5258.5 m².
-    expect(screen.getByText(/thiếu 98,10%/)).toBeInTheDocument()
+    expect(await screen.findByText(/thiếu 98,10%/)).toBeInTheDocument()
+    // What a divergence usually means is on the title's (?) (CPY-01).
+    expect(screen.getByRole('img', { name: /khi lệch quá 5,00%/ })).toBeInTheDocument()
   })
 
   it('warns on over-coverage too, naming it "vượt" -- not just under-coverage', async () => {
@@ -394,8 +393,55 @@ describe('DeckEditor', () => {
     // longer names the operation (delete/merge/mesh) -- it only ever
     // distinguishes zone impact from everything else.
     expect(screen.getByText('Thao tác này ảnh hưởng đến zone')).toBeInTheDocument()
-    expect(screen.getByText(/Các ô này đang thuộc zone/)).toBeInTheDocument()
+    expect(screen.getByText('Ô rời zone ra khỏi zone của nó')).toBeInTheDocument()
     expect(syncCells).not.toHaveBeenCalled()
+  })
+
+  it('confirms a destructive mesh edit in the consequence dialog: subjects, then one consequence each (I5)', async () => {
+    listCells.mockResolvedValue([
+      { id: 'c1', code: 'R1C1', x: 0, y: 0, w: 0.5, h: 1, areaM2: 100, stageId: 'coat1' },
+      { id: 'c2', code: 'R1C2', x: 0.5, y: 0, w: 0.5, h: 1, areaM2: 100, stageId: null },
+    ])
+    stagesOfTheWork.mockResolvedValue([
+      { id: 'coat1', seq: 1, name: 'Coat 1', color: '#1677ff', weight: 1 },
+    ])
+    zoneImpactOf.mockResolvedValue([{ zoneId: 'z1', zoneName: 'Zone 3', cellCodes: ['R1C1'] }])
+    renderInApp(deck)
+    await screen.findByTestId('canvas')
+
+    await selectAll()
+    press('Delete')
+    await saveDeck()
+
+    const dialog = (await screen.findByText('Thao tác này ảnh hưởng đến zone')).closest('.ant-modal') as HTMLElement
+    expect(within(dialog).getByText('Thao tác phá huỷ')).toBeInTheDocument()
+    expect(within(dialog).getByRole('button', { name: /Vẫn lưu/ })).toHaveClass('ant-btn-dangerous')
+    expect(within(dialog).getByText('Zone 3: R1C1')).toBeInTheDocument()
+    expect(within(dialog).getByText('R1C1 — Sơn · Coat 1')).toBeInTheDocument()
+    expect(consequenceItems(dialog)).toEqual([
+      'Xoá cả 2 ô hiện có của sàn',
+      'Ô rời zone ra khỏi zone của nó',
+      'Ô mất tiến độ bị xoá tiến độ đã ghi',
+      'Lưu cả các đường chia trên bản vẽ và diện tích sàn đang nhập',
+    ])
+    // No prose paragraphs, no bullet list of its own (ConsequenceModal's contract).
+    expect(dialog.querySelector('.ant-typography')).toBeNull()
+  })
+
+  it('says every bay goes when all are deleted, without naming the database (CPY-01)', async () => {
+    listCells.mockResolvedValue([
+      { id: 'c1', code: 'R1C1', x: 0, y: 0, w: 1, h: 1, areaM2: 100, stageId: null },
+    ])
+    renderInApp(deck)
+    await screen.findByTestId('canvas')
+    await selectAll()
+    press('Delete')
+    await saveDeck()
+    // One present-tense sentence, no advice after it (RUL-01).
+    expect(await screen.findByText('Xoá cả 1 ô hiện có của sàn')).toBeInTheDocument()
+    expect(screen.getByText('Lưu cả các đường chia trên bản vẽ và diện tích sàn đang nhập')).toBeInTheDocument()
+    expect(screen.queryByText(/sẽ|bạn/)).toBeNull()
+    expect(screen.queryByText(/cơ sở dữ liệu/)).toBeNull()
   })
 
   it('applies the delete once the zone warning is confirmed', async () => {
@@ -477,17 +523,18 @@ describe('DeckEditor', () => {
     // since both lists are non-empty simultaneously. Folding them back under
     // one umbrella sentence (the round-2 defect) can show at most one of the
     // two, so this pair fails under that mutation.
-    expect(screen.getByText('Các ô này sẽ mất tiến độ đã ghi:')).toBeInTheDocument()
-    expect(screen.getByText(/Các ô này giữ tiến độ đã ghi nhưng diện tích thay đổi/)).toBeInTheDocument()
+    expect(screen.getByText('Ô mất tiến độ bị xoá tiến độ đã ghi')).toBeInTheDocument()
+    expect(screen.getByText('Ô giữ tiến độ đổi diện tích cùng phần trăm hoàn thành')).toBeInTheDocument()
     // No sentence may claim, as an umbrella, that recorded progress is being
     // wiped -- R1C1 is listed below and keeps its progress; the round-2 lead
     // paragraph asserted the opposite about it.
     expect(screen.queryByText(/sẽ xoá tiến độ đã ghi/)).toBeNull()
-    // The merge-only caveat: there is no honest carry rule for the cell that
-    // did not survive, so the dialog says so. Deleting the `kind === 'merge'`
-    // guard on this paragraph would restore exactly the overstatement it
-    // exists to remove, and ship green unless this is asserted.
-    expect(screen.getByText(/Ô sống sót giữ tiến độ của chính nó/)).toBeInTheDocument()
+    // The merge-only paragraph on why no carry rule is honest was design
+    // rationale and is gone (CPY-01); the two lists above say what happens.
+    expect(screen.queryByText(/Ô sống sót giữ tiến độ/)).toBeNull()
+    expect(screen.queryByText(/Không có cách gộp nào/)).toBeNull()
+    // Nor the filler lead-in above the sections.
+    expect(screen.queryByText(/Kiểm tra các mục dưới đây/)).toBeNull()
     expect(syncCells).not.toHaveBeenCalled()
 
     // 'Vẫn gộp' -- EDIT_CONFIRM.merge -- is not exercised by any other test.
@@ -510,7 +557,7 @@ describe('DeckEditor', () => {
     // are the two where the disclosure is least expected and most needed, and
     // 'mesh' is the one where a conditional version would most plausibly have
     // been thought sufficient.
-    const DISCLOSURE = /cũng lưu luôn bảng guide và diện tích sàn/
+    const DISCLOSURE = /Lưu cả các đường chia trên bản vẽ và diện tích sàn/
     const twoTickedCells = [
       { id: 'c1', code: 'R1C1', x: 0, y: 0, w: 0.5, h: 1, areaM2: 100, stageId: 'coat1' },
       { id: 'c2', code: 'R1C2', x: 0.5, y: 0, w: 0.5, h: 1, areaM2: 100, stageId: 'coat3' },
@@ -595,12 +642,12 @@ describe('DeckEditor', () => {
     expect(await screen.findByText('Xác nhận thay đổi lưới ô')).toBeInTheDocument()
     // vi-VN formatted, in the exact form the review specified.
     expect(screen.getByText(listItem('R1C1 — Sơn · Coat 3: 232,00 → 400,00 m²'))).toBeInTheDocument()
-    expect(screen.getByText(/Các ô này giữ tiến độ đã ghi nhưng diện tích thay đổi/)).toBeInTheDocument()
+    expect(screen.getByText('Ô giữ tiến độ đổi diện tích cùng phần trăm hoàn thành')).toBeInTheDocument()
     // Neither of the other two sections applies here -- there is no zone
     // impact and nothing is actually being deleted -- so asserting either
     // would catch this dialog quietly reverting to an overstatement.
     expect(screen.queryByText(/Các ô này đang thuộc zone/)).toBeNull()
-    expect(screen.queryByText('Các ô này sẽ mất tiến độ đã ghi:')).toBeNull()
+    expect(screen.queryByText('Ô mất tiến độ bị xoá tiến độ đã ghi')).toBeNull()
     expect(screen.queryByText(/sẽ xoá tiến độ đã ghi/)).toBeNull()
     expect(syncCells).not.toHaveBeenCalled()
 
@@ -735,7 +782,7 @@ await userEvent.click(screen.getByRole('button', { name: 'chọn R1C1' }))
     expect(await screen.findByText('Xác nhận thay đổi lưới ô')).toBeInTheDocument()
     // The progress-loss section carries its own claim now; there is no
     // shared sentence left to assert "no zone impact" against.
-    expect(screen.getByText('Các ô này sẽ mất tiến độ đã ghi:')).toBeInTheDocument()
+    expect(screen.getByText('Ô mất tiến độ bị xoá tiến độ đã ghi')).toBeInTheDocument()
     expect(screen.queryByText(/Các ô này đang thuộc zone/)).toBeNull()
   })
 
@@ -793,6 +840,38 @@ await userEvent.click(screen.getByRole('button', { name: 'chọn R1C1' }))
 
 
 
+  it('keeps the divergence figures inline and the troubleshooting on the title\'s (?) (CPY-01)', async () => {
+    listCells.mockResolvedValue([
+      { id: 'c1', code: 'R1C1', x: 0, y: 0, w: 1, h: 1, areaM2: 100, stageId: null },
+    ])
+    renderInApp({ ...deck, totalAreaM2: 200 })
+    const title = await screen.findByText(/Tổng diện tích các ô thiếu/)
+    expect(within(title).getByRole('img', { name: 'Kiểm tra khoảng cách đường chia khi lệch quá 5,00%, trừ khi sàn có opening hoặc E-house không phải ô.' })).toBeInTheDocument()
+    expect(screen.getByText(/^Các ô cộng lại 100,00.*, sàn khai báo 200,00.*\.$/)).toBeInTheDocument()
+  })
+
+  it('names the next step in the toolbar only while drawing a bay; each button explains itself (CPY-01)', async () => {
+    renderInApp(deck)
+    await screen.findByTestId('canvas')
+    // Idle: the clauses that belong to one button each are on that button.
+    expect(screen.queryByText(/Bấm Hiệu chỉnh để/)).toBeNull()
+    await userEvent.hover(screen.getByRole('button', { name: 'Tự động dò ô từ bản vẽ' }))
+    expect(await screen.findByText('Tự động dò ô từ bản vẽ và thay toàn bộ ô đang có.')).toBeInTheDocument()
+    await userEvent.hover(screen.getByRole('button', { name: 'Hiệu chỉnh ô' }))
+    expect(await screen.findByText(/gộp \/ xoá \/ vẽ ô bằng phím tắt/)).toBeInTheDocument()
+    // Editing: the shortcut table is right below, so no line repeats it.
+    await arm()
+    expect(screen.queryByText(/Dùng phím tắt bên dưới/)).toBeNull()
+    // Drawing: the instruction, without the snapping behaviour.
+    press('i')
+    expect(await screen.findByText('Kéo một khung vào chỗ còn thiếu ô.')).toBeInTheDocument()
+  })
+
+  it('asks for the PDF in Vietnamese when the deck has no drawing (CPY-01)', async () => {
+    renderInApp({ ...deck, imagePath: null, imageW: null, imageH: null })
+    expect(await screen.findByText('Sàn này chưa có bản vẽ. Tải PDF lên trước khi dò ô.')).toBeInTheDocument()
+  })
+
   it('warns that a deck with no declared area reports 0% forever, and refuses to save', async () => {
     // Every ratio divides by the deck area, so a deck that declares none reports
     // 0% for ever -- and computeProjectProgress gives it weight 0, so it drags
@@ -802,7 +881,7 @@ await userEvent.click(screen.getByRole('button', { name: 'chọn R1C1' }))
     ])
     renderInApp({ ...deck, totalAreaM2: 0 })
 
-    expect(await screen.findByText(/Chưa khai báo diện tích sàn/)).toBeInTheDocument()
+    expect(await screen.findByText('Tiến độ của sàn là 0% cho tới khi nhập diện tích sàn.')).toBeInTheDocument()
 
     await saveDeck()
 
@@ -830,7 +909,7 @@ await userEvent.click(screen.getByRole('button', { name: 'chọn R1C1' }))
     await saveDeck()
 
     expect(await screen.findByText(listItem('R1C1 — Sơn · Coat 2: 0,00 → 232,00 m²'))).toBeInTheDocument()
-    expect(screen.getByText(/Các ô này giữ tiến độ đã ghi nhưng diện tích thay đổi/)).toBeInTheDocument()
+    expect(screen.getByText('Ô giữ tiến độ đổi diện tích cùng phần trăm hoàn thành')).toBeInTheDocument()
     expect(syncCells).not.toHaveBeenCalled()
   })
 
@@ -885,7 +964,7 @@ await userEvent.click(screen.getByRole('button', { name: 'chọn R1C1' }))
 
     expect(await screen.findByText('Xoá toàn bộ lưới ô của sàn')).toBeInTheDocument()
     // The count, so the admin can tell a two-cell mistake from the whole deck.
-    expect(screen.getByText(/2 ô hiện có sẽ bị xoá/)).toBeInTheDocument()
+    expect(screen.getByText('Xoá cả 2 ô hiện có của sàn')).toBeInTheDocument()
     expect(syncCells).not.toHaveBeenCalled()
 
     syncCells.mockResolvedValue(undefined)
@@ -996,13 +1075,15 @@ await userEvent.click(screen.getByRole('button', { name: 'chọn R1C1' }))
       detectBaysFromImage.mockResolvedValue(BAYS)
       renderInApp(deck)
       await screen.findByTestId('canvas')
+      // No bay yet: the card's one fact says so (HLT-01).
+      expect(keyFactTexts()).toEqual(['chưa dựng ô'])
 
       await userEvent.click(screen.getByRole('button', { name: 'Tự động dò ô từ bản vẽ' }))
 
       await waitFor(() => expect(screen.getByTestId('cell-geometry')).toHaveTextContent(
         'R1C1:0.1+0.35 R1C2:0.5+0.4 R2C1:0.1+0.8',
       ))
-      expect(screen.getByText('3 ô đã dựng')).toBeInTheDocument()
+      expect(keyFactTexts()).toEqual(['3 ô đã dựng'])
       // Prorated: a detected bay carries no printed dimension, so its area is
       // its share of the deck's pixels. The three bays between them come to the
       // whole deck.
@@ -1106,7 +1187,7 @@ describe('mergeErrorInVietnamese', () => {
       await userEvent.click(screen.getByRole('button', { name: 'vẽ ô vào chỗ trống' }))
 
       expect(await screen.findByTestId('canvas')).toHaveTextContent('R1C1,X1')
-      expect(screen.getByText('2 ô đã dựng')).toBeInTheDocument()
+      expect(keyFactTexts()).toEqual(['2 ô đã dựng'])
     })
 
     it('re-prorates every area, so the deck still sums to its declared total', async () => {
@@ -1136,7 +1217,7 @@ describe('mergeErrorInVietnamese', () => {
 
       await waitFor(() => expect(toastText()).toContain('đã có ô'))
       expect(screen.getByTestId('canvas')).toHaveTextContent('R1C1')
-      expect(screen.getByText('1 ô đã dựng')).toBeInTheDocument()
+      expect(keyFactTexts()).toEqual(['1 ô đã dựng'])
     })
 
   })
@@ -1221,7 +1302,7 @@ describe('mergeErrorInVietnamese', () => {
 
       press('Backspace')
 
-      await waitFor(() => expect(screen.getByText('3 ô đã dựng')).toBeInTheDocument())
+      await waitFor(() => expect(keyFactTexts()).toEqual(['3 ô đã dựng']))
       expect(syncCells).not.toHaveBeenCalled()
       // The deck total is the truth, so what is left absorbs the area.
       expect(document.querySelectorAll('.ant-descriptions-item-content')[1]?.textContent)
@@ -1234,13 +1315,13 @@ describe('mergeErrorInVietnamese', () => {
       await arm()
       await userEvent.click(screen.getByRole('button', { name: 'chọn R1C1' }))
       press('Delete')
-      await waitFor(() => expect(screen.getByText('3 ô đã dựng')).toBeInTheDocument())
+      await waitFor(() => expect(keyFactTexts()).toEqual(['3 ô đã dựng']))
 
       press('z', { metaKey: true })
-      await waitFor(() => expect(screen.getByText('4 ô đã dựng')).toBeInTheDocument())
+      await waitFor(() => expect(keyFactTexts()).toEqual(['4 ô đã dựng']))
 
       press('z', { metaKey: true, shiftKey: true })
-      await waitFor(() => expect(screen.getByText('3 ô đã dựng')).toBeInTheDocument())
+      await waitFor(() => expect(keyFactTexts()).toEqual(['3 ô đã dựng']))
     })
 
     it('keeps the browser out of the keys it takes', async () => {

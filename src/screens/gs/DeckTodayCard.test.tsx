@@ -11,6 +11,31 @@ const ONE_WORK = [
 ]
 
 const card = () => screen.getByTestId('gs-deck-today')
+const ZERO = { todayHours: 0, totalHours: 0, todayWasteHours: 0, totalWasteHours: 0 }
+
+describe('DeckTodayCard while the deck loads', () => {
+  it('draws a skeleton, not an empty deck or zero hours, while the deck is on the way', () => {
+    // Before the works land there are no rows, which the ready card reads as
+    // "this deck has no coats"; before the events land every figure is 0.
+    render(<DeckTodayCard status="loading" todayKey="2026-09-09" rows={[]} totals={ZERO} />)
+    expect(within(card()).getByRole('heading', { level: 2, name: 'Thông tin nhanh — Hôm nay' })).toBeInTheDocument()
+    expect(within(card()).getByRole('status', { name: 'Đang tải thông tin hôm nay' })).toBeInTheDocument()
+    expect(card()).not.toHaveTextContent('chưa có công đoạn')
+    expect(card()).not.toHaveTextContent('0,00')
+    expect(within(card()).queryByText('Mhr thực hiện hôm nay')).toBeNull()
+  })
+
+  it('reads the missing mark "-" for every figure when today\'s updates could not be read', () => {
+    render(<DeckTodayCard status="unknown" todayKey="2026-09-09" rows={ONE_WORK} totals={ZERO} />)
+    expect(within(card()).getByText('Blast + Coat 1')).toBeInTheDocument()
+    expect(within(card()).getByText('Mhr thực hiện hôm nay')).toBeInTheDocument()
+    // Three coats and four man-hour rows.
+    expect(within(card()).getAllByText('-')).toHaveLength(7)
+    expect(card()).not.toHaveTextContent('0,00 m²')
+    expect(card()).not.toHaveTextContent('320,50')
+    expect(within(card()).queryByRole('status')).toBeNull()
+  })
+})
 
 describe('DeckTodayCard', () => {
   it('lists every coat the deck has, at 0,00 m² where nothing was recorded today', () => {
@@ -24,6 +49,16 @@ describe('DeckTodayCard', () => {
     expect(within(card()).getAllByText('0,00 m²')).toHaveLength(2)
   })
 
+  it('is titled like every admin card, its rows on the field scale (GS-10)', () => {
+    render(<DeckTodayCard todayKey="2026-09-09" rows={ONE_WORK} totals={TOTALS} />)
+    expect(within(card()).getByRole('heading', { level: 2, name: 'Thông tin nhanh — Hôm nay' }))
+      .toHaveStyle({ fontSize: '15px', fontWeight: '600' })
+    expect(within(card()).getByText('09/09/2026')).toHaveStyle({ fontSize: '12px', fontWeight: '400' })
+    expect(within(card()).getByText('Blast + Coat 1')).toHaveStyle({ fontSize: '14px', fontWeight: '400' })
+    expect(within(card()).getByText('320,50 m²')).toHaveStyle({ fontSize: '14px', fontWeight: '600' })
+    expect(within(card()).getByText('Mhr thực hiện hôm nay')).toHaveStyle({ fontSize: '14px', fontWeight: '400' })
+  })
+
   it('names the Vietnam day it is reporting, so a tablet left open overnight says so', () => {
     // RV5-20: "hôm nay" is the Vietnam calendar day. A card that only says
     // "Hôm nay" cannot be caught being a day stale.
@@ -31,14 +66,22 @@ describe('DeckTodayCard', () => {
     expect(within(card()).getByText('09/09/2026')).toBeInTheDocument()
   })
 
+  it('keeps the hours when only the coats are unknown: they come from the updates (R2)', () => {
+    render(<DeckTodayCard status="unknown" totalsStatus="ready" todayKey="2026-09-09" rows={[]} totals={TOTALS} emptyText="Không tải được công đoạn." />)
+    expect(within(card()).getByText('Không tải được công đoạn.')).toBeInTheDocument()
+    expect(within(card()).getByText('12,50')).toBeInTheDocument()
+    expect(within(card()).getByText('480,00')).toBeInTheDocument()
+    expect(within(card()).queryByText('-')).toBeNull()
+  })
+
   it('prints the four man-hour figures Linh asked for, under their own labels', () => {
     // RV5-19, verbatim from the spec's wording.
     render(<DeckTodayCard todayKey="2026-09-09" rows={ONE_WORK} totals={TOTALS} />)
     const rows: [string, string][] = [
-      ['Mhr thực hiện hôm nay', '12,5'],
-      ['Mhr hao phí hôm nay', '1,5'],
-      ['Tổng Mhr đã thực hiện đến hôm nay', '480,0'],
-      ['Tổng Mhr hao phí đến hôm nay', '22,0'],
+      ['Mhr thực hiện hôm nay', '12,50'],
+      ['Mhr hao phí hôm nay', '1,50'],
+      ['Tổng Mhr đã thực hiện đến hôm nay', '480,00'],
+      ['Tổng Mhr hao phí đến hôm nay', '22,00'],
     ]
     for (const [label, value] of rows) {
       expect(within(card()).getByText(label)).toBeInTheDocument()
@@ -50,8 +93,13 @@ describe('DeckTodayCard', () => {
     // RV5-21: man-hours exist only from 0030 (2026-09-05), so the two totals are
     // not totals over all the work the deck has had done.
     render(<DeckTodayCard todayKey="2026-09-09" rows={ONE_WORK} totals={TOTALS} />)
-    expect(within(card()).getByText(/05\/09\/2026/)).toBeInTheDocument()
-    expect(within(card()).getByText(/không phải toàn bộ/)).toBeInTheDocument()
+    // On the two cumulative rows' (?), not as a footnote under the card (CPY-01).
+    for (const label of ['Tổng Mhr đã thực hiện đến hôm nay', 'Tổng Mhr hao phí đến hôm nay']) {
+      const tip = within(within(card()).getByText(label)).getByRole('img', { name: /05\/09\/2026.*không phải toàn bộ/ })
+      expect(tip).toBeInTheDocument()
+    }
+    expect(within(card()).queryByText(/không phải toàn bộ/)).toBeNull()
+    expect(within(card()).getByText('Mhr thực hiện hôm nay').querySelector('[role="img"]')).toBeNull()
   })
 
   it('groups the coats under their work when the deck is in two works', () => {

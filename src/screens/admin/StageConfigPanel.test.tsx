@@ -3,6 +3,10 @@ import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderApp } from '../../test/renderApp'
 import { StageConfigPanel } from './StageConfigPanel'
+import { expectLeft } from '../../test/alignment'
+import { expectOneHeight } from '../../test/controls'
+import { consequenceItems, expectHelperText, keyFactTexts, ruleTexts } from '../../test/copy'
+import { palette } from '../../theme'
 
 const listWorkStages = vi.hoisted(() => vi.fn())
 const saveWorkStages = vi.hoisted(() => vi.fn())
@@ -48,6 +52,10 @@ const dragRow = (from: number, to: number) => {
   fireEvent.drop(rows[to])
 }
 
+/** What deleting a coat does, as both the STG-R4 rule and the delete dialog say it (CPY-05). */
+const STAGE_DELETE_EFFECT =
+  'Xoá một lớp đưa các ô đang ở lớp đó về “Chưa bắt đầu” và xoá zone, kế hoạch KPI của lớp, còn lịch sử cập nhật giữ nguyên.'
+
 const saveConfig = async () => {
   await userEvent.click(screen.getByRole('button', { name: 'Lưu cấu hình lớp sơn' }))
   const removal = screen.queryByRole('button', { name: 'Vẫn lưu' })
@@ -79,10 +87,12 @@ describe('StageConfigPanel', () => {
     // mocked listWorkStages promise rather than testing the settled total.
     await screen.findByDisplayValue('Blast + Coat 1')
     // vi-VN formatting: comma decimal separator, matching the paperwork the
-    // operators already read from. Twice on purpose: the section summary
-    // survives the panel being collapsed, the chip beside Lưu does not.
-    expect(await screen.findByText('2 lớp · tổng 1,00')).toBeInTheDocument()
-    expect(screen.getByText('1,00')).toBeInTheDocument()
+    // operators already read from. Once: the fact, which survives the panel
+    // being collapsed, is the only sum; the chip beside Lưu is gone (M5).
+    await waitFor(() => expect(keyFactTexts()).toEqual(['2 lớp', 'tổng 1,00']))
+    expect(screen.getAllByText('1,00')).toHaveLength(1)
+    expect(screen.queryByText('/ 1')).toBeNull()
+    expect(screen.getAllByTestId('key-fact')[1]).not.toHaveStyle({ color: palette.warning })
   })
 
   it('blocks save when the weights do not sum to 1', async () => {
@@ -240,10 +250,20 @@ describe('StageConfigPanel', () => {
     // is renumbered from 3 to 2. Naming it here is precisely the old defect.
     expect(within(dialog).queryByText('Tháo giáo')).toBeNull()
     expect(within(dialog).queryByText('Blast + Coat 1')).toBeNull()
-    // Both consequences of the delete, named: the cells at that stage are reset,
-    // and the zones planned against it go with it.
-    expect(within(dialog).getByText(/trở về trạng thái chưa bắt đầu/)).toBeInTheDocument()
-    expect(within(dialog).getByText(/xoá luôn các zone đã lên kế hoạch/)).toBeInTheDocument()
+    // Every consequence of the delete, named as the database carries it out
+    // (CPY-05): the bays at that stage go back to not started (cell_states
+    // SET NULL), its zones and KPI plan go (zones, stage_plans CASCADE), and
+    // the history stays (cell_events has no FK on the stage and snapshots its
+    // name; the deletion trigger adds a back-to-not-started row per bay).
+    // Each consequence its own item, in the rule's words (RUL-01, CPY-05).
+    expect(consequenceItems(dialog)).toEqual([
+      'Các ô đang ở lớp đó về “Chưa bắt đầu”',
+      'Zone và kế hoạch KPI của lớp đó bị xoá',
+      'Lịch sử cập nhật giữ nguyên',
+    ])
+    expect(within(dialog).getByText('Các lớp sơn sau bị xoá vĩnh viễn khỏi cấu hình:')).toBeInTheDocument()
+    // Not the aside about what renaming keeps (CPY-01).
+    expect(within(dialog).queryByText(/Đổi tên, đổi trọng số/)).toBeNull()
     expect(saveWorkStages).not.toHaveBeenCalled()
 
     await userEvent.click(screen.getByRole('button', { name: 'Vẫn lưu' }))
@@ -450,8 +470,8 @@ describe('StageConfigPanel', () => {
 
     await waitFor(() => expect(screen.getByDisplayValue('0,33333')).toBeInTheDocument())
     expect(screen.queryByDisplayValue('0,333333')).toBeNull()
-    // 0.4 + 0.33333, not 0.4 + 0.333333.
-    expect(screen.getByText('0,73')).toBeInTheDocument()
+    // 0.4 + 0.33333, not 0.4 + 0.333333 -- in the card's facts, the one sum (M5).
+    expect(screen.getAllByText('0,73')).toHaveLength(1)
   })
 
   it('saves the three-way split that used to disable its own Save button', async () => {
@@ -488,7 +508,8 @@ describe('StageConfigPanel', () => {
     // rounds away and it reads 1,00. That is precisely why the epsilon has to
     // forgive it: at 1e-6 the banner appeared next to a total the admin reads as
     // exactly 1,00, saying "Tổng trọng số phải bằng 1 — hiện tại 1,00".
-    expect(screen.getByText('1,00')).toBeInTheDocument()
+    // In the card's facts, the one sum (M5).
+    expect(screen.getAllByText('1,00')).toHaveLength(1)
     expect(screen.queryByText(/Tổng trọng số phải bằng/)).toBeNull()
 
     expect(screen.getByRole('button', { name: 'Lưu cấu hình lớp sơn' })).toBeEnabled()
@@ -559,7 +580,8 @@ describe('StageConfigPanel', () => {
     const names = screen.getAllByLabelText('Tên lớp sơn').map((i) => (i as HTMLInputElement).value)
     expect(names).toEqual(['Coat 2', 'Blast + Coat 1'])
     // Cumulative progress reads stages by seq, so gaps or ties would corrupt it.
-    expect(screen.getAllByText(/^[12]$/).map((n) => n.textContent)).toEqual(['1', '2'])
+    const seqs = screen.getAllByText(/^[12]$/).filter((n) => n.closest('[data-testid="key-facts"]') === null)
+    expect(seqs.map((n) => n.textContent)).toEqual(['1', '2'])
   })
 
   it('refuses to save two stages under one name or one colour', async () => {
@@ -580,6 +602,9 @@ describe('StageConfigPanel', () => {
     await userEvent.type(second, 'coat 1 ')
 
     expect(await screen.findByText('Hai lớp sơn đang trùng nhau')).toBeInTheDocument()
+    // The clash itself, not why it matters: STG-R2 states the rule (CPY-01).
+    expect(screen.getByText(/^Trùng tên: .+\.$/)).toBeInTheDocument()
+    expect(screen.queryByText(/GS nhận ra lớp sơn bằng màu/)).toBeNull()
     expect(screen.getByRole('button', { name: 'Lưu cấu hình lớp sơn' })).toBeDisabled()
     expect(saveWorkStages).not.toHaveBeenCalled()
   })
@@ -621,8 +646,11 @@ describe('StageConfigPanel with no coats declared yet', () => {
     renderApp(<StageConfigPanel workId="w1" deckId="d1" />)
     await screen.findByText('Sàn này chưa có lớp sơn nào')
     expect(screen.getByRole('button', { name: 'Lưu cấu hình lớp sơn' })).toBeDisabled()
-    // And it says why, in the words of what to do about it.
-    expect(screen.getByText(/Thêm ít nhất một lớp sơn/)).toBeInTheDocument()
+    // And it says what to do about it, once: the empty state carries the step,
+    // and the caption under the weight bar no longer repeats it (CPY-01).
+    expect(screen.getByText('Thêm lớp, đặt màu và trọng số.')).toBeInTheDocument()
+    expect(screen.queryByText(/Thêm ít nhất một lớp sơn/)).toBeNull()
+    expect(screen.queryByText(/Mỗi sàn khai báo lớp sơn/)).toBeNull()
   })
 
   it('opens the way in, so an empty deck is not a dead end', async () => {
@@ -680,6 +708,60 @@ describe('StageConfigPanel hex field', () => {
   })
 })
 
+describe('StageConfigPanel — explanatory copy (CPY-01)', () => {
+  it('explains the drag on the Thứ tự header while editing, not in a line beside Thêm lớp', async () => {
+    renderApp(<StageConfigPanel workId="w1" deckId="d1" />)
+    await screen.findByDisplayValue('Blast + Coat 1')
+    const tip = screen.getByRole('img', { name: 'Kéo hàng để đổi thứ tự' })
+    expect(tip.closest('th')).toHaveTextContent(/^Thứ tự$/)
+    expect(screen.queryByText(/Kéo hàng để đổi thứ tự ·/)).toBeNull()
+  })
+
+  it('has no drag tooltip when the panel is read-only', async () => {
+    renderApp(<StageConfigPanel workId="w1" deckId="d1" editable={false} />)
+    await screen.findByText('Blast + Coat 1')
+    expect(screen.queryByRole('img', { name: 'Kéo hàng để đổi thứ tự' })).toBeNull()
+  })
+
+  it('asks before an ordinary save with the list alone, no paragraph restating the scope', async () => {
+    renderApp(<StageConfigPanel workId="w1" deckId="d1" />)
+    await screen.findByDisplayValue('Blast + Coat 1')
+    await userEvent.click(screen.getByRole('button', { name: 'Lưu cấu hình lớp sơn' }))
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText('Cấu hình này chỉ áp cho sàn đang mở:')).toBeInTheDocument()
+    expect(within(dialog).queryByText(/Mọi phần trăm tiến độ của sàn này tính lại/)).toBeNull()
+  })
+
+  it('states the coat-delete rule in the same words as the delete dialog (CPY-05)', async () => {
+    renderApp(<StageConfigPanel workId="w1" deckId="d1" />)
+    await screen.findByDisplayValue('Blast + Coat 1')
+    await userEvent.click(screen.getByRole('button', { name: /Quy tắc áp dụng/ }))
+    expect(screen.getByText(STAGE_DELETE_EFFECT)).toBeInTheDocument()
+  })
+
+  it('states its rules as helper text, the no-clash rule without the reason after it (RUL-01)', async () => {
+    renderApp(<StageConfigPanel workId="w1" deckId="d1" />)
+    await screen.findByDisplayValue('Blast + Coat 1')
+    await userEvent.click(screen.getByRole('button', { name: /Quy tắc áp dụng/ }))
+    expect(ruleTexts()).toEqual([
+      'Lưu được khi tổng trọng số các lớp bằng 1.',
+      'Lưu được khi không có hai lớp trùng tên hoặc trùng màu.',
+      'Cấu hình chỉ áp cho sàn đang mở.',
+      'Xoá một lớp đưa các ô đang ở lớp đó về “Chưa bắt đầu” và xoá zone, kế hoạch KPI của lớp, còn lịch sử cập nhật giữ nguyên.',
+    ])
+    expectHelperText(ruleTexts())
+  })
+})
+
+describe('StageConfigPanel: the work select in its header (M7)', () => {
+  it('puts a work select handed to it in its own header, beside the sum', async () => {
+    renderApp(<StageConfigPanel workId="w1" deckId="d1" workSelect={<button type="button">chọn công việc</button>} />)
+    await screen.findByDisplayValue('Blast + Coat 1')
+    const header = screen.getByRole('heading', { name: 'Cấu hình lớp sơn' }).parentElement as HTMLElement
+    expect(within(header).getByRole('button', { name: 'chọn công việc' })).toBeInTheDocument()
+  })
+})
+
 describe('StageConfigPanel weight bar', () => {
   it('gives each stage a band as wide as its own weight, in its own colour', async () => {
     renderApp(<StageConfigPanel workId="w1" deckId="d1" />)
@@ -705,7 +787,18 @@ describe('StageConfigPanel weight bar', () => {
     // "0,7000" has to be read and compared against a number that is not there.
     expect(screen.getByTestId('weight-bar-s1')).toHaveStyle({ width: '60.0000%' })
     expect(screen.getByTestId('weight-bar-s2')).toHaveStyle({ width: '10.0000%' })
-    expect(screen.getByText('0,70')).toBeInTheDocument()
+    // The one sum, the fact, amber while it is not 1 (M5, HLT-01).
+    expect(screen.getAllByText('0,70')).toHaveLength(1)
+    expect(screen.getAllByTestId('key-fact')[1]).toHaveStyle({ color: palette.warning })
+    // The validation hint, without the rationale after it (CPY-01).
+    expect(screen.getByText('Tổng trọng số các lớp phải bằng 1; hiện tại 0,70.')).toBeInTheDocument()
+  })
+
+  it('says nothing under a balanced bar: the summary already reads tổng 1,00 (CPY-01)', async () => {
+    renderApp(<StageConfigPanel workId="w1" deckId="d1" />)
+    await screen.findByDisplayValue('Blast + Coat 1')
+    expect(screen.queryByText(/Dải lấp đầy khung/)).toBeNull()
+    expect(screen.queryByText(/Tổng trọng số các lớp phải bằng 1/)).toBeNull()
   })
 
   it('clamps a band to the track rather than letting it overflow', async () => {
@@ -720,5 +813,72 @@ describe('StageConfigPanel weight bar', () => {
     await screen.findByDisplayValue('Blast + Coat 1')
 
     expect(screen.getByTestId('weight-bar-s1')).toHaveStyle({ width: '100.0000%' })
+  })
+})
+
+describe('StageConfigPanel — one control height per row (CTL-01)', () => {
+  it('stands the name, colour and weight fields and the row actions at the theme height (CTL-02)', async () => {
+    renderApp(<StageConfigPanel workId="w1" deckId="d1" />)
+    const hex = await screen.findByLabelText('Mã màu · Blast + Coat 1')
+    expectOneHeight(hex.closest('tr') as HTMLElement)
+  })
+})
+
+describe('StageConfigPanel — the read-only colour (CLR-01)', () => {
+  it('shows a coat\'s colour as a plain circle, no frame and no shadow', async () => {
+    renderApp(<StageConfigPanel workId="w1" deckId="d1" editable={false} />)
+    const swatch = await screen.findByLabelText('Màu của Blast + Coat 1')
+    expect(swatch).toHaveStyle({ borderRadius: '50%' })
+    expect(swatch.style.boxShadow).toBe('')
+    expect(swatch.style.width).toBe(swatch.style.height)
+  })
+
+  it('lines the circles up down the column: one fixed-width block per row, circle first, hex in monospace (AD7)', async () => {
+    renderApp(<StageConfigPanel workId="w1" deckId="d1" editable={false} />)
+    await screen.findByLabelText('Màu của Blast + Coat 1')
+    const blocks = screen.getAllByTestId('swatch-code')
+    expect(blocks.length).toBeGreaterThan(1)
+    const widths = new Set(blocks.map((b) => b.style.width))
+    expect(widths.size).toBe(1)
+    expect([...widths][0]).toMatch(/px$/)
+    for (const block of blocks) {
+      expect(block).toHaveStyle({ display: 'inline-flex', justifyContent: 'flex-start' })
+      // Circle first, so its left edge is the block's: one x on every row.
+      expect(block.firstElementChild).toHaveAttribute('aria-label', expect.stringMatching(/^Màu của /))
+      expect(block.lastElementChild).toHaveStyle({ fontVariantNumeric: 'tabular-nums' })
+      expect((block.lastElementChild as HTMLElement).style.fontFamily).toMatch(/monospace/)
+    }
+  })
+})
+
+describe('StageConfigPanel — alignment (UI-03)', () => {
+  it('draws no action or handle column in view mode, where both would be empty (R3)', async () => {
+    renderApp(<StageConfigPanel workId="w1" deckId="d1" editable={false} />)
+    await screen.findByText('Blast + Coat 1')
+    expect(screen.queryByRole('columnheader', { name: 'Thao tác' })).toBeNull()
+    expect(screen.queryByRole('columnheader', { name: 'Kéo để sắp xếp' })).toBeNull()
+  })
+
+  it('names its action column Thao tác and its drag handle column for a screen reader (M20)', async () => {
+    renderApp(<StageConfigPanel workId="w1" deckId="d1" />)
+    await screen.findByDisplayValue('Blast + Coat 1')
+    expect(screen.getByRole('columnheader', { name: 'Thao tác' })).toBeInTheDocument()
+    const handle = screen.getByRole('columnheader', { name: 'Kéo để sắp xếp' })
+    expect(within(handle).getByText('Kéo để sắp xếp')).toHaveStyle({ position: 'absolute', width: '1px' })
+  })
+
+  it('keeps the coat name left and centres the colour picker itself, not only the cell text', async () => {
+    renderApp(<StageConfigPanel workId="w1" deckId="d1" />)
+    const hex = await screen.findByLabelText('Mã màu · Blast + Coat 1')
+    expectLeft(screen.getByRole('columnheader', { name: 'Tên lớp' }))
+    // Thứ tự's name carries its (?) while editing, hence the prefix match.
+    for (const label of [/^Thứ tự/, 'Màu', 'Trọng số']) {
+      expect(screen.getByRole('columnheader', { name: label })).toHaveStyle({ textAlign: 'center' })
+    }
+    // The swatch and the hex sit in a flex box, which `text-align` on the
+    // cell does not move: it has to centre its own items.
+    const colourCell = hex.closest('td') as HTMLElement
+    expect(colourCell).toHaveStyle({ textAlign: 'center' })
+    expect(colourCell.firstElementChild).toHaveStyle({ justifyContent: 'center' })
   })
 })

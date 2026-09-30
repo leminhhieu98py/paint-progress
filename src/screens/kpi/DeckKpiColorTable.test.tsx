@@ -1,7 +1,10 @@
 import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { weightOf } from '../../test/typography'
+import { expectOneHeight } from '../../test/controls'
 import { DeckKpiColorTable, type DeckKpiColorRow } from './DeckKpiColorTable'
+import { keyFactTexts } from '../../test/copy'
 
 /**
  * RV6-28's admin table and RV6-31's rule on a bad hex. The two fields are
@@ -27,10 +30,22 @@ const open = async () => {
 }
 
 describe('DeckKpiColorTable', () => {
+  it('stands the colour fields and Mặc định at the theme height (CTL-02)', async () => {
+    renderTable()
+    await open()
+    expectOneHeight(screen.getByTestId('deck-color-row-d1'))
+  })
+
+  it('sets the deck name as body text, not bold (TYP-02)', async () => {
+    renderTable()
+    await open()
+    expect(weightOf(screen.getByText('Sàn A'))).toBe(400)
+  })
+
   it('is a collapsible section, shut by default, that counts the styled decks', () => {
     renderTable()
     expect(screen.getByRole('heading', { name: 'Màu biểu đồ theo sàn' })).toBeInTheDocument()
-    expect(screen.getByText('2 sàn · 1 sàn có màu riêng')).toBeInTheDocument()
+    expect(keyFactTexts()).toEqual(['2 sàn', '1 sàn có màu riêng'])
     expect(screen.getByRole('button', { name: 'Màu biểu đồ theo sàn' })).toHaveAttribute('aria-expanded', 'false')
     expect(screen.queryByLabelText('Mã màu · Kế hoạch · Sàn A')).toBeNull()
   })
@@ -43,8 +58,11 @@ describe('DeckKpiColorTable', () => {
       expect(screen.getByLabelText(`Mã màu · Kế hoạch · ${name}`)).toBeInTheDocument()
       expect(screen.getByLabelText(`Chọn màu · Thực hiện · ${name}`)).toBeInTheDocument()
       expect(screen.getByLabelText(`Mã màu · Thực hiện · ${name}`)).toBeInTheDocument()
-      expect(within(screen.getByTestId(`deck-color-row-${name === 'Sàn A' ? 'd1' : 'd2'}`)).getByRole('button', { name: `Mặc định · ${name}` }))
-        .toHaveTextContent('Mặc định')
+      // An icon action, named by its label, with no visible text (ACT-01).
+      const reset = within(screen.getByTestId(`deck-color-row-${name === 'Sàn A' ? 'd1' : 'd2'}`))
+        .getByRole('button', { name: `Mặc định · ${name}` })
+      expect(reset).toHaveClass('ant-btn-icon-only')
+      expect(reset).toHaveTextContent('')
     }
   })
 

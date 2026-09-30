@@ -15,6 +15,12 @@ const CELLAR = WORKBOOK_DECKS.find((d) => d.code === 'CD')!
 const progress = computeDeckProgress(CELLAR, WORKBOOK_STAGES)
 
 describe('StageSpecTable', () => {
+  it('draws no outer border of its own: it sits flush inside a card (layout QA)', () => {
+    const progress = computeDeckProgress(WORKBOOK_DECKS[0], WORKBOOK_STAGES)
+    const { container } = render(<StageSpecTable stages={progress.stages} />)
+    expect(container.querySelector('.ant-table-bordered')).toBeNull()
+  })
+
   it('has one column per stage, in seq order', () => {
     render(<StageSpecTable stages={progress.stages} />)
     const headers = screen.getAllByRole('columnheader').map((h) => h.textContent)

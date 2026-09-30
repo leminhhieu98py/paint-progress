@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  deckUnitOf,
   DEFAULT_QUANTITY_LABEL, DEFAULT_UNIT, labelOfWorks, perUnit, quantityHeading, rateUnit, unitOfWorks,
 } from './unit'
 
@@ -59,5 +60,18 @@ describe('label builders', () => {
   it('perUnit is the efficiency figure, "Mhr/<unit>"', () => {
     expect(perUnit('m²')).toBe('Mhr/m²')
     expect(perUnit('m')).toBe('Mhr/m')
+  })
+})
+
+describe('deckUnitOf (AD4)', () => {
+  it('is the unit every work of the deck shares', () => {
+    expect(deckUnitOf([{ unit: 'tấn', seq: 2 }, { unit: 'tấn', seq: 1 }])).toBe('tấn')
+  })
+  it('is m² for a deck in no work yet', () => {
+    expect(deckUnitOf([])).toBe('m²')
+  })
+  it('falls back to its first work\'s unit, by seq, when its works disagree: never a bare figure', () => {
+    expect(deckUnitOf([{ unit: 'tấn', seq: 2 }, { unit: 'm²', seq: 1 }])).toBe('m²')
+    expect(deckUnitOf([{ unit: 'Kg', seq: 1 }, { unit: 'm²', seq: 3 }])).toBe('Kg')
   })
 })

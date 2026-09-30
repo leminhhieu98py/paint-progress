@@ -1,7 +1,7 @@
 import { FunctionsHttpError } from '@supabase/supabase-js'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
-  createGsUser, deactivateGsUser, hideUser, listGsUsers, reactivateUser, renameUser,
+  changeRole, createGsUser, deactivateGsUser, hideUser, listGsUsers, reactivateUser, renameAccount, renameUser,
   revealPassword, setMemberships, setPassword, unhideUser,
 } from './adminApi'
 
@@ -57,14 +57,41 @@ describe('adminApi', () => {
     })
   })
 
-  it('surfaces a function-level error as a thrown Error', async () => {
-    invoke.mockResolvedValue({ data: null, error: { message: 'boom' } })
-    await expect(revealPassword('u1')).rejects.toThrow('boom')
+  it('sends no project for a Visitor created without one (NL-05)', async () => {
+    invoke.mockResolvedValue({ data: { userId: 'u2' }, error: null })
+    await createGsUser({ username: 'sep.a', fullName: 'Sếp A', password: 'pw', role: 'viewer' })
+    expect(invoke).toHaveBeenCalledWith('admin-users', {
+      body: { action: 'create', username: 'sep.a', fullName: 'Sếp A', password: 'pw', role: 'viewer' },
+    })
   })
 
-  it('surfaces an application error returned in the body', async () => {
+  it('surfaces a function-level error as a thrown Error, in Vietnamese when it came in English (M2)', async () => {
+    invoke.mockResolvedValue({ data: null, error: { message: 'boom' } })
+    await expect(revealPassword('u1')).rejects.toThrow('Máy chủ từ chối thao tác này. Thử lại sau.')
+  })
+
+  it('passes a Vietnamese server message through unchanged', async () => {
+    invoke.mockResolvedValue({ data: { error: 'Tên đăng nhập này đã có người dùng' }, error: null })
+    await expect(revealPassword('u1')).rejects.toThrow('Tên đăng nhập này đã có người dùng')
+  })
+
+  it('surfaces an application error returned in the body, in Vietnamese', async () => {
     invoke.mockResolvedValue({ data: { error: 'No stored credential' }, error: null })
-    await expect(revealPassword('u1')).rejects.toThrow('No stored credential')
+    await expect(revealPassword('u1')).rejects.toThrow('Tài khoản này chưa có mật khẩu được lưu.')
+  })
+
+  it('says the English refusals of a role change in Vietnamese (M2)', async () => {
+    const refuse = (message: string) => invoke.mockResolvedValueOnce({
+      data: null, error: new FunctionsHttpError(new Response(JSON.stringify({ error: message }), { status: 400 })),
+    })
+    refuse('username is required')
+    await expect(changeRole({ kind: 'employee', id: 'e1', role: 'gs' })).rejects.toThrow('Cần tên đăng nhập cho tài khoản mới.')
+    refuse('password is required')
+    await expect(changeRole({ kind: 'employee', id: 'e1', role: 'gs' })).rejects.toThrow('Cần mật khẩu cho tài khoản.')
+    refuse('projectId is required for a GS account')
+    await expect(changeRole({ kind: 'employee', id: 'e1', role: 'gs' })).rejects.toThrow('Tài khoản GS cần một dự án.')
+    refuse('Too many password reveals in the last hour. Try again later.')
+    await expect(revealPassword('u1')).rejects.toThrow('Đã xem mật khẩu quá nhiều lần trong một giờ qua. Thử lại sau.')
   })
 
   // supabase-js converts any non-2xx invoke response into a FunctionsHttpError
@@ -73,14 +100,13 @@ describe('adminApi', () => {
   it('reads the real error message out of a FunctionsHttpError context', async () => {
     const context = new Response(JSON.stringify({ error: 'No stored credential' }), { status: 404 })
     invoke.mockResolvedValue({ data: null, error: new FunctionsHttpError(context) })
-    await expect(revealPassword('u1')).rejects.toThrow('No stored credential')
+    await expect(revealPassword('u1')).rejects.toThrow('Tài khoản này chưa có mật khẩu được lưu.')
   })
 
-  it('falls back to the generic message when the context body is not usable JSON', async () => {
+  it('falls back to a generic Vietnamese message when the context body is not usable JSON', async () => {
     const context = new Response('not json', { status: 500 })
-    const error = new FunctionsHttpError(context)
-    invoke.mockResolvedValue({ data: null, error })
-    await expect(revealPassword('u1')).rejects.toThrow(error.message)
+    invoke.mockResolvedValue({ data: null, error: new FunctionsHttpError(context) })
+    await expect(revealPassword('u1')).rejects.toThrow('Máy chủ từ chối thao tác này. Thử lại sau.')
   })
 
   it('returns the revealed password', async () => {
@@ -115,6 +141,18 @@ describe('adminApi', () => {
       { action: 'rename', userId: 'u1', username: 'gs.moi' },
       { action: 'hide', userId: 'u1' },
       { action: 'unhide', userId: 'u1' },
+    ])
+  })
+
+  it('maps change_role onto the function, sending only the fields given (NL-04)', async () => {
+    invoke.mockResolvedValueOnce({ data: { userId: 'u5', username: 'gs.hai', reactivated: false }, error: null })
+    invoke.mockResolvedValueOnce({ data: { employeeId: 'e9' }, error: null })
+    expect(await changeRole({ kind: 'employee', id: 'e1', role: 'gs', username: 'gs.hai', password: 'pw', projectId: 'p1' }))
+      .toEqual({ userId: 'u5', username: 'gs.hai', reactivated: false })
+    expect(await changeRole({ kind: 'account', id: 'u7', role: 'employee' })).toEqual({ employeeId: 'e9' })
+    expect(invoke.mock.calls.map((c) => c[1].body)).toEqual([
+      { action: 'change_role', kind: 'employee', id: 'e1', role: 'gs', username: 'gs.hai', password: 'pw', projectId: 'p1' },
+      { action: 'change_role', kind: 'account', id: 'u7', role: 'employee' },
     ])
   })
 })
@@ -248,5 +286,32 @@ describe('listGsUsers', () => {
     expect(user.projects).toEqual([{ id: 'p2', name: 'Rạng Đông RD-2', allWorks: true, workIds: [], workCount: 0 }])
     expect(user.role).toBe('viewer')
     expect(user.hidden).toBe(true)
+  })
+})
+
+describe('renameAccount (NL-09)', () => {
+  it('writes the trimmed full name onto the profile, under the admin RLS policy', async () => {
+    const b = builder({ data: [{ id: 'u7' }] })
+    from.mockReturnValue(b)
+    await renameAccount('u7', '  GS Một Mới ')
+    expect(from).toHaveBeenCalledWith('profiles')
+    expect(b.update).toHaveBeenCalledWith({ full_name: 'GS Một Mới' })
+    expect(b.eq).toHaveBeenCalledWith('id', 'u7')
+    expect(b.select).toHaveBeenCalledWith('id')
+  })
+
+  it('refuses an update that touched no row, instead of reporting success (M4)', async () => {
+    from.mockReturnValue(builder({ data: [] }))
+    await expect(renameAccount('u7', 'GS Một Mới')).rejects.toThrow('Không đổi được họ tên: tài khoản không còn, hoặc anh không có quyền sửa.')
+  })
+
+  it('refuses an empty name without writing', async () => {
+    await expect(renameAccount('u7', '   ')).rejects.toThrow('Họ tên không được để trống.')
+    expect(from).not.toHaveBeenCalled()
+  })
+
+  it('says in Vietnamese who already holds the name when the database refuses it (0037)', async () => {
+    from.mockReturnValue(builder({ error: { code: 'PPDUP', message: 'duplicate_person_name: x', details: 'employee' } }))
+    await expect(renameAccount('u7', 'Lê Văn A')).rejects.toThrow(/Lê Văn A/)
   })
 })

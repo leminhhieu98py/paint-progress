@@ -174,6 +174,8 @@ describe('CellStageModal', () => {
     // "warning" here would look like the divergence banner, which is
     // informational and routinely ignored.
     expect(document.querySelector('.ant-alert-error')).not.toBeNull()
+    // One present-tense sentence (RUL-01).
+    expect(screen.getByText('Lưu lần này hạ tiến độ đã ghi của ô về công đoạn đã chọn.')).toBeInTheDocument()
   })
 
   it('does not warn for a forward move', async () => {
@@ -269,6 +271,8 @@ describe('CellStageModal notes', () => {
       screen.getByLabelText(/Ghi chú/),
       'Bề mặt còn ẩm, hoãn sơn sang mai',
     )
+    // The label says who reads it; no hint under the box repeats it (CPY-01).
+    expect(screen.queryByText(/trong lịch sử; quản trị viên thấy ngay/)).toBeNull()
     await chooseStage('Coat 3')
     await fillRequired()
     await user.click(screen.getByRole('button', { name: 'Xác nhận' }))
@@ -496,7 +500,7 @@ describe('CellStageModal — kế hoạch', () => {
   })
 })
 
-describe('CellStageModal — chỉ xem', () => {
+describe('CellStageModal — Visitor', () => {
   it('shows the facts and no way to change them for a viewer', () => {
     // Feedback Rv2 item 2: the bosses' account. The database refuses the write
     // anyway; the dialog must not offer one and then fail.
@@ -553,6 +557,8 @@ describe('CellStageModal effort (Feedback Rv2 item 11, tightened by Rv4)', () =>
   it('says so when the roster is empty rather than offering an empty box', async () => {
     renderModal(CELL, { employees: [] })
     expect(await screen.findByText('Chưa có nhân viên nào trong danh sách')).toBeInTheDocument()
+    // NL-07: the roster now lives under the Nhân lực menu item.
+    expect(screen.getByText('Nhờ quản trị viên thêm nhân viên ở mục Nhân lực; chưa có thì không ghi được tiến độ.')).toBeInTheDocument()
   })
 
   it('hides the effort block from a viewer', async () => {
@@ -840,5 +846,104 @@ describe('CellStageModal: the work\'s quantity and unit (RV6-35)', () => {
     expect(info().getByText('Khối lượng')).toBeInTheDocument()
     expect(info().getByText('148,50 tấn')).toBeInTheDocument()
     expect(info().queryByText(/m²/)).toBeNull()
+  })
+})
+
+describe('CellStageModal: on the field scale (GS-10)', () => {
+  beforeEach(() => {
+    listCellNotes.mockReset()
+    listCellNotes.mockResolvedValue([])
+  })
+
+  it('labels every field alike, in the field label step', () => {
+    renderModal()
+    for (const text of [/^Công đoạn/, /^Nhóm trưởng/, /^Thợ chính/, /^Số giờ công/, /^Giờ hao phí/, /^Ghi chú cho quản trị viên/]) {
+      const label = screen.getByText(text, { selector: 'label' })
+      expect(label).toHaveStyle({ fontSize: '14px', fontWeight: '600' })
+    }
+  })
+
+  it('sets hints and field errors as captions, nothing under 12 px', async () => {
+    renderModal()
+    expect(screen.getByText('Không hao phí thì nhập 0')).toHaveStyle({ fontSize: '12px' })
+    await userEvent.click(screen.getByRole('button', { name: 'Xác nhận' }))
+    expect(await screen.findByText('Chọn nhóm trưởng.')).toHaveStyle({ fontSize: '12px' })
+  })
+
+  it('gives the coat the same control height as the fields under it (CTL-01)', () => {
+    renderModal()
+    const coat = screen.getByRole('combobox', { name: 'Công đoạn' }).closest('.ant-select') as HTMLElement
+    const lead = screen.getByRole('combobox', { name: 'Nhóm trưởng' }).closest('.ant-select') as HTMLElement
+    expect(coat).not.toHaveClass('ant-select-lg')
+    expect(coat.className.includes('ant-select-sm')).toBe(lead.className.includes('ant-select-sm'))
+  })
+})
+
+describe('CellStageModal — decimal comma', () => {
+  // antd's InputNumber with no decimalSeparator deletes a comma, so a foreman
+  // typing "2,5" wrote 25 Mhr against the bay -- ten times the hours, straight
+  // into every KPI built on cell_events.
+  it('writes 2,5 Mhr worked as 2.5, not 25', async () => {
+    renderModal()
+    await chooseStage('Coat 3')
+    await fillRequired('2,5')
+    await userEvent.click(screen.getByRole('button', { name: 'Xác nhận' }))
+
+    expect(onCommit).toHaveBeenCalledWith('c1', 's3', '', { ...FILLED, workHours: 2.5 })
+  })
+
+  it('reads the dot a tablet keypad sends as the decimal point too', async () => {
+    renderModal()
+    await chooseStage('Coat 3')
+    await fillRequired('2.5')
+    await userEvent.click(screen.getByRole('button', { name: 'Xác nhận' }))
+
+    expect(onCommit).toHaveBeenCalledWith('c1', 's3', '', { ...FILLED, workHours: 2.5 })
+  })
+
+  it('reads dots as thousands once a comma is typed', async () => {
+    renderModal()
+    await chooseStage('Coat 3')
+    await fillRequired('1.230,5')
+    await userEvent.click(screen.getByRole('button', { name: 'Xác nhận' }))
+
+    expect(onCommit).toHaveBeenCalledWith('c1', 's3', '', { ...FILLED, workHours: 1230.5 })
+  })
+
+  it('reads an English-format figure, comma thousands and a decimal dot, at its value', async () => {
+    renderModal()
+    await chooseStage('Coat 3')
+    await fillRequired('1,230.5')
+    await userEvent.click(screen.getByRole('button', { name: 'Xác nhận' }))
+
+    expect(onCommit).toHaveBeenCalledWith('c1', 's3', '', { ...FILLED, workHours: 1230.5 })
+  })
+
+  it('keeps a lone dot the decimal point for hours, unlike an area field', async () => {
+    // Hours are single digits: "1.500" from a keypad is one and a half, not
+    // the fifteen hundred an area field would read.
+    renderModal()
+    await chooseStage('Coat 3')
+    await fillRequired('1.500')
+    await userEvent.click(screen.getByRole('button', { name: 'Xác nhận' }))
+
+    expect(onCommit).toHaveBeenCalledWith('c1', 's3', '', { ...FILLED, workHours: 1.5 })
+  })
+
+  it('writes 1,5 Mhr lost as 1.5, not 15', async () => {
+    renderModal()
+    await chooseStage('Coat 3')
+    await chooseCrew('Nhóm trưởng', 'Lê Văn A')
+    await chooseCrew('Thợ chính', 'Nguyễn Văn B')
+    await userEvent.type(screen.getByLabelText(/Số giờ công \(Mhr\)/), '4')
+    await userEvent.type(screen.getByLabelText(/Giờ hao phí \(Mhr\)/), '1,5')
+    await userEvent.type(screen.getByLabelText(/Lệnh sản xuất/), 'LSX-2026-77')
+    await chooseIn('Lý do hao phí', '8.1 Thời tiết', 'Thời tiết')
+    await userEvent.click(screen.getByRole('button', { name: 'Xác nhận' }))
+
+    expect(onCommit).toHaveBeenCalledWith('c1', 's3', '', {
+      leadName: 'Lê Văn A', painterName: 'Nguyễn Văn B', workHours: 4, wasteHours: 1.5,
+      wasteReason: '8.1 Thời tiết', wasteOrder: 'LSX-2026-77',
+    })
   })
 })

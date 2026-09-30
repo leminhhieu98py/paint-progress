@@ -1,5 +1,6 @@
 import { render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
+import { palette } from '../theme'
 import { StatCard } from './StatCard'
 
 describe('StatCard', () => {
@@ -31,5 +32,42 @@ describe('StatCard', () => {
     // right now?", and only motion answers that without a second glance.
     render(<StatCard label="Ghi nhận gần nhất" value="09:42" tone="accent" live />)
     expect(screen.getByTestId('stat-live-dot').style.animation).toContain('pp-pulse')
+  })
+
+  it('sets the number in display and the lines around it on the scale (TYP-01)', () => {
+    render(<StatCard label="Tổng diện tích" value="27.482,75" sub="m²" />)
+    expect(screen.getByText('27.482,75')).toHaveStyle({ fontSize: '32px', fontWeight: '700' })
+    expect(screen.getByText('Tổng diện tích')).toHaveStyle({ fontSize: '13px', fontWeight: '600' })
+    expect(screen.getByText('m²')).toHaveStyle({ fontSize: '12px', fontWeight: '400' })
+  })
+
+  it('is compact on a phone: caption label, displaySm figure, micro sub-line, md padding (MOB-02)', () => {
+    render(<StatCard label="Tổng diện tích" value="27.482,75" sub="m²" compact />)
+    expect(screen.getByText('27.482,75')).toHaveStyle({ fontSize: '21px', fontWeight: '700' })
+    expect(screen.getByText('Tổng diện tích')).toHaveStyle({ fontSize: '12px', fontWeight: '400', color: palette.textTertiary })
+    expect(screen.getByText('m²')).toHaveStyle({ fontSize: '11px', fontWeight: '600' })
+    const card = screen.getByText('Tổng diện tích').closest('[data-testid="stat-card"]') as HTMLElement
+    expect(card).toHaveStyle({ padding: '12px' })
+  })
+
+  it('keeps the highlighted card\'s tint when compact (MOB-02)', () => {
+    render(<StatCard label="Mhr/m² tổng thể" value="1,125" tone="accent" compact />)
+    const card = screen.getByText('Mhr/m² tổng thể').closest('[data-testid="stat-card"]') as HTMLElement
+    expect(card).toHaveStyle({ background: palette.accentTint })
+  })
+
+  it('keeps every value at display size on one line, cut with a title rather than shrunk (AD1 revised)', () => {
+    render(<StatCard label="Ghi nhận gần nhất" value="13:57" sub="29/09/2026 · linhdeptrai123 · B02 → Topcoat" />)
+    const value = screen.getByText('13:57')
+    expect(value).toHaveStyle({ fontSize: '32px', fontWeight: '700', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' })
+    expect(value).toHaveAttribute('title', '13:57')
+    const sub = screen.getByText('29/09/2026 · linhdeptrai123 · B02 → Topcoat')
+    expect(sub).toHaveStyle({ fontSize: '12px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' })
+    expect(sub).toHaveAttribute('title', '29/09/2026 · linhdeptrai123 · B02 → Topcoat')
+  })
+
+  it('fills its grid cell, so the cards of a row keep one height (AD1)', () => {
+    render(<StatCard label="Số sàn" value="4" />)
+    expect(screen.getByTestId('stat-card')).toHaveStyle({ height: '100%', boxSizing: 'border-box' })
   })
 })

@@ -55,11 +55,8 @@ vi.mock('./screens/admin/ProjectsScreen', () => ({
 vi.mock('./screens/admin/DecksScreen', () => ({
   DecksScreen: () => <div>DECKS SCREEN</div>,
 }))
-vi.mock('./screens/admin/UsersScreen', () => ({
-  UsersScreen: () => <div>USERS SCREEN</div>,
-}))
-vi.mock('./screens/admin/EmployeesScreen', () => ({
-  EmployeesScreen: () => <div>EMPLOYEES SCREEN</div>,
+vi.mock('./screens/admin/NhanLucScreen', () => ({
+  NhanLucScreen: () => <div>NHAN LUC SCREEN</div>,
 }))
 // Konva, and its own data fetching. This file is about which route
 // a signed-in profile lands on, not what the destination renders. The projectId
@@ -166,8 +163,12 @@ describe('AppRoutes: landing at the base path by role', () => {
       error: null,
     })
     renderAt(`${APP_BASE_PATH}/gs`)
-    expect(await screen.findByText('404')).toBeInTheDocument()
+    // Signed in and active: the branded page with a way to the foreman's own
+    // home, not the bare 404 a stranger gets.
+    expect(await screen.findByText('Không tìm thấy trang')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Về trang chính' })).toHaveAttribute('href', APP_BASE_PATH || '/')
     expect(screen.queryByText('PROJECT PICKER')).toBeNull()
+    expect(screen.queryByText('404')).toBeNull()
   })
 
   it('tells a membership-less gs to contact the admin, not the bare 404', async () => {
@@ -275,19 +276,119 @@ describe('AppRoutes: /login is the entry point', () => {
     // the entry table even by typing the URL.
     asRole('gs')
     renderAt(`${APP_BASE_PATH}/admin/kpi`)
-    expect(await screen.findByText('404')).toBeInTheDocument()
+    expect(await screen.findByText('Không tìm thấy trang')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Về trang chính' })).toHaveAttribute('href', APP_BASE_PATH || '/')
     expect(screen.queryByText('KPI admin')).toBeNull()
+    expect(screen.queryByText('ADMIN LAYOUT')).toBeNull()
   })
 
-  it('gives an admin the shared staff roster (Feedback Rv4)', async () => {
+  it('gives an admin Nhân lực at the users address (NL-01)', async () => {
+    asRole('admin')
+    renderAt(`${APP_BASE_PATH}/admin/users`)
+    expect(await screen.findByText('NHAN LUC SCREEN')).toBeInTheDocument()
+  })
+
+  it('sends /admin itself to Dự án, where login, the role home and the not-found page go (M13)', async () => {
+    asRole('admin')
+    renderAt(`${APP_BASE_PATH}/admin`)
+    expect(await screen.findByText('PROJECTS SCREEN')).toBeInTheDocument()
+    expect(screen.queryByText('NHAN LUC SCREEN')).toBeNull()
+  })
+
+  it('sends the old staff roster address to Nhân lực, so a bookmark still lands (NL-01)', async () => {
     asRole('admin')
     renderAt(`${APP_BASE_PATH}/admin/employees`)
-    expect(await screen.findByText('EMPLOYEES SCREEN')).toBeInTheDocument()
+    expect(await screen.findByText('NHAN LUC SCREEN')).toBeInTheDocument()
+    expect(screen.queryByText('Không tìm thấy trang')).toBeNull()
   })
 
-  it('gives a path that is not a route the bare 404, as spec §7.3 asks', async () => {
-    asRole('admin')
+  // -------------------------------------------------------------------
+  // QA F2 -- a path that is not a route
+  // -------------------------------------------------------------------
+
+  it('gives a stranger at a path that is not a route the bare 404, as spec §7.3 asks', async () => {
+    getSession.mockResolvedValue({ data: { session: null } })
     renderAt('/nope')
     expect(await screen.findByText('404')).toBeInTheDocument()
+    expect(screen.queryByText('Không tìm thấy trang')).toBeNull()
+  })
+
+  it('tells a signed-in account at a path that is not a route so, with a way home', async () => {
+    // Nothing to hide from an account that is already in: the bare 404 left
+    // a mistyped URL as a blank page with no way back.
+    asRole('admin')
+    renderAt('/nope')
+    expect(await screen.findByText('Không tìm thấy trang')).toBeInTheDocument()
+    // Straight to the role's own home, as the role gate's page does (N-1).
+    expect(screen.getByRole('link', { name: 'Về trang chính' })).toHaveAttribute('href', `${APP_BASE_PATH}/admin/projects`)
+    expect(screen.queryByText('404')).toBeNull()
+    expect(screen.queryByText('ADMIN LAYOUT')).toBeNull()
+  })
+
+  it('keeps an admin inside the admin shell at an unknown admin path, with a way to Dự án', async () => {
+    asRole('admin')
+    renderAt(`${APP_BASE_PATH}/admin/productivity`)
+    expect(await screen.findByText('Không tìm thấy trang')).toBeInTheDocument()
+    expect(screen.getByText('ADMIN LAYOUT')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Về trang chính' })).toHaveAttribute('href', `${APP_BASE_PATH}/admin/projects`)
+    expect(screen.queryByText('404')).toBeNull()
+  })
+
+  it('gives the wrong role the same page at a known and an unknown admin path -- the gate reveals nothing', async () => {
+    asRole('gs')
+    const known = renderAt(`${APP_BASE_PATH}/admin/users`)
+    expect(await screen.findByText('Không tìm thấy trang')).toBeInTheDocument()
+    const knownPage = known.container.innerHTML
+    known.unmount()
+    const unknown = renderAt(`${APP_BASE_PATH}/admin/productivity`)
+    expect(await screen.findByText('Không tìm thấy trang')).toBeInTheDocument()
+    expect(unknown.container.innerHTML).toBe(knownPage)
+    expect(screen.queryByText('NHAN LUC SCREEN')).toBeNull()
+  })
+
+  it.each([
+    ['viewer', `${APP_BASE_PATH}/admin/projects`, `${APP_BASE_PATH}/gs`],
+    ['admin', `${APP_BASE_PATH}/gs/proj-1`, `${APP_BASE_PATH}/admin/projects`],
+  ] as const)('sends a signed-in %s at a route of another role to its own home', async (role, path, home) => {
+    asRole(role)
+    renderAt(path)
+    expect(await screen.findByText('Không tìm thấy trang')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Về trang chính' })).toHaveAttribute('href', home)
+  })
+
+  it.each([
+    ['admin', `${APP_BASE_PATH}/gs/p1`, `${APP_BASE_PATH}/gs/p1/xyz`],
+    ['admin', `${APP_BASE_PATH}/gs`, `${APP_BASE_PATH}/gsx`],
+    ['viewer', `${APP_BASE_PATH}/admin/users`, `${APP_BASE_PATH}/zzz`],
+    ['gs', `${APP_BASE_PATH}/admin/users`, `${APP_BASE_PATH}/gs/p1/xyz`],
+  ] as const)(
+    'gives a signed-in %s the identical page at a gated route (%s) and at no route at all (%s) (N-1)',
+    async (role, gated, unknown) => {
+      asRole(role)
+      const first = renderAt(gated)
+      expect(await screen.findByText('Không tìm thấy trang')).toBeInTheDocument()
+      const gatedPage = first.container.innerHTML
+      first.unmount()
+      const second = renderAt(unknown)
+      expect(await screen.findByText('Không tìm thấy trang')).toBeInTheDocument()
+      expect(second.container.innerHTML).toBe(gatedPage)
+    },
+  )
+
+  it('keeps the bare 404 for a deactivated account, which is not signed in for any purpose', async () => {
+    maybeSingle.mockResolvedValue({
+      data: { id: 'user-1', username: 'u', full_name: 'U', role: 'gs', active: false },
+      error: null,
+    })
+    renderAt(`${APP_BASE_PATH}/admin/users`)
+    expect(await screen.findByText('404')).toBeInTheDocument()
+    expect(screen.queryByText('Không tìm thấy trang')).toBeNull()
+  })
+
+  it('keeps the bare 404 for a session with no profile row', async () => {
+    maybeSingle.mockResolvedValue({ data: null, error: null })
+    renderAt(`${APP_BASE_PATH}/admin/users`)
+    expect(await screen.findByText('404')).toBeInTheDocument()
+    expect(screen.queryByText('Không tìm thấy trang')).toBeNull()
   })
 })

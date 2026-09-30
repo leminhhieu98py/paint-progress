@@ -2,15 +2,20 @@ import {
   Alert, App, Button, Input, InputNumber, Modal, Select, Space, Switch, Table, Tooltip, Typography,
 } from 'antd'
 import { useEffect, useMemo, useState } from 'react'
+import { IconAction } from '../../components/IconAction'
 import { SectionCard } from '../../components/SectionCard'
 import { modalProps } from '../../components/modalChrome'
+import { searchSelectProps } from '../../components/searchSelect'
+import { useTablePagination } from '../../components/tablePagination'
+import { viNumberInputProps } from '../../components/viNumberInput'
 import { effortCoverage, WASTE_REASONS, wasteReasonLabel } from '../../domain/effort'
 import { type DeckEvent, type Effort } from '../../domain/types'
 import { listGsUsers } from '../../lib/adminApi'
+import { listEmployees } from '../../lib/employeesApi'
 import { listCoworkerNames } from '../../lib/gsApi'
-import { formatDateTimeVN, formatHours } from '../../lib/format'
+import { MISSING, formatDateTimeVN, formatHours } from '../../lib/format'
 import { setCellEventEffort } from '../../lib/progressApi'
-import { palette } from '../../theme'
+import { palette, space, type } from '../../theme'
 
 /**
  * Every stage change on the deck with the effort recorded against it, and --
@@ -24,17 +29,22 @@ import { palette } from '../../theme'
  * comes here to fix are the ones from this week.
  */
 
-const hours = (n: number | null) => (n === null ? '' : formatHours(n))
+const hours = (n: number | null) => (n === null ? MISSING : formatHours(n))
+/** Typed text, or the missing mark for an empty one (I7). */
+const text = (v: string | null) => (v === null || v.trim() === '' ? MISSING : v)
 
-const fieldLabel = { display: 'block', marginBottom: 4, fontSize: 12, fontWeight: 600 } as const
+const fieldLabel = { display: 'block', marginBottom: 4, ...type.label } as const
 
 export function EffortHistoryPanel({
+  deckId,
   editable,
   events,
   error,
   onRetry,
   onSaved,
 }: {
+  /** The deck the events are of: the scope the pager pages, so a new deck starts at page 1. */
+  deckId: string
   editable: boolean
   /**
    * Every stage change on the deck, OLDEST first, as the API returns them.
@@ -54,6 +64,27 @@ export function EffortHistoryPanel({
   const [editing, setEditing] = useState<DeckEvent | null>(null)
   const [draft, setDraft] = useState<Effort | null>(null)
   const [saving, setSaving] = useState(false)
+  /**
+   * The roster the crew names are picked from, active names only, as on the
+   * GS's cell dialog (M21): a typed name the dashboard then groups apart is
+   * how "Tổ 1" and "Tổ 01" became two crews. Its failure is not fatal: the
+   * row's own names stay on offer.
+   */
+  const [roster, setRoster] = useState<string[]>([])
+  useEffect(() => {
+    let cancelled = false
+    listEmployees()
+      .then((rows) => { if (!cancelled) setRoster(rows.map((e) => e.fullName)) })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [])
+  /** The roster, and the row's current name when it is not on it, marked (M21). */
+  const crewOptions = (current: string) => [
+    ...roster.map((name) => ({ value: name, label: name })),
+    ...(current !== '' && !roster.includes(current)
+      ? [{ value: current, label: `${current} (ghi tự do cũ)` }]
+      : []),
+  ]
 
   useEffect(() => {
     let cancelled = false
@@ -80,6 +111,7 @@ export function EffortHistoryPanel({
     const newestFirst = [...events].reverse()
     return onlyMissing ? newestFirst.filter((ev) => ev.effort.workHours === null) : newestFirst
   }, [events, onlyMissing])
+  const pagination = useTablePagination(shown.length, `${deckId}|${onlyMissing}`)
 
   const coverage = effortCoverage(events ?? [])
 
@@ -109,61 +141,94 @@ export function EffortHistoryPanel({
     }
   }
 
+  /** Who backfilled this update's hours, and when; nothing on one never edited. */
+  const editedMark = (ev: DeckEvent) => ev.effortEditedAt && (
+    <Tooltip title={`Sửa bởi ${ev.effortEditedByName ?? 'quản trị viên'} lúc ${formatDateTimeVN(ev.effortEditedAt)}`}>
+      <Typography.Text type="secondary" style={type.caption}>đã sửa</Typography.Text>
+    </Tooltip>
+  )
+
   return (
     <SectionCard
-      code="A3.5"
+      code="A3.7"
       title="Giờ công theo lần cập nhật"
-      summary={events === null ? undefined : `${coverage.withHours} / ${coverage.total} lần cập nhật có giờ công`}
+      facts={events === null ? undefined : [{
+        value: `${coverage.withHours} / ${coverage.total}`,
+        // The same words as Năng suất's coverage fact.
+        label: 'lần cập nhật có ghi giờ công',
+        // Missing hours are a data-quality warning (HLT-01).
+        ...(coverage.withHours < coverage.total
+          ? { tone: 'warning' as const, info: 'Các lần chưa ghi không tính vào hiệu suất.' }
+          : {}),
+      }]}
+      // Flush, as every list card is: the table's edge columns carry the
+      // card's inset (LAY-01) rather than sitting a cell's padding inboard.
+      bodyPadding={0}
       extra={(
-        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: palette.textTertiary }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, ...type.body, color: palette.textTertiary }}>
           <Switch size="small" checked={onlyMissing} onChange={setOnlyMissing} />
           Chỉ hiện lần chưa có giờ công
         </label>
       )}
     >
       {error && (
-        <Alert
-          type="error"
-          showIcon
-          message="Không tải được lịch sử cập nhật"
-          description={error}
-          action={<Button size="small" onClick={onRetry}>Thử lại</Button>}
-          style={{ marginBottom: 12 }}
-        />
+        <div style={{ padding: `${space.lg}px ${space.xl}px 0` }}>
+          <Alert
+            type="error"
+            showIcon
+            message="Không tải được lịch sử cập nhật"
+            description={error}
+            action={<Button onClick={onRetry}>Thử lại</Button>}
+            style={{ marginBottom: space.md }}
+          />
+        </div>
       )}
       <Table<DeckEvent>
         size="small"
         rowKey="id"
         loading={events === null && !error}
         dataSource={shown}
-        pagination={{ pageSize: 20, hideOnSinglePage: true, size: 'small' }}
+        pagination={pagination}
+        // Eleven columns: sideways, never a name squeezed to a word per line (I3, MOB-01).
+        scroll={{ x: 'max-content' }}
         locale={{ emptyText: onlyMissing ? 'Mọi lần cập nhật đã có giờ công' : 'Sàn này chưa có lần cập nhật nào' }}
         columns={[
           { title: 'Mã ô', dataIndex: 'cellCode', width: 80 },
-          { title: 'Công việc', dataIndex: 'workName', width: 120, render: (v: string | null) => v ?? '' },
+          { title: 'Công việc', dataIndex: 'workName', width: 120, render: (v: string | null) => text(v) },
           { title: 'Công đoạn', dataIndex: 'toStageName', width: 140, render: (v: string | null) => v ?? 'Chưa bắt đầu' },
-          { title: 'Cập nhật lúc', dataIndex: 'at', width: 160, render: (v: string) => formatDateTimeVN(v) },
-          { title: 'Bởi', dataIndex: 'byId', width: 140, render: (v: string | null) => (v === null ? '' : names[v] ?? v) },
-          { title: 'Nhóm trưởng', render: (_, ev) => ev.effort.leadName },
-          { title: 'Thợ chính', render: (_, ev) => ev.effort.painterName },
-          { title: 'Giờ công', align: 'right', width: 90, render: (_, ev) => hours(ev.effort.workHours) },
-          { title: 'Giờ hao phí', align: 'right', width: 100, render: (_, ev) => hours(ev.effort.wasteHours) },
-          { title: 'Lý do hao phí', render: (_, ev) => ev.effort.wasteReason },
-          { title: 'Lệnh sản xuất', width: 130, render: (_, ev) => ev.effort.wasteOrder },
+          { title: 'Cập nhật lúc', dataIndex: 'at', width: 160, render: (v: string) => formatDateTimeVN(v), align: 'center' },
+          { title: 'Bởi', dataIndex: 'byId', width: 140, render: (v: string | null) => (v === null ? MISSING : names[v] ?? v) },
+          { title: 'Nhóm trưởng', width: 180, render: (_, ev) => text(ev.effort.leadName) },
+          { title: 'Thợ chính', width: 180, render: (_, ev) => text(ev.effort.painterName) },
           {
-            title: '',
+            title: 'Giờ công',
+            align: 'center',
             width: 90,
-            render: (_, ev) => (
+            // Outside Sửa there is no Thao tác column (R3): the edit marker sits by the hours it is about.
+            render: (_, ev) => (editable || !ev.effortEditedAt ? hours(ev.effort.workHours) : (
               <Space size={4}>
-                {ev.effortEditedAt && (
-                  <Tooltip title={`Sửa bởi ${ev.effortEditedByName ?? 'quản trị viên'} lúc ${formatDateTimeVN(ev.effortEditedAt)}`}>
-                    <Typography.Text type="secondary" style={{ fontSize: 11 }}>đã sửa</Typography.Text>
-                  </Tooltip>
-                )}
-                {editable && <Button size="small" onClick={() => openEdit(ev)}>Sửa</Button>}
+                {hours(ev.effort.workHours)}
+                {editedMark(ev)}
+              </Space>
+            )),
+          },
+          { title: 'Giờ hao phí', align: 'center', width: 100, render: (_, ev) => hours(ev.effort.wasteHours) },
+          // A note, not a category (UI-04 amended): plain text, left like every note (UI-03).
+          { title: 'Lý do hao phí', width: 220, render: (_, ev) => text(ev.effort.wasteReason) },
+          { title: 'Lệnh sản xuất', width: 130, render: (_, ev) => text(ev.effort.wasteOrder) },
+          // In Sửa only: in view mode it was an empty pinned 90 px (R3).
+          ...(editable ? [{
+            title: 'Thao tác',
+            width: 90,
+            align: 'center' as const,
+            fixed: 'right' as const,
+            render: (_: unknown, ev: DeckEvent) => (
+              <Space size={4}>
+                {editedMark(ev)}
+                <IconAction verb="edit" label="Sửa" onClick={() => openEdit(ev)} />
               </Space>
             ),
-          },
+          }] : []),
         ]}
       />
 
@@ -181,11 +246,31 @@ export function EffortHistoryPanel({
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px 12px' }}>
             <div>
               <label htmlFor="effort-lead" style={fieldLabel}>Nhóm trưởng</label>
-              <Input id="effort-lead" value={draft.leadName} onChange={(e) => setDraft({ ...draft, leadName: e.target.value })} />
+              <Select
+                id="effort-lead"
+                aria-label="Nhóm trưởng"
+                {...searchSelectProps}
+                allowClear
+                style={{ width: '100%' }}
+                placeholder="Gõ để tìm tên"
+                value={draft.leadName === '' ? undefined : draft.leadName}
+                onChange={(v) => setDraft({ ...draft, leadName: v ?? '' })}
+                options={crewOptions(draft.leadName)}
+              />
             </div>
             <div>
               <label htmlFor="effort-painter" style={fieldLabel}>Thợ chính</label>
-              <Input id="effort-painter" value={draft.painterName} onChange={(e) => setDraft({ ...draft, painterName: e.target.value })} />
+              <Select
+                id="effort-painter"
+                aria-label="Thợ chính"
+                {...searchSelectProps}
+                allowClear
+                style={{ width: '100%' }}
+                placeholder="Gõ để tìm tên"
+                value={draft.painterName === '' ? undefined : draft.painterName}
+                onChange={(v) => setDraft({ ...draft, painterName: v ?? '' })}
+                options={crewOptions(draft.painterName)}
+              />
             </div>
             <div>
               <label htmlFor="effort-work-hours" style={fieldLabel}>Số giờ công (Mhr)</label>
@@ -193,6 +278,8 @@ export function EffortHistoryPanel({
                 id="effort-work-hours"
                 min={0}
                 step={0.5}
+                // "2,5" Mhr, not 25: see viNumberInput for the rule.
+                {...viNumberInputProps}
                 style={{ width: '100%' }}
                 value={draft.workHours}
                 onChange={(v) => setDraft({ ...draft, workHours: v === null || v === undefined ? null : Number(v) })}
@@ -204,6 +291,7 @@ export function EffortHistoryPanel({
                 id="effort-waste-hours"
                 min={0}
                 step={0.5}
+                {...viNumberInputProps}
                 style={{ width: '100%' }}
                 value={draft.wasteHours}
                 onChange={(v) => setDraft({ ...draft, wasteHours: v === null || v === undefined ? null : Number(v) })}
@@ -232,10 +320,9 @@ export function EffortHistoryPanel({
                   <Select
                     id="effort-waste-reason"
                     aria-label="Lý do hao phí"
-                    showSearch
+                    {...searchSelectProps}
                     allowClear
                     style={{ width: '100%' }}
-                    optionFilterProp="label"
                     placeholder="Chọn lý do"
                     value={draft.wasteReason === '' ? undefined : draft.wasteReason}
                     onChange={(v) => setDraft({ ...draft, wasteReason: v ?? '' })}

@@ -1,3 +1,4 @@
+import { duplicateNameMessage } from './personName'
 import { supabase } from './supabase'
 
 /**
@@ -46,7 +47,8 @@ export async function listEmployees(includeRetired = false): Promise<Employee[]>
 
 /**
  * Adds one person. The unique index is on the folded name, so a duplicate
- * comes back as a constraint violation rather than a second row; it is
+ * comes back as a constraint violation rather than a second row; since 0037 a
+ * name a GS/Visitor account carries is refused too (PPDUP). Both are
  * translated here because "duplicate key value violates unique constraint
  * employees_name_key" is not a sentence to put in front of an admin.
  */
@@ -59,8 +61,7 @@ export async function createEmployee(fullName: string): Promise<string> {
     .select('id')
     .single()
   if (error) {
-    if (error.code === '23505') throw new Error(`Đã có nhân viên tên "${name}".`)
-    throw new Error(error.message)
+    throw new Error(duplicateNameMessage(error, name) ?? error.message)
   }
   return (data as { id: string }).id
 }
@@ -81,7 +82,6 @@ export async function updateEmployee(
 
   const { error } = await supabase.from('employees').update(patch).eq('id', id)
   if (error) {
-    if (error.code === '23505') throw new Error(`Đã có nhân viên tên "${patch.full_name as string}".`)
-    throw new Error(error.message)
+    throw new Error(duplicateNameMessage(error, String(patch.full_name ?? '')) ?? error.message)
   }
 }

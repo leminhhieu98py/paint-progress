@@ -1,12 +1,14 @@
+import { useState } from 'react'
 import {
   Bar, BarChart, Brush, CartesianGrid, ComposedChart, Legend, Line, LineChart, ResponsiveContainer,
-  Tooltip, XAxis, YAxis,
+  Tooltip, XAxis, YAxis, type LegendPayload,
 } from 'recharts'
 import type { KpiDay } from '../../domain/kpi'
-import { fieldError, palette } from '../../theme'
+import { palette } from '../../theme'
 import { DEFAULT_UNIT, perUnit, rateUnit } from '../../domain/unit'
-import { formatAreaM2, formatHours, formatMhrPerM2, formatPercent } from '../../lib/format'
+import { formatAreaM2, formatAxisNumber, formatAxisPercent, formatHours, formatMhrPerM2, formatPercent } from '../../lib/format'
 import { KPI_COLOR_DEFAULTS } from './kpiColors'
+import { useFieldPhone } from '../gs/fieldSections'
 
 /**
  * The two charts of the productivity dashboard (Feedback Rv2, item 12), on
@@ -22,6 +24,91 @@ import { KPI_COLOR_DEFAULTS } from './kpiColors'
 const dayLabel = (day: string) => `${day.slice(8, 10)}/${day.slice(5, 7)}`
 
 const AXIS = { fontSize: 12, fill: palette.textTertiary }
+/** Numeric ticks in the app's Vietnamese format (R5-C2): 0,35 and 1.800, not 0.35 and 1800. */
+const axisTick = (v: number) => formatAxisNumber(v)
+/** Recharts' default is " : ", a space before the colon (R5-C3). */
+const TOOLTIP_SEPARATOR = ': '
+
+/**
+ * Recharts paints a legend entry's TEXT in its series colour, so a yellow or
+ * a light-grey coat printed a label nobody could read on white (QA F3). The
+ * marker beside it already carries the colour; the text reads in the neutral
+ * secondary colour on every chart here.
+ */
+const legendText = (value: unknown) => (
+  <span style={{ color: palette.textSecondary }}>{String(value)}</span>
+)
+/**
+ * A phone's legend item keeps to one line (M4): a long coat name ellipsises,
+ * its title holding all of it, so every item is exactly the LEGEND_LINE the
+ * chart grew by and the plot never gives up height to a wrapped name. The
+ * wrapper spans the chart, so the item has a width to end at; 24 px is the
+ * marker and its gap.
+ */
+function phoneLegendText(value: unknown) {
+  return (
+    <span
+      title={String(value)}
+      style={{
+        color: palette.textSecondary,
+        display: 'inline-block', maxWidth: 'calc(100% - 24px)', verticalAlign: 'middle',
+        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+      }}
+    >
+      {String(value)}
+    </span>
+  )
+}
+
+/** The series other than the one a hovered legend item names (CHT-03). */
+const DIMMED = 0.3
+/** A hovered day's dot on a line (CHT-03). */
+const ACTIVE_DOT = { r: 5 }
+/** A hovered day's bar (CHT-03): outlined in ink, its colour left alone. */
+const ACTIVE_BAR = { stroke: palette.ink, strokeWidth: 1 }
+
+/**
+ * A phone's legend (MOB-03): one item per line, under the plot, left at the
+ * card's inset -- a row of coat names wrapped into a ragged block there.
+ *
+ * `align` stays centre: Recharts reserves a vertical legend's WIDTH beside
+ * the plot when it is aligned left or right (appendOffsetOfLegend), which
+ * squeezed the chart into two thirds of a phone. Centred, it reserves its
+ * HEIGHT under the plot, and `left: 0` pins the wrapper to the plot's left
+ * edge -- every chart here has no left margin -- instead of centring it.
+ */
+const PHONE_LEGEND = {
+  layout: 'vertical', align: 'center', verticalAlign: 'bottom', wrapperStyle: { left: 0, width: '100%' },
+  formatter: phoneLegendText,
+} as const
+/**
+ * One vertical legend line as Chromium draws it (24 px, measured at 390); the
+ * chart grows by one per item past the first, so the plot keeps its height.
+ */
+const LEGEND_LINE = 24
+
+/**
+ * Hovering a legend item highlights its series (CHT-03): the others dim to
+ * 0.3 until the pointer leaves. Keyed by the series' `dataKey`, which Recharts
+ * hands the legend handlers. Click-to-hide is deliberately not wired. On a
+ * phone the legend stands one item per line (MOB-03), and `height` adds the
+ * lines it takes beyond the one-row legend the chart's height was set for.
+ */
+function useLegendHighlight() {
+  const [active, setActive] = useState<string | null>(null)
+  const phone = useFieldPhone()
+  return {
+    legend: {
+      ...(phone ? PHONE_LEGEND : {}),
+      onMouseEnter: (entry: LegendPayload) =>
+        setActive(typeof entry.dataKey === 'string' ? entry.dataKey : null),
+      onMouseLeave: () => setActive(null),
+    },
+    opacity: (dataKey: string) => (active === null || active === dataKey ? 1 : DIMMED),
+    height: (base: number, items: number) => (phone ? base + Math.max(0, items - 1) * LEGEND_LINE : base),
+    phone,
+  }
+}
 
 export function EfficiencyLineChart({
   data,
@@ -34,8 +121,9 @@ export function EfficiencyLineChart({
   /** The chosen work's unit (RV6-36); the axis reads `Mhr/<unit>`. */
   unit?: string
 }) {
+  const { legend, opacity, height } = useLegendHighlight()
   return (
-    <div data-testid="efficiency-chart" style={{ width: '100%', height: 280 }}>
+    <div data-testid="efficiency-chart" style={{ width: '100%', height: height(280, stages.length) }}>
       <ResponsiveContainer width="100%" height="100%">
         <LineChart data={data} margin={{ top: 8, right: 16, bottom: 0, left: 0 }}>
           <CartesianGrid stroke={palette.borderSplit} vertical={false} />
@@ -43,22 +131,27 @@ export function EfficiencyLineChart({
           <YAxis
             tick={AXIS}
             width={56}
+            tickFormatter={axisTick}
             label={{ value: perUnit(unit), angle: -90, position: 'insideLeft', style: AXIS }}
           />
           <Tooltip
+            separator={TOOLTIP_SEPARATOR}
             labelFormatter={(day) => dayLabel(String(day))}
             formatter={(value) => (typeof value === 'number' ? formatMhrPerM2(value) : '')}
           />
-          <Legend />
+          <Legend formatter={legendText} {...legend} />
           {stages.map((s) => (
             <Line
               key={s.name}
               type="monotone"
               dataKey={s.name}
               stroke={s.color}
+              strokeOpacity={opacity(s.name)}
               strokeWidth={2}
-              dot={{ r: 3 }}
-              connectNulls
+              dot={{ r: 3, fillOpacity: opacity(s.name), strokeOpacity: opacity(s.name) }}
+              activeDot={ACTIVE_DOT}
+              // No `connectNulls`: the data is padded to every calendar day
+              // (QA F4), and a day nobody worked a coat is a gap, not a slope.
               isAnimationActive={false}
             />
           ))}
@@ -68,21 +161,51 @@ export function EfficiencyLineChart({
   )
 }
 
-export function HoursBarChart({ data }: { data: Array<{ day: string; hours: number; wasteHours: number }> }) {
+export function HoursBarChart({
+  data,
+}: {
+  /** Null on a padded day with no record (QA F4): no bar, not a zero-height one. */
+  data: Array<{ day: string; hours: number | null; wasteHours: number | null }>
+}) {
+  const { legend, opacity, height } = useLegendHighlight()
   return (
-    <div data-testid="hours-chart" style={{ width: '100%', height: 260 }}>
+    <div data-testid="hours-chart" style={{ width: '100%', height: height(260, 2) }}>
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={data} margin={{ top: 8, right: 16, bottom: 0, left: 0 }}>
           <CartesianGrid stroke={palette.borderSplit} vertical={false} />
           <XAxis dataKey="day" tickFormatter={dayLabel} tick={AXIS} />
-          <YAxis tick={AXIS} width={56} label={{ value: 'Mhr', angle: -90, position: 'insideLeft', style: AXIS }} />
+          <YAxis
+            tick={AXIS}
+            width={56}
+            tickFormatter={axisTick}
+            label={{ value: 'Mhr', angle: -90, position: 'insideLeft', style: AXIS }}
+          />
           <Tooltip
+            separator={TOOLTIP_SEPARATOR}
             labelFormatter={(day) => dayLabel(String(day))}
             formatter={(value) => (typeof value === 'number' ? formatHours(value) : '')}
           />
-          <Legend />
-          <Bar dataKey="hours" name="Thực hiện" stackId="h" fill={palette.accent} isAnimationActive={false} />
-          <Bar dataKey="wasteHours" name="Hao phí" stackId="h" fill={fieldError} isAnimationActive={false} />
+          <Legend formatter={legendText} {...legend} />
+          {/* The palette's first colour is the accent, so Thực hiện reads as on
+              the KPI chart; waste takes its red (CHT-01). */}
+          <Bar
+            dataKey="hours"
+            name="Thực hiện"
+            stackId="h"
+            fill={palette.categorical[0]}
+            fillOpacity={opacity('hours')}
+            activeBar={ACTIVE_BAR}
+            isAnimationActive={false}
+          />
+          <Bar
+            dataKey="wasteHours"
+            name="Hao phí"
+            stackId="h"
+            fill={palette.categorical[3]}
+            fillOpacity={opacity('wasteHours')}
+            activeBar={ACTIVE_BAR}
+            isAnimationActive={false}
+          />
         </BarChart>
       </ResponsiveContainer>
     </div>
@@ -138,8 +261,9 @@ export function KpiComboChart({
 }) {
   const plan = colors?.plan ?? null
   const actual = colors?.actual ?? null
+  const { legend, opacity, height, phone } = useLegendHighlight()
   return (
-    <div data-testid="kpi-chart" style={{ width: '100%', height: 372 }}>
+    <div data-testid="kpi-chart" style={{ width: '100%', height: height(372, 4) }}>
       <ResponsiveContainer width="100%" height="100%">
         <ComposedChart data={data} margin={{ top: 8, right: 16, bottom: 0, left: 0 }}>
           <CartesianGrid stroke={palette.borderSplit} vertical={false} />
@@ -148,18 +272,23 @@ export function KpiComboChart({
             yAxisId="m2"
             tick={AXIS}
             width={72}
+            tickFormatter={axisTick}
             label={{ value: rateUnit(unit), angle: -90, position: 'insideLeft', style: AXIS }}
           />
           <YAxis
             yAxisId="share"
             orientation="right"
+            // On a phone the plot takes this axis's width (M7): the lines keep
+            // its scale, and the tooltip still reads each share.
+            hide={phone}
             tick={AXIS}
             width={64}
             // Not capped at 1: actual above plan is real and the workbook does
             // not clamp it either, so the axis has to be able to show it.
-            tickFormatter={(v: number) => formatPercent(v)}
+            tickFormatter={formatAxisPercent}
           />
           <Tooltip
+            separator={TOOLTIP_SEPARATOR}
             labelFormatter={(day) => dayLabel(String(day))}
             formatter={(value, name) => {
               if (typeof value !== 'number') return ''
@@ -168,12 +297,14 @@ export function KpiComboChart({
                 : formatAreaM2(value)
             }}
           />
-          <Legend />
+          <Legend formatter={legendText} {...legend} />
           <Bar
             yAxisId="m2"
             dataKey="planM2"
             name={kpiPlanName(unit)}
             fill={plan ?? KPI_COLOR_DEFAULTS.plan}
+            fillOpacity={opacity('planM2')}
+            activeBar={ACTIVE_BAR}
             isAnimationActive={false}
           />
           <Bar
@@ -181,6 +312,8 @@ export function KpiComboChart({
             dataKey="actualM2"
             name={kpiActualName(unit)}
             fill={actual ?? KPI_COLOR_DEFAULTS.actual}
+            fillOpacity={opacity('actualM2')}
+            activeBar={ACTIVE_BAR}
             isAnimationActive={false}
           />
           <Line
@@ -189,9 +322,11 @@ export function KpiComboChart({
             dataKey="planCumShare"
             name={KPI_PLAN_CUM}
             stroke={plan ?? palette.textTertiary}
+            strokeOpacity={opacity('planCumShare')}
             strokeWidth={2}
             strokeDasharray="5 3"
             dot={false}
+            activeDot={ACTIVE_DOT}
             isAnimationActive={false}
           />
           <Line
@@ -200,8 +335,10 @@ export function KpiComboChart({
             dataKey="actualCumShare"
             name={KPI_ACTUAL_CUM}
             stroke={actual ?? palette.accentHover}
+            strokeOpacity={opacity('actualCumShare')}
             strokeWidth={2}
-            dot={{ r: 2 }}
+            dot={{ r: 2, fillOpacity: opacity('actualCumShare'), strokeOpacity: opacity('actualCumShare') }}
+            activeDot={ACTIVE_DOT}
             isAnimationActive={false}
           />
           <Brush

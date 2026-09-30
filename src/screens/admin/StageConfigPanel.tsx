@@ -1,13 +1,6 @@
-import {
-  CheckCircleFilled,
-  CloseCircleFilled,
-  DeleteOutlined,
-  HolderOutlined,
-  PlusOutlined,
-  SaveOutlined,
-} from '@ant-design/icons'
-import { Alert, App, Button, Input, InputNumber, Space, Table, Tooltip } from 'antd'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { HolderOutlined, PlusOutlined } from '@ant-design/icons'
+import { Alert, App, Button, Input, InputNumber, Space, Table } from 'antd'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { duplicateStageFields } from '../../domain/stageFlow'
 import type { Stage } from '../../domain/types'
 import { formatWeight } from '../../lib/format'
@@ -15,31 +8,45 @@ import {
   listWorkStages, roundStageWeight, saveWorkStages, stagesRemovedBy, STAGE_WEIGHT_EPSILON,
 } from '../../lib/decksApi'
 import { randomUUID } from '../../lib/uuid'
+import { IconAction } from '../../components/IconAction'
+import { SwatchCode } from '../../components/SwatchCode'
 import { ColorField, HEX_COLOR } from '../../components/ColorField'
+import { useControlHeight } from '../../components/swatch'
 import { ConsequenceModal } from '../../components/ConsequenceModal'
 import { EmptyState } from '../../components/EmptyState'
+import { InfoTip } from '../../components/InfoTip'
 import { RulesDisclosure } from '../../components/RulesDisclosure'
 import { SectionCard } from '../../components/SectionCard'
-import { palette } from '../../theme'
+import { viNumberInputProps } from '../../components/viNumberInput'
+import { palette, space, type, visuallyHidden } from '../../theme'
 
+/**
+ * What deleting a coat does, as the rule says it (the delete dialog lists the
+ * same three facts as items, STAGE_DELETE_ITEMS), as the database carries it out when saveWorkStages deletes the
+ * deck_stages row: every bay AT the coat goes back to not started
+ * (cell_states.stage_id ON DELETE SET NULL, 0024); the coat's zones and KPI
+ * plan go (zones.stage_id and stage_plans.stage_id ON DELETE CASCADE, 0003 and
+ * 0033); the history stays (cell_events holds no FK on a stage since 0005 and
+ * snapshots its name, and deck_stages_log_deletion adds one back-to-not-
+ * started event per bay, 0026). Bays past the coat keep their stage.
+ */
+const STAGE_DELETE_EFFECT =
+  'Xoá một lớp đưa các ô đang ở lớp đó về “Chưa bắt đầu” và xoá zone, kế hoạch KPI của lớp, còn lịch sử cập nhật giữ nguyên.'
+
+/** STAGE_DELETE_EFFECT's three consequences, as the delete dialog lists them. */
+const STAGE_DELETE_ITEMS = [
+  'Các ô đang ở lớp đó về “Chưa bắt đầu”',
+  'Zone và kế hoạch KPI của lớp đó bị xoá',
+  'Lịch sử cập nhật giữ nguyên',
+]
+
+/** Helper text, one sentence each, checked against the code (RUL-01). */
 const STAGE_RULES = [
-          {
-            id: 'STG-R1',
-            text: 'Tổng trọng số phải đúng bằng 1; chưa đúng thì nút Lưu bị khoá.',
-          },
-          {
-            id: 'STG-R2',
-            text: 'Không hai lớp trùng tên hoặc trùng màu — GS nhận ra lớp bằng màu trên bản vẽ, báo cáo nhận ra bằng tên.',
-          },
-          {
-            id: 'STG-R3',
-            text: 'Cấu hình này chỉ áp cho sàn đang mở. Sàn khác trong cùng dự án không bị ảnh hưởng.',
-          },
-          {
-            id: 'STG-R4',
-            text: 'Xoá một lớp sẽ đưa mọi ô đang ở lớp đó về “Chưa bắt đầu”; lịch sử ghi nhận vẫn giữ nguyên.',
-          },
-        ]
+  { id: 'STG-R1', text: 'Lưu được khi tổng trọng số các lớp bằng 1.' },
+  { id: 'STG-R2', text: 'Lưu được khi không có hai lớp trùng tên hoặc trùng màu.' },
+  { id: 'STG-R3', text: 'Cấu hình chỉ áp cho sàn đang mở.' },
+  { id: 'STG-R4', text: STAGE_DELETE_EFFECT },
+]
 
 /**
  * saveWorkStages' own guard errors, in the admin's language.
@@ -83,6 +90,7 @@ export function StageConfigPanel({
   deckId,
   editable = true,
   onSaved,
+  workSelect,
 }: {
   /** The work whose coats these are: since 0024 a coat list belongs to a (work, deck). */
   workId: string
@@ -106,6 +114,8 @@ export function StageConfigPanel({
    * the same pattern, scoped tighter to when a write actually happened.
    */
   onSaved?: () => void
+  /** The deck screen's choice of work, for a deck in several: in this card's header (M7). */
+  workSelect?: ReactNode
 }) {
   /**
    * The rows being edited, each carrying the id it is identified by.
@@ -119,6 +129,8 @@ export function StageConfigPanel({
    * taken against.
    */
   const [draft, setDraft] = useState<Stage[]>([])
+  /** The read-only colour's circle: a table cell's control height (CLR-01). */
+  const swatchDiameter = useControlHeight()
   /**
    * The stage list as last read from the database, kept beside the draft so the
    * confirmation dialog can name the rows a save would actually delete. Written
@@ -310,74 +322,46 @@ export function StageConfigPanel({
     }
   }
 
-  const sumChip = (
-    <span
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: 9,
-        padding: '7px 13px',
-        borderRadius: 999,
-        background: balanced ? palette.successBg : palette.errorBg,
-        color: balanced ? palette.success : palette.error,
-      }}
-    >
-      {balanced ? <CheckCircleFilled aria-hidden /> : <CloseCircleFilled aria-hidden />}
-      <span style={{ fontSize: 14, fontWeight: 600 }}>{formatWeight(total)}</span>
-      {/*
-        The target is written as a bare 1, not formatWeight(1). Four zeros on a
-        constant add nothing, and repeating the same string the chip's own total
-        prints when balanced makes the two indistinguishable to read -- and
-        ambiguous to query.
-      */}
-      <span style={{ fontSize: 12, opacity: 0.7 }}>/ 1</span>
-    </span>
-  )
-
   return (
     <SectionCard
       code="A3.2"
       title="Cấu hình lớp sơn"
-      summary={`${draft.length} lớp · tổng ${formatWeight(total)}`}
+      // The one sum on the card (M5): amber while it is not 1 (HLT-01).
+      facts={[
+        { value: draft.length, label: 'lớp' },
+        { prefix: 'tổng', value: formatWeight(total), ...(balanced ? {} : { tone: 'warning' as const }) },
+      ]}
       collapsible
       bodyPadding={0}
       footer={<RulesDisclosure rules={STAGE_RULES} />}
       extra={
         <Space size={12}>
-          {sumChip}
+          {workSelect}
           {editable && (
-            <Tooltip
-              title={
-                balanced && !hasClash && !hexPending
-                  ? 'Lưu cấu hình lớp sơn'
-                  : 'Tổng trọng số phải bằng 1, không trùng tên/màu, và mã màu phải đủ 6 số'
-              }
-            >
-              {/* A span, because antd Tooltip cannot anchor to a disabled button. */}
-              <span>
-                <Button
-                  type="primary"
-                  aria-label="Lưu cấu hình lớp sơn"
-                  icon={<SaveOutlined aria-hidden />}
-                  disabled={draft.length === 0 || !balanced || hasClash || hexPending}
-                  loading={busy}
-                  onClick={() => setConfirming(true)}
-                />
-              </span>
-            </Tooltip>
+            // An icon action (ACT-01); disabled, its tooltip says why.
+            <IconAction
+              verb="save"
+              label="Lưu cấu hình lớp sơn"
+              tooltip={balanced && !hasClash && !hexPending
+                ? undefined
+                : 'Tổng trọng số phải bằng 1, không trùng tên/màu, và mã màu phải đủ 6 số'}
+              type="primary"
+              disabled={draft.length === 0 || !balanced || hasClash || hexPending}
+              loading={busy}
+              onClick={() => setConfirming(true)}
+            />
           )}
         </Space>
       }
     >
-    <Space direction="vertical" style={{ width: '100%', padding: '16px 0 4px' }}>
+    <Space direction="vertical" style={{ width: '100%', padding: `${space.lg}px 0 ${space.xs}px` }}>
       {error && (
-        <div style={{ padding: '0 20px' }}>
+        <div style={{ padding: `0 ${space.xl}px` }}>
           <Alert type="error" message={error} closable onClose={() => setError(null)} />
         </div>
       )}
 
       <Table<Stage>
-        className="pp-table"
         // By id, not seq: seq is renumbered under the rows on every reorder and
         // removal, so keying React's reconciliation on it makes a row's identity
         // change out from under it -- the same mistake at the UI level that
@@ -397,7 +381,7 @@ export function StageConfigPanel({
           emptyText: (
             <EmptyState
               title="Sàn này chưa có lớp sơn nào"
-              description="Mỗi sàn khai báo lớp sơn của riêng nó. Thêm lớp, đặt màu và trọng số — tổng trọng số phải bằng 1 thì mới lưu được."
+              description="Thêm lớp, đặt màu và trọng số."
             />
           ),
         }}
@@ -413,22 +397,26 @@ export function StageConfigPanel({
           onDrop: () => dropOn(index ?? 0),
         })}
         columns={[
-          {
+          // The handle and the actions exist in Sửa only: in view mode they
+          // were two empty columns, one pinned at 72 px (R3).
+          ...(editable ? [{
             // The row has been draggable all along with nothing on screen to
             // say so. A handle is not a control here -- the whole row is the
             // drag target -- it is the affordance that makes the gesture
             // discoverable at all.
-            title: '',
+            title: <span style={visuallyHidden}>Kéo để sắp xếp</span>,
             key: 'handle',
+            align: 'center' as const,
             width: 34,
-            render: () => (!editable ? null : (
-              <HolderOutlined style={{ color: '#647688', cursor: busy ? 'not-allowed' : 'grab' }} />
-            )),
-          },
+            render: () => (
+              <HolderOutlined style={{ color: palette.iconMuted, cursor: busy ? 'not-allowed' : 'grab' }} />
+            ),
+          }] : []),
           {
-            title: 'Thứ tự',
+            title: editable ? <>Thứ tự<InfoTip text="Kéo hàng để đổi thứ tự" /></> : 'Thứ tự',
             dataIndex: 'seq',
             width: 80,
+            align: 'center',
             // Plain `dataIndex` rendering left the seq cell with no handle a
             // test could target unambiguously from other numeric text on the
             // page (e.g. the weight total). A gap or tie here would corrupt
@@ -459,32 +447,19 @@ export function StageConfigPanel({
                 onChange={(e) => patch(i, { name: e.target.value })}
               />
               ) : (
-                <span style={{ fontWeight: 600 }}>{v}</span>
+                <span style={type.body}>{v}</span>
               )
             ),
           },
           {
             title: 'Màu',
+            align: 'center',
             dataIndex: 'color',
             width: 180,
             render: (v: string, row, i) => (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                {!editable && (
-                  <>
-                    <span
-                      aria-label={`Màu của ${row.name}`}
-                      style={{
-                        display: 'inline-block',
-                        width: 26,
-                        height: 26,
-                        borderRadius: 8,
-                        background: v,
-                        boxShadow: 'inset 0 0 0 1px #16202B33',
-                      }}
-                    />
-                    <span style={{ fontSize: 12, color: palette.textSecondary }}>{v}</span>
-                  </>
-                )}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
+                {/* One fixed-width block, so the circles line up down the column (AD7). */}
+                {!editable && <SwatchCode color={v} label={`Màu của ${row.name}`} diameter={swatchDiameter} />}
                 {editable && (
                   <ColorField
                     label={row.name}
@@ -500,10 +475,11 @@ export function StageConfigPanel({
           },
           {
             title: 'Trọng số',
+            align: 'center',
             dataIndex: 'weight',
             width: 130,
             render: (v: number, _r, i) => (!editable ? (
-              <div style={{ textAlign: 'right', fontWeight: 600 }}>{formatWeight(v)}</div>
+              <div style={{ textAlign: 'center', ...type.body }}>{formatWeight(v)}</div>
             ) : (
               <InputNumber
                 value={v}
@@ -520,7 +496,9 @@ export function StageConfigPanel({
                 // A Vietnamese admin types "0,25" for a weight. Without this,
                 // antd parses that as 0 and the stage silently loses its
                 // weight -- the same class of bug the deck-area field had.
-                decimalSeparator=","
+                // The shared props carry decimalSeparator="," and the parser
+                // the other decimal fields use.
+                {...viNumberInputProps}
                 // Clamped to the column's own scale (numeric(6,5)) as it is
                 // typed, so the admin never enters a sixth decimal that
                 // Postgres rounds away behind their back. That rounding is what
@@ -530,26 +508,23 @@ export function StageConfigPanel({
               />
             )),
           },
-          {
-            title: '',
+          ...(editable ? [{
+            // Wide enough for its header on one line (R3).
+            title: <span style={{ whiteSpace: 'nowrap' }}>Thao tác</span>,
             key: 'actions',
-            width: 72,
-            render: (_v, _r, i) => (!editable ? null : (
-              <Tooltip title="Xoá lớp sơn">
-                {/* A span, because antd Tooltip cannot anchor a disabled button. */}
-                <span>
-                  <Button
-                    size="small"
-                    danger
-                    aria-label="Xoá"
-                    icon={<DeleteOutlined aria-hidden />}
-                    disabled={busy || draft.length === 1}
-                    onClick={() => removeStage(i)}
-                  />
-                </span>
-              </Tooltip>
-            )),
-          },
+            width: 90,
+            align: 'center' as const,
+            render: (_v: unknown, _r: unknown, i: number) => (
+              <IconAction
+                verb="delete"
+                label="Xoá"
+                tooltip="Xoá lớp sơn"
+                danger
+                disabled={busy || draft.length === 1}
+                onClick={() => removeStage(i)}
+              />
+            ),
+          }] : []),
         ]}
       />
 
@@ -570,7 +545,7 @@ export function StageConfigPanel({
       {/* Inset. The table above is full-bleed inside its card, as tables are,
           but a chip and a bar flush against the card's own border read as
           overflow rather than as content. */}
-      <div style={{ padding: '0 20px' }}>
+      <div style={{ padding: `0 ${space.xl}px` }}>
         <div
           style={{
             display: 'flex',
@@ -594,24 +569,23 @@ export function StageConfigPanel({
             />
           ))}
         </div>
-        <div style={{ marginTop: 8, fontSize: 11, color: palette.textTertiary }}>
-          {draft.length === 0
-            ? 'Thêm ít nhất một lớp sơn. Sàn không có lớp sơn nào thì mọi phần trăm tiến độ của nó vĩnh viễn bằng 0, và không có gì báo cho ai biết.'
-            : balanced
-              ? 'Dải lấp đầy khung — tổng bằng 1, lưu được.'
-              : `Tổng trọng số các lớp phải bằng 1; hiện tại ${formatWeight(total)}. Mọi phần trăm tiến độ đều tính từ các trọng số này, nên nút Lưu khoá tới khi đúng.`}
-        </div>
+        {/* Only while it is wrong: the empty state carries the no-coats step,
+            and a balanced bar is its own answer (CPY-01). */}
+        {draft.length > 0 && !balanced && (
+          <div style={{ marginTop: 8, ...type.caption, color: palette.textTertiary }}>
+            {`Tổng trọng số các lớp phải bằng 1; hiện tại ${formatWeight(total)}.`}
+          </div>
+        )}
       </div>
 
       {hasClash && (
-        <div style={{ padding: '0 20px' }}>
+        <div style={{ padding: `0 ${space.xl}px` }}>
         <Alert
           type="error"
           message="Hai lớp sơn đang trùng nhau"
           description={[
             clashes.names.length > 0 ? `Trùng tên: ${clashes.names.join(', ')}.` : '',
             clashes.colors.length > 0 ? `Trùng màu: ${clashes.colors.join(', ')}.` : '',
-            'GS nhận ra lớp sơn bằng màu trên bản vẽ, báo cáo nhận ra bằng tên — trùng thì không đọc lại được.',
           ].filter(Boolean).join(' ')}
         />
         </div>
@@ -623,15 +597,12 @@ export function StageConfigPanel({
             display: 'flex',
             alignItems: 'center',
             gap: 12,
-            padding: '0 20px',
+            padding: `0 ${space.xl}px`,
           }}
         >
           <Button icon={<PlusOutlined aria-hidden />} disabled={busy} onClick={addStage}>
             Thêm lớp
           </Button>
-          <span style={{ fontSize: 12, color: palette.textTertiary }}>
-            Kéo hàng để đổi thứ tự · nhập trọng số trực tiếp, nhận dấu phẩy
-          </span>
         </div>
       )}
 
@@ -653,7 +624,7 @@ export function StageConfigPanel({
           }
           description={
             removed.length > 0
-              ? 'Các lớp sơn sau sẽ bị xoá khỏi cấu hình:'
+              ? 'Các lớp sơn sau bị xoá vĩnh viễn khỏi cấu hình:'
               : `Cấu hình này chỉ áp cho sàn đang mở:`
           }
           /*
@@ -672,11 +643,8 @@ export function StageConfigPanel({
                   color: st.color,
                 }))
           }
-          consequence={
-            removed.length > 0
-              ? 'Xoá một lớp sẽ xoá tiến độ đã ghi của mọi ô đang ở lớp đó — các ô đó trở về trạng thái chưa bắt đầu — và xoá luôn các zone đã lên kế hoạch cho lớp đó. Đổi tên, đổi trọng số hay đổi thứ tự thì không mất gì: mỗi lớp giữ nguyên danh tính của nó. Nhưng các lớp bị xoá ở trên thì mất vĩnh viễn.'
-              : 'Mọi phần trăm tiến độ của sàn này tính lại từ các trọng số trên. Sàn khác trong dự án không bị ảnh hưởng, và không ô nào mất tiến độ đã ghi.'
-          }
+          // STAGE_DELETE_EFFECT, one item per consequence (RUL-01).
+          consequences={removed.length > 0 ? STAGE_DELETE_ITEMS : undefined}
           okText={removed.length > 0 ? 'Vẫn lưu' : 'Lưu'}
           confirmLoading={busy}
           onCancel={() => setConfirming(false)}

@@ -1,10 +1,14 @@
 import { App as AntApp } from 'antd'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { EMPTY_EFFORT, type Cell, type DeckEvent, type Stage, type WorkModel } from '../../domain/types'
 import type { StoredStagePlan } from '../../lib/kpiApi'
+import { pageSubtitle } from '../../test/copy'
+import { chooseOption, openDropdown } from '../../test/select'
+import { setViewport } from '../../test/viewport'
 import { KpiScreen } from './KpiScreen'
+import { endSession } from '../../lib/sessionCache'
 import type { DeckKpiColorRow, DeckKpiColors } from './DeckKpiColorTable'
 import type { KpiEntry } from './KpiDashboard'
 import type { StagePlanRow } from './StagePlanTable'
@@ -17,6 +21,7 @@ const saveStagePlan = vi.hoisted(() => vi.fn())
 const clearStagePlanArea = vi.hoisted(() => vi.fn())
 const setDeckKpiColors = vi.hoisted(() => vi.fn())
 const navigate = vi.hoisted(() => vi.fn())
+const listDecks = vi.hoisted(() => vi.fn())
 
 vi.mock('../../lib/progressApi', () => ({
   loadProjectModel: (id: string) => loadProjectModel(id),
@@ -32,6 +37,14 @@ vi.mock('../../lib/kpiApi', () => ({
 }))
 vi.mock('../../lib/decksApi', () => ({
   setDeckKpiColors: (id: string, colors: unknown) => setDeckKpiColors(id, colors),
+  listDecks: (id: string) => listDecks(id),
+}))
+// The field header (GS-06) on the gs variant: who is signed in.
+vi.mock('../../auth/AuthProvider', () => ({
+  useAuth: () => ({
+    profile: { id: 'u1', username: 'gs1', fullName: 'Nguyễn Văn A', role: 'gs', active: true },
+    signOut: vi.fn(),
+  }),
 }))
 vi.mock('react-router-dom', async () => {
   const actual = await vi.importActual<typeof import('react-router-dom')>('react-router-dom')
@@ -43,8 +56,12 @@ vi.mock('react-router-dom', async () => {
 // table, and what the computed area comes out as -- so the stand-ins print
 // exactly that and nothing else.
 vi.mock('./KpiDashboard', () => ({
-  KpiDashboard: ({ entries, decks }: { entries: KpiEntry[]; decks: DeckKpiColorRow[] }) => (
+  KpiDashboard: ({ entries, decks, emptyDescription, filters }: {
+    entries: KpiEntry[]; decks: DeckKpiColorRow[]; emptyDescription?: string; filters: { deckId: string; coat: string }
+  }) => (
     <div data-testid="kpi-dashboard">
+      {`PHẠM VI ${filters.deckId || 'tất cả'}/${filters.coat || 'tất cả'} | `}
+      {emptyDescription !== undefined && `GỢI Ý ${emptyDescription} | `}
       {`CHART ${decks.map((d) => `${d.name}=${d.kpiPlanColor ?? '-'}/${d.kpiActualColor ?? '-'}`).join(',')} | `}
       {entries
         .map((e) => `${e.deckName}/${e.plan.stageName}@${e.plan.startDate} tt=${e.computedAreaM2} th=${e.actual.length} đv=${e.unit}`)
@@ -74,13 +91,15 @@ vi.mock('./StagePlanTable', () => ({
     computedAreaFor,
     onSave,
     onClearArea,
+    scopeKey,
   }: {
     rows: StagePlanRow[]
     computedAreaFor: (row: StagePlanRow, startDate: string | null) => number
     onSave: (row: StagePlanRow, w: { startDate: string; endDate: string; plannedAreaM2: number | null }) => void
     onClearArea: (stageId: string) => void
+    scopeKey?: unknown
   }) => (
-    <div data-testid="plan-table">
+    <div data-testid="plan-table" data-scope={String(scopeKey)}>
       {`BẢNG ${rows.map((r) => `${r.stageName}${r.plan === null ? '(trống)' : '(đã có)'}=${computedAreaFor(r, '2026-09-20')} đv=${r.quantityLabel}/${r.unit}`).join(' ; ')}`}
       <button
         type="button"
@@ -157,6 +176,11 @@ beforeEach(() => {
   clearStagePlanArea.mockReset()
   setDeckKpiColors.mockReset()
   navigate.mockReset()
+  // The field's Dự án switch keeps project names per session; every test is a new one.
+  endSession()
+  listDecks.mockReset()
+  // Another project's decks, read only while it is the DRAFT project (FLT-02).
+  listDecks.mockResolvedValue([{ id: 'd9', name: 'Sàn Z' }])
   loadProjectModel.mockResolvedValue(MODEL)
   listProjectEvents.mockResolvedValue(EVENTS)
   listStagePlans.mockResolvedValue(PLANS)
@@ -168,7 +192,7 @@ beforeEach(() => {
   ])
 })
 
-const { MemoryRouter, Route, Routes } = await vi.importActual<typeof import('react-router-dom')>('react-router-dom')
+const { Link, MemoryRouter, Route, Routes } = await vi.importActual<typeof import('react-router-dom')>('react-router-dom')
 
 const renderAdmin = (path = '/admin/kpi') =>
   render(
@@ -181,25 +205,239 @@ const renderAdmin = (path = '/admin/kpi') =>
     </AntApp>,
   )
 
-const renderField = () =>
-  render(
+/**
+ * The field page at `width` px: a tablet's by default, where the bar is
+ * inline; a phone's puts it in a sheet (FLT-04).
+ */
+let restoreViewport = () => {}
+afterEach(() => {
+  restoreViewport()
+  restoreViewport = () => {}
+})
+const renderField = (width = 1024) => {
+  restoreViewport = setViewport(width)
+  return render(
     <AntApp>
       <MemoryRouter initialEntries={['/gs/p2/kpi']}>
+        {/* A real route change, as the viewer's project switch makes one. */}
+        <Link to="/gs/p1/kpi">sang Giàn A</Link>
         <Routes>
           <Route path="/gs/:projectId/kpi" element={<KpiScreen variant="gs" />} />
         </Routes>
       </MemoryRouter>
     </AntApp>,
   )
+}
+
+/** The one filter bar under the title (FLT-01). */
+const bar = () => screen.getByRole('search', { name: 'Bộ lọc' })
+const before = (a: Element, b: Element) => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0
+/** Tìm, once the options it waits for have arrived (FLT-02). */
+const pressTim = async () => {
+  const tim = within(bar()).getByRole('button', { name: /Tìm/ })
+  await waitFor(() => expect(tim).not.toHaveClass('ant-btn-loading'))
+  await userEvent.click(tim)
+}
+
+describe('KpiScreen — one filter bar (FLT-01)', () => {
+  it('holds Dự án, Sàn and Công đoạn in one bar under the title, in that order, unlabelled', async () => {
+    renderAdmin()
+    await screen.findByTestId('kpi-dashboard')
+    const project = within(bar()).getByRole('combobox', { name: 'Dự án' })
+    const deck = within(bar()).getByRole('combobox', { name: 'Sàn' })
+    const coat = within(bar()).getByRole('combobox', { name: 'Công đoạn' })
+    expect(before(project, deck) && before(deck, coat)).toBe(true)
+    expect(bar().querySelector('label')).toBeNull()
+  })
+
+  it('narrows the chart by the deck picked in the bar, once Tìm is pressed (FLT-02)', async () => {
+    renderAdmin()
+    await screen.findByTestId('kpi-dashboard')
+    await userEvent.click(within(bar()).getByRole('combobox', { name: 'Sàn' }))
+    await userEvent.click(await screen.findByTitle('Sàn A'))
+    expect(screen.getByText(/PHẠM VI tất cả\/tất cả/)).toBeInTheDocument()
+    await pressTim()
+    expect(await screen.findByText(/PHẠM VI d1\/tất cả/)).toBeInTheDocument()
+  })
+
+  it('queries nothing while two filters change, then exactly once on Tìm (FLT-02)', async () => {
+    renderAdmin()
+    await screen.findByTestId('kpi-dashboard')
+    await userEvent.click(within(bar()).getByRole('combobox', { name: 'Sàn' }))
+    await userEvent.click(await screen.findByTitle('Sàn A'))
+    await userEvent.click(within(bar()).getByRole('combobox', { name: 'Dự án' }))
+    await userEvent.click(await screen.findByTitle('Giàn B (GB)'))
+    expect(loadProjectModel).toHaveBeenCalledTimes(1)
+    expect(listProjectEvents).toHaveBeenCalledTimes(1)
+    await pressTim()
+    await waitFor(() => expect(loadProjectModel).toHaveBeenCalledTimes(2))
+    expect(loadProjectModel).toHaveBeenLastCalledWith('p2')
+    expect(listProjectEvents).toHaveBeenCalledTimes(2)
+  })
+
+  it('offers the draft project\'s decks, and drops a draft deck that project does not have (FLT-02)', async () => {
+    renderAdmin()
+    await screen.findByTestId('kpi-dashboard')
+    await userEvent.click(within(bar()).getByRole('combobox', { name: 'Sàn' }))
+    await userEvent.click(await screen.findByTitle('Sàn A'))
+    await userEvent.click(within(bar()).getByRole('combobox', { name: 'Dự án' }))
+    await userEvent.click(await screen.findByTitle('Giàn B (GB)'))
+    await waitFor(() => expect(listDecks).toHaveBeenCalledWith('p2'))
+    await waitFor(() => expect(within(bar()).getByTitle('Tất cả sàn')).toBeInTheDocument())
+    await userEvent.click(within(bar()).getByRole('combobox', { name: 'Sàn' }))
+    expect(await screen.findByTitle('Sàn Z')).toBeInTheDocument()
+  })
+
+  it('keeps the chosen deck when Tìm is pressed twice while the new project loads (FLT-02)', async () => {
+    let resolveP2: (v: typeof MODEL) => void = () => {}
+    loadProjectModel.mockImplementation((id: string) =>
+      (id === 'p2' ? new Promise((r) => { resolveP2 = r }) : Promise.resolve(MODEL)))
+    renderAdmin()
+    await screen.findByTestId('kpi-dashboard')
+    await userEvent.click(within(bar()).getByRole('combobox', { name: 'Dự án' }))
+    await userEvent.click(await screen.findByTitle('Giàn B (GB)'))
+    await userEvent.click(within(bar()).getByRole('combobox', { name: 'Sàn' }))
+    await userEvent.click(await screen.findByTitle('Sàn Z'))
+    await pressTim()
+    const tim = within(bar()).getByRole('button', { name: /Tìm/ })
+    expect(tim).toHaveClass('ant-btn-loading')
+    await userEvent.click(tim)
+    expect(within(bar()).getByTitle('Sàn Z')).toBeInTheDocument()
+    resolveP2({ ...MODEL, decks: [{ id: 'd9', name: 'Sàn Z', kpiPlanColor: '#aaaaaa', kpiActualColor: null }] })
+    expect(await screen.findByText(/PHẠM VI d9\/tất cả/)).toBeInTheDocument()
+    await pressTim()
+    expect(screen.getByText(/PHẠM VI d9\/tất cả/)).toBeInTheDocument()
+  })
+
+  it('clears a draft deck the newly chosen project lacks, so going back does not restore it (FLT-02)', async () => {
+    renderAdmin()
+    await screen.findByTestId('kpi-dashboard')
+    await userEvent.click(within(bar()).getByRole('combobox', { name: 'Sàn' }))
+    await userEvent.click(await screen.findByTitle('Sàn A'))
+    await userEvent.click(within(bar()).getByRole('combobox', { name: 'Dự án' }))
+    await userEvent.click(await screen.findByTitle('Giàn B (GB)'))
+    await waitFor(() => expect(within(bar()).getByTitle('Tất cả sàn')).toBeInTheDocument())
+    await userEvent.click(within(bar()).getByRole('combobox', { name: 'Dự án' }))
+    await userEvent.click(await screen.findByTitle('Giàn A (GA)'))
+    expect(within(bar()).getByTitle('Tất cả sàn')).toBeInTheDocument()
+    await pressTim()
+    expect(screen.getByText(/PHẠM VI tất cả\/tất cả/)).toBeInTheDocument()
+  })
+
+  it('says so when the draft project\'s options fail, and applies it with Tất cả rather than the old selection (FLT-02)', async () => {
+    listDecks.mockRejectedValue(new Error('mất kết nối'))
+    renderAdmin()
+    await screen.findByTestId('kpi-dashboard')
+    await userEvent.click(within(bar()).getByRole('combobox', { name: 'Sàn' }))
+    await userEvent.click(await screen.findByTitle('Sàn A'))
+    await userEvent.click(within(bar()).getByRole('combobox', { name: 'Dự án' }))
+    await userEvent.click(await screen.findByTitle('Giàn B (GB)'))
+    expect(await screen.findByText('Không tải được bộ lọc của dự án')).toBeInTheDocument()
+    expect(screen.getByText('mất kết nối')).toBeInTheDocument()
+    const tim = within(bar()).getByRole('button', { name: /Tìm/ })
+    expect(tim).not.toHaveClass('ant-btn-loading')
+    await userEvent.click(tim)
+    await waitFor(() => expect(loadProjectModel).toHaveBeenLastCalledWith('p2'))
+    expect(await screen.findByText(/PHẠM VI tất cả\/tất cả/)).toBeInTheDocument()
+  })
+
+  it('puts the defaults back and applies them on Đặt lại (FLT-02)', async () => {
+    renderAdmin()
+    await screen.findByTestId('kpi-dashboard')
+    await userEvent.click(within(bar()).getByRole('combobox', { name: 'Sàn' }))
+    await userEvent.click(await screen.findByTitle('Sàn A'))
+    await pressTim()
+    expect(await screen.findByText(/PHẠM VI d1\/tất cả/)).toBeInTheDocument()
+    await userEvent.click(within(bar()).getByRole('button', { name: 'Đặt lại' }))
+    expect(await screen.findByText(/PHẠM VI tất cả\/tất cả/)).toBeInTheDocument()
+  })
+
+  it('holds the field\'s draft until Tìm too (FLT-02)', async () => {
+    renderField()
+    await screen.findByTestId('kpi-dashboard')
+    await userEvent.click(within(bar()).getByRole('combobox', { name: 'Sàn' }))
+    await userEvent.click(await screen.findByTitle('Sàn A'))
+    expect(screen.getByText(/PHẠM VI tất cả\/tất cả/)).toBeInTheDocument()
+    await pressTim()
+    expect(await screen.findByText(/PHẠM VI d1\/tất cả/)).toBeInTheDocument()
+  })
+
+  it('gives the field the same bar, the project first (GS-07)', async () => {
+    renderField()
+    await screen.findByTestId('kpi-dashboard')
+    expect(within(bar()).getAllByRole('combobox').map((c) => c.getAttribute('aria-label')))
+      .toEqual(['Dự án', 'Sàn', 'Công đoạn'])
+    expect(within(bar()).getByRole('button', { name: 'Đặt lại' })).toBeInTheDocument()
+  })
+
+  /** Picks the field bar's draft project. */
+  const pickProject = async (name: string) => {
+    await userEvent.click(within(bar()).getByRole('combobox', { name: 'Dự án' }))
+    await userEvent.click(await screen.findByTitle(name))
+  }
+
+  it('holds the Dự án choice in the draft: nothing moves until Tìm, and Sàn follows it (FLT-02, I-1)', async () => {
+    renderField()
+    await screen.findByTestId('kpi-dashboard')
+    await pickProject('Giàn A')
+    expect(navigate).not.toHaveBeenCalled()
+    await waitFor(() => expect(listDecks).toHaveBeenCalledWith('p1'))
+    await userEvent.click(within(bar()).getByRole('combobox', { name: 'Sàn' }))
+    expect(await screen.findByTitle('Sàn Z')).toBeInTheDocument()
+  })
+
+  it('opens this page of the draft project on Tìm, once (I-1)', async () => {
+    renderField()
+    await screen.findByTestId('kpi-dashboard')
+    await pickProject('Giàn A')
+    await pressTim()
+    expect(navigate).toHaveBeenCalledTimes(1)
+    expect(navigate).toHaveBeenCalledWith('/gs/p1/kpi')
+  })
+
+  it('carries the applied filters that the chosen project still has (I-1)', async () => {
+    listDecks.mockResolvedValue([{ id: 'd1', name: 'Sàn A' }])
+    renderField()
+    await screen.findByTestId('kpi-dashboard')
+    await pickProject('Giàn A')
+    await waitFor(() => expect(listDecks).toHaveBeenCalledWith('p1'))
+    await userEvent.click(within(bar()).getByRole('combobox', { name: 'Sàn' }))
+    await userEvent.click(await screen.findByTitle('Sàn A'))
+    await pressTim()
+    expect(navigate).toHaveBeenCalledWith('/gs/p1/kpi')
+
+    await userEvent.click(screen.getByRole('link', { name: 'sang Giàn A' }))
+    await waitFor(() => expect(listStagePlans).toHaveBeenCalledWith('p1'))
+    expect(await screen.findByText(/PHẠM VI d1\/tất cả/)).toBeInTheDocument()
+  })
+})
 
 describe('KpiScreen (admin)', () => {
+  it('hands the plan table a new scope on every Tìm, so its page and drafts start over (M10)', async () => {
+    renderAdmin()
+    const table = await screen.findByTestId('plan-table')
+    const first = table.getAttribute('data-scope')
+    expect(first).toMatch(/^p1\|/)
+    await pressTim()
+    await waitFor(() => expect(screen.getByTestId('plan-table').getAttribute('data-scope')).not.toBe(first))
+  })
+
   it('opens on the first project and makes its three reads', async () => {
     renderAdmin()
     await screen.findByTestId('kpi-dashboard')
     expect(loadProjectModel).toHaveBeenCalledWith('p1')
     expect(listProjectEvents).toHaveBeenCalledWith('p1')
     expect(listStagePlans).toHaveBeenCalledWith('p1')
-    expect(screen.getByText(/Giàn A · kế hoạch so với thực hiện/)).toBeInTheDocument()
+    // No subtitle: the card title and the Dự án select say it (CPY-01, CPY-03).
+    expect(pageSubtitle()).toBeNull()
+    expect(screen.queryByText(/kế hoạch so với thực hiện theo ngày/)).toBeNull()
+  })
+
+  it('tells the admin, and only the admin, where the plan is entered when the chart is empty (CPY-01)', async () => {
+    renderAdmin()
+    const chart = await screen.findByTestId('kpi-dashboard')
+    expect(chart.textContent).toContain('GỢI Ý Admin nhập kế hoạch ở bảng Kế hoạch KPI theo công đoạn.')
+    expect(chart.textContent).not.toContain('Biểu đồ vẽ theo')
   })
 
   it('honours ?project= when it names a project that exists', async () => {
@@ -280,17 +518,19 @@ describe('KpiScreen (admin)', () => {
   })
 
   // ---------------------------------------------------------------------
-  // RV6-28 -- the per-deck colour table, between the plan table and the chart
+  // RV6-28 -- the per-deck colour table, under the plan table
   // ---------------------------------------------------------------------
 
-  it('hands the colour table every deck with its stored colours, between the plan table and the chart', async () => {
+  it('hands the colour table every deck with its stored colours, under the chart and the plan table', async () => {
+    // UX-01: the chart is the reason for the screen and goes first; the plan
+    // table (20+ rows) and the colour table go under it.
     renderAdmin()
     const colors = await screen.findByTestId('deck-color-table')
     expect(colors.textContent).toContain('MÀU Sàn A=#aaaaaa/-')
     const table = screen.getByTestId('plan-table')
     const chart = screen.getByTestId('kpi-dashboard')
+    expect(chart.compareDocumentPosition(table) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(table.compareDocumentPosition(colors) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    expect(colors.compareDocumentPosition(chart) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
   it('writes a colour change and reloads so the chart reflects it', async () => {
@@ -333,19 +573,108 @@ describe('KpiScreen (gs)', () => {
     expect(screen.queryByTestId('deck-color-table')).toBeNull()
   })
 
+  it('gives the field chart no empty-state hint: the title is enough there (CPY-01)', async () => {
+    renderField()
+    const chart = await screen.findByTestId('kpi-dashboard')
+    expect(chart.textContent).not.toContain('GỢI Ý')
+  })
+
   it('still hands the chart the deck colours, so the field sees the admin\'s choice (RV6-29)', async () => {
     renderField()
     const chart = await screen.findByTestId('kpi-dashboard')
     expect(chart.textContent).toContain('CHART Sàn A=#aaaaaa/-')
   })
 
-  it('reads the project from the path and offers the way back to the drawing', async () => {
+  it('reads the project from the path, under the field header with KPI current (GS-01)', async () => {
     renderField()
     await screen.findByTestId('kpi-dashboard')
     expect(listStagePlans).toHaveBeenCalledWith('p2')
-    expect(listProjectNames).not.toHaveBeenCalled()
-    await userEvent.click(screen.getByRole('button', { name: 'Về bản vẽ' }))
-    expect(navigate).toHaveBeenCalledWith('/gs/p2')
+    const nav = screen.getByRole('navigation', { name: 'Điều hướng' })
+    expect(within(nav).getByRole('link', { name: 'KPI' })).toHaveAttribute('aria-current', 'page')
+    expect(within(nav).getByRole('link', { name: 'Sàn' })).toHaveAttribute('href', '/gs/p2')
+    expect(await within(bar()).findByText('Giàn B', { selector: '.ant-select-selection-item' })).toBeInTheDocument()
+  })
+
+  it('has no back button and no title bar of its own: the Sàn tab is the way back (GS-02)', async () => {
+    renderField()
+    await screen.findByTestId('kpi-dashboard')
+    expect(screen.queryByRole('button', { name: 'Về bản vẽ' })).toBeNull()
+    // "KPI" only in the field header: the tab, and on a phone the top
+    // bar's title (GS-06); the page draws no title of its own.
+    expect(screen.getAllByText('KPI').every((e) => e.closest('header, nav') !== null)).toBe(true)
+    const content = bar().closest('.ant-layout-content') as HTMLElement
+    expect(content.firstElementChild).toBe(bar())
+    expect(before(screen.getByRole('navigation', { name: 'Điều hướng' }), bar())).toBe(true)
+  })
+
+  it('starts another project on its own defaults, not the last project\'s applied filters', async () => {
+    renderField()
+    await screen.findByTestId('kpi-dashboard')
+    await userEvent.click(within(bar()).getByRole('combobox', { name: 'Sàn' }))
+    await userEvent.click(await screen.findByTitle('Sàn A'))
+    await pressTim()
+    expect(await screen.findByText(/PHẠM VI d1\/tất cả/)).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('link', { name: 'sang Giàn A' }))
+    await waitFor(() => expect(listStagePlans).toHaveBeenCalledWith('p1'))
+    expect(await screen.findByText(/PHẠM VI tất cả\/tất cả/)).toBeInTheDocument()
+  })
+})
+
+describe('KpiScreen (gs) on a phone (FLT-04)', () => {
+  const summary = (text: string) => within(bar()).findByRole('button', { name: text })
+
+  it('is one row: what is applied, in one line, and the Bộ lọc button', async () => {
+    renderField(390)
+    await screen.findByTestId('kpi-dashboard')
+    expect(await summary('GB · Tất cả sàn · Tất cả công đoạn')).toBeInTheDocument()
+    expect(within(bar()).queryByRole('combobox')).toBeNull()
+    expect(bar().querySelector('.ant-badge-count')).toBeNull()
+  })
+
+  it('throws the draft away when the sheet closes without Tìm: reopened, it shows what is applied (FLT-09)', async () => {
+    renderField(390)
+    await screen.findByTestId('kpi-dashboard')
+    await userEvent.click(within(bar()).getByRole('button', { name: 'Bộ lọc' }))
+    const sheet = await screen.findByRole('dialog', { name: 'Bộ lọc' })
+    await chooseOption('Sàn', 'Sàn A', sheet)
+    await userEvent.click(document.querySelector('.ant-drawer-mask') as HTMLElement)
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Bộ lọc' })).toBeNull())
+    await userEvent.click(within(bar()).getByRole('button', { name: 'Bộ lọc' }))
+    const again = await screen.findByRole('dialog', { name: 'Bộ lọc' })
+    expect(within(again).getByTitle('Tất cả sàn')).toBeInTheDocument()
+    expect(within(again).queryByTitle('Sàn A')).toBeNull()
+  })
+
+  it('opens every select of the sheet with its options in full', async () => {
+    renderField(390)
+    await screen.findByTestId('kpi-dashboard')
+    await userEvent.click(within(bar()).getByRole('button', { name: 'Bộ lọc' }))
+    const sheet = await screen.findByRole('dialog', { name: 'Bộ lọc' })
+    for (const name of ['Dự án', 'Sàn', 'Công đoạn']) {
+      expect((await openDropdown(name, sheet)).style.maxWidth).toBe('calc(100vw - 32px)')
+    }
+  })
+
+  it('holds Dự án, Sàn and Công đoạn in the sheet, full width; its Tìm applies once and closes', async () => {
+    renderField(390)
+    await screen.findByTestId('kpi-dashboard')
+    await userEvent.click(within(bar()).getByRole('button', { name: 'Bộ lọc' }))
+    const sheet = await screen.findByRole('dialog', { name: 'Bộ lọc' })
+    const boxes = within(sheet).getAllByRole('combobox')
+    expect(boxes.map((b) => b.getAttribute('aria-label'))).toEqual(['Dự án', 'Sàn', 'Công đoạn'])
+    for (const box of boxes) expect(box.closest('.ant-select')).toHaveStyle({ width: '100%' })
+
+    await chooseOption('Sàn', 'Sàn A', sheet)
+    expect(screen.getByText(/PHẠM VI tất cả\/tất cả/)).toBeInTheDocument()
+    const tim = within(sheet).getByRole('button', { name: /Tìm/ })
+    await waitFor(() => expect(tim).not.toHaveClass('ant-btn-loading'))
+    await userEvent.click(tim)
+    expect(await screen.findByText(/PHẠM VI d1\/tất cả/)).toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Bộ lọc' })).toBeNull())
+    expect(await summary('GB · Sàn A · Tất cả công đoạn')).toBeInTheDocument()
+    expect(bar().querySelector('.ant-badge-count')).toHaveTextContent('1')
+    expect(loadProjectModel).toHaveBeenCalledTimes(1)
   })
 })
 

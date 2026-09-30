@@ -18,6 +18,12 @@
  * front of the customer.
  */
 
+/**
+ * The mark for a value a row does not have, on every screen: one hyphen, the
+ * owner's rule from Nhân lực, never an em dash or an empty cell (I7).
+ */
+export const MISSING = '-'
+
 const AREA_M2 = new Intl.NumberFormat('vi-VN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const PERCENT = new Intl.NumberFormat('vi-VN', {
   style: 'percent', minimumFractionDigits: 2, maximumFractionDigits: 2,
@@ -38,10 +44,24 @@ const PERCENT = new Intl.NumberFormat('vi-VN', {
 */
 const WEIGHT = new Intl.NumberFormat('vi-VN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
-/** Man-hours: one decimal always ("3,0"), a second when it carries information ("0,25"). */
-const HOURS = new Intl.NumberFormat('vi-VN', { minimumFractionDigits: 1, maximumFractionDigits: 2 })
+/**
+ * Man-hours: two decimals always ("3,00", "0,25"), like every other quantity
+ * on screen. One-or-two put "0,0" above "411,62" in one column (M11); two
+ * keeps every digit the old second place carried.
+ */
+const HOURS = new Intl.NumberFormat('vi-VN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 /** Mhr/m²: three places, since the customer's workbook compares 1,149 with 1,161. */
 const MHR_PER_M2 = new Intl.NumberFormat('vi-VN', { minimumFractionDigits: 3, maximumFractionDigits: 3 })
+/**
+ * A chart axis tick (R5-C2): the Vietnamese separators like every other
+ * number on screen, but no padding -- an axis reads 0 · 0,35 · 0,7 · 1,05 or
+ * 1.350 · 1.800 · 2.200, not 0,00 · 1.800,00. Three decimals at most, the
+ * precision Mhr/m² is read to: a low-range axis stepping by 0,025 read
+ * 0,03 · 0,05 · 0,08 at two (CHT-03).
+ */
+const AXIS = new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 3 })
+/** A share axis tick: a percentage with the same no-padding rule, 0% · 25% · 50%. */
+const AXIS_PERCENT = new Intl.NumberFormat('vi-VN', { style: 'percent', maximumFractionDigits: 2 })
 
 /**
  * Two decimals for any quantity a work is measured in. Named for the m² it
@@ -55,6 +75,8 @@ export const formatPercent = (n: number): string => PERCENT.format(n)
 export const formatWeight = (n: number): string => WEIGHT.format(n)
 export const formatHours = (n: number): string => HOURS.format(n)
 export const formatMhrPerM2 = (n: number): string => MHR_PER_M2.format(n)
+export const formatAxisNumber = (n: number): string => AXIS.format(n)
+export const formatAxisPercent = (n: number): string => AXIS_PERCENT.format(n)
 
 /**
  * Vietnam is UTC+7 all year and has been since 1975 -- no daylight saving, no
@@ -66,7 +88,9 @@ export const formatMhrPerM2 = (n: number): string => MHR_PER_M2.format(n)
 const VN_OFFSET_MINUTES = 7 * 60
 
 /**
- * A recorded moment, in the form the paperwork uses: `hh:mm:ss dd/mm/yyyy`.
+ * A recorded moment, in the one date-time form on screen: `HH:mm DD/MM/YYYY`
+ * (M12). No seconds: nobody on a deck reads them, and they pushed the date
+ * out of a 160 px column.
  *
  * Time first, because on a deck the question is almost always "when today",
  * and the date is the part that repeats down the column.
@@ -83,7 +107,7 @@ export function formatDateTimeVN(iso: string | null | undefined): string {
   const vn = new Date(at.getTime() + VN_OFFSET_MINUTES * 60_000)
   const p = (n: number) => String(n).padStart(2, '0')
   return (
-    `${p(vn.getUTCHours())}:${p(vn.getUTCMinutes())}:${p(vn.getUTCSeconds())} `
+    `${p(vn.getUTCHours())}:${p(vn.getUTCMinutes())} `
     + `${p(vn.getUTCDate())}/${p(vn.getUTCMonth() + 1)}/${vn.getUTCFullYear()}`
   )
 }

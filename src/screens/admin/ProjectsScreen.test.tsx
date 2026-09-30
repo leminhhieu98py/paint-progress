@@ -5,6 +5,10 @@ import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderApp } from '../../test/renderApp'
 import { ProjectsScreen } from './ProjectsScreen'
+import { expectLeft } from '../../test/alignment'
+import { weightOf } from '../../test/typography'
+import { type } from '../../theme'
+import { consequenceItems, pageSubtitle } from '../../test/copy'
 
 const latestProgressEvent = vi.hoisted(() => vi.fn())
 vi.mock('../../lib/progressApi', () => ({
@@ -94,6 +98,15 @@ describe('ProjectsScreen header counters', () => {
     expect(screen.getByText('1.531')).toBeInTheDocument()
   })
 
+  it('has no subtitle and no caption that repeats its label (CPY-01)', async () => {
+    // The counts the subtitle carried are the stat cards' own figures.
+    renderScreen()
+    expect(await screen.findByText('38.380,95')).toBeInTheDocument()
+    expect(pageSubtitle()).toBeNull()
+    expect(screen.queryByText(/tiến độ theo công việc/)).not.toBeInTheDocument()
+    expect(screen.queryByText('trên toàn bộ bản vẽ')).not.toBeInTheDocument()
+  })
+
   it('says how many decks still have no drawing attached', async () => {
     // A deck with no drawing has no bays to tap, so this is the number that
     // says how much of the project is actually recordable today.
@@ -110,7 +123,8 @@ describe('ProjectsScreen header counters', () => {
       byUsername: 'gs.hieu',
     })
     renderScreen()
-    expect(await screen.findByText('gs.hieu · R7C11 → Coat 3')).toBeInTheDocument()
+    // The date first on the caption line, then who, where and what (AD1 revised).
+    expect(await screen.findByText(`${dayjs('2026-08-28T09:42:00').format('DD/MM/YYYY')} · gs.hieu · R7C11 → Coat 3`)).toBeInTheDocument()
   })
 
   it('names the not-started case rather than printing an empty arrow', async () => {
@@ -122,27 +136,34 @@ describe('ProjectsScreen header counters', () => {
       byUsername: 'gs.hieu',
     })
     renderScreen()
-    expect(await screen.findByText('gs.hieu · R7C11 → Chưa bắt đầu')).toBeInTheDocument()
+    expect(await screen.findByText(`${dayjs('2026-08-28T09:42:00').format('DD/MM/YYYY')} · gs.hieu · R7C11 → Chưa bắt đầu`)).toBeInTheDocument()
   })
 
-  it('shows a clock time for something recorded today, a date for anything older', async () => {
-    // "09:42" on a three-week-old event reads as though the site is busy.
+  it('shows the event\'s time as the value, at the numbers\' size, and its date first on the line beneath (AD1 revised)', async () => {
     latestProgressEvent.mockResolvedValue({
       at: dayjs().hour(7).minute(5).second(0).toISOString(),
       cellCode: 'R1C1', toStageName: 'Coat 2', byName: null, byUsername: 'gs.tuan',
     })
     const { unmount } = renderScreen()
-    expect(await screen.findByText('07:05')).toBeInTheDocument()
+    expect(await screen.findByText('07:05')).toHaveStyle({ fontSize: '32px', fontWeight: '700', whiteSpace: 'nowrap' })
+    expect(screen.getByText(`${dayjs().format('DD/MM/YYYY')} · gs.tuan · R1C1 → Coat 2`)).toBeInTheDocument()
     unmount()
 
+    // Not today: the value is still the time, and the caption starts with its date.
+    const older = dayjs().subtract(21, 'day').hour(7).minute(5).second(0)
     latestProgressEvent.mockResolvedValue({
-      at: dayjs().subtract(21, 'day').hour(7).minute(5).second(0).toISOString(),
+      at: older.toISOString(),
       cellCode: 'R1C1', toStageName: 'Coat 2', byName: null, byUsername: 'gs.tuan',
     })
     renderScreen()
-    expect(
-      await screen.findByText(dayjs().subtract(21, 'day').format('DD.MM') + ' · 07:05'),
-    ).toBeInTheDocument()
+    expect(await screen.findByText('07:05')).toHaveStyle({ fontSize: '32px' })
+    const caption = screen.getByText(`${older.format('DD/MM/YYYY')} · gs.tuan · R1C1 → Coat 2`)
+    expect(caption).toHaveStyle({ whiteSpace: 'nowrap', textOverflow: 'ellipsis' })
+    expect(caption).toHaveAttribute('title', caption.textContent)
+    // Every value in the row at one size.
+    for (const card of screen.getAllByTestId('stat-card')) {
+      expect(card.children[1]).toHaveStyle({ fontSize: '32px' })
+    }
   })
 
   it('says so plainly when nobody has recorded anything yet', async () => {
@@ -258,6 +279,9 @@ describe('ProjectsScreen — deleting a project', () => {
 
     const dialog = await screen.findByRole('dialog')
     expect(within(dialog).getByText('Xóa dự án BB1 - CPPTS?')).toBeInTheDocument()
+    // Present tense, one sentence (RUL-01).
+    expect(within(dialog).getByText('Mất vĩnh viễn theo dự án:')).toBeInTheDocument()
+    expect(consequenceItems(dialog)).toEqual(['Không khôi phục được', 'GS đang mở dự án này trên máy tính bảng không ghi được nữa cho tới khi tải lại'])
     expect(within(dialog).getByText('5 sàn')).toBeInTheDocument()
     expect(within(dialog).getByText('Phân quyền GS vào dự án')).toBeInTheDocument()
     const ok = within(dialog).getByRole('button', { name: /Xóa dự án/ })
@@ -282,5 +306,46 @@ describe('ProjectsScreen — deleting a project', () => {
 
     expect(await screen.findByText('Đã xóa, nhưng chưa dọn được file bản vẽ trên kho lưu trữ'))
       .toBeInTheDocument()
+  })
+})
+
+describe('ProjectsScreen — type scale (TYP-02)', () => {
+  it('reads "Name (CODE)" on one line in body type, as the deck list does (RLP-01, review M8)', async () => {
+    renderScreen()
+    const name = await screen.findByText('BB1 - CPPTS')
+    expect(weightOf(name)).toBe(400)
+    const cell = name.closest('td') as HTMLElement
+    expect(cell).toHaveTextContent(/^BB1 - CPPTS \(BB1\)$/)
+    // One line: no caption under the name.
+    expect(within(cell).queryByText('BB1')).toBeNull()
+    expect(name.parentElement).toHaveStyle({ fontSize: `${type.body.fontSize}px` })
+  })
+})
+
+describe('ProjectsScreen — progress as a number (PRG-01)', () => {
+  it('prints the project progress as a centred percentage, with no bar in the cell', async () => {
+    renderScreen()
+    const name = await screen.findByText('BB1 - CPPTS')
+    const row = name.closest('tr') as HTMLElement
+    expect(row.querySelector('[data-testid="progress-fill"]')).toBeNull()
+    const headers = screen.getAllByRole('columnheader').map((h) => h.textContent)
+    const cell = row.querySelectorAll('td')[headers.indexOf('Tiến độ')]
+    expect(cell).toHaveTextContent(/^\d{1,3},\d{2}%$/)
+    expect(cell).toHaveStyle({ textAlign: 'center' })
+  })
+})
+
+describe('ProjectsScreen — alignment (UI-03)', () => {
+  it('keeps the project name left and centres the figures and actions, header included', async () => {
+    renderScreen()
+    const name = await screen.findByText('BB1 - CPPTS')
+    const th = (label: string) => screen.getByRole('columnheader', { name: label })
+    expectLeft(th('Tên dự án'))
+    expectLeft(name.closest('td'))
+    for (const label of ['Số sàn', 'Tổng diện tích (m²)', 'Tiến độ', 'Thao tác']) {
+      expect(th(label)).toHaveStyle({ textAlign: 'center' })
+    }
+    const row = name.closest('tr') as HTMLElement
+    expect(within(row).getByText('5').closest('td')).toHaveStyle({ textAlign: 'center' })
   })
 })

@@ -1,7 +1,11 @@
-import { App as AntApp } from 'antd'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { App as AntApp, theme } from 'antd'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { consequenceItems, expectHelperText, expectNoSpecIds, keyFactTexts, ruleTexts } from '../../test/copy'
+import { expectOnScale, weightOf } from '../../test/typography'
+import { palette, type } from '../../theme'
+import { DECK_RING, figureFits, ringFigureStep } from '../../components/ringFit'
 import { DeckProgressPanel } from './DeckProgressPanel'
 
 const loadDeckWorks = vi.hoisted(() => vi.fn())
@@ -42,6 +46,9 @@ vi.mock('../../lib/zonesApi', () => ({
   setZoneCells: (id: string, ids: string[]) => setZoneCells(id, ids),
 }))
 
+/** How often the panel rendered a canvas: the ring's hover must not (m-4). */
+const canvasRenders = vi.hoisted(() => ({ count: 0 }))
+
 // Konva renders to a canvas, which jsdom does not implement. The double exposes
 // what this panel is responsible for putting on one: which drawing, what colour
 // each bay came out, what is selected, and what the plan says.
@@ -62,7 +69,9 @@ vi.mock('../../canvas/DrawingCanvas', () => ({
     selectedCodes?: string[]
     onCellClick?: (code: string, additive: boolean) => void
     onSelectDraw?: (rect: { x: number; y: number; w: number; h: number }) => void
-  }) => (
+  }) => {
+    canvasRenders.count += 1
+    return (
     <div
       data-testid="canvas"
       data-image={imageUrl}
@@ -87,7 +96,8 @@ vi.mock('../../canvas/DrawingCanvas', () => ({
       {/* Stands in for a Shift-drag across the whole drawing. */}
       <button data-testid="band-all" onClick={() => onSelectDraw?.({ x: 0, y: 0, w: 1, h: 1 })} />
     </div>
-  ),
+    )
+  },
 }))
 
 const STAGES = [
@@ -162,16 +172,48 @@ const startInputOf = (stageName: string) =>
     within(screen.getByTestId('stage-windows')).getByRole('row', { name: new RegExp(stageName) }),
   ).getByPlaceholderText('Bắt đầu')
 
-/** The stage the left lens is showing, by name. */
+/** Tìm in the bar that holds `el`: the lens bar is a draft (FLT-08). */
+const applyBarOf = async (el: HTMLElement) => {
+  const bar = el.closest('[role="search"]') as HTMLElement
+  await userEvent.click(within(bar).getByRole('button', { name: /Tìm/ }))
+}
+
+/** A lens bar's select, by its label, set to `name` and applied with Tìm. */
 const pickLens = async (label: string, name: string) => {
-  await userEvent.click(screen.getByLabelText(label))
+  // By role: the controls name themselves by aria-label (M14), which antd
+  // puts on the select's wrapper as well as its input.
+  await userEvent.click(screen.getByRole('combobox', { name: label }))
   await userEvent.click(await screen.findByTitle(name))
+  await applyBarOf(screen.getByRole('combobox', { name: label }))
 }
 
 describe('DeckProgressPanel', () => {
   it('loads the deck it was given', async () => {
     renderPanel()
     await waitFor(() => expect(loadDeckWorks).toHaveBeenCalledWith('d1'))
+  })
+
+  it('shows the deck\'s progress and its zone count beside the coat card\'s title as KeyFacts (HLT-01)', async () => {
+    listDeckZones.mockResolvedValue([ZONE])
+    renderPanel()
+    await screen.findByTestId('lens-A')
+    await waitFor(() => expect(keyFactTexts()).toHaveLength(2))
+    const [progress, zones] = keyFactTexts()
+    expect(progress).toMatch(/^\d+,\d{2}%$/)
+    expect(zones).toBe('1 zone')
+  })
+
+  it('states its rules as helper text, with no spec id and no legend the lens (?) already gives (CPY-04, RUL-01)', async () => {
+    renderPanel()
+    await screen.findByTestId('lens-A')
+    await userEvent.click(screen.getByRole('button', { name: /Quy tắc áp dụng/ }))
+    expect(ruleTexts()).toEqual([
+      'Xoá zone chỉ xoá kế hoạch và giữ nguyên tiến độ đã ghi trên các ô.',
+      'Màu zone chọn trong bảng màu đã bỏ các màu lớp sơn của công việc trên sàn này.',
+    ])
+    expectHelperText(ruleTexts())
+    expect(screen.queryByText(/A3\.2/)).not.toBeInTheDocument()
+    expectNoSpecIds()
   })
 
   it('opens on one coat, over the deck\'s own drawing', async () => {
@@ -187,6 +229,23 @@ describe('DeckProgressPanel', () => {
       .toBeInTheDocument()
   })
 
+  it('starts both drawings on one line: each lens header holds a control\'s height (Q1)', async () => {
+    // Ghi chú (n) is a default-height button in lens A's header alone; B's
+    // header held only its title and put B's drawing 14px higher.
+    renderPanel()
+    await screen.findByTestId('lens-A')
+    await userEvent.click(screen.getByText('So sánh hai lớp'))
+    await screen.findByTestId('lens-B')
+    const titles = screen.getAllByRole('heading', { level: 3, name: /^Tiến độ · / })
+    expect(titles).toHaveLength(2)
+    const { controlHeight } = theme.getDesignToken()
+    for (const h of titles) expect(h.parentElement).toHaveStyle({ minHeight: `${controlHeight}px` })
+    // The icon action is the one control there, at the theme height (CTL-02, ACT-01).
+    const notes = screen.getByRole('button', { name: /^Ghi chú \(/ })
+    expect(notes).not.toHaveClass('ant-btn-sm')
+    expect(notes.closest('.ant-badge')?.parentElement).toBe(titles[0].parentElement!.parentElement)
+  })
+
   it('puts a second lens beside the first, on demand, sharing one zoom', async () => {
     renderPanel()
     await screen.findByTestId('lens-A')
@@ -196,8 +255,11 @@ describe('DeckProgressPanel', () => {
     // The ring is the single-lens companion. Two drawings and a ring in one row
     // leaves nothing wide enough to read.
     expect(screen.queryByTestId('stage-ring')).not.toBeInTheDocument()
-    expect(within(screen.getByTestId('lens-B')).getByText(/cùng mức zoom để so sánh/))
-      .toBeInTheDocument()
+    // No side captions: each pane carries the legend on its title's (?),
+    // like the single view (CPY-01).
+    const lensB = screen.getByTestId('lens-B')
+    expect(within(lensB).queryByText(/cùng mức zoom để so sánh/)).toBeNull()
+    expect(within(lensB).getByRole('img', { name: /tô đặc/ })).toBeInTheDocument()
   })
 
   it('drives both lenses from one zoom control', async () => {
@@ -211,6 +273,18 @@ describe('DeckProgressPanel', () => {
   it('shows the deck\'s own spec table', async () => {
     renderPanel()
     expect(await screen.findByTestId('deck-spec')).toBeInTheDocument()
+  })
+
+  it('numbers the works and per-coat sections as cards after the drawing panel (UX-03)', async () => {
+    // They were boxes inside A3.4 and the only sections of the deck page
+    // without a code. As A3.5 and A3.6 the page reads as one ordered list.
+    renderPanel(false)
+    await screen.findByTestId('deck-works-table')
+    const [a4, a5, a6] = ['A3.4', 'A3.5', 'A3.6'].map((code) => screen.getByText(code))
+    expect(a4.compareDocumentPosition(a5) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(a5.compareDocumentPosition(a6) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'Sàn này theo từng công việc' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Diện tích cộng dồn theo công đoạn' })).toBeInTheDocument()
   })
 
   it('breaks the deck down by coat CUMULATIVELY, since a later coat implies the earlier ones', async () => {
@@ -242,12 +316,163 @@ describe('DeckProgressPanel', () => {
     expect(within(ring).queryByText(/\d+ ô/)).toBeNull()
   })
 
+  it('sets the centre figure in the largest step that fits the hole (I-2, C1)', async () => {
+    renderPanel()
+    const ring = await screen.findByTestId('stage-ring')
+    const figure = within(ring).getByTestId('ring-figure')
+    const text = figure.textContent ?? ''
+    const step = ringFigureStep(text, [type.displaySm, type.cardTitle, type.bodyStrong], DECK_RING)
+    expect(figure).toHaveStyle({ fontSize: `${step.fontSize}px` })
+    expect(figureFits(text, step, DECK_RING)).toBe(true)
+  })
+
   it('says what the ring itself answers, so it is not read as the cumulative list', async () => {
     renderPanel()
     const ring = await screen.findByTestId('stage-ring')
-    expect(
-      within(ring).getByText('Vòng tròn: diện tích đang dừng ở mỗi lớp, không cộng dồn'),
-    ).toBeInTheDocument()
+    // On the (?) of the ring's centre label, not as a caption under it (CPY-01).
+    const tip = within(ring).getByRole('img', { name: 'Vòng tròn: diện tích đang dừng ở mỗi lớp, không cộng dồn' })
+    expect(tip.parentElement).toHaveTextContent(/^Tiến độ · Công việc chính$/)
+    expect(within(ring).queryByText(/^Vòng tròn:/)).toBeNull()
+  })
+
+  it('keeps the footer figure and its unit on one line, the long work name cut with a title (R4)', async () => {
+    renderPanel()
+    const footer = await screen.findByTestId('ring-footer')
+    const label = within(footer).getByText('Tiến độ · Công việc chính')
+    expect(label).toHaveAttribute('title', 'Tiến độ · Công việc chính')
+    expect(label).toHaveStyle({ minWidth: '0px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' })
+    expect(within(footer).getByText('1.000,00 m²')).toHaveStyle({ whiteSpace: 'nowrap', flex: 'none' })
+  })
+
+  it('labels its figures with the work, leaving "Tiến độ sàn" to the all-works figure (I4)', async () => {
+    renderPanel()
+    const ring = await screen.findByTestId('stage-ring')
+    // Once in the ring's centre, once in the footer.
+    expect(within(ring).getAllByText('Tiến độ · Công việc chính')).toHaveLength(2)
+    expect(within(ring).queryByText(/Tiến độ sàn/)).toBeNull()
+  })
+
+  it('stacks the ring above its rows in its 300-352 px column, the rows its full width (RR-I1)', async () => {
+    renderPanel()
+    const ring = await screen.findByTestId('stage-ring')
+    const legend = within(ring).getByTestId('stage-legend')
+    const stack = legend.parentElement as HTMLElement
+    expect(stack).toHaveStyle({ display: 'flex', flexDirection: 'column', alignItems: 'center' })
+    expect(within(stack).getByTestId('ring-figure')).toBeInTheDocument()
+    expect(legend).toHaveStyle({ alignSelf: 'stretch' })
+  })
+
+  it('reads each coat row in two lines: dot, name and percent, then the area (RR-I1)', async () => {
+    renderPanel()
+    const ring = await screen.findByTestId('stage-ring')
+    const row = within(ring).getByText('Coat 2').closest('[data-testid="stage-legend-row"]') as HTMLElement
+    const marker = within(row).getByTestId('stage-legend-marker')
+    const line1 = marker.parentElement as HTMLElement
+    expect(within(line1).getByText('Coat 2')).toBeInTheDocument()
+    // Coat 2 is cumulative: every bay has been through it.
+    expect(within(line1).getByText('100,00%')).toBeInTheDocument()
+    const area = within(row).getByText('1.000,00 / 1.000,00 m²')
+    expect(line1.contains(area)).toBe(false)
+    expect(row.children).toHaveLength(2)
+  })
+
+  it('keeps the dot on the first line of a wrapped coat name, beside the percent (RR2-M1)', async () => {
+    renderPanel()
+    const ring = await screen.findByTestId('stage-ring')
+    const row = within(ring).getByText('Coat 2').closest('[data-testid="stage-legend-row"]') as HTMLElement
+    const marker = within(row).getByTestId('stage-legend-marker')
+    const line1 = marker.parentElement as HTMLElement
+    expect(line1).toHaveStyle({ alignItems: 'flex-start' })
+    expect(within(line1).getByText('Coat 2')).toHaveStyle({ lineHeight: '17px' })
+    expect(within(line1).getByText('100,00%')).toHaveStyle({ lineHeight: '17px' })
+    // The 15 px dot centred on the 17 px first line.
+    expect(marker).toHaveStyle({ marginTop: '1px' })
+  })
+
+  describe('the ring and its coat rows (CHT-02)', () => {
+    // Coat 2 and Tháo giáo each hold 500 m² right now; Blast + Coat 1 holds
+    // none (every bay is past it), so it has a row and no slice.
+    const rowOf = (ring: HTMLElement, name: string) =>
+      within(ring).getByText(name).closest('[data-testid="stage-legend-row"]') as HTMLElement
+    const sliceOf = (ring: HTMLElement, name: string) =>
+      within(within(ring).getByRole('group', { name: 'Diện tích đang dừng ở mỗi lớp' })).getByRole('img', { name })
+
+    it('lights up the slice of a hovered coat row, and highlights the row of a hovered slice', async () => {
+      renderPanel()
+      const ring = await screen.findByTestId('stage-ring')
+      fireEvent.pointerEnter(rowOf(ring, 'Coat 2'))
+      expect(sliceOf(ring, 'Coat 2')).toHaveAttribute('opacity', '1')
+      expect(sliceOf(ring, 'Tháo giáo')).toHaveAttribute('opacity', '0.35')
+      expect(rowOf(ring, 'Coat 2')).toHaveStyle({ background: palette.bgHover })
+      fireEvent.pointerLeave(rowOf(ring, 'Coat 2'))
+      expect(sliceOf(ring, 'Tháo giáo')).toHaveAttribute('opacity', '1')
+
+      fireEvent.pointerEnter(sliceOf(ring, 'Tháo giáo'))
+      expect(rowOf(ring, 'Tháo giáo')).toHaveStyle({ background: palette.bgHover })
+      expect(rowOf(ring, 'Coat 2').style.background).toBe('')
+      fireEvent.pointerLeave(sliceOf(ring, 'Tháo giáo'))
+      expect(rowOf(ring, 'Tháo giáo').style.background).toBe('')
+    })
+
+    it('puts the rows in the tab order, and a focused row lights its slice', async () => {
+      renderPanel()
+      const ring = await screen.findByTestId('stage-ring')
+      const rows = within(ring).getAllByTestId('stage-legend-row')
+      expect(rows.map((r) => r.getAttribute('tabindex'))).toEqual(['0', '0', '0'])
+      act(() => rowOf(ring, 'Tháo giáo').focus())
+      expect(sliceOf(ring, 'Coat 2')).toHaveAttribute('opacity', '0.35')
+      act(() => rowOf(ring, 'Tháo giáo').blur())
+      expect(sliceOf(ring, 'Coat 2')).toHaveAttribute('opacity', '1')
+    })
+
+    it('describes a slice by the area standing at its coat and by its row\'s cumulative figures', async () => {
+      // The row is cumulative and the ring is not (Feedback Rv3, item 1), so
+      // the slice says both, the row's figures exactly as the row prints them.
+      renderPanel()
+      const ring = await screen.findByTestId('stage-ring')
+      const row = rowOf(ring, 'Coat 2')
+      // Name and percent on the first line, the area under them (RR-I1).
+      expect(row).toHaveTextContent('Coat 2100,00%1.000,00 / 1.000,00 m²')
+      expect(sliceOf(ring, 'Coat 2')).toHaveAccessibleDescription(
+        'Đang ở lớp này: 500,00 / 1.000,00 m² · 50,00% Cộng dồn: 1.000,00 / 1.000,00 m² · 100,00%',
+      )
+      expect(sliceOf(ring, 'Tháo giáo')).toHaveAccessibleDescription(
+        'Đang ở lớp này: 500,00 / 1.000,00 m² · 50,00% Cộng dồn: 500,00 / 1.000,00 m² · 50,00%',
+      )
+    })
+
+    it('re-renders the ring and its rows on hover, not the panel and its canvases (m-4)', async () => {
+      renderPanel()
+      const ring = await screen.findByTestId('stage-ring')
+      await screen.findAllByTestId('canvas')
+      const before = canvasRenders.count
+      fireEvent.pointerEnter(rowOf(ring, 'Coat 2'))
+      fireEvent.pointerEnter(sliceOf(ring, 'Tháo giáo'))
+      expect(sliceOf(ring, 'Coat 2')).toHaveAttribute('opacity', '0.35')
+      expect(canvasRenders.count).toBe(before)
+    })
+
+    it('draws each coat marker as a circle of the coat\'s colour (CLR-03)', async () => {
+      renderPanel()
+      const ring = await screen.findByTestId('stage-ring')
+      const marker = within(rowOf(ring, 'Tháo giáo')).getByTestId('stage-legend-marker')
+      expect(marker).toHaveStyle({ borderRadius: '50%', background: '#722ed1', width: '15px', height: '15px' })
+      expect(marker.style.boxShadow).toBe('')
+    })
+  })
+
+  it('explains cộng dồn on the card title\'s (?), not in a subtitle (CPY-01)', async () => {
+    renderPanel()
+    const title = await screen.findByRole('heading', { name: /Tiến độ theo công đoạn · cộng dồn/ })
+    expect(within(title).getByRole('img', { name: 'Ô đã ở lớp sau được tính cho cả các lớp trước.' })).toBeInTheDocument()
+    expect(screen.queryByText(/^Ô đã ở lớp sau/)).toBeNull()
+  })
+
+  it('drops the section summaries that repeat their columns or name the report sheet (CPY-01)', async () => {
+    renderPanel()
+    await screen.findByTestId('deck-works-table')
+    expect(screen.queryByText(/Trọng số sàn trong công việc ·/)).toBeNull()
+    expect(screen.queryByText(/sheet Dashboard/)).toBeNull()
   })
 
   it('tells the admin when a deck has no drawing, instead of an empty frame', async () => {
@@ -417,7 +642,17 @@ describe('DeckProgressPanel — colouring one coat', () => {
 
   it('says what white means, rather than leaving it to be inferred', async () => {
     renderPanel()
-    expect(await screen.findByText(/ô chưa đạt, chưa kế hoạch để trắng/)).toBeInTheDocument()
+    // The map legend is the lens title's (?), not a line read every visit (CPY-01).
+    const lens = await screen.findByTestId('lens-A')
+    const title = within(lens).getByRole('heading', { level: 3 })
+    expect(within(title).getByRole('img', { name: /ô chưa đạt, chưa kế hoạch để trắng/ })).toBeInTheDocument()
+    expect(screen.queryByText(/ô chưa đạt, chưa kế hoạch để trắng/)).toBeNull()
+  })
+
+  it('names no gesture under the toolbar: the Gộp thành zone tooltip already does (CPY-01)', async () => {
+    renderPanel()
+    await screen.findByTestId('lens-A')
+    expect(screen.queryByText(/Giữ Shift rồi kéo trên bản vẽ để quét chọn/)).toBeNull()
   })
 
   it('counts each zone against the coat being viewed', async () => {
@@ -453,6 +688,15 @@ describe('DeckProgressPanel — zones', () => {
     const group = screen.getByRole('button', { name: /Gộp thành zone/ })
     expect(group).toBeDisabled()
     expect(screen.queryByRole('button', { name: 'Bỏ chọn' })).not.toBeInTheDocument()
+    // Bỏ chọn, when shown, is an icon action (ACT-01): see the ACT-01 test.
+    // Why it is disabled, without a pointer (Q2): its description, and a
+    // named stop in the tab order that opens the tip.
+    expect(group).toHaveAccessibleDescription('Chọn ô trên bản vẽ trước — bấm từng ô, hoặc giữ Shift rồi kéo')
+    const stop = screen.getByRole('group', { name: 'Gộp thành zone (0)' })
+    expect(stop).toHaveAttribute('tabindex', '0')
+    expect(stop).toContainElement(group)
+    act(() => stop.focus())
+    expect(await screen.findByRole('tooltip')).toHaveTextContent('Chọn ô trên bản vẽ trước')
   })
 
   it('creates one zone per coat that was given dates, from one dialog', async () => {
@@ -523,6 +767,32 @@ describe('DeckProgressPanel — zones', () => {
     await waitFor(() => expect(updateZone).toHaveBeenCalledWith('z1', { color: '#13c2c2' }, STAGES))
     // Re-read, so the row swatch and the bays follow the new colour.
     await waitFor(() => expect(listDeckZones).toHaveBeenCalledTimes(2))
+  })
+
+  it('draws the zone colours as plain circles, the picked one ringed apart from its colour (CLR-01, CLR-02)', async () => {
+    listDeckZones.mockResolvedValue([ZONE])
+    renderPanel()
+    await screen.findByTestId('lens-A')
+    await pickLens('Lớp sơn đang xem', 'Tháo giáo')
+    // The zone's row marker is a circle too (CLR-03, R3-D).
+    const marker = await screen.findByTestId('zone-marker')
+    expect(marker).toHaveStyle({ borderRadius: '50%' })
+    expect(marker.style.boxShadow).toBe('')
+    await userEvent.click(await screen.findByRole('button', { name: 'Mốc ngày của Khu A — Tháo giáo' }))
+    const swatches = within(await screen.findByTestId('zone-color')).getAllByRole('radio')
+    const picked = swatches.filter((sw) => sw.getAttribute('aria-checked') === 'true')
+    expect(picked).toHaveLength(1)
+    for (const sw of swatches) {
+      expect(sw).toHaveClass('pp-swatch')
+      expect(sw).toHaveStyle({ borderRadius: '50%' })
+      expect(sw.style.borderStyle === 'none' || sw.style.border === '0px').toBe(true)
+      expect(sw.style.boxShadow).toBe(sw === picked[0]
+        ? `0 0 0 2px ${palette.bgContainer}, 0 0 0 4px ${palette.text}`
+        : '')
+    }
+    // The selected ring and the focus ring reach 4 px past a circle: a 10 px
+    // gap keeps either off the next circle (R2).
+    expect(within(screen.getByTestId('zone-color')).getByRole('radiogroup', { name: 'Màu zone' })).toHaveStyle({ gap: '10px' })
   })
 
   it('refuses a zone with no dates at all, rather than writing five empty ones', async () => {
@@ -632,9 +902,38 @@ describe('DeckProgressPanel — zones', () => {
     await pickLens('Lớp sơn đang xem', 'Tháo giáo')
     await userEvent.click(await screen.findByRole('button', { name: 'Mốc ngày của Khu A — Tháo giáo' }))
 
-    expect(await screen.findByRole('button', { name: 'Thêm 0 ô đã chọn' })).toBeDisabled()
+    const add = await screen.findByRole('button', { name: 'Thêm 0 ô đã chọn' })
+    expect(add).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Bỏ 0 ô đã chọn' })).toBeDisabled()
-    expect(screen.getByText('Chọn ô trên bản vẽ rồi quay lại đây để thêm hoặc bỏ.')).toBeInTheDocument()
+    // The reason is on the disabled buttons, like Gộp thành zone (CPY-01):
+    // their description, never a sentence on screen.
+    const hint = 'Chọn ô trên bản vẽ rồi quay lại đây để thêm hoặc bỏ.'
+    expect(add).toHaveAccessibleDescription(hint)
+    expect(screen.getByRole('button', { name: 'Bỏ 0 ô đã chọn' })).toHaveAccessibleDescription(hint)
+    expect(screen.queryByRole('tooltip')).toBeNull()
+    for (const el of screen.getAllByText(hint)) {
+      expect(el).toHaveStyle({
+        position: 'absolute', width: '1px', height: '1px', padding: '0px', margin: '-1px',
+        overflow: 'hidden', whiteSpace: 'nowrap',
+      })
+      expect(el.style.clip).toMatch(/rect\(0/)
+      expect(el.style.borderStyle === 'none' || el.style.border === '0px').toBe(true)
+    }
+    // A disabled button takes no focus, so the tip opens from its wrapper,
+    // which the keyboard reaches while the button is disabled (CPY-02) and
+    // which says what it holds (Q8).
+    const wrapper = add.parentElement as HTMLElement
+    expect(wrapper).toHaveAttribute('tabindex', '0')
+    expect(wrapper).toBe(screen.getByRole('group', { name: 'Thêm 0 ô đã chọn' }))
+    act(() => wrapper.focus())
+    expect(await screen.findByRole('tooltip')).toHaveTextContent(hint)
+    act(() => wrapper.blur())
+    await userEvent.hover(wrapper)
+    expect(await screen.findByRole('tooltip')).toHaveTextContent(hint)
+    // And the intro keeps its data, not the obvious second sentence.
+    const dialog = screen.getByRole('dialog')
+    // The zone's coat and bay count, as KeyFacts under the title (HLT-01).
+    expect(keyFactTexts(dialog)).toEqual(['Tháo giáo', '1 ô'])
   })
 
   it('writes the zone\'s stage across its bays on Ghi thực tế, and re-reads the deck', async () => {
@@ -658,7 +957,11 @@ describe('DeckProgressPanel — zones', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Xoá zone' }))
 
     expect(await screen.findByText('Xoá zone Khu A — Tháo giáo?')).toBeInTheDocument()
-    expect(screen.getByText(/Tiến độ GS đã ghi trên các ô vẫn giữ nguyên/)).toBeInTheDocument()
+    // Each consequence its own item (RUL-01).
+    expect(consequenceItems()).toEqual(['Tiến độ đã ghi trên các ô giữ nguyên'])
+    expect(screen.getByText('Kế hoạch của zone này bị xoá:')).toBeInTheDocument()
+    // The consequence reads as a sentence, not a reference into the spec (CPY-04).
+    expectNoSpecIds()
     expect(deleteZone).not.toHaveBeenCalled()
 
     await userEvent.click(screen.getByRole('button', { name: 'Vẫn xoá' }))
@@ -774,7 +1077,7 @@ describe('DeckProgressPanel — the foreman\'s note', () => {
     // things at Blast + Coat 1 and at Tháo giáo.
     expect(within(dialog).getByText('Tháo giáo')).toBeInTheDocument()
     expect(within(dialog).getByText('Blast + Coat 1')).toBeInTheDocument()
-    expect(within(dialog).getByText(/29\.08\.2026/)).toBeInTheDocument()
+    expect(within(dialog).getByText(/29\/08\/2026/)).toBeInTheDocument()
     // And which of them the drawing's flag is showing.
     expect(within(dialog).getByText('Đang hiện trên bản vẽ')).toBeInTheDocument()
   })
@@ -862,6 +1165,14 @@ describe('DeckProgressPanel — the report copy of a note (0023)', () => {
     await userEvent.click(within(dialog).getByRole('button', { name: 'Sửa cho báo cáo' }))
 
     const box = await screen.findByLabelText('Bản cho báo cáo')
+    // What the field is for is its label's (?); the restore button says the
+    // rest (CPY-01).
+    const tip = screen.getByRole('img', { name: 'Chỉ file Excel in bản này. GS và màn hình này vẫn thấy ghi chú gốc.' })
+    expect(screen.queryByText(/^Chỉ file Excel in bản này/)).toBeNull()
+    // Beside the label, not in it: inside, a click on the (?) focused the
+    // field and the tip joined the field's name (CPY-02).
+    expect(tip.closest('label')).toBeNull()
+    expect(screen.getByRole('textbox', { name: 'Bản cho báo cáo' })).toBe(box)
     // Prefilled with what will otherwise print, so the admin edits rather
     // than retypes.
     expect(box).toHaveValue('Bề mặt còn ẩm, hoãn sơn sang mai')
@@ -921,21 +1232,21 @@ describe('DeckProgressPanel — the report copy of a note (0023)', () => {
   })
 })
 
-describe('DeckProgressPanel — công việc', () => {
-  const GG = {
-    id: 'w2', projectId: 'p1', seq: 2, name: 'Tháo giáo', kind: 'bays' as const,
-    weight: 0.4, counts: true, manualProgress: 0,
-  }
-  const GG_STAGES = [{ id: 't1', seq: 1, name: 'Tháo giáo lửng', color: '#333333', weight: 1 }]
-  /** The same deck in two works: Sơn (W .6, D 1, at 70%) and Tháo giáo (W .4, D 1, untouched). */
-  const TWO_WORKS = {
-    ...ENTRY,
-    works: [
-      { work: { ...WORK, name: 'Sơn', weight: 0.6 }, weight: 1, stages: STAGES, cells: CELLS, audit: {} },
-      { work: GG, weight: 1, stages: GG_STAGES, cells: CELLS.map((c) => ({ ...c, stageId: null })), audit: {} },
-    ],
-  }
+const GG = {
+  id: 'w2', projectId: 'p1', seq: 2, name: 'Tháo giáo', kind: 'bays' as const,
+  weight: 0.4, counts: true, manualProgress: 0,
+}
+const GG_STAGES = [{ id: 't1', seq: 1, name: 'Tháo giáo lửng', color: '#333333', weight: 1 }]
+/** The same deck in two works: Sơn (W .6, D 1, at 70%) and Tháo giáo (W .4, D 1, untouched). */
+const TWO_WORKS = {
+  ...ENTRY,
+  works: [
+    { work: { ...WORK, name: 'Sơn', weight: 0.6 }, weight: 1, stages: STAGES, cells: CELLS, audit: {} },
+    { work: GG, weight: 1, stages: GG_STAGES, cells: CELLS.map((c) => ({ ...c, stageId: null })), audit: {} },
+  ],
+}
 
+describe('DeckProgressPanel — công việc', () => {
   beforeEach(() => {
     loadDeckWorks.mockResolvedValue(TWO_WORKS)
   })
@@ -943,16 +1254,17 @@ describe('DeckProgressPanel — công việc', () => {
   it('offers the works the deck is part of, opening on the first', async () => {
     renderPanel(false)
     await screen.findByTestId('lens-A')
-    expect(screen.getByLabelText('Công việc')).toBeInTheDocument()
+    // Named by its card, apart from the deck page's other work selects (M7).
+    expect(screen.getByRole('combobox', { name: 'Công việc · Tiến độ theo lớp sơn' })).toBeInTheDocument()
     expect(within(screen.getByTestId('lens-A')).getByText('Tiến độ · Blast + Coat 1')).toBeInTheDocument()
   })
 
   it('switching the work switches the coats on offer, and the lens with them', async () => {
     renderPanel(false)
     await screen.findByTestId('lens-A')
-    await pickLens('Công việc', 'Tháo giáo')
+    await pickLens('Công việc · Tiến độ theo lớp sơn', 'Tháo giáo')
     expect(await within(screen.getByTestId('lens-A')).findByText('Tiến độ · Tháo giáo lửng')).toBeInTheDocument()
-    await userEvent.click(screen.getByLabelText('Lớp sơn đang xem'))
+    await userEvent.click(screen.getByRole('combobox', { name: 'Lớp sơn đang xem' }))
     expect(screen.queryByTitle('Coat 2')).toBeNull()
   })
 
@@ -975,13 +1287,49 @@ describe('DeckProgressPanel — công việc', () => {
     expect(within(table).getAllByText('1,00')).toHaveLength(2)
     expect(within(table).getByText('Tổng hợp')).toBeInTheDocument()
     expect(within(table).getByText('42,00%')).toBeInTheDocument()
+    // QA: the weight sat unlabelled mid-row; the columns now say what they hold.
+    expect(within(table).getAllByRole('columnheader').map((h) => h.textContent))
+      .toEqual(['Công việc', 'Trọng số sàn', 'Tiến độ'])
+  })
+
+  it('sets the works table on the type scale: names and figures body, the tổng hợp bodyStrong (TYP-02)', async () => {
+    renderPanel(false)
+    const table = await screen.findByTestId('deck-works-table')
+    for (const h of within(table).getAllByRole('columnheader')) {
+      expect(h).toHaveStyle({ fontSize: '13px', fontWeight: '600' })
+    }
+    const firstRow = within(table).getAllByRole('row')[1]
+    expect(weightOf(within(firstRow).getAllByRole('cell')[0])).toBe(400)
+    expect(weightOf(within(table).getByText('70,00%'))).toBe(400)
+    expect(weightOf(within(table).getByText('Tổng hợp'))).toBe(600)
+    expect(weightOf(within(table).getByText('42,00%'))).toBe(600)
+  })
+
+  it('stands the header toolbar, the notes button and the zoom buttons at the theme height (CTL-02)', async () => {
+    renderPanel()
+    await screen.findByTestId('lens-A')
+    const segmented = screen.getByText('So sánh hai lớp').closest('.ant-segmented')
+    expect(segmented).not.toHaveClass('ant-segmented-sm')
+    expect(screen.getByRole('button', { name: /^Ghi chú \(/ })).not.toHaveClass('ant-btn-sm')
+    for (const name of ['Thu nhỏ', 'Phóng to', 'Vừa khung']) {
+      const b = screen.getByRole('button', { name })
+      expect(b).not.toHaveClass('ant-btn-sm')
+      expect(screen.getByTestId('zoom-group')).toContainElement(b)
+    }
+  })
+
+  it('sets every hand-set text in the panel on the type scale (TYP-01)', async () => {
+    const { container } = renderPanel(false)
+    await screen.findByTestId('deck-works-table')
+    await screen.findAllByTestId('stage-legend-row')
+    expectOnScale(container)
   })
 
   it('shows one work without a selector, and says which it is', async () => {
     loadDeckWorks.mockResolvedValue(ENTRY)
     renderPanel(false)
     await screen.findByTestId('lens-A')
-    expect(screen.queryByLabelText('Công việc')).toBeNull()
+    expect(screen.queryByRole('combobox', { name: 'Công việc · Tiến độ theo lớp sơn' })).toBeNull()
     expect(screen.getByText('Công việc: Công việc chính')).toBeInTheDocument()
   })
 
@@ -989,6 +1337,7 @@ describe('DeckProgressPanel — công việc', () => {
     loadDeckWorks.mockResolvedValue({ ...ENTRY, works: [] })
     renderPanel(false)
     expect(await screen.findByText('Sàn này chưa thuộc công việc nào')).toBeInTheDocument()
+    expect(screen.getByText('Gán sàn vào một công việc ở mục Công việc, rồi cấu hình lớp sơn cho nó.')).toBeInTheDocument()
   })
 })
 
@@ -1031,12 +1380,43 @@ describe('DeckProgressPanel — the all-stages layer (RV6-13)', () => {
     await screen.findByTestId('lens-B')
 
     const coats = ['Blast + Coat 1', 'Coat 2', 'Tháo giáo']
-    await userEvent.click(screen.getByLabelText('Lớp bên trái'))
+    await userEvent.click(within(screen.getByTestId('lens-A')).getByRole('combobox', { name: 'Công đoạn' }))
     expect(optionLabels('lens-a-stage')).toEqual(['Tất cả công đoạn', ...coats])
     await userEvent.keyboard('{Escape}')
 
-    await userEvent.click(screen.getByLabelText('Lớp bên phải'))
+    await userEvent.click(within(screen.getByTestId('lens-B')).getByRole('combobox', { name: 'Công đoạn' }))
     expect(optionLabels('lens-b-stage')).toEqual(['Tất cả công đoạn', ...coats])
+  })
+
+  it('names the lens bar\'s controls by aria-label, with no visible label over them (FLT-01, M14)', async () => {
+    loadDeckWorks.mockResolvedValue(TWO_WORKS)
+    renderPanel(false)
+    const stage = await screen.findByRole('combobox', { name: 'Lớp sơn đang xem' })
+    const bar = stage.closest('[role="search"]') as HTMLElement
+    expect(within(bar).getByRole('combobox', { name: 'Công việc · Tiến độ theo lớp sơn' })).toBeInTheDocument()
+    expect(within(bar).getByRole('textbox', { name: 'Ngày' })).toBeInTheDocument()
+    expect(bar.querySelectorAll('label')).toHaveLength(0)
+    expect(within(bar).queryByText('Lớp sơn đang xem')).toBeNull()
+    expect(within(bar).queryByText('Ngày')).toBeNull()
+  })
+
+  it('labels each pane\'s select by what it picks, not by the side the subtitle already names (QA F6)', async () => {
+    // "Lớp bên trái" sat directly under a subtitle reading "Lớp bên trái",
+    // and the select picks a coat, not a layer.
+    renderPanel()
+    await screen.findByTestId('lens-A')
+    expect(screen.getByRole('combobox', { name: 'Lớp sơn đang xem' })).toHaveAttribute('id', 'lens-a-stage')
+
+    await userEvent.click(screen.getByText('So sánh hai lớp'))
+    const lensA = await screen.findByTestId('lens-A')
+    const lensB = await screen.findByTestId('lens-B')
+    expect(within(lensA).getByRole('combobox', { name: 'Công đoạn' })).toHaveAttribute('id', 'lens-a-stage')
+    expect(within(lensB).getByRole('combobox', { name: 'Công đoạn' })).toHaveAttribute('id', 'lens-b-stage')
+    expect(screen.queryByLabelText('Lớp bên trái')).toBeNull()
+    expect(screen.queryByLabelText('Lớp bên phải')).toBeNull()
+    // Nor does a subtitle name the sides any more: the position is obvious (CPY-01).
+    expect(within(lensA).queryByText('Lớp bên trái')).toBeNull()
+    expect(within(lensB).queryByText(/Lớp bên phải/)).toBeNull()
   })
 
   it('colours every bay by the furthest coat it has reached, with no plan overlay', async () => {
@@ -1067,6 +1447,11 @@ describe('DeckProgressPanel — the all-stages layer (RV6-13)', () => {
     expect(within(chips).getByText('Blast + Coat 1')).toBeInTheDocument()
     expect(within(chips).getAllByText('100,00%')).toHaveLength(2)
     expect(within(chips).getByText('50,00%')).toBeInTheDocument()
+    // Each chip's colour is a circle, no inset frame (CLR-03, R3-D).
+    for (const m of within(chips).getAllByTestId('lens-chip-marker')) {
+      expect(m).toHaveStyle({ borderRadius: '50%' })
+      expect(m.style.boxShadow).toBe('')
+    }
   })
 
   it('lists the zones of every coat, in coat order then zone order', async () => {
@@ -1092,8 +1477,9 @@ describe('DeckProgressPanel — the all-stages layer (RV6-13)', () => {
     // A zone row is one stage_id; there is no coat to write here.
     const make = await screen.findByRole('button', { name: /Gộp thành zone/ })
     expect(make).toBeDisabled()
+    expect(make).toHaveAccessibleDescription('Chọn một công đoạn để tạo zone')
     await userEvent.hover(make.parentElement as HTMLElement)
-    expect(await screen.findByText('Chọn một công đoạn để tạo zone')).toBeInTheDocument()
+    expect(await screen.findByRole('tooltip')).toHaveTextContent('Chọn một công đoạn để tạo zone')
   })
 })
 
@@ -1271,6 +1657,7 @@ describe('DeckProgressPanel — comparing two dates (RV6-14..16)', () => {
   const pickDate = async (side: 'a' | 'b', text: string) => {
     await userEvent.type(dateInput(side), text)
     await userEvent.keyboard('{Enter}')
+    await applyBarOf(dateInput(side))
   }
 
   it('gives every layer a date picker, empty for the live state', async () => {
@@ -1325,8 +1712,11 @@ describe('DeckProgressPanel — comparing two dates (RV6-14..16)', () => {
 
     const lens = await screen.findByTestId('lens-A')
     expect(await within(lens).findByText('Trạng thái ngày 10/09/2026')).toBeInTheDocument()
-    // Rows older than the work model name no work; the layer admits the gap.
-    expect(within(lens).getByText('Lịch sử từ 24/08/2026')).toBeInTheDocument()
+    // Rows older than the work model name no work; the layer admits the gap,
+    // on the day line's (?) (CPY-01).
+    const tip = within(lens).getByRole('img', { name: 'Lịch sử từ 24/08/2026' })
+    expect(tip.parentElement).toHaveTextContent(/^Trạng thái ngày 10\/09\/2026$/)
+    expect(within(lens).queryByText('Lịch sử từ 24/08/2026')).toBeNull()
   })
 
   it('counts the as-of bays in the chips and the m² line, not the live ones', async () => {
@@ -1350,6 +1740,7 @@ describe('DeckProgressPanel — comparing two dates (RV6-14..16)', () => {
     await userEvent.click(
       screen.getByTestId('lens-a-date').querySelector('.ant-picker-clear') as HTMLElement,
     )
+    await applyBarOf(dateInput('a'))
 
     await waitFor(() =>
       expect(screen.getByTestId('cell-R1C2')).toHaveAttribute('data-color', '#fadb14'))
@@ -1420,7 +1811,7 @@ describe('DeckProgressPanel — each layer\'s controls above its own drawing (RV
     expect(lens).not.toContainElement(document.getElementById('lens-a-stage'))
     expect(lens).not.toContainElement(screen.getByTestId('lens-a-date'))
     // ...and they are still on the panel, reachable by their labels.
-    expect(screen.getByLabelText('Lớp sơn đang xem')).toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: 'Lớp sơn đang xem' })).toBeInTheDocument()
   })
 
   it('puts each layer\'s stage select and date picker in its own pane when comparing', async () => {
@@ -1437,10 +1828,88 @@ describe('DeckProgressPanel — each layer\'s controls above its own drawing (RV
 
     // The controls still work from their new place: the right layer moves
     // to another coat without touching the left one.
-    await userEvent.click(screen.getByLabelText('Lớp bên phải'))
+    await userEvent.click(within(lensB).getByRole('combobox', { name: 'Công đoạn' }))
     await userEvent.click(await screen.findByTitle('Coat 2'))
+    await applyBarOf(within(lensB).getByRole('combobox', { name: 'Công đoạn' }))
     expect(within(lensB).getByText('Tiến độ · Coat 2')).toBeInTheDocument()
     expect(within(lensA).getByText('Tiến độ · Blast + Coat 1')).toBeInTheDocument()
+  })
+})
+
+describe('DeckProgressPanel — the lens bar is a draft, applied on Tìm (FLT-08)', () => {
+  /** The bar that holds a control. */
+  const barOf = (el: HTMLElement) => el.closest('[role="search"]') as HTMLElement
+
+  it('ends the single layer\'s bar with Đặt lại · Tìm, and changes the lens only on Tìm', async () => {
+    renderPanel()
+    const lens = await screen.findByTestId('lens-A')
+    const bar = barOf(screen.getByRole('combobox', { name: 'Lớp sơn đang xem' }))
+    expect(bar).toContainElement(screen.getByTestId('lens-a-date'))
+    const buttons = within(bar).getAllByRole('button').filter((b) => /Đặt lại|Tìm/.test(b.textContent ?? ''))
+    expect(buttons.map((b) => b.textContent)).toEqual(['Đặt lại', 'Tìm'])
+
+    await userEvent.click(screen.getByRole('combobox', { name: 'Lớp sơn đang xem' }))
+    await userEvent.click(await screen.findByTitle('Coat 2'))
+    // Not yet: the draft only.
+    expect(within(lens).getByText('Tiến độ · Blast + Coat 1')).toBeInTheDocument()
+    await userEvent.click(within(bar).getByRole('button', { name: /Tìm/ }))
+    expect(await within(lens).findByText('Tiến độ · Coat 2')).toBeInTheDocument()
+  })
+
+  it('puts the first coat and today back, applied at once, on Đặt lại', async () => {
+    listDeckEvents.mockResolvedValue([])
+    renderPanel()
+    const lens = await screen.findByTestId('lens-A')
+    await pickLens('Lớp sơn đang xem', 'Coat 2')
+    expect(await within(lens).findByText('Tiến độ · Coat 2')).toBeInTheDocument()
+    await userEvent.click(within(barOf(screen.getByRole('combobox', { name: 'Lớp sơn đang xem' }))).getByRole('button', { name: 'Đặt lại' }))
+    expect(await within(lens).findByText('Tiến độ · Blast + Coat 1')).toBeInTheDocument()
+    expect(within(screen.getByTestId('lens-a-date')).getByPlaceholderText('Hôm nay')).toHaveValue('')
+  })
+
+  it('offers the draft work\'s coats before Tìm, and applies the work with them', async () => {
+    loadDeckWorks.mockResolvedValue(TWO_WORKS)
+    renderPanel(false)
+    const lens = await screen.findByTestId('lens-A')
+    await userEvent.click(screen.getByRole('combobox', { name: 'Công việc · Tiến độ theo lớp sơn' }))
+    await userEvent.click(await screen.findByTitle('Tháo giáo'))
+    // The lens still shows the first work; the coat select already offers the second's.
+    expect(within(lens).getByText('Tiến độ · Blast + Coat 1')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('combobox', { name: 'Lớp sơn đang xem' }))
+    const coatOptions = () => Array.from(
+      (document.getElementById('lens-a-stage_list') as HTMLElement).closest('.ant-select-dropdown')!
+        .querySelectorAll('.ant-select-item-option'),
+      (el) => el.getAttribute('title'),
+    )
+    await waitFor(() => expect(coatOptions()).toEqual(['Tất cả công đoạn', 'Tháo giáo lửng']))
+    await userEvent.keyboard('{Escape}')
+    await applyBarOf(screen.getByRole('combobox', { name: 'Công việc · Tiến độ theo lớp sơn' }))
+    expect(await within(lens).findByText('Tiến độ · Tháo giáo lửng')).toBeInTheDocument()
+  })
+
+  it('gives each layer its own bar when comparing: Tìm on one leaves the other\'s draft alone', async () => {
+    renderPanel()
+    await screen.findByTestId('lens-A')
+    await userEvent.click(screen.getByText('So sánh hai lớp'))
+    const lensB = await screen.findByTestId('lens-B')
+    const lensA = screen.getByTestId('lens-A')
+    const barA = barOf(within(lensA).getByRole('combobox', { name: 'Công đoạn' }))
+    const barB = barOf(within(lensB).getByRole('combobox', { name: 'Công đoạn' }))
+    expect(barA).not.toBe(barB)
+    expect(barA).toHaveAccessibleName('Bộ lọc bên trái')
+    expect(barB).toHaveAccessibleName('Bộ lọc bên phải')
+
+    await userEvent.click(within(lensA).getByRole('combobox', { name: 'Công đoạn' }))
+    await userEvent.click(await screen.findByTitle('Coat 2'))
+    await userEvent.click(within(lensB).getByRole('combobox', { name: 'Công đoạn' }))
+    const popups = document.querySelectorAll<HTMLElement>('.ant-select-dropdown:not(.ant-select-dropdown-hidden)')
+    await userEvent.click(within(popups[popups.length - 1]).getByTitle('Blast + Coat 1'))
+    await userEvent.click(within(barB).getByRole('button', { name: /Tìm/ }))
+    expect(await within(lensB).findByText('Tiến độ · Blast + Coat 1')).toBeInTheDocument()
+    // A's pick is still a draft.
+    expect(within(lensA).getByText('Tiến độ · Blast + Coat 1')).toBeInTheDocument()
+    await userEvent.click(within(barA).getByRole('button', { name: /Tìm/ }))
+    expect(await within(lensA).findByText('Tiến độ · Coat 2')).toBeInTheDocument()
   })
 })
 
@@ -1461,5 +1930,33 @@ describe('DeckProgressPanel: the work\'s unit (RV6-35)', () => {
     expect(screen.getAllByText('1.000,00 / 1.000,00 tấn').length).toBeGreaterThan(2)
     expect(screen.queryByText(/m²/)).toBeNull()
     expect(screen.getByRole('row', { name: /^tấn/ })).toBeInTheDocument()
+  })
+})
+
+describe('DeckProgressPanel — actions are icons (ACT-01)', () => {
+  it('draws the notes, zoom and fit actions as icon buttons named by their labels, the notes count on a badge', async () => {
+    renderPanel()
+    await screen.findByTestId('lens-A')
+    for (const name of [/^Ghi chú \(\d+\)$/, 'Thu nhỏ', 'Phóng to', 'Vừa khung']) {
+      const b = screen.getByRole('button', { name })
+      expect(b).toHaveClass('ant-btn-icon-only')
+      expect(b).toHaveTextContent('')
+    }
+  })
+
+  it('draws Gộp thành zone as an icon action, the count in its name and on a badge (A3.4, review M6)', async () => {
+    renderPanel()
+    await screen.findByTestId('lens-A')
+    const idle = screen.getByRole('button', { name: 'Gộp thành zone (0)' })
+    expect(idle).toHaveClass('ant-btn-icon-only')
+    expect(idle).toHaveTextContent('')
+    expect(idle).toBeDisabled()
+    await userEvent.click(screen.getByTestId('band-all'))
+    const ready = await screen.findByRole('button', { name: /^Gộp thành zone \([1-9]\d*\)$/ })
+    expect(ready).toBeEnabled()
+    const n = /\((\d+)\)/.exec(ready.getAttribute('aria-label') ?? '')?.[1]
+    expect(ready.closest('.ant-badge')?.querySelector('.ant-badge-count')).toHaveTextContent(n ?? 'x')
+    await userEvent.hover(ready)
+    expect(await screen.findByRole('tooltip')).toHaveTextContent(new RegExp(`^Gộp thành zone \\(${n}\\)`))
   })
 })

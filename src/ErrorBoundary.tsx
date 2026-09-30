@@ -10,7 +10,7 @@ interface State {
  *
  * The concrete trigger this exists for: a deploy rotates the hashed chunk
  * names while an admin's tab is still open, with one of the four lazy admin
- * chunks (AdminLayout, ProjectsScreen, DecksScreen, UsersScreen -- see
+ * chunks (AdminLayout, ProjectsScreen, DecksScreen, NhanLucScreen -- see
  * routes.tsx) not yet loaded. The next navigation's dynamic import() 404s;
  * Suspense has no mechanism for catching a REJECTED import (it only suspends
  * a pending one), so with nothing here React unmounts the whole tree -- a
@@ -46,7 +46,7 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, State> {
             message="Đã xảy ra lỗi"
             description="Không thể tải màn hình này. Ứng dụng có thể vừa được cập nhật. Tải lại trang để tiếp tục."
             action={
-              <Button size="small" onClick={() => window.location.reload()}>
+              <Button onClick={() => window.location.reload()}>
                 Tải lại trang
               </Button>
             }

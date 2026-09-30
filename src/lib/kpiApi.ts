@@ -93,10 +93,9 @@ export async function listStagePlans(projectId: string): Promise<StoredStagePlan
     deck_stages: { name: string } | null
   }>
   if (rows.length >= PLAN_ROW_CAP) {
-    throw new Error(
-      `Đọc kế hoạch KPI bị cắt ở ${PLAN_ROW_CAP} dòng: biểu đồ sẽ thiếu công đoạn. ` +
-        'Cần phân trang truy vấn này (RV5-02/RV5-03).',
-    )
+    // The detail is the developer's; the reader gets what it means for them.
+    console.error(`listStagePlans hit PLAN_ROW_CAP (${PLAN_ROW_CAP}): this read needs paging.`)
+    throw new Error(`Đọc kế hoạch KPI bị cắt ở ${PLAN_ROW_CAP} dòng: biểu đồ sẽ thiếu công đoạn.`)
   }
   return rows.map((r) => ({
     stageId: r.stage_id,

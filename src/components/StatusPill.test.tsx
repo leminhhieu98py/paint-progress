@@ -13,8 +13,15 @@ describe('StatusPill', () => {
     ['ok' as const, palette.successBg],
     ['warn' as const, palette.warningBg],
     ['off' as const, palette.bgHover],
+    ['accent' as const, palette.accentTint],
+    ['slate' as const, palette.track],
   ])('gives the %s tone its own background', (tone, background) => {
     render(<StatusPill tone={tone}>x</StatusPill>)
     expect(screen.getByText('x')).toHaveStyle({ background })
+  })
+
+  it('is micro text, 11/600 (TYP-01)', () => {
+    render(<StatusPill tone="ok">x</StatusPill>)
+    expect(screen.getByText('x')).toHaveStyle({ fontSize: '11px', fontWeight: '600' })
   })
 })

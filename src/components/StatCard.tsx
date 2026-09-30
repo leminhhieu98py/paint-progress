@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
-import { palette, shadowCard } from '../theme'
+import { palette, shadowCard, space } from '../theme'
+import { useTypeScale } from './typeScale'
 
 /**
  * One number, large, with what it is above it and what it is out of below.
@@ -15,31 +16,44 @@ export function StatCard({
   sub,
   tone = 'default',
   live = false,
+  compact = false,
 }: {
   label: ReactNode
   value: ReactNode
   sub?: ReactNode
   tone?: 'default' | 'accent'
   live?: boolean
+  /**
+   * A phone's card (MOB-02): the label a caption, the number at displaySm,
+   * the sub-line micro, a tighter inset, so six cards fill three short rows.
+   */
+  compact?: boolean
 }) {
+  /** A plain value's full text, for the title of a line cut to fit. */
+  const titleOf = (node: ReactNode) => (typeof node === 'string' || typeof node === 'number' ? String(node) : undefined)
+  // The scale of the page this is on: the field's 14 on a field page (GS-10).
+  const type = useTypeScale()
   const accent = tone === 'accent'
   return (
     <div
+      data-testid="stat-card"
       style={{
         position: 'relative',
         overflow: 'hidden',
         background: accent ? palette.accentTint : palette.bgContainer,
         border: `1px solid ${accent ? '#CFEAE5' : palette.borderCard}`,
         borderRadius: 14,
-        padding: '18px 20px 20px',
+        padding: compact ? space.md : '18px 20px 20px',
         boxShadow: shadowCard,
+        // Fills its grid cell: the cards of one row keep one height (AD1).
+        height: '100%',
+        boxSizing: 'border-box',
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
         <span
           style={{
-            fontSize: 12,
-            fontWeight: 600,
+            ...(compact ? type.caption : type.label),
             lineHeight: 1,
             color: accent ? palette.accentHover : palette.textTertiary,
           }}
@@ -62,15 +76,35 @@ export function StatCard({
           />
         )}
       </div>
+      {/* Every value in a row at one size (owner 2026-09-30): a long one is
+          shortened to fit, with its full text on a title, never shrunk (AD1). */}
       <div
-        style={{ marginTop: 12, fontSize: 32, fontWeight: 700, lineHeight: 1, letterSpacing: '-0.03em' }}
+        title={titleOf(value)}
+        style={{
+          marginTop: compact ? space.sm : 12,
+          ...(compact ? type.displaySm : type.display),
+          lineHeight: 1,
+          letterSpacing: '-0.03em',
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+        }}
       >
         {value}
       </div>
       {sub !== undefined && (
         <div
           data-testid="stat-sub"
-          style={{ marginTop: 7, fontSize: 12, lineHeight: 1, color: palette.textTertiary }}
+          title={titleOf(sub)}
+          style={{
+            marginTop: compact ? space.xs : 7,
+            ...(compact ? type.micro : type.caption),
+            lineHeight: 1.2,
+            color: palette.textTertiary,
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+          }}
         >
           {sub}
         </div>

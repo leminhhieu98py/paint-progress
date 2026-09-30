@@ -1,5 +1,6 @@
 import { formatPercent } from '../lib/format'
 import { palette } from '../theme'
+import { useTypeScale } from './typeScale'
 
 /**
  * A ratio as a track, a fill and its own number.
@@ -31,6 +32,8 @@ export function ProgressBar({
   height?: number
   showLabel?: boolean
 }) {
+  // The scale of the page this is on: the field's 14 on a field page (GS-10).
+  const type = useTypeScale()
   const clamped = Math.min(1, Math.max(0, ratio))
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
@@ -57,7 +60,7 @@ export function ProgressBar({
       </div>
       {showLabel && (
         <span
-          style={{ fontSize: 13, fontWeight: 600, minWidth: 58, textAlign: 'right', flex: 'none' }}
+          style={{ ...type.body, minWidth: 58, textAlign: 'right', flex: 'none' }}
         >
           {formatPercent(ratio)}
         </span>

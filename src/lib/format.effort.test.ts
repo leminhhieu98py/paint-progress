@@ -2,11 +2,12 @@ import { describe, expect, it } from 'vitest'
 import { formatHours, formatMhrPerM2 } from './format'
 
 describe('formatHours', () => {
-  it('keeps one decimal always and a second only when it says something', () => {
-    expect(formatHours(3)).toBe('3,0')
-    expect(formatHours(3.5)).toBe('3,5')
+  it('prints two decimals always, so a column of hours reads at one width (M11)', () => {
+    expect(formatHours(3)).toBe('3,00')
+    expect(formatHours(3.5)).toBe('3,50')
     expect(formatHours(0.25)).toBe('0,25')
-    expect(formatHours(1444)).toBe('1.444,0')
+    expect(formatHours(411.62)).toBe('411,62')
+    expect(formatHours(1444)).toBe('1.444,00')
   })
 })
 

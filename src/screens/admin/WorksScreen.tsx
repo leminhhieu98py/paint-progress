@@ -1,5 +1,5 @@
 import {
-  DeleteOutlined, HolderOutlined, PlusOutlined, SaveOutlined, TableOutlined,
+  HolderOutlined, PlusOutlined, SaveOutlined,
 } from '@ant-design/icons'
 import {
   Alert, App, Button, Input, InputNumber, Select, Space, Switch, Table, Tooltip,
@@ -11,7 +11,7 @@ import type { Work, WorkKind } from '../../domain/types'
 import { DEFAULT_QUANTITY_LABEL, DEFAULT_UNIT } from '../../domain/unit'
 import { sumsToOne } from '../../domain/weights'
 import { listDecks, type DeckRow } from '../../lib/decksApi'
-import { formatAreaM2, formatPercent, formatWeight } from '../../lib/format'
+import { MISSING, formatAreaM2, formatPercent, formatWeight } from '../../lib/format'
 import { loadProjectModel } from '../../lib/progressApi'
 import { listProjectNames } from '../../lib/projectsApi'
 import {
@@ -19,18 +19,26 @@ import {
 } from '../../lib/worksApi'
 import { ConsequenceModal } from '../../components/ConsequenceModal'
 import { EmptyState } from '../../components/EmptyState'
+import { IconAction } from '../../components/IconAction'
+import { FilterBar } from '../../components/FilterBar'
 import { PageBody, PageHeader } from '../../components/PageHeader'
+import { ProjectSelect } from '../../components/ProjectSelect'
 import { RulesDisclosure } from '../../components/RulesDisclosure'
 import { SectionCard } from '../../components/SectionCard'
-import { palette } from '../../theme'
+import { searchSelectProps } from '../../components/searchSelect'
+import { viNumberInputProps } from '../../components/viNumberInput'
+import { palette, type, visuallyHidden } from '../../theme'
 
 type ProjectOption = Awaited<ReturnType<typeof listProjectNames>>[number]
 
+/** Helper text, one sentence each, checked against the code (RUL-01). */
 const RULES = [
-  { id: 'WRK-R2', text: 'Tổng trọng số của các công việc TÍNH VÀO TỔNG phải đúng bằng 1; chưa đúng thì nút Lưu bị khoá. Công việc không tính vào tổng vẫn theo dõi được nhưng không vào %.' },
-  { id: 'WRK-R5', text: 'Mỗi công việc theo ô chọn sàn tham gia và trọng số sàn; "Chia theo m²" chỉ là gợi ý, anh sửa được. Tổng trọng số sàn phải bằng 1.' },
-  { id: 'WRK-R6', text: 'Công việc nhập tay không có ô: tiến độ là con số anh gõ, tính vào tổng theo trọng số.' },
-  { id: 'WRK-R7', text: 'Mọi sàn trong một công việc dùng cùng đại lượng và đơn vị; sàn đo bằng đơn vị khác thì thuộc công việc khác.' },
+  { id: 'WRK-R2', text: 'Lưu được khi tổng trọng số các công việc tính vào tổng bằng 1.' },
+  { id: 'WRK-R2-uncounted', text: 'Công việc không tính vào tổng vẫn có tiến độ riêng nhưng không vào % dự án.' },
+  { id: 'WRK-R5', text: 'Lưu sàn tham gia được khi tổng trọng số các sàn tham gia bằng 1.' },
+  { id: 'WRK-R5-by-area', text: 'Anh sửa được trọng số sàn mà “Chia theo m²” điền sẵn theo diện tích.' },
+  { id: 'WRK-R6', text: 'Công việc nhập tay lấy tiến độ từ con số anh gõ.' },
+  { id: 'WRK-R7', text: 'Mỗi công việc dùng một đại lượng và một đơn vị cho mọi sàn của nó.' },
 ]
 
 /** `works.quantity_label` / `works.unit` (0036): 1–30 characters after trimming. */
@@ -44,6 +52,8 @@ const KIND_OPTIONS: { value: WorkKind; label: string }[] = [
 interface MatrixRow {
   deckId: string
   name: string
+  /** In the work when the matrix opened: switched off now, it leaves the work on save. */
+  stored: boolean
   totalAreaM2: number
   on: boolean
   weight: number
@@ -218,6 +228,7 @@ export function WorksScreen() {
           name: d.name,
           totalAreaM2: d.totalAreaM2,
           on: byDeck.has(d.id),
+          stored: byDeck.has(d.id),
           weight: byDeck.get(d.id) ?? 0,
         })),
       })
@@ -227,14 +238,23 @@ export function WorksScreen() {
   }
 
   const matrixOn = matrix?.rows.filter((r) => r.on) ?? []
+  const matrixRemoved = matrix?.rows.filter((r) => r.stored && !r.on) ?? []
   const matrixBalanced = matrixOn.length === 0 || sumsToOne(matrixOn.map((r) => r.weight))
 
   const saveMatrix = async () => {
     if (!matrix) return
     setConfirmingMatrix(false)
     setMatrixSaving(true)
+    const { workId } = matrix
+    const saved = new Set(matrixOn.map((r) => r.deckId))
     try {
-      await saveWorkDecks(matrix.workId, matrixOn.map((r) => ({ deckId: r.deckId, weight: r.weight })))
+      await saveWorkDecks(workId, matrixOn.map((r) => ({ deckId: r.deckId, weight: r.weight })))
+      // What is stored is now what was saved. The re-read below closes the
+      // matrix; when it fails the matrix stays open, and its next save must
+      // name the decks leaving the work as it stands now, not at opening (I6).
+      setMatrix((m) => (m && m.workId === workId
+        ? { ...m, rows: m.rows.map((r) => ({ ...r, stored: saved.has(r.deckId) })) }
+        : m))
       message.success('Đã lưu sàn tham gia')
       await refresh()
     } catch (e) {
@@ -245,55 +265,25 @@ export function WorksScreen() {
   }
 
   const matrixWork = matrix ? draft.find((w) => w.id === matrix.workId) : undefined
-  const projectName = projects.find((p) => p.id === projectId)?.name ?? ''
-
-  const sumChip = (
-    <span
-      data-testid="works-sum"
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: 6,
-        padding: '5px 10px',
-        borderRadius: 999,
-        fontSize: 12,
-        fontWeight: 600,
-        background: balanced ? palette.accentTint : palette.errorBg,
-        color: balanced ? palette.accent : palette.error,
-      }}
-    >
-      {`Σ trọng số ${formatWeight(sum)} / 1`}
-    </span>
-  )
 
   return (
     <>
       <PageHeader
         title="Công việc"
-        subtitle={projectName
-          ? `${projectName} · tiến độ dự án = Σ trọng số × tiến độ từng công việc tính vào tổng`
-          : 'Chọn một dự án để xem các công việc của nó'}
         filters={
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-            <label htmlFor="works-project" style={{ fontSize: 11, fontWeight: 600, color: palette.textTertiary }}>
-              Dự án
-            </label>
-            <Select
-              id="works-project"
-              style={{ width: 260 }}
-              value={projectId ?? undefined}
-              placeholder="Chọn dự án"
-              options={projects.map((p) => ({ value: p.id, label: `${p.name} (${p.code})` }))}
+          <FilterBar>
+            <ProjectSelect
+              projects={projects}
+              value={projectId}
               onChange={(v) => {
                 setProjectId(v)
                 setSearchParams({ project: v }, { replace: true })
               }}
             />
-          </div>
+          </FilterBar>
         }
         extra={
           <Space size={12}>
-            {sumChip}
             <Button icon={<PlusOutlined aria-hidden />} disabled={!projectId || loading} onClick={addWork}>
               Thêm công việc
             </Button>
@@ -320,12 +310,16 @@ export function WorksScreen() {
 
         <SectionCard
           title="Công việc của dự án"
-          summary={`${draft.length} công việc · ${counted.length} tính vào tổng`}
+          // The sum is a fact of the list like the counts, amber while it is not 1 (M5, HLT-01).
+          facts={[
+            { value: draft.length, label: 'công việc' },
+            { value: counted.length, label: 'tính vào tổng' },
+            { prefix: 'Σ trọng số', value: formatWeight(sum), ...(balanced ? {} : { tone: 'warning' as const }) },
+          ]}
           bodyPadding={0}
           footer={<RulesDisclosure rules={RULES} />}
         >
           <Table<Work>
-            className="pp-table"
             rowKey="id"
             size="middle"
             loading={loading && draft.length === 0}
@@ -343,6 +337,7 @@ export function WorksScreen() {
                 />
               ),
             }}
+            scroll={{ x: 'max-content' }}
             onRow={(_row, index) => ({
               draggable: !saving,
               onDragStart: () => { dragging.current = index ?? null },
@@ -351,15 +346,19 @@ export function WorksScreen() {
             })}
             columns={[
               {
-                title: '',
+                title: <span style={visuallyHidden}>Kéo để sắp xếp</span>,
                 key: 'handle',
+                align: 'center',
                 width: 34,
                 render: () => <HolderOutlined style={{ color: palette.textTertiary, cursor: 'grab' }} />,
               },
-              { title: 'Thứ tự', dataIndex: 'seq', width: 72 },
+              { title: 'Thứ tự', dataIndex: 'seq', width: 72, align: 'center' },
               {
                 title: 'Tên công việc',
                 dataIndex: 'name',
+                // Room for "CAM Under Deck Giàn giáo"; the table scrolls sideways
+                // rather than clipping it (M18).
+                width: 260,
                 render: (v: string, _w, i) => (
                   <Input
                     aria-label="Tên công việc"
@@ -405,11 +404,13 @@ export function WorksScreen() {
               },
               {
                 title: 'Loại',
+                align: 'center',
                 dataIndex: 'kind',
                 width: 140,
                 render: (v: WorkKind, _w, i) => (
                   <Select<WorkKind>
                     aria-label="Loại công việc"
+                    {...searchSelectProps}
                     value={v}
                     options={KIND_OPTIONS}
                     style={{ width: 120 }}
@@ -419,6 +420,7 @@ export function WorksScreen() {
               },
               {
                 title: 'Trọng số',
+                align: 'center',
                 dataIndex: 'weight',
                 width: 120,
                 render: (v: number, _w, i) => (
@@ -427,6 +429,8 @@ export function WorksScreen() {
                     value={v}
                     min={0}
                     max={1}
+                    // "0,25", not 25 clamped to 1: see viNumberInput for the rule.
+                    {...viNumberInputProps}
                     style={{ width: 100 }}
                     onChange={(n) => patch(i, { weight: n ?? 0 })}
                   />
@@ -436,12 +440,14 @@ export function WorksScreen() {
                 title: 'Tính vào tổng',
                 dataIndex: 'counts',
                 width: 130,
+                align: 'center',
                 render: (v: boolean, _w, i) => (
                   <Switch aria-label="Tính vào tổng" checked={v} onChange={(on) => patch(i, { counts: on })} />
                 ),
               },
               {
                 title: 'Tiến độ',
+                align: 'center',
                 key: 'progress',
                 width: 150,
                 render: (_v, w, i) => (w.kind === 'manual' ? (
@@ -450,13 +456,15 @@ export function WorksScreen() {
                     value={Math.round(w.manualProgress * 10000) / 100}
                     min={0}
                     max={100}
-                    addonAfter="%"
+                    // A suffix, not the addon antd deprecates (M17).
+                    suffix="%"
+                    {...viNumberInputProps}
                     style={{ width: 120 }}
                     onChange={(n) => patch(i, { manualProgress: (n ?? 0) / 100 })}
                   />
                 ) : (
-                  <span style={{ fontWeight: 600 }}>
-                    {w.id in progressByWork ? formatPercent(progressByWork[w.id]) : '—'}
+                  <span style={type.body}>
+                    {w.id in progressByWork ? formatPercent(progressByWork[w.id]) : MISSING}
                   </span>
                 )),
               },
@@ -464,28 +472,13 @@ export function WorksScreen() {
                 title: 'Thao tác',
                 key: 'actions',
                 width: 120,
-                align: 'right',
+                align: 'center',
                 render: (_v, w) => (
                   <Space size={6}>
                     {w.kind === 'bays' && (
-                      <Tooltip title="Sàn tham gia và trọng số sàn">
-                        <Button
-                          size="small"
-                          aria-label="Sàn tham gia"
-                          icon={<TableOutlined />}
-                          onClick={() => void openMatrix(w)}
-                        />
-                      </Tooltip>
+                      <IconAction verb="decks" label="Sàn tham gia" onClick={() => void openMatrix(w)} />
                     )}
-                    <Tooltip title="Xóa công việc">
-                      <Button
-                        size="small"
-                        danger
-                        aria-label="Xóa công việc"
-                        icon={<DeleteOutlined />}
-                        onClick={() => setRemovingWork(w)}
-                      />
-                    </Tooltip>
+                    <IconAction verb="delete" label="Xóa công việc" danger onClick={() => setRemovingWork(w)} />
                   </Space>
                 ),
               },
@@ -497,46 +490,53 @@ export function WorksScreen() {
           <div data-testid={`work-decks-${matrix.workId}`}>
           <SectionCard
             title={`Sàn tham gia · ${matrixWork.name || 'công việc mới'}`}
-            summary={`${matrixOn.length} / ${matrix.rows.length} sàn · Σ trọng số sàn ${formatWeight(matrixOn.reduce((s, r) => s + r.weight, 0))}`}
+            facts={[
+              { value: `${matrixOn.length} / ${matrix.rows.length}`, label: 'sàn' },
+              { prefix: 'Σ trọng số sàn', value: formatWeight(matrixOn.reduce((s, r) => s + r.weight, 0)) },
+            ]}
             bodyPadding={0}
             extra={
               <Space size={8}>
-                <Button
+                {/* Card toolbar actions are icons (ACT-01). */}
+                <IconAction
+                  verb="shareByArea"
+                  label="Chia theo m²"
                   onClick={() => setMatrix((m) => (m ? { ...m, rows: sharesByArea(m.rows) } : m))}
-                >
-                  Chia theo m²
-                </Button>
-                <Button
+                />
+                <IconAction
+                  verb="save"
+                  label="Lưu sàn tham gia"
                   type="primary"
                   disabled={!matrixBalanced || matrixSaving}
                   loading={matrixSaving}
                   onClick={() => setConfirmingMatrix(true)}
-                >
-                  Lưu sàn tham gia
-                </Button>
-                <Button onClick={() => setMatrix(null)}>Đóng</Button>
+                />
+                <IconAction verb="close" label="Đóng" onClick={() => setMatrix(null)} />
               </Space>
             }
           >
             <div>
               <Table<MatrixRow>
-                className="pp-table"
                 rowKey="deckId"
                 size="middle"
                 dataSource={matrix.rows}
+                // Not paged (UI-06): the weights balance as a set and `Chia theo
+                // m²` rewrites every row, so a pager would hide rows the total
+                // depends on.
                 pagination={false}
                 columns={[
                   { title: 'Sàn', dataIndex: 'name' },
                   {
                     title: 'Diện tích (m²)',
                     dataIndex: 'totalAreaM2',
-                    align: 'right',
+                    align: 'center',
                     render: (v: number) => formatAreaM2(v),
                   },
                   {
                     title: 'Tham gia',
                     dataIndex: 'on',
                     width: 110,
+                    align: 'center',
                     render: (v: boolean, r) => (
                       <Switch
                         aria-label={`${r.name} tham gia`}
@@ -550,6 +550,7 @@ export function WorksScreen() {
                   },
                   {
                     title: 'Trọng số sàn',
+                    align: 'center',
                     dataIndex: 'weight',
                     width: 140,
                     render: (v: number, r) => (
@@ -559,6 +560,7 @@ export function WorksScreen() {
                         min={0}
                         max={1}
                         disabled={!r.on}
+                        {...viNumberInputProps}
                         style={{ width: 110 }}
                         onChange={(n) => setMatrix((m) => (m ? {
                           ...m,
@@ -580,7 +582,8 @@ export function WorksScreen() {
         tone="accent"
         tag="Xác nhận"
         title="Lưu công việc?"
-        description="Trọng số công việc đổi là con số tiến độ dự án và báo cáo đổi theo."
+        description="Lưu các công việc sau:"
+        consequences={['Tiến độ dự án và báo cáo tính lại theo trọng số mới']}
         items={draft.map((w) => ({
           label: w.name.trim() || '(chưa đặt tên)',
           meta: w.counts ? `trọng số ${formatWeight(w.weight)}` : 'không tính vào tổng',
@@ -596,8 +599,13 @@ export function WorksScreen() {
         tone="accent"
         tag="Xác nhận"
         title="Lưu sàn tham gia?"
-        description="Sàn bị bỏ ra khỏi công việc sẽ mất lớp sơn và vị trí ô của công việc đó."
-        items={matrixOn.map((r) => ({ label: r.name, meta: `trọng số ${formatWeight(r.weight)}` }))}
+        description="Lưu các sàn tham gia sau:"
+        // The decks that leave are rows too, and only then is their loss said (RUL-01).
+        consequences={matrixRemoved.length > 0 ? ['Sàn bị bỏ ra khỏi công việc mất lớp sơn và vị trí ô của công việc đó'] : undefined}
+        items={[
+          ...matrixOn.map((r) => ({ label: r.name, meta: `trọng số ${formatWeight(r.weight)}` })),
+          ...matrixRemoved.map((r) => ({ label: r.name, meta: 'bỏ ra' })),
+        ]}
         okText="Lưu"
         confirmLoading={matrixSaving}
         onCancel={() => setConfirmingMatrix(false)}
@@ -609,14 +617,14 @@ export function WorksScreen() {
         tone="danger"
         tag="Thao tác phá huỷ"
         title={`Xóa công việc ${removingWork?.name ?? ''}?`}
-        description="Xóa vĩnh viễn, không khôi phục được. Mất theo công việc:"
+        description="Mất vĩnh viễn theo công việc:"
         items={[
           { label: 'Sàn tham gia và trọng số sàn' },
           { label: 'Lớp sơn của công việc này trên mọi sàn' },
           { label: 'Vị trí và ghi chú của từng ô cho công việc này' },
           { label: 'Zone lập trên các lớp đó' },
         ]}
-        consequence="Lịch sử cập nhật (cell_events) giữ lại tên công việc, chỉ mất liên kết."
+        consequences={['Không khôi phục được', 'Lịch sử cập nhật vẫn giữ tên công việc này']}
         okText="Xóa công việc"
         confirmText={removingWork?.name}
         confirmLoading={removing}

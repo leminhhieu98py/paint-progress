@@ -1,6 +1,6 @@
 import { Alert, Button, Input, InputNumber, Modal, Select, Space, Typography } from 'antd'
 import { modalProps } from '../../components/modalChrome'
-import { fieldError, palette } from '../../theme'
+import { fieldError, fieldType, palette } from '../../theme'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { describeZone } from '../../domain/plan'
 import { WASTE_REASONS, wasteReasonLabel } from '../../domain/effort'
@@ -10,6 +10,8 @@ import { DEFAULT_QUANTITY_LABEL, DEFAULT_UNIT } from '../../domain/unit'
 import { formatAreaM2 } from '../../lib/format'
 import { listCellNotes, type CellNote } from '../../lib/progressApi'
 import { NoteThread } from '../../components/NoteThread'
+import { searchSelectProps } from '../../components/searchSelect'
+import { viNumberInputProps } from '../../components/viNumberInput'
 
 /**
  * antd's Select cannot carry `null` as an option value (it is indistinguishable
@@ -21,7 +23,8 @@ export const NOT_STARTED_VALUE = '__not-started__'
 const NOT_STARTED_LABEL = 'Chưa bắt đầu'
 
 const EMPTY_NAMES = { leadName: '', painterName: '' }
-const effortLabel = { display: 'block', marginBottom: 4, fontSize: 12, fontWeight: 600 } as const
+/** Every field's label, one step for all of them (TYP-01 on the field scale, GS-10). */
+const fieldLabel = { display: 'block', marginBottom: 4, ...fieldType.label } as const
 
 /** The red star every compulsory field carries (Feedback Rv4). */
 function Required() {
@@ -32,7 +35,7 @@ function Required() {
 function FieldError({ text }: { text?: string }) {
   if (!text) return null
   return (
-    <div role="alert" style={{ marginTop: 3, fontSize: 11, lineHeight: 1.35, color: fieldError }}>
+    <div role="alert" style={{ marginTop: 3, ...fieldType.caption, lineHeight: 1.35, color: fieldError }}>
       {text}
     </div>
   )
@@ -285,12 +288,10 @@ export function CellStageModal({
       onOk={submit}
       okText="Xác nhận"
       cancelText="Huỷ"
-      okButtonProps={{ size: 'large' }}
-      cancelButtonProps={{ size: 'large' }}
       {...modalProps}
       // A viewer gets one button, not a hidden confirm: nothing in the DOM
       // says "write" on a dialog that cannot.
-      footer={readOnly ? <Button size="large" onClick={onClose}>Đóng</Button> : undefined}
+      footer={readOnly ? <Button onClick={onClose}>Đóng</Button> : undefined}
     >
       {cell && (
         <Space direction="vertical" size="middle" style={{ width: '100%' }}>
@@ -329,13 +330,13 @@ export function CellStageModal({
           */}
           {!readOnly && (
           <div>
-            <label htmlFor="cell-stage" style={effortLabel}>
+            <label htmlFor="cell-stage" style={fieldLabel}>
               Công đoạn <Required />
             </label>
             <Select
               id="cell-stage"
               aria-label="Công đoạn"
-              size="large"
+              {...searchSelectProps}
               style={{ width: '100%' }}
               status={errorOf('stage') ? 'error' : undefined}
               value={choice}
@@ -372,24 +373,20 @@ export function CellStageModal({
                   showIcon
                   style={{ marginBottom: 10 }}
                   message="Chưa có nhân viên nào trong danh sách"
-                  description="Nhờ quản trị viên thêm nhân viên ở mục Nhân viên; chưa có thì không ghi được tiến độ."
+                  description="Nhờ quản trị viên thêm nhân viên ở mục Nhân lực; chưa có thì không ghi được tiến độ."
                 />
               )}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 12px' }}>
                 <div>
-                  <label htmlFor="cell-lead" style={effortLabel}>Nhóm trưởng <Required /></label>
+                  <label htmlFor="cell-lead" style={fieldLabel}>Nhóm trưởng <Required /></label>
                   <Select
                     id="cell-lead"
                     aria-label="Nhóm trưởng"
-                    showSearch
+                    {...searchSelectProps}
                     allowClear
                     style={{ width: '100%' }}
                     status={errorOf('lead') ? 'error' : undefined}
                     placeholder="Gõ để tìm tên"
-                    // Matched on the label, which is the only thing these
-                    // options carry; without it antd filters on `value` and a
-                    // search for a name finds nothing.
-                    optionFilterProp="label"
                     value={effort.leadName === '' ? undefined : effort.leadName}
                     onChange={(v) => setEffort({ ...effort, leadName: v ?? '' })}
                     options={employees.map((name) => ({ value: name, label: name }))}
@@ -397,16 +394,15 @@ export function CellStageModal({
                   <FieldError text={errorOf('lead')} />
                 </div>
                 <div>
-                  <label htmlFor="cell-painter" style={effortLabel}>Thợ chính <Required /></label>
+                  <label htmlFor="cell-painter" style={fieldLabel}>Thợ chính <Required /></label>
                   <Select
                     id="cell-painter"
                     aria-label="Thợ chính"
-                    showSearch
+                    {...searchSelectProps}
                     allowClear
                     style={{ width: '100%' }}
                     status={errorOf('painter') ? 'error' : undefined}
                     placeholder="Gõ để tìm tên"
-                    optionFilterProp="label"
                     value={effort.painterName === '' ? undefined : effort.painterName}
                     onChange={(v) => setEffort({ ...effort, painterName: v ?? '' })}
                     options={employees.map((name) => ({ value: name, label: name }))}
@@ -414,13 +410,15 @@ export function CellStageModal({
                   <FieldError text={errorOf('painter')} />
                 </div>
                 <div>
-                  <label htmlFor="cell-work-hours" style={effortLabel}>
+                  <label htmlFor="cell-work-hours" style={fieldLabel}>
                     Số giờ công (Mhr) <Required />
                   </label>
                   <InputNumber
                     id="cell-work-hours"
                     min={0}
                     step={0.5}
+                    // "2,5" Mhr, not 25: see viNumberInput for the rule.
+                    {...viNumberInputProps}
                     style={{ width: '100%' }}
                     status={errorOf('workHours') ? 'error' : undefined}
                     value={effort.workHours}
@@ -429,13 +427,14 @@ export function CellStageModal({
                   <FieldError text={errorOf('workHours')} />
                 </div>
                 <div>
-                  <label htmlFor="cell-waste-hours" style={effortLabel}>
+                  <label htmlFor="cell-waste-hours" style={fieldLabel}>
                     Giờ hao phí (Mhr) <Required />
                   </label>
                   <InputNumber
                     id="cell-waste-hours"
                     min={0}
                     step={0.5}
+                    {...viNumberInputProps}
                     style={{ width: '100%' }}
                     status={errorOf('wasteHours') ? 'error' : undefined}
                     value={effort.wasteHours}
@@ -443,7 +442,7 @@ export function CellStageModal({
                   />
                   <FieldError text={errorOf('wasteHours')} />
                   {effort.wasteHours === null && errorOf('wasteHours') === undefined && (
-                    <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+                    <Typography.Text type="secondary" style={fieldType.caption}>
                       Không hao phí thì nhập 0
                     </Typography.Text>
                   )}
@@ -455,7 +454,7 @@ export function CellStageModal({
               {wasteHours > 0 && (
                 <>
                   <div style={{ marginTop: 8 }}>
-                    <label htmlFor="cell-waste-order" style={effortLabel}>
+                    <label htmlFor="cell-waste-order" style={fieldLabel}>
                       Lệnh sản xuất ghi nhận hao phí <Required />
                     </label>
                     <Input
@@ -468,17 +467,16 @@ export function CellStageModal({
                     <FieldError text={errorOf('wasteOrder')} />
                   </div>
                   <div style={{ marginTop: 8 }}>
-                    <label htmlFor="cell-waste-reason" style={effortLabel}>
+                    <label htmlFor="cell-waste-reason" style={fieldLabel}>
                       Lý do hao phí <Required />
                     </label>
                     <Select
                       id="cell-waste-reason"
                       aria-label="Lý do hao phí"
-                      showSearch
+                      {...searchSelectProps}
                       style={{ width: '100%' }}
                       status={errorOf('wasteReason') ? 'error' : undefined}
                       placeholder="Chọn lý do"
-                      optionFilterProp="label"
                       value={effort.wasteReason === '' ? undefined : effort.wasteReason}
                       onChange={(v) => setEffort({ ...effort, wasteReason: v ?? '' })}
                       options={WASTE_REASONS.map((r) => ({
@@ -525,7 +523,7 @@ export function CellStageModal({
             {notesFailed && (
               <Typography.Text
                 type="secondary"
-                style={{ display: 'block', marginBottom: 12, fontSize: 12 }}
+                style={{ display: 'block', marginBottom: 12, ...fieldType.caption }}
               >
                 Không tải được ghi chú cũ
               </Typography.Text>
@@ -534,10 +532,10 @@ export function CellStageModal({
             <>
             <label
               htmlFor="cell-note"
-              style={{ display: 'block', marginBottom: 6, fontWeight: 600 }}
+              style={fieldLabel}
             >
               Ghi chú cho quản trị viên{' '}
-              <Typography.Text type="secondary" style={{ fontWeight: 400 }}>
+              <Typography.Text type="secondary" style={{ fontWeight: fieldType.body.fontWeight }}>
                 không bắt buộc
               </Typography.Text>
             </label>
@@ -548,11 +546,6 @@ export function CellStageModal({
               onChange={(e) => setNote(e.target.value)}
               placeholder="Ví dụ: bề mặt còn ẩm, hoãn sơn sang mai"
             />
-            {note.trim() !== '' && (
-              <Typography.Text type="secondary" style={{ fontSize: 11 }}>
-                {`Ghi chú đi kèm ô ${cell.code} trong lịch sử; quản trị viên thấy ngay trên bản vẽ.`}
-              </Typography.Text>
-            )}
             </>
             )}
           </div>
@@ -562,7 +555,7 @@ export function CellStageModal({
               type="error"
               showIcon
               message="Đang chuyển ô về công đoạn trước"
-              description="Tiến độ đã ghi của ô này sẽ bị hạ xuống. Chỉ làm khi thực sự cần sửa sai."
+              description="Lưu lần này hạ tiến độ đã ghi của ô về công đoạn đã chọn."
             />
           )}
         </Space>

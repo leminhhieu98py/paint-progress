@@ -1,8 +1,8 @@
 import {
-  Alert, App, Button, Grid, Layout, Segmented, Select, Space, Spin, Tabs,
+  Alert, App, Button, Dropdown, Grid, Layout, Select, Spin, Tooltip,
 } from 'antd'
 import dayjs from 'dayjs'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useAuth } from '../../auth/AuthProvider'
 
@@ -17,16 +17,14 @@ import { EMPTY_EFFORT, type Cell, type Deck, type DeckEvent, type Effort, type S
 // One signed-URL helper for both roles: the bucket name and the 3600-second
 // expiry belong in one place, and decksApi is a lib module rather than an admin
 // one. Screens still never touch `supabase` directly.
-import { APP_BASE_PATH, LOGIN_PATH } from '../../config'
 import { getDrawingUrl } from '../../lib/decksApi'
 import { DEFAULT_QUANTITY_LABEL, DEFAULT_UNIT } from '../../domain/unit'
-import { formatAreaM2, formatPercent } from '../../lib/format'
+import { MISSING, formatAreaM2, formatPercent } from '../../lib/format'
 import {
   listCoworkerNames, listDeckCells, listDeckStates, listDeckWorks, listProjectIndex,
   loadGsProject, loadGsProjectIdentity, setCellState, subscribeDeckStates,
   type CellStateView, type DeckWork, type GsDeck, type GsRealtimeStatus,
 } from '../../lib/gsApi'
-import { listProjectNames } from '../../lib/projectsApi'
 import { listDeckZones } from '../../lib/zonesApi'
 import { listEmployees } from '../../lib/employeesApi'
 import { listDeckEvents, loadDeckWorks, loadProjectModel } from '../../lib/progressApi'
@@ -34,15 +32,22 @@ import { buildReportWorkbook, reportFileName, type DeckImages, type PlanImage } 
 import { buildProjectReport, downloadWorkbook } from '../../lib/projectReport'
 import { renderDeckDrawing, renderDeckPie, renderPlanDrawing } from '../../canvas/deckSnapshot'
 import { CellStageModal } from './CellStageModal'
-import { ConsequenceModal } from '../../components/ConsequenceModal'
-import { LogoutOutlined } from '@ant-design/icons'
-import { fieldError, palette, shadowCard } from '../../theme'
-import { AreaChartOutlined, CalendarOutlined, DownloadOutlined, LineChartOutlined } from '@ant-design/icons'
+import { fieldError, fieldType, palette, shadowCard, space } from '../../theme'
+import { EllipsisOutlined, FileExcelOutlined, FolderOpenOutlined, LoadingOutlined } from '@ant-design/icons'
 import { EmptyState } from '../../components/EmptyState'
-import { DeckProgressCard, StageRollupCard } from './DeckStatsCards'
+import { DeckProgressCard, StageRollupCard, type DeckFigureStatus } from './DeckStatsCards'
 import { DeckTodayCard } from './DeckTodayCard'
+import { FieldLayout } from './FieldLayout'
+import { FieldProjectSelect } from './FieldProjectSelect'
+import { FIELD_TAB_BAR_SPACE, useFieldPhone } from './fieldSections'
+import { FilterBar } from '../../components/FilterBar'
+import { IconAction } from '../../components/IconAction'
+import { FilterSheet } from '../../components/FilterSheet'
+import { APP_BASE_PATH } from '../../config'
+import { rememberProjectName } from './fieldProjects'
+import { openingDeckId, rememberDeck } from './lastDeck'
 import { SectionCard } from '../../components/SectionCard'
-import { StatusPill } from '../../components/StatusPill'
+import { WORK_SELECT_WIDTH, searchSelectProps, useFullOptionsProps } from '../../components/searchSelect'
 
 /**
  * How long to wait for the realtime channel to reach SUBSCRIBED before telling
@@ -107,8 +112,7 @@ const stateKey = (workId: string, cellId: string) => `${workId}/${cellId}`
 
 export function GsScreen() {
   const { projectId } = useParams()
-  const navigate = useNavigate()
-  const { profile, signOut } = useAuth()
+  const { profile } = useAuth()
   /** A viewer (0028) reads this screen and writes nothing; the database
    *  enforces it, the screen says so and offers no write control. */
   const readOnly = profile?.role === 'viewer'
@@ -120,13 +124,30 @@ export function GsScreen() {
   const [works, setWorks] = useState<DeckWork[] | null>(null)
   /** The work the drawing, the cards and the bay modal are scoped to. */
   const [activeWorkId, setActiveWorkId] = useState<string | null>(null)
+  /** The work a Tìm applied together with a new deck, for that deck's load to open on (FLT-08). */
+  const workWithDeck = useRef<string | null>(null)
+  /**
+   * The bar's draft (FLT-08) and the phone sheet's (FLT-09): a project, a deck
+   * or a work picked there and not yet applied by Tìm. Empty is what is
+   * applied. The phone's sheet holds no deck: its inline Sàn applies at once.
+   */
+  const [barDraft, setBarDraft] = useState<{ project?: string; deck?: string; work?: string }>({})
+  const navigate = useNavigate()
+  /** The bar's and the plan's selects read their options in full (FLT-04, M3). */
+  const fullOptions = useFullOptionsProps()
   const [decks, setDecks] = useState<GsDeck[]>([])
   const [activeDeckId, setActiveDeckId] = useState<string | null>(null)
   /** The deck's mesh, geometry only. Where each bay stands is in `states`. */
   const [geometry, setGeometry] = useState<Cell[]>([])
   /** states[workId][cellId]; a bay with no entry for a work is not started there. */
   const [states, setStates] = useState<Record<string, Record<string, CellStateView>>>({})
-  const [imageUrl, setImageUrl] = useState<string | null>(null)
+  /**
+   * The signed drawing, with the path it was signed for. Read through
+   * `imageUrl` below, which names it only while that path is the open deck's:
+   * a deck change must never leave the previous deck's drawing under the new
+   * title while the next URL is on the way (I1).
+   */
+  const [drawing, setDrawing] = useState<{ path: string; url: string } | null>(null)
   /** Who may be named beside a note, by user id. See listCoworkerNames. */
   const [authorNames, setAuthorNames] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(true)
@@ -148,28 +169,6 @@ export function GsScreen() {
    * refusal can say so, rather than rendering as missing data (see GsProject).
    */
   const [notMember, setNotMember] = useState(false)
-  /**
-   * Every project, for the viewer's switch in the header (RV6-24). Read only
-   * for a viewer -- 0034 gives the role every project and this screen is one
-   * project's, so changing it is a navigation. A foreman has one project and
-   * no list, so nothing is read and nothing is shown.
-   */
-  const [projectOptions, setProjectOptions] = useState<{ value: string; label: string }[]>([])
-
-  useEffect(() => {
-    if (!readOnly) return
-    let cancelled = false
-    listProjectNames()
-      .then((rows) => {
-        if (!cancelled) setProjectOptions(rows.map((p) => ({ value: p.id, label: p.name })))
-      })
-      // Its failure is not the project's: the header keeps the deck tabs and
-      // the switch simply lists the project on screen, which is on the route.
-      .catch(() => {})
-    return () => {
-      cancelled = true
-    }
-  }, [readOnly])
 
   useEffect(() => {
     if (!projectId) return
@@ -189,11 +188,15 @@ export function GsScreen() {
       .then((project) => {
         if (cancelled) return
         setNotMember(!project.isMember)
+        // The name the Dự án switch shows while its list is on the way (M-1).
+        if (project.name) rememberProjectName(projectId, project.name)
         setDecks(project.decks)
-        setActiveDeckId(project.decks[0]?.id ?? null)
+        // The deck last opened in this project, else the first (GS-02).
+        setActiveDeckId(openingDeckId(projectId, project.decks))
       })
       .catch(() => {
-        if (!cancelled) setProjectError(true)
+        if (cancelled) return
+        setProjectError(true)
       })
       .finally(() => {
         if (!cancelled) setLoading(false)
@@ -219,7 +222,9 @@ export function GsScreen() {
     }
     let cancelled = false
     setWorks(null)
-    setActiveWorkId(null)
+    // The work Tìm applied with this deck, else the deck's first (FLT-08).
+    setActiveWorkId(workWithDeck.current)
+    workWithDeck.current = null
     setStagesError(false)
     listDeckWorks(activeDeckId)
       .then((rows) => { if (!cancelled) setWorks(rows) })
@@ -227,7 +232,25 @@ export function GsScreen() {
     return () => { cancelled = true }
   }, [activeDeckId])
 
+  /**
+   * The drafted deck's works, while the bar's draft names another deck than
+   * the one on screen: the work select offers THAT deck's works (FLT-02).
+   * Null while they load; the bar's Tìm waits for them.
+   */
+  const [draftDeckWorks, setDraftDeckWorks] = useState<{ deckId: string; rows: DeckWork[] } | null>(null)
+  useEffect(() => {
+    const deckId = barDraft.deck
+    if (deckId === undefined || deckId === activeDeckId) return
+    let cancelled = false
+    listDeckWorks(deckId)
+      .then((rows) => { if (!cancelled) setDraftDeckWorks({ deckId, rows }) })
+      // Options only: Tìm still opens the deck, on its first work.
+      .catch(() => { if (!cancelled) setDraftDeckWorks({ deckId, rows: [] }) })
+    return () => { cancelled = true }
+  }, [barDraft.deck, activeDeckId])
+
   const deck = decks.find((d) => d.id === activeDeckId) ?? null
+  const imageUrl = drawing !== null && drawing.path === deck?.imagePath ? drawing.url : null
   const workList = works ?? EMPTY_WORKS
   /** The chosen work, or the first until the foreman chooses (GSW-R1). */
   const activeWork = workList.find((w) => w.work.id === activeWorkId) ?? workList[0] ?? null
@@ -282,6 +305,15 @@ export function GsScreen() {
    */
   const pendingWrites = useRef<Map<string, PendingWrite>>(new Map())
 
+  /**
+   * The deck whose cells and states have been read, and whether that read
+   * succeeded. Until it names the deck on screen the stats cards are loading:
+   * `geometry` is empty on a first load and the previous deck's on a deck
+   * change, and either would be printed as this deck's figure. A failed
+   * re-read after a good one keeps `ok`, as refetchDeck keeps the cells.
+   */
+  const [deckRead, setDeckRead] = useState<{ deckId: string; ok: boolean } | null>(null)
+
   const refetchDeck = useCallback(async (deckId: string) => {
     try {
       const [nextCells, nextStates] = await Promise.all([
@@ -289,6 +321,7 @@ export function GsScreen() {
       ])
       if (wantedDeckId.current !== deckId) return
       setGeometry(nextCells)
+      setDeckRead({ deckId, ok: true })
       setStates((prev) => {
         if (pendingWrites.current.size === 0) return nextStates
         // Keep the optimistic state for any (work, bay) still being written.
@@ -307,11 +340,21 @@ export function GsScreen() {
       // tether is the common case, and blanking the deck would take the drawing
       // and every number away from a foreman whose data is still valid. The
       // load effect owns the empty state; this only ever refreshes.
+      if (wantedDeckId.current !== deckId) return
+      setDeckRead((prev) => (prev?.deckId === deckId && prev.ok ? prev : { deckId, ok: false }))
     }
   }, [])
 
   useEffect(() => {
     wantedDeckId.current = activeDeckId
+    // The previous deck's bays and states go with it: left in place until the
+    // next read lands, a tap opened the old deck's bay under the new deck's
+    // title and wrote (old bay, new deck) (I1).
+    setGeometry([])
+    setStates({})
+    // And the read that named them: A -> B -> A must not print A's emptied
+    // bays as 0,00% before A's re-read lands (R1). Loading, and taps gated.
+    setDeckRead(null)
     if (!activeDeckId) return
     void refetchDeck(activeDeckId)
     return () => {
@@ -487,7 +530,7 @@ export function GsScreen() {
   useEffect(() => {
     const path = deck?.imagePath
     if (!path) {
-      setImageUrl(null)
+      setDrawing(null)
       setDrawingError(false)
       return
     }
@@ -495,11 +538,11 @@ export function GsScreen() {
     setDrawingError(false)
     getDrawingUrl(path)
       .then((url) => {
-        if (!cancelled) setImageUrl(url)
+        if (!cancelled) setDrawing({ path, url })
       })
       .catch(() => {
         if (cancelled) return
-        setImageUrl(null)
+        setDrawing(null)
         setDrawingError(true)
       })
     return () => {
@@ -582,7 +625,8 @@ export function GsScreen() {
    * flight -- a figure quietly describing another deck -- and clearing it from
    * the effect is the setState React would rather be derived at render.
    */
-  const [deckEvents, setDeckEvents] = useState<{ deckId: string; rows: DeckEvent[] } | null>(null)
+  /** `rows` is null when the deck's first read failed: its figures are unknown, not 0. */
+  const [deckEvents, setDeckEvents] = useState<{ deckId: string; rows: DeckEvent[] | null } | null>(null)
   const refreshDeckEvents = useCallback((deckId: string) => {
     listDeckEvents(deckId)
       .then((rows) => {
@@ -590,6 +634,8 @@ export function GsScreen() {
       })
       .catch(() => {
         // See above: the block keeps the figures it already has.
+        if (wantedDeckId.current !== deckId) return
+        setDeckEvents((prev) => (prev?.deckId === deckId && prev.rows ? prev : { deckId, rows: null }))
       })
   }, [])
 
@@ -597,7 +643,25 @@ export function GsScreen() {
     if (activeDeckId) refreshDeckEvents(activeDeckId)
   }, [activeDeckId, refreshDeckEvents])
 
-  const todayEvents = deckEvents?.deckId === activeDeckId ? deckEvents.rows : EMPTY_EVENTS
+  const todayEvents = (deckEvents?.deckId === activeDeckId ? deckEvents.rows : null) ?? EMPTY_EVENTS
+
+  /*
+    What the stats cards may print (see DeckFigureStatus). No deck, nothing
+    to wait for. A failed stage read is not a load, and not a figure either:
+    both cards print the missing mark under its warning, never a 0,00% that
+    reads as nothing painted (I2).
+  */
+  const worksLoading = activeDeckId !== null && works === null && !stagesError
+  const cellsStatus: DeckFigureStatus = activeDeckId === null ? 'ready'
+    : deckRead?.deckId !== activeDeckId ? 'loading'
+      : deckRead.ok ? 'ready' : 'unknown'
+  const eventsStatus: DeckFigureStatus = activeDeckId === null ? 'ready'
+    : deckEvents?.deckId !== activeDeckId ? 'loading'
+      : deckEvents.rows === null ? 'unknown' : 'ready'
+  const progressStatus: DeckFigureStatus = stagesError ? 'unknown' : worksLoading ? 'loading' : cellsStatus
+  const todayStatus: DeckFigureStatus = stagesError ? 'unknown' : worksLoading ? 'loading' : eventsStatus
+  /** The man-hour totals come from the events alone: a failed stage read leaves them readable (R2). */
+  const todayTotalsStatus: DeckFigureStatus = worksLoading ? 'loading' : eventsStatus
 
   /**
    * The Vietnam calendar day, settled once per mount -- the same way
@@ -650,13 +714,18 @@ export function GsScreen() {
   const [exporting, setExporting] = useState(false)
   const [zones, setZones] = useState<Zone[]>([])
   /**
-   * prog(D) per deck, for the tabs.
+   * prog(D) per deck, for the deck picker.
    *
-   * Empty until the batched read lands, and the tab shows an em dash rather
-   * than a 0,00% it does not know yet -- a wrong figure on the tab the foreman
-   * is choosing by is worse than no figure.
+   * Empty until the batched read lands. Meanwhile the option is the deck's
+   * name alone, the picker spinning, and after a failed read the missing mark
+   * -- never a 0,00% it does not know: a wrong figure on the control the foreman
+   * is choosing by is worse than no figure, and "-" while it loads reads as
+   * "no figure" when there simply is not one yet.
    */
   const [deckPercents, setDeckPercents] = useState<Record<string, number>>({})
+  /** The project whose read failed, so the next project's load is not taken for a failure. */
+  const [deckPercentsFailedFor, setDeckPercentsFailedFor] = useState<string | null>(null)
+  const deckPercentsFailed = projectId !== undefined && deckPercentsFailedFor === projectId
 
   useEffect(() => {
     const ids = decks.map((d) => d.id)
@@ -665,17 +734,19 @@ export function GsScreen() {
     listProjectIndex(projectId, ids)
       .then((index) => {
         if (cancelled) return
-        // Each deck's own works and coats, never the open deck's: the tab
+        // Each deck's own works and coats, never the open deck's: the option
         // carries P_d, the deck across its works (GSW-R3). A deck in no work
         // reads 0, which is what it contributes.
         setDeckPercents(Object.fromEntries(
           decks.map((d) => [d.id, summariseDeck(d.id, index[d.id] ?? []).progress]),
         ))
+        setDeckPercentsFailedFor(null)
       })
       .catch(() => {
-        // The tabs fall back to an em dash. Nothing else on the screen depends
-        // on this, and an error banner for a figure on a tab would push the
-        // drawing down the page on a tablet.
+        // The options fall back to an em dash. Nothing else on the screen
+        // depends on this, and an error banner for a figure on an option would
+        // push the drawing down the page on a tablet.
+        if (!cancelled) setDeckPercentsFailedFor(projectId)
       })
     return () => { cancelled = true }
   }, [projectId, decks, states])
@@ -847,18 +918,20 @@ export function GsScreen() {
     }
   }, [])
   const { message } = App.useApp()
-  const [confirmingOut, setConfirmingOut] = useState(false)
   /**
    * Which of the three shapes this screen is in.
    *
    * `lg` is where a drawing and a 372px rail both fit without the drawing
-   * losing the width its tap targets need; `sm` is where a phone stops being a
-   * phone. antd's own breakpoints, so this agrees with every Grid on the admin
-   * side rather than inventing a second set.
+   * losing the width its tap targets need; below 768 is a phone, the one
+   * breakpoint of every field screen (useFieldPhone, GS-06). antd's own
+   * breakpoints, so this agrees with every Grid on the admin side rather than
+   * inventing a second set.
    */
   const screens = Grid.useBreakpoint()
   const wide = Boolean(screens.lg)
-  const phone = !screens.sm
+  const phone = useFieldPhone()
+  /** A fixed panel's bottom offset, lifted over the phone's bottom tab bar (GS-06). */
+  const overBottomBar = (px: number) => (phone ? `calc(${px}px + ${FIELD_TAB_BAR_SPACE})` : px)
 
   /**
    * The XLSX for THIS deck (Feedback Rv1, item 6), through the same loaders
@@ -874,6 +947,8 @@ export function GsScreen() {
    * describe one project differently.
    */
   const [exportingProject, setExportingProject] = useState(false)
+  /** The phone's ⋯ export menu, open or not, for its aria-expanded (M-3). */
+  const [exportMenuOpen, setExportMenuOpen] = useState(false)
   const exportProject = async () => {
     if (!projectId) return
     setExportingProject(true)
@@ -1049,25 +1124,52 @@ export function GsScreen() {
       })
   }
 
+  /*
+    GS-06: the one field header -- Sàn · Năng suất · KPI and the account
+    menu -- in EVERY state of this screen (M-4), from the same FieldLayout,
+    so React keeps the one instance: a project switch spins the body under a
+    header that stays put, and a refusal or a failed load still offers the
+    tabs and logout.
+  */
+  const inShell = (body: ReactNode) => <FieldLayout projectId={projectId}>{body}</FieldLayout>
+  /*
+    GS-07: the project switch, first in the page's bar, also while a project
+    loads, fails or refuses: it is the way to another project from all three.
+    Its value is the route's id, so the previous project's name can never sit
+    over the next one's load or failure (M-4b).
+  */
+  const projectBar = (body: ReactNode) => (
+    <>
+      {projectId && (
+        // Longhands: a shorthand beside paddingBottom loses the 0 when the
+        // breakpoint re-renders (M-1). The loaded page's bar sits at this inset too.
+        <div style={{ paddingTop: phone ? space.md : space.lg, paddingInline: phone ? space.md : space.lg }}>
+          <FilterBar><FieldProjectSelect projectId={projectId} /></FilterBar>
+        </div>
+      )}
+      {body}
+    </>
+  )
+
   if (loading) {
-    return <Spin style={{ display: 'block', margin: '25vh auto' }} />
+    return inShell(projectBar(<Spin style={{ display: 'block', margin: '25vh auto' }} />))
   }
 
   if (projectError) {
-    return (
+    return inShell(projectBar(
       <div style={{ maxWidth: 360, margin: '25vh auto' }}>
         <Alert
           type="error"
           message="Không tải được dữ liệu dự án"
           description="Kiểm tra kết nối mạng rồi thử lại."
           action={
-            <Button size="small" onClick={() => window.location.reload()}>
+            <Button onClick={() => window.location.reload()}>
               Thử lại
             </Button>
           }
         />
-      </div>
-    )
+      </div>,
+    ))
   }
 
   // A refusal, rendered as a refusal. Before this the screen showed the same
@@ -1078,114 +1180,140 @@ export function GsScreen() {
   // coming. Same wording as the index route's, in the singular: whatever the
   // cause, the action is to talk to the administrator.
   if (notMember) {
-    return (
+    return inShell(projectBar(
       <div style={{ maxWidth: 360, margin: '25vh auto' }}>
         <Alert
           type="info"
           message="Không xem được dự án này"
           description="Tài khoản hợp lệ, nhưng chưa được gán vào dự án này. Liên hệ quản trị viên để được thêm vào dự án."
         />
-      </div>
-    )
+      </div>,
+    ))
   }
 
-  return (
-    <Layout style={{ minHeight: '100vh' }}>
-      {/*
-        Deck tabs and who is signed in, in one 48px bar. The drawing is the
-        screen; everything else has to earn its height on a tablet held at
-        arm's length.
-      */}
-      <Layout.Header
-        style={{
-          background: palette.bgContainer,
-          borderBottom: `1px solid ${palette.borderCard}`,
-          display: 'flex',
-          alignItems: 'center',
-          gap: 12,
-          paddingInline: 16,
-          height: 'auto',
-          lineHeight: 'normal',
-        }}
-      >
-        <Tabs
-          style={{ flex: 1, minWidth: 0 }}
-          activeKey={activeDeckId ?? undefined}
-          onChange={(key) => setActiveDeckId(key)}
-          items={decks.map((d) => ({
-            key: d.id,
-            /*
-              Name AND percentage. The foreman picks a deck to work on, and
-              "which one is behind" is the question he picks by -- without a
-              figure the tabs are three names in an order nobody chose. The
-              numbers come from one batched three-column read of the project
-              (listProjectIndex), not from loading each deck in full.
-            */
-            label: (
-              <span style={{ display: 'inline-flex', flexDirection: 'column', gap: 3 }}>
-                <span style={{ fontWeight: 600, lineHeight: 1.2 }}>{d.name}</span>
-                <span style={{ fontSize: 11, fontWeight: 500, opacity: 0.75 }}>
-                  {deckPercents[d.id] === undefined ? '—' : formatPercent(deckPercents[d.id])}
-                </span>
-              </span>
-            ),
-          }))}
-        />
-        {/*
-          RV6-24: a viewer reads every project (0034), so the header names the
-          one on screen and offers the rest. A foreman gets no switch -- their
-          screen is their one project's, as before.
-        */}
-        {readOnly && projectId && (
-          <Select
-            aria-label="Dự án"
-            style={{ width: phone ? 160 : 220, flex: 'none' }}
-            value={projectId}
-            onChange={(id) => navigate(`${APP_BASE_PATH}/gs/${id}`)}
-            // Typing filters by the project's NAME; the value is a uuid.
-            showSearch
-            optionFilterProp="label"
-            options={projectOptions.some((o) => o.value === projectId)
-              ? projectOptions
-              : [{ value: projectId, label: projectId }, ...projectOptions]}
-          />
-        )}
-        <div style={{ textAlign: 'right', flex: 'none' }}>
-          <div style={{ fontWeight: 600, lineHeight: 1.25 }}>{profile?.fullName}</div>
-          <span style={{ fontSize: 11, color: palette.textTertiary }}>{profile?.username}</span>
-        </div>
-        {readOnly && <StatusPill tone="off">Chỉ xem</StatusPill>}
-        {/*
-          The productivity dashboard (Feedback Rv2, item 12), one tap from the
-          drawing and one tap back. Icon only on a phone: the header is already
-          carrying the deck tabs and the name.
-        */}
-        <Button
-          aria-label="Năng suất"
-          icon={<LineChartOutlined aria-hidden />}
-          onClick={() => navigate(`${APP_BASE_PATH}/gs/${projectId}/dashboard`)}
-        >
-          {phone ? null : 'Năng suất'}
-        </Button>
-        {/*
-          KPI Plan vs Actual (Feedback Rv5, item 9), beside Năng suất and
-          reached the same way. Read-only for everyone here: the plan dates are
-          the admin's (RV5-28) and the viewer reads the chart too (RV5-29).
-        */}
-        <Button
-          aria-label="KPI"
-          icon={<AreaChartOutlined aria-hidden />}
-          onClick={() => navigate(`${APP_BASE_PATH}/gs/${projectId}/kpi`)}
-        >
-          {phone ? null : 'KPI'}
-        </Button>
-        {/* Spec §8.1: no account UI. Logout only. */}
-        <Button
-          aria-label="Đăng xuất"
-          icon={<LogoutOutlined />}
-          onClick={() => setConfirmingOut(true)}
-        />
-      </Layout.Header>
+  const noWorks = works !== null && workList.length === 0 && !stagesError
+
+  /** Opens a deck: every per-deck read follows `activeDeckId`. */
+  const chooseDeck = (id: string) => {
+    setActiveDeckId(id)
+    // Remembered on the choice, never on the load: a project's
+    // first render must not write the previous project's deck
+    // under its key.
+    if (projectId) rememberDeck(projectId, id)
+  }
+  /** A deck's figure still on the way, and its read has not failed. */
+  const deckPercentsLoading = !deckPercentsFailed && decks.some((d) => deckPercents[d.id] === undefined)
+  /** GS-03's deck picker (see the bar below), full width in the phone's row and sheet (FLT-04). */
+  const deckSelect = (block: boolean, value: string | null, onChange: (id: string) => void) => decks.length > 0 && (
+    <Select
+      aria-label="Sàn"
+      {...searchSelectProps}
+      {...fullOptions}
+      value={value ?? undefined}
+      onChange={onChange}
+      loading={deckPercentsLoading}
+      style={{ width: block ? '100%' : 320, maxWidth: '100%' }}
+      options={decks.map((d) => ({
+        value: d.id,
+        label: deckPercents[d.id] !== undefined ? `${d.name} · ${formatPercent(deckPercents[d.id])}`
+          : deckPercentsFailed ? `${d.name} · ${MISSING}` : d.name,
+        searchKey: d.name,
+      }))}
+    />
+  )
+  /** The work the page opens on is the first; another one counts on the phone's Bộ lọc badge (FLT-04). */
+  const workIsDefault = activeWork === null || activeWork.work.id === workList[0]?.work.id
+  /*
+    GSW-R1: the work the drawing is showing. Hidden with one work, since a
+    control with one position is a label pretending to be a choice.
+    Everything below -- colours, cards, plan, the bay modal -- follows it.
+    Named by its aria-label, no label on screen (FLT-01); a searchable
+    select, as on every screen (FLT-03).
+  */
+  const workSelect = (
+    block: boolean, value: string | undefined, onChange: (id: string) => void, list: DeckWork[] = workList,
+  ) => list.length > 1 && (
+    <Select
+      aria-label="Công việc"
+      {...searchSelectProps}
+      {...fullOptions}
+      style={{ width: block ? '100%' : WORK_SELECT_WIDTH, maxWidth: '100%' }}
+      value={value}
+      onChange={onChange}
+      options={list.map((w) => ({ label: w.work.name, value: w.work.id }))}
+    />
+  )
+  /*
+    The draft's project. The deck's and the work's options are this
+    project's, so both wait for Tìm on another project to open that one's
+    page, hidden while it is the draft.
+  */
+  const draftProject = barDraft.project ?? projectId
+  const onThisProject = draftProject === projectId
+  const draftProjectSelect = (width?: string) => projectId && (
+    <FieldProjectSelect
+      projectId={projectId}
+      width={width}
+      value={draftProject ?? undefined}
+      onChange={(project) => setBarDraft((d) => ({ ...d, project }))}
+    />
+  )
+  /*
+    The inline bar (768 px and wider). With more than one control -- Dự án
+    and Sàn, and the work when the deck is in several -- it is a draft ending
+    Đặt lại · Tìm (FLT-08); Dự án alone applies at once.
+  */
+  const barIsDraft = Boolean(projectId) && decks.length > 0
+  /** The drafted deck's works: the one on screen's, or the other deck's once read (null meanwhile). */
+  const draftDeckChanged = barDraft.deck !== undefined && barDraft.deck !== activeDeckId
+  const draftWorkList = !draftDeckChanged
+    ? workList
+    : draftDeckWorks !== null && draftDeckWorks.deckId === barDraft.deck ? draftDeckWorks.rows : null
+  /** The drafted work, if the drafted deck has it, else that deck's first. */
+  const draftWorkId = draftWorkList === null
+    ? undefined
+    : (draftWorkList.find((w) => w.work.id === (barDraft.work ?? activeWork?.work.id)) ?? draftWorkList[0])?.work.id
+  const barControls = barIsDraft ? (
+    <>
+      {draftProjectSelect()}
+      {onThisProject && deckSelect(false, barDraft.deck ?? activeDeckId, (deck) => setBarDraft((d) => ({ ...d, deck })))}
+      {onThisProject && draftWorkList !== null
+        && workSelect(false, draftWorkId, (work) => setBarDraft((d) => ({ ...d, work })), draftWorkList)}
+    </>
+  ) : (
+    projectId && <FieldProjectSelect projectId={projectId} />
+  )
+  /*
+    The phone's sheet (FLT-04, FLT-09): Dự án and the work, a draft until Tìm.
+    Sàn is not repeated here: it stays in the row and applies at once.
+  */
+  const sheetControls = (
+    <>
+      {draftProjectSelect('100%')}
+      {activeWork && onThisProject
+        && workSelect(true, barDraft.work ?? activeWork.work.id, (work) => setBarDraft((d) => ({ ...d, work })))}
+    </>
+  )
+  /** Tìm, in the bar or the sheet: another project opens its page; else the deck and the work apply. */
+  const applyBar = () => {
+    if (draftProject && !onThisProject) navigate(`${APP_BASE_PATH}/gs/${draftProject}`)
+    else if (draftDeckChanged && barDraft.deck !== undefined) {
+      // The deck load resets the work: hand it the drafted one to open on.
+      workWithDeck.current = draftWorkId ?? null
+      chooseDeck(barDraft.deck)
+    } else if (barDraft.work !== undefined) setActiveWorkId(barDraft.work)
+    setBarDraft({})
+  }
+  /** Đặt lại: this project, the deck on screen and its first work, applied at once (FLT-08, FLT-09). */
+  const resetBar = () => {
+    setBarDraft({})
+    setActiveWorkId(null)
+  }
+
+  // The drawing is the screen; everything under the header has to earn its
+  // height on a tablet held at arm's length.
+  return inShell(
+    <>
 
       {/*
         Full-bleed and dark red, not an inset warning box. This banner means
@@ -1199,18 +1327,18 @@ export function GsScreen() {
           style={{
             display: 'flex',
             alignItems: 'center',
-            gap: 13,
+            gap: space.md,
             background: fieldError,
             color: '#fff',
-            padding: '14px 20px',
+            padding: `${space.lg}px ${space.xl}px`,
           }}
         >
           <span
             style={{ width: 10, height: 10, borderRadius: '50%', background: '#fff', flex: 'none' }}
           />
           <div style={{ minWidth: 0 }}>
-            <div style={{ fontWeight: 600, lineHeight: 1.3 }}>Mất kết nối, đang kết nối lại…</div>
-            <div style={{ fontSize: 12, lineHeight: 1.3, opacity: 0.85, marginTop: 2 }}>
+            <div style={{ ...fieldType.bodyStrong, lineHeight: 1.3 }}>Mất kết nối, đang kết nối lại…</div>
+            <div style={{ ...fieldType.caption, lineHeight: 1.3, opacity: 0.85, marginTop: 2 }}>
               Số liệu trên màn hình có thể chưa cập nhật. Ghi tiến độ vẫn được lưu khi có mạng trở lại.
             </div>
           </div>
@@ -1231,64 +1359,178 @@ export function GsScreen() {
             glove -- so the rail goes underneath instead.
           */
           gridTemplateColumns: wide ? 'minmax(0,1fr) minmax(320px,372px)' : 'minmax(0,1fr)',
-          gap: wide ? 16 : 12,
+          gap: wide ? space.lg : space.md,
           alignItems: 'start',
-          padding: phone ? 12 : 16,
+          padding: phone ? space.md : space.lg,
         }}
       >
-        <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>
+        {/*
+          GS-07: the page's one filter bar, first and across both columns:
+          Dự án · Sàn · the work, a draft that Tìm applies (FLT-08); on a
+          phone the inline Sàn still applies at once (FLT-09).
+
+          GS-03: the deck, chosen by name. Name AND percentage on every
+          option: the foreman picks a deck to work on, and "which one is
+          behind" is the question he picks by. The figures come from one batched read of the
+          project (listProjectIndex), not from loading each deck in full.
+          Search is on the name only. Choosing one is the whole deck change:
+          every per-deck read, the realtime channel and the plan's coat follow
+          activeDeckId.
+        */}
+        <div style={{ gridColumn: '1 / -1', minWidth: 0 }}>
           {/*
-            GSW-R1: the work the drawing is showing. Hidden with one work, since
-            a control with one position is a label pretending to be a choice.
-            Everything below -- colours, cards, plan, the bay modal -- follows it.
+            On a phone one row (FLT-04): the Sàn picker, Bộ lọc -- the rest of
+            the bar, in a sheet -- and the ⋯; wider, the bar wraps its controls
+            at their own widths and the actions sit at the right end of the
+            row it leaves.
           */}
-          {activeWork && workList.length > 1 && (
-            <div
-              data-testid="gs-work-picker"
-              style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}
-            >
-              <span style={{ fontSize: 12, fontWeight: 600, color: palette.textTertiary }}>
-                Công việc
-              </span>
-              <Segmented
-                value={activeWork.work.id}
-                onChange={(id) => setActiveWorkId(String(id))}
-                options={workList.map((w) => ({ label: w.work.name, value: w.work.id }))}
-              />
+          <div
+            data-testid="gs-bar-row"
+            style={{
+              display: 'flex',
+              flexWrap: phone ? 'nowrap' : 'wrap',
+              alignItems: 'center',
+              gap: space.md,
+              minWidth: 0,
+            }}
+          >
+            <div style={{ flex: '1 1 auto', minWidth: 0 }}>
+              {phone ? (
+                <FilterSheet
+                  inline={deckSelect(true, activeDeckId, chooseDeck)}
+                  count={workIsDefault ? 0 : 1}
+                  onApply={applyBar}
+                  onReset={resetBar}
+                  onDiscard={() => setBarDraft({})}
+                >
+                  {sheetControls}
+                </FilterSheet>
+              ) : barIsDraft ? (
+                <FilterBar onApply={applyBar} onReset={resetBar} applyLoading={draftWorkList === null}>
+                  {barControls}
+                </FilterBar>
+              ) : (
+                <FilterBar>{barControls}</FilterBar>
+              )}
             </div>
-          )}
+            {/*
+              GS-09: the page's actions, at the right end of the bar and outside
+              its search landmark: they act, they do not filter. Two different
+              icons for "this deck's file" and "every deck". On a phone there is
+              no hover to name an icon, so both fold into one ⋯ menu that
+              spells them out.
+            */}
+            <div style={{ marginInlineStart: 'auto', display: 'flex', gap: space.sm, flex: 'none' }}>
+              {phone ? (
+                <Dropdown
+                  trigger={['click']}
+                  placement="bottomRight"
+                  open={exportMenuOpen}
+                  onOpenChange={setExportMenuOpen}
+                  menu={{
+                    items: [
+                      {
+                        key: 'deck',
+                        icon: exporting ? <LoadingOutlined aria-hidden /> : <FileExcelOutlined aria-hidden />,
+                        label: 'Xuất báo cáo',
+                        disabled: exporting,
+                        onClick: () => { void exportDeck() },
+                      },
+                      {
+                        key: 'project',
+                        icon: exportingProject ? <LoadingOutlined aria-hidden /> : <FolderOpenOutlined aria-hidden />,
+                        label: 'Xuất cả dự án',
+                        disabled: exportingProject,
+                        onClick: () => { void exportProject() },
+                      },
+                    ],
+                  }}
+                >
+                  {/*
+                    Never a spinner itself (M-3): it stays openable while an
+                    export runs, and the menu shows which one is running.
+                  */}
+                  <Button
+                    aria-label="Thêm thao tác"
+                    aria-haspopup="menu"
+                    aria-expanded={exportMenuOpen}
+                    icon={<EllipsisOutlined aria-hidden />}
+                  />
+                </Dropdown>
+              ) : (
+                <>
+                  {/* Closed the moment the pointer leaves, so it never sits over the header (C3). */}
+                  <Tooltip title="Xuất báo cáo" mouseLeaveDelay={0}>
+                    <Button
+                      aria-label="Xuất báo cáo"
+                      icon={<FileExcelOutlined aria-hidden />}
+                      loading={exporting}
+                      onClick={() => { void exportDeck() }}
+                    />
+                  </Tooltip>
+                  {/*
+                    Every deck in one file (Feedback Rv4). Linh: the bosses were
+                    asking for the admin build purely to download a report over
+                    all the decks. RLS decides what lands in it, so a foreman
+                    held to one work gets that work's decks and no others.
+                  */}
+                  <Tooltip title="Xuất cả dự án" mouseLeaveDelay={0}>
+                    <Button
+                      aria-label="Xuất cả dự án"
+                      icon={<FolderOpenOutlined aria-hidden />}
+                      loading={exportingProject}
+                      onClick={() => { void exportProject() }}
+                    />
+                  </Tooltip>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
 
-          {works !== null && workList.length === 0 && !stagesError && (
-            <Alert
-              type="info"
-              showIcon
-              message="Sàn này chưa được gán công việc nào"
-              description="Tiến độ được ghi theo từng công việc. Nhờ quản trị viên gán sàn vào một công việc ở mục Công việc; tới lúc đó bản vẽ chỉ để xem."
-            />
-          )}
+        {/*
+          GS-08: notices about the deck are a row of their own across both
+          columns, so the drawing card and the stats beside it start on one
+          line.
+        */}
+        {(noWorks || stagesError || drawingError) && (
+          <div style={{ gridColumn: '1 / -1', minWidth: 0, display: 'flex', flexDirection: 'column', gap: space.md }}>
+            {noWorks && (
+              <Alert
+                type="info"
+                showIcon
+                message="Sàn này chưa được gán công việc nào"
+                description="Nhờ quản trị viên gán sàn vào một công việc ở mục Công việc; tới lúc đó bản vẽ chỉ để xem."
+              />
+            )}
 
-          {stagesError && (
-            <Alert
-              type="warning"
-              showIcon
-              message="Không tải được lớp sơn của sàn"
-              description="Phần trăm bên dưới đang tính thiếu. Thử lại sau khi có mạng."
-            />
-          )}
+            {stagesError && (
+              <Alert
+                type="warning"
+                showIcon
+                message="Không tải được lớp sơn của sàn"
+                description="Tiến độ bên dưới chưa tính được. Thử lại sau khi có mạng."
+              />
+            )}
 
-          {drawingError && (
-            <Alert
-              type="warning"
-              showIcon
-              message="Không tải được bản vẽ"
-              description="Số liệu bên dưới vẫn đúng. Thử lại sau khi có mạng."
-            />
-          )}
+            {drawingError && (
+              <Alert
+                type="warning"
+                showIcon
+                message="Không tải được bản vẽ"
+                description="Số liệu bên dưới vẫn đúng. Thử lại sau khi có mạng."
+              />
+            )}
+          </div>
+        )}
 
+        <div style={{ minWidth: 0 }}>
           <SectionCard
             title={deck?.name}
-            summary={deck ? `${formatAreaM2(deck.totalAreaM2)} ${unit}` : undefined}
+            facts={deck ? [{ value: formatAreaM2(deck.totalAreaM2), label: unit }] : undefined}
             bodyPadding={0}
+            // On a phone the coat select grows into the header row's free width.
+            extraFill={phone}
             extra={
               /*
                 A button, not a switch. It is pressed through a glove, so it
@@ -1297,49 +1539,31 @@ export function GsScreen() {
                 decision. The label drops on a phone, where the calendar icon
                 and the pressed state carry it.
               */
-              <Space size={8}>
-                <Button
+              <div style={{ display: 'flex', alignItems: 'center', gap: space.sm, flex: '1 1 auto', minWidth: 0, justifyContent: 'flex-end' }}>
+                {/* An icon action at the field's 48px (ACT-01, CTL-02): the
+                    pressed state and the tooltip carry the label. */}
+                <IconAction
+                  verb="plan"
+                  label="Hiện kế hoạch"
                   type={showPlan ? 'primary' : 'default'}
-                  icon={<CalendarOutlined aria-hidden />}
-                  aria-label="Hiện kế hoạch"
                   aria-pressed={showPlan}
                   onClick={() => setShowPlan((on) => !on)}
-                >
-                  {phone ? null : 'Hiện kế hoạch'}
-                </Button>
+                />
                 {showPlan && stages.length > 0 && (
                   <Select
                     id="gs-plan-stage"
                     aria-label="Công đoạn kế hoạch"
+                    {...searchSelectProps}
+                    {...fullOptions}
                     value={planStageId ?? undefined}
                     onChange={(v) => setPlanStage({ deckId: activeDeckId, stageId: v })}
-                    style={{ width: phone ? 120 : 180 }}
+                    // A phone's coat names ran to "Blast + C…" at 120: the
+                    // select takes the row's free width there, 160 at least.
+                    style={phone ? { flex: '1 1 auto', minWidth: 160 } : { width: 180 }}
                     options={stages.map((st) => ({ value: st.id, label: st.name }))}
                   />
                 )}
-                <Button
-                  icon={<DownloadOutlined aria-hidden />}
-                  aria-label="Xuất báo cáo"
-                  loading={exporting}
-                  onClick={() => { void exportDeck() }}
-                >
-                  {phone ? null : 'Xuất báo cáo'}
-                </Button>
-                {/*
-                  Every deck in one file (Feedback Rv4). Linh: the bosses were
-                  asking for the admin build purely to download a report over
-                  all the decks. RLS decides what lands in it, so a foreman
-                  held to one work gets that work's decks and no others.
-                */}
-                <Button
-                  icon={<DownloadOutlined aria-hidden />}
-                  aria-label="Xuất cả dự án"
-                  loading={exportingProject}
-                  onClick={() => { void exportProject() }}
-                >
-                  {phone ? null : 'Xuất cả dự án'}
-                </Button>
-              </Space>
+              </div>
             }
           >
             {deck && deck.imagePath && deck.imageW && deck.imageH && imageUrl ? (
@@ -1361,6 +1585,10 @@ export function GsScreen() {
                     // No work, nothing to record against: the drawing is a
                     // drawing until the admin assigns the deck.
                     if (!activeWork) return
+                    // Nor before this deck's own read has landed: a bay can
+                    // arrive ahead of it over realtime, with its states not
+                    // read yet, and a tap would record over them (I1).
+                    if (deckRead?.deckId !== activeDeckId) return
                     setSelectedCell(cells.find((c) => c.code === code) ?? null)
                   }}
                 />
@@ -1377,7 +1605,7 @@ export function GsScreen() {
                       position: 'fixed',
                       zIndex: 4,
                       right: 24,
-                      bottom: 24,
+                      bottom: overBottomBar(24),
                       pointerEvents: 'none',
                       background: '#FFFFFFF5',
                       border: `1px solid ${palette.borderCard}`,
@@ -1394,18 +1622,11 @@ export function GsScreen() {
                       <div key={z.id} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                         <span
                           aria-hidden
-                          style={{
-                            width: 12,
-                            height: 12,
-                            flex: 'none',
-                            borderRadius: 4,
-                            background: planColors[z.id],
-                            boxShadow: 'inset 0 0 0 1px #16202B47',
-                          }}
+                          style={{ width: 12, height: 12, flex: 'none', borderRadius: '50%', background: planColors[z.id] }}
                         />
                         {/* One line, and the coat dropped when the zone's own
                             name already carries it (Feedback Rv3, item 3). */}
-                        <span style={{ fontSize: 13, fontWeight: 600 }}>
+                        <span style={fieldType.body}>
                           {describeZone(
                             z.name,
                             stageNameOf(z.stageId),
@@ -1433,7 +1654,7 @@ export function GsScreen() {
                       position: 'fixed',
                       zIndex: 4,
                       left: 24,
-                      bottom: 24,
+                      bottom: overBottomBar(24),
                       // Never in the way of a bay underneath it: this is a
                       // legend, and every tap belongs to the drawing.
                       pointerEvents: 'none',
@@ -1455,20 +1676,13 @@ export function GsScreen() {
                       >
                         <span
                           aria-hidden
-                          style={{
-                            width: 15,
-                            height: 15,
-                            flex: 'none',
-                            borderRadius: 5,
-                            background: planColors[z.id],
-                            boxShadow: 'inset 0 0 0 1px #16202B47',
-                          }}
+                          style={{ width: 15, height: 15, flex: 'none', borderRadius: '50%', background: planColors[z.id] }}
                         />
-                        <span style={{ fontSize: 13, fontWeight: 600, flex: 'none' }}>{z.name}</span>
+                        <span style={{ ...fieldType.body, flex: 'none' }}>{z.name}</span>
                         <span
                           style={{
                             marginLeft: 'auto',
-                            fontSize: 12,
+                            ...fieldType.caption,
                             color: palette.textSecondary,
                             whiteSpace: 'nowrap',
                           }}
@@ -1484,7 +1698,7 @@ export function GsScreen() {
               !drawingError && (
                 <EmptyState
                   title="Sàn này chưa có bản vẽ"
-                  description="Quản trị viên cần tải bản vẽ lên trước khi ghi tiến độ. Không có bản vẽ thì không có ô để chạm."
+                  description="Quản trị viên cần tải bản vẽ lên trước khi ghi tiến độ."
                 />
               )
             )}
@@ -1500,15 +1714,16 @@ export function GsScreen() {
           data-testid="gs-chart-region"
           style={
             wide
-              ? { display: 'flex', flexDirection: 'column', gap: 14, minWidth: 0 }
+              ? { display: 'flex', flexDirection: 'column', gap: space.lg, minWidth: 0 }
               : {
                 display: 'grid',
                 gridTemplateColumns: phone ? 'minmax(0,1fr)' : 'repeat(auto-fit,minmax(300px,1fr))',
-                gap: 12,
+                gap: space.md,
               }
           }
         >
           <DeckProgressCard
+            status={progressStatus}
             progress={deckSummary?.progress ?? 0}
             totalAreaM2={deck?.totalAreaM2 ?? 0}
             quantityLabel={quantityLabel}
@@ -1517,7 +1732,7 @@ export function GsScreen() {
               id: row.work.id, name: row.work.name, progress: row.progress,
             }))}
           />
-          {cells.length > 0 && (
+          {progressStatus === 'ready' && cells.length > 0 && (
             <StageRollupCard
               stages={stages}
               stageProgress={deckProgress?.stages ?? []}
@@ -1532,7 +1747,15 @@ export function GsScreen() {
             coats listed at 0,00 m² rather than the block disappearing, and a
             deck whose drawing has not been uploaded yet still has coats.
           */}
-          <DeckTodayCard todayKey={todayKey} rows={todayStages} totals={todayTotals} />
+          <DeckTodayCard
+            status={todayStatus}
+            totalsStatus={todayTotalsStatus}
+            todayKey={todayKey}
+            rows={todayStages}
+            totals={todayTotals}
+            emptyText={stagesError ? 'Không tải được công đoạn.'
+              : noWorks ? 'Sàn này chưa được gán công việc nào.' : undefined}
+          />
         </div>
       </Layout.Content>
 
@@ -1551,23 +1774,6 @@ export function GsScreen() {
         defaultEffortNames={lastNames}
         employees={employees}
       />
-
-      {/*
-        A foreman in gloves, on a tablet, one button away from the drawing he is
-        working off. Signing out costs him a walk back to whoever holds the
-        password, so it asks first.
-      */}
-      <ConsequenceModal
-        open={confirmingOut}
-        tag="Xác nhận"
-        title="Đăng xuất?"
-        description="Phiên làm việc hiện tại sẽ kết thúc:"
-        items={[{ label: profile?.fullName ?? '', meta: profile?.username ?? '' }]}
-        consequence="Muốn ghi tiếp tiến độ thì phải đăng nhập lại bằng mật khẩu quản trị viên đã giao."
-        okText="Vẫn đăng xuất"
-        onCancel={() => setConfirmingOut(false)}
-        onOk={() => void signOut().then(() => navigate(LOGIN_PATH, { replace: true }))}
-      />
-    </Layout>
+    </>,
   )
 }

@@ -3,9 +3,11 @@ import { lazy, Suspense, useEffect, useState, type ReactNode } from 'react'
 import { Navigate, Route, Routes } from 'react-router-dom'
 import { useAuth } from './auth/AuthProvider'
 import { RequireRole } from './auth/RequireRole'
+import { roleHome } from './auth/roleHome'
 import { APP_BASE_PATH } from './config'
 import { myFirstProjectId } from './lib/projectsApi'
 import { NotFound } from './screens/NotFound'
+import { NotFoundPage } from './screens/NotFoundPage'
 import { fieldTheme } from './theme'
 
 // Every screen behind a role gate is React.lazy, and for two different reasons.
@@ -38,11 +40,9 @@ const DecksScreen = lazy(() =>
 const DeckDetailScreen = lazy(() =>
   import('./screens/admin/DeckDetailScreen').then((m) => ({ default: m.DeckDetailScreen })),
 )
-const UsersScreen = lazy(() =>
-  import('./screens/admin/UsersScreen').then((m) => ({ default: m.UsersScreen })),
-)
-const EmployeesScreen = lazy(() =>
-  import('./screens/admin/EmployeesScreen').then((m) => ({ default: m.EmployeesScreen })),
+// Nhân lực (NL-01): accounts and employees, at the address the users screen had.
+const NhanLucScreen = lazy(() =>
+  import('./screens/admin/NhanLucScreen').then((m) => ({ default: m.NhanLucScreen })),
 )
 const GsScreen = lazy(() =>
   import('./screens/gs/GsScreen').then((m) => ({ default: m.GsScreen })),
@@ -154,6 +154,23 @@ function RoleHome() {
   return <NotFound />
 }
 
+/**
+ * The top-level catch-all (QA F2). A stranger and a deactivated profile keep
+ * the bare 404 of spec §7.3; an active account gets told and
+ * offered its role's own home, the same page the role gate gives it. Nothing while
+ * the session is still being read, so the bare page never flashes before
+ * the signed-in one.
+ */
+function StrayPath() {
+  const { session, profile, loading } = useAuth()
+  if (loading) return null
+  if (!session || !profile?.active) return <NotFound />
+  // The role's own home, exactly as the role gate's page links it: the two
+  // pages must be identical, or a signed-in account could tell a route that
+  // exists behind another role's gate from one that does not exist (N-1).
+  return <NotFoundPage home={roleHome(profile.role)} />
+}
+
 export function AppRoutes() {
   return (
     <Routes>
@@ -191,12 +208,12 @@ export function AppRoutes() {
             </RequireRole>
           }
         >
-          <Route index element={<Navigate to="users" replace />} />
+          <Route index element={<Navigate to="projects" replace />} />
           <Route
             path="users"
             element={
               <LazySuspense>
-                <UsersScreen />
+                <NhanLucScreen />
               </LazySuspense>
             }
           />
@@ -254,19 +271,18 @@ export function AppRoutes() {
               </LazySuspense>
             }
           />
-          <Route
-            path="employees"
-            element={
-              <LazySuspense>
-                <EmployeesScreen />
-              </LazySuspense>
-            }
-          />
+          {/* The staff roster moved into Nhân lực; an old bookmark still lands (NL-01). */}
+          <Route path="employees" element={<Navigate to={`${APP_BASE_PATH}/admin/users`} replace />} />
+          {/*
+            Only an admin reaches this: the gate above gives every other role
+            the same not-found page for any /admin path, known or not (QA F2).
+          */}
+          <Route path="*" element={<NotFoundPage home={`${APP_BASE_PATH}/admin/projects`} />} />
         </Route>
         {/*
           The viewer's project picker (RV6-23). The viewer's alone: a foreman
           lands on their own project from RoleHome and has no list to choose
-          from, so the gate gives them the same 404 as any other wrong role.
+          from, so the gate gives them the not-found page any wrong role gets.
           The field theme, because it is the same tablet at the same arm's
           length as the screen it leads to.
         */}
@@ -338,7 +354,7 @@ export function AppRoutes() {
           }
         />
       </Route>
-      <Route path="*" element={<NotFound />} />
+      <Route path="*" element={<StrayPath />} />
     </Routes>
   )
 }

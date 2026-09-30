@@ -1,4 +1,5 @@
 import { Input } from 'antd'
+import { swatchStyle, useControlHeight } from './swatch'
 
 /**
  * Six digits with the hash, which is the only form the native swatch and the
@@ -55,14 +56,19 @@ export function ColorField({
 }) {
   const shown = hex ?? value
   const valid = HEX_COLOR.test(shown)
+  // The theme's one control height, in a table cell too (CTL-02).
+  const diameter = useControlHeight()
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}>
-      <Input
+      {/* The native picker, bare: it opens on click, Enter and Space, and
+          `pp-swatch` takes its frame off so the colour is the whole control. */}
+      <input
         aria-label={`Chọn màu · ${label}`}
         type="color"
+        className="pp-swatch"
         value={value}
         disabled={disabled}
-        style={{ width: 44, padding: 2 }}
+        style={{ ...swatchStyle(diameter), cursor: disabled ? 'not-allowed' : 'pointer' }}
         onChange={(e) => {
           (onSwatchColor ?? onColor)(e.target.value)
           onHex(e.target.value)

@@ -1,7 +1,10 @@
-import { Button, Table } from 'antd'
+import { Table } from 'antd'
 import { useRef, useState } from 'react'
 import { ColorField, HEX_COLOR } from '../../components/ColorField'
+import { IconAction } from '../../components/IconAction'
 import { SectionCard } from '../../components/SectionCard'
+import { tablePagination } from '../../components/tablePagination'
+import { type } from '../../theme'
 import { KPI_COLOR_DEFAULTS } from '../dashboard/kpiColors'
 
 /**
@@ -136,41 +139,39 @@ export function DeckKpiColorTable({
   return (
     <SectionCard
       title="Màu biểu đồ theo sàn"
-      summary={`${decks.length} sàn · ${styled} sàn có màu riêng`}
+      facts={[{ value: decks.length, label: 'sàn' }, { value: styled, label: 'sàn có màu riêng' }]}
       collapsible
       defaultOpen={false}
       bodyPadding={0}
     >
       <Table<DeckKpiColorRow>
-        className="pp-table"
         rowKey="id"
         size="middle"
         dataSource={decks}
-        pagination={false}
+        pagination={tablePagination(decks.length)}
         scroll={{ x: true }}
         onRow={(row) => ({ 'data-testid': `deck-color-row-${row.id}` } as React.HTMLAttributes<HTMLElement>)}
         columns={[
-          { title: 'Sàn', dataIndex: 'name', render: (v: string) => <span style={{ fontWeight: 600 }}>{v}</span> },
-          { title: 'Kế hoạch', key: 'plan', width: 190, render: (_v, row) => field(row, 'plan') },
-          { title: 'Thực hiện', key: 'actual', width: 190, render: (_v, row) => field(row, 'actual') },
+          { title: 'Sàn', dataIndex: 'name', render: (v: string) => <span style={type.body}>{v}</span> },
+          { title: 'Kế hoạch', key: 'plan', width: 190, render: (_v, row) => field(row, 'plan'), align: 'center' },
+          { title: 'Thực hiện', key: 'actual', width: 190, render: (_v, row) => field(row, 'actual'), align: 'center' },
           {
+            title: 'Thao tác',
             key: 'reset',
-            width: 110,
+            width: 90,
+            align: 'center',
+            // An icon action (ACT-01). Nothing to clear on a deck already at
+            // the defaults: the write would be a no-op and its reload a cost.
             render: (_v, row) => (
-              <Button
-                type="link"
-                size="small"
-                aria-label={`Mặc định · ${row.name}`}
-                // Nothing to clear on a deck already at the defaults: the
-                // write would be a no-op and the reload it triggers a cost.
+              <IconAction
+                verb="resetDefault"
+                label={`Mặc định · ${row.name}`}
                 disabled={saving || (row.kpiPlanColor === null && row.kpiActualColor === null)}
                 onClick={() => {
                   takePending(row.id)
                   onChange(row.id, { plan: null, actual: null })
                 }}
-              >
-                Mặc định
-              </Button>
+              />
             ),
           },
         ]}

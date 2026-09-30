@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { AdminLayout } from './AdminLayout'
+import { consequenceItems } from '../../test/copy'
 
 const signOut = vi.hoisted(() => vi.fn())
 const profile = vi.hoisted(() => ({ current: null as unknown }))
@@ -19,10 +20,10 @@ function renderAt(path: string) {
           <Route path="projects" element={<div>nội dung dự án</div>} />
           <Route path="decks" element={<div>nội dung sàn</div>} />
         <Route path="decks/:deckId" element={<div>nội dung một sàn</div>} />
-          <Route path="users" element={<div>nội dung người dùng</div>} />
+          <Route path="users" element={<div>nội dung nhân lực</div>} />
           <Route path="dashboard" element={<div>nội dung năng suất</div>} />
           <Route path="kpi" element={<div>nội dung KPI</div>} />
-          <Route path="employees" element={<div>nội dung nhân viên</div>} />
+          <Route path="*" element={<div>không tìm thấy</div>} />
         </Route>
         <Route path="/login" element={<div>màn đăng nhập</div>} />
       </Routes>
@@ -48,8 +49,14 @@ describe('AdminLayout', () => {
     expect(screen.getByRole('link', { name: /Sàn/ })).toHaveAttribute('href', '/admin/decks')
     expect(screen.getByRole('link', { name: /Năng suất/ })).toHaveAttribute('href', '/admin/dashboard')
     expect(screen.getByRole('link', { name: /KPI/ })).toHaveAttribute('href', '/admin/kpi')
-    expect(screen.getByRole('link', { name: /Người dùng/ })).toHaveAttribute('href', '/admin/users')
-    expect(screen.getByRole('link', { name: /Nhân viên/ })).toHaveAttribute('href', '/admin/employees')
+    expect(screen.getByRole('link', { name: /Nhân lực/ })).toHaveAttribute('href', '/admin/users')
+  })
+
+  it('offers accounts and employees as one item, Nhân lực (NL-01)', () => {
+    renderAt('/admin/users')
+    expect(screen.queryByRole('link', { name: /Người dùng/ })).toBeNull()
+    expect(screen.queryByRole('link', { name: /Nhân viên/ })).toBeNull()
+    expect(screen.getByRole('menuitem', { name: /Nhân lực/ })).toHaveClass('ant-menu-item-selected')
   })
 
   it('puts KPI immediately after Năng suất (Feedback Rv5, item 9)', () => {
@@ -75,17 +82,30 @@ describe('AdminLayout', () => {
     expect(screen.getByRole('menuitem', { name: /Sàn/ })).toHaveClass('ant-menu-item-selected')
   })
 
+  it('marks nothing on a path that is not a destination (QA F2 follow-up)', () => {
+    // The not-found page sits inside this shell; highlighting Dự án there told
+    // the admin they were on the projects screen.
+    renderAt('/admin/nowhere')
+    for (const item of screen.getAllByRole('menuitem')) {
+      expect(item).not.toHaveClass('ant-menu-item-selected')
+    }
+  })
+
   it('shows who is signed in, by name, role and initials', () => {
     renderAt('/admin/projects')
     expect(screen.getByText('Nguyễn Thị Linh')).toBeInTheDocument()
     expect(screen.getByText('Quản trị viên')).toBeInTheDocument()
-    expect(screen.getByText('NL')).toBeInTheDocument()
+    // The last two words' letters, the shared avatar rule (AD2).
+    expect(screen.getByText('TL')).toBeInTheDocument()
   })
 
   it('signs out and leaves the admin URL behind', async () => {
     const user = userEvent.setup()
     renderAt('/admin/projects')
     await user.click(screen.getByRole('button', { name: 'Đăng xuất' }))
+    // The data-loss consequence, without the aside on what lives where (CPY-01).
+    expect(await screen.findByText('Thay đổi chưa lưu ở màn đang mở bị mất')).toBeInTheDocument()
+    expect(consequenceItems()).toEqual(['Thay đổi chưa lưu ở màn đang mở bị mất'])
     await user.click(await screen.findByRole('button', { name: 'Vẫn đăng xuất' }))
     expect(signOut).toHaveBeenCalledOnce()
     // Navigating is the point: without it the session goes but the URL stays
@@ -104,6 +124,16 @@ describe('AdminLayout', () => {
 
     await user.click(screen.getByRole('button', { name: 'Mở rộng thanh điều hướng' }))
     expect(screen.getByText('Construction Management')).toBeInTheDocument()
+  })
+
+  it('lets the product name wrap instead of clipping it (QA F1)', () => {
+    // At the open rail's width the name is longer than the space beside the
+    // mark, and a nowrap + ellipsis span cut it to "Construction Ma…" on
+    // every admin screen. Wrapping keeps the whole name at the same size.
+    renderAt('/admin/projects')
+    const brand = screen.getByText('Construction Management')
+    expect(brand).not.toHaveStyle({ whiteSpace: 'nowrap' })
+    expect(brand).not.toHaveStyle({ textOverflow: 'ellipsis' })
   })
 
   it('renders without a profile rather than crashing on first paint', () => {

@@ -1,9 +1,14 @@
-import { screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderApp } from '../../test/renderApp'
 import { DecksScreen } from './DecksScreen'
+import { expectLeft } from '../../test/alignment'
+import { weightOf } from '../../test/typography'
+import { consequenceItems, expectHelperText, pageSubtitle, ruleTexts } from '../../test/copy'
+import { palette, type } from '../../theme'
+import { ROLLUP_RING, figureFits, ringFigureStep } from '../../components/ringFit'
 
 const listProjectNames = vi.hoisted(() => vi.fn())
 const listDecks = vi.hoisted(() => vi.fn())
@@ -18,13 +23,13 @@ const getDrawingUrl = vi.hoisted(() => vi.fn())
 vi.mock('../../lib/projectsApi', () => ({ listProjectNames: () => listProjectNames() }))
 const deleteDeck = vi.hoisted(() => vi.fn())
 const duplicateDeck = vi.hoisted(() => vi.fn())
-const swapDeckSeq = vi.hoisted(() => vi.fn())
+const saveDeckOrder = vi.hoisted(() => vi.fn())
 vi.mock('../../lib/decksApi', () => ({
   listDecks: (p: string) => listDecks(p),
   getDrawingUrl: (p: string) => getDrawingUrl(p),
   deleteDeck: (d: unknown) => deleteDeck(d),
   duplicateDeck: (src: unknown, input: unknown) => duplicateDeck(src, input),
-  swapDeckSeq: (a: unknown, b: unknown) => swapDeckSeq(a, b),
+  saveDeckOrder: (changes: unknown) => saveDeckOrder(changes),
 }))
 const listDeckEvents = vi.hoisted(() => vi.fn())
 vi.mock('../../lib/progressApi', () => ({
@@ -117,8 +122,8 @@ beforeEach(() => {
   deleteDeck.mockResolvedValue({ drawingRemoved: true })
   duplicateDeck.mockReset()
   duplicateDeck.mockResolvedValue({ deckId: 'd9', drawingCopied: true })
-  swapDeckSeq.mockReset()
-  swapDeckSeq.mockResolvedValue(undefined)
+  saveDeckOrder.mockReset()
+  saveDeckOrder.mockResolvedValue(undefined)
   listDecks.mockResolvedValue([
     {
       id: 'd1', projectId: 'p1', seq: 1, name: 'Main Deck', code: 'MD',
@@ -176,12 +181,22 @@ describe('DecksScreen project selection', () => {
     renderScreen()
     await screen.findByText('Main Deck')
 
-    await userEvent.click(screen.getByLabelText('Dự án'))
+    await userEvent.click(screen.getByRole('combobox', { name: 'Dự án' }))
     await userEvent.click(await screen.findByTitle('Rạng Đông RD-2 (RD2)'))
 
     await waitFor(() =>
       expect(screen.getByTestId('url-search')).toHaveTextContent('project=p2'),
     )
+  })
+
+  it('puts the project select in the filter bar under the title, with no visible label (FLT-01)', async () => {
+    renderScreen()
+    await screen.findByText('Main Deck')
+    const bar = screen.getByRole('search', { name: 'Bộ lọc' })
+    expect(within(bar).getByRole('combobox', { name: 'Dự án' })).toBeInTheDocument()
+    expect(bar.querySelector('label')).toBeNull()
+    // The page action stays in the title row, not in the bar.
+    expect(within(bar).queryByRole('button', { name: /Tạo sàn/ })).toBeNull()
   })
 })
 
@@ -189,9 +204,10 @@ describe('DecksScreen', () => {
   it('lists the decks of the first project', async () => {
     renderScreen()
 
-    expect(await screen.findByText('Main Deck')).toBeInTheDocument()
-    expect(screen.getByText('MD')).toBeInTheDocument()
-    expect(screen.getByText('5.258,50')).toBeInTheDocument()
+    const name = await screen.findByText('Main Deck')
+    // "Main Deck (MD)", the quantity with its unit (RLP-01, AD4).
+    expect(name.closest('td')).toHaveTextContent(/^Main Deck \(MD\)$/)
+    expect(screen.getByText('5.258,50 m²')).toBeInTheDocument()
     expect(screen.getByText('24')).toBeInTheDocument()
     await waitFor(() => expect(listDecks).toHaveBeenCalledWith('p1'))
   })
@@ -267,6 +283,9 @@ describe('DecksScreen — the project-wide half of progress', () => {
     await waitFor(() => expect(within(rollup).getByText('Cellar Deck')).toBeInTheDocument())
     expect(within(rollup).queryByText('Test data')).toBeNull()
     expect(within(rollup).getByText(/Đã ẩn 1 sàn có tỉ trọng 0,00%/)).toBeInTheDocument()
+    // Why they carry nothing is a tooltip on the note, not a parenthetical (CPY-01).
+    expect(within(rollup).queryByText(/\(không thuộc/)).toBeNull()
+    expect(within(rollup).getByRole('img', { name: 'Không thuộc công việc nào tính vào tổng' })).toBeInTheDocument()
     // Still a deck of the project, in the list that says what exists.
     expect(screen.getAllByText('Test data').length).toBeGreaterThan(0)
   })
@@ -309,8 +328,8 @@ describe('DecksScreen — the project-wide half of progress', () => {
 
     const rollup = await screen.findByTestId('project-rollup')
     await waitFor(() => expect(within(rollup).getByText('Cellar Deck')).toBeInTheDocument())
-    expect(within(rollup).getByText('4.000,00')).toBeInTheDocument()
-    expect(within(rollup).queryByText('4.100,00')).toBeNull()
+    expect(within(rollup).getByText('4.000,00 m²')).toBeInTheDocument()
+    expect(within(rollup).queryByText('4.100,00 m²')).toBeNull()
   })
 
   it('says nothing about hidden decks when every deck counts', async () => {
@@ -333,6 +352,15 @@ describe('DecksScreen — the project-wide half of progress', () => {
     expect(within(rollup).getByText('31,25%')).toBeInTheDocument()   // the project, P
     // Not the m² share any more: CD is 1000 of 4000 m², which would read 25,00%.
     expect(within(rollup).queryByText('25,00%')).toBeNull()
+  })
+
+  it('does not echo the works table header as a label above it (TBL-03)', async () => {
+    renderScreen()
+    const works = await screen.findByTestId('project-works')
+    await waitFor(() => expect(within(works).getByText('Sơn')).toBeInTheDocument())
+    // Once, as the column header. The sub-label that repeated it read as a
+    // second heading for the same table; a divider separates the two now.
+    expect(within(works).getAllByText('Công việc')).toHaveLength(1)
   })
 
   it('lists every work with its kind, weight and P_w under the deck table, then P', async () => {
@@ -359,12 +387,11 @@ describe('DecksScreen — the project-wide half of progress', () => {
     // RV6-02: the legend shows each slice's own progress (Chứng từ's is
     // 50,00%, same as CD's), not the weight × progress the arc is sized by
     // -- see the dedicated RV6-01/02 tests below for the arc math itself.
-    expect(within(donut).getAllByText('50,00%').length).toBeGreaterThan(0)
     expect(within(donut).getAllByText('31,25%').length).toBeGreaterThan(0)
   })
 
   it('labels deck slices by code and shows each one\'s own progress in the legend, ' +
-    'while the arc keeps weight × progress (RV6-01, RV6-02)', async () => {
+    'and the contribution beside it, while the arc keeps weight × progress (RV6-01, RV6-02, RV6-40)', async () => {
     renderScreen()
 
     const rollup = await screen.findByTestId('project-rollup')
@@ -378,17 +405,24 @@ describe('DecksScreen — the project-wide half of progress', () => {
     expect(within(donut).queryByText('Cellar Deck')).toBeNull()
     expect(within(donut).queryByText('Weather Deck')).toBeNull()
 
-    // RV6-02: the legend number beside CD is its own progress, 50,00% -- the
-    // same figure the rollup table's Tiến độ column reads for CD, not the
-    // 21,25% contribution (.425 effective weight × 50%) the arc is sized by.
+    // RV6-02: the first number beside CD is its own progress, 50,00% -- the
+    // same figure the rollup table's Tiến độ column reads for CD. RV6-40
+    // (Linh's review of v1.7.0): the second number is the contribution the
+    // arc is sized by, 21,25% (.425 effective weight × 50%), so the column
+    // adds up to the centre figure; the legend says which is which.
     expect(within(rollup).getByText('50,00%')).toBeInTheDocument()
-    expect(within(donut).queryByText('21,25%')).toBeNull()
+    // RLP-02: the legend drops the progress (the table beside it reads it as
+    // Tiến độ sàn) and keeps the contribution alone, under Đóng góp.
+    expect(within(donut).getByText('Đóng góp')).toBeInTheDocument()
+    expect(within(donut).queryByText('Tiến độ · Đóng góp')).toBeNull()
+    const cdRow = within(donut).getByText('CD').closest('[data-testid="legend-row"]') as HTMLElement
+    expect(within(cdRow).queryByText('50,00%')).toBeNull()
+    expect(within(cdRow).getByText('21,25%')).toBeInTheDocument()
 
-    // The arc itself is untouched: the ring's conic-gradient still runs CD's
-    // solid band up to 20.750% (21,25% minus the hairline gap), i.e. weight
-    // × progress, not the 50% shown in the legend.
+    // The arc itself is untouched: CD's slice spans 21,25% of the ring, i.e.
+    // weight × progress, not the 50% shown in the legend.
     const ring = within(donut).getByTestId('donut-ring')
-    expect(ring.style.background).toContain('20.750%')
+    expect(within(ring).getByRole('img', { name: 'CD' })).toHaveAttribute('data-arc', '0.2125')
   })
 
   it('removes the trọng số × tiến độ caption under the legend (RV6-03)', async () => {
@@ -396,6 +430,133 @@ describe('DecksScreen — the project-wide half of progress', () => {
 
     await screen.findByTestId('rollup-donut')
     expect(screen.queryByText(/Mỗi phần là trọng số/)).toBeNull()
+  })
+
+  it('sets the centre figure in the largest step that fits the hole (I-2, C1)', async () => {
+    renderScreen()
+    const donut = await screen.findByTestId('rollup-donut')
+    const figure = await within(donut).findByTestId('ring-figure')
+    const text = figure.textContent ?? ''
+    const step = ringFigureStep(text, [type.displaySm, type.cardTitle, type.bodyStrong], ROLLUP_RING)
+    expect(figure).toHaveStyle({ fontSize: `${step.fontSize}px`, fontWeight: String(step.fontWeight) })
+    expect(figureFits(text, step, ROLLUP_RING)).toBe(true)
+  })
+
+  it('stands the ring above its legend, so the names get the column\'s full width (RR2-I1)', async () => {
+    renderScreen()
+    const donut = await screen.findByTestId('rollup-donut')
+    await waitFor(() => expect(within(donut).getByText('CD')).toBeInTheDocument())
+    const ring = within(donut).getByTestId('donut-ring')
+    const legend = within(donut).getByTestId('rollup-legend')
+    const stack = legend.parentElement as HTMLElement
+    expect(stack.contains(ring)).toBe(true)
+    expect(stack).toHaveStyle({ display: 'flex', flexDirection: 'column', alignItems: 'center' })
+    expect(ring.compareDocumentPosition(legend) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(legend).toHaveStyle({ alignSelf: 'stretch' })
+    // Dot · name · Đóng góp, under the header, then Còn lại (RLP-02).
+    expect(within(legend).getByText('Đóng góp')).toBeInTheDocument()
+    expect(within(legend).getByText('Còn lại')).toBeInTheDocument()
+    const name = within(legend).getByText('Chứng từ')
+    // In full: a name too long for the row wraps, it is never cut to an ellipsis.
+    expect(name.style.textOverflow).toBe('')
+    expect(name.style.whiteSpace).toBe('')
+    expect(name).toHaveStyle({ overflowWrap: 'break-word', flex: '1 1 0%', minWidth: '0px' })
+  })
+
+  it('keeps each rollup dot on its name\'s first line when the name wraps (RR2-I1, RR2-M1)', async () => {
+    renderScreen()
+    const donut = await screen.findByTestId('rollup-donut')
+    await waitFor(() => expect(within(donut).getByText('CD')).toBeInTheDocument())
+    for (const row of within(donut).getAllByTestId('legend-row')) {
+      expect(row).toHaveStyle({ alignItems: 'flex-start' })
+      // Centred on a 20 px first line: (20 - 11) / 2.
+      expect(within(row).getByTestId('legend-marker')).toHaveStyle({ marginTop: '4.5px' })
+    }
+  })
+
+  it('draws the ring 160 across, so every percent keeps displaySm (RR-M2)', async () => {
+    renderScreen()
+    const donut = await screen.findByTestId('rollup-donut')
+    const ring = within(donut).getByTestId('donut-ring')
+    expect(ring).toHaveAttribute('width', '160')
+    expect(within(donut).getByTestId('ring-figure')).toHaveStyle({ fontSize: '21px' })
+  })
+
+  describe('the ring and its legend (CHT-01, CHT-02)', () => {
+    // In the fixture CD and Chứng từ have an arc; WD is at 0% and has none.
+    const rowOf = (donut: HTMLElement, name: string) =>
+      within(donut).getByText(name).closest('[data-testid="legend-row"]') as HTMLElement
+    const sliceOf = (donut: HTMLElement, name: string) => within(donut).getByRole('img', { name })
+    const openDonut = async () => {
+      renderScreen()
+      const donut = await screen.findByTestId('rollup-donut')
+      await waitFor(() => expect(within(donut).getByText('CD')).toBeInTheDocument())
+      return donut
+    }
+
+    it('gives every legend row its own colour from the categorical palette, as a circle, and its slice the same', async () => {
+      const donut = await openDonut()
+      const rows = within(donut).getAllByTestId('legend-row')
+      rows.forEach((row, i) => {
+        // CLR-03: the marker is a circle of the slice's colour.
+        expect(within(row).getByTestId('legend-marker')).toHaveStyle({
+          borderRadius: '50%', background: palette.categorical[i],
+        })
+      })
+      expect(sliceOf(donut, 'CD')).toHaveAttribute('fill', palette.categorical[0])
+      expect(sliceOf(donut, 'Chứng từ')).toHaveAttribute('fill', palette.categorical[2])
+    })
+
+    it('lights up the slice of a hovered legend row, and lets go when the pointer leaves', async () => {
+      const donut = await openDonut()
+      fireEvent.pointerEnter(rowOf(donut, 'CD'))
+      expect(sliceOf(donut, 'CD')).toHaveAttribute('opacity', '1')
+      expect(sliceOf(donut, 'Chứng từ')).toHaveAttribute('opacity', '0.35')
+      expect(rowOf(donut, 'CD')).toHaveStyle({ background: palette.bgHover })
+      fireEvent.pointerLeave(rowOf(donut, 'CD'))
+      expect(sliceOf(donut, 'Chứng từ')).toHaveAttribute('opacity', '1')
+      expect(rowOf(donut, 'CD').style.background).toBe('')
+    })
+
+    it('dims nothing for the row of a deck at 0%, which has no slice to point at (m-7)', async () => {
+      const donut = await openDonut()
+      fireEvent.pointerEnter(rowOf(donut, 'WD'))
+      expect(sliceOf(donut, 'CD')).toHaveAttribute('opacity', '1')
+      expect(sliceOf(donut, 'Chứng từ')).toHaveAttribute('opacity', '1')
+    })
+
+    it('highlights the legend row of a hovered slice', async () => {
+      const donut = await openDonut()
+      fireEvent.pointerEnter(sliceOf(donut, 'Chứng từ'))
+      expect(rowOf(donut, 'Chứng từ')).toHaveStyle({ background: palette.bgHover })
+      expect(rowOf(donut, 'CD').style.background).toBe('')
+      // Text not bolder: the row keeps its weights.
+      expect(within(rowOf(donut, 'Chứng từ')).getByText('Chứng từ')).toHaveStyle({ fontWeight: '400' })
+      fireEvent.pointerLeave(sliceOf(donut, 'Chứng từ'))
+      expect(rowOf(donut, 'Chứng từ').style.background).toBe('')
+    })
+
+    it('reaches the rows by keyboard, in legend order, and a focused row lights its slice', async () => {
+      const donut = await openDonut()
+      const rows = within(donut).getAllByTestId('legend-row')
+      for (const r of rows) expect(r).toHaveAttribute('tabindex', '0')
+      expect(rows.map((r) => r.firstElementChild?.nextElementSibling?.textContent)).toEqual(['CD', 'WD', 'Chứng từ'])
+      act(() => rows[2].focus())
+      expect(sliceOf(donut, 'Chứng từ')).toHaveAttribute('opacity', '1')
+      expect(sliceOf(donut, 'CD')).toHaveAttribute('opacity', '0.35')
+      act(() => rows[2].blur())
+      expect(sliceOf(donut, 'CD')).toHaveAttribute('opacity', '1')
+    })
+
+    it('prints the contribution alone in each legend row, the slice still describing both figures (RLP-02)', async () => {
+      const donut = await openDonut()
+      for (const name of ['CD', 'Chứng từ']) {
+        const cells = within(rowOf(donut, name)).getAllByText(/%$/).map((c) => c.textContent)
+        expect(cells).toHaveLength(1)
+        expect(sliceOf(donut, name)).toHaveAccessibleDescription(new RegExp(`· Đóng góp ${cells[0]}$`))
+      }
+      expect(sliceOf(donut, 'CD')).toHaveAccessibleDescription('Tiến độ 50,00% · Đóng góp 21,25%')
+    })
   })
 
   it('exports every deck of the project, with its own stages, plan and pictures', async () => {
@@ -482,8 +643,43 @@ describe('DecksScreen — the project-wide half of progress', () => {
     loadProjectModel.mockResolvedValue({ models: [], decks: [], audit: {} })
     renderScreen()
 
-    expect(await screen.findByText('Dự án này chưa có sàn nào')).toBeInTheDocument()
+    expect((await screen.findAllByText('Dự án này chưa có sàn nào')).length).toBeGreaterThan(0)
     expect(screen.getByRole('button', { name: /Xuất báo cáo/ })).toBeDisabled()
+    // The export button's own tooltip says why; the empty states say nothing
+    // more than their title (CPY-01).
+    expect(screen.queryByText(/Xuất báo cáo bị tắt/)).toBeNull()
+    expect(screen.queryByText(/Rollup và báo cáo/)).toBeNull()
+  })
+
+  it('has no subtitle and no summary that explains the computation (CPY-01, CPY-03)', async () => {
+    renderScreen()
+    await screen.findByTestId('project-rollup')
+    expect(pageSubtitle()).toBeNull()
+    expect(screen.queryByText(/rollup và xuất báo cáo/)).toBeNull()
+    expect(screen.queryByText('Tổng theo công việc; mỗi công việc theo các sàn của nó')).toBeNull()
+  })
+
+  it('keeps only the business rule under the rollup, not how refresh and export are built (CPY-01)', async () => {
+    renderScreen()
+    await screen.findByTestId('project-rollup')
+    await userEvent.click(screen.getByRole('button', { name: /Quy tắc áp dụng/ }))
+    // Helper text: what the column is and where it is set, no formula (RUL-01).
+    expect(ruleTexts()).toEqual(['Tỉ trọng của sàn tính từ trọng số công việc và trọng số sàn đặt ở mục Công việc.'])
+    expectHelperText(ruleTexts())
+    expect(screen.queryByText(/Làm mới thất bại/)).toBeNull()
+    expect(screen.queryByText(/lần lượt từng sàn/)).toBeNull()
+  })
+
+  it('asks before exporting without describing how the drawings are built (CPY-01)', async () => {
+    renderScreen()
+    await screen.findByTestId('project-rollup')
+    await userEvent.click(screen.getByRole('button', { name: /Xuất báo cáo/ }))
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText('Xuất báo cáo dự án?')).toBeInTheDocument()
+    expect(consequenceItems(dialog)).toEqual(['Có thể mất một lúc với dự án nhiều sàn'])
+    // One short lead, so the deck rows say what they are (RUL-01).
+    expect(within(dialog).getByText('Báo cáo gồm các sàn sau:')).toBeInTheDocument()
+    expect(within(dialog).queryByText(/lần lượt|tuần tự|song song/)).toBeNull()
   })
 })
 
@@ -500,6 +696,9 @@ describe('DecksScreen — deleting a deck', () => {
     // what stands between a misclick and 184 bays of history.
     const dialog = await openDelete()
     expect(within(dialog).getByText('Xóa sàn Main Deck?')).toBeInTheDocument()
+    // Present tense, one sentence (RUL-01).
+    expect(within(dialog).getByText('Mất vĩnh viễn theo sàn:')).toBeInTheDocument()
+    expect(consequenceItems(dialog)).toEqual(['Không khôi phục được', 'Máy tính bảng đang mở sàn này không ghi được nữa cho tới khi tải lại'])
     for (const item of [
       'Toàn bộ ô và lịch sử công đoạn', 'Zone và kế hoạch', 'Ghi chú của GS', 'Bản vẽ đã tải lên',
     ]) expect(within(dialog).getByText(item)).toBeInTheDocument()
@@ -545,7 +744,7 @@ describe('DecksScreen — duplicating a deck (Feedback Rv2, item 3)', () => {
   it('proposes a name and a code, says what is copied, and opens the copy', async () => {
     const dialog = await openDuplicate()
     expect(within(dialog).getByText('Nhân bản sàn «Main Deck»')).toBeInTheDocument()
-    expect(within(dialog).getByText(/Không sao chép công việc, lớp sơn, tiến độ hay kế hoạch/)).toBeInTheDocument()
+    expect(within(dialog).getByText('Sao chép bản vẽ, khung và lưới ô nhưng không sao chép công việc, lớp sơn, tiến độ hay kế hoạch.')).toBeInTheDocument()
     expect(within(dialog).getByLabelText('Tên sàn mới')).toHaveValue('Main Deck (bản sao)')
     expect(within(dialog).getByLabelText('Mã sàn mới')).toHaveValue('MD-2')
 
@@ -577,7 +776,7 @@ describe('DecksScreen — duplicating a deck (Feedback Rv2, item 3)', () => {
   })
 })
 
-describe('DecksScreen — reordering decks (RV6-05, RV6-06)', () => {
+describe('DecksScreen — reordering decks by drag (ORD-01)', () => {
   const THREE_DECKS = [
     {
       id: 'd1', projectId: 'p1', seq: 1, name: 'First Deck', code: 'FD',
@@ -600,78 +799,142 @@ describe('DecksScreen — reordering decks (RV6-05, RV6-06)', () => {
     listDecks.mockResolvedValue(THREE_DECKS)
   })
 
-  it('disables Lên on the first row and Xuống on the last, leaving the rest enabled', async () => {
+  // The deck list is the first table on the page.
+  const names = () => [...(document.querySelector('.ant-table-tbody') as HTMLElement).querySelectorAll('.ant-table-row')]
+    .map((tr) => tr.querySelector('td:nth-child(2) span span')?.textContent)
+  const rowOfDeck = (name: string) => screen.getByText(name).closest('tr') as HTMLElement
+  const drag = (fromName: string, toName: string) => {
+    const from = rowOfDeck(fromName)
+    const to = rowOfDeck(toName)
+    fireEvent.dragStart(from)
+    fireEvent.dragOver(to)
+    fireEvent.drop(to)
+  }
+
+  it('has no Thứ tự column and no arrows: each row has a drag handle, the actions pinned right', async () => {
     renderScreen()
     await screen.findByText('First Deck')
-
-    const ups = screen.getAllByRole('button', { name: 'Lên' })
-    const downs = screen.getAllByRole('button', { name: 'Xuống' })
-    expect(ups).toHaveLength(3)
-    expect(downs).toHaveLength(3)
-    expect(ups[0]).toBeDisabled()
-    expect(ups[1]).toBeEnabled()
-    expect(ups[2]).toBeEnabled()
-    expect(downs[0]).toBeEnabled()
-    expect(downs[1]).toBeEnabled()
-    expect(downs[2]).toBeDisabled()
+    expect(screen.queryByRole('columnheader', { name: 'Thứ tự' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Lên' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Xuống' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Sắp xếp First Deck' })).toBeInTheDocument()
+    expect(rowOfDeck('First Deck')).toHaveAttribute('draggable', 'true')
+    expect(screen.getByRole('columnheader', { name: 'Thao tác' })).toHaveClass('ant-table-cell-fix-right')
   })
 
-  it('clicking Xuống on the first row swaps it with its neighbour and reloads the list', async () => {
-    renderScreen()
-    await screen.findByText('First Deck')
-    listDecks.mockClear()
-
-    const downs = screen.getAllByRole('button', { name: 'Xuống' })
-    await userEvent.click(downs[0])
-
-    await waitFor(() => expect(swapDeckSeq).toHaveBeenCalledWith(
-      { id: 'd1', seq: 1 }, { id: 'd2', seq: 2 },
-    ))
-    await waitFor(() => expect(listDecks).toHaveBeenCalledWith('p1'))
-  })
-
-  it('clicking Lên on the last row swaps it with its neighbour above', async () => {
-    renderScreen()
-    await screen.findByText('First Deck')
-    listDecks.mockClear()
-
-    const ups = screen.getAllByRole('button', { name: 'Lên' })
-    await userEvent.click(ups[2])
-
-    await waitFor(() => expect(swapDeckSeq).toHaveBeenCalledWith(
-      { id: 'd3', seq: 3 }, { id: 'd2', seq: 2 },
-    ))
-    await waitFor(() => expect(listDecks).toHaveBeenCalledWith('p1'))
-  })
-
-  it('surfaces a refused swap instead of failing silently', async () => {
-    swapDeckSeq.mockRejectedValue(new Error('permission denied'))
-    renderScreen()
-    await screen.findByText('First Deck')
-
-    const downs = screen.getAllByRole('button', { name: 'Xuống' })
-    await userEvent.click(downs[0])
-
-    expect(await screen.findByText('permission denied')).toBeInTheDocument()
-  })
-
-  it('ignores a second click while a swap is in flight, then re-enables the arrows', async () => {
+  it('moves a dropped deck at once and saves the seq of every deck whose place changed', async () => {
     let settle!: () => void
-    swapDeckSeq.mockReturnValue(new Promise<void>((resolve) => { settle = resolve }))
+    saveDeckOrder.mockReturnValue(new Promise<void>((resolve) => { settle = resolve }))
     renderScreen()
     await screen.findByText('First Deck')
-
-    const downs = screen.getAllByRole('button', { name: 'Xuống' })
-    await userEvent.click(downs[0])
-    await userEvent.click(downs[0])
-
-    expect(swapDeckSeq).toHaveBeenCalledTimes(1)
-    for (const b of screen.getAllByRole('button', { name: 'Xuống' })) expect(b).toBeDisabled()
-    for (const b of screen.getAllByRole('button', { name: 'Lên' })) expect(b).toBeDisabled()
-
+    drag('First Deck', 'Third Deck')
+    // Optimistic: the list reads the new order before the write lands.
+    expect(names()).toEqual(['Second Deck', 'Third Deck', 'First Deck'])
+    expect(saveDeckOrder).toHaveBeenCalledWith([
+      { id: 'd2', seq: 1 }, { id: 'd3', seq: 2 }, { id: 'd1', seq: 3 },
+    ])
     settle()
-    await waitFor(() => expect(screen.getAllByRole('button', { name: 'Xuống' })[0]).toBeEnabled())
-    expect(screen.getAllByRole('button', { name: 'Lên' })[1]).toBeEnabled()
+  })
+
+  it('writes only the decks that moved', async () => {
+    renderScreen()
+    await screen.findByText('First Deck')
+    drag('Third Deck', 'Second Deck')
+    await waitFor(() => expect(saveDeckOrder).toHaveBeenCalledWith([
+      { id: 'd3', seq: 2 }, { id: 'd2', seq: 3 },
+    ]))
+  })
+
+  it('reloads the real order and says so when a write is refused', async () => {
+    saveDeckOrder.mockRejectedValue(new Error('permission denied'))
+    renderScreen()
+    await screen.findByText('First Deck')
+    listDecks.mockClear()
+    drag('First Deck', 'Third Deck')
+    expect(await screen.findByText('permission denied')).toBeInTheDocument()
+    await waitFor(() => expect(listDecks).toHaveBeenCalledWith('p1'))
+    await waitFor(() => expect(names()).toEqual(['First Deck', 'Second Deck', 'Third Deck']))
+  })
+
+  it('reorders by keyboard: Alt+↓ and Alt+↑ on a focused handle move the deck one place', async () => {
+    renderScreen()
+    await screen.findByText('First Deck')
+    screen.getByRole('button', { name: 'Sắp xếp First Deck' }).focus()
+    await userEvent.keyboard('{Alt>}{ArrowDown}{/Alt}')
+    await waitFor(() => expect(saveDeckOrder).toHaveBeenCalledWith([
+      { id: 'd2', seq: 1 }, { id: 'd1', seq: 2 },
+    ]))
+    expect(names()).toEqual(['Second Deck', 'First Deck', 'Third Deck'])
+    saveDeckOrder.mockClear()
+    screen.getByRole('button', { name: 'Sắp xếp Third Deck' }).focus()
+    await userEvent.keyboard('{Alt>}{ArrowUp}{/Alt}')
+    await waitFor(() => expect(saveDeckOrder).toHaveBeenCalledWith([
+      { id: 'd3', seq: 2 }, { id: 'd1', seq: 3 },
+    ]))
+  })
+})
+
+describe('DecksScreen — deck order with stored gaps and duplicates (ORD-01 review I1, M1)', () => {
+  const decksWithSeqs = (seqs: number[]) => seqs.map((seq, i) => ({
+    id: `d${i + 1}`, projectId: 'p1', seq, name: `Deck ${i + 1}`, code: `D${i + 1}`,
+    imagePath: null, imageW: null, imageH: null, drawingName: null, drawingPage: null,
+    totalAreaM2: 100, areaSource: 'prorated' as const, cellCount: 1,
+  }))
+  const handle = (name: string) => screen.getByRole('button', { name: `Sắp xếp ${name}` })
+
+  it('writes every deck whose stored seq is not its new place, so gaps are closed', async () => {
+    listDecks.mockResolvedValue(decksWithSeqs([3, 4, 5, 6, 7, 8]))
+    renderScreen()
+    await screen.findByText('Deck 1')
+    handle('Deck 2').focus()
+    await userEvent.keyboard('{Alt>}{ArrowUp}{/Alt}')
+    await waitFor(() => expect(saveDeckOrder).toHaveBeenCalledWith([
+      { id: 'd2', seq: 1 }, { id: 'd1', seq: 2 }, { id: 'd3', seq: 3 },
+      { id: 'd4', seq: 4 }, { id: 'd5', seq: 5 }, { id: 'd6', seq: 6 },
+    ]))
+  })
+
+  it('writes a deck left in place when its stored seq was a duplicate, and skips one already right', async () => {
+    listDecks.mockResolvedValue(decksWithSeqs([1, 2, 2]))
+    renderScreen()
+    await screen.findByText('Deck 1')
+    handle('Deck 3').focus()
+    await userEvent.keyboard('{Alt>}{ArrowUp}{/Alt}')
+    // New order Deck 1, Deck 3, Deck 2: Deck 1 and Deck 3 already hold 1 and 2.
+    await waitFor(() => expect(saveDeckOrder).toHaveBeenCalledWith([{ id: 'd2', seq: 3 }]))
+  })
+
+  it('keeps focus on the moved deck\'s handle through the save, so Alt+↑ twice moves it twice (M1)', async () => {
+    listDecks.mockResolvedValue(decksWithSeqs([1, 2, 3]))
+    let settle!: () => void
+    saveDeckOrder.mockReturnValueOnce(new Promise<void>((resolve) => { settle = resolve }))
+    renderScreen()
+    await screen.findByText('Deck 1')
+    handle('Deck 3').focus()
+    await userEvent.keyboard('{Alt>}{ArrowUp}{/Alt}')
+    expect(document.activeElement).toBe(handle('Deck 3'))
+    expect(handle('Deck 3')).toHaveAttribute('aria-disabled', 'true')
+    // Pressed again while the save runs: ignored, not queued.
+    await userEvent.keyboard('{Alt>}{ArrowUp}{/Alt}')
+    expect(saveDeckOrder).toHaveBeenCalledTimes(1)
+    settle()
+    await waitFor(() => expect(handle('Deck 3')).toHaveAttribute('aria-disabled', 'false'))
+    expect(document.activeElement).toBe(handle('Deck 3'))
+    await userEvent.keyboard('{Alt>}{ArrowUp}{/Alt}')
+    await waitFor(() => expect(saveDeckOrder).toHaveBeenCalledTimes(2))
+    expect(saveDeckOrder).toHaveBeenLastCalledWith([{ id: 'd3', seq: 1 }, { id: 'd1', seq: 2 }])
+    expect(document.activeElement).toBe(handle('Deck 3'))
+  })
+})
+
+describe('DecksScreen: the deck list at a narrow window (QA F8)', () => {
+  it('lets the list scroll sideways rather than squeezing the name column', async () => {
+    // Every other column has a fixed width, so at 1024px the name was left
+    // ~66px and "Otis Test Deck" wrapped to three lines under a two-line
+    // header. Sized to its content like StageSpecTable, the card scrolls.
+    renderScreen()
+    const header = await screen.findByRole('columnheader', { name: 'Tên sàn' })
+    expect(header.closest('table')).toHaveStyle({ width: 'max-content' })
   })
 })
 
@@ -688,17 +951,18 @@ describe('DecksScreen: the quantity and unit of the works in scope (RV6-36)', ()
     renderScreen()
     const rollup = await screen.findByTestId('project-rollup')
     await waitFor(() => expect(within(rollup).getByText('Cellar Deck')).toBeInTheDocument())
-    expect(headersOf(rollup)).toContain('Khối lượng (tấn)')
-    expect(within(rollup).getByText('4.000,00')).toBeInTheDocument()
+    // RLP-01: the column is Diện tích; every figure carries its unit (AD4).
+    expect(headersOf(rollup)).toContain('Diện tích')
+    expect(within(rollup).getByText('4.000,00 tấn')).toBeInTheDocument()
     const list = screen.getAllByRole('table')[0] // the deck list is the first table on the page
-    expect(headersOf(list)).toContain('Khối lượng (tấn)')
+    expect(headersOf(list)).toContain('Diện tích')
     expect(screen.queryByText(/m²/)).toBeNull()
   })
 
   it('falls back to Số lượng, per-row units and no sum when the works disagree', async () => {
-    // Sơn stays m² and Tháo giáo becomes tấn. CD is in both, so its own unit is
-    // undecided and its row shows the bare number; WD is only in Sơn and reads
-    // m². The Σ under the table cannot add a tấn to a m² and says so.
+    // Sơn stays m² and Tháo giáo becomes tấn. CD is in both, so it reads its
+    // first work's unit, Sơn's m², never a bare number (AD4); WD is only in
+    // Sơn and reads m². The Σ cannot add a tấn to a m² and says so.
     loadProjectModel.mockResolvedValue({
       ...MODEL,
       models: MODEL.models.map((m) => (m.work.id === 'w2' ? { ...m, work: { ...m.work, ...tonnes } } : m)),
@@ -706,15 +970,15 @@ describe('DecksScreen: the quantity and unit of the works in scope (RV6-36)', ()
     renderScreen()
     const rollup = await screen.findByTestId('project-rollup')
     await waitFor(() => expect(within(rollup).getByText('Cellar Deck')).toBeInTheDocument())
-    expect(headersOf(rollup)).toContain('Số lượng')
-    expect(within(rollup).getByText('1.000,00')).toBeInTheDocument()
+    expect(headersOf(rollup)).toContain('Diện tích')
+    expect(within(rollup).getByText('1.000,00 m²')).toBeInTheDocument()
     expect(within(rollup).getByText('3.000,00 m²')).toBeInTheDocument()
     expect(within(rollup).queryByText('4.000,00')).toBeNull()
-    const dash = within(rollup).getByText('—')
+    const dash = within(rollup).getByText('-')
     await userEvent.hover(dash)
     expect(await screen.findByRole('tooltip')).toHaveTextContent('Các sàn dùng đơn vị khác nhau, không cộng được')
     // Both decks are in the rollup, so the deck list reads the same mix.
-    expect(headersOf(screen.getAllByRole('table')[0])).toContain('Số lượng')
+    expect(headersOf(screen.getAllByRole('table')[0])).toContain('Diện tích')
   })
 
   it('heads the rollup by the decks it lists, not by every deck of the project', async () => {
@@ -749,15 +1013,100 @@ describe('DecksScreen: the quantity and unit of the works in scope (RV6-36)', ()
     renderScreen()
     const rollup = await screen.findByTestId('project-rollup')
     await waitFor(() => expect(within(rollup).getByText('Cellar Deck')).toBeInTheDocument())
-    expect(headersOf(rollup)).toContain('Khối lượng (Kg)')
-    expect(within(rollup).getByText('1.000,00')).toBeInTheDocument()
-    expect(within(rollup).getByText('3.000,00')).toBeInTheDocument()
-    expect(within(rollup).getByText('4.000,00')).toBeInTheDocument()
-    expect(within(rollup).queryByText('—')).toBeNull()
+    expect(headersOf(rollup)).toContain('Diện tích')
+    expect(within(rollup).getByText('1.000,00 Kg')).toBeInTheDocument()
+    expect(within(rollup).getByText('3.000,00 Kg')).toBeInTheDocument()
+    expect(within(rollup).getByText('4.000,00 Kg')).toBeInTheDocument()
+    expect(within(rollup).queryByText('-')).toBeNull()
     const list = screen.getAllByRole('table')[0]
-    expect(headersOf(list)).toContain('Số lượng')
+    expect(headersOf(list)).toContain('Diện tích')
     expect(within(list).getByText('1.000,00 Kg')).toBeInTheDocument()
     expect(within(list).getByText('3.000,00 Kg')).toBeInTheDocument()
     expect(within(list).getByText('100,00 m²')).toBeInTheDocument()
+  })
+})
+
+describe('DecksScreen — alignment (UI-03)', () => {
+  it('keeps the deck name and code left and centres counts, badge and actions, header included (UI-06)', async () => {
+    renderScreen()
+    const name = await screen.findByText('Main Deck')
+    const list = within(name.closest('table') as HTMLElement)
+    const th = (label: string) => list.getByRole('columnheader', { name: label })
+    expectLeft(th('Tên sàn'))
+    expectLeft(name.closest('td'))
+    // No Mã column: the name reads "Main Deck (MD)" (RLP-01).
+    expect(list.queryByRole('columnheader', { name: 'Mã' })).toBeNull()
+    expect(name.closest('td')).toHaveTextContent(/^Main Deck \(MD\)$/)
+    for (const label of ['Số ô', 'Bản vẽ', 'Thao tác']) {
+      expect(th(label)).toHaveStyle({ textAlign: 'center' })
+    }
+    const row = within(name.closest('tr') as HTMLElement)
+    expect(row.getByText('24').closest('td')).toHaveStyle({ textAlign: 'center' })
+    expect(row.getByText('Chưa có').closest('td')).toHaveStyle({ textAlign: 'center' })
+  })
+})
+
+describe('DecksScreen — type scale (TYP-02)', () => {
+  it('sets a deck\'s name in the list as body text (R3-C)', async () => {
+    renderScreen()
+    const name = await screen.findByText('Main Deck')
+    expect(weightOf(name)).toBe(400)
+  })
+
+  it('sets the rollup\'s totals rows in bodyStrong, 600, never 700', async () => {
+    renderScreen()
+    const rollup = within(await screen.findByTestId('project-rollup'))
+    const works = within(await screen.findByTestId('project-works'))
+    for (const label of [rollup.getByText('Tổng dự án'), works.getByText('Tổng dự án')]) {
+      expect(weightOf(label)).toBe(600)
+      expect(label).toHaveStyle({ fontSize: '13px' })
+    }
+  })
+})
+
+describe('DecksScreen — rollup alignment (UI-06)', () => {
+  it('keeps the deck name and code left in the project rollup', async () => {
+    renderScreen()
+    const rollup = within(await screen.findByTestId('project-rollup'))
+    const name = await rollup.findByText('Cellar Deck')
+    expect(rollup.queryByRole('columnheader', { name: 'Mã' })).toBeNull()
+    expectLeft(name.closest('td'))
+    expect(name.closest('td')).toHaveTextContent(/^Cellar Deck \(CD\)$/)
+    expect(rollup.getByRole('columnheader', { name: 'Tỉ trọng' })).toHaveStyle({ textAlign: 'center' })
+  })
+})
+
+describe('DecksScreen — the rollup card (RLP-01, PRG-01)', () => {
+  const headersOf = (table: HTMLElement) =>
+    within(table).getAllByRole('columnheader').map((h) => h.textContent)
+
+  it('names the progress columns Tiến độ sàn and Tiến độ công việc, and prints the percentage alone', async () => {
+    renderScreen()
+    const rollup = await screen.findByTestId('project-rollup')
+    await waitFor(() => expect(within(rollup).getByText('Cellar Deck')).toBeInTheDocument())
+    const works = screen.getByTestId('project-works')
+    expect(headersOf(rollup)).toContain('Tiến độ sàn')
+    expect(headersOf(works)).toContain('Tiến độ công việc')
+    // No bar in a table cell (PRG-01), in the rows or the totals.
+    expect(rollup.querySelector('[data-testid="progress-fill"]')).toBeNull()
+    expect(works.querySelector('[data-testid="progress-fill"]')).toBeNull()
+    const cd = within(rollup).getByText('Cellar Deck').closest('tr') as HTMLElement
+    const idx = headersOf(rollup).indexOf('Tiến độ sàn')
+    expect(cd.querySelectorAll('td')[idx]).toHaveTextContent(/^50,00%$/)
+    expect(cd.querySelectorAll('td')[idx]).toHaveStyle({ textAlign: 'center' })
+  })
+
+  it('keeps the two stacked tables apart: a gap and a hairline', async () => {
+    renderScreen()
+    const works = await screen.findByTestId('project-works')
+    expect(works).toHaveStyle({ marginTop: '16px' })
+    expect(works.style.borderTop).toMatch(/1px solid/)
+  })
+
+  it('titles the ring Tiến độ tích luỹ', async () => {
+    renderScreen()
+    const donut = await screen.findByTestId('rollup-donut')
+    expect(within(donut).getByText('Tiến độ tích luỹ')).toBeInTheDocument()
+    expect(within(donut).queryByText('Tiến độ dự án')).toBeNull()
   })
 })

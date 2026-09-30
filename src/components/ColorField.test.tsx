@@ -1,4 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react'
+import { ConfigProvider, theme } from 'antd'
+import { adminTheme, fieldTheme } from '../theme'
 import { describe, expect, it, vi } from 'vitest'
 import { ColorField, HEX_COLOR } from './ColorField'
 
@@ -90,6 +92,31 @@ describe('ColorField', () => {
     renderField({ onHexBlur })
     fireEvent.blur(screen.getByLabelText('Mã màu · Blast + Coat 1'))
     expect(onHexBlur).toHaveBeenCalledTimes(1)
+  })
+
+  it('draws the swatch as a plain circle: no border, no padding, no input chrome (CLR-01)', () => {
+    renderField()
+    const swatch = screen.getByLabelText('Chọn màu · Blast + Coat 1')
+    expect(swatch).toHaveClass('pp-swatch')
+    expect(swatch).not.toHaveClass('ant-input')
+    expect(swatch).toHaveStyle({ borderRadius: '50%', padding: '0px', appearance: 'none' })
+    expect(swatch.style.borderStyle === 'none' || swatch.style.border === '0px').toBe(true)
+    expect(swatch.style.width).toBe(swatch.style.height)
+  })
+
+  it('sizes the circle to the theme\'s one control height, in a table row too (CLR-01, CTL-02)', () => {
+    for (const t of [adminTheme, fieldTheme]) {
+      const token = theme.getDesignToken(t)
+      const { unmount } = render(
+        <ConfigProvider theme={t}>
+          <ColorField label="A" value="#fadb14" onColor={vi.fn()} onHex={vi.fn()} />
+        </ConfigProvider>,
+      )
+      expect(screen.getByLabelText('Chọn màu · A')).toHaveStyle({
+        width: `${token.controlHeight}px`, height: `${token.controlHeight}px`,
+      })
+      unmount()
+    }
   })
 
   it('disables both inputs together', () => {

@@ -1,6 +1,7 @@
 import { ArrowLeftOutlined, RightOutlined } from '@ant-design/icons'
 import { Fragment, type ReactNode } from 'react'
-import { palette } from '../theme'
+import { palette, type } from '../theme'
+import { KeyFacts, type KeyFact } from './KeyFacts'
 
 export interface Crumb {
   label: string
@@ -12,7 +13,7 @@ export interface Crumb {
  * looking at, and what you can do to it.
  *
  * The slot order is fixed across screens on purpose -- crumbs, then title with
- * its badge, then subtitle, then actions right, then filters underneath. An
+ * its badge and facts, then actions right, then filters underneath. An
  * admin moving between Projects, Decks and a deck should find the create
  * button in the same place every time rather than re-reading the header.
  *
@@ -22,7 +23,7 @@ export interface Crumb {
 export function PageHeader({
   title,
   badge,
-  subtitle,
+  facts,
   breadcrumbs,
   onBack,
   extra,
@@ -31,7 +32,8 @@ export function PageHeader({
 }: {
   title: ReactNode
   badge?: ReactNode
-  subtitle?: ReactNode
+  /** The facts beside the title (HLT-01), on its line after the badge. */
+  facts?: ReadonlyArray<KeyFact | false | null | undefined>
   breadcrumbs?: Crumb[]
   onBack?: () => void
   extra?: ReactNode
@@ -55,8 +57,7 @@ export function PageHeader({
             display: 'flex',
             alignItems: 'center',
             gap: 7,
-            fontSize: 12,
-            fontWeight: 500,
+            ...type.caption,
             color: palette.textTertiary,
             marginBottom: 10,
           }}
@@ -71,7 +72,6 @@ export function PageHeader({
                   border: 0,
                   padding: 0,
                   font: 'inherit',
-                  fontWeight: 500,
                   color: palette.accent,
                   cursor: 'pointer',
                 }}
@@ -81,14 +81,18 @@ export function PageHeader({
               {/* Between crumbs, not after the last one: a trailing chevron
                   points at nothing and reads as a label that failed to load. */}
               {i < breadcrumbs.length - 1 && (
-                <RightOutlined style={{ fontSize: 10, color: '#647688' }} />
+                <RightOutlined style={{ fontSize: 10, color: palette.iconMuted }} />
               )}
             </Fragment>
           ))}
         </div>
       )}
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+      {/* Top-aligned, with the title on a line of a control's height: the
+          title then sits at one y whether the row carries 38px actions or
+          none, and whether its facts are there or arrive with the data
+          (R3-A, S2). Centring the row moved it by half of either. */}
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16 }}>
         {onBack !== undefined && (
           <button
             type="button"
@@ -112,15 +116,20 @@ export function PageHeader({
           </button>
         )}
 
-        <div style={{ minWidth: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
+        {/* The row's free width, so the facts wrap as a row, not a pill a line (M1). */}
+        <div style={{ minWidth: 0, flex: '1 1 auto' }}>
+          <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 11, minHeight: 38 }}>
+            {/* A control's height of its own: when the facts wrap, the first
+                line is no shorter than 38px, so the title does not rise (M1). */}
             <h1
               style={{
                 margin: 0,
-                fontSize: 20,
-                fontWeight: 600,
+                ...type.pageTitle,
                 lineHeight: 1.25,
                 letterSpacing: '-0.028em',
+                minHeight: 38,
+                display: 'flex',
+                alignItems: 'center',
               }}
             >
               {title}
@@ -128,8 +137,7 @@ export function PageHeader({
             {badge !== undefined && (
               <span
                 style={{
-                  fontSize: 11,
-                  fontWeight: 600,
+                  ...type.micro,
                   lineHeight: 1,
                   color: palette.textSecondary,
                   padding: '5px 8px',
@@ -140,16 +148,12 @@ export function PageHeader({
                 {badge}
               </span>
             )}
+            {facts !== undefined && <KeyFacts facts={facts} />}
           </div>
-          {subtitle !== undefined && (
-            <p style={{ margin: '5px 0 0', fontSize: 13, lineHeight: 1.35, color: palette.textTertiary }}>
-              {subtitle}
-            </p>
-          )}
         </div>
 
         {extra !== undefined && (
-          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 14 }}>
+          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 14, minHeight: 38 }}>
             {extra}
           </div>
         )}

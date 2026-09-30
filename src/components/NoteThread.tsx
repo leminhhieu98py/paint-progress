@@ -1,9 +1,10 @@
 import { Button } from 'antd'
-import dayjs from 'dayjs'
+import { formatDateTimeVN } from '../lib/format'
 import { EmptyState } from './EmptyState'
 import { initialsOf } from '../lib/initials'
 import type { CellNote } from '../lib/progressApi'
 import { palette } from '../theme'
+import { useTypeScale } from './typeScale'
 
 /**
  * Every note left on one bay, as a thread.
@@ -40,18 +41,17 @@ export function NoteThread({
   onEditReport?: (note: CellNote) => void
   onToggleHidden?: (note: CellNote) => void
 }) {
+  // The scale of the page this is on: the field's 14 on a field page (GS-10).
+  const type = useTypeScale()
   /** "Đoàn Công Linh · 02.09.2026 10:00" -- who last touched the report copy. */
   const stamp = (n: CellNote) =>
     [
       n.reportEditedByName ?? 'Không rõ',
-      n.reportEditedAt ? dayjs(n.reportEditedAt).format('DD.MM.YYYY HH:mm') : null,
+      n.reportEditedAt ? formatDateTimeVN(n.reportEditedAt) : null,
     ].filter(Boolean).join(' · ')
   if (notes.length === 0) {
     return (
-      <EmptyState
-        title="Ô này chưa có ghi chú nào"
-        description="GS ghi chú khi ghi công đoạn trên máy tính bảng. Ghi chú sẽ hiện ở đây kèm công đoạn, người ghi và thời điểm."
-      />
+      <EmptyState title="Ô này chưa có ghi chú nào" />
     )
   }
 
@@ -85,8 +85,7 @@ export function NoteThread({
                 borderRadius: 10,
                 background: palette.bgHover,
                 color: palette.textSecondary,
-                fontSize: 12,
-                fontWeight: 600,
+                ...type.micro,
                 lineHeight: '32px',
                 textAlign: 'center',
               }}
@@ -102,17 +101,16 @@ export function NoteThread({
                   flexWrap: 'wrap',
                 }}
               >
-                <span style={{ fontSize: 13, fontWeight: 600 }}>
+                <span style={type.bodyStrong}>
                   {n.byName ?? 'Không rõ người ghi'}
                 </span>
-                <span style={{ fontSize: 12, color: palette.textTertiary }}>
-                  {dayjs(n.at).format('DD.MM.YYYY HH:mm')}
+                <span style={{ ...type.caption, color: palette.textTertiary }}>
+                  {formatDateTimeVN(n.at)}
                 </span>
                 {isCurrent && (
                   <span
                     style={{
-                      fontSize: 11,
-                      fontWeight: 600,
+                      ...type.micro,
                       lineHeight: 1,
                       padding: '4px 8px',
                       borderRadius: 999,
@@ -127,7 +125,7 @@ export function NoteThread({
               <div
                 style={{
                   marginTop: 7,
-                  fontSize: 13,
+                  ...type.body,
                   lineHeight: 1.6,
                   whiteSpace: 'pre-wrap',
                   textWrap: 'pretty',
@@ -143,8 +141,7 @@ export function NoteThread({
                     display: 'inline-flex',
                     alignItems: 'center',
                     gap: 7,
-                    fontSize: 12,
-                    fontWeight: 600,
+                    ...type.micro,
                     lineHeight: 1,
                     padding: '6px 10px',
                     borderRadius: 8,
@@ -165,8 +162,7 @@ export function NoteThread({
                       display: 'inline-flex',
                       alignItems: 'center',
                       marginLeft: 8,
-                      fontSize: 12,
-                      fontWeight: 600,
+                      ...type.micro,
                       lineHeight: 1,
                       padding: '6px 10px',
                       borderRadius: 8,
@@ -188,13 +184,13 @@ export function NoteThread({
                     borderLeft: `3px solid ${palette.accent}`,
                   }}
                 >
-                  <div style={{ fontSize: 11, fontWeight: 600, color: palette.accent }}>
+                  <div style={{ ...type.micro, color: palette.accent }}>
                     Bản cho báo cáo
                   </div>
                   <div
                     style={{
                       marginTop: 4,
-                      fontSize: 13,
+                      ...type.body,
                       lineHeight: 1.6,
                       whiteSpace: 'pre-wrap',
                       textWrap: 'pretty',
@@ -202,7 +198,7 @@ export function NoteThread({
                   >
                     {n.reportNote}
                   </div>
-                  <div style={{ marginTop: 4, fontSize: 11, color: palette.textTertiary }}>
+                  <div style={{ marginTop: 4, ...type.caption, color: palette.textTertiary }}>
                     {`Sửa bởi ${stamp(n)}`}
                   </div>
                 </div>
@@ -210,12 +206,12 @@ export function NoteThread({
               {(onEditReport || onToggleHidden) && (
                 <div style={{ marginTop: 8, display: 'flex', gap: 4, marginLeft: -8 }}>
                   {onEditReport && (
-                    <Button type="link" size="small" onClick={() => onEditReport(n)}>
+                    <Button type="link" onClick={() => onEditReport(n)}>
                       Sửa cho báo cáo
                     </Button>
                   )}
                   {onToggleHidden && (
-                    <Button type="link" size="small" onClick={() => onToggleHidden(n)}>
+                    <Button type="link" onClick={() => onToggleHidden(n)}>
                       {n.reportHidden ? 'Hiện lại trong báo cáo' : 'Ẩn khỏi báo cáo'}
                     </Button>
                   )}

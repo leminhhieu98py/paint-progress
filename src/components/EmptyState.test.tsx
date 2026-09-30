@@ -14,6 +14,13 @@ describe('EmptyState', () => {
     expect(screen.getByText('Không có bản vẽ thì không có ô để GS bấm.')).toBeInTheDocument()
   })
 
+  it('can be the title alone when the title says it all (CPY-01)', () => {
+    const { container } = render(<EmptyState title="Dự án này chưa có sàn nào" />)
+    expect(screen.getByText('Dự án này chưa có sàn nào')).toBeInTheDocument()
+    // The illustration and the title; no empty paragraph under it.
+    expect(container.firstElementChild?.children).toHaveLength(2)
+  })
+
   it('renders the action when one is given', () => {
     render(
       <EmptyState

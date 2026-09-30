@@ -1,6 +1,9 @@
 import { render, screen } from '@testing-library/react'
+import type { ReactElement } from 'react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
+import { pageSubtitle } from '../test/copy'
+import { palette } from '../theme'
 import { PageHeader } from './PageHeader'
 
 describe('PageHeader', () => {
@@ -9,10 +12,26 @@ describe('PageHeader', () => {
     expect(screen.getByRole('heading', { level: 1, name: 'Dự án' })).toBeInTheDocument()
   })
 
-  it('shows the badge and subtitle when given', () => {
-    render(<PageHeader title="Main Deck" badge="MD-01" subtitle="184 ô · 5.258,50 m²" />)
+  it('shows the badge when given, and never a line of prose under the title (HLT-01, CPY-01)', () => {
+    render(<PageHeader title="Main Deck" badge="MD-01" facts={[{ value: 184, label: 'ô' }]} />)
     expect(screen.getByText('MD-01')).toBeInTheDocument()
-    expect(screen.getByText('184 ô · 5.258,50 m²')).toBeInTheDocument()
+    expect(pageSubtitle()).toBeNull()
+  })
+
+  it('shows the facts right after the title and badge, on the title\'s line, as KeyFacts pills (HLT-01)', () => {
+    render(
+      <PageHeader
+        title="Main Deck"
+        badge="MD-01"
+        facts={[{ value: 184, label: 'ô' }, { value: '5.258,50', label: 'm²' }]}
+      />,
+    )
+    expect(screen.getAllByTestId('key-fact').map((p) => p.textContent)).toEqual(['184 ô', '5.258,50 m²'])
+    const line = screen.getByRole('heading', { level: 1 }).parentElement!
+    expect(screen.getByTestId('key-facts').parentElement).toBe(line)
+    expect(screen.getByText('MD-01').nextElementSibling).toBe(screen.getByTestId('key-facts'))
+    // Wrapping below the title on a narrow header, never overflowing it.
+    expect(line).toHaveStyle({ flexWrap: 'wrap' })
   })
 
   it('has no back button unless a handler is supplied', () => {
@@ -26,6 +45,12 @@ describe('PageHeader', () => {
     render(<PageHeader title="Main Deck" onBack={onBack} />)
     await user.click(screen.getByRole('button', { name: 'Quay lại' }))
     expect(onBack).toHaveBeenCalledOnce()
+  })
+
+  it('draws the chevron between crumbs in the muted icon colour of the palette (M3)', () => {
+    render(<PageHeader title="Main Deck" breadcrumbs={[{ label: 'Dự án', onClick: () => {} }, { label: 'Sàn', onClick: () => {} }]} />)
+    const chevron = document.querySelector('.anticon-right') as HTMLElement
+    expect(chevron).toHaveStyle({ color: palette.iconMuted })
   })
 
   it('renders breadcrumbs as buttons that navigate', async () => {
@@ -46,5 +71,54 @@ describe('PageHeader', () => {
     )
     expect(screen.getByRole('button', { name: 'Tạo sàn' })).toBeInTheDocument()
     expect(screen.getByText('Dự án')).toBeInTheDocument()
+  })
+
+  it('sets title and badge on the type scale (TYP-01, TYP-03)', () => {
+    render(<PageHeader title="Main Deck" badge="MD-01" />)
+    expect(screen.getByRole('heading', { level: 1 })).toHaveStyle({ fontSize: '20px', fontWeight: '600' })
+    expect(screen.getByText('MD-01')).toHaveStyle({ fontSize: '11px', fontWeight: '600' })
+  })
+
+  it('puts the title on the same line with or without facts or actions (R3-A, S2)', () => {
+    // jsdom has no layout, so this reads what decides the title's y: every
+    // box from the heading up to the header, and whatever sits above the
+    // heading in each. Those must not change with the facts (which a
+    // screen may fill in once its data loads) or the actions.
+    const chain = (ui: ReactElement) => {
+      const { container, unmount } = render(ui)
+      const root = container.firstElementChild as HTMLElement
+      const boxes: string[] = []
+      for (let el: HTMLElement = screen.getByRole('heading', { level: 1 }); el !== root; el = el.parentElement!) {
+        const parent = el.parentElement!
+        const above = Array.from(parent.children).slice(0, Array.from(parent.children).indexOf(el))
+        boxes.push(`${parent.getAttribute('style')} | above: ${above.map((a) => a.tagName).join(',')}`)
+      }
+      unmount()
+      return boxes
+    }
+    const bare = chain(<PageHeader title="Năng suất" />)
+    expect(chain(<PageHeader title="Nhân lực" facts={[{ value: 12, label: 'người' }]} />)).toEqual(bare)
+    expect(chain(<PageHeader title="Người dùng" extra={<button type="button">Tạo</button>} />)).toEqual(bare)
+    expect(chain(<PageHeader title="Sàn" facts={[{ value: 184, label: 'ô' }]} />)).toEqual(bare)
+    expect(chain(<PageHeader title="Sàn" facts={[{ value: 184, label: 'ô' }]} extra={<button type="button">Tạo</button>} />)).toEqual(bare)
+    // The title's line is a control's height with the title centred in it,
+    // and the row aligns its items to the top rather than centring them: a
+    // taller column or 38px actions then move nothing above.
+    render(<PageHeader title="Sàn" facts={[{ value: 184, label: 'ô' }]} extra={<button type="button">Tạo</button>} />)
+    const line = screen.getByRole('heading', { level: 1 }).parentElement!
+    expect(line).toHaveStyle({ minHeight: '38px', alignItems: 'center' })
+    expect(line.parentElement!.parentElement).toHaveStyle({ alignItems: 'flex-start' })
+    expect(screen.getByRole('button', { name: 'Tạo' }).parentElement).toHaveStyle({ minHeight: '38px', alignItems: 'center' })
+  })
+
+  it('keeps the title at its y when the facts wrap, and wraps them as a row (M1)', () => {
+    render(<PageHeader title="Nhân lực" facts={[{ value: 12, label: 'người' }, { value: 3, label: 'GS' }]} extra={<button type="button">Tạo</button>} />)
+    const title = screen.getByRole('heading', { level: 1 })
+    // The heading itself is a control's height, its text centred: the first
+    // wrapped line can then never be shorter than 38px and lift the title.
+    expect(title).toHaveStyle({ minHeight: '38px', display: 'flex', alignItems: 'center' })
+    // The title block takes the row's free width, so the facts wrap as a
+    // row inside it rather than one pill per line in a shrunk column.
+    expect(title.parentElement!.parentElement).toHaveStyle({ flex: '1 1 auto' })
   })
 })

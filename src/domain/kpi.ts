@@ -167,8 +167,11 @@ export function planDays(plan: PlanWindow): number {
  * `to` before `from` yields the single day `from`, matching `planDays`' floor
  * of 1: an inverted range is refused by the database and by the entry screen,
  * and one day is a safer answer on a chart than an empty axis.
+ *
+ * Exported for the productivity charts' axis (domain/daySeries.ts, QA F4),
+ * which must walk days the same way this chart's does.
  */
-function dayRange(from: string, to: string): string[] {
+export function dayRange(from: string, to: string): string[] {
   const days: string[] = []
   const start = utcNoon(from)
   const span = Math.round((utcNoon(to).getTime() - start.getTime()) / MS_PER_DAY)

@@ -1,22 +1,18 @@
-import {
-  ArrowDownOutlined, ArrowRightOutlined, ArrowUpOutlined, CopyOutlined, DeleteOutlined,
-  DownloadOutlined, PlusOutlined,
-} from '@ant-design/icons'
-import { Alert, App, Button, Form, Input, Modal, Select, Space, Table, Tooltip, Typography } from 'antd'
+import { DownloadOutlined, HolderOutlined, PlusOutlined } from '@ant-design/icons'
+import { Alert, App, Button, Form, Input, Modal, Space, Table, Tooltip, Typography } from 'antd'
 import dayjs from 'dayjs'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { computeProjectProgress, summariseDeck } from '../../domain/progress'
 import type { WorkKind } from '../../domain/types'
 import {
-  DEFAULT_QUANTITY_LABEL, DEFAULT_UNIT, labelOfWorks, MIXED_QUANTITY_LABEL, MIXED_UNIT_SUM_TOOLTIP,
-  quantityHeading, unitOfWorks,
+  DEFAULT_UNIT, MIXED_UNIT_SUM_TOOLTIP, deckUnitOf, unitOfWorks,
 } from '../../domain/unit'
 import { listGsUsers } from '../../lib/adminApi'
 import {
-  deleteDeck, duplicateDeck, listDecks, swapDeckSeq, type DeckRow,
+  deleteDeck, duplicateDeck, listDecks, saveDeckOrder, type DeckRow,
 } from '../../lib/decksApi'
-import { formatAreaM2, formatPercent, formatWeight } from '../../lib/format'
+import { MISSING, formatAreaM2, formatPercent, formatWeight } from '../../lib/format'
 import { loadProjectModel } from '../../lib/progressApi'
 import type { ProjectModel } from '../../lib/workModel'
 import { listProjectNames } from '../../lib/projectsApi'
@@ -26,13 +22,25 @@ import { NEW_DECK } from '../../config'
 import { ConsequenceModal } from '../../components/ConsequenceModal'
 import { modalProps } from '../../components/modalChrome'
 import { Donut, type DonutSlice } from '../../components/Donut'
+import { ROLLUP_RING, ROLLUP_RING_SIZE, ROLLUP_RING_THICKNESS, ringFigureStep } from '../../components/ringFit'
+import { legendRowProps } from '../../components/ringHover'
 import { EmptyState } from '../../components/EmptyState'
+import { IconAction } from '../../components/IconAction'
+import { NameWithCode } from '../../components/NameWithCode'
+import { FilterBar } from '../../components/FilterBar'
+import { InfoTip } from '../../components/InfoTip'
 import { PageBody, PageHeader } from '../../components/PageHeader'
-import { ProgressBar } from '../../components/ProgressBar'
+import { ProjectSelect } from '../../components/ProjectSelect'
 import { RulesDisclosure } from '../../components/RulesDisclosure'
 import { SectionCard } from '../../components/SectionCard'
-import { StatusPill } from '../../components/StatusPill'
-import { palette } from '../../theme'
+import { CategoryBadge } from '../../components/CategoryBadge'
+import type { CategoryValue } from '../../components/categoryTone'
+import { useTablePagination } from '../../components/tablePagination'
+import { roundSharesToTotal } from '../../domain/rounding'
+import { categoricalColor, palette, space, type, visuallyHidden } from '../../theme'
+
+/** A deck by name with its code in brackets, "Main Deck (MD)": no Mã column (RLP-01). */
+const deckName = (name: string, code: string) => <NameWithCode name={name} code={code} />
 
 interface RollupRow {
   key: string
@@ -53,30 +61,13 @@ interface WorkRow {
   progress: number
 }
 
-const WORK_KIND_LABEL: Record<WorkKind, string> = { bays: 'Theo ô', manual: 'Nhập tay' }
-
-/**
- * Three shades of the one accent, cycled.
- *
- * Deck contributions are parts of a single quantity -- the project's own
- * percentage -- so they belong to one hue. Giving each deck a colour of its own
- * would put a fourth palette on a screen that already carries the stage
- * colours, and would imply the decks differ in kind rather than in size.
- */
-const DECK_SHADES = ['#0A8175', '#3AA396', '#6FC2B7']
+const WORK_KIND_LABEL = { bays: 'Theo ô', manual: 'Nhập tay' } as const satisfies Record<WorkKind, CategoryValue<'workKind'>>
 
 const RULES = [
   {
     id: 'DCK-R2',
-    text: 'Tỉ trọng của sàn là trọng số hiệu dụng: tổng (trọng số công việc × trọng số sàn trong công việc) qua các công việc có tính vào tổng. Cả hai trọng số đặt ở mục Công việc, không nhập ở đây.',
-  },
-  {
-    id: 'DCK-R3',
-    text: 'Làm mới thất bại thì số cũ ở lại trên màn hình, không xoá trắng con số ai đó đang đọc.',
-  },
-  {
-    id: 'DCK-R6',
-    text: 'Xuất báo cáo dựng bản vẽ lần lượt từng sàn, không song song, và không đưa ra tệp một phần nếu hỏng giữa chừng.',
+    // Helper text, checked against summariseDeck (RUL-01).
+    text: 'Tỉ trọng của sàn tính từ trọng số công việc và trọng số sàn đặt ở mục Công việc.',
   },
 ]
 
@@ -114,7 +105,7 @@ export function DecksScreen() {
   const [copying, setCopying] = useState(false)
   const [copyForm] = Form.useForm<{ name: string; code: string }>()
   const [removing, setRemoving] = useState(false)
-  /** A seq swap is in flight: every arrow waits for it (see reorderDeck). */
+  /** A deck move is being saved: the next drag or Alt+arrow waits for it (see moveDeck). */
   const [reordering, setReordering] = useState(false)
   const [confirmingExport, setConfirmingExport] = useState(false)
   const { message } = App.useApp()
@@ -151,7 +142,7 @@ export function DecksScreen() {
     // table spins on first paint, and with no project to load -- an empty
     // project list, or listProjects throwing -- nothing downstream would ever
     // turn it off again: the admin gets a spinner forever instead of an empty
-    // state. UsersScreen carries a note about the same failure mode.
+    // state. NhanLucScreen carries a note about the same failure mode.
     if (!projectId) {
       setDecks([])
       setLoading(false)
@@ -196,10 +187,14 @@ export function DecksScreen() {
    * the Σ refusing to add them.
    */
   const bays = (model?.models ?? []).filter((m) => m.work.kind === 'bays' && m.decks.length > 0)
-  const unitOfDeck = (deckId: string): string | null => {
-    const inWorks = bays.filter((m) => m.decks.some((e) => e.deck.id === deckId)).map((m) => m.work)
+  const worksOf = (deckId: string) => bays.filter((m) => m.decks.some((e) => e.deck.id === deckId)).map((m) => m.work)
+  /** The deck's works' shared unit, or null when they disagree: what a heading and a Σ may claim (RV6-36). */
+  const sharedUnitOfDeck = (deckId: string): string | null => {
+    const inWorks = worksOf(deckId)
     return inWorks.length === 0 ? DEFAULT_UNIT : unitOfWorks(inWorks)
   }
+  /** What a row prints: never a bare figure, its first work's unit when they disagree (AD4). */
+  const unitOfDeck = (deckId: string): string => deckUnitOf(worksOf(deckId))
   /**
    * The heading, the Σ's unit and the cell rule for ONE set of decks. The deck
    * list and the rollup each derive their own, because the rollup lists only
@@ -207,21 +202,15 @@ export function DecksScreen() {
    * the rollup, whose rows may then all agree on a unit the list cannot.
    */
   const quantityScope = (deckIds: string[]) => {
-    const units = deckIds.map(unitOfDeck)
-    const works = bays.filter((m) => m.decks.some((e) => deckIds.includes(e.deck.id))).map((m) => m.work)
+    const units = deckIds.map(sharedUnitOfDeck)
     const unit = units.length === 0
       ? DEFAULT_UNIT
       : (units.every((u) => u !== null && u === units[0]) ? units[0] : null)
-    const label = works.length === 0
-      ? DEFAULT_QUANTITY_LABEL
-      : (labelOfWorks(works) ?? MIXED_QUANTITY_LABEL)
-    const title = unit === null ? MIXED_QUANTITY_LABEL : quantityHeading(label, unit)
-    /** The figure, with the row's own unit only when the heading could not carry one. */
-    const cell = (deckId: string, n: number): string => {
-      if (unit !== null) return formatAreaM2(n)
-      const own = unitOfDeck(deckId)
-      return own === null ? formatAreaM2(n) : `${formatAreaM2(n)} ${own}`
-    }
+    // RLP-01: the column is "Diện tích", and every figure carries its own
+    // unit (AD4), so the heading needs none. `unit` stays for the Σ, which
+    // adds only figures of one unit (RV6-36).
+    const title = 'Diện tích'
+    const cell = (deckId: string, n: number): string => `${formatAreaM2(n)} ${unitOfDeck(deckId)}`
     return { unit, title, cell }
   }
   const listScope = quantityScope(modelDecks.map((d) => d.id))
@@ -273,6 +262,9 @@ export function DecksScreen() {
     counts: w.work.counts,
     progress: w.progress,
   }))
+  // Switching project is re-aiming the same screen: both tables start again at page 1.
+  const rollupPagination = useTablePagination(visibleRollup.length, projectId)
+  const workPagination = useTablePagination(workRows.length, projectId)
   /** What the decks carry of P; the rest sits in manual works. */
   const effectiveTotal = summaries.reduce((sum, d) => sum + d.effectiveWeight, 0)
 
@@ -290,25 +282,41 @@ export function DecksScreen() {
     table sees one number, not the arc's contribution. `display` is optional
     on `DonutSlice`; the legend prints `display ?? value`.
   */
-  const slices: DonutSlice[] = [
+  const parts = [
     ...modelDecks.flatMap((deck, i) => (carriesWeight(i) ? [{
+      key: deck.id,
       label: deck.code, // RV6-01: a deck slice is labelled by code, not name.
       value: (summaries[i]?.effectiveWeight ?? 0) * (summaries[i]?.progress ?? 0),
       display: summaries[i]?.progress ?? 0,
-      color: DECK_SHADES[i % DECK_SHADES.length],
     }] : [])),
     ...rollup.works
       .filter((w) => w.work.kind === 'manual' && w.work.counts)
-      .map((w, i) => ({
+      .map((w) => ({
+        key: w.work.id,
         // A work has no code, so a manual-work slice keeps its name.
         label: w.work.name,
         value: w.work.weight * w.progress,
         display: w.progress,
-        color: DECK_SHADES[(modelDecks.length + i) % DECK_SHADES.length],
       })),
   ]
+  /**
+   * The contribution column as printed (RV6-40): rounded so the column adds up
+   * to the centre figure to the last digit, and `Còn lại` is the printed
+   * complement -- a reader checks this column by adding it up.
+   */
+  const shownShares = roundSharesToTotal(parts.map((sl) => sl.value), rollup.progress)
+  /*
+    A colour of its own per slice (CHT-01), in legend order, so six decks no
+    longer read as three repeated teals. The tooltip's figures are the two the
+    legend row prints -- the shown share, not a recomputed one.
+  */
+  const slices: DonutSlice[] = parts.map((sl, i) => ({
+    ...sl,
+    color: categoricalColor(i),
+    detail: `Tiến độ ${formatPercent(sl.display)} · Đóng góp ${formatPercent(shownShares[i])}`,
+  }))
+  const shownRemainder = 1 - roundSharesToTotal([rollup.progress], rollup.progress)[0]
   const totalArea = modelDecks.reduce((sum, d, i) => (carriesWeight(i) ? sum + d.totalAreaM2 : sum), 0)
-  const projectName = projects.find((p) => p.id === projectId)?.name ?? ''
 
   /**
    * Hard delete, behind the typed name (Feedback Rv1, item 1). The row goes
@@ -366,29 +374,48 @@ export function DecksScreen() {
   }
 
   /**
-   * Swap a deck's `seq` with its neighbour in the current list order (RV6-05).
-   * Order everywhere else -- the rollup table, the donut legend, GS deck
-   * tabs, the KPI plan table, the xlsx -- already follows `seq`, so this one
-   * write moves the deck everywhere at once. Not transactional
-   * (decksApi.swapDeckSeq): a failure between the two writes leaves both
-   * decks at one seq, which this list still renders (ties keep insertion
-   * order) and the next swap repairs.
-   *
-   * One at a time: a second click before `refreshDecks` lands would swap
-   * from the seqs this render still holds, not the ones just written.
+   * ORD-01: a deck dragged to a new place -- or moved one place by Alt+↑/↓ on
+   * its handle -- is saved on drop. The list takes the new order at once;
+   * every deck whose stored `seq` is not its new place (1..n) gets it, one
+   * write per deck (decksApi.saveDeckOrder; the owner chose no migration), so
+   * gaps and duplicates left by deletes are closed too (review I1). On any
+   * failure the real order is read back from the server and the error said.
+   * One move at a time: a second one is ignored until the first settles, and
+   * the moved deck's handle keeps the focus throughout (review M1).
    */
-  const reorderDeck = async (a: DeckRow, b: DeckRow | undefined) => {
-    if (!b || reordering) return
+  const moveDeck = async (from: number, to: number, viaKeyboard = false) => {
+    if (reordering || from === to || from < 0 || to < 0 || from >= decks.length || to >= decks.length) return
+    const next = [...decks]
+    const [moved] = next.splice(from, 1)
+    next.splice(to, 0, moved)
+    const changes = next
+      .map((d, i) => ({ id: d.id, seq: i + 1, stored: d.seq }))
+      .filter((d) => d.stored !== d.seq)
+      .map(({ id, seq }) => ({ id, seq }))
+    setDecks(next.map((d, i) => ({ ...d, seq: i + 1 })))
+    if (viaKeyboard) focusHandle.current = moved.id
     setReordering(true)
     try {
-      await swapDeckSeq({ id: a.id, seq: a.seq }, { id: b.id, seq: b.seq })
-      await refreshDecks()
+      await saveDeckOrder(changes)
     } catch (e) {
       message.error((e as Error).message)
+      await refreshDecks()
     } finally {
       setReordering(false)
     }
   }
+  const dragging = useRef<number | null>(null)
+  /** Each deck's handle, and the one to keep focused after a keyboard move (M1). */
+  const handles = useRef(new Map<string, HTMLButtonElement>())
+  const focusHandle = useRef<string | null>(null)
+  useEffect(() => {
+    const id = focusHandle.current
+    if (id === null) return
+    const el = handles.current.get(id)
+    // Back only when the move lost it (the row re-rendered), never away from where the admin went.
+    if (el && (document.activeElement === null || document.activeElement === document.body)) el.focus()
+    if (!reordering) focusHandle.current = null
+  }, [decks, reordering])
 
   /**
    * The XLSX (spec §9), built from EVERY deck of the project.
@@ -424,25 +451,11 @@ export function DecksScreen() {
     <>
       <PageHeader
         title="Sàn"
-        subtitle={
-          projectName
-            ? `${projectName} · rollup và xuất báo cáo ở đây vì cả hai là phạm vi dự án`
-            : 'Chọn một dự án để xem các sàn của nó'
-        }
         filters={
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-            <label
-              htmlFor="decks-project"
-              style={{ fontSize: 11, fontWeight: 600, color: palette.textTertiary }}
-            >
-              Dự án
-            </label>
-            <Select
-              id="decks-project"
-              style={{ width: 260 }}
-              value={projectId ?? undefined}
-              placeholder="Chọn dự án"
-              options={projects.map((p) => ({ value: p.id, label: `${p.name} (${p.code})` }))}
+          <FilterBar>
+            <ProjectSelect
+              projects={projects}
+              value={projectId}
               onChange={(v) => {
                 setProjectId(v)
                 // Replace, not push: switching projects is re-aiming the same
@@ -451,7 +464,7 @@ export function DecksScreen() {
                 setSearchParams({ project: v }, { replace: true })
               }}
             />
-          </div>
+          </FilterBar>
         }
         extra={
           <Button
@@ -470,114 +483,112 @@ export function DecksScreen() {
 
         <SectionCard bodyPadding={0}>
           <Table<DeckRow>
-            className="pp-table"
             rowKey="id"
             loading={loading}
             dataSource={decks}
             pagination={false}
+            // Sized to its content, as StageSpecTable is (QA F8): every
+            // other column has a fixed width, so at 1024px the name was left
+            // ~66px and "Otis Test Deck" wrapped to three lines under a
+            // two-line header. Now the card scrolls sideways instead.
+            scroll={{ x: 'max-content' }}
             locale={{
               emptyText: (
-                <EmptyState
-                  title="Dự án này chưa có sàn nào"
-                  description="Xuất báo cáo bị tắt cho tới khi có ít nhất một sàn."
-                />
+                <EmptyState title="Dự án này chưa có sàn nào" />
               ),
             }}
+            // ORD-01: a row is dragged to its place, the same native drag
+            // as Công việc and Cấu hình lớp sơn, saved on drop.
+            onRow={(_row, index) => ({
+              draggable: !reordering,
+              onDragStart: () => { dragging.current = index ?? null },
+              onDragOver: (e: { preventDefault: () => void }) => e.preventDefault(),
+              onDrop: () => {
+                const from = dragging.current
+                dragging.current = null
+                if (from !== null) void moveDeck(from, index ?? 0)
+              },
+            })}
             columns={[
+              {
+                title: <span style={visuallyHidden}>Kéo để sắp xếp</span>,
+                key: 'handle',
+                align: 'center',
+                width: 44,
+                // Focusable, so the order can be changed from the keyboard:
+                // Alt+↑ and Alt+↓ move the deck one place (ORD-01).
+                render: (_v, deck, index) => (
+                  <button
+                    type="button"
+                    className="pp-drag-handle"
+                    aria-label={`Sắp xếp ${deck.name}`}
+                    aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
+                    // Not `disabled`: that drops the focus to <body> mid-save (M1).
+                    aria-disabled={reordering}
+                    ref={(el) => {
+                      if (el) handles.current.set(deck.id, el)
+                      else handles.current.delete(deck.id)
+                    }}
+                    onKeyDown={(e) => {
+                      if (!e.altKey || (e.key !== 'ArrowUp' && e.key !== 'ArrowDown')) return
+                      e.preventDefault()
+                      if (reordering) return
+                      void moveDeck(index, e.key === 'ArrowUp' ? index - 1 : index + 1, true)
+                    }}
+                    style={{
+                      border: 0, background: 'none', padding: 4, cursor: reordering ? 'not-allowed' : 'grab',
+                      color: palette.iconMuted, display: 'inline-flex',
+                    }}
+                  >
+                    <HolderOutlined aria-hidden />
+                  </button>
+                ),
+              },
               {
                 title: 'Tên sàn',
                 dataIndex: 'name',
-                render: (v: string) => <span style={{ fontWeight: 600 }}>{v}</span>,
+                // "Main Deck (MD)": no Mã column of its own (RLP-01).
+                render: (v: string, deck) => deckName(v, deck.code),
               },
-              {
-                title: 'Mã',
-                dataIndex: 'code',
-                width: 120,
-              },
-              { title: 'Số ô', dataIndex: 'cellCount', width: 90, align: 'right' },
+              { title: 'Số ô', dataIndex: 'cellCount', width: 90, align: 'center' },
               {
                 title: listScope.title,
                 dataIndex: 'totalAreaM2',
                 width: 160,
-                align: 'right',
+                align: 'center',
                 render: (v: number, deck) => listScope.cell(deck.id, v),
               },
               {
                 title: 'Bản vẽ',
+                align: 'center',
                 key: 'drawing',
                 width: 130,
                 render: (_v, deck) => (
-                  <StatusPill tone={deck.imagePath ? 'ok' : 'warn'}>
-                    {deck.imagePath ? 'Đã có' : 'Chưa có'}
-                  </StatusPill>
+                  <CategoryBadge category="drawing" value={deck.imagePath ? 'Đã có' : 'Chưa có'} />
                 ),
               },
               {
                 title: 'Thao tác',
                 key: 'actions',
                 width: 170,
-                align: 'right',
+                // Pinned: the list scrolls sideways below ~1100px (QA F8) and
+                // the row's actions must not scroll out of the card with it.
+                fixed: 'right',
+                align: 'center',
                 render: (_v, deck) => (
                   <Space size={6}>
-                    <Tooltip title="Mở sàn">
-                      <Button
-                        size="small"
-                        aria-label="Mở"
-                        icon={<ArrowRightOutlined />}
-                        onClick={() => navigate(deck.id)}
-                      />
-                    </Tooltip>
-                    <Tooltip title="Nhân bản sàn · bản vẽ, khung và lưới ô">
-                      <Button
-                        size="small"
-                        aria-label="Nhân bản sàn"
-                        icon={<CopyOutlined />}
-                        onClick={() => {
-                          copyForm.setFieldsValue({ name: `${deck.name} (bản sao)`, code: `${deck.code}-2` })
-                          setCopyingDeck(deck)
-                        }}
-                      />
-                    </Tooltip>
-                    <Tooltip title="Xóa sàn">
-                      <Button
-                        size="small"
-                        danger
-                        aria-label="Xóa sàn"
-                        icon={<DeleteOutlined />}
-                        onClick={() => setRemovingDeck(deck)}
-                      />
-                    </Tooltip>
-                  </Space>
-                ),
-              },
-              {
-                title: 'Thứ tự',
-                key: 'reorder',
-                width: 90,
-                align: 'right',
-                // Order everywhere else follows `seq`, i.e. this list's own
-                // order (`listDecks` already sorts by it) -- so the row
-                // before/after in `decks` IS the neighbour to swap with.
-                render: (_v, deck, index) => (
-                  <Space size={2}>
-                    <Tooltip title="Lên">
-                      <Button
-                        size="small"
-                        aria-label="Lên"
-                        icon={<ArrowUpOutlined />}
-                        disabled={index === 0 || reordering}
-                        onClick={() => void reorderDeck(deck, decks[index - 1])}
-                      />
-                    </Tooltip>
-                    <Tooltip title="Xuống">
-                      <Button
-                        size="small"
-                        aria-label="Xuống"
-                        icon={<ArrowDownOutlined />}
-                        disabled={index === decks.length - 1 || reordering}
-                        onClick={() => void reorderDeck(deck, decks[index + 1])}
-                      />
-                    </Tooltip>
+                    {/* Icon actions (ACT-01). */}
+                    <IconAction verb="open" label="Mở" tooltip="Mở sàn" onClick={() => navigate(deck.id)} />
+                    <IconAction
+                      verb="duplicate"
+                      label="Nhân bản sàn"
+                      tooltip="Nhân bản sàn · bản vẽ, khung và lưới ô"
+                      onClick={() => {
+                        copyForm.setFieldsValue({ name: `${deck.name} (bản sao)`, code: `${deck.code}-2` })
+                        setCopyingDeck(deck)
+                      }}
+                    />
+                    <IconAction verb="delete" label="Xóa sàn" danger onClick={() => setRemovingDeck(deck)} />
                   </Space>
                 ),
               },
@@ -587,7 +598,6 @@ export function DecksScreen() {
 
         <SectionCard
           title="Tiến độ toàn dự án"
-          summary="Tổng theo công việc; mỗi công việc theo các sàn của nó"
           bodyPadding={0}
           footer={<RulesDisclosure rules={RULES} />}
           extra={
@@ -604,10 +614,7 @@ export function DecksScreen() {
           }
         >
           {modelDecks.length === 0 ? (
-            <EmptyState
-              title="Dự án này chưa có sàn nào"
-              description="Rollup và báo cáo đều tính từ các sàn, nên cả hai chờ sàn đầu tiên."
-            />
+            <EmptyState title="Dự án này chưa có sàn nào" />
           ) : (
             <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(340px, 400px)' }}>
               {/*
@@ -619,54 +626,48 @@ export function DecksScreen() {
               <div style={{ borderRight: `1px solid ${palette.borderCard}`, minWidth: 0 }}>
                 <div data-testid="project-rollup">
                 <Table<RollupRow>
-                  className="pp-table"
                   size="small"
-                  pagination={false}
+                  pagination={rollupPagination}
                   dataSource={visibleRollup}
                   columns={[
-                    { title: 'Sàn', dataIndex: 'name', key: 'name' },
-                    {
-                      title: 'Mã',
-                      dataIndex: 'code',
-                      key: 'code',
-                      width: 100,
-                    },
-                    { title: 'Tỉ trọng', dataIndex: 'share', key: 'share', width: 110, align: 'right' },
+                    { title: 'Sàn', dataIndex: 'name', key: 'name', render: (v: string, row) => deckName(v, row.code) },
+                    { title: 'Tỉ trọng', dataIndex: 'share', key: 'share', width: 110, align: 'center' },
                     {
                       title: rollupScope.title,
                       dataIndex: 'totalAreaM2',
                       key: 'totalAreaM2',
                       width: 150,
-                      align: 'right',
+                      align: 'center',
                     },
                     {
-                      title: 'Tiến độ',
+                      // The percentage alone, centred like any figure (PRG-01).
+                      title: 'Tiến độ sàn',
+                      align: 'center',
                       dataIndex: 'progress',
                       key: 'progress',
-                      width: 220,
-                      render: (v: number) => <ProgressBar ratio={v} />,
+                      width: 130,
+                      render: (v: number) => <span style={type.body}>{formatPercent(v)}</span>,
                     },
                   ]}
                   summary={() => (
                     <Table.Summary.Row>
                       <Table.Summary.Cell index={0}>
-                        <strong>Tổng dự án</strong>
+                        <span style={type.bodyStrong}>Tổng dự án</span>
                       </Table.Summary.Cell>
-                      <Table.Summary.Cell index={1} />
-                      <Table.Summary.Cell index={2} align="right">
-                        <strong>{formatPercent(effectiveTotal)}</strong>
+                      <Table.Summary.Cell index={1} align="center">
+                        <span style={type.bodyStrong}>{formatPercent(effectiveTotal)}</span>
                       </Table.Summary.Cell>
-                      <Table.Summary.Cell index={3} align="right">
+                      <Table.Summary.Cell index={2} align="center">
                         {rollupScope.unit === null ? (
                           <Tooltip title={MIXED_UNIT_SUM_TOOLTIP}>
-                            <strong>—</strong>
+                            <span style={type.bodyStrong}>{MISSING}</span>
                           </Tooltip>
                         ) : (
-                          <strong>{formatAreaM2(totalArea)}</strong>
+                          <span style={type.bodyStrong}>{`${formatAreaM2(totalArea)} ${rollupScope.unit}`}</span>
                         )}
                       </Table.Summary.Cell>
-                      <Table.Summary.Cell index={4}>
-                        <ProgressBar ratio={rollup.progress} height={8} />
+                      <Table.Summary.Cell index={3} align="center">
+                        <span style={type.bodyStrong}>{formatPercent(rollup.progress)}</span>
                       </Table.Summary.Cell>
                     </Table.Summary.Row>
                   )}
@@ -674,9 +675,10 @@ export function DecksScreen() {
                 {hiddenDecks > 0 && (
                   <Typography.Text
                     type="secondary"
-                    style={{ display: 'block', fontSize: 12, padding: '8px 12px 10px' }}
+                    style={{ display: 'block', ...type.caption, padding: `${space.sm}px ${space.xl}px ${space.md}px` }}
                   >
-                    {`Đã ẩn ${hiddenDecks} sàn có tỉ trọng 0,00% (không thuộc công việc nào tính vào tổng)`}
+                    {`Đã ẩn ${hiddenDecks} sàn có tỉ trọng 0,00%`}
+                    <InfoTip text="Không thuộc công việc nào tính vào tổng" />
                   </Typography.Text>
                 )}
                 </div>
@@ -688,57 +690,60 @@ export function DecksScreen() {
                 */}
                 <div
                   data-testid="project-works"
-                  style={{ borderTop: `1px solid ${palette.borderCard}` }}
+                  // A gap and a hairline between the two tables, so they never
+                  // touch (RLP-01); no label above it: the table's own first
+                  // header says `Công việc` (TBL-03).
+                  style={{ marginTop: space.lg, borderTop: `1px solid ${palette.borderCard}` }}
                 >
-                  <div style={{ padding: '12px 15px 2px', fontSize: 12, fontWeight: 600, color: palette.textTertiary }}>
-                    Công việc
-                  </div>
                   <Table<WorkRow>
-                    className="pp-table"
                     size="small"
-                    pagination={false}
+                    pagination={workPagination}
                     dataSource={workRows}
                     columns={[
                       { title: 'Công việc', dataIndex: 'name', key: 'name' },
                       {
                         title: 'Loại',
+                        align: 'center',
                         dataIndex: 'kind',
                         key: 'kind',
                         width: 100,
-                        render: (k: WorkKind) => WORK_KIND_LABEL[k],
+                        render: (k: WorkKind) => <CategoryBadge category="workKind" value={WORK_KIND_LABEL[k]} />,
                       },
-                      { title: 'Trọng số', dataIndex: 'weight', key: 'weight', width: 110, align: 'right' },
+                      { title: 'Trọng số', dataIndex: 'weight', key: 'weight', width: 110, align: 'center' },
                       {
                         title: 'Tính vào tổng',
+                        align: 'center',
                         dataIndex: 'counts',
                         key: 'counts',
                         width: 150,
-                        render: (c: boolean) => (c ? 'Có' : 'Không'),
+                        render: (c: boolean) => <CategoryBadge category="counts" value={c ? 'Có' : 'Không'} />,
                       },
                       {
-                        title: 'Tiến độ',
+                        // The percentage alone, centred (PRG-01), named to match Tiến độ sàn (RLP-01).
+                        title: 'Tiến độ công việc',
+                        align: 'center',
                         dataIndex: 'progress',
                         key: 'progress',
-                        width: 220,
-                        render: (v: number) => <ProgressBar ratio={v} />,
+                        width: 150,
+                        render: (v: number) => <span style={type.body}>{formatPercent(v)}</span>,
                       },
                     ]}
                     summary={() => (
                       <Table.Summary.Row>
                         <Table.Summary.Cell index={0}>
-                          <strong>Tổng dự án</strong>
+                          <span style={type.bodyStrong}>Tổng dự án</span>
                         </Table.Summary.Cell>
-                        <Table.Summary.Cell index={1} />
-                        <Table.Summary.Cell index={2} align="right">
-                          <strong>
+                        <Table.Summary.Cell index={1} align="center" />
+                        <Table.Summary.Cell index={2} align="center">
+                          <span style={type.bodyStrong}>
                             {formatWeight(rollup.works
                               .filter((w) => w.work.counts)
                               .reduce((sum, w) => sum + w.work.weight, 0))}
-                          </strong>
+                          </span>
                         </Table.Summary.Cell>
-                        <Table.Summary.Cell index={3} />
-                        <Table.Summary.Cell index={4}>
-                          <ProgressBar ratio={rollup.progress} height={8} />
+                        <Table.Summary.Cell index={3} align="center" />
+                        <Table.Summary.Cell index={4} align="center">
+                          <span style={type.bodyStrong}>{formatPercent(rollup.progress)}</span>
                         </Table.Summary.Cell>
                       </Table.Summary.Row>
                     )}
@@ -748,65 +753,20 @@ export function DecksScreen() {
 
               <div
                 data-testid="rollup-donut"
-                style={{ padding: '18px 20px 20px', background: palette.bgSubtle }}
+                // Top padding equal to the small table's header cell padding,
+                // so `Tiến độ tích luỹ` sits on the line of `Sàn` across the
+                // divider rather than a text line below it (UX-02).
+                style={{ padding: `${space.sm}px ${space.xl}px ${space.xl}px`, background: palette.bgSubtle }}
               >
-                <div style={{ fontSize: 12, fontWeight: 600, color: palette.textTertiary }}>
-                  Tiến độ dự án
+                <div style={{ ...type.label, color: palette.textTertiary }}>
+                  Tiến độ tích luỹ
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginTop: 14 }}>
-                  <Donut slices={slices}>
-                    <span style={{ fontSize: 21, fontWeight: 700, letterSpacing: '-0.028em' }}>
-                      {formatPercent(rollup.progress)}
-                    </span>
-                    <span style={{ fontSize: 10, color: palette.textTertiary, marginTop: 3 }}>
-                      toàn dự án
-                    </span>
-                  </Donut>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0, flex: 1 }}>
-                    {slices.map((sl) => (
-                      <div key={sl.label} style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-                        <span
-                          style={{
-                            width: 11, height: 11, borderRadius: 4, flex: 'none', background: sl.color,
-                          }}
-                        />
-                        <span
-                          style={{
-                            fontSize: 12, fontWeight: 500, minWidth: 0,
-                            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                          }}
-                        >
-                          {sl.label}
-                        </span>
-                        <span style={{ marginLeft: 'auto', fontSize: 12, fontWeight: 600, flex: 'none' }}>
-                          {formatPercent(sl.display ?? sl.value)}
-                        </span>
-                      </div>
-                    ))}
-                    <div
-                      style={{
-                        display: 'flex', alignItems: 'center', gap: 9, paddingTop: 8,
-                        borderTop: `1px solid ${palette.borderSplit}`, marginTop: 2,
-                      }}
-                    >
-                      <span
-                        style={{
-                          width: 11, height: 11, borderRadius: 4, flex: 'none', background: palette.track,
-                        }}
-                      />
-                      <span style={{ fontSize: 12, fontWeight: 500, color: palette.textTertiary }}>
-                        Còn lại
-                      </span>
-                      <span
-                        style={{
-                          marginLeft: 'auto', fontSize: 12, fontWeight: 600, color: palette.textTertiary,
-                        }}
-                      >
-                        {formatPercent(1 - rollup.progress)}
-                      </span>
-                    </div>
-                  </div>
-                </div>
+                <ProjectRing
+                  slices={slices}
+                  shownShares={shownShares}
+                  shownRemainder={shownRemainder}
+                  progress={rollup.progress}
+                />
               </div>
             </div>
           )}
@@ -817,12 +777,12 @@ export function DecksScreen() {
         open={confirmingExport}
         tag="Xác nhận"
         title="Xuất báo cáo dự án?"
-        description="Bản vẽ được dựng lại lần lượt từng sàn:"
+        description="Báo cáo gồm các sàn sau:"
         items={modelDecks.map((d) => ({
           label: d.name,
           meta: `${d.cellCount} ô`,
         }))}
-        consequence="Dựng tuần tự, không song song, nên với dự án nhiều sàn việc này mất một lúc. Trong lúc chạy nút không bấm lại được, và nếu hỏng giữa chừng thì không có tệp một phần nào được đưa ra."
+        consequences={['Có thể mất một lúc với dự án nhiều sàn']}
         okText="Xuất"
         confirmLoading={exporting}
         onCancel={() => setConfirmingExport(false)}
@@ -841,9 +801,8 @@ export function DecksScreen() {
           </Button>,
         ]}
       >
-        <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginTop: 0 }}>
-          Sao chép bản vẽ, khung và lưới ô. Không sao chép công việc, lớp sơn, tiến độ hay kế hoạch:
-          sàn mới chưa thuộc công việc nào cho tới khi bạn thêm nó ở mục Công việc.
+        <Typography.Paragraph type="secondary" style={{ ...type.caption, marginTop: 0 }}>
+          Sao chép bản vẽ, khung và lưới ô nhưng không sao chép công việc, lớp sơn, tiến độ hay kế hoạch.
         </Typography.Paragraph>
         <Form form={copyForm} layout="vertical" onFinish={(v) => void copyDeck(v)}>
           <Form.Item name="name" label="Tên sàn mới" rules={[{ required: true, message: 'Đặt tên sàn' }]}>
@@ -872,14 +831,14 @@ export function DecksScreen() {
         tone="danger"
         tag="Thao tác phá huỷ"
         title={`Xóa sàn ${removingDeck?.name ?? ''}?`}
-        description="Xóa vĩnh viễn, không khôi phục được. Mất theo sàn:"
+        description="Mất vĩnh viễn theo sàn:"
         items={[
           { label: 'Toàn bộ ô và lịch sử công đoạn', meta: removingDeck ? `${removingDeck.cellCount} ô` : undefined },
           { label: 'Zone và kế hoạch' },
           { label: 'Ghi chú của GS' },
           { label: 'Bản vẽ đã tải lên', meta: removingDeck?.imagePath ? 'Đã có' : 'Chưa có' },
         ]}
-        consequence="Máy tính bảng đang mở sàn này sẽ không ghi được nữa cho tới khi tải lại."
+        consequences={['Không khôi phục được', 'Máy tính bảng đang mở sàn này không ghi được nữa cho tới khi tải lại']}
         okText="Xóa sàn"
         confirmText={removingDeck?.name}
         confirmLoading={removing}
@@ -887,5 +846,121 @@ export function DecksScreen() {
         onOk={() => void removeDeck()}
       />
     </>
+  )
+}
+
+/** One line of the rollup legend: a row's figures and its dot sit on its first. */
+const ROLLUP_LEGEND_LINE = 20
+
+/**
+ * The project ring and its legend, with the slice under the pointer or focus
+ * (CHT-02). Its own component so that hovering re-renders the ring and the
+ * legend, not the whole screen and its tables (m-4).
+ */
+function ProjectRing({
+  slices,
+  shownShares,
+  shownRemainder,
+  progress,
+}: {
+  slices: DonutSlice[]
+  /** The contribution column as printed (RV6-40). */
+  shownShares: number[]
+  /** `Còn lại`, the printed complement of the centre figure. */
+  shownRemainder: number
+  /** P, the centre figure. */
+  progress: number
+}) {
+  const [active, setActive] = useState<string | null>(null)
+  return (
+    // The ring above its legend, the legend the column's full width (RR2-I1),
+    // as both coat rings stand: beside a 160 px ring the deck names had 34 px.
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16, marginTop: 14 }}>
+      <Donut
+        label="Tiến độ tích luỹ"
+        slices={slices}
+        size={ROLLUP_RING_SIZE}
+        thickness={ROLLUP_RING_THICKNESS}
+        activeKey={active}
+        onActiveChange={setActive}
+      >
+        {/* The largest step that fits the hole, down to bodyStrong (I-2). */}
+        <span
+          data-testid="ring-figure"
+          style={{
+            ...ringFigureStep(formatPercent(progress), [type.displaySm, type.cardTitle, type.bodyStrong], ROLLUP_RING),
+            letterSpacing: '-0.028em',
+          }}
+        >
+          {formatPercent(progress)}
+        </span>
+        <span style={{ ...type.caption, color: palette.textTertiary, marginTop: 3 }}>
+          toàn dự án
+        </span>
+      </Donut>
+      <div
+        data-testid="rollup-legend"
+        style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0, alignSelf: 'stretch' }}
+      >
+        {/*
+          One number per row, the contribution the arc is sized by
+          (weight × progress), which sums to the centre exactly (RV6-40).
+          The deck's own progress is the table's, beside the ring, as
+          Tiến độ sàn (RLP-02); a slice's description keeps both.
+        */}
+        <div style={{ ...type.caption, color: palette.textTertiary, textAlign: 'right' }}>
+          Đóng góp
+        </div>
+        {slices.map((sl, i) => (
+          <div
+            key={sl.key}
+            data-testid="legend-row"
+            {...legendRowProps(sl.key ?? sl.label, active, setActive, {
+              // The top, not the middle: a wrapped name keeps its dot and its
+              // two figures on its first line (RR2-M1).
+              display: 'flex', alignItems: 'flex-start', gap: 9,
+            })}
+          >
+            <span
+              data-testid="legend-marker"
+              style={{
+                width: 11, height: 11, borderRadius: '50%', flex: 'none', background: sl.color,
+                marginTop: (ROLLUP_LEGEND_LINE - 11) / 2,
+              }}
+            />
+            {/* In full: wrapped when the row cannot hold it, never cut (RR2-I1). */}
+            <span style={{ ...type.body, lineHeight: `${ROLLUP_LEGEND_LINE}px`, minWidth: 0, flex: 1, overflowWrap: 'break-word' }}>
+              {sl.label}
+            </span>
+            <span style={{ width: 56, textAlign: 'right', flex: 'none', ...type.bodyStrong, lineHeight: `${ROLLUP_LEGEND_LINE}px` }}>
+              {formatPercent(shownShares[i])}
+            </span>
+          </div>
+        ))}
+        <div
+          style={{
+            display: 'flex', alignItems: 'center', gap: 9, paddingTop: 8,
+            borderTop: `1px solid ${palette.borderSplit}`, marginTop: 2,
+          }}
+        >
+          <span
+            style={{
+              width: 11, height: 11, borderRadius: '50%', flex: 'none', background: palette.track,
+            }}
+          />
+          <span style={{ ...type.body, color: palette.textTertiary }}>
+            Còn lại
+          </span>
+          <span
+            style={{
+              marginLeft: 'auto', width: 56, textAlign: 'right', flex: 'none',
+              ...type.bodyStrong, color: palette.textTertiary,
+            }}
+          >
+            {formatPercent(shownRemainder)}
+          </span>
+        </div>
+      </div>
+    </div>
   )
 }
