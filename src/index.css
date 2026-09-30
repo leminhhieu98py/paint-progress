@@ -200,3 +200,10 @@ body {
   outline: 2px solid #0a8175;
   outline-offset: 2px;
 }
+
+/* A deck's drag handle (ORD-01): focusable for Alt+↑/↓, with a visible ring. */
+.pp-drag-handle:focus-visible {
+  outline: 2px solid #0a8175;
+  outline-offset: 2px;
+  border-radius: 6px;
+}

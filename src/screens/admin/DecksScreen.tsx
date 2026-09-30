@@ -1,7 +1,7 @@
-import { DownloadOutlined, PlusOutlined } from '@ant-design/icons'
+import { DownloadOutlined, HolderOutlined, PlusOutlined } from '@ant-design/icons'
 import { Alert, App, Button, Form, Input, Modal, Space, Table, Tooltip, Typography } from 'antd'
 import dayjs from 'dayjs'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { computeProjectProgress, summariseDeck } from '../../domain/progress'
 import type { WorkKind } from '../../domain/types'
@@ -10,7 +10,7 @@ import {
 } from '../../domain/unit'
 import { listGsUsers } from '../../lib/adminApi'
 import {
-  deleteDeck, duplicateDeck, listDecks, swapDeckSeq, type DeckRow,
+  deleteDeck, duplicateDeck, listDecks, saveDeckOrder, type DeckRow,
 } from '../../lib/decksApi'
 import { MISSING, formatAreaM2, formatPercent, formatWeight } from '../../lib/format'
 import { loadProjectModel } from '../../lib/progressApi'
@@ -36,7 +36,7 @@ import { CategoryBadge } from '../../components/CategoryBadge'
 import type { CategoryValue } from '../../components/categoryTone'
 import { useTablePagination } from '../../components/tablePagination'
 import { roundSharesToTotal } from '../../domain/rounding'
-import { categoricalColor, palette, space, type } from '../../theme'
+import { categoricalColor, palette, space, type, visuallyHidden } from '../../theme'
 
 /**
  * A deck by name with its code in brackets, "Main Deck (MD)" (RLP-01): the
@@ -115,7 +115,7 @@ export function DecksScreen() {
   const [copying, setCopying] = useState(false)
   const [copyForm] = Form.useForm<{ name: string; code: string }>()
   const [removing, setRemoving] = useState(false)
-  /** A seq swap is in flight: every arrow waits for it (see reorderDeck). */
+  /** A deck move is being saved: the next drag or Alt+arrow waits for it (see moveDeck). */
   const [reordering, setReordering] = useState(false)
   const [confirmingExport, setConfirmingExport] = useState(false)
   const { message } = App.useApp()
@@ -384,29 +384,34 @@ export function DecksScreen() {
   }
 
   /**
-   * Swap a deck's `seq` with its neighbour in the current list order (RV6-05).
-   * Order everywhere else -- the rollup table, the donut legend, GS deck
-   * tabs, the KPI plan table, the xlsx -- already follows `seq`, so this one
-   * write moves the deck everywhere at once. Not transactional
-   * (decksApi.swapDeckSeq): a failure between the two writes leaves both
-   * decks at one seq, which this list still renders (ties keep insertion
-   * order) and the next swap repairs.
-   *
-   * One at a time: a second click before `refreshDecks` lands would swap
-   * from the seqs this render still holds, not the ones just written.
+   * ORD-01: a deck dragged to a new place -- or moved one place by Alt+↑/↓ on
+   * its handle -- is saved on drop. The list takes the new order at once;
+   * every deck whose position changed gets its new `seq`, one write per deck
+   * (decksApi.saveDeckOrder; the owner chose no migration). On any failure
+   * the real order is read back from the server and the error said. One move
+   * at a time: a second one waits for the first to settle.
    */
-  const reorderDeck = async (a: DeckRow, b: DeckRow | undefined) => {
-    if (!b || reordering) return
+  const moveDeck = async (from: number, to: number) => {
+    if (reordering || from === to || from < 0 || to < 0 || from >= decks.length || to >= decks.length) return
+    const next = [...decks]
+    const [moved] = next.splice(from, 1)
+    next.splice(to, 0, moved)
+    const renumbered = next.map((d, i) => ({ ...d, seq: i + 1 }))
+    const changes = renumbered
+      .filter((d, i) => decks.findIndex((o) => o.id === d.id) !== i)
+      .map((d) => ({ id: d.id, seq: d.seq }))
+    setDecks(renumbered)
     setReordering(true)
     try {
-      await swapDeckSeq({ id: a.id, seq: a.seq }, { id: b.id, seq: b.seq })
-      await refreshDecks()
+      await saveDeckOrder(changes)
     } catch (e) {
       message.error((e as Error).message)
+      await refreshDecks()
     } finally {
       setReordering(false)
     }
   }
+  const dragging = useRef<number | null>(null)
 
   /**
    * The XLSX (spec §9), built from EVERY deck of the project.
@@ -488,7 +493,47 @@ export function DecksScreen() {
                 <EmptyState title="Dự án này chưa có sàn nào" />
               ),
             }}
+            // ORD-01: a row is dragged to its place, the same native drag
+            // as Công việc and Cấu hình lớp sơn, saved on drop.
+            onRow={(_row, index) => ({
+              draggable: !reordering,
+              onDragStart: () => { dragging.current = index ?? null },
+              onDragOver: (e: { preventDefault: () => void }) => e.preventDefault(),
+              onDrop: () => {
+                const from = dragging.current
+                dragging.current = null
+                if (from !== null) void moveDeck(from, index ?? 0)
+              },
+            })}
             columns={[
+              {
+                title: <span style={visuallyHidden}>Kéo để sắp xếp</span>,
+                key: 'handle',
+                align: 'center',
+                width: 44,
+                // Focusable, so the order can be changed from the keyboard:
+                // Alt+↑ and Alt+↓ move the deck one place (ORD-01).
+                render: (_v, deck, index) => (
+                  <button
+                    type="button"
+                    className="pp-drag-handle"
+                    aria-label={`Sắp xếp ${deck.name}`}
+                    aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
+                    disabled={reordering}
+                    onKeyDown={(e) => {
+                      if (!e.altKey) return
+                      if (e.key === 'ArrowUp') { e.preventDefault(); void moveDeck(index, index - 1) }
+                      if (e.key === 'ArrowDown') { e.preventDefault(); void moveDeck(index, index + 1) }
+                    }}
+                    style={{
+                      border: 0, background: 'none', padding: 4, cursor: reordering ? 'not-allowed' : 'grab',
+                      color: palette.iconMuted, display: 'inline-flex',
+                    }}
+                  >
+                    <HolderOutlined aria-hidden />
+                  </button>
+                ),
+              },
               {
                 title: 'Tên sàn',
                 dataIndex: 'name',
@@ -534,32 +579,6 @@ export function DecksScreen() {
                       }}
                     />
                     <IconAction verb="delete" label="Xóa sàn" danger onClick={() => setRemovingDeck(deck)} />
-                  </Space>
-                ),
-              },
-              {
-                title: 'Thứ tự',
-                key: 'reorder',
-                width: 90,
-                fixed: 'right',
-                align: 'center',
-                // Order everywhere else follows `seq`, i.e. this list's own
-                // order (`listDecks` already sorts by it) -- so the row
-                // before/after in `decks` IS the neighbour to swap with.
-                render: (_v, deck, index) => (
-                  <Space size={2}>
-                    <IconAction
-                      verb="moveUp"
-                      label="Lên"
-                      disabled={index === 0 || reordering}
-                      onClick={() => void reorderDeck(deck, decks[index - 1])}
-                    />
-                    <IconAction
-                      verb="moveDown"
-                      label="Xuống"
-                      disabled={index === decks.length - 1 || reordering}
-                      onClick={() => void reorderDeck(deck, decks[index + 1])}
-                    />
                   </Space>
                 ),
               },

@@ -3,7 +3,7 @@ import type { Stage } from '../domain/types'
 import {
   createDeck, deleteDeck, duplicateDeck, getDrawingUrl, listCells, listDecks, listWorkStages,
   reprorateDeckCells, saveWorkStages, roundStageWeight, STAGE_WEIGHT_EPSILON, stagesRemovedBy,
-  setDeckKpiColors, swapDeckSeq, syncCells, updateDeckArea, uploadDrawing, zoneImpactOf,
+  saveDeckOrder, setDeckKpiColors, syncCells, updateDeckArea, uploadDrawing, zoneImpactOf,
 } from './decksApi'
 
 const from = vi.hoisted(() => vi.fn())
@@ -1158,39 +1158,6 @@ describe('deleteDeck', () => {
   })
 })
 
-describe('swapDeckSeq (RV6-06)', () => {
-  it('writes each deck the other one\'s seq, as two separate updates', async () => {
-    const bA = builder({ data: null })
-    const bB = builder({ data: null })
-    from.mockImplementationOnce(() => bA).mockImplementationOnce(() => bB)
-
-    await swapDeckSeq({ id: 'd1', seq: 1 }, { id: 'd2', seq: 2 })
-
-    expect(from).toHaveBeenNthCalledWith(1, 'decks')
-    expect(bA.update).toHaveBeenCalledWith({ seq: 2 })
-    expect(bA.eq).toHaveBeenCalledWith('id', 'd1')
-    expect(from).toHaveBeenNthCalledWith(2, 'decks')
-    expect(bB.update).toHaveBeenCalledWith({ seq: 1 })
-    expect(bB.eq).toHaveBeenCalledWith('id', 'd2')
-  })
-
-  it('throws on a refused first write, without attempting the second', async () => {
-    from.mockImplementationOnce(() => builder({ error: { message: 'permission denied' } }))
-
-    await expect(swapDeckSeq({ id: 'd1', seq: 1 }, { id: 'd2', seq: 2 }))
-      .rejects.toThrow('permission denied')
-    expect(from).toHaveBeenCalledTimes(1)
-  })
-
-  it('throws on a refused second write', async () => {
-    from.mockImplementationOnce(() => builder({ data: null }))
-      .mockImplementationOnce(() => builder({ error: { message: 'permission denied' } }))
-
-    await expect(swapDeckSeq({ id: 'd1', seq: 1 }, { id: 'd2', seq: 2 }))
-      .rejects.toThrow('permission denied')
-  })
-})
-
 describe('setDeckKpiColors (RV6-28)', () => {
   it('writes both colours to the deck row in one update', async () => {
     const b = builder({ data: null })
@@ -1329,5 +1296,34 @@ describe('duplicateDeck (0029)', () => {
     rpc.mockResolvedValue({ data: null, error: { message: 'only an admin may duplicate a deck' } })
     await expect(duplicateDeck(SRC, { name: 'x', code: 'X' })).rejects.toThrow(/admin/)
     expect(copy).not.toHaveBeenCalled()
+  })
+})
+
+describe('saveDeckOrder (ORD-01)', () => {
+  it('writes each moved deck\'s seq, one update per deck, in order', async () => {
+    const calls: { update: unknown; id: unknown }[] = []
+    from.mockImplementation(() => {
+      const b = builder({})
+      ;(b.update as ReturnType<typeof vi.fn>).mockImplementation((v: unknown) => {
+        calls.push({ update: v, id: undefined })
+        return b
+      })
+      ;(b.eq as ReturnType<typeof vi.fn>).mockImplementation((_c: string, id: unknown) => {
+        calls[calls.length - 1].id = id
+        return b
+      })
+      return b
+    })
+    await saveDeckOrder([{ id: 'd2', seq: 1 }, { id: 'd1', seq: 2 }])
+    expect(from).toHaveBeenCalledWith('decks')
+    expect(calls).toEqual([{ update: { seq: 1 }, id: 'd2' }, { update: { seq: 2 }, id: 'd1' }])
+  })
+
+  it('stops at the first refused write and throws its message', async () => {
+    from
+      .mockImplementationOnce(() => builder({ error: { message: 'permission denied' } }))
+      .mockImplementation(() => builder({}))
+    await expect(saveDeckOrder([{ id: 'd2', seq: 1 }, { id: 'd1', seq: 2 }])).rejects.toThrow('permission denied')
+    expect(from).toHaveBeenCalledTimes(1)
   })
 })

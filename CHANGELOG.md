@@ -51,6 +51,10 @@ One database migration (`0037`) and an Edge Function redeploy (`admin-users`).
 
 ### Changed
 
+- **Decks are reordered by drag** on the Sàn list (a handle on each row, or
+  Alt+↑/↓ on a focused handle); the new order is saved on drop, with no Lưu
+  step. The Lên/Xuống arrow column is gone. If a write fails, the list reloads
+  the real order and says why.
 - **The project ring's legend shows each deck's contribution** to the project
   figure (weight × progress) under the header `Đóng góp`: the figure the arc
   is sized by, so the legend adds up to the centre exactly (with `Còn lại`).

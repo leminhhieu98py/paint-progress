@@ -23,13 +23,13 @@ const getDrawingUrl = vi.hoisted(() => vi.fn())
 vi.mock('../../lib/projectsApi', () => ({ listProjectNames: () => listProjectNames() }))
 const deleteDeck = vi.hoisted(() => vi.fn())
 const duplicateDeck = vi.hoisted(() => vi.fn())
-const swapDeckSeq = vi.hoisted(() => vi.fn())
+const saveDeckOrder = vi.hoisted(() => vi.fn())
 vi.mock('../../lib/decksApi', () => ({
   listDecks: (p: string) => listDecks(p),
   getDrawingUrl: (p: string) => getDrawingUrl(p),
   deleteDeck: (d: unknown) => deleteDeck(d),
   duplicateDeck: (src: unknown, input: unknown) => duplicateDeck(src, input),
-  swapDeckSeq: (a: unknown, b: unknown) => swapDeckSeq(a, b),
+  saveDeckOrder: (changes: unknown) => saveDeckOrder(changes),
 }))
 const listDeckEvents = vi.hoisted(() => vi.fn())
 vi.mock('../../lib/progressApi', () => ({
@@ -122,8 +122,8 @@ beforeEach(() => {
   deleteDeck.mockResolvedValue({ drawingRemoved: true })
   duplicateDeck.mockReset()
   duplicateDeck.mockResolvedValue({ deckId: 'd9', drawingCopied: true })
-  swapDeckSeq.mockReset()
-  swapDeckSeq.mockResolvedValue(undefined)
+  saveDeckOrder.mockReset()
+  saveDeckOrder.mockResolvedValue(undefined)
   listDecks.mockResolvedValue([
     {
       id: 'd1', projectId: 'p1', seq: 1, name: 'Main Deck', code: 'MD',
@@ -776,7 +776,7 @@ describe('DecksScreen — duplicating a deck (Feedback Rv2, item 3)', () => {
   })
 })
 
-describe('DecksScreen — reordering decks (RV6-05, RV6-06)', () => {
+describe('DecksScreen — reordering decks by drag (ORD-01)', () => {
   const THREE_DECKS = [
     {
       id: 'd1', projectId: 'p1', seq: 1, name: 'First Deck', code: 'FD',
@@ -799,88 +799,78 @@ describe('DecksScreen — reordering decks (RV6-05, RV6-06)', () => {
     listDecks.mockResolvedValue(THREE_DECKS)
   })
 
-  it('keeps the row actions and the order arrows in view while the list scrolls sideways (QA F8 follow-up)', async () => {
-    // Seen at 1024px after F8: the list scrolled sideways and took Mở, Nhân
-    // bản, Xoá and Lên/Xuống past the card's right edge. Both columns are pinned.
+  // The deck list is the first table on the page.
+  const names = () => [...(document.querySelector('.ant-table-tbody') as HTMLElement).querySelectorAll('.ant-table-row')]
+    .map((tr) => tr.querySelector('td:nth-child(2) span span')?.textContent)
+  const rowOfDeck = (name: string) => screen.getByText(name).closest('tr') as HTMLElement
+  const drag = (fromName: string, toName: string) => {
+    const from = rowOfDeck(fromName)
+    const to = rowOfDeck(toName)
+    fireEvent.dragStart(from)
+    fireEvent.dragOver(to)
+    fireEvent.drop(to)
+  }
+
+  it('has no Thứ tự column and no arrows: each row has a drag handle, the actions pinned right', async () => {
     renderScreen()
     await screen.findByText('First Deck')
-    expect(screen.getAllByRole('button', { name: 'Lên' })[0].closest('td'))
-      .toHaveClass('ant-table-cell-fix-right')
+    expect(screen.queryByRole('columnheader', { name: 'Thứ tự' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Lên' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Xuống' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Sắp xếp First Deck' })).toBeInTheDocument()
+    expect(rowOfDeck('First Deck')).toHaveAttribute('draggable', 'true')
     expect(screen.getByRole('columnheader', { name: 'Thao tác' })).toHaveClass('ant-table-cell-fix-right')
   })
 
-  it('disables Lên on the first row and Xuống on the last, leaving the rest enabled', async () => {
-    renderScreen()
-    await screen.findByText('First Deck')
-
-    const ups = screen.getAllByRole('button', { name: 'Lên' })
-    const downs = screen.getAllByRole('button', { name: 'Xuống' })
-    expect(ups).toHaveLength(3)
-    expect(downs).toHaveLength(3)
-    expect(ups[0]).toBeDisabled()
-    expect(ups[1]).toBeEnabled()
-    expect(ups[2]).toBeEnabled()
-    expect(downs[0]).toBeEnabled()
-    expect(downs[1]).toBeEnabled()
-    expect(downs[2]).toBeDisabled()
-  })
-
-  it('clicking Xuống on the first row swaps it with its neighbour and reloads the list', async () => {
-    renderScreen()
-    await screen.findByText('First Deck')
-    listDecks.mockClear()
-
-    const downs = screen.getAllByRole('button', { name: 'Xuống' })
-    await userEvent.click(downs[0])
-
-    await waitFor(() => expect(swapDeckSeq).toHaveBeenCalledWith(
-      { id: 'd1', seq: 1 }, { id: 'd2', seq: 2 },
-    ))
-    await waitFor(() => expect(listDecks).toHaveBeenCalledWith('p1'))
-  })
-
-  it('clicking Lên on the last row swaps it with its neighbour above', async () => {
-    renderScreen()
-    await screen.findByText('First Deck')
-    listDecks.mockClear()
-
-    const ups = screen.getAllByRole('button', { name: 'Lên' })
-    await userEvent.click(ups[2])
-
-    await waitFor(() => expect(swapDeckSeq).toHaveBeenCalledWith(
-      { id: 'd3', seq: 3 }, { id: 'd2', seq: 2 },
-    ))
-    await waitFor(() => expect(listDecks).toHaveBeenCalledWith('p1'))
-  })
-
-  it('surfaces a refused swap instead of failing silently', async () => {
-    swapDeckSeq.mockRejectedValue(new Error('permission denied'))
-    renderScreen()
-    await screen.findByText('First Deck')
-
-    const downs = screen.getAllByRole('button', { name: 'Xuống' })
-    await userEvent.click(downs[0])
-
-    expect(await screen.findByText('permission denied')).toBeInTheDocument()
-  })
-
-  it('ignores a second click while a swap is in flight, then re-enables the arrows', async () => {
+  it('moves a dropped deck at once and saves the seq of every deck whose place changed', async () => {
     let settle!: () => void
-    swapDeckSeq.mockReturnValue(new Promise<void>((resolve) => { settle = resolve }))
+    saveDeckOrder.mockReturnValue(new Promise<void>((resolve) => { settle = resolve }))
     renderScreen()
     await screen.findByText('First Deck')
-
-    const downs = screen.getAllByRole('button', { name: 'Xuống' })
-    await userEvent.click(downs[0])
-    await userEvent.click(downs[0])
-
-    expect(swapDeckSeq).toHaveBeenCalledTimes(1)
-    for (const b of screen.getAllByRole('button', { name: 'Xuống' })) expect(b).toBeDisabled()
-    for (const b of screen.getAllByRole('button', { name: 'Lên' })) expect(b).toBeDisabled()
-
+    drag('First Deck', 'Third Deck')
+    // Optimistic: the list reads the new order before the write lands.
+    expect(names()).toEqual(['Second Deck', 'Third Deck', 'First Deck'])
+    expect(saveDeckOrder).toHaveBeenCalledWith([
+      { id: 'd2', seq: 1 }, { id: 'd3', seq: 2 }, { id: 'd1', seq: 3 },
+    ])
     settle()
-    await waitFor(() => expect(screen.getAllByRole('button', { name: 'Xuống' })[0]).toBeEnabled())
-    expect(screen.getAllByRole('button', { name: 'Lên' })[1]).toBeEnabled()
+  })
+
+  it('writes only the decks that moved', async () => {
+    renderScreen()
+    await screen.findByText('First Deck')
+    drag('Third Deck', 'Second Deck')
+    await waitFor(() => expect(saveDeckOrder).toHaveBeenCalledWith([
+      { id: 'd3', seq: 2 }, { id: 'd2', seq: 3 },
+    ]))
+  })
+
+  it('reloads the real order and says so when a write is refused', async () => {
+    saveDeckOrder.mockRejectedValue(new Error('permission denied'))
+    renderScreen()
+    await screen.findByText('First Deck')
+    listDecks.mockClear()
+    drag('First Deck', 'Third Deck')
+    expect(await screen.findByText('permission denied')).toBeInTheDocument()
+    await waitFor(() => expect(listDecks).toHaveBeenCalledWith('p1'))
+    await waitFor(() => expect(names()).toEqual(['First Deck', 'Second Deck', 'Third Deck']))
+  })
+
+  it('reorders by keyboard: Alt+↓ and Alt+↑ on a focused handle move the deck one place', async () => {
+    renderScreen()
+    await screen.findByText('First Deck')
+    screen.getByRole('button', { name: 'Sắp xếp First Deck' }).focus()
+    await userEvent.keyboard('{Alt>}{ArrowDown}{/Alt}')
+    await waitFor(() => expect(saveDeckOrder).toHaveBeenCalledWith([
+      { id: 'd2', seq: 1 }, { id: 'd1', seq: 2 },
+    ]))
+    expect(names()).toEqual(['Second Deck', 'First Deck', 'Third Deck'])
+    saveDeckOrder.mockClear()
+    screen.getByRole('button', { name: 'Sắp xếp Third Deck' }).focus()
+    await userEvent.keyboard('{Alt>}{ArrowUp}{/Alt}')
+    await waitFor(() => expect(saveDeckOrder).toHaveBeenCalledWith([
+      { id: 'd3', seq: 2 }, { id: 'd1', seq: 3 },
+    ]))
   })
 })
 
@@ -994,7 +984,7 @@ describe('DecksScreen — alignment (UI-03)', () => {
     // No Mã column: the name reads "Main Deck (MD)" (RLP-01).
     expect(list.queryByRole('columnheader', { name: 'Mã' })).toBeNull()
     expect(name.closest('td')).toHaveTextContent(/^Main Deck \(MD\)$/)
-    for (const label of ['Số ô', 'Bản vẽ', 'Thao tác', 'Thứ tự']) {
+    for (const label of ['Số ô', 'Bản vẽ', 'Thao tác']) {
       expect(th(label)).toHaveStyle({ textAlign: 'center' })
     }
     const row = within(name.closest('tr') as HTMLElement)
