@@ -55,4 +55,18 @@ describe('StatCard', () => {
     const card = screen.getByText('Mhr/m² tổng thể').closest('[data-testid="stat-card"]') as HTMLElement
     expect(card).toHaveStyle({ background: palette.accentTint })
   })
+
+  it('sets a date, time or text value at displaySm on one line, cut with a title (AD1)', () => {
+    render(<StatCard label="Ghi nhận gần nhất" value="13:57 29/09/2026" kind="text" />)
+    const value = screen.getByText('13:57 29/09/2026')
+    expect(value).toHaveStyle({
+      fontSize: '21px', fontWeight: '700', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+    })
+    expect(value).toHaveAttribute('title', '13:57 29/09/2026')
+  })
+
+  it('fills its grid cell, so the cards of a row keep one height (AD1)', () => {
+    render(<StatCard label="Số sàn" value="4" />)
+    expect(screen.getByTestId('stat-card')).toHaveStyle({ height: '100%', boxSizing: 'border-box' })
+  })
 })

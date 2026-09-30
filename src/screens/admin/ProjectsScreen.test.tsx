@@ -159,6 +159,19 @@ describe('ProjectsScreen header counters', () => {
     ).toBeInTheDocument()
   })
 
+  it('sets the last record\'s time as text, displaySm on one line, not at the numbers\' display size (AD1)', async () => {
+    latestProgressEvent.mockResolvedValue({
+      at: dayjs().subtract(21, 'day').hour(7).minute(5).second(0).toISOString(),
+      cellCode: 'R1C1', toStageName: 'Coat 2', byName: null, byUsername: 'gs.tuan',
+    })
+    renderScreen()
+    const value = await screen.findByText('07:05 ' + dayjs().subtract(21, 'day').format('DD/MM/YYYY'))
+    expect(value).toHaveStyle({ fontSize: '21px', whiteSpace: 'nowrap' })
+    // The number cards keep display.
+    const area = screen.getAllByTestId('stat-card').find((c) => c.textContent?.startsWith('Tổng diện tích')) as HTMLElement
+    expect(area.children[1]).toHaveStyle({ fontSize: '32px' })
+  })
+
   it('says so plainly when nobody has recorded anything yet', async () => {
     renderScreen()
     expect(await screen.findByText('Chưa có ghi nhận nào')).toBeInTheDocument()

@@ -17,6 +17,7 @@ export function StatCard({
   tone = 'default',
   live = false,
   compact = false,
+  kind = 'number',
 }: {
   label: ReactNode
   value: ReactNode
@@ -28,6 +29,12 @@ export function StatCard({
    * the sub-line micro, a tighter inset, so six cards fill three short rows.
    */
   compact?: boolean
+  /**
+   * `display` is for a number only (owner 2026-09-30). A date, a time or a
+   * text value is set at displaySm on one line, cut with its full text on a
+   * title, so it never wraps and makes its card taller than the row (AD1).
+   */
+  kind?: 'number' | 'text'
 }) {
   // The scale of the page this is on: the field's 14 on a field page (GS-10).
   const type = useTypeScale()
@@ -43,6 +50,9 @@ export function StatCard({
         borderRadius: 14,
         padding: compact ? space.md : '18px 20px 20px',
         boxShadow: shadowCard,
+        // Fills its grid cell: the cards of one row keep one height (AD1).
+        height: '100%',
+        boxSizing: 'border-box',
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
@@ -72,7 +82,14 @@ export function StatCard({
         )}
       </div>
       <div
-        style={{ marginTop: compact ? space.sm : 12, ...(compact ? type.displaySm : type.display), lineHeight: 1, letterSpacing: '-0.03em' }}
+        title={kind === 'text' && (typeof value === 'string' || typeof value === 'number') ? String(value) : undefined}
+        style={{
+          marginTop: compact ? space.sm : 12,
+          ...(compact || kind === 'text' ? type.displaySm : type.display),
+          lineHeight: 1,
+          letterSpacing: '-0.03em',
+          ...(kind === 'text' ? { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } : {}),
+        }}
       >
         {value}
       </div>

@@ -228,6 +228,8 @@ export function ProjectsScreen() {
           />
           <StatCard
             label="Ghi nhận gần nhất"
+            // A time and a date, not a number: displaySm, one line (AD1).
+            kind="text"
             tone="accent"
             live={event !== null}
             value={event ? eventTime(event.at) : MISSING}
