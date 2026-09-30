@@ -58,8 +58,11 @@ describe('DeckKpiColorTable', () => {
       expect(screen.getByLabelText(`Mã màu · Kế hoạch · ${name}`)).toBeInTheDocument()
       expect(screen.getByLabelText(`Chọn màu · Thực hiện · ${name}`)).toBeInTheDocument()
       expect(screen.getByLabelText(`Mã màu · Thực hiện · ${name}`)).toBeInTheDocument()
-      expect(within(screen.getByTestId(`deck-color-row-${name === 'Sàn A' ? 'd1' : 'd2'}`)).getByRole('button', { name: `Mặc định · ${name}` }))
-        .toHaveTextContent('Mặc định')
+      // An icon action, named by its label, with no visible text (ACT-01).
+      const reset = within(screen.getByTestId(`deck-color-row-${name === 'Sàn A' ? 'd1' : 'd2'}`))
+        .getByRole('button', { name: `Mặc định · ${name}` })
+      expect(reset).toHaveClass('ant-btn-icon-only')
+      expect(reset).toHaveTextContent('')
     }
   })
 
