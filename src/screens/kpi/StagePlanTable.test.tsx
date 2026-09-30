@@ -6,7 +6,7 @@ import { palette } from '../../theme'
 import { StagePlanTable, type StagePlanRow } from './StagePlanTable'
 import { expectLeft } from '../../test/alignment'
 import { weightOf } from '../../test/typography'
-import { expectAllSmall } from '../../test/controls'
+import { expectOneHeight } from '../../test/controls'
 import { expectHelperText, keyFactTexts, ruleTexts } from '../../test/copy'
 
 const ROWS: StagePlanRow[] = [
@@ -475,11 +475,11 @@ describe('StagePlanTable — type scale (TYP-02)', () => {
 })
 
 describe('StagePlanTable — one control height per row (CTL-01)', () => {
-  it('sizes the picker, the area field, Tự tính and Lưu small, as a table row\'s controls are', async () => {
+  it('stands the picker, the area field, Tự tính and Lưu at the theme height (CTL-02)', async () => {
     renderTable()
     // s1 carries an override, so its Tự tính button is laid out and visible.
-    expectAllSmall(screen.getByTestId('plan-row-s1'))
-    expectAllSmall(screen.getByTestId('plan-row-s2'))
+    expectOneHeight(screen.getByTestId('plan-row-s1'))
+    expectOneHeight(screen.getByTestId('plan-row-s2'))
   })
 
   it('makes the area field wide enough for the longest Tự tính placeholder (R3-B)', () => {

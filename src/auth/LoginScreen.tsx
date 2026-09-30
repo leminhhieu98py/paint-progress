@@ -317,7 +317,7 @@ export function LoginScreen() {
 
       {error && <Alert type="error" message={error} style={{ marginBottom: 16 }} />}
 
-      <Form<Values> layout="vertical" onFinish={onFinish} requiredMark={false} size="large">
+      <Form<Values> layout="vertical" onFinish={onFinish} requiredMark={false}>
         <Form.Item
           name="identifier"
           label="Tên đăng nhập"

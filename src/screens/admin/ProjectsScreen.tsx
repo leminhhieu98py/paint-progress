@@ -290,7 +290,6 @@ export function ProjectsScreen() {
                   <Space size={6}>
                     <Tooltip title="Sửa dự án">
                       <Button
-                        size="small"
                         aria-label="Sửa"
                         icon={<EditOutlined />}
                         onClick={(e) => {
@@ -304,7 +303,6 @@ export function ProjectsScreen() {
                     </Tooltip>
                     <Tooltip title="Xóa dự án">
                       <Button
-                        size="small"
                         danger
                         aria-label="Xóa dự án"
                         icon={<DeleteOutlined />}

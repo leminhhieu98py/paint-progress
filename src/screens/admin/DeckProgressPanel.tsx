@@ -1650,20 +1650,10 @@ export function DeckProgressPanel({
                 { value: 'split', label: 'So sánh hai lớp' },
               ]}
             />
-            {/* One compound control, as a field with its addon button is:
-                small buttons inside a frame whose padding and border bring
-                it to the Segmented's height, within a pixel (CTL-01, Q3). */}
-            <Space
-              size={4}
-              style={{
-                background: palette.bgSubtle,
-                border: `1px solid ${palette.borderSplit}`,
-                borderRadius: 10,
-                padding: 4,
-              }}
-            >
+            {/* The zoom buttons at the theme's one height, the Segmented's
+                beside them (CTL-02): no frame to pad small buttons up to it. */}
+            <Space size={4} data-testid="zoom-group">
               <Button
-                size="small"
                 aria-label="Thu nhỏ"
                 icon={<MinusOutlined aria-hidden />}
                 onClick={() => setZoom((z) => Math.max(1, z - 0.5))}
@@ -1680,13 +1670,11 @@ export function DeckProgressPanel({
                 {`${Math.round(zoom * 100)}%`}
               </span>
               <Button
-                size="small"
                 aria-label="Phóng to"
                 icon={<PlusOutlined aria-hidden />}
                 onClick={() => setZoom((z) => Math.min(4, z + 0.5))}
               />
               <Button
-                size="small"
                 aria-label="Vừa khung"
                 icon={<ExpandOutlined aria-hidden />}
                 onClick={() => setZoom(1)}
@@ -2191,7 +2179,6 @@ export function DeckProgressPanel({
                 key: 'window',
                 render: (_, st: Stage) => (
                   <DatePicker.RangePicker
-                    size="small"
                     format="DD/MM/YYYY"
                     allowEmpty={[true, true]}
                     placeholder={['Bắt đầu', 'Kết thúc']}

@@ -134,7 +134,7 @@ export function StageConfigPanel({
    */
   const [draft, setDraft] = useState<Stage[]>([])
   /** The read-only colour's circle: a table cell's control height (CLR-01). */
-  const swatchDiameter = useControlHeight('small')
+  const swatchDiameter = useControlHeight()
   /**
    * The stage list as last read from the database, kept beside the draft so the
    * confirmation dialog can name the rows a save would actually delete. Written
@@ -441,7 +441,6 @@ export function StageConfigPanel({
             render: (v: string, _r, i) => (
               editable ? (
               <Input
-                size="small"
                 // Stable across a rename, unlike the colour fields beside it:
                 // this IS the field the name is typed into, so labelling it
                 // with the name would rename the control under the cursor.
@@ -474,7 +473,6 @@ export function StageConfigPanel({
                 {!editable && <SwatchCode color={v} label={`Màu của ${row.name}`} diameter={swatchDiameter} />}
                 {editable && (
                   <ColorField
-                    size="small"
                     label={row.name}
                     value={v}
                     hex={hexDraft[row.id]}
@@ -495,7 +493,6 @@ export function StageConfigPanel({
               <div style={{ textAlign: 'center', ...type.body }}>{formatWeight(v)}</div>
             ) : (
               <InputNumber
-                size="small"
                 value={v}
                 min={0}
                 max={1}
@@ -533,7 +530,6 @@ export function StageConfigPanel({
                 {/* A span, because antd Tooltip cannot anchor a disabled button. */}
                 <span>
                   <Button
-                    size="small"
                     danger
                     aria-label="Xoá"
                     icon={<DeleteOutlined aria-hidden />}

@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderApp } from '../../test/renderApp'
 import { StageConfigPanel } from './StageConfigPanel'
 import { expectLeft } from '../../test/alignment'
-import { expectAllSmall } from '../../test/controls'
+import { expectOneHeight } from '../../test/controls'
 import { consequenceItems, expectHelperText, keyFactTexts, ruleTexts } from '../../test/copy'
 import { palette } from '../../theme'
 
@@ -817,10 +817,10 @@ describe('StageConfigPanel weight bar', () => {
 })
 
 describe('StageConfigPanel — one control height per row (CTL-01)', () => {
-  it('sizes the name, colour and weight fields and the row actions small', async () => {
+  it('stands the name, colour and weight fields and the row actions at the theme height (CTL-02)', async () => {
     renderApp(<StageConfigPanel workId="w1" deckId="d1" />)
     const hex = await screen.findByLabelText('Mã màu · Blast + Coat 1')
-    expectAllSmall(hex.closest('tr') as HTMLElement)
+    expectOneHeight(hex.closest('tr') as HTMLElement)
   })
 })
 

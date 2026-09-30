@@ -20,8 +20,8 @@ export function swatchStyle(diameter: number): CSSProperties {
   }
 }
 
-/** The height of a control at this size under the current theme. */
-export function useControlHeight(size?: 'small'): number {
+/** The theme's one control height (CTL-02): 38 on admin screens, 48 on field screens. */
+export function useControlHeight(): number {
   const { token } = theme.useToken()
-  return size === 'small' ? token.controlHeightSM : token.controlHeight
+  return token.controlHeight
 }

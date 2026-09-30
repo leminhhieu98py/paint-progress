@@ -293,7 +293,7 @@ export function CellStageModal({
       {...modalProps}
       // A viewer gets one button, not a hidden confirm: nothing in the DOM
       // says "write" on a dialog that cannot.
-      footer={readOnly ? <Button size="large" onClick={onClose}>Đóng</Button> : undefined}
+      footer={readOnly ? <Button onClick={onClose}>Đóng</Button> : undefined}
     >
       {cell && (
         <Space direction="vertical" size="middle" style={{ width: '100%' }}>

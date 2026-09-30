@@ -232,7 +232,6 @@ export function StagePlanTable({
         return (
           <Tooltip title={datesWrong(d) ? DATE_ERROR : undefined}>
             <DatePicker.RangePicker
-              size="small"
               data-testid={`plan-range-${row.stageId}`}
               format="DD/MM/YYYY"
               status={datesWrong(d) ? 'error' : undefined}
@@ -307,7 +306,6 @@ export function StagePlanTable({
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
             <Tooltip title={areaWrong(d) ? AREA_ERROR : computedLabel}>
               <InputNumber
-                size="small"
                 aria-label="Diện tích kế hoạch"
                 placeholder={computedLabel}
                 status={areaWrong(d) ? 'error' : undefined}
@@ -329,7 +327,6 @@ export function StagePlanTable({
             <span style={{ visibility: d.plannedAreaM2 !== null ? 'visible' : 'hidden' }}>
               <Tooltip title="Bỏ ghi đè, để hệ thống tự tính lại phần còn lại từ ngày bắt đầu">
                 <Button
-                  size="small"
                   aria-label="Về diện tích tự tính"
                   disabled={saving}
                   onClick={() => {
@@ -363,7 +360,6 @@ export function StagePlanTable({
         return (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <Button
-              size="small"
               type="primary"
               aria-label="Lưu kế hoạch"
               disabled={saving || !ready}

@@ -224,7 +224,7 @@ export function EffortHistoryPanel({
             render: (_: unknown, ev: DeckEvent) => (
               <Space size={4}>
                 {editedMark(ev)}
-                <Button size="small" onClick={() => openEdit(ev)}>Sửa</Button>
+                <Button onClick={() => openEdit(ev)}>Sửa</Button>
               </Space>
             ),
           }] : []),

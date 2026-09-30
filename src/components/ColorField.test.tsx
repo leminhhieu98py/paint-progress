@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { ConfigProvider, theme } from 'antd'
-import { adminTheme } from '../theme'
+import { adminTheme, fieldTheme } from '../theme'
 import { describe, expect, it, vi } from 'vitest'
 import { ColorField, HEX_COLOR } from './ColorField'
 
@@ -104,24 +104,19 @@ describe('ColorField', () => {
     expect(swatch.style.width).toBe(swatch.style.height)
   })
 
-  it('sizes the circle to the height of the controls in its row (CLR-01, CTL-01)', () => {
-    const token = theme.getDesignToken(adminTheme)
-    const { unmount } = render(
-      <ConfigProvider theme={adminTheme}>
-        <ColorField label="A" value="#fadb14" onColor={vi.fn()} onHex={vi.fn()} />
-      </ConfigProvider>,
-    )
-    expect(screen.getByLabelText('Chọn màu · A')).toHaveStyle({ width: `${token.controlHeight}px` })
-    unmount()
-    render(
-      <ConfigProvider theme={adminTheme}>
-        <ColorField size="small" label="A" value="#fadb14" onColor={vi.fn()} onHex={vi.fn()} />
-      </ConfigProvider>,
-    )
-    expect(screen.getByLabelText('Chọn màu · A')).toHaveStyle({
-      width: `${token.controlHeightSM}px`,
-      height: `${token.controlHeightSM}px`,
-    })
+  it('sizes the circle to the theme\'s one control height, in a table row too (CLR-01, CTL-02)', () => {
+    for (const t of [adminTheme, fieldTheme]) {
+      const token = theme.getDesignToken(t)
+      const { unmount } = render(
+        <ConfigProvider theme={t}>
+          <ColorField label="A" value="#fadb14" onColor={vi.fn()} onHex={vi.fn()} />
+        </ConfigProvider>,
+      )
+      expect(screen.getByLabelText('Chọn màu · A')).toHaveStyle({
+        width: `${token.controlHeight}px`, height: `${token.controlHeight}px`,
+      })
+      unmount()
+    }
   })
 
   it('disables both inputs together', () => {

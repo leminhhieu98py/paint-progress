@@ -360,7 +360,6 @@ export function WorksScreen() {
                 width: 260,
                 render: (v: string, _w, i) => (
                   <Input
-                    size="small"
                     aria-label="Tên công việc"
                     value={v}
                     placeholder="Ví dụ: Sơn, Tháo giáo, Dọn dẹp"
@@ -378,7 +377,6 @@ export function WorksScreen() {
                 width: 150,
                 render: (v: string, _w, i) => (
                   <Input
-                    size="small"
                     aria-label="Đại lượng"
                     value={v}
                     placeholder={DEFAULT_QUANTITY_LABEL}
@@ -394,7 +392,6 @@ export function WorksScreen() {
                 width: 110,
                 render: (v: string, _w, i) => (
                   <Input
-                    size="small"
                     aria-label="Đơn vị"
                     value={v}
                     placeholder={DEFAULT_UNIT}
@@ -411,7 +408,6 @@ export function WorksScreen() {
                 width: 140,
                 render: (v: WorkKind, _w, i) => (
                   <Select<WorkKind>
-                    size="small"
                     aria-label="Loại công việc"
                     {...searchSelectProps}
                     value={v}
@@ -428,7 +424,6 @@ export function WorksScreen() {
                 width: 120,
                 render: (v: number, _w, i) => (
                   <InputNumber
-                    size="small"
                     aria-label="Trọng số"
                     value={v}
                     min={0}
@@ -456,7 +451,6 @@ export function WorksScreen() {
                 width: 150,
                 render: (_v, w, i) => (w.kind === 'manual' ? (
                   <InputNumber
-                    size="small"
                     aria-label="Tiến độ (%)"
                     value={Math.round(w.manualProgress * 10000) / 100}
                     min={0}
@@ -483,7 +477,6 @@ export function WorksScreen() {
                     {w.kind === 'bays' && (
                       <Tooltip title="Sàn tham gia và trọng số sàn">
                         <Button
-                          size="small"
                           aria-label="Sàn tham gia"
                           icon={<TableOutlined />}
                           onClick={() => void openMatrix(w)}
@@ -492,7 +485,6 @@ export function WorksScreen() {
                     )}
                     <Tooltip title="Xóa công việc">
                       <Button
-                        size="small"
                         danger
                         aria-label="Xóa công việc"
                         icon={<DeleteOutlined />}
@@ -574,7 +566,6 @@ export function WorksScreen() {
                     width: 140,
                     render: (v: number, r) => (
                       <InputNumber
-                        size="small"
                         aria-label={`Trọng số ${r.name}`}
                         value={v}
                         min={0}

@@ -410,7 +410,6 @@ export function NhanLucScreen() {
     <>
       <Tooltip title="Đổi tên đăng nhập">
         <Button
-          size="small"
           aria-label="Đổi tên đăng nhập"
           icon={<EditOutlined />}
           onClick={() => {
@@ -421,11 +420,10 @@ export function NhanLucScreen() {
       </Tooltip>
       {/* Not "Phân quyền": on this screen that word is the role (review I-2). */}
       <Tooltip title="Dự án và công việc">
-        <Button size="small" aria-label="Dự án và công việc" icon={<TeamOutlined />} onClick={() => setPermTarget(user)} />
+        <Button aria-label="Dự án và công việc" icon={<TeamOutlined />} onClick={() => setPermTarget(user)} />
       </Tooltip>
       <Tooltip title="Đổi mật khẩu">
         <Button
-          size="small"
           aria-label="Đổi mật khẩu"
           icon={<KeyOutlined />}
           onClick={() => { pwForm.resetFields(); setPwTarget(user) }}
@@ -433,7 +431,6 @@ export function NhanLucScreen() {
       </Tooltip>
       <Tooltip title="Xem mật khẩu · được ghi log">
         <Button
-          size="small"
           aria-label="Xem mật khẩu"
           icon={<EyeOutlined style={{ color: palette.warning }} />}
           onClick={() =>
@@ -447,7 +444,6 @@ export function NhanLucScreen() {
       {user.active ? (
         <Tooltip title="Khoá tài khoản">
           <Button
-            size="small"
             danger
             aria-label="Khoá tài khoản"
             icon={<LockOutlined />}
@@ -456,11 +452,10 @@ export function NhanLucScreen() {
         </Tooltip>
       ) : user.hidden ? (
         // The lock's slot, kept: every account row has its buttons at the same x (M7).
-        <Button size="small" aria-hidden tabIndex={-1} icon={<LockOutlined />} style={{ visibility: 'hidden' }} />
+        <Button aria-hidden tabIndex={-1} icon={<LockOutlined />} style={{ visibility: 'hidden' }} />
       ) : (
         <Tooltip title="Mở khoá · đăng nhập lại được, dự án giữ nguyên">
           <Button
-            size="small"
             aria-label="Mở khoá"
             icon={<UnlockOutlined />}
             onClick={() =>
@@ -477,7 +472,6 @@ export function NhanLucScreen() {
         // An icon like every other action in the row (M7).
         <Tooltip title="Hiện lại trong danh sách · vẫn khoá">
           <Button
-            size="small"
             aria-label="Hiện lại"
             icon={<RollbackOutlined />}
             onClick={() =>
@@ -492,7 +486,6 @@ export function NhanLucScreen() {
       ) : (
         <Tooltip title="Ẩn khỏi danh sách · không xoá">
           <Button
-            size="small"
             aria-label="Ẩn tài khoản"
             icon={<EyeInvisibleOutlined />}
             onClick={() => setHideTarget(user)}
@@ -520,7 +513,6 @@ export function NhanLucScreen() {
       </Tooltip>
       <Tooltip title="Sửa tên">
         <Button
-          size="small"
           aria-label="Sửa tên"
           icon={<EditOutlined />}
           onClick={() => {
@@ -698,7 +690,6 @@ export function NhanLucScreen() {
                     {row.kind === 'account' ? accountActions(row.account) : employeeActions(row)}
                     <Tooltip title="Đổi phân quyền · Nhân viên, GS, Visitor">
                       <Button
-                        size="small"
                         aria-label="Đổi phân quyền"
                         icon={<SwapOutlined />}
                         onClick={() => setChangeTarget(row)}

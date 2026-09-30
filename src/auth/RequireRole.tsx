@@ -41,7 +41,7 @@ export function RequireRole({
           message="Không tải được thông tin tài khoản"
           description="Kiểm tra kết nối mạng rồi thử lại."
           action={
-            <Button size="small" onClick={() => window.location.reload()}>
+            <Button onClick={() => window.location.reload()}>
               Thử lại
             </Button>
           }

@@ -526,7 +526,6 @@ export function DecksScreen() {
                   <Space size={6}>
                     <Tooltip title="Mở sàn">
                       <Button
-                        size="small"
                         aria-label="Mở"
                         icon={<ArrowRightOutlined />}
                         onClick={() => navigate(deck.id)}
@@ -534,7 +533,6 @@ export function DecksScreen() {
                     </Tooltip>
                     <Tooltip title="Nhân bản sàn · bản vẽ, khung và lưới ô">
                       <Button
-                        size="small"
                         aria-label="Nhân bản sàn"
                         icon={<CopyOutlined />}
                         onClick={() => {
@@ -545,7 +543,6 @@ export function DecksScreen() {
                     </Tooltip>
                     <Tooltip title="Xóa sàn">
                       <Button
-                        size="small"
                         danger
                         aria-label="Xóa sàn"
                         icon={<DeleteOutlined />}
@@ -568,7 +565,6 @@ export function DecksScreen() {
                   <Space size={2}>
                     <Tooltip title="Lên">
                       <Button
-                        size="small"
                         aria-label="Lên"
                         icon={<ArrowUpOutlined />}
                         disabled={index === 0 || reordering}
@@ -577,7 +573,6 @@ export function DecksScreen() {
                     </Tooltip>
                     <Tooltip title="Xuống">
                       <Button
-                        size="small"
                         aria-label="Xuống"
                         icon={<ArrowDownOutlined />}
                         disabled={index === decks.length - 1 || reordering}

@@ -4,7 +4,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderApp } from '../../test/renderApp'
 import { expectLeft } from '../../test/alignment'
-import { expectAllSmall } from '../../test/controls'
+import { expectOneHeight } from '../../test/controls'
 import { consequenceItems, expectHelperText, keyFactTexts, pageSubtitle, ruleTexts } from '../../test/copy'
 import { palette } from '../../theme'
 import type { Work, WorkModel } from '../../domain/types'
@@ -481,19 +481,19 @@ describe('WorksScreen — alignment (UI-06)', () => {
 })
 
 describe('WorksScreen — one control height per row (CTL-01)', () => {
-  it('sizes every field and button in a work row small', async () => {
+  it('stands every field and button in a work row at the theme height (CTL-02)', async () => {
     renderScreen()
     await screen.findByDisplayValue('Sơn')
-    expectAllSmall(rowOf('Sơn'))
+    expectOneHeight(rowOf('Sơn'))
   })
 
-  it('sizes the deck weight field in the matrix small', async () => {
+  it('stands the deck weight field in the matrix at the theme height (CTL-02)', async () => {
     renderScreen()
     await screen.findByDisplayValue('Sơn')
     await userEvent.click(within(rowOf('Sơn')).getByRole('button', { name: 'Sàn tham gia' }))
     const matrix = await screen.findByTestId('work-decks-w1')
     const weight = (await within(matrix).findAllByRole('spinbutton'))[0]
-    expectAllSmall(weight.closest('tr') as HTMLElement)
+    expectOneHeight(weight.closest('tr') as HTMLElement)
   })
 })
 

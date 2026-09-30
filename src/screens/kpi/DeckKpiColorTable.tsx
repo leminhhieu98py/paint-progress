@@ -116,7 +116,6 @@ export function DeckKpiColorTable({
       : (stored(row, family) ?? KPI_COLOR_DEFAULTS[family]).toLowerCase()
     return (
       <ColorField
-        size="small"
         label={`${FAMILY_LABEL[family]} · ${row.name}`}
         value={shown}
         hex={draft}
@@ -162,7 +161,6 @@ export function DeckKpiColorTable({
             render: (_v, row) => (
               <Button
                 type="link"
-                size="small"
                 aria-label={`Mặc định · ${row.name}`}
                 // Nothing to clear on a deck already at the defaults: the
                 // write would be a no-op and the reload it triggers a cost.

@@ -31,7 +31,6 @@ export function ColorField({
   label,
   value,
   hex,
-  size,
   disabled = false,
   onColor,
   onHex,
@@ -45,8 +44,6 @@ export function ColorField({
   value: string
   /** The hex field's text while it is not yet a colour; `undefined` shows `value`. */
   hex?: string
-  /** `small` in a table cell, where every control is (CTL-01). */
-  size?: 'small'
   disabled?: boolean
   /** A complete colour, lowercased. */
   onColor: (color: string) => void
@@ -59,7 +56,8 @@ export function ColorField({
 }) {
   const shown = hex ?? value
   const valid = HEX_COLOR.test(shown)
-  const diameter = useControlHeight(size)
+  // The theme's one control height, in a table cell too (CTL-02).
+  const diameter = useControlHeight()
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}>
       {/* The native picker, bare: it opens on click, Enter and Space, and
@@ -89,7 +87,6 @@ export function ColorField({
         aria-invalid={valid ? undefined : true}
         placeholder="#RRGGBB"
         maxLength={7}
-        size={size}
         status={valid ? undefined : 'error'}
         value={shown}
         disabled={disabled}
