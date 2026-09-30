@@ -25,8 +25,8 @@ One database migration (`0037`) and an Edge Function redeploy (`admin-users`).
 
 - **Nhân lực**, one screen for GS and Visitor accounts and employees. It
   replaces Người dùng and Nhân viên in the menu; `/admin/employees` redirects
-  to it. One list sorted by name, with the role as a badge (Nhân viên / GS /
-  Visitor) whose tooltip is the role's description, a filter by name or login,
+  to it. One list, GS first, then Visitor, then Nhân viên, each sorted by
+  name, with the role as a badge (Nhân viên / GS / Visitor) whose tooltip is the role's description, a filter by name or login,
   Phân quyền and Trạng thái, and `-` where an employee has no data. Xuất danh
   sách still exports the employees.
 - **Thêm nhân lực** asks for the role first (Nhân viên by default, GS or
