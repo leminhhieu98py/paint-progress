@@ -122,3 +122,66 @@ describe('SectionCard: an extra that fills the header', () => {
     expect(wrapper).toHaveStyle({ marginLeft: 'auto' })
   })
 })
+
+describe('SectionCard — the collapsible header (COL-01)', () => {
+  const card = (props: Partial<Parameters<typeof SectionCard>[0]> = {}) => (
+    <SectionCard
+      collapsible
+      code="A3.2"
+      title="Cấu hình lớp sơn"
+      facts={[{ value: 2, label: 'lớp' }]}
+      extra={<><button type="button">Lưu</button><select aria-label="Công việc"><option>Sơn</option></select></>}
+      {...props}
+    >
+      nội dung
+    </SectionCard>
+  )
+
+  it('puts the chevron at the right end, so the header starts at the inset like any card', () => {
+    render(card())
+    const toggle = screen.getByRole('button', { name: 'Cấu hình lớp sơn' })
+    const header = toggle.parentElement as HTMLElement
+    expect(header.firstElementChild).toHaveTextContent('A3.2')
+    expect(header.lastElementChild).toBe(toggle)
+  })
+
+  it('points the chevron right when closed and down when open', async () => {
+    render(card())
+    const toggle = screen.getByRole('button', { name: 'Cấu hình lớp sơn' })
+    expect(toggle.querySelector('.anticon-down')).not.toBeNull()
+    await userEvent.click(toggle)
+    expect(toggle.querySelector('.anticon-right')).not.toBeNull()
+    expect(toggle.querySelector('.anticon-down')).toBeNull()
+  })
+
+  it('toggles from anywhere on the header row: the title, a blank stretch', async () => {
+    render(card())
+    const toggle = screen.getByRole('button', { name: 'Cấu hình lớp sơn' })
+    await userEvent.click(screen.getByRole('heading', { name: 'Cấu hình lớp sơn' }))
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    await userEvent.click(toggle.parentElement as HTMLElement)
+    expect(toggle).toHaveAttribute('aria-expanded', 'true')
+  })
+
+  it('leaves the header\'s own controls and facts alone: they do not toggle', async () => {
+    render(card())
+    const toggle = screen.getByRole('button', { name: 'Cấu hình lớp sơn' })
+    await userEvent.click(screen.getByRole('button', { name: 'Lưu' }))
+    await userEvent.click(screen.getByRole('combobox', { name: 'Công việc' }))
+    await userEvent.click(screen.getByTestId('key-fact'))
+    expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByText('nội dung')).toBeInTheDocument()
+  })
+
+  it('is one button for the keyboard: aria-controls the body, Enter and Space toggle', async () => {
+    render(card())
+    const toggle = screen.getByRole('button', { name: 'Cấu hình lớp sơn' })
+    const body = document.getElementById(toggle.getAttribute('aria-controls') ?? '')
+    expect(body).toHaveTextContent('nội dung')
+    toggle.focus()
+    await userEvent.keyboard('{Enter}')
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    await userEvent.keyboard(' ')
+    expect(toggle).toHaveAttribute('aria-expanded', 'true')
+  })
+})

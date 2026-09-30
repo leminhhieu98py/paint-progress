@@ -143,3 +143,13 @@ describe('index.css Alert title (M3, TYP-01)', () => {
     }
   })
 })
+
+describe('index.css collapsible card toggle (COL-01)', () => {
+  it('rings the toggle on keyboard focus', () => {
+    const ring = Array.from(sheet.sheet!.cssRules)
+      .filter((r): r is CSSStyleRule => r instanceof CSSStyleRule)
+      .find((r) => r.selectorText === '.pp-card-toggle:focus-visible')
+    expect(ring).toBeDefined()
+    expect(ring!.style.outline).toMatch(/2px solid/)
+  })
+})

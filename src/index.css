@@ -194,3 +194,9 @@ body {
     max-width: calc(100vw - 32px) !important;
   }
 }
+
+/* A collapsible card's toggle (COL-01): the keyboard's way in, a visible ring. */
+.pp-card-toggle:focus-visible {
+  outline: 2px solid #0a8175;
+  outline-offset: 2px;
+}
