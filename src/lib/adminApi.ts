@@ -1,4 +1,5 @@
 import { FunctionsHttpError } from '@supabase/supabase-js'
+import { duplicateNameMessage } from './personName'
 import { supabase } from './supabase'
 
 /** The roles the admin hands out. An admin account is never made here. */
@@ -121,6 +122,19 @@ export async function reactivateUser(userId: string): Promise<void> {
 
 export async function renameUser(userId: string, username: string): Promise<void> {
   await call<{ ok: true }>('rename', { userId, username })
+}
+
+/**
+ * An account's full name (NL-09's edit dialog). Written directly under the
+ * admin RLS policy on profiles -- no privileged step, so no Edge Function --
+ * and 0037's trigger refuses a name another person holds (PPDUP), said here
+ * in Vietnamese.
+ */
+export async function renameAccount(userId: string, fullName: string): Promise<void> {
+  const name = fullName.trim()
+  if (name === '') throw new Error('Họ tên không được để trống.')
+  const { error } = await supabase.from('profiles').update({ full_name: name }).eq('id', userId)
+  if (error) throw new Error(duplicateNameMessage(error, name) ?? error.message)
 }
 
 /** Locks and hides. The row and every history line naming it stay. */

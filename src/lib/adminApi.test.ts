@@ -1,7 +1,7 @@
 import { FunctionsHttpError } from '@supabase/supabase-js'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
-  changeRole, createGsUser, deactivateGsUser, hideUser, listGsUsers, reactivateUser, renameUser,
+  changeRole, createGsUser, deactivateGsUser, hideUser, listGsUsers, reactivateUser, renameAccount, renameUser,
   revealPassword, setMemberships, setPassword, unhideUser,
 } from './adminApi'
 
@@ -268,5 +268,26 @@ describe('listGsUsers', () => {
     expect(user.projects).toEqual([{ id: 'p2', name: 'Rạng Đông RD-2', allWorks: true, workIds: [], workCount: 0 }])
     expect(user.role).toBe('viewer')
     expect(user.hidden).toBe(true)
+  })
+})
+
+describe('renameAccount (NL-09)', () => {
+  it('writes the trimmed full name onto the profile, under the admin RLS policy', async () => {
+    const b = builder()
+    from.mockReturnValue(b)
+    await renameAccount('u7', '  GS Một Mới ')
+    expect(from).toHaveBeenCalledWith('profiles')
+    expect(b.update).toHaveBeenCalledWith({ full_name: 'GS Một Mới' })
+    expect(b.eq).toHaveBeenCalledWith('id', 'u7')
+  })
+
+  it('refuses an empty name without writing', async () => {
+    await expect(renameAccount('u7', '   ')).rejects.toThrow('Họ tên không được để trống.')
+    expect(from).not.toHaveBeenCalled()
+  })
+
+  it('says in Vietnamese who already holds the name when the database refuses it (0037)', async () => {
+    from.mockReturnValue(builder({ error: { code: 'PPDUP', message: 'duplicate_person_name: x', details: 'employee' } }))
+    await expect(renameAccount('u7', 'Lê Văn A')).rejects.toThrow(/Lê Văn A/)
   })
 })
