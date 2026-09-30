@@ -40,6 +40,19 @@ function shared<K extends string>(items: Record<K, string>[], key: K): string | 
  */
 export const unitOfWorks = (works: { unit: string }[]): string | null => shared(works, 'unit')
 
+/**
+ * The unit ONE deck's figure is printed in (AD4). Its works' shared unit; m²
+ * for a deck in no work yet; and when its works disagree -- a deck in Sơn (m²)
+ * and Giàn giáo (tấn), as Main Deck and Cellar Deck are on DEMO -- the unit of
+ * its first work by seq, the one the Công việc screen lists first. Never
+ * null: a deck's figure is never printed bare. A SUM over several decks is
+ * still refused when their units differ (`unitOfWorks`, RV6-36).
+ */
+export function deckUnitOf(works: { unit: string; seq: number }[]): string {
+  if (works.length === 0) return DEFAULT_UNIT
+  return unitOfWorks(works) ?? [...works].sort((a, b) => a.seq - b.seq)[0].unit
+}
+
 /** The one quantity label every work in scope shares, or null. */
 export const labelOfWorks = (works: { quantityLabel: string }[]): string | null =>
   shared(works, 'quantityLabel')

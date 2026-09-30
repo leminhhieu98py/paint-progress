@@ -661,16 +661,17 @@ describe('DeckDetailScreen: the quantity and unit of the deck\'s works (RV6-36)'
     expect(screen.queryByText(/m²/)).toBeNull()
   })
 
-  it('reads Số lượng with no unit when the deck\'s works disagree', async () => {
+  it('reads Số lượng with its first work\'s unit when the deck\'s works disagree, never a bare figure (AD4)', async () => {
     listDeckWorks.mockResolvedValue([
       { work: WORK1, weight: 1, stages: [] },
       { work: { ...WORK2, quantityLabel: 'Khối lượng', unit: 'tấn' }, weight: 1, stages: [] },
     ])
     renderAt('/decks/d1')
     await screen.findByRole('heading', { level: 1, name: 'Main Deck' })
-    await waitFor(() => expect(screen.getByText('Số lượng sàn')).toBeInTheDocument())
-    expect(headerFacts()).toEqual(['24 ô', '5.258,50'])
-    expect(screen.getByText('editor MD xem Số lượng/none')).toBeInTheDocument()
+    // Sơn (m², seq 1) and Tháo giáo (tấn, seq 2): the deck's figure names Sơn's unit.
+    await waitFor(() => expect(screen.getByText('Số lượng sàn (m²)')).toBeInTheDocument())
+    expect(headerFacts()).toEqual(['24 ô', '5.258,50 m²'])
+    expect(screen.getByText('editor MD xem Số lượng/m²')).toBeInTheDocument()
   })
 
   it('keeps Diện tích sàn (m²) for a deck in no work yet', async () => {

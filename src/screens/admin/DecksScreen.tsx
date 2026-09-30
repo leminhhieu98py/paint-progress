@@ -10,7 +10,7 @@ import { computeProjectProgress, summariseDeck } from '../../domain/progress'
 import type { WorkKind } from '../../domain/types'
 import {
   DEFAULT_QUANTITY_LABEL, DEFAULT_UNIT, labelOfWorks, MIXED_QUANTITY_LABEL, MIXED_UNIT_SUM_TOOLTIP,
-  quantityHeading, unitOfWorks,
+  deckUnitOf, quantityHeading, unitOfWorks,
 } from '../../domain/unit'
 import { listGsUsers } from '../../lib/adminApi'
 import {
@@ -187,10 +187,14 @@ export function DecksScreen() {
    * the Σ refusing to add them.
    */
   const bays = (model?.models ?? []).filter((m) => m.work.kind === 'bays' && m.decks.length > 0)
-  const unitOfDeck = (deckId: string): string | null => {
-    const inWorks = bays.filter((m) => m.decks.some((e) => e.deck.id === deckId)).map((m) => m.work)
+  const worksOf = (deckId: string) => bays.filter((m) => m.decks.some((e) => e.deck.id === deckId)).map((m) => m.work)
+  /** The deck's works' shared unit, or null when they disagree: what a heading and a Σ may claim (RV6-36). */
+  const sharedUnitOfDeck = (deckId: string): string | null => {
+    const inWorks = worksOf(deckId)
     return inWorks.length === 0 ? DEFAULT_UNIT : unitOfWorks(inWorks)
   }
+  /** What a row prints: never a bare figure, its first work's unit when they disagree (AD4). */
+  const unitOfDeck = (deckId: string): string => deckUnitOf(worksOf(deckId))
   /**
    * The heading, the Σ's unit and the cell rule for ONE set of decks. The deck
    * list and the rollup each derive their own, because the rollup lists only
@@ -198,7 +202,7 @@ export function DecksScreen() {
    * the rollup, whose rows may then all agree on a unit the list cannot.
    */
   const quantityScope = (deckIds: string[]) => {
-    const units = deckIds.map(unitOfDeck)
+    const units = deckIds.map(sharedUnitOfDeck)
     const works = bays.filter((m) => m.decks.some((e) => deckIds.includes(e.deck.id))).map((m) => m.work)
     const unit = units.length === 0
       ? DEFAULT_UNIT
@@ -208,11 +212,8 @@ export function DecksScreen() {
       : (labelOfWorks(works) ?? MIXED_QUANTITY_LABEL)
     const title = unit === null ? MIXED_QUANTITY_LABEL : quantityHeading(label, unit)
     /** The figure, with the row's own unit only when the heading could not carry one. */
-    const cell = (deckId: string, n: number): string => {
-      if (unit !== null) return formatAreaM2(n)
-      const own = unitOfDeck(deckId)
-      return own === null ? formatAreaM2(n) : `${formatAreaM2(n)} ${own}`
-    }
+    const cell = (deckId: string, n: number): string =>
+      (unit !== null ? formatAreaM2(n) : `${formatAreaM2(n)} ${unitOfDeck(deckId)}`)
     return { unit, title, cell }
   }
   const listScope = quantityScope(modelDecks.map((d) => d.id))

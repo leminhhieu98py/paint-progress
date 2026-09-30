@@ -15,7 +15,7 @@ import { formatAreaM2 } from '../../lib/format'
 import { listDeckEvents } from '../../lib/progressApi'
 import type { DeckEvent } from '../../domain/types'
 import {
-  DEFAULT_QUANTITY_LABEL, DEFAULT_UNIT, labelOfWorks, MIXED_QUANTITY_LABEL, unitOfWorks,
+  DEFAULT_QUANTITY_LABEL, deckUnitOf, labelOfWorks, MIXED_QUANTITY_LABEL, unitOfWorks,
 } from '../../domain/unit'
 import { pdfPageCount, renderPdfPage } from '../../lib/pdfToPng'
 import { DeckEditor } from './DeckEditor'
@@ -195,14 +195,16 @@ export function DeckDetailScreen() {
    * the figure printed bare. A deck in no work yet -- or one whose works have
    * not loaded -- keeps `Diện tích sàn (m²)`.
    */
-  const unit: string | null = works === null || works.length === 0
-    ? DEFAULT_UNIT
-    : unitOfWorks(works.map((w) => w.work))
+  // AD4: never a bare figure. Works that disagree keep `Số lượng sàn` and
+  // print their first work's unit (`deckUnitOf`).
+  const unit: string = deckUnitOf((works ?? []).map((w) => w.work))
   const quantityLabel = works === null || works.length === 0
     ? DEFAULT_QUANTITY_LABEL
-    : (unit === null ? MIXED_QUANTITY_LABEL : labelOfWorks(works.map((w) => w.work)) ?? MIXED_QUANTITY_LABEL)
-  const quantityTitle = unit === null ? `${quantityLabel} sàn` : `${quantityLabel} sàn (${unit})`
-  const withUnit = (n: number) => (unit === null ? formatAreaM2(n) : `${formatAreaM2(n)} ${unit}`)
+    : (unitOfWorks(works.map((w) => w.work)) === null
+      ? MIXED_QUANTITY_LABEL
+      : labelOfWorks(works.map((w) => w.work)) ?? MIXED_QUANTITY_LABEL)
+  const quantityTitle = `${quantityLabel} sàn (${unit})`
+  const withUnit = (n: number) => `${formatAreaM2(n)} ${unit}`
 
   const load = useCallback(async () => {
     if (creating || !deckId) return

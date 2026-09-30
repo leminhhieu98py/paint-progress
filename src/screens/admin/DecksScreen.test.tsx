@@ -913,9 +913,9 @@ describe('DecksScreen: the quantity and unit of the works in scope (RV6-36)', ()
   })
 
   it('falls back to Số lượng, per-row units and no sum when the works disagree', async () => {
-    // Sơn stays m² and Tháo giáo becomes tấn. CD is in both, so its own unit is
-    // undecided and its row shows the bare number; WD is only in Sơn and reads
-    // m². The Σ under the table cannot add a tấn to a m² and says so.
+    // Sơn stays m² and Tháo giáo becomes tấn. CD is in both, so it reads its
+    // first work's unit, Sơn's m², never a bare number (AD4); WD is only in
+    // Sơn and reads m². The Σ cannot add a tấn to a m² and says so.
     loadProjectModel.mockResolvedValue({
       ...MODEL,
       models: MODEL.models.map((m) => (m.work.id === 'w2' ? { ...m, work: { ...m.work, ...tonnes } } : m)),
@@ -924,7 +924,7 @@ describe('DecksScreen: the quantity and unit of the works in scope (RV6-36)', ()
     const rollup = await screen.findByTestId('project-rollup')
     await waitFor(() => expect(within(rollup).getByText('Cellar Deck')).toBeInTheDocument())
     expect(headersOf(rollup)).toContain('Số lượng')
-    expect(within(rollup).getByText('1.000,00')).toBeInTheDocument()
+    expect(within(rollup).getByText('1.000,00 m²')).toBeInTheDocument()
     expect(within(rollup).getByText('3.000,00 m²')).toBeInTheDocument()
     expect(within(rollup).queryByText('4.000,00')).toBeNull()
     const dash = within(rollup).getByText('-')
