@@ -66,6 +66,11 @@ One database migration (`0037`) and an Edge Function redeploy (`admin-users`).
   Alt+↑/↓ on a focused handle); the new order is saved on drop, with no Lưu
   step. The Lên/Xuống arrow column is gone. If a write fails, the list reloads
   the real order and says why.
+- **The KPI plan table is relabelled**: `Dự kiến triển khai` for the date range
+  and `Diện tích` for the planned area, with no placeholder in the area field.
+  `Tự động tính` sits beside `Lưu` as an icon action; pressing it clears the
+  typed area so the row goes back to the computed figure, which its tooltip
+  names.
 - **The project ring's legend shows each deck's contribution** to the project
   figure (weight × progress) under the header `Đóng góp`: the figure the arc
   is sized by, so the legend adds up to the centre exactly (with `Còn lại`).
