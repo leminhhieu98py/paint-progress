@@ -33,8 +33,17 @@ One database migration (`0037`) and an Edge Function redeploy (`admin-users`).
   Visitor) and shows only the fields that role needs: a Nhân viên has a name
   only and cannot sign in; a GS needs a login, password and project; a Visitor
   needs no project, since a Visitor reads every project.
-- **Đổi phân quyền** turns an employee into a GS or Visitor account and back,
-  and a GS into a Visitor, behind a dialog that says what happens. An account
+- **One Sửa dialog per row**, the create dialog prefilled: Họ tên, Phân quyền,
+  and for an account its login, a new password (the stored one shown only
+  when Xem is clicked, logged as before) and, for a GS, its projects and the
+  works within them. Lưu saves only what changed, in a fixed order, and on a
+  refusal says what was saved and what was not. A row keeps only Sửa,
+  Khoá/Mở khoá and, for an account, Ẩn/Hiện lại; an employee is locked and
+  unlocked like an account (it leaves the tablet's crew pickers), replacing
+  the Đang làm switch.
+- **Đổi phân quyền**, the role in the Sửa dialog, turns an employee into a GS
+  or Visitor account and back, and a GS into a Visitor, behind a dialog that
+  says what happens. An account
   turned into an employee is locked and hidden, not deleted, so the history it
   wrote keeps its author; turning the person back re-opens that account. A GS
   or Visitor account is not offered in the tablet's crew pickers, which list

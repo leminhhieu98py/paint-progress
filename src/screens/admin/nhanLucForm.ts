@@ -16,9 +16,11 @@ export const USERNAME_RULES = [
   { pattern: /^[a-z0-9._-]{3,32}$/i, message: 'Chỉ chữ, số, dấu chấm, gạch ngang, gạch dưới (3-32 ký tự)' },
 ]
 
+export const MIN_PASSWORD_RULE = { min: MIN_PASSWORD_LENGTH, message: `Tối thiểu ${MIN_PASSWORD_LENGTH} ký tự` }
+
 export const PASSWORD_RULES = [
   { required: true, message: 'Nhập mật khẩu' },
-  { min: MIN_PASSWORD_LENGTH, message: `Tối thiểu ${MIN_PASSWORD_LENGTH} ký tự` },
+  MIN_PASSWORD_RULE,
 ]
 
 /** A form rule from one of nhanLuc.ts's checks: the message it returns, or pass. */

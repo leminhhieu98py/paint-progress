@@ -16,6 +16,7 @@ const deactivateGsUser = vi.fn()
 const createGsUser = vi.fn()
 const reactivateUser = vi.fn()
 const renameUser = vi.fn()
+const renameAccount = vi.fn()
 const hideUser = vi.fn()
 const unhideUser = vi.fn()
 const setMemberships = vi.fn()
@@ -36,6 +37,7 @@ vi.mock('../../lib/adminApi', () => ({
   deactivateGsUser: (id: string) => deactivateGsUser(id),
   reactivateUser: (id: string) => reactivateUser(id),
   renameUser: (id: string, name: string) => renameUser(id, name),
+  renameAccount: (id: string, name: string) => renameAccount(id, name),
   hideUser: (id: string) => hideUser(id),
   unhideUser: (id: string) => unhideUser(id),
   setMemberships: (id: string, rows: unknown) => setMemberships(id, rows),
@@ -95,6 +97,11 @@ const renderScreen = () => renderApp(<NhanLucScreen />)
 /** The table row of the person with this name. */
 const rowOf = (name: string) =>
   screen.getAllByText(name).map((el) => el.closest('tr.ant-table-row')).find(Boolean) as HTMLElement
+/** The row's Sửa dialog (NL-09), open. */
+const openEdit = async (name: string) => {
+  await userEvent.click(within(rowOf(name)).getByRole('button', { name: 'Sửa' }))
+  return screen.findByRole('dialog', { name: `Sửa · ${name}` })
+}
 const bar = () => screen.getByRole('search', { name: 'Bộ lọc' })
 const search = () => within(bar()).getByRole('textbox', { name: 'Tìm nhân lực' })
 const apply = () => userEvent.click(within(bar()).getByRole('button', { name: /Tìm/ }))
@@ -107,7 +114,7 @@ const errorsIn = (root: HTMLElement) =>
 
 beforeEach(() => {
   for (const m of [
-    listGsUsers, revealPassword, setPassword, deactivateGsUser, createGsUser, reactivateUser, renameUser,
+    listGsUsers, revealPassword, setPassword, deactivateGsUser, createGsUser, reactivateUser, renameUser, renameAccount,
     hideUser, unhideUser, setMemberships, changeRole, listProjectNames, listWorks, listEmployees,
     createEmployee, updateEmployee, buildEmployeesXlsx, downloadWorkbook,
   ]) {
@@ -201,7 +208,7 @@ describe('NhanLucScreen — one list (NL-01)', () => {
       expect(th(label)).toHaveStyle({ textAlign: 'center' })
     }
     expect(screen.getAllByText('Đang dùng')[0].closest('td')).toHaveStyle({ textAlign: 'center' })
-    expect(within(rowOf('Lê Văn A')).getByRole('switch').closest('td')).toHaveStyle({ textAlign: 'center' })
+    expect(within(rowOf('Lê Văn A')).getByRole('button', { name: 'Sửa' }).closest('td')).toHaveStyle({ textAlign: 'center' })
   })
 
   it('sets the person\'s name as body text: the row is not a heading (TYP-02)', async () => {
@@ -392,17 +399,19 @@ describe('NhanLucScreen — accounts, as before (USR)', () => {
     revealPassword.mockImplementation((id: string) => Promise.resolve(id === 'u7' ? 's3cret' : 'other-secret'))
     renderScreen()
     await screen.findByText('gs1')
-    await userEvent.click(within(rowOf('GS Một')).getByRole('button', { name: 'Xem mật khẩu' }))
-    await waitFor(() => expect(screen.getByText('s3cret')).toBeInTheDocument())
+    // In the Sửa dialog (NL-09), and only when Xem is clicked.
+    const dialog = await openEdit('GS Một')
+    expect(revealPassword).not.toHaveBeenCalled()
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Xem mật khẩu' }))
+    await waitFor(() => expect(within(dialog).getByText('s3cret')).toBeInTheDocument())
     expect(revealPassword).toHaveBeenCalledWith('u7')
     expect(revealPassword).not.toHaveBeenCalledWith('u9')
     expect(screen.queryByText('other-secret')).toBeNull()
-    expect(screen.getByText(/Đã ghi log/)).toHaveTextContent('Nguyễn Thị Linh → gs1')
+    expect(within(dialog).getByText(/Đã ghi log/)).toHaveTextContent('Nguyễn Thị Linh → gs1')
     // The one date-time form (M12): HH:mm DD/MM/YYYY.
-    expect(screen.getByText(/Đã ghi log/)).toHaveTextContent(/^Đã ghi log · \d{2}:\d{2} \d{2}\/\d{2}\/\d{4} · /)
-    expect(screen.queryByText(/Log chỉ ghi thêm/)).toBeNull()
+    expect(within(dialog).getByText(/Đã ghi log/)).toHaveTextContent(/^Đã ghi log · \d{2}:\d{2} \d{2}\/\d{2}\/\d{4} · /)
 
-    await userEvent.click(screen.getByRole('button', { name: 'Đã ghi nhận' }))
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Huỷ' }))
     await waitFor(() => expect(screen.queryByText('s3cret')).toBeNull())
   })
 
@@ -410,8 +419,9 @@ describe('NhanLucScreen — accounts, as before (USR)', () => {
     revealPassword.mockRejectedValue(new Error('No stored credential'))
     renderScreen()
     await screen.findByText('gs1')
-    await userEvent.click(within(rowOf('GS Một')).getByRole('button', { name: 'Xem mật khẩu' }))
-    expect(await screen.findByText('No stored credential')).toBeInTheDocument()
+    const dialog = await openEdit('GS Một')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Xem mật khẩu' }))
+    expect(await within(dialog).findByText('No stored credential')).toBeInTheDocument()
   })
 
   it('locks only after the consequences have been confirmed, and says so', async () => {
@@ -436,8 +446,7 @@ describe('NhanLucScreen — accounts, as before (USR)', () => {
   it.each([
     ['Khoá tài khoản', /cho lần mở khoá/],
     ['Ẩn tài khoản', /Tìm lại bằng Trạng thái «Đã ẩn»/],
-    ['Dự án và công việc', /Lưu quyền/],
-    ['Đổi phân quyền', /Tiếp tục/],
+    ['Sửa', /Phân quyền/],
   ])('names no spec id in the %s dialog (CPY-04)', async (action, marker) => {
     renderScreen()
     await screen.findByText('gs1')
@@ -460,10 +469,11 @@ describe('NhanLucScreen — accounts, as before (USR)', () => {
   it('warns before a reset, then hands the new password straight to the reveal dialog', async () => {
     renderScreen()
     await screen.findByText('gs1')
-    await userEvent.click(within(rowOf('GS Một')).getByRole('button', { name: 'Đổi mật khẩu' }))
+    // A new password typed in the Sửa dialog (NL-09), behind the same warning.
+    const dialog = await openEdit('GS Một')
     expect(screen.queryByText(/GS không đăng nhập được cho tới khi bạn giao mật khẩu mới/)).toBeNull()
-    await userEvent.type(screen.getByLabelText('Mật khẩu mới'), 'Bh7@Deck2026')
-    await userEvent.click(screen.getByRole('button', { name: 'Lưu' }))
+    await userEvent.type(within(dialog).getByLabelText('Mật khẩu'), 'Bh7@Deck2026')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Lưu' }))
     expect(await screen.findByText('Đổi mật khẩu cho gs1?')).toBeInTheDocument()
     expect(consequenceItems()).toEqual(['Người dùng không nhận được thông báo nào', 'Anh tự giao mật khẩu mới, hiện ra ngay sau bước này'])
     expect(screen.getByText('Anh tự giao mật khẩu mới, hiện ra ngay sau bước này')).toBeInTheDocument()
@@ -477,27 +487,26 @@ describe('NhanLucScreen — accounts, as before (USR)', () => {
   it('refuses a password too short to survive being guessed, and offers a generated one', async () => {
     renderScreen()
     await screen.findByText('gs1')
-    await userEvent.click(within(rowOf('GS Một')).getByRole('button', { name: 'Đổi mật khẩu' }))
-    await userEvent.type(screen.getByLabelText('Mật khẩu mới'), 'gs2024')
-    await userEvent.click(screen.getByRole('button', { name: 'Lưu' }))
-    expect(await screen.findByText(/Tối thiểu 12 ký tự/)).toBeInTheDocument()
+    const dialog = await openEdit('GS Một')
+    await userEvent.type(within(dialog).getByLabelText('Mật khẩu'), 'gs2024')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Lưu' }))
+    expect(await within(dialog).findByText(/Tối thiểu 12 ký tự/)).toBeInTheDocument()
     expect(setPassword).not.toHaveBeenCalled()
-    await userEvent.click(screen.getByRole('button', { name: 'Sinh mật khẩu' }))
-    expect((screen.getByLabelText('Mật khẩu mới') as HTMLInputElement).value.length).toBeGreaterThanOrEqual(12)
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Sinh mật khẩu' }))
+    expect((within(dialog).getByLabelText('Mật khẩu') as HTMLInputElement).value.length).toBeGreaterThanOrEqual(12)
   })
 
-  it('renames a login from the pencil in the actions column', async () => {
+  it('renames a login from the Sửa dialog, prefilled with the current one (NL-09)', async () => {
     renderScreen()
     await screen.findByText('gs1')
-    const rename = within(rowOf('GS Một')).getByRole('button', { name: 'Đổi tên đăng nhập' })
-    expect(screen.getByText('GS Một').closest('td')).not.toContainElement(rename)
-    await userEvent.hover(rename)
-    expect(await screen.findByRole('tooltip')).toHaveTextContent('Đổi tên đăng nhập')
-    await userEvent.click(rename)
-    const field = await screen.findByLabelText('Tên đăng nhập mới')
+    const edit = within(rowOf('GS Một')).getByRole('button', { name: 'Sửa' })
+    expect(screen.getByText('GS Một').closest('td')).not.toContainElement(edit)
+    const dialog = await openEdit('GS Một')
+    const field = within(dialog).getByLabelText('Tên đăng nhập')
+    expect(field).toHaveValue('gs1')
     await userEvent.clear(field)
     await userEvent.type(field, 'gs.moi')
-    await userEvent.click(screen.getByRole('button', { name: 'Lưu' }))
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Lưu' }))
     await waitFor(() => expect(renameUser).toHaveBeenCalledWith('u7', 'gs.moi'))
     expect(await screen.findByText('Đã đổi tên đăng nhập')).toBeInTheDocument()
   })
@@ -522,24 +531,24 @@ describe('NhanLucScreen — accounts, as before (USR)', () => {
     await waitFor(() => expect(unhideUser).toHaveBeenCalledWith('u7'))
   })
 
-  it('saves project membership and the works within it from one dialog', async () => {
+  it('saves project membership and the works within it from the Sửa dialog (NL-09)', async () => {
     listProjectNames.mockResolvedValue(PROJECTS)
     listWorks.mockImplementation((projectId: string) => Promise.resolve(
       projectId === 'p1' ? [{ id: 'w1', name: 'Sơn' }, { id: 'w2', name: 'Tháo giáo' }] : [{ id: 'w3', name: 'Chứng từ' }],
     ))
     renderScreen()
     await screen.findByText('gs1')
-    await userEvent.click(within(rowOf('GS Một')).getByRole('button', { name: 'Dự án và công việc' }))
-    // Named for what it edits: "Phân quyền" is the role, on this screen (review I-2).
-    expect(await screen.findByRole('dialog', { name: 'Dự án và công việc · gs1' })).toBeInTheDocument()
+    const dialog = await openEdit('GS Một')
+    // "Dự án và công việc" names the section: "Phân quyền" is the role, on this screen (review I-2).
+    expect(within(dialog).getByText('Dự án và công việc')).toBeInTheDocument()
     expect(screen.queryByText(/Tick dự án tài khoản được vào/)).toBeNull()
-    await userEvent.click(await screen.findByRole('switch', { name: 'Tất cả công việc BB1' }))
-    await userEvent.type(screen.getByRole('combobox', { name: 'Công việc BB1' }), 'Sơ')
+    await userEvent.click(await within(dialog).findByRole('switch', { name: 'Tất cả công việc BB1' }))
+    await userEvent.type(within(dialog).getByRole('combobox', { name: 'Công việc BB1' }), 'Sơ')
     await screen.findByTitle('Sơn')
     expect(screen.queryByTitle('Tháo giáo')).toBeNull()
     await userEvent.click(screen.getByTitle('Sơn'))
-    await userEvent.click(screen.getByRole('checkbox', { name: 'Thành viên BB2' }))
-    await userEvent.click(screen.getByRole('button', { name: 'Lưu quyền' }))
+    await userEvent.click(within(dialog).getByRole('checkbox', { name: 'Thành viên BB2' }))
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Lưu' }))
     await waitFor(() => expect(setMemberships).toHaveBeenCalledWith('u7', [
       { projectId: 'p1', allWorks: false, workIds: ['w1'] },
       { projectId: 'p2', allWorks: true, workIds: [] },
@@ -551,40 +560,51 @@ describe('NhanLucScreen — accounts, as before (USR)', () => {
     listProjectNames.mockResolvedValue(PROJECTS)
     renderScreen()
     await screen.findByText('gs2')
-    await userEvent.click(within(rowOf('GS Hai')).getByRole('button', { name: 'Dự án và công việc' }))
-    expect(await screen.findByRole('dialog', { name: 'Dự án và công việc · gs2' })).toBeInTheDocument()
-    expect(await screen.findByText('Tài khoản Visitor thấy mọi dự án và mọi công việc.')).toBeInTheDocument()
-    expect(screen.queryByRole('checkbox', { name: 'Thành viên BB1' })).toBeNull()
-    expect(screen.queryByRole('button', { name: 'Lưu quyền' })).toBeNull()
+    const dialog = await openEdit('GS Hai')
+    expect(await within(dialog).findByText('Tài khoản Visitor thấy mọi dự án và mọi công việc.')).toBeInTheDocument()
+    expect(within(dialog).queryByRole('checkbox', { name: 'Thành viên BB1' })).toBeNull()
+    // Nothing changed, nothing to save.
+    expect(within(dialog).getByRole('button', { name: 'Lưu' })).toBeDisabled()
     expect(listWorks).not.toHaveBeenCalled()
-    await userEvent.click(screen.getByRole('button', { name: 'Đóng' }))
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Huỷ' }))
     await waitFor(() => expect(screen.queryByText('Tài khoản Visitor thấy mọi dự án và mọi công việc.')).toBeNull())
     expect(setMemberships).not.toHaveBeenCalled()
   })
 })
 
 describe('NhanLucScreen — employees, as before (Rv4, Rv5)', () => {
-  it('retires and brings back from the Đang làm switch, without deleting anything', async () => {
+  it('locks an employee after confirming and brings one back with Mở khoá, deleting nothing (NL-09 amendment)', async () => {
     renderScreen()
     await screen.findByText('Lê Văn A')
-    await userEvent.click(screen.getByRole('switch', { name: 'Đang làm · Lê Văn A' }))
+    // No Đang làm switch any more: Khoá/Mở khoá, like an account's.
+    expect(screen.queryByRole('switch', { name: /^Đang làm/ })).toBeNull()
+    await userEvent.click(within(rowOf('Lê Văn A')).getByRole('button', { name: 'Khoá nhân viên' }))
+    const dialog = (await screen.findByText('Khoá nhân viên Lê Văn A?')).closest('.ant-modal') as HTMLElement
+    expect(consequenceItems(dialog)).toEqual([
+      'Không còn trong ô chọn nhóm trưởng, thợ chính của GS',
+      'Các lần cập nhật đã ghi vẫn giữ tên',
+      'Mở khoá là đưa lại vào ô chọn',
+    ])
+    expect(updateEmployee).not.toHaveBeenCalled()
+    await userEvent.click(within(dialog).getByRole('button', { name: /Vẫn khoá/ }))
     await waitFor(() => expect(updateEmployee).toHaveBeenCalledWith('e1', { active: false }))
-    expect(await screen.findByText('Đã tắt khỏi danh sách chọn')).toBeInTheDocument()
+    expect(await screen.findByText('Đã khoá nhân viên')).toBeInTheDocument()
 
     await chooseOption('Trạng thái', 'Đã nghỉ', bar())
     await apply()
-    await userEvent.click(screen.getByRole('switch', { name: 'Đang làm · Trần Thị B' }))
+    await userEvent.click(within(rowOf('Trần Thị B')).getByRole('button', { name: 'Mở khoá' }))
     await waitFor(() => expect(updateEmployee).toHaveBeenCalledWith('e2', { active: true }))
+    expect(await screen.findByText('Đã mở khoá nhân viên')).toBeInTheDocument()
   })
 
   it('renames one person', async () => {
     renderScreen()
     await screen.findByText('Lê Văn A')
-    await userEvent.click(within(rowOf('Lê Văn A')).getByRole('button', { name: 'Sửa tên' }))
-    const name = await screen.findByLabelText('Họ tên')
+    const dialog = await openEdit('Lê Văn A')
+    const name = within(dialog).getByLabelText('Họ tên')
     await userEvent.clear(name)
     await userEvent.type(name, 'Lê Văn A2')
-    await userEvent.click(screen.getByRole('button', { name: 'Lưu' }))
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Lưu' }))
     await waitFor(() => expect(updateEmployee).toHaveBeenCalledWith('e1', { fullName: 'Lê Văn A2' }))
     expect(await screen.findByText('Đã đổi tên')).toBeInTheDocument()
   })
@@ -592,12 +612,12 @@ describe('NhanLucScreen — employees, as before (Rv4, Rv5)', () => {
   it('refuses a rename onto a name already on the list, beside the field', async () => {
     renderScreen()
     await screen.findByText('Lê Văn A')
-    await userEvent.click(within(rowOf('Lê Văn A')).getByRole('button', { name: 'Sửa tên' }))
-    const name = await screen.findByLabelText('Họ tên')
+    const dialog = await openEdit('Lê Văn A')
+    const name = within(dialog).getByLabelText('Họ tên')
     await userEvent.clear(name)
     await userEvent.type(name, 'gs một')
-    await userEvent.click(screen.getByRole('button', { name: 'Lưu' }))
-    expect(await screen.findByText('Đã có tài khoản GS/Visitor tên "gs một".')).toBeInTheDocument()
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Lưu' }))
+    expect(await within(dialog).findByText('Đã có tài khoản GS/Visitor tên "gs một".')).toBeInTheDocument()
     expect(updateEmployee).not.toHaveBeenCalled()
   })
 
@@ -748,14 +768,12 @@ describe('NhanLucScreen — Thêm nhân lực (NL-02)', () => {
   })
 })
 
-describe('NhanLucScreen — Đổi phân quyền (NL-04)', () => {
-  const openChange = async (name: string) => {
-    await userEvent.click(within(rowOf(name)).getByRole('button', { name: 'Đổi phân quyền' }))
-    return screen.findByRole('dialog', { name: `Đổi phân quyền · ${name}` })
-  }
+describe('NhanLucScreen — Đổi phân quyền, from the Sửa dialog (NL-04, NL-09)', () => {
+  // The role is the Sửa dialog's first field; Lưu runs the change-role flow.
+  const openChange = openEdit
   const pickNew = async (dialog: HTMLElement, label: string) =>
-    userEvent.click(within(within(dialog).getByRole('radiogroup', { name: 'Phân quyền mới' })).getByLabelText(label))
-  const next = (dialog: HTMLElement) => userEvent.click(within(dialog).getByRole('button', { name: 'Tiếp tục' }))
+    userEvent.click(within(within(dialog).getByRole('radiogroup', { name: 'Phân quyền' })).getByLabelText(label))
+  const next = (dialog: HTMLElement) => userEvent.click(within(dialog).getByRole('button', { name: 'Lưu' }))
 
   it('turns an employee into a GS after saying what happens, with a new login', async () => {
     listProjectNames.mockResolvedValue(PROJECTS)
@@ -764,7 +782,7 @@ describe('NhanLucScreen — Đổi phân quyền (NL-04)', () => {
     await screen.findByText('Lê Văn A')
     const dialog = await openChange('Lê Văn A')
     expect(within(dialog).getByRole('radio', { name: 'Nhân viên' })).toBeChecked()
-    expect(within(dialog).getByRole('button', { name: 'Tiếp tục' })).toBeDisabled()
+    expect(within(dialog).getByRole('button', { name: 'Lưu' })).toBeDisabled()
     await pickNew(dialog, 'GS')
     await userEvent.type(within(dialog).getByLabelText('Tên đăng nhập'), 'gs.a')
     await userEvent.type(within(dialog).getByLabelText('Mật khẩu'), 'Bh7@Deck2026')
@@ -862,7 +880,7 @@ describe('NhanLucScreen — Đổi phân quyền (NL-04)', () => {
     expect(within(confirm).getByText('BB2')).toBeInTheDocument()
     expect(within(confirm).getByText('giữ lại · mọi công việc')).toBeInTheDocument()
     expect(within(confirm).getByText('Không còn xem được dự án ngoài các dự án trên')).toBeInTheDocument()
-    expect(within(confirm).getByText('Bỏ bớt dự án bằng nút «Dự án và công việc» sau khi đổi')).toBeInTheDocument()
+    expect(within(confirm).getByText('Bỏ bớt dự án ở mục «Dự án và công việc» của hộp Sửa sau khi đổi')).toBeInTheDocument()
     await userEvent.click(within(confirm).getByRole('button', { name: 'Vẫn đổi' }))
     await waitFor(() => expect(changeRole).toHaveBeenCalledWith({ kind: 'account', id: 'u9', role: 'gs', projectId: 'p1' }))
   })
@@ -876,7 +894,7 @@ describe('NhanLucScreen — Đổi phân quyền (NL-04)', () => {
     const dialog = await openChange('trần thị b')
     await pickNew(dialog, 'Nhân viên')
     expect(within(dialog).getByText('Đã có nhân viên tên "trần thị b" (đã nghỉ; chọn Trạng thái «Đã nghỉ» để thấy).')).toBeInTheDocument()
-    expect(within(dialog).getByRole('button', { name: 'Tiếp tục' })).toBeDisabled()
+    expect(within(dialog).getByRole('button', { name: 'Lưu' })).toBeDisabled()
     expect(changeRole).not.toHaveBeenCalled()
   })
 
@@ -890,9 +908,10 @@ describe('NhanLucScreen — Đổi phân quyền (NL-04)', () => {
     await userEvent.type(within(dialog).getByLabelText('Mật khẩu'), 'Bh7@Deck2026')
     await next(dialog)
     await userEvent.click(await screen.findByRole('button', { name: 'Vẫn đổi' }))
-    expect(await within(dialog).findByText('Tên đăng nhập này đã có người dùng')).toBeInTheDocument()
+    // Says what was not saved, and why (NL-09).
+    expect(await within(dialog).findByText(/Chưa lưu: Phân quyền -- Tên đăng nhập này đã có người dùng/)).toBeInTheDocument()
     expect(dialog).toBeInTheDocument()
-    expect(within(dialog).getByRole('button', { name: 'Tiếp tục' })).toBeEnabled()
+    expect(within(dialog).getByRole('button', { name: 'Lưu' })).toBeEnabled()
     expect(within(dialog).getByLabelText('Tên đăng nhập')).toHaveValue('da.co')
     expect(within(dialog).getByLabelText('Mật khẩu')).toHaveValue('Bh7@Deck2026')
   })
@@ -924,25 +943,36 @@ describe('NhanLucScreen — rules (RUL-01, CPY-05)', () => {
   })
 })
 
-describe('NhanLucScreen — actions and dialogs (M7, M8, M9)', () => {
+describe('NhanLucScreen — actions and dialogs (M7, M8, M9, NL-09)', () => {
   const dialogOf = async (title: string) => (await screen.findByText(title)).closest('.ant-modal') as HTMLElement
-  const actionsOf = (name: string) => within(rowOf(name)).getByRole('button', { name: 'Đổi phân quyền' }).closest('td')!.firstElementChild as HTMLElement
+  const actionsOf = (name: string) => within(rowOf(name)).getByRole('button', { name: 'Sửa' }).closest('td')!.firstElementChild as HTMLElement
 
-  it('keeps every row\'s actions in one slot order, right-aligned, so Đổi phân quyền sits at one x (M7)', async () => {
+  it('keeps every row to Sửa, Khoá/Mở khoá and Ẩn/Hiện lại in one slot order, right-aligned (M7, NL-09)', async () => {
     listGsUsers.mockResolvedValue([
       ...ACCOUNTS,
       account({ id: 'u3', username: 'gs3', fullName: 'GS Ba', active: false, hidden: true }),
     ])
     renderScreen()
     await screen.findByText('gs1')
-    for (const name of ['GS Một', 'Lê Văn A']) expect(actionsOf(name)).toHaveStyle({ justifyContent: 'flex-end' })
+    const names = (el: HTMLElement) => within(el).queryAllByRole('button').map((b) => b.getAttribute('aria-label'))
+    expect(names(actionsOf('GS Một'))).toEqual(['Sửa', 'Khoá tài khoản', 'Ẩn tài khoản'])
+    // An employee: Sửa and Khoá, the hide slot kept empty so the columns line up.
+    expect(names(actionsOf('Lê Văn A'))).toEqual(['Sửa', 'Khoá nhân viên'])
+    for (const name of ['GS Một', 'Lê Văn A']) {
+      expect(actionsOf(name)).toHaveStyle({ justifyContent: 'flex-end' })
+      expect(actionsOf(name).children).toHaveLength(3)
+    }
+    // The old five row icons are in the Sửa dialog now.
+    for (const gone of ['Đổi tên đăng nhập', 'Dự án và công việc', 'Đổi mật khẩu', 'Xem mật khẩu', 'Đổi phân quyền']) {
+      expect(within(rowOf('GS Một')).queryByRole('button', { name: gone })).toBeNull()
+    }
     await chooseOption('Trạng thái', 'Đã ẩn', bar())
     await apply()
     await screen.findByText('gs3')
     // A hidden account has no lock: its slot is kept empty rather than closed up.
     const hidden = actionsOf('GS Ba')
     expect(hidden).toHaveStyle({ justifyContent: 'flex-end' })
-    expect(hidden.children).toHaveLength(7)
+    expect(hidden.children).toHaveLength(3)
   })
 
   it('brings a hidden account back from an icon button like the rest (M7)', async () => {
@@ -955,83 +985,95 @@ describe('NhanLucScreen — actions and dialogs (M7, M8, M9)', () => {
     expect(back).toHaveTextContent('')
   })
 
-  it('says "Đổi mật khẩu" on the tooltip, the dialog and the toast, and "·" in every dialog title (M7)', async () => {
+  it('titles the Sửa dialog with "·", and says "Đổi mật khẩu" on the confirmation and the toast (M7)', async () => {
     renderScreen()
     await screen.findByText('gs1')
-    const reset = within(rowOf('GS Một')).getByRole('button', { name: 'Đổi mật khẩu' })
-    await userEvent.hover(reset)
-    expect(await screen.findByRole('tooltip')).toHaveTextContent(/^Đổi mật khẩu$/)
-    await userEvent.click(reset)
-    expect(await screen.findByText('Đổi mật khẩu · gs1')).toBeInTheDocument()
-    await userEvent.type(screen.getByLabelText('Mật khẩu mới'), 'Bh7@Deck2026')
-    await userEvent.click(screen.getByRole('button', { name: 'Lưu' }))
+    const dialog = await openEdit('GS Một')
+    expect(within(dialog).getByText('Sửa · GS Một')).toBeInTheDocument()
+    await userEvent.type(within(dialog).getByLabelText('Mật khẩu'), 'Bh7@Deck2026')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Lưu' }))
     await userEvent.click(await screen.findByRole('button', { name: 'Vẫn đổi' }))
     expect(await screen.findByText('Đã đổi mật khẩu')).toBeInTheDocument()
   })
 
-  it('titles the login rename with "·" too (M7)', async () => {
-    renderScreen()
-    await screen.findByText('gs1')
-    await userEvent.click(within(rowOf('GS Một')).getByRole('button', { name: 'Đổi tên đăng nhập' }))
-    expect(await screen.findByText('Đổi tên đăng nhập · gs1')).toBeInTheDocument()
-  })
-
-  it.each([
-    ['Khoá tài khoản', 'Khoá tài khoản gs1?', 'Vẫn khoá', deactivateGsUser],
-    ['Ẩn tài khoản', 'Ẩn tài khoản gs1?', 'Vẫn ẩn', hideUser],
-  ])('spins %s while it writes, and keeps a refusal inside its dialog (M8)', async (action, title, ok, api) => {
-    let fail: (e: Error) => void = () => {}
-    api.mockReturnValue(new Promise((_res, rej) => { fail = rej }))
-    renderScreen()
-    await screen.findByText('gs1')
-    await userEvent.click(within(rowOf('GS Một')).getByRole('button', { name: action }))
-    const dialog = await dialogOf(title)
-    await userEvent.click(within(dialog).getByRole('button', { name: new RegExp(ok) }))
-    await waitFor(() => expect(within(dialog).getByRole('button', { name: new RegExp(ok) })).toHaveClass('ant-btn-loading'))
-    fail(new Error('Mất kết nối, thử lại'))
-    expect(await within(dialog).findByText('Mất kết nối, thử lại')).toBeInTheDocument()
-  })
-
-  it('spins the password change while it writes, and keeps a refusal inside its dialog (M8)', async () => {
+  it('spins the password change while it writes, and says a refusal in the Sửa dialog (M8, NL-09)', async () => {
     let fail: (e: Error) => void = () => {}
     setPassword.mockReturnValue(new Promise((_res, rej) => { fail = rej }))
     renderScreen()
     await screen.findByText('gs1')
-    await userEvent.click(within(rowOf('GS Một')).getByRole('button', { name: 'Đổi mật khẩu' }))
-    await userEvent.type(screen.getByLabelText('Mật khẩu mới'), 'Bh7@Deck2026')
-    await userEvent.click(screen.getByRole('button', { name: 'Lưu' }))
-    const dialog = await dialogOf('Đổi mật khẩu cho gs1?')
-    await userEvent.click(within(dialog).getByRole('button', { name: /Vẫn đổi/ }))
-    await waitFor(() => expect(within(dialog).getByRole('button', { name: /Vẫn đổi/ })).toHaveClass('ant-btn-loading'))
+    const edit = await openEdit('GS Một')
+    await userEvent.type(within(edit).getByLabelText('Mật khẩu'), 'Bh7@Deck2026')
+    await userEvent.click(within(edit).getByRole('button', { name: 'Lưu' }))
+    const confirm = await dialogOf('Đổi mật khẩu cho gs1?')
+    await userEvent.click(within(confirm).getByRole('button', { name: /Vẫn đổi/ }))
+    await waitFor(() => expect(within(confirm).getByRole('button', { name: /Vẫn đổi/ })).toHaveClass('ant-btn-loading'))
     fail(new Error('Mật khẩu bị từ chối'))
-    expect(await within(dialog).findByText('Mật khẩu bị từ chối')).toBeInTheDocument()
+    expect(await within(edit).findByText(/Chưa lưu: Mật khẩu -- Mật khẩu bị từ chối/)).toBeInTheDocument()
   })
 
-  it('keeps a refused login rename inside its dialog (M8)', async () => {
+  it('keeps a refused login rename inside the Sửa dialog, which stays open (M8, NL-09)', async () => {
     renameUser.mockRejectedValue(new Error('Tên đăng nhập này đã có người dùng'))
     renderScreen()
     await screen.findByText('gs1')
-    await userEvent.click(within(rowOf('GS Một')).getByRole('button', { name: 'Đổi tên đăng nhập' }))
-    const dialog = await dialogOf('Đổi tên đăng nhập · gs1')
-    const field = within(dialog).getByLabelText('Tên đăng nhập mới')
+    const dialog = await openEdit('GS Một')
+    const field = within(dialog).getByLabelText('Tên đăng nhập')
     await userEvent.clear(field)
     await userEvent.type(field, 'gs.moi')
     await userEvent.click(within(dialog).getByRole('button', { name: 'Lưu' }))
-    expect(await within(dialog).findByText('Tên đăng nhập này đã có người dùng')).toBeInTheDocument()
+    expect(await within(dialog).findByText(/Tên đăng nhập này đã có người dùng/)).toBeInTheDocument()
+    expect(within(dialog).getByLabelText('Tên đăng nhập')).toHaveValue('gs.moi')
   })
 
-  it('keeps a refused permissions save inside its dialog (M8)', async () => {
+  it('keeps a refused permissions save inside the Sửa dialog (M8, NL-09)', async () => {
     listProjectNames.mockResolvedValue(PROJECTS)
     setMemberships.mockRejectedValue(new Error('Không lưu được quyền'))
     renderScreen()
     await screen.findByText('gs1')
-    await userEvent.click(within(rowOf('GS Một')).getByRole('button', { name: 'Dự án và công việc' }))
-    const dialog = await screen.findByRole('dialog', { name: 'Dự án và công việc · gs1' })
-    await userEvent.click(within(dialog).getByRole('button', { name: /Lưu quyền/ }))
-    expect(await within(dialog).findByText('Không lưu được quyền')).toBeInTheDocument()
+    const dialog = await openEdit('GS Một')
+    await userEvent.click(within(dialog).getByRole('checkbox', { name: 'Thành viên BB2' }))
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Lưu' }))
+    expect(await within(dialog).findByText(/Chưa lưu: Dự án và công việc -- Không lưu được quyền/)).toBeInTheDocument()
   })
 
-  it('says "Mọi dự án" for a Visitor in the lock, hide and reset dialogs, and names no GS (M9)', async () => {
+  it('saves only what changed, in order, and stops at a refusal saying what was saved (NL-09)', async () => {
+    listProjectNames.mockResolvedValue(PROJECTS)
+    setPassword.mockRejectedValue(new Error('Mật khẩu bị từ chối'))
+    renderScreen()
+    await screen.findByText('gs1')
+    const dialog = await openEdit('GS Một')
+    const login = within(dialog).getByLabelText('Tên đăng nhập')
+    await userEvent.clear(login)
+    await userEvent.type(login, 'gs.moi')
+    await userEvent.type(within(dialog).getByLabelText('Mật khẩu'), 'Bh7@Deck2026')
+    await userEvent.click(within(dialog).getByRole('checkbox', { name: 'Thành viên BB2' }))
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Lưu' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Vẫn đổi' }))
+    expect(await within(dialog).findByText(
+      /Đã lưu: Tên đăng nhập\. Chưa lưu: Mật khẩu, Dự án và công việc -- Mật khẩu bị từ chối/,
+    )).toBeInTheDocument()
+    expect(renameUser).toHaveBeenCalledWith('u7', 'gs.moi')
+    expect(setMemberships).not.toHaveBeenCalled()
+    // What was saved is re-read; the dialog keeps what was typed.
+    await waitFor(() => expect(listGsUsers).toHaveBeenCalledTimes(2))
+    expect(within(dialog).getByLabelText('Mật khẩu')).toHaveValue('Bh7@Deck2026')
+  })
+
+  it('renames an account\'s full name from the Sửa dialog (NL-09)', async () => {
+    renderScreen()
+    await screen.findByText('gs1')
+    const dialog = await openEdit('GS Một')
+    const name = within(dialog).getByLabelText('Họ tên')
+    expect(name).toHaveValue('GS Một')
+    await userEvent.clear(name)
+    await userEvent.type(name, 'GS Một Mới')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Lưu' }))
+    await waitFor(() => expect(renameAccount).toHaveBeenCalledWith('u7', 'GS Một Mới'))
+    expect(await screen.findByText('Đã đổi tên')).toBeInTheDocument()
+    expect(setPassword).not.toHaveBeenCalled()
+    expect(renameUser).not.toHaveBeenCalled()
+  })
+
+  it('says "Mọi dự án" for a Visitor in the lock, hide and password dialogs, and names no GS (M9)', async () => {
     renderScreen()
     await screen.findByText('gs2')
     await userEvent.click(within(rowOf('GS Hai')).getByRole('button', { name: 'Khoá tài khoản' }))
@@ -1045,9 +1087,11 @@ describe('NhanLucScreen — actions and dialogs (M7, M8, M9)', () => {
     expect(within(dialog).getByText('Mọi dự án')).toBeInTheDocument()
     await userEvent.click(within(dialog).getByRole('button', { name: 'Huỷ' }))
 
-    await userEvent.click(within(rowOf('GS Hai')).getByRole('button', { name: 'Đổi mật khẩu' }))
-    await userEvent.type(screen.getByLabelText('Mật khẩu mới'), 'Bh7@Deck2026')
-    await userEvent.click(screen.getByRole('button', { name: 'Lưu' }))
+    await userEvent.click(within(rowOf('GS Hai')).getByRole('button', { name: 'Sửa' }))
+    // By its title: the two closed confirmations are still leaving the DOM in jsdom.
+    const edit = await dialogOf('Sửa · GS Hai')
+    await userEvent.type(within(edit).getByLabelText('Mật khẩu'), 'Bh7@Deck2026')
+    await userEvent.click(within(edit).getByRole('button', { name: 'Lưu' }))
     dialog = await dialogOf('Đổi mật khẩu cho gs2?')
     expect(within(dialog).getByText('Mọi dự án')).toBeInTheDocument()
     expect(consequenceItems(dialog)).toEqual(['Người dùng không nhận được thông báo nào', 'Anh tự giao mật khẩu mới, hiện ra ngay sau bước này'])

@@ -1,8 +1,8 @@
 import {
-  DownloadOutlined, EyeOutlined, LockOutlined, SearchOutlined, UserAddOutlined,
+  DownloadOutlined, LockOutlined, SearchOutlined, UserAddOutlined,
 } from '@ant-design/icons'
 import {
-  Alert, App, Button, Checkbox, Form, Input, Modal, Select, Space, Switch, Table, Tooltip, Typography,
+  Alert, App, Button, Input, Modal, Select, Space, Table, Tooltip, Typography,
 } from 'antd'
 import dayjs from 'dayjs'
 import { useEffect, useMemo, useState } from 'react'
@@ -23,31 +23,23 @@ import {
   hideUser,
   listGsUsers,
   reactivateUser,
-  renameUser,
-  revealPassword,
-  setMemberships,
-  setPassword,
   unhideUser,
   type GsUser,
-  type MembershipDraft,
 } from '../../lib/adminApi'
 import { listEmployees, updateEmployee, type Employee } from '../../lib/employeesApi'
 import { buildEmployeesXlsx, employeesFileName } from '../../lib/employeesXlsx'
 import { initialsOf } from '../../lib/initials'
-import { generatePassword } from '../../lib/passwordGen'
 import { downloadWorkbook } from '../../lib/projectReport'
 import { listProjectNames } from '../../lib/projectsApi'
 import { MISSING, formatDateTimeVN } from '../../lib/format'
-import { listWorks } from '../../lib/worksApi'
 import { palette, type } from '../../theme'
-import { ChangeRoleDialog } from './ChangeRoleDialog'
 import { NhanLucCreateDialog } from './NhanLucCreateDialog'
-import { PasswordInput } from './PasswordInput'
+import { NhanLucEditDialog } from './NhanLucEditDialog'
 import {
   DEFAULT_FILTERS, ROLE_DESCRIPTION, ROLE_LABEL, ROLE_OPTIONS, STATUS_OPTIONS,
-  buildRows, countFacts, filterRows, isFiltered, nameClash, type StaffRow,
+  buildRows, countFacts, filterRows, isFiltered, type StaffRow,
 } from './nhanLuc'
-import { PASSWORD_RULES, clashRule, type ProjectOption } from './nhanLucForm'
+import { type ProjectOption } from './nhanLucForm'
 
 /**
  * Quy tắc áp dụng (RUL-01): what the admin can do here and what the app does,
@@ -104,170 +96,6 @@ const projectsText = (user: GsUser) => (user.role === 'viewer'
   ? 'Mọi dự án'
   : user.projects.map((p) => p.name).join(' · ') || 'chưa gán dự án')
 
-interface PermissionRow {
-  member: boolean
-  allWorks: boolean
-  workIds: string[]
-}
-
-/**
- * "Dự án và công việc": one dialog per account, one line per project (items 1b, 1c).
- *
- * Membership, and within it either every work or the listed ones. Saved as
- * one statement through setMemberships, so what the admin sees on Lưu is
- * exactly what the account gets -- no per-checkbox writes that can leave the
- * two halves disagreeing when the tether drops mid-way.
- */
-function PermissionsDialog({
-  user, projects, onClose, onSaved,
-}: {
-  user: GsUser
-  projects: ProjectOption[]
-  onClose: () => void
-  onSaved: () => Promise<void>
-}) {
-  const [rows, setRows] = useState<Record<string, PermissionRow>>(() =>
-    Object.fromEntries(projects.map((p) => {
-      const current = user.projects.find((m) => m.id === p.value)
-      return [p.value, {
-        member: Boolean(current),
-        allWorks: current?.allWorks ?? true,
-        workIds: current?.workIds ?? [],
-      }]
-    })),
-  )
-  const [works, setWorks] = useState<Record<string, { value: string; label: string }[]>>({})
-  const [saving, setSaving] = useState(false)
-  /** A failed read or save, said in this dialog rather than behind its mask (M8). */
-  const [failure, setFailure] = useState<string | null>(null)
-  /**
-   * RV6-25: since 0034 the database gives a viewer every project and every
-   * work and no longer consults project_members for the role, so a matrix here
-   * would promise a narrowing that cannot happen. One sentence, nothing to
-   * save, nothing written. Rows a viewer already holds are left alone.
-   */
-  const viewer = user.role === 'viewer'
-
-  useEffect(() => {
-    if (viewer) return
-    let cancelled = false
-    void Promise.all(projects.map(async (p) => [p.value, await listWorks(p.value)] as const))
-      .then((pairs) => {
-        if (cancelled) return
-        setWorks(Object.fromEntries(
-          pairs.map(([id, list]) => [id, list.map((w) => ({ value: w.id, label: w.name }))]),
-        ))
-      })
-      .catch((e) => { if (!cancelled) setFailure((e as Error).message) })
-    return () => { cancelled = true }
-  }, [projects, viewer])
-
-  const patch = (projectId: string, change: Partial<PermissionRow>) =>
-    setRows((prev) => ({ ...prev, [projectId]: { ...prev[projectId], ...change } }))
-
-  const save = async () => {
-    setSaving(true)
-    try {
-      const drafts: MembershipDraft[] = projects
-        .filter((p) => rows[p.value]?.member)
-        .map((p) => ({
-          projectId: p.value,
-          allWorks: rows[p.value].allWorks,
-          workIds: rows[p.value].allWorks ? [] : rows[p.value].workIds,
-        }))
-      await setMemberships(user.id, drafts)
-      await onSaved()
-    } catch (e) {
-      setFailure((e as Error).message)
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  if (viewer) {
-    return (
-      <Modal
-        open
-        title={`Dự án và công việc · ${user.username}`}
-        onCancel={onClose}
-        width={640}
-        {...modalProps}
-        footer={[<Button key="close" onClick={onClose}>Đóng</Button>]}
-      >
-        <Typography.Text>Tài khoản Visitor thấy mọi dự án và mọi công việc.</Typography.Text>
-      </Modal>
-    )
-  }
-
-  return (
-    <Modal
-      open
-      title={`Dự án và công việc · ${user.username}`}
-      onCancel={onClose}
-      width={640}
-      {...modalProps}
-      footer={[
-        <Button key="cancel" onClick={onClose}>Huỷ</Button>,
-        <Button key="ok" type="primary" loading={saving} onClick={() => void save()}>Lưu quyền</Button>,
-      ]}
-    >
-      {failure && <Alert type="error" showIcon message={failure} style={{ marginBottom: 12 }} />}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-        {projects.map((p) => {
-          const row = rows[p.value]
-          return (
-            <div
-              key={p.value}
-              style={{
-                border: `1px solid ${palette.borderCard}`,
-                borderRadius: 10,
-                padding: '10px 12px',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 8,
-              }}
-            >
-              <Checkbox
-                aria-label={`Thành viên ${p.label}`}
-                checked={row?.member ?? false}
-                onChange={(e) => patch(p.value, { member: e.target.checked })}
-              >
-                <span style={type.label}>{p.label}</span>
-              </Checkbox>
-              {row?.member && (
-                <Space size={12} wrap>
-                  <Space size={6}>
-                    <Switch
-                      size="small"
-                      aria-label={`Tất cả công việc ${p.label}`}
-                      checked={row.allWorks}
-                      onChange={(on) => patch(p.value, { allWorks: on })}
-                    />
-                    <span style={type.body}>Tất cả công việc</span>
-                  </Space>
-                  {!row.allWorks && (
-                    <Select
-                      mode="multiple"
-                      aria-label={`Công việc ${p.label}`}
-                      placeholder="Chọn công việc"
-                      {...searchSelectProps}
-                      style={{ minWidth: 260 }}
-                      value={row.workIds}
-                      onChange={(ids) => patch(p.value, { workIds: ids })}
-                      options={works[p.value] ?? []}
-                    />
-                  )}
-                </Space>
-              )}
-            </div>
-          )
-        })}
-      </div>
-    </Modal>
-  )
-}
-
-
 /**
  * Nhân lực (NL-01): the GS/Visitor accounts and the employees on one list.
  *
@@ -292,32 +120,14 @@ export function NhanLucScreen() {
   const [revealed, setRevealed] = useState<{ user: GsUser; password: string; at: string } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [createOpen, setCreateOpen] = useState(false)
-  const [pwTarget, setPwTarget] = useState<GsUser | null>(null)
   const [offTarget, setOffTarget] = useState<GsUser | null>(null)
   const [hideTarget, setHideTarget] = useState<GsUser | null>(null)
-  const [renameTarget, setRenameTarget] = useState<GsUser | null>(null)
-  const [permTarget, setPermTarget] = useState<GsUser | null>(null)
-  const [changeTarget, setChangeTarget] = useState<StaffRow | null>(null)
-  const [renaming, setRenaming] = useState<StaffRow | null>(null)
+  /** The row whose Sửa dialog is open (NL-09). */
+  const [editTarget, setEditTarget] = useState<StaffRow | null>(null)
+  /** An employee whose Khoá is being confirmed (NL-09 amendment). */
+  const [employeeOffTarget, setEmployeeOffTarget] = useState<StaffRow | null>(null)
   const [exporting, setExporting] = useState(false)
   const filters = useDraftFilters(DEFAULT_FILTERS)
-  /**
-   * A reset the admin has typed but not yet confirmed.
-   *
-   * The password sits here for the length of one dialog, and the dialog never
-   * prints it -- it names the account being locked out, which is the fact the
-   * admin has to weigh. Cleared on both exits.
-   */
-  const [pwPending, setPwPending] = useState<{ user: GsUser; password: string } | null>(null)
-  const [pwForm] = Form.useForm<{ password: string }>()
-  const [renameForm] = Form.useForm<{ username: string }>()
-  const [employeeForm] = Form.useForm<{ fullName: string }>()
-
-  /** Same for the reset dialog, and it clears a password out of memory. */
-  const closePw = () => {
-    setPwTarget(null)
-    pwForm.resetFields()
-  }
 
   // Two reads (NL-01); either failing shows the alert with its retry. The
   // rows on screen stay until the next read lands, so a write's re-read does
@@ -406,100 +216,79 @@ export function NhanLucScreen() {
     }
   }
 
-  const accountActions = (user: GsUser) => (
+  /**
+   * NL-09: a row keeps only what the Sửa dialog does not hold. One slot order
+   * on every row -- Sửa, Khoá/Mở khoá, Ẩn/Hiện lại -- right-aligned, a slot
+   * kept empty where a row has no action for it, so the columns line up (M7).
+   */
+  const slot = (key: string) => (
+    <Button key={key} aria-hidden tabIndex={-1} icon={<LockOutlined />} style={{ visibility: 'hidden' }} />
+  )
+
+  const accountActions = (row: StaffRow & { kind: 'account' }) => {
+    const user = row.account
+    return (
+      <>
+        <IconAction verb="edit" label="Sửa" tooltip="Sửa · họ tên, phân quyền, đăng nhập, mật khẩu, dự án" onClick={() => setEditTarget(row)} />
+        {user.active ? (
+          <IconAction verb="lock" label="Khoá tài khoản" danger onClick={() => setOffTarget(user)} />
+        ) : user.hidden ? (
+          slot('lock')
+        ) : (
+          <IconAction
+            verb="unlock"
+            label="Mở khoá"
+            tooltip="Mở khoá · đăng nhập lại được, dự án giữ nguyên"
+            onClick={() =>
+              void run(async () => {
+                await reactivateUser(user.id)
+                reload()
+                message.success('Đã mở khoá tài khoản')
+              })
+            }
+          />
+        )}
+        {user.hidden ? (
+          <IconAction
+            verb="unhide"
+            label="Hiện lại"
+            tooltip="Hiện lại trong danh sách · vẫn khoá"
+            onClick={() =>
+              void run(async () => {
+                await unhideUser(user.id)
+                reload()
+                message.success('Đã hiện lại tài khoản')
+              })
+            }
+          />
+        ) : (
+          <IconAction verb="hide" label="Ẩn tài khoản" tooltip="Ẩn khỏi danh sách · không xoá" onClick={() => setHideTarget(user)} />
+        )}
+      </>
+    )
+  }
+
+  const employeeActions = (row: StaffRow & { kind: 'employee' }) => (
     <>
-      {/* Icon actions, one icon per verb (ACT-01). */}
-      <IconAction
-        verb="rename"
-        label="Đổi tên đăng nhập"
-        onClick={() => {
-          renameForm.setFieldsValue({ username: user.username })
-          setRenameTarget(user)
-        }}
-      />
-      {/* Not "Phân quyền": on this screen that word is the role (review I-2). */}
-      <IconAction verb="members" label="Dự án và công việc" onClick={() => setPermTarget(user)} />
-      <IconAction verb="password" label="Đổi mật khẩu" onClick={() => { pwForm.resetFields(); setPwTarget(user) }} />
-      <Tooltip title="Xem mật khẩu · được ghi log">
-        <Button
-          aria-label="Xem mật khẩu"
-          icon={<EyeOutlined style={{ color: palette.warning }} />}
-          onClick={() =>
-            void run(async () => {
-              const password = await revealPassword(user.id)
-              setRevealed({ user, password, at: formatDateTimeVN(new Date().toISOString()) })
-            })
-          }
-        />
-      </Tooltip>
-      {user.active ? (
-        <IconAction verb="lock" label="Khoá tài khoản" danger onClick={() => setOffTarget(user)} />
-      ) : user.hidden ? (
-        // The lock's slot, kept: every account row has its buttons at the same x (M7).
-        <Button aria-hidden tabIndex={-1} icon={<LockOutlined />} style={{ visibility: 'hidden' }} />
+      <IconAction verb="edit" label="Sửa" tooltip="Sửa · họ tên, phân quyền" onClick={() => setEditTarget(row)} />
+      {/* Khoá/Mở khoá like an account's (NL-09 amendment): Đang làm or Đã nghỉ. */}
+      {row.employee.active ? (
+        <IconAction verb="lock" label="Khoá nhân viên" danger onClick={() => setEmployeeOffTarget(row)} />
       ) : (
         <IconAction
           verb="unlock"
           label="Mở khoá"
-          tooltip="Mở khoá · đăng nhập lại được, dự án giữ nguyên"
+          tooltip="Mở khoá · trở lại ô chọn nhóm trưởng, thợ chính của GS"
           onClick={() =>
             void run(async () => {
-              await reactivateUser(user.id)
+              await updateEmployee(row.id, { active: true })
               reload()
-              message.success('Đã mở khoá tài khoản')
+              message.success('Đã mở khoá nhân viên')
             })
           }
         />
       )}
-      {user.hidden ? (
-        // An icon like every other action in the row (M7).
-        <IconAction
-          verb="unhide"
-          label="Hiện lại"
-          tooltip="Hiện lại trong danh sách · vẫn khoá"
-          onClick={() =>
-            void run(async () => {
-              await unhideUser(user.id)
-              reload()
-              message.success('Đã hiện lại tài khoản')
-            })
-          }
-        />
-      ) : (
-        <IconAction
-          verb="hide"
-          label="Ẩn tài khoản"
-          tooltip="Ẩn khỏi danh sách · không xoá"
-          onClick={() => setHideTarget(user)}
-        />
-      )}
-    </>
-  )
-
-  const employeeActions = (row: StaffRow & { kind: 'employee' }) => (
-    <>
-      <Tooltip title="Đang làm · tắt thì không còn trong ô chọn của GS">
-        <Switch
-          size="small"
-          checked={row.employee.active}
-          aria-label={`Đang làm · ${row.fullName}`}
-          onChange={(next) =>
-            void run(async () => {
-              await updateEmployee(row.id, { active: next })
-              reload()
-              message.success(next ? 'Đã bật lại' : 'Đã tắt khỏi danh sách chọn')
-            })
-          }
-        />
-      </Tooltip>
-      <IconAction
-        verb="edit"
-        label="Sửa tên"
-        onClick={() => {
-          employeeForm.setFieldsValue({ fullName: row.fullName })
-          setRenaming(row)
-        }}
-      />
+      {slot('hide')}
     </>
   )
 
@@ -658,21 +447,15 @@ export function NhanLucScreen() {
               {
                 title: 'Thao tác',
                 key: 'actions',
-                width: 250,
-                // Pinned: lock, hide and reveal must not scroll out of the card.
+                width: 150,
+                // Pinned: Sửa, lock and hide must not scroll out of the card.
                 fixed: 'right',
                 align: 'center',
                 render: (_v, row) => (
-                  // Right-aligned, in one slot order, Đổi phân quyền last: it
-                  // then sits at one x on every row, account or employee (M7).
+                  // Right-aligned, one slot order on every row, account or
+                  // employee, so each icon sits at one x (M7, NL-09).
                   <div style={{ display: 'flex', gap: 7, justifyContent: 'flex-end', alignItems: 'center' }}>
-                    {row.kind === 'account' ? accountActions(row.account) : employeeActions(row)}
-                    <IconAction
-                      verb="changeRole"
-                      label="Đổi phân quyền"
-                      tooltip="Đổi phân quyền · Nhân viên, GS, Visitor"
-                      onClick={() => setChangeTarget(row)}
-                    />
+                    {row.kind === 'account' ? accountActions(row) : employeeActions(row)}
                   </div>
                 ),
               },
@@ -804,57 +587,6 @@ export function NhanLucScreen() {
         }
       />
 
-      <Modal
-        open={renameTarget !== null}
-        title={`Đổi tên đăng nhập · ${renameTarget?.username ?? ''}`}
-        onCancel={closing(() => setRenameTarget(null))}
-        {...modalProps}
-        footer={[
-          <Button key="cancel" onClick={closing(() => setRenameTarget(null))}>Huỷ</Button>,
-          <Button key="ok" type="primary" loading={dialogBusy} onClick={() => renameForm.submit()}>Lưu</Button>,
-        ]}
-      >
-        {dialogError && <Alert type="error" showIcon message={dialogError} style={{ marginBottom: 12 }} />}
-        <Form<{ username: string }>
-          form={renameForm}
-          layout="vertical"
-          onFinish={({ username }) =>
-            void runInDialog(async () => {
-              await renameUser(renameTarget!.id, username.trim().toLowerCase())
-              setRenameTarget(null)
-              reload()
-              message.success('Đã đổi tên đăng nhập')
-            })
-          }
-        >
-          <Form.Item
-            name="username"
-            label="Tên đăng nhập mới"
-            rules={[
-              { required: true, message: 'Nhập tên đăng nhập' },
-              { pattern: /^[a-z0-9._-]{3,32}$/i, message: 'Chỉ chữ, số, dấu chấm, gạch ngang, gạch dưới (3-32 ký tự)' },
-            ]}
-            extra="Từ lần đăng nhập sau người này dùng tên mới với mật khẩu cũ."
-          >
-            <Input placeholder="Ví dụ: gs.hieu" />
-          </Form.Item>
-        </Form>
-      </Modal>
-
-      {permTarget !== null && (
-        <PermissionsDialog
-          user={permTarget}
-          projects={projects}
-          onClose={() => setPermTarget(null)}
-          onSaved={async () => {
-            setPermTarget(null)
-            reload()
-            message.success('Đã cập nhật quyền')
-          }}
-        />
-      )}
-
-
       <NhanLucCreateDialog
         open={createOpen}
         rows={rows}
@@ -866,127 +598,48 @@ export function NhanLucScreen() {
         }}
       />
 
-      {changeTarget !== null && (
-        <ChangeRoleDialog
-          row={changeTarget}
+      {editTarget !== null && (
+        <NhanLucEditDialog
+          key={editTarget.key}
+          row={editTarget}
           rows={rows}
           projects={projects}
-          onClose={() => setChangeTarget(null)}
-          onDone={(done) => {
-            setChangeTarget(null)
+          adminName={profile?.fullName ?? ''}
+          onClose={() => setEditTarget(null)}
+          onPartial={reload}
+          onDone={({ message: done, revealed: fresh }) => {
+            setEditTarget(null)
             reload()
             message.success(done)
+            // Straight into the reveal modal: the admin has to read a new
+            // password out to the foreman, and it appears nowhere else.
+            if (fresh) setRevealed({ ...fresh, at: formatDateTimeVN(new Date().toISOString()) })
           }}
         />
       )}
 
-      <Modal
-        open={renaming !== null}
-        title={`Sửa tên · ${renaming?.fullName ?? ''}`}
-        onCancel={closing(() => setRenaming(null))}
-        {...modalProps}
-        footer={[
-          <Button key="cancel" onClick={closing(() => setRenaming(null))}>Huỷ</Button>,
-          <Button key="ok" type="primary" loading={dialogBusy} onClick={() => employeeForm.submit()}>Lưu</Button>,
-        ]}
-      >
-        {dialogError && <Alert type="error" showIcon message={dialogError} style={{ marginBottom: 12 }} />}
-        <Form<{ fullName: string }>
-          form={employeeForm}
-          layout="vertical"
-          onFinish={({ fullName }) =>
-            void runInDialog(async () => {
-              await updateEmployee(renaming!.id, { fullName })
-              setRenaming(null)
-              reload()
-              message.success('Đã đổi tên')
-            })
-          }
-        >
-          <Form.Item
-            name="fullName"
-            label="Họ tên"
-            rules={[
-              { required: true, whitespace: true, message: 'Nhập họ tên' },
-              clashRule((v) => nameClash(rows, v, 'employee', renaming?.key)),
-            ]}
-          >
-            <Input placeholder="Ví dụ: Nguyễn Văn A" />
-          </Form.Item>
-        </Form>
-      </Modal>
-
-      <Modal
-        open={pwTarget !== null}
-        title={`Đổi mật khẩu · ${pwTarget?.username ?? ''}`}
-        onCancel={closePw}
-        {...modalProps}
-        footer={[
-          <Button key="cancel" onClick={closePw}>
-            Huỷ
-          </Button>,
-          <Button key="ok" type="primary" onClick={() => pwForm.submit()}>
-            Lưu
-          </Button>,
-        ]}
-      >
-        <Form<{ password: string }>
-          form={pwForm}
-          layout="vertical"
-          // Submitting the form asks; it does not write. The write is behind
-          // the dialog below, because the moment it lands the foreman on the
-          // platform is locked out with no way to know why.
-          onFinish={({ password }) => {
-            setPwPending({ user: pwTarget!, password })
-            setPwTarget(null)
-            // The typed password does not outlive the dialog it was typed in.
-            // It is already held in `pwPending` for the length of the
-            // confirmation; a second copy sitting in a Form store the admin
-            // cannot see is a credential with nothing watching it.
-            pwForm.resetFields()
-          }}
-        >
-          <Form.Item
-            name="password"
-            label="Mật khẩu mới"
-            rules={[{ required: true, message: 'Nhập mật khẩu mới' }, PASSWORD_RULES[1]]}
-          >
-            <PasswordInput
-              placeholder="Nhập mật khẩu mới"
-              onGenerate={() => pwForm.setFieldsValue({ password: generatePassword() })}
-            />
-          </Form.Item>
-        </Form>
-      </Modal>
-
       <ConsequenceModal
-        open={pwPending !== null}
+        open={employeeOffTarget !== null}
         tone="danger"
-        tag="Thao tác phá huỷ"
-        title={`Đổi mật khẩu cho ${pwPending?.user.username ?? ''}?`}
-        description="Mật khẩu cũ ngừng hiệu lực ngay khi anh xác nhận:"
-        items={
-          pwPending
-            ? [
-                { label: pwPending.user.fullName, meta: projectsText(pwPending.user) },
-              ]
-            : []
-        }
-        // "Người dùng": the account may be a Visitor as well as a GS (M9).
-        consequences={['Người dùng không nhận được thông báo nào', 'Anh tự giao mật khẩu mới, hiện ra ngay sau bước này']}
-        okText="Vẫn đổi"
+        tag="Xác nhận"
+        title={`Khoá nhân viên ${employeeOffTarget?.fullName ?? ''}?`}
+        description="Nhân viên nghỉ làm, không bị xoá:"
+        items={employeeOffTarget ? [{ label: employeeOffTarget.fullName, meta: 'Đang làm' }] : []}
+        consequences={[
+          'Không còn trong ô chọn nhóm trưởng, thợ chính của GS',
+          'Các lần cập nhật đã ghi vẫn giữ tên',
+          'Mở khoá là đưa lại vào ô chọn',
+        ]}
+        okText="Vẫn khoá"
         confirmLoading={dialogBusy}
         error={dialogError}
-        onCancel={closing(() => setPwPending(null))}
+        onCancel={closing(() => setEmployeeOffTarget(null))}
         onOk={() =>
           void runInDialog(async () => {
-            const { user, password } = pwPending!
-            await setPassword(user.id, password)
-            setPwPending(null)
-            // Straight into the reveal modal: the admin has to read this value
-            // out to the foreman, and it appears nowhere else.
-            setRevealed({ user, password, at: formatDateTimeVN(new Date().toISOString()) })
-            message.success('Đã đổi mật khẩu')
+            await updateEmployee(employeeOffTarget!.id, { active: false })
+            setEmployeeOffTarget(null)
+            reload()
+            message.success('Đã khoá nhân viên')
           })
         }
       />
