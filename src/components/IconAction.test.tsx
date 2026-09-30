@@ -1,6 +1,8 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ConfigProvider, theme } from 'antd'
+import { readdirSync, readFileSync, statSync } from 'node:fs'
+import { join, resolve } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { adminTheme, fieldTheme } from '../theme'
 import { ACTION_ICONS } from './actionIcons'
@@ -45,5 +47,16 @@ describe('IconAction (ACT-01)', () => {
   it('maps each verb to one icon, no icon shared by two verbs', () => {
     const icons = Object.values(ACTION_ICONS)
     expect(new Set(icons).size).toBe(icons.length)
+  })
+
+  it('keeps no verb that no screen uses (AD review M7)', () => {
+    const sources = (dir: string): string[] => readdirSync(dir).flatMap((name) => {
+      const path = join(dir, name)
+      if (statSync(path).isDirectory()) return sources(path)
+      return /\.tsx$/.test(name) && !/\.test\.tsx$/.test(name) ? [path] : []
+    })
+    const text = sources(resolve(import.meta.dirname, '..')).map((f) => readFileSync(f, 'utf8')).join('\n')
+    const unused = Object.keys(ACTION_ICONS).filter((verb) => !text.includes(`verb="${verb}"`))
+    expect(unused).toEqual([])
   })
 })

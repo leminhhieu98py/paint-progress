@@ -1,9 +1,9 @@
 import {
-  ArrowDownOutlined, ArrowRightOutlined, ArrowUpOutlined, BlockOutlined, CalculatorOutlined, CalendarOutlined, ClearOutlined, CloseCircleOutlined, CloseOutlined,
-  ControlOutlined, CopyOutlined, MergeCellsOutlined, DeleteOutlined, EditOutlined, ExpandOutlined, EyeInvisibleOutlined,
-  EyeOutlined, FormOutlined, KeyOutlined, LockOutlined, MessageOutlined, MinusOutlined, PieChartOutlined,
-  PlusOutlined, RollbackOutlined, SaveOutlined, SwapOutlined, TableOutlined, TeamOutlined,
-  ThunderboltOutlined, UndoOutlined, UnlockOutlined,
+  ArrowRightOutlined, BlockOutlined, CalculatorOutlined, CalendarOutlined, ClearOutlined,
+  CloseCircleOutlined, CloseOutlined, ControlOutlined, CopyOutlined, MergeCellsOutlined,
+  DeleteOutlined, EditOutlined, ExpandOutlined, EyeInvisibleOutlined, EyeOutlined, LockOutlined,
+  MessageOutlined, MinusOutlined, PieChartOutlined, PlusOutlined, RollbackOutlined, SaveOutlined,
+  TableOutlined, ThunderboltOutlined, UndoOutlined, UnlockOutlined,
 } from '@ant-design/icons'
 import type { ComponentType } from 'react'
 
@@ -14,29 +14,23 @@ import type { ComponentType } from 'react'
  */
 export const ACTION_ICONS = {
   save: SaveOutlined, // Lưu …
-  recompute: CalculatorOutlined, // Tự tính
+  recompute: CalculatorOutlined, // Tự động tính
   resetDefault: UndoOutlined, // Mặc định
   edit: EditOutlined, // Sửa
-  rename: FormOutlined, // Đổi tên đăng nhập
   delete: DeleteOutlined, // Xoá …
   clear: ClearOutlined, // Xoá toàn bộ lưới ô
   open: ArrowRightOutlined, // Mở (FolderOpen stays the field's Xuất cả dự án)
   duplicate: BlockOutlined, // Nhân bản
   copy: CopyOutlined, // Sao chép mật khẩu
-  moveUp: ArrowUpOutlined, // Lên
-  moveDown: ArrowDownOutlined, // Xuống
   close: CloseOutlined, // Đóng
   deselect: CloseCircleOutlined, // Bỏ chọn
   shareByArea: PieChartOutlined, // Chia theo m²
-  members: TeamOutlined, // Dự án và công việc
   decks: TableOutlined, // Sàn tham gia
-  password: KeyOutlined, // Đổi mật khẩu
   reveal: EyeOutlined, // Xem mật khẩu
   lock: LockOutlined, // Khoá tài khoản
   unlock: UnlockOutlined, // Mở khoá
   hide: EyeInvisibleOutlined, // Ẩn tài khoản
   unhide: RollbackOutlined, // Hiện lại
-  changeRole: SwapOutlined, // Đổi phân quyền
   detect: ThunderboltOutlined, // Tự động dò ô
   editMode: ControlOutlined, // Hiệu chỉnh ô
   zoomIn: PlusOutlined, // Phóng to
