@@ -95,7 +95,8 @@ describe('AdminLayout', () => {
     renderAt('/admin/projects')
     expect(screen.getByText('Nguyễn Thị Linh')).toBeInTheDocument()
     expect(screen.getByText('Quản trị viên')).toBeInTheDocument()
-    expect(screen.getByText('NL')).toBeInTheDocument()
+    // The last two words' letters, the shared avatar rule (AD2).
+    expect(screen.getByText('TL')).toBeInTheDocument()
   })
 
   it('signs out and leaves the admin URL behind', async () => {

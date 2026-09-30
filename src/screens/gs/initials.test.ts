@@ -1,19 +1,19 @@
 import { describe, expect, it } from 'vitest'
 import { initialsOf } from './initials'
 
-describe('initialsOf', () => {
+describe('initialsOf (field account trigger)', () => {
   it.each([
-    ['Nguyễn Văn A', 'gs1', 'NA'],
-    ['đặng thị hoa', 'x', 'ĐH'],
+    // The shared rule (AD2): the last two words' first letters, letters only.
+    ['Nguyễn Văn A', 'gs1', 'VA'],
+    ['đặng thị hoa', 'x', 'TH'],
+    ['Phạm Đức Long (demo)', 'x', 'ĐL'],
     ['Linh', 'linhhh', 'L'],
+    ['Lê Văn', 'x', 'LV'],
+    ['Âu Thành', 'x', 'ÂT'],
+    // No name: the login's first letter, else a question mark.
     ['   ', 'sep.test', 'S'],
-    ['', '', '?'],
-    ['Le\u0302 Va\u0306n', 'x', 'LV'],
-    ['A\u0302u Tha\u0300nh', 'x', 'ÂT'],
-    // Letters only (AD2): a bracketed note, punctuation and digits are not a name.
-    ['Bùi Quang Huy (demo)', 'x', 'BH'],
-    ['Lê Văn A 2', 'x', 'LA'],
     ['(demo)', 'sep.test', 'S'],
+    ['', '', '?'],
   ])('%j (%s) reads %s', (fullName, username, expected) => {
     expect(initialsOf(fullName, username)).toBe(expected)
   })

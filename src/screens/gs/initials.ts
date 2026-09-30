@@ -1,15 +1,12 @@
-import { nameWords } from '../../lib/initials'
+import { initialsOf as nameInitials } from '../../lib/initials'
 
 /**
- * The avatar's letters: the first letter of the first and of the last word of
- * the full name, or of the login when there is no name.
+ * The field account trigger's letters: the shared avatar rule on the full
+ * name (AD2), or the login's first letter when there is no name, else "?".
  */
 export function initialsOf(fullName: string, username: string): string {
-  // Letters only, a bracketed note dropped (AD2).
-  const words = nameWords(fullName)
-  const letters = words.length === 0
-    ? [username.trim()[0]]
-    : words.length === 1 ? [words[0][0]] : [words[0][0], words[words.length - 1][0]]
-  const text = letters.filter(Boolean).join('').toLocaleUpperCase('vi')
+  const fromName = nameInitials(fullName)
+  if (fromName !== '') return fromName
+  const text = (username.trim()[0] ?? '').toLocaleUpperCase('vi')
   return text === '' ? '?' : text
 }

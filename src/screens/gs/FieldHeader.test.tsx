@@ -201,7 +201,8 @@ describe('FieldHeader: navigation and the account, nothing else (GS-06)', () => 
 
   it('shows an avatar of initials and the full name on the trigger, and no logout button', () => {
     renderAt('/gs/p1')
-    expect(trigger()).toHaveTextContent('NA')
+    // The last two words' letters, the shared avatar rule (AD2).
+    expect(trigger()).toHaveTextContent('VA')
     expect(trigger()).toHaveTextContent('Nguyễn Văn A')
     expect(trigger()).toHaveAttribute('aria-haspopup', 'menu')
     expect(screen.queryByRole('button', { name: 'Đăng xuất' })).toBeNull()
@@ -264,7 +265,7 @@ describe('FieldHeader: phone width', () => {
   it('folds the trigger to the avatar, named for who is signed in', async () => {
     renderAt('/gs/p1')
     const avatar = screen.getByRole('button', { name: 'Nguyễn Văn A (gs1)' })
-    expect(avatar).toHaveTextContent(/^NA$/)
+    expect(avatar).toHaveTextContent(/^VA$/)
     const menu = await (async () => {
       await userEvent.click(avatar)
       return screen.findByRole('menu')
