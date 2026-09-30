@@ -799,6 +799,39 @@ describe('NhanLucScreen — Thêm nhân lực (NL-02)', () => {
     expect(createGsUser).not.toHaveBeenCalled()
   })
 
+  it('gives the new password the Sửa field: masked, eye inside, copy and generate joined, no access log (NL-10)', async () => {
+    renderScreen()
+    const dialog = await open()
+    await pick('Visitor')
+    const field = within(dialog).getByLabelText('Mật khẩu') as HTMLInputElement
+    expect(field).toHaveAttribute('type', 'password')
+    const group = field.closest('.ant-space-compact') as HTMLElement
+    const copy = within(dialog).getByRole('button', { name: 'Sao chép mật khẩu' })
+    const generate = within(dialog).getByRole('button', { name: 'Sinh mật khẩu' })
+    for (const b of [copy, generate]) {
+      expect(b.parentElement).toBe(group)
+      expect(b).toHaveClass('ant-btn-compact-item')
+    }
+    expect((field.closest('.ant-input-affix-wrapper') as HTMLElement).style.height)
+      .toBe(`${antdTheme.getDesignToken().controlHeight}px`)
+    expect(copy).toBeDisabled()
+    // Generated: still masked.
+    await userEvent.click(generate)
+    expect(field.value.length).toBeGreaterThanOrEqual(12)
+    expect(field).toHaveAttribute('type', 'password')
+    expect(copy).toBeEnabled()
+    // The eye shows what is in the field; nothing is stored yet, so nothing is fetched or logged.
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Hiện mật khẩu' }))
+    expect(field).toHaveAttribute('type', 'text')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Ẩn mật khẩu' }))
+    expect(field).toHaveAttribute('type', 'password')
+    // An empty field's eye only unmasks, too.
+    await userEvent.clear(field)
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Hiện mật khẩu' }))
+    expect(field).toHaveAttribute('type', 'text')
+    expect(revealPassword).not.toHaveBeenCalled()
+  })
+
   it('creates a Visitor with no project field and sends no project (NL-05)', async () => {
     renderScreen()
     const dialog = await open()
