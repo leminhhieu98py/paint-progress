@@ -1,7 +1,7 @@
 import {
   ArrowDownOutlined, ArrowRightOutlined, ArrowUpOutlined, CalculatorOutlined, ClearOutlined, CloseCircleOutlined, CloseOutlined,
   ControlOutlined, CopyOutlined, DeleteOutlined, EditOutlined, ExpandOutlined, EyeInvisibleOutlined,
-  EyeOutlined, FormOutlined, KeyOutlined, LockOutlined, MinusOutlined, PieChartOutlined,
+  EyeOutlined, FormOutlined, KeyOutlined, LockOutlined, MessageOutlined, MinusOutlined, PieChartOutlined,
   PlusOutlined, RollbackOutlined, SaveOutlined, ScheduleOutlined, SwapOutlined, TableOutlined, TeamOutlined,
   ThunderboltOutlined, UndoOutlined, UnlockOutlined,
 } from '@ant-design/icons'
@@ -42,6 +42,7 @@ export const ACTION_ICONS = {
   zoomOut: MinusOutlined, // Thu nhỏ
   fit: ExpandOutlined, // Vừa khung
   plan: ScheduleOutlined, // Hiện kế hoạch
+  notes: MessageOutlined, // Ghi chú (n)
 } satisfies Record<string, ComponentType>
 
 export type ActionVerb = keyof typeof ACTION_ICONS

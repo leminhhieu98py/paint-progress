@@ -240,10 +240,10 @@ describe('DeckProgressPanel', () => {
     expect(titles).toHaveLength(2)
     const { controlHeight } = theme.getDesignToken()
     for (const h of titles) expect(h.parentElement).toHaveStyle({ minHeight: `${controlHeight}px` })
-    // The button is the one control there, at the default height (CTL-01).
+    // The icon action is the one control there, at the theme height (CTL-02, ACT-01).
     const notes = screen.getByRole('button', { name: /^Ghi chú \(/ })
     expect(notes).not.toHaveClass('ant-btn-sm')
-    expect(notes.parentElement).toBe(titles[0].parentElement!.parentElement)
+    expect(notes.closest('.ant-badge')?.parentElement).toBe(titles[0].parentElement!.parentElement)
   })
 
   it('puts a second lens beside the first, on demand, sharing one zoom', async () => {
@@ -688,6 +688,7 @@ describe('DeckProgressPanel — zones', () => {
     const group = screen.getByRole('button', { name: /Gộp thành zone/ })
     expect(group).toBeDisabled()
     expect(screen.queryByRole('button', { name: 'Bỏ chọn' })).not.toBeInTheDocument()
+    // Bỏ chọn, when shown, is an icon action (ACT-01): see the ACT-01 test.
     // Why it is disabled, without a pointer (Q2): its description, and a
     // named stop in the tab order that opens the tip.
     expect(group).toHaveAccessibleDescription('Chọn ô trên bản vẽ trước — bấm từng ô, hoặc giữ Shift rồi kéo')
@@ -1929,5 +1930,17 @@ describe('DeckProgressPanel: the work\'s unit (RV6-35)', () => {
     expect(screen.getAllByText('1.000,00 / 1.000,00 tấn').length).toBeGreaterThan(2)
     expect(screen.queryByText(/m²/)).toBeNull()
     expect(screen.getByRole('row', { name: /^tấn/ })).toBeInTheDocument()
+  })
+})
+
+describe('DeckProgressPanel — actions are icons (ACT-01)', () => {
+  it('draws the notes, zoom and fit actions as icon buttons named by their labels, the notes count on a badge', async () => {
+    renderPanel()
+    await screen.findByTestId('lens-A')
+    for (const name of [/^Ghi chú \(\d+\)$/, 'Thu nhỏ', 'Phóng to', 'Vừa khung']) {
+      const b = screen.getByRole('button', { name })
+      expect(b).toHaveClass('ant-btn-icon-only')
+      expect(b).toHaveTextContent('')
+    }
   })
 })

@@ -1,6 +1,6 @@
-import { ExpandOutlined, MinusOutlined, PlusOutlined } from '@ant-design/icons'
+import { PlusOutlined } from '@ant-design/icons'
 import {
-  Alert, App, Button, DatePicker, Form, Input, Modal, Segmented,
+  Alert, App, Badge, Button, DatePicker, Form, Input, Modal, Segmented,
   Select, Space, Spin, Switch, Table, Tooltip, Typography,
 } from 'antd'
 import dayjs from 'dayjs'
@@ -34,6 +34,7 @@ import { Donut, type DonutSlice } from '../../components/Donut'
 import { DECK_RING, ringFigureStep } from '../../components/ringFit'
 import { legendRowProps } from '../../components/ringHover'
 import { EmptyState } from '../../components/EmptyState'
+import { IconAction } from '../../components/IconAction'
 import { FilterBar } from '../../components/FilterBar'
 import { KeyFacts } from '../../components/KeyFacts'
 import { InfoTip } from '../../components/InfoTip'
@@ -1403,12 +1404,15 @@ export function DeckProgressPanel({
             lens, so the split view does not grow two of them.
           */}
           {side === 'A' && (
-            <Button
-              disabled={notedCodes.length === 0}
-              onClick={() => setNotesListOpen(true)}
-            >
-              {`Ghi chú (${notedCodes.length})`}
-            </Button>
+            // An icon action, its count on a badge and in its name (ACT-01).
+            <Badge count={notedCodes.length} size="small" color={palette.accent}>
+              <IconAction
+                verb="notes"
+                label={`Ghi chú (${notedCodes.length})`}
+                disabled={notedCodes.length === 0}
+                onClick={() => setNotesListOpen(true)}
+              />
+            </Badge>
           )}
         </div>
 
@@ -1653,11 +1657,7 @@ export function DeckProgressPanel({
             {/* The zoom buttons at the theme's one height, the Segmented's
                 beside them (CTL-02): no frame to pad small buttons up to it. */}
             <Space size={4} data-testid="zoom-group">
-              <Button
-                aria-label="Thu nhỏ"
-                icon={<MinusOutlined aria-hidden />}
-                onClick={() => setZoom((z) => Math.max(1, z - 0.5))}
-              />
+              <IconAction verb="zoomOut" label="Thu nhỏ" onClick={() => setZoom((z) => Math.max(1, z - 0.5))} />
               <span
                 style={{
                   display: 'inline-flex',
@@ -1669,16 +1669,8 @@ export function DeckProgressPanel({
               >
                 {`${Math.round(zoom * 100)}%`}
               </span>
-              <Button
-                aria-label="Phóng to"
-                icon={<PlusOutlined aria-hidden />}
-                onClick={() => setZoom((z) => Math.min(4, z + 0.5))}
-              />
-              <Button
-                aria-label="Vừa khung"
-                icon={<ExpandOutlined aria-hidden />}
-                onClick={() => setZoom(1)}
-              />
+              <IconAction verb="zoomIn" label="Phóng to" onClick={() => setZoom((z) => Math.min(4, z + 0.5))} />
+              <IconAction verb="fit" label="Vừa khung" onClick={() => setZoom(1)} />
             </Space>
           </Space>
         ) : undefined
@@ -1763,7 +1755,7 @@ export function DeckProgressPanel({
                 {editable && (
                   <Space style={{ marginLeft: 'auto' }}>
                     {selectedCodes.length > 0 && (
-                      <Button onClick={() => setSelectedCodes([])}>Bỏ chọn</Button>
+                      <IconAction verb="deselect" label="Bỏ chọn" onClick={() => setSelectedCodes([])} />
                     )}
                     {/*
                       A zone row IS one stage_id, so there is no coat to write
