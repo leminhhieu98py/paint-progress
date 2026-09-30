@@ -1,10 +1,5 @@
-import {
-  DeleteOutlined,
-  HolderOutlined,
-  PlusOutlined,
-  SaveOutlined,
-} from '@ant-design/icons'
-import { Alert, App, Button, Input, InputNumber, Space, Table, Tooltip } from 'antd'
+import { HolderOutlined, PlusOutlined } from '@ant-design/icons'
+import { Alert, App, Button, Input, InputNumber, Space, Table } from 'antd'
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { duplicateStageFields } from '../../domain/stageFlow'
 import type { Stage } from '../../domain/types'
@@ -13,6 +8,7 @@ import {
   listWorkStages, roundStageWeight, saveWorkStages, stagesRemovedBy, STAGE_WEIGHT_EPSILON,
 } from '../../lib/decksApi'
 import { randomUUID } from '../../lib/uuid'
+import { IconAction } from '../../components/IconAction'
 import { SwatchCode } from '../../components/SwatchCode'
 import { ColorField, HEX_COLOR } from '../../components/ColorField'
 import { useControlHeight } from '../../components/swatch'
@@ -342,25 +338,18 @@ export function StageConfigPanel({
         <Space size={12}>
           {workSelect}
           {editable && (
-            <Tooltip
-              title={
-                balanced && !hasClash && !hexPending
-                  ? 'Lưu cấu hình lớp sơn'
-                  : 'Tổng trọng số phải bằng 1, không trùng tên/màu, và mã màu phải đủ 6 số'
-              }
-            >
-              {/* A span, because antd Tooltip cannot anchor to a disabled button. */}
-              <span>
-                <Button
-                  type="primary"
-                  aria-label="Lưu cấu hình lớp sơn"
-                  icon={<SaveOutlined aria-hidden />}
-                  disabled={draft.length === 0 || !balanced || hasClash || hexPending}
-                  loading={busy}
-                  onClick={() => setConfirming(true)}
-                />
-              </span>
-            </Tooltip>
+            // An icon action (ACT-01); disabled, its tooltip says why.
+            <IconAction
+              verb="save"
+              label="Lưu cấu hình lớp sơn"
+              tooltip={balanced && !hasClash && !hexPending
+                ? undefined
+                : 'Tổng trọng số phải bằng 1, không trùng tên/màu, và mã màu phải đủ 6 số'}
+              type="primary"
+              disabled={draft.length === 0 || !balanced || hasClash || hexPending}
+              loading={busy}
+              onClick={() => setConfirming(true)}
+            />
           )}
         </Space>
       }
@@ -526,18 +515,14 @@ export function StageConfigPanel({
             width: 90,
             align: 'center' as const,
             render: (_v: unknown, _r: unknown, i: number) => (
-              <Tooltip title="Xoá lớp sơn">
-                {/* A span, because antd Tooltip cannot anchor a disabled button. */}
-                <span>
-                  <Button
-                    danger
-                    aria-label="Xoá"
-                    icon={<DeleteOutlined aria-hidden />}
-                    disabled={busy || draft.length === 1}
-                    onClick={() => removeStage(i)}
-                  />
-                </span>
-              </Tooltip>
+              <IconAction
+                verb="delete"
+                label="Xoá"
+                tooltip="Xoá lớp sơn"
+                danger
+                disabled={busy || draft.length === 1}
+                onClick={() => removeStage(i)}
+              />
             ),
           }] : []),
         ]}
