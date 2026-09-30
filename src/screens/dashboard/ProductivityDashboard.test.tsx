@@ -534,10 +534,10 @@ describe('ProductivityDashboard — the crew table beside the waste reasons (AD9
   afterEach(() => restore())
   const pair = () => screen.getByTestId('lead-table').closest('[data-testid="lead-waste-pair"]') as HTMLElement
 
-  it('gives Theo nhóm trưởng three fifths and Lý do hao phí two from 1200 px, so the six columns fit', () => {
+  it('gives Theo nhóm trưởng two thirds and Lý do hao phí one from 1200 px, so the six columns fit at 1280 (review M9)', () => {
     restore = setViewport(1280)
     renderDashboard()
-    expect(pair()).toHaveStyle({ gridTemplateColumns: 'minmax(0, 3fr) minmax(0, 2fr)' })
+    expect(pair()).toHaveStyle({ gridTemplateColumns: 'minmax(0, 2fr) minmax(0, 1fr)' })
   })
 
   it('keeps the old wrap-and-scroll below 1200 px', () => {

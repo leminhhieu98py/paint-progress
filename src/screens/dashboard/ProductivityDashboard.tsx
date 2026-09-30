@@ -398,15 +398,16 @@ export function ProductivityDashboard({
       </SectionCard>
 
       {/*
-        Uneven from 1200 px (AD9): the crew table's six columns take three
-        fifths and fit without scrolling; the three short columns of Lý do
-        hao phí take two. Narrower, the pair wraps and scrolls as before.
+        Uneven from 1200 px (AD9): the crew table's six columns take two
+        thirds and fit without scrolling from 1280 (604 px of content; three
+        fifths left 579 there, review M9); the three short columns of Lý do
+        hao phí take one. Narrower, the pair wraps and scrolls as before.
       */}
       <div
         data-testid="lead-waste-pair"
         style={{
           display: 'grid',
-          gridTemplateColumns: xl ? 'minmax(0, 3fr) minmax(0, 2fr)' : 'repeat(auto-fit, minmax(320px, 1fr))',
+          gridTemplateColumns: xl ? 'minmax(0, 2fr) minmax(0, 1fr)' : 'repeat(auto-fit, minmax(320px, 1fr))',
           gap: 16,
         }}
       >
