@@ -2,7 +2,7 @@ import {
   DownloadOutlined, LockOutlined, SearchOutlined, UserAddOutlined,
 } from '@ant-design/icons'
 import {
-  Alert, App, Button, Input, Modal, Select, Space, Table, Tooltip, Typography,
+  Alert, App, Button, Input, Modal, Select, Space, Table, Tooltip,
 } from 'antd'
 import dayjs from 'dayjs'
 import { useEffect, useMemo, useState } from 'react'
@@ -34,6 +34,7 @@ import { listProjectNames } from '../../lib/projectsApi'
 import { MISSING } from '../../lib/format'
 import { palette, type } from '../../theme'
 import { NhanLucCreateDialog } from './NhanLucCreateDialog'
+import { CopyPasswordAction } from './CopyPasswordAction'
 import { NhanLucEditDialog } from './NhanLucEditDialog'
 import {
   DEFAULT_FILTERS, ROLE_DESCRIPTION, ROLE_LABEL, ROLE_OPTIONS, STATUS_OPTIONS,
@@ -515,20 +516,11 @@ export function NhanLucScreen() {
             background: palette.bgSubtle,
           }}
         >
-          {/*
-            `copyable={{ text }}`, not a bare `copyable`. antd copies its own
-            children when no text is given, and children here is a React
-            element -- so the clipboard got "[object Object]" and the admin
-            pasted that into the message they were sending the foreman.
-          */}
-          <Typography.Text
-            copyable={{ text: revealed.password, tooltips: ['Sao chép', 'Đã sao chép'] }}
-            style={{ fontFamily: 'inherit' }}
-          >
-            <span style={{ ...type.cardTitle, letterSpacing: '0.06em' }}>
-              {revealed.password}
-            </span>
-          </Typography.Text>
+          <span style={{ ...type.cardTitle, letterSpacing: '0.06em', flex: 1, minWidth: 0 }}>
+            {revealed.password}
+          </span>
+          {/* Copies the password text itself, and says whether it did. */}
+          <CopyPasswordAction password={revealed.password} />
         </div>
       </Modal>
       )}

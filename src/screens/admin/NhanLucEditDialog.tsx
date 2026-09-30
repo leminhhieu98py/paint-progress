@@ -2,7 +2,6 @@ import { EyeInvisibleOutlined, EyeOutlined, ReloadOutlined } from '@ant-design/i
 import { Alert, Button, Checkbox, Form, Input, Modal, Radio, Select, Space, Switch, Tooltip, Typography } from 'antd'
 import { useEffect, useMemo, useState } from 'react'
 import { ConsequenceModal } from '../../components/ConsequenceModal'
-import { IconAction } from '../../components/IconAction'
 import { modalProps } from '../../components/modalChrome'
 import { searchSelectProps } from '../../components/searchSelect'
 import {
@@ -13,6 +12,7 @@ import { updateEmployee } from '../../lib/employeesApi'
 import { generatePassword } from '../../lib/passwordGen'
 import { listWorks } from '../../lib/worksApi'
 import { palette, type } from '../../theme'
+import { CopyPasswordAction } from './CopyPasswordAction'
 import { PasswordInput } from './PasswordInput'
 import { ROLE_DESCRIPTION, loginClash, nameClash, parkedAccountFor, type StaffRow } from './nhanLuc'
 import {
@@ -538,12 +538,7 @@ function StoredPasswordField({
           </button>
         )}
       />
-      <IconAction
-        verb="copy"
-        label="Sao chép mật khẩu"
-        disabled={(value ?? '') === ''}
-        onClick={() => void navigator.clipboard?.writeText(value ?? '')}
-      />
+      <CopyPasswordAction password={value ?? ''} disabled={(value ?? '') === ''} />
       <Tooltip title="Sinh mật khẩu ngẫu nhiên, dễ đọc qua bộ đàm">
         <Button aria-label="Sinh mật khẩu" icon={<ReloadOutlined aria-hidden />} onClick={onGenerate} />
       </Tooltip>

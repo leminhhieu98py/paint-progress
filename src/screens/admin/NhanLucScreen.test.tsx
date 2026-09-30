@@ -1,6 +1,6 @@
-import { screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderApp } from '../../test/renderApp'
 import { palette } from '../../theme'
 import { NhanLucScreen } from './NhanLucScreen'
@@ -412,6 +412,60 @@ describe('NhanLucScreen — accounts, as before (USR)', () => {
 
     await userEvent.click(within(reveal).getByRole('button', { name: 'Đóng' }))
     await waitFor(() => expect(screen.queryByText('s3cret')).toBeNull())
+  })
+
+  describe('copying a revealed password', () => {
+    const original = Object.getOwnPropertyDescriptor(navigator, 'clipboard')
+    afterEach(() => {
+      if (original) Object.defineProperty(navigator, 'clipboard', original)
+      else Reflect.deleteProperty(navigator, 'clipboard')
+    })
+    const stubClipboard = (writeText: unknown) =>
+      Object.defineProperty(navigator, 'clipboard', { value: writeText === undefined ? undefined : { writeText }, configurable: true })
+    const openRowReveal = async () => {
+      revealPassword.mockResolvedValue('s3cret')
+      renderScreen()
+      await screen.findByText('gs1')
+      await userEvent.click(within(rowOf('GS Một')).getByRole('button', { name: 'Xem mật khẩu' }))
+      const reveal = await screen.findByRole('dialog', { name: 'Mật khẩu của gs1' })
+      await within(reveal).findByText('s3cret')
+      return reveal
+    }
+    // userEvent.click installs its own clipboard stub; fireEvent keeps ours.
+    const copy = (root: HTMLElement) => fireEvent.click(within(root).getByRole('button', { name: 'Sao chép mật khẩu' }))
+
+    it('says it copied, in Vietnamese, from the row reveal', async () => {
+      const reveal = await openRowReveal()
+      const writeText = vi.fn().mockResolvedValue(undefined)
+      stubClipboard(writeText)
+      copy(reveal)
+      expect(await screen.findByText('Đã sao chép mật khẩu')).toBeInTheDocument()
+      expect(writeText).toHaveBeenCalledWith('s3cret')
+    })
+
+    it('says so when the browser has no clipboard, or refuses it', async () => {
+      const reveal = await openRowReveal()
+      stubClipboard(undefined)
+      copy(reveal)
+      expect(await screen.findByText(/Không sao chép được mật khẩu/)).toBeInTheDocument()
+      stubClipboard(vi.fn().mockRejectedValue(new Error('NotAllowedError')))
+      copy(reveal)
+      await waitFor(() => expect(screen.getAllByText(/Không sao chép được mật khẩu/).length).toBeGreaterThan(0))
+    })
+
+    it('says it copied from the Sửa dialog\'s field too', async () => {
+      revealPassword.mockResolvedValue('s3cret')
+      renderScreen()
+      await screen.findByText('gs1')
+      const dialog = await openEdit('GS Một')
+      await userEvent.click(within(dialog).getByRole('button', { name: 'Hiện mật khẩu' }))
+      await waitFor(() => expect(within(dialog).getByLabelText('Mật khẩu')).toHaveValue('s3cret'))
+      const writeText = vi.fn().mockResolvedValue(undefined)
+      stubClipboard(writeText)
+      copy(dialog)
+      expect(await screen.findByText('Đã sao chép mật khẩu')).toBeInTheDocument()
+      expect(writeText).toHaveBeenCalledWith('s3cret')
+    })
   })
 
   it('shows an error when reveal fails', async () => {
