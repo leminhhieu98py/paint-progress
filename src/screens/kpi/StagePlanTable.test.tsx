@@ -72,6 +72,22 @@ const row = (stageId: string) => within(screen.getByTestId(`plan-row-${stageId}`
 const startOf = (stageId: string) => row(stageId).getByPlaceholderText('Bắt đầu')
 const endOf = (stageId: string) => row(stageId).getByPlaceholderText('Kết thúc')
 const saveOf = (stageId: string) => row(stageId).getByRole('button', { name: 'Lưu' })
+/** The text of Tự động tính's tooltip on a row, read by hovering it. */
+const autoTip = async (stageId: string) => {
+  const button = row(stageId).getByRole('button', { name: 'Tự động tính' })
+  const anchor = button.parentElement as HTMLElement
+  // A tooltip from an earlier hover can linger in jsdom: read the new one.
+  const before = new Set(screen.queryAllByRole('tooltip'))
+  await userEvent.hover(anchor)
+  const tip = await waitFor(() => {
+    const fresh = screen.queryAllByRole('tooltip').find((t) => !before.has(t))
+    if (!fresh) throw new Error('no new tooltip')
+    return fresh
+  })
+  const text = tip.textContent ?? ''
+  await userEvent.unhover(anchor)
+  return text
+}
 
 const retype = async (input: HTMLElement, value: string) => {
   await userEvent.clear(input)
@@ -121,12 +137,13 @@ describe('StagePlanTable', () => {
     expect(save.closest('td')).toHaveClass('ant-table-cell-fix-right')
   })
 
-  it('holds the window in one Khoảng kế hoạch column (Feedback Rv5, RV5-38)', () => {
+  it('holds the window in one Dự kiến triển khai column (Feedback Rv5, RV5-38, AD18)', () => {
     // The app already had a settled answer for a per-coat date range and this
     // table did not use it: DeckProgressPanel.tsx:582, "One RangePicker per
     // coat writes both ends at once".
     renderTable()
-    expect(screen.getByRole('columnheader', { name: 'Khoảng kế hoạch' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'Dự kiến triển khai' })).toBeInTheDocument()
+    expect(screen.queryByRole('columnheader', { name: 'Khoảng kế hoạch' })).toBeNull()
     expect(screen.queryByRole('columnheader', { name: 'Ngày bắt đầu' })).toBeNull()
     expect(screen.queryByRole('columnheader', { name: 'Ngày kết thúc' })).toBeNull()
 
@@ -198,16 +215,14 @@ describe('StagePlanTable', () => {
     }
   })
 
-  it('shows the computed figure rather than a blank when the area is empty', async () => {
+  it('leaves an empty area field empty, with no placeholder: empty means the automatic figure (AD18)', async () => {
     // RV5-23: the plan defaults to what the system computes as remaining on the
-    // start date. A blank field would read as "no area planned", which is what
-    // a typed 0 means instead.
+    // start date. The figure is on Tự động tính's tooltip now, not in the field.
     renderTable()
-    const area = row('s2').getByLabelText('Diện tích kế hoạch')
-    expect((area as HTMLInputElement).value).toBe('')
-    // In the placeholder and nowhere under it (TBL-02): a helper line beneath
-    // the field pushed the input, the picker and Lưu off one axis.
-    expect(area).toHaveAttribute('placeholder', 'Tự tính 8.000,00')
+    const area = row('s2').getByLabelText('Diện tích kế hoạch') as HTMLInputElement
+    expect(area.value).toBe('')
+    expect(area.placeholder).toBe('')
+    expect(await autoTip('s2')).toBe('Tự động tính · 8.000,00 m²')
     expect(row('s2').queryByTestId('plan-computed-s2')).toBeNull()
   })
 
@@ -216,35 +231,27 @@ describe('StagePlanTable', () => {
   const asOfStart = (r: StagePlanRow, startDate: string | null) =>
     (startDate === null ? 0 : COMPUTED[r.stageId] ?? 0)
 
-  it('shows no computed area on a row with no window (Feedback Rv5, RV5-23)', () => {
+  it('names no computed area on a row with no window (Feedback Rv5, RV5-23)', async () => {
     // The computed area is what remains ON the start date. With no start date
-    // there is nothing to compute from, and `Tự tính: 0,00` reads as "the
-    // system worked out zero" -- a different statement.
+    // there is nothing to compute from, and a 0,00 reads as "the system worked
+    // out zero" -- a different statement.
     renderTable({ computedAreaFor: asOfStart })
-    // No zero placeholder standing in for a figure that does not exist.
-    const area = row('s3').getByLabelText('Diện tích kế hoạch') as HTMLInputElement
-    expect(area.value).toBe('')
-    expect(area.placeholder).toBe('')
-    // The rows that do have a window are untouched.
-    expect(row('s2').getByLabelText('Diện tích kế hoạch'))
-      .toHaveAttribute('placeholder', 'Tự tính 8.000,00')
+    expect(await autoTip('s3')).toBe('Tự động tính')
+    expect(await autoTip('s2')).toBe('Tự động tính · 8.000,00 m²')
   })
 
-  it('shows the computed figure as soon as a start date is entered', async () => {
+  it('names the computed figure as soon as a start date is entered', async () => {
     renderTable({ computedAreaFor: asOfStart })
     await retype(startOf('s3'), '01/10/2026')
-    await waitFor(() => expect(row('s3').getByLabelText('Diện tích kế hoạch'))
-      .toHaveAttribute('placeholder', 'Tự tính 16.000,00'))
+    await waitFor(async () => expect(await autoTip('s3')).toBe('Tự động tính · 16.000,00 m²'))
   })
 
-  it('still prints a computed zero, which is not the same as no figure at all', () => {
+  it('still names a computed zero, which is not the same as no figure at all', async () => {
     // A coat with genuinely nothing left computes 0,00 and has to say so. Only
-    // the absence of a start date is undefined, so the branch turns on the
-    // DATE and never on the value -- here every figure is zero and the two
-    // rows must still read differently.
+    // the absence of a start date is undefined.
     renderTable({ computedAreaFor: () => 0 })
-    expect(row('s2').getByLabelText('Diện tích kế hoạch')).toHaveAttribute('placeholder', 'Tự tính 0,00')
-    expect((row('s3').getByLabelText('Diện tích kế hoạch') as HTMLInputElement).placeholder).toBe('')
+    expect(await autoTip('s2')).toBe('Tự động tính · 0,00 m²')
+    expect(await autoTip('s3')).toBe('Tự động tính')
   })
 
   it('sends the computed figure as null so the system keeps computing it', async () => {
@@ -376,17 +383,17 @@ describe('StagePlanTable', () => {
     const area = row('s1').getByLabelText('Diện tích kế hoạch')
     expect((area as HTMLInputElement).value).toBe('3300')
 
-    await userEvent.click(row('s1').getByRole('button', { name: 'Tự tính' }))
+    await userEvent.click(row('s1').getByRole('button', { name: 'Tự động tính' }))
 
     expect(onClearArea).toHaveBeenCalledWith('s1')
     await waitFor(() => expect((row('s1').getByLabelText('Diện tích kế hoạch') as HTMLInputElement).value).toBe(''))
-    expect(row('s1').getByLabelText('Diện tích kế hoạch'))
-      .toHaveAttribute('placeholder', 'Tự tính 5.000,00')
+    expect(row('s1').getByRole('button', { name: 'Tự động tính' })).toBeDisabled()
   })
 
-  it('offers no clear button on a row that carries no override', () => {
+  it('keeps Tự động tính in its slot but disabled on a row that carries no override (AD18)', () => {
     renderTable()
-    expect(row('s2').queryByRole('button', { name: 'Tự tính' })).toBeNull()
+    expect(row('s2').getByRole('button', { name: 'Tự động tính' })).toBeDisabled()
+    expect(row('s1').getByRole('button', { name: 'Tự động tính' })).toBeEnabled()
   })
 
   it('refuses a negative area with a message', async () => {
@@ -450,7 +457,7 @@ describe('StagePlanTable', () => {
     expect(ruleTexts()).toEqual([
       'Kế hoạch chia đều cho mọi ngày từ ngày bắt đầu đến ngày kết thúc, kể cả chủ nhật và ngày lễ.',
       'Để trống diện tích kế hoạch thì hệ thống tự tính phần còn lại của công đoạn từ ngày bắt đầu.',
-      'Số anh gõ ghi đè diện tích tự tính cho tới khi bấm nút bỏ ghi đè cạnh ô.',
+      'Số anh gõ ghi đè diện tích tự tính cho tới khi bấm Tự động tính cạnh Lưu.',
       'Gõ 0 nghĩa là không có diện tích kế hoạch, khác với để trống.',
     ])
     expectHelperText(ruleTexts())
@@ -475,20 +482,18 @@ describe('StagePlanTable — type scale (TYP-02)', () => {
 })
 
 describe('StagePlanTable — one control height per row (CTL-01)', () => {
-  it('stands the picker, the area field, Tự tính and Lưu at the theme height (CTL-02)', async () => {
+  it('stands the picker, the area field, Tự động tính and Lưu at the theme height (CTL-02)', async () => {
     renderTable()
-    // s1 carries an override, so its Tự tính button is laid out and visible.
     expectOneHeight(screen.getByTestId('plan-row-s1'))
     expectOneHeight(screen.getByTestId('plan-row-s2'))
   })
 
-  it('makes the area field wide enough for the longest Tự tính placeholder (R3-B)', () => {
-    // `Tự tính 99.999,99 m²` measures 136px at 13px Be Vietnam Pro; with the
-    // small field's padding, border and step handle it needs 176. At 130 the
-    // placeholder was cut to `Tự tính 2.880,0…`.
+  it('lets the area field take its column\'s width, with no slot reserved beside it (AD18)', () => {
     renderTable()
-    const field = row('s1').getByLabelText('Diện tích kế hoạch').closest('.ant-input-number')
-    expect(field).toHaveStyle({ width: '176px' })
+    const field = row('s1').getByLabelText('Diện tích kế hoạch').closest('.ant-input-number') as HTMLElement
+    expect(field).toHaveStyle({ width: '100%' })
+    const cell = field.closest('td') as HTMLElement
+    expect(within(cell).queryByRole('button', { name: /Tự động tính|Tự tính/ })).toBeNull()
   })
 })
 
@@ -534,9 +539,9 @@ describe('StagePlanTable — Lưu only for a changed row (M10)', () => {
 })
 
 describe('StagePlanTable — row actions are icons (ACT-01)', () => {
-  it('shows Tự tính and Lưu as icon buttons named by their old labels, with no visible text', async () => {
+  it('shows Tự động tính and Lưu as icon buttons named by their labels, with no visible text', async () => {
     renderTable()
-    for (const name of ['Tự tính', 'Lưu']) {
+    for (const name of ['Tự động tính', 'Lưu']) {
       const button = row('s1').getByRole('button', { name })
       expect(button).toHaveClass('ant-btn-icon-only')
       expect(button).toHaveTextContent('')
@@ -571,22 +576,12 @@ describe('StagePlanTable — alignment (UI-03)', () => {
   })
 })
 
-describe('StagePlanTable — the area field holds still (UI-06 review I6)', () => {
-  it('keeps the Tự tính slot laid out on every row, shown only on an override', async () => {
+describe('StagePlanTable — Tự động tính sits beside Lưu (AD18)', () => {
+  it('puts Tự động tính then Lưu in the Thao tác cell of every row, in one fixed slot order', () => {
     renderTable()
-    // The field and the button are centred as a group, so a button that
-    // appeared on the first keystroke re-centred the group and moved the
-    // field under the caret. The slot is always there; only its visibility
-    // follows the override.
-    const group = (stageId: string) =>
-      (row(stageId).getByLabelText('Diện tích kế hoạch').closest('td') as HTMLElement).firstElementChild as HTMLElement
-    const slot = (stageId: string) => group(stageId).lastElementChild as HTMLElement
-    expect(group('s2').childElementCount).toBe(group('s1').childElementCount)
-    expect(slot('s1')).toHaveStyle({ visibility: 'visible' })
-    expect(slot('s2')).toHaveStyle({ visibility: 'hidden' })
-
-    await userEvent.type(row('s2').getByLabelText('Diện tích kế hoạch'), '1')
-    await waitFor(() => expect(slot('s2')).toHaveStyle({ visibility: 'visible' }))
-    expect(group('s2').childElementCount).toBe(group('s1').childElementCount)
+    for (const id of ['s1', 's2', 's3']) {
+      const cell = saveOf(id).closest('td') as HTMLElement
+      expect(within(cell).getAllByRole('button').map((b) => b.getAttribute('aria-label'))).toEqual(['Tự động tính', 'Lưu'])
+    }
   })
 })

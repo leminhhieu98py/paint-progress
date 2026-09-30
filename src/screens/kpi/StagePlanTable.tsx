@@ -8,9 +8,7 @@ import { SectionCard } from '../../components/SectionCard'
 import { useTablePagination, type PaginationResetKey } from '../../components/tablePagination'
 import { viAreaInputProps } from '../../components/viNumberInput'
 import { planDays, type StagePlan } from '../../domain/kpi'
-import {
-  DEFAULT_QUANTITY_LABEL, DEFAULT_UNIT, labelOfWorks, MIXED_QUANTITY_LABEL, unitOfWorks,
-} from '../../domain/unit'
+import { DEFAULT_UNIT, unitOfWorks } from '../../domain/unit'
 import { MISSING, formatAreaM2 } from '../../lib/format'
 import { palette, type } from '../../theme'
 
@@ -32,7 +30,7 @@ import { palette, type } from '../../theme'
 const RULES: Rule[] = [
   { id: 'RV5-22', text: 'Kế hoạch chia đều cho mọi ngày từ ngày bắt đầu đến ngày kết thúc, kể cả chủ nhật và ngày lễ.' },
   { id: 'RV5-23', text: 'Để trống diện tích kế hoạch thì hệ thống tự tính phần còn lại của công đoạn từ ngày bắt đầu.' },
-  { id: 'RV5-23-override', text: 'Số anh gõ ghi đè diện tích tự tính cho tới khi bấm nút bỏ ghi đè cạnh ô.' },
+  { id: 'RV5-23-override', text: 'Số anh gõ ghi đè diện tích tự tính cho tới khi bấm Tự động tính cạnh Lưu.' },
   { id: 'RV5-23-zero', text: 'Gõ 0 nghĩa là không có diện tích kế hoạch, khác với để trống.' },
 ]
 
@@ -110,19 +108,12 @@ export function StagePlanTable({
   scopeKey?: PaginationResetKey
 }) {
   /**
-   * The heading names the quantity when every row's work agrees on it --
-   * `Diện tích kế hoạch (m²)` -- and falls back to `Số lượng kế hoạch` with
-   * the unit on each row when the works differ (RV6-35, RV6-36).
+   * The column is Diện tích (AD18), with the unit when every row's work
+   * shares one (RV6-35); with mixed units each row's Tự động tính tooltip
+   * names its own (RV6-36).
    */
-  const quantities = rows.map((r) => ({
-    quantityLabel: r.quantityLabel ?? DEFAULT_QUANTITY_LABEL, unit: r.unit ?? DEFAULT_UNIT,
-  }))
-  const sharedUnit = unitOfWorks(quantities)
-  const sharedLabel = labelOfWorks(quantities)
-  const areaTitle = sharedUnit === null
-    ? `${MIXED_QUANTITY_LABEL} kế hoạch`
-    : `${sharedLabel ?? MIXED_QUANTITY_LABEL} kế hoạch (${sharedUnit})`
-  const rowUnit = (row: StagePlanRow) => (sharedUnit === null ? ` ${row.unit ?? DEFAULT_UNIT}` : '')
+  const sharedUnit = unitOfWorks(rows.map((r) => ({ unit: r.unit ?? DEFAULT_UNIT })))
+  const areaTitle = sharedUnit === null ? 'Diện tích' : `Diện tích (${sharedUnit})`
 
   /**
    * Drafts by stage id, holding only the rows the admin has touched.
@@ -222,7 +213,7 @@ export function StagePlanTable({
         (RV5-39). Unlike a zone, whose finish may legitimately be unknown, a
         KPI window with one end is not a plan.
       */
-      title: 'Khoảng kế hoạch',
+      title: 'Dự kiến triển khai',
       align: 'center' as const,
       key: 'window',
       width: 280,
@@ -292,52 +283,26 @@ export function StagePlanTable({
           coat that genuinely has nothing left still computes 0,00 and still
           says so, so the branch turns on the DATE and never on the value.
         */
-        const computed = d.startDate === null ? null : computedAreaFor(row, d.startDate)
         /*
-          The computed figure lives in the placeholder and its tooltip, not on
-          a line under the field (TBL-02). The helper line made this cell two
-          lines tall while the picker and Lưu beside it stayed one, so the
-          three controls of a row sat on three different axes. The
-          placeholder says what the system will use while the field is empty;
-          the tooltip keeps the figure readable once a value is typed over it.
-          No placeholder at all while there is no figure to show.
+          No placeholder (AD18): an empty field means the automatic figure,
+          which Tự động tính's tooltip names, beside Lưu. The field takes the
+          column's width; no slot is kept beside it any more.
         */
-        const computedLabel = computed === null ? undefined : `Tự tính ${formatAreaM2(computed)}${rowUnit(row)}`
         return (
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-            <Tooltip title={areaWrong(d) ? AREA_ERROR : computedLabel}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Tooltip title={areaWrong(d) ? AREA_ERROR : undefined}>
               <InputNumber
                 aria-label="Diện tích kế hoạch"
-                placeholder={computedLabel}
                 status={areaWrong(d) ? 'error' : undefined}
                 value={d.plannedAreaM2}
                 disabled={saving}
-                // Room for `Tự tính 99.999,99 m²` (R3-B): at 130 the
-                // placeholder was cut to `Tự tính 2.880,0…`.
-                style={{ width: 176 }}
-                // "1.234,5" m², not 1.2345, and "8.000" the way its placeholder
-                // writes it, not 8: see viNumberInput for the rule.
+                style={{ width: '100%' }}
+                // "1.234,5" m², not 1.2345, and "8.000" as eight thousand:
+                // see viNumberInput for the rule.
                 {...viAreaInputProps}
                 onChange={(n) => patch(row, { plannedAreaM2: n === null ? null : Number(n) })}
               />
             </Tooltip>
-            {/* Always laid out, shown only on an override: the group is
-                centred, so a button that appeared on the first keystroke
-                re-centred it and moved the field under the caret. Hidden,
-                it is out of the tab order and the accessibility tree. */}
-            <span style={{ visibility: d.plannedAreaM2 !== null ? 'visible' : 'hidden' }}>
-              {/* An icon action (ACT-01). Cleared locally as well as on the
-                  server, so the field shows the computed placeholder at once. */}
-              <IconAction
-                verb="recompute"
-                label="Tự tính"
-                disabled={saving}
-                onClick={() => {
-                  patch(row, { plannedAreaM2: null })
-                  void onClearArea(row.stageId)
-                }}
-              />
-            </span>
           </div>
         )
       },
@@ -345,7 +310,7 @@ export function StagePlanTable({
     {
       title: 'Thao tác',
       key: 'save',
-      width: 120,
+      width: 130,
       // Pinned: the table scrolls sideways at tablet widths (QA F9) and a
       // row's Lưu must stay in view with the dates it saves.
       fixed: 'right' as const,
@@ -354,8 +319,32 @@ export function StagePlanTable({
         const d = draft(row)
         // Complete, valid, and changed: an untouched row has nothing to write (M10).
         const ready = d.startDate !== null && d.endDate !== null && errorOf(d) === null && dirty(row)
+        /*
+          Null: there is no figure, as opposed to a figure of zero. The
+          computed area is what remains ON the start date (RV5-23), so with no
+          start date there is nothing to compute from -- `computedAreaFor`
+          returns 0 there as a sentinel. A coat with genuinely nothing left
+          still names 0,00, so the branch turns on the DATE, not the value.
+        */
+        const computed = d.startDate === null ? null : computedAreaFor(row, d.startDate)
+        const autoTip = computed === null
+          ? 'Tự động tính'
+          : `Tự động tính · ${formatAreaM2(computed)} ${row.unit ?? DEFAULT_UNIT}`
         return (
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+            {/* One fixed slot on every row (AD18), disabled with its tooltip
+                while the row has no override; enabled, it resets the override,
+                locally at once and on the server. */}
+            <IconAction
+              verb="recompute"
+              label="Tự động tính"
+              tooltip={autoTip}
+              disabled={saving || d.plannedAreaM2 === null}
+              onClick={() => {
+                patch(row, { plannedAreaM2: null })
+                void onClearArea(row.stageId)
+              }}
+            />
             <IconAction
               verb="save"
               label="Lưu"
