@@ -161,8 +161,12 @@ export async function renameUser(userId: string, username: string): Promise<void
 export async function renameAccount(userId: string, fullName: string): Promise<void> {
   const name = fullName.trim()
   if (name === '') throw new Error('Họ tên không được để trống.')
-  const { error } = await supabase.from('profiles').update({ full_name: name }).eq('id', userId)
+  const { data, error } = await supabase.from('profiles').update({ full_name: name }).eq('id', userId).select('id')
   if (error) throw new Error(duplicateNameMessage(error, name) ?? error.message)
+  // No row back: the account is gone, or RLS hid it -- not a success (M4).
+  if (!data || data.length === 0) {
+    throw new Error('Không đổi được họ tên: tài khoản không còn, hoặc anh không có quyền sửa.')
+  }
 }
 
 /** Locks and hides. The row and every history line naming it stay. */

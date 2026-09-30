@@ -291,12 +291,18 @@ describe('listGsUsers', () => {
 
 describe('renameAccount (NL-09)', () => {
   it('writes the trimmed full name onto the profile, under the admin RLS policy', async () => {
-    const b = builder()
+    const b = builder({ data: [{ id: 'u7' }] })
     from.mockReturnValue(b)
     await renameAccount('u7', '  GS Một Mới ')
     expect(from).toHaveBeenCalledWith('profiles')
     expect(b.update).toHaveBeenCalledWith({ full_name: 'GS Một Mới' })
     expect(b.eq).toHaveBeenCalledWith('id', 'u7')
+    expect(b.select).toHaveBeenCalledWith('id')
+  })
+
+  it('refuses an update that touched no row, instead of reporting success (M4)', async () => {
+    from.mockReturnValue(builder({ data: [] }))
+    await expect(renameAccount('u7', 'GS Một Mới')).rejects.toThrow('Không đổi được họ tên: tài khoản không còn, hoặc anh không có quyền sửa.')
   })
 
   it('refuses an empty name without writing', async () => {
