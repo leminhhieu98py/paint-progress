@@ -3,6 +3,7 @@ import { Alert, Button, Checkbox, Form, Input, Modal, Radio, Select, Space, Swit
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ConsequenceModal } from '../../components/ConsequenceModal'
 import { modalProps } from '../../components/modalChrome'
+import { useControlHeight } from '../../components/swatch'
 import { searchSelectProps } from '../../components/searchSelect'
 import {
   changeRole, renameAccount, renameUser, revealPassword, setMemberships, setPassword,
@@ -540,6 +541,7 @@ function StoredPasswordField({
   onGenerate: () => void
 }) {
   const [visible, setVisible] = useState(false)
+  const controlHeight = useControlHeight()
   const toggle = async () => {
     if (!visible && (value ?? '') === '') {
       const password = await onReveal()
@@ -552,6 +554,9 @@ function StoredPasswordField({
     <Space.Compact style={{ width: '100%' }}>
       <Input
         id={id}
+        // The theme's one height, as the two buttons joined to it (N2, CTL-02):
+        // an input with a suffix comes out a pixel taller on its own.
+        style={{ height: controlHeight }}
         type={visible ? 'text' : 'password'}
         autoComplete="new-password"
         placeholder="Để trống: giữ mật khẩu hiện tại"
@@ -568,7 +573,7 @@ function StoredPasswordField({
           </button>
         )}
       />
-      <CopyPasswordAction password={value ?? ''} disabled={(value ?? '') === ''} />
+      <CopyPasswordAction joined password={value ?? ''} disabled={(value ?? '') === ''} />
       <Tooltip title="Sinh mật khẩu ngẫu nhiên, dễ đọc qua bộ đàm">
         <Button aria-label="Sinh mật khẩu" icon={<ReloadOutlined aria-hidden />} onClick={onGenerate} />
       </Tooltip>

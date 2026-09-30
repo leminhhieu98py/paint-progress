@@ -1,6 +1,7 @@
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { theme as antdTheme } from 'antd'
 import { renderApp } from '../../test/renderApp'
 import { palette } from '../../theme'
 import { NhanLucScreen } from './NhanLucScreen'
@@ -1210,6 +1211,38 @@ describe('NhanLucScreen — actions and dialogs (M7, M8, M9, NL-09)', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Vẫn đổi' }))
     expect(await screen.findByText('Mật khẩu của gs.moi')).toBeInTheDocument()
     expect(screen.queryByText('Mật khẩu của gs1')).toBeNull()
+  })
+
+  it('joins the password field, its copy and its generate buttons into one compact group (N2)', async () => {
+    revealPassword.mockResolvedValue('s3cret')
+    renderScreen()
+    await screen.findByText('gs1')
+    const dialog = await openEdit('GS Một')
+    const input = within(dialog).getByLabelText('Mật khẩu')
+    const group = input.closest('.ant-space-compact') as HTMLElement
+    const check = () => {
+      const copy = within(dialog).getByRole('button', { name: 'Sao chép mật khẩu' })
+      const generate = within(dialog).getByRole('button', { name: 'Sinh mật khẩu' })
+      // Direct children, so the compact join reaches them: no wrapper span.
+      for (const b of [copy, generate]) {
+        expect(b.parentElement).toBe(group)
+        expect(b).toHaveClass('ant-btn-compact-item')
+      }
+      expect(generate).toHaveClass('ant-btn-compact-last-item')
+      // One control height (CTL-02): no size of their own, and the field at
+      // the theme's height like its buttons (an affix input is a pixel taller
+      // by itself; 38 in the admin theme, antd's default in this render).
+      expect((input.closest('.ant-input-affix-wrapper') as HTMLElement).style.height)
+        .toBe(`${antdTheme.getDesignToken().controlHeight}px`)
+      expect(copy).not.toHaveClass('ant-btn-sm')
+      expect(copy).not.toHaveClass('ant-btn-lg')
+    }
+    // Disabled while empty, enabled once the eye has filled it.
+    expect(within(dialog).getByRole('button', { name: 'Sao chép mật khẩu' })).toBeDisabled()
+    check()
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Hiện mật khẩu' }))
+    await waitFor(() => expect(within(dialog).getByRole('button', { name: 'Sao chép mật khẩu' })).toBeEnabled())
+    check()
   })
 
   it('does not hold a rename back on a stored legacy password shorter than the rule, shown by the eye (N4)', async () => {
