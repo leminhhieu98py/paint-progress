@@ -1,8 +1,8 @@
 import { App as AntApp, ConfigProvider } from 'antd'
-import viVN from 'antd/locale/vi_VN'
 import { BrowserRouter } from 'react-router-dom'
 import { AuthProvider } from './auth/AuthProvider'
 import { ErrorBoundary } from './ErrorBoundary'
+import { appLocale } from './appLocale'
 import { AppRoutes } from './routes'
 import { adminTheme, palette } from './theme'
 
@@ -15,7 +15,7 @@ import { adminTheme, palette } from './theme'
 export default function App() {
   return (
     <ConfigProvider
-      locale={viVN}
+      locale={appLocale}
       theme={adminTheme}
       // antd puts the asterisk BEFORE the label; every screen in the approved
       // prototypes puts it after ("Tên sàn *"), which is also how the label
