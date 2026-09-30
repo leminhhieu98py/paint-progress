@@ -103,6 +103,16 @@ export function NhanLucEditDialog({
   const target: StaffRole = Form.useWatch('role', form) ?? row.role
   const account = row.kind === 'account' ? row.account : null
   const roleChanged = target !== row.role
+  /**
+   * The row under the name typed: Họ tên is saved before Phân quyền, and the
+   * server then looks for a hidden account under the new name, so the plan,
+   * its confirmation and the clash check do too (M2).
+   */
+  const withName = (name: string | undefined): StaffRow => {
+    const typed = (name ?? '').trim()
+    return typed === '' || typed === row.fullName ? row : { ...row, fullName: typed }
+  }
+  const named = withName(Form.useWatch('fullName', form))
   /** The account keeps being an account of the same role: its own fields show. */
   const keepsAccount = account !== null && !roleChanged
   /**
@@ -150,10 +160,10 @@ export function NhanLucEditDialog({
 
   // The change-role fields, as NL-04 asks for them.
   const becomesAccount = row.kind === 'employee' && target !== 'employee'
-  const parked = becomesAccount ? parkedAccountFor(rows, row.fullName) : null
+  const parked = becomesAccount ? parkedAccountFor(rows, named.fullName) : null
   const needsProject = target === 'gs' && (row.kind === 'employee' || row.role === 'viewer')
   const employeeClash = row.kind === 'account' && target === 'employee'
-    ? nameClash(rows, row.fullName, 'employee', row.key)
+    ? nameClash(rows, named.fullName, 'employee', row.key)
     : null
 
   const patch = (projectId: string, change: Partial<Membership>) =>
@@ -220,7 +230,8 @@ export function NhanLucEditDialog({
     && stepsFor({ ...values, fullName: values.fullName ?? row.fullName }).length === 0
 
   const apply = async (v: EditValues) => {
-    const roleRequest: RoleChangeRequest | null = roleChanged ? planRoleChange(row, rows, list, v).request : null
+    const renamed = withName(v.fullName)
+    const roleRequest: RoleChangeRequest | null = roleChanged ? planRoleChange(renamed, rows, list, v).request : null
     let roleDone = ''
     const steps = stepsFor(v)
     // The role last: it can turn the row into another kind of row.
@@ -230,7 +241,7 @@ export function NhanLucEditDialog({
         done: '',
         run: async () => {
           const result = await changeRole(roleRequest)
-          roleDone = roleChangeMessage(row, roleRequest, result)
+          roleDone = roleChangeMessage(renamed, roleRequest, result)
         },
       })
     }
@@ -270,7 +281,7 @@ export function NhanLucEditDialog({
 
   const submit = (v: EditValues) => {
     if (roleChanged) {
-      setPending({ confirmation: planRoleChange(row, rows, list, v).confirmation, values: v })
+      setPending({ confirmation: planRoleChange(withName(v.fullName), rows, list, v).confirmation, values: v })
     } else if (keepsAccount && (v.password ?? '') !== '' && v.password !== stored && v.password !== savedPassword) {
       setPending({
         values: v,

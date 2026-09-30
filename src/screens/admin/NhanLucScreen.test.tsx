@@ -845,6 +845,49 @@ describe('NhanLucScreen — Đổi phân quyền, from the Sửa dialog (NL-04, 
     expect(await screen.findByText('Đã mở lại tài khoản a.cu')).toBeInTheDocument()
   })
 
+  it('plans a rename plus role change with the new name: no hidden account under it, so a login is asked (M2)', async () => {
+    listGsUsers.mockResolvedValue([...ACCOUNTS, account({ id: 'u3', username: 'a.cu', fullName: 'lê văn a', role: 'viewer', active: false, hidden: true })])
+    changeRole.mockResolvedValue({ userId: 'u5', username: 'c.moi', reactivated: false })
+    renderScreen()
+    await screen.findByText('Lê Văn A')
+    const dialog = await openChange('Lê Văn A')
+    const name = within(dialog).getByLabelText('Họ tên')
+    await userEvent.clear(name)
+    await userEvent.type(name, 'Lê Văn C')
+    await pickNew(dialog, 'Visitor')
+    expect(within(dialog).queryByText('Mở lại tài khoản đã ẩn a.cu')).toBeNull()
+    await userEvent.type(within(dialog).getByLabelText('Tên đăng nhập'), 'c.moi')
+    await userEvent.type(within(dialog).getByLabelText('Mật khẩu'), 'Bh7@Deck2026')
+    await next(dialog)
+    expect(await screen.findByText('Đổi Lê Văn C thành Visitor?')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Vẫn đổi' }))
+    await waitFor(() => expect(changeRole).toHaveBeenCalledWith({
+      kind: 'employee', id: 'e1', role: 'viewer', username: 'c.moi', password: 'Bh7@Deck2026',
+    }))
+    expect(updateEmployee).toHaveBeenCalledWith('e1', { fullName: 'Lê Văn C' })
+  })
+
+  it('plans a rename plus role change with the new name: the hidden account under it is re-opened (M2)', async () => {
+    listGsUsers.mockResolvedValue([...ACCOUNTS, account({ id: 'u3', username: 'c.cu', fullName: 'lê văn c', role: 'viewer', active: false, hidden: true })])
+    changeRole.mockResolvedValue({ userId: 'u3', username: 'c.cu', reactivated: true })
+    renderScreen()
+    await screen.findByText('Lê Văn A')
+    const dialog = await openChange('Lê Văn A')
+    const name = within(dialog).getByLabelText('Họ tên')
+    await userEvent.clear(name)
+    await userEvent.type(name, 'Lê Văn C')
+    await pickNew(dialog, 'Visitor')
+    expect(within(dialog).getByText('Mở lại tài khoản đã ẩn c.cu')).toBeInTheDocument()
+    expect(within(dialog).queryByLabelText('Tên đăng nhập')).toBeNull()
+    await userEvent.type(within(dialog).getByLabelText('Mật khẩu'), 'Bh7@Deck2026')
+    await next(dialog)
+    expect(await screen.findByText('Mở lại tài khoản c.cu')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Vẫn đổi' }))
+    await waitFor(() => expect(changeRole).toHaveBeenCalledWith({
+      kind: 'employee', id: 'e1', role: 'viewer', password: 'Bh7@Deck2026',
+    }))
+  })
+
   it('turns a GS into an employee: locked and hidden, never deleted', async () => {
     changeRole.mockResolvedValue({ employeeId: 'e9' })
     renderScreen()

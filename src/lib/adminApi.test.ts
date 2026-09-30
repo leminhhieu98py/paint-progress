@@ -65,14 +65,33 @@ describe('adminApi', () => {
     })
   })
 
-  it('surfaces a function-level error as a thrown Error', async () => {
+  it('surfaces a function-level error as a thrown Error, in Vietnamese when it came in English (M2)', async () => {
     invoke.mockResolvedValue({ data: null, error: { message: 'boom' } })
-    await expect(revealPassword('u1')).rejects.toThrow('boom')
+    await expect(revealPassword('u1')).rejects.toThrow('Máy chủ từ chối thao tác này. Thử lại sau.')
   })
 
-  it('surfaces an application error returned in the body', async () => {
+  it('passes a Vietnamese server message through unchanged', async () => {
+    invoke.mockResolvedValue({ data: { error: 'Tên đăng nhập này đã có người dùng' }, error: null })
+    await expect(revealPassword('u1')).rejects.toThrow('Tên đăng nhập này đã có người dùng')
+  })
+
+  it('surfaces an application error returned in the body, in Vietnamese', async () => {
     invoke.mockResolvedValue({ data: { error: 'No stored credential' }, error: null })
-    await expect(revealPassword('u1')).rejects.toThrow('No stored credential')
+    await expect(revealPassword('u1')).rejects.toThrow('Tài khoản này chưa có mật khẩu được lưu.')
+  })
+
+  it('says the English refusals of a role change in Vietnamese (M2)', async () => {
+    const refuse = (message: string) => invoke.mockResolvedValueOnce({
+      data: null, error: new FunctionsHttpError(new Response(JSON.stringify({ error: message }), { status: 400 })),
+    })
+    refuse('username is required')
+    await expect(changeRole({ kind: 'employee', id: 'e1', role: 'gs' })).rejects.toThrow('Cần tên đăng nhập cho tài khoản mới.')
+    refuse('password is required')
+    await expect(changeRole({ kind: 'employee', id: 'e1', role: 'gs' })).rejects.toThrow('Cần mật khẩu cho tài khoản.')
+    refuse('projectId is required for a GS account')
+    await expect(changeRole({ kind: 'employee', id: 'e1', role: 'gs' })).rejects.toThrow('Tài khoản GS cần một dự án.')
+    refuse('Too many password reveals in the last hour. Try again later.')
+    await expect(revealPassword('u1')).rejects.toThrow('Đã xem mật khẩu quá nhiều lần trong một giờ qua. Thử lại sau.')
   })
 
   // supabase-js converts any non-2xx invoke response into a FunctionsHttpError
@@ -81,14 +100,13 @@ describe('adminApi', () => {
   it('reads the real error message out of a FunctionsHttpError context', async () => {
     const context = new Response(JSON.stringify({ error: 'No stored credential' }), { status: 404 })
     invoke.mockResolvedValue({ data: null, error: new FunctionsHttpError(context) })
-    await expect(revealPassword('u1')).rejects.toThrow('No stored credential')
+    await expect(revealPassword('u1')).rejects.toThrow('Tài khoản này chưa có mật khẩu được lưu.')
   })
 
-  it('falls back to the generic message when the context body is not usable JSON', async () => {
+  it('falls back to a generic Vietnamese message when the context body is not usable JSON', async () => {
     const context = new Response('not json', { status: 500 })
-    const error = new FunctionsHttpError(context)
-    invoke.mockResolvedValue({ data: null, error })
-    await expect(revealPassword('u1')).rejects.toThrow(error.message)
+    invoke.mockResolvedValue({ data: null, error: new FunctionsHttpError(context) })
+    await expect(revealPassword('u1')).rejects.toThrow('Máy chủ từ chối thao tác này. Thử lại sau.')
   })
 
   it('returns the revealed password', async () => {

@@ -34,6 +34,34 @@ type Action =
   | 'create' | 'reveal' | 'set-password' | 'deactivate'
   | 'reactivate' | 'rename' | 'hide' | 'unhide' | 'change_role'
 
+/**
+ * admin-users' English refusals, as the admin reads them (M2). The Edge
+ * Function is not redeployed for this, so the client says them in Vietnamese.
+ */
+const SERVER_MESSAGES: Record<string, string> = {
+  'username is required': 'Cần tên đăng nhập cho tài khoản mới.',
+  'password is required': 'Cần mật khẩu cho tài khoản.',
+  'projectId is required for a GS account': 'Tài khoản GS cần một dự án.',
+  'This row is already an employee': 'Người này đã là nhân viên.',
+  'This action is only available for GS and viewer accounts': 'Thao tác này chỉ dành cho tài khoản GS và Visitor.',
+  'No such account': 'Không tìm thấy tài khoản này.',
+  'Could not read the target account': 'Không đọc được tài khoản này.',
+  'Could not check the access log; reveal aborted': 'Không kiểm tra được nhật ký xem mật khẩu, nên chưa hiện mật khẩu.',
+  'Could not record credential access; reveal aborted': 'Không ghi được nhật ký xem mật khẩu, nên chưa hiện mật khẩu.',
+  'Too many password reveals in the last hour. Try again later.': 'Đã xem mật khẩu quá nhiều lần trong một giờ qua. Thử lại sau.',
+  'No stored credential': 'Tài khoản này chưa có mật khẩu được lưu.',
+  Forbidden: 'Chỉ quản trị viên được làm việc này.',
+  'Internal error': 'Máy chủ gặp lỗi. Thử lại sau.',
+}
+
+/** Any other message with no Vietnamese in it is English, and not for the admin. */
+export function serverMessage(raw: string): string {
+  const known = SERVER_MESSAGES[raw.trim()]
+  if (known) return known
+  if (raw.startsWith('Failed to send a request')) return 'Không kết nối được máy chủ. Kiểm tra mạng rồi thử lại.'
+  return /[^\x20-\x7E\s]/.test(raw) ? raw : 'Máy chủ từ chối thao tác này. Thử lại sau.'
+}
+
 async function call<T>(action: Action, payload: Record<string, string>): Promise<T> {
   const { data, error } = await supabase.functions.invoke('admin-users', {
     body: { action, ...payload },
@@ -54,12 +82,12 @@ async function call<T>(action: Action, payload: Record<string, string>): Promise
       } catch {
         // Body wasn't JSON (or already consumed) -- fall back to the generic message.
       }
-      throw new Error(message)
+      throw new Error(serverMessage(message))
     }
-    throw new Error(error.message)
+    throw new Error(serverMessage(error.message))
   }
   if (data && typeof data === 'object' && 'error' in data) {
-    throw new Error(String((data as { error: unknown }).error))
+    throw new Error(serverMessage(String((data as { error: unknown }).error)))
   }
   return data as T
 }
