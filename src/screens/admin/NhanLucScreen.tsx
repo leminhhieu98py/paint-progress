@@ -1,6 +1,5 @@
 import {
-  DownloadOutlined, EditOutlined, EyeInvisibleOutlined, EyeOutlined, KeyOutlined, LockOutlined,
-  RollbackOutlined, SearchOutlined, SwapOutlined, TeamOutlined, UnlockOutlined, UserAddOutlined,
+  DownloadOutlined, EyeOutlined, LockOutlined, SearchOutlined, UserAddOutlined,
 } from '@ant-design/icons'
 import {
   Alert, App, Button, Checkbox, Form, Input, Modal, Select, Space, Switch, Table, Tooltip, Typography,
@@ -10,6 +9,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../../auth/AuthProvider'
 import { CategoryBadge } from '../../components/CategoryBadge'
 import { ConsequenceModal } from '../../components/ConsequenceModal'
+import { IconAction } from '../../components/IconAction'
 import { useDraftFilters } from '../../components/draftFilters'
 import { FilterBar } from '../../components/FilterBar'
 import { modalProps } from '../../components/modalChrome'
@@ -408,27 +408,18 @@ export function NhanLucScreen() {
 
   const accountActions = (user: GsUser) => (
     <>
-      <Tooltip title="Đổi tên đăng nhập">
-        <Button
-          aria-label="Đổi tên đăng nhập"
-          icon={<EditOutlined />}
-          onClick={() => {
-            renameForm.setFieldsValue({ username: user.username })
-            setRenameTarget(user)
-          }}
-        />
-      </Tooltip>
+      {/* Icon actions, one icon per verb (ACT-01). */}
+      <IconAction
+        verb="rename"
+        label="Đổi tên đăng nhập"
+        onClick={() => {
+          renameForm.setFieldsValue({ username: user.username })
+          setRenameTarget(user)
+        }}
+      />
       {/* Not "Phân quyền": on this screen that word is the role (review I-2). */}
-      <Tooltip title="Dự án và công việc">
-        <Button aria-label="Dự án và công việc" icon={<TeamOutlined />} onClick={() => setPermTarget(user)} />
-      </Tooltip>
-      <Tooltip title="Đổi mật khẩu">
-        <Button
-          aria-label="Đổi mật khẩu"
-          icon={<KeyOutlined />}
-          onClick={() => { pwForm.resetFields(); setPwTarget(user) }}
-        />
-      </Tooltip>
+      <IconAction verb="members" label="Dự án và công việc" onClick={() => setPermTarget(user)} />
+      <IconAction verb="password" label="Đổi mật khẩu" onClick={() => { pwForm.resetFields(); setPwTarget(user) }} />
       <Tooltip title="Xem mật khẩu · được ghi log">
         <Button
           aria-label="Xem mật khẩu"
@@ -442,55 +433,45 @@ export function NhanLucScreen() {
         />
       </Tooltip>
       {user.active ? (
-        <Tooltip title="Khoá tài khoản">
-          <Button
-            danger
-            aria-label="Khoá tài khoản"
-            icon={<LockOutlined />}
-            onClick={() => setOffTarget(user)}
-          />
-        </Tooltip>
+        <IconAction verb="lock" label="Khoá tài khoản" danger onClick={() => setOffTarget(user)} />
       ) : user.hidden ? (
         // The lock's slot, kept: every account row has its buttons at the same x (M7).
         <Button aria-hidden tabIndex={-1} icon={<LockOutlined />} style={{ visibility: 'hidden' }} />
       ) : (
-        <Tooltip title="Mở khoá · đăng nhập lại được, dự án giữ nguyên">
-          <Button
-            aria-label="Mở khoá"
-            icon={<UnlockOutlined />}
-            onClick={() =>
-              void run(async () => {
-                await reactivateUser(user.id)
-                reload()
-                message.success('Đã mở khoá tài khoản')
-              })
-            }
-          />
-        </Tooltip>
+        <IconAction
+          verb="unlock"
+          label="Mở khoá"
+          tooltip="Mở khoá · đăng nhập lại được, dự án giữ nguyên"
+          onClick={() =>
+            void run(async () => {
+              await reactivateUser(user.id)
+              reload()
+              message.success('Đã mở khoá tài khoản')
+            })
+          }
+        />
       )}
       {user.hidden ? (
         // An icon like every other action in the row (M7).
-        <Tooltip title="Hiện lại trong danh sách · vẫn khoá">
-          <Button
-            aria-label="Hiện lại"
-            icon={<RollbackOutlined />}
-            onClick={() =>
-              void run(async () => {
-                await unhideUser(user.id)
-                reload()
-                message.success('Đã hiện lại tài khoản')
-              })
-            }
-          />
-        </Tooltip>
+        <IconAction
+          verb="unhide"
+          label="Hiện lại"
+          tooltip="Hiện lại trong danh sách · vẫn khoá"
+          onClick={() =>
+            void run(async () => {
+              await unhideUser(user.id)
+              reload()
+              message.success('Đã hiện lại tài khoản')
+            })
+          }
+        />
       ) : (
-        <Tooltip title="Ẩn khỏi danh sách · không xoá">
-          <Button
-            aria-label="Ẩn tài khoản"
-            icon={<EyeInvisibleOutlined />}
-            onClick={() => setHideTarget(user)}
-          />
-        </Tooltip>
+        <IconAction
+          verb="hide"
+          label="Ẩn tài khoản"
+          tooltip="Ẩn khỏi danh sách · không xoá"
+          onClick={() => setHideTarget(user)}
+        />
       )}
     </>
   )
@@ -511,16 +492,14 @@ export function NhanLucScreen() {
           }
         />
       </Tooltip>
-      <Tooltip title="Sửa tên">
-        <Button
-          aria-label="Sửa tên"
-          icon={<EditOutlined />}
-          onClick={() => {
-            employeeForm.setFieldsValue({ fullName: row.fullName })
-            setRenaming(row)
-          }}
-        />
-      </Tooltip>
+      <IconAction
+        verb="edit"
+        label="Sửa tên"
+        onClick={() => {
+          employeeForm.setFieldsValue({ fullName: row.fullName })
+          setRenaming(row)
+        }}
+      />
     </>
   )
 
@@ -688,13 +667,12 @@ export function NhanLucScreen() {
                   // then sits at one x on every row, account or employee (M7).
                   <div style={{ display: 'flex', gap: 7, justifyContent: 'flex-end', alignItems: 'center' }}>
                     {row.kind === 'account' ? accountActions(row.account) : employeeActions(row)}
-                    <Tooltip title="Đổi phân quyền · Nhân viên, GS, Visitor">
-                      <Button
-                        aria-label="Đổi phân quyền"
-                        icon={<SwapOutlined />}
-                        onClick={() => setChangeTarget(row)}
-                      />
-                    </Tooltip>
+                    <IconAction
+                      verb="changeRole"
+                      label="Đổi phân quyền"
+                      tooltip="Đổi phân quyền · Nhân viên, GS, Visitor"
+                      onClick={() => setChangeTarget(row)}
+                    />
                   </div>
                 ),
               },
