@@ -1,7 +1,7 @@
 import {
-  ArrowDownOutlined, ArrowUpOutlined, CalculatorOutlined, ClearOutlined, CloseCircleOutlined, CloseOutlined,
+  ArrowDownOutlined, ArrowRightOutlined, ArrowUpOutlined, CalculatorOutlined, ClearOutlined, CloseCircleOutlined, CloseOutlined,
   ControlOutlined, CopyOutlined, DeleteOutlined, EditOutlined, ExpandOutlined, EyeInvisibleOutlined,
-  EyeOutlined, FolderOpenOutlined, FormOutlined, KeyOutlined, LockOutlined, MinusOutlined, PieChartOutlined,
+  EyeOutlined, FormOutlined, KeyOutlined, LockOutlined, MinusOutlined, PieChartOutlined,
   PlusOutlined, RollbackOutlined, SaveOutlined, ScheduleOutlined, SwapOutlined, TableOutlined, TeamOutlined,
   ThunderboltOutlined, UndoOutlined, UnlockOutlined,
 } from '@ant-design/icons'
@@ -20,7 +20,7 @@ export const ACTION_ICONS = {
   rename: FormOutlined, // Đổi tên đăng nhập
   delete: DeleteOutlined, // Xoá …
   clear: ClearOutlined, // Xoá toàn bộ lưới ô
-  open: FolderOpenOutlined, // Mở
+  open: ArrowRightOutlined, // Mở (FolderOpen stays the field's Xuất cả dự án)
   duplicate: CopyOutlined, // Nhân bản
   moveUp: ArrowUpOutlined, // Lên
   moveDown: ArrowDownOutlined, // Xuống

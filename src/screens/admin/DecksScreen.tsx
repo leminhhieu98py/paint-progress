@@ -1,7 +1,4 @@
-import {
-  ArrowDownOutlined, ArrowRightOutlined, ArrowUpOutlined, CopyOutlined, DeleteOutlined,
-  DownloadOutlined, PlusOutlined,
-} from '@ant-design/icons'
+import { DownloadOutlined, PlusOutlined } from '@ant-design/icons'
 import { Alert, App, Button, Form, Input, Modal, Space, Table, Tooltip, Typography } from 'antd'
 import dayjs from 'dayjs'
 import { useCallback, useEffect, useMemo, useState } from 'react'
@@ -28,6 +25,7 @@ import { Donut, type DonutSlice } from '../../components/Donut'
 import { ROLLUP_RING, ROLLUP_RING_SIZE, ROLLUP_RING_THICKNESS, ringFigureStep } from '../../components/ringFit'
 import { legendRowProps } from '../../components/ringHover'
 import { EmptyState } from '../../components/EmptyState'
+import { IconAction } from '../../components/IconAction'
 import { FilterBar } from '../../components/FilterBar'
 import { InfoTip } from '../../components/InfoTip'
 import { PageBody, PageHeader } from '../../components/PageHeader'
@@ -524,31 +522,18 @@ export function DecksScreen() {
                 align: 'center',
                 render: (_v, deck) => (
                   <Space size={6}>
-                    <Tooltip title="Mở sàn">
-                      <Button
-                        aria-label="Mở"
-                        icon={<ArrowRightOutlined />}
-                        onClick={() => navigate(deck.id)}
-                      />
-                    </Tooltip>
-                    <Tooltip title="Nhân bản sàn · bản vẽ, khung và lưới ô">
-                      <Button
-                        aria-label="Nhân bản sàn"
-                        icon={<CopyOutlined />}
-                        onClick={() => {
-                          copyForm.setFieldsValue({ name: `${deck.name} (bản sao)`, code: `${deck.code}-2` })
-                          setCopyingDeck(deck)
-                        }}
-                      />
-                    </Tooltip>
-                    <Tooltip title="Xóa sàn">
-                      <Button
-                        danger
-                        aria-label="Xóa sàn"
-                        icon={<DeleteOutlined />}
-                        onClick={() => setRemovingDeck(deck)}
-                      />
-                    </Tooltip>
+                    {/* Icon actions (ACT-01). */}
+                    <IconAction verb="open" label="Mở" tooltip="Mở sàn" onClick={() => navigate(deck.id)} />
+                    <IconAction
+                      verb="duplicate"
+                      label="Nhân bản sàn"
+                      tooltip="Nhân bản sàn · bản vẽ, khung và lưới ô"
+                      onClick={() => {
+                        copyForm.setFieldsValue({ name: `${deck.name} (bản sao)`, code: `${deck.code}-2` })
+                        setCopyingDeck(deck)
+                      }}
+                    />
+                    <IconAction verb="delete" label="Xóa sàn" danger onClick={() => setRemovingDeck(deck)} />
                   </Space>
                 ),
               },
@@ -563,22 +548,18 @@ export function DecksScreen() {
                 // before/after in `decks` IS the neighbour to swap with.
                 render: (_v, deck, index) => (
                   <Space size={2}>
-                    <Tooltip title="Lên">
-                      <Button
-                        aria-label="Lên"
-                        icon={<ArrowUpOutlined />}
-                        disabled={index === 0 || reordering}
-                        onClick={() => void reorderDeck(deck, decks[index - 1])}
-                      />
-                    </Tooltip>
-                    <Tooltip title="Xuống">
-                      <Button
-                        aria-label="Xuống"
-                        icon={<ArrowDownOutlined />}
-                        disabled={index === decks.length - 1 || reordering}
-                        onClick={() => void reorderDeck(deck, decks[index + 1])}
-                      />
-                    </Tooltip>
+                    <IconAction
+                      verb="moveUp"
+                      label="Lên"
+                      disabled={index === 0 || reordering}
+                      onClick={() => void reorderDeck(deck, decks[index - 1])}
+                    />
+                    <IconAction
+                      verb="moveDown"
+                      label="Xuống"
+                      disabled={index === decks.length - 1 || reordering}
+                      onClick={() => void reorderDeck(deck, decks[index + 1])}
+                    />
                   </Space>
                 ),
               },
