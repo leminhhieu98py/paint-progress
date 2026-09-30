@@ -1,9 +1,10 @@
-import { DeleteOutlined, EditOutlined, PlusOutlined } from '@ant-design/icons'
-import { Alert, App, Button, Form, Input, Modal, Space, Table, Tooltip } from 'antd'
+import { PlusOutlined } from '@ant-design/icons'
+import { Alert, App, Button, Form, Input, Modal, Space, Table } from 'antd'
 import dayjs from 'dayjs'
 import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ConsequenceModal } from '../../components/ConsequenceModal'
+import { IconAction } from '../../components/IconAction'
 import { PageBody, PageHeader } from '../../components/PageHeader'
 import { SectionCard } from '../../components/SectionCard'
 import { modalProps } from '../../components/modalChrome'
@@ -288,30 +289,27 @@ export function ProjectsScreen() {
                 align: 'center',
                 render: (_v, row) => (
                   <Space size={6}>
-                    <Tooltip title="Sửa dự án">
-                      <Button
-                        aria-label="Sửa"
-                        icon={<EditOutlined />}
-                        onClick={(e) => {
-                          // The button sits inside a row that navigates. Without
-                          // this, editing also opens the project's decks behind
-                          // the modal, and closing it strands the admin there.
-                          e.stopPropagation()
-                          openDialog(row)
-                        }}
-                      />
-                    </Tooltip>
-                    <Tooltip title="Xóa dự án">
-                      <Button
-                        danger
-                        aria-label="Xóa dự án"
-                        icon={<DeleteOutlined />}
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          setRemovingProject(row)
-                        }}
-                      />
-                    </Tooltip>
+                    {/* Icon actions (ACT-01). They sit inside a row that
+                        navigates: without stopPropagation, editing also opens
+                        the project's decks behind the modal. */}
+                    <IconAction
+                      verb="edit"
+                      label="Sửa"
+                      tooltip="Sửa dự án"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        openDialog(row)
+                      }}
+                    />
+                    <IconAction
+                      verb="delete"
+                      label="Xóa dự án"
+                      danger
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setRemovingProject(row)
+                      }}
+                    />
                   </Space>
                 ),
               },
