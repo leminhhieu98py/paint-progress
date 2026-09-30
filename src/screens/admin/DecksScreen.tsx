@@ -386,21 +386,24 @@ export function DecksScreen() {
   /**
    * ORD-01: a deck dragged to a new place -- or moved one place by Alt+↑/↓ on
    * its handle -- is saved on drop. The list takes the new order at once;
-   * every deck whose position changed gets its new `seq`, one write per deck
-   * (decksApi.saveDeckOrder; the owner chose no migration). On any failure
-   * the real order is read back from the server and the error said. One move
-   * at a time: a second one waits for the first to settle.
+   * every deck whose stored `seq` is not its new place (1..n) gets it, one
+   * write per deck (decksApi.saveDeckOrder; the owner chose no migration), so
+   * gaps and duplicates left by deletes are closed too (review I1). On any
+   * failure the real order is read back from the server and the error said.
+   * One move at a time: a second one is ignored until the first settles, and
+   * the moved deck's handle keeps the focus throughout (review M1).
    */
-  const moveDeck = async (from: number, to: number) => {
+  const moveDeck = async (from: number, to: number, viaKeyboard = false) => {
     if (reordering || from === to || from < 0 || to < 0 || from >= decks.length || to >= decks.length) return
     const next = [...decks]
     const [moved] = next.splice(from, 1)
     next.splice(to, 0, moved)
-    const renumbered = next.map((d, i) => ({ ...d, seq: i + 1 }))
-    const changes = renumbered
-      .filter((d, i) => decks.findIndex((o) => o.id === d.id) !== i)
-      .map((d) => ({ id: d.id, seq: d.seq }))
-    setDecks(renumbered)
+    const changes = next
+      .map((d, i) => ({ id: d.id, seq: i + 1, stored: d.seq }))
+      .filter((d) => d.stored !== d.seq)
+      .map(({ id, seq }) => ({ id, seq }))
+    setDecks(next.map((d, i) => ({ ...d, seq: i + 1 })))
+    if (viaKeyboard) focusHandle.current = moved.id
     setReordering(true)
     try {
       await saveDeckOrder(changes)
@@ -412,6 +415,17 @@ export function DecksScreen() {
     }
   }
   const dragging = useRef<number | null>(null)
+  /** Each deck's handle, and the one to keep focused after a keyboard move (M1). */
+  const handles = useRef(new Map<string, HTMLButtonElement>())
+  const focusHandle = useRef<string | null>(null)
+  useEffect(() => {
+    const id = focusHandle.current
+    if (id === null) return
+    const el = handles.current.get(id)
+    // Back only when the move lost it (the row re-rendered), never away from where the admin went.
+    if (el && (document.activeElement === null || document.activeElement === document.body)) el.focus()
+    if (!reordering) focusHandle.current = null
+  }, [decks, reordering])
 
   /**
    * The XLSX (spec §9), built from EVERY deck of the project.
@@ -519,11 +533,17 @@ export function DecksScreen() {
                     className="pp-drag-handle"
                     aria-label={`Sắp xếp ${deck.name}`}
                     aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
-                    disabled={reordering}
+                    // Not `disabled`: that drops the focus to <body> mid-save (M1).
+                    aria-disabled={reordering}
+                    ref={(el) => {
+                      if (el) handles.current.set(deck.id, el)
+                      else handles.current.delete(deck.id)
+                    }}
                     onKeyDown={(e) => {
-                      if (!e.altKey) return
-                      if (e.key === 'ArrowUp') { e.preventDefault(); void moveDeck(index, index - 1) }
-                      if (e.key === 'ArrowDown') { e.preventDefault(); void moveDeck(index, index + 1) }
+                      if (!e.altKey || (e.key !== 'ArrowUp' && e.key !== 'ArrowDown')) return
+                      e.preventDefault()
+                      if (reordering) return
+                      void moveDeck(index, e.key === 'ArrowUp' ? index - 1 : index + 1, true)
                     }}
                     style={{
                       border: 0, background: 'none', padding: 4, cursor: reordering ? 'not-allowed' : 'grab',

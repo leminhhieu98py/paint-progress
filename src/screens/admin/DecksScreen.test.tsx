@@ -874,6 +874,59 @@ describe('DecksScreen — reordering decks by drag (ORD-01)', () => {
   })
 })
 
+describe('DecksScreen — deck order with stored gaps and duplicates (ORD-01 review I1, M1)', () => {
+  const decksWithSeqs = (seqs: number[]) => seqs.map((seq, i) => ({
+    id: `d${i + 1}`, projectId: 'p1', seq, name: `Deck ${i + 1}`, code: `D${i + 1}`,
+    imagePath: null, imageW: null, imageH: null, drawingName: null, drawingPage: null,
+    totalAreaM2: 100, areaSource: 'prorated' as const, cellCount: 1,
+  }))
+  const handle = (name: string) => screen.getByRole('button', { name: `Sắp xếp ${name}` })
+
+  it('writes every deck whose stored seq is not its new place, so gaps are closed', async () => {
+    listDecks.mockResolvedValue(decksWithSeqs([3, 4, 5, 6, 7, 8]))
+    renderScreen()
+    await screen.findByText('Deck 1')
+    handle('Deck 2').focus()
+    await userEvent.keyboard('{Alt>}{ArrowUp}{/Alt}')
+    await waitFor(() => expect(saveDeckOrder).toHaveBeenCalledWith([
+      { id: 'd2', seq: 1 }, { id: 'd1', seq: 2 }, { id: 'd3', seq: 3 },
+      { id: 'd4', seq: 4 }, { id: 'd5', seq: 5 }, { id: 'd6', seq: 6 },
+    ]))
+  })
+
+  it('writes a deck left in place when its stored seq was a duplicate, and skips one already right', async () => {
+    listDecks.mockResolvedValue(decksWithSeqs([1, 2, 2]))
+    renderScreen()
+    await screen.findByText('Deck 1')
+    handle('Deck 3').focus()
+    await userEvent.keyboard('{Alt>}{ArrowUp}{/Alt}')
+    // New order Deck 1, Deck 3, Deck 2: Deck 1 and Deck 3 already hold 1 and 2.
+    await waitFor(() => expect(saveDeckOrder).toHaveBeenCalledWith([{ id: 'd2', seq: 3 }]))
+  })
+
+  it('keeps focus on the moved deck\'s handle through the save, so Alt+↑ twice moves it twice (M1)', async () => {
+    listDecks.mockResolvedValue(decksWithSeqs([1, 2, 3]))
+    let settle!: () => void
+    saveDeckOrder.mockReturnValueOnce(new Promise<void>((resolve) => { settle = resolve }))
+    renderScreen()
+    await screen.findByText('Deck 1')
+    handle('Deck 3').focus()
+    await userEvent.keyboard('{Alt>}{ArrowUp}{/Alt}')
+    expect(document.activeElement).toBe(handle('Deck 3'))
+    expect(handle('Deck 3')).toHaveAttribute('aria-disabled', 'true')
+    // Pressed again while the save runs: ignored, not queued.
+    await userEvent.keyboard('{Alt>}{ArrowUp}{/Alt}')
+    expect(saveDeckOrder).toHaveBeenCalledTimes(1)
+    settle()
+    await waitFor(() => expect(handle('Deck 3')).toHaveAttribute('aria-disabled', 'false'))
+    expect(document.activeElement).toBe(handle('Deck 3'))
+    await userEvent.keyboard('{Alt>}{ArrowUp}{/Alt}')
+    await waitFor(() => expect(saveDeckOrder).toHaveBeenCalledTimes(2))
+    expect(saveDeckOrder).toHaveBeenLastCalledWith([{ id: 'd3', seq: 1 }, { id: 'd1', seq: 2 }])
+    expect(document.activeElement).toBe(handle('Deck 3'))
+  })
+})
+
 describe('DecksScreen: the deck list at a narrow window (QA F8)', () => {
   it('lets the list scroll sideways rather than squeezing the name column', async () => {
     // Every other column has a fixed width, so at 1024px the name was left
