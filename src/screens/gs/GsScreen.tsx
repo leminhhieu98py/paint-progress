@@ -33,7 +33,7 @@ import { buildProjectReport, downloadWorkbook } from '../../lib/projectReport'
 import { renderDeckDrawing, renderDeckPie, renderPlanDrawing } from '../../canvas/deckSnapshot'
 import { CellStageModal } from './CellStageModal'
 import { fieldError, fieldType, palette, shadowCard, space } from '../../theme'
-import { CalendarOutlined, EllipsisOutlined, FileExcelOutlined, FolderOpenOutlined, LoadingOutlined } from '@ant-design/icons'
+import { EllipsisOutlined, FileExcelOutlined, FolderOpenOutlined, LoadingOutlined } from '@ant-design/icons'
 import { EmptyState } from '../../components/EmptyState'
 import { DeckProgressCard, StageRollupCard, type DeckFigureStatus } from './DeckStatsCards'
 import { DeckTodayCard } from './DeckTodayCard'
@@ -41,6 +41,7 @@ import { FieldLayout } from './FieldLayout'
 import { FieldProjectSelect } from './FieldProjectSelect'
 import { FIELD_TAB_BAR_SPACE, useFieldPhone } from './fieldSections'
 import { FilterBar } from '../../components/FilterBar'
+import { IconAction } from '../../components/IconAction'
 import { FilterSheet } from '../../components/FilterSheet'
 import { APP_BASE_PATH } from '../../config'
 import { rememberProjectName } from './fieldProjects'
@@ -1539,15 +1540,15 @@ export function GsScreen() {
                 and the pressed state carry it.
               */
               <div style={{ display: 'flex', alignItems: 'center', gap: space.sm, flex: '1 1 auto', minWidth: 0, justifyContent: 'flex-end' }}>
-                <Button
+                {/* An icon action at the field's 48px (ACT-01, CTL-02): the
+                    pressed state and the tooltip carry the label. */}
+                <IconAction
+                  verb="plan"
+                  label="Hiện kế hoạch"
                   type={showPlan ? 'primary' : 'default'}
-                  icon={<CalendarOutlined aria-hidden />}
-                  aria-label="Hiện kế hoạch"
                   aria-pressed={showPlan}
                   onClick={() => setShowPlan((on) => !on)}
-                >
-                  {phone ? null : 'Hiện kế hoạch'}
-                </Button>
+                />
                 {showPlan && stages.length > 0 && (
                   <Select
                     id="gs-plan-stage"

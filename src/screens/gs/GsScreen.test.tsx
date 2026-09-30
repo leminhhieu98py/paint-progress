@@ -911,6 +911,22 @@ describe('GsScreen: the deck picker (GS-03)', () => {
       .toBeInTheDocument()
   })
 
+  it('draws Hiện kế hoạch as a pressed-or-not icon action on a tablet too, with no visible text (ACT-01)', async () => {
+    const restore = setViewport(1280)
+    try {
+      renderScreen()
+      await screen.findByTestId('canvas')
+      const plan = screen.getByRole('button', { name: 'Hiện kế hoạch' })
+      expect(plan).toHaveClass('ant-btn-icon-only')
+      expect(plan).toHaveTextContent('')
+      expect(plan).toHaveAttribute('aria-pressed', 'false')
+      await userEvent.click(plan)
+      expect(screen.getByRole('button', { name: 'Hiện kế hoạch' })).toHaveAttribute('aria-pressed', 'true')
+    } finally {
+      restore()
+    }
+  })
+
   it('puts the plan back on the first coat of the deck it opens', async () => {
     renderScreen()
     await screen.findByTestId('canvas')

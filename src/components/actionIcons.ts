@@ -1,8 +1,8 @@
 import {
-  ArrowDownOutlined, ArrowRightOutlined, ArrowUpOutlined, CalculatorOutlined, ClearOutlined, CloseCircleOutlined, CloseOutlined,
+  ArrowDownOutlined, ArrowRightOutlined, ArrowUpOutlined, CalculatorOutlined, CalendarOutlined, ClearOutlined, CloseCircleOutlined, CloseOutlined,
   ControlOutlined, CopyOutlined, DeleteOutlined, EditOutlined, ExpandOutlined, EyeInvisibleOutlined,
   EyeOutlined, FormOutlined, KeyOutlined, LockOutlined, MessageOutlined, MinusOutlined, PieChartOutlined,
-  PlusOutlined, RollbackOutlined, SaveOutlined, ScheduleOutlined, SwapOutlined, TableOutlined, TeamOutlined,
+  PlusOutlined, RollbackOutlined, SaveOutlined, SwapOutlined, TableOutlined, TeamOutlined,
   ThunderboltOutlined, UndoOutlined, UnlockOutlined,
 } from '@ant-design/icons'
 import type { ComponentType } from 'react'
@@ -41,7 +41,7 @@ export const ACTION_ICONS = {
   zoomIn: PlusOutlined, // Phóng to
   zoomOut: MinusOutlined, // Thu nhỏ
   fit: ExpandOutlined, // Vừa khung
-  plan: ScheduleOutlined, // Hiện kế hoạch
+  plan: CalendarOutlined, // Hiện kế hoạch
   notes: MessageOutlined, // Ghi chú (n)
 } satisfies Record<string, ComponentType>
 
