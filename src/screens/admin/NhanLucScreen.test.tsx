@@ -2,6 +2,7 @@ import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderApp } from '../../test/renderApp'
+import { palette } from '../../theme'
 import { NhanLucScreen } from './NhanLucScreen'
 import { expectLeft } from '../../test/alignment'
 import { weightOf } from '../../test/typography'
@@ -208,6 +209,12 @@ describe('NhanLucScreen — one list (NL-01)', () => {
     const name = await screen.findByText('GS Một')
     expect(weightOf(name)).toBe(400)
     expect(name).toHaveStyle({ fontSize: '13px' })
+  })
+
+  it('sets an active account\'s projects in the text colour of every other name (AD5, UI-06)', async () => {
+    renderScreen()
+    await screen.findByText('GS Một')
+    expect(within(rowOf('GS Một')).getByText('BB1')).toHaveStyle({ color: palette.text })
   })
 
   it('gives the project list a fixed 280 px column, so a long list wraps (UI-06)', async () => {

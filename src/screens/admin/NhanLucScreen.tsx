@@ -74,7 +74,8 @@ const RULES: Rule[] = [
 const NONE = <span style={{ color: palette.textTertiary }}>{MISSING}</span>
 
 const projectTextStyle = (user: GsUser) => ({
-  color: user.active ? palette.textSecondary : palette.textQuaternary,
+  // A name like the person's own beside it (AD5, UI-06); dimmed only on a locked account.
+  color: user.active ? palette.text : palette.textQuaternary,
 })
 
 /**

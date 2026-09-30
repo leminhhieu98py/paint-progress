@@ -2,6 +2,7 @@ import { App as AntApp } from 'antd'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
+import { palette } from '../../theme'
 import { StagePlanTable, type StagePlanRow } from './StagePlanTable'
 import { expectLeft } from '../../test/alignment'
 import { weightOf } from '../../test/typography'
@@ -529,6 +530,16 @@ describe('StagePlanTable — Lưu only for a changed row (M10)', () => {
     await userEvent.clear(area)
     await userEvent.type(area, '4321')
     await waitFor(() => expect(saveOf('s1')).toBeEnabled())
+  })
+})
+
+describe('StagePlanTable — names are one class (AD5, UI-06)', () => {
+  it('sets Sàn, Công việc and Công đoạn in the one text colour, body weight', () => {
+    renderTable()
+    for (const text of ['Cellar Deck', 'Sơn', 'Công đoạn 1']) {
+      const el = row('s1').getByText(text)
+      expect(el).toHaveStyle({ color: palette.text, fontSize: '13px', fontWeight: '400' })
+    }
   })
 })
 

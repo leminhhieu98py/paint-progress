@@ -177,7 +177,8 @@ export function StagePlanTable({
       key: 'deck',
       width: 150,
       render: (_v: unknown, row: StagePlanRow) => (
-        <span style={{ color: palette.textSecondary }}>{row.deckName}</span>
+        // Sàn, Công việc, Công đoạn: three names, one class, one colour (AD5, UI-06).
+        <span style={{ ...type.body, color: palette.text }}>{row.deckName}</span>
       ),
     },
     {
@@ -185,7 +186,7 @@ export function StagePlanTable({
       key: 'work',
       width: 130,
       render: (_v: unknown, row: StagePlanRow) => (
-        <span style={{ color: palette.textSecondary }}>{row.workName}</span>
+        <span style={{ ...type.body, color: palette.text }}>{row.workName}</span>
       ),
     },
     {
@@ -194,7 +195,7 @@ export function StagePlanTable({
       // A floor, not a cap: `Blast + Coat 1` wraps once at most (QA F9).
       width: 140,
       render: (_v: unknown, row: StagePlanRow) => (
-        <span style={type.body}>{row.stageName}</span>
+        <span style={{ ...type.body, color: palette.text }}>{row.stageName}</span>
       ),
     },
     {
