@@ -119,6 +119,16 @@ export function NhanLucEditDialog({
   const [works, setWorks] = useState<Record<string, { value: string; label: string }[]>>({})
   /** The stored password, once the field's eye has fetched it (and the fetch logged it). */
   const [stored, setStored] = useState<string | null>(null)
+  /**
+   * What earlier Lưu presses already saved (M3). The row is the list as it was
+   * when the dialog opened, so a retry after a refusal compares against these,
+   * re-runs only what is not saved yet, and "Đã lưu" stays true.
+   */
+  const [savedName, setSavedName] = useState(row.fullName)
+  const [savedUsername, setSavedUsername] = useState(account?.username ?? '')
+  const [savedPassword, setSavedPassword] = useState<string | null>(null)
+  const [savedDrafts, setSavedDrafts] = useState<string | null>(null)
+  const [savedLabels, setSavedLabels] = useState<string[]>([])
   const [pending, setPending] = useState<{ confirmation: Confirmation; values: EditValues } | null>(null)
   const [saving, setSaving] = useState(false)
   const [failure, setFailure] = useState<string | null>(null)
@@ -153,26 +163,52 @@ export function NhanLucEditDialog({
   const stepsFor = (values: EditValues): Step[] => {
     const steps: Step[] = []
     const name = values.fullName.trim()
-    if (name !== row.fullName) {
-      steps.push(row.kind === 'employee'
-        ? { label: 'Họ tên', done: 'Đã đổi tên', run: () => updateEmployee(row.id, { fullName: name }) }
-        : { label: 'Họ tên', done: 'Đã đổi tên', run: () => renameAccount(row.id, name) })
+    if (name !== savedName) {
+      steps.push({
+        label: 'Họ tên',
+        done: 'Đã đổi tên',
+        run: async () => {
+          await (row.kind === 'employee' ? updateEmployee(row.id, { fullName: name }) : renameAccount(row.id, name))
+          setSavedName(name)
+        },
+      })
     }
     if (keepsAccount) {
       const username = (values.username ?? '').trim().toLowerCase()
-      if (username !== '' && username !== account.username) {
-        steps.push({ label: 'Tên đăng nhập', done: 'Đã đổi tên đăng nhập', run: () => renameUser(account.id, username) })
+      if (username !== '' && username !== savedUsername) {
+        steps.push({
+          label: 'Tên đăng nhập',
+          done: 'Đã đổi tên đăng nhập',
+          run: async () => {
+            await renameUser(account.id, username)
+            setSavedUsername(username)
+          },
+        })
       }
       const password = values.password ?? ''
-      // The stored password shown by the eye is not a change.
-      if (password !== '' && password !== stored) {
-        steps.push({ label: 'Mật khẩu', done: 'Đã đổi mật khẩu', run: () => setPassword(account.id, password) })
+      // The stored password shown by the eye is not a change, nor one already saved.
+      if (password !== '' && password !== stored && password !== savedPassword) {
+        steps.push({
+          label: 'Mật khẩu',
+          done: 'Đã đổi mật khẩu',
+          run: async () => {
+            await setPassword(account.id, password)
+            setSavedPassword(password)
+          },
+        })
       }
       if (account.role === 'gs' && ready) {
-        const before = JSON.stringify(draftsOf(loadedMemberships, list, account))
+        const before = savedDrafts ?? JSON.stringify(draftsOf(loadedMemberships, list, account))
         const after = draftsOf(memberships, list, account)
         if (JSON.stringify(after) !== before) {
-          steps.push({ label: 'Dự án và công việc', done: 'Đã cập nhật quyền', run: () => setMemberships(account.id, after) })
+          steps.push({
+            label: 'Dự án và công việc',
+            done: 'Đã cập nhật quyền',
+            run: async () => {
+              await setMemberships(account.id, after)
+              setSavedDrafts(JSON.stringify(after))
+            },
+          })
         }
       }
     }
@@ -207,9 +243,11 @@ export function NhanLucEditDialog({
         saved.push(step.label)
       } catch (e) {
         const notSaved = steps.slice(saved.length).map((s) => s.label)
+        const all = [...savedLabels, ...saved]
         setFailure(
-          `${saved.length > 0 ? `Đã lưu: ${saved.join(', ')}. ` : ''}Chưa lưu: ${notSaved.join(', ')} -- ${(e as Error).message}`,
+          `${all.length > 0 ? `Đã lưu: ${all.join(', ')}. ` : ''}Chưa lưu: ${notSaved.join(', ')} -- ${(e as Error).message}`,
         )
+        setSavedLabels(all)
         setSaving(false)
         setPending(null)
         if (saved.length > 0) onPartial()
@@ -218,13 +256,14 @@ export function NhanLucEditDialog({
     }
     setSaving(false)
     setPending(null)
-    const typed = keepsAccount ? v.password ?? '' : ''
-    const password = typed !== stored ? typed : ''
-    const only = steps.length === 1 ? steps[0] : null
+    // A new password saved now, or by an earlier press, is read out next.
+    const password = steps.some((s) => s.label === 'Mật khẩu') ? v.password ?? '' : savedPassword ?? ''
+    const all = [...savedLabels, ...saved]
+    const only = all.length === 1 && steps.length === 1 ? steps[0] : null
     onDone({
       message: roleRequest && only?.label === 'Phân quyền'
         ? roleDone
-        : only ? only.done : `Đã lưu: ${steps.map((s) => s.label).join(', ')}`,
+        : only ? only.done : `Đã lưu: ${all.join(', ')}`,
       ...(password !== '' && account ? { revealed: { user: account, password } } : {}),
     })
   }
@@ -232,7 +271,7 @@ export function NhanLucEditDialog({
   const submit = (v: EditValues) => {
     if (roleChanged) {
       setPending({ confirmation: planRoleChange(row, rows, list, v).confirmation, values: v })
-    } else if (keepsAccount && (v.password ?? '') !== '' && v.password !== stored) {
+    } else if (keepsAccount && (v.password ?? '') !== '' && v.password !== stored && v.password !== savedPassword) {
       setPending({
         values: v,
         confirmation: {
