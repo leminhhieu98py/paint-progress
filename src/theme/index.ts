@@ -42,10 +42,11 @@ export const palette = {
   bgSubtleAlt: '#F9FBFD',
   bgHover: '#F1F6FA',
   /**
-   * A table's header band (RLP-01): a step darker than the body so a header
-   * reads as a header, its label textSecondary at 6:1 on it.
+   * A table's header band (RLP-01): a clear step darker than the body so a
+   * header reads as a header -- 1.27:1 against white (#EDF1F5 was 1.14:1, a
+   * tint) -- its label textSecondary at 5.58:1 on it.
    */
-  bgTableHeader: '#EDF1F5',
+  bgTableHeader: '#DFE5EC',
 
   border: '#D5DFE9',
   borderCard: '#E8EEF4',

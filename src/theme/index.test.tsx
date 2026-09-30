@@ -169,8 +169,8 @@ describe('table header band (RLP-01)', () => {
       expect(table.headerColor).toBe(palette.textSecondary)
       expect(table.borderColor).toBe(palette.borderCard)
     }
-    // Darker than the body (white) by a visible step, not a tint of it.
-    expect(contrast(palette.bgTableHeader, palette.bgContainer)).toBeGreaterThan(1.1)
+    // Darker than the body (white) by a clear step, not a tint of it (review: at least 1.25:1).
+    expect(contrast(palette.bgTableHeader, palette.bgContainer)).toBeGreaterThanOrEqual(1.25)
     expect(contrast(palette.textSecondary, palette.bgTableHeader)).toBeGreaterThanOrEqual(4.5)
   })
 })
