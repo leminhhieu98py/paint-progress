@@ -24,10 +24,18 @@ const EMPLOYEES = [
 ]
 
 describe('buildRows (NL-01)', () => {
-  it('lists accounts and employees as one list, keyed by kind and id, sorted by name in Vietnamese order', () => {
+  it('lists GS, then Visitor, then Nhân viên, each by name in Vietnamese order (NL-08)', () => {
     const rows = buildRows(ACCOUNTS, EMPLOYEES)
-    expect(rows.map((r) => r.key)).toEqual(['employee:e2', 'account:u2', 'account:u1', 'employee:e1', 'employee:e3', 'account:u3'])
-    expect(rows.map((r) => r.fullName)).toEqual(['An Nguyễn', 'Ân Lê', 'Bích Trần', 'Đoàn Công Linh', 'trần thị lan', 'Trần Thị Lan'])
+    expect(rows.map((r) => r.key)).toEqual(['account:u1', 'account:u2', 'account:u3', 'employee:e2', 'employee:e1', 'employee:e3'])
+    expect(rows.map((r) => r.fullName)).toEqual(['Bích Trần', 'Ân Lê', 'Trần Thị Lan', 'An Nguyễn', 'Đoàn Công Linh', 'trần thị lan'])
+  })
+
+  it('keeps the role order however the two lists arrive, a Visitor named A after a GS named Z (NL-08)', () => {
+    const rows = buildRows(
+      [account({ id: 'v', fullName: 'An Visitor', role: 'viewer' }), account({ id: 'g', fullName: 'Zung GS' })],
+      [employee({ id: 'a', fullName: 'Ánh Nhân' })],
+    )
+    expect(rows.map((r) => r.role)).toEqual(['gs', 'viewer', 'employee'])
   })
 
   it('gives each row its Phân quyền and its Trạng thái', () => {
@@ -48,7 +56,7 @@ describe('filterRows (NL-01, FLT-02)', () => {
   const keys = (f: Partial<typeof DEFAULT_FILTERS>) => filterRows(rows, { ...DEFAULT_FILTERS, ...f }).map((r) => r.key)
 
   it('leaves hidden accounts and retired employees out by default', () => {
-    expect(keys({})).toEqual(['account:u2', 'account:u1', 'employee:e1', 'employee:e3'])
+    expect(keys({})).toEqual(['account:u1', 'account:u2', 'employee:e1', 'employee:e3'])
   })
 
   it('shows every row on Tất cả trạng thái, and one status on its own', () => {

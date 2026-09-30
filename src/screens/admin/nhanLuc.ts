@@ -44,7 +44,10 @@ export type StaffRow =
 
 const statusOfAccount = (a: GsUser): CategoryValue<'accountStatus'> => (a.hidden ? 'Đã ẩn' : a.active ? 'Đang dùng' : 'Đã khoá')
 
-/** Both lists, one row per person, by full name in Vietnamese order. */
+/** The list's role order (NL-08): the accounts that sign in first, GS before Visitor, then the roster. */
+const ROLE_ORDER: Record<StaffRole, number> = { gs: 0, viewer: 1, employee: 2 }
+
+/** Both lists, one row per person: GS, then Visitor, then Nhân viên, each by full name in Vietnamese order (NL-08). */
 export function buildRows(accounts: GsUser[], employees: Employee[]): StaffRow[] {
   const rows: StaffRow[] = [
     ...accounts.map((a): StaffRow => ({
@@ -56,7 +59,9 @@ export function buildRows(accounts: GsUser[], employees: Employee[]): StaffRow[]
       status: e.active ? 'Đang làm' : 'Đã nghỉ', employee: e,
     })),
   ]
-  return rows.sort((a, b) => a.fullName.localeCompare(b.fullName, 'vi') || a.key.localeCompare(b.key))
+  return rows.sort((a, b) => ROLE_ORDER[a.role] - ROLE_ORDER[b.role]
+    || a.fullName.localeCompare(b.fullName, 'vi')
+    || a.key.localeCompare(b.key))
 }
 
 /** `listed`: everyone but hidden accounts and retired employees -- the default. */

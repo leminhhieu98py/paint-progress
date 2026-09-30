@@ -130,7 +130,7 @@ describe('NhanLucScreen — one list (NL-01)', () => {
     await screen.findByText('gs1')
     expect(listGsUsers).toHaveBeenCalledWith(true)
     expect(listEmployees).toHaveBeenCalledWith(true)
-    expect(shownNames()).toEqual(['GS Hai', 'GS Một', 'Lê Văn A'])
+    expect(shownNames()).toEqual(['GS Một', 'GS Hai', 'Lê Văn A'])
     expect(screen.queryByText('Trần Thị B')).toBeNull()
   })
 
@@ -290,7 +290,7 @@ describe('NhanLucScreen — filter bar (FLT-01, FLT-02, FLT-08)', () => {
     expect(shownNames()).toEqual(['Cũ Ẩn'])
 
     await userEvent.click(within(bar()).getByRole('button', { name: 'Đặt lại' }))
-    expect(shownNames()).toEqual(['GS Hai', 'GS Một', 'Lê Văn A'])
+    expect(shownNames()).toEqual(['GS Một', 'GS Hai', 'Lê Văn A'])
   })
 
   it('says when the filter matches nobody, rather than looking like an empty list', async () => {
