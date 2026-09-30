@@ -30,6 +30,13 @@ describe('initialsOf', () => {
     expect(initialsOf('  Nguyễn   Thị  Linh ')).toBe('NL')
   })
 
+  it('reads letters only: a bracketed note, punctuation and digits are not a name (AD2)', () => {
+    expect(initialsOf('Bùi Quang Huy (demo)')).toBe('BH')
+    expect(initialsOf('Châu Văn Đạt [test]')).toBe('CĐ')
+    expect(initialsOf('Đỗ Minh, Tổ 2')).toBe('ĐT')
+    expect(initialsOf('(demo)')).toBe('')
+  })
+
   it('upper-cases, so a lower-case profile name still reads as an avatar', () => {
     expect(initialsOf('nguyễn linh')).toBe('NL')
   })

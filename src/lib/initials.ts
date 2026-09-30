@@ -11,8 +11,22 @@
  * .full_name is nullable, and an empty circle is honest where a made-up letter
  * is not.
  */
+/**
+ * The words of a name that are a name: a bracketed note ("(demo)", "[test]")
+ * dropped, and each word kept to its letters, so punctuation and digits never
+ * become an avatar's letter -- "Bùi Quang Huy (demo)" read "B(" (AD2).
+ */
+export function nameWords(fullName: string): string[] {
+  return fullName
+    .normalize('NFC')
+    .replace(/\([^)]*\)|\[[^\]]*\]/g, ' ')
+    .split(/\s+/)
+    .map((w) => w.replace(/[^\p{L}\p{M}]/gu, ''))
+    .filter(Boolean)
+}
+
 export function initialsOf(fullName: string): string {
-  const parts = fullName.trim().split(/\s+/).filter(Boolean)
+  const parts = nameWords(fullName)
   if (parts.length === 0) return ''
   const first = parts[0]
   const last = parts[parts.length - 1]
