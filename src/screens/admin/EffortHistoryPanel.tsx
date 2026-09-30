@@ -2,6 +2,7 @@ import {
   Alert, App, Button, Input, InputNumber, Modal, Select, Space, Switch, Table, Tooltip, Typography,
 } from 'antd'
 import { useEffect, useMemo, useState } from 'react'
+import { IconAction } from '../../components/IconAction'
 import { SectionCard } from '../../components/SectionCard'
 import { modalProps } from '../../components/modalChrome'
 import { searchSelectProps } from '../../components/searchSelect'
@@ -224,7 +225,7 @@ export function EffortHistoryPanel({
             render: (_: unknown, ev: DeckEvent) => (
               <Space size={4}>
                 {editedMark(ev)}
-                <Button onClick={() => openEdit(ev)}>Sửa</Button>
+                <IconAction verb="edit" label="Sửa" onClick={() => openEdit(ev)} />
               </Space>
             ),
           }] : []),

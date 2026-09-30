@@ -290,6 +290,14 @@ describe('EffortHistoryPanel — identifiers are text (UI-06)', () => {
     expect(edited.closest('td')).toBe(first.querySelectorAll('td')[headers.indexOf('Giờ công')])
   })
 
+  it('makes Sửa an icon action, named Sửa, with no visible text (ACT-01)', async () => {
+    renderPanel()
+    await screen.findByText('LSX-1')
+    const edit = within(rows()[0]).getByRole('button', { name: 'Sửa' })
+    expect(edit).toHaveClass('ant-btn-icon-only')
+    expect(edit).toHaveTextContent('')
+  })
+
   it('titles its action column Thao tác (M20)', async () => {
     renderPanel()
     await screen.findByText('LSX-1')
