@@ -71,7 +71,7 @@ function renderTable(over: Partial<Parameters<typeof StagePlanTable>[0]> = {}) {
 const row = (stageId: string) => within(screen.getByTestId(`plan-row-${stageId}`))
 const startOf = (stageId: string) => row(stageId).getByPlaceholderText('Bắt đầu')
 const endOf = (stageId: string) => row(stageId).getByPlaceholderText('Kết thúc')
-const saveOf = (stageId: string) => row(stageId).getByRole('button', { name: 'Lưu kế hoạch' })
+const saveOf = (stageId: string) => row(stageId).getByRole('button', { name: 'Lưu' })
 
 const retype = async (input: HTMLElement, value: string) => {
   await userEvent.clear(input)
@@ -117,7 +117,7 @@ describe('StagePlanTable', () => {
     // Seen at 1024px after F9: the scrolling table pushed every row's Lưu past
     // the card's right edge. The save column is pinned to the right instead.
     renderTable()
-    const save = row('s1').getByRole('button', { name: 'Lưu kế hoạch' })
+    const save = row('s1').getByRole('button', { name: 'Lưu' })
     expect(save.closest('td')).toHaveClass('ant-table-cell-fix-right')
   })
 
@@ -376,7 +376,7 @@ describe('StagePlanTable', () => {
     const area = row('s1').getByLabelText('Diện tích kế hoạch')
     expect((area as HTMLInputElement).value).toBe('3300')
 
-    await userEvent.click(row('s1').getByRole('button', { name: 'Về diện tích tự tính' }))
+    await userEvent.click(row('s1').getByRole('button', { name: 'Tự tính' }))
 
     expect(onClearArea).toHaveBeenCalledWith('s1')
     await waitFor(() => expect((row('s1').getByLabelText('Diện tích kế hoạch') as HTMLInputElement).value).toBe(''))
@@ -386,7 +386,7 @@ describe('StagePlanTable', () => {
 
   it('offers no clear button on a row that carries no override', () => {
     renderTable()
-    expect(row('s2').queryByRole('button', { name: 'Về diện tích tự tính' })).toBeNull()
+    expect(row('s2').queryByRole('button', { name: 'Tự tính' })).toBeNull()
   })
 
   it('refuses a negative area with a message', async () => {
@@ -530,6 +530,18 @@ describe('StagePlanTable — Lưu only for a changed row (M10)', () => {
     await userEvent.clear(area)
     await userEvent.type(area, '4321')
     await waitFor(() => expect(saveOf('s1')).toBeEnabled())
+  })
+})
+
+describe('StagePlanTable — row actions are icons (ACT-01)', () => {
+  it('shows Tự tính and Lưu as icon buttons named by their old labels, with no visible text', async () => {
+    renderTable()
+    for (const name of ['Tự tính', 'Lưu']) {
+      const button = row('s1').getByRole('button', { name })
+      expect(button).toHaveClass('ant-btn-icon-only')
+      expect(button).toHaveTextContent('')
+      expect(button).not.toHaveClass('ant-btn-sm')
+    }
   })
 })
 

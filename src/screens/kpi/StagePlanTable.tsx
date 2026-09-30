@@ -1,7 +1,8 @@
-import { Button, DatePicker, InputNumber, Table, Tooltip } from 'antd'
+import { DatePicker, InputNumber, Table, Tooltip } from 'antd'
 import dayjs, { type Dayjs } from 'dayjs'
 import { useState } from 'react'
 import { EmptyState } from '../../components/EmptyState'
+import { IconAction } from '../../components/IconAction'
 import { RulesDisclosure, type Rule } from '../../components/RulesDisclosure'
 import { SectionCard } from '../../components/SectionCard'
 import { useTablePagination, type PaginationResetKey } from '../../components/tablePagination'
@@ -325,21 +326,17 @@ export function StagePlanTable({
                 re-centred it and moved the field under the caret. Hidden,
                 it is out of the tab order and the accessibility tree. */}
             <span style={{ visibility: d.plannedAreaM2 !== null ? 'visible' : 'hidden' }}>
-              <Tooltip title="Bỏ ghi đè, để hệ thống tự tính lại phần còn lại từ ngày bắt đầu">
-                <Button
-                  aria-label="Về diện tích tự tính"
-                  disabled={saving}
-                  onClick={() => {
-                    // Cleared locally as well as on the server, so the field
-                    // shows the computed placeholder at once rather than
-                    // waiting for a reload to catch up.
-                    patch(row, { plannedAreaM2: null })
-                    void onClearArea(row.stageId)
-                  }}
-                >
-                  Tự tính
-                </Button>
-              </Tooltip>
+              {/* An icon action (ACT-01). Cleared locally as well as on the
+                  server, so the field shows the computed placeholder at once. */}
+              <IconAction
+                verb="recompute"
+                label="Tự tính"
+                disabled={saving}
+                onClick={() => {
+                  patch(row, { plannedAreaM2: null })
+                  void onClearArea(row.stageId)
+                }}
+              />
             </span>
           </div>
         )
@@ -359,9 +356,10 @@ export function StagePlanTable({
         const ready = d.startDate !== null && d.endDate !== null && errorOf(d) === null && dirty(row)
         return (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <Button
+            <IconAction
+              verb="save"
+              label="Lưu"
               type="primary"
-              aria-label="Lưu kế hoạch"
               disabled={saving || !ready}
               onClick={() => {
                 if (!ready) return
@@ -371,9 +369,7 @@ export function StagePlanTable({
                   plannedAreaM2: d.plannedAreaM2,
                 })
               }}
-            >
-              Lưu
-            </Button>
+            />
           </div>
         )
       },
