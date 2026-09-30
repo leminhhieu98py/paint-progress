@@ -7,7 +7,7 @@ import { renderApp } from '../../test/renderApp'
 import { ProjectsScreen } from './ProjectsScreen'
 import { expectLeft } from '../../test/alignment'
 import { weightOf } from '../../test/typography'
-import { palette } from '../../theme'
+import { type } from '../../theme'
 import { consequenceItems, pageSubtitle } from '../../test/copy'
 
 const latestProgressEvent = vi.hoisted(() => vi.fn())
@@ -310,12 +310,15 @@ describe('ProjectsScreen — deleting a project', () => {
 })
 
 describe('ProjectsScreen — type scale (TYP-02)', () => {
-  it('sets the name as body and the code under it as a caption in textTertiary', async () => {
+  it('reads "Name (CODE)" on one line in body type, as the deck list does (RLP-01, review M8)', async () => {
     renderScreen()
     const name = await screen.findByText('BB1 - CPPTS')
     expect(weightOf(name)).toBe(400)
-    const code = within(name.closest('td') as HTMLElement).getByText('BB1')
-    expect(code).toHaveStyle({ fontSize: '12px', fontWeight: '400', color: palette.textTertiary })
+    const cell = name.closest('td') as HTMLElement
+    expect(cell).toHaveTextContent(/^BB1 - CPPTS \(BB1\)$/)
+    // One line: no caption under the name.
+    expect(within(cell).queryByText('BB1')).toBeNull()
+    expect(name.parentElement).toHaveStyle({ fontSize: `${type.body.fontSize}px` })
   })
 })
 

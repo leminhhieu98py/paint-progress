@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ConsequenceModal } from '../../components/ConsequenceModal'
 import { IconAction } from '../../components/IconAction'
+import { NameWithCode } from '../../components/NameWithCode'
 import { PageBody, PageHeader } from '../../components/PageHeader'
 import { SectionCard } from '../../components/SectionCard'
 import { modalProps } from '../../components/modalChrome'
@@ -16,7 +17,7 @@ import {
   createProject, deleteProject, listProjects, updateProject, type ProjectRow,
 } from '../../lib/projectsApi'
 import { APP_BASE_PATH } from '../../config'
-import { palette, type } from '../../theme'
+import { type } from '../../theme'
 
 interface CreateValues {
   name: string
@@ -258,14 +259,9 @@ export function ProjectsScreen() {
               {
                 title: 'Tên dự án',
                 dataIndex: 'name',
-                // Name, then the code as its caption, at the cell inset: no
+                // "Name (CODE)" in one column, as the deck list (RLP-01): no
                 // initials avatar, which is for people only (AD8).
-                render: (_v, row) => (
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ ...type.body, lineHeight: 1.35 }}>{row.name}</div>
-                    <span style={{ ...type.caption, color: palette.textTertiary }}>{row.code}</span>
-                  </div>
-                ),
+                render: (_v, row) => <NameWithCode name={row.name} code={row.code} />,
               },
               { title: 'Số sàn', dataIndex: 'deckCount', width: 100, align: 'center' },
               {

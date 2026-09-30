@@ -26,6 +26,7 @@ import { ROLLUP_RING, ROLLUP_RING_SIZE, ROLLUP_RING_THICKNESS, ringFigureStep } 
 import { legendRowProps } from '../../components/ringHover'
 import { EmptyState } from '../../components/EmptyState'
 import { IconAction } from '../../components/IconAction'
+import { NameWithCode } from '../../components/NameWithCode'
 import { FilterBar } from '../../components/FilterBar'
 import { InfoTip } from '../../components/InfoTip'
 import { PageBody, PageHeader } from '../../components/PageHeader'
@@ -38,19 +39,8 @@ import { useTablePagination } from '../../components/tablePagination'
 import { roundSharesToTotal } from '../../domain/rounding'
 import { categoricalColor, palette, space, type, visuallyHidden } from '../../theme'
 
-/**
- * A deck by name with its code in brackets, "Main Deck (MD)" (RLP-01): the
- * name its own span, so the name reads alone where a test or a reader looks
- * for it, and no separate Mã column.
- */
-function deckName(name: string, code: string) {
-  return (
-    <span style={type.body}>
-      <span>{name}</span>
-      {` (${code})`}
-    </span>
-  )
-}
+/** A deck by name with its code in brackets, "Main Deck (MD)": no Mã column (RLP-01). */
+const deckName = (name: string, code: string) => <NameWithCode name={name} code={code} />
 
 interface RollupRow {
   key: string
