@@ -1093,6 +1093,61 @@ describe('NhanLucScreen — actions and dialogs (M7, M8, M9, NL-09)', () => {
     expect(renameUser).not.toHaveBeenCalled()
   })
 
+  it('shows the GS project matrix only once the project list has loaded, and a late list changes nothing (C1)', async () => {
+    let resolveProjects: (rows: typeof PROJECTS) => void = () => {}
+    listProjectNames.mockReturnValue(new Promise((resolve) => { resolveProjects = resolve }))
+    renderScreen()
+    await screen.findByText('gs1')
+    const dialog = await openEdit('GS Một')
+    expect(within(dialog).getByText('Đang tải danh sách dự án…')).toBeInTheDocument()
+    expect(within(dialog).queryAllByRole('checkbox')).toHaveLength(0)
+    const lưu = within(dialog).getByRole('button', { name: 'Lưu' })
+    expect(lưu).toBeDisabled()
+    const name = within(dialog).getByLabelText('Họ tên')
+    await userEvent.clear(name)
+    await userEvent.type(name, 'GS Một Mới')
+    // Still loading: nothing is sent before the admin can see the memberships.
+    expect(lưu).toBeDisabled()
+    resolveProjects(PROJECTS)
+    expect(await within(dialog).findByRole('checkbox', { name: 'Thành viên BB1' })).toBeChecked()
+    expect(within(dialog).getByRole('checkbox', { name: 'Thành viên BB2' })).not.toBeChecked()
+    expect(within(dialog).queryByText('Đang tải danh sách dự án…')).toBeNull()
+    await waitFor(() => expect(lưu).toBeEnabled())
+    await userEvent.click(lưu)
+    await waitFor(() => expect(renameAccount).toHaveBeenCalledWith('u7', 'GS Một Mới'))
+    expect(await screen.findByText('Đã đổi tên')).toBeInTheDocument()
+    expect(setMemberships).not.toHaveBeenCalled()
+  })
+
+  it('keeps Lưu disabled when the project list arrives after the dialog opened and nothing changed (C1)', async () => {
+    let resolveProjects: (rows: typeof PROJECTS) => void = () => {}
+    listProjectNames.mockReturnValue(new Promise((resolve) => { resolveProjects = resolve }))
+    renderScreen()
+    await screen.findByText('gs1')
+    const dialog = await openEdit('GS Một')
+    resolveProjects(PROJECTS)
+    expect(await within(dialog).findByRole('checkbox', { name: 'Thành viên BB1' })).toBeChecked()
+    expect(within(dialog).getByRole('button', { name: 'Lưu' })).toBeDisabled()
+  })
+
+  it('keeps a membership of a project missing from the list when another project changes (C1)', async () => {
+    listGsUsers.mockResolvedValue([
+      account({ id: 'u7', username: 'gs1', fullName: 'GS Một', role: 'gs', projects: [member('p1', 'BB1'), member('p3', 'BB3', { allWorks: false, workIds: ['w9'] })] }),
+    ])
+    listProjectNames.mockResolvedValue(PROJECTS)
+    renderScreen()
+    await screen.findByText('gs1')
+    const dialog = await openEdit('GS Một')
+    await userEvent.click(await within(dialog).findByRole('checkbox', { name: 'Thành viên BB2' }))
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Lưu' }))
+    await waitFor(() => expect(setMemberships).toHaveBeenCalledTimes(1))
+    expect(setMemberships.mock.calls[0][1]).toEqual([
+      { projectId: 'p1', allWorks: true, workIds: [] },
+      { projectId: 'p2', allWorks: true, workIds: [] },
+      { projectId: 'p3', allWorks: false, workIds: ['w9'] },
+    ])
+  })
+
   it('says "Mọi dự án" for a Visitor in the lock, hide and password dialogs, and names no GS (M9)', async () => {
     renderScreen()
     await screen.findByText('gs2')

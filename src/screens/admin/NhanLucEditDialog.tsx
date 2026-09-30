@@ -1,6 +1,6 @@
 import { EyeInvisibleOutlined, EyeOutlined, ReloadOutlined } from '@ant-design/icons'
 import { Alert, Button, Checkbox, Form, Input, Modal, Radio, Select, Space, Switch, Tooltip, Typography } from 'antd'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { ConsequenceModal } from '../../components/ConsequenceModal'
 import { IconAction } from '../../components/IconAction'
 import { modalProps } from '../../components/modalChrome'
@@ -52,20 +52,29 @@ const membershipsOf = (user: GsUser, projects: ProjectOption[]): Record<string, 
     }]
   }))
 
-const draftsOf = (rows: Record<string, Membership>, projects: ProjectOption[]): MembershipDraft[] =>
-  projects
+/**
+ * The memberships Lưu would save: the listed projects as the matrix has them,
+ * then any project of the account the list does not carry, untouched -- a
+ * project missing from the list is never read as "not a member" (C1).
+ */
+const draftsOf = (rows: Record<string, Membership>, projects: ProjectOption[], user: GsUser): MembershipDraft[] => [
+  ...projects
     .filter((p) => rows[p.value]?.member)
     .map((p) => ({
       projectId: p.value,
       allWorks: rows[p.value].allWorks,
       workIds: rows[p.value].allWorks ? [] : [...rows[p.value].workIds].sort(),
-    }))
+    })),
+  ...user.projects
+    .filter((m) => !projects.some((p) => p.value === m.id))
+    .map((m) => ({ projectId: m.id, allWorks: m.allWorks, workIds: m.allWorks ? [] : [...m.workIds].sort() })),
+]
 
 /**
  * "Sửa" (NL-09): one dialog, the create dialog's fields prefilled, for
  * everything a row used to spread over five icons -- Họ tên, Phân quyền (the
  * change-role flow, NL-04), and for an account its login, its password (a
- * "Xem" that reveals the stored one only when clicked, logged as the reveal
+ * masked field whose eye reveals the stored one only when clicked, logged as the reveal
  * always was; a new one typed or generated replaces it) and, for a GS, its
  * projects and the works within them.
  *
@@ -81,21 +90,32 @@ export function NhanLucEditDialog({
 }: {
   row: StaffRow
   rows: StaffRow[]
-  projects: ProjectOption[]
+  /** Null while the project list is loading: no matrix and no Lưu until it lands (C1). */
+  projects: ProjectOption[] | null
   onClose: () => void
   /** Some steps were saved before one failed: re-read the list, keep the dialog. */
   onPartial: () => void
   onDone: (result: { message: string; revealed?: { user: GsUser; password: string } }) => void
 }) {
   const [form] = Form.useForm<EditValues>()
+  const ready = projects !== null
+  const list = useMemo(() => projects ?? [], [projects])
   const target: StaffRole = Form.useWatch('role', form) ?? row.role
   const account = row.kind === 'account' ? row.account : null
   const roleChanged = target !== row.role
   /** The account keeps being an account of the same role: its own fields show. */
   const keepsAccount = account !== null && !roleChanged
-  const [memberships, setMembershipRows] = useState<Record<string, Membership>>(
-    () => (account ? membershipsOf(account, projects) : {}),
+  /**
+   * The memberships as loaded, once the project list is here. The admin's
+   * ticks are kept apart, per project, and laid over them: a list that
+   * arrives after the dialog opened changes nothing by itself (C1).
+   */
+  const loadedMemberships = useMemo(
+    () => (account && projects ? membershipsOf(account, projects) : {}),
+    [account, projects],
   )
+  const [edits, setEdits] = useState<Record<string, Membership>>({})
+  const memberships = { ...loadedMemberships, ...edits }
   const [works, setWorks] = useState<Record<string, { value: string; label: string }[]>>({})
   /** The stored password, once the field's eye has fetched it (and the fetch logged it). */
   const [stored, setStored] = useState<string | null>(null)
@@ -105,7 +125,7 @@ export function NhanLucEditDialog({
 
   const showMatrix = keepsAccount && account.role === 'gs'
   useEffect(() => {
-    if (!showMatrix) return
+    if (!showMatrix || projects === null) return
     let cancelled = false
     void Promise.all(projects.map(async (p) => [p.value, await listWorks(p.value)] as const))
       .then((pairs) => {
@@ -127,7 +147,7 @@ export function NhanLucEditDialog({
     : null
 
   const patch = (projectId: string, change: Partial<Membership>) =>
-    setMembershipRows((prev) => ({ ...prev, [projectId]: { ...prev[projectId], ...change } }))
+    setEdits((prev) => ({ ...prev, [projectId]: { ...(prev[projectId] ?? loadedMemberships[projectId]), ...change } }))
 
   /** The steps Lưu would run for these values, only what changed, in order. */
   const stepsFor = (values: EditValues): Step[] => {
@@ -148,9 +168,9 @@ export function NhanLucEditDialog({
       if (password !== '' && password !== stored) {
         steps.push({ label: 'Mật khẩu', done: 'Đã đổi mật khẩu', run: () => setPassword(account.id, password) })
       }
-      if (account.role === 'gs') {
-        const before = JSON.stringify(draftsOf(membershipsOf(account, projects), projects))
-        const after = draftsOf(memberships, projects)
+      if (account.role === 'gs' && ready) {
+        const before = JSON.stringify(draftsOf(loadedMemberships, list, account))
+        const after = draftsOf(memberships, list, account)
         if (JSON.stringify(after) !== before) {
           steps.push({ label: 'Dự án và công việc', done: 'Đã cập nhật quyền', run: () => setMemberships(account.id, after) })
         }
@@ -164,7 +184,7 @@ export function NhanLucEditDialog({
     && stepsFor({ ...values, fullName: values.fullName ?? row.fullName }).length === 0
 
   const apply = async (v: EditValues) => {
-    const roleRequest: RoleChangeRequest | null = roleChanged ? planRoleChange(row, rows, projects, v).request : null
+    const roleRequest: RoleChangeRequest | null = roleChanged ? planRoleChange(row, rows, list, v).request : null
     let roleDone = ''
     const steps = stepsFor(v)
     // The role last: it can turn the row into another kind of row.
@@ -211,7 +231,7 @@ export function NhanLucEditDialog({
 
   const submit = (v: EditValues) => {
     if (roleChanged) {
-      setPending({ confirmation: planRoleChange(row, rows, projects, v).confirmation, values: v })
+      setPending({ confirmation: planRoleChange(row, rows, list, v).confirmation, values: v })
     } else if (keepsAccount && (v.password ?? '') !== '' && v.password !== stored) {
       setPending({
         values: v,
@@ -263,7 +283,7 @@ export function NhanLucEditDialog({
             key="ok"
             type="primary"
             loading={saving}
-            disabled={nothingChanged || employeeClash !== null}
+            disabled={!ready || nothingChanged || employeeClash !== null}
             onClick={() => form.submit()}
           >
             Lưu
@@ -317,10 +337,15 @@ export function NhanLucEditDialog({
               {account.role === 'viewer' && (
                 <Typography.Text>Tài khoản Visitor thấy mọi dự án và mọi công việc.</Typography.Text>
               )}
-              {showMatrix && (
+              {showMatrix && !ready && (
+                <Form.Item label="Dự án và công việc">
+                  <Typography.Text type="secondary">Đang tải danh sách dự án…</Typography.Text>
+                </Form.Item>
+              )}
+              {showMatrix && ready && (
                 <Form.Item label="Dự án và công việc">
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                    {projects.map((p) => {
+                    {list.map((p) => {
                       const m = memberships[p.value]
                       return (
                         <div
@@ -394,7 +419,7 @@ export function NhanLucEditDialog({
           )}
           {needsProject && (
             <Form.Item name="projectId" label="Dự án" rules={[{ required: true, message: 'Chọn dự án' }]}>
-              <Select options={projects} placeholder="Chọn dự án" {...searchSelectProps} />
+              <Select options={list} placeholder="Chọn dự án" {...searchSelectProps} />
             </Form.Item>
           )}
         </Form>
