@@ -615,6 +615,7 @@ export function NhanLucScreen() {
         open={createOpen}
         rows={rows}
         projects={projects}
+        projectsFailed={projectsFailed}
         onClose={() => setCreateOpen(false)}
         onCreated={(done) => {
           reload()

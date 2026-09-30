@@ -14,7 +14,7 @@ import { palette, type } from '../../theme'
 import { PasswordInput } from './PasswordInput'
 import { ROLE_DESCRIPTION, loginClash, nameClash, parkedAccountFor, type StaffRow } from './nhanLuc'
 import {
-  MIN_PASSWORD_RULE, PASSWORD_RULES, RADIOGROUP, ROLE_RADIOS, USERNAME_RULES, clashRule, type ProjectOption,
+  MIN_PASSWORD_RULE, PASSWORD_RULES, PROJECTS_FAILED_NOTE, RADIOGROUP, ROLE_RADIOS, USERNAME_RULES, clashRule, type ProjectOption,
 } from './nhanLucForm'
 import { planRoleChange, roleChangeMessage, type Confirmation, type RoleChangeRequest } from './nhanLucRoleChange'
 
@@ -171,7 +171,7 @@ export function NhanLucEditDialog({
    */
   const heldByList = projects === null && (needsProject || (showMatrix && !projectsFailed))
   const listNote = projectsFailed
-    ? 'Không tải được danh sách dự án. Tải lại trang để thử lại.'
+    ? PROJECTS_FAILED_NOTE
     : 'Đang tải danh sách dự án…'
   const employeeClash = row.kind === 'account' && target === 'employee'
     ? nameClash(rows, named.fullName, 'employee', row.key)

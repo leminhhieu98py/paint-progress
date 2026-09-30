@@ -7,7 +7,7 @@ import { createEmployee } from '../../lib/employeesApi'
 import { generatePassword } from '../../lib/passwordGen'
 import { PasswordInput } from './PasswordInput'
 import { ROLE_DESCRIPTION, loginClash, nameClash, type StaffRow } from './nhanLuc'
-import { PASSWORD_RULES, RADIOGROUP, ROLE_RADIOS, USERNAME_RULES, clashRule, type ProjectOption } from './nhanLucForm'
+import { PASSWORD_RULES, PROJECTS_FAILED_NOTE, RADIOGROUP, ROLE_RADIOS, USERNAME_RULES, clashRule, type ProjectOption } from './nhanLucForm'
 
 interface CreateValues {
   role: StaffRole
@@ -26,11 +26,13 @@ interface CreateValues {
  * still refuses shows at the top of the dialog, which stays open.
  */
 export function NhanLucCreateDialog({
-  open, rows, projects, onClose, onCreated,
+  open, rows, projects, projectsFailed = false, onClose, onCreated,
 }: {
   open: boolean
   rows: StaffRow[]
   projects: ProjectOption[]
+  /** The project list failed: a GS cannot be given one, so Thêm waits for GS only (NL-10 review M1). */
+  projectsFailed?: boolean
   onClose: () => void
   onCreated: (message: string) => void
 }) {
@@ -80,7 +82,15 @@ export function NhanLucCreateDialog({
       {...modalProps}
       footer={[
         <Button key="cancel" onClick={close}>Huỷ</Button>,
-        <Button key="ok" type="primary" loading={saving} onClick={() => form.submit()}>Thêm</Button>,
+        <Button
+          key="ok"
+          type="primary"
+          loading={saving}
+          disabled={role === 'gs' && projectsFailed}
+          onClick={() => form.submit()}
+        >
+          Thêm
+        </Button>,
       ]}
     >
       {failure && <Alert type="error" showIcon message={failure} style={{ marginBottom: 12 }} />}
@@ -123,7 +133,12 @@ export function NhanLucCreateDialog({
           </>
         )}
         {role === 'gs' && (
-          <Form.Item name="projectId" label="Dự án" rules={[{ required: true, message: 'Chọn dự án' }]}>
+          <Form.Item
+            name="projectId"
+            label="Dự án"
+            rules={[{ required: true, message: 'Chọn dự án' }]}
+            extra={projectsFailed ? PROJECTS_FAILED_NOTE : undefined}
+          >
             <Select options={projects} placeholder="Chọn dự án" {...searchSelectProps} />
           </Form.Item>
         )}

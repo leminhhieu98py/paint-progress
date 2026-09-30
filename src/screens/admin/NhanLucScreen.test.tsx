@@ -832,6 +832,22 @@ describe('NhanLucScreen — Thêm nhân lực (NL-02)', () => {
     expect(revealPassword).not.toHaveBeenCalled()
   })
 
+  it('says under Dự án why a GS cannot be created when the project list failed, and still creates the others (NL-10 review M1)', async () => {
+    listProjectNames.mockRejectedValue(new Error('network down'))
+    renderScreen()
+    let dialog = await open()
+    await pick('GS')
+    expect(await within(dialog).findByText('Không tải được danh sách dự án. Tải lại trang để thử lại.')).toBeInTheDocument()
+    expect(within(dialog).getByRole('button', { name: 'Thêm' })).toBeDisabled()
+    await pick('Visitor')
+    expect(within(dialog).queryByText(/Không tải được danh sách dự án/)).toBeNull()
+    expect(within(dialog).getByRole('button', { name: 'Thêm' })).toBeEnabled()
+    await pick('Nhân viên')
+    await userEvent.type(within(dialog).getByLabelText('Họ tên'), 'Nguyễn Mới')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Thêm' }))
+    await waitFor(() => expect(createEmployee).toHaveBeenCalledWith('Nguyễn Mới'))
+  })
+
   it('creates a Visitor with no project field and sends no project (NL-05)', async () => {
     renderScreen()
     const dialog = await open()

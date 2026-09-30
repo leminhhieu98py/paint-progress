@@ -37,3 +37,6 @@ export const clashRule = (check: (value: string) => string | null) => ({
  * pickAttrs) but does not type it, hence a spread rather than an attribute.
  */
 export const RADIOGROUP = { role: 'radiogroup' }
+
+/** Under Dự án when the project list failed to load: a GS waits for it (N1, NL-10 review M1). */
+export const PROJECTS_FAILED_NOTE = 'Không tải được danh sách dự án. Tải lại trang để thử lại.'
