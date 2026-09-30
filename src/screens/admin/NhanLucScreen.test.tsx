@@ -1212,6 +1212,24 @@ describe('NhanLucScreen — actions and dialogs (M7, M8, M9, NL-09)', () => {
     expect(screen.queryByText('Mật khẩu của gs1')).toBeNull()
   })
 
+  it('does not hold a rename back on a stored legacy password shorter than the rule, shown by the eye (N4)', async () => {
+    revealPassword.mockResolvedValue('abc')
+    renderScreen()
+    await screen.findByText('gs1')
+    const dialog = await openEdit('GS Một')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Hiện mật khẩu' }))
+    await waitFor(() => expect(within(dialog).getByLabelText('Mật khẩu')).toHaveValue('abc'))
+    await new Promise((r) => setTimeout(r, 50))
+    expect(within(dialog).queryByText(/Tối thiểu/)).toBeNull()
+    const name = within(dialog).getByLabelText('Họ tên')
+    await userEvent.clear(name)
+    await userEvent.type(name, 'GS Một Mới')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Lưu' }))
+    await waitFor(() => expect(renameAccount).toHaveBeenCalledWith('u7', 'GS Một Mới'))
+    expect(setPassword).not.toHaveBeenCalled()
+    expect(screen.queryByText(/Tối thiểu/)).toBeNull()
+  })
+
   it('does not ask again for a password already saved when a later step is retried (M3)', async () => {
     listProjectNames.mockResolvedValue(PROJECTS)
     setMemberships.mockRejectedValueOnce(new Error('Không lưu được quyền'))

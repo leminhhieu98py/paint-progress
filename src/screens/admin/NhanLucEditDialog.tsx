@@ -1,6 +1,6 @@
 import { EyeInvisibleOutlined, EyeOutlined, ReloadOutlined } from '@ant-design/icons'
 import { Alert, Button, Checkbox, Form, Input, Modal, Radio, Select, Space, Switch, Tooltip, Typography } from 'antd'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { ConsequenceModal } from '../../components/ConsequenceModal'
 import { modalProps } from '../../components/modalChrome'
 import { searchSelectProps } from '../../components/searchSelect'
@@ -131,6 +131,8 @@ export function NhanLucEditDialog({
   const [works, setWorks] = useState<Record<string, { value: string; label: string }[]>>({})
   /** The stored password, once the field's eye has fetched it (and the fetch logged it). */
   const [stored, setStored] = useState<string | null>(null)
+  /** The same, for the length rule: the field changes before the next render (N4). */
+  const storedNow = useRef<string | null>(null)
   /**
    * What earlier Lưu presses already saved (M3). The row is the list as it was
    * when the dialog opened, so a retry after a refusal compares against these,
@@ -323,6 +325,7 @@ export function NhanLucEditDialog({
     if (!account) return null
     try {
       const password = await revealPassword(account.id)
+      storedNow.current = password
       setStored(password)
       return password
     } catch (e) {
@@ -391,7 +394,15 @@ export function NhanLucEditDialog({
               <Form.Item
                 name="password"
                 label="Mật khẩu"
-                rules={[MIN_PASSWORD_RULE]}
+                // A new password is checked for length; the stored one the eye
+                // shows is not, even when an old account's is shorter (N4).
+                rules={[{
+                  validator: (_rule, value?: string) => (
+                    !value || value === storedNow.current || value.length >= MIN_PASSWORD_RULE.min
+                      ? Promise.resolve()
+                      : Promise.reject(new Error(MIN_PASSWORD_RULE.message))
+                  ),
+                }]}
               >
                 <StoredPasswordField
                   onReveal={reveal}
