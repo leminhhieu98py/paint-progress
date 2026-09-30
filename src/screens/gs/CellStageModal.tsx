@@ -288,8 +288,6 @@ export function CellStageModal({
       onOk={submit}
       okText="Xác nhận"
       cancelText="Huỷ"
-      okButtonProps={{ size: 'large' }}
-      cancelButtonProps={{ size: 'large' }}
       {...modalProps}
       // A viewer gets one button, not a hidden confirm: nothing in the DOM
       // says "write" on a dialog that cannot.

@@ -15,13 +15,33 @@ const CONTROLS = [
   'ColorField',
 ]
 const ALLOWED: string[] = []
+/**
+ * A size set through a props object (`okButtonProps={{ size: 'large' }}`,
+ * a shared props helper) is the same override (AD review M5). The one kept is
+ * the Table's own pagination, which is not a form control and sits under the
+ * table, never beside one.
+ */
+const ALLOWED_OBJECTS = ['components/tablePagination.ts']
 
-function sources(dir: string): string[] {
+function sources(dir: string, pattern = /\.tsx$/): string[] {
   return readdirSync(dir).flatMap((name) => {
     const path = join(dir, name)
-    if (statSync(path).isDirectory()) return sources(path)
-    return /\.tsx$/.test(name) && !/\.test\.tsx$/.test(name) ? [path] : []
+    if (statSync(path).isDirectory()) return sources(path, pattern)
+    return pattern.test(name) && !/\.test\.tsx?$/.test(name) ? [path] : []
   })
+}
+
+/** Every `size: 'small' | 'large'` in an object literal, as `file:line`. */
+function sizedObjects(root: string): string[] {
+  const found: string[] = []
+  for (const file of sources(root, /\.tsx?$/)) {
+    const text = readFileSync(file, 'utf8')
+    for (const m of text.matchAll(/\bsize:\s*['"](small|large)['"]/g)) {
+      const line = text.slice(0, m.index).split('\n').length
+      found.push(`${relative(root, file)}:${line}`)
+    }
+  }
+  return found
 }
 
 /**
@@ -68,6 +88,12 @@ function sizedControls(root: string): string[] {
 describe('one control height per theme (CTL-02)', () => {
   it('gives no form control, and no button, a size of its own', () => {
     const offenders = sizedControls(resolve(import.meta.dirname)).filter((o) => !ALLOWED.includes(o))
+    expect(offenders).toEqual([])
+  })
+
+  it('sets no small or large size through a props object either (AD review M5)', () => {
+    const offenders = sizedObjects(resolve(import.meta.dirname))
+      .filter((o) => !ALLOWED_OBJECTS.some((file) => o.startsWith(`${file}:`)))
     expect(offenders).toEqual([])
   })
 })
