@@ -281,12 +281,14 @@ export function NhanLucEditDialog({
     // A new password saved now, or by an earlier press, is read out next.
     const password = steps.some((s) => s.label === 'Mật khẩu') ? v.password ?? '' : savedPassword ?? ''
     const all = [...savedLabels, ...saved]
+    const login = steps.some((s) => s.label === 'Tên đăng nhập') ? (v.username ?? '').trim().toLowerCase() : savedUsername
     const only = all.length === 1 && steps.length === 1 ? steps[0] : null
     onDone({
       message: roleRequest && only?.label === 'Phân quyền'
         ? roleDone
         : only ? only.done : `Đã lưu: ${all.join(', ')}`,
-      ...(password !== '' && account ? { revealed: { user: account, password } } : {}),
+      // Under the login it has now, when this save (or an earlier one) renamed it (N3).
+      ...(password !== '' && account ? { revealed: { user: { ...account, username: login }, password } } : {}),
     })
   }
 
@@ -299,10 +301,11 @@ export function NhanLucEditDialog({
         confirmation: {
           tone: 'danger',
           tag: 'Thao tác phá huỷ',
-          title: `Đổi mật khẩu cho ${account.username}?`,
+          // The login and name as typed: the same save renames them first (N3).
+          title: `Đổi mật khẩu cho ${(v.username ?? '').trim().toLowerCase() || account.username}?`,
           description: 'Mật khẩu cũ ngừng hiệu lực ngay khi anh xác nhận:',
           items: [{
-            label: account.fullName,
+            label: withName(v.fullName).fullName,
             meta: account.role === 'viewer'
               ? 'Mọi dự án'
               : account.projects.map((p) => p.name).join(' · ') || 'chưa gán dự án',

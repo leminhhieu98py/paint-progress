@@ -1197,6 +1197,21 @@ describe('NhanLucScreen — actions and dialogs (M7, M8, M9, NL-09)', () => {
     expect(setMemberships).toHaveBeenCalledTimes(1)
   })
 
+  it('names the new login in the password confirmation and the reveal when both change in one save (N3)', async () => {
+    renderScreen()
+    await screen.findByText('gs1')
+    const dialog = await openEdit('GS Một')
+    const login = within(dialog).getByLabelText('Tên đăng nhập')
+    await userEvent.clear(login)
+    await userEvent.type(login, 'gs.moi')
+    await userEvent.type(within(dialog).getByLabelText('Mật khẩu'), 'Bh7@Deck2026')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Lưu' }))
+    expect(await screen.findByText('Đổi mật khẩu cho gs.moi?')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Vẫn đổi' }))
+    expect(await screen.findByText('Mật khẩu của gs.moi')).toBeInTheDocument()
+    expect(screen.queryByText('Mật khẩu của gs1')).toBeNull()
+  })
+
   it('does not ask again for a password already saved when a later step is retried (M3)', async () => {
     listProjectNames.mockResolvedValue(PROJECTS)
     setMemberships.mockRejectedValueOnce(new Error('Không lưu được quyền'))
