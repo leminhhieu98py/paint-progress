@@ -5,6 +5,7 @@ import { EmptyState } from '../../components/EmptyState'
 import { RulesDisclosure, type Rule } from '../../components/RulesDisclosure'
 import { SectionCard } from '../../components/SectionCard'
 import { useTablePagination, type PaginationResetKey } from '../../components/tablePagination'
+import { viAreaInputProps } from '../../components/viNumberInput'
 import { planDays, type StagePlan } from '../../domain/kpi'
 import {
   DEFAULT_QUANTITY_LABEL, DEFAULT_UNIT, labelOfWorks, MIXED_QUANTITY_LABEL, unitOfWorks,
@@ -314,6 +315,9 @@ export function StagePlanTable({
                 // Room for `Tự tính 99.999,99 m²` (R3-B): at 130 the
                 // placeholder was cut to `Tự tính 2.880,0…`.
                 style={{ width: 176 }}
+                // "1.234,5" m², not 1.2345, and "8.000" the way its placeholder
+                // writes it, not 8: see viNumberInput for the rule.
+                {...viAreaInputProps}
                 onChange={(n) => patch(row, { plannedAreaM2: n === null ? null : Number(n) })}
               />
             </Tooltip>

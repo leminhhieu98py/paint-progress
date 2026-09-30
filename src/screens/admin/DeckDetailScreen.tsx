@@ -28,6 +28,7 @@ import { PageBody, PageHeader } from '../../components/PageHeader'
 import { InfoTip } from '../../components/InfoTip'
 import { SectionCard } from '../../components/SectionCard'
 import { WORK_SELECT_WIDTH, searchSelectProps, useFullOptionsProps } from '../../components/searchSelect'
+import { viAreaInputProps, viIntegerInputProps } from '../../components/viNumberInput'
 import { formatPercent } from '../../lib/format'
 import { palette, type } from '../../theme'
 
@@ -397,8 +398,10 @@ export function DeckDetailScreen() {
           step={10}
           // A Vietnamese admin types "5258,5". Without this antd parses that as
           // 5258 and the deck silently loses half a square metre from the
-          // denominator of every percentage on the project.
-          decimalSeparator=","
+          // denominator of every percentage on the project. The shared props
+          // also read "5.258,5", which decimalSeparator="," alone left at 5.258,
+          // and "5.258" as thousands, as an area is written.
+          {...viAreaInputProps}
           onChange={(n) => setArea(n ?? 0)}
         />
       </Form.Item>
@@ -489,6 +492,8 @@ export function DeckDetailScreen() {
               id="deck-page"
               min={1}
               max={pages}
+              // A whole page: "1.230" is page 1230, never 1.23.
+              {...viIntegerInputProps}
               value={page}
               onChange={(n) => setPage(n ?? 1)}
             />

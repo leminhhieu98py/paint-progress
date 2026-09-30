@@ -11,6 +11,7 @@ import { formatAreaM2 } from '../../lib/format'
 import { listCellNotes, type CellNote } from '../../lib/progressApi'
 import { NoteThread } from '../../components/NoteThread'
 import { searchSelectProps } from '../../components/searchSelect'
+import { viNumberInputProps } from '../../components/viNumberInput'
 
 /**
  * antd's Select cannot carry `null` as an option value (it is indistinguishable
@@ -418,6 +419,8 @@ export function CellStageModal({
                     id="cell-work-hours"
                     min={0}
                     step={0.5}
+                    // "2,5" Mhr, not 25: see viNumberInput for the rule.
+                    {...viNumberInputProps}
                     style={{ width: '100%' }}
                     status={errorOf('workHours') ? 'error' : undefined}
                     value={effort.workHours}
@@ -433,6 +436,7 @@ export function CellStageModal({
                     id="cell-waste-hours"
                     min={0}
                     step={0.5}
+                    {...viNumberInputProps}
                     style={{ width: '100%' }}
                     status={errorOf('wasteHours') ? 'error' : undefined}
                     value={effort.wasteHours}

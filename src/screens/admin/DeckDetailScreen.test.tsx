@@ -242,6 +242,38 @@ describe('DeckDetailScreen', () => {
     expect(uploadDrawing.mock.calls[0][5]).toEqual({ name: 'deck.pdf', page: null })
   })
 
+  it('reads a dot in the page number as a thousands separator, not a decimal point', async () => {
+    // With no parser antd read "1.230" as page 1.23, a page that does not exist.
+    pdfPageCount.mockResolvedValue(2000)
+    renderAt('/decks/new?project=p1')
+
+    await userEvent.type(await screen.findByLabelText('Tên sàn'), 'Cellar Deck')
+    await userEvent.type(screen.getByLabelText('Mã sàn'), 'CD')
+    await userEvent.upload(screen.getByLabelText('Bản vẽ (PDF)'), pdfFile())
+    await screen.findByText('Tệp có 2000 trang')
+    await userEvent.type(screen.getByLabelText('Trang'), '{Backspace}1.230')
+    await userEvent.click(screen.getByRole('button', { name: 'Tạo sàn' }))
+
+    await waitFor(() => expect(uploadDrawing).toHaveBeenCalled())
+    expect(uploadDrawing.mock.calls[0][5]).toEqual({ name: 'deck.pdf', page: 1230 })
+  })
+
+  it('keeps the page whole when a comma is typed in it', async () => {
+    // "2,5" used to lose its comma and read as page 25.
+    pdfPageCount.mockResolvedValue(30)
+    renderAt('/decks/new?project=p1')
+
+    await userEvent.type(await screen.findByLabelText('Tên sàn'), 'Cellar Deck')
+    await userEvent.type(screen.getByLabelText('Mã sàn'), 'CD')
+    await userEvent.upload(screen.getByLabelText('Bản vẽ (PDF)'), pdfFile())
+    await screen.findByText('Tệp có 30 trang')
+    await userEvent.type(screen.getByLabelText('Trang'), '{Backspace}2,5')
+    await userEvent.click(screen.getByRole('button', { name: 'Tạo sàn' }))
+
+    await waitFor(() => expect(uploadDrawing).toHaveBeenCalled())
+    expect(uploadDrawing.mock.calls[0][5]).toEqual({ name: 'deck.pdf', page: 2 })
+  })
+
   it('records the page too, when the file had more than one', async () => {
     pdfPageCount.mockResolvedValue(3)
     renderAt('/decks/new?project=p1')
@@ -381,6 +413,43 @@ describe('DeckDetailScreen', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Lưu' }))
     await waitFor(() => expect(updateDeckArea).toHaveBeenCalledWith('d1', 6000, 'prorated'))
+  })
+
+  it('reads an area typed with thousands dots and a decimal comma', async () => {
+    // decimalSeparator="," alone replaced the comma but kept the dots, so
+    // "6.000,5" never parsed and the field kept the "6.000" it had read on
+    // the way -- a deck of 6 m² instead of 6000.5.
+    renderAt('/decks/d1')
+    await screen.findByRole('heading', { level: 1, name: 'Main Deck' })
+    await userEvent.click(screen.getByText('Sửa'))
+    const area = await screen.findByLabelText('Diện tích sàn (m²)')
+    await userEvent.clear(area)
+    await userEvent.type(area, '6.000,5')
+    await userEvent.click(screen.getByRole('button', { name: 'Lưu thông tin sàn' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Lưu' }))
+
+    await waitFor(() => expect(updateDeckArea).toHaveBeenCalledWith('d1', 6000.5, 'prorated'))
+  })
+
+  it('reads "6.000" in the area as six thousand m², not six', async () => {
+    renderAt('/decks/d1')
+    await screen.findByRole('heading', { level: 1, name: 'Main Deck' })
+    await userEvent.click(screen.getByText('Sửa'))
+    const area = await screen.findByLabelText('Diện tích sàn (m²)')
+    await userEvent.clear(area)
+    await userEvent.type(area, '6.000')
+    await userEvent.click(screen.getByRole('button', { name: 'Lưu thông tin sàn' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Lưu' }))
+
+    await waitFor(() => expect(updateDeckArea).toHaveBeenCalledWith('d1', 6000, 'prorated'))
+  })
+
+  it('shows the area with a decimal comma and no grouping, so an edit keeps its magnitude', async () => {
+    renderAt('/decks/d1')
+    await screen.findByRole('heading', { level: 1, name: 'Main Deck' })
+    await userEvent.click(screen.getByText('Sửa'))
+
+    expect(await screen.findByLabelText('Diện tích sàn (m²)')).toHaveValue('5258,5')
   })
 
   it('says the deck was saved, because the form looks the same afterwards', async () => {

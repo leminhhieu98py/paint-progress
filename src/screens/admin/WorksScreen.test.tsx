@@ -242,14 +242,15 @@ describe('WorksScreen', () => {
 
     await waitFor(() => expect(listWorkDecks).toHaveBeenCalledWith('w1'))
     const matrix = await screen.findByTestId('work-decks-w1')
-    // Both decks in, at the weights on file.
+    // Both decks in, at the weights on file -- with the comma the rest of
+    // the app writes decimals with.
     expect(within(matrix).getByRole('switch', { name: 'Cellar Deck tham gia' })).toBeChecked()
-    expect(within(matrix).getByLabelText('Trọng số Cellar Deck')).toHaveValue('0.5')
+    expect(within(matrix).getByLabelText('Trọng số Cellar Deck')).toHaveValue('0,5')
 
     // 1000 of 4000 m² and 3000 of 4000.
     await userEvent.click(within(matrix).getByRole('button', { name: 'Chia theo m²' }))
-    expect(within(matrix).getByLabelText('Trọng số Cellar Deck')).toHaveValue('0.25')
-    expect(within(matrix).getByLabelText('Trọng số Main Deck')).toHaveValue('0.75')
+    expect(within(matrix).getByLabelText('Trọng số Cellar Deck')).toHaveValue('0,25')
+    expect(within(matrix).getByLabelText('Trọng số Main Deck')).toHaveValue('0,75')
 
     await userEvent.click(within(matrix).getByRole('button', { name: 'Lưu sàn tham gia' }))
     const dialog = await screen.findByRole('dialog')
@@ -333,6 +334,54 @@ describe('WorksScreen', () => {
     dialog = await saveOnce()
     expect(within(dialog).queryByText('bỏ ra')).toBeNull()
     expect(consequenceItems(dialog)).toEqual([])
+  })
+
+  it('reads work weights and a manual % typed with a decimal comma', async () => {
+    // antd's InputNumber with no decimalSeparator deletes the comma: "0,25"
+    // became 25 and was clamped to 1, and "12,5" % became 125, clamped to 100.
+    renderScreen()
+    await screen.findByDisplayValue('Sơn')
+    const son = within(rowOf('Sơn')).getByLabelText('Trọng số')
+    await userEvent.clear(son)
+    await userEvent.type(son, '0,25')
+    const thao = within(rowOf('Tháo giáo')).getByLabelText('Trọng số')
+    await userEvent.clear(thao)
+    await userEvent.type(thao, '0,75')
+    const pct = within(rowOf('Marking')).getByLabelText('Tiến độ (%)')
+    await userEvent.clear(pct)
+    await userEvent.type(pct, '12,5')
+    await userEvent.tab()
+    expect(keyFactTexts()).toContain('Σ trọng số 1,00')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Lưu công việc' }))
+    const dialog = await screen.findByRole('dialog')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Lưu' }))
+
+    await waitFor(() => expect(saveWorks).toHaveBeenCalledTimes(1))
+    const [, works] = saveWorks.mock.calls[0] as [string, Work[]]
+    expect(works.map((w) => w.weight)).toEqual([0.25, 0.75, 0])
+    expect(works[2].manualProgress).toBeCloseTo(0.125, 12)
+  })
+
+  it('reads deck weights typed with a decimal comma', async () => {
+    renderScreen()
+    await screen.findByDisplayValue('Sơn')
+    await userEvent.click(within(rowOf('Sơn')).getByRole('button', { name: 'Sàn tham gia' }))
+    const matrix = await screen.findByTestId('work-decks-w1')
+    const cd = within(matrix).getByLabelText('Trọng số Cellar Deck')
+    await userEvent.clear(cd)
+    await userEvent.type(cd, '0,3')
+    const md = within(matrix).getByLabelText('Trọng số Main Deck')
+    await userEvent.clear(md)
+    await userEvent.type(md, '0,7')
+    await userEvent.tab()
+
+    await userEvent.click(within(matrix).getByRole('button', { name: 'Lưu sàn tham gia' }))
+    const dialog = await screen.findByRole('dialog')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Lưu' }))
+    await waitFor(() => expect(saveWorkDecks).toHaveBeenCalledWith('w1', [
+      { deckId: 'd1', weight: 0.3 }, { deckId: 'd2', weight: 0.7 },
+    ]))
   })
 
   it('deletes a work only behind its typed name, and reloads', async () => {

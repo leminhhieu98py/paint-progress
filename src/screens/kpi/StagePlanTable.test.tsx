@@ -272,6 +272,84 @@ describe('StagePlanTable', () => {
     ))
   })
 
+  it('reads an override typed the Vietnamese way, with a decimal comma and thousands dots', async () => {
+    // antd's InputNumber with no decimalSeparator deletes the comma: "1.234,5"
+    // was sent as 1.2345 m², and "2,5" as 25.
+    const { onSave } = renderTable()
+
+    const area = row('s2').getByLabelText('Diện tích kế hoạch')
+    await userEvent.clear(area)
+    await userEvent.type(area, '1.234,5')
+    await userEvent.click(saveOf('s2'))
+
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({ stageId: 's2' }),
+      { startDate: '2026-09-09', endDate: '2026-09-16', plannedAreaM2: 1234.5 },
+    ))
+
+    onSave.mockClear()
+    await userEvent.clear(area)
+    await userEvent.type(area, '2,5')
+    await userEvent.click(saveOf('s2'))
+
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({ stageId: 's2' }),
+      { startDate: '2026-09-09', endDate: '2026-09-16', plannedAreaM2: 2.5 },
+    ))
+  })
+
+  it('reads "8.000" as eight thousand m², the way its own placeholder writes areas', async () => {
+    // The placeholder shows "8.000,00". Under the general rule a lone dot is
+    // the decimal point and "8.000" would plan 8 m²; an area field reads a dot
+    // before exactly three digits as thousands instead.
+    const { onSave } = renderTable()
+
+    const area = row('s2').getByLabelText('Diện tích kế hoạch')
+    await userEvent.clear(area)
+    await userEvent.type(area, '8.000')
+    await userEvent.click(saveOf('s2'))
+
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({ stageId: 's2' }),
+      { startDate: '2026-09-09', endDate: '2026-09-16', plannedAreaM2: 8000 },
+    ))
+
+    onSave.mockClear()
+    await userEvent.clear(area)
+    await userEvent.type(area, '8.5')
+    await userEvent.click(saveOf('s2'))
+
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({ stageId: 's2' }),
+      { startDate: '2026-09-09', endDate: '2026-09-16', plannedAreaM2: 8.5 },
+    ))
+  })
+
+  it('edits a stored area in place by one digit at its real magnitude', async () => {
+    // The field shows 3300 ungrouped on purpose. Grouped as "3.300", adding
+    // a digit at the end gave "3.3000" and deleting one gave "3.30" -- no
+    // longer a thousands group, so both saved 3.3 m².
+    const { onSave } = renderTable()
+    const area = row('s1').getByLabelText('Diện tích kế hoạch') as HTMLInputElement
+    expect(area.value).toBe('3300')
+
+    // userEvent.type puts the caret at the end of the current text.
+    await userEvent.type(area, '0')
+    await userEvent.click(saveOf('s1'))
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({ stageId: 's1' }),
+      { startDate: '2026-09-01', endDate: '2026-09-12', plannedAreaM2: 33000 },
+    ))
+
+    onSave.mockClear()
+    await userEvent.type(area, '{Backspace}{Backspace}')
+    await userEvent.click(saveOf('s1'))
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({ stageId: 's1' }),
+      { startDate: '2026-09-01', endDate: '2026-09-12', plannedAreaM2: 330 },
+    ))
+  })
+
   it('treats a typed zero as an override of zero, not as an empty field', async () => {
     // The distinction the whole nullable column exists for: 0 says this coat
     // plans no area, empty says work it out for me.
