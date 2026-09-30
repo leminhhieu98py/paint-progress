@@ -103,9 +103,10 @@ describe('countFacts (HLT-01)', () => {
 describe('one person, one row (NL-02, 0037)', () => {
   const rows = buildRows(ACCOUNTS, EMPLOYEES)
 
+  // The name quoted is the one stored, as Hiện lại says it, not as typed (NL-10).
   it('refuses a new employee named like an employee or a visible account', () => {
-    expect(nameClash(rows, ' ĐOÀN CÔNG LINH ', 'employee')).toBe('Đã có nhân viên tên "ĐOÀN CÔNG LINH".')
-    expect(nameClash(rows, 'bích trần', 'employee')).toBe('Đã có tài khoản GS/Visitor tên "bích trần".')
+    expect(nameClash(rows, ' ĐOÀN CÔNG LINH ', 'employee')).toBe('Đã có nhân viên tên "Đoàn Công Linh".')
+    expect(nameClash(rows, 'bích trần', 'employee')).toBe('Đã có tài khoản GS/Visitor tên "Bích Trần".')
     expect(nameClash(rows, 'Nguyễn Mới', 'employee')).toBeNull()
   })
 
@@ -114,10 +115,10 @@ describe('one person, one row (NL-02, 0037)', () => {
   })
 
   it('refuses a new account named like any account, hidden included, or an employee', () => {
-    expect(nameClash(rows, 'Trần thị Lan', 'account')).toBe('Đã có nhân viên tên "Trần thị Lan".')
+    expect(nameClash(rows, 'Trần thị Lan', 'account')).toBe('Đã có nhân viên tên "trần thị lan".')
     expect(nameClash(rows.filter((r) => r.kind === 'account'), 'Trần thị Lan', 'account'))
-      .toBe('Đã có tài khoản GS/Visitor tên "Trần thị Lan" (đã ẩn; chọn Trạng thái «Đã ẩn» để thấy).')
-    expect(nameClash(rows, 'An Nguyễn', 'account'))
+      .toBe('Đã có tài khoản GS/Visitor tên "Trần Thị Lan" (đã ẩn; chọn Trạng thái «Đã ẩn» để thấy).')
+    expect(nameClash(rows, '  an nguyễn ', 'account'))
       .toBe('Đã có nhân viên tên "An Nguyễn" (đã nghỉ; chọn Trạng thái «Đã nghỉ» để thấy).')
   })
 

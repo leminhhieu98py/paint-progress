@@ -123,17 +123,18 @@ export function countFacts(all: StaffRow[], shown: StaffRow[], filtered: boolean
 export function nameClash(rows: StaffRow[], name: string, target: 'employee' | 'account', exceptKey?: string): string | null {
   const key = personNameKey(name)
   if (key === '') return null
-  const shown = name.trim()
   const same = rows.filter((r) => r.key !== exceptKey && personNameKey(r.fullName) === key)
+  // The name as the list stores it, as Hiện lại says it, not as typed (NL-10).
   const employees = same.filter((r) => r.kind === 'employee')
   if (employees.length > 0) {
-    return nameTakenMessage(shown, employees.some((r) => r.status === 'Đang làm') ? 'employee' : 'retired_employee')
+    const active = employees.find((r) => r.status === 'Đang làm')
+    return nameTakenMessage((active ?? employees[0]).fullName, active ? 'employee' : 'retired_employee')
   }
   const accounts = same.filter((r) => r.kind === 'account')
   const visible = accounts.filter((r) => r.status !== 'Đã ẩn')
-  if (visible.length > 0) return nameTakenMessage(shown, 'account')
+  if (visible.length > 0) return nameTakenMessage(visible[0].fullName, 'account')
   // A hidden account blocks a new account, never an employee (0037, A1).
-  return target === 'account' && accounts.length > 0 ? nameTakenMessage(shown, 'hidden_account') : null
+  return target === 'account' && accounts.length > 0 ? nameTakenMessage(accounts[0].fullName, 'hidden_account') : null
 }
 
 /** A login already taken by any account on the list, hidden ones included. */
