@@ -1490,3 +1490,46 @@ describe('NhanLucScreen — no trash icon where nothing is deleted (NL-10)', () 
     expect((await headIcon('Đổi mật khẩu cho gs1?')).querySelector('.anticon-key')).not.toBeNull()
   })
 })
+
+describe('NhanLucScreen — the page error clears on the next step (NL-10)', () => {
+  const failReveal = async () => {
+    revealPassword.mockRejectedValue(new Error('Không đọc được mật khẩu'))
+    renderScreen()
+    await screen.findByText('gs1')
+    await userEvent.click(within(rowOf('GS Một')).getByRole('button', { name: 'Xem mật khẩu' }))
+    expect(await screen.findByText('Không đọc được mật khẩu')).toBeInTheDocument()
+  }
+
+  it('clears when the filter bar is applied with Tìm', async () => {
+    await failReveal()
+    await apply()
+    await waitFor(() => expect(screen.queryByText('Không đọc được mật khẩu')).toBeNull())
+  })
+
+  it('clears when the filter bar is applied with Enter', async () => {
+    await failReveal()
+    await userEvent.type(search(), 'gs{Enter}')
+    await waitFor(() => expect(screen.queryByText('Không đọc được mật khẩu')).toBeNull())
+  })
+
+  it('clears on Đặt lại', async () => {
+    await failReveal()
+    await userEvent.click(within(bar()).getByRole('button', { name: /Đặt lại/ }))
+    await waitFor(() => expect(screen.queryByText('Không đọc được mật khẩu')).toBeNull())
+  })
+
+  it('clears when another row action starts', async () => {
+    await failReveal()
+    await userEvent.click(within(rowOf('Lê Văn A')).getByRole('button', { name: 'Khoá nhân viên' }))
+    await waitFor(() => expect(screen.queryByText('Không đọc được mật khẩu')).toBeNull())
+  })
+
+  it('clears when a row action that runs at once starts, before its own result', async () => {
+    await failReveal()
+    let settle!: (p: string) => void
+    revealPassword.mockReturnValue(new Promise<string>((resolve) => { settle = resolve }))
+    await userEvent.click(within(rowOf('GS Hai')).getByRole('button', { name: 'Xem mật khẩu' }))
+    await waitFor(() => expect(screen.queryByText('Không đọc được mật khẩu')).toBeNull())
+    settle('x')
+  })
+})

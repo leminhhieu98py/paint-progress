@@ -175,7 +175,17 @@ export function NhanLucScreen() {
   const filtered = isFiltered(filters.applied)
   const pagination = useTablePagination(shown.length, filters.version)
 
+  /**
+   * The page Alert says what the last step refused; the next step -- a row
+   * action, or the filter bar applied or reset -- clears it (NL-10), rather
+   * than leaving it up until something succeeds.
+   */
+  const start = (open: () => void) => {
+    setError(null)
+    open()
+  }
   const run = async (fn: () => Promise<void>) => {
+    setError(null)
     try {
       await fn()
       setError(null)
@@ -238,7 +248,7 @@ export function NhanLucScreen() {
     const user = row.account
     return (
       <>
-        <IconAction verb="edit" label="Sửa" tooltip="Sửa · họ tên, phân quyền, đăng nhập, mật khẩu, dự án" onClick={() => setEditTarget(row)} />
+        <IconAction verb="edit" label="Sửa" tooltip="Sửa · họ tên, phân quyền, đăng nhập, mật khẩu, dự án" onClick={() => start(() => setEditTarget(row))} />
         {/* The stored password, only when asked for; the call is what logs it. */}
         <IconAction
           verb="reveal"
@@ -250,7 +260,7 @@ export function NhanLucScreen() {
           }
         />
         {user.active ? (
-          <IconAction verb="lock" label="Khoá tài khoản" danger onClick={() => setOffTarget(user)} />
+          <IconAction verb="lock" label="Khoá tài khoản" danger onClick={() => start(() => setOffTarget(user))} />
         ) : user.hidden ? (
           slot('lock')
         ) : (
@@ -281,7 +291,7 @@ export function NhanLucScreen() {
             }
           />
         ) : (
-          <IconAction verb="hide" label="Ẩn tài khoản" tooltip="Ẩn khỏi danh sách · không xoá" onClick={() => setHideTarget(user)} />
+          <IconAction verb="hide" label="Ẩn tài khoản" tooltip="Ẩn khỏi danh sách · không xoá" onClick={() => start(() => setHideTarget(user))} />
         )}
       </>
     )
@@ -289,11 +299,11 @@ export function NhanLucScreen() {
 
   const employeeActions = (row: StaffRow & { kind: 'employee' }) => (
     <>
-      <IconAction verb="edit" label="Sửa" tooltip="Sửa · họ tên, phân quyền" onClick={() => setEditTarget(row)} />
+      <IconAction verb="edit" label="Sửa" tooltip="Sửa · họ tên, phân quyền" onClick={() => start(() => setEditTarget(row))} />
       {slot('reveal')}
       {/* Khoá/Mở khoá like an account's (NL-09 amendment): Đang làm or Đã nghỉ. */}
       {row.employee.active ? (
-        <IconAction verb="lock" label="Khoá nhân viên" danger onClick={() => setEmployeeOffTarget(row)} />
+        <IconAction verb="lock" label="Khoá nhân viên" danger onClick={() => start(() => setEmployeeOffTarget(row))} />
       ) : (
         <IconAction
           verb="unlock"
@@ -320,7 +330,10 @@ export function NhanLucScreen() {
         facts={loaded ? countFacts(rows, shown, filtered) : undefined}
         filters={
           // Three controls: a draft, applied by Tìm or Enter (FLT-02, FLT-08).
-          <FilterBar onApply={() => filters.apply()} onReset={filters.reset}>
+          <FilterBar
+            onApply={() => start(() => filters.apply())}
+            onReset={() => start(() => filters.reset())}
+          >
             <Input
               allowClear
               aria-label="Tìm nhân lực"
