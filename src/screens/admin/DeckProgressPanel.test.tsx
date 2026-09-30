@@ -1943,4 +1943,20 @@ describe('DeckProgressPanel — actions are icons (ACT-01)', () => {
       expect(b).toHaveTextContent('')
     }
   })
+
+  it('draws Gộp thành zone as an icon action, the count in its name and on a badge (A3.4, review M6)', async () => {
+    renderPanel()
+    await screen.findByTestId('lens-A')
+    const idle = screen.getByRole('button', { name: 'Gộp thành zone (0)' })
+    expect(idle).toHaveClass('ant-btn-icon-only')
+    expect(idle).toHaveTextContent('')
+    expect(idle).toBeDisabled()
+    await userEvent.click(screen.getByTestId('band-all'))
+    const ready = await screen.findByRole('button', { name: /^Gộp thành zone \([1-9]\d*\)$/ })
+    expect(ready).toBeEnabled()
+    const n = /\((\d+)\)/.exec(ready.getAttribute('aria-label') ?? '')?.[1]
+    expect(ready.closest('.ant-badge')?.querySelector('.ant-badge-count')).toHaveTextContent(n ?? 'x')
+    await userEvent.hover(ready)
+    expect(await screen.findByRole('tooltip')).toHaveTextContent(new RegExp(`^Gộp thành zone \\(${n}\\)`))
+  })
 })

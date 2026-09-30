@@ -1,10 +1,9 @@
-import { PlusOutlined } from '@ant-design/icons'
 import {
   Alert, App, Badge, Button, DatePicker, Form, Input, Modal, Segmented,
   Select, Space, Spin, Switch, Table, Tooltip, Typography,
 } from 'antd'
 import dayjs from 'dayjs'
-import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { DrawingCanvas } from '../../canvas/DrawingCanvas'
 import { cellStagesAsOf, HISTORY_FROM_LABEL } from '../../domain/asOf'
 import { effortDayKey } from '../../domain/effort'
@@ -35,6 +34,7 @@ import { DECK_RING, ringFigureStep } from '../../components/ringFit'
 import { legendRowProps } from '../../components/ringHover'
 import { EmptyState } from '../../components/EmptyState'
 import { IconAction } from '../../components/IconAction'
+import { ACTION_ICONS, type ActionVerb } from '../../components/actionIcons'
 import { FilterBar } from '../../components/FilterBar'
 import { KeyFacts } from '../../components/KeyFacts'
 import { InfoTip } from '../../components/InfoTip'
@@ -262,19 +262,21 @@ const VISUALLY_HIDDEN = {
  * screen. `tip` is the tooltip at any time; it is the reason while disabled.
  */
 function HintedButton({
-  label, tip, disabled, onClick, type, icon,
+  label, tip, disabled, onClick, verb,
 }: {
   label: string
   tip: string | undefined
   disabled: boolean
   onClick: () => void
-  type?: 'primary'
-  icon?: ReactNode
+  /** An icon action (ACT-01): the icon alone, named by `label`, its tooltip led by it. */
+  verb?: ActionVerb
 }) {
   const hintId = useId()
   const hinted = disabled && tip !== undefined
+  const Icon = verb ? ACTION_ICONS[verb] : null
+  const title = Icon && tip !== undefined ? `${label} · ${tip}` : tip ?? (Icon ? label : undefined)
   return (
-    <Tooltip title={tip} trigger={['hover', 'focus']}>
+    <Tooltip title={title} trigger={['hover', 'focus']}>
       {/* A span, because antd Tooltip cannot anchor a disabled button. */}
       <span
         tabIndex={hinted ? 0 : undefined}
@@ -282,13 +284,13 @@ function HintedButton({
         aria-label={hinted ? label : undefined}
       >
         <Button
-          type={type}
-          icon={icon}
+          icon={Icon ? <Icon aria-hidden /> : undefined}
+          aria-label={Icon ? label : undefined}
           disabled={disabled}
           aria-describedby={hinted ? hintId : undefined}
           onClick={onClick}
         >
-          {label}
+          {Icon ? null : label}
         </Button>
         {hinted && <span id={hintId} style={VISUALLY_HIDDEN}>{tip}</span>}
       </span>
@@ -1763,24 +1765,26 @@ export function DeckProgressPanel({
                       Disabled with the reason on it rather than hidden, for
                       the same reason the empty-selection state is.
                     */}
-                    <HintedButton
-                      type="primary"
-                      icon={<PlusOutlined aria-hidden />}
-                      label={`Gộp thành zone (${selectedCodes.length})`}
-                      tip={
-                        viewA === ALL_STAGES
-                          ? 'Chọn một công đoạn để tạo zone'
-                          : selectedCodes.length > 0
-                            ? 'Gộp các ô đang chọn thành một zone'
-                            : 'Chọn ô trên bản vẽ trước — bấm từng ô, hoặc giữ Shift rồi kéo'
-                      }
-                      disabled={selectedCodes.length === 0 || viewA === ALL_STAGES}
-                      onClick={() => {
-                        setWindows({})
-                        form.resetFields()
-                        setZoneFormOpen(true)
-                      }}
-                    />
+                    {/* An icon action, its count on a badge and in its name, as Ghi chú (ACT-01). */}
+                    <Badge count={selectedCodes.length} size="small" color={palette.accent}>
+                      <HintedButton
+                        verb="mergeZone"
+                        label={`Gộp thành zone (${selectedCodes.length})`}
+                        tip={
+                          viewA === ALL_STAGES
+                            ? 'Chọn một công đoạn để tạo zone'
+                            : selectedCodes.length > 0
+                              ? 'Gộp các ô đang chọn thành một zone'
+                              : 'Chọn ô trên bản vẽ trước — bấm từng ô, hoặc giữ Shift rồi kéo'
+                        }
+                        disabled={selectedCodes.length === 0 || viewA === ALL_STAGES}
+                        onClick={() => {
+                          setWindows({})
+                          form.resetFields()
+                          setZoneFormOpen(true)
+                        }}
+                      />
+                    </Badge>
                   </Space>
                 )}
               </div>

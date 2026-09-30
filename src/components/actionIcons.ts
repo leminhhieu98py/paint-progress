@@ -1,6 +1,6 @@
 import {
   ArrowDownOutlined, ArrowRightOutlined, ArrowUpOutlined, BlockOutlined, CalculatorOutlined, CalendarOutlined, ClearOutlined, CloseCircleOutlined, CloseOutlined,
-  ControlOutlined, CopyOutlined, DeleteOutlined, EditOutlined, ExpandOutlined, EyeInvisibleOutlined,
+  ControlOutlined, CopyOutlined, MergeCellsOutlined, DeleteOutlined, EditOutlined, ExpandOutlined, EyeInvisibleOutlined,
   EyeOutlined, FormOutlined, KeyOutlined, LockOutlined, MessageOutlined, MinusOutlined, PieChartOutlined,
   PlusOutlined, RollbackOutlined, SaveOutlined, SwapOutlined, TableOutlined, TeamOutlined,
   ThunderboltOutlined, UndoOutlined, UnlockOutlined,
@@ -44,6 +44,7 @@ export const ACTION_ICONS = {
   fit: ExpandOutlined, // Vừa khung
   plan: CalendarOutlined, // Hiện kế hoạch
   notes: MessageOutlined, // Ghi chú (n)
+  mergeZone: MergeCellsOutlined, // Gộp thành zone (n)
 } satisfies Record<string, ComponentType>
 
 export type ActionVerb = keyof typeof ACTION_ICONS
