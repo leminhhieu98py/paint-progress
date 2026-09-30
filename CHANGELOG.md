@@ -10,12 +10,44 @@ own branch, verified against the development Supabase project, and deployed to
 production by the owner. **Database migrations are listed per release and must
 reach production before the app that needs them.**
 
-## [1.7.1] - 2026-09-29
+## [1.8.0] - 2026-09-30
 
-The UI consistency release: one layout, table, filter bar and type scale
-across the admin and field screens, charts and rings that read on phones, the
-field screens' second pass, and an animated login screen. It also carries the
-one item from Linh's review of v1.7.0.
+The UI consistency release, the Nhân lực screen, and a fix for number fields.
+One layout, table, filter bar and type scale across the admin and field
+screens; charts and rings that read on phones; the field screens' second pass;
+an animated login screen; and the one item from Linh's review of v1.7.0. The
+admin's Người dùng and Nhân viên screens become one screen, Nhân lực, where a
+person's name appears once. And every number field now reads a Vietnamese
+decimal comma: since 1.4.0 production has saved "2,5" as 25 in several fields.
+One database migration (`0037`) and an Edge Function redeploy (`admin-users`).
+
+### Added
+
+- **Nhân lực**, one screen for GS and Visitor accounts and employees. It
+  replaces Người dùng and Nhân viên in the menu; `/admin/employees` redirects
+  to it. One list sorted by name, with the role as a badge (Nhân viên / GS /
+  Visitor) whose tooltip is the role's description, a filter by name or login,
+  Phân quyền and Trạng thái, and `-` where an employee has no data. Xuất danh
+  sách still exports the employees.
+- **Thêm nhân lực** asks for the role first (Nhân viên by default, GS or
+  Visitor) and shows only the fields that role needs: a Nhân viên has a name
+  only and cannot sign in; a GS needs a login, password and project; a Visitor
+  needs no project, since a Visitor reads every project.
+- **Đổi phân quyền** turns an employee into a GS or Visitor account and back,
+  and a GS into a Visitor, behind a dialog that says what happens. An account
+  turned into an employee is locked and hidden, not deleted, so the history it
+  wrote keeps its author; turning the person back re-opens that account. A GS
+  or Visitor account is not offered in the tablet's crew pickers, which list
+  employees as before.
+- **One person, one row.** A name may belong to one person across GS/Visitor
+  accounts and employees, compared without case and outer spaces. A duplicate
+  is refused in the dialog, by the Edge Function and by the database.
+- Data tables paginate, 10 / 20 / 50 / 100 rows a page. Every select can be
+  searched by typing.
+- Rings and their legends highlight each other on hover and focus, and hovering
+  a chart legend item highlights its series.
+- On phones the field screens have a bottom tab bar, and filters open in a
+  bottom sheet behind a one-row bar.
 
 ### Changed
 
@@ -36,10 +68,60 @@ one item from Linh's review of v1.7.0.
   The published file loops eight of its movements with expressions, which
   the light player skips; those are written out as keyframes
   (`scripts/bake-lottie-pingpong.mjs`), so it plays as published.
+- **One layout for every screen.** One inset inside every card, one type
+  scale, table columns aligned by content and centred vertically, one control
+  height per row, one colour swatch, and eight distinct chart colours.
+  Categories read as coloured badges; the facts beside a title read as one
+  line.
+- **One filter bar.** A bar with more than one control applies on `Tìm`, with
+  `Đặt lại` beside it; the work is chosen from a searchable select everywhere,
+  and tab-like filters are searchable selects.
+- **The field screens, second pass.** One header holds the navigation and the
+  account menu, with no back buttons; the deck is picked on the Sàn page; each
+  tab has one filter bar with the project first; the exports are bar actions.
+  The admin table, type and colour rules apply there too; on phones tables
+  scroll sideways, stat cards are compact and chart legends run one item per
+  line.
+- **Explanations moved out of the way.** Subtitles that read like the
+  developer's reasoning are removed or become a `(?)` tooltip or a rule; the
+  `Quy tắc áp dụng` entries read as helper text; no rule IDs on screen.
+- The viewer role reads **Visitor** everywhere it read `Chỉ xem`.
+
+### Fixed
+
+- **Every number field reads a Vietnamese decimal comma**: "2,5" Mhr is 2,5,
+  not 25. In production since 1.4.0, antd's number field deleted the comma, so
+  "2,5" was saved as 25, "0,7" of a weight as 7 and clamped to 1, and "1.230,5"
+  as 1,2305. Affected: Mhr thực hiện and Mhr hao phí in the bay dialog, the
+  hour fields of the effort history, the KPI plan area, the work and deck
+  weights, and the manual %. The deck area already read a comma but stopped at
+  a thousands dot ("5.258,5" was saved as 5,258); it now reads it too.
+  A dot is read as the decimal point, as phone keypads send it ("2.5" is 2,5),
+  except in the two area fields (KPI plan area, deck area): there "8.000" means
+  8000 m², as the field's own placeholder writes it, so type "8,125" for
+  8,125 m². A page number reads "1.230" as page 1230.
+- A read-only report, `supabase/queries/decimal_comma_suspects.sql`, lists
+  stored values that a dropped comma may have inflated or deflated — effort
+  hours, KPI plan areas, manual %, deck totals — for the owner to check with
+  the people who typed them. Nothing is changed automatically.
+
+### Database
+
+- `0037_nhan_luc_unique_names.sql` — one name per person across GS/Visitor
+  accounts (`profiles`) and employees, through a BEFORE row trigger on each
+  table; a refusal is `SQLSTATE PPDUP`. The name lookups run only for admins
+  and the service role, and INSERT on `profiles` is revoked from anon and
+  authenticated, on `employees` from anon. **Run
+  `supabase/queries/nhan_luc_duplicates.sql` (read-only) first**: the migration
+  fails fast, changing nothing, while any name it lists as blocking exists.
 
 ### Operational
 
-No migration. Deploy the app only.
+Deploy in this order: migration `0037` → redeploy the Edge Function
+`admin-users` (Đổi phân quyền, Visitors without a project, the duplicate-name
+refusals) → the app. The app's Nhân lực dialogs call the new function
+actions. After deploying, run `supabase/queries/decimal_comma_suspects.sql`
+(read-only) and check the rows it lists.
 
 ## [1.7.0] - 2026-09-15
 
@@ -500,7 +582,7 @@ Level Security.
 
 Production runs its own Supabase project, created empty.
 
-[1.7.1]: https://github.com/leminhhieu98py/paint-progress/compare/v1.7.0...v1.7.1
+[1.8.0]: https://github.com/leminhhieu98py/paint-progress/compare/v1.7.0...v1.8.0
 [1.7.0]: https://github.com/leminhhieu98py/paint-progress/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/leminhhieu98py/paint-progress/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/leminhhieu98py/paint-progress/compare/v1.4.0...v1.5.0
