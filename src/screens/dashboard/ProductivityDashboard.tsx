@@ -80,7 +80,9 @@ export function ProductivityDashboard({
   /** A text cell, wrapped at 160 px on a phone (I5). */
   const text = (node: ReactNode) => (phone ? wrapped(node) : node)
   const narrowPhone = useFieldNarrowPhone()
-  const lg = Grid.useBreakpoint().lg === true
+  const screens = Grid.useBreakpoint()
+  const lg = screens.lg === true
+  const xl = screens.xl === true
   /**
    * On a phone the cards go two to a row, one under 360 px (MOB-02). Wider,
    * the six go three to a row from 992 px and two below it, so no row holds
@@ -395,7 +397,19 @@ export function ProductivityDashboard({
         <HoursBarChart data={padDays(hoursSeries(daily))} />
       </SectionCard>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 16 }}>
+      {/*
+        Uneven from 1200 px (AD9): the crew table's six columns take three
+        fifths and fit without scrolling; the three short columns of Lý do
+        hao phí take two. Narrower, the pair wraps and scrolls as before.
+      */}
+      <div
+        data-testid="lead-waste-pair"
+        style={{
+          display: 'grid',
+          gridTemplateColumns: xl ? 'minmax(0, 3fr) minmax(0, 2fr)' : 'repeat(auto-fit, minmax(320px, 1fr))',
+          gap: 16,
+        }}
+      >
         <SectionCard
           title="Theo nhóm trưởng"
           bodyPadding={0}

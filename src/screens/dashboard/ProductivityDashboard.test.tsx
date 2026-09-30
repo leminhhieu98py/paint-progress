@@ -529,6 +529,24 @@ describe('ProductivityDashboard — tables on a phone (MOB-01)', () => {
   })
 })
 
+describe('ProductivityDashboard — the crew table beside the waste reasons (AD9)', () => {
+  let restore = () => {}
+  afterEach(() => restore())
+  const pair = () => screen.getByTestId('lead-table').closest('[data-testid="lead-waste-pair"]') as HTMLElement
+
+  it('gives Theo nhóm trưởng three fifths and Lý do hao phí two from 1200 px, so the six columns fit', () => {
+    restore = setViewport(1280)
+    renderDashboard()
+    expect(pair()).toHaveStyle({ gridTemplateColumns: 'minmax(0, 3fr) minmax(0, 2fr)' })
+  })
+
+  it('keeps the old wrap-and-scroll below 1200 px', () => {
+    restore = setViewport(1024)
+    renderDashboard()
+    expect(pair()).toHaveStyle({ gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))' })
+  })
+})
+
 describe('ProductivityDashboard — stat cards on a phone (MOB-02)', () => {
   const grid = () => screen.getByTestId('dashboard-cards')
   let restoreViewport = () => {}
