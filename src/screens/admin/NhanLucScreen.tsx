@@ -6,7 +6,6 @@ import {
 } from 'antd'
 import dayjs from 'dayjs'
 import { useEffect, useMemo, useState } from 'react'
-import { useAuth } from '../../auth/AuthProvider'
 import { CategoryBadge } from '../../components/CategoryBadge'
 import { ConsequenceModal } from '../../components/ConsequenceModal'
 import { IconAction } from '../../components/IconAction'
@@ -23,6 +22,7 @@ import {
   hideUser,
   listGsUsers,
   reactivateUser,
+  revealPassword,
   unhideUser,
   type GsUser,
 } from '../../lib/adminApi'
@@ -31,7 +31,7 @@ import { buildEmployeesXlsx, employeesFileName } from '../../lib/employeesXlsx'
 import { initialsOf } from '../../lib/initials'
 import { downloadWorkbook } from '../../lib/projectReport'
 import { listProjectNames } from '../../lib/projectsApi'
-import { MISSING, formatDateTimeVN } from '../../lib/format'
+import { MISSING } from '../../lib/format'
 import { palette, type } from '../../theme'
 import { NhanLucCreateDialog } from './NhanLucCreateDialog'
 import { NhanLucEditDialog } from './NhanLucEditDialog'
@@ -109,7 +109,6 @@ const projectsText = (user: GsUser) => (user.role === 'viewer'
  * for a duplicate name see everything the database will.
  */
 export function NhanLucScreen() {
-  const { profile } = useAuth()
   const { message } = App.useApp()
   const fullOptionsProps = useFullOptionsProps()
   const [accounts, setAccounts] = useState<GsUser[] | null>(null)
@@ -117,7 +116,7 @@ export function NhanLucScreen() {
   const [loadError, setLoadError] = useState<string | null>(null)
   const [attempt, setAttempt] = useState(0)
   const [projects, setProjects] = useState<ProjectOption[]>([])
-  const [revealed, setRevealed] = useState<{ user: GsUser; password: string; at: string } | null>(null)
+  const [revealed, setRevealed] = useState<{ user: GsUser; password: string } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [createOpen, setCreateOpen] = useState(false)
   const [offTarget, setOffTarget] = useState<GsUser | null>(null)
@@ -230,6 +229,16 @@ export function NhanLucScreen() {
     return (
       <>
         <IconAction verb="edit" label="Sửa" tooltip="Sửa · họ tên, phân quyền, đăng nhập, mật khẩu, dự án" onClick={() => setEditTarget(row)} />
+        {/* The stored password, only when asked for; the call is what logs it. */}
+        <IconAction
+          verb="reveal"
+          label="Xem mật khẩu"
+          onClick={() =>
+            void run(async () => {
+              setRevealed({ user, password: await revealPassword(user.id) })
+            })
+          }
+        />
         {user.active ? (
           <IconAction verb="lock" label="Khoá tài khoản" danger onClick={() => setOffTarget(user)} />
         ) : user.hidden ? (
@@ -271,6 +280,7 @@ export function NhanLucScreen() {
   const employeeActions = (row: StaffRow & { kind: 'employee' }) => (
     <>
       <IconAction verb="edit" label="Sửa" tooltip="Sửa · họ tên, phân quyền" onClick={() => setEditTarget(row)} />
+      {slot('reveal')}
       {/* Khoá/Mở khoá like an account's (NL-09 amendment): Đang làm or Đã nghỉ. */}
       {row.employee.active ? (
         <IconAction verb="lock" label="Khoá nhân viên" danger onClick={() => setEmployeeOffTarget(row)} />
@@ -484,7 +494,7 @@ export function NhanLucScreen() {
         title={`Mật khẩu của ${revealed.user.username}`}
         onCancel={() => setRevealed(null)}
         onOk={() => setRevealed(null)}
-        okText="Đã ghi nhận"
+        okText="Đóng"
         cancelButtonProps={{ style: { display: 'none' } }}
         {...modalProps}
       >
@@ -515,9 +525,6 @@ export function NhanLucScreen() {
             </span>
           </Typography.Text>
         </div>
-        <span style={{ display: 'block', marginTop: 9, ...type.caption, color: palette.textTertiary }}>
-          {`Đã ghi log · ${revealed.at} · ${profile?.fullName ?? ''} → ${revealed.user.username}`}
-        </span>
       </Modal>
       )}
 
@@ -604,7 +611,6 @@ export function NhanLucScreen() {
           row={editTarget}
           rows={rows}
           projects={projects}
-          adminName={profile?.fullName ?? ''}
           onClose={() => setEditTarget(null)}
           onPartial={reload}
           onDone={({ message: done, revealed: fresh }) => {
@@ -613,7 +619,7 @@ export function NhanLucScreen() {
             message.success(done)
             // Straight into the reveal modal: the admin has to read a new
             // password out to the foreman, and it appears nowhere else.
-            if (fresh) setRevealed({ ...fresh, at: formatDateTimeVN(new Date().toISOString()) })
+            if (fresh) setRevealed(fresh)
           }}
         />
       )}

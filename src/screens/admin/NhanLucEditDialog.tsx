@@ -1,4 +1,5 @@
-import { Alert, Button, Checkbox, Form, Input, Modal, Radio, Select, Space, Switch, Typography } from 'antd'
+import { EyeInvisibleOutlined, EyeOutlined, ReloadOutlined } from '@ant-design/icons'
+import { Alert, Button, Checkbox, Form, Input, Modal, Radio, Select, Space, Switch, Tooltip, Typography } from 'antd'
 import { useEffect, useState } from 'react'
 import { ConsequenceModal } from '../../components/ConsequenceModal'
 import { IconAction } from '../../components/IconAction'
@@ -9,7 +10,6 @@ import {
   type GsUser, type MembershipDraft, type StaffRole,
 } from '../../lib/adminApi'
 import { updateEmployee } from '../../lib/employeesApi'
-import { formatDateTimeVN } from '../../lib/format'
 import { generatePassword } from '../../lib/passwordGen'
 import { listWorks } from '../../lib/worksApi'
 import { palette, type } from '../../theme'
@@ -77,13 +77,11 @@ const draftsOf = (rows: Record<string, Membership>, projects: ProjectOption[]): 
  * the Edge Function is not redeployed in this change.
  */
 export function NhanLucEditDialog({
-  row, rows, projects, adminName, onClose, onPartial, onDone,
+  row, rows, projects, onClose, onPartial, onDone,
 }: {
   row: StaffRow
   rows: StaffRow[]
   projects: ProjectOption[]
-  /** Who is signed in, for the reveal's log line. */
-  adminName: string
   onClose: () => void
   /** Some steps were saved before one failed: re-read the list, keep the dialog. */
   onPartial: () => void
@@ -99,7 +97,8 @@ export function NhanLucEditDialog({
     () => (account ? membershipsOf(account, projects) : {}),
   )
   const [works, setWorks] = useState<Record<string, { value: string; label: string }[]>>({})
-  const [shown, setShown] = useState<{ password: string; at: string } | null>(null)
+  /** The stored password, once the field's eye has fetched it (and the fetch logged it). */
+  const [stored, setStored] = useState<string | null>(null)
   const [pending, setPending] = useState<{ confirmation: Confirmation; values: EditValues } | null>(null)
   const [saving, setSaving] = useState(false)
   const [failure, setFailure] = useState<string | null>(null)
@@ -145,7 +144,8 @@ export function NhanLucEditDialog({
         steps.push({ label: 'Tên đăng nhập', done: 'Đã đổi tên đăng nhập', run: () => renameUser(account.id, username) })
       }
       const password = values.password ?? ''
-      if (password !== '') {
+      // The stored password shown by the eye is not a change.
+      if (password !== '' && password !== stored) {
         steps.push({ label: 'Mật khẩu', done: 'Đã đổi mật khẩu', run: () => setPassword(account.id, password) })
       }
       if (account.role === 'gs') {
@@ -198,7 +198,8 @@ export function NhanLucEditDialog({
     }
     setSaving(false)
     setPending(null)
-    const password = keepsAccount ? v.password ?? '' : ''
+    const typed = keepsAccount ? v.password ?? '' : ''
+    const password = typed !== stored ? typed : ''
     const only = steps.length === 1 ? steps[0] : null
     onDone({
       message: roleRequest && only?.label === 'Phân quyền'
@@ -211,7 +212,7 @@ export function NhanLucEditDialog({
   const submit = (v: EditValues) => {
     if (roleChanged) {
       setPending({ confirmation: planRoleChange(row, rows, projects, v).confirmation, values: v })
-    } else if (keepsAccount && (v.password ?? '') !== '') {
+    } else if (keepsAccount && (v.password ?? '') !== '' && v.password !== stored) {
       setPending({
         values: v,
         confirmation: {
@@ -233,13 +234,16 @@ export function NhanLucEditDialog({
     }
   }
 
-  const reveal = async () => {
-    if (!account) return
+  /** The eye's first look: the stored password, fetched (and so logged) once. */
+  const reveal = async (): Promise<string | null> => {
+    if (!account) return null
     try {
       const password = await revealPassword(account.id)
-      setShown({ password, at: formatDateTimeVN(new Date().toISOString()) })
+      setStored(password)
+      return password
     } catch (e) {
       setFailure((e as Error).message)
+      return null
     }
   }
 
@@ -305,26 +309,11 @@ export function NhanLucEditDialog({
                 label="Mật khẩu"
                 rules={[MIN_PASSWORD_RULE]}
               >
-                <PasswordInput
-                  placeholder="Để trống: giữ mật khẩu hiện tại"
+                <StoredPasswordField
+                  onReveal={reveal}
                   onGenerate={() => form.setFieldsValue({ password: generatePassword() })}
                 />
               </Form.Item>
-              {/* The stored password, only when asked for, logged as the reveal always was. */}
-              <Space size={8} style={{ marginTop: -8, marginBottom: shown ? 4 : 16 }}>
-                <IconAction verb="reveal" label="Xem mật khẩu" tooltip="Xem mật khẩu · được ghi log" onClick={() => void reveal()} />
-                <span style={{ ...type.caption, color: palette.textTertiary }}>Mật khẩu hiện tại · xem là được ghi log</span>
-              </Space>
-              {shown && (
-                <div data-testid="shown-password" style={{ marginBottom: 16 }}>
-                  <Typography.Text copyable={{ text: shown.password, tooltips: ['Sao chép', 'Đã sao chép'] }}>
-                    <span style={{ ...type.bodyStrong, letterSpacing: '0.06em' }}>{shown.password}</span>
-                  </Typography.Text>
-                  <span style={{ display: 'block', marginTop: 4, ...type.caption, color: palette.textTertiary }}>
-                    {`Đã ghi log · ${shown.at} · ${adminName} → ${account.username}`}
-                  </span>
-                </div>
-              )}
               {account.role === 'viewer' && (
                 <Typography.Text>Tài khoản Visitor thấy mọi dự án và mọi công việc.</Typography.Text>
               )}
@@ -425,5 +414,64 @@ export function NhanLucEditDialog({
         onOk={() => { if (pending) void apply(pending.values) }}
       />
     </>
+  )
+}
+
+/**
+ * The account's one password field (NL-09 amendment 2): masked, an eye inside
+ * it, a copy icon and the generator beside it. The eye's first look fetches
+ * the stored password -- the call that logs a reveal, silently -- and shows it
+ * in the field; later looks only unmask. A password typed or generated
+ * replaces the stored one on Lưu; the stored one shown is not a change.
+ */
+function StoredPasswordField({
+  id, value, onChange, onReveal, onGenerate,
+}: {
+  /** From Form.Item, so the label names the input. */
+  id?: string
+  value?: string
+  onChange?: (value: string) => void
+  onReveal: () => Promise<string | null>
+  onGenerate: () => void
+}) {
+  const [visible, setVisible] = useState(false)
+  const toggle = async () => {
+    if (!visible && (value ?? '') === '') {
+      const password = await onReveal()
+      if (password === null) return
+      onChange?.(password)
+    }
+    setVisible((v) => !v)
+  }
+  return (
+    <Space.Compact style={{ width: '100%' }}>
+      <Input
+        id={id}
+        type={visible ? 'text' : 'password'}
+        autoComplete="new-password"
+        placeholder="Để trống: giữ mật khẩu hiện tại"
+        value={value}
+        onChange={(e) => onChange?.(e.target.value)}
+        suffix={(
+          <button
+            type="button"
+            aria-label={visible ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
+            onClick={() => void toggle()}
+            style={{ border: 0, background: 'none', padding: 0, cursor: 'pointer', color: palette.iconMuted, display: 'inline-flex' }}
+          >
+            {visible ? <EyeInvisibleOutlined aria-hidden /> : <EyeOutlined aria-hidden />}
+          </button>
+        )}
+      />
+      <IconAction
+        verb="copy"
+        label="Sao chép mật khẩu"
+        disabled={(value ?? '') === ''}
+        onClick={() => void navigator.clipboard?.writeText(value ?? '')}
+      />
+      <Tooltip title="Sinh mật khẩu ngẫu nhiên, dễ đọc qua bộ đàm">
+        <Button aria-label="Sinh mật khẩu" icon={<ReloadOutlined aria-hidden />} onClick={onGenerate} />
+      </Tooltip>
+    </Space.Compact>
   )
 }

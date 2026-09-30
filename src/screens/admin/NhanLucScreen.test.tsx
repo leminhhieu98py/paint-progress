@@ -395,23 +395,22 @@ describe('NhanLucScreen — accounts, as before (USR)', () => {
     expect(revealPassword).not.toHaveBeenCalled()
   })
 
-  it('reveals a password only for the row that was clicked, names who saw it, and takes it off screen on close', async () => {
+  it('reveals a password from the row, only for that row, with the password and a copy icon and nothing else (NL-09 am. 2)', async () => {
     revealPassword.mockImplementation((id: string) => Promise.resolve(id === 'u7' ? 's3cret' : 'other-secret'))
     renderScreen()
     await screen.findByText('gs1')
-    // In the Sửa dialog (NL-09), and only when Xem is clicked.
-    const dialog = await openEdit('GS Một')
     expect(revealPassword).not.toHaveBeenCalled()
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Xem mật khẩu' }))
-    await waitFor(() => expect(within(dialog).getByText('s3cret')).toBeInTheDocument())
+    await userEvent.click(within(rowOf('GS Một')).getByRole('button', { name: 'Xem mật khẩu' }))
+    const reveal = await screen.findByRole('dialog', { name: 'Mật khẩu của gs1' })
+    await waitFor(() => expect(within(reveal).getByText('s3cret')).toBeInTheDocument())
+    // The logging API, once per click; no log text on screen.
+    expect(revealPassword).toHaveBeenCalledTimes(1)
     expect(revealPassword).toHaveBeenCalledWith('u7')
-    expect(revealPassword).not.toHaveBeenCalledWith('u9')
     expect(screen.queryByText('other-secret')).toBeNull()
-    expect(within(dialog).getByText(/Đã ghi log/)).toHaveTextContent('Nguyễn Thị Linh → gs1')
-    // The one date-time form (M12): HH:mm DD/MM/YYYY.
-    expect(within(dialog).getByText(/Đã ghi log/)).toHaveTextContent(/^Đã ghi log · \d{2}:\d{2} \d{2}\/\d{2}\/\d{4} · /)
+    expect(within(reveal).getByRole('button', { name: /Sao chép|copy/i })).toBeInTheDocument()
+    expect(screen.queryByText(/Đã ghi log/)).toBeNull()
 
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Huỷ' }))
+    await userEvent.click(within(reveal).getByRole('button', { name: 'Đóng' }))
     await waitFor(() => expect(screen.queryByText('s3cret')).toBeNull())
   })
 
@@ -419,9 +418,30 @@ describe('NhanLucScreen — accounts, as before (USR)', () => {
     revealPassword.mockRejectedValue(new Error('No stored credential'))
     renderScreen()
     await screen.findByText('gs1')
+    await userEvent.click(within(rowOf('GS Một')).getByRole('button', { name: 'Xem mật khẩu' }))
+    expect(await screen.findByText('No stored credential')).toBeInTheDocument()
+  })
+
+  it('reveals the stored password inside the Sửa dialog\'s one field, from its eye, silently (NL-09 am. 2)', async () => {
+    revealPassword.mockResolvedValue('s3cret')
+    renderScreen()
+    await screen.findByText('gs1')
     const dialog = await openEdit('GS Một')
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Xem mật khẩu' }))
-    expect(await within(dialog).findByText('No stored credential')).toBeInTheDocument()
+    const field = within(dialog).getByLabelText('Mật khẩu') as HTMLInputElement
+    expect(field).toHaveAttribute('type', 'password')
+    expect(field.value).toBe('')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Hiện mật khẩu' }))
+    await waitFor(() => expect(field.value).toBe('s3cret'))
+    expect(field).toHaveAttribute('type', 'text')
+    expect(revealPassword).toHaveBeenCalledTimes(1)
+    expect(within(dialog).getByRole('button', { name: 'Sao chép mật khẩu' })).toBeInTheDocument()
+    expect(screen.queryByText(/Đã ghi log|xem là được ghi log/)).toBeNull()
+    // Seeing the stored password changes nothing: nothing to save.
+    expect(within(dialog).getByRole('button', { name: 'Lưu' })).toBeDisabled()
+    // The eye hides it again without asking the server a second time.
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Ẩn mật khẩu' }))
+    expect(field).toHaveAttribute('type', 'password')
+    expect(revealPassword).toHaveBeenCalledTimes(1)
   })
 
   it('locks only after the consequences have been confirmed, and says so', async () => {
@@ -955,15 +975,15 @@ describe('NhanLucScreen — actions and dialogs (M7, M8, M9, NL-09)', () => {
     renderScreen()
     await screen.findByText('gs1')
     const names = (el: HTMLElement) => within(el).queryAllByRole('button').map((b) => b.getAttribute('aria-label'))
-    expect(names(actionsOf('GS Một'))).toEqual(['Sửa', 'Khoá tài khoản', 'Ẩn tài khoản'])
-    // An employee: Sửa and Khoá, the hide slot kept empty so the columns line up.
+    expect(names(actionsOf('GS Một'))).toEqual(['Sửa', 'Xem mật khẩu', 'Khoá tài khoản', 'Ẩn tài khoản'])
+    // An employee: Sửa and Khoá, the reveal and hide slots kept empty so the columns line up.
     expect(names(actionsOf('Lê Văn A'))).toEqual(['Sửa', 'Khoá nhân viên'])
     for (const name of ['GS Một', 'Lê Văn A']) {
       expect(actionsOf(name)).toHaveStyle({ justifyContent: 'flex-end' })
-      expect(actionsOf(name).children).toHaveLength(3)
+      expect(actionsOf(name).children).toHaveLength(4)
     }
-    // The old five row icons are in the Sửa dialog now.
-    for (const gone of ['Đổi tên đăng nhập', 'Dự án và công việc', 'Đổi mật khẩu', 'Xem mật khẩu', 'Đổi phân quyền']) {
+    // The other old row icons are in the Sửa dialog now.
+    for (const gone of ['Đổi tên đăng nhập', 'Dự án và công việc', 'Đổi mật khẩu', 'Đổi phân quyền']) {
       expect(within(rowOf('GS Một')).queryByRole('button', { name: gone })).toBeNull()
     }
     await chooseOption('Trạng thái', 'Đã ẩn', bar())
@@ -972,7 +992,7 @@ describe('NhanLucScreen — actions and dialogs (M7, M8, M9, NL-09)', () => {
     // A hidden account has no lock: its slot is kept empty rather than closed up.
     const hidden = actionsOf('GS Ba')
     expect(hidden).toHaveStyle({ justifyContent: 'flex-end' })
-    expect(hidden.children).toHaveLength(3)
+    expect(hidden.children).toHaveLength(4)
   })
 
   it('brings a hidden account back from an icon button like the rest (M7)', async () => {

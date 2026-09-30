@@ -1,5 +1,5 @@
 import {
-  ArrowDownOutlined, ArrowRightOutlined, ArrowUpOutlined, CalculatorOutlined, CalendarOutlined, ClearOutlined, CloseCircleOutlined, CloseOutlined,
+  ArrowDownOutlined, ArrowRightOutlined, ArrowUpOutlined, BlockOutlined, CalculatorOutlined, CalendarOutlined, ClearOutlined, CloseCircleOutlined, CloseOutlined,
   ControlOutlined, CopyOutlined, DeleteOutlined, EditOutlined, ExpandOutlined, EyeInvisibleOutlined,
   EyeOutlined, FormOutlined, KeyOutlined, LockOutlined, MessageOutlined, MinusOutlined, PieChartOutlined,
   PlusOutlined, RollbackOutlined, SaveOutlined, SwapOutlined, TableOutlined, TeamOutlined,
@@ -21,7 +21,8 @@ export const ACTION_ICONS = {
   delete: DeleteOutlined, // Xoá …
   clear: ClearOutlined, // Xoá toàn bộ lưới ô
   open: ArrowRightOutlined, // Mở (FolderOpen stays the field's Xuất cả dự án)
-  duplicate: CopyOutlined, // Nhân bản
+  duplicate: BlockOutlined, // Nhân bản
+  copy: CopyOutlined, // Sao chép mật khẩu
   moveUp: ArrowUpOutlined, // Lên
   moveDown: ArrowDownOutlined, // Xuống
   close: CloseOutlined, // Đóng
