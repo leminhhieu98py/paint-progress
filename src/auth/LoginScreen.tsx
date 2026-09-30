@@ -132,7 +132,8 @@ export function LoginIllustration({ compact = false }: { compact?: boolean }) {
         aspectRatio: '750 / 500',
         ...(compact
           ? { maxWidth: 240, maxHeight: 160, margin: '0 auto 16px' }
-          : { maxWidth: 372 }),
+          // Grows with the viewport beside the wide hero column (owner 2026-09-30).
+          : { maxWidth: 'clamp(372px, 42vw, 720px)' }),
       }}
     >
       {!drawn && <Platform />}

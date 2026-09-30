@@ -169,4 +169,15 @@ describe('LoginIllustration', () => {
 
     expect(pause).toHaveBeenCalledTimes(1)
   })
+
+  // Owner 2026-09-30: at 372 px the picture looked small beside the wide hero
+  // column on desktop, so it grows with the viewport; the phone size is unchanged.
+  it('grows with the viewport on the wide layout and keeps the phone size compact', () => {
+    const { unmount } = render(<LoginIllustration />)
+    expect(screen.getByTestId('login-illustration').style.maxWidth).toBe('clamp(372px, 42vw, 720px)')
+    unmount()
+
+    render(<LoginIllustration compact />)
+    expect(screen.getByTestId('login-illustration').style.maxWidth).toBe('240px')
+  })
 })
