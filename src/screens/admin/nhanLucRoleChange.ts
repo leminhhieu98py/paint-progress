@@ -1,4 +1,4 @@
-import type { ConsequenceItem, ConsequenceTone } from '../../components/ConsequenceModal'
+import type { ConsequenceIcon, ConsequenceItem, ConsequenceTone } from '../../components/ConsequenceModal'
 import type { changeRole, StaffRole } from '../../lib/adminApi'
 import { ROLE_LABEL, parkedAccountFor, type StaffRow } from './nhanLuc'
 import type { ProjectOption } from './nhanLucForm'
@@ -8,6 +8,8 @@ export type RoleChangeRequest = Parameters<typeof changeRole>[0]
 /** A confirmation: who it is about, then what happens, one item each (RUL-01). */
 export interface Confirmation {
   tone: ConsequenceTone
+  /** For a confirmation that deletes nothing: never the trash can (NL-10). */
+  icon?: ConsequenceIcon
   tag?: string
   title: string
   description: string
@@ -80,6 +82,7 @@ export function planRoleChange(
       request,
       confirmation: {
         tone: 'danger',
+        icon: 'lock',
         title: `Đổi ${row.account.username} thành Nhân viên?`,
         description: 'Tài khoản bị khoá và ẩn, không bị xoá:',
         items: [who],

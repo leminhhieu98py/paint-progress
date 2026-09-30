@@ -532,6 +532,8 @@ export function NhanLucScreen() {
       <ConsequenceModal
         open={offTarget !== null}
         tone="danger"
+        // Nothing is deleted: a lock, not the trash can (NL-10).
+        icon="lock"
         tag="Xác nhận"
         title={`Khoá tài khoản ${offTarget?.username ?? ''}?`}
         description="Tài khoản bị khoá, không bị xoá:"
@@ -566,6 +568,7 @@ export function NhanLucScreen() {
       <ConsequenceModal
         open={hideTarget !== null}
         tone="danger"
+        icon="hide"
         tag="Xác nhận"
         title={`Ẩn tài khoản ${hideTarget?.username ?? ''}?`}
         description="Tài khoản bị khoá và ẩn khỏi danh sách, không bị xoá:"
@@ -629,6 +632,7 @@ export function NhanLucScreen() {
       <ConsequenceModal
         open={employeeOffTarget !== null}
         tone="danger"
+        icon="lock"
         tag="Xác nhận"
         title={`Khoá nhân viên ${employeeOffTarget?.fullName ?? ''}?`}
         description="Nhân viên nghỉ làm, không bị xoá:"

@@ -1441,3 +1441,52 @@ describe('NhanLucScreen — actions and dialogs (M7, M8, M9, NL-09)', () => {
     expect(consequenceItems(dialog)).toEqual(['Người dùng không nhận được thông báo nào', 'Anh tự giao mật khẩu mới, hiện ra ngay sau bước này'])
   })
 })
+
+describe('NhanLucScreen — no trash icon where nothing is deleted (NL-10)', () => {
+  /** The confirmation holding this text: its head icon, as an antd icon class. */
+  const headIcon = async (text: string | RegExp) => {
+    const modal = (await screen.findByText(text)).closest('.ant-modal') as HTMLElement
+    expect(modal.querySelector('.anticon-delete')).toBeNull()
+    return modal
+  }
+
+  it('locks an account under a lock', async () => {
+    renderScreen()
+    await screen.findByText('gs1')
+    await userEvent.click(within(rowOf('GS Một')).getByRole('button', { name: 'Khoá tài khoản' }))
+    expect((await headIcon('Tài khoản bị khoá, không bị xoá:')).querySelector('.anticon-lock')).not.toBeNull()
+  })
+
+  it('hides an account under an eye-invisible', async () => {
+    renderScreen()
+    await screen.findByText('gs1')
+    await userEvent.click(within(rowOf('GS Một')).getByRole('button', { name: 'Ẩn tài khoản' }))
+    const modal = await headIcon('Tài khoản bị khoá và ẩn khỏi danh sách, không bị xoá:')
+    expect(modal.querySelector('.anticon-eye-invisible')).not.toBeNull()
+  })
+
+  it('locks an employee under a lock', async () => {
+    renderScreen()
+    await screen.findByText('Lê Văn A')
+    await userEvent.click(within(rowOf('Lê Văn A')).getByRole('button', { name: 'Khoá nhân viên' }))
+    expect((await headIcon('Nhân viên nghỉ làm, không bị xoá:')).querySelector('.anticon-lock')).not.toBeNull()
+  })
+
+  it('turns a GS into an employee under a lock', async () => {
+    renderScreen()
+    await screen.findByText('gs1')
+    const dialog = await openEdit('GS Một')
+    await userEvent.click(within(within(dialog).getByRole('radiogroup', { name: 'Phân quyền' })).getByLabelText('Nhân viên'))
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Lưu' }))
+    expect((await headIcon('Tài khoản bị khoá và ẩn, không bị xoá:')).querySelector('.anticon-lock')).not.toBeNull()
+  })
+
+  it('replaces a password under a key, not a trash can', async () => {
+    renderScreen()
+    await screen.findByText('gs1')
+    const dialog = await openEdit('GS Một')
+    await userEvent.type(within(dialog).getByLabelText('Mật khẩu'), 'Bh7@Deck2026')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Lưu' }))
+    expect((await headIcon('Đổi mật khẩu cho gs1?')).querySelector('.anticon-key')).not.toBeNull()
+  })
+})

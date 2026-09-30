@@ -303,6 +303,7 @@ export function NhanLucEditDialog({
         values: v,
         confirmation: {
           tone: 'danger',
+          icon: 'key',
           tag: 'Thao tác phá huỷ',
           // The login and name as typed: the same save renames them first (N3).
           title: `Đổi mật khẩu cho ${(v.username ?? '').trim().toLowerCase() || account.username}?`,
@@ -509,6 +510,7 @@ export function NhanLucEditDialog({
       <ConsequenceModal
         open={pending !== null}
         tone={pending?.confirmation.tone ?? 'warn'}
+        icon={pending?.confirmation.icon}
         tag={pending?.confirmation.tag ?? 'Xác nhận'}
         title={pending?.confirmation.title ?? ''}
         description={pending?.confirmation.description}

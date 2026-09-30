@@ -1,7 +1,10 @@
 import {
   DeleteOutlined,
   ExclamationCircleFilled,
+  EyeInvisibleOutlined,
   InfoCircleFilled,
+  KeyOutlined,
+  LockOutlined,
   WarningFilled,
 } from '@ant-design/icons'
 import { Alert, Button, ConfigProvider, Input, Modal, theme } from 'antd'
@@ -17,6 +20,18 @@ export interface ConsequenceItem {
 }
 
 export type ConsequenceTone = 'accent' | 'warn' | 'danger'
+
+/**
+ * The head icon of a confirmation that deletes nothing (NL-10): a lock for a
+ * lock, an eye-invisible for a hide, a key for a password. The tone's own
+ * icon -- the trash can for `danger` -- stays for the deletes.
+ */
+export type ConsequenceIcon = 'lock' | 'hide' | 'key'
+const ICONS: Record<ConsequenceIcon, ReactNode> = {
+  lock: <LockOutlined aria-hidden />,
+  hide: <EyeInvisibleOutlined aria-hidden />,
+  key: <KeyOutlined aria-hidden />,
+}
 
 const TONES: Record<ConsequenceTone, { fg: string; bg: string; icon: ReactNode }> = {
   accent: { fg: palette.accent, bg: palette.accentTint, icon: <InfoCircleFilled aria-hidden /> },
@@ -39,6 +54,7 @@ const TONES: Record<ConsequenceTone, { fg: string; bg: string; icon: ReactNode }
 export function ConsequenceModal({
   open,
   tone = 'accent',
+  icon,
   tag,
   title,
   description,
@@ -54,6 +70,8 @@ export function ConsequenceModal({
 }: {
   open: boolean
   tone?: ConsequenceTone
+  /** In place of the tone's icon, for a confirmation that deletes nothing. */
+  icon?: ConsequenceIcon
   tag?: string
   title: ReactNode
   description?: ReactNode
@@ -132,7 +150,7 @@ export function ConsequenceModal({
             color: t.fg,
           }}
         >
-          {t.icon}
+          {icon ? ICONS[icon] : t.icon}
         </span>
         <div style={{ flex: 1, minWidth: 0 }}>
           {tag !== undefined && (

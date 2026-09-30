@@ -22,6 +22,19 @@ describe('ConsequenceModal', () => {
     expect(icon()).toHaveStyle({ background: palette.errorTint })
   })
 
+  it('keeps the trash can for a delete, and takes a lock, eye or key where nothing is deleted (NL-10)', () => {
+    const head = () => document.querySelector('.ant-modal-body > div > span') as HTMLElement
+    const { rerender } = render(<ConsequenceModal {...base} tone="danger" />)
+    expect(head().querySelector('.anticon-delete')).not.toBeNull()
+    for (const [icon, cls] of [['lock', 'lock'], ['hide', 'eye-invisible'], ['key', 'key']] as const) {
+      rerender(<ConsequenceModal {...base} tone="danger" icon={icon} />)
+      expect(head().querySelector('.anticon-delete')).toBeNull()
+      expect(head().querySelector(`.anticon-${cls}`)).not.toBeNull()
+      // Still the danger tint: the icon changes, not the weight of the step.
+      expect(head()).toHaveStyle({ background: palette.errorTint })
+    }
+  })
+
   it('names what will be lost, item by item', () => {
     render(
       <ConsequenceModal
