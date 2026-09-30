@@ -41,6 +41,11 @@ export const palette = {
   bgSubtle: '#FCFDFE',
   bgSubtleAlt: '#F9FBFD',
   bgHover: '#F1F6FA',
+  /**
+   * A table's header band (RLP-01): a step darker than the body so a header
+   * reads as a header, its label textSecondary at 6:1 on it.
+   */
+  bgTableHeader: '#EDF1F5',
 
   border: '#D5DFE9',
   borderCard: '#E8EEF4',
@@ -280,10 +285,11 @@ export const adminTheme: ThemeConfig = {
       activeBarBorderWidth: 0,
     },
     Table: {
-      headerBg: palette.bgSubtleAlt,
-      headerColor: palette.textTertiary,
+      // A band a step darker than the body, its label and hairline to match (RLP-01).
+      headerBg: palette.bgTableHeader,
+      headerColor: palette.textSecondary,
       headerSplitColor: 'transparent',
-      borderColor: palette.borderSplit,
+      borderColor: palette.borderCard,
       rowHoverBg: palette.bgApp,
       cellPaddingBlock: 13,
       cellPaddingInline: 12,
@@ -364,9 +370,10 @@ export const fieldTheme: ThemeConfig = {
     Select: { optionSelectedBg: palette.accentTint, optionHeight: 48, optionPadding: '12px 13px' },
     Tabs: { horizontalItemPadding: '12px 0' },
     Table: {
-      headerBg: palette.bgSubtleAlt,
-      headerColor: palette.textTertiary,
-      borderColor: palette.borderSplit,
+      // The admin's header band, on the field too (RLP-01).
+      headerBg: palette.bgTableHeader,
+      headerColor: palette.textSecondary,
+      borderColor: palette.borderCard,
       cellPaddingBlock: 14,
     },
     Progress: { defaultColor: palette.accent, remainingColor: palette.track },

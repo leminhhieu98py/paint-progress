@@ -9,8 +9,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { computeProjectProgress, summariseDeck } from '../../domain/progress'
 import type { WorkKind } from '../../domain/types'
 import {
-  DEFAULT_QUANTITY_LABEL, DEFAULT_UNIT, labelOfWorks, MIXED_QUANTITY_LABEL, MIXED_UNIT_SUM_TOOLTIP,
-  deckUnitOf, quantityHeading, unitOfWorks,
+  DEFAULT_UNIT, MIXED_UNIT_SUM_TOOLTIP, deckUnitOf, unitOfWorks,
 } from '../../domain/unit'
 import { listGsUsers } from '../../lib/adminApi'
 import {
@@ -32,7 +31,6 @@ import { EmptyState } from '../../components/EmptyState'
 import { FilterBar } from '../../components/FilterBar'
 import { InfoTip } from '../../components/InfoTip'
 import { PageBody, PageHeader } from '../../components/PageHeader'
-import { ProgressBar } from '../../components/ProgressBar'
 import { ProjectSelect } from '../../components/ProjectSelect'
 import { RulesDisclosure } from '../../components/RulesDisclosure'
 import { SectionCard } from '../../components/SectionCard'
@@ -41,6 +39,20 @@ import type { CategoryValue } from '../../components/categoryTone'
 import { useTablePagination } from '../../components/tablePagination'
 import { roundSharesToTotal } from '../../domain/rounding'
 import { categoricalColor, palette, space, type } from '../../theme'
+
+/**
+ * A deck by name with its code in brackets, "Main Deck (MD)" (RLP-01): the
+ * name its own span, so the name reads alone where a test or a reader looks
+ * for it, and no separate Mã column.
+ */
+function deckName(name: string, code: string) {
+  return (
+    <span style={type.body}>
+      <span>{name}</span>
+      {` (${code})`}
+    </span>
+  )
+}
 
 interface RollupRow {
   key: string
@@ -203,17 +215,14 @@ export function DecksScreen() {
    */
   const quantityScope = (deckIds: string[]) => {
     const units = deckIds.map(sharedUnitOfDeck)
-    const works = bays.filter((m) => m.decks.some((e) => deckIds.includes(e.deck.id))).map((m) => m.work)
     const unit = units.length === 0
       ? DEFAULT_UNIT
       : (units.every((u) => u !== null && u === units[0]) ? units[0] : null)
-    const label = works.length === 0
-      ? DEFAULT_QUANTITY_LABEL
-      : (labelOfWorks(works) ?? MIXED_QUANTITY_LABEL)
-    const title = unit === null ? MIXED_QUANTITY_LABEL : quantityHeading(label, unit)
-    /** The figure, with the row's own unit only when the heading could not carry one. */
-    const cell = (deckId: string, n: number): string =>
-      (unit !== null ? formatAreaM2(n) : `${formatAreaM2(n)} ${unitOfDeck(deckId)}`)
+    // RLP-01: the column is "Diện tích", and every figure carries its own
+    // unit (AD4), so the heading needs none. `unit` stays for the Σ, which
+    // adds only figures of one unit (RV6-36).
+    const title = 'Diện tích'
+    const cell = (deckId: string, n: number): string => `${formatAreaM2(n)} ${unitOfDeck(deckId)}`
     return { unit, title, cell }
   }
   const listScope = quantityScope(modelDecks.map((d) => d.id))
@@ -485,9 +494,9 @@ export function DecksScreen() {
               {
                 title: 'Tên sàn',
                 dataIndex: 'name',
-                render: (v: string) => <span style={type.body}>{v}</span>,
+                // "Main Deck (MD)": no Mã column of its own (RLP-01).
+                render: (v: string, deck) => deckName(v, deck.code),
               },
-              { title: 'Mã', dataIndex: 'code', width: 120 },
               { title: 'Số ô', dataIndex: 'cellCount', width: 90, align: 'center' },
               {
                 title: listScope.title,
@@ -616,8 +625,7 @@ export function DecksScreen() {
                   pagination={rollupPagination}
                   dataSource={visibleRollup}
                   columns={[
-                    { title: 'Sàn', dataIndex: 'name', key: 'name' },
-                    { title: 'Mã', dataIndex: 'code', key: 'code', width: 100 },
+                    { title: 'Sàn', dataIndex: 'name', key: 'name', render: (v: string, row) => deckName(v, row.code) },
                     { title: 'Tỉ trọng', dataIndex: 'share', key: 'share', width: 110, align: 'center' },
                     {
                       title: rollupScope.title,
@@ -627,12 +635,13 @@ export function DecksScreen() {
                       align: 'center',
                     },
                     {
-                      title: 'Tiến độ',
+                      // The percentage alone, centred like any figure (PRG-01).
+                      title: 'Tiến độ sàn',
                       align: 'center',
                       dataIndex: 'progress',
                       key: 'progress',
-                      width: 220,
-                      render: (v: number) => <ProgressBar ratio={v} />,
+                      width: 130,
+                      render: (v: number) => <span style={type.body}>{formatPercent(v)}</span>,
                     },
                   ]}
                   summary={() => (
@@ -640,21 +649,20 @@ export function DecksScreen() {
                       <Table.Summary.Cell index={0}>
                         <span style={type.bodyStrong}>Tổng dự án</span>
                       </Table.Summary.Cell>
-                      <Table.Summary.Cell index={1} />
-                      <Table.Summary.Cell index={2} align="center">
+                      <Table.Summary.Cell index={1} align="center">
                         <span style={type.bodyStrong}>{formatPercent(effectiveTotal)}</span>
                       </Table.Summary.Cell>
-                      <Table.Summary.Cell index={3} align="center">
+                      <Table.Summary.Cell index={2} align="center">
                         {rollupScope.unit === null ? (
                           <Tooltip title={MIXED_UNIT_SUM_TOOLTIP}>
                             <span style={type.bodyStrong}>{MISSING}</span>
                           </Tooltip>
                         ) : (
-                          <span style={type.bodyStrong}>{formatAreaM2(totalArea)}</span>
+                          <span style={type.bodyStrong}>{`${formatAreaM2(totalArea)} ${rollupScope.unit}`}</span>
                         )}
                       </Table.Summary.Cell>
-                      <Table.Summary.Cell index={4} align="center">
-                        <ProgressBar ratio={rollup.progress} height={8} />
+                      <Table.Summary.Cell index={3} align="center">
+                        <span style={type.bodyStrong}>{formatPercent(rollup.progress)}</span>
                       </Table.Summary.Cell>
                     </Table.Summary.Row>
                   )}
@@ -677,10 +685,10 @@ export function DecksScreen() {
                 */}
                 <div
                   data-testid="project-works"
-                  // A hairline between the two tables and nothing else: the
-                  // table's own first header says `Công việc`, and a label
-                  // above it saying the same read as a second heading (TBL-03).
-                  style={{ borderTop: `1px solid ${palette.borderSplit}` }}
+                  // A gap and a hairline between the two tables, so they never
+                  // touch (RLP-01); no label above it: the table's own first
+                  // header says `Công việc` (TBL-03).
+                  style={{ marginTop: space.lg, borderTop: `1px solid ${palette.borderCard}` }}
                 >
                   <Table<WorkRow>
                     size="small"
@@ -706,12 +714,13 @@ export function DecksScreen() {
                         render: (c: boolean) => <CategoryBadge category="counts" value={c ? 'Có' : 'Không'} />,
                       },
                       {
-                        title: 'Tiến độ',
+                        // The percentage alone, centred (PRG-01), named to match Tiến độ sàn (RLP-01).
+                        title: 'Tiến độ công việc',
                         align: 'center',
                         dataIndex: 'progress',
                         key: 'progress',
-                        width: 220,
-                        render: (v: number) => <ProgressBar ratio={v} />,
+                        width: 150,
+                        render: (v: number) => <span style={type.body}>{formatPercent(v)}</span>,
                       },
                     ]}
                     summary={() => (
@@ -729,7 +738,7 @@ export function DecksScreen() {
                         </Table.Summary.Cell>
                         <Table.Summary.Cell index={3} align="center" />
                         <Table.Summary.Cell index={4} align="center">
-                          <ProgressBar ratio={rollup.progress} height={8} />
+                          <span style={type.bodyStrong}>{formatPercent(rollup.progress)}</span>
                         </Table.Summary.Cell>
                       </Table.Summary.Row>
                     )}
@@ -740,12 +749,12 @@ export function DecksScreen() {
               <div
                 data-testid="rollup-donut"
                 // Top padding equal to the small table's header cell padding,
-                // so `Tiến độ dự án` sits on the line of `Sàn` across the
+                // so `Tiến độ tích luỹ` sits on the line of `Sàn` across the
                 // divider rather than a text line below it (UX-02).
                 style={{ padding: `${space.sm}px ${space.xl}px ${space.xl}px`, background: palette.bgSubtle }}
               >
                 <div style={{ ...type.label, color: palette.textTertiary }}>
-                  Tiến độ dự án
+                  Tiến độ tích luỹ
                 </div>
                 <ProjectRing
                   slices={slices}
@@ -863,7 +872,7 @@ function ProjectRing({
     // as both coat rings stand: beside a 160 px ring the deck names had 34 px.
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16, marginTop: 14 }}>
       <Donut
-        label="Tiến độ dự án"
+        label="Tiến độ tích luỹ"
         slices={slices}
         size={ROLLUP_RING_SIZE}
         thickness={ROLLUP_RING_THICKNESS}
@@ -889,17 +898,13 @@ function ProjectRing({
         style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0, alignSelf: 'stretch' }}
       >
         {/*
-          Two numbers per row (RV6-40, Linh's review of v1.7.0). RV6-02
-          put the deck's own progress here so the legend agreed with
-          the table; she then read `83,22%` beside an arc a fifth of
-          the ring and asked why the five numbers do not add up to the
-          centre. They never did -- the arc is weight × progress -- so
-          that figure now stands beside the progress, in its own column,
-          and the header says which is which. The contribution column
-          sums to P exactly; the progress column is the table's.
+          One number per row, the contribution the arc is sized by
+          (weight × progress), which sums to the centre exactly (RV6-40).
+          The deck's own progress is the table's, beside the ring, as
+          Tiến độ sàn (RLP-02); a slice's description keeps both.
         */}
         <div style={{ ...type.caption, color: palette.textTertiary, textAlign: 'right' }}>
-          Tiến độ · Đóng góp
+          Đóng góp
         </div>
         {slices.map((sl, i) => (
           <div
@@ -921,14 +926,6 @@ function ProjectRing({
             {/* In full: wrapped when the row cannot hold it, never cut (RR2-I1). */}
             <span style={{ ...type.body, lineHeight: `${ROLLUP_LEGEND_LINE}px`, minWidth: 0, flex: 1, overflowWrap: 'break-word' }}>
               {sl.label}
-            </span>
-            <span
-              style={{
-                width: 56, textAlign: 'right', flex: 'none',
-                ...type.body, lineHeight: `${ROLLUP_LEGEND_LINE}px`, color: palette.textSecondary,
-              }}
-            >
-              {formatPercent(sl.display ?? sl.value)}
             </span>
             <span style={{ width: 56, textAlign: 'right', flex: 'none', ...type.bodyStrong, lineHeight: `${ROLLUP_LEGEND_LINE}px` }}>
               {formatPercent(shownShares[i])}

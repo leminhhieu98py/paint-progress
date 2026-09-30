@@ -5,12 +5,11 @@ import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ConsequenceModal } from '../../components/ConsequenceModal'
 import { PageBody, PageHeader } from '../../components/PageHeader'
-import { ProgressBar } from '../../components/ProgressBar'
 import { SectionCard } from '../../components/SectionCard'
 import { modalProps } from '../../components/modalChrome'
 import { StatCard } from '../../components/StatCard'
 import { tablePagination } from '../../components/tablePagination'
-import { MISSING, formatAreaM2, formatDateTimeVN } from '../../lib/format'
+import { MISSING, formatAreaM2, formatDateTimeVN, formatPercent } from '../../lib/format'
 import { latestProgressEvent, type ProgressEvent } from '../../lib/progressApi'
 import {
   createProject, deleteProject, listProjects, updateProject, type ProjectRow,
@@ -278,8 +277,9 @@ export function ProjectsScreen() {
                 title: 'Tiến độ',
                 align: 'center',
                 dataIndex: 'progress',
-                width: 240,
-                render: (v: number) => <ProgressBar ratio={v} />,
+                width: 120,
+                // The percentage alone, centred like any figure (PRG-01).
+                render: (v: number) => <span style={type.body}>{formatPercent(v)}</span>,
               },
               {
                 title: 'Thao tác',

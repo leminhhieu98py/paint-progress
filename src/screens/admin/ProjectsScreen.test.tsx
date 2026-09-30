@@ -335,6 +335,19 @@ describe('ProjectsScreen — type scale (TYP-02)', () => {
   })
 })
 
+describe('ProjectsScreen — progress as a number (PRG-01)', () => {
+  it('prints the project progress as a centred percentage, with no bar in the cell', async () => {
+    renderScreen()
+    const name = await screen.findByText('BB1 - CPPTS')
+    const row = name.closest('tr') as HTMLElement
+    expect(row.querySelector('[data-testid="progress-fill"]')).toBeNull()
+    const headers = screen.getAllByRole('columnheader').map((h) => h.textContent)
+    const cell = row.querySelectorAll('td')[headers.indexOf('Tiến độ')]
+    expect(cell).toHaveTextContent(/^\d{1,3},\d{2}%$/)
+    expect(cell).toHaveStyle({ textAlign: 'center' })
+  })
+})
+
 describe('ProjectsScreen — alignment (UI-03)', () => {
   it('keeps the project name left and centres the figures and actions, header included', async () => {
     renderScreen()

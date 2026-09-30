@@ -204,9 +204,10 @@ describe('DecksScreen', () => {
   it('lists the decks of the first project', async () => {
     renderScreen()
 
-    expect(await screen.findByText('Main Deck')).toBeInTheDocument()
-    expect(screen.getByText('MD')).toBeInTheDocument()
-    expect(screen.getByText('5.258,50')).toBeInTheDocument()
+    const name = await screen.findByText('Main Deck')
+    // "Main Deck (MD)", the quantity with its unit (RLP-01, AD4).
+    expect(name.closest('td')).toHaveTextContent(/^Main Deck \(MD\)$/)
+    expect(screen.getByText('5.258,50 m²')).toBeInTheDocument()
     expect(screen.getByText('24')).toBeInTheDocument()
     await waitFor(() => expect(listDecks).toHaveBeenCalledWith('p1'))
   })
@@ -327,8 +328,8 @@ describe('DecksScreen — the project-wide half of progress', () => {
 
     const rollup = await screen.findByTestId('project-rollup')
     await waitFor(() => expect(within(rollup).getByText('Cellar Deck')).toBeInTheDocument())
-    expect(within(rollup).getByText('4.000,00')).toBeInTheDocument()
-    expect(within(rollup).queryByText('4.100,00')).toBeNull()
+    expect(within(rollup).getByText('4.000,00 m²')).toBeInTheDocument()
+    expect(within(rollup).queryByText('4.100,00 m²')).toBeNull()
   })
 
   it('says nothing about hidden decks when every deck counts', async () => {
@@ -386,7 +387,6 @@ describe('DecksScreen — the project-wide half of progress', () => {
     // RV6-02: the legend shows each slice's own progress (Chứng từ's is
     // 50,00%, same as CD's), not the weight × progress the arc is sized by
     // -- see the dedicated RV6-01/02 tests below for the arc math itself.
-    expect(within(donut).getAllByText('50,00%').length).toBeGreaterThan(0)
     expect(within(donut).getAllByText('31,25%').length).toBeGreaterThan(0)
   })
 
@@ -411,9 +411,12 @@ describe('DecksScreen — the project-wide half of progress', () => {
     // arc is sized by, 21,25% (.425 effective weight × 50%), so the column
     // adds up to the centre figure; the legend says which is which.
     expect(within(rollup).getByText('50,00%')).toBeInTheDocument()
-    expect(within(donut).getByText('Tiến độ · Đóng góp')).toBeInTheDocument()
+    // RLP-02: the legend drops the progress (the table beside it reads it as
+    // Tiến độ sàn) and keeps the contribution alone, under Đóng góp.
+    expect(within(donut).getByText('Đóng góp')).toBeInTheDocument()
+    expect(within(donut).queryByText('Tiến độ · Đóng góp')).toBeNull()
     const cdRow = within(donut).getByText('CD').closest('[data-testid="legend-row"]') as HTMLElement
-    expect(within(cdRow).getByText('50,00%')).toBeInTheDocument()
+    expect(within(cdRow).queryByText('50,00%')).toBeNull()
     expect(within(cdRow).getByText('21,25%')).toBeInTheDocument()
 
     // The arc itself is untouched: CD's slice spans 21,25% of the ring, i.e.
@@ -450,8 +453,8 @@ describe('DecksScreen — the project-wide half of progress', () => {
     expect(stack).toHaveStyle({ display: 'flex', flexDirection: 'column', alignItems: 'center' })
     expect(ring.compareDocumentPosition(legend) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(legend).toHaveStyle({ alignSelf: 'stretch' })
-    // Dot · name · Tiến độ · Đóng góp, under the header, then Còn lại.
-    expect(within(legend).getByText('Tiến độ · Đóng góp')).toBeInTheDocument()
+    // Dot · name · Đóng góp, under the header, then Còn lại (RLP-02).
+    expect(within(legend).getByText('Đóng góp')).toBeInTheDocument()
     expect(within(legend).getByText('Còn lại')).toBeInTheDocument()
     const name = within(legend).getByText('Chứng từ')
     // In full: a name too long for the row wraps, it is never cut to an ellipsis.
@@ -545,12 +548,12 @@ describe('DecksScreen — the project-wide half of progress', () => {
       expect(sliceOf(donut, 'CD')).toHaveAttribute('opacity', '1')
     })
 
-    it('describes each slice with the two figures its legend row prints', async () => {
+    it('prints the contribution alone in each legend row, the slice still describing both figures (RLP-02)', async () => {
       const donut = await openDonut()
       for (const name of ['CD', 'Chứng từ']) {
         const cells = within(rowOf(donut, name)).getAllByText(/%$/).map((c) => c.textContent)
-        expect(cells).toHaveLength(2)
-        expect(sliceOf(donut, name)).toHaveAccessibleDescription(`Tiến độ ${cells[0]} · Đóng góp ${cells[1]}`)
+        expect(cells).toHaveLength(1)
+        expect(sliceOf(donut, name)).toHaveAccessibleDescription(new RegExp(`· Đóng góp ${cells[0]}$`))
       }
       expect(sliceOf(donut, 'CD')).toHaveAccessibleDescription('Tiến độ 50,00% · Đóng góp 21,25%')
     })
@@ -905,10 +908,11 @@ describe('DecksScreen: the quantity and unit of the works in scope (RV6-36)', ()
     renderScreen()
     const rollup = await screen.findByTestId('project-rollup')
     await waitFor(() => expect(within(rollup).getByText('Cellar Deck')).toBeInTheDocument())
-    expect(headersOf(rollup)).toContain('Khối lượng (tấn)')
-    expect(within(rollup).getByText('4.000,00')).toBeInTheDocument()
+    // RLP-01: the column is Diện tích; every figure carries its unit (AD4).
+    expect(headersOf(rollup)).toContain('Diện tích')
+    expect(within(rollup).getByText('4.000,00 tấn')).toBeInTheDocument()
     const list = screen.getAllByRole('table')[0] // the deck list is the first table on the page
-    expect(headersOf(list)).toContain('Khối lượng (tấn)')
+    expect(headersOf(list)).toContain('Diện tích')
     expect(screen.queryByText(/m²/)).toBeNull()
   })
 
@@ -923,7 +927,7 @@ describe('DecksScreen: the quantity and unit of the works in scope (RV6-36)', ()
     renderScreen()
     const rollup = await screen.findByTestId('project-rollup')
     await waitFor(() => expect(within(rollup).getByText('Cellar Deck')).toBeInTheDocument())
-    expect(headersOf(rollup)).toContain('Số lượng')
+    expect(headersOf(rollup)).toContain('Diện tích')
     expect(within(rollup).getByText('1.000,00 m²')).toBeInTheDocument()
     expect(within(rollup).getByText('3.000,00 m²')).toBeInTheDocument()
     expect(within(rollup).queryByText('4.000,00')).toBeNull()
@@ -931,7 +935,7 @@ describe('DecksScreen: the quantity and unit of the works in scope (RV6-36)', ()
     await userEvent.hover(dash)
     expect(await screen.findByRole('tooltip')).toHaveTextContent('Các sàn dùng đơn vị khác nhau, không cộng được')
     // Both decks are in the rollup, so the deck list reads the same mix.
-    expect(headersOf(screen.getAllByRole('table')[0])).toContain('Số lượng')
+    expect(headersOf(screen.getAllByRole('table')[0])).toContain('Diện tích')
   })
 
   it('heads the rollup by the decks it lists, not by every deck of the project', async () => {
@@ -966,13 +970,13 @@ describe('DecksScreen: the quantity and unit of the works in scope (RV6-36)', ()
     renderScreen()
     const rollup = await screen.findByTestId('project-rollup')
     await waitFor(() => expect(within(rollup).getByText('Cellar Deck')).toBeInTheDocument())
-    expect(headersOf(rollup)).toContain('Khối lượng (Kg)')
-    expect(within(rollup).getByText('1.000,00')).toBeInTheDocument()
-    expect(within(rollup).getByText('3.000,00')).toBeInTheDocument()
-    expect(within(rollup).getByText('4.000,00')).toBeInTheDocument()
+    expect(headersOf(rollup)).toContain('Diện tích')
+    expect(within(rollup).getByText('1.000,00 Kg')).toBeInTheDocument()
+    expect(within(rollup).getByText('3.000,00 Kg')).toBeInTheDocument()
+    expect(within(rollup).getByText('4.000,00 Kg')).toBeInTheDocument()
     expect(within(rollup).queryByText('-')).toBeNull()
     const list = screen.getAllByRole('table')[0]
-    expect(headersOf(list)).toContain('Số lượng')
+    expect(headersOf(list)).toContain('Diện tích')
     expect(within(list).getByText('1.000,00 Kg')).toBeInTheDocument()
     expect(within(list).getByText('3.000,00 Kg')).toBeInTheDocument()
     expect(within(list).getByText('100,00 m²')).toBeInTheDocument()
@@ -987,9 +991,9 @@ describe('DecksScreen — alignment (UI-03)', () => {
     const th = (label: string) => list.getByRole('columnheader', { name: label })
     expectLeft(th('Tên sàn'))
     expectLeft(name.closest('td'))
-    // The code is typed by the admin: text, so left like the name.
-    expectLeft(th('Mã'))
-    expectLeft(list.getByText('MD').closest('td'))
+    // No Mã column: the name reads "Main Deck (MD)" (RLP-01).
+    expect(list.queryByRole('columnheader', { name: 'Mã' })).toBeNull()
+    expect(name.closest('td')).toHaveTextContent(/^Main Deck \(MD\)$/)
     for (const label of ['Số ô', 'Bản vẽ', 'Thao tác', 'Thứ tự']) {
       expect(th(label)).toHaveStyle({ textAlign: 'center' })
     }
@@ -1022,8 +1026,44 @@ describe('DecksScreen — rollup alignment (UI-06)', () => {
     renderScreen()
     const rollup = within(await screen.findByTestId('project-rollup'))
     const name = await rollup.findByText('Cellar Deck')
-    expectLeft(rollup.getByRole('columnheader', { name: 'Mã' }))
-    expectLeft(within(name.closest('tr') as HTMLElement).getByText('CD').closest('td'))
+    expect(rollup.queryByRole('columnheader', { name: 'Mã' })).toBeNull()
+    expectLeft(name.closest('td'))
+    expect(name.closest('td')).toHaveTextContent(/^Cellar Deck \(CD\)$/)
     expect(rollup.getByRole('columnheader', { name: 'Tỉ trọng' })).toHaveStyle({ textAlign: 'center' })
+  })
+})
+
+describe('DecksScreen — the rollup card (RLP-01, PRG-01)', () => {
+  const headersOf = (table: HTMLElement) =>
+    within(table).getAllByRole('columnheader').map((h) => h.textContent)
+
+  it('names the progress columns Tiến độ sàn and Tiến độ công việc, and prints the percentage alone', async () => {
+    renderScreen()
+    const rollup = await screen.findByTestId('project-rollup')
+    await waitFor(() => expect(within(rollup).getByText('Cellar Deck')).toBeInTheDocument())
+    const works = screen.getByTestId('project-works')
+    expect(headersOf(rollup)).toContain('Tiến độ sàn')
+    expect(headersOf(works)).toContain('Tiến độ công việc')
+    // No bar in a table cell (PRG-01), in the rows or the totals.
+    expect(rollup.querySelector('[data-testid="progress-fill"]')).toBeNull()
+    expect(works.querySelector('[data-testid="progress-fill"]')).toBeNull()
+    const cd = within(rollup).getByText('Cellar Deck').closest('tr') as HTMLElement
+    const idx = headersOf(rollup).indexOf('Tiến độ sàn')
+    expect(cd.querySelectorAll('td')[idx]).toHaveTextContent(/^50,00%$/)
+    expect(cd.querySelectorAll('td')[idx]).toHaveStyle({ textAlign: 'center' })
+  })
+
+  it('keeps the two stacked tables apart: a gap and a hairline', async () => {
+    renderScreen()
+    const works = await screen.findByTestId('project-works')
+    expect(works).toHaveStyle({ marginTop: '16px' })
+    expect(works.style.borderTop).toMatch(/1px solid/)
+  })
+
+  it('titles the ring Tiến độ tích luỹ', async () => {
+    renderScreen()
+    const donut = await screen.findByTestId('rollup-donut')
+    expect(within(donut).getByText('Tiến độ tích luỹ')).toBeInTheDocument()
+    expect(within(donut).queryByText('Tiến độ dự án')).toBeNull()
   })
 })

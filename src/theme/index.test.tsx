@@ -155,3 +155,22 @@ describe('fieldType (GS-04, GS-10)', () => {
     expect(fieldTheme.token?.fontSize).toBe(fieldType.body.fontSize)
   })
 })
+
+describe('table header band (RLP-01)', () => {
+  const contrast = (a: string, b: string) => {
+    const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x)
+    return (hi + 0.05) / (lo + 0.05)
+  }
+
+  it('is clearly darker than the body on both themes, its label AA on it', () => {
+    for (const t of [adminTheme, fieldTheme]) {
+      const table = t.components?.Table as { headerBg: string; headerColor: string; borderColor: string }
+      expect(table.headerBg).toBe(palette.bgTableHeader)
+      expect(table.headerColor).toBe(palette.textSecondary)
+      expect(table.borderColor).toBe(palette.borderCard)
+    }
+    // Darker than the body (white) by a visible step, not a tint of it.
+    expect(contrast(palette.bgTableHeader, palette.bgContainer)).toBeGreaterThan(1.1)
+    expect(contrast(palette.textSecondary, palette.bgTableHeader)).toBeGreaterThanOrEqual(4.5)
+  })
+})

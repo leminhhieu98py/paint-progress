@@ -51,12 +51,13 @@ One database migration (`0037`) and an Edge Function redeploy (`admin-users`).
 
 ### Changed
 
-- **The project ring's legend shows two numbers per deck** under the header
-  `Tiến độ · Đóng góp`: the deck's own progress, as the table reads it, and its
-  contribution to the project figure (weight × progress), which is what the
-  arc is sized by. The contribution column adds up to the centre exactly;
-  1.7.0 showed only the progress, so `83,22%` sat beside an arc a fifth of the
-  ring and the numbers did not add up to `42,91%`. No number changed.
+- **The project ring's legend shows each deck's contribution** to the project
+  figure (weight × progress) under the header `Đóng góp`: the figure the arc
+  is sized by, so the legend adds up to the centre exactly (with `Còn lại`).
+  1.7.0 showed the deck's own progress there, so `83,22%` sat beside an arc a
+  fifth of the ring and the numbers did not add up to `42,91%`. The deck's own
+  progress is the table's, beside the ring, as `Tiến độ sàn`; hovering a slice
+  still names both figures. No number changed.
 - **The login screen's picture moves**: "Free construction Animation" by
   Lakhwinder, from LottieFiles
   (https://lottiefiles.com/free-animation/construction-g8Hve0ildf), under the
