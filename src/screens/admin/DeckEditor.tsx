@@ -1,9 +1,4 @@
-import {
-  ClearOutlined, ControlOutlined, SaveOutlined, ThunderboltOutlined,
-} from '@ant-design/icons'
-import {
-  Alert, App, Button, Descriptions, Space, Tooltip,
-} from 'antd'
+import { Alert, App, Descriptions, Space } from 'antd'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   AREA_DIVERGENCE_THRESHOLD, areaDivergence, cellReshaped,
@@ -20,6 +15,7 @@ import {
   listDeckStates, listDeckWorks, type CellStateView, type DeckWork,
 } from '../../lib/gsApi'
 import { formatAreaM2, formatPercent } from '../../lib/format'
+import { IconAction } from '../../components/IconAction'
 import { MeshEditDialog, type EditKind, type PendingEdit } from './MeshEditDialog'
 import { SectionCard } from '../../components/SectionCard'
 import { InfoTip } from '../../components/InfoTip'
@@ -635,28 +631,21 @@ export function DeckEditor({
                 {`${selected.length} ô đang chọn`}
               </span>
             )}
-            <Tooltip title="Xoá toàn bộ lưới ô">
-              <span>
-                <Button
-                  danger
-                  aria-label="Xoá toàn bộ lưới ô"
-                  icon={<ClearOutlined aria-hidden />}
-                  disabled={busy || cells.length === 0}
-                  onClick={() => void reviewEdit('mesh', [])}
-                />
-              </span>
-            </Tooltip>
-            <Tooltip title="Lưu hình học ô">
-              <span>
-                <Button
-                  type="primary"
-                  aria-label="Lưu hình học ô"
-                  icon={<SaveOutlined aria-hidden />}
-                  loading={busy}
-                  onClick={() => void reviewEdit('mesh', cells)}
-                />
-              </span>
-            </Tooltip>
+            {/* Icon actions (ACT-01). */}
+            <IconAction
+              verb="clear"
+              label="Xoá toàn bộ lưới ô"
+              danger
+              disabled={busy || cells.length === 0}
+              onClick={() => void reviewEdit('mesh', [])}
+            />
+            <IconAction
+              verb="save"
+              label="Lưu hình học ô"
+              type="primary"
+              loading={busy}
+              onClick={() => void reviewEdit('mesh', cells)}
+            />
           </Space>
         ) : undefined
       }
@@ -730,31 +719,27 @@ export function DeckEditor({
             borderBottom: `1px solid ${palette.borderSplit}`,
           }}
         >
-          <Tooltip title="Tự động dò ô từ bản vẽ và thay toàn bộ ô đang có.">
-            <span>
-              <Button
-                aria-label="Tự động dò ô từ bản vẽ"
-                icon={<ThunderboltOutlined aria-hidden />}
-                loading={detecting}
-                disabled={!imageUrl || shortcuts}
-                onClick={() => void detectGrid()}
-              />
-            </span>
-          </Tooltip>
+          <IconAction
+            verb="detect"
+            label="Tự động dò ô từ bản vẽ"
+            tooltip="Tự động dò ô từ bản vẽ và thay toàn bộ ô đang có."
+            loading={detecting}
+            disabled={!imageUrl || shortcuts}
+            onClick={() => void detectGrid()}
+          />
           {/*
             One button for the whole working session. Off, it is the way in; on,
             it is the way out -- and the way out is the save in the header, so
             there is no third state where the admin has been editing and has
             nowhere to put it.
           */}
-          <Tooltip title={shortcuts ? 'Đang hiệu chỉnh — bấm để thoát' : 'Hiệu chỉnh ô: gộp / xoá / vẽ ô bằng phím tắt'}>
-            <Button
-              aria-label={shortcuts ? 'Thoát hiệu chỉnh ô' : 'Hiệu chỉnh ô'}
-              type={shortcuts ? 'primary' : 'default'}
-              icon={<ControlOutlined aria-hidden />}
-              onClick={() => setShortcuts((on) => !on)}
-            />
-          </Tooltip>
+          <IconAction
+            verb="editMode"
+            label={shortcuts ? 'Thoát hiệu chỉnh ô' : 'Hiệu chỉnh ô'}
+            tooltip={shortcuts ? 'Đang hiệu chỉnh — bấm để thoát' : 'Hiệu chỉnh ô: gộp / xoá / vẽ ô bằng phím tắt'}
+            type={shortcuts ? 'primary' : 'default'}
+            onClick={() => setShortcuts((on) => !on)}
+          />
           {/* Only for the mode entered by a key, which has no control to
               hang a tooltip on (CPY-01). */}
           {drawingCell && (
