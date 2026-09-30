@@ -2,7 +2,7 @@ import {
   ArrowDownOutlined, ArrowUpOutlined, CalculatorOutlined, ClearOutlined, CloseCircleOutlined, CloseOutlined,
   ControlOutlined, CopyOutlined, DeleteOutlined, EditOutlined, ExpandOutlined, EyeInvisibleOutlined,
   EyeOutlined, FolderOpenOutlined, FormOutlined, KeyOutlined, LockOutlined, MinusOutlined, PieChartOutlined,
-  PlusOutlined, RollbackOutlined, SaveOutlined, ScheduleOutlined, SwapOutlined, TeamOutlined,
+  PlusOutlined, RollbackOutlined, SaveOutlined, ScheduleOutlined, SwapOutlined, TableOutlined, TeamOutlined,
   ThunderboltOutlined, UndoOutlined, UnlockOutlined,
 } from '@ant-design/icons'
 import type { ComponentType } from 'react'
@@ -27,7 +27,8 @@ export const ACTION_ICONS = {
   close: CloseOutlined, // Đóng
   deselect: CloseCircleOutlined, // Bỏ chọn
   shareByArea: PieChartOutlined, // Chia theo m²
-  members: TeamOutlined, // Dự án và công việc, Sàn tham gia
+  members: TeamOutlined, // Dự án và công việc
+  decks: TableOutlined, // Sàn tham gia
   password: KeyOutlined, // Đổi mật khẩu
   reveal: EyeOutlined, // Xem mật khẩu
   lock: LockOutlined, // Khoá tài khoản

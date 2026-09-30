@@ -1,5 +1,5 @@
 import {
-  DeleteOutlined, HolderOutlined, PlusOutlined, SaveOutlined, TableOutlined,
+  HolderOutlined, PlusOutlined, SaveOutlined,
 } from '@ant-design/icons'
 import {
   Alert, App, Button, Input, InputNumber, Select, Space, Switch, Table, Tooltip,
@@ -19,6 +19,7 @@ import {
 } from '../../lib/worksApi'
 import { ConsequenceModal } from '../../components/ConsequenceModal'
 import { EmptyState } from '../../components/EmptyState'
+import { IconAction } from '../../components/IconAction'
 import { FilterBar } from '../../components/FilterBar'
 import { PageBody, PageHeader } from '../../components/PageHeader'
 import { ProjectSelect } from '../../components/ProjectSelect'
@@ -475,22 +476,9 @@ export function WorksScreen() {
                 render: (_v, w) => (
                   <Space size={6}>
                     {w.kind === 'bays' && (
-                      <Tooltip title="Sàn tham gia và trọng số sàn">
-                        <Button
-                          aria-label="Sàn tham gia"
-                          icon={<TableOutlined />}
-                          onClick={() => void openMatrix(w)}
-                        />
-                      </Tooltip>
+                      <IconAction verb="decks" label="Sàn tham gia" onClick={() => void openMatrix(w)} />
                     )}
-                    <Tooltip title="Xóa công việc">
-                      <Button
-                        danger
-                        aria-label="Xóa công việc"
-                        icon={<DeleteOutlined />}
-                        onClick={() => setRemovingWork(w)}
-                      />
-                    </Tooltip>
+                    <IconAction verb="delete" label="Xóa công việc" danger onClick={() => setRemovingWork(w)} />
                   </Space>
                 ),
               },
@@ -509,20 +497,21 @@ export function WorksScreen() {
             bodyPadding={0}
             extra={
               <Space size={8}>
-                <Button
+                {/* Card toolbar actions are icons (ACT-01). */}
+                <IconAction
+                  verb="shareByArea"
+                  label="Chia theo m²"
                   onClick={() => setMatrix((m) => (m ? { ...m, rows: sharesByArea(m.rows) } : m))}
-                >
-                  Chia theo m²
-                </Button>
-                <Button
+                />
+                <IconAction
+                  verb="save"
+                  label="Lưu sàn tham gia"
                   type="primary"
                   disabled={!matrixBalanced || matrixSaving}
                   loading={matrixSaving}
                   onClick={() => setConfirmingMatrix(true)}
-                >
-                  Lưu sàn tham gia
-                </Button>
-                <Button onClick={() => setMatrix(null)}>Đóng</Button>
+                />
+                <IconAction verb="close" label="Đóng" onClick={() => setMatrix(null)} />
               </Space>
             }
           >

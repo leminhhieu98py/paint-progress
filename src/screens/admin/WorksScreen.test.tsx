@@ -436,6 +436,24 @@ describe('WorksScreen', () => {
   })
 })
 
+describe('WorksScreen — actions are icons (ACT-01)', () => {
+  it('draws the row actions and the deck matrix\'s toolbar as icon buttons, each named, none with text', async () => {
+    renderScreen()
+    await screen.findByDisplayValue('Sơn')
+    const row = within(rowOf('Sơn'))
+    for (const name of ['Sàn tham gia', 'Xóa công việc']) {
+      expect(row.getByRole('button', { name })).toHaveClass('ant-btn-icon-only')
+    }
+    await userEvent.click(row.getByRole('button', { name: 'Sàn tham gia' }))
+    const matrix = await screen.findByTestId('work-decks-w1')
+    for (const name of ['Chia theo m²', 'Lưu sàn tham gia', 'Đóng']) {
+      const b = within(matrix).getByRole('button', { name })
+      expect(b).toHaveClass('ant-btn-icon-only')
+      expect(b).toHaveTextContent('')
+    }
+  })
+})
+
 describe('WorksScreen — alignment (UI-06)', () => {
   it('gives the work name room, the table scrolling sideways rather than clipping it (M18)', async () => {
     renderScreen()
