@@ -48,7 +48,9 @@ export async function teardown() {
 
   const { stdout } = await run(
     'npx',
-    ['supabase', 'db', 'query', '--linked', '-f', 'tests/rls-teardown.sql'],
+    // JSON explicitly: since CLI 2.11x the default is a text table, which the
+    // parse below cannot read.
+    ['supabase', 'db', 'query', '--linked', '--output-format', 'json', '-f', 'tests/rls-teardown.sql'],
     { cwd: process.cwd(), timeout: 120_000 },
   )
 
