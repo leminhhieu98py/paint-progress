@@ -119,6 +119,7 @@ export function NhanLucScreen() {
   const [projects, setProjects] = useState<ProjectOption[]>([])
   /** The project list has arrived: until then the Sửa dialog cannot show a GS's memberships (C1). */
   const [projectsReady, setProjectsReady] = useState(false)
+  const [projectsFailed, setProjectsFailed] = useState(false)
   const [revealed, setRevealed] = useState<{ user: GsUser; password: string } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [createOpen, setCreateOpen] = useState(false)
@@ -159,7 +160,10 @@ export function NhanLucScreen() {
         setProjectsReady(true)
       })
       // An empty Select with no explanation is the worst of both worlds.
-      .catch((e: Error) => setError(e.message))
+      .catch((e: Error) => {
+        setError(e.message)
+        setProjectsFailed(true)
+      })
   }, [])
 
   const rows = useMemo(
@@ -608,6 +612,7 @@ export function NhanLucScreen() {
           row={editTarget}
           rows={rows}
           projects={projectsReady ? projects : null}
+          projectsFailed={projectsFailed}
           onClose={() => setEditTarget(null)}
           onPartial={reload}
           onDone={({ message: done, revealed: fresh }) => {

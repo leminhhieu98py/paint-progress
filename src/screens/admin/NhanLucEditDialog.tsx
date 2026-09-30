@@ -86,12 +86,14 @@ const draftsOf = (rows: Record<string, Membership>, projects: ProjectOption[], u
  * the Edge Function is not redeployed in this change.
  */
 export function NhanLucEditDialog({
-  row, rows, projects, onClose, onPartial, onDone,
+  row, rows, projects, projectsFailed = false, onClose, onPartial, onDone,
 }: {
   row: StaffRow
   rows: StaffRow[]
-  /** Null while the project list is loading: no matrix and no Lưu until it lands (C1). */
+  /** Null while the project list is loading, or when it failed: no matrix until it lands (C1). */
   projects: ProjectOption[] | null
+  /** The project list failed: only what needs it (the GS matrix, a change to GS) is held back (N1). */
+  projectsFailed?: boolean
   onClose: () => void
   /** Some steps were saved before one failed: re-read the list, keep the dialog. */
   onPartial: () => void
@@ -162,6 +164,15 @@ export function NhanLucEditDialog({
   const becomesAccount = row.kind === 'employee' && target !== 'employee'
   const parked = becomesAccount ? parkedAccountFor(rows, named.fullName) : null
   const needsProject = target === 'gs' && (row.kind === 'employee' || row.role === 'viewer')
+  /**
+   * What the missing list holds back (N1): a change to GS needs a project
+   * from it; a GS's own dialog waits for its matrix while the list loads (C1),
+   * and once it failed saves the other fields without the matrix.
+   */
+  const heldByList = projects === null && (needsProject || (showMatrix && !projectsFailed))
+  const listNote = projectsFailed
+    ? 'Không tải được danh sách dự án. Tải lại trang để thử lại.'
+    : 'Đang tải danh sách dự án…'
   const employeeClash = row.kind === 'account' && target === 'employee'
     ? nameClash(rows, named.fullName, 'employee', row.key)
     : null
@@ -333,7 +344,7 @@ export function NhanLucEditDialog({
             key="ok"
             type="primary"
             loading={saving}
-            disabled={!ready || nothingChanged || employeeClash !== null}
+            disabled={heldByList || nothingChanged || employeeClash !== null}
             onClick={() => form.submit()}
           >
             Lưu
@@ -389,7 +400,7 @@ export function NhanLucEditDialog({
               )}
               {showMatrix && !ready && (
                 <Form.Item label="Dự án và công việc">
-                  <Typography.Text type="secondary">Đang tải danh sách dự án…</Typography.Text>
+                  <Typography.Text type="secondary">{listNote}</Typography.Text>
                 </Form.Item>
               )}
               {showMatrix && ready && (
@@ -468,7 +479,12 @@ export function NhanLucEditDialog({
             </>
           )}
           {needsProject && (
-            <Form.Item name="projectId" label="Dự án" rules={[{ required: true, message: 'Chọn dự án' }]}>
+            <Form.Item
+              name="projectId"
+              label="Dự án"
+              rules={[{ required: true, message: 'Chọn dự án' }]}
+              extra={ready ? undefined : listNote}
+            >
               <Select options={list} placeholder="Chọn dự án" {...searchSelectProps} />
             </Form.Item>
           )}

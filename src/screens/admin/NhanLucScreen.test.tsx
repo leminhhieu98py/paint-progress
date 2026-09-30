@@ -1271,6 +1271,68 @@ describe('NhanLucScreen — actions and dialogs (M7, M8, M9, NL-09)', () => {
     expect(within(dialog).getByRole('button', { name: 'Lưu' })).toBeDisabled()
   })
 
+  describe('when the project list fails, only what needs it waits (N1)', () => {
+    const rename = async (dialog: HTMLElement, to: string) => {
+      const name = within(dialog).getByLabelText('Họ tên')
+      await userEvent.clear(name)
+      await userEvent.type(name, to)
+    }
+
+    it('saves a Visitor rename while the list is still loading', async () => {
+      listProjectNames.mockReturnValue(new Promise(() => {}))
+      renderScreen()
+      await screen.findByText('gs2')
+      const dialog = await openEdit('GS Hai')
+      await rename(dialog, 'GS Hai Mới')
+      await userEvent.click(within(dialog).getByRole('button', { name: 'Lưu' }))
+      await waitFor(() => expect(renameAccount).toHaveBeenCalledWith('u9', 'GS Hai Mới'))
+    })
+
+    it('saves a Visitor rename after the list failed', async () => {
+      listProjectNames.mockRejectedValue(new Error('network down'))
+      renderScreen()
+      await screen.findByText('gs2')
+      const dialog = await openEdit('GS Hai')
+      await rename(dialog, 'GS Hai Mới')
+      await userEvent.click(within(dialog).getByRole('button', { name: 'Lưu' }))
+      await waitFor(() => expect(renameAccount).toHaveBeenCalledWith('u9', 'GS Hai Mới'))
+    })
+
+    it('saves an employee rename after the list failed', async () => {
+      listProjectNames.mockRejectedValue(new Error('network down'))
+      renderScreen()
+      await screen.findByText('Lê Văn A')
+      const dialog = await openEdit('Lê Văn A')
+      await rename(dialog, 'Lê Văn Á')
+      await userEvent.click(within(dialog).getByRole('button', { name: 'Lưu' }))
+      await waitFor(() => expect(updateEmployee).toHaveBeenCalledWith('e1', { fullName: 'Lê Văn Á' }))
+    })
+
+    it('says in the GS dialog why the matrix is missing, and still saves the other fields', async () => {
+      listProjectNames.mockRejectedValue(new Error('network down'))
+      renderScreen()
+      await screen.findByText('gs1')
+      const dialog = await openEdit('GS Một')
+      expect(await within(dialog).findByText(/Không tải được danh sách dự án/)).toBeInTheDocument()
+      expect(within(dialog).queryByText('Đang tải danh sách dự án…')).toBeNull()
+      expect(within(dialog).queryAllByRole('checkbox')).toHaveLength(0)
+      await rename(dialog, 'GS Một Mới')
+      await userEvent.click(within(dialog).getByRole('button', { name: 'Lưu' }))
+      await waitFor(() => expect(renameAccount).toHaveBeenCalledWith('u7', 'GS Một Mới'))
+      expect(setMemberships).not.toHaveBeenCalled()
+    })
+
+    it('blocks a change to GS, which needs a project, and says why', async () => {
+      listProjectNames.mockRejectedValue(new Error('network down'))
+      renderScreen()
+      await screen.findByText('Lê Văn A')
+      const dialog = await openEdit('Lê Văn A')
+      await userEvent.click(within(within(dialog).getByRole('radiogroup', { name: 'Phân quyền' })).getByLabelText('GS'))
+      expect(await within(dialog).findByText(/Không tải được danh sách dự án/)).toBeInTheDocument()
+      expect(within(dialog).getByRole('button', { name: 'Lưu' })).toBeDisabled()
+    })
+  })
+
   it('keeps a membership of a project missing from the list when another project changes (C1)', async () => {
     listGsUsers.mockResolvedValue([
       account({ id: 'u7', username: 'gs1', fullName: 'GS Một', role: 'gs', projects: [member('p1', 'BB1'), member('p3', 'BB3', { allWorks: false, workIds: ['w9'] })] }),
