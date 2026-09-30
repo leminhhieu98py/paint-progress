@@ -17,7 +17,6 @@ export function StatCard({
   tone = 'default',
   live = false,
   compact = false,
-  kind = 'number',
 }: {
   label: ReactNode
   value: ReactNode
@@ -29,13 +28,9 @@ export function StatCard({
    * the sub-line micro, a tighter inset, so six cards fill three short rows.
    */
   compact?: boolean
-  /**
-   * `display` is for a number only (owner 2026-09-30). A date, a time or a
-   * text value is set at displaySm on one line, cut with its full text on a
-   * title, so it never wraps and makes its card taller than the row (AD1).
-   */
-  kind?: 'number' | 'text'
 }) {
+  /** A plain value's full text, for the title of a line cut to fit. */
+  const titleOf = (node: ReactNode) => (typeof node === 'string' || typeof node === 'number' ? String(node) : undefined)
   // The scale of the page this is on: the field's 14 on a field page (GS-10).
   const type = useTypeScale()
   const accent = tone === 'accent'
@@ -81,14 +76,18 @@ export function StatCard({
           />
         )}
       </div>
+      {/* Every value in a row at one size (owner 2026-09-30): a long one is
+          shortened to fit, with its full text on a title, never shrunk (AD1). */}
       <div
-        title={kind === 'text' && (typeof value === 'string' || typeof value === 'number') ? String(value) : undefined}
+        title={titleOf(value)}
         style={{
           marginTop: compact ? space.sm : 12,
-          ...(compact || kind === 'text' ? type.displaySm : type.display),
+          ...(compact ? type.displaySm : type.display),
           lineHeight: 1,
           letterSpacing: '-0.03em',
-          ...(kind === 'text' ? { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } : {}),
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
         }}
       >
         {value}
@@ -96,7 +95,16 @@ export function StatCard({
       {sub !== undefined && (
         <div
           data-testid="stat-sub"
-          style={{ marginTop: compact ? space.xs : 7, ...(compact ? type.micro : type.caption), lineHeight: 1, color: palette.textTertiary }}
+          title={titleOf(sub)}
+          style={{
+            marginTop: compact ? space.xs : 7,
+            ...(compact ? type.micro : type.caption),
+            lineHeight: 1.2,
+            color: palette.textTertiary,
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+          }}
         >
           {sub}
         </div>

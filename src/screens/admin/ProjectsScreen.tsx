@@ -10,7 +10,7 @@ import { SectionCard } from '../../components/SectionCard'
 import { modalProps } from '../../components/modalChrome'
 import { StatCard } from '../../components/StatCard'
 import { tablePagination } from '../../components/tablePagination'
-import { MISSING, formatAreaM2, formatDateTimeVN, formatPercent } from '../../lib/format'
+import { MISSING, formatAreaM2, formatPercent } from '../../lib/format'
 import { latestProgressEvent, type ProgressEvent } from '../../lib/progressApi'
 import {
   createProject, deleteProject, listProjects, updateProject, type ProjectRow,
@@ -33,17 +33,20 @@ const COUNT = new Intl.NumberFormat('vi-VN')
  * that matters more: nothing has been recorded in three weeks, and "09:42"
  * reads as though the site is busy.
  */
+/**
+ * The card's value: the time alone, at the numbers' size like every value in
+ * the row (owner 2026-09-30, AD1). Its date is the first thing on the line
+ * beneath, today's included, so an old event never reads as this morning's.
+ */
 function eventTime(iso: string): string {
-  const at = dayjs(iso)
-  // The one date-time form, HH:mm DD/MM/YYYY (M12); today's is its time alone.
-  return at.isSame(dayjs(), 'day') ? at.format('HH:mm') : formatDateTimeVN(iso)
+  return dayjs(iso).format('HH:mm')
 }
 
 function eventDetail(e: ProgressEvent): string {
   const who = e.byUsername ?? e.byName ?? 'không rõ'
   // A null stage is a bay sent back to the start -- a real and consequential
   // thing a foreman does. Printing "R7C11 → " would read as a rendering bug.
-  return `${who} · ${e.cellCode} → ${e.toStageName ?? 'Chưa bắt đầu'}`
+  return `${dayjs(e.at).format('DD/MM/YYYY')} · ${who} · ${e.cellCode} → ${e.toStageName ?? 'Chưa bắt đầu'}`
 }
 
 export function ProjectsScreen() {
@@ -228,8 +231,6 @@ export function ProjectsScreen() {
           />
           <StatCard
             label="Ghi nhận gần nhất"
-            // A time and a date, not a number: displaySm, one line (AD1).
-            kind="text"
             tone="accent"
             live={event !== null}
             value={event ? eventTime(event.at) : MISSING}

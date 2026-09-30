@@ -56,13 +56,14 @@ describe('StatCard', () => {
     expect(card).toHaveStyle({ background: palette.accentTint })
   })
 
-  it('sets a date, time or text value at displaySm on one line, cut with a title (AD1)', () => {
-    render(<StatCard label="Ghi nhận gần nhất" value="13:57 29/09/2026" kind="text" />)
-    const value = screen.getByText('13:57 29/09/2026')
-    expect(value).toHaveStyle({
-      fontSize: '21px', fontWeight: '700', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-    })
-    expect(value).toHaveAttribute('title', '13:57 29/09/2026')
+  it('keeps every value at display size on one line, cut with a title rather than shrunk (AD1 revised)', () => {
+    render(<StatCard label="Ghi nhận gần nhất" value="13:57" sub="29/09/2026 · linhdeptrai123 · B02 → Topcoat" />)
+    const value = screen.getByText('13:57')
+    expect(value).toHaveStyle({ fontSize: '32px', fontWeight: '700', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' })
+    expect(value).toHaveAttribute('title', '13:57')
+    const sub = screen.getByText('29/09/2026 · linhdeptrai123 · B02 → Topcoat')
+    expect(sub).toHaveStyle({ fontSize: '12px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' })
+    expect(sub).toHaveAttribute('title', '29/09/2026 · linhdeptrai123 · B02 → Topcoat')
   })
 
   it('fills its grid cell, so the cards of a row keep one height (AD1)', () => {

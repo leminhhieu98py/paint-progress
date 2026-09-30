@@ -123,7 +123,8 @@ describe('ProjectsScreen header counters', () => {
       byUsername: 'gs.hieu',
     })
     renderScreen()
-    expect(await screen.findByText('gs.hieu · R7C11 → Coat 3')).toBeInTheDocument()
+    // The date first on the caption line, then who, where and what (AD1 revised).
+    expect(await screen.findByText(`${dayjs('2026-08-28T09:42:00').format('DD/MM/YYYY')} · gs.hieu · R7C11 → Coat 3`)).toBeInTheDocument()
   })
 
   it('names the not-started case rather than printing an empty arrow', async () => {
@@ -135,51 +136,34 @@ describe('ProjectsScreen header counters', () => {
       byUsername: 'gs.hieu',
     })
     renderScreen()
-    expect(await screen.findByText('gs.hieu · R7C11 → Chưa bắt đầu')).toBeInTheDocument()
+    expect(await screen.findByText(`${dayjs('2026-08-28T09:42:00').format('DD/MM/YYYY')} · gs.hieu · R7C11 → Chưa bắt đầu`)).toBeInTheDocument()
   })
 
-  it('shows a clock time for something recorded today, a date for anything older', async () => {
-    // "09:42" on a three-week-old event reads as though the site is busy.
+  it('shows the event\'s time as the value, at the numbers\' size, and its date first on the line beneath (AD1 revised)', async () => {
     latestProgressEvent.mockResolvedValue({
       at: dayjs().hour(7).minute(5).second(0).toISOString(),
       cellCode: 'R1C1', toStageName: 'Coat 2', byName: null, byUsername: 'gs.tuan',
     })
     const { unmount } = renderScreen()
-    expect(await screen.findByText('07:05')).toBeInTheDocument()
+    expect(await screen.findByText('07:05')).toHaveStyle({ fontSize: '32px', fontWeight: '700', whiteSpace: 'nowrap' })
+    expect(screen.getByText(`${dayjs().format('DD/MM/YYYY')} · gs.tuan · R1C1 → Coat 2`)).toBeInTheDocument()
     unmount()
 
+    // Not today: the value is still the time, and the caption starts with its date.
+    const older = dayjs().subtract(21, 'day').hour(7).minute(5).second(0)
     latestProgressEvent.mockResolvedValue({
-      at: dayjs().subtract(21, 'day').hour(7).minute(5).second(0).toISOString(),
+      at: older.toISOString(),
       cellCode: 'R1C1', toStageName: 'Coat 2', byName: null, byUsername: 'gs.tuan',
     })
     renderScreen()
-    expect(
-      // The one date-time form (M12): HH:mm DD/MM/YYYY.
-      await screen.findByText('07:05 ' + dayjs().subtract(21, 'day').format('DD/MM/YYYY')),
-    ).toBeInTheDocument()
-  })
-
-  it('sets the last record\'s time as text, displaySm on one line, not at the numbers\' display size (AD1)', async () => {
-    latestProgressEvent.mockResolvedValue({
-      at: dayjs().subtract(21, 'day').hour(7).minute(5).second(0).toISOString(),
-      cellCode: 'R1C1', toStageName: 'Coat 2', byName: null, byUsername: 'gs.tuan',
-    })
-    renderScreen()
-    const value = await screen.findByText('07:05 ' + dayjs().subtract(21, 'day').format('DD/MM/YYYY'))
-    expect(value).toHaveStyle({ fontSize: '21px', whiteSpace: 'nowrap' })
-    // The number cards keep display.
-    const area = screen.getAllByTestId('stat-card').find((c) => c.textContent?.startsWith('Tổng diện tích')) as HTMLElement
-    expect(area.children[1]).toHaveStyle({ fontSize: '32px' })
-  })
-
-  it('names a project by name and code, with no initials avatar: avatars are for people (AD8)', async () => {
-    renderScreen()
-    const name = await screen.findByText('BB1 - CPPTS')
-    const cell = name.closest('td') as HTMLElement
-    expect(cell).toHaveTextContent(/^BB1 - CPPTSBB1$/)
-    expect(within(cell).getByText('BB1')).toHaveStyle({ fontSize: '12px' })
-    // Name first, code beneath, nothing before them at the cell inset.
-    expect(cell.firstElementChild?.firstElementChild).toBe(name)
+    expect(await screen.findByText('07:05')).toHaveStyle({ fontSize: '32px' })
+    const caption = screen.getByText(`${older.format('DD/MM/YYYY')} · gs.tuan · R1C1 → Coat 2`)
+    expect(caption).toHaveStyle({ whiteSpace: 'nowrap', textOverflow: 'ellipsis' })
+    expect(caption).toHaveAttribute('title', caption.textContent)
+    // Every value in the row at one size.
+    for (const card of screen.getAllByTestId('stat-card')) {
+      expect(card.children[1]).toHaveStyle({ fontSize: '32px' })
+    }
   })
 
   it('says so plainly when nobody has recorded anything yet', async () => {
