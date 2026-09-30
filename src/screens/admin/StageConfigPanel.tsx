@@ -13,8 +13,9 @@ import {
   listWorkStages, roundStageWeight, saveWorkStages, stagesRemovedBy, STAGE_WEIGHT_EPSILON,
 } from '../../lib/decksApi'
 import { randomUUID } from '../../lib/uuid'
+import { SwatchCode } from '../../components/SwatchCode'
 import { ColorField, HEX_COLOR } from '../../components/ColorField'
-import { swatchStyle, useControlHeight } from '../../components/swatch'
+import { useControlHeight } from '../../components/swatch'
 import { ConsequenceModal } from '../../components/ConsequenceModal'
 import { EmptyState } from '../../components/EmptyState'
 import { InfoTip } from '../../components/InfoTip'
@@ -469,15 +470,8 @@ export function StageConfigPanel({
             width: 180,
             render: (v: string, row, i) => (
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
-                {!editable && (
-                  <>
-                    <span
-                      aria-label={`Màu của ${row.name}`}
-                      style={{ ...swatchStyle(swatchDiameter), display: 'inline-block', background: v }}
-                    />
-                    <span style={{ ...type.body, color: palette.textSecondary }}>{v}</span>
-                  </>
-                )}
+                {/* One fixed-width block, so the circles line up down the column (AD7). */}
+                {!editable && <SwatchCode color={v} label={`Màu của ${row.name}`} diameter={swatchDiameter} />}
                 {editable && (
                   <ColorField
                     size="small"

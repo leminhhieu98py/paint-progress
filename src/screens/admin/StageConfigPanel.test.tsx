@@ -832,6 +832,23 @@ describe('StageConfigPanel — the read-only colour (CLR-01)', () => {
     expect(swatch.style.boxShadow).toBe('')
     expect(swatch.style.width).toBe(swatch.style.height)
   })
+
+  it('lines the circles up down the column: one fixed-width block per row, circle first, hex in monospace (AD7)', async () => {
+    renderApp(<StageConfigPanel workId="w1" deckId="d1" editable={false} />)
+    await screen.findByLabelText('Màu của Blast + Coat 1')
+    const blocks = screen.getAllByTestId('swatch-code')
+    expect(blocks.length).toBeGreaterThan(1)
+    const widths = new Set(blocks.map((b) => b.style.width))
+    expect(widths.size).toBe(1)
+    expect([...widths][0]).toMatch(/px$/)
+    for (const block of blocks) {
+      expect(block).toHaveStyle({ display: 'inline-flex', justifyContent: 'flex-start' })
+      // Circle first, so its left edge is the block's: one x on every row.
+      expect(block.firstElementChild).toHaveAttribute('aria-label', expect.stringMatching(/^Màu của /))
+      expect(block.lastElementChild).toHaveStyle({ fontVariantNumeric: 'tabular-nums' })
+      expect((block.lastElementChild as HTMLElement).style.fontFamily).toMatch(/monospace/)
+    }
+  })
 })
 
 describe('StageConfigPanel — alignment (UI-03)', () => {
