@@ -172,6 +172,16 @@ describe('ProjectsScreen header counters', () => {
     expect(area.children[1]).toHaveStyle({ fontSize: '32px' })
   })
 
+  it('names a project by name and code, with no initials avatar: avatars are for people (AD8)', async () => {
+    renderScreen()
+    const name = await screen.findByText('BB1 - CPPTS')
+    const cell = name.closest('td') as HTMLElement
+    expect(cell).toHaveTextContent(/^BB1 - CPPTSBB1$/)
+    expect(within(cell).getByText('BB1')).toHaveStyle({ fontSize: '12px' })
+    // Name first, code beneath, nothing before them at the cell inset.
+    expect(cell.firstElementChild?.firstElementChild).toBe(name)
+  })
+
   it('says so plainly when nobody has recorded anything yet', async () => {
     renderScreen()
     expect(await screen.findByText('Chưa có ghi nhận nào')).toBeInTheDocument()

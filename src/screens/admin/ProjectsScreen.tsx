@@ -257,27 +257,12 @@ export function ProjectsScreen() {
               {
                 title: 'Tên dự án',
                 dataIndex: 'name',
+                // Name, then the code as its caption, at the cell inset: no
+                // initials avatar, which is for people only (AD8).
                 render: (_v, row) => (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                    <span
-                      style={{
-                        width: 32,
-                        height: 32,
-                        borderRadius: 9,
-                        background: palette.bgHover,
-                        color: palette.textSecondary,
-                        ...type.micro,
-                        lineHeight: '32px',
-                        textAlign: 'center',
-                        flex: 'none',
-                      }}
-                    >
-                      {row.code.slice(0, 2).toUpperCase()}
-                    </span>
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ ...type.body, lineHeight: 1.35 }}>{row.name}</div>
-                      <span style={{ ...type.caption, color: palette.textTertiary }}>{row.code}</span>
-                    </div>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ ...type.body, lineHeight: 1.35 }}>{row.name}</div>
+                    <span style={{ ...type.caption, color: palette.textTertiary }}>{row.code}</span>
                   </div>
                 ),
               },
