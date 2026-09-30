@@ -125,6 +125,14 @@ One database migration (`0037`) and an Edge Function redeploy (`admin-users`).
   stored values that a dropped comma may have inflated or deflated — effort
   hours, KPI plan areas, manual %, deck totals — for the owner to check with
   the people who typed them. Nothing is changed automatically.
+- **Nhân lực polish**:
+  - A name clash quotes the name as it is stored, not as typed.
+  - Lock, hide and a change to Nhân viên confirm under a lock or an eye, not
+    the trash can, since nothing is deleted.
+  - The page error clears when a row action starts or the filter bar is
+    applied or reset.
+  - Thêm uses Sửa's password field (masked, eye inside, copy and generate
+    joined beside it).
 
 ### Database
 
