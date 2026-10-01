@@ -150,8 +150,9 @@ describe('fitLabelFontSize', () => {
 
   it('returns null rather than a smudge when the bay is too small', () => {
     // The admin's screenshot: a date range at a fixed 12px spilling across three
-    // neighbouring bays. Nothing is better than a label about the wrong bay --
-    // the zone legend under the canvas still names it.
+    // neighbouring bays. Nothing is better than a label about the wrong bay (a
+    // zone card falls back to MIN_LABEL_FONT_SIZE in DrawingCanvas.zoneCard
+    // instead, Rv7 item 4).
     expect(fitLabelFontSize('01/08 – 12/08', 30, 20)).toBeNull()
   })
 

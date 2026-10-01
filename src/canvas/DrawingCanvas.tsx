@@ -377,7 +377,9 @@ export function DrawingCanvas({
    *
    * Each card is centred on its zone and then kept inside the drawing: a card
    * that overhangs a zone on the drawing's edge would otherwise be cut off by
-   * the stage. A card that fits its box is inside the drawing already.
+   * the stage. A fitted card overhangs its box by at most a few px
+   * vertically, so the clamp only nudges one that sits on the drawing's top
+   * or bottom edge.
    */
   const zoneCards = useMemo(() => {
     const sized = (zoneLabels ?? []).map((label) => {

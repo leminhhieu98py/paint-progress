@@ -6,9 +6,9 @@
 /** The drawing exactly fills its container: where every canvas starts, and
  *  what "Vừa khung" returns to. */
 export const FIT_ZOOM = 1
-/** A quarter of fit (Rv7 item 5). Below fit the drawing sits smaller than its
- *  frame, which letterboxes it -- the customer asked for it anyway, to see a
- *  whole deck at a glance on a screen that crops it at fit. */
+/** A quarter of fit (Rv7 item 5): the customer wants to zoom out below 100%
+ *  on every screen. Below fit the drawing sits smaller than, and centred in,
+ *  its frame. */
 export const MIN_ZOOM = 0.25
 export const MAX_ZOOM = 4
 /** Per button press above fit. */
@@ -33,7 +33,8 @@ export function clampZoom(zoom: number): number {
  * stops at 1 -- so fit is always one press away on the way through.
  *
  * Shared by the canvas's own controls and by any screen that draws its own
- * (the progress panel's split view), so the two cannot disagree on the steps.
+ * (the progress panel, whose one control drives both lenses), so the two
+ * cannot disagree on the steps.
  */
 export function stepZoom(zoom: number, direction: 1 | -1): number {
   if (Number.isNaN(zoom)) return FIT_ZOOM
@@ -44,7 +45,8 @@ export function stepZoom(zoom: number, direction: 1 | -1): number {
 }
 
 /**
- * Keeps the panned drawing covering its viewport.
+ * Keeps the panned drawing covering its viewport at or above fit, and centred
+ * in it below fit.
  *
  * At zoom z the content is width*z by height*z inside a width by height
  * viewport, so the stage's own position may run from width*(1-z) (content's
@@ -140,7 +142,8 @@ export const MAX_LABEL_FONT_SIZE = 12
  * Fixed at 12px before this, which is why a date range spilled across three
  * neighbouring bays on a dense deck -- see the admin's screenshot. The whole
  * point of the label is to say which plan a bay belongs to, and a label wider
- * than its bay says it about the wrong bay.
+ * than its bay says it about the wrong bay (a zone card falls back to
+ * MIN_LABEL_FONT_SIZE in DrawingCanvas.zoneCard instead, Rv7 item 4).
  *
  * Width is estimated at 0.55em per character rather than measured. Measuring
  * means a canvas context and a font that has finished loading, neither of which

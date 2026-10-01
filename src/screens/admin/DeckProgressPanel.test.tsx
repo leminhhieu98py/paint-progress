@@ -55,7 +55,7 @@ const canvasRenders = vi.hoisted(() => ({ count: 0 }))
 vi.mock('../../canvas/DrawingCanvas', () => ({
   DrawingCanvas: ({
     imageUrl, cells, cellColors, hatchedCodes, markedCodes, planLabels, selectedCodes,
-    outlineColors, cellOpacities, zoneLabels, onCellClick, onSelectDraw,
+    outlineColors, cellOpacities, zoneLabels, onCellClick, onSelectDraw, zoom,
   }: {
     imageUrl: string
     cells: { code: string }[]
@@ -69,6 +69,7 @@ vi.mock('../../canvas/DrawingCanvas', () => ({
     selectedCodes?: string[]
     onCellClick?: (code: string, additive: boolean) => void
     onSelectDraw?: (rect: { x: number; y: number; w: number; h: number }) => void
+    zoom?: number
   }) => {
     canvasRenders.count += 1
     return (
@@ -78,6 +79,9 @@ vi.mock('../../canvas/DrawingCanvas', () => ({
       // The label boxes the panel asks for, as a count and as their names:
       // RV6-12 off and RV6-13 both have to draw none of them.
       data-labels={(zoneLabels ?? []).map((l) => l.name).join('|')}
+      // The zoom the panel hands the lens, so a test can tell the readout and
+      // the drawing apart (Rv7 item 5).
+      data-zoom={String(zoom)}
     >
       {cells.map((c) => (
         <button
@@ -274,12 +278,17 @@ describe('DeckProgressPanel', () => {
     renderPanel()
     await screen.findByTestId('lens-A')
     const zoomOut = screen.getByRole('button', { name: 'Thu nhỏ' })
-    for (const shown of ['75%', '50%', '25%', '25%']) {
+    for (const shown of ['75%', '50%', '25%']) {
       await userEvent.click(zoomOut)
       expect(screen.getByText(shown)).toBeInTheDocument()
     }
+    // The lens itself is drawn at the readout's zoom, not only the label.
+    for (const canvas of screen.getAllByTestId('canvas')) expect(canvas).toHaveAttribute('data-zoom', '0.25')
+    await userEvent.click(zoomOut)
+    expect(screen.getByText('25%')).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Vừa khung' }))
     expect(screen.getByText('100%')).toBeInTheDocument()
+    for (const canvas of screen.getAllByTestId('canvas')) expect(canvas).toHaveAttribute('data-zoom', '1')
   })
 
   it('shows the deck\'s own spec table', async () => {
