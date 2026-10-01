@@ -122,9 +122,11 @@ export function GsScreen() {
    */
   const [works, setWorks] = useState<DeckWork[] | null>(null)
   /**
-   * The work the drawing, the cards and the bay modal are scoped to. Kept
-   * across a deck switch from the bar: a deck without it opens on its first
-   * (`activeWork`, RV7-3).
+   * The work the drawing, the cards and the bay modal are scoped to; null is
+   * the deck's first. Kept across a deck switch from the bar when the new
+   * deck has it, else settled to that deck's first once its works arrive, so
+   * a work hidden by one deck never comes back on the next (RV7-3). Another
+   * project starts on its first.
    */
   const [activeWorkId, setActiveWorkId] = useState<string | null>(null)
   /** The bar's and the plan's selects read their options in full (FLT-04, M3). */
@@ -185,8 +187,9 @@ export function GsScreen() {
         // The name the Dự án switch shows while its list is on the way (M-1).
         if (project.name) rememberProjectName(projectId, project.name)
         setDecks(project.decks)
-        // The deck last opened in this project, else the first (GS-02).
+        // The deck last opened in this project, else the first (GS-02), on its first work.
         setActiveDeckId(openingDeckId(projectId, project.decks))
+        setActiveWorkId(null)
       })
       .catch(() => {
         if (cancelled) return
@@ -218,7 +221,11 @@ export function GsScreen() {
     setWorks(null)
     setStagesError(false)
     listDeckWorks(activeDeckId)
-      .then((rows) => { if (!cancelled) setWorks(rows) })
+      .then((rows) => {
+        if (cancelled) return
+        setWorks(rows)
+        setActiveWorkId((id) => (id === null || rows.some((w) => w.work.id === id) ? id : rows[0]?.work.id ?? null))
+      })
       .catch(() => { if (!cancelled) setStagesError(true) })
     return () => { cancelled = true }
   }, [activeDeckId])

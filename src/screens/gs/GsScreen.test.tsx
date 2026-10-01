@@ -1,6 +1,6 @@
 import { App as AntApp } from 'antd'
 import {
-  act, render, screen, waitFor, within,
+  act, fireEvent, render, screen, waitFor, within,
 } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Link, MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
@@ -1860,6 +1860,60 @@ describe('GsScreen: one filter bar, the project first (GS-07)', () => {
     expect(within(bars()[0]).queryByTitle('Giàn giáo')).toBeNull()
   })
 
+  it('settles the work on each deck: a work hidden by one deck does not come back on the next (RV7-3)', async () => {
+    restoreViewport = setViewport(1024)
+    const GG = { ...WORK, id: 'w3', seq: 3, name: 'Giàn giáo' }
+    const D3 = { ...DECKS[1], id: 'd3', seq: 3, name: 'Helideck', code: 'HD' }
+    loadGsProject.mockResolvedValue({ decks: [...DECKS, D3], isMember: true, name: 'BlockB1_CPPTS' })
+    // A and C have Sơn and Tháo giáo; B has Sơn and Giàn giáo.
+    listDeckWorks.mockImplementation((deckId: string) => Promise.resolve(deckId === 'd2'
+      ? [{ work: WORK, weight: 1, stages: STAGES }, { work: GG, weight: 1, stages: TG_STAGES }]
+      : TWO_WORKS))
+    renderScreen()
+    await screen.findByRole('combobox', { name: 'Công việc' })
+    await chooseOption('Công việc', 'Tháo giáo', bars()[0])
+    await chooseOption('Sàn', /^Main Deck/, bars()[0])
+    await waitFor(() => expect(listDeckWorks).toHaveBeenCalledWith('d2'))
+    await waitFor(() => expect(within(bars()[0]).getByTitle('Sơn')).toBeInTheDocument())
+    await chooseOption('Sàn', /^Helideck/, bars()[0])
+    await waitFor(() => expect(listDeckWorks).toHaveBeenCalledWith('d3'))
+    // On the work B showed, not on the Tháo giáo picked two decks ago.
+    await waitFor(() => expect(within(bars()[0]).getByTitle('Sơn')).toBeInTheDocument())
+    expect(within(bars()[0]).queryByTitle('Tháo giáo')).toBeNull()
+  })
+
+  it('opens another project on its first work, and this one again on its first (RV7-3)', async () => {
+    restoreViewport = setViewport(1024)
+    const GG = { ...WORK, id: 'w3', seq: 3, name: 'Giàn giáo' }
+    // Giàn B's one deck has Tháo giáo too, after its first work.
+    loadGsProject.mockImplementation((projectId: string) => Promise.resolve(projectId === 'p2'
+      ? { decks: [DECKS[1]], isMember: true, name: 'Đại Hùng' }
+      : { decks: DECKS, isMember: true, name: 'BlockB1_CPPTS' }))
+    listDeckWorks.mockImplementation((deckId: string) => Promise.resolve(deckId === 'd2'
+      ? [{ work: GG, weight: 1, stages: TG_STAGES }, { work: WORK2, weight: 1, stages: TG_STAGES }]
+      : TWO_WORKS))
+    render(
+      <AntApp>
+        <MemoryRouter initialEntries={['/gs/p1']}>
+          <Link to="/gs/p2">sang p2</Link>
+          <Link to="/gs/p1">về p1</Link>
+          <Routes>
+            <Route path="/gs/:projectId" element={<GsScreen />} />
+          </Routes>
+        </MemoryRouter>
+      </AntApp>,
+    )
+    await screen.findByRole('combobox', { name: 'Công việc' })
+    await chooseOption('Công việc', 'Tháo giáo', bars()[0])
+    await userEvent.click(screen.getByRole('link', { name: 'sang p2' }))
+    await waitFor(() => expect(listDeckWorks).toHaveBeenCalledWith('d2'))
+    await waitFor(() => expect(within(bars()[0]).getByTitle('Giàn giáo')).toBeInTheDocument())
+    await userEvent.click(screen.getByRole('link', { name: 'về p1' }))
+    await waitFor(() => expect(loadGsProject).toHaveBeenLastCalledWith('p1'))
+    await waitFor(() => expect(within(bars()[0]).getByTitle('Sơn')).toBeInTheDocument())
+    expect(within(bars()[0]).queryByTitle('Tháo giáo')).toBeNull()
+  })
+
   it('opens the new deck on its first work when it does not have the one applied (RV7-3)', async () => {
     restoreViewport = setViewport(1024)
     const GG = { ...WORK, id: 'w3', seq: 3, name: 'Giàn giáo' }
@@ -1962,6 +2016,29 @@ describe('GsScreen: the phone\'s bar is one row, the rest in a sheet (FLT-04)', 
     await pickWork('Tháo giáo')
     const again = await openFilterSheet()
     expect(within(again).getByTitle('Tháo giáo')).toBeInTheDocument()
+  })
+
+  it('closes the sheet when another project is picked in it, as Năng suất and KPI do (RV7-3)', async () => {
+    listDeckWorks.mockResolvedValue(TWO_WORKS)
+    render(
+      <AntApp>
+        <MemoryRouter initialEntries={['/gs/p1']}>
+          <Link to="/gs/p2">sang p2</Link>
+          <Routes>
+            <Route path="/gs/:projectId" element={<GsScreen />} />
+          </Routes>
+        </MemoryRouter>
+      </AntApp>,
+    )
+    await screen.findByRole('button', { name: 'ô R1C1' })
+    await chooseOption('Dự án', 'Đại Hùng', await openFilterSheet())
+    expect(navigate).toHaveBeenCalledWith('/gs/p2')
+    // The route change that navigate makes.
+    fireEvent.click(screen.getByRole('link', { name: 'sang p2' }))
+    await sheetGone()
+    await waitFor(() => expect(loadGsProject).toHaveBeenCalledWith('p2'))
+    await screen.findByRole('button', { name: 'Bộ lọc' })
+    expect(screen.queryByRole('dialog', { name: 'Bộ lọc' })).toBeNull()
   })
 
   it('opens another project at once from the sheet (RV7-3)', async () => {
