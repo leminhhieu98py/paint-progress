@@ -284,6 +284,24 @@ describe('NhanLucScreen — filter bar (FLT-01, RV7-3)', () => {
       expect(shownNames()).toEqual(['GS Hai'])
     })
 
+    it('drops the pending pause on Enter: nothing applies again 250 ms later', async () => {
+      listGsUsers.mockResolvedValue([])
+      listEmployees.mockResolvedValue(Array.from({ length: 30 }, (_, i) => ({
+        id: `e${i}`, fullName: `NV${String(i).padStart(2, '0')} - ${i < 12 ? 'Cao Minh Hải' : 'Trần Văn Bình'}`, active: true,
+      })))
+      renderScreen()
+      await screen.findByText('NV00 - Cao Minh Hải')
+      vi.useFakeTimers()
+      typeQuery('hai')
+      fireEvent.keyDown(search(), { key: 'Enter', code: 'Enter', keyCode: 13 })
+      expect(shownNames()).toHaveLength(10)
+      fireEvent.click(screen.getByTitle('2'))
+      expect(screen.getByTitle('2')).toHaveClass('ant-pagination-item-active')
+      // A second apply would send the pager back to page 1.
+      act(() => vi.advanceTimersByTime(SEARCH_DEBOUNCE_MS))
+      expect(screen.getByTitle('2')).toHaveClass('ant-pagination-item-active')
+    })
+
     it('applies at once when cleared with its x', async () => {
       await loaded()
       typeQuery('le van')
