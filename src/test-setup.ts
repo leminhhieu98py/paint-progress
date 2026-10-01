@@ -82,6 +82,7 @@ vi.mock('lottie-web/build/player/lottie_light', () => {
       addEventListener: vi.fn(),
       play: vi.fn(),
       pause: vi.fn(),
+      goToAndStop: vi.fn(),
       destroy: vi.fn(),
     })
   return { default: strict('lottie', { loadAnimation: vi.fn(animation) }) }
