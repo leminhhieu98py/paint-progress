@@ -270,6 +270,18 @@ describe('DeckProgressPanel', () => {
     expect(screen.getByText('150%')).toBeInTheDocument()
   })
 
+  it('zooms out below 100% by quarters, down to 25%, and fits back to 100% (Rv7 item 5)', async () => {
+    renderPanel()
+    await screen.findByTestId('lens-A')
+    const zoomOut = screen.getByRole('button', { name: 'Thu nhỏ' })
+    for (const shown of ['75%', '50%', '25%', '25%']) {
+      await userEvent.click(zoomOut)
+      expect(screen.getByText(shown)).toBeInTheDocument()
+    }
+    await userEvent.click(screen.getByRole('button', { name: 'Vừa khung' }))
+    expect(screen.getByText('100%')).toBeInTheDocument()
+  })
+
   it('shows the deck\'s own spec table', async () => {
     renderPanel()
     expect(await screen.findByTestId('deck-spec')).toBeInTheDocument()

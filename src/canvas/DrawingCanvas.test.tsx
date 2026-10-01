@@ -558,7 +558,31 @@ describe('DrawingCanvas', () => {
       expect(screen.getByTestId('stage:drawing')).toHaveAttribute('data-scalex', '4')
     })
 
-    it('will not zoom out below fit-to-container', async () => {
+    it('zooms out below fit-to-container by quarters, down to 25% (Rv7 item 5)', async () => {
+      render(
+        <DrawingCanvas
+          imageUrl="u" imageW={2000} imageH={1600} cells={cells}
+          selectedCodes={[]} panZoom
+        />,
+      )
+      const zoomOut = screen.getByRole('button', { name: 'Thu nhỏ' })
+      const stage = screen.getByTestId('stage:drawing')
+      await userEvent.click(zoomOut)
+      expect(stage).toHaveAttribute('data-scalex', '0.75')
+      expect(screen.getByText('75%')).toBeInTheDocument()
+      await userEvent.click(zoomOut)
+      expect(screen.getByText('50%')).toBeInTheDocument()
+      await userEvent.click(zoomOut)
+      expect(stage).toHaveAttribute('data-scalex', '0.25')
+      expect(screen.getByText('25%')).toBeInTheDocument()
+      // MIN_ZOOM: a fourth press does nothing.
+      await userEvent.click(zoomOut)
+      expect(stage).toHaveAttribute('data-scalex', '0.25')
+    })
+
+    it('centres the drawing below fit and locks the pan there', async () => {
+      // At 50% the 450 x 360 drawing sits centred in its 900 x 720 frame; even
+      // a drag target far off to the top-left lands it back in the centre.
       render(
         <DrawingCanvas
           imageUrl="u" imageW={2000} imageH={1600} cells={cells}
@@ -566,7 +590,24 @@ describe('DrawingCanvas', () => {
         />,
       )
       await userEvent.click(screen.getByRole('button', { name: 'Thu nhỏ' }))
-      expect(screen.getByTestId('stage:drawing')).toHaveAttribute('data-scalex', '1')
+      await userEvent.click(screen.getByRole('button', { name: 'Thu nhỏ' }))
+      expect(screen.getByTestId('stage:drawing')).toHaveAttribute('data-dragboundx', '225')
+      expect(screen.getByTestId('stage:drawing')).toHaveAttribute('data-dragboundy', '180')
+    })
+
+    it('lets the page scroll past a drawing zoomed out below fit', async () => {
+      // Smaller than its frame there is still nowhere to pan to.
+      render(
+        <DrawingCanvas
+          imageUrl="u" imageW={2000} imageH={1600} cells={cells}
+          selectedCodes={[]} panZoom
+        />,
+      )
+      await userEvent.click(screen.getByRole('button', { name: 'Thu nhỏ' }))
+      const stage = screen.getByTestId('stage:drawing')
+      fireEvent.wheel(stage, { deltaY: 120 })
+      expect(stage).toHaveAttribute('data-wheel-claimed', 'false')
+      expect(stage).toHaveAttribute('data-scalex', '0.75')
     })
 
     it('returns to fit-to-container', async () => {
@@ -580,6 +621,11 @@ describe('DrawingCanvas', () => {
       await userEvent.click(screen.getByRole('button', { name: 'Phóng to' }))
       expect(screen.getByTestId('stage:drawing')).toHaveAttribute('data-scalex', '2')
 
+      await userEvent.click(screen.getByRole('button', { name: 'Vừa khung' }))
+      expect(screen.getByTestId('stage:drawing')).toHaveAttribute('data-scalex', '1')
+
+      // From below fit too: fit is 100%, not the minimum.
+      await userEvent.click(screen.getByRole('button', { name: 'Thu nhỏ' }))
       await userEvent.click(screen.getByRole('button', { name: 'Vừa khung' }))
       expect(screen.getByTestId('stage:drawing')).toHaveAttribute('data-scalex', '1')
     })
@@ -635,14 +681,16 @@ describe('DrawingCanvas', () => {
           selectedCodes={[]} panZoom
         />,
       )
-      expect(screen.getByTestId('stage:drawing')).toHaveAttribute('data-scalex', '1')
-      fireEvent.wheel(screen.getByTestId('stage:drawing'), { deltaY: 100, ctrlKey: true })
-      // clampZoom pins this at MIN_ZOOM. A test that only asserted "still 1"
-      // would look identical whether the handler clamped correctly or threw
-      // away the event entirely -- the point of this test, paired with the
-      // wheel-up one above, is that the SAME handler does react to input and
-      // still cannot be pushed past the boundary.
-      expect(screen.getByTestId('stage:drawing')).toHaveAttribute('data-scalex', '1')
+      const stage = screen.getByTestId('stage:drawing')
+      expect(stage).toHaveAttribute('data-scalex', '1')
+      // A pinch zooms out below fit by the wheel step (Rv7 item 5)...
+      fireEvent.wheel(stage, { deltaY: 100, ctrlKey: true })
+      expect(stage).toHaveAttribute('data-scalex', '0.75')
+      for (let i = 0; i < 5; i += 1) fireEvent.wheel(stage, { deltaY: 100, ctrlKey: true })
+      // ...and clampZoom pins it at MIN_ZOOM. Paired with the wheel-up test
+      // above, this shows the SAME handler reacts to input and still cannot be
+      // pushed past the boundary.
+      expect(stage).toHaveAttribute('data-scalex', '0.25')
     })
 
     it('is a no-op on wheel-up at the maximum zoom, not a drift past it', () => {
