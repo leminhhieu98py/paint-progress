@@ -95,9 +95,10 @@ export function boxFromDrag(
   return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 }
 }
 
-/** Below this a label is a smudge, not information. A bay too small to carry
- *  its text legibly gets none: the zone legend under the canvas still names it,
- *  and an unreadable overlap costs the drawing underneath for nothing. */
+/** Below this a label is a smudge, not information. A zone too small to carry
+ *  its text at this size still gets its card, at this size, overhanging the
+ *  zone (Rv7 item 4) -- that fallback is DrawingCanvas.zoneCard's, not
+ *  fitLabelFontSize's. */
 export const MIN_LABEL_FONT_SIZE = 7
 /** What a label gets when the bay has room. Matches the drawing's own dimension
  *  text, so the overlay does not shout over the plan. */

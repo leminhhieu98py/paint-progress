@@ -8,7 +8,7 @@ import type { MeshCell } from '../domain/types'
 import { spreadLabelBoxes, type ZoneLabel } from '../domain/plan'
 import {
   clampStagePan, clampZoom, boxFromDrag, fitLabelFontSize,
-  MIN_ZOOM, WHEEL_ZOOM_STEP, ZOOM_STEP,
+  MIN_LABEL_FONT_SIZE, MIN_ZOOM, WHEEL_ZOOM_STEP, ZOOM_STEP,
 } from './canvasView'
 import { createHatchPattern } from './hatchPattern'
 
@@ -137,8 +137,8 @@ export function DrawingCanvas({
    * One label per zone, not one per bay: repeating a date range on forty bays
    * printed the same characters forty times and still left the reader to find
    * where one zone ended, which is what the source drawings annotate by hand.
-   * A zone whose box is too small to carry the text legibly gets no label; the
-   * zone list beside the drawing still names it.
+   * A zone whose box is too small for the text still gets its card (Rv7 item
+   * 4), at the smallest legible size and overhanging its box -- see zoneCard.
    */
   zoneLabels?: ZoneLabel[]
   /**
@@ -331,26 +331,31 @@ export function DrawingCanvas({
   const pointerIn = (e: Konva.KonvaEventObject<MouseEvent>) =>
     e.target.getStage()?.getRelativePointerPosition() ?? null
 
-  /** The font a bay's plan label can carry, or null when it can carry none. */
   /**
    * The card drawn for one zone: its size, and the font that fits inside it.
    *
    * Two lines of text, so the height each line may take is half the box's, and
-   * the width is measured against the LONGER line. Null when nothing legible
-   * fits -- a 40-bay deck has zones only a few pixels tall at 100%.
+   * the width is measured against the LONGER line.
+   *
+   * When nothing legible fits -- a narrow zone, or a 40-bay deck whose zones
+   * are a few pixels tall at 100% -- the card is still drawn, at
+   * MIN_LABEL_FONT_SIZE and sized to its text, overhanging the box (Rv7 item
+   * 4). It used to be dropped, and zooming never brought it back because the
+   * fit is sized unzoomed: Zone 3 on A3.4 was simply missing from the drawing.
    */
   const zoneCard = (label: ZoneLabel) => {
     const boxW = label.w * width
     const boxH = label.h * height
     const longest = label.range.length > label.name.length ? label.range : label.name
     const lines = label.range === '' ? 1 : 2
-    const font = fitLabelFontSize(longest, boxW * 0.9, (boxH * 0.9) / lines)
-    if (font === null) return null
+    const fitted = fitLabelFontSize(longest, boxW * 0.9, (boxH * 0.9) / lines)
+    const font = fitted ?? MIN_LABEL_FONT_SIZE
+    const textW = Math.max(font * longest.length * 0.62, font * 4) + font
     const textH = font * 1.25 * lines
     return {
       font,
       textH,
-      cardW: Math.min(boxW, Math.max(font * longest.length * 0.62, font * 4) + font),
+      cardW: fitted === null ? textW : Math.min(boxW, textW),
       cardH: textH + font * 0.6,
     }
   }
@@ -362,14 +367,19 @@ export function DrawingCanvas({
    * here is a card's real size known; a 2px gap keeps the borders from
    * touching. Memoised on what decides it, so a pan or a hover does not
    * re-lay the cards.
+   *
+   * Each card is centred on its zone and then kept inside the drawing: a card
+   * that overhangs a zone on the drawing's edge would otherwise be cut off by
+   * the stage. A card that fits its box is inside the drawing already.
    */
   const zoneCards = useMemo(() => {
-    const sized = (zoneLabels ?? []).flatMap((label) => {
+    const sized = (zoneLabels ?? []).map((label) => {
       const card = zoneCard(label)
-      if (card === null) return []
       const cx = (label.x + label.w / 2) * width
       const cy = (label.y + label.h / 2) * height
-      return [{ label, ...card, x: cx - card.cardW / 2, y: cy - card.cardH / 2, w: card.cardW, h: card.cardH }]
+      const x = Math.max(0, Math.min(width - card.cardW, cx - card.cardW / 2))
+      const y = Math.max(0, Math.min(height - card.cardH, cy - card.cardH / 2))
+      return { label, ...card, x, y, w: card.cardW, h: card.cardH }
     })
     return spreadLabelBoxes(sized, height, 2)
     // zoneCard reads only width and height beyond its argument.
