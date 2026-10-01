@@ -10,6 +10,21 @@ own branch, verified against the development Supabase project, and deployed to
 production by the owner. **Database migrations are listed per release and must
 reach production before the app that needs them.**
 
+## [1.9.1] - 2026-10-01
+
+Two follow-ups from Linh on 1.9.0. No database migration, no Edge Function.
+
+### Added
+
+- **KPI chart name** under the chart's legend, for the admin, the GS and the
+  viewer, following the filters: "Sàn - Công đoạn" when both are chosen
+  ("Main Deck - Blast + Coat 1"), the deck's name alone under Tất cả công đoạn,
+  and "Tất cả sàn" (with " - Công đoạn" when one is chosen) over every deck.
+
+### Changed
+
+- **Copyright line** reads "Bản quyền © 2026 Đoàn Linh – XDVTH".
+
 ## [1.9.0] - 2026-10-01
 
 Linh's review Rv7: filters that apply as they change, a copyright line on
@@ -642,6 +657,7 @@ Level Security.
 
 Production runs its own Supabase project, created empty.
 
+[1.9.1]: https://github.com/leminhhieu98py/paint-progress/compare/v1.9.0...v1.9.1
 [1.9.0]: https://github.com/leminhhieu98py/paint-progress/compare/v1.8.0...v1.9.0
 [1.8.0]: https://github.com/leminhhieu98py/paint-progress/compare/v1.7.0...v1.8.0
 [1.7.0]: https://github.com/leminhhieu98py/paint-progress/compare/v1.6.0...v1.7.0
