@@ -95,7 +95,8 @@ describe('LoginIllustration', () => {
     loadAnimation.mockReturnValue(player.anim)
     const goToAndStop = vi.spyOn(player.anim, 'goToAndStop')
     const play = vi.spyOn(player.anim, 'play')
-    render(<LoginIllustration />)
+    const destroy = vi.spyOn(player.anim, 'destroy')
+    const { unmount } = render(<LoginIllustration />)
     await settle()
 
     expect(loadAnimation).toHaveBeenCalledTimes(1)
@@ -107,6 +108,10 @@ describe('LoginIllustration', () => {
     setHidden(true)
     setHidden(false)
     expect(play).not.toHaveBeenCalled()
+
+    // Gone with the screen, as the playing animation is.
+    unmount()
+    expect(destroy).toHaveBeenCalledTimes(1)
   })
 
   it('keeps the box empty until the animation has drawn, then shows the animation', async () => {
@@ -189,13 +194,15 @@ describe('LoginIllustration', () => {
   })
 
   // RV7-1c: the animation is square, so is its box. Large on the wide layout
-  // but never taller than 70vh, so the form beside it stays in view.
+  // but never taller than 70vh, so the form beside it stays in view: the
+  // width is held to 70vh rather than the height, so the box stays square.
   it('sizes a square box, large on the wide layout and compact on a phone', () => {
     const { unmount } = render(<LoginIllustration />)
     const wide = screen.getByTestId('login-illustration').style
     expect(wide.aspectRatio).toBe('1 / 1')
+    expect(wide.width).toBe('min(100%, 70vh)')
     expect(wide.maxWidth).toBe('clamp(320px, 34vw, 560px)')
-    expect(wide.maxHeight).toBe('70vh')
+    expect(wide.maxHeight).toBe('')
     unmount()
 
     render(<LoginIllustration compact />)

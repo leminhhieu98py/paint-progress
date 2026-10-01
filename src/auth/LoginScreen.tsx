@@ -121,8 +121,9 @@ export function LoginIllustration({ compact = false }: { compact?: boolean }) {
         aspectRatio: '1 / 1',
         ...(compact
           ? { maxWidth: 200, margin: '0 auto 16px' }
-          // Centred in the hero, which it now has to itself (RV7-1a).
-          : { maxWidth: 'clamp(320px, 34vw, 560px)', maxHeight: '70vh', margin: '0 auto' }),
+          // Centred in the hero, which it now has to itself (RV7-1a). Never
+          // taller than 70vh: the width is held there, so the box stays square.
+          : { width: 'min(100%, 70vh)', maxWidth: 'clamp(320px, 34vw, 560px)', margin: '0 auto' }),
       }}
     >
       {!failed && (

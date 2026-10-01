@@ -146,7 +146,7 @@ describe('LoginScreen', () => {
       const hero = screen.getByTestId('login-illustration')
       const button = screen.getByRole('button', { name: 'Đăng nhập' })
       // Wide: the hero's illustration is not the compact one above the card.
-      expect(hero.style.maxHeight).toBe('70vh')
+      expect(hero.style.width).toBe('min(100%, 70vh)')
       expect(button.compareDocumentPosition(line) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
       // In the form's column, not under the hero.
       expect(hero.parentElement?.contains(line)).toBe(false)
