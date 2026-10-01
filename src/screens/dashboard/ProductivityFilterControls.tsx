@@ -6,7 +6,9 @@ import { resolveWork, workLabel, type ProductivityFilters } from './productivity
  * The Năng suất controls of the filter bar, after Dự án (FLT-01): the work
  * (scope), then Sàn, then the dates. Unlabelled on screen, each named by its
  * aria-label. The work is a searchable select (FLT-03), and only appears when
- * there is more than one work.
+ * there is more than one work. Sàn shows its value only while its options
+ * hold it, else Tất cả sàn: the last project's deck, still applied while the
+ * next one loads, is never shown (RV7-3).
  */
 export function ProductivityFilterControls({
   workNames,
@@ -41,7 +43,7 @@ export function ProductivityFilterControls({
         {...searchSelectProps}
         {...fullOptions}
         style={{ width: block ? '100%' : 220 }}
-        value={value.deck}
+        value={deckNames.includes(value.deck) ? value.deck : ''}
         onChange={(deck: string) => onChange({ ...value, deck })}
         options={[{ value: '', label: 'Tất cả sàn' }, ...deckNames.map((name) => ({ value: name, label: name }))]}
       />

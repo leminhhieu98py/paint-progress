@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import userEvent from '@testing-library/user-event'
 import { Select } from 'antd'
 import type { ComponentProps } from 'react'
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { space } from '../theme'
 import { FilterSheet } from './FilterSheet'
 
@@ -21,11 +21,7 @@ const controls = (
   </>
 )
 type Props = Partial<ComponentProps<typeof FilterSheet>>
-const renderSheet = (props: Props = {}) => {
-  const handlers = { onApply: vi.fn(), onReset: vi.fn(), onDiscard: vi.fn() }
-  const view = render(<FilterSheet count={0} {...handlers} {...props}>{controls}</FilterSheet>)
-  return { ...handlers, ...view }
-}
+const renderSheet = (props: Props = {}) => render(<FilterSheet count={0} {...props}>{controls}</FilterSheet>)
 
 describe('FilterSheet: the phone bar is one row (FLT-04)', () => {
   it('holds the inline control and the Bộ lọc button in one row that does not wrap', () => {
@@ -65,7 +61,7 @@ describe('FilterSheet: the phone bar is one row (FLT-04)', () => {
   })
 })
 
-describe('FilterSheet: the sheet (FLT-04, FLT-09)', () => {
+describe('FilterSheet: the sheet (FLT-04, RV7-3)', () => {
   it('opens from the bottom, titled Bộ lọc, as tall as its controls up to 80% of the screen', async () => {
     renderSheet()
     const dialog = await openSheet()
@@ -74,64 +70,33 @@ describe('FilterSheet: the sheet (FLT-04, FLT-09)', () => {
     expect(dialog.closest('.ant-drawer-content-wrapper')).toHaveStyle({ height: 'auto' })
   })
 
-  it('bounds the panel, not only its wrapper: the body scrolls and the footer stays in view (I4)', async () => {
+  it('bounds the panel, not only its wrapper: the body scrolls (I4)', async () => {
     renderSheet()
     const dialog = await openSheet()
-    // The panel itself is capped and stacks header, body and footer as a column...
     const panel = dialog.closest('.ant-drawer-content') as HTMLElement
     expect(panel.getAttribute('style')).toContain('max-height: 80vh')
     expect(panel).toHaveStyle({ display: 'flex', flexDirection: 'column' })
-    // ...where the body alone gives way and scrolls, and the footer never shrinks.
     const body = dialog.querySelector('.ant-drawer-body') as HTMLElement
-    const footer = dialog.querySelector('.ant-drawer-footer') as HTMLElement
     expect(body).toHaveStyle({ flex: '1 1 auto', minHeight: '0px', overflowY: 'auto' })
-    expect(footer).toHaveStyle({ flexShrink: '0' })
-    expect(body.parentElement).toBe(footer.parentElement)
   })
 
-  it('stacks every control full width, one gap apart, on the footer\'s inset (M1)', async () => {
+  it('stacks every control full width, one gap apart, clear of a home indicator (M1)', async () => {
     renderSheet()
     const dialog = await openSheet()
     const body = dialog.querySelector('.ant-drawer-body') as HTMLElement
-    const footer = dialog.querySelector('.ant-drawer-footer') as HTMLElement
     expect(body).toHaveStyle({ display: 'flex', flexDirection: 'column', gap: `${space.md}px` })
     expect(body).toHaveStyle({ paddingLeft: `${space.xl}px`, paddingRight: `${space.xl}px` })
-    expect(footer).toHaveStyle({ paddingLeft: `${space.xl}px`, paddingRight: `${space.xl}px` })
+    expect(body.getAttribute('style')).toContain('env(safe-area-inset-bottom')
     for (const name of ['Dự án', 'Công việc']) {
       expect(within(dialog).getByRole('combobox', { name }).closest('.ant-select')).toHaveStyle({ width: '100%' })
     }
   })
 
-  it('ends with Đặt lại and Tìm, equal halves of one row, and no Xong (FLT-09)', async () => {
+  it('has no footer: no Đặt lại, no Tìm, no Xong -- its controls apply as they change (RV7-3)', async () => {
     renderSheet()
     const dialog = await openSheet()
-    const footer = dialog.querySelector('.ant-drawer-footer') as HTMLElement
-    const buttons = within(footer).getAllByRole('button')
-    expect(buttons.map((b) => b.textContent)).toEqual(['Đặt lại', 'Tìm'])
-    expect(buttons[0]).toHaveClass('ant-btn-variant-outlined')
-    expect(buttons[1]).toHaveClass('ant-btn-primary')
-    expect(buttons[0].parentElement).toHaveStyle({ display: 'flex', gap: `${space.sm}px` })
-    for (const b of buttons) expect(b).toHaveStyle({ flex: '1 1 0' })
-    expect(within(dialog).queryByRole('button', { name: 'Xong' })).toBeNull()
-  })
-
-  it('applies once on Tìm and closes, discarding nothing', async () => {
-    const { onApply, onDiscard } = renderSheet()
-    const dialog = await openSheet()
-    await userEvent.click(within(dialog).getByRole('button', { name: /Tìm/ }))
-    expect(onApply).toHaveBeenCalledOnce()
-    await gone()
-    expect(onDiscard).not.toHaveBeenCalled()
-  })
-
-  it('resets on Đặt lại, which the screen applies, and stays open', async () => {
-    const { onReset, onApply, onDiscard } = renderSheet()
-    const dialog = await openSheet()
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Đặt lại' }))
-    expect(onReset).toHaveBeenCalledOnce()
-    expect(onApply).not.toHaveBeenCalled()
-    expect(onDiscard).not.toHaveBeenCalled()
-    expect(screen.getByRole('dialog', { name: 'Bộ lọc' })).toBeInTheDocument()
+    expect(dialog.querySelector('.ant-drawer-footer')).toBeNull()
+    for (const name of ['Đặt lại', 'Tìm', 'Xong']) expect(within(dialog).queryByRole('button', { name })).toBeNull()
   })
 
   it.each([
@@ -146,21 +111,11 @@ describe('FilterSheet: the sheet (FLT-04, FLT-09)', () => {
     ['a tap on the mask', async () => {
       await userEvent.click(document.querySelector('.ant-drawer-mask') as HTMLElement)
     }],
-  ])('discards the draft when closed by %s, and applies nothing', async (_, close) => {
-    const { onApply, onDiscard } = renderSheet()
+  ])('closes by %s', async (_, close) => {
+    renderSheet()
     await openSheet()
     await close()
     await gone()
-    expect(onDiscard).toHaveBeenCalledOnce()
-    expect(onApply).not.toHaveBeenCalled()
-  })
-
-  it('holds Tìm while the draft\'s options load', async () => {
-    const { onApply } = renderSheet({ applyLoading: true })
-    const dialog = await openSheet()
-    const tim = within(dialog).getByRole('button', { name: /Tìm/ })
-    expect(tim).toHaveClass('ant-btn-loading')
-    await userEvent.click(tim)
-    expect(onApply).not.toHaveBeenCalled()
+    expect(sheetButton()).toHaveAttribute('aria-expanded', 'false')
   })
 })

@@ -5,11 +5,11 @@ import {
   Alert, App, Button, Input, Modal, Select, Space, Table, Tooltip,
 } from 'antd'
 import dayjs from 'dayjs'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { CategoryBadge } from '../../components/CategoryBadge'
 import { ConsequenceModal } from '../../components/ConsequenceModal'
 import { IconAction } from '../../components/IconAction'
-import { useDraftFilters } from '../../components/draftFilters'
+import { useAppliedFilters } from '../../components/appliedFilters'
 import { FilterBar } from '../../components/FilterBar'
 import { modalProps } from '../../components/modalChrome'
 import { PageBody, PageHeader } from '../../components/PageHeader'
@@ -17,6 +17,7 @@ import { RulesDisclosure, type Rule } from '../../components/RulesDisclosure'
 import { SectionCard } from '../../components/SectionCard'
 import { searchSelectProps, useFullOptionsProps } from '../../components/searchSelect'
 import { useTablePagination } from '../../components/tablePagination'
+import { SEARCH_DEBOUNCE_MS } from '../../components/useDebouncedValue'
 import {
   deactivateGsUser,
   hideUser,
@@ -130,7 +131,11 @@ export function NhanLucScreen() {
   /** An employee whose Khoá is being confirmed (NL-09 amendment). */
   const [employeeOffTarget, setEmployeeOffTarget] = useState<StaffRow | null>(null)
   const [exporting, setExporting] = useState(false)
-  const filters = useDraftFilters(DEFAULT_FILTERS)
+  const filters = useAppliedFilters(DEFAULT_FILTERS)
+  /** What is typed in the search box; applied once the typing pauses (RV7-3). */
+  const [query, setQuery] = useState(DEFAULT_FILTERS.query)
+  const queryTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  useEffect(() => () => clearTimeout(queryTimer.current), [])
 
   // Two reads (NL-01); either failing shows the alert with its retry. The
   // rows on screen stay until the next read lands, so a write's re-read does
@@ -177,12 +182,17 @@ export function NhanLucScreen() {
 
   /**
    * The page Alert says what the last step refused; the next step -- a row
-   * action, or the filter bar applied or reset -- clears it (NL-10), rather
+   * action, or a filter of the bar applied -- clears it (NL-10), rather
    * than leaving it up until something succeeds.
    */
   const start = (open: () => void) => {
     setError(null)
     open()
+  }
+  /** The typed search, applied now: a pending pause is dropped (Enter, the x, or the pause itself). */
+  const applyQuery = (text: string) => {
+    clearTimeout(queryTimer.current)
+    start(() => filters.apply({ query: text }))
   }
   const run = async (fn: () => Promise<void>) => {
     setError(null)
@@ -329,37 +339,42 @@ export function NhanLucScreen() {
         // The counts arrive with the lists, on the title's own line (HLT-01).
         facts={loaded ? countFacts(rows, shown, filtered) : undefined}
         filters={
-          // Three controls: a draft, applied by Tìm or Enter (FLT-02, FLT-08).
-          <FilterBar
-            onApply={() => start(() => filters.apply())}
-            onReset={() => start(() => filters.reset())}
-          >
+          // Every control applies as it changes (RV7-3).
+          <FilterBar>
             <Input
               allowClear
               aria-label="Tìm nhân lực"
               placeholder="Tìm tên, tên đăng nhập"
               prefix={<SearchOutlined aria-hidden />}
               style={{ width: 260 }}
-              value={filters.draft.query}
-              onChange={(e) => filters.setDraft({ query: e.target.value })}
+              value={query}
+              onChange={(e) => {
+                const text = e.target.value
+                setQuery(text)
+                clearTimeout(queryTimer.current)
+                // Cleared (its x, or emptied): at once. Typed: once the typing pauses.
+                if (text === '') applyQuery(text)
+                else queryTimer.current = setTimeout(() => applyQuery(text), SEARCH_DEBOUNCE_MS)
+              }}
+              onPressEnter={() => applyQuery(query)}
             />
             <Select
               aria-label="Phân quyền"
               {...searchSelectProps}
               {...fullOptionsProps}
               style={{ width: 170 }}
-              value={filters.draft.role}
+              value={filters.applied.role}
               options={ROLE_OPTIONS}
-              onChange={(role) => filters.setDraft({ role })}
+              onChange={(role) => start(() => filters.apply({ role }))}
             />
             <Select
               aria-label="Trạng thái"
               {...searchSelectProps}
               {...fullOptionsProps}
               style={{ width: 190 }}
-              value={filters.draft.status}
+              value={filters.applied.status}
               options={STATUS_OPTIONS}
-              onChange={(status) => filters.setDraft({ status })}
+              onChange={(status) => start(() => filters.apply({ status }))}
             />
           </FilterBar>
         }

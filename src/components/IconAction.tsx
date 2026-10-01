@@ -6,8 +6,8 @@ import { ACTION_ICONS, type ActionVerb } from './actionIcons'
  * one control height (CTL-02), named by `label`, which is also its tooltip
  * unless `tooltip` says more (why it is disabled, what it does in full). The
  * button sits in a span so the tooltip still shows while it is disabled.
- * Page-level primary actions (Tạo …, Thêm …), the filter bar's Đặt lại and
- * Tìm, and dialog footers stay text buttons.
+ * Page-level primary actions (Tạo …, Thêm …) and dialog footers stay text
+ * buttons.
  */
 export function IconAction({
   verb,

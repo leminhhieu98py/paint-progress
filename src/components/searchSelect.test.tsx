@@ -129,7 +129,7 @@ describe('searchSelectProps closes and clears on a choice (A2)', () => {
     return (
       <>
         <Select aria-label="Sàn" {...searchSelectProps} value={v} onChange={setV} options={DECKS} />
-        <button type="button">Tìm</button>
+        <button type="button">Xuất báo cáo</button>
       </>
     )
   }
@@ -159,11 +159,11 @@ describe('searchSelectProps closes and clears on a choice (A2)', () => {
     expect(box().value).toBe('')
   })
 
-  it('closes and forgets the typed text when the admin moves on to Tìm without choosing', async () => {
+  it('closes and forgets the typed text when the admin moves on to another control without choosing', async () => {
     render(<Bar />)
     await userEvent.click(box())
     await userEvent.type(box(), 'cellar')
-    await userEvent.click(screen.getByRole('button', { name: 'Tìm' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Xuất báo cáo' }))
     await waitFor(() => expect(box()).toHaveAttribute('aria-expanded', 'false'))
     expect(box().value).toBe('')
     expect(shown()).toBe('Main Deck')

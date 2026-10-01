@@ -67,9 +67,9 @@ export function ProductivityDashboard({
 }: {
   events: DeckEvent[]
   models: WorkModel[]
-  /** What the screen's filter bar has applied (FLT-01, FLT-02). */
+  /** What the screen's filter bar has applied (FLT-01, RV7-3). */
   filters: ProductivityFilters
-  /** Counts the bar's applies: every apply sends the tables back to page 1 (FLT-02). */
+  /** Counts the bar's applies: every apply sends the tables back to page 1 (RV7-3). */
   version?: number
 }) {
   // The scale of the page this is on: the field's 14 on a field page (GS-10).

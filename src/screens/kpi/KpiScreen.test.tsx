@@ -1,5 +1,5 @@
 import { App as AntApp } from 'antd'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { EMPTY_EFFORT, type Cell, type DeckEvent, type Stage, type WorkModel } from '../../domain/types'
@@ -21,7 +21,6 @@ const saveStagePlan = vi.hoisted(() => vi.fn())
 const clearStagePlanArea = vi.hoisted(() => vi.fn())
 const setDeckKpiColors = vi.hoisted(() => vi.fn())
 const navigate = vi.hoisted(() => vi.fn())
-const listDecks = vi.hoisted(() => vi.fn())
 
 vi.mock('../../lib/progressApi', () => ({
   loadProjectModel: (id: string) => loadProjectModel(id),
@@ -37,7 +36,6 @@ vi.mock('../../lib/kpiApi', () => ({
 }))
 vi.mock('../../lib/decksApi', () => ({
   setDeckKpiColors: (id: string, colors: unknown) => setDeckKpiColors(id, colors),
-  listDecks: (id: string) => listDecks(id),
 }))
 // The field header (GS-06) on the gs variant: who is signed in.
 vi.mock('../../auth/AuthProvider', () => ({
@@ -146,6 +144,8 @@ const MODEL = {
   decks: [{ id: 'd1', name: 'Sàn A', kpiPlanColor: '#aaaaaa', kpiActualColor: null }],
   audit: {},
 }
+/** Another project's model: its own deck, none of the first's. */
+const MODEL_Z = { ...MODEL, decks: [{ id: 'd9', name: 'Sàn Z', kpiPlanColor: null, kpiActualColor: null }] }
 
 const ev = (over: Partial<Omit<DeckEvent, 'effort'>> = {}): DeckEvent => ({
   id: 1, deckName: 'Sàn A', cellCode: 'R1C1', cellAreaM2: 250, workName: 'Sơn',
@@ -178,9 +178,6 @@ beforeEach(() => {
   navigate.mockReset()
   // The field's Dự án switch keeps project names per session; every test is a new one.
   endSession()
-  listDecks.mockReset()
-  // Another project's decks, read only while it is the DRAFT project (FLT-02).
-  listDecks.mockResolvedValue([{ id: 'd9', name: 'Sàn Z' }])
   loadProjectModel.mockResolvedValue(MODEL)
   listProjectEvents.mockResolvedValue(EVENTS)
   listStagePlans.mockResolvedValue(PLANS)
@@ -232,11 +229,10 @@ const renderField = (width = 1024) => {
 /** The one filter bar under the title (FLT-01). */
 const bar = () => screen.getByRole('search', { name: 'Bộ lọc' })
 const before = (a: Element, b: Element) => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0
-/** Tìm, once the options it waits for have arrived (FLT-02). */
-const pressTim = async () => {
-  const tim = within(bar()).getByRole('button', { name: /Tìm/ })
-  await waitFor(() => expect(tim).not.toHaveClass('ant-btn-loading'))
-  await userEvent.click(tim)
+/** No Đặt lại and no Tìm: every control applies as it changes (RV7-3). */
+const expectNoApplyButtons = (root: HTMLElement) => {
+  expect(within(root).queryByRole('button', { name: 'Đặt lại' })).toBeNull()
+  expect(within(root).queryByRole('button', { name: /Tìm/ })).toBeNull()
 }
 
 describe('KpiScreen — one filter bar (FLT-01)', () => {
@@ -248,178 +244,163 @@ describe('KpiScreen — one filter bar (FLT-01)', () => {
     const coat = within(bar()).getByRole('combobox', { name: 'Công đoạn' })
     expect(before(project, deck) && before(deck, coat)).toBe(true)
     expect(bar().querySelector('label')).toBeNull()
+    expectNoApplyButtons(bar())
   })
 
-  it('narrows the chart by the deck picked in the bar, once Tìm is pressed (FLT-02)', async () => {
+  it('narrows the chart by the deck picked in the bar, as soon as it changes (RV7-3)', async () => {
     renderAdmin()
     await screen.findByTestId('kpi-dashboard')
-    await userEvent.click(within(bar()).getByRole('combobox', { name: 'Sàn' }))
-    await userEvent.click(await screen.findByTitle('Sàn A'))
-    expect(screen.getByText(/PHẠM VI tất cả\/tất cả/)).toBeInTheDocument()
-    await pressTim()
+    await chooseOption('Sàn', 'Sàn A', bar())
     expect(await screen.findByText(/PHẠM VI d1\/tất cả/)).toBeInTheDocument()
   })
 
-  it('queries nothing while two filters change, then exactly once on Tìm (FLT-02)', async () => {
+  it('reads nothing on a filter change, and the project\'s data once when the project changes (RV7-3)', async () => {
     renderAdmin()
     await screen.findByTestId('kpi-dashboard')
-    await userEvent.click(within(bar()).getByRole('combobox', { name: 'Sàn' }))
-    await userEvent.click(await screen.findByTitle('Sàn A'))
-    await userEvent.click(within(bar()).getByRole('combobox', { name: 'Dự án' }))
-    await userEvent.click(await screen.findByTitle('Giàn B (GB)'))
+    await chooseOption('Sàn', 'Sàn A', bar())
     expect(loadProjectModel).toHaveBeenCalledTimes(1)
     expect(listProjectEvents).toHaveBeenCalledTimes(1)
-    await pressTim()
+    await chooseOption('Dự án', 'Giàn B (GB)', bar())
     await waitFor(() => expect(loadProjectModel).toHaveBeenCalledTimes(2))
     expect(loadProjectModel).toHaveBeenLastCalledWith('p2')
     expect(listProjectEvents).toHaveBeenCalledTimes(2)
   })
 
-  it('offers the draft project\'s decks, and drops a draft deck that project does not have (FLT-02)', async () => {
+  it('drops a deck the new project does not have, so going back does not restore it (RV7-3)', async () => {
+    loadProjectModel.mockImplementation((id: string) => Promise.resolve(id === 'p2' ? MODEL_Z : MODEL))
     renderAdmin()
     await screen.findByTestId('kpi-dashboard')
-    await userEvent.click(within(bar()).getByRole('combobox', { name: 'Sàn' }))
-    await userEvent.click(await screen.findByTitle('Sàn A'))
-    await userEvent.click(within(bar()).getByRole('combobox', { name: 'Dự án' }))
-    await userEvent.click(await screen.findByTitle('Giàn B (GB)'))
-    await waitFor(() => expect(listDecks).toHaveBeenCalledWith('p2'))
-    await waitFor(() => expect(within(bar()).getByTitle('Tất cả sàn')).toBeInTheDocument())
+    await chooseOption('Sàn', 'Sàn A', bar())
+    expect(await screen.findByText(/PHẠM VI d1\/tất cả/)).toBeInTheDocument()
+    await chooseOption('Dự án', 'Giàn B (GB)', bar())
+    await waitFor(() => expect(loadProjectModel).toHaveBeenLastCalledWith('p2'))
+    expect(await screen.findByText(/PHẠM VI tất cả\/tất cả/)).toBeInTheDocument()
+    expect(within(bar()).getByTitle('Tất cả sàn')).toBeInTheDocument()
     await userEvent.click(within(bar()).getByRole('combobox', { name: 'Sàn' }))
     expect(await screen.findByTitle('Sàn Z')).toBeInTheDocument()
+    await userEvent.keyboard('{Escape}')
+    await chooseOption('Dự án', 'Giàn A (GA)', bar())
+    await waitFor(() => expect(loadProjectModel).toHaveBeenLastCalledWith('p1'))
+    expect(await screen.findByText(/PHẠM VI tất cả\/tất cả/)).toBeInTheDocument()
   })
 
-  it('keeps the chosen deck when Tìm is pressed twice while the new project loads (FLT-02)', async () => {
-    let resolveP2: (v: typeof MODEL) => void = () => {}
+  it('shows Tất cả sàn, never the old project\'s deck id, while the new project loads (RV7-3)', async () => {
+    loadProjectModel.mockImplementation((id: string) => (id === 'p2' ? new Promise(() => {}) : Promise.resolve(MODEL)))
+    renderAdmin()
+    await screen.findByTestId('kpi-dashboard')
+    await chooseOption('Sàn', 'Sàn A', bar())
+    await chooseOption('Dự án', 'Giàn B (GB)', bar())
+    await waitFor(() => expect(loadProjectModel).toHaveBeenLastCalledWith('p2'))
+    const deck = within(bar()).getByRole('combobox', { name: 'Sàn' }).closest('.ant-select') as HTMLElement
+    expect(within(deck).getByTitle('Tất cả sàn')).toBeInTheDocument()
+    expect(within(deck).queryByText('d1')).toBeNull()
+  })
+
+  it('shows the last project picked when an earlier pick answers after it (RV7-3)', async () => {
+    let resolveP2: (v: typeof MODEL | typeof MODEL_Z) => void = () => {}
     loadProjectModel.mockImplementation((id: string) =>
       (id === 'p2' ? new Promise((r) => { resolveP2 = r }) : Promise.resolve(MODEL)))
     renderAdmin()
-    await screen.findByTestId('kpi-dashboard')
-    await userEvent.click(within(bar()).getByRole('combobox', { name: 'Dự án' }))
-    await userEvent.click(await screen.findByTitle('Giàn B (GB)'))
-    await userEvent.click(within(bar()).getByRole('combobox', { name: 'Sàn' }))
-    await userEvent.click(await screen.findByTitle('Sàn Z'))
-    await pressTim()
-    const tim = within(bar()).getByRole('button', { name: /Tìm/ })
-    expect(tim).toHaveClass('ant-btn-loading')
-    await userEvent.click(tim)
-    expect(within(bar()).getByTitle('Sàn Z')).toBeInTheDocument()
-    resolveP2({ ...MODEL, decks: [{ id: 'd9', name: 'Sàn Z', kpiPlanColor: '#aaaaaa', kpiActualColor: null }] })
-    expect(await screen.findByText(/PHẠM VI d9\/tất cả/)).toBeInTheDocument()
-    await pressTim()
-    expect(screen.getByText(/PHẠM VI d9\/tất cả/)).toBeInTheDocument()
-  })
-
-  it('clears a draft deck the newly chosen project lacks, so going back does not restore it (FLT-02)', async () => {
-    renderAdmin()
-    await screen.findByTestId('kpi-dashboard')
-    await userEvent.click(within(bar()).getByRole('combobox', { name: 'Sàn' }))
-    await userEvent.click(await screen.findByTitle('Sàn A'))
-    await userEvent.click(within(bar()).getByRole('combobox', { name: 'Dự án' }))
-    await userEvent.click(await screen.findByTitle('Giàn B (GB)'))
-    await waitFor(() => expect(within(bar()).getByTitle('Tất cả sàn')).toBeInTheDocument())
-    await userEvent.click(within(bar()).getByRole('combobox', { name: 'Dự án' }))
-    await userEvent.click(await screen.findByTitle('Giàn A (GA)'))
-    expect(within(bar()).getByTitle('Tất cả sàn')).toBeInTheDocument()
-    await pressTim()
-    expect(screen.getByText(/PHẠM VI tất cả\/tất cả/)).toBeInTheDocument()
-  })
-
-  it('says so when the draft project\'s options fail, and applies it with Tất cả rather than the old selection (FLT-02)', async () => {
-    listDecks.mockRejectedValue(new Error('mất kết nối'))
-    renderAdmin()
-    await screen.findByTestId('kpi-dashboard')
-    await userEvent.click(within(bar()).getByRole('combobox', { name: 'Sàn' }))
-    await userEvent.click(await screen.findByTitle('Sàn A'))
-    await userEvent.click(within(bar()).getByRole('combobox', { name: 'Dự án' }))
-    await userEvent.click(await screen.findByTitle('Giàn B (GB)'))
-    expect(await screen.findByText('Không tải được bộ lọc của dự án')).toBeInTheDocument()
-    expect(screen.getByText('mất kết nối')).toBeInTheDocument()
-    const tim = within(bar()).getByRole('button', { name: /Tìm/ })
-    expect(tim).not.toHaveClass('ant-btn-loading')
-    await userEvent.click(tim)
+    await screen.findByText(/CHART Sàn A=/)
+    await chooseOption('Dự án', 'Giàn B (GB)', bar())
     await waitFor(() => expect(loadProjectModel).toHaveBeenLastCalledWith('p2'))
-    expect(await screen.findByText(/PHẠM VI tất cả\/tất cả/)).toBeInTheDocument()
+    await chooseOption('Dự án', 'Giàn A (GA)', bar())
+    await waitFor(() => expect(loadProjectModel).toHaveBeenLastCalledWith('p1'))
+    expect(await screen.findByText(/CHART Sàn A=/)).toBeInTheDocument()
+    await act(async () => resolveP2(MODEL_Z))
+    expect(screen.getByText(/CHART Sàn A=/)).toBeInTheDocument()
+    expect(screen.queryByText(/Sàn Z/)).toBeNull()
   })
 
-  it('puts the defaults back and applies them on Đặt lại (FLT-02)', async () => {
+  it('keeps a deck the new project has too (RV7-3)', async () => {
     renderAdmin()
     await screen.findByTestId('kpi-dashboard')
-    await userEvent.click(within(bar()).getByRole('combobox', { name: 'Sàn' }))
-    await userEvent.click(await screen.findByTitle('Sàn A'))
-    await pressTim()
+    await chooseOption('Sàn', 'Sàn A', bar())
+    await chooseOption('Dự án', 'Giàn B (GB)', bar())
+    await waitFor(() => expect(loadProjectModel).toHaveBeenLastCalledWith('p2'))
     expect(await screen.findByText(/PHẠM VI d1\/tất cả/)).toBeInTheDocument()
-    await userEvent.click(within(bar()).getByRole('button', { name: 'Đặt lại' }))
-    expect(await screen.findByText(/PHẠM VI tất cả\/tất cả/)).toBeInTheDocument()
   })
 
-  it('holds the field\'s draft until Tìm too (FLT-02)', async () => {
+  it('applies the field\'s filters as they change too (RV7-3)', async () => {
     renderField()
     await screen.findByTestId('kpi-dashboard')
-    await userEvent.click(within(bar()).getByRole('combobox', { name: 'Sàn' }))
-    await userEvent.click(await screen.findByTitle('Sàn A'))
-    expect(screen.getByText(/PHẠM VI tất cả\/tất cả/)).toBeInTheDocument()
-    await pressTim()
+    await chooseOption('Sàn', 'Sàn A', bar())
     expect(await screen.findByText(/PHẠM VI d1\/tất cả/)).toBeInTheDocument()
+    expect(navigate).not.toHaveBeenCalled()
   })
 
-  it('gives the field the same bar, the project first (GS-07)', async () => {
+  it('gives the field the same bar, the project first, and no Đặt lại or Tìm (GS-07, RV7-3)', async () => {
     renderField()
     await screen.findByTestId('kpi-dashboard')
     expect(within(bar()).getAllByRole('combobox').map((c) => c.getAttribute('aria-label')))
       .toEqual(['Dự án', 'Sàn', 'Công đoạn'])
-    expect(within(bar()).getByRole('button', { name: 'Đặt lại' })).toBeInTheDocument()
+    expectNoApplyButtons(bar())
   })
 
-  /** Picks the field bar's draft project. */
+  /** Picks the field bar's project. */
   const pickProject = async (name: string) => {
     await userEvent.click(within(bar()).getByRole('combobox', { name: 'Dự án' }))
     await userEvent.click(await screen.findByTitle(name))
   }
 
-  it('holds the Dự án choice in the draft: nothing moves until Tìm, and Sàn follows it (FLT-02, I-1)', async () => {
+  it('opens this page of the picked project at once, once (RV7-3, I-1)', async () => {
     renderField()
     await screen.findByTestId('kpi-dashboard')
     await pickProject('Giàn A')
-    expect(navigate).not.toHaveBeenCalled()
-    await waitFor(() => expect(listDecks).toHaveBeenCalledWith('p1'))
-    await userEvent.click(within(bar()).getByRole('combobox', { name: 'Sàn' }))
-    expect(await screen.findByTitle('Sàn Z')).toBeInTheDocument()
-  })
-
-  it('opens this page of the draft project on Tìm, once (I-1)', async () => {
-    renderField()
-    await screen.findByTestId('kpi-dashboard')
-    await pickProject('Giàn A')
-    await pressTim()
     expect(navigate).toHaveBeenCalledTimes(1)
     expect(navigate).toHaveBeenCalledWith('/gs/p1/kpi')
   })
 
-  it('carries the applied filters that the chosen project still has (I-1)', async () => {
-    listDecks.mockResolvedValue([{ id: 'd1', name: 'Sàn A' }])
+  it('carries the applied filters to the picked project, which keeps those it has (I-1)', async () => {
     renderField()
     await screen.findByTestId('kpi-dashboard')
+    await chooseOption('Sàn', 'Sàn A', bar())
+    expect(await screen.findByText(/PHẠM VI d1\/tất cả/)).toBeInTheDocument()
     await pickProject('Giàn A')
-    await waitFor(() => expect(listDecks).toHaveBeenCalledWith('p1'))
-    await userEvent.click(within(bar()).getByRole('combobox', { name: 'Sàn' }))
-    await userEvent.click(await screen.findByTitle('Sàn A'))
-    await pressTim()
     expect(navigate).toHaveBeenCalledWith('/gs/p1/kpi')
 
     await userEvent.click(screen.getByRole('link', { name: 'sang Giàn A' }))
     await waitFor(() => expect(listStagePlans).toHaveBeenCalledWith('p1'))
     expect(await screen.findByText(/PHẠM VI d1\/tất cả/)).toBeInTheDocument()
   })
+
+  it('shows Tất cả sàn on the picked project\'s page while it loads, not the carried deck id (RV7-3)', async () => {
+    loadProjectModel.mockImplementation((id: string) => (id === 'p1' ? new Promise(() => {}) : Promise.resolve(MODEL)))
+    renderField()
+    await screen.findByTestId('kpi-dashboard')
+    await chooseOption('Sàn', 'Sàn A', bar())
+    await pickProject('Giàn A')
+    await userEvent.click(screen.getByRole('link', { name: 'sang Giàn A' }))
+    await waitFor(() => expect(loadProjectModel).toHaveBeenCalledWith('p1'))
+    const deck = within(bar()).getByRole('combobox', { name: 'Sàn' }).closest('.ant-select') as HTMLElement
+    expect(within(deck).getByTitle('Tất cả sàn')).toBeInTheDocument()
+    expect(within(deck).queryByText('d1')).toBeNull()
+  })
+
+  it('carries them and drops the deck the picked project does not have (I-1)', async () => {
+    loadProjectModel.mockImplementation((id: string) => Promise.resolve(id === 'p1' ? MODEL_Z : MODEL))
+    renderField()
+    await screen.findByTestId('kpi-dashboard')
+    await chooseOption('Sàn', 'Sàn A', bar())
+    expect(await screen.findByText(/PHẠM VI d1\/tất cả/)).toBeInTheDocument()
+    await pickProject('Giàn A')
+    await userEvent.click(screen.getByRole('link', { name: 'sang Giàn A' }))
+    await waitFor(() => expect(loadProjectModel).toHaveBeenCalledWith('p1'))
+    expect(await screen.findByText(/PHẠM VI tất cả\/tất cả/)).toBeInTheDocument()
+  })
 })
 
 describe('KpiScreen (admin)', () => {
-  it('hands the plan table a new scope on every Tìm, so its page and drafts start over (M10)', async () => {
+  it('hands the plan table a new scope on a project change only: its rows do not follow the chart\'s filters (M10, RV7-3)', async () => {
     renderAdmin()
     const table = await screen.findByTestId('plan-table')
-    const first = table.getAttribute('data-scope')
-    expect(first).toMatch(/^p1\|/)
-    await pressTim()
-    await waitFor(() => expect(screen.getByTestId('plan-table').getAttribute('data-scope')).not.toBe(first))
+    expect(table.getAttribute('data-scope')).toBe('p1')
+    // A chart filter keeps the page and the unsaved edits.
+    await chooseOption('Sàn', 'Sàn A', bar())
+    expect(await screen.findByText(/PHẠM VI d1\/tất cả/)).toBeInTheDocument()
+    expect(screen.getByTestId('plan-table').getAttribute('data-scope')).toBe('p1')
+    await chooseOption('Dự án', 'Giàn B (GB)', bar())
+    await waitFor(() => expect(screen.getByTestId('plan-table').getAttribute('data-scope')).toBe('p2'))
   })
 
   it('opens on the first project and makes its three reads', async () => {
@@ -612,7 +593,6 @@ describe('KpiScreen (gs)', () => {
     await screen.findByTestId('kpi-dashboard')
     await userEvent.click(within(bar()).getByRole('combobox', { name: 'Sàn' }))
     await userEvent.click(await screen.findByTitle('Sàn A'))
-    await pressTim()
     expect(await screen.findByText(/PHẠM VI d1\/tất cả/)).toBeInTheDocument()
 
     await userEvent.click(screen.getByRole('link', { name: 'sang Giàn A' }))
@@ -632,7 +612,7 @@ describe('KpiScreen (gs) on a phone (FLT-04)', () => {
     expect(bar().querySelector('.ant-badge-count')).toBeNull()
   })
 
-  it('throws the draft away when the sheet closes without Tìm: reopened, it shows what is applied (FLT-09)', async () => {
+  it('keeps what was applied when the sheet closes: reopened, it shows it (RV7-3)', async () => {
     renderField(390)
     await screen.findByTestId('kpi-dashboard')
     await userEvent.click(within(bar()).getByRole('button', { name: 'Bộ lọc' }))
@@ -642,8 +622,7 @@ describe('KpiScreen (gs) on a phone (FLT-04)', () => {
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Bộ lọc' })).toBeNull())
     await userEvent.click(within(bar()).getByRole('button', { name: 'Bộ lọc' }))
     const again = await screen.findByRole('dialog', { name: 'Bộ lọc' })
-    expect(within(again).getByTitle('Tất cả sàn')).toBeInTheDocument()
-    expect(within(again).queryByTitle('Sàn A')).toBeNull()
+    expect(within(again).getByTitle('Sàn A')).toBeInTheDocument()
   })
 
   it('opens every select of the sheet with its options in full', async () => {
@@ -656,7 +635,7 @@ describe('KpiScreen (gs) on a phone (FLT-04)', () => {
     }
   })
 
-  it('holds Dự án, Sàn and Công đoạn in the sheet, full width; its Tìm applies once and closes', async () => {
+  it('holds Dự án, Sàn and Công đoạn in the sheet, full width, each applied as it changes, with no footer (RV7-3)', async () => {
     renderField(390)
     await screen.findByTestId('kpi-dashboard')
     await userEvent.click(within(bar()).getByRole('button', { name: 'Bộ lọc' }))
@@ -665,13 +644,13 @@ describe('KpiScreen (gs) on a phone (FLT-04)', () => {
     expect(boxes.map((b) => b.getAttribute('aria-label'))).toEqual(['Dự án', 'Sàn', 'Công đoạn'])
     for (const box of boxes) expect(box.closest('.ant-select')).toHaveStyle({ width: '100%' })
 
+    expect(sheet.querySelector('.ant-drawer-footer')).toBeNull()
+    expectNoApplyButtons(sheet)
+
     await chooseOption('Sàn', 'Sàn A', sheet)
-    expect(screen.getByText(/PHẠM VI tất cả\/tất cả/)).toBeInTheDocument()
-    const tim = within(sheet).getByRole('button', { name: /Tìm/ })
-    await waitFor(() => expect(tim).not.toHaveClass('ant-btn-loading'))
-    await userEvent.click(tim)
     expect(await screen.findByText(/PHẠM VI d1\/tất cả/)).toBeInTheDocument()
-    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Bộ lọc' })).toBeNull())
+    // Still open: it closes with its X, Esc or a tap on the mask.
+    expect(screen.getByRole('dialog', { name: 'Bộ lọc' })).toBeInTheDocument()
     expect(await summary('GB · Sàn A · Tất cả công đoạn')).toBeInTheDocument()
     expect(bar().querySelector('.ant-badge-count')).toHaveTextContent('1')
     expect(loadProjectModel).toHaveBeenCalledTimes(1)

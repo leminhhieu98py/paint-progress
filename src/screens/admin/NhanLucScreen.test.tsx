@@ -1,7 +1,8 @@
-import { fireEvent, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { theme as antdTheme } from 'antd'
+import { SEARCH_DEBOUNCE_MS } from '../../components/useDebouncedValue'
 import { renderApp } from '../../test/renderApp'
 import { palette } from '../../theme'
 import { NhanLucScreen } from './NhanLucScreen'
@@ -105,7 +106,6 @@ const openEdit = async (name: string) => {
 }
 const bar = () => screen.getByRole('search', { name: 'Bộ lọc' })
 const search = () => within(bar()).getByRole('textbox', { name: 'Tìm nhân lực' })
-const apply = () => userEvent.click(within(bar()).getByRole('button', { name: /Tìm/ }))
 /** The names on screen, in order. */
 const shownNames = () =>
   [...document.querySelectorAll('.ant-table-tbody .ant-table-row')].map((tr) => tr.querySelector('td div > div')?.textContent)
@@ -235,29 +235,82 @@ describe('NhanLucScreen — one list (NL-01)', () => {
   })
 })
 
-describe('NhanLucScreen — filter bar (FLT-01, FLT-02, FLT-08)', () => {
-  it('holds a search, Phân quyền and Trạng thái, with Đặt lại and Tìm, under the title', async () => {
+describe('NhanLucScreen — filter bar (FLT-01, RV7-3)', () => {
+  it('holds a search, Phân quyền and Trạng thái under the title, and no Đặt lại or Tìm (RV7-3)', async () => {
     renderScreen()
     await screen.findByText('gs1')
     // Short enough to read whole in its 260 px (M18).
     expect(search()).toHaveAttribute('placeholder', 'Tìm tên, tên đăng nhập')
     expect(within(bar()).getByRole('combobox', { name: 'Phân quyền' })).toBeInTheDocument()
     expect(within(bar()).getByRole('combobox', { name: 'Trạng thái' })).toBeInTheDocument()
-    expect(within(bar()).getByRole('button', { name: 'Đặt lại' })).toBeInTheDocument()
+    expect(within(bar()).queryByRole('button', { name: 'Đặt lại' })).toBeNull()
+    expect(within(bar()).queryByRole('button', { name: 'Tìm' })).toBeNull()
     expect(within(bar()).queryByRole('button', { name: /Thêm nhân lực|Xuất danh sách/ })).toBeNull()
     expect(await optionTitles('Phân quyền', bar())).toEqual(['Tất cả phân quyền', 'Nhân viên', 'GS', 'Visitor'])
     expect(await optionTitles('Trạng thái', bar()))
       .toEqual(['Trừ đã ẩn, đã nghỉ', 'Tất cả trạng thái', 'Đang dùng', 'Đang làm', 'Đã khoá', 'Đã nghỉ', 'Đã ẩn'])
   })
 
-  it('applies a typed search only on Tìm, then counts the match against the whole list', async () => {
-    renderScreen()
-    await screen.findByText('gs1')
-    await userEvent.type(search(), 'le van')
-    expect(shownNames()).toHaveLength(3)
-    await apply()
-    expect(shownNames()).toEqual(['Lê Văn A'])
-    expect(keyFactTexts()).toEqual(['1/4 dòng khớp bộ lọc'])
+  describe('the search box filters as you type (RV7-3)', () => {
+    afterEach(() => {
+      vi.useRealTimers()
+    })
+    /** The list on screen, then a clock the test moves by hand. */
+    const loaded = async () => {
+      renderScreen()
+      await screen.findByText('gs1')
+      vi.useFakeTimers()
+    }
+    const typeQuery = (text: string) => fireEvent.change(search(), { target: { value: text } })
+
+    it('applies once the typing pauses for 250 ms, then counts the match against the whole list', async () => {
+      await loaded()
+      typeQuery('le')
+      act(() => vi.advanceTimersByTime(SEARCH_DEBOUNCE_MS - 1))
+      typeQuery('le van')
+      act(() => vi.advanceTimersByTime(SEARCH_DEBOUNCE_MS - 1))
+      // Every keystroke starts the wait again; the box shows what is typed at once.
+      expect(search()).toHaveValue('le van')
+      expect(shownNames()).toHaveLength(3)
+      act(() => vi.advanceTimersByTime(1))
+      expect(shownNames()).toEqual(['Lê Văn A'])
+      expect(keyFactTexts()).toEqual(['1/4 dòng khớp bộ lọc'])
+    })
+
+    it('applies at once on Enter, without waiting for the pause', async () => {
+      await loaded()
+      typeQuery('gs2')
+      fireEvent.keyDown(search(), { key: 'Enter', code: 'Enter', keyCode: 13 })
+      expect(shownNames()).toEqual(['GS Hai'])
+    })
+
+    it('drops the pending pause on Enter: nothing applies again 250 ms later', async () => {
+      listGsUsers.mockResolvedValue([])
+      listEmployees.mockResolvedValue(Array.from({ length: 30 }, (_, i) => ({
+        id: `e${i}`, fullName: `NV${String(i).padStart(2, '0')} - ${i < 12 ? 'Cao Minh Hải' : 'Trần Văn Bình'}`, active: true,
+      })))
+      renderScreen()
+      await screen.findByText('NV00 - Cao Minh Hải')
+      vi.useFakeTimers()
+      typeQuery('hai')
+      fireEvent.keyDown(search(), { key: 'Enter', code: 'Enter', keyCode: 13 })
+      expect(shownNames()).toHaveLength(10)
+      fireEvent.click(screen.getByTitle('2'))
+      expect(screen.getByTitle('2')).toHaveClass('ant-pagination-item-active')
+      // A second apply would send the pager back to page 1.
+      act(() => vi.advanceTimersByTime(SEARCH_DEBOUNCE_MS))
+      expect(screen.getByTitle('2')).toHaveClass('ant-pagination-item-active')
+    })
+
+    it('applies at once when cleared with its x', async () => {
+      await loaded()
+      typeQuery('le van')
+      act(() => vi.advanceTimersByTime(SEARCH_DEBOUNCE_MS))
+      expect(shownNames()).toEqual(['Lê Văn A'])
+      fireEvent.click(bar().querySelector('.ant-input-clear-icon') as HTMLElement)
+      expect(search()).toHaveValue('')
+      expect(shownNames()).toHaveLength(3)
+    })
   })
 
   it('applies on Enter in the search box, and matches the login as well as the name', async () => {
@@ -279,25 +332,22 @@ describe('NhanLucScreen — filter bar (FLT-01, FLT-02, FLT-08)', () => {
     expect(shownNames()).toEqual(['MC005594 - Đoàn Công Linh'])
   })
 
-  it('narrows by Phân quyền and finds retired employees and hidden accounts by Trạng thái', async () => {
+  it('narrows by Phân quyền and finds retired employees and hidden accounts by Trạng thái, each on change (RV7-3)', async () => {
     listGsUsers.mockResolvedValue([...ACCOUNTS, account({ id: 'u5', username: 'cu', fullName: 'Cũ Ẩn', active: false, hidden: true })])
     renderScreen()
     await screen.findByText('gs1')
     await chooseOption('Phân quyền', 'Nhân viên', bar())
-    await apply()
     expect(shownNames()).toEqual(['Lê Văn A'])
 
     await chooseOption('Phân quyền', 'Tất cả phân quyền', bar())
     await chooseOption('Trạng thái', 'Đã nghỉ', bar())
-    await apply()
     expect(shownNames()).toEqual(['Trần Thị B'])
     expect(within(rowOf('Trần Thị B')).getByText('Đã nghỉ')).toBeInTheDocument()
 
     await chooseOption('Trạng thái', 'Đã ẩn', bar())
-    await apply()
     expect(shownNames()).toEqual(['Cũ Ẩn'])
 
-    await userEvent.click(within(bar()).getByRole('button', { name: 'Đặt lại' }))
+    await chooseOption('Trạng thái', 'Trừ đã ẩn, đã nghỉ', bar())
     expect(shownNames()).toEqual(['GS Một', 'GS Hai', 'Lê Văn A'])
   })
 
@@ -600,7 +650,6 @@ describe('NhanLucScreen — accounts, as before (USR)', () => {
     await waitFor(() => expect(screen.queryByText('gs1')).toBeNull())
 
     await chooseOption('Trạng thái', 'Đã ẩn', bar())
-    await apply()
     expect(await screen.findByText('Đã ẩn', { selector: '.ant-table-cell *' })).toBeInTheDocument()
     await userEvent.click(within(rowOf('GS Một')).getByRole('button', { name: 'Hiện lại' }))
     await waitFor(() => expect(unhideUser).toHaveBeenCalledWith('u7'))
@@ -666,7 +715,6 @@ describe('NhanLucScreen — employees, as before (Rv4, Rv5)', () => {
     expect(await screen.findByText('Đã khoá nhân viên')).toBeInTheDocument()
 
     await chooseOption('Trạng thái', 'Đã nghỉ', bar())
-    await apply()
     await userEvent.click(within(rowOf('Trần Thị B')).getByRole('button', { name: 'Mở khoá' }))
     await waitFor(() => expect(updateEmployee).toHaveBeenCalledWith('e2', { active: true }))
     expect(await screen.findByText('Đã mở khoá nhân viên')).toBeInTheDocument()
@@ -1057,7 +1105,6 @@ describe('NhanLucScreen — Đổi phân quyền, from the Sửa dialog (NL-04, 
     renderScreen()
     await screen.findByText('gs1')
     await chooseOption('Trạng thái', 'Đã ẩn', bar())
-    await apply()
     const dialog = await openChange('trần thị b')
     await pickNew(dialog, 'Nhân viên')
     expect(within(dialog).getByText('Đã có nhân viên tên "Trần Thị B" (đã nghỉ; chọn Trạng thái «Đã nghỉ» để thấy).')).toBeInTheDocument()
@@ -1134,7 +1181,6 @@ describe('NhanLucScreen — actions and dialogs (M7, M8, M9, NL-09)', () => {
       expect(within(rowOf('GS Một')).queryByRole('button', { name: gone })).toBeNull()
     }
     await chooseOption('Trạng thái', 'Đã ẩn', bar())
-    await apply()
     await screen.findByText('gs3')
     // A hidden account has no lock: its slot is kept empty rather than closed up.
     const hidden = actionsOf('GS Ba')
@@ -1146,7 +1192,6 @@ describe('NhanLucScreen — actions and dialogs (M7, M8, M9, NL-09)', () => {
     listGsUsers.mockResolvedValue([account({ active: false, hidden: true })])
     renderScreen()
     await chooseOption('Trạng thái', 'Đã ẩn', bar())
-    await apply()
     const back = await within(await waitFor(() => rowOf('GS Một'))).findByRole('button', { name: 'Hiện lại' })
     expect(back).toHaveClass('ant-btn-icon-only')
     expect(back).toHaveTextContent('')
@@ -1549,21 +1594,21 @@ describe('NhanLucScreen — the page error clears on the next step (NL-10)', () 
     expect(await screen.findByText('Không đọc được mật khẩu')).toBeInTheDocument()
   }
 
-  it('clears when the filter bar is applied with Tìm', async () => {
+  it('clears when a filter of the bar changes', async () => {
     await failReveal()
-    await apply()
+    await chooseOption('Phân quyền', 'GS', bar())
+    await waitFor(() => expect(screen.queryByText('Không đọc được mật khẩu')).toBeNull())
+  })
+
+  it('clears when a typed search applies', async () => {
+    await failReveal()
+    await userEvent.type(search(), 'gs')
     await waitFor(() => expect(screen.queryByText('Không đọc được mật khẩu')).toBeNull())
   })
 
   it('clears when the filter bar is applied with Enter', async () => {
     await failReveal()
     await userEvent.type(search(), 'gs{Enter}')
-    await waitFor(() => expect(screen.queryByText('Không đọc được mật khẩu')).toBeNull())
-  })
-
-  it('clears on Đặt lại', async () => {
-    await failReveal()
-    await userEvent.click(within(bar()).getByRole('button', { name: /Đặt lại/ }))
     await waitFor(() => expect(screen.queryByText('Không đọc được mật khẩu')).toBeNull())
   })
 

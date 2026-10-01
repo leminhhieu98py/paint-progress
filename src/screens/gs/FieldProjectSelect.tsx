@@ -13,24 +13,23 @@ import { FIELD_SECTIONS, fieldSectionOf } from './fieldSections'
  * by its aria-label (FLT-01). An account on one project still sees it, with
  * one option, so the bar reads the same for everyone.
  *
- * On the Sàn page choosing is navigation: it opens the same page of the
- * chosen project at once. In a draft bar (Năng suất, KPI) it is part of the
- * draft (`value`/`onChange`), and the bar opens the chosen project on Tìm.
+ * Choosing is navigation: it opens the same page of the chosen project at
+ * once (RV7-3). Năng suất and KPI take the pick (`onChange`) to carry their
+ * filters there first (I-1).
  *
  * The list is kept for the session (fieldProjects), because every field page
  * and every project switch mounts this anew. A failed read leaves the project
  * on screen, which is on the route: by the name the screen already read when
  * it has one, else by its id.
  */
-export function FieldProjectSelect({ projectId, width = 260, value, onChange }: {
+export function FieldProjectSelect({ projectId, width = 260, onChange }: {
   /** The project on screen, from the route. */
   projectId: string
   width?: number | string
   /**
-   * A draft bar's choice (FLT-02, I-1): with `onChange` the select shows
-   * `value` and reports a pick instead of navigating; the bar navigates on Tìm.
+   * With `onChange` the select reports a pick instead of navigating: the page
+   * carries its filters to the chosen project and opens it (I-1).
    */
-  value?: string
   onChange?: (projectId: string) => void
 }) {
   const navigate = useNavigate()
@@ -67,7 +66,7 @@ export function FieldProjectSelect({ projectId, width = 260, value, onChange }: 
       {...searchSelectProps}
       {...fullOptions}
       style={{ width, maxWidth: '100%' }}
-      value={value ?? projectId}
+      value={projectId}
       loading={reading && !listed}
       onChange={(id: string) => {
         if (onChange) onChange(id)

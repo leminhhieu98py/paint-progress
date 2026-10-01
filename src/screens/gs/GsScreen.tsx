@@ -3,7 +3,7 @@ import {
 } from 'antd'
 import dayjs from 'dayjs'
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useParams } from 'react-router-dom'
 import { useAuth } from '../../auth/AuthProvider'
 
 import { DrawingCanvas } from '../../canvas/DrawingCanvas'
@@ -43,7 +43,6 @@ import { FIELD_TAB_BAR_SPACE, useFieldPhone } from './fieldSections'
 import { FilterBar } from '../../components/FilterBar'
 import { IconAction } from '../../components/IconAction'
 import { FilterSheet } from '../../components/FilterSheet'
-import { APP_BASE_PATH } from '../../config'
 import { rememberProjectName } from './fieldProjects'
 import { openingDeckId, rememberDeck } from './lastDeck'
 import { SectionCard } from '../../components/SectionCard'
@@ -122,17 +121,14 @@ export function GsScreen() {
    * while the read is in flight, so "no work" is never shown for "not yet".
    */
   const [works, setWorks] = useState<DeckWork[] | null>(null)
-  /** The work the drawing, the cards and the bay modal are scoped to. */
-  const [activeWorkId, setActiveWorkId] = useState<string | null>(null)
-  /** The work a Tìm applied together with a new deck, for that deck's load to open on (FLT-08). */
-  const workWithDeck = useRef<string | null>(null)
   /**
-   * The bar's draft (FLT-08) and the phone sheet's (FLT-09): a project, a deck
-   * or a work picked there and not yet applied by Tìm. Empty is what is
-   * applied. The phone's sheet holds no deck: its inline Sàn applies at once.
+   * The work the drawing, the cards and the bay modal are scoped to; null is
+   * the deck's first. Kept across a deck switch from the bar when the new
+   * deck has it, else settled to that deck's first once its works arrive, so
+   * a work hidden by one deck never comes back on the next (RV7-3). Another
+   * project starts on its first.
    */
-  const [barDraft, setBarDraft] = useState<{ project?: string; deck?: string; work?: string }>({})
-  const navigate = useNavigate()
+  const [activeWorkId, setActiveWorkId] = useState<string | null>(null)
   /** The bar's and the plan's selects read their options in full (FLT-04, M3). */
   const fullOptions = useFullOptionsProps()
   const [decks, setDecks] = useState<GsDeck[]>([])
@@ -191,8 +187,9 @@ export function GsScreen() {
         // The name the Dự án switch shows while its list is on the way (M-1).
         if (project.name) rememberProjectName(projectId, project.name)
         setDecks(project.decks)
-        // The deck last opened in this project, else the first (GS-02).
+        // The deck last opened in this project, else the first (GS-02), on its first work.
         setActiveDeckId(openingDeckId(projectId, project.decks))
+        setActiveWorkId(null)
       })
       .catch(() => {
         if (cancelled) return
@@ -222,32 +219,16 @@ export function GsScreen() {
     }
     let cancelled = false
     setWorks(null)
-    // The work Tìm applied with this deck, else the deck's first (FLT-08).
-    setActiveWorkId(workWithDeck.current)
-    workWithDeck.current = null
     setStagesError(false)
     listDeckWorks(activeDeckId)
-      .then((rows) => { if (!cancelled) setWorks(rows) })
+      .then((rows) => {
+        if (cancelled) return
+        setWorks(rows)
+        setActiveWorkId((id) => (id === null || rows.some((w) => w.work.id === id) ? id : rows[0]?.work.id ?? null))
+      })
       .catch(() => { if (!cancelled) setStagesError(true) })
     return () => { cancelled = true }
   }, [activeDeckId])
-
-  /**
-   * The drafted deck's works, while the bar's draft names another deck than
-   * the one on screen: the work select offers THAT deck's works (FLT-02).
-   * Null while they load; the bar's Tìm waits for them.
-   */
-  const [draftDeckWorks, setDraftDeckWorks] = useState<{ deckId: string; rows: DeckWork[] } | null>(null)
-  useEffect(() => {
-    const deckId = barDraft.deck
-    if (deckId === undefined || deckId === activeDeckId) return
-    let cancelled = false
-    listDeckWorks(deckId)
-      .then((rows) => { if (!cancelled) setDraftDeckWorks({ deckId, rows }) })
-      // Options only: Tìm still opens the deck, on its first work.
-      .catch(() => { if (!cancelled) setDraftDeckWorks({ deckId, rows: [] }) })
-    return () => { cancelled = true }
-  }, [barDraft.deck, activeDeckId])
 
   const deck = decks.find((d) => d.id === activeDeckId) ?? null
   const imageUrl = drawing !== null && drawing.path === deck?.imagePath ? drawing.url : null
@@ -1233,9 +1214,7 @@ export function GsScreen() {
     Named by its aria-label, no label on screen (FLT-01); a searchable
     select, as on every screen (FLT-03).
   */
-  const workSelect = (
-    block: boolean, value: string | undefined, onChange: (id: string) => void, list: DeckWork[] = workList,
-  ) => list.length > 1 && (
+  const workSelect = (block: boolean, value: string | undefined, onChange: (id: string) => void) => workList.length > 1 && (
     <Select
       aria-label="Công việc"
       {...searchSelectProps}
@@ -1243,75 +1222,32 @@ export function GsScreen() {
       style={{ width: block ? '100%' : WORK_SELECT_WIDTH, maxWidth: '100%' }}
       value={value}
       onChange={onChange}
-      options={list.map((w) => ({ label: w.work.name, value: w.work.id }))}
+      options={workList.map((w) => ({ label: w.work.name, value: w.work.id }))}
     />
   )
   /*
-    The draft's project. The deck's and the work's options are this
-    project's, so both wait for Tìm on another project to open that one's
-    page, hidden while it is the draft.
+    The inline bar (768 px and wider): Dự án, Sàn, and the work when the deck
+    is in several, each applied as it changes (RV7-3). Dự án opens the other
+    project's page. A deck switch keeps the work when the new deck has it,
+    else opens on its first.
   */
-  const draftProject = barDraft.project ?? projectId
-  const onThisProject = draftProject === projectId
-  const draftProjectSelect = (width?: string) => projectId && (
-    <FieldProjectSelect
-      projectId={projectId}
-      width={width}
-      value={draftProject ?? undefined}
-      onChange={(project) => setBarDraft((d) => ({ ...d, project }))}
-    />
-  )
-  /*
-    The inline bar (768 px and wider). With more than one control -- Dự án
-    and Sàn, and the work when the deck is in several -- it is a draft ending
-    Đặt lại · Tìm (FLT-08); Dự án alone applies at once.
-  */
-  const barIsDraft = Boolean(projectId) && decks.length > 0
-  /** The drafted deck's works: the one on screen's, or the other deck's once read (null meanwhile). */
-  const draftDeckChanged = barDraft.deck !== undefined && barDraft.deck !== activeDeckId
-  const draftWorkList = !draftDeckChanged
-    ? workList
-    : draftDeckWorks !== null && draftDeckWorks.deckId === barDraft.deck ? draftDeckWorks.rows : null
-  /** The drafted work, if the drafted deck has it, else that deck's first. */
-  const draftWorkId = draftWorkList === null
-    ? undefined
-    : (draftWorkList.find((w) => w.work.id === (barDraft.work ?? activeWork?.work.id)) ?? draftWorkList[0])?.work.id
-  const barControls = barIsDraft ? (
+  const barControls = (
     <>
-      {draftProjectSelect()}
-      {onThisProject && deckSelect(false, barDraft.deck ?? activeDeckId, (deck) => setBarDraft((d) => ({ ...d, deck })))}
-      {onThisProject && draftWorkList !== null
-        && workSelect(false, draftWorkId, (work) => setBarDraft((d) => ({ ...d, work })), draftWorkList)}
+      {projectId && <FieldProjectSelect projectId={projectId} />}
+      {projectId && deckSelect(false, activeDeckId, chooseDeck)}
+      {projectId && workSelect(false, activeWork?.work.id, setActiveWorkId)}
     </>
-  ) : (
-    projectId && <FieldProjectSelect projectId={projectId} />
   )
   /*
-    The phone's sheet (FLT-04, FLT-09): Dự án and the work, a draft until Tìm.
-    Sàn is not repeated here: it stays in the row and applies at once.
+    The phone's sheet (FLT-04): Dự án and the work, each applied as it
+    changes (RV7-3). Sàn is not repeated here: it stays in the row.
   */
   const sheetControls = (
     <>
-      {draftProjectSelect('100%')}
-      {activeWork && onThisProject
-        && workSelect(true, barDraft.work ?? activeWork.work.id, (work) => setBarDraft((d) => ({ ...d, work })))}
+      {projectId && <FieldProjectSelect projectId={projectId} width="100%" />}
+      {activeWork && workSelect(true, activeWork.work.id, setActiveWorkId)}
     </>
   )
-  /** Tìm, in the bar or the sheet: another project opens its page; else the deck and the work apply. */
-  const applyBar = () => {
-    if (draftProject && !onThisProject) navigate(`${APP_BASE_PATH}/gs/${draftProject}`)
-    else if (draftDeckChanged && barDraft.deck !== undefined) {
-      // The deck load resets the work: hand it the drafted one to open on.
-      workWithDeck.current = draftWorkId ?? null
-      chooseDeck(barDraft.deck)
-    } else if (barDraft.work !== undefined) setActiveWorkId(barDraft.work)
-    setBarDraft({})
-  }
-  /** Đặt lại: this project, the deck on screen and its first work, applied at once (FLT-08, FLT-09). */
-  const resetBar = () => {
-    setBarDraft({})
-    setActiveWorkId(null)
-  }
 
   // The drawing is the screen; everything under the header has to earn its
   // height on a tablet held at arm's length.
@@ -1369,8 +1305,8 @@ export function GsScreen() {
       >
         {/*
           GS-07: the page's one filter bar, first and across both columns:
-          Dự án · Sàn · the work, a draft that Tìm applies (FLT-08); on a
-          phone the inline Sàn still applies at once (FLT-09).
+          Dự án · Sàn · the work, each applied as it changes (RV7-3); on a
+          phone the work and Dự án move into a sheet (FLT-04).
 
           GS-03: the deck, chosen by name. Name AND percentage on every
           option: the foreman picks a deck to work on, and "which one is
@@ -1400,18 +1336,15 @@ export function GsScreen() {
             <div style={{ flex: '1 1 auto', minWidth: 0 }}>
               {phone ? (
                 <FilterSheet
-                  inline={deckSelect(true, activeDeckId, chooseDeck)}
+                  // The phone's Sàn opens the deck on its first work, as it always has.
+                  inline={deckSelect(true, activeDeckId, (id) => {
+                    setActiveWorkId(null)
+                    chooseDeck(id)
+                  })}
                   count={workIsDefault ? 0 : 1}
-                  onApply={applyBar}
-                  onReset={resetBar}
-                  onDiscard={() => setBarDraft({})}
                 >
                   {sheetControls}
                 </FilterSheet>
-              ) : barIsDraft ? (
-                <FilterBar onApply={applyBar} onReset={resetBar} applyLoading={draftWorkList === null}>
-                  {barControls}
-                </FilterBar>
               ) : (
                 <FilterBar>{barControls}</FilterBar>
               )}
