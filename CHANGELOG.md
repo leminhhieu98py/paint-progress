@@ -10,9 +10,11 @@ own branch, verified against the development Supabase project, and deployed to
 production by the owner. **Database migrations are listed per release and must
 reach production before the app that needs them.**
 
-## [Unreleased]
+## [1.9.0] - 2026-10-01
 
-Linh's review Rv7. No database migration, no Edge Function.
+Linh's review Rv7: filters that apply as they change, a copyright line on
+every screen, zoom below 100%, every zone label on the drawing, and a new
+login animation. No database migration, no Edge Function.
 
 ### Added
 
@@ -640,7 +642,7 @@ Level Security.
 
 Production runs its own Supabase project, created empty.
 
-[Unreleased]: https://github.com/leminhhieu98py/paint-progress/compare/v1.8.0...HEAD
+[1.9.0]: https://github.com/leminhhieu98py/paint-progress/compare/v1.8.0...v1.9.0
 [1.8.0]: https://github.com/leminhhieu98py/paint-progress/compare/v1.7.0...v1.8.0
 [1.7.0]: https://github.com/leminhhieu98py/paint-progress/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/leminhhieu98py/paint-progress/compare/v1.5.0...v1.6.0
