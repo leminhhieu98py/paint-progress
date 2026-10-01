@@ -101,9 +101,9 @@ export function StagePlanTable({
   onClearArea: (stageId: string) => void | Promise<void>
   saving?: boolean
   /**
-   * What the rows are of: the project and the count of the bar's applies.
-   * When it changes the pager goes back to page 1 and the drafts typed under
-   * the scope before are dropped (M10, UI-05).
+   * What the rows are of: the project. When it changes the pager goes back
+   * to page 1 and the drafts typed under the scope before are dropped (M10,
+   * UI-05).
    */
   scopeKey?: PaginationResetKey
 }) {

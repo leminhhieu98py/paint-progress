@@ -249,15 +249,12 @@ function Body({
   data: { current, reload },
   model: { todayKey, coats, planByStage, coatByStage, entries },
   filters,
-  version = 0,
 }: {
   projectId: string | null
   variant: 'admin' | 'gs'
   data: KpiData
   model: KpiModel
   filters: KpiFilters
-  /** Counts the bar's applies: the plan table's page and drafts start over on each (M10). */
-  version?: number
 }) {
   const { message } = App.useApp()
   const [saving, setSaving] = useState(false)
@@ -391,7 +388,9 @@ function Body({
           onSave={onSave}
           onClearArea={onClearArea}
           saving={saving}
-          scopeKey={`${projectId}|${version}`}
+          // The rows are the project's, whatever the chart shows: only another
+          // project starts its page and its unsaved edits over (M10).
+          scopeKey={projectId}
         />
       )}
       {/* RV6-28: the chart's colours per deck, admin-only like the plan table. */}
@@ -456,7 +455,7 @@ function AdminKpi() {
       />
       <PageBody>
         {listError && <Alert type="error" showIcon message="Không tải được danh sách dự án" description={listError} />}
-        <Body projectId={projectId} variant="admin" data={data} model={model} filters={filters} version={scope.version} />
+        <Body projectId={projectId} variant="admin" data={data} model={model} filters={filters} />
       </PageBody>
     </>
   )

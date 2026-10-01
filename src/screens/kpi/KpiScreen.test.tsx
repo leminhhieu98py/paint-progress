@@ -1,5 +1,5 @@
 import { App as AntApp } from 'antd'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { EMPTY_EFFORT, type Cell, type DeckEvent, type Stage, type WorkModel } from '../../domain/types'
@@ -284,6 +284,34 @@ describe('KpiScreen — one filter bar (FLT-01)', () => {
     expect(await screen.findByText(/PHẠM VI tất cả\/tất cả/)).toBeInTheDocument()
   })
 
+  it('shows Tất cả sàn, never the old project\'s deck id, while the new project loads (RV7-3)', async () => {
+    loadProjectModel.mockImplementation((id: string) => (id === 'p2' ? new Promise(() => {}) : Promise.resolve(MODEL)))
+    renderAdmin()
+    await screen.findByTestId('kpi-dashboard')
+    await chooseOption('Sàn', 'Sàn A', bar())
+    await chooseOption('Dự án', 'Giàn B (GB)', bar())
+    await waitFor(() => expect(loadProjectModel).toHaveBeenLastCalledWith('p2'))
+    const deck = within(bar()).getByRole('combobox', { name: 'Sàn' }).closest('.ant-select') as HTMLElement
+    expect(within(deck).getByTitle('Tất cả sàn')).toBeInTheDocument()
+    expect(within(deck).queryByText('d1')).toBeNull()
+  })
+
+  it('shows the last project picked when an earlier pick answers after it (RV7-3)', async () => {
+    let resolveP2: (v: typeof MODEL | typeof MODEL_Z) => void = () => {}
+    loadProjectModel.mockImplementation((id: string) =>
+      (id === 'p2' ? new Promise((r) => { resolveP2 = r }) : Promise.resolve(MODEL)))
+    renderAdmin()
+    await screen.findByText(/CHART Sàn A=/)
+    await chooseOption('Dự án', 'Giàn B (GB)', bar())
+    await waitFor(() => expect(loadProjectModel).toHaveBeenLastCalledWith('p2'))
+    await chooseOption('Dự án', 'Giàn A (GA)', bar())
+    await waitFor(() => expect(loadProjectModel).toHaveBeenLastCalledWith('p1'))
+    expect(await screen.findByText(/CHART Sàn A=/)).toBeInTheDocument()
+    await act(async () => resolveP2(MODEL_Z))
+    expect(screen.getByText(/CHART Sàn A=/)).toBeInTheDocument()
+    expect(screen.queryByText(/Sàn Z/)).toBeNull()
+  })
+
   it('keeps a deck the new project has too (RV7-3)', async () => {
     renderAdmin()
     await screen.findByTestId('kpi-dashboard')
@@ -336,6 +364,19 @@ describe('KpiScreen — one filter bar (FLT-01)', () => {
     expect(await screen.findByText(/PHẠM VI d1\/tất cả/)).toBeInTheDocument()
   })
 
+  it('shows Tất cả sàn on the picked project\'s page while it loads, not the carried deck id (RV7-3)', async () => {
+    loadProjectModel.mockImplementation((id: string) => (id === 'p1' ? new Promise(() => {}) : Promise.resolve(MODEL)))
+    renderField()
+    await screen.findByTestId('kpi-dashboard')
+    await chooseOption('Sàn', 'Sàn A', bar())
+    await pickProject('Giàn A')
+    await userEvent.click(screen.getByRole('link', { name: 'sang Giàn A' }))
+    await waitFor(() => expect(loadProjectModel).toHaveBeenCalledWith('p1'))
+    const deck = within(bar()).getByRole('combobox', { name: 'Sàn' }).closest('.ant-select') as HTMLElement
+    expect(within(deck).getByTitle('Tất cả sàn')).toBeInTheDocument()
+    expect(within(deck).queryByText('d1')).toBeNull()
+  })
+
   it('carries them and drops the deck the picked project does not have (I-1)', async () => {
     loadProjectModel.mockImplementation((id: string) => Promise.resolve(id === 'p1' ? MODEL_Z : MODEL))
     renderField()
@@ -350,13 +391,16 @@ describe('KpiScreen — one filter bar (FLT-01)', () => {
 })
 
 describe('KpiScreen (admin)', () => {
-  it('hands the plan table a new scope on every applied change, so its page and drafts start over (M10, RV7-3)', async () => {
+  it('hands the plan table a new scope on a project change only: its rows do not follow the chart\'s filters (M10, RV7-3)', async () => {
     renderAdmin()
     const table = await screen.findByTestId('plan-table')
-    const first = table.getAttribute('data-scope')
-    expect(first).toMatch(/^p1\|/)
+    expect(table.getAttribute('data-scope')).toBe('p1')
+    // A chart filter keeps the page and the unsaved edits.
     await chooseOption('Sàn', 'Sàn A', bar())
-    await waitFor(() => expect(screen.getByTestId('plan-table').getAttribute('data-scope')).not.toBe(first))
+    expect(await screen.findByText(/PHẠM VI d1\/tất cả/)).toBeInTheDocument()
+    expect(screen.getByTestId('plan-table').getAttribute('data-scope')).toBe('p1')
+    await chooseOption('Dự án', 'Giàn B (GB)', bar())
+    await waitFor(() => expect(screen.getByTestId('plan-table').getAttribute('data-scope')).toBe('p2'))
   })
 
   it('opens on the first project and makes its three reads', async () => {

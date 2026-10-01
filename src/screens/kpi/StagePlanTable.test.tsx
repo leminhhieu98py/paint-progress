@@ -507,21 +507,21 @@ describe('StagePlanTable — pager and drafts follow the scope (M10, UI-05)', ()
     </AntApp>
   )
 
-  it('goes back to page 1 when a filter applies, with the same rows', async () => {
-    const { rerender } = render(table('p1|0'))
+  it('goes back to page 1 when the scope changes, with the same rows', async () => {
+    const { rerender } = render(table('p1'))
     await userEvent.click(screen.getByTitle('2'))
     expect(screen.getByTitle('2')).toHaveClass('ant-pagination-item-active')
-    rerender(table('p1|1'))
+    rerender(table('p2'))
     expect(screen.getByTitle('1')).toHaveClass('ant-pagination-item-active')
   })
 
   it('drops the drafts typed under the scope before', async () => {
-    const { rerender } = render(table('p1|0'))
+    const { rerender } = render(table('p1'))
     const area = within(screen.getByTestId('plan-row-m0')).getByLabelText('Diện tích kế hoạch')
     await userEvent.clear(area)
     await userEvent.type(area, '77')
     expect(area).toHaveValue('77')
-    rerender(table('p1|1'))
+    rerender(table('p2'))
     expect(within(screen.getByTestId('plan-row-m0')).getByLabelText('Diện tích kế hoạch')).not.toHaveValue('77')
   })
 })

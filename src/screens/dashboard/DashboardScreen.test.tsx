@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Link, MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -181,6 +181,35 @@ describe('DashboardScreen (admin)', () => {
     await chooseOption('Dự án', 'Giàn A (GA)', bar())
     await waitFor(() => expect(loadProjectModel).toHaveBeenLastCalledWith('p1'))
     expect(await screen.findByText('DASHBOARD 2 sự kiện · Tất cả sàn · công việc đầu')).toBeInTheDocument()
+  })
+
+  it('shows Tất cả sàn, not the last project\'s deck, while the new project loads (RV7-3)', async () => {
+    loadProjectModel.mockImplementation((id: string) => (id === 'p2' ? new Promise(() => {}) : Promise.resolve(MODEL)))
+    renderAdmin()
+    await screen.findByText(/^DASHBOARD 2 sự kiện/)
+    await chooseOption('Sàn', 'Sàn A', bar())
+    await chooseOption('Dự án', 'Giàn B (GB)', bar())
+    await waitFor(() => expect(loadProjectModel).toHaveBeenLastCalledWith('p2'))
+    const deck = within(bar()).getByRole('combobox', { name: 'Sàn' }).closest('.ant-select') as HTMLElement
+    expect(within(deck).getByTitle('Tất cả sàn')).toBeInTheDocument()
+    expect(within(deck).queryByText('Sàn A')).toBeNull()
+  })
+
+  it('shows the last project picked when an earlier pick answers after it (RV7-3)', async () => {
+    let resolveP2: (v: typeof MODEL | typeof MODEL_Z) => void = () => {}
+    loadProjectModel.mockImplementation((id: string) =>
+      (id === 'p2' ? new Promise((r) => { resolveP2 = r }) : Promise.resolve(MODEL)))
+    listProjectEvents.mockImplementation((id: string) => Promise.resolve(id === 'p2' ? [{ id: 9 }] : [{ id: 1 }, { id: 2 }]))
+    renderAdmin()
+    await screen.findByText(/^DASHBOARD 2 sự kiện/)
+    await chooseOption('Dự án', 'Giàn B (GB)', bar())
+    await waitFor(() => expect(loadProjectModel).toHaveBeenLastCalledWith('p2'))
+    await chooseOption('Dự án', 'Giàn A (GA)', bar())
+    await waitFor(() => expect(loadProjectModel).toHaveBeenLastCalledWith('p1'))
+    expect(await screen.findByText(/^DASHBOARD 2 sự kiện/)).toBeInTheDocument()
+    await act(async () => resolveP2(MODEL_Z))
+    expect(screen.getByText(/^DASHBOARD 2 sự kiện/)).toBeInTheDocument()
+    expect(screen.queryByText(/^DASHBOARD 1 sự kiện/)).toBeNull()
   })
 
   it('keeps a deck the new project has too (RV7-3)', async () => {
