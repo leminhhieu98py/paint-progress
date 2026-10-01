@@ -113,6 +113,8 @@ describe('ProjectPickerScreen', () => {
     renderPicker()
     expect(await screen.findByText('Không tải được danh sách dự án')).toBeInTheDocument()
     expect(screen.queryByText('Chưa có dự án nào')).toBeNull()
+    // Ends with the copyright line, as every screen does (RV7-2).
+    expect(screen.getByText(COPYRIGHT)).toBeInTheDocument()
   })
 
   it('offers logout, after a confirmation, and nothing else about the account', async () => {

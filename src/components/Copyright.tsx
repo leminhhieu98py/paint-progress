@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { palette, space, type } from '../theme'
 
 /**
@@ -27,5 +28,20 @@ export function Copyright({ paddingInline = space.lg }: { paddingInline?: number
     >
       Bản quyền © 2026 Đoàn Công Linh – XDVTH
     </footer>
+  )
+}
+
+/**
+ * A screen with no shell of its own (a not-found page, a failed read, a
+ * GS with no project): its content, then the copyright line at the bottom of
+ * the page (RV7-2). The content keeps a block box, so it lays out as it would
+ * without the line.
+ */
+export function CopyrightPage({ children }: { children: ReactNode }) {
+  return (
+    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+      <div>{children}</div>
+      <Copyright />
+    </div>
   )
 }

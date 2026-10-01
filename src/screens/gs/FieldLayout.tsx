@@ -17,8 +17,10 @@ import { FIELD_TAB_BAR_SPACE, useFieldPhone } from './fieldSections'
  * Everything inside is on the field's type scale (GS-10): a shared component
  * sets its running text at the field's 14, not the admin's 13.
  */
-export function FieldLayout({ projectId, children }: {
+export function FieldLayout({ projectId, copyrightInset, children }: {
   projectId: string | null | undefined
+  /** The page's own side padding, to line the copyright line up with it; 16 when left out. */
+  copyrightInset?: number
   children: ReactNode
 }) {
   const phone = useFieldPhone()
@@ -27,7 +29,7 @@ export function FieldLayout({ projectId, children }: {
       <Layout style={{ minHeight: '100vh', paddingBottom: phone ? FIELD_TAB_BAR_SPACE : undefined }}>
         {projectId ? <FieldHeader projectId={projectId} /> : null}
         {children}
-        <Copyright />
+        <Copyright paddingInline={copyrightInset} />
       </Layout>
     </TypeScaleProvider>
   )

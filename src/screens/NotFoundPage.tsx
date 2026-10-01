@@ -1,6 +1,6 @@
 import { Button } from 'antd'
 import { useNavigate } from 'react-router-dom'
-import { Copyright } from '../components/Copyright'
+import { CopyrightPage } from '../components/Copyright'
 import { EmptyState } from '../components/EmptyState'
 import { palette, shadowCard } from '../theme'
 
@@ -53,13 +53,5 @@ export function NotFoundPage({ home, inShell = false }: {
       />
     </div>
   )
-  if (inShell) return card
-  // On its own, the page ends with the copyright line at its bottom (RV7-2).
-  // The card keeps a block box around it, so it centres as it always did.
-  return (
-    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
-      <div>{card}</div>
-      <Copyright />
-    </div>
-  )
+  return inShell ? card : <CopyrightPage>{card}</CopyrightPage>
 }

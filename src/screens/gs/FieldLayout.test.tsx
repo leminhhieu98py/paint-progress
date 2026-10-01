@@ -22,4 +22,15 @@ describe('FieldLayout', () => {
       screen.getByText('nội dung trang').compareDocumentPosition(line) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy()
   })
+
+  // Lined up with the page's own side padding: 16 by default (field Năng
+  // suất, KPI), the GS screen's 12 on a phone.
+  it('insets the copyright line by the page’s own side padding', () => {
+    const { unmount } = render(<FieldLayout projectId={null}><div /></FieldLayout>)
+    expect(screen.getByText(COPYRIGHT).style.paddingInline).toBe('16px')
+    unmount()
+
+    render(<FieldLayout projectId={null} copyrightInset={12}><div /></FieldLayout>)
+    expect(screen.getByText(COPYRIGHT).style.paddingInline).toBe('12px')
+  })
 })

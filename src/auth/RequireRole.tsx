@@ -1,5 +1,6 @@
 import { Alert, Button, Spin } from 'antd'
 import type { ReactNode } from 'react'
+import { CopyrightPage } from '../components/Copyright'
 import { NotFound } from '../screens/NotFound'
 import { NotFoundPage } from '../screens/NotFoundPage'
 import { useAuth, type Role } from './AuthProvider'
@@ -35,18 +36,20 @@ export function RequireRole({
   // both already require valid credentials to reach this point.
   if (profileError) {
     return (
-      <div style={{ maxWidth: 360, margin: '25vh auto' }}>
-        <Alert
-          type="error"
-          message="Không tải được thông tin tài khoản"
-          description="Kiểm tra kết nối mạng rồi thử lại."
-          action={
-            <Button onClick={() => window.location.reload()}>
-              Thử lại
-            </Button>
-          }
-        />
-      </div>
+      <CopyrightPage>
+        <div style={{ maxWidth: 360, margin: '25vh auto' }}>
+          <Alert
+            type="error"
+            message="Không tải được thông tin tài khoản"
+            description="Kiểm tra kết nối mạng rồi thử lại."
+            action={
+              <Button onClick={() => window.location.reload()}>
+                Thử lại
+              </Button>
+            }
+          />
+        </div>
+      </CopyrightPage>
     )
   }
   // No profile, or a deactivated one, is not signed in for any purpose: the
