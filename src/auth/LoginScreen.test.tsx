@@ -2,6 +2,8 @@ import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import lottie from 'lottie-web/build/player/lottie_light'
+import { COPYRIGHT } from '../test/copy'
+import { setViewport } from '../test/viewport'
 import { Hero, LoginScreen } from './LoginScreen'
 
 const signIn = vi.fn()
@@ -82,7 +84,7 @@ describe('LoginScreen', () => {
     expect(screen.getByText('Construction Management')).toBeInTheDocument()
   })
 
-  it('shows the illustration above the sign-in card on a phone, no taller than 160', () => {
+  it('shows the illustration above the sign-in card on a phone, no wider than 200', () => {
     // jsdom reports every breakpoint false, so this is the phone layout.
     render(<LoginScreen />)
     const illustration = screen.getByTestId('login-illustration')
@@ -91,7 +93,7 @@ describe('LoginScreen', () => {
     expect(
       illustration.compareDocumentPosition(heading) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy()
-    expect(illustration).toHaveStyle({ maxHeight: '160px' })
+    expect(illustration).toHaveStyle({ maxWidth: '200px' })
   })
 
   // The player here is the shared stub from test-setup.ts, which records what
@@ -111,21 +113,47 @@ describe('LoginScreen', () => {
     expect(animation.destroy).toHaveBeenCalledTimes(1)
   })
 
-  it('sets the sign-in title and the hero headline on the type scale (M3, TYP-01)', () => {
+  it('sets the sign-in title on the type scale (M3, TYP-01)', () => {
     render(<LoginScreen />)
     expect(screen.getByRole('heading', { name: 'Đăng nhập' })).toHaveStyle({ fontSize: '20px', fontWeight: '600' })
-    render(<Hero />)
-    expect(screen.getByRole('heading', { name: 'Quản lý tiến độ thi công ngay trên bản vẽ.' }))
-      .toHaveStyle({ fontSize: '15px', fontWeight: '600' })
   })
 
-  it('carries the approved headline in the wide-screen hero', () => {
-    // Asserted on Hero directly: antd's breakpoint hook reports every screen
-    // false under jsdom, so the wide layout never renders through LoginScreen
-    // in a test and this copy would otherwise go unchecked.
-    render(<Hero />)
-    expect(
-      screen.getByRole('heading', { name: 'Quản lý tiến độ thi công ngay trên bản vẽ.' }),
-    ).toBeInTheDocument()
+  // RV7-1a: the wide-screen hero is the illustration alone, no tagline.
+  // Asserted on Hero directly: antd's breakpoint hook reports every screen
+  // false under jsdom, so the wide layout never renders through LoginScreen.
+  it('carries the illustration and no tagline in the wide-screen hero', () => {
+    const { container } = render(<Hero />)
+    expect(screen.getByTestId('login-illustration')).toBeInTheDocument()
+    expect(screen.queryByRole('heading')).toBeNull()
+    expect(screen.queryByText('Quản lý tiến độ thi công ngay trên bản vẽ.')).toBeNull()
+    expect(container.textContent).toBe('')
+  })
+
+  // RV7-2: the login screen ends with the copyright line too: at the bottom
+  // of the column on a phone, at the bottom right of the page on a wide screen.
+  it('ends the phone column with the copyright line, after the sign-in card', () => {
+    render(<LoginScreen />)
+    const line = screen.getByText(COPYRIGHT)
+    const button = screen.getByRole('button', { name: 'Đăng nhập' })
+    expect(button.compareDocumentPosition(line) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('puts the copyright line at the bottom of the form column on a wide screen', () => {
+    const undo = setViewport(1512)
+    try {
+      render(<LoginScreen />)
+      const line = screen.getByText(COPYRIGHT)
+      const hero = screen.getByTestId('login-illustration')
+      const button = screen.getByRole('button', { name: 'Đăng nhập' })
+      // Wide: the hero's illustration is not the compact one above the card.
+      expect(hero.style.width).toBe('min(100%, 70vh)')
+      expect(button.compareDocumentPosition(line) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+      // In the form's column, not under the hero.
+      expect(hero.parentElement?.contains(line)).toBe(false)
+      expect((line.parentElement as HTMLElement).lastElementChild).toBe(line)
+      expect((line.parentElement as HTMLElement).contains(button)).toBe(true)
+    } finally {
+      undo()
+    }
   })
 })

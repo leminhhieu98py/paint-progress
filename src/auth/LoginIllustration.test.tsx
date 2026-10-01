@@ -16,6 +16,7 @@ const player = vi.hoisted(() => {
     },
     play: () => {},
     pause: () => {},
+    goToAndStop: () => {},
     destroy: () => {},
   }
   return { imports: 0, fail: false, handlers, anim }
@@ -51,7 +52,8 @@ async function settle() {
   })
 }
 
-const placeholder = () => screen.getByTestId('login-illustration').querySelector('svg')
+// Anything drawn in the box other than the player's own host.
+const standIn = () => screen.getByTestId('login-illustration').querySelector(':scope > :not([data-testid="login-animation"])')
 
 // A fresh module registry per test: the component's dynamic import then loads
 // (or fails to load) the player anew each time, instead of reusing whatever an
@@ -71,33 +73,53 @@ afterEach(() => {
 })
 
 describe('LoginIllustration', () => {
-  it('keeps the drawn platform and never loads the player when motion is reduced', async () => {
-    preferReducedMotion()
-    render(<LoginIllustration />)
-    await settle()
-
-    expect(placeholder()).not.toBeNull()
-    expect(screen.queryByTestId('login-animation')).toBeNull()
-    expect(player.imports).toBe(0)
-    expect(loadAnimation).not.toHaveBeenCalled()
-  })
-
-  it('keeps the drawn platform when the player fails to load', async () => {
+  // First in the file on purpose: vi.resetModules does not run the player
+  // mock's factory again once a test has loaded it, so the failed load has to
+  // be the first load of the player in this file.
+  it('keeps the box empty when the player fails to load', async () => {
     player.fail = true
     render(<LoginIllustration />)
     await settle()
 
     expect(player.imports).toBe(1)
-    expect(placeholder()).not.toBeNull()
+    expect(screen.getByTestId('login-illustration')).toBeInTheDocument()
+    expect(standIn()).toBeNull()
     expect(screen.queryByTestId('login-animation')).toBeNull()
     expect(loadAnimation).not.toHaveBeenCalled()
   })
 
-  it('shows the drawn platform until the animation has drawn, then the animation', async () => {
+  // RV7-1d: a visitor who asks for reduced motion sees one still frame of the
+  // animation instead of nothing; it never plays, not even when the tab is shown.
+  it('shows one still frame and never plays when motion is reduced', async () => {
+    preferReducedMotion()
     loadAnimation.mockReturnValue(player.anim)
+    const goToAndStop = vi.spyOn(player.anim, 'goToAndStop')
+    const play = vi.spyOn(player.anim, 'play')
+    const destroy = vi.spyOn(player.anim, 'destroy')
+    const { unmount } = render(<LoginIllustration />)
+    await settle()
+
+    expect(loadAnimation).toHaveBeenCalledTimes(1)
+    expect(loadAnimation.mock.calls[0][0]).toMatchObject({ loop: false, autoplay: false })
+    expect(goToAndStop).toHaveBeenCalledWith(60, true)
+
+    act(() => player.handlers.DOMLoaded())
+    expect(screen.getByTestId('login-animation')).toBeVisible()
+    setHidden(true)
+    setHidden(false)
+    expect(play).not.toHaveBeenCalled()
+
+    // Gone with the screen, as the playing animation is.
+    unmount()
+    expect(destroy).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps the box empty until the animation has drawn, then shows the animation', async () => {
+    loadAnimation.mockReturnValue(player.anim)
+    const goToAndStop = vi.spyOn(player.anim, 'goToAndStop')
     render(<LoginIllustration />)
 
-    expect(placeholder()).not.toBeNull()
+    expect(standIn()).toBeNull()
     const host = screen.getByTestId('login-animation')
     expect(host).not.toBeVisible()
 
@@ -111,12 +133,13 @@ describe('LoginIllustration', () => {
       autoplay: true,
       rendererSettings: { preserveAspectRatio: 'xMidYMid meet' },
     })
-    expect(config.animationData).toMatchObject({ w: 750, h: 500 })
-    // Loaded but not yet drawn: the platform still stands in.
-    expect(placeholder()).not.toBeNull()
+    // "Businessmen at the table" (RV7-1b): a square 500 x 500.
+    expect(config.animationData).toMatchObject({ w: 500, h: 500 })
+    expect(goToAndStop).not.toHaveBeenCalled()
+    expect(host).not.toBeVisible()
 
     act(() => player.handlers.DOMLoaded())
-    expect(placeholder()).toBeNull()
+    expect(standIn()).toBeNull()
     expect(screen.getByTestId('login-animation')).toBeVisible()
     expect(screen.getByTestId('login-illustration')).toHaveAttribute('aria-hidden', 'true')
   })
@@ -170,14 +193,21 @@ describe('LoginIllustration', () => {
     expect(pause).toHaveBeenCalledTimes(1)
   })
 
-  // Owner 2026-09-30: at 372 px the picture looked small beside the wide hero
-  // column on desktop, so it grows with the viewport; the phone size is unchanged.
-  it('grows with the viewport on the wide layout and keeps the phone size compact', () => {
+  // RV7-1c: the animation is square, so is its box. Large on the wide layout
+  // but never taller than 70vh, so the form beside it stays in view: the
+  // width is held to 70vh rather than the height, so the box stays square.
+  it('sizes a square box, large on the wide layout and compact on a phone', () => {
     const { unmount } = render(<LoginIllustration />)
-    expect(screen.getByTestId('login-illustration').style.maxWidth).toBe('clamp(372px, 42vw, 720px)')
+    const wide = screen.getByTestId('login-illustration').style
+    expect(wide.aspectRatio).toBe('1 / 1')
+    expect(wide.width).toBe('min(100%, 70vh)')
+    expect(wide.maxWidth).toBe('clamp(320px, 34vw, 560px)')
+    expect(wide.maxHeight).toBe('')
     unmount()
 
     render(<LoginIllustration compact />)
-    expect(screen.getByTestId('login-illustration').style.maxWidth).toBe('240px')
+    const compact = screen.getByTestId('login-illustration').style
+    expect(compact.aspectRatio).toBe('1 / 1')
+    expect(compact.maxWidth).toBe('200px')
   })
 })

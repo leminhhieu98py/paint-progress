@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { AuthProvider, useAuth } from './AuthProvider'
 import { RequireRole } from './RequireRole'
 import { onSessionEnd } from '../lib/sessionCache'
+import { COPYRIGHT } from '../test/copy'
 
 const getSession = vi.fn()
 const onAuthStateChange = vi.fn((_cb?: (event: string, next: Session | null) => void) => ({
@@ -59,6 +60,8 @@ describe('RequireRole with a real AuthProvider', () => {
     expect(await screen.findByText('Không tải được thông tin tài khoản')).toBeInTheDocument()
     expect(screen.queryByText('Protected content')).toBeNull()
     expect(screen.queryByText('404')).toBeNull()
+    // Ends with the copyright line, as every screen does (RV7-2).
+    expect(screen.getByText(COPYRIGHT)).toBeInTheDocument()
   })
 
   it('holds loading during a post-mount sign-in, so the bare 404 never flashes before the profile arrives', async () => {

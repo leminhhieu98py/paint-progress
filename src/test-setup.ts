@@ -59,8 +59,8 @@ if (typeof SVGElement !== 'undefined' && !('getBBox' in SVGElement.prototype)) {
 //
 // Strict on purpose: touching a member the stub does not have throws, and the
 // test that did it fails below. The throw alone would not be enough -- the
-// component catches a failed player and quietly shows its drawing instead, so
-// a new player call would otherwise pass every test and never be exercised.
+// component catches a failed player and quietly keeps its box empty, so a new
+// player call would otherwise pass every test and never be exercised.
 const lottieStub = vi.hoisted(() => ({ missing: [] as string[] }))
 
 vi.mock('lottie-web/build/player/lottie_light', () => {
@@ -82,6 +82,7 @@ vi.mock('lottie-web/build/player/lottie_light', () => {
       addEventListener: vi.fn(),
       play: vi.fn(),
       pause: vi.fn(),
+      goToAndStop: vi.fn(),
       destroy: vi.fn(),
     })
   return { default: strict('lottie', { loadAnimation: vi.fn(animation) }) }

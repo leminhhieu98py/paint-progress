@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { AuthProvider } from './auth/AuthProvider'
 import { APP_BASE_PATH } from './config'
 import { AppRoutes } from './routes'
+import { COPYRIGHT } from './test/copy'
 
 const getSession = vi.hoisted(() => vi.fn())
 const onAuthStateChange = vi.hoisted(() =>
@@ -182,6 +183,8 @@ describe('AppRoutes: landing at the base path by role', () => {
 
     expect(await screen.findByText('Chưa được thêm vào dự án nào')).toBeInTheDocument()
     expect(screen.queryByText('404')).toBeNull()
+    // A steady screen a real account sees, so it ends with the line (RV7-2).
+    expect(screen.getByText(COPYRIGHT)).toBeInTheDocument()
   })
 
   it('tells a gs whose profile load failed to check their connection, not the bare 404', async () => {
@@ -196,6 +199,7 @@ describe('AppRoutes: landing at the base path by role', () => {
     expect(await screen.findByText('Không tải được thông tin dự án')).toBeInTheDocument()
     expect(screen.queryByText('Chưa được thêm vào dự án nào')).toBeNull()
     expect(screen.queryByText('404')).toBeNull()
+    expect(screen.getByText(COPYRIGHT)).toBeInTheDocument()
   })
 })
 
@@ -390,5 +394,7 @@ describe('AppRoutes: /login is the entry point', () => {
     renderAt(`${APP_BASE_PATH}/admin/users`)
     expect(await screen.findByText('404')).toBeInTheDocument()
     expect(screen.queryByText('Không tìm thấy trang')).toBeNull()
+    // Bare means bare: not even the copyright line (spec §7.3).
+    expect(screen.queryByText(COPYRIGHT)).toBeNull()
   })
 })

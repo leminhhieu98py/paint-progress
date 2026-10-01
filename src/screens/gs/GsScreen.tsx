@@ -1131,7 +1131,10 @@ export function GsScreen() {
     header that stays put, and a refusal or a failed load still offers the
     tabs and logout.
   */
-  const inShell = (body: ReactNode) => <FieldLayout projectId={projectId}>{body}</FieldLayout>
+  // The copyright line lines up with this page's side padding (RV7-2).
+  const inShell = (body: ReactNode) => (
+    <FieldLayout projectId={projectId} copyrightInset={phone ? space.md : space.lg}>{body}</FieldLayout>
+  )
   /*
     GS-07: the project switch, first in the page's bar, also while a project
     loads, fails or refuses: it is the way to another project from all three.
