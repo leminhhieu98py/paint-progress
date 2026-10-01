@@ -3,9 +3,9 @@ import { onSessionEnd } from '../../lib/sessionCache'
 /**
  * Filters handed from one field page to the same page of another project
  * (I-1). The field Năng suất and KPI pages remount on a project switch (they
- * are keyed by the project), so the draft applied with Tìm is left here for
- * the next mount to open on. In memory, not in the router's state: the draft
- * holds dates, which history's structured clone would strip to plain objects.
+ * are keyed by the project), so what is applied is left here for the next
+ * mount to open on. In memory, not in the router's state: the filters hold
+ * dates, which history's structured clone would strip to plain objects.
  * Read during the first render (`peekCarried`) and cleared once mounted
  * (`clearCarried`), so a later visit to the page opens on its defaults.
  */

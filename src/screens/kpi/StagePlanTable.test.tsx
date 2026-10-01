@@ -507,7 +507,7 @@ describe('StagePlanTable — pager and drafts follow the scope (M10, UI-05)', ()
     </AntApp>
   )
 
-  it('goes back to page 1 when Tìm applies, with the same rows', async () => {
+  it('goes back to page 1 when a filter applies, with the same rows', async () => {
     const { rerender } = render(table('p1|0'))
     await userEvent.click(screen.getByTitle('2'))
     expect(screen.getByTitle('2')).toHaveClass('ant-pagination-item-active')

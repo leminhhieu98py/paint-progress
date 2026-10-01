@@ -360,19 +360,14 @@ const chooseExport = async (name: 'Xuất báo cáo' | 'Xuất cả dự án') =
 /**
  * The phone's Bộ lọc sheet, opened (FLT-04). jsdom answers every width query
  * as a phone, where the loaded Sàn page keeps Sàn in its one-row bar and puts
- * Dự án and the work in the sheet, a draft until Tìm (FLT-09).
+ * Dự án and the work in the sheet, each applied as it changes (RV7-3).
  */
 const openFilterSheet = async () => {
   await userEvent.click(await screen.findByRole('button', { name: 'Bộ lọc' }))
   return screen.findByRole('dialog', { name: 'Bộ lọc' })
 }
 const sheetGone = () => waitFor(() => expect(screen.queryByRole('dialog', { name: 'Bộ lọc' })).toBeNull())
-/** Tìm in the sheet: the draft applied, the sheet gone. */
-const applyFilterSheet = async () => {
-  await userEvent.click(within(screen.getByRole('dialog', { name: 'Bộ lọc' })).getByRole('button', { name: /Tìm/ }))
-  await sheetGone()
-}
-/** The sheet's X: the draft thrown away, the sheet gone. */
+/** The sheet's X: the sheet gone, what was picked in it still applied. */
 const dismissFilterSheet = async () => {
   await userEvent.click(within(screen.getByRole('dialog', { name: 'Bộ lọc' })).getByRole('button', { name: /Close|Đóng/ }))
   await sheetGone()
@@ -385,10 +380,10 @@ const projectSwitch = async () => {
   if (screen.queryByRole('button', { name: 'Bộ lọc' }) === null) return screen.findByRole('combobox', { name: 'Dự án' })
   return within(await openFilterSheet()).findByRole('combobox', { name: 'Dự án' })
 }
-/** The work, from its searchable select (FLT-03), in the phone's sheet and applied by Tìm (FLT-09). */
+/** The work, from its searchable select (FLT-03), in the phone's sheet, applied as it changes (RV7-3). */
 const pickWork = async (name: string) => {
   await chooseOption('Công việc', name, await openFilterSheet())
-  await applyFilterSheet()
+  await dismissFilterSheet()
 }
 
 /** The deck picker, the first row of the Sàn page (GS-03). */
@@ -1175,10 +1170,7 @@ describe('GsScreen: recording a stage', () => {
     expect(screen.getByText('BlockB1_CPPTS', { selector: '.ant-select-selection-item' })).toBeInTheDocument()
     await userEvent.click(box)
     await userEvent.click(await screen.findByTitle('Đại Hùng'))
-    // On a phone the sheet is a draft: Tìm opens it (FLT-09).
-    expect(navigate).not.toHaveBeenCalled()
-    await applyFilterSheet()
-
+    // At once, from the phone's sheet too (RV7-3).
     expect(navigate).toHaveBeenCalledWith('/gs/p2')
   })
 
@@ -1834,74 +1826,69 @@ describe('GsScreen: one filter bar, the project first (GS-07)', () => {
     expect(screen.queryByText('Công việc', { exact: true })).toBeNull()
   })
 
-  it('holds the inline bar as a draft from 768 px, ending Đặt lại · Tìm at its right end (FLT-08)', async () => {
+  it('has no Đặt lại and no Tìm in the inline bar from 768 px (RV7-3)', async () => {
     restoreViewport = setViewport(1024)
     listDeckWorks.mockResolvedValue(TWO_WORKS)
     renderScreen()
     await screen.findByRole('combobox', { name: 'Công việc' })
-    const bar = bars()[0]
-    const buttons = within(bar).getAllByRole('button')
-    expect(buttons.slice(-2).map((b) => b.textContent)).toEqual(['Đặt lại', 'Tìm'])
+    expect(within(bars()[0]).queryByRole('button', { name: 'Đặt lại' })).toBeNull()
+    expect(within(bars()[0]).queryByRole('button', { name: /Tìm/ })).toBeNull()
   })
 
-  it('switches the deck only on Tìm from 768 px (FLT-08)', async () => {
+  it('switches the deck at once from 768 px (RV7-3)', async () => {
     restoreViewport = setViewport(1024)
     renderScreen()
     await screen.findByRole('button', { name: 'ô R1C1' })
     await pickDeck('Main Deck')
-    // Not yet: the draft only.
-    expect(listDeckCells).not.toHaveBeenCalledWith('d2')
-    expect(sessionStorage.getItem('pp:lastDeck:p1')).not.toBe('d2')
-    await userEvent.click(within(bars()[0]).getByRole('button', { name: /Tìm/ }))
     await waitFor(() => expect(listDeckCells).toHaveBeenCalledWith('d2'))
     expect(sessionStorage.getItem('pp:lastDeck:p1')).toBe('d2')
   })
 
-  it('opens the drafted deck on the drafted work in one Tìm, the work offered from that deck (FLT-08)', async () => {
+  it('keeps the work across a deck switch when the new deck has it (RV7-3)', async () => {
     restoreViewport = setViewport(1024)
     const GG = { ...WORK, id: 'w3', seq: 3, name: 'Giàn giáo' }
     listDeckWorks.mockImplementation((deckId: string) => Promise.resolve(deckId === 'd2'
-      ? [{ work: WORK2, weight: 1, stages: TG_STAGES }, { work: GG, weight: 1, stages: TG_STAGES }]
+      ? [{ work: GG, weight: 1, stages: TG_STAGES }, { work: WORK2, weight: 1, stages: TG_STAGES }]
+      : TWO_WORKS))
+    renderScreen()
+    await screen.findByRole('combobox', { name: 'Công việc' })
+    await chooseOption('Công việc', 'Tháo giáo', bars()[0])
+    await chooseOption('Sàn', /^Main Deck · /, bars()[0])
+    await waitFor(() => expect(listDeckCells).toHaveBeenCalledWith('d2'))
+    // Not reset to the deck's first (Giàn giáo) by the deck load.
+    await waitFor(() => expect(within(bars()[0]).getByTitle('Tháo giáo')).toBeInTheDocument())
+    expect(within(bars()[0]).queryByTitle('Giàn giáo')).toBeNull()
+  })
+
+  it('opens the new deck on its first work when it does not have the one applied (RV7-3)', async () => {
+    restoreViewport = setViewport(1024)
+    const GG = { ...WORK, id: 'w3', seq: 3, name: 'Giàn giáo' }
+    listDeckWorks.mockImplementation((deckId: string) => Promise.resolve(deckId === 'd2'
+      ? [{ work: GG, weight: 1, stages: TG_STAGES }, { work: WORK2, weight: 1, stages: TG_STAGES }]
       : TWO_WORKS))
     renderScreen()
     await screen.findByRole('combobox', { name: 'Công việc' })
     await pickDeck('Main Deck')
-    // The work select now offers the drafted deck's works, first of them shown.
-    await waitFor(() => expect(within(bars()[0]).getByTitle('Tháo giáo')).toBeInTheDocument())
-    await chooseOption('Công việc', 'Giàn giáo', bars()[0])
-    expect(listDeckCells).not.toHaveBeenCalledWith('d2')
-    await userEvent.click(within(bars()[0]).getByRole('button', { name: /Tìm/ }))
     await waitFor(() => expect(listDeckCells).toHaveBeenCalledWith('d2'))
-    // On the drafted work, not reset to the deck's first by the deck load.
     await waitFor(() => expect(within(bars()[0]).getByTitle('Giàn giáo')).toBeInTheDocument())
-    expect(within(bars()[0]).queryByTitle('Tháo giáo')).toBeNull()
   })
 
-  it('applies the work only on Tìm from 768 px, and puts the first work back on Đặt lại (FLT-08)', async () => {
+  it('applies the work at once from 768 px (RV7-3)', async () => {
     restoreViewport = setViewport(1024)
     listDeckWorks.mockResolvedValue(TWO_WORKS)
     listDeckStates.mockResolvedValue({ w1: { c1: { stageId: 's1', note: '' } }, w2: { c1: { stageId: 't1', note: '' } } })
     renderScreen()
     expect(await screen.findByRole('button', { name: 'ô R1C1' })).toHaveAttribute('data-color', '#fadb14')
     await chooseOption('Công việc', 'Tháo giáo', bars()[0])
-    expect(screen.getByRole('button', { name: 'ô R1C1' })).toHaveAttribute('data-color', '#fadb14')
-    await userEvent.click(within(bars()[0]).getByRole('button', { name: /Tìm/ }))
     await waitFor(() => expect(screen.getByRole('button', { name: 'ô R1C1' })).toHaveAttribute('data-color', '#8B5CF6'))
-    await userEvent.click(within(bars()[0]).getByRole('button', { name: 'Đặt lại' }))
-    await waitFor(() => expect(screen.getByRole('button', { name: 'ô R1C1' })).toHaveAttribute('data-color', '#fadb14'))
-    expect(within(bars()[0]).getByTitle('Sơn')).toBeInTheDocument()
   })
 
-  it('opens another project only on Tìm from 768 px, this project\'s Sàn and works hidden meanwhile (FLT-08)', async () => {
+  it('opens another project at once from 768 px (RV7-3)', async () => {
     restoreViewport = setViewport(1024)
     listDeckWorks.mockResolvedValue(TWO_WORKS)
     renderScreen()
     await screen.findByRole('combobox', { name: 'Công việc' })
     await chooseOption('Dự án', 'Đại Hùng', bars()[0])
-    expect(navigate).not.toHaveBeenCalled()
-    expect(within(bars()[0]).queryByRole('combobox', { name: 'Sàn' })).toBeNull()
-    expect(within(bars()[0]).queryByRole('combobox', { name: 'Công việc' })).toBeNull()
-    await userEvent.click(within(bars()[0]).getByRole('button', { name: /Tìm/ }))
     expect(navigate).toHaveBeenCalledWith('/gs/p2')
   })
 
@@ -1953,58 +1940,57 @@ describe('GsScreen: the phone\'s bar is one row, the rest in a sheet (FLT-04)', 
     expect(screen.getAllByRole('combobox', { name: 'Sàn' })).toHaveLength(1)
   })
 
-  it('holds the work as a draft: Tìm applies it and closes the sheet (FLT-09)', async () => {
+  it('applies the work at once from the sheet, which has no footer and stays open (RV7-3)', async () => {
     listDeckWorks.mockResolvedValue(TWO_WORKS)
     // R1C1 at Coat 1 in Sơn, at its one coat in Tháo giáo.
     listDeckStates.mockResolvedValue({ w1: { c1: { stageId: 's1', note: '' } }, w2: { c1: { stageId: 't1', note: '' } } })
     renderScreen()
     expect(await screen.findByRole('button', { name: 'ô R1C1' })).toHaveAttribute('data-color', '#fadb14')
     const sheet = await openFilterSheet()
-    const footer = sheet.querySelector('.ant-drawer-footer') as HTMLElement
-    expect(within(footer).getAllByRole('button').map((b) => b.textContent)).toEqual(['Đặt lại', 'Tìm'])
+    expect(sheet.querySelector('.ant-drawer-footer')).toBeNull()
+    expect(within(sheet).queryByRole('button', { name: 'Đặt lại' })).toBeNull()
+    expect(within(sheet).queryByRole('button', { name: /Tìm/ })).toBeNull()
     await chooseOption('Công việc', 'Tháo giáo', sheet)
-    // Not yet: the drawing still shows Sơn while the sheet is open.
-    expect(screen.getByRole('button', { name: 'ô R1C1' })).toHaveAttribute('data-color', '#fadb14')
-    await applyFilterSheet()
     await waitFor(() => expect(screen.getByRole('button', { name: 'ô R1C1' })).toHaveAttribute('data-color', '#8B5CF6'))
+    expect(screen.getByRole('dialog', { name: 'Bộ lọc' })).toBeInTheDocument()
   })
 
-  it('throws the draft away when the sheet closes without Tìm: reopened, it shows what is applied (FLT-09)', async () => {
+  it('keeps the applied work when the sheet closes: reopened, it shows it (RV7-3)', async () => {
     listDeckWorks.mockResolvedValue(TWO_WORKS)
     renderScreen()
     await screen.findByRole('button', { name: 'ô R1C1' })
-    await chooseOption('Công việc', 'Tháo giáo', await openFilterSheet())
-    await dismissFilterSheet()
-    expect(screen.getByRole('button', { name: 'ô R1C1' })).toHaveAttribute('data-color', '#fadb14')
+    await pickWork('Tháo giáo')
     const again = await openFilterSheet()
-    expect(within(again).getByTitle('Sơn')).toBeInTheDocument()
-    expect(within(again).queryByTitle('Tháo giáo')).toBeNull()
+    expect(within(again).getByTitle('Tháo giáo')).toBeInTheDocument()
   })
 
-  it('opens another project only on Tìm, and hides this project\'s works while that one is the draft (FLT-09)', async () => {
+  it('opens another project at once from the sheet (RV7-3)', async () => {
     listDeckWorks.mockResolvedValue(TWO_WORKS)
     renderScreen()
     await screen.findByRole('button', { name: 'ô R1C1' })
-    const sheet = await openFilterSheet()
-    await chooseOption('Dự án', 'Đại Hùng', sheet)
-    expect(navigate).not.toHaveBeenCalled()
-    expect(within(sheet).queryByRole('combobox', { name: 'Công việc' })).toBeNull()
-    await applyFilterSheet()
+    await chooseOption('Dự án', 'Đại Hùng', await openFilterSheet())
     expect(navigate).toHaveBeenCalledWith('/gs/p2')
   })
 
-  it('puts the first work back and applies it on Đặt lại, the sheet still open (FLT-09)', async () => {
+  it('opens the deck picked in the row on its first work, as it always has (FLT-04)', async () => {
     listDeckWorks.mockResolvedValue(TWO_WORKS)
     renderScreen()
     await screen.findByRole('button', { name: 'ô R1C1' })
     await pickWork('Tháo giáo')
     expect(bar().querySelector('.ant-badge-count')).toHaveTextContent('1')
-    const sheet = await openFilterSheet()
-    await userEvent.click(within(sheet).getByRole('button', { name: 'Đặt lại' }))
+    await pickDeck('Main Deck')
+    await waitFor(() => expect(listDeckCells).toHaveBeenCalledWith('d2'))
     await waitFor(() => expect(bar().querySelector('.ant-badge-count[data-show="true"]')).toBeNull())
-    expect(within(sheet).getByTitle('Sơn')).toBeInTheDocument()
-    expect(screen.getByRole('dialog', { name: 'Bộ lọc' })).toBeInTheDocument()
-    expect(navigate).not.toHaveBeenCalled()
+  })
+
+  it('badges Bộ lọc while a work other than the first is applied (FLT-04)', async () => {
+    listDeckWorks.mockResolvedValue(TWO_WORKS)
+    renderScreen()
+    await screen.findByRole('button', { name: 'ô R1C1' })
+    await pickWork('Tháo giáo')
+    expect(bar().querySelector('.ant-badge-count')).toHaveTextContent('1')
+    await pickWork('Sơn')
+    await waitFor(() => expect(bar().querySelector('.ant-badge-count[data-show="true"]')).toBeNull())
   })
 
   it('opens every select of the row and the sheet with its options in full', async () => {
