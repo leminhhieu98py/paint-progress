@@ -5,6 +5,7 @@ import {
 import dayjs from 'dayjs'
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { DrawingCanvas } from '../../canvas/DrawingCanvas'
+import { FIT_ZOOM, stepZoom } from '../../canvas/canvasView'
 import { cellStagesAsOf, HISTORY_FROM_LABEL } from '../../domain/asOf'
 import { effortDayKey } from '../../domain/effort'
 import { cellsInBox } from '../../domain/geometry'
@@ -409,7 +410,7 @@ export function DeckProgressPanel({
    * Shared by both lenses, which is the whole point of the split view: two
    * drawings free to sit at different scales are not a comparison.
    */
-  const [zoom, setZoom] = useState(1)
+  const [zoom, setZoom] = useState(FIT_ZOOM)
   /** The zone whose date popover is open. */
   const [datesFor, setDatesFor] = useState<Zone | null>(null)
   /**
@@ -1659,7 +1660,7 @@ export function DeckProgressPanel({
             {/* The zoom buttons at the theme's one height, the Segmented's
                 beside them (CTL-02): no frame to pad small buttons up to it. */}
             <Space size={4} data-testid="zoom-group">
-              <IconAction verb="zoomOut" label="Thu nhỏ" onClick={() => setZoom((z) => Math.max(1, z - 0.5))} />
+              <IconAction verb="zoomOut" label="Thu nhỏ" onClick={() => setZoom((z) => stepZoom(z, -1))} />
               <span
                 style={{
                   display: 'inline-flex',
@@ -1671,8 +1672,8 @@ export function DeckProgressPanel({
               >
                 {`${Math.round(zoom * 100)}%`}
               </span>
-              <IconAction verb="zoomIn" label="Phóng to" onClick={() => setZoom((z) => Math.min(4, z + 0.5))} />
-              <IconAction verb="fit" label="Vừa khung" onClick={() => setZoom(1)} />
+              <IconAction verb="zoomIn" label="Phóng to" onClick={() => setZoom((z) => stepZoom(z, 1))} />
+              <IconAction verb="fit" label="Vừa khung" onClick={() => setZoom(FIT_ZOOM)} />
             </Space>
           </Space>
         ) : undefined

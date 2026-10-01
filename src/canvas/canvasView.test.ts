@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
-  clampStagePan, clampZoom, boxFromDrag, fitLabelFontSize,
-  MAX_LABEL_FONT_SIZE, MAX_ZOOM, MIN_LABEL_FONT_SIZE, MIN_ZOOM,
+  clampStagePan, clampZoom, boxFromDrag, fitLabelFontSize, stepZoom,
+  FIT_ZOOM, MAX_LABEL_FONT_SIZE, MAX_ZOOM, MIN_LABEL_FONT_SIZE, MIN_ZOOM,
 } from './canvasView'
 
 
@@ -10,10 +10,10 @@ describe('clampZoom', () => {
     expect(clampZoom(2.5)).toBe(2.5)
   })
 
-  it('refuses to zoom out past fit-to-container', () => {
-    // MIN_ZOOM is 1 = the whole drawing exactly fills the container. Zooming out
-    // further would letterbox the drawing inside its own canvas.
-    expect(clampZoom(0.25)).toBe(MIN_ZOOM)
+  it('zooms out to a quarter of fit-to-container, and no further (Rv7 item 5)', () => {
+    expect(MIN_ZOOM).toBe(0.25)
+    expect(clampZoom(0.5)).toBe(0.5)
+    expect(clampZoom(0.1)).toBe(MIN_ZOOM)
   })
 
   it('caps zoom in', () => {
@@ -24,7 +24,40 @@ describe('clampZoom', () => {
     // A wheel event on some trackpads reports deltaY through emulated input;
     // NaN would propagate into every Konva scale and blank the canvas with no
     // error anywhere.
-    expect(clampZoom(Number.NaN)).toBe(MIN_ZOOM)
+    expect(clampZoom(Number.NaN)).toBe(FIT_ZOOM)
+    expect(FIT_ZOOM).toBe(1)
+  })
+})
+
+describe('stepZoom', () => {
+  it('steps out by a quarter below fit, down to the minimum and no further', () => {
+    expect(stepZoom(1, -1)).toBe(0.75)
+    expect(stepZoom(0.75, -1)).toBe(0.5)
+    expect(stepZoom(0.5, -1)).toBe(0.25)
+    expect(stepZoom(0.25, -1)).toBe(MIN_ZOOM)
+  })
+
+  it('steps by a half above fit, up to the maximum and no further', () => {
+    expect(stepZoom(1, 1)).toBe(1.5)
+    expect(stepZoom(1.5, 1)).toBe(2)
+    expect(stepZoom(2, -1)).toBe(1.5)
+    expect(stepZoom(1.5, -1)).toBe(1)
+    expect(stepZoom(MAX_ZOOM, 1)).toBe(MAX_ZOOM)
+  })
+
+  it('climbs back to fit by quarters', () => {
+    expect(stepZoom(0.25, 1)).toBe(0.5)
+    expect(stepZoom(0.75, 1)).toBe(1)
+  })
+
+  it('stops at fit rather than stepping over it from a wheel-made zoom', () => {
+    // The wheel moves by 0.25, so 1.25 is reachable; a half step out from there
+    // would skip fit and land on 0.75.
+    expect(stepZoom(1.25, -1)).toBe(1)
+  })
+
+  it('falls back to fit-to-container for NaN', () => {
+    expect(stepZoom(Number.NaN, 1)).toBe(FIT_ZOOM)
   })
 })
 
@@ -47,6 +80,13 @@ describe('clampStagePan', () => {
 
   it('leaves an in-range pan untouched', () => {
     expect(clampStagePan({ x: -300, y: -100 }, 900, 720, 2)).toEqual({ x: -300, y: -100 })
+  })
+
+  it('centres a drawing smaller than its viewport and will not let it move (Rv7 item 5)', () => {
+    // At zoom 0.5 the content is 450 x 360 in a 900 x 720 viewport: centred,
+    // it sits 225 / 180 in from the top-left, wherever the drag tried to put it.
+    expect(clampStagePan({ x: -300, y: 120 }, 900, 720, 0.5)).toEqual({ x: 225, y: 180 })
+    expect(clampStagePan({ x: 5000, y: -5000 }, 900, 720, 0.25)).toEqual({ x: 337.5, y: 270 })
   })
 })
 
@@ -110,8 +150,9 @@ describe('fitLabelFontSize', () => {
 
   it('returns null rather than a smudge when the bay is too small', () => {
     // The admin's screenshot: a date range at a fixed 12px spilling across three
-    // neighbouring bays. Nothing is better than a label about the wrong bay --
-    // the zone legend under the canvas still names it.
+    // neighbouring bays. Nothing is better than a label about the wrong bay (a
+    // zone card falls back to MIN_LABEL_FONT_SIZE in DrawingCanvas.zoneCard
+    // instead, Rv7 item 4).
     expect(fitLabelFontSize('01/08 – 12/08', 30, 20)).toBeNull()
   })
 

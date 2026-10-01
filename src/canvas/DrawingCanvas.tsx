@@ -1,14 +1,14 @@
 import { ExpandOutlined, MinusOutlined, PlusOutlined } from '@ant-design/icons'
 import { Button, Space } from 'antd'
 import Konva from 'konva'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Group, Image as KonvaImage, Layer, Line, Rect, Stage, Text } from 'react-konva'
 import useImage from 'use-image'
 import type { MeshCell } from '../domain/types'
 import { spreadLabelBoxes, type ZoneLabel } from '../domain/plan'
 import {
-  clampStagePan, clampZoom, boxFromDrag, fitLabelFontSize,
-  MIN_ZOOM, WHEEL_ZOOM_STEP, ZOOM_STEP,
+  clampStagePan, clampZoom, boxFromDrag, fitLabelFontSize, stepZoom,
+  FIT_ZOOM, MIN_LABEL_FONT_SIZE, WHEEL_ZOOM_STEP,
 } from './canvasView'
 import { createHatchPattern } from './hatchPattern'
 
@@ -137,8 +137,8 @@ export function DrawingCanvas({
    * One label per zone, not one per bay: repeating a date range on forty bays
    * printed the same characters forty times and still left the reader to find
    * where one zone ended, which is what the source drawings annotate by hand.
-   * A zone whose box is too small to carry the text legibly gets no label; the
-   * zone list beside the drawing still names it.
+   * A zone whose box is too small for the text still gets its card (Rv7 item
+   * 4), at the smallest legible size and overhanging its box -- see zoneCard.
    */
   zoneLabels?: ZoneLabel[]
   /**
@@ -212,7 +212,7 @@ export function DrawingCanvas({
   const containerRef = useRef<HTMLDivElement>(null)
   const [measuredWidth, setMeasuredWidth] = useState(0)
   const stageRef = useRef<Konva.Stage>(null)
-  const [ownZoom, setOwnZoom] = useState(MIN_ZOOM)
+  const [ownZoom, setOwnZoom] = useState(FIT_ZOOM)
   const zoom = zoomProp ?? ownZoom
   /**
    * Whether Shift is down right now, so the stage can stop advertising a pan it
@@ -297,9 +297,20 @@ export function DrawingCanvas({
    *
    * Changing the zoom can leave an existing pan outside the new bounds, and
    * Konva does not re-run dragBoundFunc on a scale change, so the position is
-   * re-clamped here by hand. stageRef is null under the mocked react-konva, so
-   * this branch has no unit coverage — it is in the browser checklist.
+   * re-clamped by hand. In an effect on the zoom itself rather than in
+   * applyZoom, because a parent that owns the zoom changes it from its own
+   * buttons without going through here -- and below fit the re-clamp is what
+   * centres the drawing (Rv7 item 5). A layout effect, so the frame with the
+   * new scale is never painted at the old position. stageRef is null under
+   * the mocked react-konva, so this has no unit coverage -- it is in the
+   * browser checklist.
    */
+  useLayoutEffect(() => {
+    const stage = stageRef.current
+    if (stage) {
+      stage.position(clampStagePan({ x: stage.x(), y: stage.y() }, width, height, zoom))
+    }
+  }, [zoom, width, height])
   const applyZoom = (next: number) => {
     const clamped = clampZoom(next)
     // Written locally whether or not a parent owns the value: a controlled
@@ -307,10 +318,6 @@ export function DrawingCanvas({
     // with no sign why, and when it does honour it the two agree anyway.
     setOwnZoom(clamped)
     onZoomChange?.(clamped)
-    const stage = stageRef.current
-    if (stage) {
-      stage.position(clampStagePan({ x: stage.x(), y: stage.y() }, width, height, clamped))
-    }
   }
 
   /**
@@ -331,26 +338,31 @@ export function DrawingCanvas({
   const pointerIn = (e: Konva.KonvaEventObject<MouseEvent>) =>
     e.target.getStage()?.getRelativePointerPosition() ?? null
 
-  /** The font a bay's plan label can carry, or null when it can carry none. */
   /**
    * The card drawn for one zone: its size, and the font that fits inside it.
    *
    * Two lines of text, so the height each line may take is half the box's, and
-   * the width is measured against the LONGER line. Null when nothing legible
-   * fits -- a 40-bay deck has zones only a few pixels tall at 100%.
+   * the width is measured against the LONGER line.
+   *
+   * When nothing legible fits -- a narrow zone, or a 40-bay deck whose zones
+   * are a few pixels tall at 100% -- the card is still drawn, at
+   * MIN_LABEL_FONT_SIZE and sized to its text, overhanging the box (Rv7 item
+   * 4). It used to be dropped, and zooming never brought it back because the
+   * fit is sized unzoomed: Zone 3 on A3.4 was simply missing from the drawing.
    */
   const zoneCard = (label: ZoneLabel) => {
     const boxW = label.w * width
     const boxH = label.h * height
     const longest = label.range.length > label.name.length ? label.range : label.name
     const lines = label.range === '' ? 1 : 2
-    const font = fitLabelFontSize(longest, boxW * 0.9, (boxH * 0.9) / lines)
-    if (font === null) return null
+    const fitted = fitLabelFontSize(longest, boxW * 0.9, (boxH * 0.9) / lines)
+    const font = fitted ?? MIN_LABEL_FONT_SIZE
+    const textW = Math.max(font * longest.length * 0.62, font * 4) + font
     const textH = font * 1.25 * lines
     return {
       font,
       textH,
-      cardW: Math.min(boxW, Math.max(font * longest.length * 0.62, font * 4) + font),
+      cardW: fitted === null ? textW : Math.min(boxW, textW),
       cardH: textH + font * 0.6,
     }
   }
@@ -362,14 +374,21 @@ export function DrawingCanvas({
    * here is a card's real size known; a 2px gap keeps the borders from
    * touching. Memoised on what decides it, so a pan or a hover does not
    * re-lay the cards.
+   *
+   * Each card is centred on its zone and then kept inside the drawing: a card
+   * that overhangs a zone on the drawing's edge would otherwise be cut off by
+   * the stage. A fitted card overhangs its box by at most a few px
+   * vertically, so the clamp only nudges one that sits on the drawing's top
+   * or bottom edge.
    */
   const zoneCards = useMemo(() => {
-    const sized = (zoneLabels ?? []).flatMap((label) => {
+    const sized = (zoneLabels ?? []).map((label) => {
       const card = zoneCard(label)
-      if (card === null) return []
       const cx = (label.x + label.w / 2) * width
       const cy = (label.y + label.h / 2) * height
-      return [{ label, ...card, x: cx - card.cardW / 2, y: cy - card.cardH / 2, w: card.cardW, h: card.cardH }]
+      const x = Math.max(0, Math.min(width - card.cardW, cx - card.cardW / 2))
+      const y = Math.max(0, Math.min(height - card.cardH, cy - card.cardH / 2))
+      return { label, ...card, x, y, w: card.cardW, h: card.cardH }
     })
     return spreadLabelBoxes(sized, height, 2)
     // zoneCard reads only width and height beyond its argument.
@@ -491,7 +510,7 @@ export function DrawingCanvas({
             padding: 5,
           }}
         >
-          <Button aria-label="Thu nhỏ" icon={<MinusOutlined />} onClick={() => applyZoom(zoom - ZOOM_STEP)} />
+          <Button aria-label="Thu nhỏ" icon={<MinusOutlined />} onClick={() => applyZoom(stepZoom(zoom, -1))} />
           <span
             style={{
               display: 'inline-flex',
@@ -505,8 +524,8 @@ export function DrawingCanvas({
           >
             {`${Math.round(zoom * 100)}%`}
           </span>
-          <Button aria-label="Phóng to" icon={<PlusOutlined />} onClick={() => applyZoom(zoom + ZOOM_STEP)} />
-          <Button aria-label="Vừa khung" icon={<ExpandOutlined />} onClick={() => applyZoom(MIN_ZOOM)} />
+          <Button aria-label="Phóng to" icon={<PlusOutlined />} onClick={() => applyZoom(stepZoom(zoom, 1))} />
+          <Button aria-label="Vừa khung" icon={<ExpandOutlined />} onClick={() => applyZoom(FIT_ZOOM)} />
         </Space>
       )}
       <Stage
@@ -561,12 +580,12 @@ export function DrawingCanvas({
             applyZoom(zoom + (e.evt.deltaY < 0 ? WHEEL_ZOOM_STEP : -WHEEL_ZOOM_STEP))
             return
           }
-          // At fit there is nowhere to pan to, so the wheel is not ours to
-          // take. Swallowing it stranded the reader: the pointer crosses the
-          // drawing on the way down a long deck screen and the page simply
-          // stops moving, with nothing on screen saying why. Let it through and
-          // the page keeps scrolling under the cursor.
-          if (zoom <= MIN_ZOOM) return
+          // At fit or below there is nowhere to pan to, so the wheel is not
+          // ours to take. Swallowing it stranded the reader: the pointer
+          // crosses the drawing on the way down a long deck screen and the
+          // page simply stops moving, with nothing on screen saying why. Let it
+          // through and the page keeps scrolling under the cursor.
+          if (zoom <= FIT_ZOOM) return
           e.evt.preventDefault()
           const stage = stageRef.current
           if (!stage) return
