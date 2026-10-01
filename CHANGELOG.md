@@ -30,7 +30,7 @@ Linh's review Rv7. No database migration, no Edge Function.
   Nhân lực search filters as you type; Enter applies at once. On KPI a chart
   filter change no longer drops unsaved plan-table edits.
 - **Login screen**: the tagline is gone and the animation is LottieFiles'
-  "Businessmen at the table" (Lottie Simple License), square and larger; with
+  "Businessmen at the table" (Lottie Simple License), in a square frame; with
   reduced motion it shows one still frame.
 
 ### Fixed
@@ -640,6 +640,7 @@ Level Security.
 
 Production runs its own Supabase project, created empty.
 
+[Unreleased]: https://github.com/leminhhieu98py/paint-progress/compare/v1.8.0...HEAD
 [1.8.0]: https://github.com/leminhhieu98py/paint-progress/compare/v1.7.0...v1.8.0
 [1.7.0]: https://github.com/leminhhieu98py/paint-progress/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/leminhhieu98py/paint-progress/compare/v1.5.0...v1.6.0
