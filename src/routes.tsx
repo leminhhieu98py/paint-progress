@@ -4,6 +4,7 @@ import { Navigate, Route, Routes } from 'react-router-dom'
 import { useAuth } from './auth/AuthProvider'
 import { RequireRole } from './auth/RequireRole'
 import { roleHome } from './auth/roleHome'
+import { CopyrightPage } from './components/Copyright'
 import { APP_BASE_PATH } from './config'
 import { myFirstProjectId } from './lib/projectsApi'
 import { NotFound } from './screens/NotFound'
@@ -126,26 +127,30 @@ function RoleHome() {
     }
     if (membership === 'error') {
       return (
-        <div style={{ maxWidth: 360, margin: '25vh auto' }}>
-          <Alert
-            type="error"
-            message="Không tải được thông tin dự án"
-            description="Kiểm tra kết nối mạng rồi thử lại."
-          />
-        </div>
+        <CopyrightPage>
+          <div style={{ maxWidth: 360, margin: '25vh auto' }}>
+            <Alert
+              type="error"
+              message="Không tải được thông tin dự án"
+              description="Kiểm tra kết nối mạng rồi thử lại."
+            />
+          </div>
+        </CopyrightPage>
       )
     }
     if (membership === null) {
       // Credentials are valid -- this is not an authorisation failure, so it
       // gets an explanation instead of the bare 404 a stranger would see.
       return (
-        <div style={{ maxWidth: 360, margin: '25vh auto' }}>
-          <Alert
-            type="info"
-            message="Chưa được thêm vào dự án nào"
-            description="Tài khoản hợp lệ, nhưng chưa được gán vào dự án nào. Liên hệ quản trị viên để được thêm vào dự án."
-          />
-        </div>
+        <CopyrightPage>
+          <div style={{ maxWidth: 360, margin: '25vh auto' }}>
+            <Alert
+              type="info"
+              message="Chưa được thêm vào dự án nào"
+              description="Tài khoản hợp lệ, nhưng chưa được gán vào dự án nào. Liên hệ quản trị viên để được thêm vào dự án."
+            />
+          </div>
+        </CopyrightPage>
       )
     }
     return <Navigate to={`${APP_BASE_PATH}/gs/${membership}`} replace />
@@ -277,7 +282,7 @@ export function AppRoutes() {
             Only an admin reaches this: the gate above gives every other role
             the same not-found page for any /admin path, known or not (QA F2).
           */}
-          <Route path="*" element={<NotFoundPage home={`${APP_BASE_PATH}/admin/projects`} />} />
+          <Route path="*" element={<NotFoundPage home={`${APP_BASE_PATH}/admin/projects`} inShell />} />
         </Route>
         {/*
           The viewer's project picker (RV6-23). The viewer's alone: a foreman

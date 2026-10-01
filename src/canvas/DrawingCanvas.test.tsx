@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DrawingCanvas } from './DrawingCanvas'
+import { MIN_LABEL_FONT_SIZE } from './canvasView'
 
 // Simulates the one piece of Konva node state that the drag-clamp reset
 // exists to guard: a dragged node's `.x()`/`.y()` report its position
@@ -85,6 +86,7 @@ vi.mock('react-konva', () => {
       data-scalex={String(props.scaleX ?? '')}
       data-draggable={String(props.draggable ?? '')}
       data-text={String(props.text ?? '')}
+      data-fontsize={String(props.fontSize ?? '')}
       data-dash={String(props.dash ?? '')}
       data-stroke={String(props.stroke ?? '')}
       // A guide's drawn extent -- the crop-clipping tests read the endpoints.
@@ -556,7 +558,31 @@ describe('DrawingCanvas', () => {
       expect(screen.getByTestId('stage:drawing')).toHaveAttribute('data-scalex', '4')
     })
 
-    it('will not zoom out below fit-to-container', async () => {
+    it('zooms out below fit-to-container by quarters, down to 25% (Rv7 item 5)', async () => {
+      render(
+        <DrawingCanvas
+          imageUrl="u" imageW={2000} imageH={1600} cells={cells}
+          selectedCodes={[]} panZoom
+        />,
+      )
+      const zoomOut = screen.getByRole('button', { name: 'Thu nhỏ' })
+      const stage = screen.getByTestId('stage:drawing')
+      await userEvent.click(zoomOut)
+      expect(stage).toHaveAttribute('data-scalex', '0.75')
+      expect(screen.getByText('75%')).toBeInTheDocument()
+      await userEvent.click(zoomOut)
+      expect(screen.getByText('50%')).toBeInTheDocument()
+      await userEvent.click(zoomOut)
+      expect(stage).toHaveAttribute('data-scalex', '0.25')
+      expect(screen.getByText('25%')).toBeInTheDocument()
+      // MIN_ZOOM: a fourth press does nothing.
+      await userEvent.click(zoomOut)
+      expect(stage).toHaveAttribute('data-scalex', '0.25')
+    })
+
+    it('centres the drawing below fit and locks the pan there', async () => {
+      // At 50% the 450 x 360 drawing sits centred in its 900 x 720 frame; even
+      // a drag target far off to the top-left lands it back in the centre.
       render(
         <DrawingCanvas
           imageUrl="u" imageW={2000} imageH={1600} cells={cells}
@@ -564,7 +590,24 @@ describe('DrawingCanvas', () => {
         />,
       )
       await userEvent.click(screen.getByRole('button', { name: 'Thu nhỏ' }))
-      expect(screen.getByTestId('stage:drawing')).toHaveAttribute('data-scalex', '1')
+      await userEvent.click(screen.getByRole('button', { name: 'Thu nhỏ' }))
+      expect(screen.getByTestId('stage:drawing')).toHaveAttribute('data-dragboundx', '225')
+      expect(screen.getByTestId('stage:drawing')).toHaveAttribute('data-dragboundy', '180')
+    })
+
+    it('lets the page scroll past a drawing zoomed out below fit', async () => {
+      // Smaller than its frame there is still nowhere to pan to.
+      render(
+        <DrawingCanvas
+          imageUrl="u" imageW={2000} imageH={1600} cells={cells}
+          selectedCodes={[]} panZoom
+        />,
+      )
+      await userEvent.click(screen.getByRole('button', { name: 'Thu nhỏ' }))
+      const stage = screen.getByTestId('stage:drawing')
+      fireEvent.wheel(stage, { deltaY: 120 })
+      expect(stage).toHaveAttribute('data-wheel-claimed', 'false')
+      expect(stage).toHaveAttribute('data-scalex', '0.75')
     })
 
     it('returns to fit-to-container', async () => {
@@ -578,6 +621,11 @@ describe('DrawingCanvas', () => {
       await userEvent.click(screen.getByRole('button', { name: 'Phóng to' }))
       expect(screen.getByTestId('stage:drawing')).toHaveAttribute('data-scalex', '2')
 
+      await userEvent.click(screen.getByRole('button', { name: 'Vừa khung' }))
+      expect(screen.getByTestId('stage:drawing')).toHaveAttribute('data-scalex', '1')
+
+      // From below fit too: fit is 100%, not the minimum.
+      await userEvent.click(screen.getByRole('button', { name: 'Thu nhỏ' }))
       await userEvent.click(screen.getByRole('button', { name: 'Vừa khung' }))
       expect(screen.getByTestId('stage:drawing')).toHaveAttribute('data-scalex', '1')
     })
@@ -633,14 +681,16 @@ describe('DrawingCanvas', () => {
           selectedCodes={[]} panZoom
         />,
       )
-      expect(screen.getByTestId('stage:drawing')).toHaveAttribute('data-scalex', '1')
-      fireEvent.wheel(screen.getByTestId('stage:drawing'), { deltaY: 100, ctrlKey: true })
-      // clampZoom pins this at MIN_ZOOM. A test that only asserted "still 1"
-      // would look identical whether the handler clamped correctly or threw
-      // away the event entirely -- the point of this test, paired with the
-      // wheel-up one above, is that the SAME handler does react to input and
-      // still cannot be pushed past the boundary.
-      expect(screen.getByTestId('stage:drawing')).toHaveAttribute('data-scalex', '1')
+      const stage = screen.getByTestId('stage:drawing')
+      expect(stage).toHaveAttribute('data-scalex', '1')
+      // A pinch zooms out below fit by the wheel step (Rv7 item 5)...
+      fireEvent.wheel(stage, { deltaY: 100, ctrlKey: true })
+      expect(stage).toHaveAttribute('data-scalex', '0.75')
+      for (let i = 0; i < 5; i += 1) fireEvent.wheel(stage, { deltaY: 100, ctrlKey: true })
+      // ...and clampZoom pins it at MIN_ZOOM. Paired with the wheel-up test
+      // above, this shows the SAME handler reacts to input and still cannot be
+      // pushed past the boundary.
+      expect(stage).toHaveAttribute('data-scalex', '0.25')
     })
 
     it('is a no-op on wheel-up at the maximum zoom, not a drift past it', () => {
@@ -699,10 +749,63 @@ describe('DrawingCanvas', () => {
       expect(text).toHaveAttribute('data-text', 'Zone (3)')
     })
 
-    it('draws no label for a zone too small to carry one legibly', () => {
-      // A few pixels across: a label here would be an unreadable smear over the
-      // bays it is meant to explain. The zone list beside the drawing still
-      // names it.
+    /*
+      Rv7 item 4: a zone too narrow for its text used to lose its card
+      altogether, and zooming never brought it back because the fit is sized
+      unzoomed. Zone 3 on A3.4 is this shape: about 70 x 230 px at 100%, with a
+      name longer than the zone is wide.
+    */
+    const narrow = {
+      id: 'z3', name: 'Zone 3 — Tháo giáo', range: '27/12 – 01/01',
+      x: 400 / 900, y: 200 / 720, w: 70 / 900, h: 230 / 720,
+    }
+    const cardOf = (id: string) => {
+      const group = within(screen.getByTestId(`group:zone-label-${id}`))
+      const rect = group.getByTestId('rect:')
+      return {
+        x: Number(rect.getAttribute('data-x')),
+        y: Number(rect.getAttribute('data-y')),
+        w: Number(rect.getAttribute('data-width')),
+        h: Number(rect.getAttribute('data-height')),
+        font: Number(group.getByTestId('text:').getAttribute('data-fontsize')),
+      }
+    }
+
+    it('still names a zone too narrow for its text, at the smallest legible size', () => {
+      render(
+        <DrawingCanvas
+          imageUrl="u" imageW={2000} imageH={1600} cells={cells}
+          selectedCodes={[]}
+          zoneLabels={[narrow]}
+        />,
+      )
+      const text = within(screen.getByTestId('group:zone-label-z3')).getByTestId('text:')
+      expect(text).toHaveAttribute('data-text', 'Zone 3 — Tháo giáo\n27/12 – 01/01')
+      const card = cardOf('z3')
+      expect(card.font).toBe(MIN_LABEL_FONT_SIZE)
+      // Sized to its text, so wider than the 70 px zone it names...
+      expect(card.w).toBeGreaterThan(70)
+      // ...and centred on that zone's box, not pinned to its left edge.
+      expect(card.x + card.w / 2).toBeCloseTo(435)
+      expect(card.y + card.h / 2).toBeCloseTo(315)
+    })
+
+    it('keeps a card that overhangs its zone inside the drawing', () => {
+      // The same zone against the drawing's left and bottom edges: centred, the
+      // card would start left of 0 and end below the drawing.
+      render(
+        <DrawingCanvas
+          imageUrl="u" imageW={2000} imageH={1600} cells={cells}
+          selectedCodes={[]}
+          zoneLabels={[{ ...narrow, x: 0, y: 715 / 720, h: 5 / 720 }]}
+        />,
+      )
+      const card = cardOf('z3')
+      expect(card.x).toBe(0)
+      expect(card.y + card.h).toBeCloseTo(720)
+    })
+
+    it('names even a zone a few pixels across, rather than dropping it', () => {
       render(
         <DrawingCanvas
           imageUrl="u" imageW={2000} imageH={1600} cells={cells}
@@ -710,7 +813,23 @@ describe('DrawingCanvas', () => {
           zoneLabels={[{ ...zone, w: 0.01, h: 0.005 }]}
         />,
       )
-      expect(screen.queryByTestId('group:zone-label-z1')).toBeNull()
+      expect(screen.getByTestId('group:zone-label-z1')).toBeInTheDocument()
+      expect(cardOf('z1').font).toBe(MIN_LABEL_FONT_SIZE)
+    })
+
+    it('moves apart two overhanging cards that would cover each other', () => {
+      // Two narrow neighbours: each card is wider than its own zone, so they
+      // overlap even though the zones do not. The spread still runs after.
+      render(
+        <DrawingCanvas
+          imageUrl="u" imageW={2000} imageH={1600} cells={cells}
+          selectedCodes={[]}
+          zoneLabels={[narrow, { ...narrow, id: 'z4', name: 'Zone 4 — Tháo giáo', x: 470 / 900 }]}
+        />,
+      )
+      const first = cardOf('z3')
+      const second = cardOf('z4')
+      expect(second.y).toBeGreaterThanOrEqual(first.y + first.h)
     })
 
     it('draws nothing at all when no zones are supplied', () => {

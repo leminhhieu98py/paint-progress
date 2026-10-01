@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { Link, Navigate } from 'react-router-dom'
 import { APP_BASE_PATH } from '../../config'
 import { listProjectCards, type ProjectCard } from '../../lib/projectsApi'
+import { Copyright, CopyrightPage } from '../../components/Copyright'
 import { KeyFacts } from '../../components/KeyFacts'
 import { TypeScaleProvider } from '../../components/typeScale'
 import { fieldType, palette, shadowCard, space } from '../../theme'
@@ -49,13 +50,15 @@ export function ProjectPickerScreen() {
   }
   if (cards === 'error') {
     return (
-      <div style={{ maxWidth: 360, margin: '25vh auto' }}>
-        <Alert
-          type="error"
-          message="Không tải được danh sách dự án"
-          description="Kiểm tra kết nối mạng rồi thử lại."
-        />
-      </div>
+      <CopyrightPage>
+        <div style={{ maxWidth: 360, margin: '25vh auto' }}>
+          <Alert
+            type="error"
+            message="Không tải được danh sách dự án"
+            description="Kiểm tra kết nối mạng rồi thử lại."
+          />
+        </div>
+      </CopyrightPage>
     )
   }
   if (cards.length === 1) {
@@ -146,7 +149,7 @@ export function ProjectPickerScreen() {
             </div>
           )}
         </Layout.Content>
-
+        <Copyright />
       </Layout>
     </TypeScaleProvider>
   )

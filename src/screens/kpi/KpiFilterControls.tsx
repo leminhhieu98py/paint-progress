@@ -6,6 +6,9 @@ import { ALL, resolveCoat, type KpiFilters } from './kpiFilters'
  * The KPI controls of the filter bar, after Dự án (FLT-01): Sàn, then Công
  * đoạn. Unlabelled on screen, each named by its aria-label. A new deck starts
  * its coats over, so a coat the deck does not have is never left selected.
+ * Each shows its value only while its options hold it, else Tất cả: another
+ * project's deck, still applied while that project loads, is never shown
+ * (RV7-3).
  */
 export function KpiFilterControls({
   decks,
@@ -30,7 +33,7 @@ export function KpiFilterControls({
         {...searchSelectProps}
         {...fullOptions}
         style={{ width: block ? '100%' : 220 }}
-        value={value.deckId}
+        value={decks.some((d) => d.id === value.deckId) ? value.deckId : ALL}
         onChange={(deckId: string) => onChange({ deckId, coat: ALL })}
         options={[{ value: ALL, label: 'Tất cả sàn' }, ...decks.map((d) => ({ value: d.id, label: d.name }))]}
       />

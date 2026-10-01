@@ -3,12 +3,19 @@
  * literals. Nothing here touches Konva.
  */
 
-/** 1 = the drawing exactly fills its container. Zooming out further would
- *  letterbox the drawing inside its own canvas, which is never useful. */
-export const MIN_ZOOM = 1
+/** The drawing exactly fills its container: where every canvas starts, and
+ *  what "Vừa khung" returns to. */
+export const FIT_ZOOM = 1
+/** A quarter of fit (Rv7 item 5): the customer wants to zoom out below 100%
+ *  on every screen. Below fit the drawing sits smaller than, and centred in,
+ *  its frame. */
+export const MIN_ZOOM = 0.25
 export const MAX_ZOOM = 4
-/** Per button press. */
+/** Per button press above fit. */
 export const ZOOM_STEP = 0.5
+/** Per button press at or below fit, where a half step would be two thirds
+ *  of what is left. */
+export const ZOOM_STEP_BELOW_FIT = 0.25
 /** Per wheel notch — finer than a button press, because a wheel emits many. */
 export const WHEEL_ZOOM_STEP = 0.25
 
@@ -16,17 +23,38 @@ export function clampZoom(zoom: number): number {
   // NaN would propagate into Konva's scaleX/scaleY and blank the canvas with no
   // error anywhere; a wheel handler is one emulated input away from producing
   // one.
-  if (Number.isNaN(zoom)) return MIN_ZOOM
+  if (Number.isNaN(zoom)) return FIT_ZOOM
   return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom))
 }
 
 /**
- * Keeps the panned drawing covering its viewport.
+ * One zoom button press, in (`1`) or out (`-1`): 1 -> 0.75 -> 0.5 -> 0.25 out,
+ * 1 -> 1.5 -> 2 in. A press never steps over fit -- from a wheel-made 1.25 it
+ * stops at 1 -- so fit is always one press away on the way through.
+ *
+ * Shared by the canvas's own controls and by any screen that draws its own
+ * (the progress panel, whose one control drives both lenses), so the two
+ * cannot disagree on the steps.
+ */
+export function stepZoom(zoom: number, direction: 1 | -1): number {
+  if (Number.isNaN(zoom)) return FIT_ZOOM
+  const next = direction > 0
+    ? (zoom < FIT_ZOOM ? Math.min(FIT_ZOOM, zoom + ZOOM_STEP_BELOW_FIT) : zoom + ZOOM_STEP)
+    : (zoom > FIT_ZOOM ? Math.max(FIT_ZOOM, zoom - ZOOM_STEP) : zoom - ZOOM_STEP_BELOW_FIT)
+  return clampZoom(next)
+}
+
+/**
+ * Keeps the panned drawing covering its viewport at or above fit, and centred
+ * in it below fit.
  *
  * At zoom z the content is width*z by height*z inside a width by height
  * viewport, so the stage's own position may run from width*(1-z) (content's
  * right edge flush with the viewport's) to 0 (left edges flush). At z = 1 both
  * bounds are 0: there is nothing off-screen, so there is nothing to pan.
+ *
+ * Below 1 the content is smaller than the viewport, so the drawing is centred
+ * and stays there: width*(1-z)/2 in from the left, whatever was asked for.
  *
  * Without this a foreman can flick the drawing off the screen entirely and is
  * left with a blank canvas and no way back short of reloading.
@@ -37,6 +65,9 @@ export function clampStagePan(
   height: number,
   zoom: number,
 ): { x: number; y: number } {
+  if (zoom < FIT_ZOOM) {
+    return { x: (width * (1 - zoom)) / 2, y: (height * (1 - zoom)) / 2 }
+  }
   return {
     x: Math.min(0, Math.max(width * (1 - zoom), pos.x)),
     y: Math.min(0, Math.max(height * (1 - zoom), pos.y)),
@@ -95,9 +126,10 @@ export function boxFromDrag(
   return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 }
 }
 
-/** Below this a label is a smudge, not information. A bay too small to carry
- *  its text legibly gets none: the zone legend under the canvas still names it,
- *  and an unreadable overlap costs the drawing underneath for nothing. */
+/** Below this a label is a smudge, not information. A zone too small to carry
+ *  its text at this size still gets its card, at this size, overhanging the
+ *  zone (Rv7 item 4) -- that fallback is DrawingCanvas.zoneCard's, not
+ *  fitLabelFontSize's. */
 export const MIN_LABEL_FONT_SIZE = 7
 /** What a label gets when the bay has room. Matches the drawing's own dimension
  *  text, so the overlay does not shout over the plan. */
@@ -110,7 +142,8 @@ export const MAX_LABEL_FONT_SIZE = 12
  * Fixed at 12px before this, which is why a date range spilled across three
  * neighbouring bays on a dense deck -- see the admin's screenshot. The whole
  * point of the label is to say which plan a bay belongs to, and a label wider
- * than its bay says it about the wrong bay.
+ * than its bay says it about the wrong bay (a zone card falls back to
+ * MIN_LABEL_FONT_SIZE in DrawingCanvas.zoneCard instead, Rv7 item 4).
  *
  * Width is estimated at 0.55em per character rather than measured. Measuring
  * means a canvas context and a font that has finished loading, neither of which

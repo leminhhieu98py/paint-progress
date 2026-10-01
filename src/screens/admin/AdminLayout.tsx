@@ -15,8 +15,9 @@ import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { APP_BASE_PATH, LOGIN_PATH } from '../../config'
 import { useAuth } from '../../auth/AuthProvider'
 import { ConsequenceModal } from '../../components/ConsequenceModal'
+import { Copyright } from '../../components/Copyright'
 import { initialsOf } from '../../lib/initials'
-import { palette, type } from '../../theme'
+import { palette, space, type } from '../../theme'
 
 const items = [
   { key: 'projects', label: 'Dự án', icon: <FolderOpenOutlined /> },
@@ -202,9 +203,16 @@ export function AdminLayout() {
         PageHeader -- white, with its own bottom rule running the full width --
         and an inset content area would leave that rule floating short of both
         edges. The screens pad their own bodies with PageBody.
+
+        The copyright line ends the column (RV7-2), at the bottom of a short
+        screen, lined up with PageBody's right edge. The screen keeps a block
+        box of its own, as before the column became a flex column.
       */}
-      <Layout.Content style={{ minWidth: 0, background: palette.bgApp }}>
-        <Outlet />
+      <Layout.Content style={{ minWidth: 0, background: palette.bgApp, display: 'flex', flexDirection: 'column' }}>
+        <div>
+          <Outlet />
+        </div>
+        <Copyright paddingInline={space.xxl} />
       </Layout.Content>
 
       <ConsequenceModal

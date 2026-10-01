@@ -1,34 +1,38 @@
 /**
  * The login screen's animation and its player, in one module so that the one
  * dynamic import of it (LoginScreen) puts both in their own chunk: nothing
- * past the login screen ever downloads them, and a reduced-motion visitor
- * never does either.
+ * past the login screen ever downloads them.
  *
- * Animation: "Free construction Animation" by Lakhwinder, from LottieFiles
- * (https://lottiefiles.com/free-animation/construction-g8Hve0ildf), free to use
- * under the Lottie Simple License (https://lottiefiles.com/page/license). Its
- * frames are raster images, embedded in the JSON as data URIs, with their
- * colours as published (owner, 2026-09-30).
+ * Animation: "Businessmen at the table" by Alexander Rozhkov, from LottieFiles,
+ * free for commercial use under the Lottie Simple License
+ * (https://lottiefiles.com/page/license), no attribution required (Feedback
+ * Rv7, RV7-1b). Copied verbatim: 500 x 500 shape layers, no images, no
+ * expressions, no external URLs.
  *
- * The light build of lottie-web: SVG renderer only, no expressions engine. It
- * draws image layers, which are all this animation has. The published file
- * swung eight of their transforms with `loopOut('pingpong')` expressions,
- * which the light build ignores (it would hold them still from frame 61 on);
- * scripts/bake-lottie-pingpong.mjs has written those out as plain keyframes
- * across the whole loop, so the file needs no expressions. Rerun it on any
- * replacement file: it refuses expressions it cannot bake.
+ * The light build of lottie-web: SVG renderer only, no expressions engine,
+ * which this file does not need. Its gradient fills and trim paths are drawn
+ * by the light build.
  */
 import lottie from 'lottie-web/build/player/lottie_light'
 import type { AnimationItem } from 'lottie-web/build/player/lottie_light'
-import animationData from '../assets/login-construction.json'
+import animationData from '../assets/login-businessmen.json'
 
-export function playLoginAnimation(container: HTMLElement): AnimationItem {
-  return lottie.loadAnimation({
+/** The frame a reduced-motion visitor sees, held still (RV7-1d). */
+const STILL_FRAME = 60
+
+/**
+ * Plays the animation in `container`, looping; `still` (reduced motion) loads
+ * it without playing and holds one frame instead.
+ */
+export function playLoginAnimation(container: HTMLElement, { still = false } = {}): AnimationItem {
+  const animation = lottie.loadAnimation({
     container,
     renderer: 'svg',
-    loop: true,
-    autoplay: true,
+    loop: !still,
+    autoplay: !still,
     animationData,
     rendererSettings: { preserveAspectRatio: 'xMidYMid meet' },
   })
+  if (still) animation.goToAndStop(STILL_FRAME, true)
+  return animation
 }

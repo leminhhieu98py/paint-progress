@@ -13,6 +13,9 @@ export function expectNoSpecIds(root: HTMLElement = document.body) {
   expect(root.textContent ?? '').not.toMatch(SPEC_ID)
 }
 
+/** The customer's copyright line that ends every screen (RV7-2), word for word. */
+export const COPYRIGHT = 'Bản quyền © 2026 Đoàn Công Linh – XDVTH'
+
 /**
  * A line of prose under the page title (a `<p>` after the title line), or
  * null. PageHeader has no subtitle any more (HLT-01: facts sit on the title's

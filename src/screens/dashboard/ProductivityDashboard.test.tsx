@@ -458,7 +458,7 @@ describe('ProductivityDashboard — alignment (UI-03)', () => {
   })
 })
 
-describe('ProductivityDashboard — Tìm and the pagers (FLT-02)', () => {
+describe('ProductivityDashboard — applied filters and the pagers (RV7-3)', () => {
   it('sends a paged table back to page 1 on every apply, even when no filter changed', async () => {
     // Twelve crews: Theo nhóm trưởng pages at ten.
     const crews = Array.from({ length: 12 }, (_, i) =>

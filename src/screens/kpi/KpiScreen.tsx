@@ -1,7 +1,7 @@
 import { Alert, App, Button, Layout, Spin } from 'antd'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { settleDraft, useDraftFilters, useProjectOptions } from '../../components/draftFilters'
+import { settleFilters, useAppliedFilters } from '../../components/appliedFilters'
 import { FilterBar } from '../../components/FilterBar'
 import { FilterSheet } from '../../components/FilterSheet'
 import { PageBody, PageHeader } from '../../components/PageHeader'
@@ -14,7 +14,7 @@ import type { DeckEvent, WorkModel } from '../../domain/types'
 import {
   clearStagePlanArea, listStagePlans, saveStagePlan, type StoredStagePlan,
 } from '../../lib/kpiApi'
-import { listDecks, setDeckKpiColors } from '../../lib/decksApi'
+import { setDeckKpiColors } from '../../lib/decksApi'
 import { listProjectEvents, loadProjectModel } from '../../lib/progressApi'
 import { listProjectNames } from '../../lib/projectsApi'
 import { FieldLayout } from '../gs/FieldLayout'
@@ -224,7 +224,7 @@ const NO_OPTIONS: FilterOptions = { decks: [], coats: [] }
 /** The bar's options for the loaded project: its decks, and the coats the chart can show. */
 /**
  * The bar's options for the loaded project. Null while it loads, or after a
- * failed read: unknown, so no draft is reconciled against it.
+ * failed read: unknown, so nothing applied is reconciled against it.
  */
 function filterOptions(current: Loaded | null, entries: KpiEntry[]): FilterOptions | null {
   if (current === null || 'error' in current) return null
@@ -234,28 +234,14 @@ function filterOptions(current: Loaded | null, entries: KpiEntry[]): FilterOptio
   }
 }
 
-/** The bar's options for a DRAFT project the screen has not loaded (FLT-02): two light reads. */
-async function loadFilterOptions(projectId: string): Promise<FilterOptions> {
-  const [decks, plans] = await Promise.all([listDecks(projectId), listStagePlans(projectId)])
-  return {
-    decks: decks.map((d) => ({ id: d.id, name: d.name })),
-    coats: plans.map((p) => ({ deckId: p.deckId, workName: p.workName, stageName: p.stageName })),
-  }
-}
-
 /**
- * The draft as the options have it (FLT-02): a Sàn the draft project does not
- * have is Tất cả sàn again, and a Công đoạn the draft Sàn does not have is
- * Tất cả công đoạn.
+ * What is applied as the options have it: a Sàn the project does not have is
+ * Tất cả sàn again, and a Công đoạn the Sàn does not have is Tất cả công đoạn.
  */
-function settle<T extends KpiFilters>(draft: T, options: FilterOptions): T {
-  const deckId = options.decks.some((d) => d.id === draft.deckId) ? draft.deckId : ALL
-  return { ...draft, deckId, coat: resolveCoat(draft.coat, kpiCoatOptions(options.coats, deckId)) }
+function settle(applied: KpiFilters, options: FilterOptions): KpiFilters {
+  const deckId = options.decks.some((d) => d.id === applied.deckId) ? applied.deckId : ALL
+  return { ...applied, deckId, coat: resolveCoat(applied.coat, kpiCoatOptions(options.coats, deckId)) }
 }
-
-/** The admin bar's draft: the project (null is the one in the address) and the chart's scope. */
-type AdminScope = KpiFilters & { project: string | null }
-const DEFAULT_ADMIN_SCOPE: AdminScope = { project: null, ...DEFAULT_KPI_FILTERS }
 
 function Body({
   projectId,
@@ -263,15 +249,12 @@ function Body({
   data: { current, reload },
   model: { todayKey, coats, planByStage, coatByStage, entries },
   filters,
-  version = 0,
 }: {
   projectId: string | null
   variant: 'admin' | 'gs'
   data: KpiData
   model: KpiModel
   filters: KpiFilters
-  /** Counts the bar's applies: the plan table's page and drafts start over on each (M10). */
-  version?: number
 }) {
   const { message } = App.useApp()
   const [saving, setSaving] = useState(false)
@@ -405,7 +388,9 @@ function Body({
           onSave={onSave}
           onClearArea={onClearArea}
           saving={saving}
-          scopeKey={`${projectId}|${version}`}
+          // The rows are the project's, whatever the chart shows: only another
+          // project starts its page and its unsaved edits over (M10).
+          scopeKey={projectId}
         />
       )}
       {/* RV6-28: the chart's colours per deck, admin-only like the plan table. */}
@@ -421,7 +406,7 @@ function AdminKpi() {
   const [projects, setProjects] = useState<Array<{ id: string; name: string; code: string }>>([])
   const [chosen, setChosen] = useState<string | null>(null)
   const [listError, setListError] = useState<string | null>(null)
-  const scope = useDraftFilters(DEFAULT_ADMIN_SCOPE)
+  const scope = useAppliedFilters(DEFAULT_KPI_FILTERS)
 
   useEffect(() => {
     listProjectNames()
@@ -440,28 +425,15 @@ function AdminKpi() {
   const data = useKpiData(projectId)
   const model = useKpiEntries(data.current)
 
-  // The options follow the DRAFT (FLT-02): the loaded project's own, or a
-  // light read of the project picked but not yet applied.
-  // Between Tìm and the full data arriving, the light read made while the
-  // project was a draft still answers for it. Tìm waits while the options it
-  // would reconcile against are still loading.
-  const draftProject = scope.draft.project ?? projectId
-  const other = useProjectOptions(draftProject === projectId ? null : draftProject, loadFilterOptions)
-  const options = draftProject === projectId
-    ? filterOptions(data.current, model.entries) ?? other.cached(projectId)
-    // A failed read settles against "nothing": Tìm then applies Tất cả for
-    // the new project instead of carrying the old project's choice across.
-    : other.error !== null ? NO_OPTIONS : other.options
-  const loading = draftProject === projectId ? projectId !== null && data.current === null : other.loading
-  const draft = settleDraft(scope, options, settle)
+  // Every control applies as it changes (RV7-3). Another project reads its
+  // data at once; once its options arrive, what it lacks is settled away.
+  const options = filterOptions(data.current, model.entries)
+  const filters = settleFilters(scope, options, settle)
   const shown = options ?? NO_OPTIONS
 
-  const apply = () => {
-    if (draftProject !== null && draftProject !== projectId) {
-      setChosen(draftProject)
-      setSearchParams({ project: draftProject }, { replace: true })
-    }
-    scope.apply({ ...draft, project: null })
+  const chooseProject = (id: string) => {
+    setChosen(id)
+    setSearchParams({ project: id }, { replace: true })
   }
 
   return (
@@ -469,90 +441,59 @@ function AdminKpi() {
       <PageHeader
         title="KPI"
         filters={(
-          // One bar, the project first (FLT-01); a draft until Tìm (FLT-02).
-          <FilterBar onApply={apply} onReset={scope.reset} applyLoading={loading}>
-            <ProjectSelect
-              projects={projects}
-              value={draftProject}
-              onChange={(v) => scope.setDraft({ project: v })}
-            />
+          // One bar, the project first (FLT-01); each control applies on change (RV7-3).
+          <FilterBar>
+            <ProjectSelect projects={projects} value={projectId} onChange={chooseProject} />
             <KpiFilterControls
               decks={shown.decks}
-              coats={kpiCoatOptions(shown.coats, draft.deckId)}
-              value={draft}
-              onChange={(next) => scope.setDraft({ ...next, project: scope.draft.project })}
+              coats={kpiCoatOptions(shown.coats, filters.deckId)}
+              value={filters}
+              onChange={scope.apply}
             />
           </FilterBar>
         )}
       />
       <PageBody>
         {listError && <Alert type="error" showIcon message="Không tải được danh sách dự án" description={listError} />}
-        {draftProject !== projectId && other.error !== null && (
-          <Alert type="error" showIcon message="Không tải được bộ lọc của dự án" description={other.error} />
-        )}
-        <Body projectId={projectId} variant="admin" data={data} model={model} filters={scope.applied} version={scope.version} />
+        <Body projectId={projectId} variant="admin" data={data} model={model} filters={filters} />
       </PageBody>
     </>
   )
 }
 
-/** The field bar's draft: the project (null is the route's) and the chart's scope (I-1). */
-const DEFAULT_FIELD_SCOPE: AdminScope = DEFAULT_ADMIN_SCOPE
 const CARRY_PAGE = 'kpi'
 
 function FieldKpi({ projectId }: { projectId: string | null }) {
   const navigate = useNavigate()
-  // Opened by a Tìm on another project's page: start on what it applied (I-1).
+  // Opened by a project switch on another project's page: start on what it applied (I-1).
   const [carried] = useState(() => peekCarried<KpiFilters>(CARRY_PAGE, projectId))
   useEffect(() => clearCarried(CARRY_PAGE, projectId), [projectId])
-  const scope = useDraftFilters(DEFAULT_FIELD_SCOPE, carried ? { ...carried, project: null } : DEFAULT_FIELD_SCOPE)
+  const scope = useAppliedFilters(carried ?? DEFAULT_KPI_FILTERS)
   const data = useKpiData(projectId)
   const model = useKpiEntries(data.current)
 
-  // The options follow the DRAFT project, as on the admin page (FLT-02).
-  const draftProject = scope.draft.project ?? projectId
-  const other = useProjectOptions(draftProject === projectId ? null : draftProject, loadFilterOptions)
-  const options = draftProject === projectId
-    ? filterOptions(data.current, model.entries)
-    : other.error !== null ? NO_OPTIONS : other.options
-  const loading = draftProject === projectId ? data.current === null : other.loading
-  const draft = settleDraft(scope, options, settle)
+  // As on the admin page: each control applies on change (RV7-3), settled
+  // against the route project's options once they arrive.
+  const options = filterOptions(data.current, model.entries)
+  const filters = settleFilters(scope, options, settle)
   const shown = options ?? NO_OPTIONS
   const phone = useFieldPhone()
   const projectCode = useFieldProjectCode(projectId)
-  // What is applied is the route project's: its decks and coats name the summary.
-  const applied = filterOptions(data.current, model.entries) ?? NO_OPTIONS
-  const appliedCoats = kpiCoatOptions(applied.coats, scope.applied.deckId)
+  const coats = kpiCoatOptions(shown.coats, filters.deckId)
 
-  const apply = () => {
-    if (draftProject !== null && draftProject !== projectId) {
-      // Another project: its page, on the draft as settled against its options.
-      const { project: _project, ...filters } = draft
-      carryFilters(CARRY_PAGE, draftProject, filters)
-      navigate(`${APP_BASE_PATH}/gs/${draftProject}/kpi`)
-      return
-    }
-    scope.apply({ ...draft, project: null })
+  /** Another project: its page, at once, on what is applied here; it settles them against its own options. */
+  const chooseProject = (id: string) => {
+    carryFilters(CARRY_PAGE, id, filters)
+    navigate(`${APP_BASE_PATH}/gs/${id}/kpi`)
   }
 
   /** The bar's controls, full width in the phone's sheet (FLT-04). */
   const controls = (block: boolean) => (
     <>
       {projectId && (
-        <FieldProjectSelect
-          projectId={projectId}
-          width={block ? '100%' : undefined}
-          value={draftProject ?? undefined}
-          onChange={(v) => scope.setDraft({ project: v })}
-        />
+        <FieldProjectSelect projectId={projectId} width={block ? '100%' : undefined} onChange={chooseProject} />
       )}
-      <KpiFilterControls
-        decks={shown.decks}
-        coats={kpiCoatOptions(shown.coats, draft.deckId)}
-        block={block}
-        value={draft}
-        onChange={(next) => scope.setDraft({ ...next, project: scope.draft.project })}
-      />
+      <KpiFilterControls decks={shown.decks} coats={coats} block={block} value={filters} onChange={scope.apply} />
     </>
   )
 
@@ -562,39 +503,26 @@ function FieldKpi({ projectId }: { projectId: string | null }) {
       <Layout.Content style={{ padding: space.lg, display: 'flex', flexDirection: 'column', gap: space.lg }}>
         {/*
           The field's bar, first under the header, the project first (GS-07),
-          all of it a draft until Tìm (FLT-02, I-1). On a phone, one row --
-          what is applied, and Bộ lọc -- and the controls in a sheet (FLT-04).
+          each control applied as it changes (RV7-3, I-1). On a phone, one row
+          -- what is applied, and Bộ lọc -- and the controls in a sheet (FLT-04).
         */}
         {phone ? (
-          <FilterSheet
-            summary={kpiSummary(projectCode, scope.applied, applied.decks, appliedCoats)}
-            count={kpiFilterCount(scope.applied, appliedCoats)}
-            onApply={apply}
-            onReset={scope.reset}
-            // Closed without Tìm: the draft goes back to what is applied (FLT-09).
-            onDiscard={() => scope.setDraft(scope.applied)}
-            applyLoading={loading}
-          >
+          <FilterSheet summary={kpiSummary(projectCode, filters, shown.decks, coats)} count={kpiFilterCount(filters, coats)}>
             {controls(true)}
           </FilterSheet>
         ) : (
-          <FilterBar onApply={apply} onReset={scope.reset} applyLoading={loading}>
-            {controls(false)}
-          </FilterBar>
+          <FilterBar>{controls(false)}</FilterBar>
         )}
-        {draftProject !== projectId && other.error !== null && (
-          <Alert type="error" showIcon message="Không tải được bộ lọc của dự án" description={other.error} />
-        )}
-        <Body projectId={projectId} variant="gs" data={data} model={model} filters={scope.applied} />
+        <Body projectId={projectId} variant="gs" data={data} model={model} filters={filters} />
       </Layout.Content>
     </FieldLayout>
   )
 }
 
 export function KpiScreen({ variant }: { variant: 'admin' | 'gs' }) {
-  // Keyed by the path's project, as DashboardScreen is: Tìm on another project
-  // changes it on this page, and the fresh mount opens on what that Tìm
-  // carried (I-1), never on the last project's state.
+  // Keyed by the path's project, as DashboardScreen is: picking another
+  // project changes it on this page, and the fresh mount opens on what that
+  // pick carried (I-1), never on the last project's state.
   const { projectId } = useParams()
   return variant === 'admin'
     ? <AdminKpi />

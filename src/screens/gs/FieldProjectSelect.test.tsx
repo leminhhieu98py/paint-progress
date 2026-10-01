@@ -137,18 +137,18 @@ describe('FieldProjectSelect: the project, first in every field filter bar (GS-0
   })
 })
 
-describe('FieldProjectSelect: in a draft bar (FLT-02, I-1)', () => {
-  it('shows the draft value and reports a pick without navigating', async () => {
+describe('FieldProjectSelect: on a page that carries its filters (RV7-3, I-1)', () => {
+  it('shows the route\'s project and reports a pick, for the page to carry its filters, without navigating', async () => {
     const onChange = vi.fn()
     render(
       <MemoryRouter initialEntries={['/gs/p1/dashboard']}>
-        <FieldProjectSelect projectId="p1" value="p2" onChange={onChange} />
+        <FieldProjectSelect projectId="p1" onChange={onChange} />
       </MemoryRouter>,
     )
-    expect(await shown('Đại Hùng')).toBeInTheDocument()
+    expect(await shown('BlockB1_CPPTS')).toBeInTheDocument()
     await userEvent.click(await box())
-    await userEvent.click(document.querySelector('.ant-select-item-option[title="BlockB1_CPPTS"]') as HTMLElement)
-    expect(onChange).toHaveBeenCalledWith('p1')
+    await userEvent.click(document.querySelector('.ant-select-item-option[title="Đại Hùng"]') as HTMLElement)
+    expect(onChange).toHaveBeenCalledWith('p2')
     expect(navigate).not.toHaveBeenCalled()
   })
 })

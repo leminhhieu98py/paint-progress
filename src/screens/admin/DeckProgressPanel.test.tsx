@@ -55,7 +55,7 @@ const canvasRenders = vi.hoisted(() => ({ count: 0 }))
 vi.mock('../../canvas/DrawingCanvas', () => ({
   DrawingCanvas: ({
     imageUrl, cells, cellColors, hatchedCodes, markedCodes, planLabels, selectedCodes,
-    outlineColors, cellOpacities, zoneLabels, onCellClick, onSelectDraw,
+    outlineColors, cellOpacities, zoneLabels, onCellClick, onSelectDraw, zoom,
   }: {
     imageUrl: string
     cells: { code: string }[]
@@ -69,6 +69,7 @@ vi.mock('../../canvas/DrawingCanvas', () => ({
     selectedCodes?: string[]
     onCellClick?: (code: string, additive: boolean) => void
     onSelectDraw?: (rect: { x: number; y: number; w: number; h: number }) => void
+    zoom?: number
   }) => {
     canvasRenders.count += 1
     return (
@@ -78,6 +79,9 @@ vi.mock('../../canvas/DrawingCanvas', () => ({
       // The label boxes the panel asks for, as a count and as their names:
       // RV6-12 off and RV6-13 both have to draw none of them.
       data-labels={(zoneLabels ?? []).map((l) => l.name).join('|')}
+      // The zoom the panel hands the lens, so a test can tell the readout and
+      // the drawing apart (Rv7 item 5).
+      data-zoom={String(zoom)}
     >
       {cells.map((c) => (
         <button
@@ -172,19 +176,12 @@ const startInputOf = (stageName: string) =>
     within(screen.getByTestId('stage-windows')).getByRole('row', { name: new RegExp(stageName) }),
   ).getByPlaceholderText('Bắt đầu')
 
-/** Tìm in the bar that holds `el`: the lens bar is a draft (FLT-08). */
-const applyBarOf = async (el: HTMLElement) => {
-  const bar = el.closest('[role="search"]') as HTMLElement
-  await userEvent.click(within(bar).getByRole('button', { name: /Tìm/ }))
-}
-
-/** A lens bar's select, by its label, set to `name` and applied with Tìm. */
+/** A lens bar's select, by its label, set to `name`: it applies as it changes (RV7-3). */
 const pickLens = async (label: string, name: string) => {
   // By role: the controls name themselves by aria-label (M14), which antd
   // puts on the select's wrapper as well as its input.
   await userEvent.click(screen.getByRole('combobox', { name: label }))
   await userEvent.click(await screen.findByTitle(name))
-  await applyBarOf(screen.getByRole('combobox', { name: label }))
 }
 
 describe('DeckProgressPanel', () => {
@@ -268,6 +265,23 @@ describe('DeckProgressPanel', () => {
     expect(screen.getByText('100%')).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Phóng to' }))
     expect(screen.getByText('150%')).toBeInTheDocument()
+  })
+
+  it('zooms out below 100% by quarters, down to 25%, and fits back to 100% (Rv7 item 5)', async () => {
+    renderPanel()
+    await screen.findByTestId('lens-A')
+    const zoomOut = screen.getByRole('button', { name: 'Thu nhỏ' })
+    for (const shown of ['75%', '50%', '25%']) {
+      await userEvent.click(zoomOut)
+      expect(screen.getByText(shown)).toBeInTheDocument()
+    }
+    // The lens itself is drawn at the readout's zoom, not only the label.
+    for (const canvas of screen.getAllByTestId('canvas')) expect(canvas).toHaveAttribute('data-zoom', '0.25')
+    await userEvent.click(zoomOut)
+    expect(screen.getByText('25%')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Vừa khung' }))
+    expect(screen.getByText('100%')).toBeInTheDocument()
+    for (const canvas of screen.getAllByTestId('canvas')) expect(canvas).toHaveAttribute('data-zoom', '1')
   })
 
   it('shows the deck\'s own spec table', async () => {
@@ -1657,7 +1671,6 @@ describe('DeckProgressPanel — comparing two dates (RV6-14..16)', () => {
   const pickDate = async (side: 'a' | 'b', text: string) => {
     await userEvent.type(dateInput(side), text)
     await userEvent.keyboard('{Enter}')
-    await applyBarOf(dateInput(side))
   }
 
   it('gives every layer a date picker, empty for the live state', async () => {
@@ -1740,7 +1753,6 @@ describe('DeckProgressPanel — comparing two dates (RV6-14..16)', () => {
     await userEvent.click(
       screen.getByTestId('lens-a-date').querySelector('.ant-picker-clear') as HTMLElement,
     )
-    await applyBarOf(dateInput('a'))
 
     await waitFor(() =>
       expect(screen.getByTestId('cell-R1C2')).toHaveAttribute('data-color', '#fadb14'))
@@ -1830,51 +1842,35 @@ describe('DeckProgressPanel — each layer\'s controls above its own drawing (RV
     // to another coat without touching the left one.
     await userEvent.click(within(lensB).getByRole('combobox', { name: 'Công đoạn' }))
     await userEvent.click(await screen.findByTitle('Coat 2'))
-    await applyBarOf(within(lensB).getByRole('combobox', { name: 'Công đoạn' }))
     expect(within(lensB).getByText('Tiến độ · Coat 2')).toBeInTheDocument()
     expect(within(lensA).getByText('Tiến độ · Blast + Coat 1')).toBeInTheDocument()
   })
 })
 
-describe('DeckProgressPanel — the lens bar is a draft, applied on Tìm (FLT-08)', () => {
+describe('DeckProgressPanel — the lens bar applies as it changes (RV7-3)', () => {
   /** The bar that holds a control. */
   const barOf = (el: HTMLElement) => el.closest('[role="search"]') as HTMLElement
 
-  it('ends the single layer\'s bar with Đặt lại · Tìm, and changes the lens only on Tìm', async () => {
+  it('has no Đặt lại and no Tìm on the single layer\'s bar, and changes the lens at once', async () => {
     renderPanel()
     const lens = await screen.findByTestId('lens-A')
     const bar = barOf(screen.getByRole('combobox', { name: 'Lớp sơn đang xem' }))
     expect(bar).toContainElement(screen.getByTestId('lens-a-date'))
-    const buttons = within(bar).getAllByRole('button').filter((b) => /Đặt lại|Tìm/.test(b.textContent ?? ''))
-    expect(buttons.map((b) => b.textContent)).toEqual(['Đặt lại', 'Tìm'])
+    expect(within(bar).queryByRole('button', { name: 'Đặt lại' })).toBeNull()
+    expect(within(bar).queryByRole('button', { name: /Tìm/ })).toBeNull()
 
     await userEvent.click(screen.getByRole('combobox', { name: 'Lớp sơn đang xem' }))
     await userEvent.click(await screen.findByTitle('Coat 2'))
-    // Not yet: the draft only.
-    expect(within(lens).getByText('Tiến độ · Blast + Coat 1')).toBeInTheDocument()
-    await userEvent.click(within(bar).getByRole('button', { name: /Tìm/ }))
     expect(await within(lens).findByText('Tiến độ · Coat 2')).toBeInTheDocument()
   })
 
-  it('puts the first coat and today back, applied at once, on Đặt lại', async () => {
-    listDeckEvents.mockResolvedValue([])
-    renderPanel()
-    const lens = await screen.findByTestId('lens-A')
-    await pickLens('Lớp sơn đang xem', 'Coat 2')
-    expect(await within(lens).findByText('Tiến độ · Coat 2')).toBeInTheDocument()
-    await userEvent.click(within(barOf(screen.getByRole('combobox', { name: 'Lớp sơn đang xem' }))).getByRole('button', { name: 'Đặt lại' }))
-    expect(await within(lens).findByText('Tiến độ · Blast + Coat 1')).toBeInTheDocument()
-    expect(within(screen.getByTestId('lens-a-date')).getByPlaceholderText('Hôm nay')).toHaveValue('')
-  })
-
-  it('offers the draft work\'s coats before Tìm, and applies the work with them', async () => {
+  it('applies a new work at once, its coats on offer from their defaults', async () => {
     loadDeckWorks.mockResolvedValue(TWO_WORKS)
     renderPanel(false)
     const lens = await screen.findByTestId('lens-A')
     await userEvent.click(screen.getByRole('combobox', { name: 'Công việc · Tiến độ theo lớp sơn' }))
     await userEvent.click(await screen.findByTitle('Tháo giáo'))
-    // The lens still shows the first work; the coat select already offers the second's.
-    expect(within(lens).getByText('Tiến độ · Blast + Coat 1')).toBeInTheDocument()
+    expect(await within(lens).findByText('Tiến độ · Tháo giáo lửng')).toBeInTheDocument()
     await userEvent.click(screen.getByRole('combobox', { name: 'Lớp sơn đang xem' }))
     const coatOptions = () => Array.from(
       (document.getElementById('lens-a-stage_list') as HTMLElement).closest('.ant-select-dropdown')!
@@ -1882,12 +1878,9 @@ describe('DeckProgressPanel — the lens bar is a draft, applied on Tìm (FLT-08
       (el) => el.getAttribute('title'),
     )
     await waitFor(() => expect(coatOptions()).toEqual(['Tất cả công đoạn', 'Tháo giáo lửng']))
-    await userEvent.keyboard('{Escape}')
-    await applyBarOf(screen.getByRole('combobox', { name: 'Công việc · Tiến độ theo lớp sơn' }))
-    expect(await within(lens).findByText('Tiến độ · Tháo giáo lửng')).toBeInTheDocument()
   })
 
-  it('gives each layer its own bar when comparing: Tìm on one leaves the other\'s draft alone', async () => {
+  it('gives each layer its own bar when comparing: a change on one leaves the other alone', async () => {
     renderPanel()
     await screen.findByTestId('lens-A')
     await userEvent.click(screen.getByText('So sánh hai lớp'))
@@ -1898,18 +1891,20 @@ describe('DeckProgressPanel — the lens bar is a draft, applied on Tìm (FLT-08
     expect(barA).not.toBe(barB)
     expect(barA).toHaveAccessibleName('Bộ lọc bên trái')
     expect(barB).toHaveAccessibleName('Bộ lọc bên phải')
+    for (const bar of [barA, barB]) {
+      expect(within(bar).queryByRole('button', { name: 'Đặt lại' })).toBeNull()
+      expect(within(bar).queryByRole('button', { name: /Tìm/ })).toBeNull()
+    }
 
     await userEvent.click(within(lensA).getByRole('combobox', { name: 'Công đoạn' }))
     await userEvent.click(await screen.findByTitle('Coat 2'))
+    expect(await within(lensA).findByText('Tiến độ · Coat 2')).toBeInTheDocument()
     await userEvent.click(within(lensB).getByRole('combobox', { name: 'Công đoạn' }))
     const popups = document.querySelectorAll<HTMLElement>('.ant-select-dropdown:not(.ant-select-dropdown-hidden)')
     await userEvent.click(within(popups[popups.length - 1]).getByTitle('Blast + Coat 1'))
-    await userEvent.click(within(barB).getByRole('button', { name: /Tìm/ }))
     expect(await within(lensB).findByText('Tiến độ · Blast + Coat 1')).toBeInTheDocument()
-    // A's pick is still a draft.
-    expect(within(lensA).getByText('Tiến độ · Blast + Coat 1')).toBeInTheDocument()
-    await userEvent.click(within(barA).getByRole('button', { name: /Tìm/ }))
-    expect(await within(lensA).findByText('Tiến độ · Coat 2')).toBeInTheDocument()
+    // A's change stands.
+    expect(within(lensA).getByText('Tiến độ · Coat 2')).toBeInTheDocument()
   })
 })
 
