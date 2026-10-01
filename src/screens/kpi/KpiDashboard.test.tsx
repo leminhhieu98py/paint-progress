@@ -178,27 +178,60 @@ describe('KpiDashboard', () => {
   })
 
   // ---------------------------------------------------------------------
-  // RV6-08, withdrawn by R5-C4 — no caption under the chart
+  // RV7-6 — the chart's name under its legend (Linh, reverses R5-C4)
   // ---------------------------------------------------------------------
 
-  describe('no caption under the chart (R5-C4)', () => {
-    // The filter bar above already says which deck and which coat the chart
-    // is scoped to; a caption repeating it is a second copy to read.
-    it('prints no "Tất cả sàn" under the chart with every deck in view', () => {
+  describe('the chart name under the legend (RV7-6)', () => {
+    const title = () => screen.getByTestId('kpi-chart-title')
+
+    it('reads "Tất cả sàn" with nothing chosen', () => {
       renderDash()
-      expect(chart()).toBeInTheDocument()
-      expect(screen.queryByTestId('kpi-chart-title')).toBeNull()
-      expect(screen.queryByText(/^Tất cả sàn/, { selector: 'p' })).toBeNull()
+      expect(title()).toHaveTextContent(/^Tất cả sàn$/)
     })
 
-    it('prints no deck name or coat label under it when one of each is chosen', async () => {
+    it('reads the deck name alone under Tất cả công đoạn', async () => {
+      renderDash()
+      await pick('Sàn', 'Sàn A')
+      await waitFor(() => expect(title()).toHaveTextContent(/^Sàn A$/))
+    })
+
+    it('reads deck name - coat when both are chosen', async () => {
       renderDash()
       await pick('Sàn', 'Sàn A')
       await pick('Công đoạn', 'Công đoạn 1')
-      await waitFor(() => expect(chart()).toHaveAttribute('data-colors', '#123abc/null'))
+      await waitFor(() => expect(title()).toHaveTextContent(/^Sàn A - Công đoạn 1$/))
+    })
+
+    it('reads Tất cả sàn - coat when a coat is chosen over every deck', async () => {
+      renderDash()
+      await pick('Công đoạn', 'Công đoạn 2')
+      await waitFor(() => expect(title()).toHaveTextContent(/^Tất cả sàn - Công đoạn 2$/))
+    })
+
+    it('names the coat as the picker does, with its work, when more than one work is in view', async () => {
+      renderDash([
+        ENTRIES[0],
+        { ...ENTRIES[0], plan: { ...ENTRIES[0].plan, stageId: 's3', workName: 'Tháo giáo' }, actual: [] },
+      ])
+      await pick('Công đoạn', 'Tháo giáo · Công đoạn 1')
+      await waitFor(() => expect(title()).toHaveTextContent(/^Tất cả sàn - Tháo giáo · Công đoạn 1$/))
+    })
+
+    it('drops a coat the newly chosen deck does not have from the name', async () => {
+      renderDash()
+      await pick('Công đoạn', 'Công đoạn 2')
+      await pick('Sàn', 'Sàn A')
+      await waitFor(() => expect(title()).toHaveTextContent(/^Sàn A$/))
+    })
+
+    it('sits under the chart, whose legend is the chart\'s last row', () => {
+      renderDash()
+      expect(chart().compareDocumentPosition(title()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    })
+
+    it('is not printed over an empty chart', () => {
+      renderDash([])
       expect(screen.queryByTestId('kpi-chart-title')).toBeNull()
-      expect(screen.queryByText(/Sàn A — Công đoạn 1/)).toBeNull()
-      expect(screen.queryByText('Sàn A', { selector: 'p' })).toBeNull()
     })
   })
 

@@ -1,9 +1,11 @@
 import { useMemo } from 'react'
 import { EmptyState } from '../../components/EmptyState'
 import { SectionCard } from '../../components/SectionCard'
+import { useTypeScale } from '../../components/typeScale'
 import { kpiSeries, plannedAreaM2, type KpiScopeStage } from '../../domain/kpi'
 import { DEFAULT_UNIT, MIXED_QUANTITY_LABEL, MIXED_UNIT_SUM_TOOLTIP, unitOfWorks } from '../../domain/unit'
 import { MISSING, formatAreaM2 } from '../../lib/format'
+import { palette } from '../../theme'
 import { KpiComboChart } from '../dashboard/charts'
 import { ALL, coatKey, kpiCoatOptions, resolveCoat, type KpiFilters } from './kpiFilters'
 
@@ -46,6 +48,7 @@ export function KpiDashboard({
   /** The next step under an empty chart, for whoever can take it (the admin); none by default (CPY-01). */
   emptyDescription?: string
 }) {
+  const type = useTypeScale()
   const deckId = filters.deckId
 
   const byDeck = useMemo(
@@ -85,12 +88,15 @@ export function KpiDashboard({
   const unit = unitOfWorks(scoped.map((e) => ({ unit: e.unit ?? DEFAULT_UNIT })))
 
 
-  /*
-    No caption under the chart (R5-C4): RV6-08 printed the deck's name (or
-    "Tất cả sàn") and the coat's label there, which the filter bar above
-    already says.
-  */
   const deck = deckId === ALL ? undefined : decks.find((d) => d.id === deckId)
+  /**
+   * The chart's name under its legend (RV7-6, Linh; reverses R5-C4): the
+   * deck's name, or "Tất cả sàn", then " - " and the coat when one is chosen.
+   * The coat reads as its Công đoạn option does, so it carries the work name
+   * when more than one work is in view.
+   */
+  const coatLabel = coatValue === ALL ? undefined : coats.find((c) => c.value === coatValue)?.label
+  const chartName = [deck?.name ?? 'Tất cả sàn', coatLabel].filter((part) => part !== undefined).join(' - ')
   /**
    * RV6-29: the chart takes the selected deck's colours, and only then. Under
    * "Tất cả sàn" the series sum several decks and no one deck's colour is
@@ -133,6 +139,13 @@ export function KpiDashboard({
               survive onto it.
             */}
             <KpiComboChart key={`${deckId}|${coatValue}`} data={series} colors={colors} unit={unit ?? MIXED_QUANTITY_LABEL} />
+            {/* RV7-6: under the chart, whose legend is its last row. */}
+            <p
+              data-testid="kpi-chart-title"
+              style={{ ...type.bodyStrong, margin: 0, color: palette.textSecondary, textAlign: 'center' }}
+            >
+              {chartName}
+            </p>
           </>
         )}
       </div>

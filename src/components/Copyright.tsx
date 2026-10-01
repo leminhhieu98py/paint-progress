@@ -26,7 +26,7 @@ export function Copyright({ paddingInline = space.lg }: { paddingInline?: number
         color: palette.textSecondary,
       }}
     >
-      Bản quyền © 2026 Đoàn Công Linh – XDVTH
+      Bản quyền © 2026 Đoàn Linh – XDVTH
     </footer>
   )
 }
