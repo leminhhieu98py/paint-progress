@@ -10,6 +10,35 @@ own branch, verified against the development Supabase project, and deployed to
 production by the owner. **Database migrations are listed per release and must
 reach production before the app that needs them.**
 
+## [Unreleased]
+
+Linh's review Rv7. No database migration, no Edge Function.
+
+### Added
+
+- **Copyright line on every screen**: "Bản quyền © 2026 Đoàn Công Linh –
+  XDVTH", at the bottom right of the page, in the flow (never over content);
+  on a GS phone above the bottom tab bar. The developer is named in the page's
+  author meta and the package author only.
+- **Zoom out to 25%** on every layout canvas (Sàn editor, Sàn progress, GS):
+  below 100% the drawing sits centred in its frame; Vừa khung returns to 100%.
+
+### Changed
+
+- **Filters apply as soon as they change**, on every admin and field screen;
+  the Đặt lại and Tìm buttons are gone, phone filter sheets included. The
+  Nhân lực search filters as you type; Enter applies at once. On KPI a chart
+  filter change no longer drops unsaved plan-table edits.
+- **Login screen**: the tagline is gone and the animation is LottieFiles'
+  "Businessmen at the table" (Lottie Simple License), square and larger; with
+  reduced motion it shows one still frame.
+
+### Fixed
+
+- **Every zone shows its label on the drawing.** A zone too narrow or too short
+  for its label at the smallest legible size lost the label entirely (Sàn
+  A3.4, Zone 3); its label now overhangs the zone at that size.
+
 ## [1.8.0] - 2026-09-30
 
 The UI consistency release, the Nhân lực screen, and a fix for number fields.
