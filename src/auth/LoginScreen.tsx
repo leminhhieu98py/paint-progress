@@ -1,6 +1,7 @@
 import { Alert, Button, Form, Grid, Input } from 'antd'
 import type { AnimationItem } from 'lottie-web/build/player/lottie_light'
 import { useEffect, useRef, useState } from 'react'
+import { Copyright } from '../components/Copyright'
 import { palette, shadowCard, type } from '../theme'
 import { useAuth } from './AuthProvider'
 
@@ -237,6 +238,8 @@ export function LoginScreen() {
     </div>
   )
 
+  // The copyright line ends the page (RV7-2): the bottom of the column on a
+  // phone, the bottom right of the page on a wide screen.
   if (!wide) {
     return (
       <div
@@ -244,14 +247,24 @@ export function LoginScreen() {
           minHeight: '100vh',
           display: 'flex',
           flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          padding: '24px 18px',
+          padding: '24px 18px 0',
           background: palette.bgPage,
         }}
       >
-        <LoginIllustration compact />
-        {form}
+        <div
+          style={{
+            flex: 1,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <LoginIllustration compact />
+          {form}
+        </div>
+        {/* Its right edge on the card's, which spans the column on a phone. */}
+        <Copyright paddingInline={0} />
       </div>
     )
   }
@@ -266,16 +279,19 @@ export function LoginScreen() {
       }}
     >
       <Hero />
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          padding: '32px 48px',
-          minWidth: 0,
-        }}
-      >
-        {form}
+      <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+        <div
+          style={{
+            flex: 1,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '32px 48px',
+          }}
+        >
+          {form}
+        </div>
+        <Copyright />
       </div>
     </div>
   )

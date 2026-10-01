@@ -2,6 +2,7 @@
   "name": "paint-progress",
   "private": true,
   "version": "1.8.0",
+  "author": "Lê Minh Hiếu",
   "type": "module",
   "scripts": {
     "dev": "vite",

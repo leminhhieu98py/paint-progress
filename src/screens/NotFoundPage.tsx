@@ -1,5 +1,6 @@
 import { Button } from 'antd'
 import { useNavigate } from 'react-router-dom'
+import { Copyright } from '../components/Copyright'
 import { EmptyState } from '../components/EmptyState'
 import { palette, shadowCard } from '../theme'
 
@@ -17,9 +18,13 @@ import { palette, shadowCard } from '../theme'
  * tab like one; the click itself stays in the router so the app is not
  * reloaded for a navigation it can make on its own.
  */
-export function NotFoundPage({ home }: { home: string }) {
+export function NotFoundPage({ home, inShell = false }: {
+  home: string
+  /** Drawn inside a shell (AdminLayout) that already ends with the copyright line. */
+  inShell?: boolean
+}) {
   const navigate = useNavigate()
-  return (
+  const card = (
     <div
       style={{
         maxWidth: 480,
@@ -46,6 +51,15 @@ export function NotFoundPage({ home }: { home: string }) {
           </Button>
         }
       />
+    </div>
+  )
+  if (inShell) return card
+  // On its own, the page ends with the copyright line at its bottom (RV7-2).
+  // The card keeps a block box around it, so it centres as it always did.
+  return (
+    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+      <div>{card}</div>
+      <Copyright />
     </div>
   )
 }

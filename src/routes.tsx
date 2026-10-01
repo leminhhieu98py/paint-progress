@@ -277,7 +277,7 @@ export function AppRoutes() {
             Only an admin reaches this: the gate above gives every other role
             the same not-found page for any /admin path, known or not (QA F2).
           */}
-          <Route path="*" element={<NotFoundPage home={`${APP_BASE_PATH}/admin/projects`} />} />
+          <Route path="*" element={<NotFoundPage home={`${APP_BASE_PATH}/admin/projects`} inShell />} />
         </Route>
         {/*
           The viewer's project picker (RV6-23). The viewer's alone: a foreman

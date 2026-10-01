@@ -5,7 +5,7 @@ import { MemoryRouter, Route, Routes, useParams } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { endSession } from '../../lib/sessionCache'
 import { cachedProjectList } from './fieldProjects'
-import { consequenceItems, keyFactTexts } from '../../test/copy'
+import { consequenceItems, COPYRIGHT, keyFactTexts } from '../../test/copy'
 import { ProjectPickerScreen } from './ProjectPickerScreen'
 
 const listProjectCards = vi.hoisted(() => vi.fn())
@@ -78,6 +78,14 @@ describe('ProjectPickerScreen', () => {
       expect.stringContaining('BlockB1_CPPTS'),
       expect.stringContaining('Đại Hùng'),
     ])
+  })
+
+  // RV7-2: the picker ends with the copyright line, after the cards.
+  it('ends with the copyright line, after the cards', async () => {
+    renderPicker()
+    const last = await screen.findByRole('link', { name: /Đại Hùng/ })
+    const line = screen.getByText(COPYRIGHT)
+    expect(last.compareDocumentPosition(line) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
   it('opens the project whose card is tapped', async () => {

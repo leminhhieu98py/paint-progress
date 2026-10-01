@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { AdminLayout } from './AdminLayout'
-import { consequenceItems } from '../../test/copy'
+import { consequenceItems, COPYRIGHT } from '../../test/copy'
 
 const signOut = vi.hoisted(() => vi.fn())
 const profile = vi.hoisted(() => ({ current: null as unknown }))
@@ -142,5 +142,17 @@ describe('AdminLayout', () => {
     profile.current = null
     renderAt('/admin/projects')
     expect(screen.getByText('nội dung dự án')).toBeInTheDocument()
+  })
+
+  // RV7-2: every admin screen ends with the copyright line, at the bottom of
+  // the content column (not under the sidebar), after the routed screen.
+  it('ends the content column with the copyright line', () => {
+    renderAt('/admin/decks')
+    const line = screen.getByText(COPYRIGHT)
+    const content = screen.getByText('nội dung sàn').closest('.ant-layout-content') as HTMLElement
+    expect(content.lastElementChild).toBe(line)
+    expect(
+      screen.getByText('nội dung sàn').compareDocumentPosition(line) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
   })
 })

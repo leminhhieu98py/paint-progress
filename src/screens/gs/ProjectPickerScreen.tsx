@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { Link, Navigate } from 'react-router-dom'
 import { APP_BASE_PATH } from '../../config'
 import { listProjectCards, type ProjectCard } from '../../lib/projectsApi'
+import { Copyright } from '../../components/Copyright'
 import { KeyFacts } from '../../components/KeyFacts'
 import { TypeScaleProvider } from '../../components/typeScale'
 import { fieldType, palette, shadowCard, space } from '../../theme'
@@ -146,7 +147,7 @@ export function ProjectPickerScreen() {
             </div>
           )}
         </Layout.Content>
-
+        <Copyright />
       </Layout>
     </TypeScaleProvider>
   )
