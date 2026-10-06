@@ -10,6 +10,18 @@ own branch, verified against the development Supabase project, and deployed to
 production by the owner. **Database migrations are listed per release and must
 reach production before the app that needs them.**
 
+## [1.9.2] - 2026-10-06
+
+Linh's follow-up on the GS plan view. No database migration, no Edge Function.
+
+### Changed
+
+- **The GS plan button says "Kế hoạch"**, with its calendar icon, on every
+  width; it is filled while the plan is on.
+- **The plan's zone list moves into the right column**, as a "Kế hoạch ·
+  <công đoạn>" card under Thông tin nhanh — Hôm nay (under the drawing on a
+  narrow screen), instead of floating over the drawing's corner.
+
 ## [1.9.1] - 2026-10-01
 
 Two follow-ups from Linh on 1.9.0. No database migration, no Edge Function.
@@ -657,6 +669,7 @@ Level Security.
 
 Production runs its own Supabase project, created empty.
 
+[1.9.2]: https://github.com/leminhhieu98py/paint-progress/compare/v1.9.1...v1.9.2
 [1.9.1]: https://github.com/leminhhieu98py/paint-progress/compare/v1.9.0...v1.9.1
 [1.9.0]: https://github.com/leminhhieu98py/paint-progress/compare/v1.8.0...v1.9.0
 [1.8.0]: https://github.com/leminhhieu98py/paint-progress/compare/v1.7.0...v1.8.0

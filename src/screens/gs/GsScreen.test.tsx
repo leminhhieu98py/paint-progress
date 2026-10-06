@@ -906,14 +906,16 @@ describe('GsScreen: the deck picker (GS-03)', () => {
       .toBeInTheDocument()
   })
 
-  it('draws Hiện kế hoạch as a pressed-or-not icon action on a tablet too, with no visible text (ACT-01)', async () => {
-    const restore = setViewport(1280)
+  // Linh (RV7-8): an icon alone was hard to read for a control used this
+  // often, so the button says Kế hoạch on every width.
+  it.each([['a tablet', 1280], ['a phone', 390]])('labels the plan button Kế hoạch on %s, pressed or not (RV7-8)', async (_, width) => {
+    const restore = setViewport(width)
     try {
       renderScreen()
       await screen.findByTestId('canvas')
       const plan = screen.getByRole('button', { name: 'Hiện kế hoạch' })
-      expect(plan).toHaveClass('ant-btn-icon-only')
-      expect(plan).toHaveTextContent('')
+      expect(plan).not.toHaveClass('ant-btn-icon-only')
+      expect(plan).toHaveTextContent(/^Kế hoạch$/)
       expect(plan).toHaveAttribute('aria-pressed', 'false')
       await userEvent.click(plan)
       expect(screen.getByRole('button', { name: 'Hiện kế hoạch' })).toHaveAttribute('aria-pressed', 'true')
@@ -2687,8 +2689,9 @@ describe('GsScreen: the plan overlay', () => {
     expect(screen.getByRole('button', { name: 'ô R1C1' })).toHaveAttribute('data-color', '#fadb14')
   })
 
-  it('keeps the plan\'s key clear of the phone\'s bottom tab bar (GS-06)', async () => {
-    // jsdom answers every width query as a phone.
+  it('lists the plan in the right rail under Thông tin nhanh, never over the drawing (RV7-8)', async () => {
+    // Linh (RV7-8): the key fixed over the drawing's corner hid the bays under
+    // it; the rail beside (or, on a narrow screen, under) the drawing has room.
     listDeckZones.mockResolvedValue([{
       id: 'z1', name: 'Zone 1', stageId: 's5',
       startDate: '2026-08-13', finishDate: '2026-08-19',
@@ -2698,7 +2701,12 @@ describe('GsScreen: the plan overlay', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Hiện kế hoạch' }))
     await chooseIn('Công đoạn kế hoạch', 'Tháo giáo')
     const legend = await screen.findByTestId('gs-zone-legend')
-    expect(legend.style.bottom).toBe('calc(24px + calc(56px + env(safe-area-inset-bottom, 0px)))')
+    const rail = screen.getByTestId('gs-chart-region')
+    expect(rail).toContainElement(legend)
+    expect(rail.lastElementChild).toContainElement(legend)
+    expect(within(rail.lastElementChild as HTMLElement).getByText('Kế hoạch · Tháo giáo')).toBeInTheDocument()
+    let node: HTMLElement | null = legend
+    for (; node; node = node.parentElement) expect(node.style.position).not.toBe('fixed')
   })
 
   it('puts the coats back when switched off again', async () => {
