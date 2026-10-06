@@ -1,5 +1,5 @@
 import {
-  ArrowRightOutlined, BlockOutlined, CalculatorOutlined, CalendarOutlined, ClearOutlined,
+  ArrowRightOutlined, BlockOutlined, CalculatorOutlined, ClearOutlined,
   CloseCircleOutlined, CloseOutlined, ControlOutlined, CopyOutlined, MergeCellsOutlined,
   DeleteOutlined, EditOutlined, ExpandOutlined, EyeInvisibleOutlined, EyeOutlined, LockOutlined,
   MessageOutlined, MinusOutlined, PieChartOutlined, PlusOutlined, RollbackOutlined, SaveOutlined,
@@ -36,7 +36,6 @@ export const ACTION_ICONS = {
   zoomIn: PlusOutlined, // Phóng to
   zoomOut: MinusOutlined, // Thu nhỏ
   fit: ExpandOutlined, // Vừa khung
-  plan: CalendarOutlined, // Hiện kế hoạch
   notes: MessageOutlined, // Ghi chú (n)
   mergeZone: MergeCellsOutlined, // Gộp thành zone (n)
 } satisfies Record<string, ComponentType>
