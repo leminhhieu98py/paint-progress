@@ -33,7 +33,7 @@ import { buildProjectReport, downloadWorkbook } from '../../lib/projectReport'
 import { renderDeckDrawing, renderDeckPie, renderPlanDrawing } from '../../canvas/deckSnapshot'
 import { CellStageModal } from './CellStageModal'
 import { fieldError, fieldType, palette, shadowCard, space } from '../../theme'
-import { EllipsisOutlined, FileExcelOutlined, FolderOpenOutlined, LoadingOutlined } from '@ant-design/icons'
+import { CalendarOutlined, EllipsisOutlined, FileExcelOutlined, FolderOpenOutlined, LoadingOutlined } from '@ant-design/icons'
 import { EmptyState } from '../../components/EmptyState'
 import { DeckProgressCard, StageRollupCard, type DeckFigureStatus } from './DeckStatsCards'
 import { DeckTodayCard } from './DeckTodayCard'
@@ -41,7 +41,6 @@ import { FieldLayout } from './FieldLayout'
 import { FieldProjectSelect } from './FieldProjectSelect'
 import { FIELD_TAB_BAR_SPACE, useFieldPhone } from './fieldSections'
 import { FilterBar } from '../../components/FilterBar'
-import { IconAction } from '../../components/IconAction'
 import { FilterSheet } from '../../components/FilterSheet'
 import { rememberProjectName } from './fieldProjects'
 import { openingDeckId, rememberDeck } from './lastDeck'
@@ -1472,19 +1471,22 @@ export function GsScreen() {
                 A button, not a switch. It is pressed through a glove, so it
                 carries the field theme's full 48px height and its own label --
                 a 20px switch beside separate text is two targets for one
-                decision. The label drops on a phone, where the calendar icon
-                and the pressed state carry it.
+                decision.
               */
               <div style={{ display: 'flex', alignItems: 'center', gap: space.sm, flex: '1 1 auto', minWidth: 0, justifyContent: 'flex-end' }}>
-                {/* An icon action at the field's 48px (ACT-01, CTL-02): the
-                    pressed state and the tooltip carry the label. */}
-                <IconAction
-                  verb="plan"
-                  label="Hiện kế hoạch"
+                {/* Icon and the word on every width (RV7-8, Linh): an icon
+                    alone was hard to read for a control used this often, so
+                    this one is excepted from ACT-01. */}
+                <Button
+                  icon={<CalendarOutlined />}
+                  aria-label="Hiện kế hoạch"
                   type={showPlan ? 'primary' : 'default'}
                   aria-pressed={showPlan}
                   onClick={() => setShowPlan((on) => !on)}
-                />
+                  style={{ flex: 'none' }}
+                >
+                  Kế hoạch
+                </Button>
                 {showPlan && stages.length > 0 && (
                   <Select
                     id="gs-plan-stage"
@@ -1573,62 +1575,6 @@ export function GsScreen() {
                     ))}
                   </div>
                 )}
-                {showPlan && visibleZones.length > 0 && (
-                  <div
-                    data-testid="gs-zone-legend"
-                    style={{
-                      /*
-                        Fixed to the viewport, not to the drawing.
-
-                        The drawing is as tall as its own sheet -- often twice
-                        the height of a tablet -- so a panel pinned to the
-                        bottom of the CANVAS sits below the fold, and the key to
-                        the colours the foreman is looking at is the one thing
-                        he cannot see. Fixed keeps it in the corner of the glass
-                        wherever he has scrolled to.
-                      */
-                      position: 'fixed',
-                      zIndex: 4,
-                      left: 24,
-                      bottom: overBottomBar(24),
-                      // Never in the way of a bay underneath it: this is a
-                      // legend, and every tap belongs to the drawing.
-                      pointerEvents: 'none',
-                      background: '#FFFFFFF5',
-                      border: `1px solid ${palette.borderCard}`,
-                      borderRadius: 12,
-                      padding: '12px 13px',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: 9,
-                      boxShadow: shadowCard,
-                      maxWidth: 'calc(100vw - 48px)',
-                    }}
-                  >
-                    {visibleZones.map((z) => (
-                      <div
-                        key={z.id}
-                        style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}
-                      >
-                        <span
-                          aria-hidden
-                          style={{ width: 15, height: 15, flex: 'none', borderRadius: '50%', background: planColors[z.id] }}
-                        />
-                        <span style={{ ...fieldType.body, flex: 'none' }}>{z.name}</span>
-                        <span
-                          style={{
-                            marginLeft: 'auto',
-                            ...fieldType.caption,
-                            color: palette.textSecondary,
-                            whiteSpace: 'nowrap',
-                          }}
-                        >
-                          {formatPlanRange(z.startDate, z.finishDate)}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                )}
               </div>
             ) : (
               !drawingError && (
@@ -1692,6 +1638,36 @@ export function GsScreen() {
             emptyText={stagesError ? 'Không tải được công đoạn.'
               : noWorks ? 'Sàn này chưa được gán công việc nào.' : undefined}
           />
+          {/*
+            The plan's key, in the rail under Thông tin nhanh (RV7-8, Linh):
+            fixed over the drawing's corner, it hid the bays beneath it. Beside
+            the drawing on a laptop, under it on a narrower screen.
+          */}
+          {showPlan && visibleZones.length > 0 && (
+            <SectionCard title={`Kế hoạch · ${planStageObj?.name ?? ''}`}>
+              <div data-testid="gs-zone-legend" style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
+                {visibleZones.map((z) => (
+                  <div key={z.id} style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+                    <span
+                      aria-hidden
+                      style={{ width: 15, height: 15, flex: 'none', borderRadius: '50%', background: planColors[z.id] }}
+                    />
+                    <span style={{ ...fieldType.body, minWidth: 0, overflowWrap: 'anywhere' }}>{z.name}</span>
+                    <span
+                      style={{
+                        marginLeft: 'auto',
+                        ...fieldType.caption,
+                        color: palette.textSecondary,
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {formatPlanRange(z.startDate, z.finishDate)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </SectionCard>
+          )}
         </div>
       </Layout.Content>
 
