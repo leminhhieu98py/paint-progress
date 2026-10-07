@@ -1,12 +1,13 @@
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ConfigProvider } from 'antd'
-import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { MemoryRouter, Route, Routes, useParams } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { effortDayKey } from '../../domain/effort'
 import type { PipingSettings } from '../../domain/piping/types'
 import { endSession } from '../../lib/sessionCache'
 import { expectOneHeight } from '../../test/controls'
+import { chooseOption } from '../../test/select'
 import { renderApp } from '../../test/renderApp'
 import { setViewport } from '../../test/viewport'
 import { fieldTheme } from '../../theme'
@@ -35,9 +36,15 @@ vi.mock('../../auth/AuthProvider', () => ({
     signOut: vi.fn(),
   }),
 }))
-// Cấu hình has its own suite; here only whether it is offered (it is mounted while open).
+// Cấu hình has its own suite; here whether it is offered (it is mounted while open) and what its callbacks do.
 vi.mock('./PipingConfigModal', () => ({
-  PipingConfigModal: () => <div>CẤU HÌNH MỞ</div>,
+  PipingConfigModal: ({ onChanged, onDisabled }: { onChanged: () => void; onDisabled: () => void }) => (
+    <div>
+      CẤU HÌNH MỞ
+      <button type="button" onClick={onChanged}>đổi cấu hình</button>
+      <button type="button" onClick={onDisabled}>đã tắt piping</button>
+    </div>
+  ),
 }))
 
 /** The three tab panels are later tasks' seams: the stand-ins print the props contract. */
@@ -75,10 +82,17 @@ function renderField(projectId = 'p1') {
       <MemoryRouter initialEntries={[`/gs/${projectId}/piping`]}>
         <Routes>
           <Route path="/gs/:projectId/piping" element={<PipingScreen variant="gs" />} />
+          <Route path="/gs/:projectId" element={<SanStandIn />} />
         </Routes>
       </MemoryRouter>
     </ConfigProvider>,
   )
+}
+
+/** The Sàn page a project switch lands on when the target has Piping off. */
+function SanStandIn() {
+  const { projectId } = useParams()
+  return <div>SÀN của {projectId}</div>
 }
 
 const bar = () => screen.getAllByRole('search', { name: 'Bộ lọc' })[0]
@@ -147,6 +161,60 @@ describe('PipingScreen admin: the page and its bar (spec §11)', () => {
     renderAdmin()
     await screen.findByTestId('reinstatement-panel')
     expectOneHeight(bar())
+  })
+
+  it('keeps the bar\'s controls in place, disabled, while another project\'s settings are read', async () => {
+    renderAdmin()
+    await screen.findByTestId('reinstatement-panel')
+    let answer: (s: PipingSettings) => void = () => {}
+    api.getPipingSettings.mockReturnValue(new Promise<PipingSettings>((resolve) => { answer = resolve }))
+    await chooseOption('Dự án', 'Đại Hùng (DH)')
+    expect(within(bar()).getByRole('button', { name: 'Xuất báo cáo' })).toBeDisabled()
+    expect(within(bar()).getByText('Tuần').closest('.ant-segmented')).toHaveClass('ant-segmented-disabled')
+    expect(screen.getByRole('button', { name: /Cấu hình/ })).toBeDisabled()
+    answer(settings({ projectId: 'p2' }))
+    expect(await screen.findByTestId('reinstatement-panel')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Cấu hình/ })).toBeEnabled()
+  })
+
+  it('reads the next project on a switch, keeping the tab and the view', async () => {
+    renderAdmin()
+    await screen.findByTestId('reinstatement-panel')
+    await userEvent.click(within(bar()).getByText('Tuần'))
+    await userEvent.click(screen.getByRole('tab', { name: 'Manpower' }))
+    api.getPipingSettings.mockResolvedValue(settings({ projectId: 'p2' }))
+    await chooseOption('Dự án', 'Đại Hùng (DH)')
+    await waitFor(() => expect(props('manpower')).toMatchObject({ projectId: 'p2', mode: 'week' }))
+    expect(api.getPipingSettings).toHaveBeenCalledWith('p2')
+  })
+
+  it('closes Cấu hình on a project switch', async () => {
+    renderAdmin()
+    await screen.findByTestId('reinstatement-panel')
+    await userEvent.click(screen.getByRole('button', { name: /Cấu hình/ }))
+    await chooseOption('Dự án', 'Đại Hùng (DH)')
+    expect(screen.queryByText('CẤU HÌNH MỞ')).toBeNull()
+  })
+
+  it('raises refreshKey for the panels when Cấu hình changes something', async () => {
+    renderAdmin()
+    await screen.findByTestId('reinstatement-panel')
+    await userEvent.click(screen.getByRole('button', { name: /Cấu hình/ }))
+    await userEvent.click(screen.getByRole('button', { name: 'đổi cấu hình' }))
+    await waitFor(() => expect(props('reinstatement').refreshKey).toBe(1))
+    expect(screen.getByText('CẤU HÌNH MỞ')).toBeInTheDocument()
+  })
+
+  it('returns to the enable empty state when Cấu hình turns Piping off', async () => {
+    renderAdmin()
+    await screen.findByTestId('reinstatement-panel')
+    await userEvent.click(screen.getByRole('button', { name: /Cấu hình/ }))
+    api.getPipingSettings.mockResolvedValue(settings({ enabled: false }))
+    await userEvent.click(screen.getByRole('button', { name: 'đã tắt piping' }))
+    expect(await screen.findByText('Dự án này chưa bật Piping')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Bật Piping' })).toBeInTheDocument()
+    expect(screen.queryByText('CẤU HÌNH MỞ')).toBeNull()
+    expect(screen.queryByRole('tab')).toBeNull()
   })
 
   it('says when the settings could not be read, with a retry', async () => {
@@ -270,16 +338,44 @@ describe('PipingScreen field (gs, viewer): read the module, configure nothing', 
     expect(screen.getByRole('combobox', { name: 'Dự án' })).toBeInTheDocument()
   })
 
-  it('folds the project into the Bộ lọc sheet on a phone, the toggle and export staying on the row', async () => {
+  it('shows what is applied on a phone\'s one-line bar, the project and the view in the Bộ lọc sheet', async () => {
     undoViewport()
     undoViewport = setViewport(390)
     authRole.value = 'gs'
     renderField()
     await screen.findByTestId('reinstatement-panel')
+    expect(await within(bar()).findByRole('button', { name: 'BB1 · Ngày' })).toBeInTheDocument()
     expect(screen.queryByRole('combobox', { name: 'Dự án' })).toBeNull()
-    expect(within(bar()).getByText('Tuần')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Xuất báo cáo' })).toBeInTheDocument()
     await userEvent.click(within(bar()).getByRole('button', { name: 'Bộ lọc' }))
     expect(await screen.findByRole('combobox', { name: 'Dự án' })).toBeInTheDocument()
+    await userEvent.click(within(screen.getByRole('dialog')).getByText('Tuần'))
+    expect(props('reinstatement').mode).toBe('week')
+    expect(within(bar()).getByRole('button', { name: 'BB1 · Tuần' })).toBeInTheDocument()
+  })
+
+  it('keeps every control of the field bar at the field\'s one height (CTL-02)', async () => {
+    renderField()
+    await screen.findByTestId('reinstatement-panel')
+    expectOneHeight(bar())
+  })
+
+  it('carries the view and the tab to another project with Piping on', async () => {
+    renderField()
+    await screen.findByTestId('reinstatement-panel')
+    await userEvent.click(within(bar()).getByText('Tuần'))
+    await userEvent.click(screen.getByRole('tab', { name: 'Insulation' }))
+    api.getPipingSettings.mockResolvedValue(settings({ projectId: 'p2' }))
+    await chooseOption('Dự án', 'Đại Hùng')
+    await waitFor(() => expect(props('insulation')).toMatchObject({ projectId: 'p2', mode: 'week' }))
+    expect(screen.getByRole('tab', { name: 'Insulation' })).toHaveAttribute('aria-selected', 'true')
+  })
+
+  it('lands on the Sàn page of a project whose Piping is off', async () => {
+    renderField()
+    await screen.findByTestId('reinstatement-panel')
+    api.getPipingSettings.mockImplementation((id: string) => Promise.resolve(id === 'p2' ? null : settings()))
+    await chooseOption('Dự án', 'Đại Hùng')
+    expect(await screen.findByText('SÀN của p2')).toBeInTheDocument()
   })
 })

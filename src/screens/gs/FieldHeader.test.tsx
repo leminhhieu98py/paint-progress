@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -177,10 +177,15 @@ describe('FieldHeader: the Piping tab, only where Piping is on (piping spec §2,
   })
   const labels = () => within(nav()).getAllByRole('link').map((l) => l.textContent)
 
-  it('adds Piping after KPI once the project has it enabled', async () => {
+  /** Lets the read and the store's notification settle, whatever they answered. */
+  const settle = () => act(async () => {})
+
+  it('adds Piping after KPI once the project has it enabled, and not before', async () => {
     getPipingSettings.mockResolvedValue(settings(true))
     renderAt('/gs/p1')
-    expect(await within(nav()).findByRole('link', { name: 'Piping' })).toHaveAttribute('href', '/gs/p1/piping')
+    expect(labels()).toEqual(['Sàn', 'Năng suất', 'KPI'])
+    await settle()
+    expect(within(nav()).getByRole('link', { name: 'Piping' })).toHaveAttribute('href', '/gs/p1/piping')
     expect(labels()).toEqual(['Sàn', 'Năng suất', 'KPI', 'Piping'])
     expect(getPipingSettings).toHaveBeenCalledWith('p1')
   })
@@ -191,8 +196,8 @@ describe('FieldHeader: the Piping tab, only where Piping is on (piping spec §2,
   ])('keeps the three tabs for a project with Piping %s', async (_case, answer) => {
     getPipingSettings.mockResolvedValue(answer)
     renderAt('/gs/p1')
-    await waitFor(() => expect(getPipingSettings).toHaveBeenCalledWith('p1'))
-    await Promise.resolve()
+    await settle()
+    expect(getPipingSettings).toHaveBeenCalledWith('p1')
     expect(labels()).toEqual(['Sàn', 'Năng suất', 'KPI'])
   })
 
@@ -201,8 +206,10 @@ describe('FieldHeader: the Piping tab, only where Piping is on (piping spec §2,
     getPipingSettings.mockReturnValue(new Promise((_resolve, reject) => { fail = reject }))
     renderAt('/gs/p1')
     expect(labels()).toEqual(['Sàn', 'Năng suất', 'KPI'])
+    await settle()
+    expect(labels()).toEqual(['Sàn', 'Năng suất', 'KPI'])
     fail(new Error('mạng'))
-    await Promise.resolve()
+    await settle()
     expect(labels()).toEqual(['Sàn', 'Năng suất', 'KPI'])
   })
 

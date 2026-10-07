@@ -49,6 +49,8 @@ type PipingTab = 'reinstatement' | 'manpower' | 'insulation'
 
 const NOT_ENABLED = 'Dự án này chưa bật Piping'
 
+const VIEW_LABEL: Record<ViewMode, string> = { day: 'Ngày', week: 'Tuần' }
+
 type Loaded =
   | { projectId: string; settings: PipingSettings | null }
   | { projectId: string; error: string }
@@ -77,6 +79,12 @@ function usePipingSettings(projectId: string | null) {
   const stored = current !== null && 'settings' in current ? current.settings : null
   return {
     current,
+    /**
+     * Whether the module's controls belong in the bar: 'on', 'off' (no
+     * project, Piping off, or a failed read), or 'pending' while the project's
+     * settings are read -- the controls then stay in place, disabled.
+     */
+    state: (projectId === null ? 'off' : current === null ? 'pending' : stored?.enabled === true ? 'on' : 'off') as BarState,
     /** The stored settings, enabled or not; null when never enabled or not read. */
     stored,
     /** The settings when Piping is on: the page shows its panels only then. */
@@ -85,24 +93,28 @@ function usePipingSettings(projectId: string | null) {
   }
 }
 
+type BarState = 'on' | 'off' | 'pending'
+
 type SettingsData = ReturnType<typeof usePipingSettings>
 
 /** Today in Vietnam, read once per render of the page so every panel measures against one day. */
 const today = () => effortDayKey(new Date().toISOString())
 
 /** Ngày | Tuần: a view toggle, the one place a Segmented is allowed (FLT-07). */
-function ViewToggle({ value, onChange, block = false }: {
+function ViewToggle({ value, onChange, block = false, disabled = false }: {
   value: ViewMode
   onChange: (mode: ViewMode) => void
   block?: boolean
+  disabled?: boolean
 }) {
   return (
     <Segmented<ViewMode>
       aria-label="Xem theo"
       value={value}
       block={block}
+      disabled={disabled}
       onChange={onChange}
-      options={[{ value: 'day', label: 'Ngày' }, { value: 'week', label: 'Tuần' }]}
+      options={[{ value: 'day', label: VIEW_LABEL.day }, { value: 'week', label: VIEW_LABEL.week }]}
     />
   )
 }
@@ -146,7 +158,7 @@ function PipingBody({ projectId, variant, data, panel, tab, onTab, onEnable }: {
           />
         </SectionCard>
       )
-      : <Alert type="info" showIcon message={NOT_ENABLED} />
+      : <SectionCard><EmptyState title={NOT_ENABLED} /></SectionCard>
   }
   return (
     <Tabs
@@ -162,6 +174,7 @@ function AdminPiping() {
   const [projects, setProjects] = useState<Array<{ id: string; name: string; code: string }>>([])
   const [chosen, setChosen] = useState<string | null>(null)
   const [listError, setListError] = useState<string | null>(null)
+  const [listSettled, setListSettled] = useState(false)
   const [mode, setMode] = useState<ViewMode>('day')
   const [tab, setTab] = useState<PipingTab>('reinstatement')
   const [enabling, setEnabling] = useState(false)
@@ -172,6 +185,7 @@ function AdminPiping() {
     listProjectNames()
       .then(setProjects)
       .catch((e: Error) => setListError(e.message))
+      .finally(() => setListSettled(true))
   }, [])
 
   // As on KPI: `?project=` when it names a project, else the first one; derived, not copied.
@@ -185,6 +199,8 @@ function AdminPiping() {
   const panel: PipingPanelProps | null = projectId !== null && data.enabled !== null
     ? { projectId, settings: data.enabled, mode, variant: 'admin', role: 'admin', todayKey, refreshKey }
     : null
+  // The module's controls stay in place while a read runs (the project list's included), disabled.
+  const showControls = data.state !== 'off' || (projectId === null && !listSettled)
 
   const chooseProject = (id: string) => {
     setChosen(id)
@@ -196,14 +212,16 @@ function AdminPiping() {
     <>
       <PageHeader
         title="Piping"
-        extra={panel && (
-          <Button icon={<SettingOutlined aria-hidden />} onClick={() => setConfiguring(true)}>Cấu hình</Button>
+        extra={showControls && (
+          <Button icon={<SettingOutlined aria-hidden />} disabled={panel === null} onClick={() => setConfiguring(true)}>
+            Cấu hình
+          </Button>
         )}
         filters={(
           <FilterBar>
             <ProjectSelect projects={projects} value={projectId} onChange={chooseProject} />
-            {panel && <ViewToggle value={mode} onChange={setMode} />}
-            {panel && <BarEnd><PipingExportAction {...panel} /></BarEnd>}
+            {showControls && <ViewToggle value={mode} onChange={setMode} disabled={panel === null} />}
+            {showControls && <BarEnd><PipingExportAction panel={panel} /></BarEnd>}
           </FilterBar>
         )}
       />
@@ -274,29 +292,43 @@ function FieldPiping({ projectId }: { projectId: string | null }) {
     ? { projectId, settings: data.enabled, mode, variant: 'gs', role, todayKey, refreshKey: 0 }
     : null
 
+  /**
+   * Another project: its Piping page, on what is applied here, when it has
+   * Piping on; its Sàn page when it has not, rather than a page with nothing
+   * to show. A failed read still opens its Piping page, which says so.
+   */
   const chooseProject = (id: string) => {
-    carryFilters(CARRY_PAGE, id, { mode, tab } satisfies CarriedView)
-    navigate(`${APP_BASE_PATH}/gs/${id}/piping`)
+    if (id === projectId) return
+    readPipingSettings(id)
+      .then((target) => target?.enabled === true)
+      .catch(() => true)
+      .then((on) => {
+        if (on) carryFilters(CARRY_PAGE, id, { mode, tab } satisfies CarriedView)
+        navigate(on ? `${APP_BASE_PATH}/gs/${id}/piping` : `${APP_BASE_PATH}/gs/${id}`)
+      })
   }
 
+  const showControls = data.state !== 'off'
   const projectSelect = (block: boolean) => projectId && (
     <FieldProjectSelect projectId={projectId} width={block ? '100%' : undefined} onChange={chooseProject} />
   )
-  const exportAction = panel && <PipingExportAction {...panel} />
+  const toggle = (block: boolean) => showControls && (
+    <ViewToggle value={mode} onChange={setMode} block={block} disabled={panel === null} />
+  )
+  const exportAction = showControls && <PipingExportAction panel={panel} />
+  // FLT-04: what is applied, in one line -- the project's code, then the view once the module is shown.
+  const summary = [projectCode, showControls ? VIEW_LABEL[mode] : undefined].filter((p) => p !== undefined).join(' · ')
 
   return (
     <FieldLayout projectId={projectId}>
       <Layout.Content style={{ padding: space.lg, display: 'flex', flexDirection: 'column', gap: space.lg }}>
         {phone ? (
-          // FLT-04: one row -- the view toggle, Bộ lọc with the project in its sheet, the export (GS-09).
+          // FLT-04: one row -- what is applied and Bộ lọc, the project and the view in its sheet -- then the export.
           <div style={{ display: 'flex', alignItems: 'center', gap: space.md, minWidth: 0 }}>
             <div style={{ flex: '1 1 auto', minWidth: 0 }}>
-              <FilterSheet
-                count={0}
-                summary={projectCode}
-                inline={panel ? <ViewToggle value={mode} onChange={setMode} block /> : undefined}
-              >
+              <FilterSheet count={mode === 'week' ? 1 : 0} summary={summary}>
                 {projectSelect(true)}
+                {toggle(true)}
               </FilterSheet>
             </div>
             {exportAction}
@@ -304,7 +336,7 @@ function FieldPiping({ projectId }: { projectId: string | null }) {
         ) : (
           <FilterBar>
             {projectSelect(false)}
-            {panel && <ViewToggle value={mode} onChange={setMode} />}
+            {toggle(false)}
             {exportAction && <BarEnd>{exportAction}</BarEnd>}
           </FilterBar>
         )}
