@@ -218,6 +218,37 @@ deployed app keeps working against `0037` alone; a refused write shows the
 database's English message until the new app ships. The owner-run cases are in
 `tests/nhanLuc.integration.test.ts`.
 
+`0038` (the Piping module — Reinstatement, Manpower, CAM Insulation, spec
+`2026-10-07-piping`) is **not yet applied to dev or production**. Ten new
+`piping_*` tables, each with `<table>_admin_all`; eight also carry
+`<table>_member_read` through `my_projects()` (a GS reads its projects, a
+viewer every project since `0034`), while `piping_notes` and
+`piping_import_log` carry no member policy at all, so admin notes are
+unreadable by a GS or viewer at the database level. No member write policy
+anywhere: the field writes through three security definer functions
+(`piping_add_reinstatement`, `piping_set_manpower_actual`,
+`piping_set_spool_actuals`) that check `is_admin()` or `is_gs()` plus
+membership themselves (42501 otherwise) and enforce the field rules — no day
+after today in Vietnam, the Test Pack cap (`Vượt tổng Test Pack (đã có X / Y)`,
+`Admin chưa nhập tổng Test Pack`), fill-empty-only for a GS on Manpower,
+PH ≤ IH ≤ IW and confirm-before-overwrite on spools, clearing a date admin-only.
+The admin's plan imports go through `piping_replace_reinstatement_plan`,
+`piping_replace_manpower_plan` and `piping_replace_spools`, one transaction
+each, each writing one `piping_import_log` row; `piping_enable` creates the
+settings row and the three default crew groups. Each function's contract
+(arguments, result, errors) is the comment above it in the migration. Rules
+that must hold for direct admin writes too (cap, future day, actual order,
+no delete of a crew group with data) are triggers and CHECK constraints on the
+tables. `anon` holds no privilege on any piping table. Its `do $$ ... $$` block
+raises if a table, policy, grant, function shape, caller check, trigger, named
+foreign key, index or the actual-order constraint is not what the migration
+claims, and calls every function with no caller to prove it refuses with
+42501 — so it is self-verifying and needs no new `verify_schema.sql` row.
+Purely additive: safe to apply to production ahead of the app that needs it;
+the reverse order is not (the Piping screen selects these tables). The owner-run
+cases are the `0038: piping` describe in `tests/rls.integration.test.ts`
+(scratch projects `RLSP` / `RLSQ`, purged by `tests/rls-teardown.sql`).
+
 `supabase/scripts/purge_user.sql` removes one test account together with the
 bays it ticked (owner request, 2026-09-04). It is a dry run until its
 `v_confirm` literal is set; read its header before running it anywhere.
