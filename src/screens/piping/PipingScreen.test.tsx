@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from '@testing-library/react'
+import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ConfigProvider } from 'antd'
 import { MemoryRouter, Route, Routes, useParams } from 'react-router-dom'
@@ -12,6 +12,7 @@ import { renderApp } from '../../test/renderApp'
 import { setViewport } from '../../test/viewport'
 import { fieldTheme } from '../../theme'
 import type { PipingPanelProps } from './panelProps'
+import { readPipingSettings } from './pipingEnabled'
 import { PipingScreen } from './PipingScreen'
 
 const api = vi.hoisted(() => ({
@@ -369,6 +370,73 @@ describe('PipingScreen field (gs, viewer): read the module, configure nothing', 
     await chooseOption('Dự án', 'Đại Hùng')
     await waitFor(() => expect(props('insulation')).toMatchObject({ projectId: 'p2', mode: 'week' }))
     expect(screen.getByRole('tab', { name: 'Insulation' })).toHaveAttribute('aria-selected', 'true')
+  })
+
+  /** Settings reads answered by hand per project; p1 (on screen) answers at once. */
+  function heldReads() {
+    const answered = new Map<string, PipingSettings | null>([['p1', settings()]])
+    const waiting = new Map<string, (s: PipingSettings | null) => void>()
+    api.getPipingSettings.mockImplementation((id: string) => (answered.has(id)
+      ? Promise.resolve(answered.get(id) ?? null)
+      : new Promise((resolve) => waiting.set(id, resolve))))
+    return {
+      answer: async (id: string, s: PipingSettings | null) => {
+        answered.set(id, s)
+        await act(async () => waiting.get(id)?.(s))
+      },
+    }
+  }
+
+  it('switches at once when the session already knows the target\'s Piping', async () => {
+    api.getPipingSettings.mockImplementation((id: string) => Promise.resolve(id === 'p2' ? null : settings()))
+    await readPipingSettings('p2')
+    renderField()
+    await screen.findByTestId('reinstatement-panel')
+    api.getPipingSettings.mockImplementation(() => new Promise(() => {}))
+    await chooseOption('Dự án', 'Đại Hùng')
+    expect(screen.getByText('SÀN của p2')).toBeInTheDocument()
+  })
+
+  it('shows the switch as pending, and only the last of two quick picks navigates', async () => {
+    listProjectNames.mockResolvedValue([
+      { id: 'p1', name: 'BlockB1_CPPTS', code: 'BB1' },
+      { id: 'p2', name: 'Đại Hùng', code: 'DH' },
+      { id: 'p3', name: 'Sư Tử Vàng', code: 'STV' },
+    ])
+    const reads = heldReads()
+    renderField()
+    await screen.findByTestId('reinstatement-panel')
+    await chooseOption('Dự án', 'Đại Hùng')
+    expect(screen.getByRole('combobox', { name: 'Dự án' }).closest('.ant-select')).toHaveClass('ant-select-loading')
+    await chooseOption('Dự án', 'Sư Tử Vàng')
+    await reads.answer('p2', null)
+    expect(screen.queryByText('SÀN của p2')).toBeNull()
+    expect(props('reinstatement').projectId).toBe('p1')
+    await reads.answer('p3', settings({ projectId: 'p3' }))
+    await waitFor(() => expect(props('reinstatement').projectId).toBe('p3'))
+  })
+
+  it('navigates nowhere when the user has left before the read answers', async () => {
+    const reads = heldReads()
+    renderField()
+    await screen.findByTestId('reinstatement-panel')
+    await chooseOption('Dự án', 'Đại Hùng')
+    await userEvent.click(screen.getByRole('link', { name: 'Sàn' }))
+    expect(screen.getByText('SÀN của p1')).toBeInTheDocument()
+    await reads.answer('p2', settings({ projectId: 'p2' }))
+    expect(screen.getByText('SÀN của p1')).toBeInTheDocument()
+    expect(screen.queryByTestId('reinstatement-panel')).toBeNull()
+  })
+
+  it('never shows an empty summary on a phone: none until the project is known', async () => {
+    undoViewport()
+    undoViewport = setViewport(390)
+    listProjectNames.mockReturnValue(new Promise(() => {}))
+    api.getPipingSettings.mockResolvedValue(null)
+    renderField()
+    await screen.findByText('Dự án này chưa bật Piping')
+    const buttons = within(bar()).getAllByRole('button')
+    expect(buttons.map((b) => b.getAttribute('aria-label') ?? b.textContent)).toEqual(['Bộ lọc'])
   })
 
   it('lands on the Sàn page of a project whose Piping is off', async () => {

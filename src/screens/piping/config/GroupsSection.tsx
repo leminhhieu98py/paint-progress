@@ -140,6 +140,8 @@ export function GroupsSection({ projectId, onChanged }: { projectId: string; onC
                 <Input
                   aria-label="Tên nhóm"
                   autoFocus
+                  // Another write is running: the rename waits for it, its save button spinning.
+                  disabled={busy}
                   value={editing.text}
                   onChange={(e) => setEditing({ id: row.id, text: e.target.value })}
                   onPressEnter={() => void rename()}

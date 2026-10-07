@@ -269,6 +269,14 @@ describe('PipingConfigModal: Nhóm nhân lực (spec §5, R-6)', () => {
     expect(api.renameManpowerGroup).not.toHaveBeenCalled()
   })
 
+  it('shows a rename in progress while another write runs, instead of ignoring Enter', async () => {
+    api.setManpowerGroupHidden.mockReturnValue(new Promise(() => {}))
+    await userEvent.click(within(rowOf('Marking')).getByRole('button', { name: 'Đổi tên nhóm' }))
+    await userEvent.click(within(rowOf('Reinstatement')).getByRole('button', { name: 'Ẩn nhóm' }))
+    expect(within(config()).getByRole('textbox', { name: 'Tên nhóm' })).toBeDisabled()
+    expect(within(config()).getByRole('button', { name: 'Lưu tên nhóm' })).toHaveClass('ant-btn-loading')
+  })
+
   it('adds once on a double Enter', async () => {
     let finish: (g: ManpowerGroup) => void = () => {}
     api.addManpowerGroup.mockReturnValue(new Promise<ManpowerGroup>((resolve) => { finish = resolve }))

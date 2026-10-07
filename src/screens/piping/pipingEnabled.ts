@@ -41,6 +41,11 @@ export function rememberPipingEnabled(projectId: string, on: boolean): void {
   notify()
 }
 
+/** What this session already knows of the project's Piping, or undefined when it has not read it yet. */
+export function knownPipingEnabled(projectId: string): boolean | undefined {
+  return enabled.get(projectId)
+}
+
 /** The project's settings (null: never enabled), one request at a time per project, remembered for the header. */
 export function readPipingSettings(projectId: string): Promise<PipingSettings | null> {
   const pending = inFlight.get(projectId)

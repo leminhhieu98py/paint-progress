@@ -1,6 +1,6 @@
 import { SettingOutlined } from '@ant-design/icons'
 import { Alert, Button, Layout, Segmented, Spin, Tabs } from 'antd'
-import { useEffect, useState, type ComponentType, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ComponentType, type ReactNode } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../../auth/AuthProvider'
 import { EmptyState } from '../../components/EmptyState'
@@ -24,7 +24,7 @@ import { InsulationPanel } from './InsulationPanel'
 import { ManpowerPanel } from './ManpowerPanel'
 import type { PipingPanelProps, PipingRole } from './panelProps'
 import { PipingConfigModal } from './PipingConfigModal'
-import { readPipingSettings } from './pipingEnabled'
+import { knownPipingEnabled, readPipingSettings } from './pipingEnabled'
 import { PipingExportAction } from './PipingExportAction'
 import { ReinstatementPanel } from './ReinstatementPanel'
 
@@ -292,32 +292,70 @@ function FieldPiping({ projectId }: { projectId: string | null }) {
     ? { projectId, settings: data.enabled, mode, variant: 'gs', role, todayKey, refreshKey: 0 }
     : null
 
+  // The last project picked, and whether this page is still on screen: a read
+  // that answers after another pick, or after the user has left, opens nothing.
+  const latestPick = useRef<string | null>(null)
+  const onScreen = useRef(true)
+  useEffect(() => {
+    onScreen.current = true
+    return () => {
+      onScreen.current = false
+    }
+  }, [])
+  const [switching, setSwitching] = useState(false)
+
+  const open = (id: string, on: boolean) => {
+    if (on) carryFilters(CARRY_PAGE, id, { mode, tab } satisfies CarriedView)
+    navigate(on ? `${APP_BASE_PATH}/gs/${id}/piping` : `${APP_BASE_PATH}/gs/${id}`)
+  }
+
   /**
    * Another project: its Piping page, on what is applied here, when it has
    * Piping on; its Sàn page when it has not, rather than a page with nothing
-   * to show. A failed read still opens its Piping page, which says so.
+   * to show. At once when the session knows; otherwise after one read, the
+   * select spinning meanwhile. A failed read still opens its Piping page,
+   * which says so.
    */
   const chooseProject = (id: string) => {
-    if (id === projectId) return
+    if (id === projectId) {
+      latestPick.current = null
+      setSwitching(false)
+      return
+    }
+    latestPick.current = id
+    const known = knownPipingEnabled(id)
+    if (known !== undefined) {
+      open(id, known)
+      return
+    }
+    setSwitching(true)
     readPipingSettings(id)
       .then((target) => target?.enabled === true)
       .catch(() => true)
       .then((on) => {
-        if (on) carryFilters(CARRY_PAGE, id, { mode, tab } satisfies CarriedView)
-        navigate(on ? `${APP_BASE_PATH}/gs/${id}/piping` : `${APP_BASE_PATH}/gs/${id}`)
+        if (!onScreen.current || latestPick.current !== id) return
+        setSwitching(false)
+        open(id, on)
       })
   }
 
   const showControls = data.state !== 'off'
   const projectSelect = (block: boolean) => projectId && (
-    <FieldProjectSelect projectId={projectId} width={block ? '100%' : undefined} onChange={chooseProject} />
+    <FieldProjectSelect
+      projectId={projectId}
+      width={block ? '100%' : undefined}
+      onChange={chooseProject}
+      pending={switching}
+    />
   )
   const toggle = (block: boolean) => showControls && (
     <ViewToggle value={mode} onChange={setMode} block={block} disabled={panel === null} />
   )
   const exportAction = showControls && <PipingExportAction panel={panel} />
-  // FLT-04: what is applied, in one line -- the project's code, then the view once the module is shown.
+  // FLT-04: what is applied, in one line -- the project's code, then the view once the module is shown;
+  // nothing (no empty button) while neither is known.
   const summary = [projectCode, showControls ? VIEW_LABEL[mode] : undefined].filter((p) => p !== undefined).join(' · ')
+    || undefined
 
   return (
     <FieldLayout projectId={projectId}>
