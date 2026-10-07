@@ -2,7 +2,7 @@ import { render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ManpowerPoint } from '../../../domain/piping/manpower'
 import type { ManpowerGroup } from '../../../domain/piping/types'
-import { palette } from '../../../theme'
+import { palette, tintColor } from '../../../theme'
 import { ManpowerChart } from './ManpowerChart'
 
 /**
@@ -17,6 +17,7 @@ const captured = vi.hoisted(() => ({
   tooltip: null as null | Record<string, unknown>,
   xAxis: null as null | Record<string, unknown>,
   yAxis: null as null | Record<string, unknown>,
+  brush: null as null | Record<string, unknown>,
 }))
 
 vi.mock('recharts', async (importOriginal) => {
@@ -28,7 +29,10 @@ vi.mock('recharts', async (importOriginal) => {
       captured.data = data
       return <div data-testid="composed-chart">{children}</div>
     },
-    Brush: () => <div data-testid="brush" />,
+    Brush: (props: Record<string, unknown>) => {
+      captured.brush = props
+      return <div data-testid="brush" />
+    },
     CartesianGrid: () => null,
     XAxis: (props: Record<string, unknown>) => {
       captured.xAxis = props
@@ -50,6 +54,8 @@ vi.mock('recharts', async (importOriginal) => {
         data-name={String(props.name)}
         data-stack={String(props.stackId)}
         data-fill={String(props.fill)}
+        data-stroke={String(props.stroke)}
+        data-stroke-width={String(props.strokeWidth)}
       />
     ),
     Line: (props: Record<string, unknown>) => (
@@ -71,6 +77,24 @@ const point = (over: Partial<ManpowerPoint>): ManpowerPoint => ({
 const DAYS = [point({}), point({ key: '2026-10-06', start: '2026-10-06', end: '2026-10-06', tooltip: '06/10/2026' })]
 const WEEKS = [point({ key: '2026-10-05', end: '2026-10-11', tooltip: '05/10 – 11/10', plan: { g1: 10.5, g2: null } })]
 
+/** WCAG contrast of a `#RRGGBB` colour against white. */
+function contrastOnWhite(hex: string): number {
+  const lin = (i: number) => {
+    const c = parseInt(hex.slice(i, i + 2), 16) / 255
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4
+  }
+  const l = 0.2126 * lin(1) + 0.7152 * lin(3) + 0.0722 * lin(5)
+  return 1.05 / (l + 0.05)
+}
+
+const manyGroups = (n: number): ManpowerGroup[] =>
+  Array.from({ length: n }, (_, i) => ({ id: `g${i}`, name: `G${i}`, sort: i, hidden: false }))
+
+const days = (n: number): ManpowerPoint[] => Array.from({ length: n }, (_, i) => {
+  const day = new Date(Date.UTC(2026, 0, 1 + i)).toISOString().slice(0, 10)
+  return point({ key: day, start: day, end: day })
+})
+
 const attrs = (testId: string, attr: string) => screen.getAllByTestId(testId).map((el) => el.getAttribute(attr))
 
 beforeEach(() => {
@@ -78,6 +102,7 @@ beforeEach(() => {
   captured.tooltip = null
   captured.xAxis = null
   captured.yAxis = null
+  captured.brush = null
 })
 
 describe('ManpowerChart (spec §5)', () => {
@@ -87,7 +112,7 @@ describe('ManpowerChart (spec §5)', () => {
       'Plan · Reinstatement', 'Plan · Insulation', 'Actual · Reinstatement', 'Actual · Insulation',
     ])
     expect(attrs('bar', 'data-stack')).toEqual(['plan', 'plan', 'actual', 'actual'])
-    expect(attrs('line', 'data-name')).toEqual(['Plan tổng', 'Actual tổng'])
+    expect(attrs('line', 'data-name')).toEqual(['Plan tổng theo ngày', 'Actual tổng theo ngày'])
     expect(attrs('line', 'data-key')).toEqual(['planTotal', 'actualTotal'])
   })
 
@@ -100,19 +125,48 @@ describe('ManpowerChart (spec §5)', () => {
     expect(captured.data[0].actualTotal).toBe(8)
   })
 
-  it('colours each group from the categorical palette, its plan a tint of the same hue', () => {
+  it('colours each group from the categorical palette: Actual solid, Plan a tint outlined in the hue', () => {
     render(<ManpowerChart data={DAYS} groups={GROUPS} mode="day" />)
     const fills = attrs('bar', 'data-fill')
-    expect(fills[2]).toBe(palette.categorical[0])
-    expect(fills[3]).toBe(palette.categorical[1])
-    expect(fills[0]).not.toBe(fills[2])
-    expect(fills[0]).toMatch(/^#[0-9A-F]{6}$/)
+    const strokes = attrs('bar', 'data-stroke')
+    expect(fills.slice(2)).toEqual([palette.categorical[0], palette.categorical[1]])
+    expect(strokes.slice(2)).toEqual(['undefined', 'undefined'])
+    expect(fills.slice(0, 2)).toEqual([tintColor(palette.categorical[0], 0.55), tintColor(palette.categorical[1], 0.55)])
+    expect(strokes.slice(0, 2)).toEqual([palette.categorical[0], palette.categorical[1]])
+    expect(attrs('bar', 'data-stroke-width').slice(0, 2)).toEqual(['1.5', '1.5'])
   })
 
-  it('says trung bình on every series in week view', () => {
+  it('gives every Plan bar a boundary of at least 3:1 on white (CHT-01)', () => {
+    render(<ManpowerChart data={DAYS} groups={manyGroups(8)} mode="day" />)
+    for (const stroke of attrs('bar', 'data-stroke').slice(0, 8)) {
+      expect(contrastOnWhite(stroke as string)).toBeGreaterThanOrEqual(3)
+    }
+  })
+
+  it('never paints a Plan bar like any Actual bar, past eight groups too', () => {
+    render(<ManpowerChart data={DAYS} groups={manyGroups(12)} mode="day" />)
+    const fills = attrs('bar', 'data-fill')
+    const plan = new Set(fills.slice(0, 12))
+    for (const actual of fills.slice(12)) expect(plan.has(actual)).toBe(false)
+    for (const stroke of attrs('bar', 'data-stroke').slice(0, 12)) {
+      expect(contrastOnWhite(stroke as string)).toBeGreaterThanOrEqual(3)
+    }
+  })
+
+  it('says trung bình on the total lines and the tooltip in week view only', () => {
     render(<ManpowerChart data={WEEKS} groups={GROUPS} mode="week" />)
-    expect(attrs('bar', 'data-name')[0]).toBe('Plan · Reinstatement (trung bình)')
+    expect(attrs('bar', 'data-name')[0]).toBe('Plan · Reinstatement')
     expect(attrs('line', 'data-name')).toEqual(['Plan tổng (trung bình)', 'Actual tổng (trung bình)'])
+    const label = captured.tooltip?.labelFormatter as (v: string) => string
+    expect(label('2026-10-05')).toBe('05/10 – 11/10 · trung bình')
+  })
+
+  it('opens the day view on the last 90 days of a long range', () => {
+    const { unmount } = render(<ManpowerChart data={days(120)} groups={GROUPS} mode="day" />)
+    expect(captured.brush?.startIndex).toBe(30)
+    unmount()
+    render(<ManpowerChart data={days(90)} groups={GROUPS} mode="day" />)
+    expect(captured.brush?.startIndex).toBeUndefined()
   })
 
   it('labels the axis DD/MM, the tooltip with the bucket range, numbers in vi-VN and a gap as -', () => {
@@ -120,7 +174,7 @@ describe('ManpowerChart (spec §5)', () => {
     const tick = captured.xAxis?.tickFormatter as (v: string) => string
     expect(tick('2026-10-05')).toBe('05/10')
     const label = captured.tooltip?.labelFormatter as (v: string) => string
-    expect(label('2026-10-05')).toBe('05/10 – 11/10')
+    expect(label('2026-10-05')).toBe('05/10 – 11/10 · trung bình')
     const format = captured.tooltip?.formatter as (v: unknown) => string
     expect(format(10.5)).toBe('10,5')
     expect(format(null)).toBe('-')

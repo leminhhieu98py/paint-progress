@@ -4,7 +4,7 @@ import type { ManpowerPoint } from '../../../domain/piping/manpower'
 import type { ManpowerGroup, ViewMode } from '../../../domain/piping/types'
 import { formatDayMonth } from '../../../domain/piping/week'
 import { MISSING } from '../../../lib/format'
-import { categoricalColor, palette } from '../../../theme'
+import { categoricalColor, palette, tintColor } from '../../../theme'
 import {
   ACTIVE_BAR, ACTIVE_DOT, AXIS, axisTick, legendText, TOOLTIP_SEPARATOR, useLegendHighlight,
 } from '../../dashboard/chartKit'
@@ -13,29 +13,36 @@ import { formatQty } from '../pipingFormat'
 /**
  * Manpower (spec §5): per day or week, the groups stacked once for Plan and
  * once for Actual, the two stacks side by side, with a Plan total and an
- * Actual total line on the same axis (a total sits on top of its stack). Week
- * view is an average (R-2), so every series says "(trung bình)" there (spec
- * §3). Data is `manpowerSeries`' output, flattened for Recharts; nothing here
- * computes a figure. Actual stops at today and the plan runs to its end
+ * Actual total line on the same axis. The lines are drawn at the middle of
+ * the day or week, between the two stacks; the tooltip reads each total.
+ * Week view is an average (R-2): the total lines and the tooltip's week say
+ * "trung bình" (spec §3); day view's lines say "theo ngày", as Reinstatement's
+ * bars do. Data is `manpowerSeries`' output, flattened for Recharts; nothing
+ * here computes a figure. Actual stops at today and the plan runs to its end
  * because the series does.
  *
- * Each group keeps one hue of the categorical palette (CHT-01) in both
- * stacks: Actual in the hue itself, Plan in a tint of it, so a group reads as
- * one family and the plan as the lighter stack. The panel's tests replace
- * this module (jsdom gives ResponsiveContainer no size); only the lazily
- * loaded Piping page imports it.
+ * Colours (CHT-01): a group keeps one hue of the categorical palette in both
+ * stacks. Actual fills with `categoricalColor` (the hue itself for the first
+ * eight groups); Plan fills with a light tint of the hue and carries a 1.5 px
+ * outline in the hue, which holds 3:1 on white, so every plan mark has a
+ * visible boundary and the plan reads as the outlined stack. The palette has
+ * eight hues: past eight groups they repeat, Actual in `categoricalColor`'s
+ * lighter lap tints and Plan with a dashed outline, so a plan bar never looks
+ * like an actual bar nor like the plan of the group whose hue it shares.
+ *
+ * The panel's tests replace this module (jsdom gives ResponsiveContainer no
+ * size); only the lazily loaded Piping page imports it.
  */
 
-/** How much white the Plan stack mixes into its group's hue. */
+/** How much white the Plan fill mixes into its group's hue. */
 const PLAN_TINT = 0.55
+/** The Plan outline (CHT-01: the mark's ≥ 3:1 boundary). */
+const PLAN_OUTLINE = 1.5
+/** Day view opens on the last this many days; the Brush reaches the rest. */
+const DAY_WINDOW = 90
 
-function tint(hex: string, white: number): string {
-  const channel = (i: number) => {
-    const c = parseInt(hex.slice(i, i + 2), 16)
-    return Math.round(c + (255 - c) * white).toString(16).padStart(2, '0')
-  }
-  return `#${channel(1)}${channel(3)}${channel(5)}`.toUpperCase()
-}
+const hueOf = (i: number) => palette.categorical[i % palette.categorical.length]
+const lapOf = (i: number) => Math.floor(i / palette.categorical.length)
 
 const planKey = (groupId: string) => `plan:${groupId}`
 const actualKey = (groupId: string) => `actual:${groupId}`
@@ -61,11 +68,10 @@ export function ManpowerChart({ data, groups, mode }: {
     }),
     [data, groups],
   )
-  const suffix = mode === 'week' ? ' (trung bình)' : ''
-  const stacks = [
-    { stackId: 'plan', label: 'Plan', key: planKey, color: (i: number) => tint(categoricalColor(i), PLAN_TINT) },
-    { stackId: 'actual', label: 'Actual', key: actualKey, color: (i: number) => categoricalColor(i) },
-  ]
+  const week = mode === 'week'
+  const lineSuffix = week ? ' (trung bình)' : ' theo ngày'
+  // A long day range opens on its last days: two years of days at once is bars a pixel wide.
+  const startIndex = !week && rows.length > DAY_WINDOW ? rows.length - DAY_WINDOW : undefined
   return (
     <div data-testid="manpower-chart" style={{ width: '100%', height: height(372, groups.length * 2 + 2) }}>
       <ResponsiveContainer width="100%" height="100%">
@@ -75,26 +81,45 @@ export function ManpowerChart({ data, groups, mode }: {
           <YAxis tick={AXIS} width={phone ? 40 : 56} tickFormatter={axisTick} />
           <Tooltip
             separator={TOOLTIP_SEPARATOR}
-            labelFormatter={(key) => tooltips.get(String(key)) ?? String(key)}
+            labelFormatter={(key) => {
+              const label = tooltips.get(String(key)) ?? String(key)
+              return week ? `${label} · trung bình` : label
+            }}
             formatter={(value) => (typeof value === 'number' ? formatQty(value) : MISSING)}
           />
           <Legend formatter={legendText} {...legend} />
-          {stacks.flatMap((stack) => groups.map((g, i) => (
+          {groups.map((g, i) => (
             <Bar
-              key={stack.key(g.id)}
-              dataKey={stack.key(g.id)}
-              name={`${stack.label} · ${g.name}${suffix}`}
-              stackId={stack.stackId}
-              fill={stack.color(i)}
-              fillOpacity={opacity(stack.key(g.id))}
+              key={planKey(g.id)}
+              dataKey={planKey(g.id)}
+              name={`Plan · ${g.name}`}
+              stackId="plan"
+              fill={tintColor(hueOf(i), PLAN_TINT)}
+              fillOpacity={opacity(planKey(g.id))}
+              stroke={hueOf(i)}
+              strokeWidth={PLAN_OUTLINE}
+              strokeOpacity={opacity(planKey(g.id))}
+              strokeDasharray={lapOf(i) > 0 ? '3 2' : undefined}
               activeBar={ACTIVE_BAR}
               isAnimationActive={false}
             />
-          )))}
+          ))}
+          {groups.map((g, i) => (
+            <Bar
+              key={actualKey(g.id)}
+              dataKey={actualKey(g.id)}
+              name={`Actual · ${g.name}`}
+              stackId="actual"
+              fill={categoricalColor(i)}
+              fillOpacity={opacity(actualKey(g.id))}
+              activeBar={ACTIVE_BAR}
+              isAnimationActive={false}
+            />
+          ))}
           <Line
             type="monotone"
             dataKey="planTotal"
-            name={`Plan tổng${suffix}`}
+            name={`Plan tổng${lineSuffix}`}
             stroke={palette.textTertiary}
             strokeOpacity={opacity('planTotal')}
             strokeWidth={2}
@@ -108,7 +133,7 @@ export function ManpowerChart({ data, groups, mode }: {
           <Line
             type="monotone"
             dataKey="actualTotal"
-            name={`Actual tổng${suffix}`}
+            name={`Actual tổng${lineSuffix}`}
             stroke={palette.ink}
             strokeOpacity={opacity('actualTotal')}
             strokeWidth={2}
@@ -121,6 +146,7 @@ export function ManpowerChart({ data, groups, mode }: {
             dataKey="key"
             height={22}
             travellerWidth={8}
+            startIndex={startIndex}
             tickFormatter={(key: string) => formatDayMonth(String(key))}
             stroke={palette.border}
             fill={palette.bgSubtle}
