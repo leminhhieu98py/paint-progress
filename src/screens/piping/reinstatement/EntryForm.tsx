@@ -1,6 +1,6 @@
 import { Alert, App, Button, DatePicker, InputNumber } from 'antd'
 import dayjs, { type Dayjs } from 'dayjs'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { viNumberInputProps } from '../../../components/viNumberInput'
 import { checkReinstatementEntry } from '../../../domain/piping/reinstatement'
 import type { DayKey, ReinstatementActualEntry } from '../../../domain/piping/types'
@@ -26,15 +26,21 @@ export function EntryForm({ projectId, entries, totalTestPacks, todayKey, onAdde
   const [qty, setQty] = useState<number | null>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  /**
+   * Set synchronously, unlike `saving`: a second Enter, a held key or a fast
+   * double click during the round trip must not append a second entry.
+   */
+  const inFlight = useRef(false)
 
   const add = async () => {
-    if (day === null || qty === null) return
+    if (inFlight.current || day === null || qty === null) return
     const dayKey = day.format('YYYY-MM-DD')
     const refused = checkReinstatementEntry({ entries, totalTestPacks, day: dayKey, qty, todayKey })
     if (refused !== null) {
       setError(refused)
       return
     }
+    inFlight.current = true
     setSaving(true)
     setError(null)
     try {
@@ -45,6 +51,7 @@ export function EntryForm({ projectId, entries, totalTestPacks, todayKey, onAdde
     } catch (e) {
       setError((e as Error).message)
     } finally {
+      inFlight.current = false
       setSaving(false)
     }
   }

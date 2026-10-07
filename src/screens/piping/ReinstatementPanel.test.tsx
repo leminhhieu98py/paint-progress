@@ -225,6 +225,19 @@ describe('ReinstatementPanel: Thêm số lượng (spec §4, Q9A, Q10A)', () => 
     expect(await screen.findByText('Đã thêm số lượng')).toBeInTheDocument()
   })
 
+  it('adds once however often Enter or the button is hit while the save runs', async () => {
+    let finish: (id: string) => void = () => {}
+    api.addReinstatementEntry.mockImplementation(() => new Promise<string>((resolve) => { finish = resolve }))
+    renderPanel(asGs)
+    await loaded()
+    await userEvent.type(qtyInput(), '3{Enter}{Enter}')
+    await userEvent.dblClick(screen.getByRole('button', { name: /Thêm số lượng/ }))
+    expect(api.addReinstatementEntry).toHaveBeenCalledTimes(1)
+    finish('e3')
+    await waitFor(() => expect(api.listReinstatementEntries).toHaveBeenCalledTimes(2))
+    expect(api.addReinstatementEntry).toHaveBeenCalledTimes(1)
+  })
+
   it('shows the database message as is', async () => {
     api.addReinstatementEntry.mockRejectedValue(new Error('Vượt tổng Test Pack (đã có 1.020 / 1.022)'))
     renderPanel(asGs)
