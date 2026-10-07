@@ -55,8 +55,8 @@ const RULES = [
   { id: 'day', text: 'Chỉ nhập được ngày từ hôm nay trở về trước.' },
   { id: 'empty', text: 'Nhóm không có nhân lực trong ngày thì để trống.' },
   { id: 'gs', text: 'Giám sát chỉ nhập được ô còn trống, ô đã có giá trị chỉ admin sửa được.' },
-  { id: 'admin', text: 'Admin sửa được mọi ô, để trống một ô đã có giá trị là xoá giá trị đó.' },
-  { id: 'hidden', text: 'Nhóm đã ẩn không có ô nhập, số liệu đã có vẫn hiển thị.' },
+  { id: 'admin', text: 'Admin sửa được mọi ô, kể cả nhóm đã ẩn, và xoá một giá trị bằng cách để trống ô.' },
+  { id: 'hidden', text: 'Giám sát không nhập được nhóm đã ẩn, số liệu đã có vẫn hiển thị.' },
   { id: 'total', text: 'Tổng là tổng các nhóm trong ngày.' },
   { id: 'week', text: 'Chế độ Tuần hiển thị trung bình các ngày có số liệu trong tuần.' },
 ]
@@ -93,6 +93,9 @@ const fileDays = (rows: ManpowerValue[]) => new Set(rows.map((r) => r.day)).size
 
 const average = (n: number | null) => (n === null ? MISSING : formatQty(n))
 
+/** How the pill's averages are made (R-2), for its InfoTip. */
+const AVERAGE_INFO = 'Mỗi nhóm lấy trung bình các ngày có số liệu đến hôm nay, rồi cộng các nhóm'
+
 export function ManpowerPanel({ projectId, settings, mode, role, todayKey, refreshKey }: PipingPanelProps) {
   const { data, error, reload } = usePanelData(projectId, refreshKey, readManpower)
   const admin = role === 'admin'
@@ -100,6 +103,7 @@ export function ManpowerPanel({ projectId, settings, mode, role, todayKey, refre
   const formRef = useRef<HTMLDivElement>(null)
 
   const drawn = useMemo(() => (data === null ? [] : chartGroups(data.groups, data.plan, data.actual)), [data])
+  const historyGroups = useMemo(() => (data === null ? [] : chartGroups(data.groups, [], data.actual)), [data])
   const series = useMemo(
     () => (data === null
       ? []
@@ -128,11 +132,13 @@ export function ManpowerPanel({ projectId, settings, mode, role, todayKey, refre
   if (data === null) return <Spin style={{ display: 'block', margin: '15vh auto' }} />
 
   const averages = manpowerAverages({ groups: data.groups, plan: data.plan, actual: data.actual, todayKey })
-  const facts: KeyFact[] = [
-    { prefix: 'trung bình Plan', value: average(averages.plan) },
-    { prefix: 'trung bình Actual', value: average(averages.actual) },
-  ]
-  const entry = entryGroups(data.groups)
+  const facts: KeyFact[] = [{
+    prefix: 'trung bình đến hôm nay',
+    value: `Plan ${average(averages.plan)} · Actual ${average(averages.actual)}`,
+    info: AVERAGE_INFO,
+  }]
+  // The admin corrects hidden groups too; a foreman enters visible ones only (R-8).
+  const entry = admin ? bySort(data.groups) : entryGroups(data.groups)
   const actualDays = manpowerDays(data.groups, data.actual).length
 
   const editDay = (next: DayKey) => {
@@ -144,7 +150,8 @@ export function ManpowerPanel({ projectId, settings, mode, role, todayKey, refre
     // Keyed on the project: a typed value or an open dialog never carries over to the next one.
     <div key={projectId} style={{ display: 'flex', flexDirection: 'column', gap: space.lg }}>
       <SectionCard
-        title="Manpower"
+        // Week view averages (R-2): said in the title as well as on the total lines (spec §3).
+        title={mode === 'week' ? 'Manpower (trung bình tuần)' : 'Manpower'}
         facts={facts}
         extra={admin ? (
           <PlanImportFlow<ManpowerValue>
@@ -188,14 +195,14 @@ export function ManpowerPanel({ projectId, settings, mode, role, todayKey, refre
                     todayKey={todayKey}
                     day={day}
                     onDayChange={setDay}
-                    onSaved={reload}
+                    onChanged={reload}
                   />
                 )}
             </div>
           )}
           <ManpowerHistoryTable
             projectId={projectId}
-            groups={chartGroups(data.groups, [], data.actual)}
+            groups={historyGroups}
             actual={data.actual}
             canEdit={admin}
             onEdit={editDay}

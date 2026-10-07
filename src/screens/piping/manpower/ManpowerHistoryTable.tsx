@@ -21,9 +21,16 @@ interface HistoryRow extends ManpowerDayRow {
   editedAt: string | null
 }
 
+/** Newest day first. The cells are indexed by day once, so a long history stays one pass. */
 function historyRows(groups: ManpowerGroup[], actual: ManpowerActualEntry[]): HistoryRow[] {
+  const byDay = new Map<DayKey, ManpowerActualEntry[]>()
+  for (const c of actual) {
+    const cells = byDay.get(c.day)
+    if (cells) cells.push(c)
+    else byDay.set(c.day, [c])
+  }
   return manpowerDays(groups, actual).reverse().map((row) => {
-    const cells = actual.filter((c) => c.day === row.day && row.byGroup[c.groupId] !== undefined)
+    const cells = (byDay.get(row.day) ?? []).filter((c) => row.byGroup[c.groupId] !== undefined)
     const creators = [...new Set(cells.flatMap((c) => (c.createdByName === null ? [] : [c.createdByName])))]
     let edited: ManpowerActualEntry | null = null
     for (const c of cells) {
@@ -42,7 +49,7 @@ function historyRows(groups: ManpowerGroup[], actual: ManpowerActualEntry[]): Hi
  */
 export function ManpowerHistoryTable({ projectId, groups, actual, canEdit, onEdit, onChanged, dayExtra }: {
   projectId: string
-  /** The columns, in order (`chartGroups` of the actual). */
+  /** The columns, in order (`chartGroups` of the actual); stable across renders (memoised by the caller). */
   groups: ManpowerGroup[]
   actual: ManpowerActualEntry[]
   /** The admin's edit and delete actions. */
@@ -62,6 +69,7 @@ export function ManpowerHistoryTable({ projectId, groups, actual, canEdit, onEdi
   /** On a phone the day stays in view while the rest scrolls under it (MOB-01). */
   const pin = useFieldPhone() ? ('left' as const) : undefined
   const rows = useMemo(() => historyRows(groups, actual), [groups, actual])
+  const gridColumns = useMemo(() => dayGridColumns<HistoryRow>(groups, pin, dayExtra), [groups, pin, dayExtra])
   const pagination = useTablePagination(rows.length, projectId)
   const [removing, setRemoving] = useState<HistoryRow | null>(null)
   /** The delete in flight, and its refusal (shown inside the confirmation, which stays open). */
@@ -79,7 +87,7 @@ export function ManpowerHistoryTable({ projectId, groups, actual, canEdit, onEdi
       await setManpowerActual(
         projectId,
         removing.day,
-        Object.keys(removing.byGroup).map((groupId) => ({ groupId, value: null })),
+        groups.filter((g) => removing.byGroup[g.id] !== undefined).map((g) => ({ groupId: g.id, value: null })),
       )
       message.success('Đã xoá nhân lực')
       setRemoving(null)
@@ -102,7 +110,7 @@ export function ManpowerHistoryTable({ projectId, groups, actual, canEdit, onEdi
           scroll={{ x: 'max-content' }}
           locale={{ emptyText: 'Chưa có nhân lực nào' }}
           columns={[
-            ...dayGridColumns<HistoryRow>(groups, pin, dayExtra),
+            ...gridColumns,
             {
               title: 'Người nhập',
               key: 'creators',

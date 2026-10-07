@@ -95,6 +95,8 @@ const renderPanel = (over: Partial<PipingPanelProps> = {}) => renderApp(<Manpowe
 const asGs = { variant: 'gs', role: 'gs' } as const
 const asViewer = { variant: 'gs', role: 'viewer' } as const
 
+const AVERAGE_INFO = 'Mỗi nhóm lấy trung bình các ngày có số liệu đến hôm nay, rồi cộng các nhóm'
+
 const loaded = () => screen.findByTestId('manpower-chart')
 const dialog = () => screen.getByRole('dialog')
 const dateInput = () => screen.getByLabelText('Ngày')
@@ -130,15 +132,33 @@ beforeEach(() => {
 })
 
 describe('ManpowerPanel: summary and chart (spec §3, §5)', () => {
-  it('reads the groups, plan and actual, and states the average daily totals in vi-VN', async () => {
+  it('reads the groups, plan and actual, and states the averages up to today in vi-VN', async () => {
     renderPanel()
     await loaded()
     expect(api.listManpowerGroups).toHaveBeenCalledWith('p1')
     expect(api.listManpowerPlan).toHaveBeenCalledWith('p1')
     expect(api.listManpowerActual).toHaveBeenCalledWith('p1')
     expect(screen.getByRole('heading', { level: 2, name: 'Manpower' })).toBeInTheDocument()
-    // Plan: 14 and 14 over two days; Actual: 8, 3 and 6 over three days.
-    expect(keyFactTexts()).toEqual(expect.arrayContaining(['trung bình Plan 14', 'trung bình Actual 5,67']))
+    // Per group, the mean of its days with a value, summed: Plan (10 + 12) / 2 + 4 + 2; Actual (8 + 6) / 2 + 0 + 3.
+    expect(keyFactTexts()[0]).toBe('trung bình đến hôm nay Plan 17 · Actual 10')
+    expect(screen.getByLabelText(AVERAGE_INFO)).toBeInTheDocument()
+  })
+
+  it('states the same averages as the week chart, a plan day after today left out', async () => {
+    api.listManpowerPlan.mockResolvedValue([...PLAN, { groupId: 'g1', day: '2026-10-09', value: 50 }])
+    renderPanel({ mode: 'week' })
+    const chart = await loaded()
+    // Every value up to today falls in the week of 28/09: the pill reads that bucket.
+    expect(chart.textContent).toBe('2026-09-28:17/10 2026-10-05:50/null')
+    expect(keyFactTexts()[0]).toBe('trung bình đến hôm nay Plan 17 · Actual 10')
+  })
+
+  it('says trung bình in the card title in week view only', async () => {
+    const { rerender } = renderPanel({ mode: 'week' })
+    await loaded()
+    expect(screen.getByRole('heading', { level: 2, name: 'Manpower (trung bình tuần)' })).toBeInTheDocument()
+    rerender(<ManpowerPanel {...props({ mode: 'day' })} />)
+    expect(await screen.findByRole('heading', { level: 2, name: 'Manpower' })).toBeInTheDocument()
   })
 
   it('charts each day with the totals, a hidden group with history included (R-8)', async () => {
@@ -174,7 +194,7 @@ describe('ManpowerPanel: summary and chart (spec §3, §5)', () => {
     renderPanel()
     expect(await screen.findByText('Chưa có Plan hoặc nhân lực Manpower')).toBeInTheDocument()
     expect(screen.queryByTestId('manpower-chart')).toBeNull()
-    expect(keyFactTexts()).toEqual(expect.arrayContaining(['trung bình Plan -', 'trung bình Actual -']))
+    expect(keyFactTexts()[0]).toBe('trung bình đến hôm nay Plan - · Actual -')
   })
 
   it('says a failed read and retries it', async () => {
@@ -201,7 +221,7 @@ describe('ManpowerPanel: entry (spec §5, R-7, R-8)', () => {
     expect(dateInput()).toHaveValue('07/10/2026')
     expect(groupInput('Reinstatement')).toHaveValue('')
     expect(groupInput('Insulation')).toHaveValue('')
-    expect(screen.queryByRole('spinbutton', { name: 'Marking' })).toBeNull()
+    expect(screen.queryByRole('spinbutton', { name: /Marking/ })).toBeNull()
     expect(saveButton()).toBeDisabled()
   })
 
@@ -239,10 +259,52 @@ describe('ManpowerPanel: entry (spec §5, R-7, R-8)', () => {
     await userEvent.type(groupInput('Reinstatement'), '7')
     await userEvent.clear(groupInput('Insulation'))
     await userEvent.click(saveButton())
+    // A cleared cell is a delete: confirmed first, the cell and its old value listed.
+    expect(within(dialog()).getByText('Xoá 1 ô nhân lực ngày 03/10/2026?')).toBeInTheDocument()
+    expect(within(dialog()).getByText('Insulation')).toBeInTheDocument()
+    expect(api.setManpowerActual).not.toHaveBeenCalled()
+    await userEvent.click(within(dialog()).getByRole('button', { name: 'Lưu' }))
     await waitFor(() => expect(api.setManpowerActual).toHaveBeenCalledWith('p1', '2026-10-03', [
       { groupId: 'g1', value: 7 },
       { groupId: 'g2', value: null },
     ]))
+  })
+
+  it('saves an admin overwrite without a confirmation, and sends nothing for an unchanged value', async () => {
+    renderPanel()
+    await loaded()
+    await pickDay('03/10/2026')
+    await userEvent.clear(groupInput('Reinstatement'))
+    await userEvent.type(groupInput('Reinstatement'), '6')
+    expect(saveButton()).toBeDisabled()
+    await userEvent.clear(groupInput('Reinstatement'))
+    await userEvent.type(groupInput('Reinstatement'), '9')
+    await userEvent.click(saveButton())
+    expect(screen.queryByRole('dialog')).toBeNull()
+    await waitFor(() => expect(api.setManpowerActual).toHaveBeenCalledWith('p1', '2026-10-03', [{ groupId: 'g1', value: 9 }]))
+  })
+
+  it('cancels an admin clear when the confirmation is dismissed', async () => {
+    renderPanel()
+    await loaded()
+    await pickDay('03/10/2026')
+    await userEvent.clear(groupInput('Insulation'))
+    await userEvent.click(saveButton())
+    await userEvent.click(within(dialog()).getByRole('button', { name: 'Huỷ' }))
+    expect(api.setManpowerActual).not.toHaveBeenCalled()
+    // The cleared input stays as typed, so the admin can type the value back.
+    expect(groupInput('Insulation')).toHaveValue('')
+  })
+
+  it('lets the admin edit a hidden group, marked as hidden; a foreman never sees it', async () => {
+    renderPanel()
+    await loaded()
+    await pickDay('02/10/2026')
+    expect(groupInput('Marking (ẩn)')).toHaveValue('3')
+    await userEvent.clear(groupInput('Marking (ẩn)'))
+    await userEvent.type(groupInput('Marking (ẩn)'), '4')
+    await userEvent.click(saveButton())
+    await waitFor(() => expect(api.setManpowerActual).toHaveBeenCalledWith('p1', '2026-10-02', [{ groupId: 'g3', value: 4 }]))
   })
 
   it('never offers a day after today', async () => {
@@ -273,6 +335,20 @@ describe('ManpowerPanel: entry (spec §5, R-7, R-8)', () => {
     await userEvent.type(groupInput('Insulation'), '1')
     await userEvent.click(saveButton())
     expect(await screen.findByText('Nhóm "Insulation" ngày 07/10/2026 đã có giá trị (3); chỉ admin được sửa')).toBeInTheDocument()
+  })
+
+  it('reads the day again after a refusal, so a cell filled meanwhile locks with its value', async () => {
+    const message = 'Nhóm "Insulation" ngày 07/10/2026 đã có giá trị (3); chỉ admin được sửa'
+    api.setManpowerActual.mockRejectedValue(new Error(message))
+    renderPanel(asGs)
+    await loaded()
+    api.listManpowerActual.mockResolvedValue([...ACTUAL, cell({ groupId: 'g2', day: '2026-10-07', value: 3 })])
+    await userEvent.type(groupInput('Insulation'), '1')
+    await userEvent.click(saveButton())
+    await waitFor(() => expect(groupInput('Insulation')).toHaveValue('3'))
+    expect(groupInput('Insulation')).toBeDisabled()
+    expect(screen.getByText(message)).toBeInTheDocument()
+    expect(api.listManpowerActual).toHaveBeenCalledTimes(2)
   })
 
   it('folds its rules away as helper text, with no spec id on screen', async () => {
@@ -329,6 +405,19 @@ describe('ManpowerPanel: actual history', () => {
     await userEvent.click(within(dialog()).getByRole('button', { name: 'Xoá' }))
     await waitFor(() => expect(api.setManpowerActual).toHaveBeenCalledWith('p1', '2026-10-02', [{ groupId: 'g3', value: null }]))
     await waitFor(() => expect(api.listManpowerActual).toHaveBeenCalledTimes(2))
+  })
+
+  it('deletes every cell of the day, visible and hidden groups alike, in group order', async () => {
+    api.listManpowerActual.mockResolvedValue([...ACTUAL, cell({ groupId: 'g3', day: '2026-10-03', value: 1 })])
+    renderPanel()
+    await loaded()
+    await userEvent.click(within(historyRows()[0]).getByRole('button', { name: 'Xoá nhân lực' }))
+    await userEvent.click(within(dialog()).getByRole('button', { name: 'Xoá' }))
+    await waitFor(() => expect(api.setManpowerActual).toHaveBeenCalledWith('p1', '2026-10-03', [
+      { groupId: 'g1', value: null },
+      { groupId: 'g2', value: null },
+      { groupId: 'g3', value: null },
+    ]))
   })
 })
 
