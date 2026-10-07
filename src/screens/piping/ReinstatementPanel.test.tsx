@@ -288,6 +288,37 @@ describe('ReinstatementPanel: entries (spec §4, Q8C)', () => {
     await waitFor(() => expect(api.listReinstatementEntries).toHaveBeenCalledTimes(2))
   })
 
+  it('lets the admin lower an entry or move its day while the project is over the cap, and refuses a raise', async () => {
+    // Entered 235 against a total the admin since lowered to 200.
+    renderPanel({ settings: { ...SETTINGS, totalTestPacks: 200 } })
+    await loaded()
+    const openEdit = async () => {
+      await userEvent.click(within(dataRows()[0]).getByRole('button', { name: 'Sửa số lượng' }))
+      return screen.getByRole('dialog')
+    }
+
+    let edit = await openEdit()
+    await userEvent.clear(qtyInput(edit))
+    await userEvent.type(qtyInput(edit), '30')
+    await userEvent.click(within(edit).getByRole('button', { name: 'Lưu' }))
+    await waitFor(() => expect(api.updateReinstatementEntry).toHaveBeenCalledWith('e2', { day: '2026-10-03', qty: 30 }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+
+    edit = await openEdit()
+    await userEvent.clear(dateInput(edit))
+    await userEvent.type(dateInput(edit), '02/10/2026{Enter}')
+    await userEvent.click(within(edit).getByRole('button', { name: 'Lưu' }))
+    await waitFor(() => expect(api.updateReinstatementEntry).toHaveBeenLastCalledWith('e2', { day: '2026-10-02', qty: 35 }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+
+    edit = await openEdit()
+    await userEvent.clear(qtyInput(edit))
+    await userEvent.type(qtyInput(edit), '36')
+    await userEvent.click(within(edit).getByRole('button', { name: 'Lưu' }))
+    expect(await within(edit).findByText('Vượt tổng Test Pack (đã có 200 / 200)')).toBeInTheDocument()
+    expect(api.updateReinstatementEntry).toHaveBeenCalledTimes(2)
+  })
+
   it('keeps a refused edit open with the database message', async () => {
     api.updateReinstatementEntry.mockRejectedValue(new Error('Không lưu được: dữ liệu này không còn tồn tại, hoặc bạn không có quyền sửa.'))
     renderPanel()

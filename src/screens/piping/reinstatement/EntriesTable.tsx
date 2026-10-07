@@ -32,8 +32,8 @@ interface EditValues {
 /**
  * The Reinstatement entries (spec §4, R-3, Q8C), newest first, paged (UI-05):
  * day, quantity, who entered it and when, who last edited it. Everyone reads
- * them; only the admin edits (a dialog, checked against the cap without the
- * entry itself) or deletes (after a confirmation). Edits are stamped by the
+ * them; only the admin edits (a dialog; a raise is checked against the cap)
+ * or deletes (after a confirmation). Edits are stamped by the
  * database, which also holds the future-day rule and the cap for the admin.
  */
 export function EntriesTable({ projectId, entries, totalTestPacks, todayKey, canEdit, onChanged, dayExtra }: {
@@ -177,9 +177,10 @@ export function EntriesTable({ projectId, entries, totalTestPacks, todayKey, can
 }
 
 /**
- * Sửa số lượng: the admin corrects an entry's day or quantity, checked against
- * the cap without the entry itself. Mounted only while open, so each opening
- * starts on the entry as stored; a refusal stays in the dialog.
+ * Sửa số lượng: the admin corrects an entry's day or quantity; only a raise
+ * is checked against the cap, without the entry itself, as the trigger does.
+ * Mounted only while open, so each opening starts on the entry as stored; a
+ * refusal stays in the dialog.
  */
 function EditEntryModal({ entry, entries, totalTestPacks, todayKey, onClose, onSaved }: {
   entry: ReinstatementEntry
@@ -198,7 +199,7 @@ function EditEntryModal({ entry, entries, totalTestPacks, todayKey, onClose, onS
     if (values.day === null || values.qty === null) return
     const day = values.day.format('YYYY-MM-DD')
     const refused = checkReinstatementEntry({
-      entries, totalTestPacks, day, qty: values.qty, todayKey, editingId: entry.id,
+      entries, totalTestPacks, day, qty: values.qty, todayKey, editing: { id: entry.id, qty: entry.qty },
     })
     if (refused !== null) {
       setError(refused)
