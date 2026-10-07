@@ -59,10 +59,15 @@ const viNumber = new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 2 })
 
 /**
  * Why an entry cannot be saved, or null when it can -- the rules of
- * `piping_add_reinstatement` (spec §4), checked on screen before the round
- * trip. The database enforces the same rules; this only spares the user a
- * failed save. `editingId` leaves the entry an admin is editing out of the
- * cumulative, since the cap applies to admin edits too.
+ * `piping_add_reinstatement` and the table's trigger (spec §4), checked on
+ * screen before the round trip. The database enforces the same rules; this
+ * only spares the user a failed save.
+ *
+ * `editing` is the stored entry an admin is correcting. As the trigger does,
+ * the cap applies to an edit only when it RAISES the stored quantity, and then
+ * without the entry itself in the cumulative: lowering a quantity, keeping it
+ * or moving its day always passes, so an admin can correct downwards even
+ * after lowering the total below what was entered.
  */
 export function checkReinstatementEntry(input: {
   entries: Array<Pick<ReinstatementActualEntry, 'id' | 'qty'>>
@@ -70,13 +75,15 @@ export function checkReinstatementEntry(input: {
   day: DayKey
   qty: number
   todayKey: DayKey
-  editingId?: string
+  editing?: { id: string; qty: number }
 }): string | null {
   if (input.day > input.todayKey) return 'Ngày không được sau hôm nay'
   if (!(input.qty > 0)) return 'Số lượng phải lớn hơn 0'
+  const { editing } = input
+  if (editing !== undefined && input.qty <= editing.qty) return null
   if (input.totalTestPacks === null) return 'Admin chưa nhập tổng Test Pack'
   const already = input.entries
-    .filter((e) => e.id !== input.editingId)
+    .filter((e) => e.id !== editing?.id)
     .reduce((acc, e) => acc + e.qty, 0)
   if (already + input.qty > input.totalTestPacks) {
     return `Vượt tổng Test Pack (đã có ${viNumber.format(already)} / ${viNumber.format(input.totalTestPacks)})`

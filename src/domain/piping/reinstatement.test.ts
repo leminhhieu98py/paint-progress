@@ -81,9 +81,30 @@ describe('checkReinstatementEntry (spec §4, mirrors piping_add_reinstatement)',
       .toBe('Admin chưa nhập tổng Test Pack')
   })
 
-  it('leaves out the entry being edited, so an admin can lower or keep it', () => {
-    expect(checkReinstatementEntry({ ...base, day: '2026-09-20', qty: 22, editingId: 'b' })).toBeNull()
-    expect(checkReinstatementEntry({ ...base, day: '2026-09-20', qty: 23, editingId: 'b' }))
+  it('leaves out the entry being edited when it raises the quantity', () => {
+    expect(checkReinstatementEntry({ ...base, day: '2026-09-20', qty: 22, editing: { id: 'b', qty: 15 } })).toBeNull()
+    expect(checkReinstatementEntry({ ...base, day: '2026-09-20', qty: 23, editing: { id: 'b', qty: 15 } }))
       .toBe('Vượt tổng Test Pack (đã có 1.000 / 1.022)')
+  })
+
+  it('caps an edit only when it raises the stored quantity, as the table trigger does', () => {
+    // Over the cap already: the admin lowered the total below what was entered.
+    const over = { ...base, totalTestPacks: 900 }
+    expect(checkReinstatementEntry({ ...over, day: '2026-09-20', qty: 10, editing: { id: 'b', qty: 15 } })).toBeNull()
+    expect(checkReinstatementEntry({ ...over, day: '2026-09-25', qty: 15, editing: { id: 'b', qty: 15 } })).toBeNull()
+    expect(checkReinstatementEntry({ ...over, day: '2026-09-20', qty: 16, editing: { id: 'b', qty: 15 } }))
+      .toBe('Vượt tổng Test Pack (đã có 1.000 / 900)')
+    // No total set: lowering or keeping still passes; a raise is refused.
+    const unset = { ...base, totalTestPacks: null }
+    expect(checkReinstatementEntry({ ...unset, day: '2026-09-20', qty: 15, editing: { id: 'b', qty: 15 } })).toBeNull()
+    expect(checkReinstatementEntry({ ...unset, day: '2026-09-20', qty: 16, editing: { id: 'b', qty: 15 } }))
+      .toBe('Admin chưa nhập tổng Test Pack')
+  })
+
+  it('still refuses a future day and a quantity not above 0 on an edit', () => {
+    expect(checkReinstatementEntry({ ...base, day: '2026-10-08', qty: 1, editing: { id: 'b', qty: 15 } }))
+      .toBe('Ngày không được sau hôm nay')
+    expect(checkReinstatementEntry({ ...base, day: '2026-09-20', qty: 0, editing: { id: 'b', qty: 15 } }))
+      .toBe('Số lượng phải lớn hơn 0')
   })
 })
