@@ -220,11 +220,13 @@ database's English message until the new app ships. The owner-run cases are in
 
 `0038` (the Piping module — Reinstatement, Manpower, CAM Insulation, spec
 `2026-10-07-piping`) is **not yet applied to dev or production**. Ten new
-`piping_*` tables, each with `<table>_admin_all`; eight also carry
+`piping_*` tables. Nine carry `<table>_admin_all`; eight of those also carry
 `<table>_member_read` through `my_projects()` (a GS reads its projects, a
-viewer every project since `0034`), while `piping_notes` and
-`piping_import_log` carry no member policy at all, so admin notes are
-unreadable by a GS or viewer at the database level. No member write policy
+viewer every project since `0034`), while `piping_notes` carries no member
+policy at all, so admin notes are unreadable by a GS or viewer at the database
+level. `piping_import_log` is append-only-by-system, as `0008` made
+`credential_access_log`: one admin SELECT policy, INSERT/UPDATE/DELETE revoked
+from `authenticated`, written only by the import functions. No member write policy
 anywhere: the field writes through three security definer functions
 (`piping_add_reinstatement`, `piping_set_manpower_actual`,
 `piping_set_spool_actuals`) that check `is_admin()` or `is_gs()` plus
@@ -238,8 +240,18 @@ each, each writing one `piping_import_log` row; `piping_enable` creates the
 settings row and the three default crew groups. Each function's contract
 (arguments, result, errors) is the comment above it in the migration. Rules
 that must hold for direct admin writes too (cap, future day, actual order,
-no delete of a crew group with data) are triggers and CHECK constraints on the
-tables. `anon` holds no privilege on any piping table. Its `do $$ ... $$` block
+no delete of a crew group with data, real calendar dates, `extra` keyed by a
+configured column) are triggers and CHECK constraints on the tables, or
+validation inside the functions. Every function locks the project's
+`piping_settings` row first (FOR UPDATE for the imports and the Test Pack cap,
+FOR SHARE for the other field writes) and spools in id order after it, so an
+import and a field write queue instead of deadlocking; the cap also holds under
+REPEATABLE READ (the racer gets 40001). File limits count file rows: 20 000
+rows per Plan file (distinct days for Manpower), and for the spool actuals
+20 000 distinct spools / 60 000 changes. Measured on a throwaway Postgres 15
+container: 20 000 spool changes 1.0 s, a 60 000-change Actual import 1.6 s, a
+20 000-row Insulation Plan re-import 1.0 s. `anon` holds no privilege on any
+piping table. Its `do $$ ... $$` block
 raises if a table, policy, grant, function shape, caller check, trigger, named
 foreign key, index or the actual-order constraint is not what the migration
 claims, and calls every function with no caller to prove it refuses with
