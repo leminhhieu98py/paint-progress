@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { chartGroups, entryGroups, manpowerSeries, valuesOnDay } from './manpower'
+import { chartGroups, entryGroups, manpowerAverages, manpowerDays, manpowerSeries, valuesOnDay } from './manpower'
 import type { ManpowerGroup, ManpowerValue } from './types'
 
 const START = '2026-09-18'
@@ -113,5 +113,46 @@ describe('valuesOnDay', () => {
   it('maps each group to its value on the day', () => {
     expect(valuesOnDay([v('a', '2026-09-18', 1), v('b', '2026-09-18', 0), v('a', '2026-09-19', 3)], '2026-09-18'))
       .toEqual(new Map([['a', 1], ['b', 0]]))
+  })
+})
+
+describe('manpowerAverages (spec §3, R-2, up to today)', () => {
+  it('sums each group\'s mean over its days with a value up to today, plan and actual alike', () => {
+    const avg = manpowerAverages({
+      groups,
+      plan: [
+        v('reins', '2026-09-17', 30), v('reins', '2026-09-18', 20), v('ins', '2026-09-18', 10),
+        v('reins', '2026-09-25', 99),
+      ],
+      actual: [v('reins', '2026-09-18', 30), v('ins', '2026-09-19', 0), v('mark', '2026-09-19', 6), v('ins', '2026-09-20', 9)],
+      todayKey: '2026-09-19',
+    })
+    // Plan: (30 + 20) / 2 + 10, the day after today left out; Actual: 30 + 0 + 6, an entered 0 counted.
+    expect(avg).toEqual({ plan: 35, actual: 36 })
+  })
+
+  it('equals the week bucket of the chart when every value falls in one week up to today', () => {
+    const plan = [v('reins', '2026-09-18', 10), v('reins', '2026-09-19', 12), v('ins', '2026-09-18', 4)]
+    const actual = [v('reins', '2026-09-18', 8), v('reins', '2026-09-20', 6), v('mark', '2026-09-19', 3)]
+    const input = { groups, plan, actual, todayKey: '2026-09-24' }
+    const [week] = manpowerSeries({ ...input, mode: 'week', weekStart: START })
+    expect(manpowerAverages(input)).toEqual({ plan: week.planTotal, actual: week.actualTotal })
+  })
+
+  it('reads no value of an unknown group and is null without any value', () => {
+    expect(manpowerAverages({ groups, plan: [v('gone', '2026-09-18', 99)], actual: [], todayKey: '2026-09-19' }))
+      .toEqual({ plan: null, actual: null })
+  })
+})
+
+describe('manpowerDays (the day grid of the tables)', () => {
+  it('gives one row per day that has a value, oldest first, each group and the total', () => {
+    const rows = manpowerDays(groups, [
+      v('reins', '2026-09-20', 3), v('ins', '2026-09-18', 0), v('mark', '2026-09-18', 6), v('gone', '2026-09-19', 9),
+    ])
+    expect(rows).toEqual([
+      { day: '2026-09-18', byGroup: { ins: 0, mark: 6 }, total: 6 },
+      { day: '2026-09-20', byGroup: { reins: 3 }, total: 3 },
+    ])
   })
 })

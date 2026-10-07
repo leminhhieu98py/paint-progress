@@ -61,6 +61,12 @@ export interface PlanImportFlowProps<R> {
   lineHeader: string
   /** How that column aligns: centred for a date (UI-03), left for typed text. */
   lineAlign?: 'left' | 'center'
+  /**
+   * How many of the file's rows the parsed rows came from, for the preview's
+   * "replaced by N rows" line; the row count by default. A file with one value
+   * per row and group (Manpower Plan) counts its distinct days.
+   */
+  countFileRows?: (rows: R[]) => number
   /** Replaces the plan; `summary` is the client's note for the import log. */
   commit: (input: { rows: R[]; fileName: string; summary: Record<string, unknown> }) => Promise<unknown>
   /** After a confirmed import: the caller reads its data again. */
@@ -82,7 +88,8 @@ type Step<R> =
   | { kind: 'preview'; fileName: string; parsed: ParseResult<R>; preview: PlanImportPreview }
 
 export function PlanImportFlow<R>({
-  planLabel, templateName, buildTemplate, parse, preview, lineHeader, lineAlign = 'center', commit, onImported,
+  planLabel, templateName, buildTemplate, parse, preview, lineHeader, lineAlign = 'center', countFileRows, commit,
+  onImported,
 }: PlanImportFlowProps<R>) {
   const { message } = App.useApp()
   const type = useTypeScale()
@@ -282,7 +289,7 @@ export function PlanImportFlow<R>({
                 borderRadius: 11,
               }}
             >
-              <li>{`${planLabel} hiện tại được thay toàn bộ bằng ${COUNT.format(step.parsed.rows.length)} dòng của file.`}</li>
+              <li>{`${planLabel} hiện tại được thay toàn bộ bằng ${COUNT.format(countFileRows ? countFileRows(step.parsed.rows) : step.parsed.rows.length)} dòng của file.`}</li>
               {(step.preview.consequences ?? []).map((c) => <li key={c}>{c}</li>)}
               <li>Lần import được ghi vào lịch sử import.</li>
             </ul>

@@ -110,6 +110,54 @@ export function manpowerSeries(input: {
 }
 
 /**
+ * Plan and Actual averages up to today, by the chart's own rule (R-2): per
+ * group, the mean over the days up to today that have a value (an entered 0
+ * counts), summed over the groups -- what one week bucket of the chart shows,
+ * stretched over every day up to today. Both stop at today so the pair is
+ * like for like. A value of a group not in `groups` is ignored, as in the
+ * chart; null when no group has a value.
+ */
+export function manpowerAverages(input: {
+  groups: ManpowerGroup[]
+  plan: ManpowerValue[]
+  actual: ManpowerValue[]
+  todayKey: DayKey
+}): { plan: number | null; actual: number | null } {
+  const known = new Set(input.groups.map((g) => g.id))
+  // Every key sorts after the empty string: the range starts at the first value.
+  const total = (values: ManpowerValue[]) =>
+    rowFor(input.groups, index(values, known, input.todayKey), '', input.todayKey).total
+  return { plan: total(input.plan), actual: total(input.actual) }
+}
+
+/** One day of a Manpower table: each group's value (only the groups that have one) and their sum. */
+export interface ManpowerDayRow {
+  day: DayKey
+  byGroup: Record<string, number>
+  total: number
+}
+
+/**
+ * The plan or the actual as a day grid, oldest day first: one row per day
+ * with any value of a group in `groups` (hidden ones included, R-8).
+ */
+export function manpowerDays(groups: ManpowerGroup[], values: ManpowerValue[]): ManpowerDayRow[] {
+  const known = new Set(groups.map((g) => g.id))
+  const byDay = new Map<DayKey, ManpowerDayRow>()
+  for (const { groupId, day, value } of values) {
+    if (!known.has(groupId)) continue
+    let row = byDay.get(day)
+    if (!row) {
+      row = { day, byGroup: {}, total: 0 }
+      byDay.set(day, row)
+    }
+    row.byGroup[groupId] = value
+    row.total += value
+  }
+  return [...byDay.values()].sort((a, b) => (a.day < b.day ? -1 : a.day > b.day ? 1 : 0))
+}
+
+/**
  * The groups the chart draws, in sort order: every visible group, and a hidden
  * group only while it has any plan or actual value (R-8), so hiding a group
  * never erases its history and an unused hidden group adds no empty legend.

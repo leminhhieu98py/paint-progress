@@ -108,9 +108,13 @@ export function categoricalColor(index: number): string {
   const base = palette.categorical[index % palette.categorical.length]
   const lap = Math.floor(index / palette.categorical.length)
   const white = CATEGORICAL_TINTS[Math.min(lap, CATEGORICAL_TINTS.length - 1)]
-  if (white === 0) return base
+  return white === 0 ? base : tintColor(base, white)
+}
+
+/** `hex` (`#RRGGBB`) mixed with `white` (0..1) of white, as `#RRGGBB` upper case. */
+export function tintColor(hex: string, white: number): string {
   const channel = (i: number) => {
-    const c = parseInt(base.slice(i, i + 2), 16)
+    const c = parseInt(hex.slice(i, i + 2), 16)
     return Math.round(c + (255 - c) * white).toString(16).padStart(2, '0')
   }
   return `#${channel(1)}${channel(3)}${channel(5)}`.toUpperCase()
