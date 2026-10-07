@@ -13,6 +13,7 @@ import { formatDayMonthYear } from '../../../domain/piping/week'
 import { formatDateTimeVN, MISSING } from '../../../lib/format'
 import { deleteReinstatementEntry, updateReinstatementEntry, type ReinstatementEntry } from '../../../lib/pipingApi'
 import { palette, space } from '../../../theme'
+import { useFieldPhone } from '../../gs/fieldSections'
 import { formatQty } from '../pipingFormat'
 
 /** Newest day first; on one day, the latest entry first. */
@@ -53,6 +54,8 @@ export function EntriesTable({ projectId, entries, totalTestPacks, todayKey, can
 }) {
   const { message } = App.useApp()
   const type = useTypeScale()
+  /** On a phone the day stays in view while the rest scrolls under it (MOB-01). */
+  const pin = useFieldPhone() ? ('left' as const) : undefined
   const rows = useMemo(() => [...entries].sort(newestFirst), [entries])
   const pagination = useTablePagination(rows.length, projectId)
   const [editing, setEditing] = useState<ReinstatementEntry | null>(null)
@@ -91,6 +94,7 @@ export function EntriesTable({ projectId, entries, totalTestPacks, todayKey, can
               title: 'Ngày',
               dataIndex: 'day',
               align: 'center',
+              fixed: pin,
               render: (day: DayKey) => (
                 <>
                   {formatDayMonthYear(day)}

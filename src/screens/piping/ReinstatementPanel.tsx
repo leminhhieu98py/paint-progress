@@ -120,7 +120,7 @@ export function ReinstatementPanel({ projectId, settings, mode, role, todayKey, 
       <SectionCard
         title="Reinstatement"
         facts={[summaryFact(data.entries, total, admin)]}
-        extra={admin && (
+        extra={admin ? (
           <PlanImportFlow<ReinstatementPlanRow>
             planLabel="Reinstatement Plan"
             templateName={templateFileName('reinstatement_plan')}
@@ -131,7 +131,7 @@ export function ReinstatementPanel({ projectId, settings, mode, role, todayKey, 
             commit={({ rows, fileName, summary }) => replaceReinstatementPlan(projectId, rows, fileName, summary)}
             onImported={reload}
           />
-        )}
+        ) : undefined}
       >
         {series.length === 0
           ? <EmptyState title="Chưa có Plan hoặc số lượng Reinstatement" />

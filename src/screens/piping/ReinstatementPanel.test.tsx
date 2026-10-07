@@ -1,11 +1,12 @@
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { CellValue } from '../../domain/piping/imports'
 import type { PipingSettings, ReinstatementPlanRow } from '../../domain/piping/types'
 import type { ReinstatementEntry } from '../../lib/pipingApi'
 import { expectHelperText, expectNoSpecIds, keyFactTexts, ruleTexts } from '../../test/copy'
 import { renderApp } from '../../test/renderApp'
+import { setViewport } from '../../test/viewport'
 import type { PipingPanelProps } from './panelProps'
 import { ReinstatementPanel } from './ReinstatementPanel'
 
@@ -350,6 +351,38 @@ describe('ReinstatementPanel: entries (spec §4, Q8C)', () => {
     await userEvent.click(within(dialog()).getByRole('button', { name: 'Xoá' }))
     await waitFor(() => expect(api.deleteReinstatementEntry).toHaveBeenCalledWith('e1'))
     await waitFor(() => expect(api.listReinstatementEntries).toHaveBeenCalledTimes(2))
+  })
+})
+
+describe('ReinstatementPanel: layout', () => {
+  let restoreViewport = () => {}
+  afterEach(() => restoreViewport())
+  const antTable = () => screen.getByTestId('reinstatement-entries').querySelector('.ant-table') as HTMLElement
+
+  it('scrolls the entries sideways on a phone, headers on one line, the day column pinned (MOB-01)', async () => {
+    restoreViewport = setViewport(390)
+    renderPanel(asGs)
+    await loaded()
+    expect(antTable()).toHaveClass('ant-table-scroll-horizontal')
+    expect(antTable().querySelector('table')?.getAttribute('style')).toContain('width: max-content')
+    const pinned = antTable().querySelectorAll('thead th.ant-table-cell-fix-left')
+    expect(pinned).toHaveLength(1)
+    expect(pinned[0]).toHaveTextContent(/^Ngày$/)
+  })
+
+  it('pins nothing from 768 px', async () => {
+    restoreViewport = setViewport(1280)
+    renderPanel(asGs)
+    await loaded()
+    expect(antTable()).toHaveClass('ant-table-scroll-horizontal')
+    expect(antTable()).not.toHaveClass('ant-table-has-fix-left')
+  })
+
+  it('gives a foreman no empty action slot in the card header', async () => {
+    renderPanel(asGs)
+    await loaded()
+    const header = screen.getByRole('heading', { level: 2, name: 'Reinstatement' }).parentElement as HTMLElement
+    expect(header.lastElementChild).toHaveAttribute('data-testid', 'key-facts')
   })
 })
 
