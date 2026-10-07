@@ -1,4 +1,4 @@
-import { MAX_IMPORT_ROWS } from '../../domain/piping/imports'
+import { MAX_IMPORT_ROWS } from '../../domain/piping/limits'
 import { supabase } from '../supabase'
 
 /**

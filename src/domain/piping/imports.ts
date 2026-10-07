@@ -11,6 +11,7 @@ import type {
   SpoolMaster,
   SpoolPlanDates,
 } from './types'
+import { MAX_IMPORT_BYTES, MAX_IMPORT_ROWS } from './limits'
 import { formatDayMonthYear } from './week'
 
 /**
@@ -53,9 +54,8 @@ export interface ParseResult<T> {
   warnings: ImportIssue[]
 }
 
-/** Spec §8 limits. */
-export const MAX_IMPORT_ROWS = 20_000
-export const MAX_IMPORT_BYTES = 5 * 1024 * 1024
+/** Spec §8 limits, kept in a leaf module (see limits.ts) and re-exported here. */
+export { MAX_IMPORT_BYTES, MAX_IMPORT_ROWS }
 /** How far down each sheet the header row is looked for (a title may sit above it). */
 export const HEADER_SCAN_ROWS = 20
 
