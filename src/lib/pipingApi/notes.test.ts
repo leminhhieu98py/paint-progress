@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { builder } from '../../test/supabaseBuilder'
 import { NO_PERMISSION, NOT_SAVED } from './shared'
-import { addNote, deleteNote, listImportLog, listNotes, updateNote } from './notes'
+import { SPOOL_GONE, addNote, deleteNote, listImportLog, listNotes, updateNote } from './notes'
 
 const from = vi.hoisted(() => vi.fn())
 const rpc = vi.hoisted(() => vi.fn())
@@ -54,6 +54,14 @@ describe('notes', () => {
     await expect(addNote('p1', { target: 'spool', spoolId: '' }, 'x')).rejects.toThrow('Thiếu spool')
     await expect(updateNote('n1', '')).rejects.toThrow(/không được để trống/)
     expect(from).not.toHaveBeenCalled()
+  })
+
+  it('says so when the spool was removed by a re-import meanwhile (23503)', async () => {
+    const fk = { code: '23503', message: 'insert or update on table "piping_notes" violates foreign key constraint "piping_notes_spool_fkey"' }
+    from.mockReturnValue(builder({ error: fk }))
+    await expect(addNote('p1', { target: 'spool', spoolId: 's1' }, 'x')).rejects.toThrow(SPOOL_GONE)
+    from.mockReturnValue(builder({ error: fk }))
+    await expect(addNote('p1', { target: 'manpower_day', day: '2026-09-07' }, 'x')).rejects.toThrow(fk.message)
   })
 
   it('maps a non-admin insert refusal', async () => {

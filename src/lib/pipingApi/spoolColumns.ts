@@ -1,12 +1,12 @@
 import { builtInSpoolHeader } from '../../domain/piping/imports'
 import type { SpoolColumn } from '../../domain/piping/types'
 import { supabase } from '../supabase'
-import { callRpc, readAll, requireRows, requiredText, toError } from './shared'
+import { callRpc, readAll, requiredText, toError } from './shared'
 
 /**
  * The admin's extra text columns on spools (spec §6.1, Q21A). The values live
- * in `piping_spools.extra[label]`, so a rename has to move that key in every
- * spool of the project too -- see renameSpoolColumn.
+ * in `piping_spools.extra[label]`, so a rename or a delete has to move or
+ * strip that key in every spool of the project too (the 0039 functions).
  */
 
 const COLUMN_SELECT = 'id, label, sort'
@@ -51,7 +51,7 @@ export async function addSpoolColumn(projectId: string, label: string, sort: num
     .insert({ project_id: projectId, label: text, sort })
     .select(COLUMN_SELECT)
     .single()
-  if (error) throw toError(error, duplicateLabel(text))
+  if (error) throw toError(error, { unique: duplicateLabel(text) })
   return mapColumn(data as Record<string, unknown>)
 }
 
@@ -65,23 +65,23 @@ export async function reorderSpoolColumns(projectId: string, orderedIds: string[
 }
 
 /**
- * Admin: removes the column. Its values deliberately stay in the spools'
- * `extra` (data is never dropped as a side effect of a configuration change):
- * nothing shows them while no column has that label, a column added again
- * under the same label shows them again, and the next Plan import rewrites
- * `extra` of every spool from the file.
+ * Admin: deletes the column AND strips its key from every spool of the
+ * project, in one transaction (piping_delete_spool_column, 0039), so no value
+ * outlives its column and none can resurface under a column added later with
+ * the same label. Returns the number of spools changed.
  */
-export async function deleteSpoolColumn(id: string): Promise<void> {
-  const { data, error } = await supabase.from('piping_spool_columns').delete().eq('id', id).select('id')
-  if (error) throw toError(error)
-  requireRows(data)
+export async function deleteSpoolColumn(projectId: string, columnId: string): Promise<{ spoolsUpdated: number }> {
+  const n = await callRpc<number>('piping_delete_spool_column', { p_project: projectId, p_column: columnId })
+  return { spoolsUpdated: Number(n ?? 0) }
 }
 
 /**
  * Admin: renames a column AND moves the key of its values in every spool of
- * the project, in one transaction (piping_rename_spool_column, 0039). A value
- * already under the new key (left by a deleted column) is replaced. Returns
- * the number of spools changed; 0 when the trimmed label is unchanged.
+ * the project, in one transaction (piping_rename_spool_column, 0039). The new
+ * label becomes authoritative: any older value under it (any letter case) is
+ * dropped from every spool first, so a spool without the old value ends with
+ * none under the new label. Returns the number of spools changed; 0 when the
+ * trimmed label is unchanged.
  */
 export async function renameSpoolColumn(
   projectId: string,
@@ -92,7 +92,7 @@ export async function renameSpoolColumn(
   const n = await callRpc<number>(
     'piping_rename_spool_column',
     { p_project: projectId, p_column: columnId, p_label: text },
-    duplicateLabel(text),
+    { unique: duplicateLabel(text) },
   )
   return { spoolsUpdated: Number(n ?? 0) }
 }

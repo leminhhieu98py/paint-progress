@@ -90,7 +90,7 @@ describe('groups', () => {
 })
 
 describe('plan', () => {
-  it('lists the plan with numbers, ordered by the primary key', async () => {
+  it('lists the plan with numerics as numbers, ordered by the primary key', async () => {
     const b = builder({ data: [{ group_id: 'g1', day: '2026-09-07', value: '6' }] })
     from.mockReturnValue(b)
     expect(await listManpowerPlan('p1')).toEqual([{ groupId: 'g1', day: '2026-09-07', value: 6 }])

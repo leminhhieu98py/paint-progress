@@ -16,8 +16,8 @@ beforeEach(() => {
 })
 
 describe('listReinstatementPlan', () => {
-  it('maps numeric strings and orders by day', async () => {
-    const b = builder({ data: [{ day: '2026-09-07', plan_qty: '12.5' }, { day: '2026-09-08', plan_qty: '0' }] })
+  it('maps numerics (number or string) and orders by day', async () => {
+    const b = builder({ data: [{ day: '2026-09-07', plan_qty: 12.5 }, { day: '2026-09-08', plan_qty: '0' }] })
     from.mockReturnValue(b)
     expect(await listReinstatementPlan('p1')).toEqual([
       { day: '2026-09-07', planQty: 12.5 },
@@ -97,8 +97,10 @@ describe('addReinstatementEntry', () => {
     expect(rpc).not.toHaveBeenCalled()
   })
 
-  it('refuses a missing day', async () => {
+  it('refuses a missing or impossible day', async () => {
     await expect(addReinstatementEntry('p1', '', 1)).rejects.toThrow('Thiếu ngày')
+    await expect(addReinstatementEntry('p1', '2026-02-30', 1)).rejects.toThrow('Thiếu ngày')
+    expect(rpc).not.toHaveBeenCalled()
   })
 
   it('shows the cap message as the function words it', async () => {

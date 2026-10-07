@@ -1,6 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { builder } from '../../test/supabaseBuilder'
-import { NOT_SAVED } from './shared'
 import { addSpoolColumn, deleteSpoolColumn, listSpoolColumns, renameSpoolColumn, reorderSpoolColumns } from './spoolColumns'
 
 const from = vi.hoisted(() => vi.fn())
@@ -50,15 +49,18 @@ describe('CRUD', () => {
     await expect(reorderSpoolColumns('p1', ['c2'])).rejects.toThrow(stale)
   })
 
-  it('deletes', async () => {
-    const d = builder({ data: [{ id: 'c1' }] })
-    from.mockReturnValueOnce(d)
-    await deleteSpoolColumn('c1')
-    expect(d.delete).toHaveBeenCalled()
-    expect(d.eq).toHaveBeenCalledWith('id', 'c1')
+  it('deletes through piping_delete_spool_column, which also strips the values, and returns the count', async () => {
+    rpc.mockResolvedValue({ data: 7, error: null })
+    expect(await deleteSpoolColumn('p1', 'c1')).toEqual({ spoolsUpdated: 7 })
+    expect(rpc).toHaveBeenCalledWith('piping_delete_spool_column', { p_project: 'p1', p_column: 'c1' })
+    expect(from).not.toHaveBeenCalled()
+  })
 
-    from.mockReturnValueOnce(builder({ data: [] }))
-    await expect(deleteSpoolColumn('c1')).rejects.toThrow(NOT_SAVED)
+  it("keeps the delete function's Vietnamese messages", async () => {
+    rpc.mockResolvedValueOnce({ data: null, error: { code: 'P0001', message: 'Không tìm thấy cột này trong dự án' } })
+    await expect(deleteSpoolColumn('p1', 'c9')).rejects.toThrow('Không tìm thấy cột này trong dự án')
+    rpc.mockResolvedValueOnce({ data: null, error: { code: '42501', message: 'Chỉ admin được xoá cột' } })
+    await expect(deleteSpoolColumn('p1', 'c1')).rejects.toThrow('Chỉ admin được xoá cột')
   })
 })
 

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { builder } from '../../test/supabaseBuilder'
 import {
-  NO_PERMISSION, PIPING_PAGE, callRpc, importResult, nameOf, numberOrNull, readAll, toError,
+  NO_PERMISSION, PIPING_PAGE, callRpc, importResult, isDayKey, nameOf, readAll, toError, toNumber,
 } from './shared'
 
 const from = vi.hoisted(() => vi.fn())
@@ -34,19 +34,36 @@ describe('toError', () => {
       .toBe('Vượt tổng Test Pack (đã có 10 / 12)')
   })
 
-  it('names a unique violation only when the caller gives the words', () => {
-    const error = { code: '23505', message: 'duplicate key value violates unique constraint "x"' }
-    expect(toError(error, 'Đã có').message).toBe('Đã có')
-    expect(toError(error).message).toBe(error.message)
+  it('names a unique or foreign key violation only when the caller gives the words', () => {
+    const unique = { code: '23505', message: 'duplicate key value violates unique constraint "x"' }
+    expect(toError(unique, { unique: 'Đã có' }).message).toBe('Đã có')
+    expect(toError(unique).message).toBe(unique.message)
+    expect(toError(unique, { foreignKey: 'Không còn' }).message).toBe(unique.message)
+    const fk = { code: '23503', message: 'insert or update on table "piping_notes" violates foreign key constraint' }
+    expect(toError(fk, { foreignKey: 'Không còn' }).message).toBe('Không còn')
+    expect(toError(fk, { unique: 'Đã có' }).message).toBe(fk.message)
   })
 })
 
 describe('mappers', () => {
-  it('reads numeric strings, keeps zero and null', () => {
-    expect(numberOrNull('12.50')).toBe(12.5)
-    expect(numberOrNull('0')).toBe(0)
-    expect(numberOrNull(null)).toBeNull()
-    expect(numberOrNull(undefined)).toBeNull()
+  it('reads a numeric sent as a JSON number or as a string, zero included', () => {
+    expect(toNumber(12.5)).toBe(12.5)
+    expect(toNumber('12.50')).toBe(12.5)
+    expect(toNumber('0')).toBe(0)
+  })
+
+  it('accepts real calendar days only', () => {
+    expect(isDayKey('2026-09-07')).toBe(true)
+    expect(isDayKey('2028-02-29')).toBe(true)
+    expect(isDayKey('0050-01-01')).toBe(true)
+    expect(isDayKey('2026-02-29')).toBe(false)
+    expect(isDayKey('2026-02-30')).toBe(false)
+    expect(isDayKey('2026-13-01')).toBe(false)
+    expect(isDayKey('2026-00-10')).toBe(false)
+    expect(isDayKey('0000-01-01')).toBe(false)
+    expect(isDayKey('07/09/2026')).toBe(false)
+    expect(isDayKey('')).toBe(false)
+    expect(isDayKey(null)).toBe(false)
   })
 
   it('reads an embedded profile name, object or array, or null', () => {
@@ -99,6 +116,6 @@ describe('callRpc', () => {
 
   it('names a unique violation when given the words', async () => {
     rpc.mockResolvedValue({ data: null, error: { code: '23505', message: 'duplicate key value' } })
-    await expect(callRpc('f', {}, 'Đã có')).rejects.toThrow('Đã có')
+    await expect(callRpc('f', {}, { unique: 'Đã có' })).rejects.toThrow('Đã có')
   })
 })

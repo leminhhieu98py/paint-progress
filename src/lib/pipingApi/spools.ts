@@ -1,7 +1,7 @@
 import type { ActualChange, ActualResolution } from '../../domain/piping/cam'
 import type { Milestone, Spool, SpoolMaster, SpoolPlanDates } from '../../domain/piping/types'
 import { supabase } from '../supabase'
-import { MAX_ROWS, TOO_MANY_ROWS, callRpc, importResult, readAll, type PipingImportResult } from './shared'
+import { MAX_ROWS, PIPING_PAGE, TOO_MANY_ROWS, callRpc, importResult, toError, type PipingImportResult } from './shared'
 
 /**
  * CAM Insulation spools (spec §6): the read (paged -- a project holds up to
@@ -47,22 +47,51 @@ function mapSpool(r: Record<string, unknown>): Spool {
   }
 }
 
+/** A read that saw a Plan import land between its pages, twice in a row. */
+export const SPOOLS_CHANGED = 'Danh sách spool vừa thay đổi trong lúc tải (có thể vừa nhập kế hoạch). Hãy tải lại trang.'
+
 /**
- * Every spool of the project in file order. Paged past PostgREST's 1000-row
- * answer, ordered by (seq, id): seq repeats nowhere after an import, and id
- * makes the order total regardless.
+ * One paged pass. Every page also asks for the exact row count, so a pass is
+ * known to be whole when every page saw the same count, no id came twice and
+ * the ids number exactly that count. The pages are separate requests: an
+ * import committed between two of them renumbers `seq` and would otherwise
+ * shift spools across a page boundary -- duplicated or missing, silently.
  */
-export async function listSpools(projectId: string): Promise<Spool[]> {
-  const rows = await readAll<Record<string, unknown>>((a, b) =>
-    supabase
+async function spoolPass(projectId: string): Promise<{ rows: Array<Record<string, unknown>>; whole: boolean }> {
+  const rows: Array<Record<string, unknown>> = []
+  const counts = new Set<number | null>()
+  for (let from = 0; ; from += PIPING_PAGE) {
+    const { data, error, count } = await supabase
       .from('piping_spools')
-      .select(SPOOL_SELECT)
+      .select(SPOOL_SELECT, { count: 'exact' })
       .eq('project_id', projectId)
       .order('seq', { ascending: true })
       .order('id', { ascending: true })
-      .range(a, b),
-  )
-  return rows.map(mapSpool)
+      .range(from, from + PIPING_PAGE - 1)
+    if (error) throw toError(error)
+    counts.add(count ?? null)
+    const page = (data ?? []) as unknown as Array<Record<string, unknown>>
+    rows.push(...page)
+    if (page.length < PIPING_PAGE) break
+  }
+  const ids = new Set(rows.map((r) => r.id))
+  const [count] = [...counts]
+  const whole = counts.size === 1 && ids.size === rows.length && (count === null || count === rows.length)
+  return { rows, whole }
+}
+
+/**
+ * Every spool of the project in file order, (seq, id). Paged past
+ * PostgREST's 1000-row answer (a project holds up to 20 000). A pass that
+ * was not whole (see spoolPass) is read once more; a second such pass throws
+ * SPOOLS_CHANGED rather than showing a list with spools missing or doubled.
+ */
+export async function listSpools(projectId: string): Promise<Spool[]> {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const { rows, whole } = await spoolPass(projectId)
+    if (whole) return rows.map(mapSpool)
+  }
+  throw new Error(SPOOLS_CHANGED)
 }
 
 /** One spool row of a Plan file, as `parseSpoolPlan` yields it (its row/seq are not sent: seq = position). */

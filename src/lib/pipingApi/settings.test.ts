@@ -58,6 +58,12 @@ describe('enablePiping', () => {
     })
   })
 
+  it('accepts the largest int total', async () => {
+    rpc.mockResolvedValue({ data: null, error: null })
+    await enablePiping('p1', { ...INPUT, totalTestPacks: 2_147_483_647 })
+    expect(rpc).toHaveBeenCalledTimes(1)
+  })
+
   it('sends an unset total as null', async () => {
     rpc.mockResolvedValue({ data: null, error: null })
     await enablePiping('p1', { ...INPUT, totalTestPacks: null })
@@ -68,6 +74,8 @@ describe('enablePiping', () => {
     [{ ...INPUT, weekStartDate: '' }, /ngày bắt đầu tuần/],
     [{ ...INPUT, totalTestPacks: -1 }, /Tổng Test Pack/],
     [{ ...INPUT, totalTestPacks: 1.5 }, /Tổng Test Pack/],
+    [{ ...INPUT, totalTestPacks: 2_147_483_648 }, /Tổng Test Pack/],
+    [{ ...INPUT, weekStartDate: '2026-02-30' }, /ngày bắt đầu tuần/],
     [{ ...INPUT, lateThresholdDays: 366 }, /Ngưỡng trễ/],
     [{ ...INPUT, lateThresholdDays: Number.NaN }, /Ngưỡng trễ/],
   ])('refuses %o before calling', async (input, message) => {

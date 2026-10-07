@@ -12,6 +12,8 @@ export interface PipingSettingsInput {
   lateThresholdDays: number
 }
 
+const MAX_INT = 2_147_483_647
+
 const SETTINGS_SELECT = 'project_id, enabled, week_start_date, total_test_packs, late_threshold_days'
 
 /**
@@ -44,8 +46,9 @@ export async function getPipingSettings(projectId: string): Promise<PipingSettin
 function checkSettings(input: PipingSettingsInput): void {
   if (!isDayKey(input.weekStartDate)) throw new Error('Cần chọn ngày bắt đầu tuần')
   const total = input.totalTestPacks
-  if (total !== null && !(Number.isInteger(total) && total >= 0)) {
-    throw new Error('Tổng Test Pack phải là số nguyên lớn hơn hoặc bằng 0')
+  // The column is `int`: above 2 147 483 647 it would fail in English (22003).
+  if (total !== null && !(Number.isInteger(total) && total >= 0 && total <= MAX_INT)) {
+    throw new Error('Tổng Test Pack phải là số nguyên từ 0 đến 2 147 483 647')
   }
   const n = input.lateThresholdDays
   if (!(Number.isInteger(n) && n >= 0 && n <= 365)) throw new Error('Ngưỡng trễ phải từ 0 đến 365 ngày')

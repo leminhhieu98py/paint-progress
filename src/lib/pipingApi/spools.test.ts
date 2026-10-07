@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { builder } from '../../test/supabaseBuilder'
 import { PIPING_PAGE, TOO_MANY_ROWS } from './shared'
-import { flattenActualUpdates, listSpools, replaceSpools, setSpoolActuals } from './spools'
+import { SPOOLS_CHANGED, flattenActualUpdates, listSpools, replaceSpools, setSpoolActuals } from './spools'
 
 const from = vi.hoisted(() => vi.fn())
 const rpc = vi.hoisted(() => vi.fn())
@@ -39,16 +39,57 @@ describe('listSpools', () => {
     expect(b.order.mock.calls.map((c) => c[0])).toEqual(['seq', 'id'])
   })
 
-  it('pages through 20 000 spools in 1000-row ranges', async () => {
-    const full = Array.from({ length: PIPING_PAGE }, (_, i) => ({ ...ROW, id: `s${i}` }))
-    const pages = Array.from({ length: 20 }, () => builder({ data: full }))
-    const last = builder({ data: [] })
+  it('pages through 20 000 spools in 1000-row ranges, asking for the exact count', async () => {
+    const pages = Array.from({ length: 20 }, (_, p) =>
+      builder({ data: Array.from({ length: PIPING_PAGE }, (_, i) => ({ ...ROW, id: `s${p * PIPING_PAGE + i}` })), count: 20_000 }))
+    const last = builder({ data: [], count: 20_000 })
     for (const p of pages) from.mockReturnValueOnce(p)
     from.mockReturnValueOnce(last)
     expect(await listSpools('p1')).toHaveLength(20_000)
     expect(from).toHaveBeenCalledTimes(21)
+    expect(pages[0].select).toHaveBeenCalledWith(expect.any(String), { count: 'exact' })
     expect(pages[19].range).toHaveBeenCalledWith(19_000, 19_999)
     expect(last.range).toHaveBeenCalledWith(20_000, 20_999)
+  })
+
+  /** A full first page s0..s999 and a second page; `count` per page. */
+  const twoPages = (second: string[], counts: [number, number]) => [
+    builder({ data: Array.from({ length: PIPING_PAGE }, (_, i) => ({ ...ROW, id: `s${i}` })), count: counts[0] }),
+    builder({ data: second.map((id) => ({ ...ROW, id })), count: counts[1] }),
+  ]
+
+  it('reads again when an import landed between pages (a spool came twice), and returns the clean pass', async () => {
+    const torn = twoPages(['s999', 's1000'], [1001, 1001])
+    const clean = twoPages(['s1000'], [1001, 1001])
+    for (const b of [...torn, ...clean]) from.mockReturnValueOnce(b)
+    const spools = await listSpools('p1')
+    expect(spools).toHaveLength(1001)
+    expect(new Set(spools.map((s) => s.id)).size).toBe(1001)
+    expect(from).toHaveBeenCalledTimes(4)
+  })
+
+  it('reads again when the count changed between pages', async () => {
+    const torn = twoPages(['s1000'], [1001, 1002])
+    const clean = twoPages(['s1000', 's1001'], [1002, 1002])
+    for (const b of [...torn, ...clean]) from.mockReturnValueOnce(b)
+    expect(await listSpools('p1')).toHaveLength(1002)
+  })
+
+  it('reads again when spools went missing without a count change', async () => {
+    const torn = twoPages([], [1001, 1001])
+    const clean = twoPages(['s1000'], [1001, 1001])
+    for (const b of [...torn, ...clean]) from.mockReturnValueOnce(b)
+    expect(await listSpools('p1')).toHaveLength(1001)
+  })
+
+  it('throws in Vietnamese after two torn reads rather than show a wrong list', async () => {
+    for (const b of [...twoPages(['s999'], [1001, 1001]), ...twoPages(['s999'], [1001, 1001])]) from.mockReturnValueOnce(b)
+    await expect(listSpools('p1')).rejects.toThrow(SPOOLS_CHANGED)
+  })
+
+  it('maps a read error', async () => {
+    from.mockReturnValue(builder({ error: { message: 'boom' } }))
+    await expect(listSpools('p1')).rejects.toThrow('boom')
   })
 
   it('reads an empty extra and a null one as {}', async () => {

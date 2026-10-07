@@ -20,6 +20,7 @@ const NOTE_SELECT =
   + ' updater_profile:profiles!piping_notes_updated_by_fkey(full_name)'
 
 const EMPTY_BODY = 'Nội dung ghi chú không được để trống'
+export const SPOOL_GONE = 'Spool này không còn trong dự án (kế hoạch vừa được nhập lại?)'
 
 function mapNote(r: Record<string, unknown>): PipingNoteEntry {
   return {
@@ -72,7 +73,8 @@ export async function addNote(projectId: string, anchor: NoteAnchor, body: strin
     .insert({ project_id: projectId, ...place, body: text })
     .select(NOTE_SELECT)
     .single()
-  if (error) throw toError(error)
+  // A spool deleted by a Plan import while the note dialog was open (Q19A).
+  if (error) throw toError(error, anchor.target === 'spool' ? { foreignKey: SPOOL_GONE } : {})
   return mapNote(data as unknown as Record<string, unknown>)
 }
 

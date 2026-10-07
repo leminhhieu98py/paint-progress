@@ -48,7 +48,7 @@ export async function addManpowerGroup(projectId: string, name: string, sort: nu
     .insert({ project_id: projectId, name: text, sort })
     .select(GROUP_SELECT)
     .single()
-  if (error) throw toError(error, duplicateName(text))
+  if (error) throw toError(error, { unique: duplicateName(text) })
   return mapGroup(data as Record<string, unknown>)
 }
 
@@ -56,7 +56,7 @@ export async function addManpowerGroup(projectId: string, name: string, sort: nu
 export async function renameManpowerGroup(id: string, name: string): Promise<void> {
   const text = requiredText(name, EMPTY_NAME)
   const { data, error } = await supabase.from('piping_manpower_groups').update({ name: text }).eq('id', id).select('id')
-  if (error) throw toError(error, duplicateName(text))
+  if (error) throw toError(error, { unique: duplicateName(text) })
   requireRows(data)
 }
 

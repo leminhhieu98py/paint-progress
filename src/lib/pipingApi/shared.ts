@@ -35,25 +35,30 @@ export const PIPING_PAGE = 1000
 /**
  * A database error as the Error a screen shows.
  *
- * The functions of 0038 raise their rule violations (P0001) and their own
- * refusals (42501) in Vietnamese, meant to be shown as is -- those pass
+ * The functions of 0038/0039 raise their rule violations (P0001) and their
+ * own refusals (42501) in Vietnamese, meant to be shown as is -- those pass
  * through untouched. What Postgres itself says in English is translated: the
  * RLS refusal of a direct write ("new row violates row-level security
  * policy ...") and a revoked grant ("permission denied for table ..."), both
- * 42501; and, when the caller names it, a unique violation (23505).
+ * 42501; and, when the caller names them, a unique violation (23505) and a
+ * foreign key violation (23503).
  */
-export function toError(error: DbError, uniqueMessage?: string): Error {
+export function toError(error: DbError, messages: ErrorMessages = {}): Error {
   if (error.code === '42501' && /row-level security|permission denied/i.test(error.message)) {
     return new Error(NO_PERMISSION)
   }
-  if (error.code === '23505' && uniqueMessage) return new Error(uniqueMessage)
+  if (error.code === '23505' && messages.unique) return new Error(messages.unique)
+  if (error.code === '23503' && messages.foreignKey) return new Error(messages.foreignKey)
   return new Error(error.message)
 }
 
-/** `numeric` arrives from PostgREST as a STRING; null stays null; '0' stays 0. */
-export const numberOrNull = (v: unknown): number | null => (v === null || v === undefined ? null : Number(v))
+/** What a caller says instead of Postgres's English for the two violations it can foresee. */
+export interface ErrorMessages {
+  unique?: string
+  foreignKey?: string
+}
 
-/** A `numeric not null` column. */
+/** A `numeric not null` column: PostgREST sends a JSON number (or a numeric string); both read as a number. */
 export const toNumber = (v: unknown): number => Number(v)
 
 /** The `full_name` of an embedded profile, or null when RLS hides it or the actor is gone. */
@@ -62,9 +67,17 @@ export function nameOf(embed: unknown): string | null {
   return (row as { full_name?: string } | null | undefined)?.full_name ?? null
 }
 
-/** A calendar day as the database takes it. */
+/**
+ * A real calendar day, `YYYY-MM-DD`, as the database takes it: 2026-02-30
+ * would fail the `date` cast in English (22008). setUTCFullYear and not
+ * Date.UTC, which maps years 0..99 to 1900..1999.
+ */
 export function isDayKey(v: unknown): v is string {
-  return typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v)
+  if (typeof v !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(v)) return false
+  const [y, m, d] = v.split('-').map(Number)
+  const t = new Date(0)
+  t.setUTCFullYear(y, m - 1, d)
+  return y >= 1 && t.getUTCFullYear() === y && t.getUTCMonth() === m - 1 && t.getUTCDate() === d
 }
 
 type PageResult = PromiseLike<{ data: unknown[] | null; error: DbError | null }>
@@ -74,6 +87,12 @@ type PageResult = PromiseLike<{ data: unknown[] | null; error: DbError | null }>
  * `progressApi.listCellStates`). `page(from, to)` must order by a total key --
  * the primary key or a unique tiebreak -- or two pages could overlap or skip.
  * A small table costs exactly the one request an unpaged read would.
+ *
+ * The pages are separate requests, not one snapshot: a write committed
+ * between two pages can shift rows across a boundary (as in progressApi).
+ * Accepted for the plans, actuals, groups, columns, notes and log -- each a
+ * single writer's table written rarely while it is read; `listSpools`, where
+ * an import renumbers every row, checks its read itself.
  */
 export async function readAll<T>(page: (from: number, to: number) => PageResult): Promise<T[]> {
   const rows: T[] = []
@@ -88,9 +107,9 @@ export async function readAll<T>(page: (from: number, to: number) => PageResult)
 }
 
 /** One RPC of 0038/0039; its error mapped as above. */
-export async function callRpc<T>(name: string, args: Record<string, unknown>, uniqueMessage?: string): Promise<T> {
+export async function callRpc<T>(name: string, args: Record<string, unknown>, messages?: ErrorMessages): Promise<T> {
   const { data, error } = await supabase.rpc(name, args)
-  if (error) throw toError(error, uniqueMessage)
+  if (error) throw toError(error, messages)
   return data as T
 }
 
