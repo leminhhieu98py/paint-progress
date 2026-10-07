@@ -1,6 +1,7 @@
-import { DownloadOutlined, UploadOutlined } from '@ant-design/icons'
+import { UploadOutlined } from '@ant-design/icons'
 import { Alert, App, Button, Modal, Table, Upload } from 'antd'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
+import { IconAction } from '../../components/IconAction'
 import { KeyFacts } from '../../components/KeyFacts'
 import { modalProps } from '../../components/modalChrome'
 import { StatusPill, type StatusTone } from '../../components/StatusPill'
@@ -14,7 +15,7 @@ import { palette, space } from '../../theme'
 
 /**
  * The admin's Plan import (spec §8), one flow for every hạng mục: "Tải file
- * mẫu" downloads the header-only template; "Import Plan" reads the picked
+ * mẫu" (an icon action, ACT-01) downloads the header-only template; "Import Plan" reads the picked
  * workbook, parses it, and then either lists the row errors (nothing written,
  * no half import) or previews what the replace changes -- added, changed,
  * removed, old -> new, with counts -- and replaces the plan only when the
@@ -74,6 +75,8 @@ const CHANGE: Record<PlanDiffLine['change'], { label: string; tone: StatusTone }
 
 const COUNT = new Intl.NumberFormat('vi-VN')
 
+const NO_DATA_ROWS = 'File không có dòng dữ liệu nào'
+
 type Step<R> =
   | { kind: 'errors'; fileName: string; errors: ImportIssue[] }
   | { kind: 'preview'; fileName: string; parsed: ParseResult<R>; preview: PlanImportPreview }
@@ -88,6 +91,11 @@ export function PlanImportFlow<R>({
   const [step, setStep] = useState<Step<R> | null>(null)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
+  /**
+   * Set synchronously, unlike `saving`: a fast double click on Thay thế Plan
+   * must not replace twice (and log a second, empty import).
+   */
+  const committing = useRef(false)
 
   const downloadTemplate = async () => {
     setDownloading(true)
@@ -105,8 +113,13 @@ export function PlanImportFlow<R>({
     try {
       const parsed = parse(await readWorkbookRows(file))
       setSaveError(null)
-      setStep(parsed.errors.length > 0
-        ? { kind: 'errors', fileName: file.name, errors: parsed.errors }
+      // A file with a header and no data (the template sent back untouched)
+      // would replace the plan with nothing: refused like any other error.
+      const errors = parsed.errors.length > 0 || parsed.rows.length > 0
+        ? parsed.errors
+        : [{ row: null, message: NO_DATA_ROWS }]
+      setStep(errors.length > 0
+        ? { kind: 'errors', fileName: file.name, errors }
         : { kind: 'preview', fileName: file.name, parsed, preview: preview(parsed.rows) })
     } catch (e) {
       // A file that cannot be opened at all (too big, not .xlsx): one file-level error.
@@ -117,7 +130,8 @@ export function PlanImportFlow<R>({
   }
 
   const confirm = async () => {
-    if (step?.kind !== 'preview') return
+    if (step?.kind !== 'preview' || committing.current) return
+    committing.current = true
     setSaving(true)
     setSaveError(null)
     try {
@@ -132,6 +146,7 @@ export function PlanImportFlow<R>({
     } catch (e) {
       setSaveError((e as Error).message)
     } finally {
+      committing.current = false
       setSaving(false)
     }
   }
@@ -142,11 +157,11 @@ export function PlanImportFlow<R>({
 
   return (
     <>
-      <Button icon={<DownloadOutlined aria-hidden />} loading={downloading} onClick={() => void downloadTemplate()}>
-        Tải file mẫu
-      </Button>
+      <IconAction verb="template" label="Tải file mẫu" loading={downloading} onClick={() => void downloadTemplate()} />
       <Upload
         accept=".xlsx"
+        // While a file is read, no second pick can race it.
+        disabled={reading}
         showUploadList={false}
         maxCount={1}
         beforeUpload={(file) => {

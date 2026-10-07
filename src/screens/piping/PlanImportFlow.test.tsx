@@ -1,14 +1,55 @@
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ParseResult } from '../../domain/piping/imports'
 import { renderApp } from '../../test/renderApp'
-import { PlanImportFlow } from './PlanImportFlow'
+import { PlanImportFlow, type PlanImportFlowProps } from './PlanImportFlow'
 
+const read = vi.hoisted(() => vi.fn())
 vi.mock('../../lib/piping/xlsx', () => ({
-  readWorkbookRows: async () => [{ name: 'Plan', rows: [] }],
+  readWorkbookRows: (file: unknown) => read(file),
 }))
-vi.mock('../../lib/projectReport', () => ({ downloadWorkbook: vi.fn() }))
+const download = vi.hoisted(() => vi.fn())
+vi.mock('../../lib/projectReport', () => ({ downloadWorkbook: (...a: unknown[]) => download(...a) }))
+
+type Row = { id: string }
+
+const parsedOf = (rows: Row[]): ParseResult<Row> => ({
+  sheetName: 'Plan', rows, rowCount: rows.length, errors: [], warnings: [],
+})
+
+const PREVIEW = {
+  added: 1, changed: 0, removed: 0, unchanged: 0,
+  lines: [{ key: 'a', change: 'added' as const, label: '01/10/2026', from: null, to: '5' }],
+}
+
+function renderFlow(over: Partial<PlanImportFlowProps<Row>> = {}) {
+  const props: PlanImportFlowProps<Row> = {
+    planLabel: 'Manpower Plan',
+    templateName: 'Mau.xlsx',
+    buildTemplate: async () => new Blob(['t']),
+    parse: () => parsedOf([{ id: 'a' }]),
+    preview: () => PREVIEW,
+    lineHeader: 'Ngày',
+    commit: vi.fn().mockResolvedValue(undefined),
+    onImported: vi.fn(),
+    ...over,
+  }
+  renderApp(<PlanImportFlow<Row> {...props} />)
+  return props
+}
+
+const fileInput = () => document.querySelector('input[type="file"]') as HTMLInputElement
+const pick = (name = 'plan.xlsx') => userEvent.upload(
+  fileInput(),
+  new File(['x'], name, { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
+)
+
+beforeEach(() => {
+  read.mockReset()
+  read.mockResolvedValue([{ name: 'Plan', rows: [] }])
+  download.mockReset()
+})
 
 /**
  * The shared flow's own surface, beyond what the Reinstatement panel's suite
@@ -43,10 +84,7 @@ describe('PlanImportFlow', () => {
         onImported={onImported}
       />,
     )
-    await userEvent.upload(
-      document.querySelector('input[type="file"]') as HTMLInputElement,
-      new File(['x'], 'insu.xlsx', { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
-    )
+    await pick('insu.xlsx')
     const dialog = await screen.findByRole('dialog')
     expect(within(dialog).getByText('2 cảnh báo')).toBeInTheDocument()
     expect(within(dialog).getByText('Dòng 4: SpoolNo trùng')).toBeInTheDocument()
@@ -62,5 +100,53 @@ describe('PlanImportFlow', () => {
       rows: [{ id: 'a' }], fileName: 'insu.xlsx', summary: { sheet: 'Plan', warnings: 2 },
     }))
     expect(onImported).toHaveBeenCalled()
+  })
+
+  it('refuses a file with no data rows as an error and writes nothing', async () => {
+    const props = renderFlow({ parse: () => parsedOf([]) })
+    await pick()
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText('Không import được plan.xlsx')).toBeInTheDocument()
+    expect(within(dialog).getByText('File không có dòng dữ liệu nào')).toBeInTheDocument()
+    expect(within(dialog).queryByRole('button', { name: 'Thay thế Plan' })).toBeNull()
+    expect(props.commit).not.toHaveBeenCalled()
+  })
+
+  it('replaces once however often Thay thế Plan is hit while the replace runs', async () => {
+    let finish: () => void = () => {}
+    const commit = vi.fn(() => new Promise<void>((resolve) => { finish = resolve }))
+    const props = renderFlow({ commit })
+    await pick()
+    const dialog = await screen.findByRole('dialog')
+    // Two native clicks in one task, outside act: the second lands before the
+    // button's loading state has blocked clicks (antd syncs it in an effect).
+    const confirm = within(dialog).getByRole('button', { name: /Thay thế Plan/ })
+    confirm.click()
+    confirm.click()
+    expect(commit).toHaveBeenCalledTimes(1)
+    finish()
+    await waitFor(() => expect(props.onImported).toHaveBeenCalledTimes(1))
+    expect(commit).toHaveBeenCalledTimes(1)
+  })
+
+  it('takes no second file while the first is being read', async () => {
+    let finish: (sheets: unknown) => void = () => {}
+    read.mockImplementation(() => new Promise((resolve) => { finish = resolve }))
+    renderFlow()
+    await pick()
+    await waitFor(() => expect(fileInput()).toBeDisabled())
+    finish([{ name: 'Plan', rows: [] }])
+    await screen.findByRole('dialog')
+    expect(fileInput()).not.toBeDisabled()
+  })
+
+  it('offers the template as an icon action named Tải file mẫu, and Import Plan as text', async () => {
+    renderFlow()
+    const template = screen.getByRole('button', { name: 'Tải file mẫu' })
+    expect(template).toHaveClass('ant-btn-icon-only')
+    expect(template).toHaveTextContent('')
+    await userEvent.click(template)
+    await waitFor(() => expect(download).toHaveBeenCalledWith(expect.any(Blob), 'Mau.xlsx'))
+    expect(screen.getByRole('button', { name: /Import Plan/ })).toHaveTextContent('Import Plan')
   })
 })
