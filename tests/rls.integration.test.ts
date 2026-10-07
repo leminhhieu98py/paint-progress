@@ -35,6 +35,10 @@ const EF_PROJECT_CODE = 'RLSE'
 const SCOPE_PROJECT_CODE = 'RLSW'
 // The effort suite (0030) builds its own project with one work and two stages.
 const EFFORT_PROJECT_CODE = 'RLSH'
+// The piping suite (0038) builds two projects: one its GS is a member of, and
+// one the GS is not, so every cross-project refusal has a real target.
+const PIPING_PROJECT_CODE = 'RLSP'
+const PIPING_OTHER_PROJECT_CODE = 'RLSQ'
 
 // Accounts the Edge Function's `create` action makes. Every one of them is a
 // real auth user, so the prefix is what `tests/rls-teardown.sql` matches on.
@@ -2204,5 +2208,508 @@ describe.skipIf(!adminConfigured)('0030: effort on bay updates', () => {
 
     const still = await admin.from('stage_plans').select('end_date').eq('stage_id', stage1).single()
     expect(still.data?.end_date).toBe('2026-09-12')
+  })
+})
+
+/**
+ * 0038 (Piping, spec 2026-10-07-piping §1, §2, §4-§9).
+ *
+ * Two scratch projects, RLSP and RLSQ, both with Piping enabled; one
+ * throwaway GS assigned to RLSP only, and one throwaway viewer assigned to
+ * nothing (0034: it reads every project). Every write a GS makes goes through
+ * the three field functions; the cases below prove there is no other way in,
+ * that the field rules hold inside them, and that notes and the import log
+ * stay the admin's alone.
+ *
+ * The cases build on each other in file order (the cap case relies on the
+ * total being unset until it sets it; the re-import case relies on the
+ * actuals the spool case wrote), as the 0030 suite above does.
+ */
+describe.skipIf(!adminConfigured)('0038: piping', () => {
+  let admin: SupabaseClient
+  let gs: SupabaseClient
+  let viewer: SupabaseClient
+  let adminId: string
+  let gsUserId: string
+  let projectId: string
+  let otherProjectId: string
+  let otherSpoolId: string
+  const groupId: Record<string, string> = {}
+
+  /** Today's calendar date in Vietnam, YYYY-MM-DD -- the day 0038 calls "today". */
+  const vnToday = () =>
+    new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: '2-digit', day: '2-digit',
+    }).format(new Date())
+  const addDays = (day: string, n: number) => {
+    const d = new Date(`${day}T00:00:00Z`)
+    d.setUTCDate(d.getUTCDate() + n)
+    return d.toISOString().slice(0, 10)
+  }
+
+  type SpoolResult = { spool_id: string; spool_no: string | null; status: string }
+  const statuses = (data: unknown) => (data as SpoolResult[]).map((r) => r.status)
+
+  const spoolIdsBySeq = async () => {
+    const { data, error } = await admin
+      .from('piping_spools').select('id, seq').eq('project_id', projectId).order('seq')
+    expect(error).toBeNull()
+    return (data as { id: string; seq: number }[]).map((r) => r.id)
+  }
+
+  beforeAll(async () => {
+    admin = createClient(url!, anon!, { auth: { persistSession: false } })
+    const adminSignIn = await admin.auth.signInWithPassword({
+      email: toAuthEmail(adminUsername!),
+      password: adminPassword!,
+    })
+    expect(adminSignIn.error).toBeNull()
+    adminId = adminSignIn.data.user!.id
+
+    expect((await admin.from('projects').delete().in('code', [PIPING_PROJECT_CODE, PIPING_OTHER_PROJECT_CODE])).error).toBeNull()
+    const made = await admin
+      .from('projects')
+      .insert([
+        { name: 'RLS Piping', code: PIPING_PROJECT_CODE },
+        { name: 'RLS Piping Other', code: PIPING_OTHER_PROJECT_CODE },
+      ])
+      .select('id, code')
+    expect(made.error).toBeNull()
+    const byCode = (code: string) => (made.data as { id: string; code: string }[]).find((p) => p.code === code)!.id
+    projectId = byCode(PIPING_PROJECT_CODE)
+    otherProjectId = byCode(PIPING_OTHER_PROJECT_CODE)
+
+    // RLSP starts with no total Test Pack on purpose (R-4 case below).
+    expect((await admin.rpc('piping_enable', {
+      p_project: projectId, p_week_start: '2026-09-07', p_total_test_packs: null, p_late_threshold_days: 7,
+    })).error).toBeNull()
+    expect((await admin.rpc('piping_enable', {
+      p_project: otherProjectId, p_week_start: '2026-09-07', p_total_test_packs: 100, p_late_threshold_days: 7,
+    })).error).toBeNull()
+
+    const groups = await admin.from('piping_manpower_groups').select('id, name').eq('project_id', projectId)
+    expect(groups.error).toBeNull()
+    for (const g of groups.data as { id: string; name: string }[]) groupId[g.name] = g.id
+
+    // Something on the other project for the GS to fail to read.
+    expect((await admin.rpc('piping_add_reinstatement', {
+      p_project: otherProjectId, p_day: '2026-09-01', p_qty: 5,
+    })).error).toBeNull()
+    expect((await admin.rpc('piping_replace_spools', {
+      p_project: otherProjectId, p_rows: [{ spool_no: 'Q-1' }], p_file_name: 'other.xlsx',
+    })).error).toBeNull()
+    const otherSpool = await admin.from('piping_spools').select('id').eq('project_id', otherProjectId).single()
+    expect(otherSpool.error).toBeNull()
+    otherSpoolId = otherSpool.data!.id as string
+
+    const gsUsername = throwawayUsername('piping')
+    const gsPassword = throwawayPassword()
+    const created = await invokeAdminUsers(admin, {
+      action: 'create', username: gsUsername, fullName: throwawayName('RLS Piping GS'),
+      password: gsPassword, projectId,
+    })
+    expect(created.status).toBe(200)
+    gsUserId = created.body.userId as string
+    gs = createClient(url!, anon!, { auth: { persistSession: false } })
+    expect((await gs.auth.signInWithPassword({ email: toAuthEmail(gsUsername), password: gsPassword })).error).toBeNull()
+
+    const viewerUsername = throwawayUsername('pipingview')
+    const viewerPassword = throwawayPassword()
+    const createdViewer = await invokeAdminUsers(admin, {
+      action: 'create', username: viewerUsername, fullName: throwawayName('RLS Piping Viewer'),
+      password: viewerPassword, projectId, role: 'viewer',
+    })
+    expect(createdViewer.status).toBe(200)
+    const viewerUserId = createdViewer.body.userId as string
+    expect((await admin.from('project_members').delete().eq('user_id', viewerUserId)).error).toBeNull()
+    viewer = createClient(url!, anon!, { auth: { persistSession: false } })
+    expect((await viewer.auth.signInWithPassword({
+      email: toAuthEmail(viewerUsername), password: viewerPassword,
+    })).error).toBeNull()
+  })
+
+  afterAll(async () => {
+    if (!admin) return
+    // Every piping row hangs off the project and cascades with it.
+    expect((await admin.from('projects').delete().in('code', [PIPING_PROJECT_CODE, PIPING_OTHER_PROJECT_CODE])).error).toBeNull()
+  })
+
+  it('enabling writes the settings row and the three default groups, once', async () => {
+    const settings = await admin
+      .from('piping_settings')
+      .select('enabled, week_start_date, total_test_packs, late_threshold_days, created_by')
+      .eq('project_id', projectId)
+      .single()
+    expect(settings.error).toBeNull()
+    expect(settings.data).toEqual({
+      enabled: true, week_start_date: '2026-09-07', total_test_packs: null, late_threshold_days: 7, created_by: adminId,
+    })
+
+    // Re-enabling never re-adds groups.
+    expect((await admin.rpc('piping_enable', {
+      p_project: projectId, p_week_start: '2026-09-07', p_total_test_packs: null, p_late_threshold_days: null,
+    })).error).toBeNull()
+    const groups = await admin
+      .from('piping_manpower_groups').select('name, sort, hidden').eq('project_id', projectId).order('sort')
+    expect(groups.error).toBeNull()
+    expect(groups.data).toEqual([
+      { name: 'Reinstatement', sort: 1, hidden: false },
+      { name: 'Insulation', sort: 2, hidden: false },
+      { name: 'Marking', sort: 3, hidden: false },
+    ])
+  })
+
+  it('a GS reads its own project\'s piping data and none of a project it is not assigned to', async () => {
+    const own = await gs.from('piping_settings').select('project_id').eq('project_id', projectId)
+    expect(own.error).toBeNull()
+    expect(own.data).toHaveLength(1)
+    const ownGroups = await gs.from('piping_manpower_groups').select('id').eq('project_id', projectId)
+    expect(ownGroups.data).toHaveLength(3)
+
+    for (const table of ['piping_settings', 'piping_manpower_groups', 'piping_reinstatement_actual', 'piping_spools']) {
+      const other = await gs.from(table).select('project_id').eq('project_id', otherProjectId)
+      expect(other.error).toBeNull()
+      expect(other.data ?? []).toEqual([])
+    }
+  })
+
+  it('notes and the import log are the admin\'s alone, even on the GS\'s own project', async () => {
+    const note = await admin
+      .from('piping_notes')
+      .insert({ project_id: projectId, target: 'reinstatement_day', day: '2026-09-10', body: 'Ghi chú admin' })
+      .select('id, author')
+      .single()
+    expect(note.error).toBeNull()
+    expect(note.data?.author).toBe(adminId)
+
+    const adminLog = await admin.from('piping_import_log').select('kind').eq('project_id', otherProjectId)
+    expect(adminLog.error).toBeNull()
+    expect(adminLog.data).toEqual([{ kind: 'spool_plan' }])
+
+    for (const client of [gs, viewer]) {
+      const notes = await client.from('piping_notes').select('id').eq('project_id', projectId)
+      expect(notes.error).toBeNull()
+      expect(notes.data ?? []).toEqual([])
+      const log = await client.from('piping_import_log').select('id')
+      expect(log.error).toBeNull()
+      expect(log.data ?? []).toEqual([])
+    }
+
+    const forged = await gs
+      .from('piping_notes')
+      .insert({ project_id: projectId, target: 'reinstatement_day', day: '2026-09-10', body: 'GS' })
+    expect(forged.error).not.toBeNull()
+  })
+
+  it('a GS writes no piping table directly', async () => {
+    const inserts: [string, Record<string, unknown>][] = [
+      ['piping_reinstatement_actual', { project_id: projectId, day: '2026-09-10', qty: 1 }],
+      ['piping_reinstatement_plan', { project_id: projectId, day: '2026-09-10', plan_qty: 1 }],
+      ['piping_manpower_actual', { project_id: projectId, group_id: groupId.Reinstatement, day: '2026-09-10', value: 1 }],
+      ['piping_manpower_plan', { project_id: projectId, group_id: groupId.Reinstatement, day: '2026-09-10', value: 1 }],
+      ['piping_manpower_groups', { project_id: projectId, name: 'GS group' }],
+      ['piping_spools', { project_id: projectId, seq: 1, spool_no: 'GS-1' }],
+      ['piping_spool_columns', { project_id: projectId, label: 'GS col' }],
+      ['piping_import_log', { project_id: projectId, kind: 'spool_plan', row_count: 0 }],
+    ]
+    for (const [table, row] of inserts) {
+      const { error } = await gs.from(table).insert(row)
+      expect(error, table).not.toBeNull()
+    }
+
+    // No member write policy: RLS hides the rows from UPDATE/DELETE.
+    const update = await gs.from('piping_settings').update({ total_test_packs: 999 }).eq('project_id', projectId).select('project_id')
+    expect(update.error).toBeNull()
+    expect(update.data ?? []).toEqual([])
+    const hide = await gs.from('piping_manpower_groups').update({ hidden: true }).eq('project_id', projectId).select('id')
+    expect(hide.error).toBeNull()
+    expect(hide.data ?? []).toEqual([])
+    const drop = await gs.from('piping_settings').delete().eq('project_id', projectId).select('project_id')
+    expect(drop.error).toBeNull()
+    expect(drop.data ?? []).toEqual([])
+
+    const still = await admin.from('piping_settings').select('total_test_packs').eq('project_id', projectId).single()
+    expect(still.data?.total_test_packs).toBeNull()
+  })
+
+  it('a GS cannot add Reinstatement before the admin enters the total Test Pack (R-4)', async () => {
+    const { error } = await gs.rpc('piping_add_reinstatement', { p_project: projectId, p_day: '2026-09-10', p_qty: 1 })
+    expect(error?.message).toBe('Admin chưa nhập tổng Test Pack')
+  })
+
+  it('Reinstatement: day <= today, qty > 0, and the cap holds for the GS and for admin edits (Q9A, Q10A)', async () => {
+    expect((await admin.from('piping_settings').update({ total_test_packs: 10 }).eq('project_id', projectId)).error).toBeNull()
+
+    const future = await gs.rpc('piping_add_reinstatement', { p_project: projectId, p_day: addDays(vnToday(), 1), p_qty: 1 })
+    expect(future.error?.message).toContain('Không nhập được ngày trong tương lai')
+    const zero = await gs.rpc('piping_add_reinstatement', { p_project: projectId, p_day: '2026-09-10', p_qty: 0 })
+    expect(zero.error?.message).toBe('Số lượng phải lớn hơn 0')
+
+    const six = await gs.rpc('piping_add_reinstatement', { p_project: projectId, p_day: '2026-09-10', p_qty: 6 })
+    expect(six.error).toBeNull()
+    const sixId = six.data as string
+    const over = await gs.rpc('piping_add_reinstatement', { p_project: projectId, p_day: '2026-09-11', p_qty: 5 })
+    expect(over.error?.message).toBe('Vượt tổng Test Pack (đã có 6 / 10)')
+    const today = await gs.rpc('piping_add_reinstatement', { p_project: projectId, p_day: vnToday(), p_qty: 4 })
+    expect(today.error).toBeNull()
+
+    const row = await admin.from('piping_reinstatement_actual').select('created_by, edited_by').eq('id', sixId).single()
+    expect(row.data).toEqual({ created_by: gsUserId, edited_by: null })
+
+    // The cap applies to the admin's edits too (§4); lowering is always allowed.
+    const raise = await admin.from('piping_reinstatement_actual').update({ qty: 7 }).eq('id', sixId)
+    expect(raise.error?.message).toBe('Vượt tổng Test Pack (đã có 4 / 10)')
+    const lower = await admin.from('piping_reinstatement_actual').update({ qty: 5 }).eq('id', sixId).select('qty, edited_by, created_by').single()
+    expect(lower.error).toBeNull()
+    expect(Number(lower.data?.qty)).toBe(5)
+    expect(lower.data?.edited_by).toBe(adminId)
+    expect(lower.data?.created_by).toBe(gsUserId)
+
+    // A project the GS is not assigned to: refused before any rule is read.
+    const foreign = await gs.rpc('piping_add_reinstatement', { p_project: otherProjectId, p_day: '2026-09-10', p_qty: 1 })
+    expect(foreign.error?.code).toBe('42501')
+  })
+
+  it('Manpower: a GS fills empty cells only, never a hidden group; the admin overwrites and clears (R-7, R-8)', async () => {
+    const fill = await gs.rpc('piping_set_manpower_actual', {
+      p_project: projectId, p_day: '2026-09-10',
+      p_values: [{ group_id: groupId.Reinstatement, value: 5 }, { group_id: groupId.Insulation, value: null }],
+    })
+    expect(fill.error).toBeNull()
+    expect(fill.data).toBe(1)
+
+    const same = await gs.rpc('piping_set_manpower_actual', {
+      p_project: projectId, p_day: '2026-09-10', p_values: [{ group_id: groupId.Reinstatement, value: 5 }],
+    })
+    expect(same.error).toBeNull()
+    expect(same.data).toBe(0)
+
+    const change = await gs.rpc('piping_set_manpower_actual', {
+      p_project: projectId, p_day: '2026-09-10', p_values: [{ group_id: groupId.Reinstatement, value: 6 }],
+    })
+    expect(change.error?.message).toBe('Nhóm "Reinstatement" ngày 10/09/2026 đã có giá trị (5); chỉ admin được sửa')
+
+    const future = await gs.rpc('piping_set_manpower_actual', {
+      p_project: projectId, p_day: addDays(vnToday(), 1), p_values: [{ group_id: groupId.Insulation, value: 1 }],
+    })
+    expect(future.error?.message).toContain('Không nhập được ngày trong tương lai')
+
+    expect((await admin.from('piping_manpower_groups').update({ hidden: true }).eq('id', groupId.Marking)).error).toBeNull()
+    const hidden = await gs.rpc('piping_set_manpower_actual', {
+      p_project: projectId, p_day: '2026-09-10', p_values: [{ group_id: groupId.Marking, value: 1 }],
+    })
+    expect(hidden.error?.message).toBe('Nhóm "Marking" đã ẩn, không nhập được')
+
+    const foreign = await gs.rpc('piping_set_manpower_actual', { p_project: otherProjectId, p_day: '2026-09-10', p_values: [] })
+    expect(foreign.error?.code).toBe('42501')
+
+    const overwrite = await admin.rpc('piping_set_manpower_actual', {
+      p_project: projectId, p_day: '2026-09-10', p_values: [{ group_id: groupId.Reinstatement, value: 6 }],
+    })
+    expect(overwrite.error).toBeNull()
+    const row = await admin
+      .from('piping_manpower_actual').select('value, created_by, edited_by')
+      .eq('group_id', groupId.Reinstatement).eq('day', '2026-09-10').single()
+    expect(Number(row.data?.value)).toBe(6)
+    expect(row.data?.created_by).toBe(gsUserId)
+    expect(row.data?.edited_by).toBe(adminId)
+
+    const clear = await admin.rpc('piping_set_manpower_actual', {
+      p_project: projectId, p_day: '2026-09-10', p_values: [{ group_id: groupId.Reinstatement, value: null }],
+    })
+    expect(clear.error).toBeNull()
+    expect(clear.data).toBe(1)
+  })
+
+  it('Insulation actuals: order, future day, overwrite confirmation and admin-only clear (Q18A, R-12)', async () => {
+    const plan = await admin.rpc('piping_replace_spools', {
+      p_project: projectId, p_file_name: 'insulation.xlsx',
+      p_rows: [
+        { spool_no: 'SP-1', line_no: 'L1', test_package_no: 'TP1', ph_plan: '2026-09-01', ih_plan: '2026-09-05', iw_plan: '2026-09-10' },
+        { spool_no: 'SP-1', line_no: 'L1' },
+        { spool_no: 'SP-2', line_no: 'L2', extra: { Zone: 'A' } },
+      ],
+    })
+    expect(plan.error).toBeNull()
+    expect(plan.data).toMatchObject({ rows: 3, added: 3, matched: 0, removed: 0 })
+    const [s0, s1] = await spoolIdsBySeq()
+
+    const ph = await gs.rpc('piping_set_spool_actuals', {
+      p_project: projectId, p_changes: [{ spool_id: s0, milestone: 'ph', date: '2026-09-02' }], p_overwrite: false,
+    })
+    expect(ph.error).toBeNull()
+    expect(statuses(ph.data)).toEqual(['saved'])
+    const stamped = await admin.from('piping_spools').select('ph_actual, ph_actual_by').eq('id', s0).single()
+    expect(stamped.data).toEqual({ ph_actual: '2026-09-02', ph_actual_by: gsUserId })
+
+    const order = await gs.rpc('piping_set_spool_actuals', {
+      p_project: projectId, p_changes: [{ spool_id: s0, milestone: 'ih', date: '2026-09-01' }],
+    })
+    expect(statuses(order.data)).toEqual(['order'])
+
+    const future = await gs.rpc('piping_set_spool_actuals', {
+      p_project: projectId, p_changes: [{ spool_id: s0, milestone: 'iw', date: addDays(vnToday(), 1) }],
+    })
+    expect(future.error?.message).toContain('Không nhập được ngày trong tương lai')
+
+    const unconfirmed = await gs.rpc('piping_set_spool_actuals', {
+      p_project: projectId, p_changes: [{ spool_id: s0, milestone: 'ph', date: '2026-09-03' }], p_overwrite: false,
+    })
+    expect(statuses(unconfirmed.data)).toEqual(['overwrite_needed'])
+    const confirmed = await gs.rpc('piping_set_spool_actuals', {
+      p_project: projectId, p_changes: [{ spool_id: s0, milestone: 'ph', date: '2026-09-03' }], p_overwrite: true,
+    })
+    expect(statuses(confirmed.data)).toEqual(['saved'])
+
+    // A spool of another project is "not found" from here, never written.
+    const bulk = await gs.rpc('piping_set_spool_actuals', {
+      p_project: projectId,
+      p_changes: [
+        { spool_id: s0, milestone: 'ih', date: '2026-09-04' },
+        { spool_id: s1, milestone: 'ih', date: '2026-09-04' },
+        { spool_id: otherSpoolId, milestone: 'ih', date: '2026-09-04' },
+      ],
+    })
+    expect(bulk.error).toBeNull()
+    const byId = new Map((bulk.data as SpoolResult[]).map((r) => [r.spool_id, r.status]))
+    expect(byId.get(s0)).toBe('saved')
+    expect(byId.get(s1)).toBe('saved')
+    expect(byId.get(otherSpoolId)).toBe('not_found')
+    const untouched = await admin.from('piping_spools').select('ih_actual').eq('id', otherSpoolId).single()
+    expect(untouched.data?.ih_actual).toBeNull()
+
+    const gsClear = await gs.rpc('piping_set_spool_actuals', {
+      p_project: projectId, p_changes: [{ spool_id: s0, milestone: 'ph', date: null }],
+    })
+    expect(gsClear.error?.code).toBe('42501')
+
+    // Import mode is all or nothing: one order violation, nothing written.
+    const badImport = await gs.rpc('piping_set_spool_actuals', {
+      p_project: projectId, p_import_file: 'actual.xlsx',
+      p_changes: [
+        { spool_id: s1, milestone: 'iw', date: '2026-09-05' },
+        { spool_id: s0, milestone: 'iw', date: '2026-09-01' },
+      ],
+    })
+    expect(badImport.error?.message).toContain('Không có dữ liệu nào được ghi')
+    const notWritten = await admin.from('piping_spools').select('iw_actual').eq('id', s1).single()
+    expect(notWritten.data?.iw_actual).toBeNull()
+    const goodImport = await gs.rpc('piping_set_spool_actuals', {
+      p_project: projectId, p_import_file: 'actual.xlsx', p_changes: [{ spool_id: s1, milestone: 'iw', date: '2026-09-05' }],
+    })
+    expect(goodImport.error).toBeNull()
+    const actualLog = await admin
+      .from('piping_import_log').select('kind, file_name, imported_by').eq('project_id', projectId).eq('kind', 'spool_actual')
+    expect(actualLog.data).toEqual([{ kind: 'spool_actual', file_name: 'actual.xlsx', imported_by: gsUserId }])
+
+    const adminClear = await admin.rpc('piping_set_spool_actuals', {
+      p_project: projectId, p_changes: [{ spool_id: s0, milestone: 'ih', date: null }],
+    })
+    expect(statuses(adminClear.data)).toEqual(['saved'])
+
+    // The order rule is the table's, so a direct admin write is held to it too.
+    const direct = await admin.from('piping_spools').update({ ih_actual: '2026-08-01' }).eq('id', s0)
+    expect(direct.error?.code).toBe('23514')
+  })
+
+  it('plan imports are admin-only, atomic, logged, and a re-import keeps matched spools\' actuals (§8, Q19A, R-10)', async () => {
+    for (const client of [gs, viewer]) {
+      const { error } = await client.rpc('piping_replace_reinstatement_plan', {
+        p_project: projectId, p_rows: [], p_file_name: 'x.xlsx',
+      })
+      expect(error?.code).toBe('42501')
+    }
+
+    const first = await admin.rpc('piping_replace_reinstatement_plan', {
+      p_project: projectId, p_file_name: 'r1.xlsx',
+      p_rows: [{ day: '2026-09-07', plan_qty: 3 }, { day: '2026-09-08', plan_qty: 4 }],
+    })
+    expect(first.error).toBeNull()
+    expect(first.data).toMatchObject({ rows: 2, added: 2, changed: 0, removed: 0 })
+    const second = await admin.rpc('piping_replace_reinstatement_plan', {
+      p_project: projectId, p_file_name: 'r2.xlsx', p_summary: { source: 'test' },
+      p_rows: [{ day: '2026-09-07', plan_qty: 5 }, { day: '2026-09-09', plan_qty: 1 }],
+    })
+    expect(second.data).toMatchObject({ source: 'test', rows: 2, added: 1, changed: 1, removed: 1 })
+    const duplicate = await admin.rpc('piping_replace_reinstatement_plan', {
+      p_project: projectId, p_file_name: 'r3.xlsx',
+      p_rows: [{ day: '2026-09-07', plan_qty: 5 }, { day: '2026-09-07', plan_qty: 1 }],
+    })
+    expect(duplicate.error?.message).toBe('Ngày 07/09/2026 lặp lại trong file')
+    const plan = await gs.from('piping_reinstatement_plan').select('day, plan_qty').eq('project_id', projectId).order('day')
+    expect((plan.data ?? []).map((r) => `${r.day}=${Number(r.plan_qty)}`)).toEqual(['2026-09-07=5', '2026-09-09=1'])
+
+    const manpower = await admin.rpc('piping_replace_manpower_plan', {
+      p_project: projectId, p_file_name: 'm.xlsx',
+      p_rows: [{ group_id: groupId.Insulation, day: '2026-09-07', value: 3 }],
+    })
+    expect(manpower.error).toBeNull()
+    const foreignGroup = await admin.from('piping_manpower_groups').select('id').eq('project_id', otherProjectId).limit(1).single()
+    const wrongGroup = await admin.rpc('piping_replace_manpower_plan', {
+      p_project: projectId, p_file_name: 'm2.xlsx',
+      p_rows: [{ group_id: foreignGroup.data!.id, day: '2026-09-07', value: 3 }],
+    })
+    expect(wrongGroup.error?.message).toBe('Nhóm nhân lực không thuộc dự án này')
+    const kept = await admin.from('piping_manpower_plan').select('group_id').eq('project_id', projectId)
+    expect(kept.data).toEqual([{ group_id: groupId.Insulation }])
+
+    // R-6: a group with data is hidden, never deleted.
+    const del = await admin.from('piping_manpower_groups').delete().eq('id', groupId.Insulation)
+    expect(del.error?.message).toContain('không xoá được')
+
+    // Re-import with one SP-1: the first SP-1 (seq 1) matches and keeps its
+    // PH actual; the second SP-1 (with IH/IW actuals) and SP-2 are removed.
+    const [s0] = await spoolIdsBySeq()
+    const reimport = await admin.rpc('piping_replace_spools', {
+      p_project: projectId, p_file_name: 'insulation-2.xlsx', p_rows: [{ spool_no: 'SP-1', line_no: 'L1-new' }],
+    })
+    expect(reimport.error).toBeNull()
+    expect(reimport.data).toMatchObject({ rows: 1, added: 0, matched: 1, changed: 1, removed: 2, removed_with_actuals: 1 })
+    const left = await admin.from('piping_spools').select('id, line_no, ph_actual').eq('project_id', projectId)
+    expect(left.data).toEqual([{ id: s0, line_no: 'L1-new', ph_actual: '2026-09-03' }])
+
+    const kinds = await admin.from('piping_import_log').select('kind').eq('project_id', projectId)
+    expect((kinds.data ?? []).map((r) => r.kind).sort()).toEqual([
+      'manpower_plan', 'reinstatement_plan', 'reinstatement_plan', 'spool_actual', 'spool_plan', 'spool_plan',
+    ])
+  })
+
+  it('a viewer reads every project\'s piping data and writes none of it', async () => {
+    const settings = await viewer
+      .from('piping_settings').select('project_id').in('project_id', [projectId, otherProjectId])
+    expect(settings.error).toBeNull()
+    expect(settings.data).toHaveLength(2)
+
+    const insert = await viewer.from('piping_reinstatement_actual').insert({ project_id: projectId, day: '2026-09-10', qty: 1 })
+    expect(insert.error).not.toBeNull()
+    const update = await viewer.from('piping_spools').update({ line_no: 'Nope' }).eq('project_id', projectId).select('id')
+    expect(update.error).toBeNull()
+    expect(update.data ?? []).toEqual([])
+
+    const calls: [string, Record<string, unknown>][] = [
+      ['piping_enable', { p_project: projectId, p_week_start: '2026-09-07', p_total_test_packs: 1, p_late_threshold_days: 7 }],
+      ['piping_add_reinstatement', { p_project: projectId, p_day: '2026-09-10', p_qty: 1 }],
+      ['piping_set_manpower_actual', { p_project: projectId, p_day: '2026-09-10', p_values: [] }],
+      ['piping_set_spool_actuals', { p_project: projectId, p_changes: [] }],
+      ['piping_replace_reinstatement_plan', { p_project: projectId, p_rows: [], p_file_name: 'x.xlsx' }],
+      ['piping_replace_manpower_plan', { p_project: projectId, p_rows: [], p_file_name: 'x.xlsx' }],
+      ['piping_replace_spools', { p_project: projectId, p_rows: [], p_file_name: 'x.xlsx' }],
+    ]
+    for (const [fn, args] of calls) {
+      const { error } = await viewer.rpc(fn, args)
+      expect(error?.code, fn).toBe('42501')
+    }
+    const plan = await admin.from('piping_reinstatement_plan').select('day').eq('project_id', projectId)
+    expect(plan.data).toHaveLength(2)
+  })
+
+  it('anonymous reads no piping table and calls no piping function', async () => {
+    const anonClient = createClient(url!, anon!, { auth: { persistSession: false } })
+    expect((await anonClient.from('piping_settings').select('project_id')).error?.code).toBe('42501')
+    expect((await anonClient.from('piping_notes').select('id')).error?.code).toBe('42501')
+    expect((await anonClient.from('piping_import_log').select('id')).error?.code).toBe('42501')
+    expect((await anonClient.rpc('piping_add_reinstatement', {
+      p_project: projectId, p_day: '2026-09-10', p_qty: 1,
+    })).error?.code).toBe('42501')
   })
 })
