@@ -117,11 +117,14 @@ describe('ManpowerChart (spec §5)', () => {
 
   it('labels the axis DD/MM, the tooltip with the bucket range, numbers in vi-VN and a gap as -', () => {
     render(<ManpowerChart data={WEEKS} groups={GROUPS} mode="week" />)
-    expect((captured.xAxis?.tickFormatter as (v: string) => string)('2026-10-05')).toBe('05/10')
-    expect((captured.tooltip?.labelFormatter as (v: string) => string)('2026-10-05')).toBe('05/10 – 11/10')
+    const tick = captured.xAxis?.tickFormatter as (v: string) => string
+    expect(tick('2026-10-05')).toBe('05/10')
+    const label = captured.tooltip?.labelFormatter as (v: string) => string
+    expect(label('2026-10-05')).toBe('05/10 – 11/10')
     const format = captured.tooltip?.formatter as (v: unknown) => string
     expect(format(10.5)).toBe('10,5')
     expect(format(null)).toBe('-')
-    expect((captured.yAxis?.tickFormatter as (v: number) => string)(1800)).toBe('1.800')
+    const yTick = captured.yAxis?.tickFormatter as (v: number) => string
+    expect(yTick(1800)).toBe('1.800')
   })
 })
