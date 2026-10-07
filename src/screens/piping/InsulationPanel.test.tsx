@@ -17,13 +17,23 @@ vi.mock('../../lib/pipingApi', () => ({
 
 // jsdom gives Recharts no size; the stand-in prints what reaches the chart:
 // the view, the lines shown, and each bucket's Painting Handover counts.
-vi.mock('./insulation/InsulationChart', () => ({
-  InsulationChart: ({ data, keys, mode }: { data: Array<Record<string, unknown>>; keys: string[]; mode: string }) => (
-    <div data-testid="insulation-chart" data-mode={mode} data-keys={keys.join(',')}>
-      {data.map((p) => `${String(p.key)}:${String(p.phPlan)}/${String(p.phActual)}`).join(' ')}
-    </div>
-  ),
-}))
+// It counts its mounts too: a new mount is a fresh Brush.
+const chartMounts = vi.hoisted(() => ({ count: 0 }))
+vi.mock('./insulation/InsulationChart', async () => {
+  const { useEffect } = await import('react')
+  return {
+    InsulationChart: ({ data, keys, mode }: { data: Array<Record<string, unknown>>; keys: string[]; mode: string }) => {
+      useEffect(() => {
+        chartMounts.count += 1
+      }, [])
+      return (
+        <div data-testid="insulation-chart" data-mode={mode} data-keys={keys.join(',')}>
+          {data.map((p) => `${String(p.key)}:${String(p.phPlan)}/${String(p.phActual)}`).join(' ')}
+        </div>
+      )
+    },
+  }
+})
 
 const SETTINGS: PipingSettings = {
   projectId: 'p1', enabled: true, weekStartDate: '2026-09-28', totalTestPacks: null, lateThresholdDays: 7,
@@ -54,12 +64,15 @@ const asViewer = { variant: 'gs', role: 'viewer' } as const
 
 const chart = () => screen.findByTestId('insulation-chart')
 const bucket = (key: string) => screen.getByTestId('insulation-chart').textContent?.split(' ').find((b) => b.startsWith(`${key}:`))
-const show = (name: 'Plan' | 'Actual' | 'Plan & Actual') =>
-  userEvent.click(screen.getByRole('radio', { name }).closest('label') as HTMLElement)
+const show = (name: 'Plan' | 'Actual' | 'Plan & Actual') => chooseOption('Đường hiển thị', name)
+const selected = (name: string) =>
+  screen.getByRole('combobox', { name }).closest('.ant-select')?.querySelector('.ant-select-selection-item')?.textContent
+const header = (name: string) => screen.getByRole('heading', { level: 2, name }).parentElement as HTMLElement
 
 let undoViewport: () => void
 beforeEach(() => {
   undoViewport = setViewport(1280)
+  chartMounts.count = 0
   api.listSpools.mockReset()
   api.listSpoolColumns.mockReset()
   api.listSpools.mockResolvedValue(SPOOLS)
@@ -75,7 +88,7 @@ describe('InsulationPanel: summary (spec §6.4)', () => {
     expect(api.listSpoolColumns).toHaveBeenCalledWith('p1')
     expect(screen.getByRole('heading', { level: 2, name: 'Insulation' })).toBeInTheDocument()
     expect(keyFactTexts()).toEqual(expect.arrayContaining([
-      '4 spool', 'Painting Handover 3/4', 'Insulation Handover 1/4', 'Insulation Work 0/4',
+      '4 spool', 'Painting Handover 3/4 SpoolNo', 'Insulation Handover 1/4 SpoolNo', 'Insulation Work 0/4 SpoolNo',
     ]))
     expectNoSpecIds()
   })
@@ -106,7 +119,7 @@ describe('InsulationPanel: summary (spec §6.4)', () => {
     renderPanel(role)
     await chart()
     expect(keyFactTexts().join('|')).not.toMatch(/trùng|sai thứ tự/)
-    expect(keyFactTexts()).toContain('Painting Handover 3/4')
+    expect(keyFactTexts()).toContain('Painting Handover 3/4 SpoolNo')
   })
 })
 
@@ -129,7 +142,7 @@ describe('InsulationPanel: chart (spec §6.4, Q20A)', () => {
     await chooseOption('Đơn vị đếm', 'LineNo')
     // L1 is done once both its spools are; L2 is not; a spool without a line is no line.
     expect(keyFactTexts()).toEqual(expect.arrayContaining([
-      'Painting Handover 1/2', 'Insulation Handover 0/2', 'Insulation Work 0/2',
+      'Painting Handover 1/2 LineNo', 'Insulation Handover 0/2 LineNo', 'Insulation Work 0/2 LineNo',
     ]))
     expect(bucket('2026-10-07')).toBe('2026-10-07:1/1')
   })
@@ -137,8 +150,8 @@ describe('InsulationPanel: chart (spec §6.4, Q20A)', () => {
   it('shows all six lines, then Plan only, then Actual only', async () => {
     renderPanel()
     expect(await chart()).toHaveAttribute('data-keys', 'phPlan,phActual,ihPlan,ihActual,iwPlan,iwActual')
-    // Read on the label: under test every Segmented shares one radio name, so one group's check clears another's.
-    expect(screen.getByRole('radio', { name: 'Plan & Actual' }).closest('label')).toHaveClass('ant-segmented-item-selected')
+    expect(selected('Đường hiển thị')).toBe('Plan & Actual')
+    expect(await optionTitles('Đường hiển thị')).toEqual(['Plan', 'Actual', 'Plan & Actual'])
     await show('Plan')
     expect(screen.getByTestId('insulation-chart')).toHaveAttribute('data-keys', 'phPlan,ihPlan,iwPlan')
     await show('Actual')
@@ -151,6 +164,44 @@ describe('InsulationPanel: chart (spec §6.4, Q20A)', () => {
     expect(c).toHaveAttribute('data-mode', 'week')
     // Weeks from 28/09, cumulative to each week's last day; the plan ends in the week of 05/10 (10/10).
     expect(c.textContent).toBe('2026-09-28:2/2 2026-10-05:3/3')
+  })
+
+  it('draws the chart afresh when the unit, the lines or the view change, so a zoom never outlives its axis', async () => {
+    const { rerender } = renderPanel()
+    await chart()
+    expect(chartMounts.count).toBe(1)
+    await chooseOption('Đơn vị đếm', 'LineNo')
+    expect(chartMounts.count).toBe(2)
+    await show('Plan')
+    expect(chartMounts.count).toBe(3)
+    rerender(<InsulationPanel {...props({ mode: 'week' })} />)
+    await waitFor(() => expect(chartMounts.count).toBe(4))
+  })
+
+  it('agrees with the Package rows: a package done in the facts is one with a reached date', async () => {
+    renderPanel()
+    await chart()
+    await chooseOption('Đơn vị đếm', 'Test Package No')
+    // TP1 (spools 1, 2) reached Painting Handover on 04/10; TP2 has not; spool 4 is in no package.
+    expect(keyFactTexts()).toContain('Painting Handover 1/2 Test Package No')
+    const rows = within(within(screen.getByTestId('spool-detail')).getByRole('table')).getAllByRole('row')
+      .filter((r) => r.closest('tbody') !== null)
+      .map((r) => within(r).getAllByRole('cell').map((c) => c.textContent))
+    const packages = rows.filter((c) => c[0] !== '-')
+    expect(packages).toHaveLength(2)
+    expect(packages.filter((c) => c[4] !== '-').map((c) => c[0])).toEqual(['TP1'])
+    expect(keyFactTexts()).toContain('2 Test Package')
+  })
+
+  it('on a phone moves the unit and the lines into a row of the body', async () => {
+    undoViewport()
+    undoViewport = setViewport(390)
+    renderPanel(asGs)
+    await chart()
+    expect(within(header('Insulation')).queryByRole('combobox')).toBeNull()
+    const row = screen.getAllByTestId('control-row')[0]
+    expect(within(row).getByRole('combobox', { name: 'Đơn vị đếm' })).toBeInTheDocument()
+    expect(within(row).getByRole('combobox', { name: 'Đường hiển thị' })).toBeInTheDocument()
   })
 
   it('says there is nothing to chart while no spool has a date, still listing the spools', async () => {
@@ -166,7 +217,7 @@ describe('InsulationPanel: detail and states', () => {
   it('lists the spools with the extra columns and the admin flags', async () => {
     renderPanel()
     await chart()
-    await userEvent.click(screen.getByRole('radio', { name: 'Spool' }).closest('label') as HTMLElement)
+    await chooseOption('Cấp hiển thị', 'Spool')
     const table = within(screen.getByTestId('spool-detail')).getByRole('table')
     expect(within(table).getByRole('columnheader', { name: 'Zone' })).toBeInTheDocument()
     expect(within(table).getAllByText('SpoolNo trùng')).toHaveLength(2)

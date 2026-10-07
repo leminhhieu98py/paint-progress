@@ -1,5 +1,5 @@
 import { SearchOutlined } from '@ant-design/icons'
-import { Input, Segmented, Select, Space, Table, type TableColumnsType } from 'antd'
+import { Input, Select, Space, Table, type TableColumnsType } from 'antd'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { settleFilters, useAppliedFilters } from '../../../components/appliedFilters'
 import { FilterBar } from '../../../components/FilterBar'
@@ -18,7 +18,9 @@ import { formatDayMonthYear } from '../../../domain/piping/week'
 import { MISSING } from '../../../lib/format'
 import { useFieldPhone } from '../../gs/fieldSections'
 import { formatQty } from '../pipingFormat'
-import { showsSpoolFlags, spoolFlagItems } from './spoolFlags'
+import { ControlRow } from './ControlRow'
+import { PHONE_CONTROL } from './controlStyle'
+import { spoolFlagItems } from './spoolFlags'
 
 /**
  * The Insulation detail table (spec §6.4, Q16B): one level at a time --
@@ -27,16 +29,19 @@ import { showsSpoolFlags, spoolFlagItems } from './spoolFlags'
  * date (its spools' latest, none while one lacks it) and the day it reached
  * the milestone (its last spool's, once all have it) -- R-13. A Spool row
  * shows the master fields, the admin's extra columns, the six dates and its
- * flags.
+ * flags. The spools with no package (or line) share one `-` row, last, with
+ * counts but no dates, and are not counted as a group.
  *
  * Filtered by InsuType, Painting System, Test Package No and a search of
  * SpoolNo / LineNo, each applied as it changes (FLT-02; the search once the
  * typing pauses, at once on Enter or clear, as on Nhân lực). Paged (UI-05), so
  * a project's 20 000 spools never render at once.
  *
- * Seams for the later tasks: `toolbar` sits in the card's header (Cập nhật
- * Actual, Import Actual), `rowActions` adds a Thao tác column to Spool rows
- * (clear an actual, a note), and `spoolFlagItems` grows the late flag.
+ * The level select and `toolbar` sit in the card's header; on a phone in a
+ * wrapping row at the top of the body, the filters in their own sheet.
+ *
+ * Seams for the later tasks: `toolbar` (Cập nhật Actual, Import Actual) and
+ * `rowActions`, a Thao tác column on Spool rows (clear an actual, a note).
  */
 
 interface DetailFilters {
@@ -67,6 +72,8 @@ const LEVELS: Array<{ value: CamLevel; label: string }> = [
 const LEVEL_NOUN: Record<CamLevel, string> = { package: 'Test Package', line: 'Line', spool: 'spool' }
 
 const dateCell = (day: DayKey | null) => (day === null ? MISSING : formatDayMonthYear(day))
+/** A group's date; the row of spools with no package or line is no group, so it has none. */
+const groupDate = (row: CamGroupRow, day: DayKey | null) => (row.key === '' ? MISSING : dateCell(day))
 const textCell = (value: string | null | undefined) => {
   const v = value?.trim() ?? ''
   return v === '' ? MISSING : v
@@ -112,12 +119,15 @@ export function SpoolDetail({ projectId, spools, columns, flags, admin, toolbar,
     testPackageNos: applied.testPackageNo === ALL ? [] : [applied.testPackageNo],
     search: applied.search,
   }), [spools, applied.insuType, applied.paintingSystem, applied.testPackageNo, applied.search])
-  const groups = useMemo(
-    () => (level === 'spool' ? [] : camGroupRows(shown, level)),
-    [shown, level],
-  )
+  // The spools with no package (or line) are no group: their row comes last and is not counted as one.
+  const groups = useMemo(() => {
+    if (level === 'spool') return []
+    const rows = camGroupRows(shown, level)
+    return [...rows.filter((r) => r.key !== ''), ...rows.filter((r) => r.key === '')]
+  }, [shown, level])
   const spoolRows = useMemo(() => (level === 'spool' ? [...shown].sort((a, b) => a.seq - b.seq) : []), [shown, level])
   const rowCount = level === 'spool' ? spoolRows.length : groups.length
+  const counted = level === 'spool' ? rowCount : groups.filter((r) => r.key !== '').length
   const pagination = useTablePagination(rowCount, `${projectId}|${level}|${scope.version}`)
   /** On a phone the row's name stays in view while the rest scrolls under it (MOB-01). */
   const pin = phone ? ('left' as const) : undefined
@@ -177,8 +187,8 @@ export function SpoolDetail({ projectId, spools, columns, flags, admin, toolbar,
           align: 'center' as const,
           render: (_v: unknown, row: CamGroupRow) => `${formatQty(row.counts[m].done)}/${formatQty(row.counts[m].total)}`,
         },
-        { title: 'Plan', key: `${m}-plan`, align: 'center' as const, render: (_v: unknown, row: CamGroupRow) => dateCell(row.plan[m]) },
-        { title: 'Actual', key: `${m}-actual`, align: 'center' as const, render: (_v: unknown, row: CamGroupRow) => dateCell(row.actual[m]) },
+        { title: 'Plan', key: `${m}-plan`, align: 'center' as const, render: (_v: unknown, row: CamGroupRow) => groupDate(row, row.plan[m]) },
+        { title: 'Actual', key: `${m}-actual`, align: 'center' as const, render: (_v: unknown, row: CamGroupRow) => groupDate(row, row.actual[m]) },
       ],
     })),
   ], [level, pin])
@@ -203,22 +213,20 @@ export function SpoolDetail({ projectId, spools, columns, flags, admin, toolbar,
         { title: 'Actual', key: `${m}-actual`, align: 'center' as const, render: (_v: unknown, s: Spool) => dateCell(s[ACTUAL_FIELD[m]]) },
       ],
     })),
-    ...(showsSpoolFlags(admin)
-      ? [{
-        title: 'Cảnh báo',
-        key: 'flags',
-        align: 'center' as const,
-        render: (_v: unknown, s: Spool) => {
-          const items = spoolFlagItems(flags.get(s.id) ?? { duplicate: false, planOrder: false, late: [] }, admin)
-          if (items.length === 0) return MISSING
-          return (
-            <Space size={4} wrap style={{ justifyContent: 'center' }}>
-              {items.map((f) => <StatusPill key={f.key} tone={f.tone}>{f.label}</StatusPill>)}
-            </Space>
-          )
-        },
-      }]
-      : []),
+    {
+      title: 'Cảnh báo',
+      key: 'flags',
+      align: 'center' as const,
+      render: (_v: unknown, s: Spool) => {
+        const items = spoolFlagItems(flags.get(s.id) ?? { duplicate: false, planOrder: false, late: [] }, admin)
+        if (items.length === 0) return MISSING
+        return (
+          <Space size={4} wrap style={{ justifyContent: 'center' }}>
+            {items.map((f) => <StatusPill key={f.key} tone={f.tone}>{f.label}</StatusPill>)}
+          </Space>
+        )
+      },
+    },
     ...(rowActions
       ? [{
         title: 'Thao tác',
@@ -230,22 +238,34 @@ export function SpoolDetail({ projectId, spools, columns, flags, admin, toolbar,
       : []),
   ], [columns, flags, admin, rowActions, pin])
 
+  /** The level select and the toolbar: in the header, or on a phone in a row of the body that wraps. */
+  const controls = (
+    <>
+      <Select<CamLevel>
+        aria-label="Cấp hiển thị"
+        {...searchSelectProps}
+        {...fullOptionsProps}
+        style={phone ? PHONE_CONTROL : { width: 130 }}
+        value={level}
+        options={LEVELS}
+        onChange={setLevel}
+      />
+      {toolbar}
+    </>
+  )
+
   const emptyText = spools.length === 0 ? 'Chưa có spool nào' : 'Không có spool phù hợp'
 
   return (
     <SectionCard
       title="Chi tiết"
-      facts={[{ value: formatQty(rowCount), label: LEVEL_NOUN[level] }]}
-      extra={(
-        <>
-          <Segmented<CamLevel> aria-label="Cấp hiển thị" value={level} onChange={setLevel} options={LEVELS} />
-          {toolbar}
-        </>
-      )}
+      facts={[{ value: formatQty(counted), label: LEVEL_NOUN[level] }]}
+      extra={phone ? undefined : controls}
     >
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        {phone && <ControlRow>{controls}</ControlRow>}
         {phone
-          ? <FilterSheet count={offDefaults} inline={searchBox}>{selects}</FilterSheet>
+          ? <FilterSheet count={offDefaults} inline={searchBox} label="Lọc spool">{selects}</FilterSheet>
           : <FilterBar label="Lọc spool">{searchBox}{selects}</FilterBar>}
         <div data-testid="spool-detail">
           {level === 'spool'

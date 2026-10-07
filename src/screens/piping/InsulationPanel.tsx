@@ -1,4 +1,4 @@
-import { Alert, Button, Segmented, Select, Spin } from 'antd'
+import { Alert, Button, Select, Spin } from 'antd'
 import { useMemo, useState } from 'react'
 import { EmptyState } from '../../components/EmptyState'
 import type { KeyFact } from '../../components/KeyFacts'
@@ -11,6 +11,9 @@ import {
 import type { CamSelection, Spool, SpoolColumn, Unit } from '../../domain/piping/types'
 import { listSpoolColumns, listSpools } from '../../lib/pipingApi'
 import { space } from '../../theme'
+import { useFieldPhone } from '../gs/fieldSections'
+import { ControlRow } from './insulation/ControlRow'
+import { PHONE_CONTROL } from './insulation/controlStyle'
 import { InsulationChart } from './insulation/InsulationChart'
 import { SpoolDetail } from './insulation/SpoolDetail'
 import type { PipingPanelProps } from './panelProps'
@@ -23,14 +26,15 @@ import { usePanelData } from './usePanelData'
  * The card "Insulation" carries the summary beside its title -- the spools,
  * and per milestone how many items of the chosen unit reached it -- with the
  * admin's review warnings (duplicate SpoolNo, Q14C; plan order, Q15B), and
- * the chart: the unit select and the Plan | Actual | Plan & Actual toggle in
- * its header. Below it, the detail table (`SpoolDetail`).
+ * the chart: the unit select and the Plan | Actual | Plan & Actual select in
+ * its header (on a phone in a wrapping row of the body, as the header does not
+ * wrap). Below it, the detail table (`SpoolDetail`).
  *
  * Seams for the later tasks: the Plan import joins the Insulation card's
  * header (as on Reinstatement) and the empty state's `action`; Cập nhật
  * Actual and Import Actual go in `SpoolDetail`'s `toolbar`, a spool's own
  * actions (clear an actual, a note) in its `rowActions`; the late flag in
- * `spoolFlagItems` and the "N spool trễ" pill beside the others here.
+ * the "N spool trễ" pill beside the others here.
  */
 
 interface InsulationData {
@@ -88,6 +92,7 @@ export function InsulationPanel({ projectId, settings, mode, role, todayKey, ref
   const { data, error, reload } = usePanelData(projectId, refreshKey, readInsulation)
   const admin = role === 'admin'
   const fullOptionsProps = useFullOptionsProps()
+  const phone = useFieldPhone()
   const [unit, setUnit] = useState<Unit>('spoolNo')
   const [selection, setSelection] = useState<CamSelection>('both')
 
@@ -129,11 +134,37 @@ export function InsulationPanel({ projectId, settings, mode, role, todayKey, ref
     )
   }
 
+  /** The unit and the lines shown: in the card's header, or on a phone in a row of the body. */
+  const controls = (
+    <>
+      <Select<Unit>
+        aria-label="Đơn vị đếm"
+        {...searchSelectProps}
+        {...fullOptionsProps}
+        style={phone ? PHONE_CONTROL : { width: 170 }}
+        value={unit}
+        options={UNITS}
+        onChange={setUnit}
+      />
+      <Select<CamSelection>
+        aria-label="Đường hiển thị"
+        {...searchSelectProps}
+        {...fullOptionsProps}
+        style={phone ? PHONE_CONTROL : { width: 150 }}
+        value={selection}
+        options={SELECTIONS}
+        onChange={setSelection}
+      />
+    </>
+  )
+
   const facts: KeyFact[] = [
     { value: formatQty(data.spools.length), label: 'spool' },
     ...MILESTONES.map((m) => ({
       prefix: MILESTONE_LABEL[m],
       value: `${formatQty(progress.done[m])}/${formatQty(progress.total)}`,
+      // What the counts count: spool rows, or lines, packages... (spec §6.4).
+      label: UNIT_LABEL[unit],
     })),
     ...review,
   ]
@@ -144,30 +175,20 @@ export function InsulationPanel({ projectId, settings, mode, role, todayKey, ref
       <SectionCard
         title="Insulation"
         facts={facts}
-        extra={(
-          <>
-            <Select<Unit>
-              aria-label="Đơn vị đếm"
-              {...searchSelectProps}
-              {...fullOptionsProps}
-              style={{ width: 170 }}
-              value={unit}
-              options={UNITS}
-              onChange={setUnit}
-            />
-            <Segmented<CamSelection>
-              aria-label="Đường hiển thị"
-              value={selection}
-              onChange={setSelection}
-              options={SELECTIONS}
-            />
-          </>
-        )}
+        extra={phone ? undefined : controls}
       >
+        {phone && <div style={{ marginBottom: space.md }}><ControlRow>{controls}</ControlRow></div>}
         {series.length === 0
           ? <EmptyState title="Chưa có ngày Plan hoặc Actual" />
-          // Keyed on the view: the Brush's zoom belongs to one axis, not to the next.
-          : <InsulationChart key={mode} data={series} keys={camSeriesKeys(selection)} mode={mode} />}
+          // Keyed on what shapes the axis: the Brush's zoom (its start index) belongs to one axis, not to the next.
+          : (
+            <InsulationChart
+              key={`${mode}|${unit}|${selection}`}
+              data={series}
+              keys={camSeriesKeys(selection)}
+              mode={mode}
+            />
+          )}
       </SectionCard>
 
       <SpoolDetail
