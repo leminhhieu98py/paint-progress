@@ -262,19 +262,23 @@ cases are the `0038: piping` describe in `tests/rls.integration.test.ts`
 (scratch projects `RLSP` / `RLSQ`, purged by `tests/rls-teardown.sql`).
 
 `0039` (Piping, follows `0038`; **not yet applied to dev or production**) adds
-two admin-only security definer functions for Cấu hình, with `0038`'s
+three admin-only security definer functions for Cấu hình, with `0038`'s
 conventions (pinned search_path, revoked from `public`/`anon`, 42501 caller
 check first, Piping must be enabled, the project's `piping_settings` row locked
 FOR UPDATE first): `piping_rename_spool_column(project, column, label)` renames
 an extra spool column and moves its key in every spool's `extra` in one
-transaction (returns the spools changed; a duplicate label is refused as
-`Cột "L" đã có trong dự án`), and `piping_reorder(project, 'group' | 'column',
-ids)` writes `sort` 1..n in one statement, refusing a list that is not exactly
-the project's current rows. A label equal to a built-in spool header is refused
-by the client, which owns that list. Its `do $$ ... $$` block checks the shape,
-grants and caller check of both and calls each with no caller to prove the
-42501. Purely additive; changes nothing `0038` created. The owner-run case is
-the `0039:` test at the end of the `0038: piping` describe.
+transaction, first dropping any older value under the new label (any letter
+case) from every spool (returns the spools changed; a duplicate label is
+refused as `Cột "L" đã có trong dự án`); `piping_delete_spool_column(project,
+column)` deletes the column and strips its key from every spool in one
+transaction (returns the spools changed) -- so no value ever outlives its
+column or resurfaces under a later one; and `piping_reorder(project, 'group' |
+'column', ids)` writes `sort` 1..n in one statement, refusing a list that is
+not exactly the project's current rows. A label equal to a built-in spool
+header is refused by the client, which owns that list. Its `do $$ ... $$` block
+checks the shape, grants and caller check of all three and calls each with no
+caller to prove the 42501. Purely additive; changes nothing `0038` created. The
+owner-run case is the `0039:` test at the end of the `0038: piping` describe.
 
 `supabase/scripts/purge_user.sql` removes one test account together with the
 bays it ticked (owner request, 2026-09-04). It is a dry run until its

@@ -2833,7 +2833,7 @@ describe.skipIf(!adminConfigured)('0038: piping', () => {
 
   // 0039: the two admin functions for Cấu hình. Run on RLSQ, whose spools no
   // earlier case depends on any more.
-  it('0039: renaming an extra column moves its values in every spool, and reordering is atomic -- admin only', async () => {
+  it('0039: renaming / deleting an extra column moves / strips its values in every spool, and reordering is atomic -- admin only', async () => {
     const cols = await admin.from('piping_spool_columns').select('id, label').eq('project_id', otherProjectId)
     expect(cols.error).toBeNull()
     const otherCol = (cols.data as { id: string; label: string }[]).find((c) => c.label === 'Other col')!.id
@@ -2848,6 +2848,8 @@ describe.skipIf(!adminConfigured)('0038: piping', () => {
       expect(rename.error?.code).toBe('42501')
       const reorder = await client.rpc('piping_reorder', { p_project: otherProjectId, p_kind: 'column', p_ids: [otherCol] })
       expect(reorder.error?.code).toBe('42501')
+      const remove = await client.rpc('piping_delete_spool_column', { p_project: otherProjectId, p_column: otherCol })
+      expect(remove.error?.code).toBe('42501')
     }
     const gsOwn = await gs.rpc('piping_reorder', { p_project: projectId, p_kind: 'group', p_ids: [...ownGroupIds].reverse() })
     expect(gsOwn.error?.code).toBe('42501')
@@ -2894,9 +2896,61 @@ describe.skipIf(!adminConfigured)('0038: piping', () => {
     const stale = await admin.rpc('piping_reorder', { p_project: otherProjectId, p_kind: 'column', p_ids: [otherCol] })
     expect(stale.error?.message).toBe('Danh sách đã thay đổi, tải lại trang rồi sắp xếp lại')
 
+    const repeated = await admin.rpc('piping_reorder', { p_project: otherProjectId, p_kind: 'column', p_ids: [secondCol, secondCol] })
+    expect(repeated.error?.message).toBe('Danh sách đã thay đổi, tải lại trang rồi sắp xếp lại')
+    const foreign = await admin.rpc('piping_reorder', {
+      p_project: otherProjectId, p_kind: 'column', p_ids: [secondCol, ownGroupIds[0]],
+    })
+    expect(foreign.error?.message).toBe('Danh sách đã thay đổi, tải lại trang rồi sắp xếp lại')
+
     const groups = await admin.rpc('piping_reorder', { p_project: projectId, p_kind: 'group', p_ids: [...ownGroupIds].reverse() })
     expect(groups.error).toBeNull()
     const groupOrder = await admin.from('piping_manpower_groups').select('id').eq('project_id', projectId).order('sort')
     expect((groupOrder.data as { id: string }[]).map((g) => g.id)).toEqual([...ownGroupIds].reverse())
+
+    // A stale value under the new label (planted directly, in another letter
+    // case) never surfaces under the renamed column: the rename drops it from
+    // every spool, also from one without the old value. Case-only rename.
+    expect((await admin.from('piping_spools').update({ extra: { 'Second col': 's2', 'renamed COL': 'stale' } })
+      .eq('project_id', otherProjectId).eq('spool_no', 'Q-2')).error).toBeNull()
+    const caseOnly = await admin.rpc('piping_rename_spool_column', {
+      p_project: otherProjectId, p_column: otherCol, p_label: 'RENAMED col',
+    })
+    expect(caseOnly.error).toBeNull()
+    expect(caseOnly.data).toBe(2)
+    const afterCase = await admin.from('piping_spools').select('spool_no, extra').eq('project_id', otherProjectId).order('seq')
+    expect(afterCase.data).toEqual([
+      { spool_no: 'Q-1', extra: { 'RENAMED col': 'v1', 'Second col': 's1' } },
+      { spool_no: 'Q-2', extra: { 'Second col': 's2' } },
+    ])
+
+    // Deleting a column strips its values from every spool, in one transaction.
+    const removed = await admin.rpc('piping_delete_spool_column', { p_project: otherProjectId, p_column: secondCol })
+    expect(removed.error).toBeNull()
+    expect(removed.data).toBe(2)
+    const afterDelete = await admin.from('piping_spools').select('spool_no, extra').eq('project_id', otherProjectId).order('seq')
+    expect(afterDelete.data).toEqual([
+      { spool_no: 'Q-1', extra: { 'RENAMED col': 'v1' } },
+      { spool_no: 'Q-2', extra: {} },
+    ])
+    const gone = await admin.from('piping_spool_columns').select('id').eq('id', secondCol)
+    expect(gone.data ?? []).toEqual([])
+    const missing = await admin.rpc('piping_delete_spool_column', { p_project: otherProjectId, p_column: secondCol })
+    expect(missing.error?.message).toBe('Không tìm thấy cột này trong dự án')
+
+    // A disabled project refuses all three; re-enabled afterwards.
+    expect((await admin.from('piping_settings').update({ enabled: false }).eq('project_id', otherProjectId)).error).toBeNull()
+    try {
+      const disabled: [string, Record<string, unknown>][] = [
+        ['piping_rename_spool_column', { p_project: otherProjectId, p_column: otherCol, p_label: 'X' }],
+        ['piping_delete_spool_column', { p_project: otherProjectId, p_column: otherCol }],
+        ['piping_reorder', { p_project: otherProjectId, p_kind: 'column', p_ids: [otherCol] }],
+      ]
+      for (const [fn, args] of disabled) {
+        expect((await admin.rpc(fn, args)).error?.message, fn).toBe('Piping chưa được bật cho dự án này')
+      }
+    } finally {
+      expect((await admin.from('piping_settings').update({ enabled: true }).eq('project_id', otherProjectId)).error).toBeNull()
+    }
   })
 })
