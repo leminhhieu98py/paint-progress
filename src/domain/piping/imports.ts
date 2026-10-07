@@ -99,6 +99,17 @@ const BUILT_IN_SPOOL_COLUMNS: ColumnSpec[] = [
   ...Object.values(SPOOL_ACTUAL_COLUMNS),
 ]
 
+/**
+ * The built-in spool header (its template label) that a file would read
+ * `label` as, or null. An extra column must not carry such a label: the file
+ * could not tell the two apart. Used by the import below and by the API when
+ * the admin adds or renames an extra column.
+ */
+export function builtInSpoolHeader(label: string): string | null {
+  const key = normalizeHeader(label)
+  return BUILT_IN_SPOOL_COLUMNS.find((spec) => [spec.label, ...spec.aliases].some((n) => normalizeHeader(n) === key))?.label ?? null
+}
+
 
 // ---------------------------------------------------------------------------
 // Cells
@@ -571,11 +582,11 @@ export function parseSpoolPlan(sheets: SheetRows[], extraColumns: Array<Pick<Spo
   const filled = new Set(extraMatch.byColumn.values())
   labels.forEach((label, i) => {
     if (filled.has(i)) return
-    const builtIn = BUILT_IN_SPOOL_COLUMNS.find((spec) => [spec.label, ...spec.aliases].some((n) => normalizeHeader(n) === normalizeHeader(label)))
+    const builtIn = builtInSpoolHeader(label)
     if (builtIn) {
       warnings.push({
         row: headerRow,
-        message: `Cột thêm "${label}" trùng tên cột chuẩn ${builtIn.label} nên không đọc được; đổi tên cột thêm trong Cấu hình`,
+        message: `Cột thêm "${label}" trùng tên cột chuẩn ${builtIn} nên không đọc được; đổi tên cột thêm trong Cấu hình`,
       })
     }
   })

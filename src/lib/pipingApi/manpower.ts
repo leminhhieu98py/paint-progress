@@ -2,7 +2,7 @@ import type { DayKey, ManpowerActualValue, ManpowerGroup, ManpowerValue } from '
 import { supabase } from '../supabase'
 import {
   MAX_ROWS, TOO_MANY_ROWS, callRpc, importResult, isDayKey, nameOf, readAll, requireRows, requiredText, toError,
-  toNumber, writeOrder, type PipingImportResult,
+  toNumber, type PipingImportResult,
 } from './shared'
 
 /**
@@ -67,9 +67,13 @@ export async function setManpowerGroupHidden(id: string, hidden: boolean): Promi
   requireRows(data)
 }
 
-/** Admin: the drag order (ORD-01), as sort 1..n. */
-export async function reorderManpowerGroups(orderedIds: string[]): Promise<void> {
-  await writeOrder('piping_manpower_groups', orderedIds)
+/**
+ * Admin: the drag order (ORD-01), as sort 1..n in one transaction
+ * (piping_reorder, 0039). `orderedIds` must be every group of the project,
+ * hidden ones included; a stale list is refused ('Danh sách đã thay đổi, ...').
+ */
+export async function reorderManpowerGroups(projectId: string, orderedIds: string[]): Promise<void> {
+  await callRpc<number>('piping_reorder', { p_project: projectId, p_kind: 'group', p_ids: orderedIds })
 }
 
 /**

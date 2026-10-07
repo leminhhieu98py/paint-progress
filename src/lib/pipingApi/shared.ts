@@ -87,10 +87,10 @@ export async function readAll<T>(page: (from: number, to: number) => PageResult)
   return rows
 }
 
-/** One RPC of 0038; its error mapped as above. */
-export async function callRpc<T>(name: string, args: Record<string, unknown>): Promise<T> {
+/** One RPC of 0038/0039; its error mapped as above. */
+export async function callRpc<T>(name: string, args: Record<string, unknown>, uniqueMessage?: string): Promise<T> {
   const { data, error } = await supabase.rpc(name, args)
-  if (error) throw toError(error)
+  if (error) throw toError(error, uniqueMessage)
   return data as T
 }
 
@@ -117,20 +117,4 @@ export function requiredText(value: string, message: string): string {
   const text = (value ?? '').trim()
   if (text === '') throw new Error(message)
   return text
-}
-
-/**
- * Sets `sort` = 1..n in the given order, one UPDATE per row -- only the sort
- * column, so a name or flag changed meanwhile in another tab is never written
- * back. Not one transaction: a failure part-way leaves some rows renumbered,
- * which only changes an order and is fixed by reordering again.
- */
-export async function writeOrder(table: string, orderedIds: string[]): Promise<void> {
-  const results = await Promise.all(
-    orderedIds.map((id, i) => supabase.from(table).update({ sort: i + 1 }).eq('id', id).select('id')),
-  )
-  for (const { data, error } of results) {
-    if (error) throw toError(error)
-    requireRows(data)
-  }
 }

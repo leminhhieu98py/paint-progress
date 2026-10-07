@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { builder } from '../../test/supabaseBuilder'
 import {
-  NO_PERMISSION, NOT_SAVED, PIPING_PAGE, callRpc, importResult, nameOf, numberOrNull, readAll, toError, writeOrder,
+  NO_PERMISSION, PIPING_PAGE, callRpc, importResult, nameOf, numberOrNull, readAll, toError,
 } from './shared'
 
 const from = vi.hoisted(() => vi.fn())
@@ -96,22 +96,9 @@ describe('callRpc', () => {
     rpc.mockResolvedValue({ data: null, error: { code: 'P0001', message: 'Piping chưa được bật cho dự án này' } })
     await expect(callRpc('f', {})).rejects.toThrow('Piping chưa được bật cho dự án này')
   })
-})
 
-describe('writeOrder', () => {
-  it('writes sort 1..n and only sort', async () => {
-    const bs = [builder({ data: [{ id: 'a' }] }), builder({ data: [{ id: 'b' }] })]
-    from.mockReturnValueOnce(bs[0]).mockReturnValueOnce(bs[1])
-    await writeOrder('piping_manpower_groups', ['b', 'a'])
-    expect(from).toHaveBeenCalledWith('piping_manpower_groups')
-    expect(bs[0].update).toHaveBeenCalledWith({ sort: 1 })
-    expect(bs[0].eq).toHaveBeenCalledWith('id', 'b')
-    expect(bs[1].update).toHaveBeenCalledWith({ sort: 2 })
-    expect(bs[1].eq).toHaveBeenCalledWith('id', 'a')
-  })
-
-  it('reports a row the write did not reach', async () => {
-    from.mockReturnValue(builder({ data: [] }))
-    await expect(writeOrder('piping_spool_columns', ['a'])).rejects.toThrow(NOT_SAVED)
+  it('names a unique violation when given the words', async () => {
+    rpc.mockResolvedValue({ data: null, error: { code: '23505', message: 'duplicate key value' } })
+    await expect(callRpc('f', {}, 'Đã có')).rejects.toThrow('Đã có')
   })
 })

@@ -69,13 +69,13 @@ describe('groups', () => {
     await expect(setManpowerGroupHidden('g1', false)).rejects.toThrow(NOT_SAVED)
   })
 
-  it('reorders as sort 1..n', async () => {
-    const bs = [builder({ data: [{ id: 'g2' }] }), builder({ data: [{ id: 'g1' }] })]
-    from.mockReturnValueOnce(bs[0]).mockReturnValueOnce(bs[1])
-    await reorderManpowerGroups(['g2', 'g1'])
-    expect(bs[0].update).toHaveBeenCalledWith({ sort: 1 })
-    expect(bs[0].eq).toHaveBeenCalledWith('id', 'g2')
-    expect(bs[1].update).toHaveBeenCalledWith({ sort: 2 })
+  it('reorders through piping_reorder, atomically, and keeps its refusals', async () => {
+    rpc.mockResolvedValue({ data: 2, error: null })
+    await reorderManpowerGroups('p1', ['g2', 'g1'])
+    expect(rpc).toHaveBeenCalledWith('piping_reorder', { p_project: 'p1', p_kind: 'group', p_ids: ['g2', 'g1'] })
+    expect(from).not.toHaveBeenCalled()
+    rpc.mockResolvedValue({ data: null, error: { code: '42501', message: 'Chỉ admin được sắp xếp' } })
+    await expect(reorderManpowerGroups('p1', ['g1'])).rejects.toThrow('Chỉ admin được sắp xếp')
   })
 
   it("deletes an unused group and passes the guard's message through", async () => {

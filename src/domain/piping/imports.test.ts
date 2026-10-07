@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   MAX_IMPORT_ROWS,
+  builtInSpoolHeader,
   diffManpowerPlan,
   diffReinstatementPlan,
   diffSpoolPlan,
@@ -35,6 +36,15 @@ describe('normalizeHeader', () => {
     expect(normalizeHeader('Painting Handover – Plan')).toBe(normalizeHeader('painting handover - plan'))
     expect(normalizeHeader(' Test  Package No ')).toBe('testpackageno')
     expect(normalizeHeader('Insulation Work—Plan')).toBe('insulationworkplan')
+  })
+})
+
+describe('builtInSpoolHeader', () => {
+  it('names the built-in header a label would be read as, aliases included, or null', () => {
+    expect(builtInSpoolHeader('line no')).toBe('LineNo')
+    expect(builtInSpoolHeader('IH-Actual')).toBe('Insulation Handover – Actual')
+    expect(builtInSpoolHeader('Test Pack')).toBe('Test Package No')
+    expect(builtInSpoolHeader('Zone')).toBeNull()
   })
 })
 
