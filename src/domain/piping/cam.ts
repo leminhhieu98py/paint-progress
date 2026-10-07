@@ -172,6 +172,20 @@ export function camItems(spools: Spool[], unit: Unit): CamItem[] {
   return [...groups.entries()].map(([key, list]) => ({ key, label: key, spools: list, ...rollupDates(list) }))
 }
 
+/**
+ * How many of a unit's items reached each milestone, of how many (the
+ * Insulation summary, spec §6.4): spool rows for SpoolNo, groups otherwise --
+ * a group counting only once all its spools have the actual date (R-13).
+ */
+export function camProgress(spools: Spool[], unit: Unit): { total: number; done: Record<Milestone, number> } {
+  const items = camItems(spools, unit)
+  const done = { ph: 0, ih: 0, iw: 0 }
+  for (const i of items) {
+    for (const m of MILESTONES) if (i.actual[m] !== null) done[m] += 1
+  }
+  return { total: items.length, done }
+}
+
 // ---------------------------------------------------------------------------
 // Chart
 // ---------------------------------------------------------------------------

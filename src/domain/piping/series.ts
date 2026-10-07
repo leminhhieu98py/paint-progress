@@ -36,18 +36,27 @@ export interface BarCumPoint extends Bucket {
   actualCum: number | null
 }
 
-/** Sum of the amounts on days in `[from, to]`. */
-function sumWithin(byDay: Map<DayKey, number>, from: DayKey, to: DayKey): number {
-  let total = 0
-  for (const [day, value] of byDay) if (day >= from && day <= to) total += value
-  return total
-}
-
-/** Sum of the amounts on days up to `to`, inclusive. */
-function sumUpTo(byDay: Map<DayKey, number>, to: DayKey): number {
-  let total = 0
-  for (const [day, value] of byDay) if (day <= to) total += value
-  return total
+/**
+ * A walk over the amounts in day order, asked for windows `[from, to]` that
+ * only move forward (the buckets' order): each call answers the sum inside
+ * the window and the running total up to `to`, both added day by day from
+ * zero in day order. Every amount is visited once, so a series over B buckets
+ * and D days costs O(B + D log D) rather than O(B x D) -- a typo year in a
+ * plan gives thousands of day buckets.
+ */
+function forwardSums(byDay: Map<DayKey, number>) {
+  const entries = [...byDay].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+  let i = 0
+  let running = 0
+  return (from: DayKey, to: DayKey): { within: number; cum: number } => {
+    while (i < entries.length && entries[i][0] < from) running += entries[i++][1]
+    let within = 0
+    while (i < entries.length && entries[i][0] <= to) {
+      within += entries[i][1]
+      running += entries[i++][1]
+    }
+    return { within, cum: running }
+  }
 }
 
 /**
@@ -69,17 +78,23 @@ export function barCumSeries(input: {
   planEnd: DayKey | null
   todayKey: DayKey
 }): BarCumPoint[] {
-  const { plan, actual, planEnd, todayKey } = input
+  const { planEnd, todayKey } = input
+  const plan = forwardSums(input.plan)
+  const actual = forwardSums(input.actual)
+  // Buckets run forward and a bucket without a plan (or actual) value is
+  // followed only by such buckets, so each walk is asked in order.
   return input.buckets.map((bucket) => {
     const hasPlan = planEnd !== null && bucket.start <= planEnd
     const hasActual = bucket.start <= todayKey
     const actualTo = bucket.end < todayKey ? bucket.end : todayKey
+    const p = hasPlan ? plan(bucket.start, bucket.end) : null
+    const a = hasActual ? actual(bucket.start, actualTo) : null
     return {
       ...bucket,
-      plan: hasPlan ? sumWithin(plan, bucket.start, bucket.end) : null,
-      planCum: hasPlan ? sumUpTo(plan, bucket.end) : null,
-      actual: hasActual ? sumWithin(actual, bucket.start, actualTo) : null,
-      actualCum: hasActual ? sumUpTo(actual, actualTo) : null,
+      plan: p === null ? null : p.within,
+      planCum: p === null ? null : p.cum,
+      actual: a === null ? null : a.within,
+      actualCum: a === null ? null : a.cum,
     }
   })
 }

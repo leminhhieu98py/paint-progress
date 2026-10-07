@@ -26,6 +26,7 @@ export function FilterSheet({
   count,
   inline,
   summary,
+  label = 'Bộ lọc',
 }: {
   children: ReactNode
   /** Applied filters off their defaults, for the button's badge; 0 shows none. */
@@ -34,6 +35,11 @@ export function FilterSheet({
   inline?: ReactNode
   /** What is applied, in one line, when no control stays in the row. */
   summary?: string
+  /**
+   * The name of the bar, its button and its sheet: `Bộ lọc` for the page's
+   * own, another for a card's second sheet on the same screen.
+   */
+  label?: string
 }) {
   const [open, setOpen] = useState(false)
   const trigger = { 'aria-haspopup': 'dialog' as const, 'aria-expanded': open, onClick: () => setOpen(true) }
@@ -42,7 +48,7 @@ export function FilterSheet({
     <>
       <div
         role="search"
-        aria-label="Bộ lọc"
+        aria-label={label}
         style={{ display: 'flex', flexWrap: 'nowrap', alignItems: 'center', gap: space.md, minWidth: 0, width: '100%' }}
       >
         {summary !== undefined && inline === undefined
@@ -53,11 +59,11 @@ export function FilterSheet({
           )
           : <div style={{ flex: '1 1 auto', minWidth: 0 }}>{inline}</div>}
         <Badge count={count} size="small">
-          <Button {...trigger} aria-label="Bộ lọc" icon={<FilterOutlined aria-hidden />} />
+          <Button {...trigger} aria-label={label} icon={<FilterOutlined aria-hidden />} />
         </Badge>
       </div>
       <Drawer
-        title="Bộ lọc"
+        title={label}
         placement="bottom"
         open={open}
         onClose={() => setOpen(false)}

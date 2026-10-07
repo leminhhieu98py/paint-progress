@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   camGroupRows,
   camItems,
+  camProgress,
   camSeries,
   camSeriesKeys,
   camSpoolFlags,
@@ -103,6 +104,27 @@ describe('camItems (spec §6.4 units)', () => {
       ['L1', 2, '2026-09-03'],
       ['L2', 1, null],
     ])
+  })
+})
+
+describe('camProgress (spec §6.4 summary)', () => {
+  const spools = [
+    spool({ seq: 1, lineNo: 'L1', phActual: '2026-09-01', ihActual: '2026-09-02' }),
+    spool({ seq: 2, lineNo: 'L1', phActual: '2026-09-03' }),
+    spool({ seq: 3, lineNo: 'L2', phActual: null }),
+    spool({ seq: 4, lineNo: null, phActual: '2026-09-02', iwActual: '2026-09-04' }),
+  ]
+
+  it('counts spool rows done per milestone for SpoolNo', () => {
+    expect(camProgress(spools, 'spoolNo')).toEqual({ total: 4, done: { ph: 3, ih: 1, iw: 1 } })
+  })
+
+  it('counts a group done only when all its spools are, blank values in no group (R-13)', () => {
+    expect(camProgress(spools, 'lineNo')).toEqual({ total: 2, done: { ph: 1, ih: 0, iw: 0 } })
+  })
+
+  it('is zero over no spools', () => {
+    expect(camProgress([], 'spoolNo')).toEqual({ total: 0, done: { ph: 0, ih: 0, iw: 0 } })
   })
 })
 
