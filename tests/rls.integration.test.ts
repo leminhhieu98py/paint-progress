@@ -2696,13 +2696,18 @@ describe.skipIf(!adminConfigured)('0038: piping', () => {
     const notWritten = await admin.from('piping_spools').select('iw_actual').eq('id', s1).single()
     expect(notWritten.data?.iw_actual).toBeNull()
     const goodImport = await gs.rpc('piping_set_spool_actuals', {
-      p_project: projectId, p_import_file: 'actual.xlsx', p_file_rows: 1,
+      p_project: projectId, p_import_file: 'actual.xlsx', p_file_rows: 7,
       p_changes: [{ spool_id: s1, milestone: 'iw', date: '2026-09-05' }],
     })
     expect(goodImport.error).toBeNull()
+    // row_count is the server's own count (one spool); the client's figure is
+    // only kept in the summary.
     const actualLog = await admin
-      .from('piping_import_log').select('kind, file_name, row_count, imported_by').eq('project_id', projectId).eq('kind', 'spool_actual')
-    expect(actualLog.data).toEqual([{ kind: 'spool_actual', file_name: 'actual.xlsx', row_count: 1, imported_by: gsUserId }])
+      .from('piping_import_log').select('kind, file_name, row_count, summary, imported_by')
+      .eq('project_id', projectId).eq('kind', 'spool_actual').single()
+    expect(actualLog.error).toBeNull()
+    expect(actualLog.data).toMatchObject({ kind: 'spool_actual', file_name: 'actual.xlsx', row_count: 1, imported_by: gsUserId })
+    expect(actualLog.data?.summary).toMatchObject({ file_rows: 7, spools: 1, changes: 1, saved: 1 })
 
     const adminClear = await admin.rpc('piping_set_spool_actuals', {
       p_project: projectId, p_changes: [{ spool_id: s0, milestone: 'ih', date: null }],

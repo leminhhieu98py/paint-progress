@@ -154,7 +154,8 @@ begin
 end;
 $$;
 
-revoke all on function piping_is_iso_date(text) from public, anon;
+-- Nobody calls it from outside: the definer functions run as its owner.
+revoke all on function piping_is_iso_date(text) from public, anon, authenticated;
 
 -- ---------------------------------------------------------------------------
 -- 2. Tables
@@ -987,14 +988,17 @@ $$;
 --   p_import_file not null = an Actual import (§6.3, §8): all or nothing --
 --   any 'not_found' / 'order' / 'overwrite_needed' raises and nothing is
 --   written; on success one piping_import_log row (kind 'spool_actual',
---   file_name = p_import_file) is written. Its row_count is p_file_rows (the
---   file's own data-row count, 0..20 000) when given, else the number of
---   distinct spools; its summary carries spools, changes, saved, unchanged,
+--   file_name = p_import_file) is written. Its row_count is always the number
+--   of distinct spools, computed here -- never the caller's figure. The
+--   client's own file row count, p_file_rows (0..20 000, range-checked), is
+--   kept only as summary.file_rows (null when not given); the summary also
+--   carries spools, changes, saved, unchanged,
 --   overwrite.
 --   Errors: 42501 not allowed, or a GS clearing a date; P0001 not enabled,
 --   'Dữ liệu ngày thực tế không hợp lệ', 'Một spool và mốc xuất hiện hai lần',
 --   'Ngày không hợp lệ "x" (spool S)', future day, 'File vượt quá 20 000
---   dòng', and in import mode 'Spool S: ...' naming the first failing spool.
+--   dòng', and in import mode 'Spool S: ...' naming the first failing spool
+--   in the order of p_changes.
 --   Locks: the settings row FOR SHARE (queues behind a Plan import), then the
 --   target spools in id order.
 create or replace function piping_set_spool_actuals(
@@ -1086,11 +1090,12 @@ begin
   -- One set-based pass: classify every spool, write the 'saved' ones (unless
   -- a dry run), and build the result. Linear in the number of changes.
   with ch as (
-    select (c->>'spool_id')::uuid as spool_id, jsonb_object_agg(c->>'milestone', c->'date') as m
-    from jsonb_array_elements(p_changes) c
+    select (c.j->>'spool_id')::uuid as spool_id, jsonb_object_agg(c.j->>'milestone', c.j->'date') as m,
+           min(c.ord) as first_ord
+    from jsonb_array_elements(p_changes) with ordinality as c(j, ord)
     group by 1
   ), cur as (
-    select ch.spool_id, s.id as found_id, s.spool_no,
+    select ch.spool_id, ch.first_ord, s.id as found_id, s.spool_no,
            s.ph_actual as o_ph, s.ih_actual as o_ih, s.iw_actual as o_iw,
            case when ch.m ? 'ph' then (ch.m->>'ph')::date else s.ph_actual end as n_ph,
            case when ch.m ? 'ih' then (ch.m->>'ih')::date else s.ih_actual end as n_ih,
@@ -1121,17 +1126,18 @@ begin
   select coalesce(jsonb_agg(jsonb_build_object('spool_id', x.spool_id, 'spool_no', x.spool_no,
                                                'status', x.status) order by x.spool_id), '[]'::jsonb),
          count(*) filter (where x.status = 'saved'),
-         count(*) filter (where x.status = 'unchanged')
-    into results, n_saved, n_unchanged
+         count(*) filter (where x.status = 'unchanged'),
+         -- The first failing spool in the order of p_changes (file order), for
+         -- the import-mode message below.
+         (array_agg(jsonb_build_object('spool_id', x.spool_id, 'spool_no', x.spool_no, 'status', x.status)
+                    order by x.first_ord)
+            filter (where x.status in ('not_found', 'order', 'overwrite_needed')))[1]
+    into results, n_saved, n_unchanged, bad
   from classified x;
   -- `written` needs no reference: a data-modifying WITH runs to completion
   -- whether or not the main query reads it.
 
   if p_import_file is not null and not dry_run then
-    select x into bad
-    from jsonb_array_elements(results) x
-    where x->>'status' in ('not_found', 'order', 'overwrite_needed')
-    limit 1;
     if bad is not null then
       -- Raising rolls back the 'saved' writes above: nothing of the file lands.
       raise exception 'Spool %: %. Không có dữ liệu nào được ghi.',
@@ -1144,8 +1150,8 @@ begin
     end if;
     insert into piping_import_log (project_id, kind, file_name, row_count, summary, imported_by)
     values (
-      p_project, 'spool_actual', btrim(p_import_file), coalesce(p_file_rows, n_spools),
-      jsonb_build_object('spools', n_spools, 'changes', n_changes, 'saved', n_saved,
+      p_project, 'spool_actual', btrim(p_import_file), n_spools,
+      jsonb_build_object('file_rows', p_file_rows, 'spools', n_spools, 'changes', n_changes, 'saved', n_saved,
                          'unchanged', n_unchanged, 'overwrite', overwrite),
       auth.uid()
     );
@@ -1716,8 +1722,9 @@ begin
   if has_function_privilege('anon', 'public.piping_vn_today()', 'execute') then
     raise exception '0038: anon can execute piping_vn_today()';
   end if;
-  if has_function_privilege('anon', 'public.piping_is_iso_date(text)', 'execute') then
-    raise exception '0038: anon can execute piping_is_iso_date(text)';
+  if has_function_privilege('anon', 'public.piping_is_iso_date(text)', 'execute')
+     or has_function_privilege('authenticated', 'public.piping_is_iso_date(text)', 'execute') then
+    raise exception '0038: anon or authenticated can execute piping_is_iso_date(text)';
   end if;
 
   -- Each function checks its caller itself, with 42501.
