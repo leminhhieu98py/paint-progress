@@ -110,6 +110,61 @@ export function manpowerSeries(input: {
 }
 
 /**
+ * The average daily total over the whole range, plan and actual: the mean of
+ * the daily totals over the days that have any value (R-2's rule, applied to
+ * every day at once, so it reads the same in the Ngày and the Tuần view).
+ * Actual never reads a day after today; a value of a group not in `groups` is
+ * ignored, as in the chart. Null when no day has a value.
+ */
+export function manpowerAverages(input: {
+  groups: ManpowerGroup[]
+  plan: ManpowerValue[]
+  actual: ManpowerValue[]
+  todayKey: DayKey
+}): { plan: number | null; actual: number | null } {
+  const known = new Set(input.groups.map((g) => g.id))
+  const mean = (values: ManpowerValue[], lastDay: DayKey | null): number | null => {
+    const totals = new Map<DayKey, number>()
+    for (const { groupId, day, value } of values) {
+      if (!known.has(groupId) || (lastDay !== null && day > lastDay)) continue
+      totals.set(day, (totals.get(day) ?? 0) + value)
+    }
+    if (totals.size === 0) return null
+    let sum = 0
+    for (const total of totals.values()) sum += total
+    return sum / totals.size
+  }
+  return { plan: mean(input.plan, null), actual: mean(input.actual, input.todayKey) }
+}
+
+/** One day of a Manpower table: each group's value (only the groups that have one) and their sum. */
+export interface ManpowerDayRow {
+  day: DayKey
+  byGroup: Record<string, number>
+  total: number
+}
+
+/**
+ * The plan or the actual as a day grid, oldest day first: one row per day
+ * with any value of a group in `groups` (hidden ones included, R-8).
+ */
+export function manpowerDays(groups: ManpowerGroup[], values: ManpowerValue[]): ManpowerDayRow[] {
+  const known = new Set(groups.map((g) => g.id))
+  const byDay = new Map<DayKey, ManpowerDayRow>()
+  for (const { groupId, day, value } of values) {
+    if (!known.has(groupId)) continue
+    let row = byDay.get(day)
+    if (!row) {
+      row = { day, byGroup: {}, total: 0 }
+      byDay.set(day, row)
+    }
+    row.byGroup[groupId] = value
+    row.total += value
+  }
+  return [...byDay.values()].sort((a, b) => (a.day < b.day ? -1 : a.day > b.day ? 1 : 0))
+}
+
+/**
  * The groups the chart draws, in sort order: every visible group, and a hidden
  * group only while it has any plan or actual value (R-8), so hiding a group
  * never erases its history and an unused hidden group adds no empty legend.
