@@ -68,6 +68,21 @@ describe('import templates (spec §8)', () => {
     expect(sheet.views[0]).toMatchObject({ state: 'frozen', ySplit: 1 })
   })
 
+  it('reads back a filled template: a real date cell and a typed number survive the round trip', async () => {
+    const { Workbook } = await import('exceljs')
+    const wb = new Workbook()
+    await wb.xlsx.load(await (await buildReinstatementPlanTemplate()).arrayBuffer())
+    const sheet = wb.worksheets[0]
+    sheet.getCell('A2').value = new Date(Date.UTC(2026, 8, 18))
+    sheet.getCell('B2').value = 15
+    sheet.getCell('A3').value = '25/09/2026'
+    sheet.getCell('B3').value = '20,5'
+    const filled = await wb.xlsx.writeBuffer()
+    const res = parseReinstatementPlan(await readWorkbookRows(new Uint8Array(filled as ArrayBuffer)))
+    expect(res.errors).toEqual([])
+    expect(res.rows).toEqual([{ day: '2026-09-18', planQty: 15 }, { day: '2026-09-25', planQty: 20.5 }])
+  })
+
   it('names each template file after its import', () => {
     expect(templateFileName('reinstatement_plan')).toBe('Mau_Reinstatement_Plan.xlsx')
     expect(templateFileName('manpower_plan')).toBe('Mau_Manpower_Plan.xlsx')

@@ -10,7 +10,8 @@ import type {
   Unit,
   ViewMode,
 } from './types'
-import { buckets, daysBetween, seriesSpan, type Bucket } from './week'
+import { compareText } from './text'
+import { buckets, daysBetween, formatDayMonthYear, seriesSpan, type Bucket } from './week'
 
 /**
  * CAM Insulation -- requirement §4.3 and §6, spec §6.4 and §7, Q14-Q23.
@@ -50,8 +51,10 @@ export const UNIT_LABEL: Record<Unit, string> = {
 
 type Dates = Record<Milestone, DayKey | null>
 
-const PLAN_FIELD: Record<Milestone, keyof SpoolPlanDates> = { ph: 'phPlan', ih: 'ihPlan', iw: 'iwPlan' }
-const ACTUAL_FIELD: Record<Milestone, keyof SpoolActualDates> = { ph: 'phActual', ih: 'ihActual', iw: 'iwActual' }
+/** The Spool field holding a milestone's plan date. */
+export const PLAN_FIELD: Record<Milestone, keyof SpoolPlanDates> = { ph: 'phPlan', ih: 'ihPlan', iw: 'iwPlan' }
+/** The Spool field holding a milestone's actual date. */
+export const ACTUAL_FIELD: Record<Milestone, keyof SpoolActualDates> = { ph: 'phActual', ih: 'ihActual', iw: 'iwActual' }
 
 /** A spool's plan dates by milestone. */
 export function planDates(s: SpoolPlanDates): Dates {
@@ -65,12 +68,14 @@ export function actualDates(s: SpoolActualDates): Dates {
 
 /**
  * The key SpoolNo is compared by -- duplicates, the plan diff (R-10) and the
- * Actual import (R-11) all match on it. Trimmed and otherwise exact: SpoolNo
- * values are codes copied out of the same workbook, and folding case or inner
- * spaces could merge two spools the customer keeps apart.
+ * Actual import (R-11) all match on it. Spaces trimmed from both ends and
+ * nothing else, exactly as Postgres `btrim(spool_no)` does in
+ * `piping_replace_spools`, so the preview pairs spools the way the database
+ * will. Case and inner spaces are kept: SpoolNo values are codes, and folding
+ * them could merge two spools the customer keeps apart.
  */
 export function spoolKey(spoolNo: string): string {
-  return spoolNo.trim()
+  return spoolNo.replace(/^ +| +$/g, '')
 }
 
 /** A text value as a group key; blank and null are no value. */
@@ -79,11 +84,6 @@ function groupValue(value: string | null): string | null {
   return v === '' ? null : v
 }
 
-function compareText(a: string, b: string): number {
-  return a.localeCompare(b, 'en', { numeric: true })
-}
-
-const dateFmt = (day: DayKey) => `${day.slice(8, 10)}/${day.slice(5, 7)}/${day.slice(0, 4)}`
 
 // ---------------------------------------------------------------------------
 // Order rule
@@ -106,7 +106,7 @@ export function orderViolations(dates: Dates): Array<[Milestone, Milestone]> {
 /** `Sai thứ tự: Painting Handover (06/09/2026) sau Insulation Handover (05/09/2026)`. */
 export function orderMessage(dates: Dates, pairs: Array<[Milestone, Milestone]>): string {
   return `Sai thứ tự: ${pairs
-    .map(([a, b]) => `${MILESTONE_LABEL[a]} (${dateFmt(dates[a]!)}) sau ${MILESTONE_LABEL[b]} (${dateFmt(dates[b]!)})`)
+    .map(([a, b]) => `${MILESTONE_LABEL[a]} (${formatDayMonthYear(dates[a]!)}) sau ${MILESTONE_LABEL[b]} (${formatDayMonthYear(dates[b]!)})`)
     .join('; ')}`
 }
 
@@ -458,7 +458,7 @@ export function resolveActualChanges(spools: Spool[], changes: ActualChange[], t
     if (future) {
       res.rejected.push({
         spoolId, spoolNo: spool.spoolNo, reason: 'future',
-        message: `${MILESTONE_LABEL[future]}: ngày ${dateFmt(wanted.get(future)!)} sau hôm nay`,
+        message: `${MILESTONE_LABEL[future]}: ngày ${formatDayMonthYear(wanted.get(future)!)} sau hôm nay`,
       })
       continue
     }

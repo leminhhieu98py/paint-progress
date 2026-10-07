@@ -4,6 +4,7 @@ import {
   buckets,
   daysBetween,
   formatDayMonth,
+  formatDayMonthYear,
   seriesSpan,
   weekIndex,
   weekLabel,
@@ -53,6 +54,7 @@ describe('weekIndex / weekRange (spec §3)', () => {
 describe('labels (Q6A)', () => {
   it('labels a week by its first day DD/MM, the tooltip by DD/MM – DD/MM', () => {
     expect(formatDayMonth('2026-09-08')).toBe('08/09')
+    expect(formatDayMonthYear('2026-09-08')).toBe('08/09/2026')
     expect(weekLabel(1, START)).toBe('25/09')
     expect(weekRangeLabel(1, START)).toBe('25/09 – 01/10')
   })

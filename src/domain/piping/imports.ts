@@ -1,6 +1,6 @@
-import { parseViDecimal } from '../../components/viNumberInput'
-import { MILESTONES, actualDates, duplicateSpoolGroups, orderMessage, planOrderIssues,
+import { MILESTONES, PLAN_FIELD, actualDates, duplicateSpoolGroups, orderMessage, planDates, planOrderIssues,
   resolveActualChanges, spoolKey, type ActualChange, type ActualOverwrite, type ActualResolution } from './cam'
+import { compareText } from './text'
 import type {
   DayKey,
   ManpowerGroup,
@@ -12,6 +12,7 @@ import type {
   SpoolMaster,
   SpoolPlanDates,
 } from './types'
+import { formatDayMonthYear } from './week'
 
 /**
  * Piping imports -- spec §8 (common rules), §6.2 (Insulation Plan), §6.3
@@ -92,55 +93,71 @@ export const SPOOL_ACTUAL_COLUMNS: Record<Milestone, ColumnSpec> = {
   iw: { label: 'Insulation Work – Actual', aliases: ['IW Actual'] },
 }
 
-const PLAN_FIELD: Record<Milestone, keyof SpoolPlanDates> = { ph: 'phPlan', ih: 'ihPlan', iw: 'iwPlan' }
+/** Every built-in column of the spool files, for the extra-label collision check. */
+const BUILT_IN_SPOOL_COLUMNS: ColumnSpec[] = [
+  ...Object.values(SPOOL_MASTER_COLUMNS),
+  ...Object.values(SPOOL_PLAN_COLUMNS),
+  ...Object.values(SPOOL_ACTUAL_COLUMNS),
+]
+
 
 // ---------------------------------------------------------------------------
 // Cells
 // ---------------------------------------------------------------------------
 
 /**
- * A header as compared: case, whitespace (non-breaking included), every dash
- * (-, –, —, …), underscores and dots ignored. "Painting Handover – Plan" and
- * "painting handover - plan" are the same header.
+ * A BUILT-IN header as compared: case, whitespace (non-breaking included),
+ * every dash (-, –, —, …), underscores and dots ignored. "Painting Handover –
+ * Plan" and "painting handover - plan" are the same header.
+ *
+ * Too loose for names the admin types (groups, extra columns): the database
+ * keeps those unique by `lower(btrim(name))` only, so "Mpr A" and "MprA" are
+ * two groups. Those match by `nameKey` first (see `matchNames`).
  */
 export function normalizeHeader(text: string): string {
   return text.normalize('NFC').toLowerCase().replace(/[\s‐-―_.-]+/g, '')
 }
 
-function namesOf(spec: ColumnSpec): string[] {
-  return [spec.label, ...spec.aliases].map(normalizeHeader)
+/** An admin-typed name as the database keeps it unique: `lower(btrim(name))`. */
+export function nameKey(text: string): string {
+  return text.normalize('NFC').replace(/^ +| +$/g, '').toLowerCase()
 }
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000
 /** Excel's day 0 in the 1900 system, as the serials of today's dates count from it. */
 const EXCEL_EPOCH_MS = Date.UTC(1899, 11, 30)
-/** Serials for 2000-01-01 .. 2100-12-31: a bare number outside is not a date. */
-const SERIAL_MIN = 36526
-const SERIAL_MAX = 73415
+const FIRST_DAY = '2000-01-01'
+const LAST_DAY = '2100-12-31'
 
 /**
- * ExcelJS hands a date cell over as the wall-clock date at UTC. One second of
- * slack before midnight absorbs a serial stored a hair under the whole day.
+ * The day of an Excel date, one rule for both paths a date reaches us by.
+ *
+ * Excel stores a date as a zone-less wall-clock serial, and ExcelJS hands a
+ * date-formatted cell over as that wall clock read at UTC. So the UTC date IS
+ * the calendar day the user typed -- a Vietnam day, since the users are in
+ * Vietnam -- and no time-zone shift is applied (this is not an instant, so
+ * `effortDayKey` does not apply). A bare serial (a date cell whose format was
+ * lost) is turned into the same millisecond count. Both are then rounded to
+ * the nearest second, absorbing a serial stored a hair under a whole day,
+ * and floored to the day: the same cell content gives the same day whichever
+ * path it takes.
  */
-function dateToDay(d: Date): DayKey {
-  const days = Math.floor((d.getTime() + 1000) / MS_PER_DAY)
+function msToDay(ms: number): DayKey {
+  const seconds = Math.round(ms / 1000)
+  const days = Math.floor(seconds / (MS_PER_DAY / 1000))
   return new Date(days * MS_PER_DAY).toISOString().slice(0, 10)
-}
-
-function dayDisplay(day: DayKey): string {
-  return `${day.slice(8, 10)}/${day.slice(5, 7)}/${day.slice(0, 4)}`
 }
 
 /** A cell as text in a message. */
 function cellDisplay(v: CellValue): string {
-  if (v instanceof Date) return Number.isNaN(v.getTime()) ? '' : dayDisplay(dateToDay(v))
+  if (v instanceof Date) return Number.isNaN(v.getTime()) ? '' : formatDayMonthYear(msToDay(v.getTime()))
   return String(v ?? '').trim()
 }
 
 /** A text cell: trimmed, blank as null; a number or date as its text. */
 export function textCell(v: CellValue): string | null {
   if (v === null) return null
-  const s = v instanceof Date ? (Number.isNaN(v.getTime()) ? '' : dateToDay(v)) : String(v).trim()
+  const s = v instanceof Date ? (Number.isNaN(v.getTime()) ? '' : msToDay(v.getTime())) : String(v).trim()
   return s === '' ? null : s
 }
 
@@ -153,17 +170,18 @@ function validDay(y: number, m: number, d: number): DayKey | null {
 
 /**
  * A date cell (spec §8): an Excel date, a `dd/mm/yyyy` (also `d/m/yyyy`, with
- * `-` or `.`) or `yyyy-mm-dd` text, or a bare Excel serial (a date cell whose
- * format was lost). Blank is null. Years 2000-2100 only, which catches the
- * mm/dd and two-digit-year slips a construction plan would otherwise accept.
+ * `-` or `.`) or `yyyy-mm-dd` text, or a bare Excel serial. Blank is null.
+ * Years 2000-2100 only, which catches the mm/dd and two-digit-year slips a
+ * construction plan would otherwise accept. Day rule: `msToDay`.
  */
 export function parseDayCell(v: CellValue): { day: DayKey } | { error: string } | null {
   if (v === null) return null
   const bad = { error: `Ngày không hợp lệ: "${cellDisplay(v)}"` }
-  if (v instanceof Date) return Number.isNaN(v.getTime()) ? bad : { day: dateToDay(v) }
+  const inRange = (day: DayKey) => (day >= FIRST_DAY && day <= LAST_DAY ? { day } : bad)
+  if (v instanceof Date) return Number.isNaN(v.getTime()) ? bad : inRange(msToDay(v.getTime()))
   if (typeof v === 'number') {
-    if (!Number.isFinite(v) || v < SERIAL_MIN || v >= SERIAL_MAX + 1) return bad
-    return { day: dateToDay(new Date(EXCEL_EPOCH_MS + Math.floor(v) * MS_PER_DAY)) }
+    if (!Number.isFinite(v)) return bad
+    return inRange(msToDay(EXCEL_EPOCH_MS + v * MS_PER_DAY))
   }
   if (typeof v !== 'string') return bad
   const s = v.trim()
@@ -182,9 +200,36 @@ export function parseDayCell(v: CellValue): { day: DayKey } | { error: string } 
 }
 
 /**
- * A number cell: a number, or text read the way `parseViDecimal` reads a typed
- * number ("2,5", "1.230,5", "1,230.5", "2.5"). Blank is null. The sign is the
- * caller's to check.
+ * Typed decimal text, STRICTLY: an optional "-", then digits with at most one
+ * decimal separator and optional, well-formed thousands groups. Whitespace
+ * (non-breaking and narrow included) is dropped first. Null for anything
+ * else -- "12/05", "1:30", "(5)", "5%", "+3", "5 kg" -- which a lenient reader
+ * would turn into a DIFFERENT number without a word.
+ *
+ * The shapes, and what they read as (the same readings as the screen's
+ * `parseViDecimal`, components/viNumberInput.ts, on every shape both accept):
+ *   1234             1234
+ *   1234,5 1.234,5   1234.5   comma = decimal, dots = thousands (vi)
+ *   1,234.5          1234.5   comma groups before one dot (en)
+ *   1234.5 1.234     1234.5, 1.234   a single dot is a decimal point
+ *   1.234.567        1234567  two or more dots can only be thousands
+ */
+export function parseDecimalText(text: string): number | null {
+  const s = text.replace(/\s+/g, '')
+  const sign = s.startsWith('-') ? '-' : ''
+  const body = sign ? s.slice(1) : s
+  let plain: string | null = null
+  if (/^\d+$/.test(body)) plain = body
+  else if (/^(\d+|\d{1,3}(\.\d{3})+),\d+$/.test(body)) plain = body.replace(/\./g, '').replace(',', '.')
+  else if (/^\d{1,3}(,\d{3})+\.\d+$/.test(body)) plain = body.replace(/,/g, '')
+  else if (/^\d+\.\d+$/.test(body)) plain = body
+  else if (/^\d{1,3}(\.\d{3}){2,}$/.test(body)) plain = body.replace(/\./g, '')
+  return plain === null ? null : Number(sign + plain)
+}
+
+/**
+ * A number cell: a number, or text read by `parseDecimalText`. Blank is null;
+ * any other text is "Không phải số". The sign is the caller's to check.
  */
 export function parseNumberCell(v: CellValue): { value: number } | { error: string } | null {
   if (v === null) return null
@@ -192,9 +237,8 @@ export function parseNumberCell(v: CellValue): { value: number } | { error: stri
   if (typeof v === 'number') return Number.isFinite(v) ? { value: v } : bad
   if (typeof v !== 'string') return bad
   if (v.trim() === '') return null
-  const normalised = parseViDecimal(v)
-  if (!/^-?\d+(\.\d+)?$/.test(normalised)) return bad
-  return { value: Number(normalised) }
+  const value = parseDecimalText(v)
+  return value === null ? bad : { value }
 }
 
 // ---------------------------------------------------------------------------
@@ -212,24 +256,79 @@ interface Header {
 }
 
 /** The first header row, across sheets in order, that `accept` takes. */
-function findHeader(sheets: SheetRows[], accept: (norm: string[]) => boolean): Header | null {
+function findHeader(sheets: SheetRows[], accept: (norm: string[], texts: string[]) => boolean): Header | null {
   for (const sheet of sheets) {
     const scan = Math.min(HEADER_SCAN_ROWS, sheet.rows.length)
     for (let index = 0; index < scan; index += 1) {
       const texts = (sheet.rows[index] ?? []).map((c) => textCell(c) ?? '')
       const norm = texts.map(normalizeHeader)
-      if (accept(norm)) return { sheet, index, texts, norm }
+      if (accept(norm, texts)) return { sheet, index, texts, norm }
     }
   }
   return null
 }
 
+/**
+ * The column of a built-in header: one headed by its label wins over one
+ * headed by an alias, so a file with both "LineNo" and "Line" reads LineNo
+ * from "LineNo" and leaves "Line" free for an extra column of that name.
+ */
 function columnOf(norm: string[], spec: ColumnSpec): number {
-  const names = namesOf(spec)
-  return norm.findIndex((h) => h !== '' && names.includes(h))
+  const label = norm.indexOf(normalizeHeader(spec.label))
+  if (label !== -1) return label
+  const aliases = spec.aliases.map(normalizeHeader)
+  return norm.findIndex((h) => h !== '' && aliases.includes(h))
 }
 
 const hasAll = (specs: ColumnSpec[]) => (norm: string[]) => specs.every((s) => columnOf(norm, s) !== -1)
+
+/**
+ * Admin-typed names (groups, extra column labels) against header cells.
+ *
+ * A header naming a name by `nameKey` -- exactly what the database keeps
+ * unique -- takes it. Only then may a header match by the looser
+ * `normalizeHeader`, and only when that names ONE name: "Mpr-for-Reins"
+ * finds "Mpr for Reins", but "Mpr-A" finds neither "Mpr A" nor "MprA".
+ * A second header for a name already taken is reported in `repeats`.
+ * Columns in `skip` are not considered.
+ */
+function matchNames(
+  texts: string[],
+  names: string[],
+  skip: Set<number>,
+): { byColumn: Map<number, number>; repeats: Array<{ col: number; name: number }>; unmatched: number[] } {
+  const exact = new Map<string, number>()
+  names.forEach((n, i) => exact.set(nameKey(n), i))
+  const loose = new Map<string, number[]>()
+  names.forEach((n, i) => {
+    const k = normalizeHeader(n)
+    loose.set(k, [...(loose.get(k) ?? []), i])
+  })
+  const byColumn = new Map<number, number>()
+  const taken = new Set<number>()
+  const repeats: Array<{ col: number; name: number }> = []
+  const unmatched: number[] = []
+  const claim = (col: number, name: number) => {
+    if (taken.has(name)) repeats.push({ col, name })
+    else {
+      taken.add(name)
+      byColumn.set(col, name)
+    }
+  }
+  const pending: number[] = []
+  texts.forEach((t, col) => {
+    if (t === '' || skip.has(col)) return
+    const i = exact.get(nameKey(t))
+    if (i === undefined) pending.push(col)
+    else claim(col, i)
+  })
+  for (const col of pending) {
+    const candidates = loose.get(normalizeHeader(texts[col])) ?? []
+    if (candidates.length === 1) claim(col, candidates[0])
+    else unmatched.push(col)
+  }
+  return { byColumn, repeats, unmatched }
+}
 
 function missingHeader(labels: string): ImportIssue {
   return { row: null, message: `Không tìm thấy dòng tiêu đề có các cột: ${labels}` }
@@ -286,7 +385,7 @@ function readDate(
   }
   const first = seen.get(parsed.day)
   if (first !== undefined) {
-    errors.push({ row, message: `Ngày ${dayDisplay(parsed.day)} trùng với dòng ${first}` })
+    errors.push({ row, message: `Ngày ${formatDayMonthYear(parsed.day)} trùng với dòng ${first}` })
     return null
   }
   seen.set(parsed.day, row)
@@ -348,30 +447,22 @@ export function parseReinstatementPlan(sheets: SheetRows[]): ParseResult<Reinsta
 export function parseManpowerPlan(sheets: SheetRows[], groups: ManpowerGroup[]): ParseResult<ManpowerValue> {
   const pre = checkPreamble(sheets)
   if (pre) return empty(null, [pre])
-  const byName = new Map(groups.map((g) => [normalizeHeader(g.name), g]))
+  const names = groups.map((g) => g.name)
+  const groupsIn = (norm: string[], texts: string[]) => {
+    const dateCol = columnOf(norm, DATE_COLUMN)
+    return matchNames(texts, names, new Set(dateCol === -1 ? [] : [dateCol]))
+  }
   // A workbook may carry other sheets with a date column (the customer's own
   // has three): the one naming a group wins, else the first with a date.
-  const header = findHeader(sheets, (norm) => columnOf(norm, DATE_COLUMN) !== -1 && norm.some((h) => byName.has(h)))
+  const header = findHeader(sheets, (norm, texts) => columnOf(norm, DATE_COLUMN) !== -1 && groupsIn(norm, texts).byColumn.size > 0)
     ?? findHeader(sheets, hasAll([DATE_COLUMN]))
   if (!header) return empty(null, [missingHeader(DATE_COLUMN.label)])
   const dateCol = columnOf(header.norm, DATE_COLUMN)
   const headerRow = header.index + 1
-  const columns: Array<{ col: number; group: ManpowerGroup }> = []
-  const unknown: string[] = []
-  const errors: ImportIssue[] = []
-  header.norm.forEach((h, col) => {
-    if (col === dateCol || h === '') return
-    const group = byName.get(h)
-    if (!group) {
-      unknown.push(header.texts[col])
-      return
-    }
-    if (columns.some((c) => c.group.id === group.id)) {
-      errors.push({ row: headerRow, message: `Cột nhóm ${group.name} lặp lại` })
-      return
-    }
-    columns.push({ col, group })
-  })
+  const matched = groupsIn(header.norm, header.texts)
+  const columns = [...matched.byColumn.entries()].sort(([a], [b]) => a - b).map(([col, i]) => ({ col, group: groups[i] }))
+  const unknown = matched.unmatched.sort((a, b) => a - b).map((col) => header.texts[col])
+  const errors: ImportIssue[] = matched.repeats.map((r) => ({ row: headerRow, message: `Cột nhóm ${groups[r.name].name} lặp lại` }))
   if (unknown.length > 0) {
     errors.unshift({ row: headerRow, message: `Nhóm chưa có trong Cấu hình: ${unknown.join(', ')} (tạo nhóm trước khi nhập)` })
   }
@@ -443,15 +534,24 @@ export function parseSpoolPlan(sheets: SheetRows[], extraColumns: Array<Pick<Spo
     const c = columnOf(header.norm, SPOOL_ACTUAL_COLUMNS[m])
     if (c !== -1) used.add(c)
   }
-  const extraCol: Array<{ col: number; label: string }> = []
-  for (const { label } of extraColumns) {
-    const names = [normalizeHeader(label)]
-    const col = header.norm.findIndex((h, i) => h !== '' && !used.has(i) && names.includes(h))
-    if (col !== -1) {
-      extraCol.push({ col, label })
-      used.add(col)
+  const labels = extraColumns.map((c) => c.label)
+  const extraMatch = matchNames(header.texts, labels, used)
+  const extraCol = [...extraMatch.byColumn.entries()].sort(([a], [b]) => a - b).map(([col, i]) => ({ col, label: labels[i] }))
+  for (const { col } of extraCol) used.add(col)
+  // A label that is also a built-in header name cannot be told from it by a
+  // file; unless the file has a second column for it, say so rather than
+  // leaving the extra column silently empty.
+  const filled = new Set(extraMatch.byColumn.values())
+  labels.forEach((label, i) => {
+    if (filled.has(i)) return
+    const builtIn = BUILT_IN_SPOOL_COLUMNS.find((spec) => [spec.label, ...spec.aliases].some((n) => normalizeHeader(n) === normalizeHeader(label)))
+    if (builtIn) {
+      warnings.push({
+        row: headerRow,
+        message: `Cột thêm "${label}" trùng tên cột chuẩn ${builtIn.label} nên không đọc được; đổi tên cột thêm trong Cấu hình`,
+      })
     }
-  }
+  })
   const missing = MASTER_KEYS.filter((k) => masterCol[k] === -1).map((k) => SPOOL_MASTER_COLUMNS[k].label)
   if (missing.length > 0) warnings.push({ row: headerRow, message: `Không có cột: ${missing.join(', ')}` })
   const ignored = header.texts.filter((t, i) => t !== '' && !used.has(i))
@@ -505,16 +605,12 @@ export function parseSpoolPlan(sheets: SheetRows[], extraColumns: Array<Pick<Spo
   const planOrder = planOrderIssues(rows)
   const duplicates = duplicateSpoolGroups(rows)
   for (const issue of planOrder) {
-    warnings.push({ row: issue.row.row, message: orderMessage(planDatesOf(issue.row), issue.pairs) })
+    warnings.push({ row: issue.row.row, message: orderMessage(planDates(issue.row), issue.pairs) })
   }
   for (const d of duplicates) {
     warnings.push({ row: null, message: `SpoolNo "${d.spoolNo}" lặp lại ở các dòng ${d.rows.map((r) => r.row).join(', ')}` })
   }
   return { ...finish(header.sheet.name, rows, data.length, errors, warnings), duplicates, planOrder }
-}
-
-function planDatesOf(r: SpoolPlanDates): Record<Milestone, DayKey | null> {
-  return { ph: r.phPlan, ih: r.ihPlan, iw: r.iwPlan }
 }
 
 // ---------------------------------------------------------------------------
@@ -596,14 +692,16 @@ export function parseSpoolActual(sheets: SheetRows[]): ParseResult<SpoolActualRo
 export interface SpoolActualImport {
   errors: ImportIssue[]
   warnings: ImportIssue[]
-  /** Every change to send, one per matching spool and milestone. Empty on any error. */
+  /** Every requested change, one per matching spool and milestone, no-ops included (for display). Empty on any error. */
   changes: ActualChange[]
-  /** The same, grouped per spool with no-op dates dropped (what the RPC receives). */
+  /** THE payload: per spool, no-op dates dropped -- what the RPC receives (flattened by the API layer). */
   updates: ActualResolution['updates']
   /** Existing dates the import replaces, old -> new: confirm first. */
   overwrites: Array<ActualOverwrite & { row: number }>
   /** Dates equal to what is stored. */
   unchangedCount: number
+  /** Distinct spools the import changes (`updates.length`), for the preview and the confirm. */
+  spoolCount: number
 }
 
 /**
@@ -633,7 +731,7 @@ export function resolveSpoolActualImport(rows: SpoolActualRow[], spools: Spool[]
     }
     const future = MILESTONES.find((m) => r.dates[m] !== undefined && r.dates[m]! > todayKey)
     if (future) {
-      errors.push({ row: r.row, message: `${SPOOL_ACTUAL_COLUMNS[future].label}: ngày ${dayDisplay(r.dates[future]!)} sau hôm nay` })
+      errors.push({ row: r.row, message: `${SPOOL_ACTUAL_COLUMNS[future].label}: ngày ${formatDayMonthYear(r.dates[future]!)} sau hôm nay` })
       continue
     }
     if (matches.length > 1) warnings.push({ row: r.row, message: `SpoolNo "${key}" khớp ${matches.length} spool, áp dụng cho tất cả` })
@@ -656,7 +754,7 @@ export function resolveSpoolActualImport(rows: SpoolActualRow[], spools: Spool[]
     errors.push({ row, message })
   }
   errors.sort((a, b) => (a.row ?? 0) - (b.row ?? 0))
-  if (errors.length > 0) return { errors, warnings, changes: [], updates: [], overwrites: [], unchangedCount: 0 }
+  if (errors.length > 0) return { errors, warnings, changes: [], updates: [], overwrites: [], unchangedCount: 0, spoolCount: 0 }
   return {
     errors,
     warnings,
@@ -664,6 +762,7 @@ export function resolveSpoolActualImport(rows: SpoolActualRow[], spools: Spool[]
     updates: resolved.updates,
     overwrites: resolved.overwrites.map((o) => ({ row: rowOfSpool.get(o.spoolId)!, ...o })),
     unchangedCount: resolved.unchanged.length,
+    spoolCount: resolved.updates.length,
   }
 }
 
@@ -713,7 +812,7 @@ export function diffReinstatementPlan(old: ReinstatementPlanRow[], next: Reinsta
  */
 export function diffManpowerPlan(old: ManpowerValue[], next: ManpowerValue[]): KeyedDiff<{ groupId: string; day: DayKey }> {
   const map = (rows: ManpowerValue[]) => rows.map((r) => ({ key: `${r.groupId}|${r.day}`, id: { groupId: r.groupId, day: r.day }, value: r.value }))
-  return diffKeyed(map(old), map(next), (a, b) => byDay(a, b) || a.groupId.localeCompare(b.groupId))
+  return diffKeyed(map(old), map(next), (a, b) => byDay(a, b) || compareText(a.groupId, b.groupId))
 }
 
 export type SpoolDiffField = Exclude<keyof SpoolMaster, 'spoolNo'> | keyof SpoolPlanDates | 'extra'

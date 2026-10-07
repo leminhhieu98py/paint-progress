@@ -51,8 +51,8 @@ export function formatDayMonth(day: DayKey): string {
   return `${day.slice(8, 10)}/${day.slice(5, 7)}`
 }
 
-/** `DD/MM/YYYY`, the day-view tooltip. */
-function formatDayMonthYear(day: DayKey): string {
+/** `DD/MM/YYYY`: the day-view tooltip, and every date in a Piping message. */
+export function formatDayMonthYear(day: DayKey): string {
   return `${formatDayMonth(day)}/${day.slice(0, 4)}`
 }
 

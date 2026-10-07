@@ -46,6 +46,15 @@ describe('parseDayCell', () => {
     expect(parseDayCell(46283)).toEqual({ day: '2026-09-18' })
   })
 
+  it('rounds a date cell and a bare serial for the same instant to the same day (nearest second, then the wall date)', () => {
+    // 23:59:59.4 stays on the 17th, 23:59:59.6 rounds to midnight of the 18th -- on both paths.
+    expect(parseDayCell(new Date('2026-09-17T23:59:59.400Z'))).toEqual({ day: '2026-09-17' })
+    expect(parseDayCell(new Date('2026-09-17T23:59:59.600Z'))).toEqual({ day: '2026-09-18' })
+    expect(parseDayCell(46282 + 86399.4 / 86400)).toEqual({ day: '2026-09-17' })
+    expect(parseDayCell(46282 + 86399.6 / 86400)).toEqual({ day: '2026-09-18' })
+    expect(parseDayCell(46282.5)).toEqual({ day: '2026-09-17' })
+  })
+
   it('reads blank as no value', () => {
     expect(parseDayCell(null)).toBeNull()
     expect(parseDayCell('   ')).toBeNull()
@@ -74,6 +83,24 @@ describe('parseNumberCell', () => {
     expect(parseNumberCell(' ')).toBeNull()
     expect(parseNumberCell('abc')).toEqual({ error: 'Không phải số: "abc"' })
     expect(parseNumberCell(utc('2026-09-18'))).toEqual({ error: 'Không phải số: "18/09/2026"' })
+  })
+
+  it('reads plain grouped and signed numbers in vi or en form', () => {
+    expect(parseNumberCell('1234')).toEqual({ value: 1234 })
+    expect(parseNumberCell('1234,5')).toEqual({ value: 1234.5 })
+    expect(parseNumberCell('1234.5')).toEqual({ value: 1234.5 })
+    expect(parseNumberCell('1.234.567')).toEqual({ value: 1234567 })
+    expect(parseNumberCell('1.234.567,89')).toEqual({ value: 1234567.89 })
+    expect(parseNumberCell('1,234,567.89')).toEqual({ value: 1234567.89 })
+    expect(parseNumberCell(' 1\u00a0234,5 ')).toEqual({ value: 1234.5 })
+    // Negative reads as a number so the caller can say "phải ≥ 0".
+    expect(parseNumberCell('-5')).toEqual({ value: -5 })
+  })
+
+  it('refuses text with anything but digits and one decimal separator, rather than reading another number', () => {
+    for (const probe of ['12/05', '1:30', '(5)', '5%', '+3', '2,5.', '1.2.3,4', '1,2,3', '.5', '5,', '1e3', '5 kg', '--5']) {
+      expect(parseNumberCell(probe), probe).toEqual({ error: `Không phải số: "${probe}"` })
+    }
   })
 })
 
@@ -190,6 +217,30 @@ describe('parseManpowerPlan (spec §8, R-14)', () => {
     expect(res.rows).toEqual([{ groupId: 'g2', day: '2026-09-18', value: 7 }])
   })
 
+  it('tells apart two groups the database allows, "Mpr A" and "MprA" (lower(btrim) unique)', () => {
+    const two: ManpowerGroup[] = [
+      { id: 'a', name: 'Mpr A', sort: 1, hidden: false },
+      { id: 'b', name: 'MprA', sort: 2, hidden: false },
+    ]
+    const res = parseManpowerPlan(sheet([['Date', ' mpr a ', 'MPRA'], ['2026-09-18', 1, 2]]), two)
+    expect(res.errors).toEqual([])
+    expect(res.rows).toEqual([
+      { groupId: 'a', day: '2026-09-18', value: 1 },
+      { groupId: 'b', day: '2026-09-18', value: 2 },
+    ])
+  })
+
+  it('falls back to the dash- and space-blind match only when it names one group', () => {
+    const res = parseManpowerPlan(sheet([['Date', 'Mpr-for-Reins'], ['2026-09-18', 4]]),
+      [{ id: 'r', name: 'Mpr for Reins', sort: 1, hidden: false }])
+    expect(res.rows).toEqual([{ groupId: 'r', day: '2026-09-18', value: 4 }])
+    const ambiguous = parseManpowerPlan(sheet([['Date', 'Mpr-A'], ['2026-09-18', 4]]), [
+      { id: 'a', name: 'Mpr A', sort: 1, hidden: false },
+      { id: 'b', name: 'MprA', sort: 2, hidden: false },
+    ])
+    expect(ambiguous.errors).toEqual([{ row: 1, message: 'Nhóm chưa có trong Cấu hình: Mpr-A (tạo nhóm trước khi nhập)' }])
+  })
+
   it('warns about a dated row with no value at all', () => {
     const res = parseManpowerPlan(sheet([['Date', 'Insulation'], ['2026-09-18', null]]), groups)
     expect(res.errors).toEqual([])
@@ -247,6 +298,39 @@ describe('parseSpoolPlan (spec §6.2)', () => {
       { row: 1, message: 'Không có cột: LineNo, InsuType, DrawingNo, Test Package No, Painting System' },
       { row: 1, message: 'Bỏ qua cột: Remarks' },
     ])
+  })
+
+  it('fills an extra column whose label is also a built-in alias when the built-in column has its own header', () => {
+    const res = parseSpoolPlan(sheet([
+      [...PLAN_HEADERS, 'Line'],
+      ['A', 'L1', null, null, null, null, null, null, null, 'Deck 3'],
+    ]), [{ label: 'Line' }])
+    expect(res.warnings).toEqual([])
+    expect(res.rows[0]).toMatchObject({ lineNo: 'L1', extra: { Line: 'Deck 3' } })
+  })
+
+  it('warns when an extra column label collides with a built-in name and so cannot be read', () => {
+    const res = parseSpoolPlan(sheet([
+      ['SpoolNo', 'Line', 'Painting Handover – Plan', 'Insulation Handover – Plan', 'Insulation Work – Plan'],
+      ['A', 'L1', null, null, null],
+    ]), [{ label: 'line' }, { label: 'PH-Plan' }])
+    expect(res.rows[0]).toMatchObject({ lineNo: 'L1', extra: {} })
+    expect(res.warnings).toContainEqual({
+      row: 1,
+      message: 'Cột thêm "line" trùng tên cột chuẩn LineNo nên không đọc được; đổi tên cột thêm trong Cấu hình',
+    })
+    expect(res.warnings).toContainEqual({
+      row: 1,
+      message: 'Cột thêm "PH-Plan" trùng tên cột chuẩn Painting Handover – Plan nên không đọc được; đổi tên cột thêm trong Cấu hình',
+    })
+  })
+
+  it('tells apart two extra labels the database allows', () => {
+    const res = parseSpoolPlan(sheet([
+      [...PLAN_HEADERS, 'Zone A', 'ZoneA'],
+      ['A', null, null, null, null, null, null, null, null, 'x', 'y'],
+    ]), [{ label: 'Zone A' }, { label: 'ZoneA' }])
+    expect(res.rows[0].extra).toEqual({ 'Zone A': 'x', ZoneA: 'y' })
   })
 
   it('requires SpoolNo and the three Plan columns', () => {
@@ -308,6 +392,7 @@ describe('resolveSpoolActualImport (R-11, Q18A)', () => {
     ])
     expect(res.overwrites).toEqual([{ row: 2, spoolId: 'a1', spoolNo: 'A', milestone: 'ph', from: '2026-09-01', to: '2026-09-03' }])
     expect(res.updates.map((u) => u.spoolId)).toEqual(['a1', 'a2'])
+    expect(res.spoolCount).toBe(2)
     expect(res.unchangedCount).toBe(0)
   })
 
@@ -329,6 +414,7 @@ describe('resolveSpoolActualImport (R-11, Q18A)', () => {
     const res = resolveSpoolActualImport([{ row: 2, spoolNo: 'B', dates: { ih: '2026-09-05' } }], spools, today)
     expect(res.errors).toEqual([])
     expect(res.updates).toEqual([])
+    expect(res.spoolCount).toBe(0)
     expect(res.unchangedCount).toBe(1)
   })
 })

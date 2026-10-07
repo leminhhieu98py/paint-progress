@@ -15,6 +15,7 @@ import {
   planOrderIssues,
   resolveActualChanges,
   rollupDates,
+  spoolKey,
 } from './cam'
 import type { Spool } from './types'
 
@@ -42,6 +43,14 @@ const spool = (over: Partial<Spool> = {}): Spool => {
     ...over,
   }
 }
+
+describe('spoolKey', () => {
+  it('trims spaces only, as Postgres btrim() does by default', () => {
+    expect(spoolKey('  A-1  ')).toBe('A-1')
+    expect(spoolKey('A-1\t')).toBe('A-1\t')
+    expect(spoolKey('\u00a0A-1')).toBe('\u00a0A-1')
+  })
+})
 
 describe('orderViolations (Q15B, Q18A)', () => {
   it('checks PH <= IH <= IW over the dates present only', () => {
@@ -184,6 +193,11 @@ describe('filters', () => {
   it('searches SpoolNo and LineNo, case-insensitive, trimmed', () => {
     expect(filterSpools(spools, { ...none, search: ' line-b ' }).map((s) => s.spoolNo)).toEqual(['PP-2'])
     expect(filterSpools(spools, { ...none, search: 'qq' }).map((s) => s.spoolNo)).toEqual(['QQ-3'])
+  })
+
+  it('sorts values numerically and without regard to case', () => {
+    const rows = [spool({ insuType: 'TP10' }), spool({ insuType: 'tp3' }), spool({ insuType: 'TP2' })]
+    expect(filterOptions(rows).insuTypes).toEqual(['TP2', 'tp3', 'TP10'])
   })
 
   it('offers the distinct non-blank values, sorted', () => {

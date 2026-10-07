@@ -1,4 +1,5 @@
 import type { DayKey, ManpowerGroup, ManpowerValue, ViewMode } from './types'
+import { compareText } from './text'
 import { buckets, seriesSpan, type Bucket } from './week'
 
 /**
@@ -28,7 +29,7 @@ export interface ManpowerPoint extends Bucket {
 }
 
 function bySort(a: ManpowerGroup, b: ManpowerGroup): number {
-  return a.sort - b.sort || a.name.localeCompare(b.name)
+  return a.sort - b.sort || compareText(a.name, b.name)
 }
 
 /** Per group, per day: the value. Later duplicates overwrite (the key is unique in the DB). */
