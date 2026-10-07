@@ -1,8 +1,9 @@
 import { Alert, App, Button, Input, Space, Table } from 'antd'
-import { useState } from 'react'
+import { useRef, useState, type KeyboardEvent } from 'react'
 import { ConsequenceModal } from '../../../components/ConsequenceModal'
 import { IconAction } from '../../../components/IconAction'
 import { RulesDisclosure } from '../../../components/RulesDisclosure'
+import { builtInSpoolHeader } from '../../../domain/piping/imports'
 import type { Spool, SpoolColumn } from '../../../domain/piping/types'
 import {
   addSpoolColumn, deleteSpoolColumn, listSpoolColumns, listSpools, renameSpoolColumn, reorderSpoolColumns,
@@ -19,6 +20,20 @@ const RULES = [
 ]
 
 const COUNT = new Intl.NumberFormat('vi-VN')
+
+const sameLabel = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase()
+
+/**
+ * Why a column cannot take `label`, in the API's and the database's words, or
+ * null: blank, a built-in spool header, or another column's label in any case.
+ */
+function renameRefusal(label: string, column: SpoolColumn, columns: readonly SpoolColumn[]): string | null {
+  if (label === '') return 'Tên cột không được để trống'
+  const builtIn = builtInSpoolHeader(label)
+  if (builtIn) return `Tên cột "${label}" trùng tên cột chuẩn ${builtIn}`
+  if (columns.some((c) => c.id !== column.id && sameLabel(c.label, label))) return `Cột "${label}" đã có trong dự án`
+  return null
+}
 
 /** A rename or a delete waiting on its confirm, with the spools it rewrites once counted. */
 type Pending =
@@ -55,9 +70,27 @@ export function ColumnsSection({ projectId, onChanged }: { projectId: string; on
     }
   }
 
+  // A ref as well as state: a second Enter can land before the re-render that disables the button.
+  const adding = useRef(false)
+  const [addBusy, setAddBusy] = useState(false)
   const add = async () => {
     const text = label.trim()
-    if (await run(() => addSpoolColumn(projectId, text, nextSort(columns)), `Đã thêm cột ${text}`)) setLabel('')
+    if (text === '' || adding.current) return
+    adding.current = true
+    setAddBusy(true)
+    try {
+      if (await run(() => addSpoolColumn(projectId, text, nextSort(columns)), `Đã thêm cột ${text}`)) setLabel('')
+    } finally {
+      adding.current = false
+      setAddBusy(false)
+    }
+  }
+
+  /** Esc leaves the rename only; without stopPropagation the dialog would close on it too. */
+  const cancelOnEscape = (e: KeyboardEvent) => {
+    if (e.key !== 'Escape') return
+    e.stopPropagation()
+    setEditing(null)
   }
 
   /** Opens the confirm at once and counts the spools behind it; a failed count is said, not guessed. */
@@ -76,6 +109,12 @@ export function ColumnsSection({ projectId, onChanged }: { projectId: string; on
       return
     }
     const text = editing.text.trim()
+    // The API's own refusals, asked here first: no confirm and no spool count for a rename that cannot happen.
+    const refusal = renameRefusal(text, column, columns)
+    if (refusal !== null) {
+      message.error(refusal)
+      return
+    }
     ask({ kind: 'rename', column, label: text, count: null, error: null }, (s) => spoolsRenamed(s, column.label, text))
   }
 
@@ -122,10 +161,10 @@ export function ColumnsSection({ projectId, onChanged }: { projectId: string; on
           placeholder="Tên cột"
           value={label}
           onChange={(e) => setLabel(e.target.value)}
-          onPressEnter={() => label.trim() && void add()}
+          onPressEnter={() => void add()}
           style={{ maxWidth: 320 }}
         />
-        <Button type="primary" disabled={label.trim() === ''} loading={busy && label !== ''} onClick={() => void add()}>
+        <Button type="primary" disabled={label.trim() === ''} loading={addBusy} onClick={() => void add()}>
           Thêm cột
         </Button>
       </div>
@@ -149,7 +188,7 @@ export function ColumnsSection({ projectId, onChanged }: { projectId: string; on
                   value={editing.text}
                   onChange={(e) => setEditing({ id: row.id, text: e.target.value })}
                   onPressEnter={askRename}
-                  onKeyDown={(e) => e.key === 'Escape' && setEditing(null)}
+                  onKeyDown={cancelOnEscape}
                 />
               )
               : value),

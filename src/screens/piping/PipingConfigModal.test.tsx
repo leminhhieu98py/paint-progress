@@ -192,6 +192,33 @@ describe('PipingConfigModal: Thông số (spec §2)', () => {
     }))
   })
 
+  it('warns when the total is cleared while Test Packs are entered, naming admin edits too', async () => {
+    renderModal()
+    await waitFor(() => expect(api.listReinstatementEntries).toHaveBeenCalled())
+    await userEvent.clear(field('Tổng Test Pack'))
+    await save()
+    const warn = await waitFor(() => {
+      const d = confirmDialog()
+      expect(d).toHaveTextContent('235')
+      return d
+    })
+    expect(warn).toHaveTextContent(/admin/)
+    expect(api.updatePipingSettings).not.toHaveBeenCalled()
+    await userEvent.click(within(warn).getByRole('button', { name: 'Vẫn lưu' }))
+    await waitFor(() => expect(api.updatePipingSettings).toHaveBeenCalledWith('p1', {
+      weekStartDate: '2026-09-07', totalTestPacks: null, lateThresholdDays: 7,
+    }))
+  })
+
+  it('names admin edits in the below-total warning too (the cap holds for them, spec §4)', async () => {
+    renderModal()
+    await waitFor(() => expect(api.listReinstatementEntries).toHaveBeenCalled())
+    await userEvent.clear(field('Tổng Test Pack'))
+    await userEvent.type(field('Tổng Test Pack'), '100')
+    await save()
+    await waitFor(() => expect(confirmDialog()).toHaveTextContent(/admin/))
+  })
+
   it('saves without a warning when the total is at least what was entered', async () => {
     renderModal()
     await waitFor(() => expect(api.listReinstatementEntries).toHaveBeenCalled())
@@ -228,6 +255,34 @@ describe('PipingConfigModal: Nhóm nhân lực (spec §5, R-6)', () => {
     await userEvent.clear(input)
     await userEvent.type(input, 'Đánh dấu{Enter}')
     await waitFor(() => expect(api.renameManpowerGroup).toHaveBeenCalledWith('g3', 'Đánh dấu'))
+  })
+
+  it('cancels a rename with Esc and keeps Cấu hình open', async () => {
+    await userEvent.click(within(rowOf('Marking')).getByRole('button', { name: 'Đổi tên nhóm' }))
+    const input = within(config()).getByRole('textbox', { name: 'Tên nhóm' })
+    await userEvent.type(input, 'x')
+    // With the keyCode rc-dialog's own Esc handler reads, as a browser sends it.
+    fireEvent.keyDown(input, { key: 'Escape', code: 'Escape', keyCode: 27 })
+    expect(within(config()).queryByRole('textbox', { name: 'Tên nhóm' })).toBeNull()
+    expect(within(config()).getByText('Marking')).toBeInTheDocument()
+    expect(onClose).not.toHaveBeenCalled()
+    expect(api.renameManpowerGroup).not.toHaveBeenCalled()
+  })
+
+  it('adds once on a double Enter', async () => {
+    let finish: (g: ManpowerGroup) => void = () => {}
+    api.addManpowerGroup.mockReturnValue(new Promise<ManpowerGroup>((resolve) => { finish = resolve }))
+    await userEvent.type(within(config()).getByRole('textbox', { name: 'Tên nhóm mới' }), 'Hàn{Enter}{Enter}')
+    expect(api.addManpowerGroup).toHaveBeenCalledTimes(1)
+    finish({ id: 'g4', name: 'Hàn', sort: 4, hidden: false })
+    await waitFor(() => expect(api.listManpowerGroups).toHaveBeenCalledTimes(2))
+  })
+
+  it('spins only the control being saved, not Thêm nhóm, during a row write', async () => {
+    api.setManpowerGroupHidden.mockReturnValue(new Promise(() => {}))
+    await userEvent.type(within(config()).getByRole('textbox', { name: 'Tên nhóm mới' }), 'Hàn')
+    await userEvent.click(within(rowOf('Marking')).getByRole('button', { name: 'Ẩn nhóm' }))
+    expect(within(config()).getByRole('button', { name: 'Thêm nhóm' })).not.toHaveClass('ant-btn-loading')
   })
 
   it('hides a shown group and shows a hidden one', async () => {
@@ -286,6 +341,43 @@ describe('PipingConfigModal: Cột thêm của spool (spec §6.1)', () => {
     expect(api.renameSpoolColumn).not.toHaveBeenCalled()
     await userEvent.click(await readyButton('Đổi tên cột'))
     await waitFor(() => expect(api.renameSpoolColumn).toHaveBeenCalledWith('p1', 'c1', 'Khu'))
+  })
+
+  it('cancels a rename with Esc and keeps Cấu hình open', async () => {
+    await userEvent.click(within(rowOf('Area')).getByRole('button', { name: 'Đổi tên cột' }))
+    const input = within(config()).getByRole('textbox', { name: 'Tên cột' })
+    await userEvent.type(input, 'x')
+    fireEvent.keyDown(input, { key: 'Escape', code: 'Escape', keyCode: 27 })
+    expect(within(config()).queryByRole('textbox', { name: 'Tên cột' })).toBeNull()
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['a built-in header', 'SpoolNo', 'Tên cột "SpoolNo" trùng tên cột chuẩn SpoolNo'],
+    ['another column\'s label in another case', ' ghi CHÚ hiện trường ', 'Cột "ghi CHÚ hiện trường" đã có trong dự án'],
+  ])('refuses a rename to %s before any confirm or spool count', async (_case, label, error) => {
+    await userEvent.click(within(rowOf('Area')).getByRole('button', { name: 'Đổi tên cột' }))
+    const input = within(config()).getByRole('textbox', { name: 'Tên cột' })
+    await userEvent.clear(input)
+    await userEvent.type(input, `${label}{Enter}`)
+    expect(await screen.findByText(error)).toBeInTheDocument()
+    expect(screen.getAllByRole('dialog')).toHaveLength(1)
+    expect(api.listSpools).not.toHaveBeenCalled()
+    expect(within(config()).getByRole('textbox', { name: 'Tên cột' })).toBeInTheDocument()
+  })
+
+  it('lets a column change only the case of its own label', async () => {
+    await userEvent.click(within(rowOf('Area')).getByRole('button', { name: 'Đổi tên cột' }))
+    const input = within(config()).getByRole('textbox', { name: 'Tên cột' })
+    await userEvent.clear(input)
+    await userEvent.type(input, 'AREA{Enter}')
+    await waitFor(() => expect(api.listSpools).toHaveBeenCalled())
+  })
+
+  it('adds once on a double Enter', async () => {
+    api.addSpoolColumn.mockReturnValue(new Promise(() => {}))
+    await userEvent.type(within(config()).getByRole('textbox', { name: 'Tên cột mới' }), 'Khu{Enter}{Enter}')
+    expect(api.addSpoolColumn).toHaveBeenCalledTimes(1)
   })
 
   it('deletes only after a confirm that states how many spools lose their value', async () => {

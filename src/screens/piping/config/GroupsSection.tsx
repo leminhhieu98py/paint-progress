@@ -1,5 +1,5 @@
 import { Alert, App, Button, Input, Space, Table } from 'antd'
-import { useState } from 'react'
+import { useRef, useState, type KeyboardEvent } from 'react'
 import { ConsequenceModal } from '../../../components/ConsequenceModal'
 import { IconAction } from '../../../components/IconAction'
 import { RulesDisclosure } from '../../../components/RulesDisclosure'
@@ -51,13 +51,31 @@ export function GroupsSection({ projectId, onChanged }: { projectId: string; onC
     }
   }
 
+  // A ref as well as state: a second Enter can land before the re-render that disables the button.
+  const adding = useRef(false)
+  const [addBusy, setAddBusy] = useState(false)
   const add = async () => {
     const text = name.trim()
-    if (await run(() => addManpowerGroup(projectId, text, nextSort(groups)), `Đã thêm nhóm ${text}`)) setName('')
+    if (text === '' || adding.current) return
+    adding.current = true
+    setAddBusy(true)
+    try {
+      if (await run(() => addManpowerGroup(projectId, text, nextSort(groups)), `Đã thêm nhóm ${text}`)) setName('')
+    } finally {
+      adding.current = false
+      setAddBusy(false)
+    }
+  }
+
+  /** Esc leaves the rename only; without stopPropagation the dialog would close on it too. */
+  const cancelOnEscape = (e: KeyboardEvent) => {
+    if (e.key !== 'Escape') return
+    e.stopPropagation()
+    setEditing(null)
   }
 
   const rename = async () => {
-    if (editing === null) return
+    if (editing === null || busy) return
     const group = groups.find((g) => g.id === editing.id)
     if (group === undefined || editing.text.trim() === group.name) {
       setEditing(null)
@@ -99,10 +117,10 @@ export function GroupsSection({ projectId, onChanged }: { projectId: string; onC
           placeholder="Tên nhóm"
           value={name}
           onChange={(e) => setName(e.target.value)}
-          onPressEnter={() => name.trim() && void add()}
+          onPressEnter={() => void add()}
           style={{ maxWidth: 320 }}
         />
-        <Button type="primary" disabled={name.trim() === ''} loading={busy && name !== ''} onClick={() => void add()}>
+        <Button type="primary" disabled={name.trim() === ''} loading={addBusy} onClick={() => void add()}>
           Thêm nhóm
         </Button>
       </div>
@@ -125,7 +143,7 @@ export function GroupsSection({ projectId, onChanged }: { projectId: string; onC
                   value={editing.text}
                   onChange={(e) => setEditing({ id: row.id, text: e.target.value })}
                   onPressEnter={() => void rename()}
-                  onKeyDown={(e) => e.key === 'Escape' && setEditing(null)}
+                  onKeyDown={cancelOnEscape}
                 />
               )
               : value),
