@@ -1,6 +1,5 @@
 import { MILESTONES, PLAN_FIELD, actualDates, duplicateSpoolGroups, orderMessage, planDates, planOrderIssues,
   resolveActualChanges, spoolKey, type ActualChange, type ActualOverwrite, type ActualResolution } from './cam'
-import { compareText } from './text'
 import type {
   DayKey,
   ManpowerGroup,
@@ -118,7 +117,12 @@ export function normalizeHeader(text: string): string {
   return text.normalize('NFC').toLowerCase().replace(/[\s‐-―_.-]+/g, '')
 }
 
-/** An admin-typed name as the database keeps it unique: `lower(btrim(name))`. */
+/**
+ * An admin-typed name as the database keeps it unique: `lower(btrim(name))`.
+ * NFC first because Excel text may arrive decomposed; it only ever merges two
+ * spellings of the SAME visible name, which the screen stores as NFC anyway,
+ * so it can never merge two names the database holds apart.
+ */
 export function nameKey(text: string): string {
   return text.normalize('NFC').replace(/^ +| +$/g, '').toLowerCase()
 }
@@ -128,6 +132,14 @@ const MS_PER_DAY = 24 * 60 * 60 * 1000
 const EXCEL_EPOCH_MS = Date.UTC(1899, 11, 30)
 const FIRST_DAY = '2000-01-01'
 const LAST_DAY = '2100-12-31'
+/** The window a date may fall in, 2000-01-01 .. 2100-12-31, checked BEFORE any Date is built. */
+const WINDOW_START_MS = Date.UTC(2000, 0, 1)
+const WINDOW_END_MS = Date.UTC(2101, 0, 1)
+/** The same window as Excel serials: 36526 <= v < 73416. */
+const SERIAL_START = (WINDOW_START_MS - EXCEL_EPOCH_MS) / MS_PER_DAY
+const SERIAL_END = (WINDOW_END_MS - EXCEL_EPOCH_MS) / MS_PER_DAY
+/** The largest |ms| whose day `msToDay` can still name: a day inside JS's Date range. */
+const MAX_SAFE_MS = 8.64e15 - MS_PER_DAY
 
 /**
  * The day of an Excel date, one rule for both paths a date reaches us by.
@@ -148,16 +160,25 @@ function msToDay(ms: number): DayKey {
   return new Date(days * MS_PER_DAY).toISOString().slice(0, 10)
 }
 
+/** The day of a Date, or null for an invalid one or one too far out to name a day. */
+function dateDay(d: Date): DayKey | null {
+  const ms = d.getTime()
+  return Number.isFinite(ms) && Math.abs(ms) <= MAX_SAFE_MS ? msToDay(ms) : null
+}
+
 /** A cell as text in a message. */
 function cellDisplay(v: CellValue): string {
-  if (v instanceof Date) return Number.isNaN(v.getTime()) ? '' : formatDayMonthYear(msToDay(v.getTime()))
+  if (v instanceof Date) {
+    const day = dateDay(v)
+    return day === null ? '' : formatDayMonthYear(day)
+  }
   return String(v ?? '').trim()
 }
 
 /** A text cell: trimmed, blank as null; a number or date as its text. */
 export function textCell(v: CellValue): string | null {
   if (v === null) return null
-  const s = v instanceof Date ? (Number.isNaN(v.getTime()) ? '' : msToDay(v.getTime())) : String(v).trim()
+  const s = v instanceof Date ? (dateDay(v) ?? '') : String(v).trim()
   return s === '' ? null : s
 }
 
@@ -178,10 +199,16 @@ export function parseDayCell(v: CellValue): { day: DayKey } | { error: string } 
   if (v === null) return null
   const bad = { error: `Ngày không hợp lệ: "${cellDisplay(v)}"` }
   const inRange = (day: DayKey) => (day >= FIRST_DAY && day <= LAST_DAY ? { day } : bad)
-  if (v instanceof Date) return Number.isNaN(v.getTime()) ? bad : inRange(msToDay(v.getTime()))
+  // The window is checked on the raw value first: a far number (84901234567,
+  // 1e300) or an invalid Date must be a row error, not a RangeError from
+  // toISOString. The comparisons are false for NaN, so NaN is refused too.
+  // `inRange` then catches a value rounded up past 2100-12-31.
+  if (v instanceof Date) {
+    const ms = v.getTime()
+    return ms >= WINDOW_START_MS && ms < WINDOW_END_MS ? inRange(msToDay(ms)) : bad
+  }
   if (typeof v === 'number') {
-    if (!Number.isFinite(v)) return bad
-    return inRange(msToDay(EXCEL_EPOCH_MS + v * MS_PER_DAY))
+    return v >= SERIAL_START && v < SERIAL_END ? inRange(msToDay(EXCEL_EPOCH_MS + v * MS_PER_DAY)) : bad
   }
   if (typeof v !== 'string') return bad
   const s = v.trim()
@@ -812,7 +839,7 @@ export function diffReinstatementPlan(old: ReinstatementPlanRow[], next: Reinsta
  */
 export function diffManpowerPlan(old: ManpowerValue[], next: ManpowerValue[]): KeyedDiff<{ groupId: string; day: DayKey }> {
   const map = (rows: ManpowerValue[]) => rows.map((r) => ({ key: `${r.groupId}|${r.day}`, id: { groupId: r.groupId, day: r.day }, value: r.value }))
-  return diffKeyed(map(old), map(next), (a, b) => byDay(a, b) || compareText(a.groupId, b.groupId))
+  return diffKeyed(map(old), map(next), (a, b) => byDay(a, b) || (a.groupId < b.groupId ? -1 : a.groupId > b.groupId ? 1 : 0))
 }
 
 export type SpoolDiffField = Exclude<keyof SpoolMaster, 'spoolNo'> | keyof SpoolPlanDates | 'extra'

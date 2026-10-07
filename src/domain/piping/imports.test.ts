@@ -12,6 +12,7 @@ import {
   parseSpoolActual,
   parseSpoolPlan,
   resolveSpoolActualImport,
+  textCell,
   type CellValue,
   type SheetRows,
 } from './imports'
@@ -55,6 +56,18 @@ describe('parseDayCell', () => {
     expect(parseDayCell(46282.5)).toEqual({ day: '2026-09-17' })
   })
 
+  it('refuses a number outside the 2000-2100 serial window, and an invalid or far Date, as a row error rather than throwing', () => {
+    for (const probe of [84901234567, -1e9, 1e300, -1e300, Infinity, -Infinity, NaN, 36525, 73416, 0]) {
+      expect(parseDayCell(probe), String(probe)).toEqual({ error: `Ngày không hợp lệ: "${probe}"` })
+    }
+    expect(parseDayCell(36526)).toEqual({ day: '2000-01-01' })
+    expect(parseDayCell(73415)).toEqual({ day: '2100-12-31' })
+    expect(parseDayCell(new Date('not a date'))).toEqual({ error: 'Ngày không hợp lệ: ""' })
+    expect(parseDayCell(new Date(8.64e15))).toEqual({ error: 'Ngày không hợp lệ: ""' })
+    expect(parseDayCell(new Date(Date.UTC(1999, 11, 31)))).toEqual({ error: 'Ngày không hợp lệ: "31/12/1999"' })
+    expect(parseDayCell(new Date(Date.UTC(2101, 0, 1)))).toEqual({ error: 'Ngày không hợp lệ: "01/01/2101"' })
+  })
+
   it('reads blank as no value', () => {
     expect(parseDayCell(null)).toBeNull()
     expect(parseDayCell('   ')).toBeNull()
@@ -66,6 +79,14 @@ describe('parseDayCell', () => {
     expect(parseDayCell('soon')).toEqual({ error: 'Ngày không hợp lệ: "soon"' })
     expect(parseDayCell(12.5)).toEqual({ error: 'Ngày không hợp lệ: "12.5"' })
     expect(parseDayCell(true)).toEqual({ error: 'Ngày không hợp lệ: "true"' })
+  })
+})
+
+describe('textCell', () => {
+  it('reads a date as its day key, and a Date too far to have one as blank, without throwing', () => {
+    expect(textCell(utc('2026-09-18'))).toBe('2026-09-18')
+    expect(textCell(new Date(8.64e15))).toBeNull()
+    expect(textCell(new Date('x'))).toBeNull()
   })
 })
 
@@ -83,6 +104,7 @@ describe('parseNumberCell', () => {
     expect(parseNumberCell(' ')).toBeNull()
     expect(parseNumberCell('abc')).toEqual({ error: 'Không phải số: "abc"' })
     expect(parseNumberCell(utc('2026-09-18'))).toEqual({ error: 'Không phải số: "18/09/2026"' })
+    expect(parseNumberCell(new Date(8.64e15))).toEqual({ error: 'Không phải số: ""' })
   })
 
   it('reads plain grouped and signed numbers in vi or en form', () => {
