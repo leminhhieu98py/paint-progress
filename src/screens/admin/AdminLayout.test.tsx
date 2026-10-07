@@ -23,6 +23,7 @@ function renderAt(path: string) {
           <Route path="users" element={<div>nội dung nhân lực</div>} />
           <Route path="dashboard" element={<div>nội dung năng suất</div>} />
           <Route path="kpi" element={<div>nội dung KPI</div>} />
+          <Route path="piping" element={<div>nội dung Piping</div>} />
           <Route path="*" element={<div>không tìm thấy</div>} />
         </Route>
         <Route path="/login" element={<div>màn đăng nhập</div>} />
@@ -49,6 +50,7 @@ describe('AdminLayout', () => {
     expect(screen.getByRole('link', { name: /Sàn/ })).toHaveAttribute('href', '/admin/decks')
     expect(screen.getByRole('link', { name: /Năng suất/ })).toHaveAttribute('href', '/admin/dashboard')
     expect(screen.getByRole('link', { name: /KPI/ })).toHaveAttribute('href', '/admin/kpi')
+    expect(screen.getByRole('link', { name: /Piping/ })).toHaveAttribute('href', '/admin/piping')
     expect(screen.getByRole('link', { name: /Nhân lực/ })).toHaveAttribute('href', '/admin/users')
   })
 
@@ -72,6 +74,19 @@ describe('AdminLayout', () => {
     expect(screen.getByRole('menuitem', { name: /KPI/ })).toHaveClass('ant-menu-item-selected')
     // And not the neighbour it sits beside.
     expect(screen.getByRole('menuitem', { name: /Năng suất/ })).not.toHaveClass('ant-menu-item-selected')
+  })
+
+  it('puts Piping immediately after KPI (piping spec §11)', () => {
+    renderAt('/admin/projects')
+    const labels = screen.getAllByRole('menuitem').map((i) => i.textContent)
+    expect(labels.indexOf('Piping')).toBe(labels.indexOf('KPI') + 1)
+  })
+
+  it('marks Piping as the open destination on its own route', () => {
+    renderAt('/admin/piping')
+    expect(screen.getByText('nội dung Piping')).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: /Piping/ })).toHaveClass('ant-menu-item-selected')
+    expect(screen.getByRole('menuitem', { name: /KPI/ })).not.toHaveClass('ant-menu-item-selected')
   })
 
   it('marks the open destination, including from a deck detail route', () => {

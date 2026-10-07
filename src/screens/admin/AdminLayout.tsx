@@ -7,6 +7,7 @@ import {
   LogoutOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
+  NodeIndexOutlined,
   TeamOutlined,
 } from '@ant-design/icons'
 import { Button, Layout, Menu, Tooltip } from 'antd'
@@ -26,6 +27,8 @@ const items = [
   { key: 'dashboard', label: 'Năng suất', icon: <LineChartOutlined /> },
   // RV5-28: "KPI nằm 1 mục riêng trên thanh menu", immediately after Năng suất.
   { key: 'kpi', label: 'KPI', icon: <AreaChartOutlined /> },
+  // Piping spec §11: the per-project Piping module, after KPI.
+  { key: 'piping', label: 'Piping', icon: <NodeIndexOutlined /> },
   // NL-01: accounts and employees are one list, Nhân lực.
   { key: 'users', label: 'Nhân lực', icon: <TeamOutlined /> },
 ]

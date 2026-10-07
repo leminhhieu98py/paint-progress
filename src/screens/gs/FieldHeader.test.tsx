@@ -17,6 +17,11 @@ const loadGsProjectIdentity = vi.hoisted(() => vi.fn())
 vi.mock('../../lib/gsApi', () => ({
   loadGsProjectIdentity: (projectId: string) => loadGsProjectIdentity(projectId),
 }))
+// Whether the project has Piping (spec §2, R-1): the header shows the tab only then.
+const getPipingSettings = vi.hoisted(() => vi.fn())
+vi.mock('../../lib/pipingApi/settings', () => ({
+  getPipingSettings: (projectId: string) => getPipingSettings(projectId),
+}))
 // react-router's navigate, so a test can see where the project switch and the
 // logout send the user. Link does not go through this export, so the tabs
 // still navigate for real.
@@ -67,7 +72,7 @@ const renderAt = (path: string) =>
   render(
     <MemoryRouter initialEntries={[path]}>
       <Routes>
-        {['/gs/:projectId', '/gs/:projectId/dashboard', '/gs/:projectId/kpi'].map((p) => (
+        {['/gs/:projectId', '/gs/:projectId/dashboard', '/gs/:projectId/kpi', '/gs/:projectId/piping'].map((p) => (
           <Route
             key={p}
             path={p}
@@ -101,6 +106,8 @@ beforeEach(() => {
   ])
   loadGsProjectIdentity.mockReset()
   loadGsProjectIdentity.mockResolvedValue({ code: 'BB1', name: 'BlockB1_CPPTS' })
+  getPipingSettings.mockReset()
+  getPipingSettings.mockResolvedValue(null)
 })
 
 afterEach(() => {
@@ -161,6 +168,68 @@ describe('FieldHeader: navigation (GS-01)', () => {
     renderAt('/gs/p1')
     const header = nav().closest('header') as HTMLElement
     expect(header).toHaveStyle({ height: '64px', flexWrap: 'nowrap' })
+  })
+})
+
+describe('FieldHeader: the Piping tab, only where Piping is on (piping spec §2, R-1)', () => {
+  const settings = (enabled: boolean) => ({
+    projectId: 'p1', enabled, weekStartDate: '2026-09-07', totalTestPacks: 100, lateThresholdDays: 7,
+  })
+  const labels = () => within(nav()).getAllByRole('link').map((l) => l.textContent)
+
+  it('adds Piping after KPI once the project has it enabled', async () => {
+    getPipingSettings.mockResolvedValue(settings(true))
+    renderAt('/gs/p1')
+    expect(await within(nav()).findByRole('link', { name: 'Piping' })).toHaveAttribute('href', '/gs/p1/piping')
+    expect(labels()).toEqual(['Sàn', 'Năng suất', 'KPI', 'Piping'])
+    expect(getPipingSettings).toHaveBeenCalledWith('p1')
+  })
+
+  it.each([
+    ['never enabled', null],
+    ['disabled (its data kept)', settings(false)],
+  ])('keeps the three tabs for a project with Piping %s', async (_case, answer) => {
+    getPipingSettings.mockResolvedValue(answer)
+    renderAt('/gs/p1')
+    await waitFor(() => expect(getPipingSettings).toHaveBeenCalledWith('p1'))
+    await Promise.resolve()
+    expect(labels()).toEqual(['Sàn', 'Năng suất', 'KPI'])
+  })
+
+  it('shows no Piping tab while the read is pending, and none when it fails', async () => {
+    let fail: (e: Error) => void = () => {}
+    getPipingSettings.mockReturnValue(new Promise((_resolve, reject) => { fail = reject }))
+    renderAt('/gs/p1')
+    expect(labels()).toEqual(['Sàn', 'Năng suất', 'KPI'])
+    fail(new Error('mạng'))
+    await Promise.resolve()
+    expect(labels()).toEqual(['Sàn', 'Năng suất', 'KPI'])
+  })
+
+  it('marks Piping as the page on its own route', async () => {
+    getPipingSettings.mockResolvedValue(settings(true))
+    renderAt('/gs/p1/piping')
+    expect(await within(nav()).findByRole('link', { name: 'Piping' })).toHaveAttribute('aria-current', 'page')
+    expect(tab('KPI')).not.toHaveAttribute('aria-current')
+  })
+
+  it('keeps the tab on the next page at once, without a flash while it reads again', async () => {
+    getPipingSettings.mockResolvedValue(settings(true))
+    const first = renderAt('/gs/p1')
+    await within(nav()).findByRole('link', { name: 'Piping' })
+    first.unmount()
+    getPipingSettings.mockReturnValue(new Promise(() => {}))
+    renderAt('/gs/p1/kpi')
+    expect(labels()).toEqual(['Sàn', 'Năng suất', 'KPI', 'Piping'])
+  })
+
+  it('puts Piping in the phone\'s bottom bar too, and titles its page', async () => {
+    setViewport(390)
+    getPipingSettings.mockResolvedValue(settings(true))
+    renderAt('/gs/p1/piping')
+    expect(await within(nav()).findByRole('link', { name: 'Piping' })).toHaveAttribute('aria-current', 'page')
+    const header = document.querySelector('header') as HTMLElement
+    expect(within(header).getByRole('heading', { level: 1 })).toHaveTextContent(/^Piping$/)
   })
 })
 

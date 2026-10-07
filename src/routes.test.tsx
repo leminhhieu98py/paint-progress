@@ -78,6 +78,13 @@ vi.mock('./screens/kpi/KpiScreen', () => ({
     return <div>KPI {variant}{projectId ? ` (dự án ${projectId})` : ''}</div>
   },
 }))
+// The Piping screen's own reads and tests live beside it; here only where it lands.
+vi.mock('./screens/piping/PipingScreen', () => ({
+  PipingScreen: ({ variant }: { variant: string }) => {
+    const { projectId } = useParams()
+    return <div>PIPING {variant}{projectId ? ` (dự án ${projectId})` : ''}</div>
+  },
+}))
 vi.mock('./screens/gs/GsScreen', () => ({
   GsScreen: () => {
     const { projectId } = useParams()
@@ -284,6 +291,26 @@ describe('AppRoutes: /login is the entry point', () => {
     expect(screen.getByRole('link', { name: 'Về trang chính' })).toHaveAttribute('href', APP_BASE_PATH || '/')
     expect(screen.queryByText('KPI admin')).toBeNull()
     expect(screen.queryByText('ADMIN LAYOUT')).toBeNull()
+  })
+
+  it('gives an admin the Piping screen under the admin frame (piping spec §11)', async () => {
+    asRole('admin')
+    renderAt(`${APP_BASE_PATH}/admin/piping`)
+    expect(await screen.findByText('PIPING admin')).toBeInTheDocument()
+    expect(screen.getByText(/ADMIN LAYOUT/)).toBeInTheDocument()
+  })
+
+  it.each(['gs', 'viewer'] as const)('gives a %s the field Piping screen of the project', async (role) => {
+    asRole(role)
+    renderAt(`${APP_BASE_PATH}/gs/proj-7/piping`)
+    expect(await screen.findByText('PIPING gs (dự án proj-7)')).toBeInTheDocument()
+  })
+
+  it('refuses a foreman the admin Piping screen', async () => {
+    asRole('gs')
+    renderAt(`${APP_BASE_PATH}/admin/piping`)
+    expect(await screen.findByText('Không tìm thấy trang')).toBeInTheDocument()
+    expect(screen.queryByText('PIPING admin')).toBeNull()
   })
 
   it('gives an admin Nhân lực at the users address (NL-01)', async () => {

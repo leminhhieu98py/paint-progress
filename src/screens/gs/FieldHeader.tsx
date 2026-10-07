@@ -1,12 +1,14 @@
-import { AimOutlined, AppstoreOutlined, LineChartOutlined } from '@ant-design/icons'
+import { AimOutlined, AppstoreOutlined, LineChartOutlined, NodeIndexOutlined } from '@ant-design/icons'
 import { Layout } from 'antd'
 import type { CSSProperties } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { APP_BASE_PATH } from '../../config'
 import { fieldType, palette, space, type } from '../../theme'
+import { usePipingEnabled } from '../piping/pipingEnabled'
 import { FieldAccountTrigger } from './FieldAccountTrigger'
 import {
-  FIELD_SAFE_AREA_BOTTOM, FIELD_SECTIONS, FIELD_TAB_BAR_SPACE, fieldSectionOf, useFieldPhone, type FieldSection,
+  FIELD_SAFE_AREA_BOTTOM, FIELD_SECTIONS, FIELD_TAB_BAR_SPACE, PIPING_SECTION, fieldSectionOf, useFieldPhone,
+  type FieldSection,
 } from './fieldSections'
 
 /** One fixed height on all three routes: a 48px field control and 8px either side. */
@@ -14,21 +16,23 @@ const HEADER_HEIGHT = 64
 
 /**
  * The bottom bar's icons (GS-06): the drawing's grid of bays, the productivity
- * curve, the KPI target. Beside a label, never alone.
+ * curve, the KPI target, the pipe line. Beside a label, never alone.
  */
 const SECTION_ICONS: Record<FieldSection['label'], typeof AppstoreOutlined> = {
   'Sàn': AppstoreOutlined,
   'Năng suất': LineChartOutlined,
   'KPI': AimOutlined,
+  'Piping': NodeIndexOutlined,
 }
 
 const ellipsis: CSSProperties = { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }
 
 /**
- * The one header of the field screens (GS-01, GS-06): Sàn, Năng suất and KPI
- * of one project, for the foreman and the viewer alike, and the account.
+ * The one header of the field screens (GS-01, GS-06): Sàn, Năng suất, KPI
+ * and, where the project has it on, Piping of one project, for the foreman
+ * and the viewer alike, and the account.
  *
- * Left, the three pages as router links, the active one read from the route;
+ * Left, the pages as router links, the active one read from the route;
  * they are the only way between the pages (GS-02), so there is no back button
  * anywhere. Right, the account trigger -- avatar, full name, `Visitor` for a
  * viewer -- whose menu holds who is signed in and Đăng xuất, behind the same
@@ -46,8 +50,11 @@ export function FieldHeader({ projectId }: { projectId: string }) {
 
   const base = `${APP_BASE_PATH}/gs/${projectId}`
   const current = fieldSectionOf(pathname)
+  // Piping only once the project is known to have it on (R-1): no tab that then goes away.
+  const pipingOn = usePipingEnabled(projectId)
+  const sections = FIELD_SECTIONS.filter((s) => s !== PIPING_SECTION || pipingOn)
 
-  const tabs = FIELD_SECTIONS.map((s) => {
+  const tabs = sections.map((s) => {
     const active = s === current
     const Icon = SECTION_ICONS[s.label]
     return (
