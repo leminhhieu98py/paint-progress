@@ -116,26 +116,32 @@ describe('valuesOnDay', () => {
   })
 })
 
-describe('manpowerAverages (spec §3, R-2, over the whole range)', () => {
-  it('averages the daily totals over the days that have a value, an entered 0 included', () => {
+describe('manpowerAverages (spec §3, R-2, up to today)', () => {
+  it('sums each group\'s mean over its days with a value up to today, plan and actual alike', () => {
     const avg = manpowerAverages({
       groups,
-      plan: [v('reins', '2026-09-18', 30), v('ins', '2026-09-18', 10), v('reins', '2026-09-25', 20)],
-      actual: [v('reins', '2026-09-18', 30), v('ins', '2026-09-19', 0), v('mark', '2026-09-19', 6)],
+      plan: [
+        v('reins', '2026-09-17', 30), v('reins', '2026-09-18', 20), v('ins', '2026-09-18', 10),
+        v('reins', '2026-09-25', 99),
+      ],
+      actual: [v('reins', '2026-09-18', 30), v('ins', '2026-09-19', 0), v('mark', '2026-09-19', 6), v('ins', '2026-09-20', 9)],
       todayKey: '2026-09-19',
     })
-    // Plan: (40 + 20) / 2 days; Actual: (30 + 6) / 2 days -- the hidden group counts, an empty day does not.
-    expect(avg).toEqual({ plan: 30, actual: 18 })
+    // Plan: (30 + 20) / 2 + 10, the day after today left out; Actual: 30 + 0 + 6, an entered 0 counted.
+    expect(avg).toEqual({ plan: 35, actual: 36 })
   })
 
-  it('reads no actual after today and no value of an unknown group', () => {
-    const avg = manpowerAverages({
-      groups,
-      plan: [v('gone', '2026-09-18', 99)],
-      actual: [v('reins', '2026-09-18', 10), v('reins', '2026-09-20', 50)],
-      todayKey: '2026-09-19',
-    })
-    expect(avg).toEqual({ plan: null, actual: 10 })
+  it('equals the week bucket of the chart when every value falls in one week up to today', () => {
+    const plan = [v('reins', '2026-09-18', 10), v('reins', '2026-09-19', 12), v('ins', '2026-09-18', 4)]
+    const actual = [v('reins', '2026-09-18', 8), v('reins', '2026-09-20', 6), v('mark', '2026-09-19', 3)]
+    const input = { groups, plan, actual, todayKey: '2026-09-24' }
+    const [week] = manpowerSeries({ ...input, mode: 'week', weekStart: START })
+    expect(manpowerAverages(input)).toEqual({ plan: week.planTotal, actual: week.actualTotal })
+  })
+
+  it('reads no value of an unknown group and is null without any value', () => {
+    expect(manpowerAverages({ groups, plan: [v('gone', '2026-09-18', 99)], actual: [], todayKey: '2026-09-19' }))
+      .toEqual({ plan: null, actual: null })
   })
 })
 

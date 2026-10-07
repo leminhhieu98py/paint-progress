@@ -110,11 +110,12 @@ export function manpowerSeries(input: {
 }
 
 /**
- * The average daily total over the whole range, plan and actual: the mean of
- * the daily totals over the days that have any value (R-2's rule, applied to
- * every day at once, so it reads the same in the Ngày and the Tuần view).
- * Actual never reads a day after today; a value of a group not in `groups` is
- * ignored, as in the chart. Null when no day has a value.
+ * Plan and Actual averages up to today, by the chart's own rule (R-2): per
+ * group, the mean over the days up to today that have a value (an entered 0
+ * counts), summed over the groups -- what one week bucket of the chart shows,
+ * stretched over every day up to today. Both stop at today so the pair is
+ * like for like. A value of a group not in `groups` is ignored, as in the
+ * chart; null when no group has a value.
  */
 export function manpowerAverages(input: {
   groups: ManpowerGroup[]
@@ -123,18 +124,10 @@ export function manpowerAverages(input: {
   todayKey: DayKey
 }): { plan: number | null; actual: number | null } {
   const known = new Set(input.groups.map((g) => g.id))
-  const mean = (values: ManpowerValue[], lastDay: DayKey | null): number | null => {
-    const totals = new Map<DayKey, number>()
-    for (const { groupId, day, value } of values) {
-      if (!known.has(groupId) || (lastDay !== null && day > lastDay)) continue
-      totals.set(day, (totals.get(day) ?? 0) + value)
-    }
-    if (totals.size === 0) return null
-    let sum = 0
-    for (const total of totals.values()) sum += total
-    return sum / totals.size
-  }
-  return { plan: mean(input.plan, null), actual: mean(input.actual, input.todayKey) }
+  // Every key sorts after the empty string: the range starts at the first value.
+  const total = (values: ManpowerValue[]) =>
+    rowFor(input.groups, index(values, known, input.todayKey), '', input.todayKey).total
+  return { plan: total(input.plan), actual: total(input.actual) }
 }
 
 /** One day of a Manpower table: each group's value (only the groups that have one) and their sum. */
