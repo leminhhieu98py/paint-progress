@@ -2830,4 +2830,73 @@ describe.skipIf(!adminConfigured)('0038: piping', () => {
       p_project: projectId, p_day: '2026-09-10', p_qty: 1,
     })).error?.code).toBe('42501')
   })
+
+  // 0039: the two admin functions for Cấu hình. Run on RLSQ, whose spools no
+  // earlier case depends on any more.
+  it('0039: renaming an extra column moves its values in every spool, and reordering is atomic -- admin only', async () => {
+    const cols = await admin.from('piping_spool_columns').select('id, label').eq('project_id', otherProjectId)
+    expect(cols.error).toBeNull()
+    const otherCol = (cols.data as { id: string; label: string }[]).find((c) => c.label === 'Other col')!.id
+    const ownGroups = await admin.from('piping_manpower_groups').select('id').eq('project_id', projectId).order('sort')
+    const ownGroupIds = (ownGroups.data as { id: string }[]).map((g) => g.id)
+
+    // A GS (even on its own project) and a viewer are refused before anything changes.
+    for (const client of [gs, viewer]) {
+      const rename = await client.rpc('piping_rename_spool_column', {
+        p_project: otherProjectId, p_column: otherCol, p_label: 'Nope',
+      })
+      expect(rename.error?.code).toBe('42501')
+      const reorder = await client.rpc('piping_reorder', { p_project: otherProjectId, p_kind: 'column', p_ids: [otherCol] })
+      expect(reorder.error?.code).toBe('42501')
+    }
+    const gsOwn = await gs.rpc('piping_reorder', { p_project: projectId, p_kind: 'group', p_ids: [...ownGroupIds].reverse() })
+    expect(gsOwn.error?.code).toBe('42501')
+    const still = await admin.from('piping_spool_columns').select('label').eq('id', otherCol).single()
+    expect(still.data?.label).toBe('Other col')
+
+    const second = await admin
+      .from('piping_spool_columns').insert({ project_id: otherProjectId, label: 'Second col', sort: 2 }).select('id').single()
+    expect(second.error).toBeNull()
+    const secondCol = second.data!.id as string
+    const imported = await admin.rpc('piping_replace_spools', {
+      p_project: otherProjectId, p_file_name: 'other-2.xlsx',
+      p_rows: [
+        { spool_no: 'Q-1', extra: { 'Other col': 'v1', 'Second col': 's1' } },
+        { spool_no: 'Q-2', extra: { 'Second col': 's2' } },
+      ],
+    })
+    expect(imported.error).toBeNull()
+
+    const renamed = await admin.rpc('piping_rename_spool_column', {
+      p_project: otherProjectId, p_column: otherCol, p_label: '  Renamed col ',
+    })
+    expect(renamed.error).toBeNull()
+    expect(renamed.data).toBe(1)
+    const spools = await admin.from('piping_spools').select('spool_no, extra').eq('project_id', otherProjectId).order('seq')
+    expect(spools.data).toEqual([
+      { spool_no: 'Q-1', extra: { 'Renamed col': 'v1', 'Second col': 's1' } },
+      { spool_no: 'Q-2', extra: { 'Second col': 's2' } },
+    ])
+    const label = await admin.from('piping_spool_columns').select('label').eq('id', otherCol).single()
+    expect(label.data?.label).toBe('Renamed col')
+    const duplicate = await admin.rpc('piping_rename_spool_column', {
+      p_project: otherProjectId, p_column: otherCol, p_label: 'second COL',
+    })
+    expect(duplicate.error?.message).toBe('Cột "second COL" đã có trong dự án')
+
+    const reorder = await admin.rpc('piping_reorder', {
+      p_project: otherProjectId, p_kind: 'column', p_ids: [secondCol, otherCol],
+    })
+    expect(reorder.error).toBeNull()
+    expect(reorder.data).toBe(2)
+    const order = await admin.from('piping_spool_columns').select('id, sort').eq('project_id', otherProjectId).order('sort')
+    expect(order.data).toEqual([{ id: secondCol, sort: 1 }, { id: otherCol, sort: 2 }])
+    const stale = await admin.rpc('piping_reorder', { p_project: otherProjectId, p_kind: 'column', p_ids: [otherCol] })
+    expect(stale.error?.message).toBe('Danh sách đã thay đổi, tải lại trang rồi sắp xếp lại')
+
+    const groups = await admin.rpc('piping_reorder', { p_project: projectId, p_kind: 'group', p_ids: [...ownGroupIds].reverse() })
+    expect(groups.error).toBeNull()
+    const groupOrder = await admin.from('piping_manpower_groups').select('id').eq('project_id', projectId).order('sort')
+    expect((groupOrder.data as { id: string }[]).map((g) => g.id)).toEqual([...ownGroupIds].reverse())
+  })
 })
