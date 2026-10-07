@@ -19,8 +19,10 @@ import { formatQty } from '../pipingFormat'
  *
  * One colour per milestone from the app's palette (CHT-01), so a milestone's
  * Plan and Actual read as a pair: Plan dashed, Actual solid with dots, as on
- * the KPI and Reinstatement charts. The names are the file's (spec §0); the
- * tooltip says the counts are cumulative (spec §3).
+ * the KPI and Reinstatement charts. The names are the file's (spec §0) and
+ * say "lũy kế" (spec §3), as Reinstatement's "Plan lũy kế" does. Dots only
+ * while the points can be told apart (DOTS_UP_TO): a long day axis drew
+ * thousands of circles that read as a thick line and re-rendered on hover.
  */
 
 const MILESTONE_COLOR: Record<Milestone, string> = {
@@ -38,8 +40,11 @@ const SERIES: Record<CamSeriesKey, { milestone: Milestone; kind: 'Plan' | 'Actua
   iwActual: { milestone: 'iw', kind: 'Actual' },
 }
 
-/** `Painting Handover – Plan`, as the file's column (spec §0). */
-const seriesName = (key: CamSeriesKey) => `${MILESTONE_LABEL[SERIES[key].milestone]} – ${SERIES[key].kind}`
+/** `Painting Handover – Plan lũy kế`: the file's column (spec §0), cumulative (spec §3). */
+const seriesName = (key: CamSeriesKey) => `${MILESTONE_LABEL[SERIES[key].milestone]} – ${SERIES[key].kind} lũy kế`
+
+/** The most points an Actual line still dots. */
+const DOTS_UP_TO = 60
 
 /**
  * `keys` are the lines the Plan | Actual | Plan & Actual toggle shows
@@ -49,6 +54,7 @@ const seriesName = (key: CamSeriesKey) => `${MILESTONE_LABEL[SERIES[key].milesto
 export function InsulationChart({ data, keys, mode }: { data: CamPoint[]; keys: CamSeriesKey[]; mode: ViewMode }) {
   const { legend, opacity, height } = useLegendHighlight()
   const tooltips = useMemo(() => new Map(data.map((p) => [p.key, p.tooltip])), [data])
+  const dots = data.length <= DOTS_UP_TO
   return (
     <div data-testid="insulation-chart" data-mode={mode} style={{ width: '100%', height: height(372, keys.length) }}>
       <ResponsiveContainer width="100%" height="100%">
@@ -58,7 +64,7 @@ export function InsulationChart({ data, keys, mode }: { data: CamPoint[]; keys: 
           <YAxis tick={AXIS} width={56} tickFormatter={axisTick} allowDecimals={false} />
           <Tooltip
             separator={TOOLTIP_SEPARATOR}
-            labelFormatter={(key) => `${tooltips.get(String(key)) ?? String(key)} · lũy kế`}
+            labelFormatter={(key) => tooltips.get(String(key)) ?? String(key)}
             formatter={(value) => (typeof value === 'number' ? formatQty(value) : MISSING)}
           />
           <Legend formatter={legendText} {...legend} />
@@ -75,7 +81,7 @@ export function InsulationChart({ data, keys, mode }: { data: CamPoint[]; keys: 
                 strokeOpacity={opacity(key)}
                 strokeWidth={2}
                 strokeDasharray={plan ? '5 3' : undefined}
-                dot={plan ? false : { r: 2, fillOpacity: opacity(key), strokeOpacity: opacity(key) }}
+                dot={plan || !dots ? false : { r: 2, fillOpacity: opacity(key), strokeOpacity: opacity(key) }}
                 activeDot={ACTIVE_DOT}
                 isAnimationActive={false}
               />

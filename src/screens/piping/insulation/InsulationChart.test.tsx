@@ -45,6 +45,7 @@ vi.mock('recharts', async (importOriginal) => {
         data-name={String(props.name)}
         data-stroke={String(props.stroke)}
         data-dash={String(props.strokeDasharray ?? '')}
+        data-dot={String(props.dot !== false)}
       />
     ),
   }
@@ -70,13 +71,13 @@ beforeEach(() => {
 })
 
 describe('InsulationChart (spec §6.4, Q20A)', () => {
-  it('draws the six cumulative lines named as the file names them', () => {
+  it('draws the six cumulative lines named as the file names them, saying lũy kế', () => {
     render(<InsulationChart data={WEEKS} keys={[...ALL]} mode="week" />)
     expect(screen.getByTestId('line-chart')).toHaveAttribute('data-points', '2')
     expect(ALL.map((k) => line(k)?.getAttribute('data-name'))).toEqual([
-      'Painting Handover – Plan', 'Painting Handover – Actual',
-      'Insulation Handover – Plan', 'Insulation Handover – Actual',
-      'Insulation Work – Plan', 'Insulation Work – Actual',
+      'Painting Handover – Plan lũy kế', 'Painting Handover – Actual lũy kế',
+      'Insulation Handover – Plan lũy kế', 'Insulation Handover – Actual lũy kế',
+      'Insulation Work – Plan lũy kế', 'Insulation Work – Actual lũy kế',
     ])
   })
 
@@ -100,17 +101,27 @@ describe('InsulationChart (spec §6.4, Q20A)', () => {
     expect(line('iwActual')).toBeNull()
   })
 
-  it('labels the axis DD/MM and the tooltip with the bucket, cumulative, in vi-VN', () => {
+  it('labels the axis DD/MM and the tooltip with the bucket, in vi-VN', () => {
     render(<InsulationChart data={WEEKS} keys={[...ALL]} mode="week" />)
     const tick = captured.xAxis?.tickFormatter as (v: string) => string
     expect(tick('2026-09-14')).toBe('14/09')
     const label = captured.tooltip?.labelFormatter as (v: string) => string
-    expect(label('2026-09-14')).toBe('14/09 – 20/09 · lũy kế')
+    expect(label('2026-09-14')).toBe('14/09 – 20/09')
     const format = captured.tooltip?.formatter as (v: unknown) => string
     expect(format(1234)).toBe('1.234')
     expect(format(null)).toBe('-')
     const yTick = captured.yAxis?.tickFormatter as (v: number) => string
     expect(yTick(1800)).toBe('1.800')
     expect(captured.yAxis?.allowDecimals).toBe(false)
+  })
+
+  it('dots the Actual lines while the points can be told apart, not past 60', () => {
+    const many = (n: number) => Array.from({ length: n }, (_, i) => point({ key: `k${i}` }))
+    const { unmount } = render(<InsulationChart data={many(60)} keys={[...ALL]} mode="day" />)
+    expect(line('phActual')).toHaveAttribute('data-dot', 'true')
+    expect(line('phPlan')).toHaveAttribute('data-dot', 'false')
+    unmount()
+    render(<InsulationChart data={many(61)} keys={[...ALL]} mode="day" />)
+    expect(line('phActual')).toHaveAttribute('data-dot', 'false')
   })
 })
