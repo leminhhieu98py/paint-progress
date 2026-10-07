@@ -51,11 +51,15 @@ function mapSpool(r: Record<string, unknown>): Spool {
 export const SPOOLS_CHANGED = 'Danh sách spool vừa thay đổi trong lúc tải (có thể vừa nhập kế hoạch). Hãy tải lại trang.'
 
 /**
- * One paged pass. Every page also asks for the exact row count, so a pass is
- * known to be whole when every page saw the same count, no id came twice and
- * the ids number exactly that count. The pages are separate requests: an
- * import committed between two of them renumbers `seq` and would otherwise
- * shift spools across a page boundary -- duplicated or missing, silently.
+ * One paged pass. The pages are separate requests: an import committed
+ * between two of them renumbers `seq` and can shift spools across a page
+ * boundary -- duplicated or missing, silently. Every page also asks for the
+ * exact row count, and a pass counts as whole when every page saw the same
+ * count, no id came twice and the ids number exactly that count. That catches
+ * an import that changed the number of spools, or shifted one onto a page
+ * already read; it cannot catch one that removed and added the same number
+ * between two pages (a spool on a page already read deleted, a later one
+ * skipped, the count unchanged). Such a list is put right by the next read.
  */
 async function spoolPass(projectId: string): Promise<{ rows: Array<Record<string, unknown>>; whole: boolean }> {
   const rows: Array<Record<string, unknown>> = []
@@ -85,6 +89,7 @@ async function spoolPass(projectId: string): Promise<{ rows: Array<Record<string
  * PostgREST's 1000-row answer (a project holds up to 20 000). A pass that
  * was not whole (see spoolPass) is read once more; a second such pass throws
  * SPOOLS_CHANGED rather than showing a list with spools missing or doubled.
+ * A same-count swap between two pages is the one change it does not detect.
  */
 export async function listSpools(projectId: string): Promise<Spool[]> {
   for (let attempt = 0; attempt < 2; attempt++) {
