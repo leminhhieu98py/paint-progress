@@ -406,3 +406,8 @@ the dev one is in `.env.test.local`, its password is known to whoever set the
 project up, and the integration suite signs in as it.
 
 Never commit any of these values.
+
+- `0040_piping_column_functions_reapply.sql` — re-creates the three 0039 functions (rename, delete, reorder of
+  extra columns / groups) exactly as the current 0039 defines them. 0039 was revised after it reached the
+  development project; a pushed migration never re-runs, so dev kept the first version (no
+  `piping_delete_spool_column`). On a database that ran the current 0039 this changes nothing.
