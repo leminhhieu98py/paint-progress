@@ -7,7 +7,7 @@ import { useTypeScale } from '../../../components/typeScale'
 import { MILESTONE_LABEL, MILESTONES, type ActualChange } from '../../../domain/piping/cam'
 import type { DayKey, Milestone, Spool } from '../../../domain/piping/types'
 import { formatDayMonthYear } from '../../../domain/piping/week'
-import { setSpoolActuals, type SpoolActualResult } from '../../../lib/pipingApi'
+import { listSpools, setSpoolActuals, type SpoolActualResult } from '../../../lib/pipingApi'
 import { matchesSearch } from '../../../lib/search'
 import { space } from '../../../theme'
 import { formatQty } from '../pipingFormat'
@@ -90,22 +90,25 @@ export function ActualEntry({ projectId, spools, todayKey, onSaved }: {
       setError(`Ngày ${formatDayMonthYear(date)} sau hôm nay`)
       return
     }
-    const changes = targetSpools(spools, kind, target).map((s) => ({ spoolId: s.id, milestone, date }))
-    if (changes.length === 0) {
-      setError(`Không có spool nào có ${TARGET_LABEL[kind]} ${target}`)
-      return
-    }
     inFlight.current = true
     setBusy('preview')
     setError(null)
     try {
+      // The spools as stored now, not as the page read them: the targets, the
+      // old dates shown and the counts all come from the same moment as the dry run.
+      const fresh = await listSpools(projectId)
+      const changes = targetSpools(fresh, kind, target).map((s) => ({ spoolId: s.id, milestone, date }))
+      if (changes.length === 0) {
+        setError(`Không có spool nào có ${TARGET_LABEL[kind]} ${target}`)
+        return
+      }
       const results = await setSpoolActuals(projectId, changes, { dryRun: true })
       setOverwrite(false)
       setStep({
         title: `${TARGET_LABEL[kind]} ${target} · ${MILESTONE_LABEL[milestone]} · ${formatDayMonthYear(date)} · ${formatQty(changes.length)} spool`,
         changes,
         results,
-        preview: actualPreview(spools, changes, results),
+        preview: actualPreview(fresh, changes, results),
       })
     } catch (e) {
       setError((e as Error).message)
@@ -122,18 +125,37 @@ export function ActualEntry({ projectId, spools, todayKey, onSaved }: {
     inFlight.current = true
     setBusy('save')
     setError(null)
+    // The spools the dry run saw blank go without the overwrite flag, the
+    // agreed overwrites with it: a date set on a blank spool since the preview
+    // is then refused, never replaced unseen. Two calls, one result.
+    const plain = changesToWrite(step.changes, step.results, false)
+    const agreed = toWrite.filter((c) => !plain.includes(c))
+    const results: SpoolActualResult[] = []
+    let failure: Error | null = null
     try {
-      const results = await setSpoolActuals(projectId, toWrite, { overwrite })
+      if (plain.length > 0) results.push(...await setSpoolActuals(projectId, plain, { overwrite: false }))
+      if (agreed.length > 0) results.push(...await setSpoolActuals(projectId, agreed, { overwrite: true }))
+    } catch (e) {
+      failure = e as Error
+    }
+    try {
       const saved = results.filter((r) => r.status === 'saved').length
       const missed = results.length - saved
       if (saved > 0) message.success(`Đã lưu Actual cho ${formatQty(saved)} spool`)
       // Another write landed between the preview and this one: the database judged again.
       if (missed > 0) message.warning(`${formatQty(missed)} spool không được lưu vì dữ liệu vừa thay đổi`)
+      if (failure !== null) {
+        setError(failure.message)
+        // The first call wrote: back to the form (a new preview is needed), the page reads again.
+        if (results.length > 0) {
+          setStep(null)
+          onSaved()
+        }
+        return
+      }
       setOpen(false)
       setStep(null)
       onSaved()
-    } catch (e) {
-      setError((e as Error).message)
     } finally {
       inFlight.current = false
       setBusy(null)

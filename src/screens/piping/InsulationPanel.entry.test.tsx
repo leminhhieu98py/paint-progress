@@ -281,19 +281,62 @@ describe('Insulation: Cập nhật Actual (spec §6.3, Q18A)', () => {
     await waitFor(() => expect(api.listSpools).toHaveBeenCalledWith('p1'))
   })
 
-  it('overwrites the stored dates only once the box is ticked', async () => {
-    api.setSpoolActuals.mockResolvedValueOnce(DRY_RUN).mockResolvedValueOnce([
-      { spoolId: 's1', spoolNo: 'SP-1', status: 'saved' }, { spoolId: 's2', spoolNo: 'SP-2', status: 'saved' },
-    ])
+  it('overwrites the stored dates only once the box is ticked, apart from the plain saves', async () => {
+    api.setSpoolActuals.mockResolvedValueOnce(DRY_RUN)
+      .mockResolvedValueOnce([{ spoolId: 's1', spoolNo: 'SP-1', status: 'saved' }])
+      .mockResolvedValueOnce([{ spoolId: 's2', spoolNo: 'SP-2', status: 'saved' }])
     renderPanel()
     await ready()
     const box = await previewLineL1()
     await userEvent.click(await within(box).findByRole('checkbox', { name: 'Ghi đè ngày Actual của 1 spool' }))
     await userEvent.click(within(box).getByRole('button', { name: 'Lưu' }))
-    await waitFor(() => expect(api.setSpoolActuals).toHaveBeenLastCalledWith(
-      'p1', [L1_CHANGES[0], L1_CHANGES[1]], { overwrite: true },
-    ))
+    // A spool the dry run saw blank is never written with the overwrite flag:
+    // a date set there since the preview is not replaced unseen.
+    await waitFor(() => expect(api.setSpoolActuals).toHaveBeenCalledTimes(3))
+    expect(api.setSpoolActuals).toHaveBeenNthCalledWith(2, 'p1', [L1_CHANGES[0]], { overwrite: false })
+    expect(api.setSpoolActuals).toHaveBeenNthCalledWith(3, 'p1', [L1_CHANGES[1]], { overwrite: true })
     expect(await screen.findByText('Đã lưu Actual cho 2 spool')).toBeInTheDocument()
+  })
+
+  it('reads the spools afresh before the dry run, so the old dates shown are the stored ones', async () => {
+    api.setSpoolActuals.mockResolvedValueOnce(DRY_RUN)
+    renderPanel(asGs)
+    await ready()
+    // SP-2's PH was changed since the page opened.
+    api.listSpools.mockClear()
+    api.listSpools.mockResolvedValue(SPOOLS.map((s) => (s.id === 's2' ? { ...s, phActual: '2026-10-04' } : s)))
+    const box = await previewLineL1()
+    const over = await within(box).findByRole('region', { name: 'Ngày Actual bị ghi đè' })
+    const row = within(over).getByText('SP-2').closest('tr') as HTMLElement
+    expect(within(row).getByText('04/10/2026')).toBeInTheDocument()
+    expect(api.listSpools).toHaveBeenCalledWith('p1')
+    expect(api.listSpools.mock.invocationCallOrder[0]).toBeLessThan(api.setSpoolActuals.mock.invocationCallOrder[0])
+  })
+
+  it('warns of the spools the write did not save after all (changed since the preview)', async () => {
+    api.setSpoolActuals.mockResolvedValueOnce(DRY_RUN).mockResolvedValueOnce([
+      { spoolId: 's1', spoolNo: 'SP-1', status: 'overwrite_needed' },
+    ])
+    renderPanel(asGs)
+    await ready()
+    const box = await previewLineL1()
+    await waitFor(() => expect(facts(box)[0]).toBe('1 spool lưu'))
+    await userEvent.click(within(box).getByRole('button', { name: 'Lưu' }))
+    expect(await screen.findByText('1 spool không được lưu vì dữ liệu vừa thay đổi')).toBeInTheDocument()
+  })
+
+  it('keeps a refused write inside the dialog and reads nothing again', async () => {
+    api.setSpoolActuals.mockResolvedValueOnce(DRY_RUN).mockRejectedValueOnce(new Error('Không có quyền'))
+    renderPanel(asGs)
+    await ready()
+    const box = await previewLineL1()
+    await waitFor(() => expect(facts(box)[0]).toBe('1 spool lưu'))
+    api.listSpools.mockClear()
+    await userEvent.click(within(box).getByRole('button', { name: 'Lưu' }))
+    expect(await within(box).findByText('Không có quyền')).toBeInTheDocument()
+    // Still on the preview, Lưu there to retry (jsdom keeps the spinner's leave motion in its name).
+    expect(within(box).getByRole('button', { name: /Lưu/ })).toBeEnabled()
+    expect(api.listSpools).not.toHaveBeenCalled()
   })
 
   it('applies one SpoolNo to every spool carrying it (R-11)', async () => {
@@ -340,7 +383,7 @@ describe('Insulation: Cập nhật Actual (spec §6.3, Q18A)', () => {
     const previewButton = within(box).getByRole('button', { name: 'Xem trước' })
     previewButton.click()
     previewButton.click()
-    expect(api.setSpoolActuals).toHaveBeenCalledTimes(1)
+    await waitFor(() => expect(api.setSpoolActuals).toHaveBeenCalledTimes(1))
     finishDry(DRY_RUN)
     const save = await within(box).findByRole('button', { name: 'Lưu' })
     save.click()
