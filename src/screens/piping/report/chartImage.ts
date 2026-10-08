@@ -1,13 +1,13 @@
 import { createElement, type ReactElement } from 'react'
 import { createRoot } from 'react-dom/client'
-import type { CamPoint, CamSeriesKey } from '../../domain/piping/cam'
-import type { ManpowerPoint } from '../../domain/piping/manpower'
-import type { ReinstatementPoint } from '../../domain/piping/reinstatement'
-import type { ManpowerGroup, ViewMode } from '../../domain/piping/types'
-import { ReinstatementChart } from '../../screens/piping/charts'
-import { InsulationChart } from '../../screens/piping/insulation/InsulationChart'
-import { ManpowerChart } from '../../screens/piping/manpower/ManpowerChart'
-import type { ChartPng } from './report'
+import type { CamPoint, CamSeriesKey } from '../../../domain/piping/cam'
+import type { ManpowerPoint } from '../../../domain/piping/manpower'
+import type { ReinstatementPoint } from '../../../domain/piping/reinstatement'
+import type { ManpowerGroup, ViewMode } from '../../../domain/piping/types'
+import type { ChartPng } from '../../../lib/piping/report'
+import { ReinstatementChart } from '../charts'
+import { InsulationChart } from '../insulation/InsulationChart'
+import { ManpowerChart } from '../manpower/ManpowerChart'
 
 /**
  * The report's chart pictures (spec §10, Q25A): the Piping page's own chart

@@ -4,7 +4,7 @@ import { useRef, useState } from 'react'
 import { camSeriesKeys } from '../../domain/piping/cam'
 import type { Unit } from '../../domain/piping/types'
 import { loadGsProjectIdentity } from '../../lib/gsApi'
-import { renderChartPng, type ChartSpec } from '../../lib/piping/chartImage'
+import { renderChartPng, type ChartSpec } from './report/chartImage'
 import {
   buildPipingReport, pipingReportFileName, pipingReportSeries, type ChartKey, type PipingReportInput, type ReportChart,
 } from '../../lib/piping/report'
