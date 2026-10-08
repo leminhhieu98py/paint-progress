@@ -539,6 +539,17 @@ describe('ReinstatementPanel: admin notes (spec §9)', () => {
     expect(api.addNote).toHaveBeenCalledWith('p1', { target: 'reinstatement_day', day: '2026-10-06' }, 'Chờ vật tư')
   })
 
+  it('closes an open notes drawer when the project changes', async () => {
+    api.listNotes.mockResolvedValue([NOTE])
+    const { rerender } = renderPanel()
+    await loaded()
+    await userEvent.click(await within(dataRows()[0]).findByRole('button', { name: 'Ghi chú (1)' }))
+    expect(screen.getByText('Ghi chú Reinstatement 03/10/2026')).toBeInTheDocument()
+    rerender(<ReinstatementPanel {...props({ projectId: 'p2' })} />)
+    await waitFor(() => expect(api.listNotes).toHaveBeenCalledWith('p2'))
+    expect(screen.queryByText('Ghi chú Reinstatement 03/10/2026')).toBeNull()
+  })
+
   it('adds a note on a day and reads the notes again', async () => {
     api.addNote.mockResolvedValue(NOTE)
     renderPanel()
