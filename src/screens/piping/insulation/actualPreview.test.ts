@@ -63,6 +63,15 @@ describe('actualPreview', () => {
     ])
   })
 
+  it('keeps a row for an overwrite the page cannot show (the stored date is newer than the page)', () => {
+    // The page read s1 with no PH; the database holds one now and asks to overwrite it.
+    const p = actualPreview([spool(1)], [changes[0]], [{ spoolId: 's1', spoolNo: 'SP-1', status: 'overwrite_needed' }])
+    expect(p.overwriteSpools).toBe(1)
+    expect(p.overwrites).toEqual([
+      expect.objectContaining({ spoolNo: 'SP-1', milestone: 'ph', from: null, to: '2026-10-05' }),
+    ])
+  })
+
   it('writes the saved spools, and the overwritten ones only when confirmed', () => {
     expect(changesToWrite(changes, results, false).map((c) => c.spoolId)).toEqual(['s1'])
     expect(changesToWrite(changes, results, true).map((c) => c.spoolId)).toEqual(['s1', 's2'])

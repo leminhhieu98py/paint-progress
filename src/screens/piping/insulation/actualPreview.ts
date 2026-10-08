@@ -53,7 +53,8 @@ export interface ActualOverwriteLine {
   spoolId: string
   spoolNo: string
   milestone: Milestone
-  from: DayKey
+  /** The stored date; null when the page has not read it yet (shown as "-"). */
+  from: DayKey | null
   to: DayKey | null
 }
 
@@ -96,13 +97,19 @@ export function actualPreview(spools: Spool[], changes: ActualChange[], results:
     else if (r.status === 'unchanged') out.unchanged += 1
     else if (r.status === 'overwrite_needed') {
       out.overwriteSpools += 1
-      if (!spool) continue
-      const current = actualDates(spool)
+      const current = spool ? actualDates(spool) : null
+      const before = out.overwrites.length
       for (const c of own) {
-        const from = current[c.milestone]
+        const from = current?.[c.milestone] ?? null
         if (from !== null && from !== c.date) {
           out.overwrites.push({ key: `${r.spoolId}|${c.milestone}`, spoolId: r.spoolId, spoolNo, milestone: c.milestone, from, to: c.date })
         }
+      }
+      // The stored date is newer than the spools the page holds: a row with no
+      // old value, so the count and the rows still agree.
+      if (out.overwrites.length === before && own.length > 0) {
+        const c = own[0]
+        out.overwrites.push({ key: `${r.spoolId}|${c.milestone}`, spoolId: r.spoolId, spoolNo, milestone: c.milestone, from: null, to: c.date })
       }
     } else if (r.status === 'order') {
       let reason = ORDER_TEXT
