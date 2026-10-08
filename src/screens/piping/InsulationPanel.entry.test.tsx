@@ -1,0 +1,459 @@
+import { screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { ActualChange } from '../../domain/piping/cam'
+import type { CellValue } from '../../domain/piping/imports'
+import type { PipingSettings, Spool, SpoolColumn } from '../../domain/piping/types'
+import { renderApp } from '../../test/renderApp'
+import { chooseOption } from '../../test/select'
+import { setViewport } from '../../test/viewport'
+import { InsulationPanel } from './InsulationPanel'
+import type { PipingPanelProps } from './panelProps'
+
+const api = vi.hoisted(() => ({
+  listSpools: vi.fn(), listSpoolColumns: vi.fn(), replaceSpools: vi.fn(), setSpoolActuals: vi.fn(),
+}))
+vi.mock('../../lib/pipingApi', () => ({
+  listSpools: (...a: unknown[]) => api.listSpools(...a),
+  listSpoolColumns: (...a: unknown[]) => api.listSpoolColumns(...a),
+  replaceSpools: (...a: unknown[]) => api.replaceSpools(...a),
+  setSpoolActuals: (...a: unknown[]) => api.setSpoolActuals(...a),
+  flattenActualUpdates: (updates: Array<{ spoolId: string; changes: Array<Omit<ActualChange, 'spoolId'>> }>) =>
+    updates.flatMap((u) => u.changes.map((c) => ({ spoolId: u.spoolId, milestone: c.milestone, date: c.date }))),
+}))
+const read = vi.hoisted(() => vi.fn())
+vi.mock('../../lib/piping/xlsx', () => ({ readWorkbookRows: (file: unknown) => read(file) }))
+const download = vi.hoisted(() => vi.fn())
+vi.mock('../../lib/projectReport', () => ({ downloadWorkbook: (...a: unknown[]) => download(...a) }))
+const templates = vi.hoisted(() => ({ plan: vi.fn(), actual: vi.fn() }))
+vi.mock('../../lib/piping/templates', () => ({
+  buildSpoolPlanTemplate: (labels: string[]) => templates.plan(labels),
+  buildSpoolActualTemplate: () => templates.actual(),
+  templateFileName: (kind: string) => `${kind}.xlsx`,
+}))
+vi.mock('./insulation/InsulationChart', () => ({ InsulationChart: () => <div data-testid="insulation-chart" /> }))
+
+const SETTINGS: PipingSettings = {
+  projectId: 'p1', enabled: true, weekStartDate: '2026-09-28', totalTestPacks: null, lateThresholdDays: 7,
+}
+const TODAY = '2026-10-07'
+
+const spool = (seq: number, over: Partial<Spool> = {}): Spool => ({
+  id: `s${seq}`, seq, spoolNo: `SP-${seq}`, lineNo: 'L1', insuType: 'HC', drawingNo: 'D1', testPackageNo: 'TP1',
+  paintingSystem: 'BD-02B', extra: {}, phPlan: '2026-10-01', ihPlan: null, iwPlan: null, phActual: null,
+  ihActual: null, iwActual: null, ...over,
+})
+
+// s1 plain; s2 holds a PH actual (an overwrite); s3's IH is before the day (an order break);
+// s4 already holds the day; s5 on another line. s6 shares SpoolNo SP-1 with s1 (R-11).
+const SPOOLS: Spool[] = [
+  spool(1),
+  spool(2, { phActual: '2026-10-02' }),
+  spool(3, { ihActual: '2026-10-03' }),
+  spool(4, { phActual: TODAY }),
+  spool(5, { lineNo: 'L2', testPackageNo: 'TP2' }),
+  spool(6, { spoolNo: 'SP-1', lineNo: 'L2', testPackageNo: 'TP2' }),
+]
+const COLUMNS: SpoolColumn[] = [{ id: 'c1', label: 'Zone', sort: 1 }]
+
+const props = (over: Partial<PipingPanelProps> = {}): PipingPanelProps => ({
+  projectId: 'p1', settings: SETTINGS, mode: 'day', variant: 'admin', role: 'admin', todayKey: TODAY,
+  refreshKey: 0, ...over,
+})
+const renderPanel = (over: Partial<PipingPanelProps> = {}) => renderApp(<InsulationPanel {...props(over)} />)
+const asGs = { variant: 'gs', role: 'gs' } as const
+const asViewer = { variant: 'gs', role: 'viewer' } as const
+
+const ready = () => screen.findByRole('heading', { level: 2, name: 'Chi tiết' })
+const dialog = () => screen.findByRole('dialog')
+const facts = (root: HTMLElement) => within(within(root).getAllByTestId('key-facts')[0]).getAllByRole('listitem')
+  .map((li) => li.textContent)
+
+/** The file input of the upload button named `name`. */
+function fileInputOf(name: RegExp): HTMLInputElement {
+  const button = screen.getByRole('button', { name })
+  return button.closest('.ant-upload')?.querySelector('input[type="file"]') as HTMLInputElement
+}
+const pick = (name: RegExp, file = 'file.xlsx') => userEvent.upload(
+  fileInputOf(name),
+  new File(['x'], file, { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
+)
+
+const PLAN_HEADER = [
+  'SpoolNo', 'LineNo', 'InsuType', 'DrawingNo', 'Test Package No', 'Painting System',
+  'Painting Handover – Plan', 'Insulation Handover – Plan', 'Insulation Work – Plan', 'Zone',
+]
+const planRow = (spoolNo: string, ph: CellValue, ih: CellValue = null, zone: CellValue = null): CellValue[] =>
+  [spoolNo, 'L1', 'HC', 'D1', 'TP1', 'BD-02B', ph, ih, null, zone]
+const sheet = (rows: CellValue[][]) => [{ name: 'Insulation Plan', rows }]
+
+let undoViewport: () => void
+beforeEach(() => {
+  undoViewport = setViewport(1280)
+  for (const f of Object.values(api)) f.mockReset()
+  api.listSpools.mockResolvedValue(SPOOLS)
+  api.listSpoolColumns.mockResolvedValue(COLUMNS)
+  api.replaceSpools.mockResolvedValue({ rowCount: 0 })
+  read.mockReset()
+  download.mockReset()
+  templates.plan.mockReset().mockResolvedValue(new Blob(['p']))
+  templates.actual.mockReset().mockResolvedValue(new Blob(['a']))
+})
+afterEach(() => undoViewport())
+
+describe('Insulation: role gating (spec §1, R-12)', () => {
+  it('gives the admin the Plan import, the actual entry, the Actual import and Xoá Actual', async () => {
+    renderPanel()
+    await ready()
+    expect(screen.getByRole('button', { name: /Import Plan/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Tải file mẫu' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Cập nhật Actual' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Import Actual/ })).toBeInTheDocument()
+    await chooseOption('Cấp hiển thị', 'Spool')
+    expect(screen.getAllByRole('button', { name: 'Xoá Actual' }).length).toBeGreaterThan(0)
+  })
+
+  it('gives a foreman the actual entry and the Actual import, no Plan import and no clearing', async () => {
+    renderPanel(asGs)
+    await ready()
+    expect(screen.queryByRole('button', { name: /Import Plan/ })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Cập nhật Actual' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Import Actual/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Tải file mẫu Actual' })).toBeInTheDocument()
+    await chooseOption('Cấp hiển thị', 'Spool')
+    expect(screen.queryByRole('button', { name: 'Xoá Actual' })).toBeNull()
+    expect(screen.queryByRole('columnheader', { name: 'Thao tác' })).toBeNull()
+  })
+
+  it('gives a viewer none of them', async () => {
+    renderPanel(asViewer)
+    await ready()
+    for (const name of [/Import Plan/, /Cập nhật Actual/, /Import Actual/, /Tải file mẫu/]) {
+      expect(screen.queryByRole('button', { name })).toBeNull()
+    }
+    await chooseOption('Cấp hiển thị', 'Spool')
+    expect(screen.queryByRole('button', { name: 'Xoá Actual' })).toBeNull()
+  })
+})
+
+describe('Insulation: Plan import (spec §6.2, §8, R-10, Q19A)', () => {
+  it('offers the import in the empty state of a project with no spools', async () => {
+    api.listSpools.mockResolvedValue([])
+    renderPanel()
+    expect(await screen.findByText('Chưa có spool nào')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Import Plan/ })).toBeInTheDocument()
+  })
+
+  it('downloads the template with the extra columns', async () => {
+    renderPanel()
+    await ready()
+    await userEvent.click(screen.getByRole('button', { name: 'Tải file mẫu' }))
+    await waitFor(() => expect(download).toHaveBeenCalledWith(expect.any(Blob), 'spool_plan.xlsx'))
+    expect(templates.plan).toHaveBeenCalledWith(['Zone'])
+  })
+
+  it('previews added, changed and removed spools, flags and warns of the actuals lost, then replaces', async () => {
+    // SP-1 twice (both kept: s1 and s6), SP-2 gone (it has an actual), SP-3, SP-4, SP-5 gone,
+    // SP-7 new with IH before PH (a plan-order warning), SP-3's Zone set.
+    read.mockResolvedValue(sheet([
+      PLAN_HEADER,
+      planRow('SP-1', '2026-10-01'),
+      planRow('SP-1', '2026-10-01'),
+      planRow('SP-3', '2026-10-01', null, 'A'),
+      planRow('SP-4', '2026-10-01'),
+      planRow('SP-7', '2026-10-09', '2026-10-08'),
+    ]))
+    renderPanel()
+    await ready()
+    await pick(/Import Plan/, 'plan.xlsx')
+    const box = await dialog()
+    expect(within(box).getByText('Xem trước Insulation Plan')).toBeInTheDocument()
+    expect(facts(box)).toEqual(['1 thêm', '2 sửa', '2 xoá', '2 giữ nguyên'])
+    // The duplicate SpoolNo and the plan-order break are listed, not blocking.
+    expect(within(box).getByText(/SpoolNo "SP-1" lặp lại ở các dòng 2, 3/)).toBeInTheDocument()
+    expect(within(box).getByText(/Dòng 6: Sai thứ tự: Painting Handover/)).toBeInTheDocument()
+    const removed = within(box).getByText('SP-2').closest('tr') as HTMLElement
+    expect(within(removed).getByText('có Actual')).toBeInTheDocument()
+    const sp5 = within(box).getByText('SP-5').closest('tr') as HTMLElement
+    expect(within(sp5).queryByText('có Actual')).toBeNull()
+    expect(within(box).getByText('1 spool bị xoá cùng ngày Actual đã nhập: SP-2.')).toBeInTheDocument()
+    const confirm = within(box).getByRole('button', { name: /Thay thế Plan/ })
+    expect(confirm).toHaveClass('ant-btn-dangerous')
+
+    api.listSpools.mockClear()
+    await userEvent.click(confirm)
+    await waitFor(() => expect(api.replaceSpools).toHaveBeenCalledTimes(1))
+    const [project, rows, fileName, summary] = api.replaceSpools.mock.calls[0]
+    expect(project).toBe('p1')
+    expect(fileName).toBe('plan.xlsx')
+    expect((rows as Array<{ spoolNo: string; extra: Record<string, string> }>).map((r) => r.spoolNo))
+      .toEqual(['SP-1', 'SP-1', 'SP-3', 'SP-4', 'SP-7'])
+    expect((rows as Array<{ extra: Record<string, string> }>)[2].extra).toEqual({ Zone: 'A' })
+    expect(summary).toEqual(expect.objectContaining({ added: 1, removed: 2, removedWithActuals: 1, warnings: 2 }))
+    await waitFor(() => expect(api.listSpools).toHaveBeenCalledWith('p1'))
+  })
+
+  it('lists the row errors and writes nothing', async () => {
+    read.mockResolvedValue(sheet([PLAN_HEADER, planRow('SP-1', '31/02/2026'), planRow('', '2026-10-01')]))
+    renderPanel()
+    await ready()
+    await pick(/Import Plan/, 'bad.xlsx')
+    const box = await dialog()
+    expect(within(box).getByText('Không import được bad.xlsx')).toBeInTheDocument()
+    expect(within(box).getByText('2 lỗi · chưa có dòng nào được import')).toBeInTheDocument()
+    expect(within(box).queryByRole('button', { name: /Thay thế Plan/ })).toBeNull()
+    expect(api.replaceSpools).not.toHaveBeenCalled()
+  })
+})
+
+describe('Insulation: Cập nhật Actual (spec §6.3, Q18A)', () => {
+  /** Opens the entry for LineNo L1 at Painting Handover, today, and runs the dry run. */
+  async function previewLineL1() {
+    await userEvent.click(screen.getByRole('button', { name: 'Cập nhật Actual' }))
+    const box = await dialog()
+    await chooseOption('Áp dụng cho', 'LineNo', box)
+    await chooseOption('LineNo', 'L1', box)
+    expect(within(box).getByRole('textbox', { name: 'Ngày' })).toHaveValue('07/10/2026')
+    await userEvent.click(within(box).getByRole('button', { name: 'Xem trước' }))
+    return box
+  }
+  const DRY_RUN = [
+    { spoolId: 's1', spoolNo: 'SP-1', status: 'saved' },
+    { spoolId: 's2', spoolNo: 'SP-2', status: 'overwrite_needed' },
+    { spoolId: 's3', spoolNo: 'SP-3', status: 'order' },
+    { spoolId: 's4', spoolNo: 'SP-4', status: 'unchanged' },
+  ]
+  const L1_CHANGES = ['s1', 's2', 's3', 's4'].map((spoolId) => ({ spoolId, milestone: 'ph', date: TODAY }))
+
+  it('previews from the dry run: saved, overwritten old -> new, skipped with the reason, unchanged', async () => {
+    api.setSpoolActuals.mockResolvedValueOnce(DRY_RUN)
+    renderPanel(asGs)
+    await ready()
+    const box = await previewLineL1()
+    await waitFor(() => expect(api.setSpoolActuals).toHaveBeenCalledWith('p1', L1_CHANGES, { dryRun: true }))
+    expect(await within(box).findByText('LineNo L1 · Painting Handover · 07/10/2026 · 4 spool')).toBeInTheDocument()
+    expect(facts(box)).toEqual(['1 spool lưu', '1 spool ghi đè', '1 spool bỏ qua', '1 spool không đổi'])
+    const skipped = within(box).getByRole('region', { name: 'Spool bỏ qua' })
+    expect(within(skipped).getByText('SP-3')).toBeInTheDocument()
+    expect(within(skipped).getByText(
+      'Sai thứ tự: Painting Handover (07/10/2026) sau Insulation Handover (03/10/2026)',
+    )).toBeInTheDocument()
+    const over = within(box).getByRole('region', { name: 'Ngày Actual bị ghi đè' })
+    const row = within(over).getByText('SP-2').closest('tr') as HTMLElement
+    expect(within(row).getByText('02/10/2026')).toBeInTheDocument()
+    expect(within(row).getByText('07/10/2026')).toBeInTheDocument()
+    expect(within(over).getByRole('checkbox', { name: 'Ghi đè ngày Actual của 1 spool' })).not.toBeChecked()
+  })
+
+  it('saves only the saved spools when the overwrite is not ticked, skipping the order breakers', async () => {
+    api.setSpoolActuals.mockResolvedValueOnce(DRY_RUN).mockResolvedValueOnce([{ spoolId: 's1', spoolNo: 'SP-1', status: 'saved' }])
+    renderPanel(asGs)
+    await ready()
+    const box = await previewLineL1()
+    await waitFor(() => expect(facts(box)[0]).toBe('1 spool lưu'))
+    api.listSpools.mockClear()
+    await userEvent.click(within(box).getByRole('button', { name: 'Lưu' }))
+    await waitFor(() => expect(api.setSpoolActuals).toHaveBeenCalledTimes(2))
+    expect(api.setSpoolActuals).toHaveBeenLastCalledWith('p1', [L1_CHANGES[0]], { overwrite: false })
+    expect(await screen.findByText('Đã lưu Actual cho 1 spool')).toBeInTheDocument()
+    await waitFor(() => expect(api.listSpools).toHaveBeenCalledWith('p1'))
+  })
+
+  it('overwrites the stored dates only once the box is ticked', async () => {
+    api.setSpoolActuals.mockResolvedValueOnce(DRY_RUN).mockResolvedValueOnce([
+      { spoolId: 's1', spoolNo: 'SP-1', status: 'saved' }, { spoolId: 's2', spoolNo: 'SP-2', status: 'saved' },
+    ])
+    renderPanel()
+    await ready()
+    const box = await previewLineL1()
+    await userEvent.click(await within(box).findByRole('checkbox', { name: 'Ghi đè ngày Actual của 1 spool' }))
+    await userEvent.click(within(box).getByRole('button', { name: 'Lưu' }))
+    await waitFor(() => expect(api.setSpoolActuals).toHaveBeenLastCalledWith(
+      'p1', [L1_CHANGES[0], L1_CHANGES[1]], { overwrite: true },
+    ))
+    expect(await screen.findByText('Đã lưu Actual cho 2 spool')).toBeInTheDocument()
+  })
+
+  it('applies one SpoolNo to every spool carrying it (R-11)', async () => {
+    api.setSpoolActuals.mockResolvedValueOnce([
+      { spoolId: 's1', spoolNo: 'SP-1', status: 'saved' }, { spoolId: 's6', spoolNo: 'SP-1', status: 'saved' },
+    ])
+    renderPanel(asGs)
+    await ready()
+    await userEvent.click(screen.getByRole('button', { name: 'Cập nhật Actual' }))
+    const box = await dialog()
+    await chooseOption('SpoolNo', 'SP-1', box)
+    await chooseOption('Mốc', 'Insulation Work', box)
+    await userEvent.click(within(box).getByRole('button', { name: 'Xem trước' }))
+    await waitFor(() => expect(api.setSpoolActuals).toHaveBeenCalledWith('p1', [
+      { spoolId: 's1', milestone: 'iw', date: TODAY }, { spoolId: 's6', milestone: 'iw', date: TODAY },
+    ], { dryRun: true }))
+    await waitFor(() => expect(facts(box)[0]).toBe('2 spool lưu'))
+  })
+
+  it('keeps Lưu off when nothing would be saved', async () => {
+    api.setSpoolActuals.mockResolvedValueOnce([
+      { spoolId: 's1', spoolNo: 'SP-1', status: 'order' }, { spoolId: 's2', spoolNo: 'SP-2', status: 'unchanged' },
+      { spoolId: 's3', spoolNo: 'SP-3', status: 'order' }, { spoolId: 's4', spoolNo: 'SP-4', status: 'unchanged' },
+    ])
+    renderPanel(asGs)
+    await ready()
+    const box = await previewLineL1()
+    await waitFor(() => expect(facts(box)[0]).toBe('0 spool lưu'))
+    expect(within(box).getByRole('button', { name: 'Lưu' })).toBeDisabled()
+  })
+
+  it('runs the dry run and the write once however fast the buttons are hit', async () => {
+    let finishDry: (v: unknown) => void = () => {}
+    let finishSave: (v: unknown) => void = () => {}
+    api.setSpoolActuals
+      .mockImplementationOnce(() => new Promise((resolve) => { finishDry = resolve }))
+      .mockImplementationOnce(() => new Promise((resolve) => { finishSave = resolve }))
+    renderPanel(asGs)
+    await ready()
+    await userEvent.click(screen.getByRole('button', { name: 'Cập nhật Actual' }))
+    const box = await dialog()
+    await chooseOption('Áp dụng cho', 'LineNo', box)
+    await chooseOption('LineNo', 'L1', box)
+    const previewButton = within(box).getByRole('button', { name: 'Xem trước' })
+    previewButton.click()
+    previewButton.click()
+    expect(api.setSpoolActuals).toHaveBeenCalledTimes(1)
+    finishDry(DRY_RUN)
+    const save = await within(box).findByRole('button', { name: 'Lưu' })
+    save.click()
+    save.click()
+    expect(api.setSpoolActuals).toHaveBeenCalledTimes(2)
+    finishSave([{ spoolId: 's1', spoolNo: 'SP-1', status: 'saved' }])
+    expect(await screen.findByText('Đã lưu Actual cho 1 spool')).toBeInTheDocument()
+    expect(api.setSpoolActuals).toHaveBeenCalledTimes(2)
+  })
+
+  it('offers no day after today', async () => {
+    renderPanel(asGs)
+    await ready()
+    await userEvent.click(screen.getByRole('button', { name: 'Cập nhật Actual' }))
+    const box = await dialog()
+    await userEvent.click(within(box).getByRole('textbox', { name: 'Ngày' }))
+    const tomorrow = await waitFor(() => {
+      const cell = document.querySelector('td[title="2026-10-08"]')
+      if (!cell) throw new Error('no picker cell')
+      return cell
+    })
+    expect(tomorrow).toHaveClass('ant-picker-cell-disabled')
+  })
+})
+
+describe('Insulation: Import Actual (spec §6.3, §8, R-11)', () => {
+  const ACTUAL_HEADER = ['SpoolNo', 'Painting Handover – Actual', 'Insulation Handover – Actual', 'Insulation Work – Actual']
+
+  it('lists the row errors (unknown SpoolNo, a day after today) and writes nothing', async () => {
+    read.mockResolvedValue([{ name: 'Insulation Actual', rows: [
+      ACTUAL_HEADER, ['SP-404', '2026-10-01', null, null], ['SP-5', '2026-10-09', null, null],
+    ] }])
+    renderPanel(asGs)
+    await ready()
+    await pick(/Import Actual/, 'actual.xlsx')
+    const box = await dialog()
+    expect(within(box).getByText('Không import được actual.xlsx')).toBeInTheDocument()
+    expect(within(box).getByText('Không tìm thấy SpoolNo "SP-404"')).toBeInTheDocument()
+    expect(within(box).getByText(/ngày 09\/10\/2026 sau hôm nay/)).toBeInTheDocument()
+    expect(api.setSpoolActuals).not.toHaveBeenCalled()
+  })
+
+  it('refuses the file when the dry run finds an order break the screen did not see', async () => {
+    read.mockResolvedValue([{ name: 'Insulation Actual', rows: [ACTUAL_HEADER, ['SP-5', '2026-10-01', null, null]] }])
+    api.setSpoolActuals.mockResolvedValueOnce([{ spoolId: 's5', spoolNo: 'SP-5', status: 'order' }])
+    renderPanel(asGs)
+    await ready()
+    await pick(/Import Actual/, 'actual.xlsx')
+    const box = await dialog()
+    expect(within(box).getByText('Không import được actual.xlsx')).toBeInTheDocument()
+    expect(within(box).getByText(/SpoolNo "SP-5": Sai thứ tự/)).toBeInTheDocument()
+    expect(api.setSpoolActuals).toHaveBeenCalledTimes(1)
+  })
+
+  it('previews a SpoolNo matching two spools as applied to both, overwrites after the tick, imports once', async () => {
+    read.mockResolvedValue([{ name: 'Insulation Actual', rows: [
+      ACTUAL_HEADER, ['SP-1', '2026-10-05', null, null], ['SP-2', '2026-10-06', null, null],
+    ] }])
+    const changes = [
+      { spoolId: 's1', milestone: 'ph', date: '2026-10-05' },
+      { spoolId: 's6', milestone: 'ph', date: '2026-10-05' },
+      { spoolId: 's2', milestone: 'ph', date: '2026-10-06' },
+    ]
+    let finish: (v: unknown) => void = () => {}
+    api.setSpoolActuals
+      .mockResolvedValueOnce([
+        { spoolId: 's1', spoolNo: 'SP-1', status: 'saved' }, { spoolId: 's2', spoolNo: 'SP-2', status: 'overwrite_needed' },
+        { spoolId: 's6', spoolNo: 'SP-1', status: 'saved' },
+      ])
+      .mockImplementationOnce(() => new Promise((resolve) => { finish = resolve }))
+    renderPanel(asGs)
+    await ready()
+    await pick(/Import Actual/, 'actual.xlsx')
+    const box = await dialog()
+    await waitFor(() => expect(api.setSpoolActuals).toHaveBeenCalledWith('p1', changes, {
+      importFile: 'actual.xlsx', dryRun: true, fileRows: 2,
+    }))
+    expect(within(box).getByText('Xem trước Insulation Actual')).toBeInTheDocument()
+    expect(within(box).getByText('Dòng 2: SpoolNo "SP-1" khớp 2 spool, áp dụng cho tất cả')).toBeInTheDocument()
+    expect(facts(box)).toEqual(['2 spool lưu', '1 spool ghi đè', '0 spool bỏ qua', '0 spool không đổi'])
+    const confirm = within(box).getByRole('button', { name: /Import Actual/ })
+    expect(confirm).toBeDisabled()
+    await userEvent.click(within(box).getByRole('checkbox', { name: 'Ghi đè ngày Actual của 1 spool' }))
+    expect(confirm).toBeEnabled()
+    confirm.click()
+    confirm.click()
+    expect(api.setSpoolActuals).toHaveBeenCalledTimes(2)
+    expect(api.setSpoolActuals).toHaveBeenLastCalledWith('p1', changes, {
+      importFile: 'actual.xlsx', fileRows: 2, overwrite: true,
+    })
+    finish([
+      { spoolId: 's1', spoolNo: 'SP-1', status: 'saved' }, { spoolId: 's2', spoolNo: 'SP-2', status: 'saved' },
+      { spoolId: 's6', spoolNo: 'SP-1', status: 'saved' },
+    ])
+    expect(await screen.findByText('Đã import Insulation Actual cho 3 spool')).toBeInTheDocument()
+    expect(api.setSpoolActuals).toHaveBeenCalledTimes(2)
+  })
+
+  it('downloads the Actual template', async () => {
+    renderPanel(asGs)
+    await ready()
+    await userEvent.click(screen.getByRole('button', { name: 'Tải file mẫu Actual' }))
+    await waitFor(() => expect(download).toHaveBeenCalledWith(expect.any(Blob), 'spool_actual.xlsx'))
+  })
+})
+
+describe('Insulation: Xoá Actual (spec §6.3, R-12)', () => {
+  it('clears the chosen milestone after the confirmation, once', async () => {
+    api.listSpools.mockResolvedValue([spool(1, { phActual: '2026-10-02', ihActual: '2026-10-04' })])
+    let finish: (v: unknown) => void = () => {}
+    api.setSpoolActuals.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve }))
+    renderPanel()
+    await ready()
+    await chooseOption('Cấp hiển thị', 'Spool')
+    await userEvent.click(screen.getByRole('button', { name: 'Xoá Actual' }))
+    const box = await dialog()
+    expect(within(box).getByText('Xoá ngày Actual của SP-1?')).toBeInTheDocument()
+    await chooseOption('Mốc', 'Insulation Handover', box)
+    expect(within(box).getByText('04/10/2026')).toBeInTheDocument()
+    const ok = within(box).getByRole('button', { name: /Xoá/ })
+    ok.click()
+    ok.click()
+    expect(api.setSpoolActuals).toHaveBeenCalledTimes(1)
+    expect(api.setSpoolActuals).toHaveBeenCalledWith('p1', [{ spoolId: 's1', milestone: 'ih', date: null }])
+    api.listSpools.mockClear()
+    finish([{ spoolId: 's1', spoolNo: 'SP-1', status: 'saved' }])
+    expect(await screen.findByText('Đã xoá Insulation Handover – Actual của SP-1')).toBeInTheDocument()
+    await waitFor(() => expect(api.listSpools).toHaveBeenCalledWith('p1'))
+  })
+
+  it('has nothing to clear on a spool without actuals', async () => {
+    api.listSpools.mockResolvedValue([spool(1)])
+    renderPanel()
+    await ready()
+    await chooseOption('Cấp hiển thị', 'Spool')
+    expect(screen.getByRole('button', { name: 'Xoá Actual' })).toBeDisabled()
+  })
+})
