@@ -244,6 +244,25 @@ describe('Insulation: Plan import (spec §6.2, §8, R-10, Q19A)', () => {
     await waitFor(() => expect(api.listNotes.mock.calls.length).toBeGreaterThan(readsBefore))
   })
 
+  it('still previews when the notes cannot be read, says so, and asks for XOÁ before removing a spool', async () => {
+    // Every spool kept but SP-5, which carries no actual: only the unknown notes make the removal dangerous.
+    read.mockResolvedValue(sheet([PLAN_HEADER, ...['SP-1', 'SP-1', 'SP-2', 'SP-3', 'SP-4'].map((n) => planRow(n, '2026-10-01'))]))
+    renderPanel()
+    await ready()
+    api.listNotes.mockRejectedValue(new Error('network'))
+    await pick(/Nhập Plan/, 'plan.xlsx')
+    const box = await dialog()
+    expect(await within(box).findByText('Không đếm được ghi chú của các spool bị xoá.')).toBeInTheDocument()
+    const confirm = within(box).getByRole('button', { name: /Thay thế Plan/ })
+    expect(confirm).toHaveClass('ant-btn-dangerous')
+    await userEvent.click(confirm)
+    expect(api.replaceSpools).not.toHaveBeenCalled()
+    await userEvent.type(await screen.findByLabelText('Gõ XOÁ để xác nhận'), 'XOÁ')
+    const typed = screen.getAllByRole('dialog').at(-1) as HTMLElement
+    await userEvent.click(within(typed).getByRole('button', { name: /Thay thế Plan/ }))
+    await waitFor(() => expect(api.replaceSpools).toHaveBeenCalledTimes(1))
+  })
+
   it('lists the row errors and writes nothing', async () => {
     read.mockResolvedValue(sheet([PLAN_HEADER, planRow('SP-1', '31/02/2026'), planRow('', '2026-10-01')]))
     renderPanel()

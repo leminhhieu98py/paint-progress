@@ -59,6 +59,19 @@ describe('spoolPlanPreview (spec §6.2)', () => {
     ])
   })
 
+  it('says in a danger tone when the notes could not be counted and a spool is removed', () => {
+    const p = spoolPlanPreview(stored, next, null)
+    expect(p.lines.filter((l) => l.change === 'removed').map((l) => [l.label, l.flag ?? null])).toEqual([
+      ['SP-2', 'có Actual'],
+      ['SP-3', null],
+    ])
+    expect(p.dangers).toEqual([
+      '1 spool bị xoá cùng ngày Actual đã nhập: SP-2.',
+      'Không đếm được ghi chú của các spool bị xoá.',
+    ])
+    expect(spoolPlanPreview([spool(1)], [row(1)], null).dangers).toEqual([])
+  })
+
   it('has no danger when no removed spool carries an actual', () => {
     expect(spoolPlanPreview([spool(1)], [row(1)]).dangers).toEqual([])
   })

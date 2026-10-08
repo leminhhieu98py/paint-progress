@@ -38,14 +38,16 @@ function names(list: string[]): string {
 /**
  * `noteCounts`: the admin's notes per spool id (spec §9) -- a removed spool's
  * notes are deleted with it, so they are flagged and their loss said too.
+ * `null` when they could not be read: any removal is then said as a danger,
+ * so it still asks for the typed confirm.
  */
 export function spoolPlanPreview(
   stored: Spool[],
   next: SpoolPlanRow[],
-  noteCounts: ReadonlyMap<string, number> = new Map(),
+  noteCounts: ReadonlyMap<string, number> | null = new Map(),
 ): PlanImportPreview {
   const diff = diffSpoolPlan(stored, next)
-  const notesOf = (s: Spool) => noteCounts.get(s.id) ?? 0
+  const notesOf = (s: Spool) => noteCounts?.get(s.id) ?? 0
   const lines: PlanDiffLine[] = [
     ...diff.added.map((r) => ({
       key: `a|${r.seq}`, change: 'added' as const, label: r.spoolNo, from: null, to: `Dòng ${formatQty(r.row)}`,
@@ -84,6 +86,7 @@ export function spoolPlanPreview(
       ...(lostNotes === 0
         ? []
         : [`${formatQty(lostNotes)} ghi chú sẽ bị xoá cùng spool: ${names(noted.map((r) => r.spool.spoolNo))}.`]),
+      ...(noteCounts === null && diff.removed.length > 0 ? ['Không đếm được ghi chú của các spool bị xoá.'] : []),
     ],
   }
 }
