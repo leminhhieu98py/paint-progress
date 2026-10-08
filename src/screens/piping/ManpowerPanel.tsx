@@ -25,6 +25,7 @@ import { ManpowerEntryForm } from './manpower/ManpowerEntryForm'
 import { ManpowerHistoryTable } from './manpower/ManpowerHistoryTable'
 import type { PipingPanelProps } from './panelProps'
 import { dayNotes, usePipingNotes } from './notes/usePipingNotes'
+import { HeaderActions } from './HeaderActions'
 import { PlanImportFlow, type PlanImportPreview } from './PlanImportFlow'
 import { formatQty } from './pipingFormat'
 import { usePanelData } from './usePanelData'
@@ -160,18 +161,20 @@ export function ManpowerPanel({ projectId, settings, mode, role, todayKey, refre
         title={mode === 'week' ? 'Manpower (trung bình tuần)' : 'Manpower'}
         facts={facts}
         extra={admin ? (
-          <PlanImportFlow<ManpowerValue>
-            planLabel="Manpower Plan"
-            templateName={templateFileName('manpower_plan')}
-            buildTemplate={buildTemplate}
-            parse={parse}
-            preview={preview}
-            lineHeader="Ngày · Nhóm"
-            lineAlign="left"
-            countFileRows={fileDays}
-            commit={({ rows, fileName, summary }) => replaceManpowerPlan(projectId, rows, fileName, summary)}
-            onImported={reload}
-          />
+          <HeaderActions>
+            <PlanImportFlow<ManpowerValue>
+              planLabel="Manpower Plan"
+              templateName={templateFileName('manpower_plan')}
+              buildTemplate={buildTemplate}
+              parse={parse}
+              preview={preview}
+              lineHeader="Ngày · Nhóm"
+              lineAlign="left"
+              countFileRows={fileDays}
+              commit={({ rows, fileName, summary }) => replaceManpowerPlan(projectId, rows, fileName, summary)}
+              onImported={reload}
+            />
+          </HeaderActions>
         ) : undefined}
       >
         {series.length === 0

@@ -405,6 +405,16 @@ describe('ReinstatementPanel: layout', () => {
     const header = screen.getByRole('heading', { level: 2, name: 'Reinstatement' }).parentElement as HTMLElement
     expect(header.lastElementChild).toHaveAttribute('data-testid', 'key-facts')
   })
+
+  it('lets the admin\'s header actions wrap instead of running past the card', async () => {
+    restoreViewport = setViewport(780)
+    renderPanel()
+    await loaded()
+    const header = screen.getByRole('heading', { level: 2, name: 'Reinstatement' }).parentElement as HTMLElement
+    const actions = within(header).getByTestId('header-actions')
+    expect(actions.style.flexWrap).toBe('wrap')
+    expect(within(actions).getByRole('button', { name: /Nhập Plan/ })).toBeInTheDocument()
+  })
 })
 
 describe('ReinstatementPanel: Plan import (spec §8)', () => {

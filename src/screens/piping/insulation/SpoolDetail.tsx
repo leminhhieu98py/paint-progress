@@ -18,6 +18,7 @@ import { formatDayMonthYear } from '../../../domain/piping/week'
 import { MISSING } from '../../../lib/format'
 import { useFieldPhone } from '../../gs/fieldSections'
 import { formatQty } from '../pipingFormat'
+import { HeaderActions } from '../HeaderActions'
 import { ControlRow } from './ControlRow'
 import { PHONE_CONTROL } from './controlStyle'
 import { spoolFlagItems } from './spoolFlags'
@@ -260,7 +261,7 @@ export function SpoolDetail({ projectId, spools, columns, flags, admin, toolbar,
     <SectionCard
       title="Chi tiết"
       facts={[{ value: formatQty(counted), label: LEVEL_NOUN[level] }]}
-      extra={phone ? undefined : controls}
+      extra={phone ? undefined : <HeaderActions>{controls}</HeaderActions>}
     >
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         {phone && <ControlRow>{controls}</ControlRow>}

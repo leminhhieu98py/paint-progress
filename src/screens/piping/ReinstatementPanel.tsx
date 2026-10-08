@@ -18,6 +18,7 @@ import { space } from '../../theme'
 import { ReinstatementChart } from './charts'
 import type { PipingPanelProps } from './panelProps'
 import { dayNotes, usePipingNotes } from './notes/usePipingNotes'
+import { HeaderActions } from './HeaderActions'
 import { PlanImportFlow, type PlanImportPreview } from './PlanImportFlow'
 import { formatQty } from './pipingFormat'
 import { EntriesTable } from './reinstatement/EntriesTable'
@@ -127,16 +128,18 @@ export function ReinstatementPanel({ projectId, settings, mode, role, todayKey, 
         title="Reinstatement"
         facts={[summaryFact(data.entries, total, admin)]}
         extra={admin ? (
-          <PlanImportFlow<ReinstatementPlanRow>
-            planLabel="Reinstatement Plan"
-            templateName={templateFileName('reinstatement_plan')}
-            buildTemplate={buildReinstatementPlanTemplate}
-            parse={parseReinstatementPlan}
-            preview={preview}
-            lineHeader="Ngày"
-            commit={({ rows, fileName, summary }) => replaceReinstatementPlan(projectId, rows, fileName, summary)}
-            onImported={reload}
-          />
+          <HeaderActions>
+            <PlanImportFlow<ReinstatementPlanRow>
+              planLabel="Reinstatement Plan"
+              templateName={templateFileName('reinstatement_plan')}
+              buildTemplate={buildReinstatementPlanTemplate}
+              parse={parseReinstatementPlan}
+              preview={preview}
+              lineHeader="Ngày"
+              commit={({ rows, fileName, summary }) => replaceReinstatementPlan(projectId, rows, fileName, summary)}
+              onImported={reload}
+            />
+          </HeaderActions>
         ) : undefined}
       >
         {series.length === 0

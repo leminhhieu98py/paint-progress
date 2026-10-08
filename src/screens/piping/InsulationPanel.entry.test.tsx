@@ -138,6 +138,22 @@ describe('Insulation: role gating (spec §1, R-12)', () => {
   })
 })
 
+describe('Insulation: header actions', () => {
+  it('lets the Insulation and Chi tiết header controls wrap instead of running past the card', async () => {
+    undoViewport()
+    undoViewport = setViewport(780)
+    renderPanel()
+    await ready()
+    const actions = (name: string) => within(
+      screen.getByRole('heading', { level: 2, name }).parentElement as HTMLElement,
+    ).getByTestId('header-actions')
+    for (const name of ['Insulation', 'Chi tiết']) expect(actions(name).style.flexWrap).toBe('wrap')
+    expect(within(actions('Insulation')).getByRole('combobox', { name: 'Đơn vị đếm' })).toBeInTheDocument()
+    expect(within(actions('Insulation')).getByRole('button', { name: /Nhập Plan/ })).toBeInTheDocument()
+    expect(within(actions('Chi tiết')).getByRole('button', { name: /Nhập Actual/ })).toBeInTheDocument()
+  })
+})
+
 describe('Insulation: Plan import (spec §6.2, §8, R-10, Q19A)', () => {
   it('offers the import in the empty state of a project with no spools', async () => {
     api.listSpools.mockResolvedValue([])

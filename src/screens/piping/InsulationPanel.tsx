@@ -18,6 +18,7 @@ import { useFieldPhone } from '../gs/fieldSections'
 import { ActualEntry } from './insulation/ActualEntry'
 import { ActualImportFlow } from './insulation/ActualImportFlow'
 import { setMilestones } from './insulation/actualPreview'
+import { HeaderActions } from './HeaderActions'
 import { ClearActualModal } from './insulation/ClearActualModal'
 import { ControlRow } from './insulation/ControlRow'
 import { PHONE_CONTROL } from './insulation/controlStyle'
@@ -259,7 +260,7 @@ export function InsulationPanel({ projectId, settings, mode, role, todayKey, ref
       <SectionCard
         title="Insulation"
         facts={facts}
-        extra={phone && planImport === undefined ? undefined : <>{!phone && controls}{planImport}</>}
+        extra={phone && planImport === undefined ? undefined : <HeaderActions>{!phone && controls}{planImport}</HeaderActions>}
       >
         {phone && <div style={{ marginBottom: space.md }}><ControlRow>{controls}</ControlRow></div>}
         {series.length === 0

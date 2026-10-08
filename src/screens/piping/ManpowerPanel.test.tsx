@@ -461,6 +461,16 @@ describe('ManpowerPanel: layout', () => {
     await loaded()
     expect(antTable()).not.toHaveClass('ant-table-has-fix-left')
   })
+
+  it('lets the admin\'s header actions wrap instead of running past the card', async () => {
+    restoreViewport = setViewport(780)
+    renderPanel()
+    await loaded()
+    const header = screen.getByRole('heading', { level: 2, name: 'Manpower' }).parentElement as HTMLElement
+    const actions = within(header).getByTestId('header-actions')
+    expect(actions.style.flexWrap).toBe('wrap')
+    expect(within(actions).getByRole('button', { name: /Nhập Plan/ })).toBeInTheDocument()
+  })
 })
 
 describe('ManpowerPanel: Plan import (spec §8, R-14)', () => {
