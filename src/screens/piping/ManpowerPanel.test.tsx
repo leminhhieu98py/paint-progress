@@ -16,6 +16,7 @@ const api = vi.hoisted(() => ({
   replaceManpowerPlan: vi.fn(),
   listManpowerActual: vi.fn(),
   setManpowerActual: vi.fn(),
+  listNotes: vi.fn(),
 }))
 vi.mock('../../lib/pipingApi', () => ({
   listManpowerGroups: (...a: unknown[]) => api.listManpowerGroups(...a),
@@ -23,6 +24,7 @@ vi.mock('../../lib/pipingApi', () => ({
   replaceManpowerPlan: (...a: unknown[]) => api.replaceManpowerPlan(...a),
   listManpowerActual: (...a: unknown[]) => api.listManpowerActual(...a),
   setManpowerActual: (...a: unknown[]) => api.setManpowerActual(...a),
+  listNotes: (...a: unknown[]) => api.listNotes(...a),
 }))
 
 /** The file reader stands in: a test hands over the sheets a workbook would read as. */
@@ -124,6 +126,7 @@ beforeEach(() => {
   api.listManpowerPlan.mockResolvedValue(PLAN)
   api.listManpowerActual.mockResolvedValue(ACTUAL)
   api.setManpowerActual.mockResolvedValue(1)
+  api.listNotes.mockResolvedValue([])
   api.replaceManpowerPlan.mockResolvedValue({ logId: 'l1', summary: {} })
   xlsx.read.mockReset()
   templates.build.mockReset()
@@ -516,5 +519,36 @@ describe('ManpowerPanel: Plan import (spec §8, R-14)', () => {
     const rows = within(within(card).getByRole('table')).getAllByRole('row').slice(1)
     expect(rows[0]).toHaveTextContent(/^01\/10\/2026104-14/)
     expect(rows[1]).toHaveTextContent(/^02\/10\/202612-214/)
+  })
+})
+
+describe('ManpowerPanel: admin notes (spec §9)', () => {
+  const note = (id: string, target: string, createdAt: string) => ({
+    id, target, day: '2026-10-02', spoolId: null, body: `Nội dung ${id}`, authorId: 'u1', createdAt,
+    updatedBy: null, updatedAt: null, authorName: 'Đoàn Linh', updatedByName: null,
+  })
+
+  it('marks the days with notes and opens a day\'s thread newest first', async () => {
+    api.listNotes.mockResolvedValue([
+      note('n1', 'manpower_day', '2026-10-02T01:00:00Z'),
+      note('n2', 'manpower_day', '2026-10-02T05:00:00Z'),
+      note('n3', 'reinstatement_day', '2026-10-02T06:00:00Z'),
+    ])
+    renderPanel()
+    await loaded()
+    expect(api.listNotes).toHaveBeenCalledWith('p1')
+    const oct2 = historyRows()[1]
+    await userEvent.click(await within(oct2).findByRole('button', { name: 'Ghi chú (2)' }))
+    const drawer = screen.getByText('Ghi chú Manpower 02/10/2026').closest('.ant-drawer-content') as HTMLElement
+    expect(within(drawer).getAllByTestId('piping-note-body').map((b) => b.textContent)).toEqual(['Nội dung n2', 'Nội dung n1'])
+    expect(within(historyRows()[0]).getByRole('button', { name: 'Ghi chú' })).toBeInTheDocument()
+  })
+
+  it.each([['a foreman', asGs], ['a viewer', asViewer]])('never reads or shows notes for %s', async (_who, as) => {
+    renderPanel(as)
+    await loaded()
+    expect(historyRows()).toHaveLength(3)
+    expect(screen.queryByRole('button', { name: /Ghi chú/ })).toBeNull()
+    expect(api.listNotes).not.toHaveBeenCalled()
   })
 })
