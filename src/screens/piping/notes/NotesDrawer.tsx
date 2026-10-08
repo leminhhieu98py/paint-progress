@@ -34,6 +34,17 @@ export function NotesDrawer({ projectId, title, anchor, notes, error, onRetry, o
   const [editing, setEditing] = useState<{ id: string; body: string } | null>(null)
   const [removing, setRemoving] = useState<PipingNoteEntry | null>(null)
   const [removeError, setRemoveError] = useState<string | null>(null)
+  /** A step that would drop unsent text, waiting for the admin's word. */
+  const [leaving, setLeaving] = useState<{ title: string; okText: string; then: () => void } | null>(null)
+
+  /** Text typed and not saved: a new note, or an edit that changed its note. */
+  const dirty = draft.trim() !== ''
+    || (editing !== null && editing.body !== notes.find((n) => n.id === editing.id)?.body)
+  /** Runs `then` at once, or after a confirm while there is unsent text. */
+  const guard = (title: string, okText: string, then: () => void) => {
+    if (dirty) setLeaving({ title, okText, then })
+    else then()
+  }
 
   /** Set at once on a write, before the re-render: a second click in the same frame does nothing. */
   const inFlight = useRef(false)
@@ -57,7 +68,7 @@ export function NotesDrawer({ projectId, title, anchor, notes, error, onRetry, o
   }
 
   return (
-    <Drawer title={title} open onClose={onClose} width={440} destroyOnHidden>
+    <Drawer title={title} open onClose={() => guard('Đóng ghi chú?', 'Vẫn đóng', onClose)} width={440} destroyOnHidden>
       <div style={{ display: 'flex', flexDirection: 'column', gap: space.md }}>
         {error !== null && (
           <Alert
@@ -132,6 +143,19 @@ export function NotesDrawer({ projectId, title, anchor, notes, error, onRetry, o
           void write(() => deleteNote(removing.id), () => setRemoving(null), setRemoveError)
         }}
         onCancel={() => !busy && setRemoving(null)}
+      />
+
+      <ConsequenceModal
+        open={leaving !== null}
+        tone="warn"
+        title={leaving?.title ?? ''}
+        consequences={['Nội dung chưa lưu bị mất']}
+        okText={leaving?.okText}
+        onOk={() => {
+          leaving?.then()
+          setLeaving(null)
+        }}
+        onCancel={() => setLeaving(null)}
       />
     </Drawer>
   )

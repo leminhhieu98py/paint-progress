@@ -162,6 +162,35 @@ describe('NotesDrawer (spec §9)', () => {
     await waitFor(() => expect(handlers.onChanged).toHaveBeenCalledTimes(1))
   })
 
+  const closeDrawer = () => userEvent.click(within(drawer()).getByRole('button', { name: 'Close' }))
+
+  it('closes at once with nothing typed', async () => {
+    renderDrawer()
+    await closeDrawer()
+    expect(handlers.onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('asks before closing over an unsent note, and stays open on cancel', async () => {
+    renderDrawer()
+    await userEvent.type(within(drawer()).getByRole('textbox', { name: 'Ghi chú mới' }), 'Chưa gửi')
+    await closeDrawer()
+    expect(handlers.onClose).not.toHaveBeenCalled()
+    const confirm = (await screen.findByText('Đóng ghi chú?')).closest('.ant-modal') as HTMLElement
+    await userEvent.click(within(confirm).getByRole('button', { name: 'Huỷ' }))
+    expect(handlers.onClose).not.toHaveBeenCalled()
+    expect(within(drawer()).getByRole('textbox', { name: 'Ghi chú mới' })).toHaveValue('Chưa gửi')
+  })
+
+  it('asks before closing over a changed edit, and closes on confirm', async () => {
+    renderDrawer()
+    await userEvent.click(within(items()[0]).getByRole('button', { name: 'Sửa ghi chú' }))
+    await userEvent.type(within(items()[0]).getByRole('textbox', { name: 'Sửa ghi chú' }), ' thêm')
+    await closeDrawer()
+    const confirm = (await screen.findByText('Đóng ghi chú?')).closest('.ant-modal') as HTMLElement
+    await userEvent.click(within(confirm).getByRole('button', { name: 'Vẫn đóng' }))
+    expect(handlers.onClose).toHaveBeenCalledTimes(1)
+  })
+
   it('says a failed read and retries it', async () => {
     const user = userEvent.setup()
     renderDrawer({ notes: [], error: 'mất mạng' })
