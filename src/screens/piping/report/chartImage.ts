@@ -21,6 +21,11 @@ import { ManpowerChart } from '../manpower/ManpowerChart'
  * legend's labels are written with the canvas's text. The charts render in
  * report mode, so the picture has the whole range and no Brush.
  *
+ * One font in the picture: an SVG drawn as an image cannot load the page's
+ * web font (Be Vietnam Pro, served by Google Fonts, not bundled), so the axis
+ * text and the legend labels are both written in the theme's system stack
+ * behind it (`pictureFontFamily`).
+ *
  * Isolated here so the report and the export action are tested without a
  * canvas (jsdom has none); a failure rejects, and the caller writes
  * "Không vẽ được biểu đồ" instead of the picture.
@@ -74,7 +79,10 @@ export function svgMarkup(svg: SVGSVGElement, size: { width: number; height: num
   originals.forEach((el, i) => {
     const computed = getComputedStyle(el)
     const style = INLINED
-      .map((p) => [p, computed.getPropertyValue(p)] as const)
+      .map((p) => {
+        const value = computed.getPropertyValue(p)
+        return [p, p === 'font-family' ? pictureFontFamily(value) : value] as const
+      })
       .filter(([, v]) => v !== '')
       .map(([p, v]) => `${p}:${v}`)
       .join(';')
@@ -84,6 +92,20 @@ export function svgMarkup(svg: SVGSVGElement, size: { width: number; height: num
   clone.setAttribute('width', String(size.width))
   clone.setAttribute('height', String(size.height))
   return new XMLSerializer().serializeToString(clone)
+}
+
+/** The web font the page loads from Google Fonts; a picture cannot use it. */
+const WEB_FONT = /^\s*(['"]?)Be Vietnam Pro\1\s*$/i
+
+/**
+ * A computed `font-family` without the app's web font: the system stack the
+ * theme falls back to, the same for the axis text and the legend labels.
+ * Exported for its test.
+ */
+export function pictureFontFamily(family: string): string {
+  if (family === '') return family
+  const rest = family.split(',').filter((f) => !WEB_FONT.test(f)).map((f) => f.trim())
+  return rest.length > 0 ? rest.join(', ') : 'sans-serif'
 }
 
 function delay(ms: number): Promise<void> {
@@ -154,7 +176,7 @@ async function paint(chart: HTMLElement, deadline: number): Promise<ChartPng> {
     const styled = label.querySelector<HTMLElement>('span') ?? label
     const computed = getComputedStyle(styled)
     const r = styled.getBoundingClientRect()
-    ctx.font = `${computed.fontStyle} ${computed.fontWeight} ${computed.fontSize} ${computed.fontFamily}`
+    ctx.font = `${computed.fontStyle} ${computed.fontWeight} ${computed.fontSize} ${pictureFontFamily(computed.fontFamily)}`
     ctx.fillStyle = computed.color
     ctx.textBaseline = 'middle'
     ctx.fillText(text, r.left - box.left, r.top - box.top + r.height / 2, Math.max(1, box.right - r.left))

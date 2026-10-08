@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { CHART_TIMEOUT_MS, chartElement, loadImage, renderChartPng, svgMarkup } from './chartImage'
+import { CHART_TIMEOUT_MS, chartElement, loadImage, pictureFontFamily, renderChartPng, svgMarkup } from './chartImage'
 
 /**
  * jsdom lays nothing out and has no canvas: what is checked here is the SVG
@@ -40,6 +40,29 @@ describe('svgMarkup', () => {
     expect(root.querySelector('text')?.getAttribute('style')).toContain('font-family:Inter')
     // The page's own SVG is untouched.
     expect(bar.getAttribute('style')).toBeNull()
+  })
+})
+
+describe('the picture\'s one font', () => {
+  it('drops the app\'s web font, which an SVG drawn as an image cannot load, keeping the system stack', () => {
+    expect(pictureFontFamily('"Be Vietnam Pro", -apple-system, BlinkMacSystemFont, Arial, sans-serif'))
+      .toBe('-apple-system, BlinkMacSystemFont, Arial, sans-serif')
+    expect(pictureFontFamily("'Be Vietnam Pro', Arial")).toBe('Arial')
+    expect(pictureFontFamily('Inter')).toBe('Inter')
+    expect(pictureFontFamily('"Be Vietnam Pro"')).toBe('sans-serif')
+  })
+
+  it('writes the axis text in that same system stack', () => {
+    const style = document.createElement('style')
+    style.textContent = 'text { font-family: "Be Vietnam Pro", Arial, sans-serif; }'
+    document.head.appendChild(style)
+    const svg = document.createElementNS(SVG_NS, 'svg')
+    svg.appendChild(document.createElementNS(SVG_NS, 'text'))
+    document.body.appendChild(svg)
+    const doc = new DOMParser().parseFromString(svgMarkup(svg, { width: 10, height: 10 }), 'image/svg+xml')
+    const inlined = doc.documentElement.querySelector('text')?.getAttribute('style') ?? ''
+    expect(inlined).toContain('font-family:Arial, sans-serif')
+    expect(inlined).not.toContain('Vietnam')
   })
 })
 
