@@ -21,6 +21,7 @@ import { useFieldPhone } from '../gs/fieldSections'
 import { useFieldProjectCode } from '../gs/useFieldProjectCode'
 import { EnablePipingModal } from './EnablePipingModal'
 import { InsulationPanel } from './InsulationPanel'
+import { InsulationUnitProvider } from './insulationUnit'
 import { ManpowerPanel } from './ManpowerPanel'
 import type { PipingPanelProps, PipingRole } from './panelProps'
 import { PipingConfigModal } from './PipingConfigModal'
@@ -395,7 +396,12 @@ function FieldPiping({ projectId }: { projectId: string | null }) {
 export function PipingScreen({ variant }: { variant: 'admin' | 'gs' }) {
   // Keyed by the path's project, as KpiScreen is: another project mounts afresh on what the switch carried.
   const { projectId } = useParams()
-  return variant === 'admin'
-    ? <AdminPiping />
-    : <FieldPiping key={projectId} projectId={projectId ?? null} />
+  // The Insulation unit is the page's, so the export writes the one on screen (spec §10).
+  return (
+    <InsulationUnitProvider>
+      {variant === 'admin'
+        ? <AdminPiping />
+        : <FieldPiping key={projectId} projectId={projectId ?? null} />}
+    </InsulationUnitProvider>
+  )
 }

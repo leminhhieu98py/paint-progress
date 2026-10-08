@@ -11,6 +11,7 @@ import { chooseOption } from '../../test/select'
 import { renderApp } from '../../test/renderApp'
 import { setViewport } from '../../test/viewport'
 import { fieldTheme } from '../../theme'
+import { useInsulationUnit } from './insulationUnit'
 import type { PipingPanelProps } from './panelProps'
 import { readPipingSettings } from './pipingEnabled'
 import { PipingScreen } from './PipingScreen'
@@ -26,6 +27,9 @@ vi.mock('../../lib/pipingApi/settings', () => ({
 vi.mock('../../lib/pipingApi', () => ({
   enablePiping: (id: string, input: unknown) => api.enablePiping(id, input),
 }))
+// The export action's own suite drives the report; here it is only in the bar, and its reads never run.
+vi.mock('../../lib/gsApi', () => ({ loadGsProjectIdentity: vi.fn() }))
+vi.mock('../../lib/projectReport', () => ({ downloadWorkbook: vi.fn() }))
 const listProjectNames = vi.hoisted(() => vi.fn())
 vi.mock('../../lib/projectsApi', () => ({
   listProjectNames: () => listProjectNames(),
@@ -48,15 +52,25 @@ vi.mock('./PipingConfigModal', () => ({
   ),
 }))
 
-/** The three tab panels are later tasks' seams: the stand-ins print the props contract. */
-const panel = vi.hoisted(() => (name: string) => (p: PipingPanelProps) => (
-  <div data-testid={`${name}-panel`}>
-    {JSON.stringify({
-      projectId: p.projectId, enabled: p.settings.enabled, mode: p.mode, variant: p.variant, role: p.role,
-      todayKey: p.todayKey, refreshKey: p.refreshKey,
-    })}
-  </div>
-))
+/**
+ * The three tab panels are later tasks' seams: the stand-ins print the props contract,
+ * and the Insulation unit the page holds (with a button that sets it, as the tab's select does).
+ */
+const panel = vi.hoisted(() => (name: string) => function StandIn(p: PipingPanelProps) {
+  const [unit, setUnit] = useInsulationUnit(p.projectId)
+  return (
+    <>
+      <div data-testid={`${name}-panel`}>
+        {JSON.stringify({
+          projectId: p.projectId, enabled: p.settings.enabled, mode: p.mode, variant: p.variant, role: p.role,
+          todayKey: p.todayKey, refreshKey: p.refreshKey,
+        })}
+      </div>
+      <div data-testid={`${name}-unit`}>{unit}</div>
+      <button type="button" onClick={() => setUnit('lineNo')}>{`${name}: đơn vị LineNo`}</button>
+    </>
+  )
+})
 vi.mock('./ReinstatementPanel', () => ({ ReinstatementPanel: panel('reinstatement') }))
 vi.mock('./ManpowerPanel', () => ({ ManpowerPanel: panel('manpower') }))
 vi.mock('./InsulationPanel', () => ({ InsulationPanel: panel('insulation') }))
@@ -156,6 +170,15 @@ describe('PipingScreen admin: the page and its bar (spec §11)', () => {
     expect(props('manpower')).toMatchObject({ mode: 'week', projectId: 'p1' })
     await userEvent.click(screen.getByRole('tab', { name: 'Insulation' }))
     expect(props('insulation')).toMatchObject({ mode: 'week', projectId: 'p1' })
+  })
+
+  it('holds the Insulation unit for the page, so the export writes the unit on screen (spec §10)', async () => {
+    renderAdmin()
+    await screen.findByTestId('reinstatement-panel')
+    await userEvent.click(screen.getByRole('tab', { name: 'Insulation' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'insulation: đơn vị LineNo' }))
+    await userEvent.click(screen.getByRole('tab', { name: 'Reinstatement' }))
+    expect(screen.getByTestId('reinstatement-unit')).toHaveTextContent('lineNo')
   })
 
   it('keeps every control of the bar at the theme\'s one height (CTL-02)', async () => {
@@ -347,7 +370,8 @@ describe('PipingScreen field (gs, viewer): read the module, configure nothing', 
     await screen.findByTestId('reinstatement-panel')
     expect(await within(bar()).findByRole('button', { name: 'BB1 · Ngày' })).toBeInTheDocument()
     expect(screen.queryByRole('combobox', { name: 'Dự án' })).toBeNull()
-    expect(screen.getByRole('button', { name: 'Xuất báo cáo' })).toBeInTheDocument()
+    // GS-09: on a phone the export sits in one ⋯ menu (PipingExportAction's own suite opens it).
+    expect(screen.getByRole('button', { name: 'Thêm thao tác' })).toBeInTheDocument()
     await userEvent.click(within(bar()).getByRole('button', { name: 'Bộ lọc' }))
     expect(await screen.findByRole('combobox', { name: 'Dự án' })).toBeInTheDocument()
     await userEvent.click(within(screen.getByRole('dialog')).getByText('Tuần'))
