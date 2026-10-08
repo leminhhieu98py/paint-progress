@@ -441,7 +441,7 @@ function commaReading(v: CellValue, value: number): string | null {
   if (typeof v !== 'string') return null
   const text = v.replace(/\s+/g, '')
   if (!/^\d+,\d{3}$/.test(text)) return null
-  return `"${text}" được đọc là ${VI_AMOUNT.format(value)} (dấu phẩy là dấu thập phân)`
+  return `"${text}" được đọc là ${VI_AMOUNT.format(value)} (dấu phẩy là dấu thập phân), không phải ${text.replace(',', '')}`
 }
 
 /** A number >= 0 under `label`; null when blank (and pushes nothing). */

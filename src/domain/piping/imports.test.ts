@@ -202,7 +202,7 @@ describe('parseReinstatementPlan (spec §8)', () => {
 })
 
 describe('plan amounts: one comma then three digits', () => {
-  const COMMA_NOTE = '"1,234" được đọc là 1,234 (dấu phẩy là dấu thập phân)'
+  const COMMA_NOTE = '"1,234" được đọc là 1,234 (dấu phẩy là dấu thập phân), không phải 1234'
 
   it('reads "1,234" as the vi decimal 1.234 and warns, without blocking', () => {
     const res = parseReinstatementPlan(sheet([['Date', 'Plan Qty'], ['25/09/2026', '1,234']]))
@@ -218,6 +218,13 @@ describe('plan amounts: one comma then three digits', () => {
     expect(res.errors).toEqual([])
     expect(res.rows).toEqual([{ groupId: 'g2', day: '2026-09-25', value: 1.234 }])
     expect(res.warnings).toEqual([{ row: 2, message: COMMA_NOTE }])
+  })
+
+  it('says what a longer amount is not read as', () => {
+    const res = parseReinstatementPlan(sheet([['Date', 'Plan Qty'], ['25/09/2026', '12,500']]))
+    expect(res.warnings).toEqual([
+      { row: 2, message: '"12,500" được đọc là 12,5 (dấu phẩy là dấu thập phân), không phải 12500' },
+    ])
   })
 
   it.each(['20,5', '1,2345', '1.234,567', '12,34', '1234', '1,234.5'])('does not warn on %s', (text) => {
