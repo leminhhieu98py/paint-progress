@@ -10,6 +10,58 @@ own branch, verified against the development Supabase project, and deployed to
 production by the owner. **Database migrations are listed per release and must
 reach production before the app that needs them.**
 
+## [Unreleased]
+
+The Piping module (Linh's "Quản lý piping"): Reinstatement, Manpower and CAM
+Insulation per project, Plan against Actual by day or by week. **Two database
+migrations, `0038_piping` then `0039_piping_rename_column`, must reach
+production before this app**: field pages read `piping_settings` to decide
+whether to show the Piping tab (a missing table only hides the tab).
+
+### Added
+
+- **Piping**, a menu item for the admin after KPI and a field tab after KPI that
+  appears only for projects with Piping on. The admin turns Piping on per
+  project with a week start date (no default), the total Test Pack and the late
+  threshold (7 days by default), and keeps it in **Cấu hình**: manpower groups
+  (add, rename, hide, order), extra spool columns (add, rename, delete, order),
+  the import history and Tắt Piping (data kept).
+- **Ngày | Tuần** for every chart: a week is 7 days from the admin's start date,
+  labelled by its first day. Reinstatement and Insulation are cumulative
+  ("lũy kế"); Manpower in week view is the average of the days with a value.
+  Plan lines run to the end of the plan, Actual lines stop at today.
+- **Reinstatement**: "Reinstatement: 235/1.022 – 22,99% TestPack", a chart of
+  Plan and Actual with their cumulative lines, entries by the GS and the admin
+  (any day up to today; refused past the total Test Pack), edits and deletes by
+  the admin only, and the Plan import.
+- **Manpower**: Plan and Actual stacked by group with total lines; the GS fills
+  a day's empty groups, the admin edits or clears any of them; the Plan import.
+- **Insulation (CAM)**: spools with their Painting Handover, Insulation Handover
+  and Insulation Work Plan and Actual dates. Six cumulative lines counted in
+  SpoolNo, LineNo, InsuType, DrawingNo, Test Package No or Painting System (a
+  group counts once all its spools have the date), Plan / Actual / both; a detail
+  table by Package, Line or Spool with filters; "Cập nhật Actual" by Spool, Line
+  or Package and "Nhập Actual" from Excel, both previewed before saving, with the
+  order Painting Handover ≤ Insulation Handover ≤ Insulation Work enforced;
+  duplicate SpoolNo and Plan dates out of order listed for the admin.
+- **Plan imports** for the three items with a template per item, every row
+  checked before anything is written, and a preview of what is added, changed
+  and removed. Removing spools that carry Actual dates or notes needs "XOÁ"
+  typed. Every import is logged.
+- **Spool trễ**: "N spool trễ" and a table by Package or Line of the spools
+  whose Actual is more than the threshold past the Plan, or still missing past
+  it, with the team that handed over late.
+- **Admin notes** on a Reinstatement day, a Manpower day or a spool. The GS and
+  the Visitor never see them, and the database refuses them the notes.
+- **Xuất báo cáo** (Excel) for the admin, the GS and the Visitor: summary, the
+  three items in the current view, the late spools and the three charts; the
+  admin's report adds the notes.
+
+### Changed
+
+- Sàn, Năng suất and KPI on the field side read the project's Piping setting
+  once to show or hide the Piping tab. Their tests mock that read.
+
 ## [1.9.2] - 2026-10-06
 
 Linh's follow-up on the GS plan view. No database migration, no Edge Function.
