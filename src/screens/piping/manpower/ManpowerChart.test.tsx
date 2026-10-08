@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ManpowerPoint } from '../../../domain/piping/manpower'
 import type { ManpowerGroup } from '../../../domain/piping/types'
 import { palette, tintColor } from '../../../theme'
+import { legendNames } from '../../../test/legend'
 import { setViewport } from '../../../test/viewport'
 import { ManpowerChart } from './ManpowerChart'
 
@@ -19,6 +20,7 @@ const captured = vi.hoisted(() => ({
   xAxis: null as null | Record<string, unknown>,
   yAxis: null as null | Record<string, unknown>,
   brush: null as null | Record<string, unknown>,
+  legend: null as null | Record<string, unknown>,
 }))
 
 vi.mock('recharts', async (importOriginal) => {
@@ -47,7 +49,10 @@ vi.mock('recharts', async (importOriginal) => {
       captured.tooltip = props
       return null
     },
-    Legend: (props: Record<string, unknown>) => <div data-testid="legend" data-layout={String(props.layout ?? '')} />,
+    Legend: (props: Record<string, unknown>) => {
+      captured.legend = props
+      return <div data-testid="legend" data-layout={String(props.layout ?? '')} />
+    },
     Bar: (props: Record<string, unknown>) => (
       <div
         data-testid="bar"
@@ -104,7 +109,17 @@ beforeEach(() => {
   captured.xAxis = null
   captured.yAxis = null
   captured.brush = null
+  captured.legend = null
 })
+
+/** The legend's names, in the order Recharts lists the drawn bars and lines. */
+const legend = () => legendNames(
+  [...document.querySelectorAll('[data-testid="bar"], [data-testid="line"]')].map((el) => ({
+    dataKey: String(el.getAttribute('data-key')),
+    value: String(el.getAttribute('data-name')),
+  })),
+  captured.legend?.itemSorter,
+)
 
 describe('ManpowerChart (spec §5)', () => {
   it('stacks the groups for Plan and for Actual side by side, with a total line each', () => {
@@ -115,6 +130,14 @@ describe('ManpowerChart (spec §5)', () => {
     expect(attrs('bar', 'data-stack')).toEqual(['plan', 'plan', 'actual', 'actual'])
     expect(attrs('line', 'data-name')).toEqual(['Plan tổng theo ngày', 'Actual tổng theo ngày'])
     expect(attrs('line', 'data-key')).toEqual(['planTotal', 'actualTotal'])
+  })
+
+  it('lists Plan before Actual in the legend, the groups\' bars before the total line of each', () => {
+    render(<ManpowerChart data={DAYS} groups={GROUPS} mode="day" />)
+    expect(legend()).toEqual([
+      'Plan · Reinstatement', 'Plan · Insulation', 'Plan tổng theo ngày',
+      'Actual · Reinstatement', 'Actual · Insulation', 'Actual tổng theo ngày',
+    ])
   })
 
   it('hands Recharts one flat row per bucket', () => {

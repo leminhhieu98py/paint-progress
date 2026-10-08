@@ -2,6 +2,7 @@ import { render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { CamPoint } from '../../../domain/piping/cam'
 import { palette } from '../../../theme'
+import { legendNames } from '../../../test/legend'
 import { setViewport } from '../../../test/viewport'
 import { InsulationChart } from './InsulationChart'
 
@@ -15,6 +16,7 @@ const captured = vi.hoisted(() => ({
   tooltip: null as null | Record<string, unknown>,
   xAxis: null as null | Record<string, unknown>,
   yAxis: null as null | Record<string, unknown>,
+  legend: null as null | Record<string, unknown>,
 }))
 
 vi.mock('recharts', async (importOriginal) => {
@@ -39,7 +41,10 @@ vi.mock('recharts', async (importOriginal) => {
       captured.tooltip = props
       return null
     },
-    Legend: (props: Record<string, unknown>) => <div data-testid="legend" data-layout={String(props.layout ?? '')} />,
+    Legend: (props: Record<string, unknown>) => {
+      captured.legend = props
+      return <div data-testid="legend" data-layout={String(props.layout ?? '')} />
+    },
     Line: (props: Record<string, unknown>) => (
       <div
         data-testid={`line-${String(props.dataKey)}`}
@@ -69,13 +74,34 @@ beforeEach(() => {
   captured.tooltip = null
   captured.xAxis = null
   captured.yAxis = null
+  captured.legend = null
 })
+
+/** The legend's names, in the order Recharts lists the drawn lines. */
+const legend = () => legendNames(
+  [...document.querySelectorAll('[data-testid^="line-"]')]
+    .filter((el) => el.getAttribute('data-testid') !== 'line-chart')
+    .map((el) => ({
+      dataKey: String(el.getAttribute('data-testid')).replace(/^line-/, ''),
+      value: String(el.getAttribute('data-name')),
+    })),
+  captured.legend?.itemSorter,
+)
 
 describe('InsulationChart (spec §6.4, Q20A)', () => {
   it('draws the six cumulative lines named as the file names them, saying lũy kế', () => {
     render(<InsulationChart data={WEEKS} keys={[...ALL]} mode="week" />)
     expect(screen.getByTestId('line-chart')).toHaveAttribute('data-points', '2')
     expect(ALL.map((k) => line(k)?.getAttribute('data-name'))).toEqual([
+      'Painting Handover – Plan lũy kế', 'Painting Handover – Actual lũy kế',
+      'Insulation Handover – Plan lũy kế', 'Insulation Handover – Actual lũy kế',
+      'Insulation Work – Plan lũy kế', 'Insulation Work – Actual lũy kế',
+    ])
+  })
+
+  it('lists the legend by milestone (PH, IH, IW), Plan before Actual in each', () => {
+    render(<InsulationChart data={WEEKS} keys={[...ALL]} mode="day" />)
+    expect(legend()).toEqual([
       'Painting Handover – Plan lũy kế', 'Painting Handover – Actual lũy kế',
       'Insulation Handover – Plan lũy kế', 'Insulation Handover – Actual lũy kế',
       'Insulation Work – Plan lũy kế', 'Insulation Work – Actual lũy kế',

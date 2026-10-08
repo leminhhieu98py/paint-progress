@@ -1,6 +1,7 @@
 import { render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ReinstatementPoint } from '../../domain/piping/reinstatement'
+import { legendNames } from '../../test/legend'
 import { setViewport } from '../../test/viewport'
 import { ReinstatementChart } from './charts'
 
@@ -14,6 +15,7 @@ const captured = vi.hoisted(() => ({
   tooltip: null as null | Record<string, unknown>,
   xAxis: null as null | Record<string, unknown>,
   yAxes: {} as Record<string, Record<string, unknown>>,
+  legend: null as null | Record<string, unknown>,
 }))
 
 vi.mock('recharts', async (importOriginal) => {
@@ -38,7 +40,10 @@ vi.mock('recharts', async (importOriginal) => {
       captured.tooltip = props
       return null
     },
-    Legend: (props: Record<string, unknown>) => <div data-testid="legend" data-layout={String(props.layout ?? '')} />,
+    Legend: (props: Record<string, unknown>) => {
+      captured.legend = props
+      return <div data-testid="legend" data-layout={String(props.layout ?? '')} />
+    },
     Bar: (props: Record<string, unknown>) => (
       <div data-testid={`bar-${String(props.dataKey)}`} data-name={String(props.name)} data-axis={String(props.yAxisId)} />
     ),
@@ -69,7 +74,17 @@ beforeEach(() => {
   captured.tooltip = null
   captured.xAxis = null
   captured.yAxes = {}
+  captured.legend = null
 })
+
+/** The legend's names, in the order Recharts lists the drawn bars and lines. */
+const legend = () => legendNames(
+  [...document.querySelectorAll('[data-testid^="bar-"], [data-testid^="line-"]')].map((el) => ({
+    dataKey: String(el.getAttribute('data-testid')).replace(/^(bar|line)-/, ''),
+    value: String(el.getAttribute('data-name')),
+  })),
+  captured.legend?.itemSorter,
+)
 
 describe('ReinstatementChart (spec §4, R-5)', () => {
   it('draws Plan and Actual bars per day and the two cumulative lines, named with lũy kế', () => {
@@ -83,6 +98,11 @@ describe('ReinstatementChart (spec §4, R-5)', () => {
     expect(screen.getByTestId('bar-plan')).toHaveAttribute('data-axis', 'bucket')
     expect(screen.getByTestId('line-actualCum')).toHaveAttribute('data-axis', 'cum')
     expect(captured.yAxes.cum.orientation).toBe('right')
+  })
+
+  it('lists Plan before Actual in the legend, the bar before the line of each', () => {
+    render(<ReinstatementChart data={DAYS} mode="day" />)
+    expect(legend()).toEqual(['Plan theo ngày', 'Plan lũy kế', 'Actual theo ngày', 'Actual lũy kế'])
   })
 
   it('names the bars per week in week view', () => {

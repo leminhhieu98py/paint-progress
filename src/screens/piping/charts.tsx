@@ -9,6 +9,7 @@ import {
   ACTIVE_BAR, ACTIVE_DOT, AXIS, axisTick, legendText, TOOLTIP_SEPARATOR, useLegendHighlight,
 } from '../dashboard/chartKit'
 import { KPI_COLOR_DEFAULTS } from '../dashboard/kpiColors'
+import { legendOrder } from './legendOrder'
 import { formatQty } from './pipingFormat'
 
 /**
@@ -20,6 +21,9 @@ import { formatQty } from './pipingFormat'
  */
 
 const BUCKET_WORD: Record<ViewMode, string> = { day: 'theo ngày', week: 'theo tuần' }
+
+/** The legend: Plan before Actual, the bar before the line. */
+const REINSTATEMENT_LEGEND = legendOrder(['plan', 'planCum', 'actual', 'actualCum'])
 
 /**
  * Reinstatement (spec §4, R-5): Plan and Actual bars per day or week on the
@@ -67,7 +71,7 @@ export function ReinstatementChart({ data, mode, report = false }: {
             labelFormatter={(key) => tooltips.get(String(key)) ?? String(key)}
             formatter={(value) => (typeof value === 'number' ? formatQty(value) : MISSING)}
           />
-          <Legend formatter={legendText} {...legend} />
+          <Legend formatter={legendText} itemSorter={REINSTATEMENT_LEGEND} {...legend} />
           <Bar
             yAxisId="bucket"
             dataKey="plan"

@@ -8,6 +8,7 @@ import { categoricalColor, palette, tintColor } from '../../../theme'
 import {
   ACTIVE_BAR, ACTIVE_DOT, AXIS, axisTick, legendText, TOOLTIP_SEPARATOR, useLegendHighlight,
 } from '../../dashboard/chartKit'
+import { legendOrder } from '../legendOrder'
 import { formatQty } from '../pipingFormat'
 
 /**
@@ -70,6 +71,10 @@ export function ManpowerChart({ data, groups, mode, report = false }: {
     }),
     [data, groups],
   )
+  // The legend: Plan before Actual, the groups' bars before the total line.
+  const legendSorter = useMemo(() => legendOrder([
+    ...groups.map((g) => planKey(g.id)), 'planTotal', ...groups.map((g) => actualKey(g.id)), 'actualTotal',
+  ]), [groups])
   const week = mode === 'week'
   const lineSuffix = week ? ' (trung bình)' : ' theo ngày'
   // A long day range opens on its last days: two years of days at once is bars a pixel wide.
@@ -89,7 +94,7 @@ export function ManpowerChart({ data, groups, mode, report = false }: {
             }}
             formatter={(value) => (typeof value === 'number' ? formatQty(value) : MISSING)}
           />
-          <Legend formatter={legendText} {...legend} />
+          <Legend formatter={legendText} itemSorter={legendSorter} {...legend} />
           {groups.map((g, i) => (
             <Bar
               key={planKey(g.id)}

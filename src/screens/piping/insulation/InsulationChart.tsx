@@ -6,6 +6,7 @@ import { formatDayMonth } from '../../../domain/piping/week'
 import { MISSING } from '../../../lib/format'
 import { palette } from '../../../theme'
 import { ACTIVE_DOT, AXIS, axisTick, legendText, TOOLTIP_SEPARATOR, useLegendHighlight } from '../../dashboard/chartKit'
+import { legendOrder } from '../legendOrder'
 import { formatQty } from '../pipingFormat'
 
 /**
@@ -62,6 +63,8 @@ export function InsulationChart({ data, keys, mode, report = false }: {
   const { legend, opacity, height } = useLegendHighlight({ desktop: report })
   const tooltips = useMemo(() => new Map(data.map((p) => [p.key, p.tooltip])), [data])
   const dots = data.length <= DOTS_UP_TO
+  // The legend in the toggle's order (`camSeriesKeys`): by milestone, Plan before Actual.
+  const legendSorter = useMemo(() => legendOrder(keys), [keys])
   return (
     <div data-testid="insulation-chart" data-mode={mode} style={{ width: '100%', height: height(372, keys.length) }}>
       <ResponsiveContainer width="100%" height="100%">
@@ -74,7 +77,7 @@ export function InsulationChart({ data, keys, mode, report = false }: {
             labelFormatter={(key) => tooltips.get(String(key)) ?? String(key)}
             formatter={(value) => (typeof value === 'number' ? formatQty(value) : MISSING)}
           />
-          <Legend formatter={legendText} {...legend} />
+          <Legend formatter={legendText} itemSorter={legendSorter} {...legend} />
           {keys.map((key) => {
             const color = MILESTONE_COLOR[SERIES[key].milestone]
             const plan = SERIES[key].kind === 'Plan'
