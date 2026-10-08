@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react'
+import { createContext, createElement, useCallback, useContext, useMemo, useState, type ReactNode } from 'react'
 import type { Unit } from '../../domain/piping/types'
 
 /**
@@ -10,6 +10,9 @@ import type { Unit } from '../../domain/piping/types'
  * Without a provider above it (a panel rendered alone, as in its own tests)
  * `useInsulationUnit` keeps the choice in the component's own state, as the
  * tab did before the page held it.
+ *
+ * Plain TypeScript (no JSX), so the provider and its hooks share a module
+ * without breaking Fast Refresh.
  */
 
 export const DEFAULT_UNIT: Unit = 'spoolNo'
@@ -27,7 +30,7 @@ export function InsulationUnitProvider({ children }: { children: ReactNode }) {
     setUnits((prev) => (prev[projectId] === unit ? prev : { ...prev, [projectId]: unit }))
   }, [])
   const value = useMemo(() => ({ units, setUnit }), [units, setUnit])
-  return <UnitContext.Provider value={value}>{children}</UnitContext.Provider>
+  return createElement(UnitContext.Provider, { value }, children)
 }
 
 /** The Insulation tab's unit and its setter: the page's when it holds one, the caller's own state otherwise. */
