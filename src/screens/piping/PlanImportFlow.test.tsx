@@ -214,13 +214,13 @@ describe('PlanImportFlow', () => {
     expect(fileInput()).not.toBeDisabled()
   })
 
-  it('offers the template as an icon action named Tải file mẫu, and Import Plan as text', async () => {
+  it('offers the template as an icon action named Tải file mẫu, and Nhập Plan as text', async () => {
     renderFlow()
     const template = screen.getByRole('button', { name: 'Tải file mẫu' })
     expect(template).toHaveClass('ant-btn-icon-only')
     expect(template).toHaveTextContent('')
     await userEvent.click(template)
     await waitFor(() => expect(download).toHaveBeenCalledWith(expect.any(Blob), 'Mau.xlsx'))
-    expect(screen.getByRole('button', { name: /Import Plan/ })).toHaveTextContent('Import Plan')
+    expect(screen.getByRole('button', { name: /Nhập Plan/ })).toHaveTextContent('Nhập Plan')
   })
 })

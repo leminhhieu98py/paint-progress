@@ -107,10 +107,10 @@ describe('Insulation: role gating (spec §1, R-12)', () => {
   it('gives the admin the Plan import, the actual entry, the Actual import and Xoá Actual', async () => {
     renderPanel()
     await ready()
-    expect(screen.getByRole('button', { name: /Import Plan/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Nhập Plan/ })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Tải file mẫu' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Cập nhật Actual' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Import Actual/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Nhập Actual/ })).toBeInTheDocument()
     await chooseOption('Cấp hiển thị', 'Spool')
     expect(screen.getAllByRole('button', { name: 'Xoá Actual' }).length).toBeGreaterThan(0)
   })
@@ -118,9 +118,9 @@ describe('Insulation: role gating (spec §1, R-12)', () => {
   it('gives a foreman the actual entry and the Actual import, no Plan import and no clearing', async () => {
     renderPanel(asGs)
     await ready()
-    expect(screen.queryByRole('button', { name: /Import Plan/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: /Nhập Plan/ })).toBeNull()
     expect(screen.getByRole('button', { name: 'Cập nhật Actual' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Import Actual/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Nhập Actual/ })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Tải file mẫu Actual' })).toBeInTheDocument()
     await chooseOption('Cấp hiển thị', 'Spool')
     expect(screen.queryByRole('button', { name: 'Xoá Actual' })).toBeNull()
@@ -130,7 +130,7 @@ describe('Insulation: role gating (spec §1, R-12)', () => {
   it('gives a viewer none of them', async () => {
     renderPanel(asViewer)
     await ready()
-    for (const name of [/Import Plan/, /Cập nhật Actual/, /Import Actual/, /Tải file mẫu/]) {
+    for (const name of [/Nhập Plan/, /Cập nhật Actual/, /Nhập Actual/, /Tải file mẫu/]) {
       expect(screen.queryByRole('button', { name })).toBeNull()
     }
     await chooseOption('Cấp hiển thị', 'Spool')
@@ -143,7 +143,7 @@ describe('Insulation: Plan import (spec §6.2, §8, R-10, Q19A)', () => {
     api.listSpools.mockResolvedValue([])
     renderPanel()
     expect(await screen.findByText('Chưa có spool nào')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Import Plan/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Nhập Plan/ })).toBeInTheDocument()
   })
 
   it('downloads the template with the extra columns', async () => {
@@ -167,7 +167,7 @@ describe('Insulation: Plan import (spec §6.2, §8, R-10, Q19A)', () => {
     ]))
     renderPanel()
     await ready()
-    await pick(/Import Plan/, 'plan.xlsx')
+    await pick(/Nhập Plan/, 'plan.xlsx')
     const box = await dialog()
     expect(within(box).getByText('Xem trước Insulation Plan')).toBeInTheDocument()
     expect(facts(box)).toEqual(['1 thêm', '2 sửa', '2 xoá', '2 giữ nguyên'])
@@ -209,7 +209,7 @@ describe('Insulation: Plan import (spec §6.2, §8, R-10, Q19A)', () => {
     await ready()
     // Meanwhile a foreman entered SP-5's PH actual; the page still holds the old list.
     api.listSpools.mockResolvedValue(SPOOLS.map((s) => (s.id === 's5' ? { ...s, phActual: '2026-10-06' } : s)))
-    await pick(/Import Plan/, 'plan.xlsx')
+    await pick(/Nhập Plan/, 'plan.xlsx')
     const box = await dialog()
     const sp5 = (await within(box).findByText('SP-5')).closest('tr') as HTMLElement
     expect(within(sp5).getByText('có Actual')).toBeInTheDocument()
@@ -227,7 +227,7 @@ describe('Insulation: Plan import (spec §6.2, §8, R-10, Q19A)', () => {
       updatedBy: null, updatedAt: null, authorName: 'Linh', updatedByName: null,
     })
     api.listNotes.mockResolvedValue([spoolNote('n1', 's5'), spoolNote('n2', 's5'), spoolNote('n3', 's3')])
-    await pick(/Import Plan/, 'plan.xlsx')
+    await pick(/Nhập Plan/, 'plan.xlsx')
     const box = await dialog()
     const sp5 = (await within(box).findByText('SP-5')).closest('tr') as HTMLElement
     expect(within(sp5).getByText('có ghi chú')).toBeInTheDocument()
@@ -248,7 +248,7 @@ describe('Insulation: Plan import (spec §6.2, §8, R-10, Q19A)', () => {
     read.mockResolvedValue(sheet([PLAN_HEADER, planRow('SP-1', '31/02/2026'), planRow('', '2026-10-01')]))
     renderPanel()
     await ready()
-    await pick(/Import Plan/, 'bad.xlsx')
+    await pick(/Nhập Plan/, 'bad.xlsx')
     const box = await dialog()
     expect(within(box).getByText('Không import được bad.xlsx')).toBeInTheDocument()
     expect(within(box).getByText('2 lỗi · chưa có dòng nào được import')).toBeInTheDocument()
@@ -438,7 +438,7 @@ describe('Insulation: Cập nhật Actual (spec §6.3, Q18A)', () => {
   })
 })
 
-describe('Insulation: Import Actual (spec §6.3, §8, R-11)', () => {
+describe('Insulation: Nhập Actual (spec §6.3, §8, R-11)', () => {
   const ACTUAL_HEADER = ['SpoolNo', 'Painting Handover – Actual', 'Insulation Handover – Actual', 'Insulation Work – Actual']
 
   it('lists the row errors (unknown SpoolNo, a day after today) and writes nothing', async () => {
@@ -447,7 +447,7 @@ describe('Insulation: Import Actual (spec §6.3, §8, R-11)', () => {
     ] }])
     renderPanel(asGs)
     await ready()
-    await pick(/Import Actual/, 'actual.xlsx')
+    await pick(/Nhập Actual/, 'actual.xlsx')
     const box = await dialog()
     expect(within(box).getByText('Không import được actual.xlsx')).toBeInTheDocument()
     expect(within(box).getByText('Không tìm thấy SpoolNo "SP-404"')).toBeInTheDocument()
@@ -460,7 +460,7 @@ describe('Insulation: Import Actual (spec §6.3, §8, R-11)', () => {
     api.setSpoolActuals.mockResolvedValueOnce([{ spoolId: 's5', spoolNo: 'SP-5', status: 'order' }])
     renderPanel(asGs)
     await ready()
-    await pick(/Import Actual/, 'actual.xlsx')
+    await pick(/Nhập Actual/, 'actual.xlsx')
     const box = await dialog()
     expect(within(box).getByText('Không import được actual.xlsx')).toBeInTheDocument()
     expect(within(box).getByText(/SpoolNo "SP-5": Sai thứ tự/)).toBeInTheDocument()
@@ -485,7 +485,7 @@ describe('Insulation: Import Actual (spec §6.3, §8, R-11)', () => {
       .mockImplementationOnce(() => new Promise((resolve) => { finish = resolve }))
     renderPanel(asGs)
     await ready()
-    await pick(/Import Actual/, 'actual.xlsx')
+    await pick(/Nhập Actual/, 'actual.xlsx')
     const box = await dialog()
     await waitFor(() => expect(api.setSpoolActuals).toHaveBeenCalledWith('p1', changes, {
       importFile: 'actual.xlsx', dryRun: true, fileRows: 2,
@@ -493,7 +493,7 @@ describe('Insulation: Import Actual (spec §6.3, §8, R-11)', () => {
     expect(within(box).getByText('Xem trước Insulation Actual')).toBeInTheDocument()
     expect(within(box).getByText('Dòng 2: SpoolNo "SP-1" khớp 2 spool, áp dụng cho tất cả')).toBeInTheDocument()
     expect(facts(box)).toEqual(['2 spool lưu', '1 spool ghi đè', '0 spool bỏ qua', '0 spool không đổi'])
-    const confirm = within(box).getByRole('button', { name: /Import Actual/ })
+    const confirm = within(box).getByRole('button', { name: /Nhập Actual/ })
     expect(confirm).toBeDisabled()
     await userEvent.click(within(box).getByRole('checkbox', { name: 'Ghi đè ngày Actual của 1 spool' }))
     expect(confirm).toBeEnabled()
@@ -518,12 +518,12 @@ describe('Insulation: Import Actual (spec §6.3, §8, R-11)', () => {
       .mockResolvedValueOnce([{ spoolId: 's5', spoolNo: 'SP-5', status: 'saved' }])
     renderPanel(asGs)
     await ready()
-    await pick(/Import Actual/, 'actual.xlsx')
+    await pick(/Nhập Actual/, 'actual.xlsx')
     const box = await dialog()
     await waitFor(() => expect(facts(box)[0]).toBe('1 spool lưu'))
     expect(within(box).queryByRole('checkbox')).toBeNull()
     api.listSpools.mockClear()
-    await userEvent.click(within(box).getByRole('button', { name: /Import Actual/ }))
+    await userEvent.click(within(box).getByRole('button', { name: /Nhập Actual/ }))
     await waitFor(() => expect(api.setSpoolActuals).toHaveBeenLastCalledWith('p1', change, {
       importFile: 'actual.xlsx', fileRows: 1, overwrite: false,
     }))
@@ -535,11 +535,11 @@ describe('Insulation: Import Actual (spec §6.3, §8, R-11)', () => {
     read.mockResolvedValue([{ name: 'Insulation Actual', rows: [ACTUAL_HEADER, ['SP-2', '2026-10-02', null, null]] }])
     renderPanel(asGs)
     await ready()
-    await pick(/Import Actual/, 'actual.xlsx')
+    await pick(/Nhập Actual/, 'actual.xlsx')
     const box = await dialog()
     expect(within(box).getByText('File không thay đổi ngày Actual nào.')).toBeInTheDocument()
     expect(facts(box)).toEqual(['0 spool lưu', '0 spool ghi đè', '0 spool bỏ qua', '1 spool không đổi'])
-    expect(within(box).getByRole('button', { name: /Import Actual/ })).toBeDisabled()
+    expect(within(box).getByRole('button', { name: /Nhập Actual/ })).toBeDisabled()
     expect(api.setSpoolActuals).not.toHaveBeenCalled()
   })
 
@@ -549,13 +549,13 @@ describe('Insulation: Import Actual (spec §6.3, §8, R-11)', () => {
       .mockRejectedValueOnce(new Error('Spool SP-5: Sai thứ tự. Không có dữ liệu nào được ghi.'))
     renderPanel(asGs)
     await ready()
-    await pick(/Import Actual/, 'actual.xlsx')
+    await pick(/Nhập Actual/, 'actual.xlsx')
     const box = await dialog()
     await waitFor(() => expect(facts(box)[0]).toBe('1 spool lưu'))
     api.listSpools.mockClear()
-    await userEvent.click(within(box).getByRole('button', { name: /Import Actual/ }))
+    await userEvent.click(within(box).getByRole('button', { name: /Nhập Actual/ }))
     expect(await within(box).findByText('Spool SP-5: Sai thứ tự. Không có dữ liệu nào được ghi.')).toBeInTheDocument()
-    expect(within(box).getByRole('button', { name: /Import Actual/ })).toBeEnabled()
+    expect(within(box).getByRole('button', { name: /Nhập Actual/ })).toBeEnabled()
     expect(api.listSpools).not.toHaveBeenCalled()
   })
 
@@ -565,7 +565,7 @@ describe('Insulation: Import Actual (spec §6.3, §8, R-11)', () => {
     renderPanel(asGs)
     await ready()
     api.listSpools.mockResolvedValue([...SPOOLS, spool(8)])
-    await pick(/Import Actual/, 'actual.xlsx')
+    await pick(/Nhập Actual/, 'actual.xlsx')
     const box = await dialog()
     expect(within(box).getByText('Xem trước Insulation Actual')).toBeInTheDocument()
     await waitFor(() => expect(api.setSpoolActuals).toHaveBeenCalledWith('p1', [
@@ -585,7 +585,7 @@ describe('Insulation: Import Actual (spec §6.3, §8, R-11)', () => {
     renderPanel(asGs)
     await ready()
     api.listSpools.mockResolvedValue(pairs)
-    await pick(/Import Actual/, 'actual.xlsx')
+    await pick(/Nhập Actual/, 'actual.xlsx')
     const box = await dialog()
     expect(await within(box).findByText('và 1 cảnh báo khác')).toBeInTheDocument()
     expect(within(box).getAllByText(/khớp 2 spool, áp dụng cho tất cả/)).toHaveLength(200)

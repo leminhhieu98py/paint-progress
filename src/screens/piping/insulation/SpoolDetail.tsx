@@ -40,7 +40,7 @@ import { spoolFlagItems } from './spoolFlags'
  * The level select and `toolbar` sit in the card's header; on a phone in a
  * wrapping row at the top of the body, the filters in their own sheet.
  *
- * Seams for the later tasks: `toolbar` (Cập nhật Actual, Import Actual) and
+ * Seams for the later tasks: `toolbar` (Cập nhật Actual, Nhập Actual) and
  * `rowActions`, a Thao tác column on Spool rows (clear an actual, a note).
  */
 

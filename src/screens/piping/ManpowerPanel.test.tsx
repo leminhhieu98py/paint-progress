@@ -369,7 +369,7 @@ describe('ManpowerPanel: entry (spec §5, R-7, R-8)', () => {
     expect(screen.queryByRole('spinbutton')).toBeNull()
     expect(screen.queryByRole('button', { name: 'Sửa nhân lực' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Xoá nhân lực' })).toBeNull()
-    expect(screen.queryByRole('button', { name: /Import Plan/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: /Nhập Plan/ })).toBeNull()
     expect(historyRows()).toHaveLength(3)
   })
 })
@@ -452,7 +452,7 @@ describe('ManpowerPanel: Plan import (spec §8, R-14)', () => {
     renderPanel(asGs)
     await loaded()
     expect(screen.queryByRole('button', { name: 'Tải file mẫu' })).toBeNull()
-    expect(screen.queryByRole('button', { name: /Import Plan/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: /Nhập Plan/ })).toBeNull()
   })
 
   it('downloads a template naming every group, hidden ones included, in order', async () => {

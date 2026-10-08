@@ -19,8 +19,8 @@ import { ActualPreviewBody } from './ActualPreviewBody'
 import { actualPreview, type ActualPreview } from './actualPreview'
 
 /**
- * Import Actual (spec §6.3, §8, R-11), for a foreman of the project and the
- * admin: "Tải file mẫu Actual" downloads the template; "Import Actual" reads
+ * Nhập Actual (spec §6.3, §8, R-11), for a foreman of the project and the
+ * admin: "Tải file mẫu Actual" downloads the template; "Nhập Actual" reads
  * the file, checks it (rows, dates, SpoolNo known, order kept, no day after
  * today) and lists any error -- nothing is written then. A clean file is
  * previewed from the database's own dry run: the spools saved, the stored
@@ -159,7 +159,7 @@ export function ActualImportFlow({ projectId, todayKey, onImported }: {
           return false
         }}
       >
-        <Button icon={<UploadOutlined aria-hidden />} loading={reading}>Import Actual</Button>
+        <Button icon={<UploadOutlined aria-hidden />} loading={reading}>Nhập Actual</Button>
       </Upload>
 
       <Modal
@@ -201,7 +201,7 @@ export function ActualImportFlow({ projectId, todayKey, onImported }: {
         footer={[
           <Button key="cancel" disabled={saving} onClick={close}>Huỷ</Button>,
           <Button key="ok" type="primary" disabled={!canImport} loading={saving} onClick={() => void confirm()}>
-            Import Actual
+            Nhập Actual
           </Button>,
         ]}
       >

@@ -265,7 +265,7 @@ describe('ReinstatementPanel: Thêm số lượng (spec §4, Q9A, Q10A)', () => 
     expect(screen.queryByRole('button', { name: 'Thêm số lượng' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Sửa số lượng' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Xoá số lượng' })).toBeNull()
-    expect(screen.queryByRole('button', { name: /Import Plan/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: /Nhập Plan/ })).toBeNull()
     expect(dataRows()).toHaveLength(2)
   })
 })
@@ -396,7 +396,7 @@ describe('ReinstatementPanel: Plan import (spec §8)', () => {
     renderPanel(asGs)
     await loaded()
     expect(screen.queryByRole('button', { name: 'Tải file mẫu' })).toBeNull()
-    expect(screen.queryByRole('button', { name: /Import Plan/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: /Nhập Plan/ })).toBeNull()
   })
 
   it('downloads the template', async () => {

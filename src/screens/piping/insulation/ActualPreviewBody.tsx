@@ -17,7 +17,7 @@ import type { ActualOverwriteLine, ActualPreview, ActualSkipLine } from './actua
  * What saving the actual dates does, before it is done (spec §6.3): how many
  * spools are saved, which stored dates are replaced (old -> new, only once
  * the box is ticked), which spools are skipped and why, how many already
- * hold the date. One body for Cập nhật Actual and Import Actual.
+ * hold the date. One body for Cập nhật Actual and Nhập Actual.
  */
 export function ActualPreviewBody({ preview, overwrite, onOverwrite, warnings = [], error }: {
   preview: ActualPreview

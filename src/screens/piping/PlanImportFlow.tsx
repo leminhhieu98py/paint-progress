@@ -17,7 +17,7 @@ import { capList } from './listCap'
 
 /**
  * The admin's Plan import (spec §8), one flow for every hạng mục: "Tải file
- * mẫu" (an icon action, ACT-01) downloads the header-only template; "Import Plan" reads the picked
+ * mẫu" (an icon action, ACT-01) downloads the header-only template; "Nhập Plan" reads the picked
  * workbook, parses it, and then either lists the row errors (nothing written,
  * no half import) or previews what the replace changes -- added, changed,
  * removed, old -> new, with counts -- and replaces the plan only when the
@@ -200,7 +200,7 @@ export function PlanImportFlow<R>({
           return false
         }}
       >
-        <Button type="primary" icon={<UploadOutlined aria-hidden />} loading={reading}>Import Plan</Button>
+        <Button type="primary" icon={<UploadOutlined aria-hidden />} loading={reading}>Nhập Plan</Button>
       </Upload>
 
       <Modal

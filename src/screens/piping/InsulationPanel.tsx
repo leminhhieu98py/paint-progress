@@ -46,7 +46,7 @@ import { usePanelData } from './usePanelData'
  *
  * Seams for the later tasks: the Plan import joins the Insulation card's
  * header (as on Reinstatement) and the empty state's `action`; Cập nhật
- * Actual and Import Actual go in `SpoolDetail`'s `toolbar`, a spool's own
+ * Actual and Nhập Actual go in `SpoolDetail`'s `toolbar`, a spool's own
  * actions (clear an actual, a note) in its `rowActions`; the late flag in
  * the "N spool trễ" pill beside the others here.
  */
