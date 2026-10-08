@@ -201,6 +201,30 @@ describe('parseReinstatementPlan (spec §8)', () => {
   })
 })
 
+describe('plan amounts: one comma then three digits', () => {
+  const COMMA_NOTE = '"1,234" được đọc là 1,234 (dấu phẩy là dấu thập phân)'
+
+  it('reads "1,234" as the vi decimal 1.234 and warns, without blocking', () => {
+    const res = parseReinstatementPlan(sheet([['Date', 'Plan Qty'], ['25/09/2026', '1,234']]))
+    expect(res.errors).toEqual([])
+    expect(res.rows).toEqual([{ day: '2026-09-25', planQty: 1.234 }])
+    expect(res.warnings).toEqual([{ row: 2, message: COMMA_NOTE }])
+  })
+
+  it('warns the same on a Manpower cell', () => {
+    const res = parseManpowerPlan(sheet([['Date', 'Insulation'], ['25/09/2026', ' 1,234 ']]), [
+      { id: 'g2', name: 'Insulation', sort: 1, hidden: false },
+    ])
+    expect(res.errors).toEqual([])
+    expect(res.rows).toEqual([{ groupId: 'g2', day: '2026-09-25', value: 1.234 }])
+    expect(res.warnings).toEqual([{ row: 2, message: COMMA_NOTE }])
+  })
+
+  it.each(['20,5', '1,2345', '1.234,567', '12,34', '1234', '1,234.5'])('does not warn on %s', (text) => {
+    expect(parseReinstatementPlan(sheet([['Date', 'Plan Qty'], ['25/09/2026', text]])).warnings).toEqual([])
+  })
+})
+
 describe('parseManpowerPlan (spec §8, R-14)', () => {
   const groups: ManpowerGroup[] = [
     { id: 'g1', name: 'Reinstatement', sort: 1, hidden: false },

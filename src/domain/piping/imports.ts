@@ -430,8 +430,24 @@ function readDate(
   return parsed.day
 }
 
+const VI_AMOUNT = new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 3 })
+
+/**
+ * "1,234" is a vi decimal (1.234) here, but in an English file it is one
+ * thousand two hundred thirty-four: read as vi, and said so in a warning that
+ * does not block the import.
+ */
+function commaReading(v: CellValue, value: number): string | null {
+  if (typeof v !== 'string') return null
+  const text = v.replace(/\s+/g, '')
+  if (!/^\d+,\d{3}$/.test(text)) return null
+  return `"${text}" được đọc là ${VI_AMOUNT.format(value)} (dấu phẩy là dấu thập phân)`
+}
+
 /** A number >= 0 under `label`; null when blank (and pushes nothing). */
-function readAmount(v: CellValue, label: string, row: number, errors: ImportIssue[]): number | null | undefined {
+function readAmount(
+  v: CellValue, label: string, row: number, errors: ImportIssue[], warnings: ImportIssue[],
+): number | null | undefined {
   const parsed = parseNumberCell(v)
   if (parsed === null) return null
   if ('error' in parsed) {
@@ -442,6 +458,8 @@ function readAmount(v: CellValue, label: string, row: number, errors: ImportIssu
     errors.push({ row, message: `${label} phải ≥ 0` })
     return undefined
   }
+  const note = commaReading(v, parsed.value)
+  if (note !== null) warnings.push({ row, message: note })
   return parsed.value
 }
 
@@ -461,15 +479,16 @@ export function parseReinstatementPlan(sheets: SheetRows[]): ParseResult<Reinsta
   if (data.length > MAX_IMPORT_ROWS) return empty(header.sheet.name, [tooMany(data.length)], [], data.length)
 
   const errors: ImportIssue[] = []
+  const warnings: ImportIssue[] = []
   const rows: ReinstatementPlanRow[] = []
   const seen = new Map<DayKey, number>()
   for (const { row, cells } of data) {
     const day = readDate(cells, dateCol, row, seen, errors)
-    const qty = readAmount(cellAt(cells, qtyCol), PLAN_QTY_COLUMN.label, row, errors)
+    const qty = readAmount(cellAt(cells, qtyCol), PLAN_QTY_COLUMN.label, row, errors, warnings)
     if (qty === null) errors.push({ row, message: `Thiếu ${PLAN_QTY_COLUMN.label}` })
     if (day !== null && typeof qty === 'number') rows.push({ day, planQty: qty })
   }
-  return finish(header.sheet.name, rows, data.length, errors, [])
+  return finish(header.sheet.name, rows, data.length, errors, warnings)
 }
 
 // ---------------------------------------------------------------------------
@@ -516,7 +535,7 @@ export function parseManpowerPlan(sheets: SheetRows[], groups: ManpowerGroup[]):
     const day = readDate(cells, dateCol, row, seen, errors)
     let any = false
     for (const { col, group } of columns) {
-      const value = readAmount(cellAt(cells, col), group.name, row, errors)
+      const value = readAmount(cellAt(cells, col), group.name, row, errors, warnings)
       if (value === null) continue
       any = true
       if (day !== null && value !== undefined) rows.push({ groupId: group.id, day, value })
