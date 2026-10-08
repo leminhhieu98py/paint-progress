@@ -1,5 +1,5 @@
-import { afterEach, describe, expect, it } from 'vitest'
-import { chartElement, renderChartPng, svgMarkup } from './chartImage'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { CHART_TIMEOUT_MS, chartElement, loadImage, renderChartPng, svgMarkup } from './chartImage'
 
 /**
  * jsdom lays nothing out and has no canvas: what is checked here is the SVG
@@ -10,6 +10,7 @@ import { chartElement, renderChartPng, svgMarkup } from './chartImage'
 const SVG_NS = 'http://www.w3.org/2000/svg'
 
 afterEach(() => {
+  vi.unstubAllGlobals()
   document.head.innerHTML = ''
   document.body.innerHTML = ''
 })
@@ -55,5 +56,23 @@ describe('renderChartPng', () => {
   it('rejects when the chart never lays out, and removes its off-screen host', async () => {
     await expect(renderChartPng({ kind: 'reinstatement', data: [], mode: 'day' }, { timeoutMs: 30 })).rejects.toThrow()
     expect(document.body.children).toHaveLength(0)
+  })
+
+  it('still gives up in time with no animation frames, as in a background tab', async () => {
+    vi.stubGlobal('requestAnimationFrame', () => 0)
+    await expect(renderChartPng({ kind: 'reinstatement', data: [], mode: 'day' }, { timeoutMs: 30 }))
+      .rejects.toThrow(/timed out/)
+    expect(document.body.children).toHaveLength(0)
+  })
+
+  it('allows each chart 15 s in all', () => {
+    expect(CHART_TIMEOUT_MS).toBe(15_000)
+  })
+})
+
+describe('loadImage', () => {
+  it('rejects when the picture neither loads nor fails within its time', async () => {
+    // jsdom loads no image: neither onload nor onerror ever fires.
+    await expect(loadImage('<svg xmlns="http://www.w3.org/2000/svg"/>', Date.now() + 30)).rejects.toThrow(/timed out/)
   })
 })

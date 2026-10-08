@@ -35,8 +35,13 @@ export type ChartSpec =
 export const CHART_WIDTH = 1000
 /** Device pixels per CSS pixel: a sharp picture when Excel scales it. */
 const SCALE = 2
-/** How long the chart may take to lay out before the render counts as failed. */
-const LAYOUT_TIMEOUT_MS = 3000
+/** How long one chart may take, laid out and drawn, before it counts as failed. */
+export const CHART_TIMEOUT_MS = 15_000
+/**
+ * How often the layout is checked. Timers, not animation frames: a background
+ * tab pauses frames but still runs timers (throttled), so the deadline holds.
+ */
+const POLL_MS = 50
 
 /** The page's chart in report mode: the whole range, no Brush, the desktop layout. Exported for its test. */
 export function chartElement(spec: ChartSpec): ReactElement {
@@ -81,38 +86,45 @@ export function svgMarkup(svg: SVGSVGElement, size: { width: number; height: num
   return new XMLSerializer().serializeToString(clone)
 }
 
-function nextFrame(): Promise<void> {
-  return new Promise((resolve) => requestAnimationFrame(() => resolve()))
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
-/** Waits until Recharts has drawn its plot at a real size, then two frames more. */
-async function laidOut(host: HTMLElement, timeoutMs: number): Promise<HTMLElement> {
-  const started = Date.now()
+/** Waits until Recharts has drawn its plot at a real size, then two polls more; rejects past `deadline`. */
+async function laidOut(host: HTMLElement, deadline: number): Promise<HTMLElement> {
   for (;;) {
     const surface = host.querySelector<SVGSVGElement>('svg.recharts-surface')
     if (surface && surface.getBoundingClientRect().width > 0) {
-      await nextFrame()
-      await nextFrame()
+      await delay(POLL_MS)
+      await delay(POLL_MS)
       const chart = host.firstElementChild
       if (!(chart instanceof HTMLElement)) throw new Error('chart not rendered')
       return chart
     }
-    if (Date.now() - started > timeoutMs) throw new Error('chart layout timed out')
-    await nextFrame()
+    if (Date.now() > deadline) throw new Error('chart layout timed out')
+    await delay(POLL_MS)
   }
 }
 
-function loadImage(markup: string): Promise<HTMLImageElement> {
+/** The SVG markup as an image, or a rejection when it neither loads nor fails by `deadline`. Exported for its test. */
+export function loadImage(markup: string, deadline: number): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const img = new Image()
-    img.onload = () => resolve(img)
-    img.onerror = () => reject(new Error('chart image failed to load'))
+    const timer = setTimeout(() => reject(new Error('chart image timed out')), Math.max(0, deadline - Date.now()))
+    img.onload = () => {
+      clearTimeout(timer)
+      resolve(img)
+    }
+    img.onerror = () => {
+      clearTimeout(timer)
+      reject(new Error('chart image failed to load'))
+    }
     img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(markup)}`
   })
 }
 
 /** Draws the rendered chart on a canvas: every SVG at its place, then the legend's labels. */
-async function paint(chart: HTMLElement): Promise<ChartPng> {
+async function paint(chart: HTMLElement, deadline: number): Promise<ChartPng> {
   const box = chart.getBoundingClientRect()
   const width = Math.round(box.width)
   const height = Math.round(box.height)
@@ -131,7 +143,7 @@ async function paint(chart: HTMLElement): Promise<ChartPng> {
     if (svg.parentElement?.closest('svg')) continue
     const r = svg.getBoundingClientRect()
     if (r.width === 0 || r.height === 0) continue
-    const img = await loadImage(svgMarkup(svg, { width: r.width, height: r.height }))
+    const img = await loadImage(svgMarkup(svg, { width: r.width, height: r.height }), deadline)
     ctx.drawImage(img, r.left - box.left, r.top - box.top, r.width, r.height)
   }
 
@@ -156,12 +168,12 @@ async function paint(chart: HTMLElement): Promise<ChartPng> {
 
 /**
  * The chart as a PNG, rendered off screen at `CHART_WIDTH` and removed
- * afterwards. Rejects when it cannot be drawn, or has not laid out within
- * `timeoutMs`.
+ * afterwards. Rejects when it cannot be drawn, or is not laid out and drawn
+ * within `timeoutMs` (the caller then writes the chart as failed).
  */
 export async function renderChartPng(
   spec: ChartSpec,
-  { timeoutMs = LAYOUT_TIMEOUT_MS }: { timeoutMs?: number } = {},
+  { timeoutMs = CHART_TIMEOUT_MS }: { timeoutMs?: number } = {},
 ): Promise<ChartPng> {
   const host = document.createElement('div')
   host.setAttribute('aria-hidden', 'true')
@@ -173,7 +185,8 @@ export async function renderChartPng(
   const root = createRoot(host)
   try {
     root.render(chartElement(spec))
-    return await paint(await laidOut(host, timeoutMs))
+    const deadline = Date.now() + timeoutMs
+    return await paint(await laidOut(host, deadline), deadline)
   } finally {
     root.unmount()
     host.remove()
