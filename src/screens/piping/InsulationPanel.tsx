@@ -256,7 +256,7 @@ export function InsulationPanel({ projectId, settings, mode, role, todayKey, ref
         toolbar={role === 'viewer' ? undefined : (
           <>
             <ActualEntry projectId={projectId} spools={data.spools} todayKey={todayKey} onSaved={reload} />
-            <ActualImportFlow projectId={projectId} spools={data.spools} todayKey={todayKey} onImported={reload} />
+            <ActualImportFlow projectId={projectId} todayKey={todayKey} onImported={reload} />
           </>
         )}
         rowActions={admin ? rowActions : undefined}

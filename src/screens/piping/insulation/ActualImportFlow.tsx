@@ -7,11 +7,11 @@ import { tablePagination } from '../../../components/tablePagination'
 import { useTypeScale } from '../../../components/typeScale'
 import type { ActualChange } from '../../../domain/piping/cam'
 import { parseSpoolActual, resolveSpoolActualImport, type ImportIssue } from '../../../domain/piping/imports'
-import type { DayKey, Spool } from '../../../domain/piping/types'
+import type { DayKey } from '../../../domain/piping/types'
 import { MISSING } from '../../../lib/format'
 import { buildSpoolActualTemplate, templateFileName } from '../../../lib/piping/templates'
 import { readWorkbookRows } from '../../../lib/piping/xlsx'
-import { flattenActualUpdates, setSpoolActuals } from '../../../lib/pipingApi'
+import { flattenActualUpdates, listSpools, setSpoolActuals } from '../../../lib/pipingApi'
 import { downloadWorkbook } from '../../../lib/projectReport'
 import { palette, space } from '../../../theme'
 import { formatQty } from '../pipingFormat'
@@ -41,9 +41,8 @@ type Step =
     warnings: ImportIssue[]
   }
 
-export function ActualImportFlow({ projectId, spools, todayKey, onImported }: {
+export function ActualImportFlow({ projectId, todayKey, onImported }: {
   projectId: string
-  spools: Spool[]
   todayKey: DayKey
   onImported: () => void
 }) {
@@ -78,7 +77,11 @@ export function ActualImportFlow({ projectId, spools, todayKey, onImported }: {
       const parsed = parseSpoolActual(await readWorkbookRows(file))
       if (parsed.errors.length > 0) return refuse(parsed.errors)
       if (parsed.rows.length === 0) return refuse([{ row: null, message: NO_DATA_ROWS }])
-      const resolved = resolveSpoolActualImport(parsed.rows, spools, todayKey)
+      // The spools as stored now, not as the page read them: the SpoolNo
+      // matches, the old dates shown and the counts come from the same moment
+      // as the dry run.
+      const fresh = await listSpools(projectId)
+      const resolved = resolveSpoolActualImport(parsed.rows, fresh, todayKey)
       if (resolved.errors.length > 0) return refuse(resolved.errors)
       const changes = flattenActualUpdates(resolved.updates)
       // Spools whose every date in the file is already stored: no change is sent for them.
@@ -89,7 +92,7 @@ export function ActualImportFlow({ projectId, spools, todayKey, onImported }: {
         const results = await setSpoolActuals(projectId, changes, {
           importFile: file.name, dryRun: true, fileRows: parsed.rowCount,
         })
-        preview = actualPreview(spools, changes, results)
+        preview = actualPreview(fresh, changes, results)
         // The database judged otherwise (the spools changed since they were read): refused, nothing written.
         if (preview.skipped.length > 0) {
           return refuse(preview.skipped.map((s) => ({ row: null, message: `SpoolNo "${s.spoolNo}": ${s.reason}` })))
@@ -119,6 +122,11 @@ export function ActualImportFlow({ projectId, spools, todayKey, onImported }: {
     setSaving(true)
     setSaveError(null)
     try {
+      // One flag for the whole file (the RPC takes no per-spool expectation):
+      // a date set on a spool the preview showed blank, between the preview
+      // and this call, is replaced too when the overwrite was agreed to. The
+      // window is the time the dialog stays open; the manual entry splits its
+      // calls instead, which an all-or-nothing import cannot.
       const results = await setSpoolActuals(projectId, step.changes, {
         importFile: step.fileName, fileRows: step.fileRows, overwrite: needsAgreement,
       })

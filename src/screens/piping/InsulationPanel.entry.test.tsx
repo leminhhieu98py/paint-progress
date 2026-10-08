@@ -482,6 +482,86 @@ describe('Insulation: Import Actual (spec §6.3, §8, R-11)', () => {
     expect(api.setSpoolActuals).toHaveBeenCalledTimes(2)
   })
 
+  it('imports without the overwrite flag when no stored date is replaced, and reads the page again', async () => {
+    read.mockResolvedValue([{ name: 'Insulation Actual', rows: [ACTUAL_HEADER, ['SP-5', '2026-10-01', null, null]] }])
+    const change = [{ spoolId: 's5', milestone: 'ph', date: '2026-10-01' }]
+    api.setSpoolActuals.mockResolvedValueOnce([{ spoolId: 's5', spoolNo: 'SP-5', status: 'saved' }])
+      .mockResolvedValueOnce([{ spoolId: 's5', spoolNo: 'SP-5', status: 'saved' }])
+    renderPanel(asGs)
+    await ready()
+    await pick(/Import Actual/, 'actual.xlsx')
+    const box = await dialog()
+    await waitFor(() => expect(facts(box)[0]).toBe('1 spool lưu'))
+    expect(within(box).queryByRole('checkbox')).toBeNull()
+    api.listSpools.mockClear()
+    await userEvent.click(within(box).getByRole('button', { name: /Import Actual/ }))
+    await waitFor(() => expect(api.setSpoolActuals).toHaveBeenLastCalledWith('p1', change, {
+      importFile: 'actual.xlsx', fileRows: 1, overwrite: false,
+    }))
+    expect(await screen.findByText('Đã import Insulation Actual cho 1 spool')).toBeInTheDocument()
+    await waitFor(() => expect(api.listSpools).toHaveBeenCalledWith('p1'))
+  })
+
+  it('offers no import when every date in the file is already stored', async () => {
+    read.mockResolvedValue([{ name: 'Insulation Actual', rows: [ACTUAL_HEADER, ['SP-2', '2026-10-02', null, null]] }])
+    renderPanel(asGs)
+    await ready()
+    await pick(/Import Actual/, 'actual.xlsx')
+    const box = await dialog()
+    expect(within(box).getByText('File không thay đổi ngày Actual nào.')).toBeInTheDocument()
+    expect(facts(box)).toEqual(['0 spool lưu', '0 spool ghi đè', '0 spool bỏ qua', '1 spool không đổi'])
+    expect(within(box).getByRole('button', { name: /Import Actual/ })).toBeDisabled()
+    expect(api.setSpoolActuals).not.toHaveBeenCalled()
+  })
+
+  it('keeps a refused import inside the dialog and reads nothing again', async () => {
+    read.mockResolvedValue([{ name: 'Insulation Actual', rows: [ACTUAL_HEADER, ['SP-5', '2026-10-01', null, null]] }])
+    api.setSpoolActuals.mockResolvedValueOnce([{ spoolId: 's5', spoolNo: 'SP-5', status: 'saved' }])
+      .mockRejectedValueOnce(new Error('Spool SP-5: Sai thứ tự. Không có dữ liệu nào được ghi.'))
+    renderPanel(asGs)
+    await ready()
+    await pick(/Import Actual/, 'actual.xlsx')
+    const box = await dialog()
+    await waitFor(() => expect(facts(box)[0]).toBe('1 spool lưu'))
+    api.listSpools.mockClear()
+    await userEvent.click(within(box).getByRole('button', { name: /Import Actual/ }))
+    expect(await within(box).findByText('Spool SP-5: Sai thứ tự. Không có dữ liệu nào được ghi.')).toBeInTheDocument()
+    expect(within(box).getByRole('button', { name: /Import Actual/ })).toBeEnabled()
+    expect(api.listSpools).not.toHaveBeenCalled()
+  })
+
+  it('reads the spools afresh for the file: a spool added since the page opened is found', async () => {
+    read.mockResolvedValue([{ name: 'Insulation Actual', rows: [ACTUAL_HEADER, ['SP-8', '2026-10-01', null, null]] }])
+    api.setSpoolActuals.mockResolvedValueOnce([{ spoolId: 's8', spoolNo: 'SP-8', status: 'saved' }])
+    renderPanel(asGs)
+    await ready()
+    api.listSpools.mockResolvedValue([...SPOOLS, spool(8)])
+    await pick(/Import Actual/, 'actual.xlsx')
+    const box = await dialog()
+    expect(within(box).getByText('Xem trước Insulation Actual')).toBeInTheDocument()
+    await waitFor(() => expect(api.setSpoolActuals).toHaveBeenCalledWith('p1', [
+      { spoolId: 's8', milestone: 'ph', date: '2026-10-01' },
+    ], { importFile: 'actual.xlsx', dryRun: true, fileRows: 1 }))
+  })
+
+  it('lists 200 notes at most, then says how many more', async () => {
+    // 201 SpoolNos, each carried by two spools: one R-11 note per row.
+    const pairs = Array.from({ length: 201 }, (_, i) => [
+      spool(100 + 2 * i, { spoolNo: `P-${i}` }), spool(101 + 2 * i, { spoolNo: `P-${i}` }),
+    ]).flat()
+    read.mockResolvedValue([{ name: 'Insulation Actual', rows: [
+      ACTUAL_HEADER, ...Array.from({ length: 201 }, (_, i) => [`P-${i}`, '2026-10-01', null, null]),
+    ] }])
+    api.setSpoolActuals.mockResolvedValueOnce(pairs.map((p) => ({ spoolId: p.id, spoolNo: p.spoolNo, status: 'saved' })))
+    renderPanel(asGs)
+    await ready()
+    api.listSpools.mockResolvedValue(pairs)
+    await pick(/Import Actual/, 'actual.xlsx')
+    const box = await dialog()
+    expect(await within(box).findByText('và 1 cảnh báo khác')).toBeInTheDocument()
+    expect(within(box).getAllByText(/khớp 2 spool, áp dụng cho tất cả/)).toHaveLength(200)
+  })
+
   it('downloads the Actual template', async () => {
     renderPanel(asGs)
     await ready()

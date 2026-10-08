@@ -9,6 +9,7 @@ import type { DayKey, Milestone } from '../../../domain/piping/types'
 import { formatDayMonthYear } from '../../../domain/piping/week'
 import { MISSING } from '../../../lib/format'
 import { palette, space } from '../../../theme'
+import { capList } from '../listCap'
 import { formatQty } from '../pipingFormat'
 import type { ActualOverwriteLine, ActualPreview, ActualSkipLine } from './actualPreview'
 
@@ -28,6 +29,7 @@ export function ActualPreviewBody({ preview, overwrite, onOverwrite, warnings = 
 }) {
   const type = useTypeScale()
   const dateCell = (d: DayKey | null) => (d === null ? MISSING : formatDayMonthYear(d))
+  const notes = capList(warnings)
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: space.md }}>
       {error && <Alert type="error" showIcon message={error} />}
@@ -45,9 +47,10 @@ export function ActualPreviewBody({ preview, overwrite, onOverwrite, warnings = 
           showIcon
           message={(
             <ul style={{ margin: 0, paddingInlineStart: space.lg }}>
-              {warnings.map((w, i) => (
+              {notes.shown.map((w, i) => (
                 <li key={i}>{w.row === null ? w.message : `Dòng ${formatQty(w.row)}: ${w.message}`}</li>
               ))}
+              {notes.more > 0 && <li>{`và ${formatQty(notes.more)} cảnh báo khác`}</li>}
             </ul>
           )}
         />
