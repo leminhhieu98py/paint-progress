@@ -13,6 +13,7 @@ import {
 import type { Milestone } from '../../../domain/piping/types'
 import { formatDayMonthYear } from '../../../domain/piping/week'
 import { MISSING } from '../../../lib/format'
+import { space } from '../../../theme'
 import { useFieldPhone } from '../../gs/fieldSections'
 import { formatQty } from '../pipingFormat'
 import { ControlRow } from './ControlRow'
@@ -88,7 +89,7 @@ export function LateSpools({ projectId, warnings, thresholdDays }: {
       facts={[{ value: formatQty(lateSpoolCount(warnings)), label: 'spool', info: lateRule(thresholdDays) }]}
       extra={phone ? undefined : select}
     >
-      {phone && <div style={{ marginBottom: 12 }}><ControlRow>{select}</ControlRow></div>}
+      {phone && <div style={{ marginBottom: space.md }}><ControlRow>{select}</ControlRow></div>}
       {warnings.length === 0
         ? <EmptyState title="Không có spool trễ" />
         : (
