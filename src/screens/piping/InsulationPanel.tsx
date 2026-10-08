@@ -1,5 +1,5 @@
 import { Alert, Button, Select, Space, Spin } from 'antd'
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import { EmptyState } from '../../components/EmptyState'
 import { IconAction } from '../../components/IconAction'
 import type { KeyFact } from '../../components/KeyFacts'
@@ -123,7 +123,18 @@ export function InsulationPanel({ projectId, settings, mode, role, todayKey, ref
     (sheets: Parameters<typeof parseSpoolPlan>[0]) => parseSpoolPlan(sheets, columns ?? []),
     [columns],
   )
-  const previewPlan = useCallback((rows: SpoolPlanRow[]) => spoolPlanPreview(spools ?? [], rows), [spools])
+  /**
+   * The spools the last Plan preview was computed from. Read afresh when the
+   * file is read, not taken from the page: an actual entered since the page
+   * opened must show as lost (Q19A), and the log's client counts match what
+   * the admin was shown.
+   */
+  const previewedSpools = useRef<Spool[]>([])
+  const previewPlan = useCallback(async (rows: SpoolPlanRow[]) => {
+    const fresh = await listSpools(projectId)
+    previewedSpools.current = fresh
+    return spoolPlanPreview(fresh, rows)
+  }, [projectId])
   /** The spool whose actual the admin is clearing (R-12). */
   const [clearing, setClearing] = useState<Spool | null>(null)
   const rowActions = useCallback((s: Spool) => (
@@ -160,7 +171,8 @@ export function InsulationPanel({ projectId, settings, mode, role, todayKey, ref
       lineHeader="SpoolNo"
       lineAlign="left"
       commit={({ rows, fileName, summary }) => replaceSpools(
-        projectId, rows, fileName, { ...summary, ...spoolPlanSummary(data.spools, rows) },
+        // The database writes its own counts into the summary; the preview's sit under `client`.
+        projectId, rows, fileName, { ...summary, client: spoolPlanSummary(previewedSpools.current, rows) },
       )}
       onImported={reload}
     />

@@ -182,6 +182,11 @@ describe('Insulation: Plan import (spec §6.2, §8, R-10, Q19A)', () => {
 
     api.listSpools.mockClear()
     await userEvent.click(confirm)
+    // Deleting actuals is never one click: XOÁ is typed first.
+    expect(api.replaceSpools).not.toHaveBeenCalled()
+    await userEvent.type(await screen.findByLabelText('Gõ XOÁ để xác nhận'), 'XOÁ')
+    const typed = screen.getAllByRole('dialog').at(-1) as HTMLElement
+    await userEvent.click(within(typed).getByRole('button', { name: /Thay thế Plan/ }))
     await waitFor(() => expect(api.replaceSpools).toHaveBeenCalledTimes(1))
     const [project, rows, fileName, summary] = api.replaceSpools.mock.calls[0]
     expect(project).toBe('p1')
@@ -189,8 +194,25 @@ describe('Insulation: Plan import (spec §6.2, §8, R-10, Q19A)', () => {
     expect((rows as Array<{ spoolNo: string; extra: Record<string, string> }>).map((r) => r.spoolNo))
       .toEqual(['SP-1', 'SP-1', 'SP-3', 'SP-4', 'SP-7'])
     expect((rows as Array<{ extra: Record<string, string> }>)[2].extra).toEqual({ Zone: 'A' })
-    expect(summary).toEqual(expect.objectContaining({ added: 1, removed: 2, removedWithActuals: 1, warnings: 2 }))
+    // The preview's own counts sit apart from the ones the database writes into the log.
+    expect(summary).toEqual({
+      sheet: 'Insulation Plan', warnings: 2, client: { added: 1, changed: 2, removed: 2, removedWithActuals: 1 },
+    })
     await waitFor(() => expect(api.listSpools).toHaveBeenCalledWith('p1'))
+  })
+
+  it('reads the spools afresh for the preview: an actual entered since the page opened is flagged', async () => {
+    read.mockResolvedValue(sheet([PLAN_HEADER, ...['SP-1', 'SP-1', 'SP-2', 'SP-3', 'SP-4'].map((n) => planRow(n, '2026-10-01'))]))
+    renderPanel()
+    await ready()
+    // Meanwhile a foreman entered SP-5's PH actual; the page still holds the old list.
+    api.listSpools.mockResolvedValue(SPOOLS.map((s) => (s.id === 's5' ? { ...s, phActual: '2026-10-06' } : s)))
+    await pick(/Import Plan/, 'plan.xlsx')
+    const box = await dialog()
+    const sp5 = (await within(box).findByText('SP-5')).closest('tr') as HTMLElement
+    expect(within(sp5).getByText('có Actual')).toBeInTheDocument()
+    expect(within(box).getByText('1 spool bị xoá cùng ngày Actual đã nhập: SP-5.')).toBeInTheDocument()
+    expect(within(box).getByRole('button', { name: /Thay thế Plan/ })).toHaveClass('ant-btn-dangerous')
   })
 
   it('lists the row errors and writes nothing', async () => {
