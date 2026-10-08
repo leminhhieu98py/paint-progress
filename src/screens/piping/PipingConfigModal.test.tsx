@@ -414,6 +414,7 @@ describe('PipingConfigModal: Lịch sử import (spec §8)', () => {
     renderModal()
     await openTab('Lịch sử import')
     const first = (await within(config()).findByText('cam.xlsx')).closest('tr') as HTMLElement
+    expect(within(config()).getByRole('columnheader', { name: 'Tệp' })).toBeInTheDocument()
     expect(first).toHaveTextContent('Insulation Plan')
     expect(first).toHaveTextContent('1.250')
     expect(first).toHaveTextContent('Đoàn Linh')

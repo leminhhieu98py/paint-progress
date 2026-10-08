@@ -63,7 +63,7 @@ describe('LateSpools (spec §7)', () => {
     expect(within(tp2).getByRole('button', { name: 'Ẩn spool' })).toHaveAttribute('aria-expanded', 'true')
     const list = screen.getByTestId('late-spool-list')
     expect(within(list).getAllByRole('columnheader').map((h) => h.textContent)).toEqual([
-      'SpoolNo', 'Milestone', 'Bộ phận', 'Plan', 'Actual', 'Số ngày trễ',
+      'SpoolNo', 'Mốc', 'Bộ phận', 'Plan', 'Actual', 'Số ngày trễ',
     ])
     expect(tableRows(list)).toEqual([
       ['SP-a', 'Painting Handover', 'Piping', '01/09/2026', '-', '36'],

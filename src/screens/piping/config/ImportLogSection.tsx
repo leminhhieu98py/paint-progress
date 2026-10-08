@@ -38,7 +38,7 @@ export function ImportLogSection({ projectId }: { projectId: string }) {
           align: 'center',
           render: (kind: ImportKind) => <StatusPill tone={KINDS[kind].tone}>{KINDS[kind].label}</StatusPill>,
         },
-        { title: 'File', dataIndex: 'fileName', render: (v: string) => v || MISSING },
+        { title: 'Tệp', dataIndex: 'fileName', render: (v: string) => v || MISSING },
         { title: 'Số dòng', dataIndex: 'rowCount', align: 'center', render: (v: number) => COUNT.format(v) },
         { title: 'Người import', dataIndex: 'importedByName', render: (v: string | null) => v ?? MISSING },
         { title: 'Thời gian', dataIndex: 'importedAt', align: 'center', render: (v: string | null) => formatDateTimeVN(v) || MISSING },

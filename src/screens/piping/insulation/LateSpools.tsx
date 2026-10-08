@@ -139,7 +139,7 @@ function LateSpoolList({ resetKey, warnings, pin }: {
         columns={[
           { title: 'SpoolNo', key: 'spoolNo', fixed: pin, render: (_v, w) => w.spoolNo },
           {
-            title: 'Milestone',
+            title: 'Mốc',
             key: 'milestone',
             align: 'center',
             render: (_v, w) => <StatusPill tone={MILESTONE_TONE[w.milestone]}>{MILESTONE_LABEL[w.milestone]}</StatusPill>,
