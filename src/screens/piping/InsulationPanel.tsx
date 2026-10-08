@@ -1,5 +1,5 @@
 import { Alert, Button, Select, Spin } from 'antd'
-import { useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import { EmptyState } from '../../components/EmptyState'
 import type { KeyFact } from '../../components/KeyFacts'
 import { SectionCard } from '../../components/SectionCard'
@@ -16,7 +16,7 @@ import { ControlRow } from './insulation/ControlRow'
 import { PHONE_CONTROL } from './insulation/controlStyle'
 import { InsulationChart } from './insulation/InsulationChart'
 import { SpoolDetail } from './insulation/SpoolDetail'
-import { useInsulationUnit } from './insulationUnit'
+import { useInsulationSelection, useInsulationUnit } from './insulationUnit'
 import type { PipingPanelProps } from './panelProps'
 import { formatQty } from './pipingFormat'
 import { usePanelData } from './usePanelData'
@@ -94,9 +94,9 @@ export function InsulationPanel({ projectId, settings, mode, role, todayKey, ref
   const admin = role === 'admin'
   const fullOptionsProps = useFullOptionsProps()
   const phone = useFieldPhone()
-  // The page holds the unit, so the export writes the one on screen (spec §10).
+  // The page holds the unit and the lines, so the export writes them as on screen (spec §10).
   const [unit, setUnit] = useInsulationUnit(projectId)
-  const [selection, setSelection] = useState<CamSelection>('both')
+  const [selection, setSelection] = useInsulationSelection(projectId)
 
   const spools = data?.spools
   const series = useMemo(

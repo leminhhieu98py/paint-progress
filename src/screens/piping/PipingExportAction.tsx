@@ -2,7 +2,7 @@ import { EllipsisOutlined, FileExcelOutlined, LoadingOutlined } from '@ant-desig
 import { App, Button, Dropdown, Tooltip } from 'antd'
 import { useRef, useState } from 'react'
 import { camSeriesKeys } from '../../domain/piping/cam'
-import type { Unit } from '../../domain/piping/types'
+import type { CamSelection, Unit } from '../../domain/piping/types'
 import { loadGsProjectIdentity } from '../../lib/gsApi'
 import { renderChartPng, type ChartSpec } from './report/chartImage'
 import {
@@ -14,7 +14,7 @@ import {
 } from '../../lib/pipingApi'
 import { downloadWorkbook } from '../../lib/projectReport'
 import { useFieldPhone } from '../gs/fieldSections'
-import { useInsulationUnitValue } from './insulationUnit'
+import { useInsulationSelectionValue, useInsulationUnitValue } from './insulationUnit'
 import type { PipingPanelProps } from './panelProps'
 
 /**
@@ -44,7 +44,13 @@ async function chartPicture(spec: ChartSpec | null): Promise<ReportChart | undef
   }
 }
 
-async function exportReport(panel: PipingPanelProps, unit: Unit): Promise<void> {
+/** The Insulation tab's choices on screen: the report's unit and its chart's lines. */
+interface InsulationView {
+  unit: Unit
+  selection: CamSelection
+}
+
+async function exportReport(panel: PipingPanelProps, { unit, selection }: InsulationView): Promise<void> {
   const { projectId, settings, mode, todayKey } = panel
   const admin = panel.role === 'admin'
   const [project, plan, entries, groups, mpPlan, mpActual, spools, notes] = await Promise.all([
@@ -78,7 +84,7 @@ async function exportReport(panel: PipingPanelProps, unit: Unit): Promise<void> 
       : { kind: 'manpower', data: series.manpower.points, groups: series.manpower.groups, mode }],
     ['insulation', series.insulation.points.length === 0
       ? null
-      : { kind: 'insulation', data: series.insulation.points, keys: camSeriesKeys('both'), mode }],
+      : { kind: 'insulation', data: series.insulation.points, keys: camSeriesKeys(selection), mode }],
   ]
   const charts: PipingReportInput['charts'] = {}
   for (const [key, spec] of specs) {
@@ -93,6 +99,7 @@ export function PipingExportAction({ panel }: { panel: PipingPanelProps | null }
   const { message } = App.useApp()
   const phone = useFieldPhone()
   const unit = useInsulationUnitValue(panel?.projectId ?? null)
+  const selection = useInsulationSelectionValue(panel?.projectId ?? null)
   const [busy, setBusy] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   // The state answers after a render; a second click before it must not start a second export.
@@ -103,7 +110,7 @@ export function PipingExportAction({ panel }: { panel: PipingPanelProps | null }
     running.current = true
     setBusy(true)
     try {
-      await exportReport(panel, unit)
+      await exportReport(panel, { unit, selection })
       message.success('Đã xuất báo cáo Piping')
     } catch (e) {
       message.error(`Không xuất được báo cáo: ${(e as Error).message}`)

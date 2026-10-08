@@ -5,7 +5,7 @@ import type { Unit } from '../../domain/piping/types'
 import type { PipingReportInput } from '../../lib/piping/report'
 import { renderApp } from '../../test/renderApp'
 import { setViewport } from '../../test/viewport'
-import { InsulationUnitProvider, useInsulationUnit } from './insulationUnit'
+import { InsulationUnitProvider, useInsulationSelection, useInsulationUnit } from './insulationUnit'
 import type { PipingPanelProps, PipingRole } from './panelProps'
 import { PipingExportAction } from './PipingExportAction'
 
@@ -165,6 +165,23 @@ describe('PipingExportAction (spec §10)', () => {
     await userEvent.click(exportButton())
     await waitFor(() => expect(buildPipingReport).toHaveBeenCalled())
     expect(reportInput().unit).toBe('lineNo')
+  })
+
+  it('draws the Insulation lines on screen: Actual only when the tab shows Actual', async () => {
+    function LinesPicker() {
+      const [, setSelection] = useInsulationSelection('p1')
+      return <button type="button" onClick={() => setSelection('actual')}>pick lines</button>
+    }
+    renderApp(
+      <InsulationUnitProvider>
+        <LinesPicker />
+        <PipingExportAction panel={panel()} />
+      </InsulationUnitProvider>,
+    )
+    await userEvent.click(screen.getByRole('button', { name: 'pick lines' }))
+    await userEvent.click(exportButton())
+    await waitFor(() => expect(buildPipingReport).toHaveBeenCalled())
+    expect(renderChartPng.mock.calls[2][0].keys).toEqual(['phActual', 'ihActual', 'iwActual'])
   })
 
   it('on a phone, a field user finds it in one ⋯ menu with its icon and text (GS-09)', async () => {

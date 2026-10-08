@@ -5,7 +5,9 @@ import type { Unit } from '../../domain/piping/types'
 import { renderApp } from '../../test/renderApp'
 import { chooseOption } from '../../test/select'
 import { InsulationPanel } from './InsulationPanel'
-import { InsulationUnitProvider, useInsulationUnit, useInsulationUnitValue } from './insulationUnit'
+import {
+  InsulationUnitProvider, useInsulationSelection, useInsulationSelectionValue, useInsulationUnit, useInsulationUnitValue,
+} from './insulationUnit'
 
 vi.mock('../../lib/pipingApi', () => ({
   listSpools: async () => [{
@@ -26,7 +28,17 @@ function Reader({ projectId }: { projectId: string | null }) {
   return <output aria-label={`unit ${projectId ?? 'none'}`}>{useInsulationUnitValue(projectId)}</output>
 }
 
+function SelectionPicker({ projectId }: { projectId: string }) {
+  const [value, setSelection] = useInsulationSelection(projectId)
+  return <button type="button" onClick={() => setSelection('actual')}>{`${projectId} chọn actual: ${value}`}</button>
+}
+
+function SelectionReader({ projectId }: { projectId: string | null }) {
+  return <output aria-label={`lines ${projectId ?? 'none'}`}>{useInsulationSelectionValue(projectId)}</output>
+}
+
 const unitOf = (projectId: string) => screen.getByRole('status', { name: `unit ${projectId}` }).textContent
+const linesOf = (projectId: string) => screen.getByRole('status', { name: `lines ${projectId}` }).textContent
 
 describe('insulationUnit', () => {
   it('shares the unit per project under the page\'s provider, SpoolNo until it is changed', async () => {
@@ -43,6 +55,28 @@ describe('insulationUnit', () => {
     expect(unitOf('p1')).toBe('lineNo')
     expect(unitOf('p2')).toBe('spoolNo')
     expect(unitOf('none')).toBe('spoolNo')
+  })
+
+  it('shares the Plan | Actual | Plan & Actual lines per project beside the unit, Plan & Actual until changed', async () => {
+    renderApp(
+      <InsulationUnitProvider>
+        <SelectionPicker projectId="p1" />
+        <SelectionReader projectId="p1" />
+        <SelectionReader projectId="p2" />
+        <Reader projectId="p1" />
+      </InsulationUnitProvider>,
+    )
+    expect(linesOf('p1')).toBe('both')
+    await userEvent.click(screen.getByRole('button', { name: /p1 chọn actual/ }))
+    expect(linesOf('p1')).toBe('actual')
+    expect(linesOf('p2')).toBe('both')
+    expect(unitOf('p1')).toBe('spoolNo')
+  })
+
+  it('keeps the lines in the component\'s own state without a provider', async () => {
+    renderApp(<SelectionPicker projectId="p1" />)
+    await userEvent.click(screen.getByRole('button', { name: /p1 chọn actual: both/ }))
+    expect(screen.getByRole('button', { name: /p1 chọn actual: actual/ })).toBeInTheDocument()
   })
 
   it('keeps the choice in the component\'s own state without a provider', async () => {
@@ -64,10 +98,13 @@ describe('insulationUnit', () => {
           refreshKey={0}
         />
         <Reader projectId="p1" />
+        <SelectionReader projectId="p1" />
       </InsulationUnitProvider>,
     )
     await screen.findByRole('combobox', { name: 'Đơn vị đếm' })
     await chooseOption('Đơn vị đếm', 'LineNo')
     expect(unitOf('p1')).toBe('lineNo')
+    await chooseOption('Đường hiển thị', 'Actual')
+    expect(linesOf('p1')).toBe('actual')
   })
 })
