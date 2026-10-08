@@ -246,6 +246,7 @@ export function InsulationPanel({ projectId, settings, mode, role, todayKey, ref
   return (
     // Keyed on the project: a filter or a search never carries over to the next project's spools.
     <div key={projectId} style={{ display: 'flex', flexDirection: 'column', gap: space.lg }}>
+      {notes.alert}
       <SectionCard
         title="Insulation"
         facts={facts}

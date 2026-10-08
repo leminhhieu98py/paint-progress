@@ -499,6 +499,20 @@ describe('ReinstatementPanel: admin notes (spec §9)', () => {
     expect(screen.getAllByRole('button', { name: /^Ghi chú/ })).toHaveLength(2)
   })
 
+  it('warns on the panel when the notes cannot be read, marks the icons, and retries', async () => {
+    api.listNotes.mockRejectedValueOnce(new Error('mất mạng')).mockResolvedValue([NOTE])
+    renderPanel()
+    await loaded()
+    const alert = (await screen.findByText('Không tải được ghi chú')).closest('.ant-alert') as HTMLElement
+    expect(within(alert).getByText('mất mạng')).toBeInTheDocument()
+    expect(within(dataRows()[0]).getByRole('button', { name: 'Ghi chú (không tải được)' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Ghi chú' })).toBeNull()
+    await userEvent.click(within(alert).getByRole('button', { name: 'Thử lại' }))
+    expect(await within(dataRows()[0]).findByRole('button', { name: 'Ghi chú (1)' })).toBeInTheDocument()
+    expect(api.listNotes).toHaveBeenCalledTimes(2)
+    expect(screen.queryByText('Không tải được ghi chú')).toBeNull()
+  })
+
   it('adds a note on a day and reads the notes again', async () => {
     api.addNote.mockResolvedValue(NOTE)
     renderPanel()

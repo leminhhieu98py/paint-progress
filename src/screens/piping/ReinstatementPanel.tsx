@@ -122,6 +122,7 @@ export function ReinstatementPanel({ projectId, settings, mode, role, todayKey, 
   return (
     // Keyed on the project: a typed quantity or an open dialog never carries over to the next one.
     <div key={projectId} style={{ display: 'flex', flexDirection: 'column', gap: space.lg }}>
+      {notes.alert}
       <SectionCard
         title="Reinstatement"
         facts={[summaryFact(data.entries, total, admin)]}

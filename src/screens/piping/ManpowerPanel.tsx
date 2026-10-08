@@ -154,6 +154,7 @@ export function ManpowerPanel({ projectId, settings, mode, role, todayKey, refre
   return (
     // Keyed on the project: a typed value or an open dialog never carries over to the next one.
     <div key={projectId} style={{ display: 'flex', flexDirection: 'column', gap: space.lg }}>
+      {notes.alert}
       <SectionCard
         // Week view averages (R-2): said in the title as well as on the total lines (spec §3).
         title={mode === 'week' ? 'Manpower (trung bình tuần)' : 'Manpower'}

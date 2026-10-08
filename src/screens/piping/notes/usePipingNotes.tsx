@@ -1,3 +1,4 @@
+import { Alert, Button } from 'antd'
 import { useCallback, useMemo, useState, type ReactNode } from 'react'
 import type { DayKey } from '../../../domain/piping/types'
 import { formatDayMonthYear } from '../../../domain/piping/week'
@@ -26,6 +27,8 @@ export function usePipingNotes(projectId: string, refreshKey: number, admin: boo
   action: NoteAction | undefined
   /** The open target's drawer, if any. */
   drawer: ReactNode
+  /** A warning for the panel while the notes cannot be read, with Thử lại. */
+  alert: ReactNode
 } {
   const { data, error, reload } = usePanelData(projectId, refreshKey, admin ? listNotes : readNone)
   const threads = useMemo(() => groupNotes(data ?? []), [data])
@@ -34,9 +37,10 @@ export function usePipingNotes(projectId: string, refreshKey: number, admin: boo
   const action = useCallback<NoteAction>((anchor, title) => (
     <NotesButton
       count={threads.get(anchorKey(anchor))?.length ?? 0}
+      failed={error !== null}
       onClick={() => setOpen({ projectId, anchor, title })}
     />
-  ), [threads, projectId])
+  ), [threads, projectId, error])
 
   // Another project's target never stays open.
   const shown = admin && open !== null && open.projectId === projectId ? open : null
@@ -52,6 +56,16 @@ export function usePipingNotes(projectId: string, refreshKey: number, admin: boo
         onRetry={reload}
         onClose={() => setOpen(null)}
         onChanged={reload}
+      />
+    ),
+    // Unread is not "no notes": the panel says so, the icons too.
+    alert: admin && error !== null && (
+      <Alert
+        type="warning"
+        showIcon
+        message="Không tải được ghi chú"
+        description={error}
+        action={<Button onClick={reload}>Thử lại</Button>}
       />
     ),
   }
