@@ -48,8 +48,9 @@ export function EntriesTable({ projectId, entries, totalTestPacks, todayKey, can
   onChanged: () => void
   /**
    * Beside a day, the admin's note icon for that day (spec §9): on the day's
-   * first (newest) row only, as a day may have several entries. Not passed
-   * for a foreman or a viewer.
+   * first (newest) row only, as a day may have several entries, and again on
+   * the first row of a page the day runs onto. Not passed for a foreman or a
+   * viewer.
    */
   dayExtra?: (day: DayKey) => ReactNode
 }) {
@@ -58,7 +59,7 @@ export function EntriesTable({ projectId, entries, totalTestPacks, todayKey, can
   /** On a phone the day stays in view while the rest scrolls under it (MOB-01). */
   const pin = useFieldPhone() ? ('left' as const) : undefined
   const rows = useMemo(() => [...entries].sort(newestFirst), [entries])
-  /** A day's first (newest) entry: the one row of the day that carries `dayExtra`. */
+  /** A day's first (newest) entry: the row of the day that carries `dayExtra` (and a page's first row). */
   const firstOfDay = useMemo(() => new Set(rows.filter((r, i) => i === 0 || rows[i - 1].day !== r.day).map((r) => r.id)), [rows])
   const pagination = useTablePagination(rows.length, projectId)
   const [editing, setEditing] = useState<ReinstatementEntry | null>(null)
@@ -98,10 +99,11 @@ export function EntriesTable({ projectId, entries, totalTestPacks, todayKey, can
               dataIndex: 'day',
               align: 'center',
               fixed: pin,
-              render: (day: DayKey, row: ReinstatementEntry) => (
+              // `index` counts from the page's first row: a day carried over from the page before shows its note there too.
+              render: (day: DayKey, row: ReinstatementEntry, index: number) => (
                 <>
                   {formatDayMonthYear(day)}
-                  {firstOfDay.has(row.id) && dayExtra?.(day)}
+                  {(firstOfDay.has(row.id) || index === 0) && dayExtra?.(day)}
                 </>
               ),
             },

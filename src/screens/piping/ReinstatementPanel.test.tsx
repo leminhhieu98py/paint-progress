@@ -499,6 +499,25 @@ describe('ReinstatementPanel: admin notes (spec §9)', () => {
     expect(within(entriesTable()).getAllByRole('button', { name: /^Ghi chú/ })).toHaveLength(2)
   })
 
+  it('puts the note button on the first row of a day on each page the day spans', async () => {
+    // Eleven entries on 02/10 run past the first page of ten; 01/10 follows on page 2.
+    const oct2 = Array.from({ length: 11 }, (_, i) => entry({
+      id: `d${String(i).padStart(2, '0')}`, day: '2026-10-02', createdAt: `2026-10-02T${String(10 + i)}:00:00Z`,
+    }))
+    api.listReinstatementEntries.mockResolvedValue([...oct2, entry({ id: 'e1', day: '2026-10-01' })])
+    renderPanel()
+    await loaded()
+    const noteButtons = () => within(entriesTable()).getAllByRole('button', { name: /^Ghi chú/ })
+    expect(await within(dataRows()[0]).findByRole('button', { name: 'Ghi chú' })).toBeInTheDocument()
+    expect(noteButtons()).toHaveLength(1)
+    await userEvent.click(within(screen.getByTestId('reinstatement-entries')).getByTitle('2'))
+    const [carried, oct1] = dataRows()
+    expect(within(carried).getAllByRole('cell')[0]).toHaveTextContent('02/10/2026')
+    expect(within(carried).getByRole('button', { name: 'Ghi chú' })).toBeInTheDocument()
+    expect(within(oct1).getByRole('button', { name: 'Ghi chú' })).toBeInTheDocument()
+    expect(noteButtons()).toHaveLength(2)
+  })
+
   it('warns on the panel when the notes cannot be read, marks the icons, and retries', async () => {
     api.listNotes.mockRejectedValueOnce(new Error('mất mạng')).mockResolvedValue([NOTE])
     renderPanel()
