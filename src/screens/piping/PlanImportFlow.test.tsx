@@ -114,7 +114,8 @@ describe('PlanImportFlow', () => {
     await pick()
     const dialog = await screen.findByRole('dialog')
     const row = within(dialog).getByText('SP-2').closest('tr') as HTMLElement
-    expect(within(row).getByText('có Actual')).toBeInTheDocument()
+    // The flag reads as a loss, not as the row's own Xoá pill (warn).
+    expect(within(row).getByText('có Actual')).toHaveStyle({ color: '#B42318' })
     const danger = within(within(dialog).getByRole('list', { name: 'Hệ quả' }))
       .getByText('1 spool bị xoá cùng ngày Actual đã nhập: SP-2.')
     expect(danger).toHaveStyle({ color: '#B42318' })

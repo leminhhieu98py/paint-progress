@@ -34,7 +34,7 @@ export interface PlanDiffLine {
   from: string | null
   /** The file's value; null when removed. */
   to: string | null
-  /** A badge beside the label, e.g. `có Actual` on a removed spool that carries actual dates. */
+  /** A danger badge beside the label, e.g. `có Actual` on a removed spool that carries actual dates. */
   flag?: string
 }
 
@@ -291,7 +291,7 @@ export function PlanImportFlow<R>({
                     render: (label: string, line: PlanDiffLine) => (line.flag === undefined ? label : (
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: space.sm, flexWrap: 'wrap' }}>
                         {label}
-                        <StatusPill tone="warn">{line.flag}</StatusPill>
+                        <StatusPill tone="danger">{line.flag}</StatusPill>
                       </span>
                     )),
                   },
