@@ -11,14 +11,14 @@ import { InsulationPanel } from './InsulationPanel'
 import type { PipingPanelProps } from './panelProps'
 
 const api = vi.hoisted(() => ({
-  listSpools: vi.fn(), listSpoolColumns: vi.fn(), replaceSpools: vi.fn(), setSpoolActuals: vi.fn(),
+  listSpools: vi.fn(), listSpoolColumns: vi.fn(), replaceSpools: vi.fn(), setSpoolActuals: vi.fn(), listNotes: vi.fn(),
 }))
 vi.mock('../../lib/pipingApi', () => ({
   listSpools: (...a: unknown[]) => api.listSpools(...a),
   listSpoolColumns: (...a: unknown[]) => api.listSpoolColumns(...a),
   replaceSpools: (...a: unknown[]) => api.replaceSpools(...a),
   setSpoolActuals: (...a: unknown[]) => api.setSpoolActuals(...a),
-  listNotes: async () => [],
+  listNotes: (...a: unknown[]) => api.listNotes(...a),
   flattenActualUpdates: (updates: Array<{ spoolId: string; changes: Array<Omit<ActualChange, 'spoolId'>> }>) =>
     updates.flatMap((u) => u.changes.map((c) => ({ spoolId: u.spoolId, milestone: c.milestone, date: c.date }))),
 }))
@@ -95,6 +95,7 @@ beforeEach(() => {
   api.listSpools.mockResolvedValue(SPOOLS)
   api.listSpoolColumns.mockResolvedValue(COLUMNS)
   api.replaceSpools.mockResolvedValue({ rowCount: 0 })
+  api.listNotes.mockResolvedValue([])
   read.mockReset()
   download.mockReset()
   templates.plan.mockReset().mockResolvedValue(new Blob(['p']))
@@ -214,6 +215,33 @@ describe('Insulation: Plan import (spec §6.2, §8, R-10, Q19A)', () => {
     expect(within(sp5).getByText('có Actual')).toBeInTheDocument()
     expect(within(box).getByText('1 spool bị xoá cùng ngày Actual đã nhập: SP-5.')).toBeInTheDocument()
     expect(within(box).getByRole('button', { name: /Thay thế Plan/ })).toHaveClass('ant-btn-dangerous')
+  })
+
+  it('reads the notes afresh for the preview, says the removed spools\' notes go with them, and reads them again after', async () => {
+    read.mockResolvedValue(sheet([PLAN_HEADER, ...['SP-1', 'SP-1', 'SP-2', 'SP-3', 'SP-4'].map((n) => planRow(n, '2026-10-01'))]))
+    renderPanel()
+    await ready()
+    // Two notes were written on SP-5 (dropped by the file) since the page read them; one on SP-3 (kept).
+    const spoolNote = (id: string, spoolId: string) => ({
+      id, target: 'spool', day: null, spoolId, body: id, authorId: 'u1', createdAt: '2026-10-05T01:00:00Z',
+      updatedBy: null, updatedAt: null, authorName: 'Linh', updatedByName: null,
+    })
+    api.listNotes.mockResolvedValue([spoolNote('n1', 's5'), spoolNote('n2', 's5'), spoolNote('n3', 's3')])
+    await pick(/Import Plan/, 'plan.xlsx')
+    const box = await dialog()
+    const sp5 = (await within(box).findByText('SP-5')).closest('tr') as HTMLElement
+    expect(within(sp5).getByText('có ghi chú')).toBeInTheDocument()
+    expect(within(box).getByText('2 ghi chú sẽ bị xoá cùng spool: SP-5.')).toBeInTheDocument()
+    const confirm = within(box).getByRole('button', { name: /Thay thế Plan/ })
+    expect(confirm).toHaveClass('ant-btn-dangerous')
+
+    const readsBefore = api.listNotes.mock.calls.length
+    await userEvent.click(confirm)
+    await userEvent.type(await screen.findByLabelText('Gõ XOÁ để xác nhận'), 'XOÁ')
+    const typed = screen.getAllByRole('dialog').at(-1) as HTMLElement
+    await userEvent.click(within(typed).getByRole('button', { name: /Thay thế Plan/ }))
+    await waitFor(() => expect(api.replaceSpools).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(api.listNotes.mock.calls.length).toBeGreaterThan(readsBefore))
   })
 
   it('lists the row errors and writes nothing', async () => {

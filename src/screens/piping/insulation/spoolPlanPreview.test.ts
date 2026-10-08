@@ -47,6 +47,18 @@ describe('spoolPlanPreview (spec §6.2)', () => {
     ])
   })
 
+  it('flags the removed spools with admin notes and says in a danger tone that the notes go with them', () => {
+    const p = spoolPlanPreview(stored, next, new Map([['s2', 1], ['s3', 2], ['s1', 4]]))
+    expect(p.lines.filter((l) => l.change === 'removed').map((l) => [l.label, l.flag ?? null])).toEqual([
+      ['SP-2', 'có Actual, có ghi chú'],
+      ['SP-3', 'có ghi chú'],
+    ])
+    expect(p.dangers).toEqual([
+      '1 spool bị xoá cùng ngày Actual đã nhập: SP-2.',
+      '3 ghi chú sẽ bị xoá cùng spool: SP-2, SP-3.',
+    ])
+  })
+
   it('has no danger when no removed spool carries an actual', () => {
     expect(spoolPlanPreview([spool(1)], [row(1)]).dangers).toEqual([])
   })

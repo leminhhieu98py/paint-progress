@@ -29,8 +29,23 @@ function place(s: Spool): string {
   return parts.length === 0 ? MISSING : parts.join(' · ')
 }
 
-export function spoolPlanPreview(stored: Spool[], next: SpoolPlanRow[]): PlanImportPreview {
+/** Ten names at most, then how many more. */
+function names(list: string[]): string {
+  const more = list.length > MAX_NAMED ? ` và ${formatQty(list.length - MAX_NAMED)} spool khác` : ''
+  return `${list.slice(0, MAX_NAMED).join(', ')}${more}`
+}
+
+/**
+ * `noteCounts`: the admin's notes per spool id (spec §9) -- a removed spool's
+ * notes are deleted with it, so they are flagged and their loss said too.
+ */
+export function spoolPlanPreview(
+  stored: Spool[],
+  next: SpoolPlanRow[],
+  noteCounts: ReadonlyMap<string, number> = new Map(),
+): PlanImportPreview {
   const diff = diffSpoolPlan(stored, next)
+  const notesOf = (s: Spool) => noteCounts.get(s.id) ?? 0
   const lines: PlanDiffLine[] = [
     ...diff.added.map((r) => ({
       key: `a|${r.seq}`, change: 'added' as const, label: r.spoolNo, from: null, to: `Dòng ${formatQty(r.row)}`,
@@ -48,12 +63,12 @@ export function spoolPlanPreview(stored: Spool[], next: SpoolPlanRow[]): PlanImp
       label: spool.spoolNo,
       from: place(spool),
       to: null,
-      ...(hasActuals ? { flag: 'có Actual' } : {}),
+      ...flagOf(hasActuals, notesOf(spool) > 0),
     })),
   ]
   const lost = diff.removed.filter((r) => r.hasActuals).map((r) => r.spool.spoolNo)
-  const named = lost.slice(0, MAX_NAMED).join(', ')
-  const more = lost.length > MAX_NAMED ? ` và ${formatQty(lost.length - MAX_NAMED)} spool khác` : ''
+  const noted = diff.removed.filter((r) => notesOf(r.spool) > 0)
+  const lostNotes = noted.reduce((sum, r) => sum + notesOf(r.spool), 0)
   const consequences: string[] = []
   if (diff.removed.length > 0) consequences.push(`${formatQty(diff.removed.length)} spool không có trong file bị xoá.`)
   if (diff.matches.length > 0) consequences.push('Spool khớp SpoolNo giữ nguyên ngày Actual.')
@@ -64,8 +79,18 @@ export function spoolPlanPreview(stored: Spool[], next: SpoolPlanRow[]): PlanImp
     unchanged: diff.unchangedCount,
     lines,
     consequences,
-    dangers: lost.length === 0 ? [] : [`${formatQty(lost.length)} spool bị xoá cùng ngày Actual đã nhập: ${named}${more}.`],
+    dangers: [
+      ...(lost.length === 0 ? [] : [`${formatQty(lost.length)} spool bị xoá cùng ngày Actual đã nhập: ${names(lost)}.`]),
+      ...(lostNotes === 0
+        ? []
+        : [`${formatQty(lostNotes)} ghi chú sẽ bị xoá cùng spool: ${names(noted.map((r) => r.spool.spoolNo))}.`]),
+    ],
   }
+}
+
+function flagOf(hasActuals: boolean, hasNotes: boolean): { flag?: string } {
+  const flags = [hasActuals && 'có Actual', hasNotes && 'có ghi chú'].filter((f): f is string => Boolean(f))
+  return flags.length === 0 ? {} : { flag: flags.join(', ') }
 }
 
 /** The diff's counts, kept in the import log's summary. */

@@ -10,6 +10,15 @@ function noteAnchor(note: PipingNoteEntry): NoteAnchor | null {
   return note.day === null ? null : { target: note.target, day: note.day }
 }
 
+/** How many notes each spool carries, by spool id. */
+export function spoolNoteCounts(notes: PipingNoteEntry[]): Map<string, number> {
+  const out = new Map<string, number>()
+  for (const n of notes) {
+    if (n.target === 'spool' && n.spoolId !== null) out.set(n.spoolId, (out.get(n.spoolId) ?? 0) + 1)
+  }
+  return out
+}
+
 /**
  * The project's notes threaded per target, newest first: a target may carry
  * several notes, and the latest is the one an admin reads first.

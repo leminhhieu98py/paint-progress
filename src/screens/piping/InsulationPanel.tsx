@@ -12,7 +12,7 @@ import {
 import { parseSpoolPlan, type SpoolPlanRow } from '../../domain/piping/imports'
 import type { CamSelection, Spool, SpoolColumn, Unit } from '../../domain/piping/types'
 import { buildSpoolPlanTemplate, templateFileName } from '../../lib/piping/templates'
-import { listSpoolColumns, listSpools, replaceSpools } from '../../lib/pipingApi'
+import { listNotes, listSpoolColumns, listSpools, replaceSpools } from '../../lib/pipingApi'
 import { space } from '../../theme'
 import { useFieldPhone } from '../gs/fieldSections'
 import { ActualEntry } from './insulation/ActualEntry'
@@ -27,6 +27,7 @@ import { LateSpools } from './insulation/LateSpools'
 import { SpoolDetail } from './insulation/SpoolDetail'
 import { spoolPlanPreview, spoolPlanSummary } from './insulation/spoolPlanPreview'
 import { useInsulationSelection, useInsulationUnit } from './insulationUnit'
+import { spoolNoteCounts } from './notes/noteAnchors'
 import { usePipingNotes } from './notes/usePipingNotes'
 import type { PipingPanelProps } from './panelProps'
 import { PlanImportFlow } from './PlanImportFlow'
@@ -141,9 +142,10 @@ export function InsulationPanel({ projectId, settings, mode, role, todayKey, ref
    */
   const previewedSpools = useRef<Spool[]>([])
   const previewPlan = useCallback(async (rows: SpoolPlanRow[]) => {
-    const fresh = await listSpools(projectId)
+    // The notes too (admin only, as is the Plan import): a removed spool's notes go with it (spec §9).
+    const [fresh, notes] = await Promise.all([listSpools(projectId), listNotes(projectId)])
     previewedSpools.current = fresh
-    return spoolPlanPreview(fresh, rows)
+    return spoolPlanPreview(fresh, rows, spoolNoteCounts(notes))
   }, [projectId])
   /** The spool whose actual the admin is clearing (R-12). */
   const [clearing, setClearing] = useState<Spool | null>(null)
@@ -190,7 +192,11 @@ export function InsulationPanel({ projectId, settings, mode, role, todayKey, ref
         // The database writes its own counts into the summary; the preview's sit under `client`.
         projectId, rows, fileName, { ...summary, client: spoolPlanSummary(previewedSpools.current, rows) },
       )}
-      onImported={reload}
+      onImported={() => {
+        reload()
+        // The replace deleted the removed spools' notes.
+        notes.reload()
+      }}
     />
   ) : undefined
 

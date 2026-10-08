@@ -32,6 +32,8 @@ export function usePipingNotes(projectId: string, refreshKey: number, admin: boo
   drawer: ReactNode
   /** A warning for the panel while the notes cannot be read, with Thử lại. */
   alert: ReactNode
+  /** Reads the notes again (after a write elsewhere: a Plan import deletes removed spools' notes). */
+  reload: () => void
   /**
    * "Ghi chú theo ngày" (admin): any day of the tab, picked in the drawer --
    * a day with no entry row too, and a day whose rows were deleted. Undefined
@@ -73,6 +75,7 @@ export function usePipingNotes(projectId: string, refreshKey: number, admin: boo
   }, [shown?.byDay, shownAnchor, threads])
   return {
     action: admin ? action : undefined,
+    reload,
     byDay: admin ? byDay : undefined,
     drawer: shown && (
       <NotesDrawer

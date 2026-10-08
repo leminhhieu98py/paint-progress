@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { PipingNoteEntry } from '../../../lib/pipingApi'
-import { anchorKey, groupNotes } from './noteAnchors'
+import { anchorKey, groupNotes, spoolNoteCounts } from './noteAnchors'
 
 const note = (id: string, over: Partial<PipingNoteEntry> = {}): PipingNoteEntry => ({
   id, target: 'reinstatement_day', day: '2026-10-01', spoolId: null, body: id, authorId: 'u1',
@@ -31,5 +31,17 @@ describe('groupNotes', () => {
 
   it('skips a note without its day or spool', () => {
     expect(groupNotes([note('x', { day: null }), note('y', { target: 'spool', spoolId: null })]).size).toBe(0)
+  })
+})
+
+describe('spoolNoteCounts', () => {
+  it('counts the notes per spool, days left out', () => {
+    const counts = spoolNoteCounts([
+      note('a', { target: 'spool', day: null, spoolId: 's1' }),
+      note('b', { target: 'spool', day: null, spoolId: 's1' }),
+      note('c', { target: 'spool', day: null, spoolId: 's2' }),
+      note('d'),
+    ])
+    expect([...counts]).toEqual([['s1', 2], ['s2', 1]])
   })
 })
