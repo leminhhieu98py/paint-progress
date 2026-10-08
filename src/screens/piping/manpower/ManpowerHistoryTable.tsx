@@ -59,8 +59,8 @@ export function ManpowerHistoryTable({ projectId, groups, actual, canEdit, onEdi
   /** After a write: the panel reads its data again. */
   onChanged: () => void
   /**
-   * Beside a day, what the admin's notes on that day add (spec §9). The seam
-   * for the notes task; nothing renders here until it passes one.
+   * Beside a day, the admin's note icon for that day (spec §9): one row per
+   * day here. Not passed for a foreman or a viewer.
    */
   dayExtra?: (day: DayKey) => ReactNode
 }) {
