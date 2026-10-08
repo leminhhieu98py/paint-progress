@@ -54,7 +54,13 @@ describe('LateSpools (spec §7)', () => {
   it('opens a group to its spools: milestone, department, plan, actual and days late', async () => {
     const user = userEvent.setup()
     renderApp(<LateSpools projectId="p1" warnings={WARNINGS} thresholdDays={7} />)
-    await user.click(screen.getByRole('button', { name: 'Xem spool trễ của TP2' }))
+    const tp2 = within(screen.getByTestId('late-spools')).getAllByRole('row').find((r) => within(r).queryByText('TP2')) as HTMLElement
+    const toggle = within(tp2).getByRole('button', { name: 'Xem spool' })
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    await user.hover(toggle)
+    expect(await screen.findByRole('tooltip')).toHaveTextContent('Xem spool')
+    await user.click(toggle)
+    expect(within(tp2).getByRole('button', { name: 'Ẩn spool' })).toHaveAttribute('aria-expanded', 'true')
     const list = screen.getByTestId('late-spool-list')
     expect(within(list).getAllByRole('columnheader').map((h) => h.textContent)).toEqual([
       'SpoolNo', 'Milestone', 'Bộ phận', 'Plan', 'Actual', 'Số ngày trễ',

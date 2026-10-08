@@ -1,5 +1,5 @@
 import { DownOutlined, RightOutlined } from '@ant-design/icons'
-import { Button, Select, Table, type TableColumnsType } from 'antd'
+import { Button, Select, Table, Tooltip, type TableColumnsType } from 'antd'
 import { useMemo, useState } from 'react'
 import { EmptyState } from '../../../components/EmptyState'
 import { InfoTip } from '../../../components/InfoTip'
@@ -101,14 +101,17 @@ export function LateSpools({ projectId, warnings, thresholdDays }: {
               scroll={{ x: 'max-content' }}
               expandable={{
                 expandedRowRender: (r) => <LateSpoolList resetKey={`${projectId}|${by}|${r.key}`} warnings={r.warnings} pin={pin} />,
+                // An icon-only toggle: its name is its tooltip (ACT-01).
                 expandIcon: ({ expanded, onExpand, record }) => (
-                  <Button
-                    type="text"
-                    aria-label={`Xem spool trễ của ${groupName(record.key)}`}
-                    aria-expanded={expanded}
-                    icon={expanded ? <DownOutlined aria-hidden /> : <RightOutlined aria-hidden />}
-                    onClick={(e) => onExpand(record, e)}
-                  />
+                  <Tooltip title={expanded ? 'Ẩn spool' : 'Xem spool'}>
+                    <Button
+                      type="text"
+                      aria-label={expanded ? 'Ẩn spool' : 'Xem spool'}
+                      aria-expanded={expanded}
+                      icon={expanded ? <DownOutlined aria-hidden /> : <RightOutlined aria-hidden />}
+                      onClick={(e) => onExpand(record, e)}
+                    />
+                  </Tooltip>
                 ),
               }}
             />
