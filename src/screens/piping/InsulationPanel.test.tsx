@@ -9,10 +9,11 @@ import { setViewport } from '../../test/viewport'
 import { InsulationPanel } from './InsulationPanel'
 import type { PipingPanelProps } from './panelProps'
 
-const api = vi.hoisted(() => ({ listSpools: vi.fn(), listSpoolColumns: vi.fn() }))
+const api = vi.hoisted(() => ({ listSpools: vi.fn(), listSpoolColumns: vi.fn(), listNotes: vi.fn() }))
 vi.mock('../../lib/pipingApi', () => ({
   listSpools: (...a: unknown[]) => api.listSpools(...a),
   listSpoolColumns: (...a: unknown[]) => api.listSpoolColumns(...a),
+  listNotes: (...a: unknown[]) => api.listNotes(...a),
 }))
 // The import flows' download helper reaches the Supabase client; this file never downloads.
 vi.mock('../../lib/projectReport', () => ({ downloadWorkbook: vi.fn() }))
@@ -79,6 +80,8 @@ beforeEach(() => {
   api.listSpoolColumns.mockReset()
   api.listSpools.mockResolvedValue(SPOOLS)
   api.listSpoolColumns.mockResolvedValue(COLUMNS)
+  api.listNotes.mockReset()
+  api.listNotes.mockResolvedValue([])
 })
 afterEach(() => undoViewport())
 
@@ -282,5 +285,37 @@ describe('InsulationPanel: late warnings (spec §7)', () => {
     await chart()
     expect(keyFactTexts(header('Insulation')).some((t) => t.includes('spool trễ'))).toBe(false)
     expect(screen.getByText('Không có spool trễ')).toBeInTheDocument()
+  })
+})
+
+describe('InsulationPanel: admin notes (spec §9)', () => {
+  const NOTE = {
+    id: 'n1', target: 'spool', day: null, spoolId: 's3', body: 'Chờ giàn giáo', authorId: 'u1',
+    createdAt: '2026-10-03T09:00:00Z', updatedBy: null, updatedAt: null, authorName: 'Đoàn Linh', updatedByName: null,
+  }
+  const spoolRow = (spoolNo: string) => within(within(screen.getByTestId('spool-detail')).getByRole('table'))
+    .getAllByRole('row').find((r) => within(r).queryAllByRole('cell')[0]?.textContent === spoolNo) as HTMLElement
+
+  it('marks the spools with notes beside the clear action and opens a spool\'s thread', async () => {
+    api.listNotes.mockResolvedValue([NOTE])
+    renderPanel()
+    await chart()
+    expect(api.listNotes).toHaveBeenCalledWith('p1')
+    await chooseOption('Cấp hiển thị', 'Spool')
+    const sp3 = spoolRow('SP-3')
+    expect(within(sp3).getByRole('button', { name: 'Xoá Actual' })).toBeInTheDocument()
+    await userEvent.click(within(sp3).getByRole('button', { name: 'Ghi chú (1)' }))
+    const drawer = screen.getByText('Ghi chú spool SP-3').closest('.ant-drawer-content') as HTMLElement
+    expect(within(drawer).getByText('Chờ giàn giáo')).toBeInTheDocument()
+    expect(within(spoolRow('SP-4')).getByRole('button', { name: 'Ghi chú' })).toBeInTheDocument()
+  })
+
+  it.each([['a foreman', asGs], ['a viewer', asViewer]])('never reads or shows notes for %s', async (_who, as) => {
+    renderPanel(as)
+    await chart()
+    await chooseOption('Cấp hiển thị', 'Spool')
+    expect(spoolRow('SP-3')).toBeDefined()
+    expect(screen.queryByRole('button', { name: /Ghi chú/ })).toBeNull()
+    expect(api.listNotes).not.toHaveBeenCalled()
   })
 })

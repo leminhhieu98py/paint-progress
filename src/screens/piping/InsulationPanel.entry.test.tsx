@@ -18,6 +18,7 @@ vi.mock('../../lib/pipingApi', () => ({
   listSpoolColumns: (...a: unknown[]) => api.listSpoolColumns(...a),
   replaceSpools: (...a: unknown[]) => api.replaceSpools(...a),
   setSpoolActuals: (...a: unknown[]) => api.setSpoolActuals(...a),
+  listNotes: async () => [],
   flattenActualUpdates: (updates: Array<{ spoolId: string; changes: Array<Omit<ActualChange, 'spoolId'>> }>) =>
     updates.flatMap((u) => u.changes.map((c) => ({ spoolId: u.spoolId, milestone: c.milestone, date: c.date }))),
 }))

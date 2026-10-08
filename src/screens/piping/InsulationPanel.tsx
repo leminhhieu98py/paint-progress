@@ -26,6 +26,7 @@ import { lateFact } from './insulation/lateGroups'
 import { LateSpools } from './insulation/LateSpools'
 import { SpoolDetail } from './insulation/SpoolDetail'
 import { spoolPlanPreview, spoolPlanSummary } from './insulation/spoolPlanPreview'
+import { usePipingNotes } from './notes/usePipingNotes'
 import type { PipingPanelProps } from './panelProps'
 import { PlanImportFlow } from './PlanImportFlow'
 import { formatQty } from './pipingFormat'
@@ -144,15 +145,21 @@ export function InsulationPanel({ projectId, settings, mode, role, todayKey, ref
   }, [projectId])
   /** The spool whose actual the admin is clearing (R-12). */
   const [clearing, setClearing] = useState<Spool | null>(null)
+  /** The admin's notes on a spool (spec §9); none for a foreman or a viewer. */
+  const notes = usePipingNotes(projectId, refreshKey, admin)
+  const noteAction = notes.action
   const rowActions = useCallback((s: Spool) => (
-    <IconAction
-      verb="delete"
-      label="Xoá Actual"
-      danger
-      disabled={setMilestones(s).length === 0}
-      onClick={() => setClearing(s)}
-    />
-  ), [])
+    <Space size={space.xs}>
+      {noteAction?.({ target: 'spool', spoolId: s.id }, `Ghi chú spool ${s.spoolNo}`)}
+      <IconAction
+        verb="delete"
+        label="Xoá Actual"
+        danger
+        disabled={setMilestones(s).length === 0}
+        onClick={() => setClearing(s)}
+      />
+    </Space>
+  ), [noteAction])
 
   if (error !== null) {
     return (
@@ -284,6 +291,7 @@ export function InsulationPanel({ projectId, settings, mode, role, todayKey, ref
           }}
         />
       )}
+      {notes.drawer}
     </div>
   )
 }
