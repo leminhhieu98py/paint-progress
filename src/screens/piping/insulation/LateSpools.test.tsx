@@ -55,12 +55,12 @@ describe('LateSpools (spec §7)', () => {
     const user = userEvent.setup()
     renderApp(<LateSpools projectId="p1" warnings={WARNINGS} thresholdDays={7} />)
     const tp2 = within(screen.getByTestId('late-spools')).getAllByRole('row').find((r) => within(r).queryByText('TP2')) as HTMLElement
-    const toggle = within(tp2).getByRole('button', { name: 'Xem spool' })
+    const toggle = within(tp2).getByRole('button', { name: 'Xem spool của TP2' })
     expect(toggle).toHaveAttribute('aria-expanded', 'false')
     await user.hover(toggle)
-    expect(await screen.findByRole('tooltip')).toHaveTextContent('Xem spool')
+    expect(await screen.findByRole('tooltip')).toHaveTextContent('Xem spool của TP2')
     await user.click(toggle)
-    expect(within(tp2).getByRole('button', { name: 'Ẩn spool' })).toHaveAttribute('aria-expanded', 'true')
+    expect(within(tp2).getByRole('button', { name: 'Ẩn spool của TP2' })).toHaveAttribute('aria-expanded', 'true')
     const list = screen.getByTestId('late-spool-list')
     expect(within(list).getAllByRole('columnheader').map((h) => h.textContent)).toEqual([
       'SpoolNo', 'Mốc', 'Bộ phận', 'Plan', 'Actual', 'Số ngày trễ',
@@ -84,6 +84,14 @@ describe('LateSpools (spec §7)', () => {
   it('puts the spools with no package in a last "-" row', () => {
     renderApp(<LateSpools projectId="p1" warnings={[warning('c', { testPackageNo: null }), ...WARNINGS]} thresholdDays={7} />)
     expect(tableRows(screen.getByTestId('late-spools')).map((r) => r[1])).toEqual(['TP1', 'TP2', '-'])
+    expect(screen.getByRole('button', { name: 'Xem spool không có Package' })).toBeInTheDocument()
+  })
+
+  it('names the "-" Line group in its toggle', async () => {
+    renderApp(<LateSpools projectId="p1" warnings={[warning('c', { lineNo: null }), ...WARNINGS]} thresholdDays={7} />)
+    await chooseOption('Nhóm spool trễ theo', 'Line')
+    expect(screen.getByRole('button', { name: 'Xem spool không có Line' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Xem spool của L9' })).toBeInTheDocument()
   })
 
   it('says so when no spool is late', () => {

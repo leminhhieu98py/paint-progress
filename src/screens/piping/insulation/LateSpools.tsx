@@ -46,6 +46,10 @@ const DAYS_LATE_INFO = 'Tính từ ngày Plan đến ngày Actual, hoặc đến
 
 const groupName = (key: string) => (key === '' ? MISSING : key)
 
+/** The toggle's name says which group it opens; the "-" group is the spools with no Package or Line. */
+const toggleName = (expanded: boolean, key: string, by: LateBy) =>
+  `${expanded ? 'Ẩn' : 'Xem'} spool ${key === '' ? `không có ${by === 'line' ? 'Line' : 'Package'}` : `của ${key}`}`
+
 export function LateSpools({ projectId, warnings, thresholdDays }: {
   projectId: string
   /** `lateWarnings` of the project's spools. */
@@ -104,10 +108,10 @@ export function LateSpools({ projectId, warnings, thresholdDays }: {
                 expandedRowRender: (r) => <LateSpoolList resetKey={`${projectId}|${by}|${r.key}`} warnings={r.warnings} pin={pin} />,
                 // An icon-only toggle: its name is its tooltip (ACT-01).
                 expandIcon: ({ expanded, onExpand, record }) => (
-                  <Tooltip title={expanded ? 'Ẩn spool' : 'Xem spool'}>
+                  <Tooltip title={toggleName(expanded, record.key, by)}>
                     <Button
                       type="text"
-                      aria-label={expanded ? 'Ẩn spool' : 'Xem spool'}
+                      aria-label={toggleName(expanded, record.key, by)}
                       aria-expanded={expanded}
                       icon={expanded ? <DownOutlined aria-hidden /> : <RightOutlined aria-hidden />}
                       onClick={(e) => onExpand(record, e)}
