@@ -49,10 +49,17 @@ const DOTS_UP_TO = 60
 /**
  * `keys` are the lines the Plan | Actual | Plan & Actual toggle shows
  * (`camSeriesKeys`). The caller keys this on the view so the Brush's zoom
- * does not survive a switch between days and weeks.
+ * does not survive a switch between days and weeks. `report` draws it for the
+ * Excel report (spec §10): the whole range with no Brush, on the desktop
+ * layout whatever the screen.
  */
-export function InsulationChart({ data, keys, mode }: { data: CamPoint[]; keys: CamSeriesKey[]; mode: ViewMode }) {
-  const { legend, opacity, height } = useLegendHighlight()
+export function InsulationChart({ data, keys, mode, report = false }: {
+  data: CamPoint[]
+  keys: CamSeriesKey[]
+  mode: ViewMode
+  report?: boolean
+}) {
+  const { legend, opacity, height } = useLegendHighlight({ desktop: report })
   const tooltips = useMemo(() => new Map(data.map((p) => [p.key, p.tooltip])), [data])
   const dots = data.length <= DOTS_UP_TO
   return (
@@ -87,14 +94,16 @@ export function InsulationChart({ data, keys, mode }: { data: CamPoint[]; keys: 
               />
             )
           })}
-          <Brush
-            dataKey="key"
-            height={22}
-            travellerWidth={8}
-            tickFormatter={(key: string) => formatDayMonth(String(key))}
-            stroke={palette.border}
-            fill={palette.bgSubtle}
-          />
+          {!report && (
+            <Brush
+              dataKey="key"
+              height={22}
+              travellerWidth={8}
+              tickFormatter={(key: string) => formatDayMonth(String(key))}
+              stroke={palette.border}
+              fill={palette.bgSubtle}
+            />
+          )}
         </LineChart>
       </ResponsiveContainer>
     </div>

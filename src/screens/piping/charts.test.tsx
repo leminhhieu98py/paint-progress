@@ -1,6 +1,7 @@
 import { render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ReinstatementPoint } from '../../domain/piping/reinstatement'
+import { setViewport } from '../../test/viewport'
 import { ReinstatementChart } from './charts'
 
 /**
@@ -37,7 +38,7 @@ vi.mock('recharts', async (importOriginal) => {
       captured.tooltip = props
       return null
     },
-    Legend: () => <div data-testid="legend" />,
+    Legend: (props: Record<string, unknown>) => <div data-testid="legend" data-layout={String(props.layout ?? '')} />,
     Bar: (props: Record<string, unknown>) => (
       <div data-testid={`bar-${String(props.dataKey)}`} data-name={String(props.name)} data-axis={String(props.yAxisId)} />
     ),
@@ -106,5 +107,21 @@ describe('ReinstatementChart (spec §4, R-5)', () => {
     expect(format(null)).toBe('-')
     const tick = captured.yAxes.bucket.tickFormatter as (v: number) => string
     expect(tick(1800)).toBe('1.800')
+  })
+  it('report: the whole range on the desktop layout with no Brush, from a phone too (spec §10)', () => {
+    const undo = setViewport(390)
+    try {
+      const { unmount } = render(<ReinstatementChart data={WEEKS} mode="week" />)
+      expect(screen.getByTestId('brush')).toBeInTheDocument()
+      expect(captured.yAxes.cum.hide).toBe(true)
+      unmount()
+      render(<ReinstatementChart data={WEEKS} mode="week" report />)
+      expect(screen.queryByTestId('brush')).toBeNull()
+      expect(captured.yAxes.cum.hide).toBe(false)
+      expect(screen.getByTestId('legend')).toHaveAttribute('data-layout', '')
+      expect(screen.getByTestId('reinstatement-chart').style.height).toBe('372px')
+    } finally {
+      undo()
+    }
   })
 })

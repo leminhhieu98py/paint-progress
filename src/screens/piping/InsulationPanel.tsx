@@ -24,6 +24,7 @@ import { PHONE_CONTROL } from './insulation/controlStyle'
 import { InsulationChart } from './insulation/InsulationChart'
 import { SpoolDetail } from './insulation/SpoolDetail'
 import { spoolPlanPreview, spoolPlanSummary } from './insulation/spoolPlanPreview'
+import { useInsulationSelection, useInsulationUnit } from './insulationUnit'
 import type { PipingPanelProps } from './panelProps'
 import { PlanImportFlow } from './PlanImportFlow'
 import { formatQty } from './pipingFormat'
@@ -102,8 +103,9 @@ export function InsulationPanel({ projectId, settings, mode, role, todayKey, ref
   const admin = role === 'admin'
   const fullOptionsProps = useFullOptionsProps()
   const phone = useFieldPhone()
-  const [unit, setUnit] = useState<Unit>('spoolNo')
-  const [selection, setSelection] = useState<CamSelection>('both')
+  // The page holds the unit and the lines, so the export writes them as on screen (spec §10).
+  const [unit, setUnit] = useInsulationUnit(projectId)
+  const [selection, setSelection] = useInsulationSelection(projectId)
 
   const spools = data?.spools
   const series = useMemo(

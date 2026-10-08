@@ -82,10 +82,11 @@ const LEGEND_LINE = 24
  * hands the legend handlers. Click-to-hide is deliberately not wired. On a
  * phone the legend stands one item per line (MOB-03), and `height` adds the
  * lines it takes beyond the one-row legend the chart's height was set for.
+ * `desktop` keeps the desktop layout on any screen (a chart drawn for a report).
  */
-export function useLegendHighlight() {
+export function useLegendHighlight({ desktop = false }: { desktop?: boolean } = {}) {
   const [active, setActive] = useState<string | null>(null)
-  const phone = useFieldPhone()
+  const phone = useFieldPhone() && !desktop
   return {
     legend: {
       ...(phone ? PHONE_LEGEND : {}),

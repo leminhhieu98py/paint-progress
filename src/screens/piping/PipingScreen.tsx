@@ -21,6 +21,7 @@ import { useFieldPhone } from '../gs/fieldSections'
 import { useFieldProjectCode } from '../gs/useFieldProjectCode'
 import { EnablePipingModal } from './EnablePipingModal'
 import { InsulationPanel } from './InsulationPanel'
+import { InsulationUnitProvider } from './insulationUnit'
 import { ManpowerPanel } from './ManpowerPanel'
 import type { PipingPanelProps, PipingRole } from './panelProps'
 import { PipingConfigModal } from './PipingConfigModal'
@@ -221,7 +222,7 @@ function AdminPiping() {
           <FilterBar>
             <ProjectSelect projects={projects} value={projectId} onChange={chooseProject} />
             {showControls && <ViewToggle value={mode} onChange={setMode} disabled={panel === null} />}
-            {showControls && <BarEnd><PipingExportAction panel={panel} /></BarEnd>}
+            {showControls && <BarEnd><PipingExportAction panel={panel} variant="admin" /></BarEnd>}
           </FilterBar>
         )}
       />
@@ -351,7 +352,7 @@ function FieldPiping({ projectId }: { projectId: string | null }) {
   const toggle = (block: boolean) => showControls && (
     <ViewToggle value={mode} onChange={setMode} block={block} disabled={panel === null} />
   )
-  const exportAction = showControls && <PipingExportAction panel={panel} />
+  const exportAction = showControls && <PipingExportAction panel={panel} variant="gs" />
   // FLT-04: what is applied, in one line -- the project's code, then the view once the module is shown;
   // nothing (no empty button) while neither is known.
   const summary = [projectCode, showControls ? VIEW_LABEL[mode] : undefined].filter((p) => p !== undefined).join(' · ')
@@ -395,7 +396,12 @@ function FieldPiping({ projectId }: { projectId: string | null }) {
 export function PipingScreen({ variant }: { variant: 'admin' | 'gs' }) {
   // Keyed by the path's project, as KpiScreen is: another project mounts afresh on what the switch carried.
   const { projectId } = useParams()
-  return variant === 'admin'
-    ? <AdminPiping />
-    : <FieldPiping key={projectId} projectId={projectId ?? null} />
+  // The Insulation unit is the page's, so the export writes the one on screen (spec §10).
+  return (
+    <InsulationUnitProvider>
+      {variant === 'admin'
+        ? <AdminPiping />
+        : <FieldPiping key={projectId} projectId={projectId ?? null} />}
+    </InsulationUnitProvider>
+  )
 }

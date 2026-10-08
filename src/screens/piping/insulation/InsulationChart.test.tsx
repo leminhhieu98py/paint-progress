@@ -2,6 +2,7 @@ import { render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { CamPoint } from '../../../domain/piping/cam'
 import { palette } from '../../../theme'
+import { setViewport } from '../../../test/viewport'
 import { InsulationChart } from './InsulationChart'
 
 /**
@@ -38,7 +39,7 @@ vi.mock('recharts', async (importOriginal) => {
       captured.tooltip = props
       return null
     },
-    Legend: () => <div data-testid="legend" />,
+    Legend: (props: Record<string, unknown>) => <div data-testid="legend" data-layout={String(props.layout ?? '')} />,
     Line: (props: Record<string, unknown>) => (
       <div
         data-testid={`line-${String(props.dataKey)}`}
@@ -123,5 +124,16 @@ describe('InsulationChart (spec §6.4, Q20A)', () => {
     unmount()
     render(<InsulationChart data={many(61)} keys={[...ALL]} mode="day" />)
     expect(line('phActual')).toHaveAttribute('data-dot', 'false')
+  })
+  it('report: the whole range on the desktop layout with no Brush, from a phone too (spec §10)', () => {
+    const undo = setViewport(390)
+    try {
+      render(<InsulationChart data={WEEKS} keys={[...ALL]} mode="week" report />)
+      expect(screen.queryByTestId('brush')).toBeNull()
+      expect(screen.getByTestId('legend')).toHaveAttribute('data-layout', '')
+      expect(screen.getByTestId('insulation-chart').style.height).toBe('372px')
+    } finally {
+      undo()
+    }
   })
 })

@@ -33,9 +33,16 @@ const BUCKET_WORD: Record<ViewMode, string> = { day: 'theo ngày', week: 'theo t
  * that day's `DD/MM` and the tooltip names the bucket in full (`DD/MM/YYYY`,
  * or `DD/MM – DD/MM` for a week, Q6A). The caller keys this on the view so the
  * Brush's zoom does not survive a switch between days and weeks.
+ *
+ * `report` draws it for the Excel report (spec §10): the whole range with no
+ * Brush, on the desktop layout whatever the screen.
  */
-export function ReinstatementChart({ data, mode }: { data: ReinstatementPoint[]; mode: ViewMode }) {
-  const { legend, opacity, height, phone } = useLegendHighlight()
+export function ReinstatementChart({ data, mode, report = false }: {
+  data: ReinstatementPoint[]
+  mode: ViewMode
+  report?: boolean
+}) {
+  const { legend, opacity, height, phone } = useLegendHighlight({ desktop: report })
   const tooltips = useMemo(() => new Map(data.map((p) => [p.key, p.tooltip])), [data])
   const word = BUCKET_WORD[mode]
   return (
@@ -104,14 +111,16 @@ export function ReinstatementChart({ data, mode }: { data: ReinstatementPoint[];
             activeDot={ACTIVE_DOT}
             isAnimationActive={false}
           />
-          <Brush
-            dataKey="key"
-            height={22}
-            travellerWidth={8}
-            tickFormatter={(key: string) => formatDayMonth(String(key))}
-            stroke={palette.border}
-            fill={palette.bgSubtle}
-          />
+          {!report && (
+            <Brush
+              dataKey="key"
+              height={22}
+              travellerWidth={8}
+              tickFormatter={(key: string) => formatDayMonth(String(key))}
+              stroke={palette.border}
+              fill={palette.bgSubtle}
+            />
+          )}
         </ComposedChart>
       </ResponsiveContainer>
     </div>

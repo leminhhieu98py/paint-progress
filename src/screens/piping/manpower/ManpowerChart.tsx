@@ -47,13 +47,15 @@ const lapOf = (i: number) => Math.floor(i / palette.categorical.length)
 const planKey = (groupId: string) => `plan:${groupId}`
 const actualKey = (groupId: string) => `actual:${groupId}`
 
-export function ManpowerChart({ data, groups, mode }: {
+export function ManpowerChart({ data, groups, mode, report = false }: {
   data: ManpowerPoint[]
   /** The groups to draw, in order (`chartGroups`): their colours follow this order. */
   groups: ManpowerGroup[]
   mode: ViewMode
+  /** For the Excel report (spec §10): every bucket with no Brush, on the desktop layout whatever the screen. */
+  report?: boolean
 }) {
-  const { legend, opacity, height, phone } = useLegendHighlight()
+  const { legend, opacity, height, phone } = useLegendHighlight({ desktop: report })
   const tooltips = useMemo(() => new Map(data.map((p) => [p.key, p.tooltip])), [data])
   const rows = useMemo(
     () => data.map((p) => {
@@ -142,15 +144,17 @@ export function ManpowerChart({ data, groups, mode }: {
             activeDot={ACTIVE_DOT}
             isAnimationActive={false}
           />
-          <Brush
-            dataKey="key"
-            height={22}
-            travellerWidth={8}
-            startIndex={startIndex}
-            tickFormatter={(key: string) => formatDayMonth(String(key))}
-            stroke={palette.border}
-            fill={palette.bgSubtle}
-          />
+          {!report && (
+            <Brush
+              dataKey="key"
+              height={22}
+              travellerWidth={8}
+              startIndex={startIndex}
+              tickFormatter={(key: string) => formatDayMonth(String(key))}
+              stroke={palette.border}
+              fill={palette.bgSubtle}
+            />
+          )}
         </ComposedChart>
       </ResponsiveContainer>
     </div>
