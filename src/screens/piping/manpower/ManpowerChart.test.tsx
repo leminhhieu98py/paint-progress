@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ManpowerPoint } from '../../../domain/piping/manpower'
 import type { ManpowerGroup } from '../../../domain/piping/types'
 import { palette, tintColor } from '../../../theme'
+import { setViewport } from '../../../test/viewport'
 import { ManpowerChart } from './ManpowerChart'
 
 /**
@@ -46,7 +47,7 @@ vi.mock('recharts', async (importOriginal) => {
       captured.tooltip = props
       return null
     },
-    Legend: () => <div data-testid="legend" />,
+    Legend: (props: Record<string, unknown>) => <div data-testid="legend" data-layout={String(props.layout ?? '')} />,
     Bar: (props: Record<string, unknown>) => (
       <div
         data-testid="bar"
@@ -180,5 +181,19 @@ describe('ManpowerChart (spec §5)', () => {
     expect(format(null)).toBe('-')
     const yTick = captured.yAxis?.tickFormatter as (v: number) => string
     expect(yTick(1800)).toBe('1.800')
+  })
+  it('report: every day of a long range on the desktop layout with no Brush, from a phone too (spec §10)', () => {
+    const undo = setViewport(390)
+    try {
+      render(<ManpowerChart data={days(120)} groups={GROUPS} mode="day" report />)
+      expect(screen.queryByTestId('brush')).toBeNull()
+      expect(captured.brush).toBeNull()
+      expect(captured.data).toHaveLength(120)
+      expect(captured.yAxis?.width).toBe(56)
+      expect(screen.getByTestId('legend')).toHaveAttribute('data-layout', '')
+      expect(screen.getByTestId('manpower-chart').style.height).toBe('372px')
+    } finally {
+      undo()
+    }
   })
 })

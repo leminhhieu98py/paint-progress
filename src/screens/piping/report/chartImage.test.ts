@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { renderChartPng, svgMarkup } from './chartImage'
+import { chartElement, renderChartPng, svgMarkup } from './chartImage'
 
 /**
  * jsdom lays nothing out and has no canvas: what is checked here is the SVG
@@ -15,7 +15,7 @@ afterEach(() => {
 })
 
 describe('svgMarkup', () => {
-  it('inlines the computed styles, fixes the size and leaves the Brush out', () => {
+  it('inlines the computed styles and fixes the size', () => {
     const style = document.createElement('style')
     style.textContent = '.bar { fill: rgb(1, 2, 3); } text { font-family: Inter; }'
     document.head.appendChild(style)
@@ -25,10 +25,7 @@ describe('svgMarkup', () => {
     bar.setAttribute('class', 'bar')
     const label = document.createElementNS(SVG_NS, 'text')
     label.textContent = '01/10'
-    const brush = document.createElementNS(SVG_NS, 'g')
-    brush.setAttribute('class', 'recharts-layer recharts-brush')
-    brush.appendChild(document.createElementNS(SVG_NS, 'rect'))
-    svg.append(bar, label, brush)
+    svg.append(bar, label)
     document.body.appendChild(svg)
 
     const markup = svgMarkup(svg, { width: 1000, height: 380 })
@@ -38,12 +35,19 @@ describe('svgMarkup', () => {
     expect(root.namespaceURI).toBe(SVG_NS)
     expect(root.getAttribute('width')).toBe('1000')
     expect(root.getAttribute('height')).toBe('380')
-    expect(root.querySelector('.recharts-brush')).toBeNull()
     expect(root.querySelector('.bar')?.getAttribute('style')).toContain('fill:rgb(1, 2, 3)')
     expect(root.querySelector('text')?.getAttribute('style')).toContain('font-family:Inter')
     // The page's own SVG is untouched.
-    expect(svg.querySelector('.recharts-brush')).not.toBeNull()
     expect(bar.getAttribute('style')).toBeNull()
+  })
+})
+
+describe('chartElement', () => {
+  it('draws each chart in report mode: the whole range, no Brush, the desktop layout', () => {
+    expect(chartElement({ kind: 'reinstatement', data: [], mode: 'day' }).props).toMatchObject({ report: true, mode: 'day' })
+    expect(chartElement({ kind: 'manpower', data: [], groups: [], mode: 'week' }).props).toMatchObject({ report: true, mode: 'week' })
+    expect(chartElement({ kind: 'insulation', data: [], keys: ['phActual'], mode: 'day' }).props)
+      .toMatchObject({ report: true, keys: ['phActual'] })
   })
 })
 

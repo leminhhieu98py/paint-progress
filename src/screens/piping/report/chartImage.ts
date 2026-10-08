@@ -18,8 +18,8 @@ import { ManpowerChart } from '../manpower/ManpowerChart'
  *
  * Recharts draws its legend in HTML beside the SVG: every SVG in the chart
  * (the plot and the legend's markers) is drawn at its own place, and the
- * legend's labels are written with the canvas's text. The Brush, a control,
- * is left out of the picture.
+ * legend's labels are written with the canvas's text. The charts render in
+ * report mode, so the picture has the whole range and no Brush.
  *
  * Isolated here so the report and the export action are tested without a
  * canvas (jsdom has none); a failure rejects, and the caller writes
@@ -38,14 +38,15 @@ const SCALE = 2
 /** How long the chart may take to lay out before the render counts as failed. */
 const LAYOUT_TIMEOUT_MS = 3000
 
-function chartElement(spec: ChartSpec): ReactElement {
+/** The page's chart in report mode: the whole range, no Brush, the desktop layout. Exported for its test. */
+export function chartElement(spec: ChartSpec): ReactElement {
   switch (spec.kind) {
     case 'reinstatement':
-      return createElement(ReinstatementChart, { data: spec.data, mode: spec.mode })
+      return createElement(ReinstatementChart, { data: spec.data, mode: spec.mode, report: true })
     case 'manpower':
-      return createElement(ManpowerChart, { data: spec.data, groups: spec.groups, mode: spec.mode })
+      return createElement(ManpowerChart, { data: spec.data, groups: spec.groups, mode: spec.mode, report: true })
     case 'insulation':
-      return createElement(InsulationChart, { data: spec.data, keys: spec.keys, mode: spec.mode })
+      return createElement(InsulationChart, { data: spec.data, keys: spec.keys, mode: spec.mode, report: true })
   }
 }
 
@@ -58,8 +59,8 @@ const INLINED = [
 
 /**
  * One SVG of the chart as standalone markup: a deep copy with the computed
- * styles inlined, its size fixed to what it measures on screen, the Brush
- * removed. Exported for its test.
+ * styles inlined, its size fixed to what it measures on screen. Exported for
+ * its test.
  */
 export function svgMarkup(svg: SVGSVGElement, size: { width: number; height: number }): string {
   const clone = svg.cloneNode(true) as SVGSVGElement
@@ -74,7 +75,6 @@ export function svgMarkup(svg: SVGSVGElement, size: { width: number; height: num
       .join(';')
     if (style !== '') (copies[i] as Element).setAttribute('style', style)
   })
-  for (const brush of clone.querySelectorAll('.recharts-brush')) brush.remove()
   // No xmlns attribute: the serialiser writes the SVG namespace of the element itself, and a second one is not XML.
   clone.setAttribute('width', String(size.width))
   clone.setAttribute('height', String(size.height))
