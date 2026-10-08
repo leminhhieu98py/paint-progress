@@ -1,5 +1,5 @@
 import {
-  actualDates, MILESTONE_LABEL, MILESTONES, orderMessage, orderViolations, spoolKey, type ActualChange,
+  ACTUAL_FIELD, actualDates, MILESTONE_LABEL, MILESTONES, orderMessage, orderViolations, spoolKey, type ActualChange,
 } from '../../../domain/piping/cam'
 import { compareText } from '../../../domain/piping/text'
 import type { DayKey, Milestone, Spool } from '../../../domain/piping/types'
@@ -12,6 +12,11 @@ import type { SpoolActualResult, SpoolActualStatus } from '../../../lib/pipingAp
  * the spools' terms: the stored date each overwrite replaces, why a spool is
  * skipped. The screen never decides on its own what is saved.
  */
+
+/** The milestones of a spool that hold an actual date, PH, IH, IW order: what Xoá Actual can clear (R-12). */
+export function setMilestones(spool: Spool): Milestone[] {
+  return MILESTONES.filter((m) => spool[ACTUAL_FIELD[m]] !== null)
+}
 
 /** What a manual entry applies to: one SpoolNo (every spool carrying it, R-11), a line, a package. */
 export type TargetKind = 'spool' | 'line' | 'package'

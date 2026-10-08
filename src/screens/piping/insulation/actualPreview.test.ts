@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { ActualChange } from '../../../domain/piping/cam'
 import type { Spool } from '../../../domain/piping/types'
 import type { SpoolActualResult } from '../../../lib/pipingApi'
-import { actualPreview, changesToWrite, targetSpools, targetValues } from './actualPreview'
+import { actualPreview, changesToWrite, setMilestones, targetSpools, targetValues } from './actualPreview'
 
 const spool = (seq: number, over: Partial<Spool> = {}): Spool => ({
   id: `s${seq}`, seq, spoolNo: `SP-${seq}`, lineNo: 'L1', insuType: null, drawingNo: null, testPackageNo: 'TP1',
@@ -66,5 +66,12 @@ describe('actualPreview', () => {
   it('writes the saved spools, and the overwritten ones only when confirmed', () => {
     expect(changesToWrite(changes, results, false).map((c) => c.spoolId)).toEqual(['s1'])
     expect(changesToWrite(changes, results, true).map((c) => c.spoolId)).toEqual(['s1', 's2'])
+  })
+})
+
+describe('setMilestones', () => {
+  it('lists the milestones holding an actual date, PH, IH, IW order', () => {
+    expect(setMilestones(spool(1))).toEqual([])
+    expect(setMilestones(spool(2, { iwActual: '2026-10-03', phActual: '2026-10-01' }))).toEqual(['ph', 'iw'])
   })
 })
