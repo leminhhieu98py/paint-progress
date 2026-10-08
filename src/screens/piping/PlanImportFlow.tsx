@@ -34,6 +34,8 @@ export interface PlanDiffLine {
   from: string | null
   /** The file's value; null when removed. */
   to: string | null
+  /** A badge beside the label, e.g. `có Actual` on a removed spool that carries actual dates. */
+  flag?: string
 }
 
 /** What a confirmed import would change, as the caller's diff counts it. */
@@ -45,6 +47,12 @@ export interface PlanImportPreview {
   lines: PlanDiffLine[]
   /** Anything else the confirm does that the admin must know, one sentence each. */
   consequences?: string[]
+  /**
+   * What the confirm destroys beyond the plan itself (spools deleted with
+   * their actuals), one sentence each, said in the danger tone; the confirm
+   * button turns danger too.
+   */
+  dangers?: string[]
 }
 
 export interface PlanImportFlowProps<R> {
@@ -222,7 +230,15 @@ export function PlanImportFlow<R>({
         {...modalProps}
         footer={[
           <Button key="cancel" disabled={saving} onClick={close}>Huỷ</Button>,
-          <Button key="ok" type="primary" loading={saving} onClick={() => void confirm()}>Thay thế Plan</Button>,
+          <Button
+            key="ok"
+            type="primary"
+            danger={step?.kind === 'preview' && (step.preview.dangers?.length ?? 0) > 0}
+            loading={saving}
+            onClick={() => void confirm()}
+          >
+            Thay thế Plan
+          </Button>,
         ]}
       >
         {step?.kind === 'preview' && (
@@ -268,7 +284,17 @@ export function PlanImportFlow<R>({
                       <StatusPill tone={CHANGE[change].tone}>{CHANGE[change].label}</StatusPill>
                     ),
                   },
-                  { title: lineHeader, dataIndex: 'label', align: lineAlign },
+                  {
+                    title: lineHeader,
+                    dataIndex: 'label',
+                    align: lineAlign,
+                    render: (label: string, line: PlanDiffLine) => (line.flag === undefined ? label : (
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: space.sm, flexWrap: 'wrap' }}>
+                        {label}
+                        <StatusPill tone="warn">{line.flag}</StatusPill>
+                      </span>
+                    )),
+                  },
                   { title: 'Cũ', dataIndex: 'from', align: 'center', render: (v: string | null) => v ?? MISSING },
                   { title: 'Mới', dataIndex: 'to', align: 'center', render: (v: string | null) => v ?? MISSING },
                 ]}
@@ -291,6 +317,9 @@ export function PlanImportFlow<R>({
             >
               <li>{`${planLabel} hiện tại được thay toàn bộ bằng ${COUNT.format(countFileRows ? countFileRows(step.parsed.rows) : step.parsed.rows.length)} dòng của file.`}</li>
               {(step.preview.consequences ?? []).map((c) => <li key={c}>{c}</li>)}
+              {(step.preview.dangers ?? []).map((c) => (
+                <li key={c} style={{ ...type.bodyStrong, color: palette.error }}>{c}</li>
+              ))}
               <li>Lần import được ghi vào lịch sử import.</li>
             </ul>
           </div>

@@ -102,6 +102,32 @@ describe('PlanImportFlow', () => {
     expect(onImported).toHaveBeenCalled()
   })
 
+  it('flags a line and says the caller dangers in the danger tone, with a danger confirm', async () => {
+    renderFlow({
+      preview: () => ({
+        added: 0, changed: 0, removed: 1, unchanged: 0,
+        lines: [{ key: 'r', change: 'removed', label: 'SP-2', from: 'L1', to: null, flag: 'có Actual' }],
+        consequences: ['1 spool không có trong file bị xoá.'],
+        dangers: ['1 spool bị xoá cùng ngày Actual đã nhập: SP-2.'],
+      }),
+    })
+    await pick()
+    const dialog = await screen.findByRole('dialog')
+    const row = within(dialog).getByText('SP-2').closest('tr') as HTMLElement
+    expect(within(row).getByText('có Actual')).toBeInTheDocument()
+    const danger = within(within(dialog).getByRole('list', { name: 'Hệ quả' }))
+      .getByText('1 spool bị xoá cùng ngày Actual đã nhập: SP-2.')
+    expect(danger).toHaveStyle({ color: '#B42318' })
+    expect(within(dialog).getByRole('button', { name: /Thay thế Plan/ })).toHaveClass('ant-btn-dangerous')
+  })
+
+  it('keeps the confirm plain when there is no danger', async () => {
+    renderFlow()
+    await pick()
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByRole('button', { name: /Thay thế Plan/ })).not.toHaveClass('ant-btn-dangerous')
+  })
+
   it('refuses a file with no data rows as an error and writes nothing', async () => {
     const props = renderFlow({ parse: () => parsedOf([]) })
     await pick()
