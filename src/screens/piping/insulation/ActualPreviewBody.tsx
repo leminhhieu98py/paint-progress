@@ -9,6 +9,7 @@ import type { DayKey, Milestone } from '../../../domain/piping/types'
 import { formatDayMonthYear } from '../../../domain/piping/week'
 import { MISSING } from '../../../lib/format'
 import { palette, space } from '../../../theme'
+import { useFieldPhone } from '../../gs/fieldSections'
 import { capList } from '../listCap'
 import { formatQty } from '../pipingFormat'
 import type { ActualOverwriteLine, ActualPreview, ActualSkipLine } from './actualPreview'
@@ -28,6 +29,8 @@ export function ActualPreviewBody({ preview, overwrite, onOverwrite, warnings = 
   error?: string | null
 }) {
   const type = useTypeScale()
+  /** On a phone the SpoolNo stays in view while the rest scrolls under it (MOB-01). */
+  const pin = useFieldPhone() ? ('left' as const) : undefined
   const dateCell = (d: DayKey | null) => (d === null ? MISSING : formatDayMonthYear(d))
   const notes = capList(warnings)
   return (
@@ -77,8 +80,9 @@ export function ActualPreviewBody({ preview, overwrite, onOverwrite, warnings = 
               rowKey="key"
               dataSource={preview.overwrites}
               pagination={tablePagination(preview.overwrites.length)}
+              scroll={{ x: 'max-content' }}
               columns={[
-                { title: 'SpoolNo', dataIndex: 'spoolNo' },
+                { title: 'SpoolNo', dataIndex: 'spoolNo', fixed: pin },
                 {
                   title: 'Mốc',
                   dataIndex: 'milestone',
