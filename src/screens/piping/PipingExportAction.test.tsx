@@ -184,6 +184,30 @@ describe('PipingExportAction (spec §10)', () => {
     expect(renderChartPng.mock.calls[2][0].keys).toEqual(['phActual', 'ihActual', 'iwActual'])
   })
 
+  it('on a field phone, keeps the ⋯ menu in place with the item disabled while the page has no panel', async () => {
+    setViewport(390)
+    renderApp(<PipingExportAction panel={null} variant="gs" />)
+    await userEvent.click(screen.getByRole('button', { name: 'Thêm thao tác' }))
+    const item = await screen.findByRole('menuitem', { name: /Xuất báo cáo/ })
+    expect(item).toHaveAttribute('aria-disabled', 'true')
+  })
+
+  it('on a field phone, disables the ⋯ item while an export runs', async () => {
+    setViewport(390)
+    let finish: (b: Blob) => void = () => {}
+    buildPipingReport.mockReturnValue(new Promise<Blob>((resolve) => { finish = resolve }))
+    renderApp(<PipingExportAction panel={fieldPanel('gs')} variant="gs" />)
+    await userEvent.click(screen.getByRole('button', { name: 'Thêm thao tác' }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: /Xuất báo cáo/ }))
+    await waitFor(() => expect(buildPipingReport).toHaveBeenCalledTimes(1))
+    // The item's click closed the menu; opened again, it shows the export running.
+    expect(screen.getByRole('button', { name: 'Thêm thao tác' })).toHaveAttribute('aria-expanded', 'false')
+    await userEvent.click(screen.getByRole('button', { name: 'Thêm thao tác' }))
+    expect(await screen.findByRole('menuitem', { name: /Xuất báo cáo/ })).toHaveAttribute('aria-disabled', 'true')
+    finish(BLOB)
+    await waitFor(() => expect(downloadWorkbook).toHaveBeenCalledTimes(1))
+  })
+
   it('on a phone, a field user finds it in one ⋯ menu with its icon and text (GS-09)', async () => {
     setViewport(390)
     renderApp(<PipingExportAction panel={fieldPanel('gs')} />)

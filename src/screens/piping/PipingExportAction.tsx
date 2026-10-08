@@ -95,7 +95,11 @@ async function exportReport(panel: PipingPanelProps, { unit, selection }: Insula
   downloadWorkbook(blob, pipingReportFileName(project.code, todayKey))
 }
 
-export function PipingExportAction({ panel }: { panel: PipingPanelProps | null }) {
+export function PipingExportAction({ panel, variant }: {
+  panel: PipingPanelProps | null
+  /** The page's variant, known before its panel: the field phone's ⋯ menu keeps its place while loading. */
+  variant?: PipingPanelProps['variant']
+}) {
   const { message } = App.useApp()
   const phone = useFieldPhone()
   const unit = useInsulationUnitValue(panel?.projectId ?? null)
@@ -120,7 +124,7 @@ export function PipingExportAction({ panel }: { panel: PipingPanelProps | null }
     }
   }
 
-  if (phone && panel?.variant === 'gs') {
+  if (phone && (variant ?? panel?.variant) === 'gs') {
     return (
       <Dropdown
         trigger={['click']}
@@ -132,7 +136,7 @@ export function PipingExportAction({ panel }: { panel: PipingPanelProps | null }
             key: 'report',
             icon: busy ? <LoadingOutlined aria-hidden /> : <FileExcelOutlined aria-hidden />,
             label: LABEL,
-            disabled: busy,
+            disabled: busy || panel === null,
             onClick: () => { void run() },
           }],
         }}

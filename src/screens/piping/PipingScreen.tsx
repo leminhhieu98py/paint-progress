@@ -222,7 +222,7 @@ function AdminPiping() {
           <FilterBar>
             <ProjectSelect projects={projects} value={projectId} onChange={chooseProject} />
             {showControls && <ViewToggle value={mode} onChange={setMode} disabled={panel === null} />}
-            {showControls && <BarEnd><PipingExportAction panel={panel} /></BarEnd>}
+            {showControls && <BarEnd><PipingExportAction panel={panel} variant="admin" /></BarEnd>}
           </FilterBar>
         )}
       />
@@ -352,7 +352,7 @@ function FieldPiping({ projectId }: { projectId: string | null }) {
   const toggle = (block: boolean) => showControls && (
     <ViewToggle value={mode} onChange={setMode} block={block} disabled={panel === null} />
   )
-  const exportAction = showControls && <PipingExportAction panel={panel} />
+  const exportAction = showControls && <PipingExportAction panel={panel} variant="gs" />
   // FLT-04: what is applied, in one line -- the project's code, then the view once the module is shown;
   // nothing (no empty button) while neither is known.
   const summary = [projectCode, showControls ? VIEW_LABEL[mode] : undefined].filter((p) => p !== undefined).join(' · ')
