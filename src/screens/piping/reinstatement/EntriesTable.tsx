@@ -57,6 +57,8 @@ export function EntriesTable({ projectId, entries, totalTestPacks, todayKey, can
   /** On a phone the day stays in view while the rest scrolls under it (MOB-01). */
   const pin = useFieldPhone() ? ('left' as const) : undefined
   const rows = useMemo(() => [...entries].sort(newestFirst), [entries])
+  /** A day's first (newest) entry: the one row of the day that carries `dayExtra`. */
+  const firstOfDay = useMemo(() => new Set(rows.filter((r, i) => i === 0 || rows[i - 1].day !== r.day).map((r) => r.id)), [rows])
   const pagination = useTablePagination(rows.length, projectId)
   const [editing, setEditing] = useState<ReinstatementEntry | null>(null)
   const [removing, setRemoving] = useState<ReinstatementEntry | null>(null)
@@ -95,10 +97,10 @@ export function EntriesTable({ projectId, entries, totalTestPacks, todayKey, can
               dataIndex: 'day',
               align: 'center',
               fixed: pin,
-              render: (day: DayKey) => (
+              render: (day: DayKey, row: ReinstatementEntry) => (
                 <>
                   {formatDayMonthYear(day)}
-                  {dayExtra?.(day)}
+                  {firstOfDay.has(row.id) && dayExtra?.(day)}
                 </>
               ),
             },

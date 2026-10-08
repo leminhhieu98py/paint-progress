@@ -485,6 +485,20 @@ describe('ReinstatementPanel: admin notes (spec §9)', () => {
     expect(within(drawer).queryByText('Ghi chú Manpower')).toBeNull()
   })
 
+  it('puts one note button on a day with several entries, on its first row', async () => {
+    api.listNotes.mockResolvedValue([NOTE])
+    api.listReinstatementEntries.mockResolvedValue([
+      ...ENTRIES, entry({ id: 'e3', day: '2026-10-03', qty: 5, createdAt: '2026-10-03T08:00:00Z' }),
+    ])
+    renderPanel()
+    await loaded()
+    const rows = dataRows()
+    expect(rows).toHaveLength(3)
+    expect(await within(rows[0]).findByRole('button', { name: 'Ghi chú (1)' })).toBeInTheDocument()
+    expect(within(rows[1]).queryByRole('button', { name: /Ghi chú/ })).toBeNull()
+    expect(screen.getAllByRole('button', { name: /^Ghi chú/ })).toHaveLength(2)
+  })
+
   it('adds a note on a day and reads the notes again', async () => {
     api.addNote.mockResolvedValue(NOTE)
     renderPanel()
