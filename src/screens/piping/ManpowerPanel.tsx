@@ -98,7 +98,7 @@ const average = (n: number | null) => (n === null ? MISSING : formatQty(n))
 const AVERAGE_INFO = 'Mỗi nhóm lấy trung bình các ngày có số liệu đến hôm nay, rồi cộng các nhóm'
 
 export function ManpowerPanel({ projectId, settings, mode, role, todayKey, refreshKey }: PipingPanelProps) {
-  const { data, error, reload } = usePanelData(projectId, refreshKey, readManpower)
+  const { data, error, loading, reload } = usePanelData(projectId, refreshKey, readManpower)
   const admin = role === 'admin'
   const [day, setDay] = useState<DayKey | null>(todayKey)
   const formRef = useRef<HTMLDivElement>(null)
@@ -175,7 +175,10 @@ export function ManpowerPanel({ projectId, settings, mode, role, todayKey, refre
         ) : undefined}
       >
         {series.length === 0
-          ? <EmptyState title="Chưa có Plan hoặc nhân lực Manpower" />
+          // An empty answer is not the last word while a re-read runs (after an import or a save).
+          ? (loading
+            ? <Spin style={{ display: 'block', margin: `${space.xxl}px auto` }} />
+            : <EmptyState title="Chưa có Plan hoặc nhân lực Manpower" />)
           // Keyed on the view: the Brush's zoom belongs to one axis, not to the next.
           : <ManpowerChart key={mode} data={series} groups={drawn} mode={mode} />}
       </SectionCard>

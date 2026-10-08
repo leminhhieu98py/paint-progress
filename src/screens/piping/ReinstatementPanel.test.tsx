@@ -1,3 +1,4 @@
+import { App as AntApp } from 'antd'
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -166,6 +167,21 @@ describe('ReinstatementPanel: summary and chart (spec §4)', () => {
     renderPanel()
     expect(await screen.findByText('Chưa có Plan hoặc số lượng Reinstatement')).toBeInTheDocument()
     expect(screen.queryByTestId('reinstatement-chart')).toBeNull()
+  })
+
+  it('never shows the empty state while the data is read again, until the new read answers', async () => {
+    api.listReinstatementPlan.mockResolvedValue([])
+    api.listReinstatementEntries.mockResolvedValue([])
+    const { rerender } = renderPanel()
+    expect(await screen.findByText('Chưa có Plan hoặc số lượng Reinstatement')).toBeInTheDocument()
+    let resolve: (plan: typeof PLAN) => void = () => {}
+    api.listReinstatementPlan.mockReturnValue(new Promise<typeof PLAN>((r) => { resolve = r }))
+    // Wrapped as renderApp wraps it, so the panel keeps its state and reads again.
+    rerender(<AntApp><ReinstatementPanel {...props({ refreshKey: 1 })} /></AntApp>)
+    await waitFor(() => expect(api.listReinstatementPlan).toHaveBeenCalledTimes(2))
+    expect(screen.queryByText('Chưa có Plan hoặc số lượng Reinstatement')).toBeNull()
+    resolve(PLAN)
+    expect(await screen.findByTestId('reinstatement-chart')).toBeInTheDocument()
   })
 
   it('says a failed read and retries it', async () => {

@@ -87,7 +87,7 @@ function planPreview(stored: ReinstatementPlanRow[], next: ReinstatementPlanRow[
 }
 
 export function ReinstatementPanel({ projectId, settings, mode, role, todayKey, refreshKey }: PipingPanelProps) {
-  const { data, error, reload } = usePanelData(projectId, refreshKey, readReinstatement)
+  const { data, error, loading, reload } = usePanelData(projectId, refreshKey, readReinstatement)
   const admin = role === 'admin'
   const total = settings.totalTestPacks
 
@@ -140,7 +140,10 @@ export function ReinstatementPanel({ projectId, settings, mode, role, todayKey, 
         ) : undefined}
       >
         {series.length === 0
-          ? <EmptyState title="Chưa có Plan hoặc số lượng Reinstatement" />
+          // An empty answer is not the last word while a re-read runs (after an import or a save).
+          ? (loading
+            ? <Spin style={{ display: 'block', margin: `${space.xxl}px auto` }} />
+            : <EmptyState title="Chưa có Plan hoặc số lượng Reinstatement" />)
           // Keyed on the view: the Brush's zoom belongs to one axis, not to the next.
           : <ReinstatementChart key={mode} data={series} mode={mode} />}
       </SectionCard>

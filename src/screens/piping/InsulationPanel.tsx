@@ -103,7 +103,7 @@ function reviewFacts(spools: Spool[]): KeyFact[] {
 }
 
 export function InsulationPanel({ projectId, settings, mode, role, todayKey, refreshKey }: PipingPanelProps) {
-  const { data, error, reload } = usePanelData(projectId, refreshKey, readInsulation)
+  const { data, error, loading, reload } = usePanelData(projectId, refreshKey, readInsulation)
   const admin = role === 'admin'
   const fullOptionsProps = useFullOptionsProps()
   const phone = useFieldPhone()
@@ -202,6 +202,8 @@ export function InsulationPanel({ projectId, settings, mode, role, todayKey, ref
   ) : undefined
 
   if (data.spools.length === 0) {
+    // An empty answer is not the last word while a re-read runs (after an import): no flash of the empty state.
+    if (loading) return <Spin style={{ display: 'block', margin: '15vh auto' }} />
     return (
       <SectionCard title="Insulation">
         <EmptyState
@@ -261,7 +263,9 @@ export function InsulationPanel({ projectId, settings, mode, role, todayKey, ref
       >
         {phone && <div style={{ marginBottom: space.md }}><ControlRow>{controls}</ControlRow></div>}
         {series.length === 0
-          ? <EmptyState title="Chưa có ngày Plan hoặc Actual" />
+          ? (loading
+            ? <Spin style={{ display: 'block', margin: `${space.xxl}px auto` }} />
+            : <EmptyState title="Chưa có ngày Plan hoặc Actual" />)
           // Keyed on what shapes the axis: the Brush's zoom (its start index) belongs to one axis, not to the next.
           : (
             <InsulationChart

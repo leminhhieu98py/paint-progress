@@ -146,6 +146,22 @@ describe('Insulation: Plan import (spec §6.2, §8, R-10, Q19A)', () => {
     expect(screen.getByRole('button', { name: /Nhập Plan/ })).toBeInTheDocument()
   })
 
+  it('never shows the empty state while the spools are read again after the first import', async () => {
+    api.listSpools.mockResolvedValue([])
+    read.mockResolvedValue(sheet([PLAN_HEADER, planRow('SP-1', '2026-10-01')]))
+    renderPanel()
+    expect(await screen.findByText('Chưa có spool nào')).toBeInTheDocument()
+    await pick(/Nhập Plan/, 'plan.xlsx')
+    const box = await dialog()
+    let resolve: (spools: Spool[]) => void = () => {}
+    api.listSpools.mockReturnValue(new Promise<Spool[]>((r) => { resolve = r }))
+    await userEvent.click(within(box).getByRole('button', { name: /Thay thế Plan/ }))
+    await waitFor(() => expect(api.listSpools).toHaveBeenCalledTimes(3))
+    expect(screen.queryByText('Chưa có spool nào')).toBeNull()
+    resolve(SPOOLS)
+    await ready()
+  })
+
   it('downloads the template with the extra columns', async () => {
     renderPanel()
     await ready()
