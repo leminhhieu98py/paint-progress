@@ -275,7 +275,7 @@ transaction (returns the spools changed) -- so no value ever outlives its
 column or resurfaces under a later one; and `piping_reorder(project, 'group' |
 'column', ids)` writes `sort` 1..n in one statement, refusing a list that is
 not exactly the project's current rows. A label equal to a built-in spool
-header is refused by the client, which owns that list. Its `do $$ ... $$` block
+header is refused by the app (admin UI); the database does not enforce it. Its `do $$ ... $$` block
 checks the shape, grants and caller check of all three and calls each with no
 caller to prove the 42501. Purely additive; changes nothing `0038` created. The
 owner-run case is the `0039:` test at the end of the `0038: piping` describe.
