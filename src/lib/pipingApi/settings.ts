@@ -1,8 +1,11 @@
-import type { DayKey, PipingSettings } from '../../domain/piping/types'
+import type { DayKey } from '../../domain/piping/types'
 import { supabase } from '../supabase'
 import { callRpc, isDayKey, requireRows, toError } from './shared'
 
 /** Piping per project: read, enable, change, disable (spec §2, 0038 piping_settings / piping_enable). */
+
+// The read lives on its own so the field pages load it without the admin's writers.
+export { getPipingSettings } from './settingsRead'
 
 /** What the admin types when enabling, and later in Cấu hình. */
 export interface PipingSettingsInput {
@@ -13,30 +16,6 @@ export interface PipingSettingsInput {
 }
 
 const MAX_INT = 2_147_483_647
-
-const SETTINGS_SELECT = 'project_id, enabled, week_start_date, total_test_packs, late_threshold_days'
-
-/**
- * The project's settings, or null when Piping was never enabled for it. A
- * disabled project still has its row (`enabled: false`; data is kept).
- */
-export async function getPipingSettings(projectId: string): Promise<PipingSettings | null> {
-  const { data, error } = await supabase
-    .from('piping_settings')
-    .select(SETTINGS_SELECT)
-    .eq('project_id', projectId)
-    .maybeSingle()
-  if (error) throw toError(error)
-  if (!data) return null
-  const r = data as Record<string, unknown>
-  return {
-    projectId: r.project_id as string,
-    enabled: r.enabled === true,
-    weekStartDate: r.week_start_date as string,
-    totalTestPacks: r.total_test_packs === null || r.total_test_packs === undefined ? null : Number(r.total_test_packs),
-    lateThresholdDays: Number(r.late_threshold_days),
-  }
-}
 
 /**
  * The same rules the table's CHECKs and piping_enable hold, in the

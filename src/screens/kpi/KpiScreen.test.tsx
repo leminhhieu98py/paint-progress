@@ -30,7 +30,7 @@ vi.mock('../../lib/projectsApi', () => ({
   listProjectNames: () => listProjectNames(),
 }))
 // The field header asks whether the project has Piping (piping spec §2, R-1): none here.
-vi.mock('../../lib/pipingApi/settings', () => ({
+vi.mock('../../lib/pipingApi/settingsRead', () => ({
   getPipingSettings: () => Promise.resolve(null),
 }))
 vi.mock('../../lib/kpiApi', () => ({

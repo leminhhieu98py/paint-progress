@@ -1,8 +1,8 @@
 import { useEffect, useSyncExternalStore } from 'react'
 import type { PipingSettings } from '../../domain/piping/types'
-// The settings module, not the barrel: the field header is in every field
-// page's chunk, and the rest of the Piping API has no business there.
-import { getPipingSettings } from '../../lib/pipingApi/settings'
+// The settings read alone, not the barrel nor the writers: the field header is
+// in every field page's chunk, and the rest of the Piping API has no business there.
+import { getPipingSettings } from '../../lib/pipingApi/settingsRead'
 import { onSessionEnd } from '../../lib/sessionCache'
 
 /**

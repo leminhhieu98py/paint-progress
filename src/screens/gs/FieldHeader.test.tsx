@@ -19,7 +19,7 @@ vi.mock('../../lib/gsApi', () => ({
 }))
 // Whether the project has Piping (spec §2, R-1): the header shows the tab only then.
 const getPipingSettings = vi.hoisted(() => vi.fn())
-vi.mock('../../lib/pipingApi/settings', () => ({
+vi.mock('../../lib/pipingApi/settingsRead', () => ({
   getPipingSettings: (projectId: string) => getPipingSettings(projectId),
 }))
 // react-router's navigate, so a test can see where the project switch and the

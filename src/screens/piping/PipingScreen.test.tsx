@@ -21,7 +21,7 @@ const api = vi.hoisted(() => ({
   enablePiping: vi.fn(),
 }))
 // The settings read comes from its own module (pipingEnabled keeps the field chunks small).
-vi.mock('../../lib/pipingApi/settings', () => ({
+vi.mock('../../lib/pipingApi/settingsRead', () => ({
   getPipingSettings: (id: string) => api.getPipingSettings(id),
 }))
 vi.mock('../../lib/pipingApi', () => ({
