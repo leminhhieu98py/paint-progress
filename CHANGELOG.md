@@ -10,11 +10,11 @@ own branch, verified against the development Supabase project, and deployed to
 production by the owner. **Database migrations are listed per release and must
 reach production before the app that needs them.**
 
-## [Unreleased]
+## [2.0.0] - 2026-10-08
 
 The Piping module (Linh's "Quản lý piping"): Reinstatement, Manpower and CAM
-Insulation per project, Plan against Actual by day or by week. **Two database
-migrations, `0038_piping` then `0039_piping_rename_column`, must reach
+Insulation per project, Plan against Actual by day or by week. **Three database
+migrations, `0038_piping`, `0039_piping_rename_column` and `0040_piping_column_functions_reapply`, must reach
 production before this app**: field pages read `piping_settings` to decide
 whether to show the Piping tab (a missing table only hides the tab).
 
@@ -721,6 +721,7 @@ Level Security.
 
 Production runs its own Supabase project, created empty.
 
+[2.0.0]: https://github.com/leminhhieu98py/paint-progress/compare/v1.9.2...v2.0.0
 [1.9.2]: https://github.com/leminhhieu98py/paint-progress/compare/v1.9.1...v1.9.2
 [1.9.1]: https://github.com/leminhhieu98py/paint-progress/compare/v1.9.0...v1.9.1
 [1.9.0]: https://github.com/leminhhieu98py/paint-progress/compare/v1.8.0...v1.9.0
