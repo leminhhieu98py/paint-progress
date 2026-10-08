@@ -180,7 +180,11 @@ export function ManpowerPanel({ projectId, settings, mode, role, todayKey, refre
           : <ManpowerChart key={mode} data={series} groups={drawn} mode={mode} />}
       </SectionCard>
 
-      <SectionCard title="Nhân lực đã nhập" facts={[{ value: formatQty(actualDays), label: 'ngày' }]}>
+      <SectionCard
+        title="Nhân lực đã nhập"
+        facts={[{ value: formatQty(actualDays), label: 'ngày' }]}
+        extra={notes.byDay?.('manpower_day', 'Manpower', todayKey)}
+      >
         <div style={{ display: 'flex', flexDirection: 'column', gap: space.md }}>
           {role !== 'viewer' && (
             <div ref={formRef}>

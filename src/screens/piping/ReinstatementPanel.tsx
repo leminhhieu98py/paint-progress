@@ -145,7 +145,11 @@ export function ReinstatementPanel({ projectId, settings, mode, role, todayKey, 
           : <ReinstatementChart key={mode} data={series} mode={mode} />}
       </SectionCard>
 
-      <SectionCard title="Số lượng đã nhập" facts={[{ value: formatQty(data.entries.length), label: 'lần nhập' }]}>
+      <SectionCard
+        title="Số lượng đã nhập"
+        facts={[{ value: formatQty(data.entries.length), label: 'lần nhập' }]}
+        extra={notes.byDay?.('reinstatement_day', 'Reinstatement', todayKey)}
+      >
         <div style={{ display: 'flex', flexDirection: 'column', gap: space.md }}>
           {role !== 'viewer' && (
             <EntryForm

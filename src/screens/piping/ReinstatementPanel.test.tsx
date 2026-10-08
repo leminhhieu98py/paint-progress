@@ -496,7 +496,7 @@ describe('ReinstatementPanel: admin notes (spec §9)', () => {
     expect(rows).toHaveLength(3)
     expect(await within(rows[0]).findByRole('button', { name: 'Ghi chú (1)' })).toBeInTheDocument()
     expect(within(rows[1]).queryByRole('button', { name: /Ghi chú/ })).toBeNull()
-    expect(screen.getAllByRole('button', { name: /^Ghi chú/ })).toHaveLength(2)
+    expect(within(entriesTable()).getAllByRole('button', { name: /^Ghi chú/ })).toHaveLength(2)
   })
 
   it('warns on the panel when the notes cannot be read, marks the icons, and retries', async () => {
@@ -511,6 +511,32 @@ describe('ReinstatementPanel: admin notes (spec §9)', () => {
     expect(await within(dataRows()[0]).findByRole('button', { name: 'Ghi chú (1)' })).toBeInTheDocument()
     expect(api.listNotes).toHaveBeenCalledTimes(2)
     expect(screen.queryByText('Không tải được ghi chú')).toBeNull()
+  })
+
+  it('reaches every noted day from Ghi chú theo ngày, a day with no entry row too, and adds on any picked day', async () => {
+    // 05/10 has no entry (a rain day, or its only entry was deleted).
+    const RAIN = { ...NOTE, id: 'n9', day: '2026-10-05', body: 'Mưa, nghỉ' }
+    api.listNotes.mockResolvedValue([NOTE, RAIN, OTHER_TAB])
+    api.addNote.mockResolvedValue(NOTE)
+    renderPanel()
+    await loaded()
+    const card = screen.getByRole('heading', { level: 2, name: 'Số lượng đã nhập' }).parentElement as HTMLElement
+    await userEvent.click(within(card).getByRole('button', { name: 'Ghi chú theo ngày' }))
+    const drawer = screen.getByText('Ghi chú theo ngày Reinstatement').closest('.ant-drawer-content') as HTMLElement
+    expect(within(drawer).getByLabelText('Ngày ghi chú')).toHaveValue('07/10/2026')
+    const noted = within(drawer).getByRole('list', { name: 'Ngày có ghi chú' })
+    expect(within(noted).getAllByRole('button').map((b) => b.textContent)).toEqual(['05/10/2026 (1)', '03/10/2026 (1)'])
+    await userEvent.click(within(noted).getByRole('button', { name: '05/10/2026 (1)' }))
+    expect(within(drawer).getByText('Mưa, nghỉ')).toBeInTheDocument()
+    expect(within(drawer).getByLabelText('Ngày ghi chú')).toHaveValue('05/10/2026')
+
+    const picker = within(drawer).getByLabelText('Ngày ghi chú')
+    await userEvent.clear(picker)
+    await userEvent.type(picker, '06/10/2026{Enter}')
+    expect(within(drawer).getByText('Chưa có ghi chú')).toBeInTheDocument()
+    await userEvent.type(within(drawer).getByRole('textbox', { name: 'Ghi chú mới' }), 'Chờ vật tư')
+    await userEvent.click(within(drawer).getByRole('button', { name: 'Thêm ghi chú' }))
+    expect(api.addNote).toHaveBeenCalledWith('p1', { target: 'reinstatement_day', day: '2026-10-06' }, 'Chờ vật tư')
   })
 
   it('adds a note on a day and reads the notes again', async () => {

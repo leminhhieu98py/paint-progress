@@ -1,12 +1,16 @@
-import { Alert, Button, Drawer, Input, Space } from 'antd'
+import { Alert, Button, DatePicker, Drawer, Input, Space } from 'antd'
+import dayjs from 'dayjs'
 import { useRef, useState } from 'react'
 import { ConsequenceModal } from '../../../components/ConsequenceModal'
 import { EmptyState } from '../../../components/EmptyState'
 import { IconAction } from '../../../components/IconAction'
 import { useTypeScale } from '../../../components/typeScale'
+import type { DayKey } from '../../../domain/piping/types'
+import { formatDayMonthYear } from '../../../domain/piping/week'
 import { formatDateTimeVN } from '../../../lib/format'
 import { addNote, deleteNote, updateNote, type NoteAnchor, type PipingNoteEntry } from '../../../lib/pipingApi'
 import { palette, space } from '../../../theme'
+import { formatQty } from '../pipingFormat'
 
 /**
  * The admin's notes on one target -- a Reinstatement day, a Manpower day or a
@@ -15,7 +19,16 @@ import { palette, space } from '../../../theme'
  * place and deletable after a confirm. Admin only: the panels never render it
  * for a foreman or a viewer, and the database gives them no row anyway.
  */
-export function NotesDrawer({ projectId, title, anchor, notes, error, onRetry, onClose, onChanged }: {
+/** "Ghi chú theo ngày": the day is picked in the drawer, among any date or the tab's noted days. */
+export interface NoteDayPicker {
+  /** The day whose notes are shown. */
+  value: DayKey
+  /** Every day of the tab that has notes, newest first, with or without an entry row. */
+  noted: Array<{ day: DayKey; count: number }>
+  onChange: (day: DayKey) => void
+}
+
+export function NotesDrawer({ projectId, title, anchor, notes, error, onRetry, onClose, onChanged, days }: {
   projectId: string
   title: string
   anchor: NoteAnchor
@@ -27,7 +40,10 @@ export function NotesDrawer({ projectId, title, anchor, notes, error, onRetry, o
   onClose: () => void
   /** After a write: the notes are read again. */
   onChanged: () => void
+  /** Day mode: a date picker and the noted days above the thread. */
+  days?: NoteDayPicker
 }) {
+  const type = useTypeScale()
   const [draft, setDraft] = useState('')
   const [busy, setBusy] = useState(false)
   const [writeError, setWriteError] = useState<string | null>(null)
@@ -37,13 +53,22 @@ export function NotesDrawer({ projectId, title, anchor, notes, error, onRetry, o
   /** A step that would drop unsent text, waiting for the admin's word. */
   const [leaving, setLeaving] = useState<{ title: string; okText: string; then: () => void } | null>(null)
 
-  /** Text typed and not saved: a new note, or an edit that changed its note. */
-  const dirty = draft.trim() !== ''
-    || (editing !== null && editing.body !== notes.find((n) => n.id === editing.id)?.body)
-  /** Runs `then` at once, or after a confirm while there is unsent text. */
-  const guard = (title: string, okText: string, then: () => void) => {
-    if (dirty) setLeaving({ title, okText, then })
+  /** An open edit that changed its note. */
+  const editDirty = editing !== null && editing.body !== notes.find((n) => n.id === editing.id)?.body
+  /** Text typed and not saved: a new note, or a changed edit. */
+  const dirty = draft.trim() !== '' || editDirty
+  /** Runs `then` at once, or after a confirm when it would drop unsent text. */
+  const confirmIf = (drops: boolean, title: string, okText: string, then: () => void) => {
+    if (drops) setLeaving({ title, okText, then })
     else then()
+  }
+  /** Another day: a typed new note stays (it is for the day picked); an open edit belongs to the old day. */
+  const pickDay = (day: DayKey) => {
+    if (days === undefined || day === days.value) return
+    confirmIf(editDirty, 'Bỏ sửa ghi chú?', 'Vẫn đổi ngày', () => {
+      setEditing(null)
+      days.onChange(day)
+    })
   }
 
   /** Set at once on a write, before the re-render: a second click in the same frame does nothing. */
@@ -68,7 +93,7 @@ export function NotesDrawer({ projectId, title, anchor, notes, error, onRetry, o
   }
 
   return (
-    <Drawer title={title} open onClose={() => guard('Đóng ghi chú?', 'Vẫn đóng', onClose)} width={440} destroyOnHidden>
+    <Drawer title={title} open onClose={() => confirmIf(dirty, 'Đóng ghi chú?', 'Vẫn đóng', onClose)} width={440} destroyOnHidden>
       <div style={{ display: 'flex', flexDirection: 'column', gap: space.md }}>
         {error !== null && (
           <Alert
@@ -78,6 +103,34 @@ export function NotesDrawer({ projectId, title, anchor, notes, error, onRetry, o
             description={error}
             action={<Button onClick={onRetry}>Thử lại</Button>}
           />
+        )}
+        {days !== undefined && (
+          <>
+            <DatePicker
+              aria-label="Ngày ghi chú"
+              format="DD/MM/YYYY"
+              allowClear={false}
+              value={dayjs(days.value)}
+              onChange={(d) => d && pickDay(d.format('YYYY-MM-DD'))}
+              style={{ width: '100%' }}
+            />
+            {days.noted.length > 0 && (
+              <div role="list" aria-label="Ngày có ghi chú" style={{ display: 'flex', flexWrap: 'wrap', gap: space.xs }}>
+                <span style={{ ...type.caption, color: palette.textTertiary, width: '100%' }}>Ngày có ghi chú</span>
+                {days.noted.map((d) => (
+                  <span role="listitem" key={d.day}>
+                    <Button
+                      type={d.day === days.value ? 'primary' : 'default'}
+                      aria-pressed={d.day === days.value}
+                      onClick={() => pickDay(d.day)}
+                    >
+                      {`${formatDayMonthYear(d.day)} (${formatQty(d.count)})`}
+                    </Button>
+                  </span>
+                ))}
+              </div>
+            )}
+          </>
         )}
         {writeError !== null && <Alert type="error" showIcon message={writeError} />}
         <Input.TextArea

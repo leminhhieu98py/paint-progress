@@ -36,7 +36,7 @@ const renderDrawer = (over: { notes?: PipingNoteEntry[]; error?: string | null }
     {...handlers}
   />,
 )
-const drawer = () => screen.getByText('Ghi chú Reinstatement 01/10/2026').closest('.ant-drawer-content') as HTMLElement
+const drawer = () => screen.getByText(/^Ghi chú (theo ngày )?Reinstatement/).closest('.ant-drawer-content') as HTMLElement
 const items = () => within(drawer()).getAllByTestId('piping-note')
 
 beforeEach(() => {
@@ -189,6 +189,35 @@ describe('NotesDrawer (spec §9)', () => {
     const confirm = (await screen.findByText('Đóng ghi chú?')).closest('.ant-modal') as HTMLElement
     await userEvent.click(within(confirm).getByRole('button', { name: 'Vẫn đóng' }))
     expect(handlers.onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('in day mode keeps a typed note across days, and asks before dropping a changed edit', async () => {
+    const onDay = vi.fn()
+    renderApp(
+      <NotesDrawer
+        projectId="p1"
+        title="Ghi chú theo ngày Reinstatement"
+        anchor={ANCHOR}
+        notes={NOTES}
+        error={null}
+        days={{ value: '2026-10-01', noted: [{ day: '2026-10-01', count: 2 }, { day: '2026-09-30', count: 1 }], onChange: onDay }}
+        {...handlers}
+      />,
+    )
+    const box = screen.getByRole('textbox', { name: 'Ghi chú mới' })
+    await userEvent.type(box, 'Giữ lại')
+    await userEvent.click(screen.getByRole('button', { name: '30/09/2026 (1)' }))
+    expect(onDay).toHaveBeenCalledWith('2026-09-30')
+    expect(box).toHaveValue('Giữ lại')
+
+    await userEvent.click(within(items()[0]).getByRole('button', { name: 'Sửa ghi chú' }))
+    await userEvent.type(within(items()[0]).getByRole('textbox', { name: 'Sửa ghi chú' }), ' x')
+    await userEvent.click(screen.getByRole('button', { name: '30/09/2026 (1)' }))
+    expect(onDay).toHaveBeenCalledTimes(1)
+    const confirm = (await screen.findByText('Bỏ sửa ghi chú?')).closest('.ant-modal') as HTMLElement
+    await userEvent.click(within(confirm).getByRole('button', { name: 'Vẫn đổi ngày' }))
+    expect(onDay).toHaveBeenCalledTimes(2)
+    expect(within(items()[0]).queryByRole('textbox')).toBeNull()
   })
 
   it('says a failed read and retries it', async () => {

@@ -544,6 +544,22 @@ describe('ManpowerPanel: admin notes (spec §9)', () => {
     expect(within(historyRows()[0]).getByRole('button', { name: 'Ghi chú' })).toBeInTheDocument()
   })
 
+  it('lists a noted day with no row under Ghi chú theo ngày', async () => {
+    api.listNotes.mockResolvedValue([
+      { ...note('n1', 'manpower_day', '2026-10-02T01:00:00Z'), day: '2026-10-06', body: 'Nghỉ lễ' },
+      note('n3', 'reinstatement_day', '2026-10-02T06:00:00Z'),
+    ])
+    renderPanel()
+    await loaded()
+    const card = screen.getByRole('heading', { level: 2, name: 'Nhân lực đã nhập' }).parentElement as HTMLElement
+    await userEvent.click(within(card).getByRole('button', { name: 'Ghi chú theo ngày' }))
+    const drawer = screen.getByText('Ghi chú theo ngày Manpower').closest('.ant-drawer-content') as HTMLElement
+    const noted = within(drawer).getByRole('list', { name: 'Ngày có ghi chú' })
+    expect(within(noted).getAllByRole('button').map((b) => b.textContent)).toEqual(['06/10/2026 (1)'])
+    await userEvent.click(within(noted).getByRole('button', { name: '06/10/2026 (1)' }))
+    expect(within(drawer).getByText('Nghỉ lễ')).toBeInTheDocument()
+  })
+
   it.each([['a foreman', asGs], ['a viewer', asViewer]])('never reads or shows notes for %s', async (_who, as) => {
     renderPanel(as)
     await loaded()
