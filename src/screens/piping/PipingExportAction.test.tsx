@@ -19,8 +19,8 @@ const api = vi.hoisted(() => ({
   listNotes: vi.fn(),
 }))
 vi.mock('../../lib/pipingApi', () => api)
-const loadGsProjectIdentity = vi.hoisted(() => vi.fn())
-vi.mock('../../lib/gsApi', () => ({ loadGsProjectIdentity: (id: string) => loadGsProjectIdentity(id) }))
+const listProjectNames = vi.hoisted(() => vi.fn())
+vi.mock('../../lib/projectsApi', () => ({ listProjectNames: () => listProjectNames() }))
 const renderChartPng = vi.hoisted(() => vi.fn())
 vi.mock('./report/chartImage', () => ({ renderChartPng: (spec: unknown) => renderChartPng(spec) }))
 const downloadWorkbook = vi.hoisted(() => vi.fn())
@@ -28,7 +28,7 @@ vi.mock('../../lib/projectReport', () => ({ downloadWorkbook: (b: Blob, n: strin
 const buildPipingReport = vi.hoisted(() => vi.fn())
 vi.mock('../../lib/piping/report', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../lib/piping/report')>()),
-  buildPipingReport: (input: PipingReportInput) => buildPipingReport(input),
+  buildPipingReport: (input: PipingReportInput, series: unknown) => buildPipingReport(input, series),
 }))
 
 const PNG = { base64: 'AAAA', width: 1000, height: 400 }
@@ -65,7 +65,10 @@ beforeEach(() => {
     phActual: null, ihActual: null, iwActual: null,
   }])
   api.listNotes.mockResolvedValue([{ id: 'n1', target: 'spool', spoolId: 's1', body: 'x' }])
-  loadGsProjectIdentity.mockReset().mockResolvedValue({ code: 'DH', name: 'Đại Hùng' })
+  listProjectNames.mockReset().mockResolvedValue([
+    { id: 'p0', code: 'BB1', name: 'BlockB1' },
+    { id: 'p1', code: 'DH', name: 'Đại Hùng' },
+  ])
   renderChartPng.mockReset().mockResolvedValue(PNG)
   downloadWorkbook.mockReset()
   buildPipingReport.mockReset().mockResolvedValue(BLOB)
@@ -86,7 +89,7 @@ describe('PipingExportAction (spec §10)', () => {
     renderApp(<PipingExportAction panel={panel()} />)
     await userEvent.click(exportButton())
     await waitFor(() => expect(downloadWorkbook).toHaveBeenCalledWith(BLOB, 'DH_Piping_2026-10-02.xlsx'))
-    expect(loadGsProjectIdentity).toHaveBeenCalledWith('p1')
+    expect(listProjectNames).toHaveBeenCalledTimes(1)
     expect(api.listNotes).toHaveBeenCalledWith('p1')
     const input = reportInput()
     expect(input).toMatchObject({
@@ -103,6 +106,11 @@ describe('PipingExportAction (spec §10)', () => {
     expect(renderChartPng.mock.calls.map(([spec]) => spec.kind)).toEqual(['reinstatement', 'manpower', 'insulation'])
     expect(renderChartPng.mock.calls[0][0]).toMatchObject({ mode: 'week' })
     expect(renderChartPng.mock.calls[2][0].keys).toHaveLength(6)
+    // The series are computed once: the charts are drawn from what the workbook writes.
+    const series = buildPipingReport.mock.calls[0][1]
+    expect(renderChartPng.mock.calls[0][0].data).toBe(series.reinstatement)
+    expect(renderChartPng.mock.calls[1][0].data).toBe(series.manpower.points)
+    expect(renderChartPng.mock.calls[2][0].data).toBe(series.insulation.points)
     expect(await screen.findByText('Đã xuất báo cáo Piping')).toBeInTheDocument()
   })
 
@@ -135,10 +143,18 @@ describe('PipingExportAction (spec §10)', () => {
     await userEvent.click(exportButton())
     await waitFor(() => expect(buildPipingReport).toHaveBeenCalledTimes(1))
     await userEvent.click(exportButton())
-    expect(loadGsProjectIdentity).toHaveBeenCalledTimes(1)
+    expect(listProjectNames).toHaveBeenCalledTimes(1)
     finish(BLOB)
     await waitFor(() => expect(downloadWorkbook).toHaveBeenCalledTimes(1))
     await waitFor(() => expect(exportButton()).not.toHaveClass('ant-btn-loading'))
+  })
+
+  it('says so when the project cannot be read for the file name, and downloads nothing', async () => {
+    listProjectNames.mockResolvedValue([{ id: 'p0', code: 'BB1', name: 'BlockB1' }])
+    renderApp(<PipingExportAction panel={panel()} />)
+    await userEvent.click(exportButton())
+    expect(await screen.findByText('Không xuất được báo cáo: Không đọc được dự án để đặt tên báo cáo.')).toBeInTheDocument()
+    expect(downloadWorkbook).not.toHaveBeenCalled()
   })
 
   it('says why when a read fails, and downloads nothing', async () => {

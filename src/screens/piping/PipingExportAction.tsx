@@ -3,7 +3,6 @@ import { App, Button, Dropdown, Tooltip } from 'antd'
 import { useRef, useState } from 'react'
 import { camSeriesKeys } from '../../domain/piping/cam'
 import type { CamSelection, Unit } from '../../domain/piping/types'
-import { loadGsProjectIdentity } from '../../lib/gsApi'
 import { renderChartPng, type ChartSpec } from './report/chartImage'
 import {
   buildPipingReport, pipingReportFileName, pipingReportSeries, type ChartKey, type PipingReportInput, type ReportChart,
@@ -13,6 +12,7 @@ import {
   listReinstatementPlan, listSpools,
 } from '../../lib/pipingApi'
 import { downloadWorkbook } from '../../lib/projectReport'
+import { listProjectNames } from '../../lib/projectsApi'
 import { useFieldPhone } from '../gs/fieldSections'
 import { useInsulationSelectionValue, useInsulationUnitValue } from './insulationUnit'
 import type { PipingPanelProps } from './panelProps'
@@ -50,11 +50,18 @@ interface InsulationView {
   selection: CamSelection
 }
 
+/** The project's name and code for the file, from the page's own project list read (no extra module). */
+async function projectIdentity(projectId: string): Promise<{ name: string; code: string }> {
+  const project = (await listProjectNames()).find((p) => p.id === projectId)
+  if (!project) throw new Error('Không đọc được dự án để đặt tên báo cáo.')
+  return { name: project.name, code: project.code }
+}
+
 async function exportReport(panel: PipingPanelProps, { unit, selection }: InsulationView): Promise<void> {
   const { projectId, settings, mode, todayKey } = panel
   const admin = panel.role === 'admin'
   const [project, plan, entries, groups, mpPlan, mpActual, spools, notes] = await Promise.all([
-    loadGsProjectIdentity(projectId),
+    projectIdentity(projectId),
     listReinstatementPlan(projectId),
     listReinstatementEntries(projectId),
     listManpowerGroups(projectId),
@@ -91,7 +98,7 @@ async function exportReport(panel: PipingPanelProps, { unit, selection }: Insula
     const picture = await chartPicture(spec)
     if (picture !== undefined) charts[key] = picture
   }
-  const blob = await buildPipingReport({ ...data, charts })
+  const blob = await buildPipingReport({ ...data, charts }, series)
   downloadWorkbook(blob, pipingReportFileName(project.code, todayKey))
 }
 

@@ -77,12 +77,17 @@ export interface PipingReportInput {
   charts: Partial<Record<ChartKey, ReportChart>>
 }
 
-/** The three charts' series, as the panels compute them. The caller renders the charts from these. */
-export function pipingReportSeries(input: Pick<PipingReportInput, 'settings' | 'mode' | 'unit' | 'todayKey' | 'reinstatement' | 'manpower' | 'spools'>): {
+/** The three charts' series, as the panels compute them. */
+export interface PipingReportSeries {
   reinstatement: ReinstatementPoint[]
   manpower: { points: ManpowerPoint[]; groups: ManpowerGroup[] }
   insulation: { points: CamPoint[]; total: number }
-} {
+}
+
+/** The series the workbook writes; the caller renders the charts from the same ones and hands them back. */
+export function pipingReportSeries(
+  input: Pick<PipingReportInput, 'settings' | 'mode' | 'unit' | 'todayKey' | 'reinstatement' | 'manpower' | 'spools'>,
+): PipingReportSeries {
   const { mode, todayKey } = input
   const weekStart = input.settings.weekStartDate
   const groups = chartGroups(input.manpower.groups, input.manpower.plan, input.manpower.actual)
@@ -211,12 +216,15 @@ const NOTE_TARGET_LABEL: Record<NoteTarget, string> = {
   spool: 'Spool',
 }
 
-export async function buildPipingReport(input: PipingReportInput): Promise<Blob> {
+/** `series` are `pipingReportSeries(input)`, passed in when the caller already computed them for the charts. */
+export async function buildPipingReport(
+  input: PipingReportInput,
+  series: PipingReportSeries = pipingReportSeries(input),
+): Promise<Blob> {
   const { Workbook } = await import('exceljs')
   const wb = new Workbook()
   wb.creator = 'paint-progress'
   const { mode, unit, todayKey, settings } = input
-  const series = pipingReportSeries(input)
   const warnings = lateWarnings(input.spools, settings.lateThresholdDays, todayKey)
 
   // Tóm tắt: what the page's cards say, as numbers.

@@ -28,7 +28,6 @@ vi.mock('../../lib/pipingApi', () => ({
   enablePiping: (id: string, input: unknown) => api.enablePiping(id, input),
 }))
 // The export action's own suite drives the report; here it is only in the bar, and its reads never run.
-vi.mock('../../lib/gsApi', () => ({ loadGsProjectIdentity: vi.fn() }))
 vi.mock('../../lib/projectReport', () => ({ downloadWorkbook: vi.fn() }))
 const listProjectNames = vi.hoisted(() => vi.fn())
 vi.mock('../../lib/projectsApi', () => ({
