@@ -102,6 +102,80 @@ describe('PlanImportFlow', () => {
     expect(onImported).toHaveBeenCalled()
   })
 
+  it('flags a line and says the caller dangers in the danger tone, with a danger confirm', async () => {
+    renderFlow({
+      preview: () => ({
+        added: 0, changed: 0, removed: 1, unchanged: 0,
+        lines: [{ key: 'r', change: 'removed', label: 'SP-2', from: 'L1', to: null, flag: 'có Actual' }],
+        consequences: ['1 spool không có trong file bị xoá.'],
+        dangers: ['1 spool bị xoá cùng ngày Actual đã nhập: SP-2.'],
+      }),
+    })
+    await pick()
+    const dialog = await screen.findByRole('dialog')
+    const row = within(dialog).getByText('SP-2').closest('tr') as HTMLElement
+    // The flag reads as a loss, not as the row's own Xoá pill (warn).
+    expect(within(row).getByText('có Actual')).toHaveStyle({ color: '#B42318' })
+    const danger = within(within(dialog).getByRole('list', { name: 'Hệ quả' }))
+      .getByText('1 spool bị xoá cùng ngày Actual đã nhập: SP-2.')
+    expect(danger).toHaveStyle({ color: '#B42318' })
+    expect(within(dialog).getByRole('button', { name: /Thay thế Plan/ })).toHaveClass('ant-btn-dangerous')
+  })
+
+  it('asks to type XOÁ before a replace that deletes actuals, and replaces once', async () => {
+    const props = renderFlow({
+      preview: () => ({ ...PREVIEW, dangers: ['1 spool bị xoá cùng ngày Actual đã nhập: SP-2.'] }),
+    })
+    await pick()
+    const preview = await screen.findByRole('dialog')
+    await userEvent.click(within(preview).getByRole('button', { name: /Thay thế Plan/ }))
+    // The click alone writes nothing: a second dialog names the loss and wants XOÁ typed.
+    expect(props.commit).not.toHaveBeenCalled()
+    const box = await screen.findByLabelText('Gõ XOÁ để xác nhận')
+    const confirm = screen.getAllByRole('dialog').at(-1) as HTMLElement
+    expect(within(confirm).getByText('1 spool bị xoá cùng ngày Actual đã nhập: SP-2.')).toBeInTheDocument()
+    const ok = within(confirm).getByRole('button', { name: /Thay thế Plan/ })
+    expect(ok).toBeDisabled()
+    await userEvent.type(box, 'XOÁ')
+    await userEvent.dblClick(ok)
+    await waitFor(() => expect(props.onImported).toHaveBeenCalledTimes(1))
+    expect(props.commit).toHaveBeenCalledTimes(1)
+  })
+
+  it('waits for a preview the caller computes asynchronously', async () => {
+    const preview = vi.fn().mockResolvedValue({ ...PREVIEW, added: 3 })
+    renderFlow({ preview })
+    await pick()
+    const dialog = await screen.findByRole('dialog')
+    await waitFor(() => expect(within(dialog).getAllByTestId('key-facts')[0]).toHaveTextContent('3 thêm'))
+    expect(preview).toHaveBeenCalledWith([{ id: 'a' }])
+  })
+
+  it('refuses the file when the preview cannot be computed, and writes nothing', async () => {
+    const props = renderFlow({ preview: () => Promise.reject(new Error('Mất kết nối')) })
+    await pick()
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText('Mất kết nối')).toBeInTheDocument()
+    expect(props.commit).not.toHaveBeenCalled()
+  })
+
+  it('lists 200 warnings at most, then says how many more', async () => {
+    const warnings = Array.from({ length: 205 }, (_, i) => ({ row: i + 2, message: `Cảnh báo ${i + 1}` }))
+    renderFlow({ parse: () => ({ ...parsedOf([{ id: 'a' }]), warnings }) })
+    await pick()
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText('Dòng 201: Cảnh báo 200')).toBeInTheDocument()
+    expect(within(dialog).queryByText('Dòng 202: Cảnh báo 201')).toBeNull()
+    expect(within(dialog).getByText('và 5 cảnh báo khác')).toBeInTheDocument()
+  })
+
+  it('keeps the confirm plain when there is no danger', async () => {
+    renderFlow()
+    await pick()
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByRole('button', { name: /Thay thế Plan/ })).not.toHaveClass('ant-btn-dangerous')
+  })
+
   it('refuses a file with no data rows as an error and writes nothing', async () => {
     const props = renderFlow({ parse: () => parsedOf([]) })
     await pick()

@@ -14,6 +14,8 @@ vi.mock('../../lib/pipingApi', () => ({
   listSpools: (...a: unknown[]) => api.listSpools(...a),
   listSpoolColumns: (...a: unknown[]) => api.listSpoolColumns(...a),
 }))
+// The import flows' download helper reaches the Supabase client; this file never downloads.
+vi.mock('../../lib/projectReport', () => ({ downloadWorkbook: vi.fn() }))
 
 // jsdom gives Recharts no size; the stand-in prints what reaches the chart:
 // the view, the lines shown, and each bucket's Painting Handover counts.

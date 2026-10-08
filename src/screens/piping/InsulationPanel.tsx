@@ -1,6 +1,7 @@
-import { Alert, Button, Select, Spin } from 'antd'
-import { useMemo, useState } from 'react'
+import { Alert, Button, Select, Space, Spin } from 'antd'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import { EmptyState } from '../../components/EmptyState'
+import { IconAction } from '../../components/IconAction'
 import type { KeyFact } from '../../components/KeyFacts'
 import { SectionCard } from '../../components/SectionCard'
 import { searchSelectProps, useFullOptionsProps } from '../../components/searchSelect'
@@ -8,15 +9,23 @@ import {
   camProgress, camSeries, camSeriesKeys, camSpoolFlags, duplicateSpoolGroups, MILESTONE_LABEL, MILESTONES,
   planOrderIssues, UNIT_LABEL, type CamSpoolFlags,
 } from '../../domain/piping/cam'
+import { parseSpoolPlan, type SpoolPlanRow } from '../../domain/piping/imports'
 import type { CamSelection, Spool, SpoolColumn, Unit } from '../../domain/piping/types'
-import { listSpoolColumns, listSpools } from '../../lib/pipingApi'
+import { buildSpoolPlanTemplate, templateFileName } from '../../lib/piping/templates'
+import { listSpoolColumns, listSpools, replaceSpools } from '../../lib/pipingApi'
 import { space } from '../../theme'
 import { useFieldPhone } from '../gs/fieldSections'
+import { ActualEntry } from './insulation/ActualEntry'
+import { ActualImportFlow } from './insulation/ActualImportFlow'
+import { setMilestones } from './insulation/actualPreview'
+import { ClearActualModal } from './insulation/ClearActualModal'
 import { ControlRow } from './insulation/ControlRow'
 import { PHONE_CONTROL } from './insulation/controlStyle'
 import { InsulationChart } from './insulation/InsulationChart'
 import { SpoolDetail } from './insulation/SpoolDetail'
+import { spoolPlanPreview, spoolPlanSummary } from './insulation/spoolPlanPreview'
 import type { PipingPanelProps } from './panelProps'
+import { PlanImportFlow } from './PlanImportFlow'
 import { formatQty } from './pipingFormat'
 import { usePanelData } from './usePanelData'
 
@@ -109,6 +118,34 @@ export function InsulationPanel({ projectId, settings, mode, role, todayKey, ref
     [spools, settings.lateThresholdDays, todayKey],
   )
   const review = useMemo(() => (spools === undefined || !admin ? [] : reviewFacts(spools)), [spools, admin])
+  const columns = data?.columns
+  const parsePlan = useCallback(
+    (sheets: Parameters<typeof parseSpoolPlan>[0]) => parseSpoolPlan(sheets, columns ?? []),
+    [columns],
+  )
+  /**
+   * The spools the last Plan preview was computed from. Read afresh when the
+   * file is read, not taken from the page: an actual entered since the page
+   * opened must show as lost (Q19A), and the log's client counts match what
+   * the admin was shown.
+   */
+  const previewedSpools = useRef<Spool[]>([])
+  const previewPlan = useCallback(async (rows: SpoolPlanRow[]) => {
+    const fresh = await listSpools(projectId)
+    previewedSpools.current = fresh
+    return spoolPlanPreview(fresh, rows)
+  }, [projectId])
+  /** The spool whose actual the admin is clearing (R-12). */
+  const [clearing, setClearing] = useState<Spool | null>(null)
+  const rowActions = useCallback((s: Spool) => (
+    <IconAction
+      verb="delete"
+      label="Xoá Actual"
+      danger
+      disabled={setMilestones(s).length === 0}
+      onClick={() => setClearing(s)}
+    />
+  ), [])
 
   if (error !== null) {
     return (
@@ -123,12 +160,31 @@ export function InsulationPanel({ projectId, settings, mode, role, todayKey, ref
   }
   if (data === null || progress === null) return <Spin style={{ display: 'block', margin: '15vh auto' }} />
 
+  /** The admin's Plan import (spec §6.2): in the card's header, and in the empty state. */
+  const planImport = admin ? (
+    <PlanImportFlow<SpoolPlanRow>
+      planLabel="Insulation Plan"
+      templateName={templateFileName('spool_plan')}
+      buildTemplate={() => buildSpoolPlanTemplate(data.columns.map((c) => c.label))}
+      parse={parsePlan}
+      preview={previewPlan}
+      lineHeader="SpoolNo"
+      lineAlign="left"
+      commit={({ rows, fileName, summary }) => replaceSpools(
+        // The database writes its own counts into the summary; the preview's sit under `client`.
+        projectId, rows, fileName, { ...summary, client: spoolPlanSummary(previewedSpools.current, rows) },
+      )}
+      onImported={reload}
+    />
+  ) : undefined
+
   if (data.spools.length === 0) {
     return (
       <SectionCard title="Insulation">
         <EmptyState
           title="Chưa có spool nào"
           description={admin ? 'Nhập Plan Insulation để thêm spool' : 'Admin chưa nhập Plan Insulation'}
+          action={planImport && <Space size={space.sm}>{planImport}</Space>}
         />
       </SectionCard>
     )
@@ -175,7 +231,7 @@ export function InsulationPanel({ projectId, settings, mode, role, todayKey, ref
       <SectionCard
         title="Insulation"
         facts={facts}
-        extra={phone ? undefined : controls}
+        extra={phone && planImport === undefined ? undefined : <>{!phone && controls}{planImport}</>}
       >
         {phone && <div style={{ marginBottom: space.md }}><ControlRow>{controls}</ControlRow></div>}
         {series.length === 0
@@ -197,7 +253,26 @@ export function InsulationPanel({ projectId, settings, mode, role, todayKey, ref
         columns={data.columns}
         flags={flags}
         admin={admin}
+        toolbar={role === 'viewer' ? undefined : (
+          <>
+            <ActualEntry projectId={projectId} spools={data.spools} todayKey={todayKey} onSaved={reload} />
+            <ActualImportFlow projectId={projectId} todayKey={todayKey} onImported={reload} />
+          </>
+        )}
+        rowActions={admin ? rowActions : undefined}
       />
+
+      {clearing !== null && (
+        <ClearActualModal
+          projectId={projectId}
+          spool={clearing}
+          onClose={() => setClearing(null)}
+          onCleared={() => {
+            setClearing(null)
+            reload()
+          }}
+        />
+      )}
     </div>
   )
 }

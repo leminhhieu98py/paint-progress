@@ -1,6 +1,7 @@
 import { UploadOutlined } from '@ant-design/icons'
 import { Alert, App, Button, Modal, Table, Upload } from 'antd'
 import { useRef, useState } from 'react'
+import { ConsequenceModal } from '../../components/ConsequenceModal'
 import { IconAction } from '../../components/IconAction'
 import { KeyFacts } from '../../components/KeyFacts'
 import { modalProps } from '../../components/modalChrome'
@@ -12,6 +13,7 @@ import { downloadWorkbook } from '../../lib/projectReport'
 import { readWorkbookRows } from '../../lib/piping/xlsx'
 import { MISSING } from '../../lib/format'
 import { palette, space } from '../../theme'
+import { capList } from './listCap'
 
 /**
  * The admin's Plan import (spec §8), one flow for every hạng mục: "Tải file
@@ -19,8 +21,9 @@ import { palette, space } from '../../theme'
  * workbook, parses it, and then either lists the row errors (nothing written,
  * no half import) or previews what the replace changes -- added, changed,
  * removed, old -> new, with counts -- and replaces the plan only when the
- * admin confirms. The caller owns what is specific: the parser, the diff
- * against what is stored, and the write.
+ * admin confirms -- after typing XOÁ when the replace destroys more than the
+ * plan (the caller's `dangers`). The caller owns what is specific: the
+ * parser, the diff against what is stored, and the write.
  */
 
 /** One line of the preview: a day (or a day and group, a spool and column) and its old -> new value. */
@@ -34,6 +37,8 @@ export interface PlanDiffLine {
   from: string | null
   /** The file's value; null when removed. */
   to: string | null
+  /** A danger badge beside the label, e.g. `có Actual` on a removed spool that carries actual dates. */
+  flag?: string
 }
 
 /** What a confirmed import would change, as the caller's diff counts it. */
@@ -45,6 +50,12 @@ export interface PlanImportPreview {
   lines: PlanDiffLine[]
   /** Anything else the confirm does that the admin must know, one sentence each. */
   consequences?: string[]
+  /**
+   * What the confirm destroys beyond the plan itself (spools deleted with
+   * their actuals), one sentence each, said in the danger tone; the confirm
+   * button turns danger too.
+   */
+  dangers?: string[]
 }
 
 export interface PlanImportFlowProps<R> {
@@ -55,8 +66,12 @@ export interface PlanImportFlowProps<R> {
   buildTemplate: () => Promise<Blob>
   /** The pure parser of `domain/piping/imports.ts`. */
   parse: (sheets: SheetRows[]) => ParseResult<R>
-  /** The parsed rows against what is stored now. */
-  preview: (rows: R[]) => PlanImportPreview
+  /**
+   * The parsed rows against what is stored now; may be async, so the caller
+   * can read what is stored afresh when the file is read (a refusal is shown
+   * as a file error and nothing is written).
+   */
+  preview: (rows: R[]) => PlanImportPreview | Promise<PlanImportPreview>
   /** The preview's first column header: "Ngày". */
   lineHeader: string
   /** How that column aligns: centred for a date (UI-03), left for typed text. */
@@ -98,6 +113,8 @@ export function PlanImportFlow<R>({
   const [step, setStep] = useState<Step<R> | null>(null)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
+  /** The typed confirmation is open: the replace deletes what the `dangers` name. */
+  const [arming, setArming] = useState(false)
   /**
    * Set synchronously, unlike `saving`: a fast double click on Thay thế Plan
    * must not replace twice (and log a second, empty import).
@@ -127,7 +144,7 @@ export function PlanImportFlow<R>({
         : [{ row: null, message: NO_DATA_ROWS }]
       setStep(errors.length > 0
         ? { kind: 'errors', fileName: file.name, errors }
-        : { kind: 'preview', fileName: file.name, parsed, preview: preview(parsed.rows) })
+        : { kind: 'preview', fileName: file.name, parsed, preview: await preview(parsed.rows) })
     } catch (e) {
       // A file that cannot be opened at all (too big, not .xlsx): one file-level error.
       setStep({ kind: 'errors', fileName: file.name, errors: [{ row: null, message: (e as Error).message }] })
@@ -148,6 +165,7 @@ export function PlanImportFlow<R>({
         summary: { sheet: step.parsed.sheetName, warnings: step.parsed.warnings.length },
       })
       message.success(`Đã import ${planLabel}`)
+      setArming(false)
       setStep(null)
       onImported()
     } catch (e) {
@@ -159,8 +177,13 @@ export function PlanImportFlow<R>({
   }
 
   const close = () => {
-    if (!saving) setStep(null)
+    if (saving) return
+    setArming(false)
+    setStep(null)
   }
+
+  const dangers = step?.kind === 'preview' ? step.preview.dangers ?? [] : []
+  const warnings = step?.kind === 'preview' ? capList(step.parsed.warnings) : { shown: [], more: 0 }
 
   return (
     <>
@@ -222,7 +245,15 @@ export function PlanImportFlow<R>({
         {...modalProps}
         footer={[
           <Button key="cancel" disabled={saving} onClick={close}>Huỷ</Button>,
-          <Button key="ok" type="primary" loading={saving} onClick={() => void confirm()}>Thay thế Plan</Button>,
+          <Button
+            key="ok"
+            type="primary"
+            danger={dangers.length > 0}
+            loading={saving}
+            onClick={() => (dangers.length > 0 ? setArming(true) : void confirm())}
+          >
+            Thay thế Plan
+          </Button>,
         ]}
       >
         {step?.kind === 'preview' && (
@@ -246,9 +277,10 @@ export function PlanImportFlow<R>({
                 message={`${COUNT.format(step.parsed.warnings.length)} cảnh báo`}
                 description={(
                   <ul style={{ margin: 0, paddingInlineStart: space.lg }}>
-                    {step.parsed.warnings.map((w, i) => (
+                    {warnings.shown.map((w, i) => (
                       <li key={i}>{w.row === null ? w.message : `Dòng ${COUNT.format(w.row)}: ${w.message}`}</li>
                     ))}
+                    {warnings.more > 0 && <li>{`và ${COUNT.format(warnings.more)} cảnh báo khác`}</li>}
                   </ul>
                 )}
               />
@@ -268,7 +300,17 @@ export function PlanImportFlow<R>({
                       <StatusPill tone={CHANGE[change].tone}>{CHANGE[change].label}</StatusPill>
                     ),
                   },
-                  { title: lineHeader, dataIndex: 'label', align: lineAlign },
+                  {
+                    title: lineHeader,
+                    dataIndex: 'label',
+                    align: lineAlign,
+                    render: (label: string, line: PlanDiffLine) => (line.flag === undefined ? label : (
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: space.sm, flexWrap: 'wrap' }}>
+                        {label}
+                        <StatusPill tone="danger">{line.flag}</StatusPill>
+                      </span>
+                    )),
+                  },
                   { title: 'Cũ', dataIndex: 'from', align: 'center', render: (v: string | null) => v ?? MISSING },
                   { title: 'Mới', dataIndex: 'to', align: 'center', render: (v: string | null) => v ?? MISSING },
                 ]}
@@ -291,11 +333,28 @@ export function PlanImportFlow<R>({
             >
               <li>{`${planLabel} hiện tại được thay toàn bộ bằng ${COUNT.format(countFileRows ? countFileRows(step.parsed.rows) : step.parsed.rows.length)} dòng của file.`}</li>
               {(step.preview.consequences ?? []).map((c) => <li key={c}>{c}</li>)}
+              {(step.preview.dangers ?? []).map((c) => (
+                <li key={c} style={{ ...type.bodyStrong, color: palette.error }}>{c}</li>
+              ))}
               <li>Lần import được ghi vào lịch sử import.</li>
             </ul>
           </div>
         )}
       </Modal>
+
+      <ConsequenceModal
+        open={arming && step?.kind === 'preview'}
+        tone="danger"
+        title={`Thay thế ${planLabel}?`}
+        consequences={dangers}
+        confirmText="XOÁ"
+        confirmLabel="Gõ XOÁ để xác nhận"
+        okText="Thay thế Plan"
+        confirmLoading={saving}
+        error={saveError}
+        onOk={() => void confirm()}
+        onCancel={() => !saving && setArming(false)}
+      />
     </>
   )
 }

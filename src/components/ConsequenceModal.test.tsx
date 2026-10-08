@@ -191,6 +191,11 @@ describe('ConsequenceModal — typed confirmation', () => {
     expect(screen.getByRole('button', { name: /Xóa sàn/ })).toBeDisabled()
   })
 
+  it('labels the box with the caller text when what is typed is not a name', () => {
+    render(<ConsequenceModal {...typed} confirmText="XOÁ" confirmLabel="Gõ XOÁ để xác nhận" />)
+    expect(screen.getByLabelText('Gõ XOÁ để xác nhận')).toHaveAttribute('placeholder', 'XOÁ')
+  })
+
   it('asks for nothing when no confirmText is given', () => {
     render(<ConsequenceModal {...base} okText="Vẫn xoá" />)
     expect(screen.queryByLabelText('Gõ đúng tên để xác nhận')).toBeNull()
