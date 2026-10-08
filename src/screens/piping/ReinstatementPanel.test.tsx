@@ -17,6 +17,8 @@ const api = vi.hoisted(() => ({
   addReinstatementEntry: vi.fn(),
   updateReinstatementEntry: vi.fn(),
   deleteReinstatementEntry: vi.fn(),
+  listNotes: vi.fn(),
+  addNote: vi.fn(),
 }))
 vi.mock('../../lib/pipingApi', () => ({
   listReinstatementPlan: (...a: unknown[]) => api.listReinstatementPlan(...a),
@@ -25,6 +27,8 @@ vi.mock('../../lib/pipingApi', () => ({
   addReinstatementEntry: (...a: unknown[]) => api.addReinstatementEntry(...a),
   updateReinstatementEntry: (...a: unknown[]) => api.updateReinstatementEntry(...a),
   deleteReinstatementEntry: (...a: unknown[]) => api.deleteReinstatementEntry(...a),
+  listNotes: (...a: unknown[]) => api.listNotes(...a),
+  addNote: (...a: unknown[]) => api.addNote(...a),
 }))
 
 /** The file reader stands in: a test hands over the sheets a workbook would read as. */
@@ -107,6 +111,7 @@ beforeEach(() => {
   api.addReinstatementEntry.mockResolvedValue('e3')
   api.updateReinstatementEntry.mockResolvedValue(undefined)
   api.deleteReinstatementEntry.mockResolvedValue(undefined)
+  api.listNotes.mockResolvedValue([])
   api.replaceReinstatementPlan.mockResolvedValue({ logId: 'l1', summary: {} })
   xlsx.read.mockReset()
   templates.build.mockReset()
@@ -455,5 +460,47 @@ describe('ReinstatementPanel: Plan import (spec §8)', () => {
     await screen.findByText('Xem trước Reinstatement Plan')
     await userEvent.click(within(dialog()).getByRole('button', { name: 'Thay thế Plan' }))
     expect(await within(dialog()).findByText('Bạn không có quyền thực hiện thao tác này')).toBeInTheDocument()
+  })
+})
+
+describe('ReinstatementPanel: admin notes (spec §9)', () => {
+  const NOTE = {
+    id: 'n1', target: 'reinstatement_day', day: '2026-10-03', spoolId: null, body: 'Mưa, nghỉ chiều',
+    authorId: 'u1', createdAt: '2026-10-03T09:00:00Z', updatedBy: null, updatedAt: null, authorName: 'Đoàn Linh',
+    updatedByName: null,
+  }
+  const OTHER_TAB = { ...NOTE, id: 'n2', target: 'manpower_day', body: 'Ghi chú Manpower' }
+
+  it('marks the days with notes and opens a day\'s thread, the same day on Manpower apart', async () => {
+    api.listNotes.mockResolvedValue([NOTE, OTHER_TAB])
+    renderPanel()
+    await loaded()
+    expect(api.listNotes).toHaveBeenCalledWith('p1')
+    const [oct3, oct1] = dataRows()
+    expect(await within(oct3).findByRole('button', { name: 'Ghi chú (1)' })).toBeInTheDocument()
+    expect(within(oct1).getByRole('button', { name: 'Ghi chú' })).toBeInTheDocument()
+    await userEvent.click(within(oct3).getByRole('button', { name: 'Ghi chú (1)' }))
+    const drawer = screen.getByText('Ghi chú Reinstatement 03/10/2026').closest('.ant-drawer-content') as HTMLElement
+    expect(within(drawer).getByText('Mưa, nghỉ chiều')).toBeInTheDocument()
+    expect(within(drawer).queryByText('Ghi chú Manpower')).toBeNull()
+  })
+
+  it('adds a note on a day and reads the notes again', async () => {
+    api.addNote.mockResolvedValue(NOTE)
+    renderPanel()
+    await loaded()
+    await userEvent.click(within(dataRows()[1]).getByRole('button', { name: 'Ghi chú' }))
+    await userEvent.type(screen.getByRole('textbox', { name: 'Ghi chú mới' }), 'Thiếu vật tư')
+    await userEvent.click(screen.getByRole('button', { name: 'Thêm ghi chú' }))
+    expect(api.addNote).toHaveBeenCalledWith('p1', { target: 'reinstatement_day', day: '2026-10-01' }, 'Thiếu vật tư')
+    await waitFor(() => expect(api.listNotes).toHaveBeenCalledTimes(2))
+  })
+
+  it.each([['a foreman', asGs], ['a viewer', asViewer]])('never reads or shows notes for %s', async (_who, as) => {
+    renderPanel(as)
+    await loaded()
+    expect(dataRows()).toHaveLength(2)
+    expect(screen.queryByRole('button', { name: /Ghi chú/ })).toBeNull()
+    expect(api.listNotes).not.toHaveBeenCalled()
   })
 })

@@ -24,6 +24,7 @@ import { ManpowerChart } from './manpower/ManpowerChart'
 import { ManpowerEntryForm } from './manpower/ManpowerEntryForm'
 import { ManpowerHistoryTable } from './manpower/ManpowerHistoryTable'
 import type { PipingPanelProps } from './panelProps'
+import { dayNotes, usePipingNotes } from './notes/usePipingNotes'
 import { PlanImportFlow, type PlanImportPreview } from './PlanImportFlow'
 import { formatQty } from './pipingFormat'
 import { usePanelData } from './usePanelData'
@@ -117,6 +118,10 @@ export function ManpowerPanel({ projectId, settings, mode, role, todayKey, refre
   const parse = useCallback((sheets: SheetRows[]) => parseManpowerPlan(sheets, groups ?? []), [groups])
   const preview = useCallback((rows: ManpowerValue[]) => planPreview(groups ?? [], plan ?? [], rows), [groups, plan])
   const buildTemplate = useCallback(() => buildManpowerPlanTemplate(bySort(groups ?? []).map((g) => g.name)), [groups])
+  /** The admin's notes on a day (spec §9); none for a foreman or a viewer. */
+  const notes = usePipingNotes(projectId, refreshKey, admin)
+  const noteAction = notes.action
+  const dayExtra = useMemo(() => noteAction && dayNotes(noteAction, 'manpower_day', 'Manpower'), [noteAction])
 
   if (error !== null) {
     return (
@@ -207,12 +212,14 @@ export function ManpowerPanel({ projectId, settings, mode, role, todayKey, refre
             canEdit={admin}
             onEdit={editDay}
             onChanged={reload}
+            dayExtra={dayExtra}
           />
           <RulesDisclosure rules={RULES} />
         </div>
       </SectionCard>
 
       {data.plan.length > 0 && <PlanCard projectId={projectId} groups={data.groups} plan={data.plan} />}
+      {notes.drawer}
     </div>
   )
 }

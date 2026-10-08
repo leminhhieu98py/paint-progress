@@ -6,7 +6,7 @@ import type { KeyFact } from '../../components/KeyFacts'
 import { SectionCard } from '../../components/SectionCard'
 import { searchSelectProps, useFullOptionsProps } from '../../components/searchSelect'
 import {
-  camProgress, camSeries, camSeriesKeys, camSpoolFlags, duplicateSpoolGroups, MILESTONE_LABEL, MILESTONES,
+  camProgress, camSeries, camSeriesKeys, camSpoolFlags, duplicateSpoolGroups, lateWarnings, MILESTONE_LABEL, MILESTONES,
   planOrderIssues, UNIT_LABEL, type CamSpoolFlags,
 } from '../../domain/piping/cam'
 import { parseSpoolPlan, type SpoolPlanRow } from '../../domain/piping/imports'
@@ -22,9 +22,12 @@ import { ClearActualModal } from './insulation/ClearActualModal'
 import { ControlRow } from './insulation/ControlRow'
 import { PHONE_CONTROL } from './insulation/controlStyle'
 import { InsulationChart } from './insulation/InsulationChart'
+import { lateFact } from './insulation/lateGroups'
+import { LateSpools } from './insulation/LateSpools'
 import { SpoolDetail } from './insulation/SpoolDetail'
 import { spoolPlanPreview, spoolPlanSummary } from './insulation/spoolPlanPreview'
 import { useInsulationSelection, useInsulationUnit } from './insulationUnit'
+import { usePipingNotes } from './notes/usePipingNotes'
 import type { PipingPanelProps } from './panelProps'
 import { PlanImportFlow } from './PlanImportFlow'
 import { formatQty } from './pipingFormat'
@@ -119,6 +122,11 @@ export function InsulationPanel({ projectId, settings, mode, role, todayKey, ref
     () => (spools === undefined ? new Map<string, CamSpoolFlags>() : camSpoolFlags(spools, settings.lateThresholdDays, todayKey)),
     [spools, settings.lateThresholdDays, todayKey],
   )
+  /** Late milestones (spec §7), for every role: the pill and the Spool trễ card. */
+  const warnings = useMemo(
+    () => (spools === undefined ? [] : lateWarnings(spools, settings.lateThresholdDays, todayKey)),
+    [spools, settings.lateThresholdDays, todayKey],
+  )
   const review = useMemo(() => (spools === undefined || !admin ? [] : reviewFacts(spools)), [spools, admin])
   const columns = data?.columns
   const parsePlan = useCallback(
@@ -139,15 +147,21 @@ export function InsulationPanel({ projectId, settings, mode, role, todayKey, ref
   }, [projectId])
   /** The spool whose actual the admin is clearing (R-12). */
   const [clearing, setClearing] = useState<Spool | null>(null)
+  /** The admin's notes on a spool (spec §9); none for a foreman or a viewer. */
+  const notes = usePipingNotes(projectId, refreshKey, admin)
+  const noteAction = notes.action
   const rowActions = useCallback((s: Spool) => (
-    <IconAction
-      verb="delete"
-      label="Xoá Actual"
-      danger
-      disabled={setMilestones(s).length === 0}
-      onClick={() => setClearing(s)}
-    />
-  ), [])
+    <Space size={space.xs}>
+      {noteAction?.({ target: 'spool', spoolId: s.id }, `Ghi chú spool ${s.spoolNo}`)}
+      <IconAction
+        verb="delete"
+        label="Xoá Actual"
+        danger
+        disabled={setMilestones(s).length === 0}
+        onClick={() => setClearing(s)}
+      />
+    </Space>
+  ), [noteAction])
 
   if (error !== null) {
     return (
@@ -216,6 +230,7 @@ export function InsulationPanel({ projectId, settings, mode, role, todayKey, ref
     </>
   )
 
+  const late = lateFact(warnings, settings.lateThresholdDays)
   const facts: KeyFact[] = [
     { value: formatQty(data.spools.length), label: 'spool' },
     ...MILESTONES.map((m) => ({
@@ -224,6 +239,7 @@ export function InsulationPanel({ projectId, settings, mode, role, todayKey, ref
       // What the counts count: spool rows, or lines, packages... (spec §6.4).
       label: UNIT_LABEL[unit],
     })),
+    ...(late === null ? [] : [late]),
     ...review,
   ]
 
@@ -264,6 +280,8 @@ export function InsulationPanel({ projectId, settings, mode, role, todayKey, ref
         rowActions={admin ? rowActions : undefined}
       />
 
+      <LateSpools projectId={projectId} warnings={warnings} thresholdDays={settings.lateThresholdDays} />
+
       {clearing !== null && (
         <ClearActualModal
           projectId={projectId}
@@ -275,6 +293,7 @@ export function InsulationPanel({ projectId, settings, mode, role, todayKey, ref
           }}
         />
       )}
+      {notes.drawer}
     </div>
   )
 }

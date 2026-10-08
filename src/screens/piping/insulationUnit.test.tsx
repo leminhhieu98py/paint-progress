@@ -16,6 +16,7 @@ vi.mock('../../lib/pipingApi', () => ({
     phActual: null, ihActual: null, iwActual: null,
   }],
   listSpoolColumns: async () => [],
+  listNotes: async () => [],
 }))
 vi.mock('./insulation/InsulationChart', () => ({ InsulationChart: () => <div data-testid="insulation-chart" /> }))
 

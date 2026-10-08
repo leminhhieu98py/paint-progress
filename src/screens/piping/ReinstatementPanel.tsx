@@ -17,6 +17,7 @@ import {
 import { space } from '../../theme'
 import { ReinstatementChart } from './charts'
 import type { PipingPanelProps } from './panelProps'
+import { dayNotes, usePipingNotes } from './notes/usePipingNotes'
 import { PlanImportFlow, type PlanImportPreview } from './PlanImportFlow'
 import { formatQty } from './pipingFormat'
 import { EntriesTable } from './reinstatement/EntriesTable'
@@ -100,6 +101,10 @@ export function ReinstatementPanel({ projectId, settings, mode, role, todayKey, 
   )
   const plan = data?.plan
   const preview = useCallback((rows: ReinstatementPlanRow[]) => planPreview(plan ?? [], rows), [plan])
+  /** The admin's notes on a day (spec §9); none for a foreman or a viewer. */
+  const notes = usePipingNotes(projectId, refreshKey, admin)
+  const noteAction = notes.action
+  const dayExtra = useMemo(() => noteAction && dayNotes(noteAction, 'reinstatement_day', 'Reinstatement'), [noteAction])
 
   if (error !== null) {
     return (
@@ -157,12 +162,14 @@ export function ReinstatementPanel({ projectId, settings, mode, role, todayKey, 
             todayKey={todayKey}
             canEdit={admin}
             onChanged={reload}
+            dayExtra={dayExtra}
           />
           <RulesDisclosure rules={RULES} />
         </div>
       </SectionCard>
 
       {data.plan.length > 0 && <PlanCard projectId={projectId} plan={data.plan} />}
+      {notes.drawer}
     </div>
   )
 }
