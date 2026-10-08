@@ -85,6 +85,49 @@ describe('NotesDrawer (spec §9)', () => {
     expect(handlers.onChanged).not.toHaveBeenCalled()
   })
 
+  it('adds once on a double click', async () => {
+    let finish: (v: unknown) => void = () => {}
+    api.addNote.mockReturnValue(new Promise((resolve) => { finish = resolve }))
+    const user = userEvent.setup()
+    renderDrawer()
+    await user.type(within(drawer()).getByRole('textbox', { name: 'Ghi chú mới' }), 'Một lần')
+    await user.dblClick(within(drawer()).getByRole('button', { name: /Thêm ghi chú/ }))
+    finish(note('n3'))
+    await waitFor(() => expect(handlers.onChanged).toHaveBeenCalledTimes(1))
+    expect(api.addNote).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps Thêm ghi chú off while a note is being edited', async () => {
+    const user = userEvent.setup()
+    renderDrawer()
+    await user.type(within(drawer()).getByRole('textbox', { name: 'Ghi chú mới' }), 'Mới')
+    await user.click(within(items()[0]).getByRole('button', { name: 'Sửa ghi chú' }))
+    expect(within(drawer()).getByRole('button', { name: 'Thêm ghi chú' })).toBeDisabled()
+  })
+
+  it('keeps the edit open with the reason when saving fails', async () => {
+    api.updateNote.mockRejectedValue(new Error('Không lưu được'))
+    const user = userEvent.setup()
+    renderDrawer()
+    await user.click(within(items()[0]).getByRole('button', { name: 'Sửa ghi chú' }))
+    await user.click(within(items()[0]).getByRole('button', { name: 'Lưu ghi chú' }))
+    expect(await within(drawer()).findByText('Không lưu được')).toBeInTheDocument()
+    expect(within(items()[0]).getByRole('textbox', { name: 'Sửa ghi chú' })).toBeInTheDocument()
+    expect(handlers.onChanged).not.toHaveBeenCalled()
+  })
+
+  it('keeps the delete confirm open with the reason when deleting fails', async () => {
+    api.deleteNote.mockRejectedValue(new Error('Không xoá được'))
+    const user = userEvent.setup()
+    renderDrawer()
+    await user.click(within(items()[0]).getByRole('button', { name: 'Xoá ghi chú' }))
+    const confirm = (await screen.findByText('Xoá ghi chú?')).closest('.ant-modal') as HTMLElement
+    await user.click(within(confirm).getByRole('button', { name: 'Xoá' }))
+    expect(await within(confirm).findByText('Không xoá được')).toBeInTheDocument()
+    expect(within(confirm).getByRole('button', { name: 'Xoá' })).toBeEnabled()
+    expect(handlers.onChanged).not.toHaveBeenCalled()
+  })
+
   it('edits a note in place', async () => {
     const user = userEvent.setup()
     renderDrawer()

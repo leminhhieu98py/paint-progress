@@ -1,5 +1,5 @@
 import { Alert, Button, Drawer, Input, Space } from 'antd'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { ConsequenceModal } from '../../../components/ConsequenceModal'
 import { EmptyState } from '../../../components/EmptyState'
 import { IconAction } from '../../../components/IconAction'
@@ -35,8 +35,13 @@ export function NotesDrawer({ projectId, title, anchor, notes, error, onRetry, o
   const [removing, setRemoving] = useState<PipingNoteEntry | null>(null)
   const [removeError, setRemoveError] = useState<string | null>(null)
 
+  /** Set at once on a write, before the re-render: a second click in the same frame does nothing. */
+  const inFlight = useRef(false)
+
   /** One write at a time; the notes are read again after it. */
   const write = async (run: () => Promise<unknown>, done: () => void, fail = setWriteError) => {
+    if (inFlight.current) return
+    inFlight.current = true
     setBusy(true)
     fail(null)
     try {
@@ -46,6 +51,7 @@ export function NotesDrawer({ projectId, title, anchor, notes, error, onRetry, o
     } catch (e) {
       fail((e as Error).message)
     } finally {
+      inFlight.current = false
       setBusy(false)
     }
   }
@@ -73,8 +79,9 @@ export function NotesDrawer({ projectId, title, anchor, notes, error, onRetry, o
         <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
           <Button
             type="primary"
-            disabled={draft.trim() === ''}
-            loading={busy && editing === null}
+            // Off while a note is being edited or anything is being saved: one write at a time.
+            disabled={draft.trim() === '' || editing !== null || busy}
+            loading={busy && editing === null && removing === null}
             onClick={() => void write(() => addNote(projectId, anchor, draft.trim()), () => setDraft(''))}
           >
             Thêm ghi chú
