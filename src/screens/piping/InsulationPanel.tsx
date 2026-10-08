@@ -6,7 +6,7 @@ import type { KeyFact } from '../../components/KeyFacts'
 import { SectionCard } from '../../components/SectionCard'
 import { searchSelectProps, useFullOptionsProps } from '../../components/searchSelect'
 import {
-  camProgress, camSeries, camSeriesKeys, camSpoolFlags, duplicateSpoolGroups, MILESTONE_LABEL, MILESTONES,
+  camProgress, camSeries, camSeriesKeys, camSpoolFlags, duplicateSpoolGroups, lateWarnings, MILESTONE_LABEL, MILESTONES,
   planOrderIssues, UNIT_LABEL, type CamSpoolFlags,
 } from '../../domain/piping/cam'
 import { parseSpoolPlan, type SpoolPlanRow } from '../../domain/piping/imports'
@@ -22,6 +22,8 @@ import { ClearActualModal } from './insulation/ClearActualModal'
 import { ControlRow } from './insulation/ControlRow'
 import { PHONE_CONTROL } from './insulation/controlStyle'
 import { InsulationChart } from './insulation/InsulationChart'
+import { lateFact } from './insulation/lateGroups'
+import { LateSpools } from './insulation/LateSpools'
 import { SpoolDetail } from './insulation/SpoolDetail'
 import { spoolPlanPreview, spoolPlanSummary } from './insulation/spoolPlanPreview'
 import type { PipingPanelProps } from './panelProps'
@@ -115,6 +117,11 @@ export function InsulationPanel({ projectId, settings, mode, role, todayKey, ref
   const progress = useMemo(() => (spools === undefined ? null : camProgress(spools, unit)), [spools, unit])
   const flags = useMemo(
     () => (spools === undefined ? new Map<string, CamSpoolFlags>() : camSpoolFlags(spools, settings.lateThresholdDays, todayKey)),
+    [spools, settings.lateThresholdDays, todayKey],
+  )
+  /** Late milestones (spec §7), for every role: the pill and the Spool trễ card. */
+  const warnings = useMemo(
+    () => (spools === undefined ? [] : lateWarnings(spools, settings.lateThresholdDays, todayKey)),
     [spools, settings.lateThresholdDays, todayKey],
   )
   const review = useMemo(() => (spools === undefined || !admin ? [] : reviewFacts(spools)), [spools, admin])
@@ -214,6 +221,7 @@ export function InsulationPanel({ projectId, settings, mode, role, todayKey, ref
     </>
   )
 
+  const late = lateFact(warnings, settings.lateThresholdDays)
   const facts: KeyFact[] = [
     { value: formatQty(data.spools.length), label: 'spool' },
     ...MILESTONES.map((m) => ({
@@ -222,6 +230,7 @@ export function InsulationPanel({ projectId, settings, mode, role, todayKey, ref
       // What the counts count: spool rows, or lines, packages... (spec §6.4).
       label: UNIT_LABEL[unit],
     })),
+    ...(late === null ? [] : [late]),
     ...review,
   ]
 
@@ -261,6 +270,8 @@ export function InsulationPanel({ projectId, settings, mode, role, todayKey, ref
         )}
         rowActions={admin ? rowActions : undefined}
       />
+
+      <LateSpools projectId={projectId} warnings={warnings} thresholdDays={settings.lateThresholdDays} />
 
       {clearing !== null && (
         <ClearActualModal

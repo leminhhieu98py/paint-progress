@@ -258,3 +258,29 @@ describe('InsulationPanel: detail and states', () => {
     await waitFor(() => expect(api.listSpoolColumns).toHaveBeenCalledTimes(2))
   })
 })
+
+describe('InsulationPanel: late warnings (spec §7)', () => {
+  // On 20/10 with N = 7: SP-1's Insulation Work (plan 10/10) and SP-3's two milestones (09/10, 08/10) are late.
+  const late = { todayKey: '2026-10-20' } as const
+  const lateInfo = 'Spool có ít nhất một mốc trễ quá 7 ngày so với ngày Plan (chưa có Actual thì tính đến hôm nay)'
+
+  it.each([
+    ['the admin', {}],
+    ['a foreman', asGs],
+    ['a viewer', asViewer],
+  ])('shows %s the late spools in an amber pill and the Spool trễ card', async (_who, as) => {
+    renderPanel({ ...late, ...as })
+    await chart()
+    expect(keyFactTexts(header('Insulation'))).toContain('2 spool trễ')
+    expect(within(header('Insulation')).getByLabelText(lateInfo)).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 2, name: 'Spool trễ' })).toBeInTheDocument()
+    expect(within(screen.getByTestId('late-spools')).getByText('TP2')).toBeInTheDocument()
+  })
+
+  it('shows no pill while no spool is past the threshold', async () => {
+    renderPanel({ ...late, settings: { ...SETTINGS, lateThresholdDays: 15 } })
+    await chart()
+    expect(keyFactTexts(header('Insulation')).some((t) => t.includes('spool trễ'))).toBe(false)
+    expect(screen.getByText('Không có spool trễ')).toBeInTheDocument()
+  })
+})
