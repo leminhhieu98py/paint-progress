@@ -5,6 +5,20 @@ import { promisify } from 'node:util'
 const run = promisify(execFile)
 
 /**
+ * The rows of `supabase db query --output-format json`, whichever shape the CLI
+ * prints. Up to 2.118 it was `{ "rows": [...] }`; 2.120 prints the bare array,
+ * and both put "Initialising login role..." in front. Slicing from the first
+ * `{` read only the first row of the array and failed on what followed.
+ */
+export function parseQueryRows(stdout: string): Record<string, unknown>[] {
+  const starts = [stdout.indexOf('['), stdout.indexOf('{')].filter((i) => i >= 0)
+  if (starts.length === 0) throw new Error(`rls-teardown: no JSON in the CLI output:\n${stdout}`)
+  const parsed: unknown = JSON.parse(stdout.slice(Math.min(...starts)))
+  if (Array.isArray(parsed)) return parsed as Record<string, unknown>[]
+  return ((parsed as { rows?: Record<string, unknown>[] }).rows) ?? []
+}
+
+/**
  * Purge what the RLS suite leaves in the live project.
  *
  * The Edge Function's `create` action makes real auth users, and `reveal`
@@ -56,15 +70,13 @@ export async function teardown() {
 
   // The script asserts its own results. A silent failure here would put us back
   // to leaking accounts, so a non-PASS row fails the run loudly.
-  const rows: { rows?: Record<string, unknown>[] } = JSON.parse(
-    stdout.slice(stdout.indexOf('{')),
-  )
-  const failures = (rows.rows ?? []).filter((r) => !JSON.stringify(r).includes('PASS'))
+  const rows = parseQueryRows(stdout)
+  const failures = rows.filter((r) => !JSON.stringify(r).includes('PASS'))
   if (failures.length > 0) {
     throw new Error(
       `rls-teardown.sql left ${failures.length} check(s) failing; the live project may hold residue:\n` +
         failures.map((f) => JSON.stringify(f)).join('\n'),
     )
   }
-  console.log(`[rls-teardown] purged, ${(rows.rows ?? []).length} checks PASS`)
+  console.log(`[rls-teardown] purged, ${rows.length} checks PASS`)
 }

@@ -1,14 +1,15 @@
 import type { ReactNode } from 'react'
 import { palette, type } from '../theme'
 
-export type StatusTone = 'ok' | 'warn' | 'off' | 'accent' | 'slate' | 'info'
+export type StatusTone = 'ok' | 'warn' | 'off' | 'accent' | 'slate' | 'info' | 'danger'
 
 /**
  * `ok` is a fact that holds -- a drawing is attached, an account is live.
  * `warn` is a fact that blocks something downstream -- no drawing means no
  * bays for a foreman to tap. `off` is deliberate absence, not a problem: a
  * deactivated account is the admin's own decision and should not read as an
- * alarm.
+ * alarm. `danger` is a loss the confirm brings with it -- a spool deleted
+ * together with its actual dates.
  *
  * `accent`, `slate` and `info` carry no verdict; they exist so a column of
  * category badges (UI-04, `CategoryBadge`) can give each value of a small set
@@ -21,6 +22,7 @@ const TONES: Record<StatusTone, { background: string; color: string }> = {
   accent: { background: palette.accentTint, color: palette.accentHover },
   slate: { background: palette.track, color: palette.ink },
   info: { background: palette.infoBg, color: palette.info },
+  danger: { background: palette.errorBg, color: palette.error },
 }
 
 export function StatusPill({ tone, children }: { tone: StatusTone; children: ReactNode }) {

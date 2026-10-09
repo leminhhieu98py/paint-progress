@@ -65,6 +65,9 @@ const DashboardScreen = lazy(() =>
 const KpiScreen = lazy(() =>
   import('./screens/kpi/KpiScreen').then((m) => ({ default: m.KpiScreen })),
 )
+const PipingScreen = lazy(() =>
+  import('./screens/piping/PipingScreen').then((m) => ({ default: m.PipingScreen })),
+)
 
 function LazySuspense({ children }: { children: ReactNode }) {
   return (
@@ -276,6 +279,15 @@ export function AppRoutes() {
               </LazySuspense>
             }
           />
+          {/* Piping spec §11: its own item after KPI; the project is in `?project=`. */}
+          <Route
+            path="piping"
+            element={
+              <LazySuspense>
+                <PipingScreen variant="admin" />
+              </LazySuspense>
+            }
+          />
           {/* The staff roster moved into Nhân lực; an old bookmark still lands (NL-01). */}
           <Route path="employees" element={<Navigate to={`${APP_BASE_PATH}/admin/users`} replace />} />
           {/*
@@ -353,6 +365,24 @@ export function AppRoutes() {
               <ConfigProvider theme={fieldTheme}>
                 <LazySuspense>
                   <KpiScreen variant="gs" />
+                </LazySuspense>
+              </ConfigProvider>
+            </RequireRole>
+          }
+        />
+        {/*
+          The field Piping page (piping spec §2, §11): the same two roles and
+          field theme as KPI, its own chunk. The route always answers; a
+          project without Piping gets an info state, and the header shows the
+          tab only where Piping is on (R-1).
+        */}
+        <Route
+          path="gs/:projectId/piping"
+          element={
+            <RequireRole roles={['gs', 'viewer']}>
+              <ConfigProvider theme={fieldTheme}>
+                <LazySuspense>
+                  <PipingScreen variant="gs" />
                 </LazySuspense>
               </ConfigProvider>
             </RequireRole>

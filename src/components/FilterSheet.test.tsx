@@ -119,3 +119,13 @@ describe('FilterSheet: the sheet (FLT-04, RV7-3)', () => {
     expect(sheetButton()).toHaveAttribute('aria-expanded', 'false')
   })
 })
+
+describe('FilterSheet: a second sheet on one screen', () => {
+  it('takes its own name for the bar, the button and the sheet, so it reads apart from the page one', async () => {
+    renderSheet({ label: 'Lọc spool' })
+    const own = screen.getByRole('search', { name: 'Lọc spool' })
+    expect(screen.queryByRole('search', { name: 'Bộ lọc' })).toBeNull()
+    await userEvent.click(within(own).getByRole('button', { name: 'Lọc spool' }))
+    expect(await screen.findByRole('dialog', { name: 'Lọc spool' })).toBeInTheDocument()
+  })
+})

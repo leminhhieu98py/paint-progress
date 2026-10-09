@@ -84,6 +84,10 @@ const listProjectNames = vi.hoisted(() => vi.fn())
 vi.mock('../../lib/projectsApi', () => ({
   listProjectNames: () => listProjectNames(),
 }))
+// The field header asks whether the project has Piping (piping spec §2, R-1): none here.
+vi.mock('../../lib/pipingApi/settingsRead', () => ({
+  getPipingSettings: () => Promise.resolve(null),
+}))
 // react-router's navigate, so the test can see WHERE signing out sends the
 // foreman -- not merely that signOut was called.
 const navigate = vi.hoisted(() => vi.fn())

@@ -60,8 +60,11 @@ delete from auth.users where email like 'rlstest-ef-%@app.local';
 -- instead and creates no account, so nothing of its own reaches this step.)
 delete from profiles where username like 'rlstest-ef-%';
 
--- 4. The scratch projects, in case a run was killed before afterAll.
-delete from projects where code in ('RLSX', 'RLSY', 'RLSE', 'RLSW', 'RLSH', 'RLSN');
+-- 4. The scratch projects, in case a run was killed before afterAll. RLSP and
+-- RLSQ are the piping suite's (0038): every piping_* row it writes -- settings,
+-- plans, actuals, groups, spools, notes, the import log -- carries project_id
+-- on delete cascade, so the project delete removes all of it.
+delete from projects where code in ('RLSX', 'RLSY', 'RLSE', 'RLSW', 'RLSH', 'RLSN', 'RLSP', 'RLSQ');
 
 -- 4b. The employees the suites add (the 0032 roster case, and
 -- tests/nhanLuc.integration.test.ts), in case a run was killed before its
@@ -166,7 +169,7 @@ begin
   return next format('%s no Edge Function credential rows survive: %s found, expected 0',
                      case when n = 0 then 'PASS' else 'FAIL' end, n);
 
-  select count(*) into n from projects where code in ('RLSX', 'RLSY', 'RLSE', 'RLSW', 'RLSH', 'RLSN');
+  select count(*) into n from projects where code in ('RLSX', 'RLSY', 'RLSE', 'RLSW', 'RLSH', 'RLSN', 'RLSP', 'RLSQ');
   return next format('%s no scratch projects survive: %s found, expected 0',
                      case when n = 0 then 'PASS' else 'FAIL' end, n);
 

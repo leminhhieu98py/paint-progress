@@ -19,6 +19,10 @@ vi.mock('../../lib/progressApi', () => ({
 vi.mock('../../lib/projectsApi', () => ({
   listProjectNames: () => listProjectNames(),
 }))
+// The field header asks whether the project has Piping (piping spec §2, R-1): none here.
+vi.mock('../../lib/pipingApi/settingsRead', () => ({
+  getPipingSettings: () => Promise.resolve(null),
+}))
 vi.mock('./ProductivityDashboard', () => ({
   ProductivityDashboard: ({ events, filters, version }: {
     events: unknown[]; filters: { work: string | null; deck: string }; version: number

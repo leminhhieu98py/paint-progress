@@ -22,7 +22,7 @@ import { FIELD_SECTIONS, fieldSectionOf } from './fieldSections'
  * on screen, which is on the route: by the name the screen already read when
  * it has one, else by its id.
  */
-export function FieldProjectSelect({ projectId, width = 260, onChange }: {
+export function FieldProjectSelect({ projectId, width = 260, onChange, pending = false }: {
   /** The project on screen, from the route. */
   projectId: string
   width?: number | string
@@ -31,6 +31,8 @@ export function FieldProjectSelect({ projectId, width = 260, onChange }: {
    * carries its filters to the chosen project and opens it (I-1).
    */
   onChange?: (projectId: string) => void
+  /** The page is still working out where a pick leads (Piping reads the target's settings first). */
+  pending?: boolean
 }) {
   const navigate = useNavigate()
   const fullOptions = useFullOptionsProps()
@@ -67,7 +69,7 @@ export function FieldProjectSelect({ projectId, width = 260, onChange }: {
       {...fullOptions}
       style={{ width, maxWidth: '100%' }}
       value={projectId}
-      loading={reading && !listed}
+      loading={pending || (reading && !listed)}
       onChange={(id: string) => {
         if (onChange) onChange(id)
         else if (id !== projectId) navigate(`${APP_BASE_PATH}/gs/${id}${section.suffix}`)

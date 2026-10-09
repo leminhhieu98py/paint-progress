@@ -66,6 +66,7 @@ export function ConsequenceModal({
   onOk,
   onCancel,
   confirmText,
+  confirmLabel = 'Gõ đúng tên để xác nhận',
   error,
 }: {
   open: boolean
@@ -94,6 +95,8 @@ export function ConsequenceModal({
    * cleared on every close so the next delete is never one click.
    */
   confirmText?: string
+  /** The typed confirmation's label, when what is typed is not a name (e.g. "Gõ XOÁ để xác nhận"). */
+  confirmLabel?: string
   /**
    * A refused confirm, said inside the dialog the admin is looking at rather
    * than on the page behind its mask (M8). The dialog stays open to retry.
@@ -266,7 +269,7 @@ export function ConsequenceModal({
             htmlFor="consequence-confirm"
             style={{ display: 'block', marginBottom: 6, ...type.label }}
           >
-            Gõ đúng tên để xác nhận
+            {confirmLabel}
           </label>
           <Input
             id="consequence-confirm"

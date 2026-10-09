@@ -4,15 +4,20 @@ import { matchPath } from 'react-router-dom'
 import { APP_BASE_PATH } from '../../config'
 
 /**
- * The three field pages of one project, in the order the tabs show them. The
+ * The field pages of one project, in the order the tabs show them. The
  * suffix is what follows `/gs/:projectId`, so the project switch can open the
- * same page of the project it chooses.
+ * same page of the project it chooses. Piping is a per-project module: the
+ * header shows its tab only where it is enabled (piping spec §2, R-1).
  */
 export const FIELD_SECTIONS = [
   { label: 'Sàn', suffix: '' },
   { label: 'Năng suất', suffix: '/dashboard' },
   { label: 'KPI', suffix: '/kpi' },
+  { label: 'Piping', suffix: '/piping' },
 ] as const
+
+/** The section of the Piping module, shown only for a project with Piping on. */
+export const PIPING_SECTION = FIELD_SECTIONS[3]
 
 export type FieldSection = (typeof FIELD_SECTIONS)[number]
 
