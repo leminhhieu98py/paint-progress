@@ -1,4 +1,4 @@
-import { DownloadOutlined, HolderOutlined, PlusOutlined } from '@ant-design/icons'
+import { HolderOutlined, PlusOutlined } from '@ant-design/icons'
 import { Alert, App, Button, Form, Input, Modal, Space, Table, Tooltip, Typography } from 'antd'
 import dayjs from 'dayjs'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -601,14 +601,14 @@ export function DecksScreen() {
           bodyPadding={0}
           footer={<RulesDisclosure rules={RULES} />}
           extra={
-            <Tooltip title={modelDecks.length === 0 ? 'Cần ít nhất một sàn' : 'Xuất báo cáo · .xlsx'}>
+            // A word, no icon (RV8-1); the tooltip only says why it is off.
+            <Tooltip title={modelDecks.length === 0 ? 'Cần ít nhất một sàn' : undefined}>
               <Button
-                icon={<DownloadOutlined aria-hidden />}
                 onClick={() => setConfirmingExport(true)}
                 loading={exporting}
                 disabled={modelDecks.length === 0}
               >
-                Xuất báo cáo
+                Project Report
               </Button>
             </Tooltip>
           }

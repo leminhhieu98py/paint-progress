@@ -565,7 +565,7 @@ describe('DecksScreen — the project-wide half of progress', () => {
     renderScreen()
     await screen.findByTestId('project-rollup')
 
-    await userEvent.click(screen.getByRole('button', { name: /Xuất báo cáo/ }))
+    await userEvent.click(screen.getByRole('button', { name: 'Project Report' }))
     await userEvent.click(await screen.findByRole('button', { name: 'Xuất' }))
 
     await waitFor(() => expect(buildReportWorkbook).toHaveBeenCalledTimes(1))
@@ -603,7 +603,7 @@ describe('DecksScreen — the project-wide half of progress', () => {
     ))
     renderScreen()
     await screen.findByTestId('project-rollup')
-    await userEvent.click(screen.getByRole('button', { name: /Xuất báo cáo/ }))
+    await userEvent.click(screen.getByRole('button', { name: 'Project Report' }))
     await userEvent.click(await screen.findByRole('button', { name: 'Xuất' }))
 
     await waitFor(() => expect(buildReportWorkbook).toHaveBeenCalledTimes(1))
@@ -621,7 +621,7 @@ describe('DecksScreen — the project-wide half of progress', () => {
     renderScreen()
     await screen.findByTestId('project-rollup')
 
-    await userEvent.click(screen.getByRole('button', { name: /Xuất báo cáo/ }))
+    await userEvent.click(screen.getByRole('button', { name: 'Project Report' }))
     await userEvent.click(await screen.findByRole('button', { name: 'Xuất' }))
 
     await waitFor(() => expect(buildReportWorkbook).toHaveBeenCalled())
@@ -633,10 +633,18 @@ describe('DecksScreen — the project-wide half of progress', () => {
     renderScreen()
     await screen.findByTestId('project-rollup')
 
-    await userEvent.click(screen.getByRole('button', { name: /Xuất báo cáo/ }))
+    await userEvent.click(screen.getByRole('button', { name: 'Project Report' }))
     await userEvent.click(await screen.findByRole('button', { name: 'Xuất' }))
 
     expect(await screen.findByText(/out of memory/)).toBeInTheDocument()
+  })
+
+  it('labels the whole-project export Project Report, a word and no icon (RV8-1)', async () => {
+    renderScreen()
+    await screen.findByTestId('project-rollup')
+    const button = screen.getByRole('button', { name: 'Project Report' })
+    expect(button).toHaveTextContent(/^Project Report$/)
+    expect(button.querySelector('.anticon')).toBeNull()
   })
 
   it('says so, and offers no export, when the project has no decks', async () => {
@@ -644,7 +652,7 @@ describe('DecksScreen — the project-wide half of progress', () => {
     renderScreen()
 
     expect((await screen.findAllByText('Dự án này chưa có sàn nào')).length).toBeGreaterThan(0)
-    expect(screen.getByRole('button', { name: /Xuất báo cáo/ })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Project Report' })).toBeDisabled()
     // The export button's own tooltip says why; the empty states say nothing
     // more than their title (CPY-01).
     expect(screen.queryByText(/Xuất báo cáo bị tắt/)).toBeNull()
@@ -673,7 +681,7 @@ describe('DecksScreen — the project-wide half of progress', () => {
   it('asks before exporting without describing how the drawings are built (CPY-01)', async () => {
     renderScreen()
     await screen.findByTestId('project-rollup')
-    await userEvent.click(screen.getByRole('button', { name: /Xuất báo cáo/ }))
+    await userEvent.click(screen.getByRole('button', { name: 'Project Report' }))
     const dialog = await screen.findByRole('dialog')
     expect(within(dialog).getByText('Xuất báo cáo dự án?')).toBeInTheDocument()
     expect(consequenceItems(dialog)).toEqual(['Có thể mất một lúc với dự án nhiều sàn'])
