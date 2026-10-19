@@ -27,6 +27,7 @@ import { space } from '../../theme'
 import { useFieldPhone } from '../gs/fieldSections'
 import { dayGridColumns } from './manpower/dayGridColumns'
 import { ManpowerChart } from './manpower/ManpowerChart'
+import { resolveChartColors } from './chartColors'
 import { ManpowerEntryForm } from './manpower/ManpowerEntryForm'
 import { ManpowerHistoryTable } from './manpower/ManpowerHistoryTable'
 import type { PipingPanelProps } from './panelProps'
@@ -146,6 +147,7 @@ export function ManpowerPanel({ projectId, settings, mode, role, todayKey, refre
   const groups = data?.groups
   const plan = data?.plan
   const drawn = useMemo(() => (data === null ? [] : chartGroups(data.groups, data.plan, data.actual)), [data])
+  const colors = useMemo(() => resolveChartColors(settings.chartColors, drawn), [settings.chartColors, drawn])
   // The Nhóm select (RV8-7): the groups with something to draw, hidden ones marked; every group for the admin.
   const groupOptions = useMemo(
     () => (admin ? bySort(groups ?? []) : drawn)
@@ -307,6 +309,7 @@ export function ManpowerPanel({ projectId, settings, mode, role, todayKey, refre
                 groups={drawn}
                 selected={selected}
                 planAverage={planAvg}
+                colors={colors}
                 mode={mode}
               />
             )}

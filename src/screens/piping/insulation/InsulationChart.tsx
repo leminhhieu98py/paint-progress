@@ -8,6 +8,7 @@ import { palette, tintColor } from '../../../theme'
 import {
   ACTIVE_BAR, ACTIVE_DOT, AXIS, axisTick, legendText, TOOLTIP_SEPARATOR, useLegendHighlight,
 } from '../../dashboard/chartKit'
+import { insulationColorKey, resolveChartColors, type ChartColors } from '../chartColors'
 import { legendOrder } from '../legendOrder'
 import { formatQty } from '../pipingFormat'
 
@@ -24,17 +25,13 @@ import { formatQty } from '../pipingFormat'
  * One colour per milestone from the app's palette (CHT-01), so a milestone's
  * bars and lines read as a set: the Plan bar a lighter tint, the Plan line
  * dashed, the Actual line solid with dots, as on the KPI and Reinstatement
- * charts. The names are the milestones' (RV8-4); the lines say "lũy kế"
+ * charts. The project's colours (RV8-2) may set Plan and Actual of each
+ * milestone apart (`ins.<milestone>.<kind>`); a bar and its line share one.
+ * The names are the milestones' (RV8-4); the lines say "lũy kế"
  * (spec §3), as Reinstatement's "Plan lũy kế" does. Dots only
  * while the points can be told apart (DOTS_UP_TO): a long day axis drew
  * thousands of circles that read as a thick line and re-rendered on hover.
  */
-
-const MILESTONE_COLOR: Record<Milestone, string> = {
-  ph: palette.categorical[0],
-  ih: palette.categorical[2],
-  iw: palette.categorical[6],
-}
 
 /** How much white the Plan bar mixes into its milestone's colour: the same hue, lighter. */
 const PLAN_BAR_TINT = 0.5
@@ -64,6 +61,13 @@ const seriesName = (key: CamSeriesKey) => {
 /** The most points an Actual line still dots. */
 const DOTS_UP_TO = 60
 
+/** Today's colours, for a caller that passes none. */
+const DEFAULT_COLORS = resolveChartColors({}, [])
+
+/** The series' colour: its milestone × kind's. */
+const colorOf = (colors: ChartColors, key: CamSeriesKey) =>
+  colors[insulationColorKey(SERIES[key].milestone, SERIES[key].kind === 'Plan' ? 'plan' : 'actual')]
+
 /**
  * `keys` are the bars and lines the Plan | Actual | Plan & Actual toggle
  * shows (`camSeriesKeys`). The caller keys this on the view so the Brush's zoom
@@ -71,10 +75,12 @@ const DOTS_UP_TO = 60
  * Excel report (spec §10): the whole range with no Brush, on the desktop
  * layout whatever the screen.
  */
-export function InsulationChart({ data, keys, mode, report = false }: {
+export function InsulationChart({ data, keys, mode, colors = DEFAULT_COLORS, report = false }: {
   data: CamPoint[]
   keys: CamSeriesKey[]
   mode: ViewMode
+  /** The project's resolved chart colours (`resolveChartColors`). */
+  colors?: ChartColors
   report?: boolean
 }) {
   const { legend, opacity, height, phone } = useLegendHighlight({ desktop: report })
@@ -109,7 +115,7 @@ export function InsulationChart({ data, keys, mode, report = false }: {
           />
           <Legend formatter={legendText} itemSorter={legendSorter} {...legend} />
           {bars.map((key) => {
-            const color = MILESTONE_COLOR[SERIES[key].milestone]
+            const color = colorOf(colors, key)
             return (
               <Bar
                 key={key}
@@ -124,7 +130,7 @@ export function InsulationChart({ data, keys, mode, report = false }: {
             )
           })}
           {lines.map((key) => {
-            const color = MILESTONE_COLOR[SERIES[key].milestone]
+            const color = colorOf(colors, key)
             const plan = SERIES[key].kind === 'Plan'
             return (
               <Line

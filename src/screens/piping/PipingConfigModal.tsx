@@ -4,15 +4,16 @@ import { ConsequenceModal } from '../../components/ConsequenceModal'
 import { modalProps } from '../../components/modalChrome'
 import type { PipingSettings } from '../../domain/piping/types'
 import { disablePiping } from '../../lib/pipingApi'
+import { ChartColorsSection } from './config/ChartColorsSection'
 import { ColumnsSection } from './config/ColumnsSection'
 import { GroupsSection } from './config/GroupsSection'
 import { ImportLogSection } from './config/ImportLogSection'
 import { SettingsSection } from './config/SettingsSection'
 
 /**
- * Cấu hình (spec §2, §5, §6.1, §8), the admin's alone: Thông số, Nhóm nhân
- * lực, Cột thêm của spool, Lịch sử import, and Tắt Piping, which hides the
- * module and keeps every row of data.
+ * Cấu hình (spec §2, §5, §6.1, §8, RV8-2), the admin's alone: Thông số, Màu
+ * biểu đồ, Nhóm nhân lực, Cột thêm của spool, Lịch sử import, and Tắt Piping,
+ * which hides the module and keeps every row of data.
  *
  * Mounted only while open, so each opening reads the lists afresh.
  */
@@ -30,6 +31,8 @@ export function PipingConfigModal({ projectId, projectName, settings, onClose, o
   const [disabling, setDisabling] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Màu biểu đồ lists the groups: it re-reads them after a change in Nhóm nhân lực.
+  const [groupsChanged, setGroupsChanged] = useState(0)
 
   const disable = async () => {
     setBusy(true)
@@ -76,7 +79,26 @@ export function PipingConfigModal({ projectId, projectName, settings, onClose, o
               label: 'Thông số',
               children: <SettingsSection projectId={projectId} settings={settings} onSaved={onChanged} />,
             },
-            { key: 'groups', label: 'Nhóm nhân lực', children: <GroupsSection projectId={projectId} onChanged={onChanged} /> },
+            {
+              key: 'colors',
+              label: 'Màu biểu đồ',
+              children: (
+                <ChartColorsSection projectId={projectId} settings={settings} refreshKey={groupsChanged} onSaved={onChanged} />
+              ),
+            },
+            {
+              key: 'groups',
+              label: 'Nhóm nhân lực',
+              children: (
+                <GroupsSection
+                  projectId={projectId}
+                  onChanged={() => {
+                    setGroupsChanged((n) => n + 1)
+                    onChanged()
+                  }}
+                />
+              ),
+            },
             {
               key: 'columns',
               label: 'Cột thêm của spool',

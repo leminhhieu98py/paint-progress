@@ -3,6 +3,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ReinstatementPoint } from '../../domain/piping/reinstatement'
 import { legendNames } from '../../test/legend'
 import { setViewport } from '../../test/viewport'
+import { palette } from '../../theme'
+import { KPI_COLOR_DEFAULTS } from '../dashboard/kpiColors'
+import { resolveChartColors } from './chartColors'
 import { ReinstatementChart } from './charts'
 
 /**
@@ -45,10 +48,20 @@ vi.mock('recharts', async (importOriginal) => {
       return <div data-testid="legend" data-layout={String(props.layout ?? '')} />
     },
     Bar: (props: Record<string, unknown>) => (
-      <div data-testid={`bar-${String(props.dataKey)}`} data-name={String(props.name)} data-axis={String(props.yAxisId)} />
+      <div
+        data-testid={`bar-${String(props.dataKey)}`}
+        data-name={String(props.name)}
+        data-axis={String(props.yAxisId)}
+        data-fill={String(props.fill)}
+      />
     ),
     Line: (props: Record<string, unknown>) => (
-      <div data-testid={`line-${String(props.dataKey)}`} data-name={String(props.name)} data-axis={String(props.yAxisId)} />
+      <div
+        data-testid={`line-${String(props.dataKey)}`}
+        data-name={String(props.name)}
+        data-axis={String(props.yAxisId)}
+        data-stroke={String(props.stroke)}
+      />
     ),
   }
 })
@@ -143,5 +156,23 @@ describe('ReinstatementChart (spec §4, R-5)', () => {
     } finally {
       undo()
     }
+  })
+
+  it('paints each series in the project\'s colour for its key, today\'s colour by default (RV8-2)', () => {
+    const { unmount } = render(<ReinstatementChart data={DAYS} mode="day" />)
+    expect(screen.getByTestId('bar-plan')).toHaveAttribute('data-fill', KPI_COLOR_DEFAULTS.plan)
+    expect(screen.getByTestId('bar-actual')).toHaveAttribute('data-fill', KPI_COLOR_DEFAULTS.actual)
+    expect(screen.getByTestId('line-planCum')).toHaveAttribute('data-stroke', palette.textTertiary)
+    expect(screen.getByTestId('line-actualCum')).toHaveAttribute('data-stroke', palette.accentHover)
+    unmount()
+    const colors = resolveChartColors(
+      { 'rein.planBar': '#111111', 'rein.actualBar': '#222222', 'rein.planCum': '#333333', 'rein.actualCum': '#444444' },
+      [],
+    )
+    render(<ReinstatementChart data={DAYS} mode="day" colors={colors} />)
+    expect(screen.getByTestId('bar-plan')).toHaveAttribute('data-fill', '#111111')
+    expect(screen.getByTestId('bar-actual')).toHaveAttribute('data-fill', '#222222')
+    expect(screen.getByTestId('line-planCum')).toHaveAttribute('data-stroke', '#333333')
+    expect(screen.getByTestId('line-actualCum')).toHaveAttribute('data-stroke', '#444444')
   })
 })

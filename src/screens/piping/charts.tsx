@@ -8,7 +8,7 @@ import { palette } from '../../theme'
 import {
   ACTIVE_BAR, ACTIVE_DOT, AXIS, axisTick, legendText, TOOLTIP_SEPARATOR, useLegendHighlight,
 } from '../dashboard/chartKit'
-import { KPI_COLOR_DEFAULTS } from '../dashboard/kpiColors'
+import { resolveChartColors, type ChartColors } from './chartColors'
 import { legendOrder } from './legendOrder'
 import { formatQty } from './pipingFormat'
 
@@ -25,13 +25,16 @@ const BUCKET_WORD: Record<ViewMode, string> = { day: 'theo ngày', week: 'theo t
 /** The legend: Plan before Actual, the bar before the line. */
 const REINSTATEMENT_LEGEND = legendOrder(['plan', 'planCum', 'actual', 'actualCum'])
 
+/** Today's colours, for a caller that passes none. */
+const DEFAULT_COLORS = resolveChartColors({}, [])
+
 /**
  * Reinstatement (spec §4, R-5): Plan and Actual bars per day or week on the
  * left axis, the Plan cumulative line (to the end of the plan) and the Actual
  * cumulative line (to today) on the right. The names say "theo ngày/tuần" and
- * "lũy kế" so a bar is never read as a running total (spec §3). Colours as on
- * the KPI chart: the plan in the grey family, the actual in the accent family,
- * the plan line dashed.
+ * "lũy kế" so a bar is never read as a running total (spec §3). Colours are
+ * the project's (RV8-2, `rein.*`), by default as on the KPI chart: the plan in
+ * the grey family, the actual in the accent family; the plan line dashed.
  *
  * The axis keys on each bucket's first day, unique across years; its tick is
  * that day's `DD/MM` and the tooltip names the bucket in full (`DD/MM/YYYY`,
@@ -41,9 +44,11 @@ const REINSTATEMENT_LEGEND = legendOrder(['plan', 'planCum', 'actual', 'actualCu
  * `report` draws it for the Excel report (spec §10): the whole range with no
  * Brush, on the desktop layout whatever the screen.
  */
-export function ReinstatementChart({ data, mode, report = false }: {
+export function ReinstatementChart({ data, mode, colors = DEFAULT_COLORS, report = false }: {
   data: ReinstatementPoint[]
   mode: ViewMode
+  /** The project's resolved chart colours (`resolveChartColors`). */
+  colors?: ChartColors
   report?: boolean
 }) {
   const { legend, opacity, height, phone } = useLegendHighlight({ desktop: report })
@@ -76,7 +81,7 @@ export function ReinstatementChart({ data, mode, report = false }: {
             yAxisId="bucket"
             dataKey="plan"
             name={`Plan ${word}`}
-            fill={KPI_COLOR_DEFAULTS.plan}
+            fill={colors['rein.planBar']}
             fillOpacity={opacity('plan')}
             activeBar={ACTIVE_BAR}
             isAnimationActive={false}
@@ -85,7 +90,7 @@ export function ReinstatementChart({ data, mode, report = false }: {
             yAxisId="bucket"
             dataKey="actual"
             name={`Actual ${word}`}
-            fill={KPI_COLOR_DEFAULTS.actual}
+            fill={colors['rein.actualBar']}
             fillOpacity={opacity('actual')}
             activeBar={ACTIVE_BAR}
             isAnimationActive={false}
@@ -95,7 +100,7 @@ export function ReinstatementChart({ data, mode, report = false }: {
             type="monotone"
             dataKey="planCum"
             name="Plan lũy kế"
-            stroke={palette.textTertiary}
+            stroke={colors['rein.planCum']}
             strokeOpacity={opacity('planCum')}
             strokeWidth={2}
             strokeDasharray="5 3"
@@ -108,7 +113,7 @@ export function ReinstatementChart({ data, mode, report = false }: {
             type="monotone"
             dataKey="actualCum"
             name="Actual lũy kế"
-            stroke={palette.accentHover}
+            stroke={colors['rein.actualCum']}
             strokeOpacity={opacity('actualCum')}
             strokeWidth={2}
             dot={{ r: 2, fillOpacity: opacity('actualCum'), strokeOpacity: opacity('actualCum') }}

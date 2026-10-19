@@ -5,6 +5,7 @@ import type { Unit } from '../../domain/piping/types'
 import type { PipingReportInput } from '../../lib/piping/report'
 import { renderApp } from '../../test/renderApp'
 import { setViewport } from '../../test/viewport'
+import { resolveChartColors } from './chartColors'
 import { InsulationUnitProvider, useInsulationSelection, useInsulationUnit } from './insulationUnit'
 import { showManpowerSelection } from './manpowerSelection'
 import type { PipingPanelProps, PipingRole } from './panelProps'
@@ -126,6 +127,17 @@ describe('PipingExportAction (spec §10)', () => {
     expect(renderChartPng.mock.calls[1][0].data).toEqual(series.manpower.points)
     expect(renderChartPng.mock.calls[2][0].data).toBe(series.insulation.points)
     expect(await screen.findByText('Đã xuất báo cáo Piping')).toBeInTheDocument()
+  })
+
+  it('draws the pictures in the project\'s colours, as on screen (RV8-2)', async () => {
+    const stored = { 'rein.actualCum': '#123456', 'mp.group.g1': '#654321', 'ins.ph.plan': '#ABCDEF' }
+    const base = panel()
+    renderApp(<PipingExportAction panel={{ ...base, settings: { ...base.settings, chartColors: stored } }} />)
+    await userEvent.click(exportButton())
+    await waitFor(() => expect(downloadWorkbook).toHaveBeenCalled())
+    const colors = resolveChartColors(stored, [{ id: 'g1', name: 'Reinstatement', sort: 1, hidden: false }])
+    expect(renderChartPng.mock.calls.map(([spec]) => spec.colors)).toEqual([colors, colors, colors])
+    expect(colors['mp.group.g1']).toBe('#654321')
   })
 
   it.each(['gs', 'viewer'] as const)('%s: never reads the notes, and the report has none', async (role) => {

@@ -4,6 +4,7 @@ import type { CamPoint } from '../../../domain/piping/cam'
 import { palette, tintColor } from '../../../theme'
 import { legendNames } from '../../../test/legend'
 import { setViewport } from '../../../test/viewport'
+import { resolveChartColors } from '../chartColors'
 import { InsulationChart } from './InsulationChart'
 
 /**
@@ -153,6 +154,18 @@ describe('InsulationChart (spec §6.4, Q20A)', () => {
       expect(bar(`${m}ActualBar`)).toHaveAttribute('data-fill', stroke(`${m}Actual`))
       expect(bar(`${m}PlanBar`)).toHaveAttribute('data-fill', tintColor(stroke(`${m}Plan`)!, 0.5))
     }
+  })
+
+  it('paints each milestone × kind in the project\'s colour for it, bar and line alike (RV8-2)', () => {
+    const colors = resolveChartColors({ 'ins.ih.plan': '#123456', 'ins.ih.actual': '#654321' }, [])
+    render(<InsulationChart data={WEEKS} keys={[...ALL]} mode="day" colors={colors} />)
+    expect(line('ihPlan')).toHaveAttribute('data-stroke', '#123456')
+    expect(bar('ihPlanBar')).toHaveAttribute('data-fill', tintColor('#123456', 0.5))
+    expect(line('ihActual')).toHaveAttribute('data-stroke', '#654321')
+    expect(bar('ihActualBar')).toHaveAttribute('data-fill', '#654321')
+    // The Plan line stays dashed in a picked colour; an unpicked key keeps today's.
+    expect(line('ihPlan')).not.toHaveAttribute('data-dash', '')
+    expect(line('phPlan')).toHaveAttribute('data-stroke', palette.categorical[0])
   })
 
   it('draws only the bars and lines the toggle asks for', () => {

@@ -24,6 +24,7 @@ import { ClearActualModal } from './insulation/ClearActualModal'
 import { ControlRow } from './insulation/ControlRow'
 import { PHONE_CONTROL } from './insulation/controlStyle'
 import { InsulationChart } from './insulation/InsulationChart'
+import { resolveChartColors } from './chartColors'
 import { lateFact } from './insulation/lateGroups'
 import { LateSpools } from './insulation/LateSpools'
 import { SpoolDetail } from './insulation/SpoolDetail'
@@ -122,6 +123,7 @@ export function InsulationPanel({ projectId, settings, mode, role, todayKey, ref
       : camSeries({ spools, unit, mode, weekStart: settings.weekStartDate, todayKey }).points),
     [spools, unit, mode, settings.weekStartDate, todayKey],
   )
+  const colors = useMemo(() => resolveChartColors(settings.chartColors, []), [settings.chartColors])
   const progress = useMemo(() => (spools === undefined ? null : camProgress(spools, unit)), [spools, unit])
   const flags = useMemo(
     () => (spools === undefined ? new Map<string, CamSpoolFlags>() : camSpoolFlags(spools, settings.lateThresholdDays, todayKey)),
@@ -291,6 +293,7 @@ export function InsulationPanel({ projectId, settings, mode, role, todayKey, ref
               data={series}
               keys={camSeriesKeys(selection)}
               mode={mode}
+              colors={colors}
             />
           )}
       </SectionCard>
