@@ -99,6 +99,8 @@ const TEMPLATE_NAME: Record<ImportKind, string> = {
   manpower_plan: 'Mau_Manpower_Plan.xlsx',
   spool_plan: 'Mau_Insulation_Plan.xlsx',
   spool_actual: 'Mau_Insulation_Actual.xlsx',
+  reinstatement_actual: 'Mau_Reinstatement_Actual.xlsx',
+  manpower_actual: 'Mau_Manpower_Actual.xlsx',
 }
 
 /** The template's file name: ASCII, so every phone and mail client keeps it intact. */

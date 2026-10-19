@@ -91,7 +91,7 @@ describe('insulationUnit', () => {
       <InsulationUnitProvider>
         <InsulationPanel
           projectId="p1"
-          settings={{ projectId: 'p1', enabled: true, weekStartDate: '2026-09-28', totalTestPacks: null, lateThresholdDays: 7 }}
+          settings={{ projectId: 'p1', enabled: true, weekStartDate: '2026-09-28', totalTestPacks: null, lateThresholdDays: 7, chartColors: {} }}
           mode="day"
           variant="admin"
           role="admin"

@@ -75,7 +75,8 @@ vi.mock('./ManpowerPanel', () => ({ ManpowerPanel: panel('manpower') }))
 vi.mock('./InsulationPanel', () => ({ InsulationPanel: panel('insulation') }))
 
 const settings = (over: Partial<PipingSettings> = {}): PipingSettings => ({
-  projectId: 'p1', enabled: true, weekStartDate: '2026-09-07', totalTestPacks: 1022, lateThresholdDays: 7, ...over,
+  projectId: 'p1', enabled: true, weekStartDate: '2026-09-07', totalTestPacks: 1022, lateThresholdDays: 7,
+  chartColors: {}, ...over,
 })
 
 const props = (name: string) => JSON.parse(screen.getByTestId(`${name}-panel`).textContent ?? '{}')

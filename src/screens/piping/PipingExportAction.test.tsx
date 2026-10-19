@@ -38,6 +38,7 @@ const panel = (over: Partial<PipingPanelProps> = {}): PipingPanelProps => ({
   projectId: 'p1',
   settings: {
     projectId: 'p1', enabled: true, weekStartDate: '2026-09-28', totalTestPacks: 100, lateThresholdDays: 7,
+    chartColors: {},
   },
   mode: 'week',
   variant: 'admin',

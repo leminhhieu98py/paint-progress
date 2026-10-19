@@ -24,6 +24,8 @@ export interface PipingSettings {
   totalTestPacks: number | null
   /** N in the late rule (spec §7), 0..365, default 7. */
   lateThresholdDays: number
+  /** Chart colours (Rv8 RV8-2): series key -> `#rrggbb`; a key not set means the default colour. */
+  chartColors: Record<string, string>
 }
 
 /** One day of the Reinstatement plan (spec §4). One row per day. */
@@ -152,8 +154,22 @@ export interface PipingNote {
   updatedAt: string | null
 }
 
-/** The four imports (spec §8). */
-export type ImportKind = 'reinstatement_plan' | 'manpower_plan' | 'spool_plan' | 'spool_actual'
+/** The imports (spec §8; the two Actual imports of Reinstatement and Manpower are Rv8 RV8-6). */
+export type ImportKind =
+  | 'reinstatement_plan' | 'manpower_plan' | 'spool_plan' | 'spool_actual'
+  | 'reinstatement_actual' | 'manpower_actual'
+
+/** One day of a Reinstatement Actual file (RV8-6): the day's new total. */
+export interface ReinstatementActualImportRow {
+  day: DayKey
+  qty: number
+}
+
+/** One day of a Manpower Actual file (RV8-6): the filled cells, by group id. */
+export interface ManpowerActualImportRow {
+  day: DayKey
+  values: Record<string, number>
+}
 
 /** One confirmed import, as listed in Cấu hình (spec §8). */
 export interface PipingImportLogEntry {

@@ -1,4 +1,6 @@
-import type { DayKey, ManpowerActualValue, ManpowerGroup, ManpowerValue } from '../../domain/piping/types'
+import type {
+  DayKey, ManpowerActualImportRow, ManpowerActualValue, ManpowerGroup, ManpowerValue,
+} from '../../domain/piping/types'
 import { supabase } from '../supabase'
 import {
   MAX_ROWS, TOO_MANY_ROWS, callRpc, importResult, isDayKey, nameOf, readAll, requireRows, requiredText, toError,
@@ -117,6 +119,49 @@ export async function replaceManpowerPlan(
   const data = await callRpc<unknown>('piping_replace_manpower_plan', {
     p_project: projectId,
     p_rows: values.map((v) => ({ group_id: v.groupId, day: v.day, value: v.value })),
+    p_file_name: fileName,
+    p_summary: summary,
+  })
+  return importResult(data)
+}
+
+/**
+ * Update Plan (RV8-5): sets each (group, day) cell in `values`; blank cells
+ * and absent days keep their value. One transaction, logged as a Manpower
+ * Plan import with `mode: 'update'`. Admin only. Limits as replaceManpowerPlan.
+ */
+export async function mergeManpowerPlan(
+  projectId: string,
+  values: ManpowerValue[],
+  fileName: string,
+  summary: Record<string, unknown> = {},
+): Promise<PipingImportResult> {
+  if (new Set(values.map((v) => v.day)).size > MAX_ROWS) throw new Error(TOO_MANY_ROWS)
+  const data = await callRpc<unknown>('piping_merge_manpower_plan', {
+    p_project: projectId,
+    p_rows: values.map((v) => ({ group_id: v.groupId, day: v.day, value: v.value })),
+    p_file_name: fileName,
+    p_summary: summary,
+  })
+  return importResult(data)
+}
+
+/**
+ * Actual import (RV8-6): one row per file day, its filled cells by group id
+ * (hidden groups allowed); each value upserts its (group, day) cell, 0
+ * included. All or nothing; the summary comes back with days, cells, added
+ * and overwritten. Admin only.
+ */
+export async function importManpowerActual(
+  projectId: string,
+  rows: ManpowerActualImportRow[],
+  fileName: string,
+  summary: Record<string, unknown> = {},
+): Promise<PipingImportResult> {
+  if (rows.length > MAX_ROWS) throw new Error(TOO_MANY_ROWS)
+  const data = await callRpc<unknown>('piping_import_manpower_actual', {
+    p_project: projectId,
+    p_rows: rows.map((r) => ({ day: r.day, values: r.values })),
     p_file_name: fileName,
     p_summary: summary,
   })

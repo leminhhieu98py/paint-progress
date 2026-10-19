@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { builder } from '../../test/supabaseBuilder'
-import { PIPING_PAGE, TOO_MANY_ROWS } from './shared'
-import { SPOOLS_CHANGED, flattenActualUpdates, listSpools, replaceSpools, setSpoolActuals } from './spools'
+import { NO_PERMISSION, PIPING_PAGE, TOO_MANY_ROWS } from './shared'
+import { SPOOLS_CHANGED, flattenActualUpdates, listSpools, mergeSpools, replaceSpools, setSpoolActuals } from './spools'
 
 const from = vi.hoisted(() => vi.fn())
 const rpc = vi.hoisted(() => vi.fn())
@@ -141,6 +141,53 @@ describe('replaceSpools', () => {
     const message = 'Cột "Zone" ở dòng 4 chưa được cấu hình (Cấu hình → Cột thêm)'
     rpc.mockResolvedValue({ data: null, error: { code: 'P0001', message } })
     await expect(replaceSpools('p1', [INPUT], 'f')).rejects.toThrow(message)
+  })
+})
+
+describe('mergeSpools (RV8-5 Update Plan)', () => {
+  const INPUT = {
+    spoolNo: 'SP-01', lineNo: 'L1', insuType: null, drawingNo: '  ', testPackageNo: 'TP1', paintingSystem: null,
+    phPlan: '2026-09-01', ihPlan: null, iwPlan: '', extra: { Zone: 'A', Area: '', Level: ' ' },
+  }
+
+  it('sends only the non-empty cells as keys, in file order, and returns the log', async () => {
+    rpc.mockResolvedValue({ data: { mode: 'update', rows: 2, added: 1, matched: 1, changed: 1, log_id: 'l6' }, error: null })
+    const result = await mergeSpools('p1', [
+      INPUT,
+      { ...INPUT, spoolNo: 'SP-02', lineNo: null, testPackageNo: null, phPlan: null, extra: {} },
+    ], 'cam.xlsx', { mode: 'update' })
+    expect(rpc).toHaveBeenCalledWith('piping_merge_spools', {
+      p_project: 'p1',
+      p_rows: [
+        { spool_no: 'SP-01', line_no: 'L1', test_package_no: 'TP1', ph_plan: '2026-09-01', extra: { Zone: 'A' } },
+        { spool_no: 'SP-02' },
+      ],
+      p_file_name: 'cam.xlsx',
+      p_summary: { mode: 'update' },
+    })
+    expect(result).toEqual({ logId: 'l6', summary: { mode: 'update', rows: 2, added: 1, matched: 1, changed: 1 } })
+  })
+
+  it('does not send a parse row number or seq, and defaults the summary', async () => {
+    rpc.mockResolvedValue({ data: { log_id: 'l' }, error: null })
+    await mergeSpools('p1', [{ ...INPUT, row: 7, seq: 3 } as typeof INPUT], 'f')
+    const sent = rpc.mock.calls[0][1].p_rows[0]
+    expect(sent).not.toHaveProperty('row')
+    expect(sent).not.toHaveProperty('seq')
+    expect(rpc.mock.calls[0][1]).toHaveProperty('p_summary', {})
+  })
+
+  it('refuses more than 20 000 rows before calling', async () => {
+    await expect(mergeSpools('p1', Array.from({ length: 20_001 }, () => INPUT), 'f')).rejects.toThrow(TOO_MANY_ROWS)
+    expect(rpc).not.toHaveBeenCalled()
+  })
+
+  it("keeps the function's message and maps a revoked grant", async () => {
+    const message = 'Dự án vượt quá 20 000 spool sau khi cập nhật (20001)'
+    rpc.mockResolvedValueOnce({ data: null, error: { code: 'P0001', message } })
+    await expect(mergeSpools('p1', [INPUT], 'f')).rejects.toThrow(message)
+    rpc.mockResolvedValueOnce({ data: null, error: { code: '42501', message: 'permission denied for function piping_merge_spools' } })
+    await expect(mergeSpools('p1', [INPUT], 'f')).rejects.toThrow(NO_PERMISSION)
   })
 })
 

@@ -44,6 +44,7 @@ vi.mock('../../lib/pipingApi', () => ({
 
 const SETTINGS: PipingSettings = {
   projectId: 'p1', enabled: true, weekStartDate: '2026-09-07', totalTestPacks: 1022, lateThresholdDays: 7,
+  chartColors: {},
 }
 
 const GROUPS: ManpowerGroup[] = [
@@ -423,6 +424,25 @@ describe('PipingConfigModal: Lịch sử import (spec §8)', () => {
     expect(rows[1]).toHaveTextContent('Reinstatement Plan')
     expect(rows[1]).toHaveTextContent('rein.xlsx')
     expect(rows[1]).toHaveTextContent('-')
+  })
+
+  it('names the two Actual imports in the Area Kind pattern (RV8-6)', async () => {
+    api.listImportLog.mockResolvedValue([
+      {
+        id: 'l4', kind: 'manpower_actual', fileName: 'mp-actual.xlsx', rowCount: 3, summary: {}, importedBy: null,
+        importedAt: '2026-10-08T01:00:00Z', importedByName: null,
+      },
+      {
+        id: 'l3', kind: 'reinstatement_actual', fileName: 'rein-actual.xlsx', rowCount: 2, summary: {}, importedBy: null,
+        importedAt: '2026-10-07T01:00:00Z', importedByName: null,
+      },
+    ])
+    renderModal()
+    await openTab('Lịch sử import')
+    const manpower = (await within(config()).findByText('mp-actual.xlsx')).closest('tr') as HTMLElement
+    expect(manpower).toHaveTextContent('Manpower Actual')
+    const reinstatement = within(config()).getByText('rein-actual.xlsx').closest('tr') as HTMLElement
+    expect(reinstatement).toHaveTextContent('Reinstatement Actual')
   })
 })
 

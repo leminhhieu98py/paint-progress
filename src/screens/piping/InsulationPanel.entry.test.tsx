@@ -36,6 +36,7 @@ vi.mock('./insulation/InsulationChart', () => ({ InsulationChart: () => <div dat
 
 const SETTINGS: PipingSettings = {
   projectId: 'p1', enabled: true, weekStartDate: '2026-09-28', totalTestPacks: null, lateThresholdDays: 7,
+  chartColors: {},
 }
 const TODAY = '2026-10-07'
 

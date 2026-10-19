@@ -40,6 +40,7 @@ vi.mock('./insulation/InsulationChart', async () => {
 
 const SETTINGS: PipingSettings = {
   projectId: 'p1', enabled: true, weekStartDate: '2026-09-28', totalTestPacks: null, lateThresholdDays: 7,
+  chartColors: {},
 }
 
 const spool = (seq: number, over: Partial<Spool> = {}): Spool => ({

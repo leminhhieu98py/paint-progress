@@ -135,6 +135,50 @@ export async function replaceSpools(
   return importResult(data)
 }
 
+const filled = (v: string | null): v is string => typeof v === 'string' && v.trim() !== ''
+
+/** A Plan row as Update Plan sends it: SpoolNo plus only the cells the file fills (absent = keep). */
+function filledCells(r: SpoolPlanInput): Record<string, unknown> {
+  const cells: Record<string, string | null> = {
+    line_no: r.lineNo,
+    insu_type: r.insuType,
+    drawing_no: r.drawingNo,
+    test_package_no: r.testPackageNo,
+    painting_system: r.paintingSystem,
+    ph_plan: r.phPlan,
+    ih_plan: r.ihPlan,
+    iw_plan: r.iwPlan,
+  }
+  const out: Record<string, unknown> = { spool_no: r.spoolNo }
+  for (const [key, value] of Object.entries(cells)) if (filled(value)) out[key] = value
+  const extra = Object.fromEntries(Object.entries(r.extra).filter(([, value]) => filled(value)))
+  if (Object.keys(extra).length > 0) out.extra = extra
+  return out
+}
+
+/**
+ * Update Plan (RV8-5): merges `rows`, IN FILE ORDER, into the project's
+ * spools. Matched spools (SpoolNo, duplicates paired by order, R-10) take
+ * every non-empty cell of their row -- extra columns key-wise -- and keep the
+ * rest, actuals included; unmatched rows are added after the existing spools.
+ * Nothing is deleted. Only non-empty cells are sent as keys. Admin only.
+ */
+export async function mergeSpools(
+  projectId: string,
+  rows: SpoolPlanInput[],
+  fileName: string,
+  summary: Record<string, unknown> = {},
+): Promise<PipingImportResult> {
+  if (rows.length > MAX_ROWS) throw new Error(TOO_MANY_ROWS)
+  const data = await callRpc<unknown>('piping_merge_spools', {
+    p_project: projectId,
+    p_rows: rows.map(filledCells),
+    p_file_name: fileName,
+    p_summary: summary,
+  })
+  return importResult(data)
+}
+
 /** How piping_set_spool_actuals judged one spool. */
 export type SpoolActualStatus = 'saved' | 'unchanged' | 'not_found' | 'order' | 'overwrite_needed'
 

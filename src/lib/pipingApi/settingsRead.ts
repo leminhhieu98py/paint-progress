@@ -8,7 +8,21 @@ import { toError } from './shared'
  * nothing else of the Piping API.
  */
 
-const SETTINGS_SELECT = 'project_id, enabled, week_start_date, total_test_packs, late_threshold_days'
+const SETTINGS_SELECT = 'project_id, enabled, week_start_date, total_test_packs, late_threshold_days, chart_colors'
+
+/** A chart colour as stored (RV8-2): `#rrggbb`, no alpha. */
+export const HEX_COLOUR = /^#[0-9a-fA-F]{6}$/
+
+/** The stored colour map with anything but a `#rrggbb` string dropped: such a key falls back to its default. */
+function chartColorsOf(v: unknown): Record<string, string> {
+  const out: Record<string, string> = {}
+  if (v && typeof v === 'object' && !Array.isArray(v)) {
+    for (const [k, c] of Object.entries(v as Record<string, unknown>)) {
+      if (typeof c === 'string' && HEX_COLOUR.test(c)) out[k] = c
+    }
+  }
+  return out
+}
 
 /**
  * The project's settings, or null when Piping was never enabled for it. A
@@ -29,5 +43,6 @@ export async function getPipingSettings(projectId: string): Promise<PipingSettin
     weekStartDate: r.week_start_date as string,
     totalTestPacks: r.total_test_packs === null || r.total_test_packs === undefined ? null : Number(r.total_test_packs),
     lateThresholdDays: Number(r.late_threshold_days),
+    chartColors: chartColorsOf(r.chart_colors),
   }
 }
