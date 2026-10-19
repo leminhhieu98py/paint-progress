@@ -2,8 +2,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { builder } from '../../test/supabaseBuilder'
 import { NO_PERMISSION, NOT_SAVED, PIPING_PAGE, TOO_MANY_ROWS } from './shared'
 import {
-  addManpowerGroup, deleteManpowerGroup, listManpowerActual, listManpowerGroups, listManpowerPlan,
-  renameManpowerGroup, reorderManpowerGroups, replaceManpowerPlan, setManpowerActual, setManpowerGroupHidden,
+  addManpowerGroup, deleteManpowerGroup, importManpowerActual, listManpowerActual, listManpowerGroups,
+  listManpowerPlan, mergeManpowerPlan, renameManpowerGroup, reorderManpowerGroups, replaceManpowerPlan,
+  setManpowerActual, setManpowerGroupHidden,
 } from './manpower'
 
 const from = vi.hoisted(() => vi.fn())
@@ -129,6 +130,69 @@ describe('plan', () => {
     rpc.mockClear()
     await expect(replaceManpowerPlan('p1', tooMany, 'f')).rejects.toThrow(TOO_MANY_ROWS)
     expect(rpc).not.toHaveBeenCalled()
+  })
+})
+
+describe('mergeManpowerPlan (RV8-5 Update Plan)', () => {
+  it('calls piping_merge_manpower_plan with snake_case cells and splits off log_id', async () => {
+    rpc.mockResolvedValue({ data: { mode: 'update', rows: 1, cells: 1, added: 0, changed: 1, log_id: 'l4' }, error: null })
+    const result = await mergeManpowerPlan('p1', [{ groupId: 'g1', day: '2026-09-07', value: 6 }], 'mp.xlsx', { mode: 'update' })
+    expect(rpc).toHaveBeenCalledWith('piping_merge_manpower_plan', {
+      p_project: 'p1',
+      p_rows: [{ group_id: 'g1', day: '2026-09-07', value: 6 }],
+      p_file_name: 'mp.xlsx',
+      p_summary: { mode: 'update' },
+    })
+    expect(result).toEqual({ logId: 'l4', summary: { mode: 'update', rows: 1, cells: 1, added: 0, changed: 1 } })
+  })
+
+  it('limits distinct days, not cells, to 20 000', async () => {
+    rpc.mockResolvedValue({ data: { log_id: 'l' }, error: null })
+    const sameDays = Array.from({ length: 30_000 }, (_, i) => ({ groupId: `g${i % 3}`, day: `d${Math.floor(i / 3)}`, value: 1 }))
+    await mergeManpowerPlan('p1', sameDays, 'f')
+    expect(rpc.mock.calls[0][1]).toHaveProperty('p_summary', {})
+    const tooMany = Array.from({ length: 20_001 }, (_, i) => ({ groupId: 'g1', day: `d${i}`, value: 1 }))
+    rpc.mockClear()
+    await expect(mergeManpowerPlan('p1', tooMany, 'f')).rejects.toThrow(TOO_MANY_ROWS)
+    expect(rpc).not.toHaveBeenCalled()
+  })
+
+  it("keeps the function's message", async () => {
+    rpc.mockResolvedValue({ data: null, error: { code: 'P0001', message: 'Nhóm nhân lực không thuộc dự án này' } })
+    await expect(mergeManpowerPlan('p1', [], 'f')).rejects.toThrow('Nhóm nhân lực không thuộc dự án này')
+  })
+})
+
+describe('importManpowerActual (RV8-6)', () => {
+  it('calls piping_import_manpower_actual with one element per day and splits off log_id', async () => {
+    rpc.mockResolvedValue({ data: { days: 1, cells: 2, added: 1, overwritten: 1, log_id: 'l5' }, error: null })
+    const result = await importManpowerActual(
+      'p1', [{ day: '2026-09-07', values: { g1: 4, g2: 0 } }], 'mp-actual.xlsx', { note: 'x' },
+    )
+    expect(rpc).toHaveBeenCalledWith('piping_import_manpower_actual', {
+      p_project: 'p1',
+      p_rows: [{ day: '2026-09-07', values: { g1: 4, g2: 0 } }],
+      p_file_name: 'mp-actual.xlsx',
+      p_summary: { note: 'x' },
+    })
+    expect(result).toEqual({ logId: 'l5', summary: { days: 1, cells: 2, added: 1, overwritten: 1 } })
+  })
+
+  it('defaults the summary and refuses more than 20 000 days without calling', async () => {
+    rpc.mockResolvedValue({ data: { log_id: 'l5' }, error: null })
+    await importManpowerActual('p1', [], 'f')
+    expect(rpc.mock.calls[0][1]).toHaveProperty('p_summary', {})
+    rpc.mockClear()
+    const rows = Array.from({ length: 20_001 }, (_, i) => ({ day: `d${i}`, values: { g1: 1 } }))
+    await expect(importManpowerActual('p1', rows, 'f')).rejects.toThrow(TOO_MANY_ROWS)
+    expect(rpc).not.toHaveBeenCalled()
+  })
+
+  it("keeps the function's message and maps a revoked grant", async () => {
+    rpc.mockResolvedValueOnce({ data: null, error: { code: 'P0001', message: 'Không nhập được ngày trong tương lai (20/10/2026)' } })
+    await expect(importManpowerActual('p1', [], 'f')).rejects.toThrow('Không nhập được ngày trong tương lai (20/10/2026)')
+    rpc.mockResolvedValueOnce({ data: null, error: { code: '42501', message: 'permission denied for function piping_import_manpower_actual' } })
+    await expect(importManpowerActual('p1', [], 'f')).rejects.toThrow(NO_PERMISSION)
   })
 })
 
