@@ -1,10 +1,12 @@
-import { MILESTONES, PLAN_FIELD, actualDates, duplicateSpoolGroups, orderMessage, planDates, planOrderIssues,
-  resolveActualChanges, spoolKey, type ActualChange, type ActualOverwrite, type ActualResolution } from './cam'
+import { MILESTONES, PLAN_FIELD, actualDates, duplicateSpoolGroups, milestoneActualLabel, milestonePlanLabel, orderMessage,
+  planDates, planOrderIssues, resolveActualChanges, spoolKey, type ActualChange, type ActualOverwrite, type ActualResolution } from './cam'
 import type {
   DayKey,
+  ManpowerActualImportRow,
   ManpowerGroup,
   ManpowerValue,
   Milestone,
+  ReinstatementActualImportRow,
   ReinstatementPlanRow,
   Spool,
   SpoolColumn,
@@ -12,6 +14,7 @@ import type {
   SpoolPlanDates,
 } from './types'
 import { MAX_IMPORT_BYTES, MAX_IMPORT_ROWS } from './limits'
+import { sumQty } from './reinstatement'
 import { formatDayMonthYear } from './week'
 
 /**
@@ -65,8 +68,15 @@ export interface ColumnSpec {
   aliases: readonly string[]
 }
 
+/**
+ * How a Plan file is applied (RV8-5): "Plan" replaces the stored plan with the
+ * file, "Update Plan" sets only what the file fills and keeps the rest.
+ */
+export type PlanImportMode = 'replace' | 'update'
+
 export const DATE_COLUMN: ColumnSpec = { label: 'Date', aliases: ['Ngày', 'Day'] }
 export const PLAN_QTY_COLUMN: ColumnSpec = { label: 'Plan Qty', aliases: ['Plan', 'Kế hoạch', 'Plan Quantity'] }
+export const ACTUAL_QTY_COLUMN: ColumnSpec = { label: 'Actual Qty', aliases: ['Actual', 'Thực tế', 'Actual Quantity'] }
 
 /** The six master columns, as the customer's file names them (spec §0). */
 export const SPOOL_MASTER_COLUMNS: Record<keyof SpoolMaster, ColumnSpec> = {
@@ -80,16 +90,21 @@ export const SPOOL_MASTER_COLUMNS: Record<keyof SpoolMaster, ColumnSpec> = {
 
 const MASTER_KEYS = Object.keys(SPOOL_MASTER_COLUMNS) as Array<keyof SpoolMaster>
 
+/**
+ * The milestone columns (RV8-4): labelled `Pip Plan` … `Insu Act` from the
+ * label map; the names files used before, and the customer's own wording,
+ * stay as aliases so an existing file still imports.
+ */
 export const SPOOL_PLAN_COLUMNS: Record<Milestone, ColumnSpec> = {
-  ph: { label: 'Painting Handover – Plan', aliases: ['PH Plan'] },
-  ih: { label: 'Insulation Handover – Plan', aliases: ['IH Plan'] },
-  iw: { label: 'Insulation Work – Plan', aliases: ['IW Plan'] },
+  ph: { label: milestonePlanLabel('ph'), aliases: ['Painting Handover – Plan', 'PH Plan', 'Handover to Painting – Plan'] },
+  ih: { label: milestonePlanLabel('ih'), aliases: ['Insulation Handover – Plan', 'IH Plan', 'Handover to Insulation – Plan'] },
+  iw: { label: milestonePlanLabel('iw'), aliases: ['Insulation Work – Plan', 'IW Plan'] },
 }
 
 export const SPOOL_ACTUAL_COLUMNS: Record<Milestone, ColumnSpec> = {
-  ph: { label: 'Painting Handover – Actual', aliases: ['PH Actual'] },
-  ih: { label: 'Insulation Handover – Actual', aliases: ['IH Actual'] },
-  iw: { label: 'Insulation Work – Actual', aliases: ['IW Actual'] },
+  ph: { label: milestoneActualLabel('ph'), aliases: ['Painting Handover – Actual', 'PH Actual', 'Handover to Painting – Actual'] },
+  ih: { label: milestoneActualLabel('ih'), aliases: ['Insulation Handover – Actual', 'IH Actual', 'Handover to Insulation – Actual'] },
+  iw: { label: milestoneActualLabel('iw'), aliases: ['Insulation Work – Actual', 'IW Actual'] },
 }
 
 /** Every built-in column of the spool files, for the extra-label collision check. */
@@ -467,8 +482,12 @@ function readAmount(
 // Reinstatement Plan
 // ---------------------------------------------------------------------------
 
-/** A `Date` + `Plan Qty` file (spec §8): one row per day, daily or weekly. */
-export function parseReinstatementPlan(sheets: SheetRows[]): ParseResult<ReinstatementPlanRow> {
+/**
+ * A `Date` + `Plan Qty` file (spec §8): one row per day, daily or weekly. A
+ * dated row without Plan Qty is an error, except in Update Plan (RV8-5) where
+ * a blank cell is not in the file: that row is skipped and its day kept.
+ */
+export function parseReinstatementPlan(sheets: SheetRows[], mode: PlanImportMode = 'replace'): ParseResult<ReinstatementPlanRow> {
   const pre = checkPreamble(sheets)
   if (pre) return empty(null, [pre])
   const header = findHeader(sheets, hasAll([DATE_COLUMN, PLAN_QTY_COLUMN]))
@@ -485,7 +504,8 @@ export function parseReinstatementPlan(sheets: SheetRows[]): ParseResult<Reinsta
   for (const { row, cells } of data) {
     const day = readDate(cells, dateCol, row, seen, errors)
     const qty = readAmount(cellAt(cells, qtyCol), PLAN_QTY_COLUMN.label, row, errors, warnings)
-    if (qty === null) errors.push({ row, message: `Thiếu ${PLAN_QTY_COLUMN.label}` })
+    if (qty === null && mode === 'update') warnings.push({ row, message: `Không có ${PLAN_QTY_COLUMN.label}, bỏ qua` })
+    else if (qty === null) errors.push({ row, message: `Thiếu ${PLAN_QTY_COLUMN.label}` })
     if (day !== null && typeof qty === 'number') rows.push({ day, planQty: qty })
   }
   return finish(header.sheet.name, rows, data.length, errors, warnings)
@@ -502,32 +522,10 @@ export function parseReinstatementPlan(sheets: SheetRows[]): ParseResult<Reinsta
  * cell is no plan for that group on that day.
  */
 export function parseManpowerPlan(sheets: SheetRows[], groups: ManpowerGroup[]): ParseResult<ManpowerValue> {
-  const pre = checkPreamble(sheets)
-  if (pre) return empty(null, [pre])
-  const names = groups.map((g) => g.name)
-  const groupsIn = (norm: string[], texts: string[]) => {
-    const dateCol = columnOf(norm, DATE_COLUMN)
-    return matchNames(texts, names, new Set(dateCol === -1 ? [] : [dateCol]))
-  }
-  // A workbook may carry other sheets with a date column (the customer's own
-  // has three): the one naming a group wins, else the first with a date.
-  const header = findHeader(sheets, (norm, texts) => columnOf(norm, DATE_COLUMN) !== -1 && groupsIn(norm, texts).byColumn.size > 0)
-    ?? findHeader(sheets, hasAll([DATE_COLUMN]))
-  if (!header) return empty(null, [missingHeader(DATE_COLUMN.label)])
-  const dateCol = columnOf(header.norm, DATE_COLUMN)
-  const headerRow = header.index + 1
-  const matched = groupsIn(header.norm, header.texts)
-  const columns = [...matched.byColumn.entries()].sort(([a], [b]) => a - b).map(([col, i]) => ({ col, group: groups[i] }))
-  const unknown = matched.unmatched.sort((a, b) => a - b).map((col) => header.texts[col])
-  const errors: ImportIssue[] = matched.repeats.map((r) => ({ row: headerRow, message: `Cột nhóm ${groups[r.name].name} lặp lại` }))
-  if (unknown.length > 0) {
-    errors.unshift({ row: headerRow, message: `Nhóm chưa có trong Cấu hình: ${unknown.join(', ')} (tạo nhóm trước khi nhập)` })
-  }
-  if (errors.length === 0 && columns.length === 0) errors.push({ row: headerRow, message: 'Không có cột nhóm nào' })
-  if (errors.length > 0) return empty(header.sheet.name, errors)
-
-  const data = dataRows(header, [dateCol, ...columns.map((c) => c.col)])
-  if (data.length > MAX_IMPORT_ROWS) return empty(header.sheet.name, [tooMany(data.length)], [], data.length)
+  const file = readManpowerFile<ManpowerValue>(sheets, groups)
+  if ('result' in file) return file.result
+  const { header, dateCol, columns, data } = file
+  const errors: ImportIssue[] = []
   const warnings: ImportIssue[] = []
   const rows: ManpowerValue[] = []
   const seen = new Map<DayKey, number>()
@@ -541,6 +539,114 @@ export function parseManpowerPlan(sheets: SheetRows[], groups: ManpowerGroup[]):
       if (day !== null && value !== undefined) rows.push({ groupId: group.id, day, value })
     }
     if (day !== null && !any) warnings.push({ row, message: 'Không có giá trị nào, bỏ qua' })
+  }
+  return finish(header.sheet.name, rows, data.length, errors, warnings)
+}
+
+/**
+ * The header and data rows of a Manpower file (Plan or Actual): `Date` + one
+ * column per group, unknown headers refused (R-14) -- or the refusal itself.
+ */
+function readManpowerFile<T>(sheets: SheetRows[], groups: ManpowerGroup[]):
+  | { header: Header; dateCol: number; columns: Array<{ col: number; group: ManpowerGroup }>; data: Array<{ row: number; cells: CellValue[] }> }
+  | { result: ParseResult<T> } {
+  const pre = checkPreamble(sheets)
+  if (pre) return { result: empty(null, [pre]) }
+  const names = groups.map((g) => g.name)
+  const groupsIn = (norm: string[], texts: string[]) => {
+    const dateCol = columnOf(norm, DATE_COLUMN)
+    return matchNames(texts, names, new Set(dateCol === -1 ? [] : [dateCol]))
+  }
+  // A workbook may carry other sheets with a date column (the customer's own
+  // has three): the one naming a group wins, else the first with a date.
+  const header = findHeader(sheets, (norm, texts) => columnOf(norm, DATE_COLUMN) !== -1 && groupsIn(norm, texts).byColumn.size > 0)
+    ?? findHeader(sheets, hasAll([DATE_COLUMN]))
+  if (!header) return { result: empty(null, [missingHeader(DATE_COLUMN.label)]) }
+  const dateCol = columnOf(header.norm, DATE_COLUMN)
+  const headerRow = header.index + 1
+  const matched = groupsIn(header.norm, header.texts)
+  const columns = [...matched.byColumn.entries()].sort(([a], [b]) => a - b).map(([col, i]) => ({ col, group: groups[i] }))
+  const unknown = matched.unmatched.sort((a, b) => a - b).map((col) => header.texts[col])
+  const errors: ImportIssue[] = matched.repeats.map((r) => ({ row: headerRow, message: `Cột nhóm ${groups[r.name].name} lặp lại` }))
+  if (unknown.length > 0) {
+    errors.unshift({ row: headerRow, message: `Nhóm chưa có trong Cấu hình: ${unknown.join(', ')} (tạo nhóm trước khi nhập)` })
+  }
+  if (errors.length === 0 && columns.length === 0) errors.push({ row: headerRow, message: 'Không có cột nhóm nào' })
+  if (errors.length > 0) return { result: empty(header.sheet.name, errors) }
+
+  const data = dataRows(header, [dateCol, ...columns.map((c) => c.col)])
+  if (data.length > MAX_IMPORT_ROWS) return { result: empty(header.sheet.name, [tooMany(data.length)], [], data.length) }
+  return { header, dateCol, columns, data }
+}
+
+// ---------------------------------------------------------------------------
+// Reinstatement and Manpower Actual (RV8-6)
+// ---------------------------------------------------------------------------
+
+/** An Actual day after today (VN), said as piping_import_*_actual says it. */
+function futureDay(day: DayKey): string {
+  return `Không nhập được ngày trong tương lai (${formatDayMonthYear(day)})`
+}
+
+/**
+ * A `Date` + `Actual Qty` file (RV8-6): the plan file's rules, plus no day
+ * after `todayKey`. A blank Actual Qty is not in the file -- that day is kept,
+ * whatever its date, so a sheet listing the days ahead still imports; 0
+ * empties the day.
+ */
+export function parseReinstatementActual(sheets: SheetRows[], todayKey: DayKey): ParseResult<ReinstatementActualImportRow> {
+  const pre = checkPreamble(sheets)
+  if (pre) return empty(null, [pre])
+  const header = findHeader(sheets, hasAll([DATE_COLUMN, ACTUAL_QTY_COLUMN]))
+  if (!header) return empty(null, [missingHeader(`${DATE_COLUMN.label}, ${ACTUAL_QTY_COLUMN.label}`)])
+  const dateCol = columnOf(header.norm, DATE_COLUMN)
+  const qtyCol = columnOf(header.norm, ACTUAL_QTY_COLUMN)
+  const data = dataRows(header, [dateCol, qtyCol])
+  if (data.length > MAX_IMPORT_ROWS) return empty(header.sheet.name, [tooMany(data.length)], [], data.length)
+
+  const errors: ImportIssue[] = []
+  const warnings: ImportIssue[] = []
+  const rows: ReinstatementActualImportRow[] = []
+  const seen = new Map<DayKey, number>()
+  for (const { row, cells } of data) {
+    const day = readDate(cells, dateCol, row, seen, errors)
+    const qty = readAmount(cellAt(cells, qtyCol), ACTUAL_QTY_COLUMN.label, row, errors, warnings)
+    if (day === null || typeof qty !== 'number') continue
+    if (day > todayKey) errors.push({ row, message: futureDay(day) })
+    else rows.push({ day, qty })
+  }
+  return finish(header.sheet.name, rows, data.length, errors, warnings)
+}
+
+/**
+ * A `Date` + one-column-per-group file (RV8-6): the Manpower Plan file's rules
+ * (hidden groups included, an unknown header refused), plus no day after
+ * `todayKey` with a value. One row per day, its filled cells by group id; a
+ * blank cell is kept, a day with none is skipped.
+ */
+export function parseManpowerActual(
+  sheets: SheetRows[], groups: ManpowerGroup[], todayKey: DayKey,
+): ParseResult<ManpowerActualImportRow> {
+  const file = readManpowerFile<ManpowerActualImportRow>(sheets, groups)
+  if ('result' in file) return file.result
+  const { header, dateCol, columns, data } = file
+  const errors: ImportIssue[] = []
+  const warnings: ImportIssue[] = []
+  const rows: ManpowerActualImportRow[] = []
+  const seen = new Map<DayKey, number>()
+  for (const { row, cells } of data) {
+    const day = readDate(cells, dateCol, row, seen, errors)
+    const values: Record<string, number> = {}
+    let any = false
+    for (const { col, group } of columns) {
+      const value = readAmount(cellAt(cells, col), group.name, row, errors, warnings)
+      if (value === null) continue
+      any = true
+      if (value !== undefined) values[group.id] = value
+    }
+    if (day === null || !any) continue
+    if (day > todayKey) errors.push({ row, message: futureDay(day) })
+    else rows.push({ day, values })
   }
   return finish(header.sheet.name, rows, data.length, errors, warnings)
 }
@@ -564,6 +670,11 @@ export interface SpoolPlanParse extends ParseResult<SpoolPlanRow> {
   duplicates: Array<{ spoolNo: string; rows: SpoolPlanRow[] }>
   /** Rows breaking PH <= IH <= IW (Q15B): imported, flagged. */
   planOrder: Array<{ row: SpoolPlanRow; pairs: Array<[Milestone, Milestone]> }>
+  /**
+   * The warnings about the file's columns, the first of `warnings`: Update
+   * Plan shows them beside the merged result's own (RV8-5).
+   */
+  columnWarnings: ImportIssue[]
 }
 
 /**
@@ -575,7 +686,7 @@ export interface SpoolPlanParse extends ParseResult<SpoolPlanRow> {
  * warning. Duplicates and plan-order breaks are warnings, never errors.
  */
 export function parseSpoolPlan(sheets: SheetRows[], extraColumns: Array<Pick<SpoolColumn, 'label'>>): SpoolPlanParse {
-  const blank = { duplicates: [], planOrder: [] }
+  const blank = { duplicates: [], planOrder: [], columnWarnings: [] }
   const pre = checkPreamble(sheets)
   if (pre) return { ...empty(null, [pre]), ...blank }
   const required = [SPOOL_MASTER_COLUMNS.spoolNo, ...MILESTONES.map((m) => SPOOL_PLAN_COLUMNS[m])]
@@ -614,9 +725,11 @@ export function parseSpoolPlan(sheets: SheetRows[], extraColumns: Array<Pick<Spo
   const ignored = header.texts.filter((t, i) => t !== '' && !used.has(i))
   if (ignored.length > 0) warnings.push({ row: headerRow, message: `Bỏ qua cột: ${ignored.join(', ')}` })
 
+  const columnWarnings = [...warnings]
+
   const read = [...Object.values(masterCol), ...Object.values(planCol), ...extraCol.map((e) => e.col)].filter((c) => c !== -1)
   const data = dataRows(header, read)
-  if (data.length > MAX_IMPORT_ROWS) return { ...empty(header.sheet.name, [tooMany(data.length)], warnings, data.length), ...blank }
+  if (data.length > MAX_IMPORT_ROWS) return { ...empty(header.sheet.name, [tooMany(data.length)], warnings, data.length), ...blank, columnWarnings }
 
   const errors: ImportIssue[] = []
   const rows: SpoolPlanRow[] = []
@@ -657,7 +770,7 @@ export function parseSpoolPlan(sheets: SheetRows[], extraColumns: Array<Pick<Spo
       ...plan,
     })
   }
-  if (errors.length > 0) return { ...empty(header.sheet.name, errors, warnings, data.length), ...blank }
+  if (errors.length > 0) return { ...empty(header.sheet.name, errors, warnings, data.length), ...blank, columnWarnings }
 
   const planOrder = planOrderIssues(rows)
   const duplicates = duplicateSpoolGroups(rows)
@@ -667,7 +780,7 @@ export function parseSpoolPlan(sheets: SheetRows[], extraColumns: Array<Pick<Spo
   for (const d of duplicates) {
     warnings.push({ row: null, message: `SpoolNo "${d.spoolNo}" lặp lại ở các dòng ${d.rows.map((r) => r.row).join(', ')}` })
   }
-  return { ...finish(header.sheet.name, rows, data.length, errors, warnings), duplicates, planOrder }
+  return { ...finish(header.sheet.name, rows, data.length, errors, warnings), duplicates, planOrder, columnWarnings }
 }
 
 // ---------------------------------------------------------------------------
@@ -863,6 +976,11 @@ export function diffReinstatementPlan(old: ReinstatementPlanRow[], next: Reinsta
   return diffKeyed(map(old), map(next), byDay)
 }
 
+/** Update Plan preview for Reinstatement (RV8-5): as the replace, but a day absent from the file is kept. */
+export function diffReinstatementPlanUpdate(old: ReinstatementPlanRow[], next: ReinstatementPlanRow[]): KeyedDiff<{ day: DayKey }> {
+  return { ...diffReinstatementPlan(old, next), removed: [] }
+}
+
 /**
  * Re-import preview for Manpower Plan (spec §8): by (group, day). The import
  * replaces the whole plan, so a group absent from the new file shows as removed.
@@ -870,6 +988,47 @@ export function diffReinstatementPlan(old: ReinstatementPlanRow[], next: Reinsta
 export function diffManpowerPlan(old: ManpowerValue[], next: ManpowerValue[]): KeyedDiff<{ groupId: string; day: DayKey }> {
   const map = (rows: ManpowerValue[]) => rows.map((r) => ({ key: `${r.groupId}|${r.day}`, id: { groupId: r.groupId, day: r.day }, value: r.value }))
   return diffKeyed(map(old), map(next), (a, b) => byDay(a, b) || (a.groupId < b.groupId ? -1 : a.groupId > b.groupId ? 1 : 0))
+}
+
+/** Update Plan preview for Manpower (RV8-5): as the replace, but a blank cell or an absent day is kept. */
+export function diffManpowerPlanUpdate(old: ManpowerValue[], next: ManpowerValue[]): KeyedDiff<{ groupId: string; day: DayKey }> {
+  return { ...diffManpowerPlan(old, next), removed: [] }
+}
+
+/**
+ * Actual import preview for Reinstatement (RV8-6), as
+ * piping_import_reinstatement_actual counts it: each file day against the
+ * day's stored total -- added on a day without entries (a 0 there changes
+ * nothing), changed when the total differs. Nothing is removed.
+ */
+export function diffReinstatementActual(
+  entries: Array<{ day: DayKey; qty: number }>, rows: ReinstatementActualImportRow[],
+): KeyedDiff<{ day: DayKey }> {
+  const totals = new Map<DayKey, number[]>()
+  for (const e of entries) totals.set(e.day, [...(totals.get(e.day) ?? []), e.qty])
+  const diff: KeyedDiff<{ day: DayKey }> = { added: [], changed: [], removed: [], unchangedCount: 0 }
+  for (const r of rows) {
+    const qtys = totals.get(r.day)
+    const from = qtys === undefined ? null : sumQty(qtys)
+    if (from === null && r.qty > 0) diff.added.push({ day: r.day, to: r.qty })
+    else if (from !== null && from !== r.qty) diff.changed.push({ day: r.day, from, to: r.qty })
+    else diff.unchangedCount += 1
+  }
+  diff.added.sort(byDay)
+  diff.changed.sort(byDay)
+  return diff
+}
+
+/**
+ * Actual import preview for Manpower (RV8-6): each filled cell against the
+ * stored one -- added without a value (0 included), changed when it differs.
+ * Cells the file leaves blank are kept, so nothing is removed.
+ */
+export function diffManpowerActual(
+  stored: Array<{ groupId: string; day: DayKey; value: number }>, rows: ManpowerActualImportRow[],
+): KeyedDiff<{ groupId: string; day: DayKey }> {
+  const next = rows.flatMap((r) => Object.entries(r.values).map(([groupId, value]) => ({ groupId, day: r.day, value })))
+  return { ...diffManpowerPlan(stored, next), removed: [] }
 }
 
 export type SpoolDiffField = Exclude<keyof SpoolMaster, 'spoolNo'> | keyof SpoolPlanDates | 'extra'
@@ -940,5 +1099,83 @@ export function diffSpoolPlan(old: Spool[], next: SpoolPlanRow[]): SpoolPlanDiff
     else diff.unchangedCount += 1
   }
   diff.added = next.filter((r) => !paired.has(r.seq)).sort((a, b) => a.seq - b.seq)
+  return diff
+}
+
+/** A spool as Update Plan leaves it (RV8-5): its file row, when one matched or added it. */
+export interface MergedSpool extends SpoolMaster, SpoolPlanDates {
+  row: number | null
+  extra: Record<string, string>
+}
+
+export interface SpoolPlanUpdateDiff {
+  /** New rows with no old spool to pair with: added after the existing spools. */
+  added: SpoolPlanRow[]
+  /** Matched spools some filled cell of the file changes; they keep their actuals. */
+  changed: Array<{ spool: Spool; next: SpoolPlanRow; changes: SpoolFieldChange[] }>
+  unchangedCount: number
+  /** Old spools absent from the file: kept as they are, actuals included. */
+  kept: Spool[]
+  /** Every spool after the update, in seq order (the new ones last, in file order). */
+  merged: MergedSpool[]
+  /** Duplicates and plan-order breaks of `merged` (Q14C, Q15B), as the replace's file warnings say them. */
+  warnings: ImportIssue[]
+}
+
+/**
+ * Update Plan preview for Insulation (RV8-5), as piping_merge_spools writes:
+ * old and new spools paired as the replace pairs them (R-10); a matched spool
+ * takes every filled cell of its row -- extra columns key-wise -- and keeps
+ * the rest; unmatched rows are added after the existing spools; nothing is
+ * removed. The warnings are judged on the merged result.
+ */
+export function diffSpoolPlanUpdate(old: Spool[], next: SpoolPlanRow[]): SpoolPlanUpdateDiff {
+  const pairs = diffSpoolPlan(old, next)
+  const bySeq = new Map(next.map((r) => [r.seq, r]))
+  const matched = new Map(pairs.matches.map((m) => [m.oldId, bySeq.get(m.nextSeq)!]))
+  const diff: SpoolPlanUpdateDiff = { added: pairs.added, changed: [], unchangedCount: 0, kept: [], merged: [], warnings: [] }
+  for (const spool of [...old].sort((a, b) => a.seq - b.seq)) {
+    const { spoolNo, lineNo, insuType, drawingNo, testPackageNo, paintingSystem, phPlan, ihPlan, iwPlan } = spool
+    const merged: MergedSpool = {
+      row: null, spoolNo, lineNo, insuType, drawingNo, testPackageNo, paintingSystem, phPlan, ihPlan, iwPlan,
+      extra: { ...spool.extra },
+    }
+    const row = matched.get(spool.id)
+    if (!row) {
+      diff.kept.push(spool)
+      diff.merged.push(merged)
+      continue
+    }
+    merged.row = row.row
+    const changes: SpoolFieldChange[] = []
+    for (const { field, label } of DIFF_FIELDS) {
+      const to = row[field]
+      if (to === null) continue
+      const from = spool[field] ?? null
+      if (from !== to) changes.push({ field, label, from, to })
+      merged[field] = to
+    }
+    for (const [label, to] of Object.entries(row.extra)) {
+      const from = spool.extra[label] ?? null
+      if (from !== to) changes.push({ field: 'extra', label, from, to })
+      merged.extra[label] = to
+    }
+    if (changes.length > 0) diff.changed.push({ spool, next: row, changes })
+    else diff.unchangedCount += 1
+    diff.merged.push(merged)
+  }
+  for (const r of pairs.added) {
+    const { row, spoolNo, lineNo, insuType, drawingNo, testPackageNo, paintingSystem, phPlan, ihPlan, iwPlan, extra } = r
+    diff.merged.push({ row, spoolNo, lineNo, insuType, drawingNo, testPackageNo, paintingSystem, phPlan, ihPlan, iwPlan, extra })
+  }
+  for (const issue of planOrderIssues(diff.merged)) {
+    const message = orderMessage(planDates(issue.row), issue.pairs)
+    diff.warnings.push(issue.row.row === null
+      ? { row: null, message: `SpoolNo "${spoolKey(issue.row.spoolNo)}": ${message}` }
+      : { row: issue.row.row, message })
+  }
+  for (const d of duplicateSpoolGroups(diff.merged)) {
+    diff.warnings.push({ row: null, message: `SpoolNo "${d.spoolNo}" có ${d.rows.length} spool sau khi cập nhật` })
+  }
   return diff
 }

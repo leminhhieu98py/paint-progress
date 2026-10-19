@@ -411,3 +411,8 @@ Never commit any of these values.
   extra columns / groups) exactly as the current 0039 defines them. 0039 was revised after it reached the
   development project; a pushed migration never re-runs, so dev kept the first version (no
   `piping_delete_spool_column`). On a database that ran the current 0039 this changes nothing.
+- `0041_piping_rv8.sql` — Piping Rv8: `piping_settings.chart_colors` (chart colours per project), the import-log
+  kinds `reinstatement_actual` / `manpower_actual`, three Update Plan functions (`piping_merge_reinstatement_plan`,
+  `piping_merge_manpower_plan`, `piping_merge_spools`), two Actual imports (`piping_import_reinstatement_actual`,
+  `piping_import_manpower_actual`), and `piping_set_spool_actuals` re-created with only its order message changed
+  (Pip ≤ Paint ≤ Insu). Apply before deploying the 2.1.0 app: it reads `chart_colors` on every Piping page.

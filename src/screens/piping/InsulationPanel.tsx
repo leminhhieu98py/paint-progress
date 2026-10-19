@@ -6,13 +6,14 @@ import type { KeyFact } from '../../components/KeyFacts'
 import { SectionCard } from '../../components/SectionCard'
 import { searchSelectProps, useFullOptionsProps } from '../../components/searchSelect'
 import {
-  camProgress, camSeries, camSeriesKeys, camSpoolFlags, duplicateSpoolGroups, lateWarnings, MILESTONE_LABEL, MILESTONES,
-  planOrderIssues, UNIT_LABEL, type CamSpoolFlags,
+  camProgress, camSeries, camSeriesKeys, camSpoolFlags, duplicateSpoolGroups, lateWarnings, MILESTONE_LABEL, milestoneActualLabel,
+  MILESTONES, planOrderIssues, UNIT_LABEL, type CamSpoolFlags,
 } from '../../domain/piping/cam'
-import { parseSpoolPlan, type SpoolPlanRow } from '../../domain/piping/imports'
+import { parseSpoolPlan, type PlanImportMode, type SpoolPlanParse, type SpoolPlanRow } from '../../domain/piping/imports'
 import type { CamSelection, Spool, SpoolColumn, Unit } from '../../domain/piping/types'
+import { formatPercent } from '../../lib/format'
 import { buildSpoolPlanTemplate, templateFileName } from '../../lib/piping/templates'
-import { listNotes, listSpoolColumns, listSpools, replaceSpools } from '../../lib/pipingApi'
+import { listNotes, listSpoolColumns, listSpools, mergeSpools, replaceSpools } from '../../lib/pipingApi'
 import { space } from '../../theme'
 import { useFieldPhone } from '../gs/fieldSections'
 import { ActualEntry } from './insulation/ActualEntry'
@@ -23,10 +24,13 @@ import { ClearActualModal } from './insulation/ClearActualModal'
 import { ControlRow } from './insulation/ControlRow'
 import { PHONE_CONTROL } from './insulation/controlStyle'
 import { InsulationChart } from './insulation/InsulationChart'
+import { resolveChartColors } from './chartColors'
 import { lateFact } from './insulation/lateGroups'
 import { LateSpools } from './insulation/LateSpools'
 import { SpoolDetail } from './insulation/SpoolDetail'
-import { spoolPlanPreview, spoolPlanSummary } from './insulation/spoolPlanPreview'
+import {
+  spoolPlanPreview, spoolPlanSummary, spoolPlanUpdatePreview, spoolPlanUpdateSummary,
+} from './insulation/spoolPlanPreview'
 import { useInsulationSelection, useInsulationUnit } from './insulationUnit'
 import { spoolNoteCounts } from './notes/noteAnchors'
 import { usePipingNotes } from './notes/usePipingNotes'
@@ -119,6 +123,7 @@ export function InsulationPanel({ projectId, settings, mode, role, todayKey, ref
       : camSeries({ spools, unit, mode, weekStart: settings.weekStartDate, todayKey }).points),
     [spools, unit, mode, settings.weekStartDate, todayKey],
   )
+  const colors = useMemo(() => resolveChartColors(settings.chartColors, []), [settings.chartColors])
   const progress = useMemo(() => (spools === undefined ? null : camProgress(spools, unit)), [spools, unit])
   const flags = useMemo(
     () => (spools === undefined ? new Map<string, CamSpoolFlags>() : camSpoolFlags(spools, settings.lateThresholdDays, todayKey)),
@@ -131,8 +136,13 @@ export function InsulationPanel({ projectId, settings, mode, role, todayKey, ref
   )
   const review = useMemo(() => (spools === undefined || !admin ? [] : reviewFacts(spools)), [spools, admin])
   const columns = data?.columns
+  /** The last Plan file parsed: Update Plan shows its column warnings beside the merged result's (RV8-5). */
+  const parsedPlan = useRef<SpoolPlanParse | null>(null)
   const parsePlan = useCallback(
-    (sheets: Parameters<typeof parseSpoolPlan>[0]) => parseSpoolPlan(sheets, columns ?? []),
+    (sheets: Parameters<typeof parseSpoolPlan>[0]) => {
+      parsedPlan.current = parseSpoolPlan(sheets, columns ?? [])
+      return parsedPlan.current
+    },
     [columns],
   )
   /**
@@ -142,7 +152,13 @@ export function InsulationPanel({ projectId, settings, mode, role, todayKey, ref
    * the admin was shown.
    */
   const previewedSpools = useRef<Spool[]>([])
-  const previewPlan = useCallback(async (rows: SpoolPlanRow[]) => {
+  const previewPlan = useCallback(async (rows: SpoolPlanRow[], importMode: PlanImportMode) => {
+    if (importMode === 'update') {
+      // Nothing is removed, so no note is lost: the spools alone.
+      const fresh = await listSpools(projectId)
+      previewedSpools.current = fresh
+      return spoolPlanUpdatePreview(fresh, rows, parsedPlan.current?.columnWarnings)
+    }
     // The notes too (admin only, as is the Plan import): a removed spool's notes go with it (spec §9).
     // A failed notes read does not block the preview: it says so, and any removal then asks for XOÁ.
     const [fresh, notes] = await Promise.all([listSpools(projectId), listNotes(projectId).catch(() => null)])
@@ -188,12 +204,13 @@ export function InsulationPanel({ projectId, settings, mode, role, todayKey, ref
       buildTemplate={() => buildSpoolPlanTemplate(data.columns.map((c) => c.label))}
       parse={parsePlan}
       preview={previewPlan}
+      modes
       lineHeader="SpoolNo"
       lineAlign="left"
-      commit={({ rows, fileName, summary }) => replaceSpools(
-        // The database writes its own counts into the summary; the preview's sit under `client`.
-        projectId, rows, fileName, { ...summary, client: spoolPlanSummary(previewedSpools.current, rows) },
-      )}
+      // The database writes its own counts into the summary; the preview's sit under `client`.
+      commit={({ rows, fileName, summary, mode: importMode }) => (importMode === 'update'
+        ? mergeSpools(projectId, rows, fileName, { ...summary, client: spoolPlanUpdateSummary(previewedSpools.current, rows) })
+        : replaceSpools(projectId, rows, fileName, { ...summary, client: spoolPlanSummary(previewedSpools.current, rows) }))}
       onImported={() => {
         reload()
         // The replace deleted the removed spools' notes.
@@ -244,8 +261,10 @@ export function InsulationPanel({ projectId, settings, mode, role, todayKey, ref
   const facts: KeyFact[] = [
     { value: formatQty(data.spools.length), label: 'spool' },
     ...MILESTONES.map((m) => ({
-      prefix: MILESTONE_LABEL[m],
-      value: `${formatQty(progress.done[m])}/${formatQty(progress.total)}`,
+      prefix: milestoneActualLabel(m),
+      // `164/2.537 · 6,46%` (RV8-9); no percent of nothing.
+      value: `${formatQty(progress.done[m])}/${formatQty(progress.total)}`
+        + (progress.total > 0 ? ` · ${formatPercent(progress.done[m] / progress.total)}` : ''),
       // What the counts count: spool rows, or lines, packages... (spec §6.4).
       label: UNIT_LABEL[unit],
     })),
@@ -274,6 +293,7 @@ export function InsulationPanel({ projectId, settings, mode, role, todayKey, ref
               data={series}
               keys={camSeriesKeys(selection)}
               mode={mode}
+              colors={colors}
             />
           )}
       </SectionCard>

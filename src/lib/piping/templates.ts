@@ -1,4 +1,5 @@
 import {
+  ACTUAL_QTY_COLUMN,
   DATE_COLUMN,
   PLAN_QTY_COLUMN,
   SPOOL_ACTUAL_COLUMNS,
@@ -68,6 +69,22 @@ export function buildManpowerPlanTemplate(groupNames: string[]): Promise<Blob> {
   ])
 }
 
+/** `Date`, `Actual Qty` (RV8-6). */
+export function buildReinstatementActualTemplate(): Promise<Blob> {
+  return buildTemplate('Reinstatement Actual', [
+    { header: DATE_COLUMN.label, width: 14, date: true },
+    { header: ACTUAL_QTY_COLUMN.label, width: 12 },
+  ])
+}
+
+/** `Date` + one column per group name, in the order given (visible and hidden, RV8-6). */
+export function buildManpowerActualTemplate(groupNames: string[]): Promise<Blob> {
+  return buildTemplate('Manpower Actual', [
+    { header: DATE_COLUMN.label, width: 14, date: true },
+    ...groupNames.map((name) => ({ header: name, width: Math.max(12, name.length + 2) })),
+  ])
+}
+
 /** The six master columns, the three Plan dates, then the extra columns in the order given. */
 export function buildSpoolPlanTemplate(extraLabels: string[]): Promise<Blob> {
   return buildTemplate('Insulation Plan', [
@@ -99,6 +116,8 @@ const TEMPLATE_NAME: Record<ImportKind, string> = {
   manpower_plan: 'Mau_Manpower_Plan.xlsx',
   spool_plan: 'Mau_Insulation_Plan.xlsx',
   spool_actual: 'Mau_Insulation_Actual.xlsx',
+  reinstatement_actual: 'Mau_Reinstatement_Actual.xlsx',
+  manpower_actual: 'Mau_Manpower_Actual.xlsx',
 }
 
 /** The template's file name: ASCII, so every phone and mail client keeps it intact. */

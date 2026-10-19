@@ -57,7 +57,7 @@ describe('actualPreview', () => {
     expect(p.skipped).toEqual([
       expect.objectContaining({
         spoolNo: 'SP-3',
-        reason: 'Sai thứ tự: Painting Handover (05/10/2026) sau Insulation Handover (02/10/2026)',
+        reason: 'Sai thứ tự: Pip (05/10/2026) sau Paint (02/10/2026)',
       }),
       expect.objectContaining({ spoolNo: '-', reason: 'Không tìm thấy spool' }),
     ])

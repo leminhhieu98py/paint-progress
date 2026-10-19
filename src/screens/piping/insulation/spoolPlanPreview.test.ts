@@ -31,7 +31,7 @@ describe('spoolPlanPreview (spec §6.2)', () => {
     expect(p).toMatchObject({ added: 1, changed: 1, removed: 2, unchanged: 1 })
     expect(p.lines.map((l) => [l.change, l.label, l.from, l.to, l.flag ?? null])).toEqual([
       ['added', 'SP-9', null, 'Dòng 6', null],
-      ['changed', 'SP-4 · Painting Handover – Plan', '01/10/2026', '09/10/2026', null],
+      ['changed', 'SP-4 · Pip Plan', '01/10/2026', '09/10/2026', null],
       ['changed', 'SP-4 · Zone', 'A', 'B', null],
       ['removed', 'SP-2', 'L1 · TP1', null, 'có Actual'],
       ['removed', 'SP-3', 'L1 · TP1', null, null],

@@ -2,7 +2,7 @@ import { App, Select } from 'antd'
 import { useRef, useState } from 'react'
 import { ConsequenceModal } from '../../../components/ConsequenceModal'
 import { searchSelectProps } from '../../../components/searchSelect'
-import { ACTUAL_FIELD, MILESTONE_LABEL } from '../../../domain/piping/cam'
+import { ACTUAL_FIELD, milestoneActualLabel } from '../../../domain/piping/cam'
 import type { Milestone, Spool } from '../../../domain/piping/types'
 import { formatDayMonthYear } from '../../../domain/piping/week'
 import { setSpoolActuals } from '../../../lib/pipingApi'
@@ -40,7 +40,7 @@ export function ClearActualModal({ projectId, spool, onClose, onCleared }: {
         setError('Không tìm thấy spool. Hãy tải lại trang.')
         return
       }
-      message.success(`Đã xoá ${MILESTONE_LABEL[milestone]} – Actual của ${spool.spoolNo}`)
+      message.success(`Đã xoá ${milestoneActualLabel(milestone)} của ${spool.spoolNo}`)
       onCleared()
     } catch (e) {
       setError((e as Error).message)
@@ -54,22 +54,22 @@ export function ClearActualModal({ projectId, spool, onClose, onCleared }: {
     <ConsequenceModal
       open
       tone="danger"
-      title={`Xoá ngày Actual của ${spool.spoolNo}?`}
+      title={`Xoá ngày Act của ${spool.spoolNo}?`}
       description={choices.length > 1 ? (
         <Select<Milestone>
           aria-label="Mốc"
           {...searchSelectProps}
           value={milestone}
-          options={choices.map((m) => ({ value: m, label: MILESTONE_LABEL[m] }))}
+          options={choices.map((m) => ({ value: m, label: milestoneActualLabel(m) }))}
           onChange={setMilestone}
           style={{ width: '100%' }}
         />
       ) : undefined}
       items={milestone === undefined || date === null ? undefined : [{
-        label: `${MILESTONE_LABEL[milestone]} – Actual`,
+        label: milestoneActualLabel(milestone),
         meta: formatDayMonthYear(date),
       }]}
-      consequences={['Spool trở lại chưa có ngày Actual ở mốc này.']}
+      consequences={['Spool trở lại chưa có ngày Act ở mốc này.']}
       okText="Xoá"
       confirmLoading={busy}
       error={error}

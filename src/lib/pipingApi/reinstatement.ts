@@ -1,4 +1,6 @@
-import type { DayKey, ReinstatementActualEntry, ReinstatementPlanRow } from '../../domain/piping/types'
+import type {
+  DayKey, ReinstatementActualEntry, ReinstatementActualImportRow, ReinstatementPlanRow,
+} from '../../domain/piping/types'
 import { supabase } from '../supabase'
 import {
   MAX_ROWS, TOO_MANY_ROWS, callRpc, importResult, isDayKey, nameOf, readAll, requireRows, toError, toNumber,
@@ -47,6 +49,51 @@ export async function replaceReinstatementPlan(
   const data = await callRpc<unknown>('piping_replace_reinstatement_plan', {
     p_project: projectId,
     p_rows: rows.map((r) => ({ day: r.day, plan_qty: r.planQty })),
+    p_file_name: fileName,
+    p_summary: summary,
+  })
+  return importResult(data)
+}
+
+/**
+ * Update Plan (RV8-5): sets the plan of each day in `rows`; days not in the
+ * file keep theirs. One transaction, logged as a Reinstatement Plan import
+ * with `mode: 'update'`; the function merges its counts (rows, added,
+ * changed) into `summary`. Admin only.
+ */
+export async function mergeReinstatementPlan(
+  projectId: string,
+  rows: ReinstatementPlanRow[],
+  fileName: string,
+  summary: Record<string, unknown> = {},
+): Promise<PipingImportResult> {
+  if (rows.length > MAX_ROWS) throw new Error(TOO_MANY_ROWS)
+  const data = await callRpc<unknown>('piping_merge_reinstatement_plan', {
+    p_project: projectId,
+    p_rows: rows.map((r) => ({ day: r.day, plan_qty: r.planQty })),
+    p_file_name: fileName,
+    p_summary: summary,
+  })
+  return importResult(data)
+}
+
+/**
+ * Actual import (RV8-6): each row sets that day's total -- the day's entries
+ * are replaced by one entry of `qty` (none for 0); days not in the file are
+ * kept. All or nothing: the Test Pack cap holds on the result ("Vượt tổng
+ * Test Pack (đã có X / Y)", X = cumulative after the import). The summary
+ * comes back with days, added and overwritten. Admin only.
+ */
+export async function importReinstatementActual(
+  projectId: string,
+  rows: ReinstatementActualImportRow[],
+  fileName: string,
+  summary: Record<string, unknown> = {},
+): Promise<PipingImportResult> {
+  if (rows.length > MAX_ROWS) throw new Error(TOO_MANY_ROWS)
+  const data = await callRpc<unknown>('piping_import_reinstatement_actual', {
+    p_project: projectId,
+    p_rows: rows.map((r) => ({ day: r.day, qty: r.qty })),
     p_file_name: fileName,
     p_summary: summary,
   })

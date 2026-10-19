@@ -1,5 +1,5 @@
 import {
-  Alert, App, Button, Dropdown, Grid, Layout, Select, Spin, Tooltip,
+  Alert, App, Button, Dropdown, Grid, Layout, Select, Spin,
 } from 'antd'
 import dayjs from 'dayjs'
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
@@ -1350,10 +1350,10 @@ export function GsScreen() {
             </div>
             {/*
               GS-09: the page's actions, at the right end of the bar and outside
-              its search landmark: they act, they do not filter. Two different
-              icons for "this deck's file" and "every deck". On a phone there is
-              no hover to name an icon, so both fold into one ⋯ menu that
-              spells them out.
+              its search landmark: they act, they do not filter. Two words, not
+              icons (RV8-1): "Report" for this deck's file and "Project Report"
+              for every deck. On a phone both fold into one ⋯ menu that keeps
+              the words.
             */}
             <div style={{ marginInlineStart: 'auto', display: 'flex', gap: space.sm, flex: 'none' }}>
               {phone ? (
@@ -1367,14 +1367,14 @@ export function GsScreen() {
                       {
                         key: 'deck',
                         icon: exporting ? <LoadingOutlined aria-hidden /> : <FileExcelOutlined aria-hidden />,
-                        label: 'Xuất báo cáo',
+                        label: 'Report',
                         disabled: exporting,
                         onClick: () => { void exportDeck() },
                       },
                       {
                         key: 'project',
                         icon: exportingProject ? <LoadingOutlined aria-hidden /> : <FolderOpenOutlined aria-hidden />,
-                        label: 'Xuất cả dự án',
+                        label: 'Project Report',
                         disabled: exportingProject,
                         onClick: () => { void exportProject() },
                       },
@@ -1394,29 +1394,23 @@ export function GsScreen() {
                 </Dropdown>
               ) : (
                 <>
-                  {/* Closed the moment the pointer leaves, so it never sits over the header (C3). */}
-                  <Tooltip title="Xuất báo cáo" mouseLeaveDelay={0}>
-                    <Button
-                      aria-label="Xuất báo cáo"
-                      icon={<FileExcelOutlined aria-hidden />}
-                      loading={exporting}
-                      onClick={() => { void exportDeck() }}
-                    />
-                  </Tooltip>
+                  {/*
+                    The word is the name: no tooltip to sit over the header
+                    (C3). The aria-label keeps that name while the spinner,
+                    which names itself "loading", shows.
+                  */}
+                  <Button aria-label="Report" loading={exporting} onClick={() => { void exportDeck() }}>
+                    Report
+                  </Button>
                   {/*
                     Every deck in one file (Feedback Rv4). Linh: the bosses were
                     asking for the admin build purely to download a report over
                     all the decks. RLS decides what lands in it, so a foreman
                     held to one work gets that work's decks and no others.
                   */}
-                  <Tooltip title="Xuất cả dự án" mouseLeaveDelay={0}>
-                    <Button
-                      aria-label="Xuất cả dự án"
-                      icon={<FolderOpenOutlined aria-hidden />}
-                      loading={exportingProject}
-                      onClick={() => { void exportProject() }}
-                    />
-                  </Tooltip>
+                  <Button aria-label="Project Report" loading={exportingProject} onClick={() => { void exportProject() }}>
+                    Project Report
+                  </Button>
                 </>
               )}
             </div>

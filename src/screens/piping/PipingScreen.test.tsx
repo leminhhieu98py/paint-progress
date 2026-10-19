@@ -75,7 +75,8 @@ vi.mock('./ManpowerPanel', () => ({ ManpowerPanel: panel('manpower') }))
 vi.mock('./InsulationPanel', () => ({ InsulationPanel: panel('insulation') }))
 
 const settings = (over: Partial<PipingSettings> = {}): PipingSettings => ({
-  projectId: 'p1', enabled: true, weekStartDate: '2026-09-07', totalTestPacks: 1022, lateThresholdDays: 7, ...over,
+  projectId: 'p1', enabled: true, weekStartDate: '2026-09-07', totalTestPacks: 1022, lateThresholdDays: 7,
+  chartColors: {}, ...over,
 })
 
 const props = (name: string) => JSON.parse(screen.getByTestId(`${name}-panel`).textContent ?? '{}')
@@ -146,7 +147,7 @@ describe('PipingScreen admin: the page and its bar (spec §11)', () => {
     expect(tabs.map((t) => t.textContent)).toEqual(['Reinstatement', 'Manpower', 'Insulation'])
     expect(within(bar()).getByText('Ngày')).toBeInTheDocument()
     expect(within(bar()).getByText('Tuần')).toBeInTheDocument()
-    expect(within(bar()).getByRole('button', { name: 'Xuất báo cáo' })).toBeInTheDocument()
+    expect(within(bar()).getByRole('button', { name: 'Report' })).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: /Cấu hình/ }))
     expect(screen.getByText('CẤU HÌNH MỞ')).toBeInTheDocument()
   })
@@ -192,7 +193,7 @@ describe('PipingScreen admin: the page and its bar (spec §11)', () => {
     let answer: (s: PipingSettings) => void = () => {}
     api.getPipingSettings.mockReturnValue(new Promise<PipingSettings>((resolve) => { answer = resolve }))
     await chooseOption('Dự án', 'Đại Hùng (DH)')
-    expect(within(bar()).getByRole('button', { name: 'Xuất báo cáo' })).toBeDisabled()
+    expect(within(bar()).getByRole('button', { name: 'Report' })).toBeDisabled()
     expect(within(bar()).getByText('Tuần').closest('.ant-segmented')).toHaveClass('ant-segmented-disabled')
     expect(screen.getByRole('button', { name: /Cấu hình/ })).toBeDisabled()
     answer(settings({ projectId: 'p2' }))
@@ -264,7 +265,7 @@ describe('PipingScreen admin: enabling (spec §2)', () => {
     expect(screen.getByRole('button', { name: 'Bật Piping' })).toBeInTheDocument()
     expect(screen.queryByRole('tab')).toBeNull()
     expect(screen.queryByText('Tuần')).toBeNull()
-    expect(screen.queryByRole('button', { name: 'Xuất báo cáo' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Report' })).toBeNull()
     expect(screen.queryByRole('button', { name: /Cấu hình/ })).toBeNull()
   })
 
@@ -344,7 +345,7 @@ describe('PipingScreen field (gs, viewer): read the module, configure nothing', 
     expect(props('reinstatement')).toMatchObject({ projectId: 'p1', variant: 'gs', role, mode: 'day' })
     expect(screen.getAllByRole('tab').map((t) => t.textContent)).toEqual(['Reinstatement', 'Manpower', 'Insulation'])
     expect(screen.getByRole('combobox', { name: 'Dự án' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Xuất báo cáo' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Report' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Cấu hình/ })).toBeNull()
   })
 

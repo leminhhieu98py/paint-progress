@@ -105,7 +105,15 @@ const CATEGORICAL_TINTS = [0, 0.35, 0.6] as const
  * last slice that wraps onto the first slot is a lap later, so a tint of it.
  */
 export function categoricalColor(index: number): string {
-  const base = palette.categorical[index % palette.categorical.length]
+  return categoricalTint(palette.categorical[index % palette.categorical.length], index)
+}
+
+/**
+ * `base` as the `index`-th item would wear it: itself on the palette's first
+ * lap, then its lap's tint -- for an item whose hue an admin picked in place
+ * of the palette's (RV8-2).
+ */
+export function categoricalTint(base: string, index: number): string {
   const lap = Math.floor(index / palette.categorical.length)
   const white = CATEGORICAL_TINTS[Math.min(lap, CATEGORICAL_TINTS.length - 1)]
   return white === 0 ? base : tintColor(base, white)

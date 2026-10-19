@@ -1,13 +1,13 @@
 import type { Workbook, Worksheet } from 'exceljs'
 import {
-  camProgress, camSeries, groupLateWarnings, lateSpoolCount, lateWarnings, MILESTONE_LABEL, MILESTONES,
-  UNIT_LABEL, type CamPoint, type CamSeriesKey,
+  ACTUAL_FIELD, camProgress, camSeries, camSeriesKeys, groupLateWarnings, lateSpoolCount, lateWarnings, MILESTONE_LABEL,
+  milestoneActualLabel, milestonePlanLabel, MILESTONES, PLAN_FIELD, UNIT_LABEL, type CamPoint, type CamSeriesKey,
 } from '../../domain/piping/cam'
 import { chartGroups, manpowerAverages, manpowerSeries, type ManpowerPoint } from '../../domain/piping/manpower'
 import { reinstatementSeries, reinstatementSummary, type ReinstatementPoint } from '../../domain/piping/reinstatement'
 import type {
   DayKey, ManpowerGroup, ManpowerValue, NoteTarget, PipingSettings, ReinstatementActualEntry, ReinstatementPlanRow,
-  Spool, Unit, ViewMode,
+  Spool, SpoolColumn, Unit, ViewMode,
 } from '../../domain/piping/types'
 import type { Bucket } from '../../domain/piping/week'
 import { toVNExcelDate } from '../format'
@@ -16,7 +16,7 @@ import type { PipingNoteEntry } from '../pipingApi/notes'
 /**
  * The Piping report (spec §10, Q25, R-16): one workbook in the page's current
  * Ngày | Tuần view and Insulation unit -- Tóm tắt, Reinstatement, Manpower,
- * Insulation, Spool trễ, and Ghi chú for the admin only.
+ * Insulation, Chi tiết spool, Spool trễ, and Ghi chú for the admin only.
  *
  * Pure but for ExcelJS, imported dynamically as everywhere else
  * (reportXlsx.ts): the caller hands in the data it read and the chart PNGs it
@@ -71,6 +71,8 @@ export interface PipingReportInput {
   }
   manpower: { groups: ManpowerGroup[]; plan: ManpowerValue[]; actual: ManpowerValue[] }
   spools: Spool[]
+  /** The admin's extra spool columns (spec §6.1), for Chi tiết spool. */
+  columns: SpoolColumn[]
   /** The admin's report only (spec §9): a GS or viewer report never has a Ghi chú sheet. */
   includeNotes: boolean
   notes: PipingNoteEntry[]
@@ -254,7 +256,7 @@ export async function buildPipingReport(
   summaryRow('Manpower – Actual trung bình đến hôm nay', averages.actual, null, null, DECIMAL_FORMAT)
   for (const m of MILESTONES) {
     const ratio = progress.total > 0 ? progress.done[m] / progress.total : null
-    summaryRow(`${MILESTONE_LABEL[m]} (${unitLabel})`, progress.done[m], progress.total, ratio, INTEGER_FORMAT)
+    summaryRow(`${milestoneActualLabel(m)} (${unitLabel})`, progress.done[m], progress.total, ratio, INTEGER_FORMAT)
   }
   summaryRow('Ngưỡng trễ (ngày)', settings.lateThresholdDays, null, null, INTEGER_FORMAT)
   summaryRow('Spool trễ', lateSpoolCount(warnings), null, null, INTEGER_FORMAT)
@@ -284,13 +286,43 @@ export async function buildPipingReport(
   ])
   placeChart(wb, manpower, input.charts.manpower)
 
-  // Insulation: the six cumulative lines in the unit on screen (spec §6.4).
+  // Insulation: the chart's bars and cumulative lines in the unit on screen, in
+  // its legend's order (spec §6.4, RV8-11): every series whatever the tab shows; the picture follows the tab.
   const insulation = wb.addWorksheet('Insulation')
-  seriesTable(insulation, mode, series.insulation.points, MILESTONES.flatMap((m) => (['Plan', 'Actual'] as const).map((kind) => {
-    const key = `${m}${kind}` as CamSeriesKey
-    return { header: `${MILESTONE_LABEL[m]} – ${kind} lũy kế (${unitLabel})`, value: (p: CamPoint) => p[key] }
+  const camHeader = new Map<CamSeriesKey, string>(MILESTONES.flatMap((m) => [
+    [`${m}PlanBar`, `${milestonePlanLabel(m)} (${unitLabel})`],
+    [`${m}ActualBar`, `${milestoneActualLabel(m)} (${unitLabel})`],
+    [`${m}Plan`, `${milestonePlanLabel(m)} lũy kế (${unitLabel})`],
+    [`${m}Actual`, `${milestoneActualLabel(m)} lũy kế (${unitLabel})`],
+  ] as Array<[CamSeriesKey, string]>))
+  seriesTable(insulation, mode, series.insulation.points, camSeriesKeys('both').map((key) => ({
+    header: camHeader.get(key) ?? key,
+    value: (p: CamPoint) => p[key],
   })))
   placeChart(wb, insulation, input.charts.insulation)
+
+  // Chi tiết spool: every spool of the project in file order, whatever the
+  // screen filters (RV8-3); the extra columns in the admin's order, the dates
+  // as day cells like Spool trễ's.
+  const detail = wb.addWorksheet('Chi tiết spool')
+  const masterFields = Object.keys(UNIT_LABEL) as Unit[]
+  const extraColumns = [...input.columns].sort((a, b) => a.sort - b.sort)
+  writeTable(detail, [
+    { header: 'STT', width: 6, numFmt: INTEGER_FORMAT },
+    ...masterFields.map((f) => ({ header: UNIT_LABEL[f], width: f === 'spoolNo' ? 30 : 22 })),
+    ...extraColumns.map((c) => ({ header: c.label, width: Math.max(12, Math.min(28, c.label.length + 2)) })),
+    ...MILESTONES.flatMap((m) => [
+      { header: milestonePlanLabel(m), width: 13, numFmt: DATE_FORMAT },
+      { header: milestoneActualLabel(m), width: 13, numFmt: DATE_FORMAT },
+    ]),
+  ], [...input.spools].sort((a, b) => a.seq - b.seq).map((s, i) => [
+    i + 1,
+    // A missing value is an empty cell.
+    ...masterFields.map((f) => s[f] || null),
+    ...extraColumns.map((c) => s.extra[c.label] || null),
+    ...MILESTONES.flatMap((m) => [dayCell(s[PLAN_FIELD[m]]), dayCell(s[ACTUAL_FIELD[m]])]),
+  ]))
+  detail.autoFilter = { from: { row: 1, column: 1 }, to: { row: detail.rowCount, column: detail.columnCount } }
 
   // Spool trễ: by package, as the screen's table groups it (spec §7).
   const late = wb.addWorksheet('Spool trễ')
@@ -301,7 +333,7 @@ export async function buildPipingReport(
     { header: 'Mốc', width: 22 },
     { header: 'Bộ phận', width: 12 },
     { header: 'Plan', width: 13, numFmt: DATE_FORMAT },
-    { header: 'Actual', width: 13, numFmt: DATE_FORMAT },
+    { header: 'Act', width: 13, numFmt: DATE_FORMAT },
     { header: 'Số ngày trễ', width: 12, numFmt: INTEGER_FORMAT },
   ], groupLateWarnings(warnings, 'package').flatMap((g) => g.warnings).map((w) => [
     w.spoolNo, w.lineNo, w.testPackageNo, MILESTONE_LABEL[w.milestone], w.department,

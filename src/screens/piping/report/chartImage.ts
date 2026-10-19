@@ -5,6 +5,7 @@ import type { ManpowerPoint } from '../../../domain/piping/manpower'
 import type { ReinstatementPoint } from '../../../domain/piping/reinstatement'
 import type { ManpowerGroup, ViewMode } from '../../../domain/piping/types'
 import type { ChartPng } from '../../../lib/piping/report'
+import type { ChartColors } from '../chartColors'
 import { ReinstatementChart } from '../charts'
 import { InsulationChart } from '../insulation/InsulationChart'
 import { ManpowerChart } from '../manpower/ManpowerChart'
@@ -31,10 +32,22 @@ import { ManpowerChart } from '../manpower/ManpowerChart'
  * "Không vẽ được biểu đồ" instead of the picture.
  */
 
-export type ChartSpec =
+export type ChartSpec = (
   | { kind: 'reinstatement'; data: ReinstatementPoint[]; mode: ViewMode }
-  | { kind: 'manpower'; data: ManpowerPoint[]; groups: ManpowerGroup[]; mode: ViewMode }
+  | {
+    kind: 'manpower'
+    data: ManpowerPoint[]
+    groups: ManpowerGroup[]
+    /** The groups the tab's Nhóm select shows, and their Plan TB (RV8-7). */
+    selected?: ReadonlySet<string>
+    planAverage?: number | null
+    mode: ViewMode
+  }
   | { kind: 'insulation'; data: CamPoint[]; keys: CamSeriesKey[]; mode: ViewMode }
+) & {
+  /** The project's resolved chart colours (RV8-2), as the tab draws them. */
+  colors?: ChartColors
+}
 
 /** The chart's width on the canvas, in CSS pixels; its height is the component's own. */
 export const CHART_WIDTH = 1000
@@ -52,11 +65,16 @@ const POLL_MS = 50
 export function chartElement(spec: ChartSpec): ReactElement {
   switch (spec.kind) {
     case 'reinstatement':
-      return createElement(ReinstatementChart, { data: spec.data, mode: spec.mode, report: true })
+      return createElement(ReinstatementChart, { data: spec.data, mode: spec.mode, colors: spec.colors, report: true })
     case 'manpower':
-      return createElement(ManpowerChart, { data: spec.data, groups: spec.groups, mode: spec.mode, report: true })
+      return createElement(ManpowerChart, {
+        data: spec.data, groups: spec.groups, selected: spec.selected, planAverage: spec.planAverage, mode: spec.mode,
+        colors: spec.colors, report: true,
+      })
     case 'insulation':
-      return createElement(InsulationChart, { data: spec.data, keys: spec.keys, mode: spec.mode, report: true })
+      return createElement(InsulationChart, {
+        data: spec.data, keys: spec.keys, mode: spec.mode, colors: spec.colors, report: true,
+      })
   }
 }
 

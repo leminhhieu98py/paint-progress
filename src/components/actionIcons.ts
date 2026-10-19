@@ -19,7 +19,7 @@ export const ACTION_ICONS = {
   edit: EditOutlined, // Sửa
   delete: DeleteOutlined, // Xoá …
   clear: ClearOutlined, // Xoá toàn bộ lưới ô
-  open: ArrowRightOutlined, // Mở (FolderOpen stays the field's Xuất cả dự án)
+  open: ArrowRightOutlined, // Mở (FolderOpen stays the field's Project Report menu item)
   duplicate: BlockOutlined, // Nhân bản
   copy: CopyOutlined, // Sao chép mật khẩu
   close: CloseOutlined, // Đóng

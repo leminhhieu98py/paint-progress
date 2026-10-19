@@ -1,12 +1,16 @@
 import { describe, expect, it } from 'vitest'
 import {
+  parseManpowerActual,
   parseManpowerPlan,
+  parseReinstatementActual,
   parseReinstatementPlan,
   parseSpoolActual,
   parseSpoolPlan,
 } from '../../domain/piping/imports'
 import {
+  buildManpowerActualTemplate,
   buildManpowerPlanTemplate,
+  buildReinstatementActualTemplate,
   buildReinstatementPlanTemplate,
   buildSpoolActualTemplate,
   buildSpoolPlanTemplate,
@@ -41,11 +45,29 @@ describe('import templates (spec §8)', () => {
     expect(parseManpowerPlan(t.sheets, groups).errors).toEqual([])
   })
 
+  it('Reinstatement Actual: Date, Actual Qty, and the importer accepts it (RV8-6)', async () => {
+    const t = await headerOf(await buildReinstatementActualTemplate())
+    expect(t.name).toBe('Reinstatement Actual')
+    expect(t.header).toEqual(['Date', 'Actual Qty'])
+    expect(parseReinstatementActual(t.sheets, '2026-10-07').errors).toEqual([])
+  })
+
+  it('Manpower Actual: Date + one column per given group, hidden ones included (RV8-6)', async () => {
+    const groups = [
+      { id: 'g1', name: 'Reinstatement', sort: 1, hidden: false },
+      { id: 'g3', name: 'Marking', sort: 3, hidden: true },
+    ]
+    const t = await headerOf(await buildManpowerActualTemplate(groups.map((g) => g.name)))
+    expect(t.name).toBe('Manpower Actual')
+    expect(t.header).toEqual(['Date', 'Reinstatement', 'Marking'])
+    expect(parseManpowerActual(t.sheets, groups, '2026-10-07').errors).toEqual([])
+  })
+
   it('Insulation Plan: the master and Plan columns, then the extra columns', async () => {
     const t = await headerOf(await buildSpoolPlanTemplate(['Area', 'Zone']))
     expect(t.name).toBe('Insulation Plan')
     expect(t.header).toEqual(['SpoolNo', 'LineNo', 'InsuType', 'DrawingNo', 'Test Package No', 'Painting System',
-      'Painting Handover – Plan', 'Insulation Handover – Plan', 'Insulation Work – Plan', 'Area', 'Zone'])
+      'Pip Plan', 'Paint Plan', 'Insu Plan', 'Area', 'Zone'])
     const res = parseSpoolPlan(t.sheets, [{ label: 'Area' }, { label: 'Zone' }])
     expect(res.errors).toEqual([])
     expect(res.warnings).toEqual([])
@@ -54,7 +76,7 @@ describe('import templates (spec §8)', () => {
   it('Insulation Actual: SpoolNo and the three Actual columns', async () => {
     const t = await headerOf(await buildSpoolActualTemplate())
     expect(t.name).toBe('Insulation Actual')
-    expect(t.header).toEqual(['SpoolNo', 'Painting Handover – Actual', 'Insulation Handover – Actual', 'Insulation Work – Actual'])
+    expect(t.header).toEqual(['SpoolNo', 'Pip Act', 'Paint Act', 'Insu Act'])
     expect(parseSpoolActual(t.sheets).errors).toEqual([])
   })
 
@@ -88,5 +110,7 @@ describe('import templates (spec §8)', () => {
     expect(templateFileName('manpower_plan')).toBe('Mau_Manpower_Plan.xlsx')
     expect(templateFileName('spool_plan')).toBe('Mau_Insulation_Plan.xlsx')
     expect(templateFileName('spool_actual')).toBe('Mau_Insulation_Actual.xlsx')
+    expect(templateFileName('reinstatement_actual')).toBe('Mau_Reinstatement_Actual.xlsx')
+    expect(templateFileName('manpower_actual')).toBe('Mau_Manpower_Actual.xlsx')
   })
 })

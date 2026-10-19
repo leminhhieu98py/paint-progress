@@ -189,7 +189,7 @@ export function SpoolDetail({ projectId, spools, columns, flags, admin, toolbar,
           render: (_v: unknown, row: CamGroupRow) => `${formatQty(row.counts[m].done)}/${formatQty(row.counts[m].total)}`,
         },
         { title: 'Plan', key: `${m}-plan`, align: 'center' as const, render: (_v: unknown, row: CamGroupRow) => groupDate(row, row.plan[m]) },
-        { title: 'Actual', key: `${m}-actual`, align: 'center' as const, render: (_v: unknown, row: CamGroupRow) => groupDate(row, row.actual[m]) },
+        { title: 'Act', key: `${m}-actual`, align: 'center' as const, render: (_v: unknown, row: CamGroupRow) => groupDate(row, row.actual[m]) },
       ],
     })),
   ], [level, pin])
@@ -211,7 +211,7 @@ export function SpoolDetail({ projectId, spools, columns, flags, admin, toolbar,
       key: m,
       children: [
         { title: 'Plan', key: `${m}-plan`, align: 'center' as const, render: (_v: unknown, s: Spool) => dateCell(s[PLAN_FIELD[m]]) },
-        { title: 'Actual', key: `${m}-actual`, align: 'center' as const, render: (_v: unknown, s: Spool) => dateCell(s[ACTUAL_FIELD[m]]) },
+        { title: 'Act', key: `${m}-actual`, align: 'center' as const, render: (_v: unknown, s: Spool) => dateCell(s[ACTUAL_FIELD[m]]) },
       ],
     })),
     {

@@ -1,26 +1,29 @@
 import { EllipsisOutlined, FileExcelOutlined, LoadingOutlined } from '@ant-design/icons'
-import { App, Button, Dropdown, Tooltip } from 'antd'
+import { App, Button, Dropdown } from 'antd'
 import { useRef, useState } from 'react'
 import { camSeriesKeys } from '../../domain/piping/cam'
+import { manpowerSeries, planAverage } from '../../domain/piping/manpower'
 import type { CamSelection, Unit } from '../../domain/piping/types'
+import { resolveChartColors } from './chartColors'
 import { renderChartPng, type ChartSpec } from './report/chartImage'
 import {
   buildPipingReport, pipingReportFileName, pipingReportSeries, type ChartKey, type PipingReportInput, type ReportChart,
 } from '../../lib/piping/report'
 import {
   listManpowerActual, listManpowerGroups, listManpowerPlan, listNotes, listReinstatementEntries,
-  listReinstatementPlan, listSpools,
+  listReinstatementPlan, listSpoolColumns, listSpools,
 } from '../../lib/pipingApi'
 import { downloadWorkbook } from '../../lib/projectReport'
 import { listProjectNames } from '../../lib/projectsApi'
 import { useFieldPhone } from '../gs/fieldSections'
 import { useInsulationSelectionValue, useInsulationUnitValue } from './insulationUnit'
+import { manpowerSelectionOnScreen } from './manpowerSelection'
 import type { PipingPanelProps } from './panelProps'
 
 /**
- * Xuất báo cáo (spec §10), the icon action at the end of the Piping filter
- * bar for every role (GS-09): on a field phone it folds into one `⋯` menu
- * that spells it out, as on the GS screen.
+ * Xuất báo cáo (spec §10), the "Report" text button at the end of the Piping
+ * filter bar for every role (GS-09, RV8-1): on a field phone it folds into
+ * one `⋯` menu item with the same word, as on the GS screen.
  *
  * A click reads what the report needs afresh -- the panels' data, and the
  * admin's notes only for the admin (spec §9: a GS or viewer never asks for
@@ -33,7 +36,7 @@ import type { PipingPanelProps } from './panelProps'
  * place in the bar, disabled, so the bar does not jump.
  */
 
-const LABEL = 'Xuất báo cáo'
+const LABEL = 'Report'
 
 async function chartPicture(spec: ChartSpec | null): Promise<ReportChart | undefined> {
   if (spec === null) return undefined
@@ -60,7 +63,7 @@ async function projectIdentity(projectId: string): Promise<{ name: string; code:
 async function exportReport(panel: PipingPanelProps, { unit, selection }: InsulationView): Promise<void> {
   const { projectId, settings, mode, todayKey } = panel
   const admin = panel.role === 'admin'
-  const [project, plan, entries, groups, mpPlan, mpActual, spools, notes] = await Promise.all([
+  const [project, plan, entries, groups, mpPlan, mpActual, spools, columns, notes] = await Promise.all([
     projectIdentity(projectId),
     listReinstatementPlan(projectId),
     listReinstatementEntries(projectId),
@@ -68,6 +71,7 @@ async function exportReport(panel: PipingPanelProps, { unit, selection }: Insula
     listManpowerPlan(projectId),
     listManpowerActual(projectId),
     listSpools(projectId),
+    listSpoolColumns(projectId),
     admin ? listNotes(projectId) : Promise.resolve([]),
   ])
   const data: Omit<PipingReportInput, 'charts'> = {
@@ -79,19 +83,33 @@ async function exportReport(panel: PipingPanelProps, { unit, selection }: Insula
     reinstatement: { plan, actual: entries },
     manpower: { groups, plan: mpPlan, actual: mpActual },
     spools,
+    columns,
     includeNotes: admin,
     notes,
   }
   const series = pipingReportSeries(data)
+  // The Manpower picture draws the groups the tab's Nhóm select shows (RV8-7); its table keeps every group.
+  const selected = manpowerSelectionOnScreen(projectId, groups, mpPlan, mpActual)
+  const manpowerPoints = manpowerSeries({
+    groups: series.manpower.groups, plan: mpPlan, actual: mpActual, mode, weekStart: settings.weekStartDate, todayKey,
+    selected,
+  })
+  // The project's colours (RV8-2), resolved over the groups the chart draws, as the tab does.
+  const colors = resolveChartColors(settings.chartColors, series.manpower.groups)
   // One after another: each borrows the page for a moment, off screen.
   const specs: Array<[ChartKey, ChartSpec | null]> = [
-    ['reinstatement', series.reinstatement.length === 0 ? null : { kind: 'reinstatement', data: series.reinstatement, mode }],
-    ['manpower', series.manpower.points.length === 0
+    ['reinstatement', series.reinstatement.length === 0
       ? null
-      : { kind: 'manpower', data: series.manpower.points, groups: series.manpower.groups, mode }],
+      : { kind: 'reinstatement', data: series.reinstatement, mode, colors }],
+    ['manpower', manpowerPoints.length === 0
+      ? null
+      : {
+        kind: 'manpower', data: manpowerPoints, groups: series.manpower.groups, selected,
+        planAverage: planAverage(mpPlan, selected), mode, colors,
+      }],
     ['insulation', series.insulation.points.length === 0
       ? null
-      : { kind: 'insulation', data: series.insulation.points, keys: camSeriesKeys(selection), mode }],
+      : { kind: 'insulation', data: series.insulation.points, keys: camSeriesKeys(selection), mode, colors }],
   ]
   const charts: PipingReportInput['charts'] = {}
   for (const [key, spec] of specs) {
@@ -160,17 +178,14 @@ export function PipingExportAction({ panel, variant }: {
   }
 
   return (
-    // Closed the moment the pointer leaves, so it never sits over the page (C3).
-    <Tooltip title={LABEL} mouseLeaveDelay={0}>
-      <span style={{ display: 'inline-flex' }}>
-        <Button
-          aria-label={LABEL}
-          icon={<FileExcelOutlined aria-hidden />}
-          loading={busy}
-          disabled={panel === null}
-          onClick={() => { void run() }}
-        />
-      </span>
-    </Tooltip>
+    // The word is the name, no tooltip (RV8-1); the aria-label keeps it while the spinner shows.
+    <Button
+      aria-label={LABEL}
+      loading={busy}
+      disabled={panel === null}
+      onClick={() => { void run() }}
+    >
+      {LABEL}
+    </Button>
   )
 }

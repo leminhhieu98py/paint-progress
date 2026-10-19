@@ -5,6 +5,7 @@ import type { ManpowerGroup } from '../../../domain/piping/types'
 import { palette, tintColor } from '../../../theme'
 import { legendNames } from '../../../test/legend'
 import { setViewport } from '../../../test/viewport'
+import { resolveChartColors } from '../chartColors'
 import { ManpowerChart } from './ManpowerChart'
 
 /**
@@ -21,6 +22,7 @@ const captured = vi.hoisted(() => ({
   yAxis: null as null | Record<string, unknown>,
   brush: null as null | Record<string, unknown>,
   legend: null as null | Record<string, unknown>,
+  referenceLine: null as null | Record<string, unknown>,
 }))
 
 vi.mock('recharts', async (importOriginal) => {
@@ -65,8 +67,12 @@ vi.mock('recharts', async (importOriginal) => {
       />
     ),
     Line: (props: Record<string, unknown>) => (
-      <div data-testid="line" data-key={String(props.dataKey)} data-name={String(props.name)} />
+      <div data-testid="line" data-key={String(props.dataKey)} data-name={String(props.name)} data-stroke={String(props.stroke)} />
     ),
+    ReferenceLine: (props: Record<string, unknown>) => {
+      captured.referenceLine = props
+      return <div data-testid="reference-line" />
+    },
   }
 })
 
@@ -110,6 +116,7 @@ beforeEach(() => {
   captured.yAxis = null
   captured.brush = null
   captured.legend = null
+  captured.referenceLine = null
 })
 
 /** The legend's names, in the order Recharts lists the drawn bars and lines. */
@@ -218,5 +225,66 @@ describe('ManpowerChart (spec §5)', () => {
     } finally {
       undo()
     }
+  })
+
+  it('draws only the selected groups, each keeping the colour of its place among all (RV8-7)', () => {
+    render(<ManpowerChart data={DAYS} groups={GROUPS} selected={new Set(['g2'])} mode="day" />)
+    expect(attrs('bar', 'data-name')).toEqual(['Plan · Insulation', 'Actual · Insulation'])
+    expect(attrs('bar', 'data-fill')[1]).toBe(palette.categorical[1])
+    expect(Object.keys(captured.data[0]).filter((k) => k.includes(':'))).toEqual(['plan:g2', 'actual:g2'])
+  })
+
+  it('draws the plan average as a dashed Plan TB line, listed after Plan tổng (RV8-7)', () => {
+    render(<ManpowerChart data={DAYS} groups={GROUPS} mode="day" planAverage={12.5} />)
+    expect(captured.referenceLine?.y).toBe(12.5)
+    expect(captured.referenceLine?.strokeDasharray).toBeTruthy()
+    expect((captured.referenceLine?.label as { value: string } | undefined)?.value).toBe('Plan TB')
+    expect(legend()).toEqual([
+      'Plan · Reinstatement', 'Plan · Insulation', 'Plan tổng theo ngày', 'Plan TB',
+      'Actual · Reinstatement', 'Actual · Insulation', 'Actual tổng theo ngày',
+    ])
+  })
+
+  it('names the average Plan TB in week view too', () => {
+    render(<ManpowerChart data={WEEKS} groups={GROUPS} mode="week" planAverage={12.5} />)
+    expect(captured.referenceLine?.y).toBe(12.5)
+    expect(attrs('line', 'data-name')).toContain('Plan TB')
+  })
+
+  it('draws no average line without a plan average', () => {
+    render(<ManpowerChart data={DAYS} groups={GROUPS} mode="day" planAverage={null} />)
+    expect(screen.queryByTestId('reference-line')).toBeNull()
+    expect(attrs('line', 'data-name')).toEqual(['Plan tổng theo ngày', 'Actual tổng theo ngày'])
+  })
+  it('derives a group\'s Plan and Actual bars from the project\'s colour for it (RV8-2)', () => {
+    const colors = resolveChartColors({ 'mp.group.g2': '#336699' }, GROUPS)
+    render(<ManpowerChart data={DAYS} groups={GROUPS} mode="day" colors={colors} />)
+    // Plan: the light tint with the colour as outline; Actual: the colour itself.
+    expect(attrs('bar', 'data-fill')).toEqual([
+      tintColor(palette.categorical[0], 0.55), tintColor('#336699', 0.55), palette.categorical[0], '#336699',
+    ])
+    expect(attrs('bar', 'data-stroke').slice(0, 2)).toEqual([palette.categorical[0], '#336699'])
+  })
+
+  it('past eight groups, tints a picked colour as the palette\'s next lap would', () => {
+    const groups = manyGroups(9)
+    const colors = resolveChartColors({ 'mp.group.g8': '#336699' }, groups)
+    render(<ManpowerChart data={DAYS} groups={groups} mode="day" colors={colors} />)
+    const fills = attrs('bar', 'data-fill')
+    expect(fills[8]).toBe(tintColor('#336699', 0.55))
+    expect(fills[17]).toBe(tintColor('#336699', 0.35))
+    expect(attrs('bar', 'data-stroke')[8]).toBe('#336699')
+  })
+
+  it('paints the totals and Plan TB in the project\'s colours, today\'s by default (RV8-2)', () => {
+    const { unmount } = render(<ManpowerChart data={DAYS} groups={GROUPS} mode="day" planAverage={12.5} />)
+    expect(attrs('line', 'data-stroke')).toEqual([palette.textTertiary, palette.ink, palette.warning])
+    expect(captured.referenceLine?.stroke).toBe(palette.warning)
+    unmount()
+    const colors = resolveChartColors({ 'mp.planTotal': '#111111', 'mp.actualTotal': '#222222', 'mp.planAvg': '#333333' }, GROUPS)
+    render(<ManpowerChart data={DAYS} groups={GROUPS} mode="day" planAverage={12.5} colors={colors} />)
+    expect(attrs('line', 'data-stroke')).toEqual(['#111111', '#222222', '#333333'])
+    expect(captured.referenceLine?.stroke).toBe('#333333')
+    expect((captured.referenceLine?.label as { fill: string } | undefined)?.fill).toBe('#333333')
   })
 })

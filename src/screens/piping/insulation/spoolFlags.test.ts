@@ -8,7 +8,7 @@ const labels = (flags: CamSpoolFlags, admin: boolean) => spoolFlagItems(flags, a
 describe('spoolFlagItems (spec §6.2, §6.4, §7)', () => {
   it('shows the admin a duplicate SpoolNo, a plan-order issue and each late milestone', () => {
     expect(labels({ duplicate: true, planOrder: true, late: ['ph', 'iw'] }, true))
-      .toEqual(['SpoolNo trùng', 'Sai thứ tự Plan', 'Trễ Painting Handover', 'Trễ Insulation Work'])
+      .toEqual(['SpoolNo trùng', 'Sai thứ tự Plan', 'Trễ Pip', 'Trễ Insu'])
   })
 
   it('shows nothing for a spool without flags', () => {
@@ -16,6 +16,6 @@ describe('spoolFlagItems (spec §6.2, §6.4, §7)', () => {
   })
 
   it('shows a foreman or a viewer the late milestones but not the review flags', () => {
-    expect(labels({ duplicate: true, planOrder: true, late: ['ih'] }, false)).toEqual(['Trễ Insulation Handover'])
+    expect(labels({ duplicate: true, planOrder: true, late: ['ih'] }, false)).toEqual(['Trễ Paint'])
   })
 })

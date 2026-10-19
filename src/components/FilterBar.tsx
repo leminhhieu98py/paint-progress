@@ -8,7 +8,7 @@ import { space } from '../theme'
  * other toggles; one row that wraps at narrow widths. No control carries a
  * visible label -- each names itself with an `aria-label` and shows its value
  * or placeholder -- so no label floats above one control while the others
- * have none. Page actions (Xuất báo cáo, Thêm …) stay at the right end of the
+ * have none. Page actions (Report, Thêm …) stay at the right end of the
  * title row, not here.
  *
  * Every control applies as it changes, through the screen's own onChange

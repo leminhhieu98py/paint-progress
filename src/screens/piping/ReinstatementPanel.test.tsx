@@ -8,12 +8,16 @@ import type { ReinstatementEntry } from '../../lib/pipingApi'
 import { expectHelperText, expectNoSpecIds, keyFactTexts, ruleTexts } from '../../test/copy'
 import { renderApp } from '../../test/renderApp'
 import { setViewport } from '../../test/viewport'
+import { resolveChartColors } from './chartColors'
 import type { PipingPanelProps } from './panelProps'
 import { ReinstatementPanel } from './ReinstatementPanel'
 
 const api = vi.hoisted(() => ({
   listReinstatementPlan: vi.fn(),
   replaceReinstatementPlan: vi.fn(),
+  mergeReinstatementPlan: vi.fn(),
+  importReinstatementActual: vi.fn(),
+  getPipingSettings: vi.fn(),
   listReinstatementEntries: vi.fn(),
   addReinstatementEntry: vi.fn(),
   updateReinstatementEntry: vi.fn(),
@@ -24,6 +28,9 @@ const api = vi.hoisted(() => ({
 vi.mock('../../lib/pipingApi', () => ({
   listReinstatementPlan: (...a: unknown[]) => api.listReinstatementPlan(...a),
   replaceReinstatementPlan: (...a: unknown[]) => api.replaceReinstatementPlan(...a),
+  mergeReinstatementPlan: (...a: unknown[]) => api.mergeReinstatementPlan(...a),
+  importReinstatementActual: (...a: unknown[]) => api.importReinstatementActual(...a),
+  getPipingSettings: (...a: unknown[]) => api.getPipingSettings(...a),
   listReinstatementEntries: (...a: unknown[]) => api.listReinstatementEntries(...a),
   addReinstatementEntry: (...a: unknown[]) => api.addReinstatementEntry(...a),
   updateReinstatementEntry: (...a: unknown[]) => api.updateReinstatementEntry(...a),
@@ -41,6 +48,7 @@ const templates = vi.hoisted(() => ({ build: vi.fn() }))
 vi.mock('../../lib/piping/templates', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../lib/piping/templates')>()),
   buildReinstatementPlanTemplate: () => templates.build(),
+  buildReinstatementActualTemplate: () => templates.build(),
 }))
 const download = vi.hoisted(() => vi.fn())
 vi.mock('../../lib/projectReport', () => ({
@@ -49,8 +57,12 @@ vi.mock('../../lib/projectReport', () => ({
 
 // jsdom gives Recharts no size; the stand-in prints what reaches the chart.
 vi.mock('./charts', () => ({
-  ReinstatementChart: ({ data, mode }: { data: Array<Record<string, unknown>>; mode: string }) => (
-    <div data-testid="reinstatement-chart" data-mode={mode}>
+  ReinstatementChart: ({ data, mode, colors }: {
+    data: Array<Record<string, unknown>>
+    mode: string
+    colors?: Record<string, string>
+  }) => (
+    <div data-testid="reinstatement-chart" data-mode={mode} data-colors={JSON.stringify(colors ?? null)}>
       {data.map((p) => `${String(p.key)}:${String(p.plan)}/${String(p.actual)}/${String(p.planCum)}/${String(p.actualCum)}`).join(' ')}
     </div>
   ),
@@ -58,6 +70,7 @@ vi.mock('./charts', () => ({
 
 const SETTINGS: PipingSettings = {
   projectId: 'p1', enabled: true, weekStartDate: '2026-09-28', totalTestPacks: 1022, lateThresholdDays: 7,
+  chartColors: {},
 }
 
 const PLAN: ReinstatementPlanRow[] = [
@@ -114,6 +127,9 @@ beforeEach(() => {
   api.deleteReinstatementEntry.mockResolvedValue(undefined)
   api.listNotes.mockResolvedValue([])
   api.replaceReinstatementPlan.mockResolvedValue({ logId: 'l1', summary: {} })
+  api.mergeReinstatementPlan.mockResolvedValue({ logId: 'l2', summary: {} })
+  api.importReinstatementActual.mockResolvedValue({ logId: 'l3', summary: {} })
+  api.getPipingSettings.mockResolvedValue(SETTINGS)
   xlsx.read.mockReset()
   templates.build.mockReset()
   templates.build.mockResolvedValue(new Blob(['t']))
@@ -128,6 +144,13 @@ describe('ReinstatementPanel: summary and chart (spec §4)', () => {
     expect(api.listReinstatementEntries).toHaveBeenCalledWith('p1')
     expect(screen.getByRole('heading', { level: 2, name: 'Reinstatement' })).toBeInTheDocument()
     expect(keyFactTexts()).toContain('235/1.022 – 22,99% TestPack')
+  })
+
+  it('draws the chart in the project\'s colours (RV8-2)', async () => {
+    renderPanel({ settings: { ...SETTINGS, chartColors: { 'rein.planCum': '#123456' } } })
+    const colors = JSON.parse((await loaded()).getAttribute('data-colors') ?? 'null') as Record<string, string>
+    expect(colors).toEqual(resolveChartColors({ 'rein.planCum': '#123456' }, []))
+    expect(colors['rein.planCum']).toBe('#123456')
   })
 
   it('shows - for a total that is not set, with a warning that tells the admin where to set it', async () => {
@@ -210,7 +233,7 @@ describe('ReinstatementPanel: Thêm số lượng (spec §4, Q9A, Q10A)', () => 
   })
 
   it('folds its rules away as helper text, with no spec id on screen', async () => {
-    renderPanel(asGs)
+    renderPanel()
     await loaded()
     await userEvent.click(screen.getByRole('button', { name: /Quy tắc áp dụng/ }))
     expectHelperText(ruleTexts())
@@ -282,13 +305,12 @@ describe('ReinstatementPanel: Thêm số lượng (spec §4, Q9A, Q10A)', () => 
     expect(screen.queryByRole('button', { name: 'Sửa số lượng' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Xoá số lượng' })).toBeNull()
     expect(screen.queryByRole('button', { name: /Nhập Plan/ })).toBeNull()
-    expect(dataRows()).toHaveLength(2)
   })
 })
 
 describe('ReinstatementPanel: entries (spec §4, Q8C)', () => {
   it('lists entries newest first with who entered them, when, and who edited them', async () => {
-    renderPanel(asGs)
+    renderPanel()
     await loaded()
     const rows = dataRows()
     expect(rows[0]).toHaveTextContent('03/10/2026')
@@ -298,9 +320,6 @@ describe('ReinstatementPanel: entries (spec §4, Q8C)', () => {
     expect(rows[0]).toHaveTextContent('Đoàn Linh')
     expect(rows[1]).toHaveTextContent('01/10/2026')
     expect(rows[1]).toHaveTextContent('200')
-    // A foreman reads; only the admin edits or deletes.
-    expect(screen.queryByRole('button', { name: 'Sửa số lượng' })).toBeNull()
-    expect(screen.queryByRole('button', { name: 'Xoá số lượng' })).toBeNull()
   })
 
   it('lets the admin edit an entry, checked against the cap without the entry itself', async () => {
@@ -382,7 +401,7 @@ describe('ReinstatementPanel: layout', () => {
 
   it('scrolls the entries sideways on a phone, headers on one line, the day column pinned (MOB-01)', async () => {
     restoreViewport = setViewport(390)
-    renderPanel(asGs)
+    renderPanel()
     await loaded()
     expect(antTable()).toHaveClass('ant-table-scroll-horizontal')
     expect(antTable().querySelector('table')?.getAttribute('style')).toContain('width: max-content')
@@ -393,7 +412,7 @@ describe('ReinstatementPanel: layout', () => {
 
   it('pins nothing from 768 px', async () => {
     restoreViewport = setViewport(1280)
-    renderPanel(asGs)
+    renderPanel()
     await loaded()
     expect(antTable()).toHaveClass('ant-table-scroll-horizontal')
     expect(antTable()).not.toHaveClass('ant-table-has-fix-left')
@@ -471,10 +490,38 @@ describe('ReinstatementPanel: Plan import (spec §8)', () => {
       'p1',
       [{ day: '2026-10-02', planQty: 175 }, { day: '2026-10-03', planQty: 50 }],
       'plan.xlsx',
-      { sheet: 'Sheet1', warnings: 0 },
+      { sheet: 'Sheet1', warnings: 0, mode: 'replace' },
     ))
+    expect(api.mergeReinstatementPlan).not.toHaveBeenCalled()
     await waitFor(() => expect(api.listReinstatementPlan).toHaveBeenCalledTimes(2))
     expect(await screen.findByText('Đã import Reinstatement Plan')).toBeInTheDocument()
+  })
+
+  it('previews Update Plan without removals, a blank cell kept, and merges on confirm (RV8-5)', async () => {
+    xlsx.read.mockResolvedValue(sheet([['Date', 'Plan Qty'], ['02/10/2026', 175], ['03/10/2026', null], ['04/10/2026', 50]]))
+    renderPanel()
+    await loaded()
+    await upload()
+    // Plan (the replace) refuses the blank cell, as it always did.
+    expect(await screen.findByText('Thiếu Plan Qty')).toBeInTheDocument()
+    await userEvent.click(within(dialog()).getByText('Update Plan', { selector: '.ant-segmented-item-label' }))
+    expect(await screen.findByText('Xem trước Reinstatement Plan')).toBeInTheDocument()
+    const preview = screen.getAllByRole('dialog').at(-1) as HTMLElement
+    expect(keyFactTexts(preview)).toEqual(['1 thêm', '1 sửa', '0 giữ nguyên'])
+    expect(within(preview).getByText('02/10/2026').closest('tr')).toHaveTextContent(/Sửa.*150.*175/)
+    expect(within(preview).getByText('04/10/2026').closest('tr')).toHaveTextContent(/Thêm.*-.*50/)
+    // 01/10 is not in the file: kept, so not listed.
+    expect(within(preview).queryByText('01/10/2026')).toBeNull()
+
+    await userEvent.click(within(preview).getByRole('button', { name: 'Update Plan' }))
+    await waitFor(() => expect(api.mergeReinstatementPlan).toHaveBeenCalledWith(
+      'p1',
+      [{ day: '2026-10-02', planQty: 175 }, { day: '2026-10-04', planQty: 50 }],
+      'plan.xlsx',
+      { sheet: 'Sheet1', warnings: 1, mode: 'update' },
+    ))
+    expect(api.replaceReinstatementPlan).not.toHaveBeenCalled()
+    await waitFor(() => expect(api.listReinstatementPlan).toHaveBeenCalledTimes(2))
   })
 
   it('keeps the preview open with the message when the replace is refused', async () => {
@@ -486,6 +533,122 @@ describe('ReinstatementPanel: Plan import (spec §8)', () => {
     await screen.findByText('Xem trước Reinstatement Plan')
     await userEvent.click(within(dialog()).getByRole('button', { name: 'Thay thế Plan' }))
     expect(await within(dialog()).findByText('Bạn không có quyền thực hiện thao tác này')).toBeInTheDocument()
+  })
+})
+
+describe('ReinstatementPanel: Nhập Actual (RV8-6)', () => {
+  /** The file input of the Nhập Actual button. */
+  const uploadActual = async () => {
+    const button = screen.getByRole('button', { name: /Nhập Actual/ })
+    const input = button.closest('.ant-upload')?.querySelector('input[type="file"]') as HTMLInputElement
+    await userEvent.upload(input, new File(['x'], 'actual.xlsx', {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    }))
+  }
+
+  it('gives the admin Nhập Actual and its template beside the Plan import', async () => {
+    renderPanel()
+    await loaded()
+    expect(screen.getByRole('button', { name: /Nhập Actual/ })).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Tải file mẫu Actual' }))
+    await waitFor(() => expect(download).toHaveBeenCalledWith(expect.any(Blob), 'Mau_Reinstatement_Actual.xlsx'))
+  })
+
+  it('gives a foreman and a viewer no Actual import', async () => {
+    for (const role of [asGs, asViewer]) {
+      const { unmount } = renderPanel(role)
+      await loaded()
+      expect(screen.queryByRole('button', { name: /Nhập Actual/ })).toBeNull()
+      expect(screen.queryByRole('button', { name: 'Tải file mẫu Actual' })).toBeNull()
+      unmount()
+    }
+  })
+
+  it('previews day totals, confirms the overwrite naming the count, then imports and reads again', async () => {
+    // 01/10 holds 200 (overwritten), 04/10 none (added), 05/10 blank (kept).
+    xlsx.read.mockResolvedValue(sheet([['Date', 'Actual Qty'], ['01/10/2026', 150], ['04/10/2026', 10], ['05/10/2026', null]]))
+    renderPanel()
+    await loaded()
+    await uploadActual()
+    expect(await screen.findByText('Xem trước Reinstatement Actual')).toBeInTheDocument()
+    expect(keyFactTexts(dialog())).toEqual(['1 thêm', '1 sửa', '0 giữ nguyên'])
+    expect(within(dialog()).getByText('01/10/2026').closest('tr')).toHaveTextContent(/Sửa.*200.*150/)
+    expect(within(dialog()).getByText('04/10/2026').closest('tr')).toHaveTextContent(/Thêm.*-.*10/)
+    await userEvent.click(within(dialog()).getByRole('button', { name: 'Nhập Actual' }))
+    expect(api.importReinstatementActual).not.toHaveBeenCalled()
+    await waitFor(() => expect(screen.getAllByRole('dialog')).toHaveLength(2))
+    const confirm = screen.getAllByRole('dialog').at(-1) as HTMLElement
+    expect(within(confirm).getByText('Ghi đè 1 ngày đã có số liệu')).toBeInTheDocument()
+    await userEvent.click(within(confirm).getByRole('button', { name: 'Nhập Actual' }))
+    await waitFor(() => expect(api.importReinstatementActual).toHaveBeenCalledWith(
+      'p1',
+      [{ day: '2026-10-01', qty: 150 }, { day: '2026-10-04', qty: 10 }],
+      'actual.xlsx',
+      { sheet: 'Sheet1', warnings: 0 },
+    ))
+    // The page's read, the preview's fresh one, and the read after the import.
+    await waitFor(() => expect(api.listReinstatementEntries).toHaveBeenCalledTimes(3))
+    expect(api.replaceReinstatementPlan).not.toHaveBeenCalled()
+  })
+
+  it('imports on one confirm when nothing stored is overwritten', async () => {
+    xlsx.read.mockResolvedValue(sheet([['Date', 'Actual Qty'], ['04/10/2026', 10]]))
+    renderPanel()
+    await loaded()
+    await uploadActual()
+    await screen.findByText('Xem trước Reinstatement Actual')
+    await userEvent.click(within(dialog()).getByRole('button', { name: 'Nhập Actual' }))
+    await waitFor(() => expect(api.importReinstatementActual).toHaveBeenCalledTimes(1))
+  })
+
+  it('refuses a file that would pass total Test Pack, or a future day, and writes nothing', async () => {
+    xlsx.read.mockResolvedValue(sheet([['Date', 'Actual Qty'], ['05/10/2026', 900]]))
+    renderPanel()
+    await loaded()
+    await uploadActual()
+    expect(await screen.findByText('Không import được actual.xlsx')).toBeInTheDocument()
+    expect(within(dialog()).getByText('Vượt tổng Test Pack (đã có 1.135 / 1.022)')).toBeInTheDocument()
+    await userEvent.click(within(dialog()).getByRole('button', { name: 'Đóng' }))
+
+    xlsx.read.mockResolvedValue(sheet([['Date', 'Actual Qty'], ['08/10/2026', 1]]))
+    await uploadActual()
+    expect(await screen.findByText('Không nhập được ngày trong tương lai (08/10/2026)')).toBeInTheDocument()
+    expect(api.importReinstatementActual).not.toHaveBeenCalled()
+  })
+
+  it('reads the entries and total Test Pack afresh: an entry added since the page opened is an overwrite', async () => {
+    xlsx.read.mockResolvedValue(sheet([['Date', 'Actual Qty'], ['04/10/2026', 10]]))
+    renderPanel()
+    await loaded()
+    api.listReinstatementEntries.mockResolvedValue([...ENTRIES, entry({ id: 'e3', day: '2026-10-04', qty: 4 })])
+    await uploadActual()
+    await screen.findByText('Xem trước Reinstatement Actual')
+    expect(within(dialog()).getByText('04/10/2026').closest('tr')).toHaveTextContent(/Sửa.*4.*10/)
+    await userEvent.click(within(dialog()).getByRole('button', { name: 'Nhập Actual' }))
+    await waitFor(() => expect(screen.getAllByRole('dialog')).toHaveLength(2))
+    expect(within(screen.getAllByRole('dialog').at(-1) as HTMLElement).getByText('Ghi đè 1 ngày đã có số liệu'))
+      .toBeInTheDocument()
+    expect(api.getPipingSettings).toHaveBeenCalledWith('p1')
+  })
+
+  it('checks the cap against total Test Pack as stored now, not as the page read it', async () => {
+    xlsx.read.mockResolvedValue(sheet([['Date', 'Actual Qty'], ['04/10/2026', 10]]))
+    renderPanel()
+    await loaded()
+    api.getPipingSettings.mockResolvedValue({ ...SETTINGS, totalTestPacks: 240 })
+    await uploadActual()
+    expect(await screen.findByText('Vượt tổng Test Pack (đã có 245 / 240)')).toBeInTheDocument()
+    expect(api.importReinstatementActual).not.toHaveBeenCalled()
+  })
+
+  it('refuses any Actual file while total Test Pack is not set', async () => {
+    xlsx.read.mockResolvedValue(sheet([['Date', 'Actual Qty'], ['04/10/2026', 1]]))
+    renderPanel({ settings: { ...SETTINGS, totalTestPacks: null } })
+    await loaded()
+    api.getPipingSettings.mockResolvedValue({ ...SETTINGS, totalTestPacks: null })
+    await uploadActual()
+    expect(await within(await screen.findByRole('dialog')).findByText('Admin chưa nhập tổng Test Pack')).toBeInTheDocument()
+    expect(api.importReinstatementActual).not.toHaveBeenCalled()
   })
 })
 
@@ -609,8 +772,40 @@ describe('ReinstatementPanel: admin notes (spec §9)', () => {
   it.each([['a foreman', asGs], ['a viewer', asViewer]])('never reads or shows notes for %s', async (_who, as) => {
     renderPanel(as)
     await loaded()
-    expect(dataRows()).toHaveLength(2)
     expect(screen.queryByRole('button', { name: /Ghi chú/ })).toBeNull()
     expect(api.listNotes).not.toHaveBeenCalled()
+  })
+})
+
+describe('ReinstatementPanel: sections by role (RV8-8)', () => {
+  const planCard = () => screen.queryByRole('heading', { level: 2, name: 'Plan' })
+  const rules = () => screen.queryByRole('button', { name: /Quy tắc áp dụng/ })
+
+  it('shows the admin the entries, the rules and the plan', async () => {
+    renderPanel()
+    await loaded()
+    expect(screen.getByTestId('reinstatement-entries')).toBeInTheDocument()
+    expect(rules()).toBeInTheDocument()
+    expect(planCard()).toBeInTheDocument()
+  })
+
+  it('shows a foreman the summary, the chart and the form, no entries, rules or plan', async () => {
+    renderPanel(asGs)
+    await loaded()
+    expect(keyFactTexts()).toContain('235/1.022 – 22,99% TestPack')
+    expect(screen.getByRole('button', { name: 'Thêm số lượng' })).toBeInTheDocument()
+    expect(screen.queryByTestId('reinstatement-entries')).toBeNull()
+    expect(rules()).toBeNull()
+    expect(planCard()).toBeNull()
+  })
+
+  it('shows a viewer the summary and the chart only', async () => {
+    renderPanel(asViewer)
+    await loaded()
+    expect(keyFactTexts()).toContain('235/1.022 – 22,99% TestPack')
+    expect(screen.queryByTestId('reinstatement-entries')).toBeNull()
+    expect(rules()).toBeNull()
+    expect(planCard()).toBeNull()
+    expect(screen.queryByRole('heading', { level: 2, name: 'Số lượng đã nhập' })).toBeNull()
   })
 })

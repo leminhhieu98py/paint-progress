@@ -6,6 +6,7 @@ import { expectNoSpecIds, keyFactTexts } from '../../test/copy'
 import { renderApp } from '../../test/renderApp'
 import { chooseOption, optionTitles } from '../../test/select'
 import { setViewport } from '../../test/viewport'
+import { resolveChartColors } from './chartColors'
 import { InsulationPanel } from './InsulationPanel'
 import type { PipingPanelProps } from './panelProps'
 
@@ -19,18 +20,28 @@ vi.mock('../../lib/pipingApi', () => ({
 vi.mock('../../lib/projectReport', () => ({ downloadWorkbook: vi.fn() }))
 
 // jsdom gives Recharts no size; the stand-in prints what reaches the chart:
-// the view, the lines shown, and each bucket's Painting Handover counts.
+// the view, the lines shown, and each bucket's Pip counts.
 // It counts its mounts too: a new mount is a fresh Brush.
 const chartMounts = vi.hoisted(() => ({ count: 0 }))
 vi.mock('./insulation/InsulationChart', async () => {
   const { useEffect } = await import('react')
   return {
-    InsulationChart: ({ data, keys, mode }: { data: Array<Record<string, unknown>>; keys: string[]; mode: string }) => {
+    InsulationChart: ({ data, keys, mode, colors }: {
+      data: Array<Record<string, unknown>>
+      keys: string[]
+      mode: string
+      colors?: Record<string, string>
+    }) => {
       useEffect(() => {
         chartMounts.count += 1
       }, [])
       return (
-        <div data-testid="insulation-chart" data-mode={mode} data-keys={keys.join(',')}>
+        <div
+          data-testid="insulation-chart"
+          data-mode={mode}
+          data-keys={keys.join(',')}
+          data-colors={JSON.stringify(colors ?? null)}
+        >
           {data.map((p) => `${String(p.key)}:${String(p.phPlan)}/${String(p.phActual)}`).join(' ')}
         </div>
       )
@@ -40,6 +51,7 @@ vi.mock('./insulation/InsulationChart', async () => {
 
 const SETTINGS: PipingSettings = {
   projectId: 'p1', enabled: true, weekStartDate: '2026-09-28', totalTestPacks: null, lateThresholdDays: 7,
+  chartColors: {},
 }
 
 const spool = (seq: number, over: Partial<Spool> = {}): Spool => ({
@@ -93,9 +105,16 @@ describe('InsulationPanel: summary (spec §6.4)', () => {
     expect(api.listSpoolColumns).toHaveBeenCalledWith('p1')
     expect(screen.getByRole('heading', { level: 2, name: 'Insulation' })).toBeInTheDocument()
     expect(keyFactTexts()).toEqual(expect.arrayContaining([
-      '4 spool', 'Painting Handover 3/4 SpoolNo', 'Insulation Handover 1/4 SpoolNo', 'Insulation Work 0/4 SpoolNo',
+      '4 spool', 'Pip Act 3/4 · 75,00% SpoolNo', 'Paint Act 1/4 · 25,00% SpoolNo', 'Insu Act 0/4 · 0,00% SpoolNo',
     ]))
     expectNoSpecIds()
+  })
+
+  it('draws the chart in the project\'s colours (RV8-2)', async () => {
+    renderPanel({ settings: { ...SETTINGS, chartColors: { 'ins.iw.actual': '#123456' } } })
+    const colors = JSON.parse((await chart()).getAttribute('data-colors') ?? 'null') as Record<string, string>
+    expect(colors).toEqual(resolveChartColors({ 'ins.iw.actual': '#123456' }, []))
+    expect(colors['ins.iw.actual']).toBe('#123456')
   })
 
   it('warns the admin of duplicate SpoolNo and plan-order issues, naming them', async () => {
@@ -104,7 +123,7 @@ describe('InsulationPanel: summary (spec §6.4)', () => {
     expect(keyFactTexts()).toEqual(expect.arrayContaining(['1 SpoolNo trùng', '1 spool sai thứ tự Plan']))
     expect(screen.getByLabelText('SpoolNo trùng: SP-1 (2 dòng)')).toBeInTheDocument()
     expect(screen.getByLabelText(
-      'Ngày Plan không theo thứ tự Painting Handover, Insulation Handover, Insulation Work: SP-3',
+      'Ngày Plan không theo thứ tự Pip, Paint, Insu: SP-3',
     )).toBeInTheDocument()
   })
 
@@ -124,7 +143,17 @@ describe('InsulationPanel: summary (spec §6.4)', () => {
     renderPanel(role)
     await chart()
     expect(keyFactTexts().join('|')).not.toMatch(/trùng|sai thứ tự/)
-    expect(keyFactTexts()).toContain('Painting Handover 3/4 SpoolNo')
+    expect(keyFactTexts()).toContain('Pip Act 3/4 · 75,00% SpoolNo')
+  })
+
+  it('leaves the percent out when the unit counts nothing (RV8-9)', async () => {
+    api.listSpools.mockResolvedValue(SPOOLS.map((s) => ({ ...s, testPackageNo: null })))
+    renderPanel()
+    await chart()
+    await chooseOption('Đơn vị đếm', 'Test Package No')
+    expect(keyFactTexts()).toEqual(expect.arrayContaining([
+      'Pip Act 0/0 Test Package No', 'Paint Act 0/0 Test Package No', 'Insu Act 0/0 Test Package No',
+    ]))
   })
 })
 
@@ -147,20 +176,25 @@ describe('InsulationPanel: chart (spec §6.4, Q20A)', () => {
     await chooseOption('Đơn vị đếm', 'LineNo')
     // L1 is done once both its spools are; L2 is not; a spool without a line is no line.
     expect(keyFactTexts()).toEqual(expect.arrayContaining([
-      'Painting Handover 1/2 LineNo', 'Insulation Handover 0/2 LineNo', 'Insulation Work 0/2 LineNo',
+      'Pip Act 1/2 · 50,00% LineNo', 'Paint Act 0/2 · 0,00% LineNo', 'Insu Act 0/2 · 0,00% LineNo',
     ]))
     expect(bucket('2026-10-07')).toBe('2026-10-07:1/1')
   })
 
-  it('shows all six lines, then Plan only, then Actual only', async () => {
+  it('shows all bars and lines, then Plan only, then Actual only', async () => {
     renderPanel()
-    expect(await chart()).toHaveAttribute('data-keys', 'phPlan,phActual,ihPlan,ihActual,iwPlan,iwActual')
+    expect(await chart()).toHaveAttribute('data-keys', [
+      'phPlanBar,phActualBar,phPlan,phActual',
+      'ihPlanBar,ihActualBar,ihPlan,ihActual',
+      'iwPlanBar,iwActualBar,iwPlan,iwActual',
+    ].join(','))
     expect(selected('Đường hiển thị')).toBe('Plan & Actual')
     expect(await optionTitles('Đường hiển thị')).toEqual(['Plan', 'Actual', 'Plan & Actual'])
     await show('Plan')
-    expect(screen.getByTestId('insulation-chart')).toHaveAttribute('data-keys', 'phPlan,ihPlan,iwPlan')
+    expect(screen.getByTestId('insulation-chart')).toHaveAttribute('data-keys', 'phPlanBar,phPlan,ihPlanBar,ihPlan,iwPlanBar,iwPlan')
     await show('Actual')
-    expect(screen.getByTestId('insulation-chart')).toHaveAttribute('data-keys', 'phActual,ihActual,iwActual')
+    expect(screen.getByTestId('insulation-chart'))
+      .toHaveAttribute('data-keys', 'phActualBar,phActual,ihActualBar,ihActual,iwActualBar,iwActual')
   })
 
   it('runs the plan to its end and the actual to today, by week in week view', async () => {
@@ -187,8 +221,8 @@ describe('InsulationPanel: chart (spec §6.4, Q20A)', () => {
     renderPanel()
     await chart()
     await chooseOption('Đơn vị đếm', 'Test Package No')
-    // TP1 (spools 1, 2) reached Painting Handover on 04/10; TP2 has not; spool 4 is in no package.
-    expect(keyFactTexts()).toContain('Painting Handover 1/2 Test Package No')
+    // TP1 (spools 1, 2) reached Pip on 04/10; TP2 has not; spool 4 is in no package.
+    expect(keyFactTexts()).toContain('Pip Act 1/2 · 50,00% Test Package No')
     const rows = within(within(screen.getByTestId('spool-detail')).getByRole('table')).getAllByRole('row')
       .filter((r) => r.closest('tbody') !== null)
       .map((r) => within(r).getAllByRole('cell').map((c) => c.textContent))

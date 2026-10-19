@@ -1,13 +1,16 @@
 import { useMemo } from 'react'
-import { Bar, Brush, CartesianGrid, ComposedChart, Legend, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+import {
+  Bar, Brush, CartesianGrid, ComposedChart, Legend, Line, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis,
+} from 'recharts'
 import type { ManpowerPoint } from '../../../domain/piping/manpower'
 import type { ManpowerGroup, ViewMode } from '../../../domain/piping/types'
 import { formatDayMonth } from '../../../domain/piping/week'
 import { MISSING } from '../../../lib/format'
-import { categoricalColor, palette, tintColor } from '../../../theme'
+import { categoricalTint, palette, tintColor } from '../../../theme'
 import {
   ACTIVE_BAR, ACTIVE_DOT, AXIS, axisTick, legendText, TOOLTIP_SEPARATOR, useLegendHighlight,
 } from '../../dashboard/chartKit'
+import { groupColorKey, resolveChartColors, type ChartColors } from '../chartColors'
 import { legendOrder } from '../legendOrder'
 import { formatQty } from '../pipingFormat'
 
@@ -31,6 +34,15 @@ import { formatQty } from '../pipingFormat'
  * lighter lap tints and Plan with a dashed outline, so a plan bar never looks
  * like an actual bar nor like the plan of the group whose hue it shares.
  *
+ * The Nhóm select (RV8-7) draws a subset of `groups`; a group keeps the hue
+ * of its place among all of them, so picking another group never recolours
+ * it. "Plan TB", the selected groups' average daily plan, is a dashed
+ * reference line across the plot, named in the legend after Plan tổng.
+ *
+ * The project's colours (RV8-2) stand in for the palette: a group's picked
+ * colour is its hue, its Plan and Actual derived from it as above (the lap
+ * by its place); the two totals and Plan TB have their own keys.
+ *
  * The panel's tests replace this module (jsdom gives ResponsiveContainer no
  * size); only the lazily loaded Piping page imports it.
  */
@@ -42,45 +54,62 @@ const PLAN_OUTLINE = 1.5
 /** Day view opens on the last this many days; the Brush reaches the rest. */
 const DAY_WINDOW = 90
 
-const hueOf = (i: number) => palette.categorical[i % palette.categorical.length]
 const lapOf = (i: number) => Math.floor(i / palette.categorical.length)
 
 const planKey = (groupId: string) => `plan:${groupId}`
 const actualKey = (groupId: string) => `actual:${groupId}`
+/** The legend's stand-in for the Plan TB reference line, which Recharts never lists. */
+const PLAN_AVG = 'planAvg'
+const PLAN_AVG_NAME = 'Plan TB'
+const PLAN_AVG_DASH = '6 4'
 
-export function ManpowerChart({ data, groups, mode, report = false }: {
+export function ManpowerChart({ data, groups, selected, planAverage = null, colors, mode, report = false }: {
   data: ManpowerPoint[]
-  /** The groups to draw, in order (`chartGroups`): their colours follow this order. */
+  /** The groups that may be drawn, in order (`chartGroups`): their colours follow this order. */
   groups: ManpowerGroup[]
+  /** The groups the Nhóm select picked (RV8-7); every one of `groups` without it. */
+  selected?: ReadonlySet<string>
+  /** The selected groups' average daily plan (`planAverage`); no line when null. */
+  planAverage?: number | null
+  /** The project's resolved chart colours (`resolveChartColors` over `groups`); today's colours without it. */
+  colors?: ChartColors
   mode: ViewMode
   /** For the Excel report (spec §10): every bucket with no Brush, on the desktop layout whatever the screen. */
   report?: boolean
 }) {
   const { legend, opacity, height, phone } = useLegendHighlight({ desktop: report })
   const tooltips = useMemo(() => new Map(data.map((p) => [p.key, p.tooltip])), [data])
+  const resolved = useMemo(() => colors ?? resolveChartColors({}, groups), [colors, groups])
+  // The groups drawn, each with its place among all (the lap) and its hue: the place picks the default one.
+  const shown = useMemo(
+    () => groups.flatMap((g, i) => (selected === undefined || selected.has(g.id)
+      ? [{ g, i, hue: resolved[groupColorKey(g.id)] ?? palette.categorical[i % palette.categorical.length] }]
+      : [])),
+    [groups, selected, resolved],
+  )
   const rows = useMemo(
     () => data.map((p) => {
       const row: Record<string, string | number | null> = {
         key: p.key, planTotal: p.planTotal, actualTotal: p.actualTotal,
       }
-      for (const g of groups) {
+      for (const { g } of shown) {
         row[planKey(g.id)] = p.plan[g.id] ?? null
         row[actualKey(g.id)] = p.actual[g.id] ?? null
       }
       return row
     }),
-    [data, groups],
+    [data, shown],
   )
-  // The legend: Plan before Actual, the groups' bars before the total line.
+  // The legend: Plan before Actual, the groups' bars before the total line, the average after it.
   const legendSorter = useMemo(() => legendOrder([
-    ...groups.map((g) => planKey(g.id)), 'planTotal', ...groups.map((g) => actualKey(g.id)), 'actualTotal',
-  ]), [groups])
+    ...shown.map(({ g }) => planKey(g.id)), 'planTotal', PLAN_AVG, ...shown.map(({ g }) => actualKey(g.id)), 'actualTotal',
+  ]), [shown])
   const week = mode === 'week'
   const lineSuffix = week ? ' (trung bình)' : ' theo ngày'
   // A long day range opens on its last days: two years of days at once is bars a pixel wide.
   const startIndex = !week && rows.length > DAY_WINDOW ? rows.length - DAY_WINDOW : undefined
   return (
-    <div data-testid="manpower-chart" style={{ width: '100%', height: height(372, groups.length * 2 + 2) }}>
+    <div data-testid="manpower-chart" style={{ width: '100%', height: height(372, shown.length * 2 + 2 + (planAverage === null ? 0 : 1)) }}>
       <ResponsiveContainer width="100%" height="100%">
         <ComposedChart data={rows} margin={{ top: 8, right: 16, bottom: 0, left: 0 }}>
           <CartesianGrid stroke={palette.borderSplit} vertical={false} />
@@ -95,15 +124,15 @@ export function ManpowerChart({ data, groups, mode, report = false }: {
             formatter={(value) => (typeof value === 'number' ? formatQty(value) : MISSING)}
           />
           <Legend formatter={legendText} itemSorter={legendSorter} {...legend} />
-          {groups.map((g, i) => (
+          {shown.map(({ g, i, hue }) => (
             <Bar
               key={planKey(g.id)}
               dataKey={planKey(g.id)}
               name={`Plan · ${g.name}`}
               stackId="plan"
-              fill={tintColor(hueOf(i), PLAN_TINT)}
+              fill={tintColor(hue, PLAN_TINT)}
               fillOpacity={opacity(planKey(g.id))}
-              stroke={hueOf(i)}
+              stroke={hue}
               strokeWidth={PLAN_OUTLINE}
               strokeOpacity={opacity(planKey(g.id))}
               strokeDasharray={lapOf(i) > 0 ? '3 2' : undefined}
@@ -111,13 +140,13 @@ export function ManpowerChart({ data, groups, mode, report = false }: {
               isAnimationActive={false}
             />
           ))}
-          {groups.map((g, i) => (
+          {shown.map(({ g, i, hue }) => (
             <Bar
               key={actualKey(g.id)}
               dataKey={actualKey(g.id)}
               name={`Actual · ${g.name}`}
               stackId="actual"
-              fill={categoricalColor(i)}
+              fill={categoricalTint(hue, i)}
               fillOpacity={opacity(actualKey(g.id))}
               activeBar={ACTIVE_BAR}
               isAnimationActive={false}
@@ -127,7 +156,7 @@ export function ManpowerChart({ data, groups, mode, report = false }: {
             type="monotone"
             dataKey="planTotal"
             name={`Plan tổng${lineSuffix}`}
-            stroke={palette.textTertiary}
+            stroke={resolved['mp.planTotal']}
             strokeOpacity={opacity('planTotal')}
             strokeWidth={2}
             strokeDasharray="5 3"
@@ -141,7 +170,7 @@ export function ManpowerChart({ data, groups, mode, report = false }: {
             type="monotone"
             dataKey="actualTotal"
             name={`Actual tổng${lineSuffix}`}
-            stroke={palette.ink}
+            stroke={resolved['mp.actualTotal']}
             strokeOpacity={opacity('actualTotal')}
             strokeWidth={2}
             connectNulls
@@ -149,6 +178,28 @@ export function ManpowerChart({ data, groups, mode, report = false }: {
             activeDot={ACTIVE_DOT}
             isAnimationActive={false}
           />
+          {planAverage !== null && (
+            <ReferenceLine
+              y={planAverage}
+              stroke={resolved['mp.planAvg']}
+              strokeOpacity={opacity(PLAN_AVG)}
+              strokeWidth={2}
+              strokeDasharray={PLAN_AVG_DASH}
+              label={{ value: PLAN_AVG_NAME, position: 'insideTopRight', fill: resolved['mp.planAvg'], fontSize: 12 }}
+              ifOverflow="extendDomain"
+            />
+          )}
+          {planAverage !== null && (
+            // No data of its own: it only puts the reference line in the legend, out of the tooltip.
+            <Line
+              dataKey={PLAN_AVG}
+              name={PLAN_AVG_NAME}
+              stroke={resolved['mp.planAvg']}
+              strokeDasharray={PLAN_AVG_DASH}
+              tooltipType="none"
+              isAnimationActive={false}
+            />
+          )}
           {!report && (
             <Brush
               dataKey="key"

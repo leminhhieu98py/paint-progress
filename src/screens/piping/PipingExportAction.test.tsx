@@ -5,7 +5,9 @@ import type { Unit } from '../../domain/piping/types'
 import type { PipingReportInput } from '../../lib/piping/report'
 import { renderApp } from '../../test/renderApp'
 import { setViewport } from '../../test/viewport'
+import { resolveChartColors } from './chartColors'
 import { InsulationUnitProvider, useInsulationSelection, useInsulationUnit } from './insulationUnit'
+import { showManpowerSelection } from './manpowerSelection'
 import type { PipingPanelProps, PipingRole } from './panelProps'
 import { PipingExportAction } from './PipingExportAction'
 
@@ -16,6 +18,7 @@ const api = vi.hoisted(() => ({
   listManpowerPlan: vi.fn(),
   listManpowerActual: vi.fn(),
   listSpools: vi.fn(),
+  listSpoolColumns: vi.fn(),
   listNotes: vi.fn(),
 }))
 vi.mock('../../lib/pipingApi', () => api)
@@ -38,6 +41,7 @@ const panel = (over: Partial<PipingPanelProps> = {}): PipingPanelProps => ({
   projectId: 'p1',
   settings: {
     projectId: 'p1', enabled: true, weekStartDate: '2026-09-28', totalTestPacks: 100, lateThresholdDays: 7,
+    chartColors: {},
   },
   mode: 'week',
   variant: 'admin',
@@ -64,6 +68,7 @@ beforeEach(() => {
     paintingSystem: null, extra: {}, phPlan: '2026-09-30', ihPlan: null, iwPlan: null,
     phActual: null, ihActual: null, iwActual: null,
   }])
+  api.listSpoolColumns.mockResolvedValue([{ id: 'c1', label: 'Khu vực', sort: 1 }])
   api.listNotes.mockResolvedValue([{ id: 'n1', target: 'spool', spoolId: 's1', body: 'x' }])
   listProjectNames.mockReset().mockResolvedValue([
     { id: 'p0', code: 'BB1', name: 'BlockB1' },
@@ -76,10 +81,16 @@ beforeEach(() => {
 
 afterEach(() => undoViewport())
 
-const exportButton = () => screen.getByRole('button', { name: 'Xuất báo cáo' })
+const exportButton = () => screen.getByRole('button', { name: 'Report' })
 const reportInput = (): PipingReportInput => buildPipingReport.mock.calls[0][0]
 
 describe('PipingExportAction (spec §10)', () => {
+  it('is a text button that reads Report, with no icon (RV8-1)', () => {
+    renderApp(<PipingExportAction panel={panel()} />)
+    expect(exportButton()).toHaveTextContent(/^Report$/)
+    expect(exportButton().querySelector('.anticon')).toBeNull()
+  })
+
   it('stays in place, disabled, while the page has no panel', () => {
     renderApp(<PipingExportAction panel={null} />)
     expect(exportButton()).toBeDisabled()
@@ -102,16 +113,31 @@ describe('PipingExportAction (spec §10)', () => {
       settings: { weekStartDate: '2026-09-28', totalTestPacks: 100, lateThresholdDays: 7 },
     })
     expect(input.reinstatement.actual).toEqual([{ id: 'e1', day: '2026-09-30', qty: 4 }])
+    // Chi tiết spool (RV8-3): the extra columns in their order.
+    expect(api.listSpoolColumns).toHaveBeenCalledWith('p1')
+    expect(input.columns).toEqual([{ id: 'c1', label: 'Khu vực', sort: 1 }])
     expect(input.charts).toEqual({ reinstatement: PNG, manpower: PNG, insulation: PNG })
     expect(renderChartPng.mock.calls.map(([spec]) => spec.kind)).toEqual(['reinstatement', 'manpower', 'insulation'])
     expect(renderChartPng.mock.calls[0][0]).toMatchObject({ mode: 'week' })
-    expect(renderChartPng.mock.calls[2][0].keys).toHaveLength(6)
+    expect(renderChartPng.mock.calls[2][0].keys).toHaveLength(12)
     // The series are computed once: the charts are drawn from what the workbook writes.
     const series = buildPipingReport.mock.calls[0][1]
     expect(renderChartPng.mock.calls[0][0].data).toBe(series.reinstatement)
-    expect(renderChartPng.mock.calls[1][0].data).toBe(series.manpower.points)
+    // Manpower draws the groups the tab's Nhóm select shows (RV8-7): here every one, so the same points.
+    expect(renderChartPng.mock.calls[1][0].data).toEqual(series.manpower.points)
     expect(renderChartPng.mock.calls[2][0].data).toBe(series.insulation.points)
     expect(await screen.findByText('Đã xuất báo cáo Piping')).toBeInTheDocument()
+  })
+
+  it('draws the pictures in the project\'s colours, as on screen (RV8-2)', async () => {
+    const stored = { 'rein.actualCum': '#123456', 'mp.group.g1': '#654321', 'ins.ph.plan': '#ABCDEF' }
+    const base = panel()
+    renderApp(<PipingExportAction panel={{ ...base, settings: { ...base.settings, chartColors: stored } }} />)
+    await userEvent.click(exportButton())
+    await waitFor(() => expect(downloadWorkbook).toHaveBeenCalled())
+    const colors = resolveChartColors(stored, [{ id: 'g1', name: 'Reinstatement', sort: 1, hidden: false }])
+    expect(renderChartPng.mock.calls.map(([spec]) => spec.colors)).toEqual([colors, colors, colors])
+    expect(colors['mp.group.g1']).toBe('#654321')
   })
 
   it.each(['gs', 'viewer'] as const)('%s: never reads the notes, and the report has none', async (role) => {
@@ -120,7 +146,7 @@ describe('PipingExportAction (spec §10)', () => {
     await userEvent.click(exportButton())
     await waitFor(() => expect(downloadWorkbook).toHaveBeenCalled())
     expect(api.listNotes).not.toHaveBeenCalled()
-    expect(reportInput()).toMatchObject({ includeNotes: false, notes: [] })
+    expect(reportInput()).toMatchObject({ includeNotes: false, notes: [], columns: [{ label: 'Khu vực' }] })
   })
 
   it('writes the file without a chart that failed to render, and skips a chart with no data', async () => {
@@ -197,14 +223,57 @@ describe('PipingExportAction (spec §10)', () => {
     await userEvent.click(screen.getByRole('button', { name: 'pick lines' }))
     await userEvent.click(exportButton())
     await waitFor(() => expect(buildPipingReport).toHaveBeenCalled())
-    expect(renderChartPng.mock.calls[2][0].keys).toEqual(['phActual', 'ihActual', 'iwActual'])
+    expect(renderChartPng.mock.calls[2][0].keys)
+      .toEqual(['phActualBar', 'phActual', 'ihActualBar', 'ihActual', 'iwActualBar', 'iwActual'])
+  })
+
+  describe('the Manpower groups on screen (RV8-7)', () => {
+    const GROUPS = [
+      { id: 'g1', name: 'Reinstatement', sort: 1, hidden: false },
+      { id: 'g2', name: 'Insulation', sort: 2, hidden: false },
+      { id: 'g3', name: 'Marking', sort: 3, hidden: true },
+      { id: 'g4', name: 'Painting', sort: 4, hidden: true },
+    ]
+    beforeEach(() => {
+      api.listManpowerGroups.mockResolvedValue(GROUPS)
+      api.listManpowerPlan.mockResolvedValue([
+        { groupId: 'g1', day: '2026-09-30', value: 3 },
+        { groupId: 'g2', day: '2026-09-30', value: 5 },
+        { groupId: 'g3', day: '2026-09-30', value: 7 },
+      ])
+    })
+    const manpowerSpec = () => renderChartPng.mock.calls[1][0]
+
+    it('draws the select\'s default when the tab has picked nothing: the visible groups and a hidden one with data', async () => {
+      renderApp(<PipingExportAction panel={panel()} />)
+      await userEvent.click(exportButton())
+      await waitFor(() => expect(buildPipingReport).toHaveBeenCalled())
+      expect([...manpowerSpec().selected]).toEqual(['g1', 'g2', 'g3'])
+      expect(manpowerSpec().planAverage).toBe(15)
+      expect(manpowerSpec().data[0].planTotal).toBe(15)
+    })
+
+    it('draws the groups the tab shows, the Plan TB line following them; the table keeps every group', async () => {
+      const forget = showManpowerSelection('p1', new Set(['g2', 'g3']))
+      try {
+        renderApp(<PipingExportAction panel={panel()} />)
+        await userEvent.click(exportButton())
+        await waitFor(() => expect(buildPipingReport).toHaveBeenCalled())
+        expect([...manpowerSpec().selected]).toEqual(['g2', 'g3'])
+        expect(manpowerSpec().planAverage).toBe(12)
+        expect(manpowerSpec().data[0].planTotal).toBe(12)
+        expect(buildPipingReport.mock.calls[0][1].manpower.points[0].planTotal).toBe(15)
+      } finally {
+        forget()
+      }
+    })
   })
 
   it('on a field phone, keeps the ⋯ menu in place with the item disabled while the page has no panel', async () => {
     setViewport(390)
     renderApp(<PipingExportAction panel={null} variant="gs" />)
     await userEvent.click(screen.getByRole('button', { name: 'Thêm thao tác' }))
-    const item = await screen.findByRole('menuitem', { name: /Xuất báo cáo/ })
+    const item = await screen.findByRole('menuitem', { name: 'Report' })
     expect(item).toHaveAttribute('aria-disabled', 'true')
   })
 
@@ -214,22 +283,22 @@ describe('PipingExportAction (spec §10)', () => {
     buildPipingReport.mockReturnValue(new Promise<Blob>((resolve) => { finish = resolve }))
     renderApp(<PipingExportAction panel={fieldPanel('gs')} variant="gs" />)
     await userEvent.click(screen.getByRole('button', { name: 'Thêm thao tác' }))
-    await userEvent.click(await screen.findByRole('menuitem', { name: /Xuất báo cáo/ }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Report' }))
     await waitFor(() => expect(buildPipingReport).toHaveBeenCalledTimes(1))
     // The item's click closed the menu; opened again, it shows the export running.
     expect(screen.getByRole('button', { name: 'Thêm thao tác' })).toHaveAttribute('aria-expanded', 'false')
     await userEvent.click(screen.getByRole('button', { name: 'Thêm thao tác' }))
-    expect(await screen.findByRole('menuitem', { name: /Xuất báo cáo/ })).toHaveAttribute('aria-disabled', 'true')
+    expect(await screen.findByRole('menuitem', { name: 'Report' })).toHaveAttribute('aria-disabled', 'true')
     finish(BLOB)
     await waitFor(() => expect(downloadWorkbook).toHaveBeenCalledTimes(1))
   })
 
-  it('on a phone, a field user finds it in one ⋯ menu with its icon and text (GS-09)', async () => {
+  it('on a phone, a field user finds it in one ⋯ menu with its icon and word (GS-09, RV8-1)', async () => {
     setViewport(390)
     renderApp(<PipingExportAction panel={fieldPanel('gs')} />)
-    expect(screen.queryByRole('button', { name: 'Xuất báo cáo' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Report' })).toBeNull()
     await userEvent.click(screen.getByRole('button', { name: 'Thêm thao tác' }))
-    const item = await screen.findByRole('menuitem', { name: /Xuất báo cáo/ })
+    const item = await screen.findByRole('menuitem', { name: 'Report' })
     expect(item.querySelector('.anticon-file-excel')).not.toBeNull()
     await userEvent.click(item)
     await waitFor(() => expect(downloadWorkbook).toHaveBeenCalledWith(BLOB, 'DH_Piping_2026-10-02.xlsx'))

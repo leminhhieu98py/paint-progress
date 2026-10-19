@@ -1,5 +1,6 @@
 import type { DayKey } from '../../domain/piping/types'
 import { supabase } from '../supabase'
+import { HEX_COLOUR } from './settingsRead'
 import { callRpc, isDayKey, requireRows, toError } from './shared'
 
 /** Piping per project: read, enable, change, disable (spec §2, 0038 piping_settings / piping_enable). */
@@ -57,6 +58,22 @@ export async function updatePipingSettings(projectId: string, input: PipingSetti
       total_test_packs: input.totalTestPacks,
       late_threshold_days: input.lateThresholdDays,
     })
+    .eq('project_id', projectId)
+    .select('project_id')
+  if (error) throw toError(error)
+  requireRows(data)
+}
+
+/**
+ * Cấu hình · Màu biểu đồ (RV8-2): the whole colour map, series key ->
+ * `#rrggbb`, written alone so a colour save never re-sends Thông số; `{}`
+ * restores every default. Admin only.
+ */
+export async function updatePipingChartColors(projectId: string, chartColors: Record<string, string>): Promise<void> {
+  if (Object.values(chartColors).some((c) => !HEX_COLOUR.test(c))) throw new Error('Màu biểu đồ không hợp lệ')
+  const { data, error } = await supabase
+    .from('piping_settings')
+    .update({ chart_colors: chartColors })
     .eq('project_id', projectId)
     .select('project_id')
   if (error) throw toError(error)

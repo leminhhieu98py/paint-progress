@@ -4,7 +4,7 @@ import { useMemo, useRef, useState } from 'react'
 import { modalProps } from '../../../components/modalChrome'
 import { searchSelectProps } from '../../../components/searchSelect'
 import { useTypeScale } from '../../../components/typeScale'
-import { MILESTONE_LABEL, MILESTONES, type ActualChange } from '../../../domain/piping/cam'
+import { milestoneActualLabel, MILESTONES, type ActualChange } from '../../../domain/piping/cam'
 import type { DayKey, Milestone, Spool } from '../../../domain/piping/types'
 import { formatDayMonthYear } from '../../../domain/piping/week'
 import { listSpools, setSpoolActuals, type SpoolActualResult } from '../../../lib/pipingApi'
@@ -27,7 +27,7 @@ import {
  */
 
 const KINDS = (Object.keys(TARGET_LABEL) as TargetKind[]).map((k) => ({ value: k, label: TARGET_LABEL[k] }))
-const MILESTONE_OPTIONS = MILESTONES.map((m) => ({ value: m, label: MILESTONE_LABEL[m] }))
+const MILESTONE_OPTIONS = MILESTONES.map((m) => ({ value: m, label: milestoneActualLabel(m) }))
 
 /** A project holds up to 20 000 spools: the value select lists this many matches at most. */
 const MAX_OPTIONS = 100
@@ -105,7 +105,7 @@ export function ActualEntry({ projectId, spools, todayKey, onSaved }: {
       const results = await setSpoolActuals(projectId, changes, { dryRun: true })
       setOverwrite(false)
       setStep({
-        title: `${TARGET_LABEL[kind]} ${target} · ${MILESTONE_LABEL[milestone]} · ${formatDayMonthYear(date)} · ${formatQty(changes.length)} spool`,
+        title: `${TARGET_LABEL[kind]} ${target} · ${milestoneActualLabel(milestone)} · ${formatDayMonthYear(date)} · ${formatQty(changes.length)} spool`,
         changes,
         results,
         preview: actualPreview(fresh, changes, results),

@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { resolveChartColors } from '../chartColors'
 import { CHART_TIMEOUT_MS, chartElement, loadImage, pictureFontFamily, renderChartPng, svgMarkup } from './chartImage'
 
 /**
@@ -72,6 +73,20 @@ describe('chartElement', () => {
     expect(chartElement({ kind: 'manpower', data: [], groups: [], mode: 'week' }).props).toMatchObject({ report: true, mode: 'week' })
     expect(chartElement({ kind: 'insulation', data: [], keys: ['phActual'], mode: 'day' }).props)
       .toMatchObject({ report: true, keys: ['phActual'] })
+  })
+
+  it('draws the Manpower groups the tab shows, with its Plan TB line (RV8-7)', () => {
+    const selected = new Set(['g1'])
+    expect(chartElement({ kind: 'manpower', data: [], groups: [], selected, planAverage: 12, mode: 'day' }).props)
+      .toMatchObject({ selected, planAverage: 12 })
+  })
+
+  it('draws each chart in the project\'s colours (RV8-2)', () => {
+    const colors = resolveChartColors({ 'rein.planBar': '#123456' }, [])
+    expect(chartElement({ kind: 'reinstatement', data: [], mode: 'day', colors }).props).toMatchObject({ colors })
+    expect(chartElement({ kind: 'manpower', data: [], groups: [], mode: 'day', colors }).props).toMatchObject({ colors })
+    expect(chartElement({ kind: 'insulation', data: [], keys: ['phActual'], mode: 'day', colors }).props)
+      .toMatchObject({ colors })
   })
 })
 
