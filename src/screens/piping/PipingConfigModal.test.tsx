@@ -444,6 +444,32 @@ describe('PipingConfigModal: Lịch sử import (spec §8)', () => {
     const reinstatement = within(config()).getByText('rein-actual.xlsx').closest('tr') as HTMLElement
     expect(reinstatement).toHaveTextContent('Reinstatement Actual')
   })
+
+  it('says the mode of a Plan import, Plan when the log has none (RV8-5)', async () => {
+    const log = (id: string, kind: string, summary: Record<string, unknown>) => ({
+      id, kind, fileName: `${id}.xlsx`, rowCount: 1, summary, importedBy: null, importedAt: '2026-10-08T01:00:00Z',
+      importedByName: null,
+    })
+    api.listImportLog.mockResolvedValue([
+      log('update', 'manpower_plan', { mode: 'update' }),
+      log('replace', 'spool_plan', { mode: 'replace' }),
+      log('old', 'reinstatement_plan', {}),
+      log('actual', 'manpower_actual', {}),
+    ])
+    renderModal()
+    await openTab('Lịch sử import')
+    await within(config()).findByText('update.xlsx')
+    expect(within(config()).getByRole('columnheader', { name: 'Chế độ' })).toBeInTheDocument()
+    const modeOf = (file: string) => {
+      const row = within(config()).getByText(file).closest('tr') as HTMLElement
+      const column = within(config()).getAllByRole('columnheader').findIndex((h) => h.textContent === 'Chế độ')
+      return within(row).getAllByRole('cell')[column].textContent
+    }
+    expect(modeOf('update.xlsx')).toBe('Update Plan')
+    expect(modeOf('replace.xlsx')).toBe('Plan')
+    expect(modeOf('old.xlsx')).toBe('Plan')
+    expect(modeOf('actual.xlsx')).toBe('-')
+  })
 })
 
 describe('PipingConfigModal: Tắt Piping (spec §2)', () => {

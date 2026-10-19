@@ -18,6 +18,14 @@ const KINDS: Record<ImportKind, { label: string; tone: StatusTone }> = {
 
 const COUNT = new Intl.NumberFormat('vi-VN')
 
+const PLAN_KINDS = new Set<ImportKind>(['reinstatement_plan', 'manpower_plan', 'spool_plan'])
+
+/** A Plan import's mode (RV8-5): "Update Plan" for a merge, "Plan" otherwise -- logs from before Rv8 carry none. */
+function modeLabel(row: PipingImportLogRow): string {
+  if (!PLAN_KINDS.has(row.kind)) return MISSING
+  return row.summary.mode === 'update' ? 'Update Plan' : 'Plan'
+}
+
 /** Lịch sử import (spec §8): every confirmed import of the project, newest first. */
 export function ImportLogSection({ projectId }: { projectId: string }) {
   const list = useProjectList(projectId, listImportLog)
@@ -40,6 +48,7 @@ export function ImportLogSection({ projectId }: { projectId: string }) {
           align: 'center',
           render: (kind: ImportKind) => <StatusPill tone={KINDS[kind].tone}>{KINDS[kind].label}</StatusPill>,
         },
+        { title: 'Chế độ', key: 'mode', align: 'center', render: (_: unknown, row: PipingImportLogRow) => modeLabel(row) },
         { title: 'Tệp', dataIndex: 'fileName', render: (v: string) => v || MISSING },
         { title: 'Số dòng', dataIndex: 'rowCount', align: 'center', render: (v: number) => COUNT.format(v) },
         { title: 'Người import', dataIndex: 'importedByName', render: (v: string | null) => v ?? MISSING },
