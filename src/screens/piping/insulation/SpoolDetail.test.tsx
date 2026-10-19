@@ -79,8 +79,7 @@ describe('SpoolDetail: levels (spec §6.4, Q16B)', () => {
     renderDetail()
     expect(selected('Cấp hiển thị')).toBe('Package')
     expect(headers()).toEqual(expect.arrayContaining([
-      'Test Package No', 'Số spool', 'Pip', 'Paint', 'Insu', 'Hoàn thành', 'Pip Plan', 'Pip Act', 'Paint Plan', 'Paint Act',
-      'Insu Plan', 'Insu Act',
+      'Test Package No', 'Số spool', 'Pip', 'Paint', 'Insu', 'Hoàn thành', 'Plan', 'Act',
     ]))
     // TP1 holds spools 1 and 2, TP2 spool 3; spool 4 has no package: its row comes last.
     expect(firstCells()).toEqual(['TP1', 'TP2', '-'])

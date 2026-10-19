@@ -194,6 +194,39 @@ describe('camSeries (spec §6.4 chart)', () => {
     ])
   })
 
+  it('counts a Line\'s Pip Plan bar on its last spool\'s date, by day', () => {
+    // LY's Paint Plan puts 18/09 on the axis; LX reaches Pip only with its later spool.
+    const line = [
+      spool({ lineNo: 'LX', phPlan: '2026-09-18' }),
+      spool({ lineNo: 'LX', phPlan: '2026-09-19' }),
+      spool({ lineNo: 'LY', ihPlan: '2026-09-18' }),
+    ]
+    const { points } = camSeries({ spools: line, unit: 'lineNo', mode: 'day', weekStart: START, todayKey: '2026-09-20' })
+    expect(points.map((p) => [p.key, p.phPlanBar, p.phPlan])).toEqual([
+      ['2026-09-18', 0, 0],
+      ['2026-09-19', 1, 1],
+      ['2026-09-20', null, null],
+    ])
+  })
+
+  it('runs each cumulative line as the running sum of its bars', () => {
+    for (const unit of ['spoolNo', 'lineNo'] as const) {
+      const { points } = camSeries({ spools, unit, mode: 'day', weekStart: START, todayKey: '2026-09-20' })
+      for (const key of ['phPlan', 'phActual', 'ihPlan', 'ihActual', 'iwPlan', 'iwActual'] as const) {
+        let sum = 0
+        for (const p of points) {
+          const bar = p[`${key}Bar`]
+          if (bar === null) {
+            expect([unit, key, p.key, p[key]]).toEqual([unit, key, p.key, null])
+            continue
+          }
+          sum += bar
+          expect([unit, key, p.key, p[key]]).toEqual([unit, key, p.key, sum])
+        }
+      }
+    }
+  })
+
   it('is empty without any date', () => {
     expect(camSeries({ spools: [spool()], unit: 'spoolNo', mode: 'day', weekStart: START, todayKey: '2026-09-20' }))
       .toEqual({ points: [], total: 1 })
