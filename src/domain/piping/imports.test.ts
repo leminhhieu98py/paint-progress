@@ -3,8 +3,11 @@ import {
   MAX_IMPORT_ROWS,
   builtInSpoolHeader,
   diffManpowerPlan,
+  diffManpowerPlanUpdate,
   diffReinstatementPlan,
+  diffReinstatementPlanUpdate,
   diffSpoolPlan,
+  diffSpoolPlanUpdate,
   normalizeHeader,
   SPOOL_ACTUAL_COLUMNS,
   SPOOL_MASTER_COLUMNS,
@@ -593,5 +596,111 @@ describe('diffs (spec §8)', () => {
       ['o5', [{ field: 'extra', label: 'Area', from: 'X', to: 'Y' }]],
     ])
     expect(diff.unchangedCount).toBe(1)
+  })
+})
+
+describe('Update Plan (RV8-5)', () => {
+  it('skips a dated row without Plan Qty in update mode, and still refuses it in replace mode', () => {
+    const rows: CellValue[][] = [['Date', 'Plan Qty'], ['2026-09-18', 5], ['2026-09-19', null], ['2026-09-20', 0]]
+    expect(parseReinstatementPlan(sheet(rows)).errors).toEqual([{ row: 3, message: 'Thiếu Plan Qty' }])
+    expect(parseReinstatementPlan(sheet(rows), 'replace').errors).toEqual([{ row: 3, message: 'Thiếu Plan Qty' }])
+    const update = parseReinstatementPlan(sheet(rows), 'update')
+    expect(update.errors).toEqual([])
+    expect(update.rows).toEqual([{ day: '2026-09-18', planQty: 5 }, { day: '2026-09-20', planQty: 0 }])
+    expect(update.warnings).toEqual([{ row: 3, message: 'Không có Plan Qty, bỏ qua' }])
+    expect(update.rowCount).toBe(3)
+  })
+
+  it('still refuses a repeated date in update mode, a blank row included', () => {
+    const res = parseReinstatementPlan(sheet([['Date', 'Plan Qty'], ['2026-09-18', 5], ['2026-09-18', null]]), 'update')
+    expect(res.errors).toEqual([{ row: 3, message: 'Ngày 18/09/2026 trùng với dòng 2' }])
+    expect(res.rows).toEqual([])
+  })
+
+  it('compares a Reinstatement update day by day, days absent from the file kept', () => {
+    const diff = diffReinstatementPlanUpdate(
+      [{ day: '2026-09-18', planQty: 10 }, { day: '2026-09-25', planQty: 20 }, { day: '2026-10-02', planQty: 5 }],
+      [{ day: '2026-09-25', planQty: 22 }, { day: '2026-09-18', planQty: 10 }, { day: '2026-10-09', planQty: 0 }],
+    )
+    expect(diff).toEqual({
+      added: [{ day: '2026-10-09', to: 0 }],
+      changed: [{ day: '2026-09-25', from: 20, to: 22 }],
+      removed: [],
+      unchangedCount: 1,
+    })
+  })
+
+  it('compares a Manpower update cell by cell, blank cells and absent days kept', () => {
+    const diff = diffManpowerPlanUpdate(
+      [{ groupId: 'g1', day: '2026-09-18', value: 30 }, { groupId: 'g2', day: '2026-09-18', value: 5 }],
+      [{ groupId: 'g1', day: '2026-09-18', value: 33 }, { groupId: 'g2', day: '2026-09-25', value: 0 }],
+    )
+    expect(diff).toEqual({
+      added: [{ groupId: 'g2', day: '2026-09-25', to: 0 }],
+      changed: [{ groupId: 'g1', day: '2026-09-18', from: 30, to: 33 }],
+      removed: [],
+      unchangedCount: 0,
+    })
+  })
+
+  it('merges spools: filled cells overwrite, empty cells keep, extras key-wise, new spools appended, none removed', () => {
+    const old = [
+      spool({ id: 'o1', seq: 1, spoolNo: 'A', lineNo: 'L1', testPackageNo: 'TP1', phPlan: '2026-10-01', extra: { Area: 'X', Zone: 'Z1' } }),
+      spool({ id: 'o2', seq: 2, spoolNo: 'B', lineNo: 'L2', ihActual: '2026-09-01' }),
+      spool({ id: 'o3', seq: 3, spoolNo: 'C', lineNo: 'L3', phPlan: '2026-10-01' }),
+    ]
+    const next = parseSpoolPlan(sheet([
+      [...PLAN_HEADERS, 'Area', 'Zone'],
+      ['A', 'L9', null, null, null, null, null, '2026-10-05', null, null, 'Z2'],
+      ['C', null, null, null, null, null, '2026-10-01', null, null, null, null],
+      ['D', 'L4', null, null, null, null, null, null, null, 'Y', null],
+    ]), [{ label: 'Area' }, { label: 'Zone' }]).rows
+    const diff = diffSpoolPlanUpdate(old, next)
+    expect(diff.changed.map((c) => [c.spool.id, c.changes])).toEqual([
+      ['o1', [
+        { field: 'lineNo', label: 'LineNo', from: 'L1', to: 'L9' },
+        { field: 'ihPlan', label: 'Paint Plan', from: null, to: '2026-10-05' },
+        { field: 'extra', label: 'Zone', from: 'Z1', to: 'Z2' },
+      ]],
+    ])
+    expect(diff.unchangedCount).toBe(1)
+    expect(diff.added.map((r) => r.spoolNo)).toEqual(['D'])
+    expect(diff.kept.map((s) => s.id)).toEqual(['o2'])
+    expect(diff.merged.map((s) => [s.spoolNo, s.lineNo, s.testPackageNo, s.phPlan, s.ihPlan, s.extra])).toEqual([
+      ['A', 'L9', 'TP1', '2026-10-01', '2026-10-05', { Area: 'X', Zone: 'Z2' }],
+      ['B', 'L2', null, null, null, {}],
+      ['C', 'L3', null, '2026-10-01', null, {}],
+      ['D', 'L4', null, null, null, { Area: 'Y' }],
+    ])
+  })
+
+  it('warns about duplicates and plan-order breaks of the merged spools, not of the file alone', () => {
+    const old = [
+      spool({ id: 'o1', seq: 1, spoolNo: 'A', ihPlan: '2026-10-01' }),
+      spool({ id: 'o2', seq: 2, spoolNo: 'B', phPlan: '2026-10-09', ihPlan: '2026-10-01' }),
+    ]
+    const next = parseSpoolPlan(sheet([
+      PLAN_HEADERS,
+      ['A', null, null, null, null, null, '2026-10-05', null, null],
+      ['A', null, null, null, null, null, null, null, null],
+    ]), []).rows
+    expect(diffSpoolPlanUpdate(old, next).warnings).toEqual([
+      { row: 2, message: 'Sai thứ tự: Pip (05/10/2026) sau Paint (01/10/2026)' },
+      { row: null, message: 'SpoolNo "B": Sai thứ tự: Pip (09/10/2026) sau Paint (01/10/2026)' },
+      { row: null, message: 'SpoolNo "A" có 2 spool sau khi cập nhật' },
+    ])
+  })
+
+  it('keeps the warnings about the file columns apart, for the update preview', () => {
+    const res = parseSpoolPlan(sheet([
+      ['SpoolNo', 'Painting Handover – Plan', 'Insulation Handover – Plan', 'Insulation Work – Plan', 'Note'],
+      ['A', '2026-10-05', '2026-10-01', null, null],
+    ]), [])
+    expect(res.columnWarnings).toEqual([
+      { row: 1, message: 'Không có cột: LineNo, InsuType, DrawingNo, Test Package No, Painting System' },
+      { row: 1, message: 'Bỏ qua cột: Note' },
+    ])
+    expect(res.warnings.slice(0, 2)).toEqual(res.columnWarnings)
+    expect(res.warnings).toHaveLength(3)
   })
 })

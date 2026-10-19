@@ -65,6 +65,12 @@ export interface ColumnSpec {
   aliases: readonly string[]
 }
 
+/**
+ * How a Plan file is applied (RV8-5): "Plan" replaces the stored plan with the
+ * file, "Update Plan" sets only what the file fills and keeps the rest.
+ */
+export type PlanImportMode = 'replace' | 'update'
+
 export const DATE_COLUMN: ColumnSpec = { label: 'Date', aliases: ['Ngày', 'Day'] }
 export const PLAN_QTY_COLUMN: ColumnSpec = { label: 'Plan Qty', aliases: ['Plan', 'Kế hoạch', 'Plan Quantity'] }
 
@@ -472,8 +478,12 @@ function readAmount(
 // Reinstatement Plan
 // ---------------------------------------------------------------------------
 
-/** A `Date` + `Plan Qty` file (spec §8): one row per day, daily or weekly. */
-export function parseReinstatementPlan(sheets: SheetRows[]): ParseResult<ReinstatementPlanRow> {
+/**
+ * A `Date` + `Plan Qty` file (spec §8): one row per day, daily or weekly. A
+ * dated row without Plan Qty is an error, except in Update Plan (RV8-5) where
+ * a blank cell is not in the file: that row is skipped and its day kept.
+ */
+export function parseReinstatementPlan(sheets: SheetRows[], mode: PlanImportMode = 'replace'): ParseResult<ReinstatementPlanRow> {
   const pre = checkPreamble(sheets)
   if (pre) return empty(null, [pre])
   const header = findHeader(sheets, hasAll([DATE_COLUMN, PLAN_QTY_COLUMN]))
@@ -490,7 +500,8 @@ export function parseReinstatementPlan(sheets: SheetRows[]): ParseResult<Reinsta
   for (const { row, cells } of data) {
     const day = readDate(cells, dateCol, row, seen, errors)
     const qty = readAmount(cellAt(cells, qtyCol), PLAN_QTY_COLUMN.label, row, errors, warnings)
-    if (qty === null) errors.push({ row, message: `Thiếu ${PLAN_QTY_COLUMN.label}` })
+    if (qty === null && mode === 'update') warnings.push({ row, message: `Không có ${PLAN_QTY_COLUMN.label}, bỏ qua` })
+    else if (qty === null) errors.push({ row, message: `Thiếu ${PLAN_QTY_COLUMN.label}` })
     if (day !== null && typeof qty === 'number') rows.push({ day, planQty: qty })
   }
   return finish(header.sheet.name, rows, data.length, errors, warnings)
@@ -569,6 +580,11 @@ export interface SpoolPlanParse extends ParseResult<SpoolPlanRow> {
   duplicates: Array<{ spoolNo: string; rows: SpoolPlanRow[] }>
   /** Rows breaking PH <= IH <= IW (Q15B): imported, flagged. */
   planOrder: Array<{ row: SpoolPlanRow; pairs: Array<[Milestone, Milestone]> }>
+  /**
+   * The warnings about the file's columns, the first of `warnings`: Update
+   * Plan shows them beside the merged result's own (RV8-5).
+   */
+  columnWarnings: ImportIssue[]
 }
 
 /**
@@ -580,7 +596,7 @@ export interface SpoolPlanParse extends ParseResult<SpoolPlanRow> {
  * warning. Duplicates and plan-order breaks are warnings, never errors.
  */
 export function parseSpoolPlan(sheets: SheetRows[], extraColumns: Array<Pick<SpoolColumn, 'label'>>): SpoolPlanParse {
-  const blank = { duplicates: [], planOrder: [] }
+  const blank = { duplicates: [], planOrder: [], columnWarnings: [] }
   const pre = checkPreamble(sheets)
   if (pre) return { ...empty(null, [pre]), ...blank }
   const required = [SPOOL_MASTER_COLUMNS.spoolNo, ...MILESTONES.map((m) => SPOOL_PLAN_COLUMNS[m])]
@@ -619,9 +635,11 @@ export function parseSpoolPlan(sheets: SheetRows[], extraColumns: Array<Pick<Spo
   const ignored = header.texts.filter((t, i) => t !== '' && !used.has(i))
   if (ignored.length > 0) warnings.push({ row: headerRow, message: `Bỏ qua cột: ${ignored.join(', ')}` })
 
+  const columnWarnings = [...warnings]
+
   const read = [...Object.values(masterCol), ...Object.values(planCol), ...extraCol.map((e) => e.col)].filter((c) => c !== -1)
   const data = dataRows(header, read)
-  if (data.length > MAX_IMPORT_ROWS) return { ...empty(header.sheet.name, [tooMany(data.length)], warnings, data.length), ...blank }
+  if (data.length > MAX_IMPORT_ROWS) return { ...empty(header.sheet.name, [tooMany(data.length)], warnings, data.length), ...blank, columnWarnings }
 
   const errors: ImportIssue[] = []
   const rows: SpoolPlanRow[] = []
@@ -662,7 +680,7 @@ export function parseSpoolPlan(sheets: SheetRows[], extraColumns: Array<Pick<Spo
       ...plan,
     })
   }
-  if (errors.length > 0) return { ...empty(header.sheet.name, errors, warnings, data.length), ...blank }
+  if (errors.length > 0) return { ...empty(header.sheet.name, errors, warnings, data.length), ...blank, columnWarnings }
 
   const planOrder = planOrderIssues(rows)
   const duplicates = duplicateSpoolGroups(rows)
@@ -672,7 +690,7 @@ export function parseSpoolPlan(sheets: SheetRows[], extraColumns: Array<Pick<Spo
   for (const d of duplicates) {
     warnings.push({ row: null, message: `SpoolNo "${d.spoolNo}" lặp lại ở các dòng ${d.rows.map((r) => r.row).join(', ')}` })
   }
-  return { ...finish(header.sheet.name, rows, data.length, errors, warnings), duplicates, planOrder }
+  return { ...finish(header.sheet.name, rows, data.length, errors, warnings), duplicates, planOrder, columnWarnings }
 }
 
 // ---------------------------------------------------------------------------
@@ -868,6 +886,11 @@ export function diffReinstatementPlan(old: ReinstatementPlanRow[], next: Reinsta
   return diffKeyed(map(old), map(next), byDay)
 }
 
+/** Update Plan preview for Reinstatement (RV8-5): as the replace, but a day absent from the file is kept. */
+export function diffReinstatementPlanUpdate(old: ReinstatementPlanRow[], next: ReinstatementPlanRow[]): KeyedDiff<{ day: DayKey }> {
+  return { ...diffReinstatementPlan(old, next), removed: [] }
+}
+
 /**
  * Re-import preview for Manpower Plan (spec §8): by (group, day). The import
  * replaces the whole plan, so a group absent from the new file shows as removed.
@@ -875,6 +898,11 @@ export function diffReinstatementPlan(old: ReinstatementPlanRow[], next: Reinsta
 export function diffManpowerPlan(old: ManpowerValue[], next: ManpowerValue[]): KeyedDiff<{ groupId: string; day: DayKey }> {
   const map = (rows: ManpowerValue[]) => rows.map((r) => ({ key: `${r.groupId}|${r.day}`, id: { groupId: r.groupId, day: r.day }, value: r.value }))
   return diffKeyed(map(old), map(next), (a, b) => byDay(a, b) || (a.groupId < b.groupId ? -1 : a.groupId > b.groupId ? 1 : 0))
+}
+
+/** Update Plan preview for Manpower (RV8-5): as the replace, but a blank cell or an absent day is kept. */
+export function diffManpowerPlanUpdate(old: ManpowerValue[], next: ManpowerValue[]): KeyedDiff<{ groupId: string; day: DayKey }> {
+  return { ...diffManpowerPlan(old, next), removed: [] }
 }
 
 export type SpoolDiffField = Exclude<keyof SpoolMaster, 'spoolNo'> | keyof SpoolPlanDates | 'extra'
@@ -945,5 +973,83 @@ export function diffSpoolPlan(old: Spool[], next: SpoolPlanRow[]): SpoolPlanDiff
     else diff.unchangedCount += 1
   }
   diff.added = next.filter((r) => !paired.has(r.seq)).sort((a, b) => a.seq - b.seq)
+  return diff
+}
+
+/** A spool as Update Plan leaves it (RV8-5): its file row, when one matched or added it. */
+export interface MergedSpool extends SpoolMaster, SpoolPlanDates {
+  row: number | null
+  extra: Record<string, string>
+}
+
+export interface SpoolPlanUpdateDiff {
+  /** New rows with no old spool to pair with: added after the existing spools. */
+  added: SpoolPlanRow[]
+  /** Matched spools some filled cell of the file changes; they keep their actuals. */
+  changed: Array<{ spool: Spool; next: SpoolPlanRow; changes: SpoolFieldChange[] }>
+  unchangedCount: number
+  /** Old spools absent from the file: kept as they are, actuals included. */
+  kept: Spool[]
+  /** Every spool after the update, in seq order (the new ones last, in file order). */
+  merged: MergedSpool[]
+  /** Duplicates and plan-order breaks of `merged` (Q14C, Q15B), as the replace's file warnings say them. */
+  warnings: ImportIssue[]
+}
+
+/**
+ * Update Plan preview for Insulation (RV8-5), as piping_merge_spools writes:
+ * old and new spools paired as the replace pairs them (R-10); a matched spool
+ * takes every filled cell of its row -- extra columns key-wise -- and keeps
+ * the rest; unmatched rows are added after the existing spools; nothing is
+ * removed. The warnings are judged on the merged result.
+ */
+export function diffSpoolPlanUpdate(old: Spool[], next: SpoolPlanRow[]): SpoolPlanUpdateDiff {
+  const pairs = diffSpoolPlan(old, next)
+  const bySeq = new Map(next.map((r) => [r.seq, r]))
+  const matched = new Map(pairs.matches.map((m) => [m.oldId, bySeq.get(m.nextSeq)!]))
+  const diff: SpoolPlanUpdateDiff = { added: pairs.added, changed: [], unchangedCount: 0, kept: [], merged: [], warnings: [] }
+  for (const spool of [...old].sort((a, b) => a.seq - b.seq)) {
+    const { spoolNo, lineNo, insuType, drawingNo, testPackageNo, paintingSystem, phPlan, ihPlan, iwPlan } = spool
+    const merged: MergedSpool = {
+      row: null, spoolNo, lineNo, insuType, drawingNo, testPackageNo, paintingSystem, phPlan, ihPlan, iwPlan,
+      extra: { ...spool.extra },
+    }
+    const row = matched.get(spool.id)
+    if (!row) {
+      diff.kept.push(spool)
+      diff.merged.push(merged)
+      continue
+    }
+    merged.row = row.row
+    const changes: SpoolFieldChange[] = []
+    for (const { field, label } of DIFF_FIELDS) {
+      const to = row[field]
+      if (to === null) continue
+      const from = spool[field] ?? null
+      if (from !== to) changes.push({ field, label, from, to })
+      merged[field] = to
+    }
+    for (const [label, to] of Object.entries(row.extra)) {
+      const from = spool.extra[label] ?? null
+      if (from !== to) changes.push({ field: 'extra', label, from, to })
+      merged.extra[label] = to
+    }
+    if (changes.length > 0) diff.changed.push({ spool, next: row, changes })
+    else diff.unchangedCount += 1
+    diff.merged.push(merged)
+  }
+  for (const r of pairs.added) {
+    const { row, spoolNo, lineNo, insuType, drawingNo, testPackageNo, paintingSystem, phPlan, ihPlan, iwPlan, extra } = r
+    diff.merged.push({ row, spoolNo, lineNo, insuType, drawingNo, testPackageNo, paintingSystem, phPlan, ihPlan, iwPlan, extra })
+  }
+  for (const issue of planOrderIssues(diff.merged)) {
+    const message = orderMessage(planDates(issue.row), issue.pairs)
+    diff.warnings.push(issue.row.row === null
+      ? { row: null, message: `SpoolNo "${spoolKey(issue.row.spoolNo)}": ${message}` }
+      : { row: issue.row.row, message })
+  }
+  for (const d of duplicateSpoolGroups(diff.merged)) {
+    diff.warnings.push({ row: null, message: `SpoolNo "${d.spoolNo}" có ${d.rows.length} spool sau khi cập nhật` })
+  }
   return diff
 }
