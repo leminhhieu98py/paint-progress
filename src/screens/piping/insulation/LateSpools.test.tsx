@@ -64,7 +64,7 @@ describe('LateSpools (spec §7)', () => {
     expect(within(tp2).getByRole('button', { name: 'Ẩn spool của TP2' })).toHaveAttribute('aria-expanded', 'true')
     const list = screen.getByTestId('late-spool-list')
     expect(within(list).getAllByRole('columnheader').map((h) => h.textContent)).toEqual([
-      'SpoolNo', 'Mốc', 'Bộ phận', 'Plan', 'Actual', 'Số ngày trễ',
+      'SpoolNo', 'Mốc', 'Bộ phận', 'Plan', 'Act', 'Số ngày trễ',
     ])
     expect(tableRows(list)).toEqual([
       ['SP-a', 'Pip', 'Piping', '01/09/2026', '-', '36'],
@@ -135,9 +135,9 @@ describe('LateSpools: Spool level (RV8-10)', () => {
     const table = screen.getByTestId('late-spools')
     expect(within(table).getAllByRole('columnheader').map((h) => h.textContent)).toEqual([
       'SpoolNo', 'LineNo', 'Test Package No', PH, IH, IW,
-      'Bộ phận', 'Plan', 'Actual', 'Số ngày trễ',
-      'Bộ phận', 'Plan', 'Actual', 'Số ngày trễ',
-      'Bộ phận', 'Plan', 'Actual', 'Số ngày trễ',
+      'Bộ phận', 'Plan', 'Act', 'Số ngày trễ',
+      'Bộ phận', 'Plan', 'Act', 'Số ngày trễ',
+      'Bộ phận', 'Plan', 'Act', 'Số ngày trễ',
     ])
     expect(tableRows(table)).toEqual([
       // An on-time milestone is blank; "-" stays a missing value (a late milestone with no Actual).
