@@ -1,7 +1,7 @@
 import type { Workbook, Worksheet } from 'exceljs'
 import {
-  camProgress, camSeries, groupLateWarnings, lateSpoolCount, lateWarnings, MILESTONE_LABEL, milestoneActualLabel,
-  milestonePlanLabel, MILESTONES, UNIT_LABEL, type CamPoint, type CamSeriesKey,
+  camProgress, camSeries, camSeriesKeys, groupLateWarnings, lateSpoolCount, lateWarnings, MILESTONE_LABEL,
+  milestoneActualLabel, milestonePlanLabel, MILESTONES, UNIT_LABEL, type CamPoint, type CamSeriesKey,
 } from '../../domain/piping/cam'
 import { chartGroups, manpowerAverages, manpowerSeries, type ManpowerPoint } from '../../domain/piping/manpower'
 import { reinstatementSeries, reinstatementSummary, type ReinstatementPoint } from '../../domain/piping/reinstatement'
@@ -284,12 +284,18 @@ export async function buildPipingReport(
   ])
   placeChart(wb, manpower, input.charts.manpower)
 
-  // Insulation: the six cumulative lines in the unit on screen (spec §6.4).
+  // Insulation: the chart's bars and cumulative lines in the unit on screen, in
+  // its legend's order (spec §6.4, RV8-11): every series whatever the tab shows; the picture follows the tab.
   const insulation = wb.addWorksheet('Insulation')
-  seriesTable(insulation, mode, series.insulation.points, MILESTONES.flatMap((m) => (['Plan', 'Actual'] as const).map((kind) => {
-    const key = `${m}${kind}` as CamSeriesKey
-    const name = kind === 'Plan' ? milestonePlanLabel(m) : milestoneActualLabel(m)
-    return { header: `${name} lũy kế (${unitLabel})`, value: (p: CamPoint) => p[key] }
+  const camHeader = new Map<CamSeriesKey, string>(MILESTONES.flatMap((m) => [
+    [`${m}PlanBar`, `${milestonePlanLabel(m)} (${unitLabel})`],
+    [`${m}ActualBar`, `${milestoneActualLabel(m)} (${unitLabel})`],
+    [`${m}Plan`, `${milestonePlanLabel(m)} lũy kế (${unitLabel})`],
+    [`${m}Actual`, `${milestoneActualLabel(m)} lũy kế (${unitLabel})`],
+  ] as Array<[CamSeriesKey, string]>))
+  seriesTable(insulation, mode, series.insulation.points, camSeriesKeys('both').map((key) => ({
+    header: camHeader.get(key) ?? key,
+    value: (p: CamPoint) => p[key],
   })))
   placeChart(wb, insulation, input.charts.insulation)
 

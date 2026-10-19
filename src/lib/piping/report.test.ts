@@ -124,7 +124,9 @@ const headerOf = (ws: Worksheet) => rowValues(ws, 1)
 describe('buildPipingReport (spec §10)', () => {
   it('writes the sheets in order, without Ghi chú when notes are not included', async () => {
     const wb = await open(await buildPipingReport(input()))
-    expect(wb.worksheets.map((w) => w.name)).toEqual(['Tóm tắt', 'Reinstatement', 'Manpower', 'Insulation', 'Spool trễ'])
+    expect(wb.worksheets.map((w) => w.name)).toEqual([
+      'Tóm tắt', 'Reinstatement', 'Manpower', 'Insulation', 'Spool trễ',
+    ])
   })
 
   it('adds Ghi chú only when notes are included (admin)', async () => {
@@ -137,7 +139,9 @@ describe('buildPipingReport (spec §10)', () => {
     expect(without.getWorksheet('Ghi chú')).toBeUndefined()
 
     const wb = await open(await buildPipingReport(input({ notes, includeNotes: true })))
-    expect(wb.worksheets.map((w) => w.name)).toContain('Ghi chú')
+    expect(wb.worksheets.map((w) => w.name)).toEqual([
+      'Tóm tắt', 'Reinstatement', 'Manpower', 'Insulation', 'Spool trễ', 'Ghi chú',
+    ])
     const ws = sheet(wb, 'Ghi chú')
     expect(headerOf(ws)).toEqual(['Mục', 'Ngày', 'Spool', 'Nội dung', 'Người viết', 'Thời gian'])
     // 03:15 UTC is 10:15 in Vietnam: the cell holds the wall clock (toVNExcelDate).
@@ -230,13 +234,16 @@ describe('buildPipingReport (spec §10)', () => {
     expect(rowValues(week, 2)).toEqual([utc('2026-09-28'), utc('2026-10-04'), 3, 2.25, 6, null, 9, 2.25])
   })
 
-  it('Insulation: six cumulative series in the chosen unit, per bucket', async () => {
+  it('Insulation: per milestone the Plan and Act bars, then the cumulative lines, in the chosen unit (RV8-11)', async () => {
     const wb = await open(await buildPipingReport(input({ mode: 'week', unit: 'testPackageNo' })))
     const ws = sheet(wb, 'Insulation')
     expect(headerOf(ws)).toEqual([
       'Tuần (từ ngày)', 'Đến ngày',
+      'Pip Plan (Test Package No)', 'Pip Act (Test Package No)',
       'Pip Plan lũy kế (Test Package No)', 'Pip Act lũy kế (Test Package No)',
+      'Paint Plan (Test Package No)', 'Paint Act (Test Package No)',
       'Paint Plan lũy kế (Test Package No)', 'Paint Act lũy kế (Test Package No)',
+      'Insu Plan (Test Package No)', 'Insu Act (Test Package No)',
       'Insu Plan lũy kế (Test Package No)', 'Insu Act lũy kế (Test Package No)',
     ])
     const expected = pipingReportSeries(input({ mode: 'week', unit: 'testPackageNo' })).insulation.points
@@ -244,10 +251,14 @@ describe('buildPipingReport (spec §10)', () => {
     const last = expected[expected.length - 1]
     expect(rowValues(ws, ws.rowCount)).toEqual([
       utc(last.start), utc(last.end),
-      last.phPlan, last.phActual, last.ihPlan, last.ihActual, last.iwPlan, last.iwActual,
+      last.phPlanBar, last.phActualBar, last.phPlan, last.phActual,
+      last.ihPlanBar, last.ihActualBar, last.ihPlan, last.ihActual,
+      last.iwPlanBar, last.iwActualBar, last.iwPlan, last.iwActual,
     ])
     // Two packages, each one spool, both through PH by today.
     expect(last.phActual).toBe(2)
+    // Week of 28/09: SP-B's package planned and reached PH on 30/09.
+    expect(rowValues(ws, ws.rowCount).slice(2, 4)).toEqual([1, 1])
     expect(ws.getCell('C2').numFmt).toBe('#,##0')
   })
 
