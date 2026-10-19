@@ -115,7 +115,7 @@ export function LateSpools({ projectId, warnings, thresholdDays }: {
         children: [
           { title: departmentTitle(departmentInfo(m)), key: `${m}-department`, align: 'center' as const, render: lateCell(departmentCell) },
           { title: 'Plan', key: `${m}-plan`, align: 'center' as const, render: lateCell(planCell) },
-          { title: 'Actual', key: `${m}-actual`, align: 'center' as const, render: lateCell(actualCell) },
+          { title: 'Act', key: `${m}-actual`, align: 'center' as const, render: lateCell(actualCell) },
           { title: daysLateTitle, key: `${m}-daysLate`, align: 'center' as const, render: lateCell(daysLateCell) },
         ],
       }
@@ -236,7 +236,7 @@ function LateSpoolList({ resetKey, warnings, pin }: {
           },
           { title: departmentTitle(DEPARTMENT_INFO), key: 'department', align: 'center', render: (_v, w) => departmentCell(w) },
           { title: 'Plan', key: 'plan', align: 'center', render: (_v, w) => planCell(w) },
-          { title: 'Actual', key: 'actual', align: 'center', render: (_v, w) => actualCell(w) },
+          { title: 'Act', key: 'actual', align: 'center', render: (_v, w) => actualCell(w) },
           { title: daysLateTitle, key: 'daysLate', align: 'center', render: (_v, w) => daysLateCell(w) },
         ]}
       />

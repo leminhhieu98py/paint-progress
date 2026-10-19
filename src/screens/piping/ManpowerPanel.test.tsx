@@ -851,6 +851,39 @@ describe('ManpowerPanel: Nhóm select (RV8-7)', () => {
     expect(maxFact()).toBeUndefined()
   })
 
+  describe('one summary tag in the select', () => {
+    const tags = () => [...(screen.getByRole('combobox', { name: 'Nhóm' }).closest('.ant-select')
+      ?.querySelectorAll('.ant-select-selection-item') ?? [])].map((t) => t.textContent)
+
+    it('reads Tất cả nhóm when every offered group is selected', async () => {
+      renderPanel(asGs)
+      await loaded()
+      expect(tags()).toEqual(['Tất cả nhóm'])
+    })
+
+    it('counts the groups, or names the only one', async () => {
+      renderPanel()
+      await loaded()
+      expect(tags()).toEqual(['3 nhóm'])
+      await chooseOption('Nhóm', 'Insulation')
+      await chooseOption('Nhóm', 'Marking (ẩn)')
+      expect(tags()).toEqual(['Reinstatement'])
+      await chooseOption('Nhóm', 'Reinstatement')
+      expect(tags()).toEqual([])
+    })
+
+    it('shows the same summary on a phone', async () => {
+      const restore = setViewport(390)
+      try {
+        renderPanel()
+        await loaded()
+        expect(tags()).toEqual(['3 nhóm'])
+      } finally {
+        restore()
+      }
+    })
+  })
+
   it('puts the select in a row of the card on a phone, in the header from 768 px', async () => {
     const restore = setViewport(390)
     try {

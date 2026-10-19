@@ -333,7 +333,7 @@ export async function buildPipingReport(
     { header: 'Mốc', width: 22 },
     { header: 'Bộ phận', width: 12 },
     { header: 'Plan', width: 13, numFmt: DATE_FORMAT },
-    { header: 'Actual', width: 13, numFmt: DATE_FORMAT },
+    { header: 'Act', width: 13, numFmt: DATE_FORMAT },
     { header: 'Số ngày trễ', width: 12, numFmt: INTEGER_FORMAT },
   ], groupLateWarnings(warnings, 'package').flatMap((g) => g.warnings).map((w) => [
     w.spoolNo, w.lineNo, w.testPackageNo, MILESTONE_LABEL[w.milestone], w.department,

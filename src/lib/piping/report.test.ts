@@ -326,7 +326,7 @@ describe('buildPipingReport (spec §10)', () => {
   it('Spool trễ: spool, line, package, milestone, department, plan, actual, days late, by package', async () => {
     const wb = await open(await buildPipingReport(input()))
     const ws = sheet(wb, 'Spool trễ')
-    expect(headerOf(ws)).toEqual(['SpoolNo', 'LineNo', 'Test Package No', 'Mốc', 'Bộ phận', 'Plan', 'Actual', 'Số ngày trễ'])
+    expect(headerOf(ws)).toEqual(['SpoolNo', 'LineNo', 'Test Package No', 'Mốc', 'Bộ phận', 'Plan', 'Act', 'Số ngày trễ'])
     // TP1 first: SP-B's IH, planned 01/09, no actual, 31 days by today. Then TP2: SP-A's PH, 19 days late.
     expect(rowValues(ws, 2)).toEqual(['SP-B', 'L2', 'TP1', 'Paint', 'Painting', utc('2026-09-01'), null, 31])
     expect(rowValues(ws, 3)).toEqual(['SP-A', 'L1', 'TP2', 'Pip', 'Piping', utc('2026-09-01'), utc('2026-09-20'), 19])
