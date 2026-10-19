@@ -237,7 +237,7 @@ describe('ManpowerChart (spec §5)', () => {
     render(<ManpowerChart data={DAYS} groups={GROUPS} mode="day" planAverage={12.5} />)
     expect(captured.referenceLine?.y).toBe(12.5)
     expect(captured.referenceLine?.strokeDasharray).toBeTruthy()
-    expect((captured.referenceLine?.label as { value: string }).value).toBe('Plan TB')
+    expect((captured.referenceLine?.label as { value: string } | undefined)?.value).toBe('Plan TB')
     expect(legend()).toEqual([
       'Plan · Reinstatement', 'Plan · Insulation', 'Plan tổng theo ngày', 'Plan TB',
       'Actual · Reinstatement', 'Actual · Insulation', 'Actual tổng theo ngày',
