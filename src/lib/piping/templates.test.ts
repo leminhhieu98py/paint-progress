@@ -45,7 +45,7 @@ describe('import templates (spec §8)', () => {
     const t = await headerOf(await buildSpoolPlanTemplate(['Area', 'Zone']))
     expect(t.name).toBe('Insulation Plan')
     expect(t.header).toEqual(['SpoolNo', 'LineNo', 'InsuType', 'DrawingNo', 'Test Package No', 'Painting System',
-      'Painting Handover – Plan', 'Insulation Handover – Plan', 'Insulation Work – Plan', 'Area', 'Zone'])
+      'Pip Plan', 'Paint Plan', 'Insu Plan', 'Area', 'Zone'])
     const res = parseSpoolPlan(t.sheets, [{ label: 'Area' }, { label: 'Zone' }])
     expect(res.errors).toEqual([])
     expect(res.warnings).toEqual([])
@@ -54,7 +54,7 @@ describe('import templates (spec §8)', () => {
   it('Insulation Actual: SpoolNo and the three Actual columns', async () => {
     const t = await headerOf(await buildSpoolActualTemplate())
     expect(t.name).toBe('Insulation Actual')
-    expect(t.header).toEqual(['SpoolNo', 'Painting Handover – Actual', 'Insulation Handover – Actual', 'Insulation Work – Actual'])
+    expect(t.header).toEqual(['SpoolNo', 'Pip Act', 'Paint Act', 'Insu Act'])
     expect(parseSpoolActual(t.sheets).errors).toEqual([])
   })
 

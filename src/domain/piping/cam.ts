@@ -17,7 +17,7 @@ import { buckets, daysBetween, formatDayMonthYear, seriesSpan, type Bucket } fro
  * CAM Insulation -- requirement §4.3 and §6, spec §6.4 and §7, Q14-Q23.
  *
  * Everything the Insulation tab computes from the spool list: counting units,
- * group completion, the six cumulative lines, the Package / Line / Spool
+ * group completion, the chart's bars and cumulative lines, the Package / Line / Spool
  * tables, filters, duplicate SpoolNo, plan-order issues, the actual-order rule
  * used by manual entry and by the Actual import, and late warnings. Pure: the
  * caller passes today's key and the late threshold.
@@ -25,12 +25,20 @@ import { buckets, daysBetween, formatDayMonthYear, seriesSpan, type Bucket } fro
 
 export const MILESTONES: readonly Milestone[] = ['ph', 'ih', 'iw']
 
-/** The milestone names as the customer's file writes them (spec §0). */
+/**
+ * The milestone names (RV8-4): the one source every screen, chart, report,
+ * template and message takes them from.
+ */
 export const MILESTONE_LABEL: Record<Milestone, string> = {
-  ph: 'Painting Handover',
-  ih: 'Insulation Handover',
-  iw: 'Insulation Work',
+  ph: 'Pip',
+  ih: 'Paint',
+  iw: 'Insu',
 }
+
+/** `Pip Plan`: a milestone's plan date, column or series (RV8-4). */
+export const milestonePlanLabel = (m: Milestone): string => `${MILESTONE_LABEL[m]} Plan`
+/** `Pip Act`: a milestone's actual date, column or series (RV8-4). */
+export const milestoneActualLabel = (m: Milestone): string => `${MILESTONE_LABEL[m]} Act`
 
 /** Who answers for a late milestone (spec §7). */
 export const MILESTONE_DEPARTMENT: Record<Milestone, { department: Department; duty: string }> = {
@@ -103,7 +111,7 @@ export function orderViolations(dates: Dates): Array<[Milestone, Milestone]> {
   }).map(([a, b]) => [a, b])
 }
 
-/** `Sai thứ tự: Painting Handover (06/09/2026) sau Insulation Handover (05/09/2026)`. */
+/** `Sai thứ tự: Pip (06/09/2026) sau Paint (05/09/2026)`. */
 export function orderMessage(dates: Dates, pairs: Array<[Milestone, Milestone]>): string {
   return `Sai thứ tự: ${pairs
     .map(([a, b]) => `${MILESTONE_LABEL[a]} (${formatDayMonthYear(dates[a]!)}) sau ${MILESTONE_LABEL[b]} (${formatDayMonthYear(dates[b]!)})`)
@@ -190,17 +198,22 @@ export function camProgress(spools: Spool[], unit: Unit): { total: number; done:
 // Chart
 // ---------------------------------------------------------------------------
 
-export type CamSeriesKey = 'phPlan' | 'phActual' | 'ihPlan' | 'ihActual' | 'iwPlan' | 'iwActual'
+/** A cumulative line: the items that reached the milestone by the bucket's last day. */
+export type CamLineKey = 'phPlan' | 'phActual' | 'ihPlan' | 'ihActual' | 'iwPlan' | 'iwActual'
+/** A bar: the items reaching the milestone inside the bucket (RV8-11). */
+export type CamBarKey = `${CamLineKey}Bar`
+export type CamSeriesKey = CamLineKey | CamBarKey
 
-/** One bucket of the Insulation chart: six cumulative counts. */
+/** One bucket of the Insulation chart: six bars and six cumulative counts. */
 export type CamPoint = Bucket & Record<CamSeriesKey, number | null>
 
 /**
- * The Insulation chart (spec §6.4): per milestone, the cumulative number of
- * items that reached it by each bucket's last day, Plan and Actual. All three
- * plan lines run to the plan's overall last day (the latest plan date of any
- * item and milestone), so they end together; actual lines run to today.
- * `total` is the number of items, the lines' ceiling. Empty without any date.
+ * The Insulation chart (spec §6.4, RV8-11): per milestone, Plan and Actual,
+ * the number of items reaching it inside each bucket (the bars) and by the
+ * bucket's last day (the cumulative lines). All three plan series run to the
+ * plan's overall last day (the latest plan date of any item and milestone),
+ * so they end together; actual series run to today. `total` is the number of
+ * items, the lines' ceiling. Empty without any date.
  */
 export function camSeries(input: {
   spools: Spool[]
@@ -231,20 +244,32 @@ export function camSeries(input: {
   }))
   const points = axis.map((bucket, i) => ({
     ...bucket,
+    phPlanBar: perMilestone[0][i].plan,
+    phActualBar: perMilestone[0][i].actual,
     phPlan: perMilestone[0][i].planCum,
     phActual: perMilestone[0][i].actualCum,
+    ihPlanBar: perMilestone[1][i].plan,
+    ihActualBar: perMilestone[1][i].actual,
     ihPlan: perMilestone[1][i].planCum,
     ihActual: perMilestone[1][i].actualCum,
+    iwPlanBar: perMilestone[2][i].plan,
+    iwActualBar: perMilestone[2][i].actual,
     iwPlan: perMilestone[2][i].planCum,
     iwActual: perMilestone[2][i].actualCum,
   }))
   return { points, total: items.length }
 }
 
-/** The lines the Plan | Actual | Plan & Actual toggle shows (Q20A). */
+/**
+ * The bars and lines the Plan | Actual | Plan & Actual toggle shows (Q20A),
+ * in the legend's order (RV8-11): by milestone, the Plan and Act bars, then
+ * the Plan and Act cumulative lines.
+ */
 export function camSeriesKeys(selection: CamSelection): CamSeriesKey[] {
   const out: CamSeriesKey[] = []
   for (const m of MILESTONES) {
+    if (selection !== 'actual') out.push(`${m}PlanBar`)
+    if (selection !== 'plan') out.push(`${m}ActualBar`)
     if (selection !== 'actual') out.push(`${m}Plan`)
     if (selection !== 'plan') out.push(`${m}Actual`)
   }

@@ -111,7 +111,7 @@ describe('PipingExportAction (spec §10)', () => {
     expect(input.charts).toEqual({ reinstatement: PNG, manpower: PNG, insulation: PNG })
     expect(renderChartPng.mock.calls.map(([spec]) => spec.kind)).toEqual(['reinstatement', 'manpower', 'insulation'])
     expect(renderChartPng.mock.calls[0][0]).toMatchObject({ mode: 'week' })
-    expect(renderChartPng.mock.calls[2][0].keys).toHaveLength(6)
+    expect(renderChartPng.mock.calls[2][0].keys).toHaveLength(12)
     // The series are computed once: the charts are drawn from what the workbook writes.
     const series = buildPipingReport.mock.calls[0][1]
     expect(renderChartPng.mock.calls[0][0].data).toBe(series.reinstatement)
@@ -203,7 +203,8 @@ describe('PipingExportAction (spec §10)', () => {
     await userEvent.click(screen.getByRole('button', { name: 'pick lines' }))
     await userEvent.click(exportButton())
     await waitFor(() => expect(buildPipingReport).toHaveBeenCalled())
-    expect(renderChartPng.mock.calls[2][0].keys).toEqual(['phActual', 'ihActual', 'iwActual'])
+    expect(renderChartPng.mock.calls[2][0].keys)
+      .toEqual(['phActualBar', 'phActual', 'ihActualBar', 'ihActual', 'iwActualBar', 'iwActual'])
   })
 
   it('on a field phone, keeps the ⋯ menu in place with the item disabled while the page has no panel', async () => {
