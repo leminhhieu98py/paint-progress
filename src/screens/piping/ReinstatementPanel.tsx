@@ -19,7 +19,7 @@ import {
   buildReinstatementActualTemplate, buildReinstatementPlanTemplate, templateFileName,
 } from '../../lib/piping/templates'
 import {
-  importReinstatementActual, listReinstatementEntries, listReinstatementPlan, mergeReinstatementPlan,
+  getPipingSettings, importReinstatementActual, listReinstatementEntries, listReinstatementPlan, mergeReinstatementPlan,
   replaceReinstatementPlan, type ReinstatementEntry,
 } from '../../lib/pipingApi'
 import { space } from '../../theme'
@@ -136,12 +136,16 @@ export function ReinstatementPanel({ projectId, settings, mode, role, todayKey, 
     (rows: ReinstatementPlanRow[], importMode: PlanImportMode) => planPreview(plan ?? [], rows, importMode),
     [plan],
   )
-  const entries = data?.entries
   const parseActual = useCallback((sheets: SheetRows[]) => parseReinstatementActual(sheets, todayKey), [todayKey])
-  const previewActual = useCallback(
-    (rows: ReinstatementActualImportRow[]) => actualPreview(entries ?? [], rows, total),
-    [entries, total],
-  )
+  /**
+   * The entries and total Test Pack read afresh when the file is read, not
+   * taken from the page: an entry added since it opened must show as an
+   * overwrite, and the cap is checked against the total as stored now.
+   */
+  const previewActual = useCallback(async (rows: ReinstatementActualImportRow[]) => {
+    const [fresh, stored] = await Promise.all([listReinstatementEntries(projectId), getPipingSettings(projectId)])
+    return actualPreview(fresh, rows, stored?.totalTestPacks ?? null)
+  }, [projectId])
   /** The admin's notes on a day (spec §9); none for a foreman or a viewer. */
   const notes = usePipingNotes(projectId, refreshKey, admin)
   const noteAction = notes.action
@@ -185,8 +189,9 @@ export function ReinstatementPanel({ projectId, settings, mode, role, todayKey, 
             <PlanImportFlow<ReinstatementActualImportRow>
               planLabel="Reinstatement Actual"
               templateLabel="Tải file mẫu Actual"
-              importText="Import Actual"
-              okText="Import Actual"
+              importText="Nhập Actual"
+              okText="Nhập Actual"
+              primary={false}
               templateName={templateFileName('reinstatement_actual')}
               buildTemplate={buildReinstatementActualTemplate}
               parse={parseActual}

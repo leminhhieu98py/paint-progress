@@ -178,14 +178,14 @@ export function ManpowerPanel({ projectId, settings, mode, role, todayKey, refre
     [groups, plan],
   )
   const buildTemplate = useCallback(() => buildManpowerPlanTemplate(bySort(groups ?? []).map((g) => g.name)), [groups])
-  const actual = data?.actual
   const parseActual = useCallback(
     (sheets: SheetRows[]) => parseManpowerActual(sheets, groups ?? [], todayKey),
     [groups, todayKey],
   )
+  /** The stored actual read afresh when the file is read: a cell entered since the page opened is an overwrite. */
   const previewActual = useCallback(
-    (rows: ManpowerActualImportRow[]) => actualPreview(groups ?? [], actual ?? [], rows),
-    [groups, actual],
+    async (rows: ManpowerActualImportRow[]) => actualPreview(groups ?? [], await listManpowerActual(projectId), rows),
+    [groups, projectId],
   )
   const buildActualTemplate = useCallback(
     () => buildManpowerActualTemplate(bySort(groups ?? []).map((g) => g.name)),
@@ -273,8 +273,9 @@ export function ManpowerPanel({ projectId, settings, mode, role, todayKey, refre
                 <PlanImportFlow<ManpowerActualImportRow>
                   planLabel="Manpower Actual"
                   templateLabel="Tải file mẫu Actual"
-                  importText="Import Actual"
-                  okText="Import Actual"
+                  importText="Nhập Actual"
+                  okText="Nhập Actual"
+                  primary={false}
                   templateName={templateFileName('manpower_actual')}
                   buildTemplate={buildActualTemplate}
                   parse={parseActual}

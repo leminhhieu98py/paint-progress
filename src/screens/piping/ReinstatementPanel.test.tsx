@@ -16,6 +16,7 @@ const api = vi.hoisted(() => ({
   replaceReinstatementPlan: vi.fn(),
   mergeReinstatementPlan: vi.fn(),
   importReinstatementActual: vi.fn(),
+  getPipingSettings: vi.fn(),
   listReinstatementEntries: vi.fn(),
   addReinstatementEntry: vi.fn(),
   updateReinstatementEntry: vi.fn(),
@@ -28,6 +29,7 @@ vi.mock('../../lib/pipingApi', () => ({
   replaceReinstatementPlan: (...a: unknown[]) => api.replaceReinstatementPlan(...a),
   mergeReinstatementPlan: (...a: unknown[]) => api.mergeReinstatementPlan(...a),
   importReinstatementActual: (...a: unknown[]) => api.importReinstatementActual(...a),
+  getPipingSettings: (...a: unknown[]) => api.getPipingSettings(...a),
   listReinstatementEntries: (...a: unknown[]) => api.listReinstatementEntries(...a),
   addReinstatementEntry: (...a: unknown[]) => api.addReinstatementEntry(...a),
   updateReinstatementEntry: (...a: unknown[]) => api.updateReinstatementEntry(...a),
@@ -122,6 +124,7 @@ beforeEach(() => {
   api.replaceReinstatementPlan.mockResolvedValue({ logId: 'l1', summary: {} })
   api.mergeReinstatementPlan.mockResolvedValue({ logId: 'l2', summary: {} })
   api.importReinstatementActual.mockResolvedValue({ logId: 'l3', summary: {} })
+  api.getPipingSettings.mockResolvedValue(SETTINGS)
   xlsx.read.mockReset()
   templates.build.mockReset()
   templates.build.mockResolvedValue(new Blob(['t']))
@@ -521,20 +524,20 @@ describe('ReinstatementPanel: Plan import (spec §8)', () => {
   })
 })
 
-describe('ReinstatementPanel: Import Actual (RV8-6)', () => {
-  /** The file input of the Import Actual button. */
+describe('ReinstatementPanel: Nhập Actual (RV8-6)', () => {
+  /** The file input of the Nhập Actual button. */
   const uploadActual = async () => {
-    const button = screen.getByRole('button', { name: /Import Actual/ })
+    const button = screen.getByRole('button', { name: /Nhập Actual/ })
     const input = button.closest('.ant-upload')?.querySelector('input[type="file"]') as HTMLInputElement
     await userEvent.upload(input, new File(['x'], 'actual.xlsx', {
       type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     }))
   }
 
-  it('gives the admin Import Actual and its template beside the Plan import', async () => {
+  it('gives the admin Nhập Actual and its template beside the Plan import', async () => {
     renderPanel()
     await loaded()
-    expect(screen.getByRole('button', { name: /Import Actual/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Nhập Actual/ })).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Tải file mẫu Actual' }))
     await waitFor(() => expect(download).toHaveBeenCalledWith(expect.any(Blob), 'Mau_Reinstatement_Actual.xlsx'))
   })
@@ -543,7 +546,7 @@ describe('ReinstatementPanel: Import Actual (RV8-6)', () => {
     for (const role of [asGs, asViewer]) {
       const { unmount } = renderPanel(role)
       await loaded()
-      expect(screen.queryByRole('button', { name: /Import Actual/ })).toBeNull()
+      expect(screen.queryByRole('button', { name: /Nhập Actual/ })).toBeNull()
       expect(screen.queryByRole('button', { name: 'Tải file mẫu Actual' })).toBeNull()
       unmount()
     }
@@ -559,19 +562,20 @@ describe('ReinstatementPanel: Import Actual (RV8-6)', () => {
     expect(keyFactTexts(dialog())).toEqual(['1 thêm', '1 sửa', '0 giữ nguyên'])
     expect(within(dialog()).getByText('01/10/2026').closest('tr')).toHaveTextContent(/Sửa.*200.*150/)
     expect(within(dialog()).getByText('04/10/2026').closest('tr')).toHaveTextContent(/Thêm.*-.*10/)
-    await userEvent.click(within(dialog()).getByRole('button', { name: 'Import Actual' }))
+    await userEvent.click(within(dialog()).getByRole('button', { name: 'Nhập Actual' }))
     expect(api.importReinstatementActual).not.toHaveBeenCalled()
     await waitFor(() => expect(screen.getAllByRole('dialog')).toHaveLength(2))
     const confirm = screen.getAllByRole('dialog').at(-1) as HTMLElement
     expect(within(confirm).getByText('Ghi đè 1 ngày đã có số liệu')).toBeInTheDocument()
-    await userEvent.click(within(confirm).getByRole('button', { name: 'Import Actual' }))
+    await userEvent.click(within(confirm).getByRole('button', { name: 'Nhập Actual' }))
     await waitFor(() => expect(api.importReinstatementActual).toHaveBeenCalledWith(
       'p1',
       [{ day: '2026-10-01', qty: 150 }, { day: '2026-10-04', qty: 10 }],
       'actual.xlsx',
       { sheet: 'Sheet1', warnings: 0 },
     ))
-    await waitFor(() => expect(api.listReinstatementEntries).toHaveBeenCalledTimes(2))
+    // The page's read, the preview's fresh one, and the read after the import.
+    await waitFor(() => expect(api.listReinstatementEntries).toHaveBeenCalledTimes(3))
     expect(api.replaceReinstatementPlan).not.toHaveBeenCalled()
   })
 
@@ -581,7 +585,7 @@ describe('ReinstatementPanel: Import Actual (RV8-6)', () => {
     await loaded()
     await uploadActual()
     await screen.findByText('Xem trước Reinstatement Actual')
-    await userEvent.click(within(dialog()).getByRole('button', { name: 'Import Actual' }))
+    await userEvent.click(within(dialog()).getByRole('button', { name: 'Nhập Actual' }))
     await waitFor(() => expect(api.importReinstatementActual).toHaveBeenCalledTimes(1))
   })
 
@@ -600,10 +604,36 @@ describe('ReinstatementPanel: Import Actual (RV8-6)', () => {
     expect(api.importReinstatementActual).not.toHaveBeenCalled()
   })
 
+  it('reads the entries and total Test Pack afresh: an entry added since the page opened is an overwrite', async () => {
+    xlsx.read.mockResolvedValue(sheet([['Date', 'Actual Qty'], ['04/10/2026', 10]]))
+    renderPanel()
+    await loaded()
+    api.listReinstatementEntries.mockResolvedValue([...ENTRIES, entry({ id: 'e3', day: '2026-10-04', qty: 4 })])
+    await uploadActual()
+    await screen.findByText('Xem trước Reinstatement Actual')
+    expect(within(dialog()).getByText('04/10/2026').closest('tr')).toHaveTextContent(/Sửa.*4.*10/)
+    await userEvent.click(within(dialog()).getByRole('button', { name: 'Nhập Actual' }))
+    await waitFor(() => expect(screen.getAllByRole('dialog')).toHaveLength(2))
+    expect(within(screen.getAllByRole('dialog').at(-1) as HTMLElement).getByText('Ghi đè 1 ngày đã có số liệu'))
+      .toBeInTheDocument()
+    expect(api.getPipingSettings).toHaveBeenCalledWith('p1')
+  })
+
+  it('checks the cap against total Test Pack as stored now, not as the page read it', async () => {
+    xlsx.read.mockResolvedValue(sheet([['Date', 'Actual Qty'], ['04/10/2026', 10]]))
+    renderPanel()
+    await loaded()
+    api.getPipingSettings.mockResolvedValue({ ...SETTINGS, totalTestPacks: 240 })
+    await uploadActual()
+    expect(await screen.findByText('Vượt tổng Test Pack (đã có 245 / 240)')).toBeInTheDocument()
+    expect(api.importReinstatementActual).not.toHaveBeenCalled()
+  })
+
   it('refuses any Actual file while total Test Pack is not set', async () => {
     xlsx.read.mockResolvedValue(sheet([['Date', 'Actual Qty'], ['04/10/2026', 1]]))
     renderPanel({ settings: { ...SETTINGS, totalTestPacks: null } })
     await loaded()
+    api.getPipingSettings.mockResolvedValue({ ...SETTINGS, totalTestPacks: null })
     await uploadActual()
     expect(await within(await screen.findByRole('dialog')).findByText('Admin chưa nhập tổng Test Pack')).toBeInTheDocument()
     expect(api.importReinstatementActual).not.toHaveBeenCalled()

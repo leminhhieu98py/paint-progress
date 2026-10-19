@@ -595,20 +595,20 @@ describe('ManpowerPanel: Plan import (spec §8, R-14)', () => {
   })
 })
 
-describe('ManpowerPanel: Import Actual (RV8-6)', () => {
-  /** The file input of the Import Actual button. */
+describe('ManpowerPanel: Nhập Actual (RV8-6)', () => {
+  /** The file input of the Nhập Actual button. */
   const uploadActual = async () => {
-    const button = screen.getByRole('button', { name: /Import Actual/ })
+    const button = screen.getByRole('button', { name: /Nhập Actual/ })
     const input = button.closest('.ant-upload')?.querySelector('input[type="file"]') as HTMLInputElement
     await userEvent.upload(input, new File(['x'], 'actual.xlsx', {
       type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     }))
   }
 
-  it('gives the admin Import Actual and a template with every group, hidden ones included', async () => {
+  it('gives the admin Nhập Actual and a template with every group, hidden ones included', async () => {
     renderPanel()
     await loaded()
-    expect(screen.getByRole('button', { name: /Import Actual/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Nhập Actual/ })).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Tải file mẫu Actual' }))
     await waitFor(() => expect(download).toHaveBeenCalledWith(expect.any(Blob), 'Mau_Manpower_Actual.xlsx'))
     expect(templates.build).toHaveBeenCalledWith(['Reinstatement', 'Insulation', 'Marking'])
@@ -618,7 +618,7 @@ describe('ManpowerPanel: Import Actual (RV8-6)', () => {
     for (const role of [asGs, asViewer]) {
       const { unmount } = renderPanel(role)
       await loaded()
-      expect(screen.queryByRole('button', { name: /Import Actual/ })).toBeNull()
+      expect(screen.queryByRole('button', { name: /Nhập Actual/ })).toBeNull()
       expect(screen.queryByRole('button', { name: 'Tải file mẫu Actual' })).toBeNull()
       unmount()
     }
@@ -638,19 +638,34 @@ describe('ManpowerPanel: Import Actual (RV8-6)', () => {
     expect(keyFactTexts(dialog())).toEqual(['1 thêm', '1 sửa', '1 giữ nguyên'])
     expect(within(dialog()).getByText('01/10/2026 · Reinstatement').closest('tr')).toHaveTextContent(/Sửa.*8.*9/)
     expect(within(dialog()).getByText('01/10/2026 · Insulation').closest('tr')).toHaveTextContent(/Thêm.*-.*0/)
-    await userEvent.click(within(dialog()).getByRole('button', { name: 'Import Actual' }))
+    await userEvent.click(within(dialog()).getByRole('button', { name: 'Nhập Actual' }))
     await waitFor(() => expect(screen.getAllByRole('dialog')).toHaveLength(2))
     const confirm = screen.getAllByRole('dialog').at(-1) as HTMLElement
     expect(within(confirm).getByText('Ghi đè 1 ô đã có số liệu')).toBeInTheDocument()
     expect(api.importManpowerActual).not.toHaveBeenCalled()
-    await userEvent.click(within(confirm).getByRole('button', { name: 'Import Actual' }))
+    await userEvent.click(within(confirm).getByRole('button', { name: 'Nhập Actual' }))
     await waitFor(() => expect(api.importManpowerActual).toHaveBeenCalledWith(
       'p1',
       [{ day: '2026-10-01', values: { g1: 9, g2: 0 } }, { day: '2026-10-02', values: { g3: 3 } }],
       'actual.xlsx',
       { sheet: 'Sheet1', warnings: 0 },
     ))
-    await waitFor(() => expect(api.listManpowerActual).toHaveBeenCalledTimes(2))
+    // The page's read, the preview's fresh one, and the read after the import.
+    await waitFor(() => expect(api.listManpowerActual).toHaveBeenCalledTimes(3))
+  })
+
+  it('reads the stored actual afresh: a cell entered since the page opened is an overwrite', async () => {
+    xlsx.read.mockResolvedValue(sheet([['Date', 'Insulation'], ['04/10/2026', 5]]))
+    renderPanel()
+    await loaded()
+    api.listManpowerActual.mockResolvedValue([...ACTUAL, cell({ groupId: 'g2', day: '2026-10-04', value: 2 })])
+    await uploadActual()
+    await screen.findByText('Xem trước Manpower Actual')
+    expect(within(dialog()).getByText('04/10/2026 · Insulation').closest('tr')).toHaveTextContent(/Sửa.*2.*5/)
+    await userEvent.click(within(dialog()).getByRole('button', { name: 'Nhập Actual' }))
+    await waitFor(() => expect(screen.getAllByRole('dialog')).toHaveLength(2))
+    expect(within(screen.getAllByRole('dialog').at(-1) as HTMLElement).getByText('Ghi đè 1 ô đã có số liệu'))
+      .toBeInTheDocument()
   })
 
   it('refuses a future day and an unknown group, and writes nothing', async () => {

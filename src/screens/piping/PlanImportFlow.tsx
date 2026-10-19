@@ -88,6 +88,8 @@ export interface PlanImportFlowProps<R> {
   importText?: string
   /** The confirm button's text: "Thay thế Plan" by default ("Update Plan" in that mode). */
   okText?: string
+  /** The upload button is the card's primary action (true by default): one per card, the Plan import. */
+  primary?: boolean
   /** The preview's first consequence, from the file's row count: what a replace or an update does by default. */
   leadLine?: (fileRows: number) => string
   /** The template's file name (`templateFileName`). */
@@ -141,7 +143,8 @@ type Step<R> =
   | { kind: 'preview'; fileName: string; parsed: ParseResult<R>; preview: PlanImportPreview; mode: PlanImportMode; sheets: SheetRows[] }
 
 export function PlanImportFlow<R>({
-  planLabel, templateLabel = 'Tải file mẫu', importText = 'Nhập Plan', okText: replaceText = 'Thay thế Plan', leadLine,
+  planLabel, templateLabel = 'Tải file mẫu', importText = 'Nhập Plan', okText: replaceText = 'Thay thế Plan', primary = true,
+  leadLine,
   templateName, buildTemplate, parse, preview, modes = false, lineHeader, lineAlign = 'center', countFileRows, commit,
   onImported,
 }: PlanImportFlowProps<R>) {
@@ -305,7 +308,9 @@ export function PlanImportFlow<R>({
           return false
         }}
       >
-        <Button type="primary" icon={<UploadOutlined aria-hidden />} loading={reading}>{importText}</Button>
+        <Button type={primary ? 'primary' : 'default'} icon={<UploadOutlined aria-hidden />} loading={reading}>
+          {importText}
+        </Button>
       </Upload>
 
       <Modal

@@ -222,6 +222,7 @@ describe('PlanImportFlow', () => {
     await userEvent.click(template)
     await waitFor(() => expect(download).toHaveBeenCalledWith(expect.any(Blob), 'Mau.xlsx'))
     expect(screen.getByRole('button', { name: /Nhập Plan/ })).toHaveTextContent('Nhập Plan')
+    expect(screen.getByRole('button', { name: /Nhập Plan/ })).toHaveClass('ant-btn-primary')
   })
 
   it('offers no mode switch unless the caller asks for one', async () => {
@@ -309,12 +310,13 @@ describe('PlanImportFlow: Plan | Update Plan', () => {
 })
 
 /** RV8-6: the same flow imports an Actual file, labelled by its props; an overwrite is confirmed first. */
-describe('PlanImportFlow: Import Actual', () => {
+describe('PlanImportFlow: Nhập Actual', () => {
   const ACTUAL = {
     planLabel: 'Reinstatement Actual',
     templateLabel: 'Tải file mẫu Actual',
-    importText: 'Import Actual',
-    okText: 'Import Actual',
+    importText: 'Nhập Actual',
+    okText: 'Nhập Actual',
+    primary: false,
     leadLine: (rows: number) => `Ghi Actual của ${rows} ngày trong file, ngày không có trong file giữ nguyên.`,
   }
 
@@ -322,7 +324,9 @@ describe('PlanImportFlow: Import Actual', () => {
     const props = renderFlow({ ...ACTUAL, preview: () => ({ ...PREVIEW, removed: undefined }) })
     await userEvent.click(screen.getByRole('button', { name: 'Tải file mẫu Actual' }))
     await waitFor(() => expect(download).toHaveBeenCalledWith(expect.any(Blob), 'Mau.xlsx'))
-    expect(screen.getByRole('button', { name: /Import Actual/ })).toHaveTextContent('Import Actual')
+    expect(screen.getByRole('button', { name: /Nhập Actual/ })).toHaveTextContent('Nhập Actual')
+    // Only Nhập Plan is the primary action beside it, as on Insulation.
+    expect(screen.getByRole('button', { name: /Nhập Actual/ })).not.toHaveClass('ant-btn-primary')
     await pick()
     const dialog = await screen.findByRole('dialog')
     expect(within(dialog).getByText('Xem trước Reinstatement Actual')).toBeInTheDocument()
@@ -330,7 +334,7 @@ describe('PlanImportFlow: Import Actual', () => {
     expect(within(dialog).getAllByTestId('key-facts')[0]).not.toHaveTextContent('xoá')
     expect(within(within(dialog).getByRole('list', { name: 'Hệ quả' })).getAllByRole('listitem')[0])
       .toHaveTextContent('Ghi Actual của 1 ngày trong file, ngày không có trong file giữ nguyên.')
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Import Actual' }))
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Nhập Actual' }))
     await waitFor(() => expect(props.commit).toHaveBeenCalledWith({
       rows: [{ id: 'a' }], fileName: 'plan.xlsx', summary: { sheet: 'Plan', warnings: 0 }, mode: 'replace',
     }))
@@ -344,14 +348,14 @@ describe('PlanImportFlow: Import Actual', () => {
     })
     await pick()
     const preview = await screen.findByRole('dialog')
-    await userEvent.click(within(preview).getByRole('button', { name: 'Import Actual' }))
+    await userEvent.click(within(preview).getByRole('button', { name: 'Nhập Actual' }))
     expect(props.commit).not.toHaveBeenCalled()
     await waitFor(() => expect(screen.getAllByRole('dialog')).toHaveLength(2))
     const confirm = screen.getAllByRole('dialog').at(-1) as HTMLElement
     expect(within(confirm).getByText('Ghi đè Reinstatement Actual?')).toBeInTheDocument()
     expect(within(confirm).getByText('Ghi đè 2 ngày đã có số liệu')).toBeInTheDocument()
     expect(within(confirm).queryByRole('textbox')).toBeNull()
-    await userEvent.dblClick(within(confirm).getByRole('button', { name: 'Import Actual' }))
+    await userEvent.dblClick(within(confirm).getByRole('button', { name: 'Nhập Actual' }))
     await waitFor(() => expect(props.onImported).toHaveBeenCalledTimes(1))
     expect(props.commit).toHaveBeenCalledTimes(1)
   })
