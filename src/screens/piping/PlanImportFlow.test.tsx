@@ -356,3 +356,22 @@ describe('PlanImportFlow: Import Actual', () => {
     expect(props.commit).toHaveBeenCalledTimes(1)
   })
 })
+
+describe('PlanImportFlow: switching back', () => {
+  it('drops a slow Update Plan preview when Plan is picked again before it lands', async () => {
+    let land: (p: unknown) => void = () => {}
+    const preview = vi.fn((_rows: Row[], mode: string) => (mode === 'update'
+      ? new Promise((resolve) => { land = resolve })
+      : PREVIEW)) as PlanImportFlowProps<Row>['preview']
+    renderFlow({ modes: true, preview })
+    await pick()
+    const dialog = await screen.findByRole('dialog')
+    const label = (name: string) => within(dialog).getByText(name, { selector: '.ant-segmented-item-label' })
+    await userEvent.click(label('Update Plan'))
+    await userEvent.click(label('Plan'))
+    land({ added: 9, changed: 0, unchanged: 0, lines: [] })
+    await waitFor(() => expect(within(dialog).getByRole('radio', { name: 'Plan' })).toBeChecked())
+    expect(within(dialog).getAllByTestId('key-facts')[0]).toHaveTextContent('1 thêm')
+    expect(within(dialog).getByRole('button', { name: 'Thay thế Plan' })).toBeEnabled()
+  })
+})

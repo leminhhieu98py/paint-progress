@@ -199,6 +199,7 @@ export function PlanImportFlow<R>({
   const read = async (file: File) => {
     setReading(true)
     evaluation.current += 1
+    setSwitching(null)
     try {
       const sheets = await readWorkbookRows(file)
       setSaveError(null)
@@ -212,8 +213,13 @@ export function PlanImportFlow<R>({
   }
 
   const switchMode = async (mode: PlanImportMode) => {
-    if (!step?.sheets || saving || mode === step.mode) return
+    if (!step?.sheets || saving) return
     const token = ++evaluation.current
+    // Back to the mode shown while another is computed: that one is dropped.
+    if (mode === step.mode) {
+      setSwitching(null)
+      return
+    }
     setSwitching(mode)
     const next = await evaluate(step.fileName, step.sheets, mode)
     if (token !== evaluation.current) return
