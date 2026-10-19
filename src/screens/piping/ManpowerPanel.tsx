@@ -1,5 +1,5 @@
 import { Alert, Button, Select, Spin, Table } from 'antd'
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { EmptyState } from '../../components/EmptyState'
 import type { KeyFact } from '../../components/KeyFacts'
 import { RulesDisclosure } from '../../components/RulesDisclosure'
@@ -28,6 +28,7 @@ import { ManpowerHistoryTable } from './manpower/ManpowerHistoryTable'
 import type { PipingPanelProps } from './panelProps'
 import { dayNotes, usePipingNotes } from './notes/usePipingNotes'
 import { HeaderActions } from './HeaderActions'
+import { showManpowerSelection } from './manpowerSelection'
 import { ControlRow } from './insulation/ControlRow'
 import { PHONE_CONTROL } from './insulation/controlStyle'
 import { PlanImportFlow, type PlanImportPreview } from './PlanImportFlow'
@@ -134,6 +135,8 @@ export function ManpowerPanel({ projectId, settings, mode, role, todayKey, refre
     return picked.ids.filter((id) => offered.has(id))
   }, [picked, projectId, groups, groupOptions])
   const selected = useMemo(() => new Set(selectedIds), [selectedIds])
+  // The export draws the report's Manpower chart with the groups drawn here (spec §10).
+  useEffect(() => showManpowerSelection(projectId, selected), [projectId, selected])
   const drawn = useMemo(() => (data === null ? [] : chartGroups(data.groups, data.plan, data.actual)), [data])
   const historyGroups = useMemo(() => (data === null ? [] : chartGroups(data.groups, [], data.actual)), [data])
   const series = useMemo(

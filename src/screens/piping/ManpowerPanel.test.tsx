@@ -10,6 +10,7 @@ import { renderApp } from '../../test/renderApp'
 import { chooseOption, optionTitles } from '../../test/select'
 import { setViewport } from '../../test/viewport'
 import { ManpowerPanel } from './ManpowerPanel'
+import { manpowerSelectionOnScreen } from './manpowerSelection'
 import type { PipingPanelProps } from './panelProps'
 
 const api = vi.hoisted(() => ({
@@ -712,6 +713,16 @@ describe('ManpowerPanel: Nhóm select (RV8-7)', () => {
     } finally {
       restore()
     }
+  })
+
+  it('tells the export which groups it shows while it is on screen', async () => {
+    const { unmount } = renderPanel()
+    await loaded()
+    expect([...manpowerSelectionOnScreen('p1', GROUPS)]).toEqual(['g1', 'g2'])
+    await chooseOption('Nhóm', 'Insulation')
+    await waitFor(() => expect([...manpowerSelectionOnScreen('p1', GROUPS)]).toEqual(['g1']))
+    unmount()
+    expect([...manpowerSelectionOnScreen('p1', GROUPS)]).toEqual(['g1', 'g2'])
   })
 
   it('opens every project on its visible groups', async () => {

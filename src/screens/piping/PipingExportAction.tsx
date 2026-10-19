@@ -2,6 +2,7 @@ import { EllipsisOutlined, FileExcelOutlined, LoadingOutlined } from '@ant-desig
 import { App, Button, Dropdown, Tooltip } from 'antd'
 import { useRef, useState } from 'react'
 import { camSeriesKeys } from '../../domain/piping/cam'
+import { manpowerSeries, planAverage } from '../../domain/piping/manpower'
 import type { CamSelection, Unit } from '../../domain/piping/types'
 import { renderChartPng, type ChartSpec } from './report/chartImage'
 import {
@@ -15,6 +16,7 @@ import { downloadWorkbook } from '../../lib/projectReport'
 import { listProjectNames } from '../../lib/projectsApi'
 import { useFieldPhone } from '../gs/fieldSections'
 import { useInsulationSelectionValue, useInsulationUnitValue } from './insulationUnit'
+import { manpowerSelectionOnScreen } from './manpowerSelection'
 import type { PipingPanelProps } from './panelProps'
 
 /**
@@ -83,12 +85,21 @@ async function exportReport(panel: PipingPanelProps, { unit, selection }: Insula
     notes,
   }
   const series = pipingReportSeries(data)
+  // The Manpower picture draws the groups the tab's Nhóm select shows (RV8-7); its table keeps every group.
+  const selected = manpowerSelectionOnScreen(projectId, groups)
+  const manpowerPoints = manpowerSeries({
+    groups: series.manpower.groups, plan: mpPlan, actual: mpActual, mode, weekStart: settings.weekStartDate, todayKey,
+    selected,
+  })
   // One after another: each borrows the page for a moment, off screen.
   const specs: Array<[ChartKey, ChartSpec | null]> = [
     ['reinstatement', series.reinstatement.length === 0 ? null : { kind: 'reinstatement', data: series.reinstatement, mode }],
-    ['manpower', series.manpower.points.length === 0
+    ['manpower', manpowerPoints.length === 0
       ? null
-      : { kind: 'manpower', data: series.manpower.points, groups: series.manpower.groups, mode }],
+      : {
+        kind: 'manpower', data: manpowerPoints, groups: series.manpower.groups, selected,
+        planAverage: planAverage(mpPlan, selected), mode,
+      }],
     ['insulation', series.insulation.points.length === 0
       ? null
       : { kind: 'insulation', data: series.insulation.points, keys: camSeriesKeys(selection), mode }],

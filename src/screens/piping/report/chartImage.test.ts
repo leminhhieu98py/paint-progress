@@ -73,6 +73,12 @@ describe('chartElement', () => {
     expect(chartElement({ kind: 'insulation', data: [], keys: ['phActual'], mode: 'day' }).props)
       .toMatchObject({ report: true, keys: ['phActual'] })
   })
+
+  it('draws the Manpower groups the tab shows, with its Plan TB line (RV8-7)', () => {
+    const selected = new Set(['g1'])
+    expect(chartElement({ kind: 'manpower', data: [], groups: [], selected, planAverage: 12, mode: 'day' }).props)
+      .toMatchObject({ selected, planAverage: 12 })
+  })
 })
 
 describe('renderChartPng', () => {
