@@ -42,7 +42,7 @@ describe('LateSpools (spec §7)', () => {
     )).toBeInTheDocument()
     const header = within(screen.getByTestId('late-spools')).getAllByRole('columnheader').map((h) => h.textContent)
     expect(header).toEqual(expect.arrayContaining([
-      'Test Package No', 'Số spool trễ', 'Painting Handover', 'Insulation Handover', 'Insulation Work',
+      'Test Package No', 'Số spool trễ', 'Pip', 'Paint', 'Insu',
     ]))
     expect(tableRows(screen.getByTestId('late-spools')).map((r) => r.slice(1))).toEqual([
       ['TP1', '1', '0', '1', '0'],
@@ -66,10 +66,10 @@ describe('LateSpools (spec §7)', () => {
       'SpoolNo', 'Mốc', 'Bộ phận', 'Plan', 'Actual', 'Số ngày trễ',
     ])
     expect(tableRows(list)).toEqual([
-      ['SP-a', 'Painting Handover', 'Piping', '01/09/2026', '-', '36'],
-      ['SP-a', 'Insulation Work', 'Insulation', '10/09/2026', '25/09/2026', '15'],
+      ['SP-a', 'Pip', 'Piping', '01/09/2026', '-', '36'],
+      ['SP-a', 'Insu', 'Insulation', '10/09/2026', '25/09/2026', '15'],
     ])
-    expect(within(list).getAllByLabelText(/Painting Handover: Piping bàn giao cho Painting/).length).toBeGreaterThan(0)
+    expect(within(list).getAllByLabelText(/Pip: Piping bàn giao cho Painting/).length).toBeGreaterThan(0)
   })
 
   it('groups by Line from a searchable select', async () => {

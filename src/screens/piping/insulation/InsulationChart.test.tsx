@@ -93,18 +93,18 @@ describe('InsulationChart (spec §6.4, Q20A)', () => {
     render(<InsulationChart data={WEEKS} keys={[...ALL]} mode="week" />)
     expect(screen.getByTestId('line-chart')).toHaveAttribute('data-points', '2')
     expect(ALL.map((k) => line(k)?.getAttribute('data-name'))).toEqual([
-      'Painting Handover – Plan lũy kế', 'Painting Handover – Actual lũy kế',
-      'Insulation Handover – Plan lũy kế', 'Insulation Handover – Actual lũy kế',
-      'Insulation Work – Plan lũy kế', 'Insulation Work – Actual lũy kế',
+      'Pip Plan lũy kế', 'Pip Act lũy kế',
+      'Paint Plan lũy kế', 'Paint Act lũy kế',
+      'Insu Plan lũy kế', 'Insu Act lũy kế',
     ])
   })
 
   it('lists the legend by milestone (PH, IH, IW), Plan before Actual in each', () => {
     render(<InsulationChart data={WEEKS} keys={[...ALL]} mode="day" />)
     expect(legend()).toEqual([
-      'Painting Handover – Plan lũy kế', 'Painting Handover – Actual lũy kế',
-      'Insulation Handover – Plan lũy kế', 'Insulation Handover – Actual lũy kế',
-      'Insulation Work – Plan lũy kế', 'Insulation Work – Actual lũy kế',
+      'Pip Plan lũy kế', 'Pip Act lũy kế',
+      'Paint Plan lũy kế', 'Paint Act lũy kế',
+      'Insu Plan lũy kế', 'Insu Act lũy kế',
     ])
   })
 

@@ -6,8 +6,8 @@ import type { KeyFact } from '../../components/KeyFacts'
 import { SectionCard } from '../../components/SectionCard'
 import { searchSelectProps, useFullOptionsProps } from '../../components/searchSelect'
 import {
-  camProgress, camSeries, camSeriesKeys, camSpoolFlags, duplicateSpoolGroups, lateWarnings, MILESTONE_LABEL, MILESTONES,
-  planOrderIssues, UNIT_LABEL, type CamSpoolFlags,
+  camProgress, camSeries, camSeriesKeys, camSpoolFlags, duplicateSpoolGroups, lateWarnings, MILESTONE_LABEL, milestoneActualLabel,
+  MILESTONES, planOrderIssues, UNIT_LABEL, type CamSpoolFlags,
 } from '../../domain/piping/cam'
 import { parseSpoolPlan, type SpoolPlanRow } from '../../domain/piping/imports'
 import type { CamSelection, Spool, SpoolColumn, Unit } from '../../domain/piping/types'
@@ -244,7 +244,7 @@ export function InsulationPanel({ projectId, settings, mode, role, todayKey, ref
   const facts: KeyFact[] = [
     { value: formatQty(data.spools.length), label: 'spool' },
     ...MILESTONES.map((m) => ({
-      prefix: MILESTONE_LABEL[m],
+      prefix: milestoneActualLabel(m),
       value: `${formatQty(progress.done[m])}/${formatQty(progress.total)}`,
       // What the counts count: spool rows, or lines, packages... (spec §6.4).
       label: UNIT_LABEL[unit],

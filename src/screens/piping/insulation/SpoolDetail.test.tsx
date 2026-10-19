@@ -79,7 +79,8 @@ describe('SpoolDetail: levels (spec §6.4, Q16B)', () => {
     renderDetail()
     expect(selected('Cấp hiển thị')).toBe('Package')
     expect(headers()).toEqual(expect.arrayContaining([
-      'Test Package No', 'Số spool', 'Painting Handover', 'Insulation Handover', 'Insulation Work', 'Hoàn thành', 'Plan', 'Actual',
+      'Test Package No', 'Số spool', 'Pip', 'Paint', 'Insu', 'Hoàn thành', 'Pip Plan', 'Pip Act', 'Paint Plan', 'Paint Act',
+      'Insu Plan', 'Insu Act',
     ]))
     // TP1 holds spools 1 and 2, TP2 spool 3; spool 4 has no package: its row comes last.
     expect(firstCells()).toEqual(['TP1', 'TP2', '-'])
@@ -129,9 +130,9 @@ describe('SpoolDetail: flags (spec §6.2, §6.4, §7)', () => {
     renderDetail()
     await level('Spool')
     // Today 07/10, threshold 7: SP-1's IH and IW plans are long past without an actual.
-    expect(flagsOf(0)).toEqual(['SpoolNo trùng', 'Trễ Insulation Handover', 'Trễ Insulation Work'])
+    expect(flagsOf(0)).toEqual(['SpoolNo trùng', 'Trễ Paint', 'Trễ Insu'])
     expect(flagsOf(1)).toEqual(['SpoolNo trùng'])
-    expect(flagsOf(2)).toEqual(['Sai thứ tự Plan', 'Trễ Painting Handover', 'Trễ Insulation Handover'])
+    expect(flagsOf(2)).toEqual(['Sai thứ tự Plan', 'Trễ Pip', 'Trễ Paint'])
     expect(cells(bodyRows()[3]).at(-1)).toBe('-')
   })
 
@@ -139,9 +140,9 @@ describe('SpoolDetail: flags (spec §6.2, §6.4, §7)', () => {
     renderDetail({ admin: false })
     await level('Spool')
     expect(headers()).toContain('Cảnh báo')
-    expect(flagsOf(0)).toEqual(['Trễ Insulation Handover', 'Trễ Insulation Work'])
+    expect(flagsOf(0)).toEqual(['Trễ Paint', 'Trễ Insu'])
     expect(cells(bodyRows()[1]).at(-1)).toBe('-')
-    expect(flagsOf(2)).toEqual(['Trễ Painting Handover', 'Trễ Insulation Handover'])
+    expect(flagsOf(2)).toEqual(['Trễ Pip', 'Trễ Paint'])
   })
 })
 

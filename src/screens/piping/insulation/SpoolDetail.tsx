@@ -10,8 +10,8 @@ import { StatusPill } from '../../../components/StatusPill'
 import { useTablePagination } from '../../../components/tablePagination'
 import { SEARCH_DEBOUNCE_MS } from '../../../components/useDebouncedValue'
 import {
-  ACTUAL_FIELD, camGroupRows, filterOptions, filterSpools, MILESTONE_LABEL, MILESTONES, PLAN_FIELD,
-  type CamGroupRow, type CamSpoolFlags,
+  ACTUAL_FIELD, camGroupRows, filterOptions, filterSpools, MILESTONE_LABEL, milestoneActualLabel, milestonePlanLabel, MILESTONES,
+  PLAN_FIELD, type CamGroupRow, type CamSpoolFlags,
 } from '../../../domain/piping/cam'
 import type { CamLevel, DayKey, Spool, SpoolColumn } from '../../../domain/piping/types'
 import { formatDayMonthYear } from '../../../domain/piping/week'
@@ -188,8 +188,8 @@ export function SpoolDetail({ projectId, spools, columns, flags, admin, toolbar,
           align: 'center' as const,
           render: (_v: unknown, row: CamGroupRow) => `${formatQty(row.counts[m].done)}/${formatQty(row.counts[m].total)}`,
         },
-        { title: 'Plan', key: `${m}-plan`, align: 'center' as const, render: (_v: unknown, row: CamGroupRow) => groupDate(row, row.plan[m]) },
-        { title: 'Actual', key: `${m}-actual`, align: 'center' as const, render: (_v: unknown, row: CamGroupRow) => groupDate(row, row.actual[m]) },
+        { title: milestonePlanLabel(m), key: `${m}-plan`, align: 'center' as const, render: (_v: unknown, row: CamGroupRow) => groupDate(row, row.plan[m]) },
+        { title: milestoneActualLabel(m), key: `${m}-actual`, align: 'center' as const, render: (_v: unknown, row: CamGroupRow) => groupDate(row, row.actual[m]) },
       ],
     })),
   ], [level, pin])
@@ -210,8 +210,8 @@ export function SpoolDetail({ projectId, spools, columns, flags, admin, toolbar,
       title: MILESTONE_LABEL[m],
       key: m,
       children: [
-        { title: 'Plan', key: `${m}-plan`, align: 'center' as const, render: (_v: unknown, s: Spool) => dateCell(s[PLAN_FIELD[m]]) },
-        { title: 'Actual', key: `${m}-actual`, align: 'center' as const, render: (_v: unknown, s: Spool) => dateCell(s[ACTUAL_FIELD[m]]) },
+        { title: milestonePlanLabel(m), key: `${m}-plan`, align: 'center' as const, render: (_v: unknown, s: Spool) => dateCell(s[PLAN_FIELD[m]]) },
+        { title: milestoneActualLabel(m), key: `${m}-actual`, align: 'center' as const, render: (_v: unknown, s: Spool) => dateCell(s[ACTUAL_FIELD[m]]) },
       ],
     })),
     {

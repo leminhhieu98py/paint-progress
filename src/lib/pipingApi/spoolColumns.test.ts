@@ -75,7 +75,7 @@ describe('renameSpoolColumn', () => {
   it('refuses a blank label or a built-in header before calling', async () => {
     await expect(renameSpoolColumn('p1', 'c1', '  ')).rejects.toThrow('Tên cột không được để trống')
     await expect(renameSpoolColumn('p1', 'c1', 'line no')).rejects.toThrow('Tên cột "line no" trùng tên cột chuẩn LineNo')
-    await expect(renameSpoolColumn('p1', 'c1', 'PH-Plan')).rejects.toThrow(/trùng tên cột chuẩn Painting Handover – Plan/)
+    await expect(renameSpoolColumn('p1', 'c1', 'PH-Plan')).rejects.toThrow(/trùng tên cột chuẩn Pip Plan/)
     expect(rpc).not.toHaveBeenCalled()
   })
 

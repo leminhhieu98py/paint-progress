@@ -25,12 +25,20 @@ import { buckets, daysBetween, formatDayMonthYear, seriesSpan, type Bucket } fro
 
 export const MILESTONES: readonly Milestone[] = ['ph', 'ih', 'iw']
 
-/** The milestone names as the customer's file writes them (spec §0). */
+/**
+ * The milestone names (RV8-4): the one source every screen, chart, report,
+ * template and message takes them from.
+ */
 export const MILESTONE_LABEL: Record<Milestone, string> = {
-  ph: 'Painting Handover',
-  ih: 'Insulation Handover',
-  iw: 'Insulation Work',
+  ph: 'Pip',
+  ih: 'Paint',
+  iw: 'Insu',
 }
+
+/** `Pip Plan`: a milestone's plan date, column or series (RV8-4). */
+export const milestonePlanLabel = (m: Milestone): string => `${MILESTONE_LABEL[m]} Plan`
+/** `Pip Act`: a milestone's actual date, column or series (RV8-4). */
+export const milestoneActualLabel = (m: Milestone): string => `${MILESTONE_LABEL[m]} Act`
 
 /** Who answers for a late milestone (spec §7). */
 export const MILESTONE_DEPARTMENT: Record<Milestone, { department: Department; duty: string }> = {
@@ -103,7 +111,7 @@ export function orderViolations(dates: Dates): Array<[Milestone, Milestone]> {
   }).map(([a, b]) => [a, b])
 }
 
-/** `Sai thứ tự: Painting Handover (06/09/2026) sau Insulation Handover (05/09/2026)`. */
+/** `Sai thứ tự: Pip (06/09/2026) sau Paint (05/09/2026)`. */
 export function orderMessage(dates: Dates, pairs: Array<[Milestone, Milestone]>): string {
   return `Sai thứ tự: ${pairs
     .map(([a, b]) => `${MILESTONE_LABEL[a]} (${formatDayMonthYear(dates[a]!)}) sau ${MILESTONE_LABEL[b]} (${formatDayMonthYear(dates[b]!)})`)

@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { Brush, CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { MILESTONE_LABEL, type CamPoint, type CamSeriesKey } from '../../../domain/piping/cam'
+import { milestoneActualLabel, milestonePlanLabel, type CamPoint, type CamSeriesKey } from '../../../domain/piping/cam'
 import type { Milestone, ViewMode } from '../../../domain/piping/types'
 import { formatDayMonth } from '../../../domain/piping/week'
 import { MISSING } from '../../../lib/format'
@@ -20,7 +20,7 @@ import { formatQty } from '../pipingFormat'
  *
  * One colour per milestone from the app's palette (CHT-01), so a milestone's
  * Plan and Actual read as a pair: Plan dashed, Actual solid with dots, as on
- * the KPI and Reinstatement charts. The names are the file's (spec §0) and
+ * the KPI and Reinstatement charts. The names are the milestones' (RV8-4) and
  * say "lũy kế" (spec §3), as Reinstatement's "Plan lũy kế" does. Dots only
  * while the points can be told apart (DOTS_UP_TO): a long day axis drew
  * thousands of circles that read as a thick line and re-rendered on hover.
@@ -41,8 +41,11 @@ const SERIES: Record<CamSeriesKey, { milestone: Milestone; kind: 'Plan' | 'Actua
   iwActual: { milestone: 'iw', kind: 'Actual' },
 }
 
-/** `Painting Handover – Plan lũy kế`: the file's column (spec §0), cumulative (spec §3). */
-const seriesName = (key: CamSeriesKey) => `${MILESTONE_LABEL[SERIES[key].milestone]} – ${SERIES[key].kind} lũy kế`
+/** `Pip Plan lũy kế`: the milestone's Plan or Act (RV8-4), cumulative (spec §3). */
+const seriesName = (key: CamSeriesKey) => {
+  const { milestone, kind } = SERIES[key]
+  return `${kind === 'Plan' ? milestonePlanLabel(milestone) : milestoneActualLabel(milestone)} lũy kế`
+}
 
 /** The most points an Actual line still dots. */
 const DOTS_UP_TO = 60

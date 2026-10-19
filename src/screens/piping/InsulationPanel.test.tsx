@@ -93,7 +93,7 @@ describe('InsulationPanel: summary (spec §6.4)', () => {
     expect(api.listSpoolColumns).toHaveBeenCalledWith('p1')
     expect(screen.getByRole('heading', { level: 2, name: 'Insulation' })).toBeInTheDocument()
     expect(keyFactTexts()).toEqual(expect.arrayContaining([
-      '4 spool', 'Painting Handover 3/4 SpoolNo', 'Insulation Handover 1/4 SpoolNo', 'Insulation Work 0/4 SpoolNo',
+      '4 spool', 'Pip Act 3/4 SpoolNo', 'Paint Act 1/4 SpoolNo', 'Insu Act 0/4 SpoolNo',
     ]))
     expectNoSpecIds()
   })
@@ -104,7 +104,7 @@ describe('InsulationPanel: summary (spec §6.4)', () => {
     expect(keyFactTexts()).toEqual(expect.arrayContaining(['1 SpoolNo trùng', '1 spool sai thứ tự Plan']))
     expect(screen.getByLabelText('SpoolNo trùng: SP-1 (2 dòng)')).toBeInTheDocument()
     expect(screen.getByLabelText(
-      'Ngày Plan không theo thứ tự Painting Handover, Insulation Handover, Insulation Work: SP-3',
+      'Ngày Plan không theo thứ tự Pip, Paint, Insu: SP-3',
     )).toBeInTheDocument()
   })
 
@@ -124,7 +124,7 @@ describe('InsulationPanel: summary (spec §6.4)', () => {
     renderPanel(role)
     await chart()
     expect(keyFactTexts().join('|')).not.toMatch(/trùng|sai thứ tự/)
-    expect(keyFactTexts()).toContain('Painting Handover 3/4 SpoolNo')
+    expect(keyFactTexts()).toContain('Pip Act 3/4 SpoolNo')
   })
 })
 
@@ -147,7 +147,7 @@ describe('InsulationPanel: chart (spec §6.4, Q20A)', () => {
     await chooseOption('Đơn vị đếm', 'LineNo')
     // L1 is done once both its spools are; L2 is not; a spool without a line is no line.
     expect(keyFactTexts()).toEqual(expect.arrayContaining([
-      'Painting Handover 1/2 LineNo', 'Insulation Handover 0/2 LineNo', 'Insulation Work 0/2 LineNo',
+      'Pip Act 1/2 LineNo', 'Paint Act 0/2 LineNo', 'Insu Act 0/2 LineNo',
     ]))
     expect(bucket('2026-10-07')).toBe('2026-10-07:1/1')
   })
@@ -188,7 +188,7 @@ describe('InsulationPanel: chart (spec §6.4, Q20A)', () => {
     await chart()
     await chooseOption('Đơn vị đếm', 'Test Package No')
     // TP1 (spools 1, 2) reached Painting Handover on 04/10; TP2 has not; spool 4 is in no package.
-    expect(keyFactTexts()).toContain('Painting Handover 1/2 Test Package No')
+    expect(keyFactTexts()).toContain('Pip Act 1/2 Test Package No')
     const rows = within(within(screen.getByTestId('spool-detail')).getByRole('table')).getAllByRole('row')
       .filter((r) => r.closest('tbody') !== null)
       .map((r) => within(r).getAllByRole('cell').map((c) => c.textContent))

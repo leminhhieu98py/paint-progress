@@ -1,7 +1,7 @@
 import type { Workbook, Worksheet } from 'exceljs'
 import {
-  camProgress, camSeries, groupLateWarnings, lateSpoolCount, lateWarnings, MILESTONE_LABEL, MILESTONES,
-  UNIT_LABEL, type CamPoint, type CamSeriesKey,
+  camProgress, camSeries, groupLateWarnings, lateSpoolCount, lateWarnings, MILESTONE_LABEL, milestoneActualLabel,
+  milestonePlanLabel, MILESTONES, UNIT_LABEL, type CamPoint, type CamSeriesKey,
 } from '../../domain/piping/cam'
 import { chartGroups, manpowerAverages, manpowerSeries, type ManpowerPoint } from '../../domain/piping/manpower'
 import { reinstatementSeries, reinstatementSummary, type ReinstatementPoint } from '../../domain/piping/reinstatement'
@@ -254,7 +254,7 @@ export async function buildPipingReport(
   summaryRow('Manpower – Actual trung bình đến hôm nay', averages.actual, null, null, DECIMAL_FORMAT)
   for (const m of MILESTONES) {
     const ratio = progress.total > 0 ? progress.done[m] / progress.total : null
-    summaryRow(`${MILESTONE_LABEL[m]} (${unitLabel})`, progress.done[m], progress.total, ratio, INTEGER_FORMAT)
+    summaryRow(`${milestoneActualLabel(m)} (${unitLabel})`, progress.done[m], progress.total, ratio, INTEGER_FORMAT)
   }
   summaryRow('Ngưỡng trễ (ngày)', settings.lateThresholdDays, null, null, INTEGER_FORMAT)
   summaryRow('Spool trễ', lateSpoolCount(warnings), null, null, INTEGER_FORMAT)
@@ -288,7 +288,8 @@ export async function buildPipingReport(
   const insulation = wb.addWorksheet('Insulation')
   seriesTable(insulation, mode, series.insulation.points, MILESTONES.flatMap((m) => (['Plan', 'Actual'] as const).map((kind) => {
     const key = `${m}${kind}` as CamSeriesKey
-    return { header: `${MILESTONE_LABEL[m]} – ${kind} lũy kế (${unitLabel})`, value: (p: CamPoint) => p[key] }
+    const name = kind === 'Plan' ? milestonePlanLabel(m) : milestoneActualLabel(m)
+    return { header: `${name} lũy kế (${unitLabel})`, value: (p: CamPoint) => p[key] }
   })))
   placeChart(wb, insulation, input.charts.insulation)
 
