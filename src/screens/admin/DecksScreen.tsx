@@ -601,9 +601,11 @@ export function DecksScreen() {
           bodyPadding={0}
           footer={<RulesDisclosure rules={RULES} />}
           extra={
-            // A word, no icon (RV8-1); the tooltip only says why it is off.
+            // A word, no icon (RV8-1); the tooltip only says why it is off. The
+            // aria-label keeps the name while the spinner, named "loading", shows.
             <Tooltip title={modelDecks.length === 0 ? 'Cần ít nhất một sàn' : undefined}>
               <Button
+                aria-label="Project Report"
                 onClick={() => setConfirmingExport(true)}
                 loading={exporting}
                 disabled={modelDecks.length === 0}

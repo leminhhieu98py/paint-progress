@@ -647,6 +647,16 @@ describe('DecksScreen — the project-wide half of progress', () => {
     expect(button.querySelector('.anticon')).toBeNull()
   })
 
+  it('keeps the Project Report name while the export runs (RV8-1)', async () => {
+    buildReportWorkbook.mockReturnValue(new Promise(() => {}))
+    renderScreen()
+    await screen.findByTestId('project-rollup')
+    await userEvent.click(screen.getByRole('button', { name: 'Project Report' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Xuất' }))
+    await waitFor(() => expect(buildReportWorkbook).toHaveBeenCalled())
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Project Report' })).toHaveClass('ant-btn-loading'))
+  })
+
   it('says so, and offers no export, when the project has no decks', async () => {
     loadProjectModel.mockResolvedValue({ models: [], decks: [], audit: {} })
     renderScreen()
