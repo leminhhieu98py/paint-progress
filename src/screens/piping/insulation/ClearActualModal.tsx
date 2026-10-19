@@ -54,7 +54,7 @@ export function ClearActualModal({ projectId, spool, onClose, onCleared }: {
     <ConsequenceModal
       open
       tone="danger"
-      title={`Xoá ngày Actual của ${spool.spoolNo}?`}
+      title={`Xoá ngày Act của ${spool.spoolNo}?`}
       description={choices.length > 1 ? (
         <Select<Milestone>
           aria-label="Mốc"
@@ -69,7 +69,7 @@ export function ClearActualModal({ projectId, spool, onClose, onCleared }: {
         label: milestoneActualLabel(milestone),
         meta: formatDayMonthYear(date),
       }]}
-      consequences={['Spool trở lại chưa có ngày Actual ở mốc này.']}
+      consequences={['Spool trở lại chưa có ngày Act ở mốc này.']}
       okText="Xoá"
       confirmLoading={busy}
       error={error}

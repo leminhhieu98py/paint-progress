@@ -697,7 +697,7 @@ describe('Insulation: Xoá Actual (spec §6.3, R-12)', () => {
     await chooseOption('Cấp hiển thị', 'Spool')
     await userEvent.click(screen.getByRole('button', { name: 'Xoá Actual' }))
     const box = await dialog()
-    expect(within(box).getByText('Xoá ngày Actual của SP-1?')).toBeInTheDocument()
+    expect(within(box).getByText('Xoá ngày Act của SP-1?')).toBeInTheDocument()
     await chooseOption('Mốc', 'Paint Act', box)
     expect(within(box).getByText('04/10/2026')).toBeInTheDocument()
     const ok = within(box).getByRole('button', { name: /Xoá/ })
