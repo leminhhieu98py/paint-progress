@@ -11,6 +11,7 @@ import {
 } from '../../domain/piping/cam'
 import { parseSpoolPlan, type SpoolPlanRow } from '../../domain/piping/imports'
 import type { CamSelection, Spool, SpoolColumn, Unit } from '../../domain/piping/types'
+import { formatPercent } from '../../lib/format'
 import { buildSpoolPlanTemplate, templateFileName } from '../../lib/piping/templates'
 import { listNotes, listSpoolColumns, listSpools, replaceSpools } from '../../lib/pipingApi'
 import { space } from '../../theme'
@@ -245,7 +246,9 @@ export function InsulationPanel({ projectId, settings, mode, role, todayKey, ref
     { value: formatQty(data.spools.length), label: 'spool' },
     ...MILESTONES.map((m) => ({
       prefix: milestoneActualLabel(m),
-      value: `${formatQty(progress.done[m])}/${formatQty(progress.total)}`,
+      // `164/2.537 · 6,46%` (RV8-9); no percent of nothing.
+      value: `${formatQty(progress.done[m])}/${formatQty(progress.total)}`
+        + (progress.total > 0 ? ` · ${formatPercent(progress.done[m] / progress.total)}` : ''),
       // What the counts count: spool rows, or lines, packages... (spec §6.4).
       label: UNIT_LABEL[unit],
     })),

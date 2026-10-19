@@ -19,7 +19,7 @@ vi.mock('../../lib/pipingApi', () => ({
 vi.mock('../../lib/projectReport', () => ({ downloadWorkbook: vi.fn() }))
 
 // jsdom gives Recharts no size; the stand-in prints what reaches the chart:
-// the view, the lines shown, and each bucket's Painting Handover counts.
+// the view, the lines shown, and each bucket's Pip counts.
 // It counts its mounts too: a new mount is a fresh Brush.
 const chartMounts = vi.hoisted(() => ({ count: 0 }))
 vi.mock('./insulation/InsulationChart', async () => {
@@ -93,7 +93,7 @@ describe('InsulationPanel: summary (spec §6.4)', () => {
     expect(api.listSpoolColumns).toHaveBeenCalledWith('p1')
     expect(screen.getByRole('heading', { level: 2, name: 'Insulation' })).toBeInTheDocument()
     expect(keyFactTexts()).toEqual(expect.arrayContaining([
-      '4 spool', 'Pip Act 3/4 SpoolNo', 'Paint Act 1/4 SpoolNo', 'Insu Act 0/4 SpoolNo',
+      '4 spool', 'Pip Act 3/4 · 75,00% SpoolNo', 'Paint Act 1/4 · 25,00% SpoolNo', 'Insu Act 0/4 · 0,00% SpoolNo',
     ]))
     expectNoSpecIds()
   })
@@ -124,7 +124,17 @@ describe('InsulationPanel: summary (spec §6.4)', () => {
     renderPanel(role)
     await chart()
     expect(keyFactTexts().join('|')).not.toMatch(/trùng|sai thứ tự/)
-    expect(keyFactTexts()).toContain('Pip Act 3/4 SpoolNo')
+    expect(keyFactTexts()).toContain('Pip Act 3/4 · 75,00% SpoolNo')
+  })
+
+  it('leaves the percent out when the unit counts nothing (RV8-9)', async () => {
+    api.listSpools.mockResolvedValue(SPOOLS.map((s) => ({ ...s, testPackageNo: null })))
+    renderPanel()
+    await chart()
+    await chooseOption('Đơn vị đếm', 'Test Package No')
+    expect(keyFactTexts()).toEqual(expect.arrayContaining([
+      'Pip Act 0/0 Test Package No', 'Paint Act 0/0 Test Package No', 'Insu Act 0/0 Test Package No',
+    ]))
   })
 })
 
@@ -147,7 +157,7 @@ describe('InsulationPanel: chart (spec §6.4, Q20A)', () => {
     await chooseOption('Đơn vị đếm', 'LineNo')
     // L1 is done once both its spools are; L2 is not; a spool without a line is no line.
     expect(keyFactTexts()).toEqual(expect.arrayContaining([
-      'Pip Act 1/2 LineNo', 'Paint Act 0/2 LineNo', 'Insu Act 0/2 LineNo',
+      'Pip Act 1/2 · 50,00% LineNo', 'Paint Act 0/2 · 0,00% LineNo', 'Insu Act 0/2 · 0,00% LineNo',
     ]))
     expect(bucket('2026-10-07')).toBe('2026-10-07:1/1')
   })
@@ -187,8 +197,8 @@ describe('InsulationPanel: chart (spec §6.4, Q20A)', () => {
     renderPanel()
     await chart()
     await chooseOption('Đơn vị đếm', 'Test Package No')
-    // TP1 (spools 1, 2) reached Painting Handover on 04/10; TP2 has not; spool 4 is in no package.
-    expect(keyFactTexts()).toContain('Pip Act 1/2 Test Package No')
+    // TP1 (spools 1, 2) reached Pip on 04/10; TP2 has not; spool 4 is in no package.
+    expect(keyFactTexts()).toContain('Pip Act 1/2 · 50,00% Test Package No')
     const rows = within(within(screen.getByTestId('spool-detail')).getByRole('table')).getAllByRole('row')
       .filter((r) => r.closest('tbody') !== null)
       .map((r) => within(r).getAllByRole('cell').map((c) => c.textContent))
