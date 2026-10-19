@@ -7,20 +7,21 @@ import { searchSelectProps, useFullOptionsProps } from '../../components/searchS
 import { SectionCard } from '../../components/SectionCard'
 import { useTablePagination } from '../../components/tablePagination'
 import {
-  diffManpowerPlan, diffManpowerPlanUpdate, parseManpowerPlan, type PlanImportMode, type SheetRows,
+  diffManpowerActual, diffManpowerPlan, diffManpowerPlanUpdate, parseManpowerActual, parseManpowerPlan,
+  type KeyedDiff, type PlanImportMode, type SheetRows,
 } from '../../domain/piping/imports'
 import {
   chartGroups, defaultGroupSelection, entryGroups, manpowerAverages, manpowerDays, manpowerSeries, planAverage, planMax,
   type ManpowerDayRow,
 } from '../../domain/piping/manpower'
 import { compareText } from '../../domain/piping/text'
-import type { DayKey, ManpowerGroup, ManpowerValue } from '../../domain/piping/types'
+import type { DayKey, ManpowerActualImportRow, ManpowerGroup, ManpowerValue } from '../../domain/piping/types'
 import { formatDayMonth, formatDayMonthYear } from '../../domain/piping/week'
 import { MISSING } from '../../lib/format'
-import { buildManpowerPlanTemplate, templateFileName } from '../../lib/piping/templates'
+import { buildManpowerActualTemplate, buildManpowerPlanTemplate, templateFileName } from '../../lib/piping/templates'
 import {
-  listManpowerActual, listManpowerGroups, listManpowerPlan, mergeManpowerPlan, replaceManpowerPlan,
-  type ManpowerActualEntry,
+  importManpowerActual, listManpowerActual, listManpowerGroups, listManpowerPlan, mergeManpowerPlan,
+  replaceManpowerPlan, type ManpowerActualEntry,
 } from '../../lib/pipingApi'
 import { space } from '../../theme'
 import { useFieldPhone } from '../gs/fieldSections'
@@ -43,7 +44,7 @@ import { usePanelData } from './usePanelData'
  *
  * The card "Manpower" carries the average daily Plan and Actual totals and the
  * highest daily Plan beside its title, the Nhóm select that picks the groups
- * drawn (RV8-7) and the chart; the admin's Plan import sits in its header. Below
+ * drawn (RV8-7) and the chart; the admin's Plan and Actual imports (RV8-6) sit in its header. Below
  * it, the actual: the entry form for a foreman and the admin (one input per
  * visible group for the picked day), the day grid with Sửa and Xoá for the
  * admin. Last, the plan as imported, folded away. The grid, the rules and the
@@ -83,8 +84,24 @@ function bySort(groups: ManpowerGroup[]): ManpowerGroup[] {
 function planPreview(
   groups: ManpowerGroup[], stored: ManpowerValue[], next: ManpowerValue[], mode: PlanImportMode,
 ): PlanImportPreview {
+  return mode === 'update'
+    ? diffPreview(groups, diffManpowerPlanUpdate(stored, next), false)
+    : diffPreview(groups, diffManpowerPlan(stored, next), true)
+}
+
+/** The Actual import preview (RV8-6): every cell the file sets or changes, old -> new, the overwrites confirmed first. */
+function actualPreview(groups: ManpowerGroup[], stored: ManpowerActualEntry[], next: ManpowerActualImportRow[]): PlanImportPreview {
+  const preview = diffPreview(groups, diffManpowerActual(stored, next), false)
+  return preview.changed === 0
+    ? preview
+    : { ...preview, overwrites: [`Ghi đè ${formatQty(preview.changed)} ô đã có số liệu`] }
+}
+
+/** A (day, group) diff as preview lines, by day; with its removal count when the import removes. */
+function diffPreview(
+  groups: ManpowerGroup[], diff: KeyedDiff<{ groupId: string; day: DayKey }>, removes: boolean,
+): PlanImportPreview {
   const names = new Map(groups.map((g) => [g.id, g.name]))
-  const diff = mode === 'update' ? diffManpowerPlanUpdate(stored, next) : diffManpowerPlan(stored, next)
   const lines = [
     ...diff.added.map((d) => ({ ...d, change: 'added' as const, from: null, to: formatQty(d.to) })),
     ...diff.changed.map((d) => ({ ...d, change: 'changed' as const, from: formatQty(d.from), to: formatQty(d.to) })),
@@ -97,7 +114,7 @@ function planPreview(
   return {
     added: diff.added.length,
     changed: diff.changed.length,
-    ...(mode === 'update' ? {} : { removed: diff.removed.length }),
+    ...(removes ? { removed: diff.removed.length } : {}),
     unchanged: diff.unchangedCount,
     lines,
   }
@@ -161,6 +178,19 @@ export function ManpowerPanel({ projectId, settings, mode, role, todayKey, refre
     [groups, plan],
   )
   const buildTemplate = useCallback(() => buildManpowerPlanTemplate(bySort(groups ?? []).map((g) => g.name)), [groups])
+  const actual = data?.actual
+  const parseActual = useCallback(
+    (sheets: SheetRows[]) => parseManpowerActual(sheets, groups ?? [], todayKey),
+    [groups, todayKey],
+  )
+  const previewActual = useCallback(
+    (rows: ManpowerActualImportRow[]) => actualPreview(groups ?? [], actual ?? [], rows),
+    [groups, actual],
+  )
+  const buildActualTemplate = useCallback(
+    () => buildManpowerActualTemplate(bySort(groups ?? []).map((g) => g.name)),
+    [groups],
+  )
   /** The admin's notes on a day (spec §9); none for a foreman or a viewer. */
   const notes = usePipingNotes(projectId, refreshKey, admin)
   const noteAction = notes.action
@@ -224,21 +254,38 @@ export function ManpowerPanel({ projectId, settings, mode, role, todayKey, refre
           <HeaderActions>
             {!phone && groupSelect}
             {admin && (
-              <PlanImportFlow<ManpowerValue>
-                planLabel="Manpower Plan"
-                templateName={templateFileName('manpower_plan')}
-                buildTemplate={buildTemplate}
-                parse={parse}
-                preview={preview}
-                modes
-                lineHeader="Ngày · Nhóm"
-                lineAlign="left"
-                countFileRows={fileDays}
-                commit={({ rows, fileName, summary, mode: importMode }) => (importMode === 'update'
-                  ? mergeManpowerPlan(projectId, rows, fileName, summary)
-                  : replaceManpowerPlan(projectId, rows, fileName, summary))}
-                onImported={reload}
-              />
+              <>
+                <PlanImportFlow<ManpowerValue>
+                  planLabel="Manpower Plan"
+                  templateName={templateFileName('manpower_plan')}
+                  buildTemplate={buildTemplate}
+                  parse={parse}
+                  preview={preview}
+                  modes
+                  lineHeader="Ngày · Nhóm"
+                  lineAlign="left"
+                  countFileRows={fileDays}
+                  commit={({ rows, fileName, summary, mode: importMode }) => (importMode === 'update'
+                    ? mergeManpowerPlan(projectId, rows, fileName, summary)
+                    : replaceManpowerPlan(projectId, rows, fileName, summary))}
+                  onImported={reload}
+                />
+                <PlanImportFlow<ManpowerActualImportRow>
+                  planLabel="Manpower Actual"
+                  templateLabel="Tải file mẫu Actual"
+                  importText="Import Actual"
+                  okText="Import Actual"
+                  templateName={templateFileName('manpower_actual')}
+                  buildTemplate={buildActualTemplate}
+                  parse={parseActual}
+                  preview={previewActual}
+                  lineHeader="Ngày · Nhóm"
+                  lineAlign="left"
+                  leadLine={(days) => `${formatQty(days)} ngày trong file ghi vào các ô có giá trị, ô trống giữ nguyên.`}
+                  commit={({ rows, fileName, summary }) => importManpowerActual(projectId, rows, fileName, summary)}
+                  onImported={reload}
+                />
+              </>
             )}
           </HeaderActions>
         )}
