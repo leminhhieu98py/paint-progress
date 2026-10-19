@@ -26,7 +26,8 @@ import { formatQty } from '../pipingFormat'
  * bars and lines read as a set: the Plan bar a lighter tint, the Plan line
  * dashed, the Actual line solid with dots, as on the KPI and Reinstatement
  * charts. The project's colours (RV8-2) may set Plan and Actual of each
- * milestone apart (`ins.<milestone>.<kind>`); a bar and its line share one. The names are the milestones' (RV8-4); the lines say "lũy kế"
+ * milestone apart (`ins.<milestone>.<kind>`); a bar and its line share one.
+ * The names are the milestones' (RV8-4); the lines say "lũy kế"
  * (spec §3), as Reinstatement's "Plan lũy kế" does. Dots only
  * while the points can be told apart (DOTS_UP_TO): a long day axis drew
  * thousands of circles that read as a thick line and re-rendered on hover.

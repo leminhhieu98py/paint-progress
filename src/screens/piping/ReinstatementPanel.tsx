@@ -102,6 +102,7 @@ export function ReinstatementPanel({ projectId, settings, mode, role, todayKey, 
       })),
     [data, mode, settings.weekStartDate, todayKey],
   )
+  const colors = useMemo(() => resolveChartColors(settings.chartColors, []), [settings.chartColors])
   const plan = data?.plan
   const preview = useCallback((rows: ReinstatementPlanRow[]) => planPreview(plan ?? [], rows), [plan])
   /** The admin's notes on a day (spec §9); none for a foreman or a viewer. */
@@ -150,7 +151,7 @@ export function ReinstatementPanel({ projectId, settings, mode, role, todayKey, 
             ? <Spin style={{ display: 'block', margin: `${space.xxl}px auto` }} />
             : <EmptyState title="Chưa có Plan hoặc số lượng Reinstatement" />)
           // Keyed on the view: the Brush's zoom belongs to one axis, not to the next.
-          : <ReinstatementChart key={mode} data={series} mode={mode} colors={resolveChartColors(settings.chartColors, [])} />}
+          : <ReinstatementChart key={mode} data={series} mode={mode} colors={colors} />}
       </SectionCard>
 
       {role !== 'viewer' && (
