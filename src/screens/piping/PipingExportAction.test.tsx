@@ -6,6 +6,7 @@ import type { PipingReportInput } from '../../lib/piping/report'
 import { renderApp } from '../../test/renderApp'
 import { setViewport } from '../../test/viewport'
 import { InsulationUnitProvider, useInsulationSelection, useInsulationUnit } from './insulationUnit'
+import { showManpowerSelection } from './manpowerSelection'
 import type { PipingPanelProps, PipingRole } from './panelProps'
 import { PipingExportAction } from './PipingExportAction'
 
@@ -116,7 +117,8 @@ describe('PipingExportAction (spec §10)', () => {
     // The series are computed once: the charts are drawn from what the workbook writes.
     const series = buildPipingReport.mock.calls[0][1]
     expect(renderChartPng.mock.calls[0][0].data).toBe(series.reinstatement)
-    expect(renderChartPng.mock.calls[1][0].data).toBe(series.manpower.points)
+    // Manpower draws the groups the tab's Nhóm select shows (RV8-7): here every one, so the same points.
+    expect(renderChartPng.mock.calls[1][0].data).toEqual(series.manpower.points)
     expect(renderChartPng.mock.calls[2][0].data).toBe(series.insulation.points)
     expect(await screen.findByText('Đã xuất báo cáo Piping')).toBeInTheDocument()
   })
@@ -206,6 +208,48 @@ describe('PipingExportAction (spec §10)', () => {
     await waitFor(() => expect(buildPipingReport).toHaveBeenCalled())
     expect(renderChartPng.mock.calls[2][0].keys)
       .toEqual(['phActualBar', 'phActual', 'ihActualBar', 'ihActual', 'iwActualBar', 'iwActual'])
+  })
+
+  describe('the Manpower groups on screen (RV8-7)', () => {
+    const GROUPS = [
+      { id: 'g1', name: 'Reinstatement', sort: 1, hidden: false },
+      { id: 'g2', name: 'Insulation', sort: 2, hidden: false },
+      { id: 'g3', name: 'Marking', sort: 3, hidden: true },
+      { id: 'g4', name: 'Painting', sort: 4, hidden: true },
+    ]
+    beforeEach(() => {
+      api.listManpowerGroups.mockResolvedValue(GROUPS)
+      api.listManpowerPlan.mockResolvedValue([
+        { groupId: 'g1', day: '2026-09-30', value: 3 },
+        { groupId: 'g2', day: '2026-09-30', value: 5 },
+        { groupId: 'g3', day: '2026-09-30', value: 7 },
+      ])
+    })
+    const manpowerSpec = () => renderChartPng.mock.calls[1][0]
+
+    it('draws the select\'s default when the tab has picked nothing: the visible groups and a hidden one with data', async () => {
+      renderApp(<PipingExportAction panel={panel()} />)
+      await userEvent.click(exportButton())
+      await waitFor(() => expect(buildPipingReport).toHaveBeenCalled())
+      expect([...manpowerSpec().selected]).toEqual(['g1', 'g2', 'g3'])
+      expect(manpowerSpec().planAverage).toBe(15)
+      expect(manpowerSpec().data[0].planTotal).toBe(15)
+    })
+
+    it('draws the groups the tab shows, the Plan TB line following them; the table keeps every group', async () => {
+      const forget = showManpowerSelection('p1', new Set(['g2', 'g3']))
+      try {
+        renderApp(<PipingExportAction panel={panel()} />)
+        await userEvent.click(exportButton())
+        await waitFor(() => expect(buildPipingReport).toHaveBeenCalled())
+        expect([...manpowerSpec().selected]).toEqual(['g2', 'g3'])
+        expect(manpowerSpec().planAverage).toBe(12)
+        expect(manpowerSpec().data[0].planTotal).toBe(12)
+        expect(buildPipingReport.mock.calls[0][1].manpower.points[0].planTotal).toBe(15)
+      } finally {
+        forget()
+      }
+    })
   })
 
   it('on a field phone, keeps the ⋯ menu in place with the item disabled while the page has no panel', async () => {

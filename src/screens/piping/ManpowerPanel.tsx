@@ -1,17 +1,19 @@
-import { Alert, Button, Spin, Table } from 'antd'
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { Alert, Button, Select, Spin, Table } from 'antd'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { EmptyState } from '../../components/EmptyState'
 import type { KeyFact } from '../../components/KeyFacts'
 import { RulesDisclosure } from '../../components/RulesDisclosure'
+import { searchSelectProps, useFullOptionsProps } from '../../components/searchSelect'
 import { SectionCard } from '../../components/SectionCard'
 import { useTablePagination } from '../../components/tablePagination'
 import { diffManpowerPlan, parseManpowerPlan, type SheetRows } from '../../domain/piping/imports'
 import {
-  chartGroups, entryGroups, manpowerAverages, manpowerDays, manpowerSeries, type ManpowerDayRow,
+  chartGroups, defaultGroupSelection, entryGroups, manpowerAverages, manpowerDays, manpowerSeries, planAverage, planMax,
+  type ManpowerDayRow,
 } from '../../domain/piping/manpower'
 import { compareText } from '../../domain/piping/text'
 import type { DayKey, ManpowerGroup, ManpowerValue } from '../../domain/piping/types'
-import { formatDayMonthYear } from '../../domain/piping/week'
+import { formatDayMonth, formatDayMonthYear } from '../../domain/piping/week'
 import { MISSING } from '../../lib/format'
 import { buildManpowerPlanTemplate, templateFileName } from '../../lib/piping/templates'
 import {
@@ -26,6 +28,9 @@ import { ManpowerHistoryTable } from './manpower/ManpowerHistoryTable'
 import type { PipingPanelProps } from './panelProps'
 import { dayNotes, usePipingNotes } from './notes/usePipingNotes'
 import { HeaderActions } from './HeaderActions'
+import { showManpowerSelection } from './manpowerSelection'
+import { ControlRow } from './insulation/ControlRow'
+import { PHONE_CONTROL } from './insulation/controlStyle'
 import { PlanImportFlow, type PlanImportPreview } from './PlanImportFlow'
 import { formatQty } from './pipingFormat'
 import { usePanelData } from './usePanelData'
@@ -33,11 +38,14 @@ import { usePanelData } from './usePanelData'
 /**
  * The Manpower tab of the Piping page (spec §3, §5, R-2, R-6..R-8, Q11-Q13).
  *
- * The card "Manpower" carries the average daily Plan and Actual totals beside
- * its title and the chart; the admin's Plan import sits in its header. Below
+ * The card "Manpower" carries the average daily Plan and Actual totals and the
+ * highest daily Plan beside its title, the Nhóm select that picks the groups
+ * drawn (RV8-7) and the chart; the admin's Plan import sits in its header. Below
  * it, the actual: the entry form for a foreman and the admin (one input per
- * visible group for the picked day), the day grid for everyone, Sửa and Xoá
- * for the admin. Last, the plan as imported, folded away.
+ * visible group for the picked day), the day grid with Sửa and Xoá for the
+ * admin. Last, the plan as imported, folded away. The grid, the rules and the
+ * plan are the admin's alone (RV8-8): a foreman keeps the form, a viewer the
+ * chart.
  */
 
 interface ManpowerData {
@@ -95,6 +103,12 @@ const fileDays = (rows: ManpowerValue[]) => new Set(rows.map((r) => r.day)).size
 
 const average = (n: number | null) => (n === null ? MISSING : formatQty(n))
 
+/** The Nhóm select's picks, for the project they were made on: another project opens on its default. */
+interface Picked {
+  projectId: string
+  ids: string[]
+}
+
 /** How the pill's averages are made (R-2), for its InfoTip. */
 const AVERAGE_INFO = 'Mỗi nhóm lấy trung bình các ngày có số liệu đến hôm nay, rồi cộng các nhóm'
 
@@ -103,19 +117,39 @@ export function ManpowerPanel({ projectId, settings, mode, role, todayKey, refre
   const admin = role === 'admin'
   const [day, setDay] = useState<DayKey | null>(todayKey)
   const formRef = useRef<HTMLDivElement>(null)
+  const phone = useFieldPhone()
+  const fullOptionsProps = useFullOptionsProps()
+  const [picked, setPicked] = useState<Picked | null>(null)
 
+  const groups = data?.groups
+  const plan = data?.plan
   const drawn = useMemo(() => (data === null ? [] : chartGroups(data.groups, data.plan, data.actual)), [data])
+  // The Nhóm select (RV8-7): the groups with something to draw, hidden ones marked; every group for the admin.
+  const groupOptions = useMemo(
+    () => (admin ? bySort(groups ?? []) : drawn)
+      .map((g) => ({ value: g.id, label: g.hidden ? `${g.name} (ẩn)` : g.name })),
+    [admin, groups, drawn],
+  )
+  const ownPick = data !== null && picked?.projectId === projectId
+  const selectedIds = useMemo(() => {
+    if (!ownPick) return data === null ? [] : defaultGroupSelection(data.groups, data.plan, data.actual)
+    const offered = new Set(groupOptions.map((o) => o.value))
+    return picked.ids.filter((id) => offered.has(id))
+  }, [ownPick, picked, data, groupOptions])
+  const selected = useMemo(() => new Set(selectedIds), [selectedIds])
+  // The export draws the report's Manpower chart with a pick made here, or the same default (spec §10).
+  useEffect(() => (ownPick ? showManpowerSelection(projectId, selected) : undefined), [ownPick, projectId, selected])
   const historyGroups = useMemo(() => (data === null ? [] : chartGroups(data.groups, [], data.actual)), [data])
   const series = useMemo(
     () => (data === null
       ? []
       : manpowerSeries({
-        groups: drawn, plan: data.plan, actual: data.actual, mode, weekStart: settings.weekStartDate, todayKey,
+        groups: drawn, plan: data.plan, actual: data.actual, mode, weekStart: settings.weekStartDate, todayKey, selected,
       })),
-    [data, drawn, mode, settings.weekStartDate, todayKey],
+    [data, drawn, mode, settings.weekStartDate, todayKey, selected],
   )
-  const groups = data?.groups
-  const plan = data?.plan
+  const planAvg = useMemo(() => planAverage(plan ?? [], selected), [plan, selected])
+  const max = useMemo(() => planMax(plan ?? [], selected), [plan, selected])
   const parse = useCallback((sheets: SheetRows[]) => parseManpowerPlan(sheets, groups ?? []), [groups])
   const preview = useCallback((rows: ManpowerValue[]) => planPreview(groups ?? [], plan ?? [], rows), [groups, plan])
   const buildTemplate = useCallback(() => buildManpowerPlanTemplate(bySort(groups ?? []).map((g) => g.name)), [groups])
@@ -137,12 +171,30 @@ export function ManpowerPanel({ projectId, settings, mode, role, todayKey, refre
   }
   if (data === null) return <Spin style={{ display: 'block', margin: '15vh auto' }} />
 
-  const averages = manpowerAverages({ groups: data.groups, plan: data.plan, actual: data.actual, todayKey })
+  // The pill reads what the chart draws: the selected groups.
+  const averages = manpowerAverages({
+    groups: data.groups.filter((g) => selected.has(g.id)), plan: data.plan, actual: data.actual, todayKey,
+  })
   const facts: KeyFact[] = [{
     prefix: 'trung bình đến hôm nay',
     value: `Plan ${average(averages.plan)} · Actual ${average(averages.actual)}`,
     info: AVERAGE_INFO,
   }]
+  if (max !== null) facts.push({ prefix: 'Max Plan', value: `${formatQty(max.value)} · ${formatDayMonth(max.day)}` })
+  const groupSelect = (
+    <Select<string[]>
+      mode="multiple"
+      aria-label="Nhóm"
+      placeholder="Nhóm"
+      {...searchSelectProps}
+      {...fullOptionsProps}
+      maxTagCount="responsive"
+      style={phone ? PHONE_CONTROL : { width: 170 }}
+      value={selectedIds}
+      options={groupOptions}
+      onChange={(ids) => setPicked({ projectId, ids })}
+    />
+  )
   // The admin corrects hidden groups too; a foreman enters visible ones only (R-8).
   const entry = admin ? bySort(data.groups) : entryGroups(data.groups)
   const actualDays = manpowerDays(data.groups, data.actual).length
@@ -160,39 +212,54 @@ export function ManpowerPanel({ projectId, settings, mode, role, todayKey, refre
         // Week view averages (R-2): said in the title as well as on the total lines (spec §3).
         title={mode === 'week' ? 'Manpower (trung bình tuần)' : 'Manpower'}
         facts={facts}
-        extra={admin ? (
+        extra={phone && !admin ? undefined : (
           <HeaderActions>
-            <PlanImportFlow<ManpowerValue>
-              planLabel="Manpower Plan"
-              templateName={templateFileName('manpower_plan')}
-              buildTemplate={buildTemplate}
-              parse={parse}
-              preview={preview}
-              lineHeader="Ngày · Nhóm"
-              lineAlign="left"
-              countFileRows={fileDays}
-              commit={({ rows, fileName, summary }) => replaceManpowerPlan(projectId, rows, fileName, summary)}
-              onImported={reload}
-            />
+            {!phone && groupSelect}
+            {admin && (
+              <PlanImportFlow<ManpowerValue>
+                planLabel="Manpower Plan"
+                templateName={templateFileName('manpower_plan')}
+                buildTemplate={buildTemplate}
+                parse={parse}
+                preview={preview}
+                lineHeader="Ngày · Nhóm"
+                lineAlign="left"
+                countFileRows={fileDays}
+                commit={({ rows, fileName, summary }) => replaceManpowerPlan(projectId, rows, fileName, summary)}
+                onImported={reload}
+              />
+            )}
           </HeaderActions>
-        ) : undefined}
+        )}
       >
-        {series.length === 0
-          // An empty answer is not the last word while a re-read runs (after an import or a save).
-          ? (loading
-            ? <Spin style={{ display: 'block', margin: `${space.xxl}px auto` }} />
-            : <EmptyState title="Chưa có Plan hoặc nhân lực Manpower" />)
-          // Keyed on the view: the Brush's zoom belongs to one axis, not to the next.
-          : <ManpowerChart key={mode} data={series} groups={drawn} mode={mode} />}
+        {phone && <div style={{ marginBottom: space.md }}><ControlRow>{groupSelect}</ControlRow></div>}
+        {groupOptions.length > 0 && selected.size === 0
+          ? <EmptyState title="Chọn ít nhất một nhóm" />
+          : series.length === 0
+            // An empty answer is not the last word while a re-read runs (after an import or a save).
+            ? (loading
+              ? <Spin style={{ display: 'block', margin: `${space.xxl}px auto` }} />
+              : <EmptyState title="Chưa có Plan hoặc nhân lực Manpower" />)
+            // Keyed on what shapes the axis: the Brush's zoom belongs to one axis, not to the next.
+            : (
+              <ManpowerChart
+                key={`${mode}|${selectedIds.join(',')}`}
+                data={series}
+                groups={drawn}
+                selected={selected}
+                planAverage={planAvg}
+                mode={mode}
+              />
+            )}
       </SectionCard>
 
-      <SectionCard
-        title="Nhân lực đã nhập"
-        facts={[{ value: formatQty(actualDays), label: 'ngày' }]}
-        extra={notes.byDay?.('manpower_day', 'Manpower', todayKey)}
-      >
-        <div style={{ display: 'flex', flexDirection: 'column', gap: space.md }}>
-          {role !== 'viewer' && (
+      {role !== 'viewer' && (
+        <SectionCard
+          title="Nhân lực đã nhập"
+          facts={[{ value: formatQty(actualDays), label: 'ngày' }]}
+          extra={notes.byDay?.('manpower_day', 'Manpower', todayKey)}
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: space.md }}>
             <div ref={formRef}>
               {entry.length === 0
                 ? (
@@ -215,21 +282,25 @@ export function ManpowerPanel({ projectId, settings, mode, role, todayKey, refre
                   />
                 )}
             </div>
-          )}
-          <ManpowerHistoryTable
-            projectId={projectId}
-            groups={historyGroups}
-            actual={data.actual}
-            canEdit={admin}
-            onEdit={editDay}
-            onChanged={reload}
-            dayExtra={dayExtra}
-          />
-          <RulesDisclosure rules={RULES} />
-        </div>
-      </SectionCard>
+            {admin && (
+              <>
+                <ManpowerHistoryTable
+                  projectId={projectId}
+                  groups={historyGroups}
+                  actual={data.actual}
+                  canEdit
+                  onEdit={editDay}
+                  onChanged={reload}
+                  dayExtra={dayExtra}
+                />
+                <RulesDisclosure rules={RULES} />
+              </>
+            )}
+          </div>
+        </SectionCard>
+      )}
 
-      {data.plan.length > 0 && <PlanCard projectId={projectId} groups={data.groups} plan={data.plan} />}
+      {admin && data.plan.length > 0 && <PlanCard projectId={projectId} groups={data.groups} plan={data.plan} />}
       {notes.drawer}
     </div>
   )

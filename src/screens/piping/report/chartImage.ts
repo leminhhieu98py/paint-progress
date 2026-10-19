@@ -33,7 +33,15 @@ import { ManpowerChart } from '../manpower/ManpowerChart'
 
 export type ChartSpec =
   | { kind: 'reinstatement'; data: ReinstatementPoint[]; mode: ViewMode }
-  | { kind: 'manpower'; data: ManpowerPoint[]; groups: ManpowerGroup[]; mode: ViewMode }
+  | {
+    kind: 'manpower'
+    data: ManpowerPoint[]
+    groups: ManpowerGroup[]
+    /** The groups the tab's Nhóm select shows, and their Plan TB (RV8-7). */
+    selected?: ReadonlySet<string>
+    planAverage?: number | null
+    mode: ViewMode
+  }
   | { kind: 'insulation'; data: CamPoint[]; keys: CamSeriesKey[]; mode: ViewMode }
 
 /** The chart's width on the canvas, in CSS pixels; its height is the component's own. */
@@ -54,7 +62,10 @@ export function chartElement(spec: ChartSpec): ReactElement {
     case 'reinstatement':
       return createElement(ReinstatementChart, { data: spec.data, mode: spec.mode, report: true })
     case 'manpower':
-      return createElement(ManpowerChart, { data: spec.data, groups: spec.groups, mode: spec.mode, report: true })
+      return createElement(ManpowerChart, {
+        data: spec.data, groups: spec.groups, selected: spec.selected, planAverage: spec.planAverage, mode: spec.mode,
+        report: true,
+      })
     case 'insulation':
       return createElement(InsulationChart, { data: spec.data, keys: spec.keys, mode: spec.mode, report: true })
   }
