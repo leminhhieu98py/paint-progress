@@ -97,7 +97,7 @@ describe('PlanImportFlow', () => {
     ])
     await userEvent.click(within(dialog).getByRole('button', { name: 'Thay thế Plan' }))
     await waitFor(() => expect(commit).toHaveBeenCalledWith({
-      rows: [{ id: 'a' }], fileName: 'insu.xlsx', summary: { sheet: 'Plan', warnings: 2 },
+      rows: [{ id: 'a' }], fileName: 'insu.xlsx', summary: { sheet: 'Plan', warnings: 2 }, mode: 'replace',
     }))
     expect(onImported).toHaveBeenCalled()
   })
@@ -148,7 +148,7 @@ describe('PlanImportFlow', () => {
     await pick()
     const dialog = await screen.findByRole('dialog')
     await waitFor(() => expect(within(dialog).getAllByTestId('key-facts')[0]).toHaveTextContent('3 thêm'))
-    expect(preview).toHaveBeenCalledWith([{ id: 'a' }])
+    expect(preview).toHaveBeenCalledWith([{ id: 'a' }], 'replace')
   })
 
   it('refuses the file when the preview cannot be computed, and writes nothing', async () => {
@@ -222,5 +222,88 @@ describe('PlanImportFlow', () => {
     await userEvent.click(template)
     await waitFor(() => expect(download).toHaveBeenCalledWith(expect.any(Blob), 'Mau.xlsx'))
     expect(screen.getByRole('button', { name: /Nhập Plan/ })).toHaveTextContent('Nhập Plan')
+  })
+
+  it('offers no mode switch unless the caller asks for one', async () => {
+    renderFlow()
+    await pick()
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).queryByRole('radio', { name: 'Update Plan' })).toBeNull()
+  })
+})
+
+/** RV8-5: Plan replaces, Update Plan merges; the preview follows the mode picked. */
+describe('PlanImportFlow: Plan | Update Plan', () => {
+  const UPDATE = {
+    added: 1, changed: 2, unchanged: 0,
+    lines: [{ key: 'u', change: 'changed' as const, label: '02/10/2026', from: '5', to: '6' }],
+  }
+  const byMode = (mode: string) => (mode === 'update' ? UPDATE : { ...PREVIEW, removed: 3 })
+  const radio = (dialog: HTMLElement, name: string) => within(dialog).getByRole('radio', { name })
+
+  it('opens on Plan, and Update Plan recomputes the preview, says what it does and commits the merge', async () => {
+    const parse = vi.fn(() => parsedOf([{ id: 'a' }]))
+    const preview = vi.fn((_rows: Row[], mode: string) => byMode(mode))
+    const props = renderFlow({ modes: true, parse, preview })
+    await pick()
+    const dialog = await screen.findByRole('dialog')
+    expect(radio(dialog, 'Plan')).toBeChecked()
+    expect(within(dialog).getByText('Xoá Plan cũ, thay bằng file (kể cả ô trống)')).toBeInTheDocument()
+    expect(within(dialog).getAllByTestId('key-facts')[0]).toHaveTextContent('3 xoá')
+    expect(within(dialog).getByRole('button', { name: 'Thay thế Plan' })).toBeInTheDocument()
+
+    await userEvent.click(within(dialog).getByText('Update Plan', { selector: '.ant-segmented-item-label' }))
+    await waitFor(() => expect(radio(dialog, 'Update Plan')).toBeChecked())
+    expect(parse).toHaveBeenLastCalledWith(expect.any(Array), 'update')
+    expect(preview).toHaveBeenLastCalledWith([{ id: 'a' }], 'update')
+    expect(within(dialog).getByText('Chỉ cập nhật ngày/spool có dữ liệu trong file, giữ nguyên phần còn lại'))
+      .toBeInTheDocument()
+    // No removal in an update: the count is not even offered.
+    expect(within(dialog).getAllByTestId('key-facts')[0]).not.toHaveTextContent('xoá')
+    expect(within(dialog).getByText('02/10/2026').closest('tr')).toHaveTextContent(/Sửa.*5.*6/)
+    const consequences = within(within(dialog).getByRole('list', { name: 'Hệ quả' })).getAllByRole('listitem')
+    expect(consequences[0]).toHaveTextContent('Manpower Plan được cập nhật theo 1 dòng của file, phần còn lại giữ nguyên.')
+
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Update Plan' }))
+    await waitFor(() => expect(props.commit).toHaveBeenCalledWith({
+      rows: [{ id: 'a' }], fileName: 'plan.xlsx', summary: { sheet: 'Plan', warnings: 0, mode: 'update' }, mode: 'update',
+    }))
+    expect(props.onImported).toHaveBeenCalled()
+  })
+
+  it('writes the replace mode into the log summary', async () => {
+    const props = renderFlow({ modes: true })
+    await pick()
+    const dialog = await screen.findByRole('dialog')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Thay thế Plan' }))
+    await waitFor(() => expect(props.commit).toHaveBeenCalledWith({
+      rows: [{ id: 'a' }], fileName: 'plan.xlsx', summary: { sheet: 'Plan', warnings: 0, mode: 'replace' }, mode: 'replace',
+    }))
+  })
+
+  it('offers the switch on a file Plan refuses, and previews it as Update Plan', async () => {
+    const parse = vi.fn((_sheets: unknown, mode: string) => (mode === 'update'
+      ? parsedOf([{ id: 'a' }])
+      : { ...parsedOf([]), errors: [{ row: 3, message: 'Thiếu Plan Qty' }] }))
+    renderFlow({ modes: true, parse, preview: (_rows, mode) => byMode(mode) })
+    await pick()
+    const errors = await screen.findByRole('dialog')
+    expect(within(errors).getByText('Thiếu Plan Qty')).toBeInTheDocument()
+    await userEvent.click(within(errors).getByText('Update Plan', { selector: '.ant-segmented-item-label' }))
+    expect(await screen.findByText('Xem trước Manpower Plan')).toBeInTheDocument()
+    const dialog = screen.getAllByRole('dialog').at(-1) as HTMLElement
+    expect(radio(dialog, 'Update Plan')).toBeChecked()
+  })
+
+  it('shows the warnings of the preview in place of the file ones when it gives them', async () => {
+    renderFlow({
+      modes: true,
+      parse: () => ({ ...parsedOf([{ id: 'a' }]), warnings: [{ row: 2, message: 'Trùng trong file' }] }),
+      preview: () => ({ ...UPDATE, warnings: [{ row: null, message: 'SpoolNo "A" có 2 spool sau khi cập nhật' }] }),
+    })
+    await pick()
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText('SpoolNo "A" có 2 spool sau khi cập nhật')).toBeInTheDocument()
+    expect(within(dialog).queryByText('Dòng 2: Trùng trong file')).toBeNull()
   })
 })
