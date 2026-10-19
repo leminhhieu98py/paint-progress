@@ -123,21 +123,22 @@ export function ManpowerPanel({ projectId, settings, mode, role, todayKey, refre
 
   const groups = data?.groups
   const plan = data?.plan
-  // The Nhóm select (RV8-7): the visible groups; the admin's hidden ones too, marked, never picked for them.
+  const drawn = useMemo(() => (data === null ? [] : chartGroups(data.groups, data.plan, data.actual)), [data])
+  // The Nhóm select (RV8-7): the groups with something to draw, hidden ones marked; every group for the admin.
   const groupOptions = useMemo(
-    () => (admin ? bySort(groups ?? []) : entryGroups(groups ?? []))
+    () => (admin ? bySort(groups ?? []) : drawn)
       .map((g) => ({ value: g.id, label: g.hidden ? `${g.name} (ẩn)` : g.name })),
-    [admin, groups],
+    [admin, groups, drawn],
   )
+  const ownPick = data !== null && picked?.projectId === projectId
   const selectedIds = useMemo(() => {
-    if (picked?.projectId !== projectId) return defaultGroupSelection(groups ?? [])
+    if (!ownPick) return data === null ? [] : defaultGroupSelection(data.groups, data.plan, data.actual)
     const offered = new Set(groupOptions.map((o) => o.value))
     return picked.ids.filter((id) => offered.has(id))
-  }, [picked, projectId, groups, groupOptions])
+  }, [ownPick, picked, data, groupOptions])
   const selected = useMemo(() => new Set(selectedIds), [selectedIds])
-  // The export draws the report's Manpower chart with the groups drawn here (spec §10).
-  useEffect(() => showManpowerSelection(projectId, selected), [projectId, selected])
-  const drawn = useMemo(() => (data === null ? [] : chartGroups(data.groups, data.plan, data.actual)), [data])
+  // The export draws the report's Manpower chart with a pick made here, or the same default (spec §10).
+  useEffect(() => (ownPick ? showManpowerSelection(projectId, selected) : undefined), [ownPick, projectId, selected])
   const historyGroups = useMemo(() => (data === null ? [] : chartGroups(data.groups, [], data.actual)), [data])
   const series = useMemo(
     () => (data === null
@@ -232,7 +233,7 @@ export function ManpowerPanel({ projectId, settings, mode, role, todayKey, refre
         )}
       >
         {phone && <div style={{ marginBottom: space.md }}><ControlRow>{groupSelect}</ControlRow></div>}
-        {selected.size === 0
+        {groupOptions.length > 0 && selected.size === 0
           ? <EmptyState title="Chọn ít nhất một nhóm" />
           : series.length === 0
             // An empty answer is not the last word while a re-read runs (after an import or a save).

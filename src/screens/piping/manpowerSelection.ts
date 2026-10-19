@@ -1,12 +1,12 @@
 import { defaultGroupSelection } from '../../domain/piping/manpower'
-import type { ManpowerGroup } from '../../domain/piping/types'
+import type { ManpowerGroup, ManpowerValue } from '../../domain/piping/types'
 
 /**
  * The Manpower chart's Nhóm select as it is on screen (RV8-7), per project,
  * for the export: the report's Manpower picture draws the groups the tab
  * draws (spec §10). The tab keeps its selection in its own state and reports
- * it here while it is mounted; with the tab not on screen, the export draws
- * the select's default, the groups the tab would open on.
+ * a pick here while it is mounted; with no pick on screen, the export draws
+ * the select's default, worked out from the same data as the tab does.
  */
 
 const onScreen = new Map<string, ReadonlySet<string>>()
@@ -19,7 +19,12 @@ export function showManpowerSelection(projectId: string, selected: ReadonlySet<s
   }
 }
 
-/** The groups the tab shows for the project, or the select's default for `groups`. */
-export function manpowerSelectionOnScreen(projectId: string, groups: ManpowerGroup[]): ReadonlySet<string> {
-  return onScreen.get(projectId) ?? new Set(defaultGroupSelection(groups))
+/** The groups the tab shows for the project: its pick, or the select's default. */
+export function manpowerSelectionOnScreen(
+  projectId: string,
+  groups: ManpowerGroup[],
+  plan: ManpowerValue[],
+  actual: ManpowerValue[],
+): ReadonlySet<string> {
+  return onScreen.get(projectId) ?? new Set(defaultGroupSelection(groups, plan, actual))
 }

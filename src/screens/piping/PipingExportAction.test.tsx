@@ -207,6 +207,7 @@ describe('PipingExportAction (spec §10)', () => {
       { id: 'g1', name: 'Reinstatement', sort: 1, hidden: false },
       { id: 'g2', name: 'Insulation', sort: 2, hidden: false },
       { id: 'g3', name: 'Marking', sort: 3, hidden: true },
+      { id: 'g4', name: 'Painting', sort: 4, hidden: true },
     ]
     beforeEach(() => {
       api.listManpowerGroups.mockResolvedValue(GROUPS)
@@ -218,18 +219,16 @@ describe('PipingExportAction (spec §10)', () => {
     })
     const manpowerSpec = () => renderChartPng.mock.calls[1][0]
 
-    it('draws the visible groups when the tab has not changed its select', async () => {
+    it('draws the select\'s default when the tab has picked nothing: the visible groups and a hidden one with data', async () => {
       renderApp(<PipingExportAction panel={panel()} />)
       await userEvent.click(exportButton())
       await waitFor(() => expect(buildPipingReport).toHaveBeenCalled())
-      expect([...manpowerSpec().selected]).toEqual(['g1', 'g2'])
-      expect(manpowerSpec().planAverage).toBe(8)
-      expect(manpowerSpec().data[0].planTotal).toBe(8)
-      // The workbook's own table still lists every group.
-      expect(buildPipingReport.mock.calls[0][1].manpower.points[0].planTotal).toBe(15)
+      expect([...manpowerSpec().selected]).toEqual(['g1', 'g2', 'g3'])
+      expect(manpowerSpec().planAverage).toBe(15)
+      expect(manpowerSpec().data[0].planTotal).toBe(15)
     })
 
-    it('draws the groups the tab shows, the Plan TB line following them', async () => {
+    it('draws the groups the tab shows, the Plan TB line following them; the table keeps every group', async () => {
       const forget = showManpowerSelection('p1', new Set(['g2', 'g3']))
       try {
         renderApp(<PipingExportAction panel={panel()} />)
@@ -238,6 +237,7 @@ describe('PipingExportAction (spec §10)', () => {
         expect([...manpowerSpec().selected]).toEqual(['g2', 'g3'])
         expect(manpowerSpec().planAverage).toBe(12)
         expect(manpowerSpec().data[0].planTotal).toBe(12)
+        expect(buildPipingReport.mock.calls[0][1].manpower.points[0].planTotal).toBe(15)
       } finally {
         forget()
       }

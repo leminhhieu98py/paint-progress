@@ -169,8 +169,10 @@ describe('the Nhóm selection (RV8-7)', () => {
   ]
   const both = new Set(['reins', 'ins'])
 
-  it('starts with every visible group, in sort order, a hidden one left out', () => {
-    expect(defaultGroupSelection(groups)).toEqual(['reins', 'ins'])
+  it('starts with every visible group and a hidden one with data, in sort order', () => {
+    expect(defaultGroupSelection(groups, [], [])).toEqual(['reins', 'ins'])
+    expect(defaultGroupSelection(groups, [], [v('mark', '2026-09-18', 1)])).toEqual(['reins', 'ins', 'mark'])
+    expect(defaultGroupSelection(groups, plan, [])).toEqual(['reins', 'ins', 'mark'])
   })
 
   it('draws only the selected groups, the totals following them', () => {

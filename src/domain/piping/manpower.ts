@@ -208,11 +208,16 @@ export function chartGroups(
 }
 
 /**
- * The chart's Nhóm select as it opens (RV8-7): every visible group, in sort
- * order. A hidden group is drawn only when the admin picks it.
+ * The chart's Nhóm select as it opens (RV8-7), on screen and in the report
+ * alike: the groups the chart draws (`chartGroups`), so a hidden group with
+ * data still shows (R-8).
  */
-export function defaultGroupSelection(groups: ManpowerGroup[]): string[] {
-  return entryGroups(groups).map((g) => g.id)
+export function defaultGroupSelection(
+  groups: ManpowerGroup[],
+  plan: ManpowerValue[],
+  actual: ManpowerValue[],
+): string[] {
+  return chartGroups(groups, plan, actual).map((g) => g.id)
 }
 
 /** The groups an entry form offers: visible ones, in sort order (R-8). */

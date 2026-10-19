@@ -86,7 +86,7 @@ async function exportReport(panel: PipingPanelProps, { unit, selection }: Insula
   }
   const series = pipingReportSeries(data)
   // The Manpower picture draws the groups the tab's Nhóm select shows (RV8-7); its table keeps every group.
-  const selected = manpowerSelectionOnScreen(projectId, groups)
+  const selected = manpowerSelectionOnScreen(projectId, groups, mpPlan, mpActual)
   const manpowerPoints = manpowerSeries({
     groups: series.manpower.groups, plan: mpPlan, actual: mpActual, mode, weekStart: settings.weekStartDate, todayKey,
     selected,
