@@ -10,6 +10,56 @@ own branch, verified against the development Supabase project, and deployed to
 production by the owner. **Database migrations are listed per release and must
 reach production before the app that needs them.**
 
+## [2.1.0] - 2026-10-19
+
+Linh's Rv8 feedback on Piping and the report buttons. **One database migration,
+`0041_piping_rv8`, must reach production before this app**: the Piping settings
+read now selects `chart_colors`. Applying it first is safe for 2.0.0. Rolling the
+app back to 2.0.0 after an Actual import has been logged breaks 2.0.0's import
+history table in Cấu hình (it does not know the new kinds).
+
+### Added
+
+- **Plan | Update Plan** when importing a Plan (Reinstatement, Manpower,
+  Insulation). Plan replaces the old plan as before; Update Plan writes only the
+  days, cells and spools that have data in the file, keeps everything else, and
+  adds new spools after the existing ones. The preview shows what each mode
+  changes; the import history shows the mode.
+- **Nhập Actual** for Reinstatement and Manpower (admin): a file of days (and
+  groups) with their Actual. A value replaces that day's total (Reinstatement)
+  or that cell (Manpower); blank cells keep what is stored; days already holding
+  data are overwritten only after a confirmation that counts them. The total
+  Test Pack cap still applies.
+- **Màu biểu đồ** in Cấu hình (admin): a colour per series of the three Piping
+  charts, per project, with Khôi phục mặc định. The screen and the report
+  pictures use them.
+- **Manpower**: a Nhóm select choosing which groups the chart draws, a dashed
+  "Plan TB" line (average daily Plan of those groups) and "Max Plan N · dd/mm".
+- **Spool trễ**: a Spool level next to Package and Line, and a search over
+  SpoolNo, LineNo and Test Package No.
+- **Piping report**: a "Chi tiết spool" sheet listing every spool with all its
+  columns and the six dates (blank where there is none); the Insulation sheet
+  also lists the chart's per-day or per-week bars.
+
+### Changed
+
+- **Milestone names** everywhere (screen, charts, report, templates, messages):
+  Painting Handover → **Pip**, Insulation Handover → **Paint**, Insulation Work →
+  **Insu**, with **Plan** and **Act** (`Pip Plan`, `Pip Act`, …; the Spool trễ
+  table and sheet read Plan / Act too). Files with the
+  old headers, or with "Handover to Painting / Insulation", still import.
+- **Insulation chart**: bars per day or week with the cumulative lines, like
+  Reinstatement; the legend runs Pip, Paint, Insu. The quick stats show the
+  percent: `Pip Act 164/2.537 · 6,46% SpoolNo`.
+- **Report buttons** carry words: **Report** and **Project Report** on the field
+  deck screen (inside the ⋯ menu on a phone), **Report** on Piping and **Project
+  Report** on the admin Sàn screen.
+- **GS and viewer** no longer see the history, rules and Plan cards of
+  Reinstatement and Manpower; the GS keeps the entry forms (the viewer, who has
+  no form, no longer sees the "đã nhập" card at all).
+- **Import history** in Cấu hình has a Chế độ column (Plan / Update Plan; "-"
+  for Actual imports) and lists the two new Actual kinds.
+
 ## [2.0.0] - 2026-10-08
 
 The Piping module (Linh's "Quản lý piping"): Reinstatement, Manpower and CAM
