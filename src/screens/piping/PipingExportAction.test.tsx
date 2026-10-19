@@ -17,6 +17,7 @@ const api = vi.hoisted(() => ({
   listManpowerPlan: vi.fn(),
   listManpowerActual: vi.fn(),
   listSpools: vi.fn(),
+  listSpoolColumns: vi.fn(),
   listNotes: vi.fn(),
 }))
 vi.mock('../../lib/pipingApi', () => api)
@@ -66,6 +67,7 @@ beforeEach(() => {
     paintingSystem: null, extra: {}, phPlan: '2026-09-30', ihPlan: null, iwPlan: null,
     phActual: null, ihActual: null, iwActual: null,
   }])
+  api.listSpoolColumns.mockResolvedValue([{ id: 'c1', label: 'Khu vực', sort: 1 }])
   api.listNotes.mockResolvedValue([{ id: 'n1', target: 'spool', spoolId: 's1', body: 'x' }])
   listProjectNames.mockReset().mockResolvedValue([
     { id: 'p0', code: 'BB1', name: 'BlockB1' },
@@ -110,6 +112,9 @@ describe('PipingExportAction (spec §10)', () => {
       settings: { weekStartDate: '2026-09-28', totalTestPacks: 100, lateThresholdDays: 7 },
     })
     expect(input.reinstatement.actual).toEqual([{ id: 'e1', day: '2026-09-30', qty: 4 }])
+    // Chi tiết spool (RV8-3): the extra columns in their order.
+    expect(api.listSpoolColumns).toHaveBeenCalledWith('p1')
+    expect(input.columns).toEqual([{ id: 'c1', label: 'Khu vực', sort: 1 }])
     expect(input.charts).toEqual({ reinstatement: PNG, manpower: PNG, insulation: PNG })
     expect(renderChartPng.mock.calls.map(([spec]) => spec.kind)).toEqual(['reinstatement', 'manpower', 'insulation'])
     expect(renderChartPng.mock.calls[0][0]).toMatchObject({ mode: 'week' })
@@ -129,7 +134,7 @@ describe('PipingExportAction (spec §10)', () => {
     await userEvent.click(exportButton())
     await waitFor(() => expect(downloadWorkbook).toHaveBeenCalled())
     expect(api.listNotes).not.toHaveBeenCalled()
-    expect(reportInput()).toMatchObject({ includeNotes: false, notes: [] })
+    expect(reportInput()).toMatchObject({ includeNotes: false, notes: [], columns: [{ label: 'Khu vực' }] })
   })
 
   it('writes the file without a chart that failed to render, and skips a chart with no data', async () => {

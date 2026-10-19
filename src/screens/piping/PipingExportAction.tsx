@@ -10,7 +10,7 @@ import {
 } from '../../lib/piping/report'
 import {
   listManpowerActual, listManpowerGroups, listManpowerPlan, listNotes, listReinstatementEntries,
-  listReinstatementPlan, listSpools,
+  listReinstatementPlan, listSpoolColumns, listSpools,
 } from '../../lib/pipingApi'
 import { downloadWorkbook } from '../../lib/projectReport'
 import { listProjectNames } from '../../lib/projectsApi'
@@ -62,7 +62,7 @@ async function projectIdentity(projectId: string): Promise<{ name: string; code:
 async function exportReport(panel: PipingPanelProps, { unit, selection }: InsulationView): Promise<void> {
   const { projectId, settings, mode, todayKey } = panel
   const admin = panel.role === 'admin'
-  const [project, plan, entries, groups, mpPlan, mpActual, spools, notes] = await Promise.all([
+  const [project, plan, entries, groups, mpPlan, mpActual, spools, columns, notes] = await Promise.all([
     projectIdentity(projectId),
     listReinstatementPlan(projectId),
     listReinstatementEntries(projectId),
@@ -70,6 +70,7 @@ async function exportReport(panel: PipingPanelProps, { unit, selection }: Insula
     listManpowerPlan(projectId),
     listManpowerActual(projectId),
     listSpools(projectId),
+    listSpoolColumns(projectId),
     admin ? listNotes(projectId) : Promise.resolve([]),
   ])
   const data: Omit<PipingReportInput, 'charts'> = {
@@ -81,6 +82,7 @@ async function exportReport(panel: PipingPanelProps, { unit, selection }: Insula
     reinstatement: { plan, actual: entries },
     manpower: { groups, plan: mpPlan, actual: mpActual },
     spools,
+    columns,
     includeNotes: admin,
     notes,
   }

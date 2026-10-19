@@ -93,6 +93,7 @@ function input(over: Partial<PipingReportInput> = {}): PipingReportInput {
       spool({ id: 'a', seq: 1, spoolNo: 'SP-A', lineNo: 'L1', testPackageNo: 'TP2', phPlan: '2026-09-01', phActual: '2026-09-20' }),
       spool({ id: 'b', seq: 2, spoolNo: 'SP-B', lineNo: 'L2', testPackageNo: 'TP1', phPlan: '2026-09-30', phActual: '2026-09-30', ihPlan: '2026-09-01' }),
     ],
+    columns: [],
     includeNotes: false,
     notes: [],
     charts: {},
@@ -125,7 +126,7 @@ describe('buildPipingReport (spec §10)', () => {
   it('writes the sheets in order, without Ghi chú when notes are not included', async () => {
     const wb = await open(await buildPipingReport(input()))
     expect(wb.worksheets.map((w) => w.name)).toEqual([
-      'Tóm tắt', 'Reinstatement', 'Manpower', 'Insulation', 'Spool trễ',
+      'Tóm tắt', 'Reinstatement', 'Manpower', 'Insulation', 'Chi tiết spool', 'Spool trễ',
     ])
   })
 
@@ -140,7 +141,7 @@ describe('buildPipingReport (spec §10)', () => {
 
     const wb = await open(await buildPipingReport(input({ notes, includeNotes: true })))
     expect(wb.worksheets.map((w) => w.name)).toEqual([
-      'Tóm tắt', 'Reinstatement', 'Manpower', 'Insulation', 'Spool trễ', 'Ghi chú',
+      'Tóm tắt', 'Reinstatement', 'Manpower', 'Insulation', 'Chi tiết spool', 'Spool trễ', 'Ghi chú',
     ])
     const ws = sheet(wb, 'Ghi chú')
     expect(headerOf(ws)).toEqual(['Mục', 'Ngày', 'Spool', 'Nội dung', 'Người viết', 'Thời gian'])
@@ -260,6 +261,66 @@ describe('buildPipingReport (spec §10)', () => {
     // Week of 28/09: SP-B's package planned and reached PH on 30/09.
     expect(rowValues(ws, ws.rowCount).slice(2, 4)).toEqual([1, 1])
     expect(ws.getCell('C2').numFmt).toBe('#,##0')
+  })
+
+  it('Chi tiết spool: every spool in file order, master fields, extra columns in order, the six dates', async () => {
+    const columns = [
+      { id: 'c1', label: 'Khu vực', sort: 1 },
+      { id: 'c2', label: 'Ghi chú KH', sort: 2 },
+    ]
+    const spools = [
+      spool({
+        id: 'b', seq: 2, spoolNo: 'SP-B', lineNo: 'L2', extra: { 'Ghi chú KH': 'gấp' },
+        phPlan: '2026-09-30', phActual: '2026-09-30', ihPlan: '2026-10-05',
+      }),
+      // Missing values everywhere: empty cells, never a dash.
+      spool({
+        id: 'c', seq: 3, spoolNo: 'SP-C', lineNo: null, insuType: null, drawingNo: null, testPackageNo: null,
+        paintingSystem: null, extra: { 'Khu vực': '' },
+      }),
+      spool({
+        id: 'a', seq: 1, spoolNo: 'SP-A', extra: { 'Khu vực': 'Zone 1', 'Ghi chú KH': 'ok' },
+        phPlan: '2026-09-01', phActual: '2026-09-20', ihPlan: '2026-09-25', ihActual: '2026-09-28',
+        iwPlan: '2026-10-10', iwActual: '2026-10-01',
+      }),
+    ]
+    const wb = await open(await buildPipingReport(input({ spools, columns })))
+    const ws = sheet(wb, 'Chi tiết spool')
+    expect(headerOf(ws)).toEqual([
+      'STT', 'SpoolNo', 'LineNo', 'InsuType', 'DrawingNo', 'Test Package No', 'Painting System',
+      'Khu vực', 'Ghi chú KH',
+      'Pip Plan', 'Pip Act', 'Paint Plan', 'Paint Act', 'Insu Plan', 'Insu Act',
+    ])
+    expect(rowValues(ws, 2)).toEqual([
+      1, 'SP-A', 'L1', 'HC', 'D1', 'TP1', 'BD-02B', 'Zone 1', 'ok',
+      utc('2026-09-01'), utc('2026-09-20'), utc('2026-09-25'), utc('2026-09-28'), utc('2026-10-10'), utc('2026-10-01'),
+    ])
+    expect(rowValues(ws, 3)).toEqual([
+      2, 'SP-B', 'L2', 'HC', 'D1', 'TP1', 'BD-02B', null, 'gấp',
+      utc('2026-09-30'), utc('2026-09-30'), utc('2026-10-05'), null, null, null,
+    ])
+    expect(rowValues(ws, 4)).toEqual([3, 'SP-C', null, null, null, null, null, null, null, null, null, null, null, null, null])
+    expect(ws.rowCount).toBe(4)
+    expect(ws.getCell('J2').value).toBeInstanceOf(Date)
+    for (const col of ['J', 'K', 'L', 'M', 'N', 'O']) expect(ws.getCell(`${col}2`).numFmt).toBe('dd/mm/yyyy')
+    expect(ws.getCell('A2').numFmt).toBe('#,##0')
+    // The other sheets' chrome, and a filter over the header.
+    expect(ws.views[0]).toMatchObject({ state: 'frozen', ySplit: 1 })
+    expect(ws.getCell('O1').fill).toMatchObject({ fgColor: { argb: 'FFFAE2D5' } })
+    expect(ws.getCell('O4').border).toMatchObject({ top: { style: 'thin' } })
+    const filter = ws.autoFilter as unknown
+    if (typeof filter === 'string') expect(filter).toBe('A1:O4')
+    else expect(filter).toMatchObject({ from: { row: 1, column: 1 }, to: { row: 4, column: 15 } })
+    expect(ws.getImages()).toHaveLength(0)
+  })
+
+  it('Chi tiết spool: no extra columns, no spools: the header alone', async () => {
+    const ws = sheet(await open(await buildPipingReport(input({ spools: [] }))), 'Chi tiết spool')
+    expect(headerOf(ws)).toEqual([
+      'STT', 'SpoolNo', 'LineNo', 'InsuType', 'DrawingNo', 'Test Package No', 'Painting System',
+      'Pip Plan', 'Pip Act', 'Paint Plan', 'Paint Act', 'Insu Plan', 'Insu Act',
+    ])
+    expect(ws.rowCount).toBe(1)
   })
 
   it('Spool trễ: spool, line, package, milestone, department, plan, actual, days late, by package', async () => {
