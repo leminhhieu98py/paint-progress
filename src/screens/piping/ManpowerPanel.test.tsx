@@ -7,6 +7,7 @@ import type { ManpowerGroup, ManpowerValue, PipingSettings } from '../../domain/
 import type { ManpowerActualEntry } from '../../lib/pipingApi'
 import { expectHelperText, expectNoSpecIds, keyFactTexts, ruleTexts } from '../../test/copy'
 import { renderApp } from '../../test/renderApp'
+import { chooseOption, optionTitles } from '../../test/select'
 import { setViewport } from '../../test/viewport'
 import { ManpowerPanel } from './ManpowerPanel'
 import type { PipingPanelProps } from './panelProps'
@@ -45,12 +46,20 @@ vi.mock('../../lib/projectReport', () => ({
 
 // jsdom gives Recharts no size; the stand-in prints what reaches the chart.
 vi.mock('./manpower/ManpowerChart', () => ({
-  ManpowerChart: ({ data, groups, mode }: {
+  ManpowerChart: ({ data, groups, selected, planAverage, mode }: {
     data: Array<Record<string, unknown>>
     groups: Array<{ name: string }>
+    selected?: ReadonlySet<string>
+    planAverage?: number | null
     mode: string
   }) => (
-    <div data-testid="manpower-chart" data-mode={mode} data-groups={groups.map((g) => g.name).join(',')}>
+    <div
+      data-testid="manpower-chart"
+      data-mode={mode}
+      data-groups={groups.map((g) => g.name).join(',')}
+      data-selected={selected === undefined ? 'all' : [...selected].join(',')}
+      data-average={String(planAverage)}
+    >
       {data.map((p) => `${String(p.key)}:${String(p.planTotal)}/${String(p.actualTotal)}`).join(' ')}
     </div>
   ),
@@ -143,8 +152,8 @@ describe('ManpowerPanel: summary and chart (spec §3, §5)', () => {
     expect(api.listManpowerPlan).toHaveBeenCalledWith('p1')
     expect(api.listManpowerActual).toHaveBeenCalledWith('p1')
     expect(screen.getByRole('heading', { level: 2, name: 'Manpower' })).toBeInTheDocument()
-    // Per group, the mean of its days with a value, summed: Plan (10 + 12) / 2 + 4 + 2; Actual (8 + 6) / 2 + 0 + 3.
-    expect(keyFactTexts()[0]).toBe('trung bình đến hôm nay Plan 17 · Actual 10')
+    // Per selected group, the mean of its days with a value, summed: Plan (10 + 12) / 2 + 4; Actual (8 + 6) / 2 + 0.
+    expect(keyFactTexts()[0]).toBe('trung bình đến hôm nay Plan 15 · Actual 7')
     expect(screen.getByLabelText(AVERAGE_INFO)).toBeInTheDocument()
   })
 
@@ -153,8 +162,8 @@ describe('ManpowerPanel: summary and chart (spec §3, §5)', () => {
     renderPanel({ mode: 'week' })
     const chart = await loaded()
     // Every value up to today falls in the week of 28/09: the pill reads that bucket.
-    expect(chart.textContent).toBe('2026-09-28:17/10 2026-10-05:50/null')
-    expect(keyFactTexts()[0]).toBe('trung bình đến hôm nay Plan 17 · Actual 10')
+    expect(chart.textContent).toBe('2026-09-28:15/7 2026-10-05:50/null')
+    expect(keyFactTexts()[0]).toBe('trung bình đến hôm nay Plan 15 · Actual 7')
   })
 
   it('says trung bình in the card title in week view only', async () => {
@@ -165,14 +174,15 @@ describe('ManpowerPanel: summary and chart (spec §3, §5)', () => {
     expect(await screen.findByRole('heading', { level: 2, name: 'Manpower' })).toBeInTheDocument()
   })
 
-  it('charts each day with the totals, a hidden group with history included (R-8)', async () => {
+  it('charts each day with the totals of the visible groups, a hidden group with history kept for the select (R-8)', async () => {
     renderPanel()
     const chart = await loaded()
     expect(chart).toHaveAttribute('data-mode', 'day')
     expect(chart).toHaveAttribute('data-groups', 'Reinstatement,Insulation,Marking')
+    expect(chart).toHaveAttribute('data-selected', 'g1,g2')
     const points = (chart.textContent ?? '').split(' ')
     expect(points[0]).toBe('2026-10-01:14/8')
-    expect(points[1]).toBe('2026-10-02:14/3')
+    expect(points[1]).toBe('2026-10-02:12/null')
     expect(points[2]).toBe('2026-10-03:null/6')
     expect(points.at(-1)).toBe('2026-10-07:null/null')
   })
@@ -181,8 +191,8 @@ describe('ManpowerPanel: summary and chart (spec §3, §5)', () => {
     renderPanel({ mode: 'week' })
     const chart = await loaded()
     expect(chart).toHaveAttribute('data-mode', 'week')
-    // Plan: Reinstatement (10 + 12) / 2 + Insulation 4 + Marking 2; Actual: (8 + 6) / 2 + 0 + 3.
-    expect(chart.textContent).toBe('2026-09-28:17/10 2026-10-05:null/null')
+    // Plan: Reinstatement (10 + 12) / 2 + Insulation 4; Actual: (8 + 6) / 2 + 0.
+    expect(chart.textContent).toBe('2026-09-28:15/7 2026-10-05:null/null')
   })
 
   it('leaves a hidden group without data out of the chart', async () => {
@@ -620,5 +630,97 @@ describe('ManpowerPanel: sections by role (RV8-8)', () => {
     expect(rules()).toBeNull()
     expect(planCard()).toBeNull()
     expect(screen.queryByRole('heading', { level: 2, name: 'Nhân lực đã nhập' })).toBeNull()
+  })
+})
+
+describe('ManpowerPanel: Nhóm select (RV8-7)', () => {
+  const chart = () => screen.getByTestId('manpower-chart')
+  const maxFact = () => keyFactTexts().find((t) => t.startsWith('Max Plan'))
+
+  it('offers the visible groups to a foreman, every one selected', async () => {
+    renderPanel(asGs)
+    await loaded()
+    expect(await optionTitles('Nhóm')).toEqual(['Reinstatement', 'Insulation'])
+    expect(chart()).toHaveAttribute('data-selected', 'g1,g2')
+  })
+
+  it('offers the admin the hidden groups too, marked and left unselected, and draws one when picked', async () => {
+    renderPanel()
+    await loaded()
+    expect(await optionTitles('Nhóm')).toEqual(['Reinstatement', 'Insulation', 'Marking (ẩn)'])
+    await chooseOption('Nhóm', 'Marking (ẩn)')
+    expect(chart()).toHaveAttribute('data-selected', 'g1,g2,g3')
+    expect((chart().textContent ?? '').split(' ')[1]).toBe('2026-10-02:14/3')
+  })
+
+  it('draws the selected groups only, the totals, the average and the max following them', async () => {
+    renderPanel()
+    await loaded()
+    // Plan days 01/10 = 10 + 4, 02/10 = 12: average 13, max 14 on 01/10.
+    expect(chart()).toHaveAttribute('data-average', '13')
+    expect(maxFact()).toBe('Max Plan 14 · 01/10')
+    await chooseOption('Nhóm', 'Insulation')
+    expect(chart()).toHaveAttribute('data-selected', 'g1')
+    expect((chart().textContent ?? '').split(' ')[0]).toBe('2026-10-01:10/8')
+    expect(chart()).toHaveAttribute('data-average', '11')
+    expect(maxFact()).toBe('Max Plan 12 · 02/10')
+  })
+
+  it('gives the same average in week view', async () => {
+    renderPanel({ mode: 'week' })
+    await loaded()
+    expect(chart()).toHaveAttribute('data-average', '13')
+  })
+
+  it('asks for a group when none is selected, with no max', async () => {
+    renderPanel()
+    await loaded()
+    await chooseOption('Nhóm', 'Reinstatement')
+    await chooseOption('Nhóm', 'Insulation')
+    expect(screen.getByText('Chọn ít nhất một nhóm')).toBeInTheDocument()
+    expect(screen.queryByTestId('manpower-chart')).toBeNull()
+    expect(maxFact()).toBeUndefined()
+  })
+
+  it('has no max and no average without a plan', async () => {
+    api.listManpowerPlan.mockResolvedValue([])
+    renderPanel()
+    await loaded()
+    expect(chart()).toHaveAttribute('data-average', 'null')
+    expect(maxFact()).toBeUndefined()
+  })
+
+  it('puts the select in a row of the card on a phone, in the header from 768 px', async () => {
+    const restore = setViewport(390)
+    try {
+      renderPanel(asGs)
+      await loaded()
+      expect(within(screen.getByTestId('control-row')).getByRole('combobox', { name: 'Nhóm' })).toBeInTheDocument()
+      expect(screen.queryByTestId('header-actions')).toBeNull()
+    } finally {
+      restore()
+    }
+  })
+
+  it('puts the select in the card header from 768 px', async () => {
+    const restore = setViewport(1280)
+    try {
+      renderPanel(asGs)
+      await loaded()
+      expect(within(screen.getByTestId('header-actions')).getByRole('combobox', { name: 'Nhóm' })).toBeInTheDocument()
+      expect(screen.queryByTestId('control-row')).toBeNull()
+    } finally {
+      restore()
+    }
+  })
+
+  it('opens every project on its visible groups', async () => {
+    const { rerender } = renderPanel()
+    await loaded()
+    await chooseOption('Nhóm', 'Insulation')
+    expect(chart()).toHaveAttribute('data-selected', 'g1')
+    rerender(<ManpowerPanel {...props({ projectId: 'p2' })} />)
+    await waitFor(() => expect(api.listManpowerGroups).toHaveBeenCalledWith('p2'))
+    await waitFor(() => expect(screen.getByTestId('manpower-chart')).toHaveAttribute('data-selected', 'g1,g2'))
   })
 })

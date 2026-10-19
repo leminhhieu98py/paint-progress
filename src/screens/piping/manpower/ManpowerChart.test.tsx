@@ -21,6 +21,7 @@ const captured = vi.hoisted(() => ({
   yAxis: null as null | Record<string, unknown>,
   brush: null as null | Record<string, unknown>,
   legend: null as null | Record<string, unknown>,
+  referenceLine: null as null | Record<string, unknown>,
 }))
 
 vi.mock('recharts', async (importOriginal) => {
@@ -67,6 +68,10 @@ vi.mock('recharts', async (importOriginal) => {
     Line: (props: Record<string, unknown>) => (
       <div data-testid="line" data-key={String(props.dataKey)} data-name={String(props.name)} />
     ),
+    ReferenceLine: (props: Record<string, unknown>) => {
+      captured.referenceLine = props
+      return <div data-testid="reference-line" />
+    },
   }
 })
 
@@ -110,6 +115,7 @@ beforeEach(() => {
   captured.yAxis = null
   captured.brush = null
   captured.legend = null
+  captured.referenceLine = null
 })
 
 /** The legend's names, in the order Recharts lists the drawn bars and lines. */
@@ -218,5 +224,35 @@ describe('ManpowerChart (spec §5)', () => {
     } finally {
       undo()
     }
+  })
+
+  it('draws only the selected groups, each keeping the colour of its place among all (RV8-7)', () => {
+    render(<ManpowerChart data={DAYS} groups={GROUPS} selected={new Set(['g2'])} mode="day" />)
+    expect(attrs('bar', 'data-name')).toEqual(['Plan · Insulation', 'Actual · Insulation'])
+    expect(attrs('bar', 'data-fill')[1]).toBe(palette.categorical[1])
+    expect(Object.keys(captured.data[0]).filter((k) => k.includes(':'))).toEqual(['plan:g2', 'actual:g2'])
+  })
+
+  it('draws the plan average as a dashed Plan TB line, listed after Plan tổng (RV8-7)', () => {
+    render(<ManpowerChart data={DAYS} groups={GROUPS} mode="day" planAverage={12.5} />)
+    expect(captured.referenceLine?.y).toBe(12.5)
+    expect(captured.referenceLine?.strokeDasharray).toBeTruthy()
+    expect((captured.referenceLine?.label as { value: string }).value).toBe('Plan TB')
+    expect(legend()).toEqual([
+      'Plan · Reinstatement', 'Plan · Insulation', 'Plan tổng theo ngày', 'Plan TB',
+      'Actual · Reinstatement', 'Actual · Insulation', 'Actual tổng theo ngày',
+    ])
+  })
+
+  it('names the average Plan TB in week view too', () => {
+    render(<ManpowerChart data={WEEKS} groups={GROUPS} mode="week" planAverage={12.5} />)
+    expect(captured.referenceLine?.y).toBe(12.5)
+    expect(attrs('line', 'data-name')).toContain('Plan TB')
+  })
+
+  it('draws no average line without a plan average', () => {
+    render(<ManpowerChart data={DAYS} groups={GROUPS} mode="day" planAverage={null} />)
+    expect(screen.queryByTestId('reference-line')).toBeNull()
+    expect(attrs('line', 'data-name')).toEqual(['Plan tổng theo ngày', 'Actual tổng theo ngày'])
   })
 })
