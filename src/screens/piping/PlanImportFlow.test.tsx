@@ -307,3 +307,52 @@ describe('PlanImportFlow: Plan | Update Plan', () => {
     expect(within(dialog).queryByText('Dòng 2: Trùng trong file')).toBeNull()
   })
 })
+
+/** RV8-6: the same flow imports an Actual file, labelled by its props; an overwrite is confirmed first. */
+describe('PlanImportFlow: Import Actual', () => {
+  const ACTUAL = {
+    planLabel: 'Reinstatement Actual',
+    templateLabel: 'Tải file mẫu Actual',
+    importText: 'Import Actual',
+    okText: 'Import Actual',
+    leadLine: (rows: number) => `Ghi Actual của ${rows} ngày trong file, ngày không có trong file giữ nguyên.`,
+  }
+
+  it('names its template, its button, its preview and its confirm by the props, and writes on confirm', async () => {
+    const props = renderFlow({ ...ACTUAL, preview: () => ({ ...PREVIEW, removed: undefined }) })
+    await userEvent.click(screen.getByRole('button', { name: 'Tải file mẫu Actual' }))
+    await waitFor(() => expect(download).toHaveBeenCalledWith(expect.any(Blob), 'Mau.xlsx'))
+    expect(screen.getByRole('button', { name: /Import Actual/ })).toHaveTextContent('Import Actual')
+    await pick()
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText('Xem trước Reinstatement Actual')).toBeInTheDocument()
+    expect(within(dialog).queryByRole('radio')).toBeNull()
+    expect(within(dialog).getAllByTestId('key-facts')[0]).not.toHaveTextContent('xoá')
+    expect(within(within(dialog).getByRole('list', { name: 'Hệ quả' })).getAllByRole('listitem')[0])
+      .toHaveTextContent('Ghi Actual của 1 ngày trong file, ngày không có trong file giữ nguyên.')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Import Actual' }))
+    await waitFor(() => expect(props.commit).toHaveBeenCalledWith({
+      rows: [{ id: 'a' }], fileName: 'plan.xlsx', summary: { sheet: 'Plan', warnings: 0 }, mode: 'replace',
+    }))
+    expect(await screen.findByText('Đã import Reinstatement Actual')).toBeInTheDocument()
+  })
+
+  it('confirms an overwrite in a second dialog that names the count, without a typed word, and writes once', async () => {
+    const props = renderFlow({
+      ...ACTUAL,
+      preview: () => ({ ...PREVIEW, removed: undefined, overwrites: ['Ghi đè 2 ngày đã có số liệu'] }),
+    })
+    await pick()
+    const preview = await screen.findByRole('dialog')
+    await userEvent.click(within(preview).getByRole('button', { name: 'Import Actual' }))
+    expect(props.commit).not.toHaveBeenCalled()
+    await waitFor(() => expect(screen.getAllByRole('dialog')).toHaveLength(2))
+    const confirm = screen.getAllByRole('dialog').at(-1) as HTMLElement
+    expect(within(confirm).getByText('Ghi đè Reinstatement Actual?')).toBeInTheDocument()
+    expect(within(confirm).getByText('Ghi đè 2 ngày đã có số liệu')).toBeInTheDocument()
+    expect(within(confirm).queryByRole('textbox')).toBeNull()
+    await userEvent.dblClick(within(confirm).getByRole('button', { name: 'Import Actual' }))
+    await waitFor(() => expect(props.onImported).toHaveBeenCalledTimes(1))
+    expect(props.commit).toHaveBeenCalledTimes(1)
+  })
+})

@@ -29,6 +29,10 @@ import { capList } from './listCap'
  * switching parses the file again in that mode and recomputes the preview,
  * so the admin sees what each mode does before confirming; the commit and the
  * log summary carry the mode.
+ *
+ * The same flow imports an Actual file (RV8-6): the props name its template,
+ * its button and its confirm, and an overwrite of stored values (the caller's
+ * `overwrites`) is confirmed in a second dialog first.
  */
 
 /** One line of the preview: a day (or a day and group, a spool and column) and its old -> new value. */
@@ -67,11 +71,25 @@ export interface PlanImportPreview {
    * button turns danger too.
    */
   dangers?: string[]
+  /**
+   * The stored values the confirm overwrites (an Actual import), one item
+   * each, e.g. `Ghi đè 2 ngày đã có số liệu`: asked in a confirmation dialog
+   * before anything is written.
+   */
+  overwrites?: string[]
 }
 
 export interface PlanImportFlowProps<R> {
-  /** The plan as the file names it (Q27): "Reinstatement Plan". */
+  /** The plan as the file names it (Q27): "Reinstatement Plan"; or the Actual, "Reinstatement Actual". */
   planLabel: string
+  /** The template action's name: "Tải file mẫu" by default. */
+  templateLabel?: string
+  /** The upload button's text: "Nhập Plan" by default. */
+  importText?: string
+  /** The confirm button's text: "Thay thế Plan" by default ("Update Plan" in that mode). */
+  okText?: string
+  /** The preview's first consequence, from the file's row count: what a replace or an update does by default. */
+  leadLine?: (fileRows: number) => string
   /** The template's file name (`templateFileName`). */
   templateName: string
   buildTemplate: () => Promise<Blob>
@@ -123,8 +141,9 @@ type Step<R> =
   | { kind: 'preview'; fileName: string; parsed: ParseResult<R>; preview: PlanImportPreview; mode: PlanImportMode; sheets: SheetRows[] }
 
 export function PlanImportFlow<R>({
-  planLabel, templateName, buildTemplate, parse, preview, modes = false, lineHeader, lineAlign = 'center', countFileRows,
-  commit, onImported,
+  planLabel, templateLabel = 'Tải file mẫu', importText = 'Nhập Plan', okText: replaceText = 'Thay thế Plan', leadLine,
+  templateName, buildTemplate, parse, preview, modes = false, lineHeader, lineAlign = 'center', countFileRows, commit,
+  onImported,
 }: PlanImportFlowProps<R>) {
   const { message } = App.useApp()
   const type = useTypeScale()
@@ -133,7 +152,10 @@ export function PlanImportFlow<R>({
   const [step, setStep] = useState<Step<R> | null>(null)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
-  /** The typed confirmation is open: the replace deletes what the `dangers` name. */
+  /**
+   * The second confirmation is open: typed when the replace deletes what the
+   * `dangers` name, plain when the import overwrites what `overwrites` name.
+   */
   const [arming, setArming] = useState(false)
   /**
    * Set synchronously, unlike `saving`: a fast double click on Thay thế Plan
@@ -237,9 +259,10 @@ export function PlanImportFlow<R>({
   }
 
   const dangers = step?.kind === 'preview' ? step.preview.dangers ?? [] : []
+  const overwrites = step?.kind === 'preview' ? step.preview.overwrites ?? [] : []
   const allWarnings = step?.kind === 'preview' ? step.preview.warnings ?? step.parsed.warnings : []
   const warnings = capList(allWarnings)
-  const okText = step?.mode === 'update' ? 'Update Plan' : 'Thay thế Plan'
+  const okText = step?.mode === 'update' ? 'Update Plan' : replaceText
   const fileRows = step?.kind === 'preview'
     ? (countFileRows ? countFileRows(step.parsed.rows) : step.parsed.rows.length)
     : 0
@@ -263,7 +286,7 @@ export function PlanImportFlow<R>({
 
   return (
     <>
-      <IconAction verb="template" label="Tải file mẫu" loading={downloading} onClick={() => void downloadTemplate()} />
+      <IconAction verb="template" label={templateLabel} loading={downloading} onClick={() => void downloadTemplate()} />
       <Upload
         accept=".xlsx"
         // While a file is read, no second pick can race it.
@@ -276,7 +299,7 @@ export function PlanImportFlow<R>({
           return false
         }}
       >
-        <Button type="primary" icon={<UploadOutlined aria-hidden />} loading={reading}>Nhập Plan</Button>
+        <Button type="primary" icon={<UploadOutlined aria-hidden />} loading={reading}>{importText}</Button>
       </Upload>
 
       <Modal
@@ -328,7 +351,7 @@ export function PlanImportFlow<R>({
             danger={dangers.length > 0}
             loading={saving}
             disabled={switching !== null}
-            onClick={() => (dangers.length > 0 ? setArming(true) : void confirm())}
+            onClick={() => (dangers.length > 0 || overwrites.length > 0 ? setArming(true) : void confirm())}
           >
             {okText}
           </Button>,
@@ -411,7 +434,7 @@ export function PlanImportFlow<R>({
               }}
             >
               <li>
-                {step.mode === 'update'
+                {leadLine ? leadLine(fileRows) : step.mode === 'update'
                   ? `${planLabel} được cập nhật theo ${COUNT.format(fileRows)} dòng của file, phần còn lại giữ nguyên.`
                   : `${planLabel} hiện tại được thay toàn bộ bằng ${COUNT.format(fileRows)} dòng của file.`}
               </li>
@@ -427,12 +450,16 @@ export function PlanImportFlow<R>({
 
       <ConsequenceModal
         open={arming && step?.kind === 'preview'}
-        tone="danger"
-        title={`Thay thế ${planLabel}?`}
-        consequences={dangers}
-        confirmText="XOÁ"
-        confirmLabel="Gõ XOÁ để xác nhận"
-        okText="Thay thế Plan"
+        {...(dangers.length > 0
+          ? {
+            tone: 'danger' as const,
+            title: `Thay thế ${planLabel}?`,
+            consequences: dangers,
+            confirmText: 'XOÁ',
+            confirmLabel: 'Gõ XOÁ để xác nhận',
+          }
+          : { tone: 'warn' as const, title: `Ghi đè ${planLabel}?`, consequences: overwrites })}
+        okText={okText}
         confirmLoading={saving}
         error={saveError}
         onOk={() => void confirm()}
