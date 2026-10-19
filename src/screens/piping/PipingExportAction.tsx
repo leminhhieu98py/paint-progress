@@ -1,5 +1,5 @@
 import { EllipsisOutlined, FileExcelOutlined, LoadingOutlined } from '@ant-design/icons'
-import { App, Button, Dropdown, Tooltip } from 'antd'
+import { App, Button, Dropdown } from 'antd'
 import { useRef, useState } from 'react'
 import { camSeriesKeys } from '../../domain/piping/cam'
 import type { CamSelection, Unit } from '../../domain/piping/types'
@@ -18,9 +18,9 @@ import { useInsulationSelectionValue, useInsulationUnitValue } from './insulatio
 import type { PipingPanelProps } from './panelProps'
 
 /**
- * Xuất báo cáo (spec §10), the icon action at the end of the Piping filter
- * bar for every role (GS-09): on a field phone it folds into one `⋯` menu
- * that spells it out, as on the GS screen.
+ * Xuất báo cáo (spec §10), the "Report" text button at the end of the Piping
+ * filter bar for every role (GS-09, RV8-1): on a field phone it folds into
+ * one `⋯` menu item with the same word, as on the GS screen.
  *
  * A click reads what the report needs afresh -- the panels' data, and the
  * admin's notes only for the admin (spec §9: a GS or viewer never asks for
@@ -33,7 +33,7 @@ import type { PipingPanelProps } from './panelProps'
  * place in the bar, disabled, so the bar does not jump.
  */
 
-const LABEL = 'Xuất báo cáo'
+const LABEL = 'Report'
 
 async function chartPicture(spec: ChartSpec | null): Promise<ReportChart | undefined> {
   if (spec === null) return undefined
@@ -160,17 +160,14 @@ export function PipingExportAction({ panel, variant }: {
   }
 
   return (
-    // Closed the moment the pointer leaves, so it never sits over the page (C3).
-    <Tooltip title={LABEL} mouseLeaveDelay={0}>
-      <span style={{ display: 'inline-flex' }}>
-        <Button
-          aria-label={LABEL}
-          icon={<FileExcelOutlined aria-hidden />}
-          loading={busy}
-          disabled={panel === null}
-          onClick={() => { void run() }}
-        />
-      </span>
-    </Tooltip>
+    // The word is the name, no tooltip (RV8-1); the aria-label keeps it while the spinner shows.
+    <Button
+      aria-label={LABEL}
+      loading={busy}
+      disabled={panel === null}
+      onClick={() => { void run() }}
+    >
+      {LABEL}
+    </Button>
   )
 }

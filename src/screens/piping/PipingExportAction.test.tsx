@@ -76,10 +76,16 @@ beforeEach(() => {
 
 afterEach(() => undoViewport())
 
-const exportButton = () => screen.getByRole('button', { name: 'Xuất báo cáo' })
+const exportButton = () => screen.getByRole('button', { name: 'Report' })
 const reportInput = (): PipingReportInput => buildPipingReport.mock.calls[0][0]
 
 describe('PipingExportAction (spec §10)', () => {
+  it('is a text button that reads Report, with no icon (RV8-1)', () => {
+    renderApp(<PipingExportAction panel={panel()} />)
+    expect(exportButton()).toHaveTextContent(/^Report$/)
+    expect(exportButton().querySelector('.anticon')).toBeNull()
+  })
+
   it('stays in place, disabled, while the page has no panel', () => {
     renderApp(<PipingExportAction panel={null} />)
     expect(exportButton()).toBeDisabled()
@@ -204,7 +210,7 @@ describe('PipingExportAction (spec §10)', () => {
     setViewport(390)
     renderApp(<PipingExportAction panel={null} variant="gs" />)
     await userEvent.click(screen.getByRole('button', { name: 'Thêm thao tác' }))
-    const item = await screen.findByRole('menuitem', { name: /Xuất báo cáo/ })
+    const item = await screen.findByRole('menuitem', { name: 'Report' })
     expect(item).toHaveAttribute('aria-disabled', 'true')
   })
 
@@ -214,22 +220,22 @@ describe('PipingExportAction (spec §10)', () => {
     buildPipingReport.mockReturnValue(new Promise<Blob>((resolve) => { finish = resolve }))
     renderApp(<PipingExportAction panel={fieldPanel('gs')} variant="gs" />)
     await userEvent.click(screen.getByRole('button', { name: 'Thêm thao tác' }))
-    await userEvent.click(await screen.findByRole('menuitem', { name: /Xuất báo cáo/ }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Report' }))
     await waitFor(() => expect(buildPipingReport).toHaveBeenCalledTimes(1))
     // The item's click closed the menu; opened again, it shows the export running.
     expect(screen.getByRole('button', { name: 'Thêm thao tác' })).toHaveAttribute('aria-expanded', 'false')
     await userEvent.click(screen.getByRole('button', { name: 'Thêm thao tác' }))
-    expect(await screen.findByRole('menuitem', { name: /Xuất báo cáo/ })).toHaveAttribute('aria-disabled', 'true')
+    expect(await screen.findByRole('menuitem', { name: 'Report' })).toHaveAttribute('aria-disabled', 'true')
     finish(BLOB)
     await waitFor(() => expect(downloadWorkbook).toHaveBeenCalledTimes(1))
   })
 
-  it('on a phone, a field user finds it in one ⋯ menu with its icon and text (GS-09)', async () => {
+  it('on a phone, a field user finds it in one ⋯ menu with its icon and word (GS-09, RV8-1)', async () => {
     setViewport(390)
     renderApp(<PipingExportAction panel={fieldPanel('gs')} />)
-    expect(screen.queryByRole('button', { name: 'Xuất báo cáo' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Report' })).toBeNull()
     await userEvent.click(screen.getByRole('button', { name: 'Thêm thao tác' }))
-    const item = await screen.findByRole('menuitem', { name: /Xuất báo cáo/ })
+    const item = await screen.findByRole('menuitem', { name: 'Report' })
     expect(item.querySelector('.anticon-file-excel')).not.toBeNull()
     await userEvent.click(item)
     await waitFor(() => expect(downloadWorkbook).toHaveBeenCalledWith(BLOB, 'DH_Piping_2026-10-02.xlsx'))
