@@ -228,7 +228,12 @@ export function ManpowerPanel({ projectId, settings, mode, role, todayKey, refre
       placeholder="Nhóm"
       {...searchSelectProps}
       {...fullOptionsProps}
-      maxTagCount="responsive"
+      // One summary tag: a narrow select's "+ 3 ..." says nothing.
+      maxTagCount={0}
+      maxTagPlaceholder={(omitted) => {
+        if (omitted.length === groupOptions.length) return 'Tất cả nhóm'
+        return omitted.length === 1 ? omitted[0].label : `${formatQty(omitted.length)} nhóm`
+      }}
       style={phone ? PHONE_CONTROL : { width: 170 }}
       value={selectedIds}
       options={groupOptions}
