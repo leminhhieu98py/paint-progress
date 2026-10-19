@@ -2,8 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { builder } from '../../test/supabaseBuilder'
 import { NO_PERMISSION, NOT_SAVED, PIPING_PAGE, TOO_MANY_ROWS } from './shared'
 import {
-  addReinstatementEntry, deleteReinstatementEntry, listReinstatementEntries, listReinstatementPlan,
-  replaceReinstatementPlan, updateReinstatementEntry,
+  addReinstatementEntry, deleteReinstatementEntry, importReinstatementActual, listReinstatementEntries,
+  listReinstatementPlan, mergeReinstatementPlan, replaceReinstatementPlan, updateReinstatementEntry,
 } from './reinstatement'
 
 const from = vi.hoisted(() => vi.fn())
@@ -63,6 +63,73 @@ describe('replaceReinstatementPlan', () => {
   it("keeps the function's message", async () => {
     rpc.mockResolvedValue({ data: null, error: { code: 'P0001', message: 'Ngày 07/09/2026 lặp lại trong file' } })
     await expect(replaceReinstatementPlan('p1', [], 'f')).rejects.toThrow('Ngày 07/09/2026 lặp lại trong file')
+  })
+})
+
+describe('mergeReinstatementPlan (RV8-5 Update Plan)', () => {
+  it('calls piping_merge_reinstatement_plan with the replace shape and splits off log_id', async () => {
+    rpc.mockResolvedValue({
+      data: { mode: 'update', rows: 1, added: 0, changed: 1, log_id: 'l2' }, error: null,
+    })
+    const result = await mergeReinstatementPlan('p1', [{ day: '2026-09-07', planQty: 4 }], 'plan.xlsx', { mode: 'update' })
+    expect(rpc).toHaveBeenCalledWith('piping_merge_reinstatement_plan', {
+      p_project: 'p1', p_rows: [{ day: '2026-09-07', plan_qty: 4 }], p_file_name: 'plan.xlsx', p_summary: { mode: 'update' },
+    })
+    expect(result).toEqual({ logId: 'l2', summary: { mode: 'update', rows: 1, added: 0, changed: 1 } })
+  })
+
+  it('defaults the summary to an empty object', async () => {
+    rpc.mockResolvedValue({ data: { log_id: 'l2' }, error: null })
+    await mergeReinstatementPlan('p1', [], 'f.xlsx')
+    expect(rpc.mock.calls[0][1]).toHaveProperty('p_summary', {})
+  })
+
+  it('refuses more than 20 000 rows without calling', async () => {
+    const rows = Array.from({ length: 20_001 }, () => ({ day: '2026-09-07', planQty: 1 }))
+    await expect(mergeReinstatementPlan('p1', rows, 'f.xlsx')).rejects.toThrow(TOO_MANY_ROWS)
+    expect(rpc).not.toHaveBeenCalled()
+  })
+
+  it("keeps the function's message and maps a revoked grant", async () => {
+    rpc.mockResolvedValueOnce({ data: null, error: { code: 'P0001', message: 'Ngày 07/09/2026 lặp lại trong file' } })
+    await expect(mergeReinstatementPlan('p1', [], 'f')).rejects.toThrow('Ngày 07/09/2026 lặp lại trong file')
+    rpc.mockResolvedValueOnce({ data: null, error: { code: '42501', message: 'permission denied for function piping_merge_reinstatement_plan' } })
+    await expect(mergeReinstatementPlan('p1', [], 'f')).rejects.toThrow(NO_PERMISSION)
+  })
+})
+
+describe('importReinstatementActual (RV8-6)', () => {
+  it('calls piping_import_reinstatement_actual with {day, qty} rows and splits off log_id', async () => {
+    rpc.mockResolvedValue({ data: { days: 2, added: 1, overwritten: 1, log_id: 'l3' }, error: null })
+    const result = await importReinstatementActual(
+      'p1', [{ day: '2026-09-07', qty: 3 }, { day: '2026-09-08', qty: 0 }], 'actual.xlsx', { note: 'x' },
+    )
+    expect(rpc).toHaveBeenCalledWith('piping_import_reinstatement_actual', {
+      p_project: 'p1',
+      p_rows: [{ day: '2026-09-07', qty: 3 }, { day: '2026-09-08', qty: 0 }],
+      p_file_name: 'actual.xlsx',
+      p_summary: { note: 'x' },
+    })
+    expect(result).toEqual({ logId: 'l3', summary: { days: 2, added: 1, overwritten: 1 } })
+  })
+
+  it('defaults the summary to an empty object', async () => {
+    rpc.mockResolvedValue({ data: { log_id: 'l3' }, error: null })
+    await importReinstatementActual('p1', [], 'f.xlsx')
+    expect(rpc.mock.calls[0][1]).toHaveProperty('p_summary', {})
+  })
+
+  it('refuses more than 20 000 rows without calling', async () => {
+    const rows = Array.from({ length: 20_001 }, () => ({ day: '2026-09-07', qty: 1 }))
+    await expect(importReinstatementActual('p1', rows, 'f.xlsx')).rejects.toThrow(TOO_MANY_ROWS)
+    expect(rpc).not.toHaveBeenCalled()
+  })
+
+  it('shows the cap and the 42501 refusal as the function words them', async () => {
+    rpc.mockResolvedValueOnce({ data: null, error: { code: 'P0001', message: 'Vượt tổng Test Pack (đã có 12 / 10)' } })
+    await expect(importReinstatementActual('p1', [], 'f')).rejects.toThrow('Vượt tổng Test Pack (đã có 12 / 10)')
+    rpc.mockResolvedValueOnce({ data: null, error: { code: '42501', message: 'Chỉ admin được nhập số liệu thực tế' } })
+    await expect(importReinstatementActual('p1', [], 'f')).rejects.toThrow('Chỉ admin được nhập số liệu thực tế')
   })
 })
 
