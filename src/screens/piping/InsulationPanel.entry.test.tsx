@@ -11,12 +11,14 @@ import { InsulationPanel } from './InsulationPanel'
 import type { PipingPanelProps } from './panelProps'
 
 const api = vi.hoisted(() => ({
-  listSpools: vi.fn(), listSpoolColumns: vi.fn(), replaceSpools: vi.fn(), setSpoolActuals: vi.fn(), listNotes: vi.fn(),
+  listSpools: vi.fn(), listSpoolColumns: vi.fn(), replaceSpools: vi.fn(), mergeSpools: vi.fn(), setSpoolActuals: vi.fn(),
+  listNotes: vi.fn(),
 }))
 vi.mock('../../lib/pipingApi', () => ({
   listSpools: (...a: unknown[]) => api.listSpools(...a),
   listSpoolColumns: (...a: unknown[]) => api.listSpoolColumns(...a),
   replaceSpools: (...a: unknown[]) => api.replaceSpools(...a),
+  mergeSpools: (...a: unknown[]) => api.mergeSpools(...a),
   setSpoolActuals: (...a: unknown[]) => api.setSpoolActuals(...a),
   listNotes: (...a: unknown[]) => api.listNotes(...a),
   flattenActualUpdates: (updates: Array<{ spoolId: string; changes: Array<Omit<ActualChange, 'spoolId'>> }>) =>
@@ -96,6 +98,7 @@ beforeEach(() => {
   api.listSpools.mockResolvedValue(SPOOLS)
   api.listSpoolColumns.mockResolvedValue(COLUMNS)
   api.replaceSpools.mockResolvedValue({ rowCount: 0 })
+  api.mergeSpools.mockResolvedValue({ rowCount: 0 })
   api.listNotes.mockResolvedValue([])
   read.mockReset()
   download.mockReset()
@@ -231,9 +234,42 @@ describe('Insulation: Plan import (spec §6.2, §8, R-10, Q19A)', () => {
     expect((rows as Array<{ extra: Record<string, string> }>)[2].extra).toEqual({ Zone: 'A' })
     // The preview's own counts sit apart from the ones the database writes into the log.
     expect(summary).toEqual({
-      sheet: 'Insulation Plan', warnings: 2, client: { added: 1, changed: 2, removed: 2, removedWithActuals: 1 },
+      sheet: 'Insulation Plan', warnings: 2, mode: 'replace',
+      client: { added: 1, changed: 2, removed: 2, removedWithActuals: 1 },
     })
+    expect(api.mergeSpools).not.toHaveBeenCalled()
     await waitFor(() => expect(api.listSpools).toHaveBeenCalledWith('p1'))
+  })
+
+  it('previews Update Plan on the merged spools, keeps the absent ones, and merges without XOÁ (RV8-5)', async () => {
+    // SP-1 fills only Zone (its other cells blank: kept); SP-9 is new, IH before PH.
+    read.mockResolvedValue(sheet([
+      PLAN_HEADER,
+      ['SP-1', null, null, null, null, null, null, null, null, 'B'],
+      planRow('SP-9', '2026-10-05', '2026-10-04'),
+    ]))
+    renderPanel()
+    await ready()
+    await pick(/Nhập Plan/, 'plan.xlsx')
+    const box = await dialog()
+    await userEvent.click(within(box).getByText('Update Plan', { selector: '.ant-segmented-item-label' }))
+    await waitFor(() => expect(facts(box)).toEqual(['1 thêm', '1 sửa', '0 giữ nguyên']))
+    expect(within(box).getByText('SP-1 · Zone').closest('tr')).toHaveTextContent(/Sửa.*-.*B/)
+    expect(within(box).queryByText('SP-2')).toBeNull()
+    // Judged on the merged spools: s1 and s6 still share SP-1; the new SP-9 breaks the order.
+    expect(within(box).getByText('SpoolNo "SP-1" có 2 spool sau khi cập nhật')).toBeInTheDocument()
+    expect(within(box).getByText(/Dòng 3: Sai thứ tự: Pip/)).toBeInTheDocument()
+    expect(within(box).getByText('5 spool không có trong file được giữ nguyên cùng ngày Actual.')).toBeInTheDocument()
+    const confirm = within(box).getByRole('button', { name: 'Update Plan' })
+    expect(confirm).not.toHaveClass('ant-btn-dangerous')
+
+    await userEvent.click(confirm)
+    await waitFor(() => expect(api.mergeSpools).toHaveBeenCalledTimes(1))
+    const [project, rows, fileName, summary] = api.mergeSpools.mock.calls[0]
+    expect([project, fileName]).toEqual(['p1', 'plan.xlsx'])
+    expect((rows as Array<{ spoolNo: string }>).map((r) => r.spoolNo)).toEqual(['SP-1', 'SP-9'])
+    expect(summary).toEqual({ sheet: 'Insulation Plan', warnings: 2, mode: 'update', client: { added: 1, changed: 1 } })
+    expect(api.replaceSpools).not.toHaveBeenCalled()
   })
 
   it('reads the spools afresh for the preview: an actual entered since the page opened is flagged', async () => {

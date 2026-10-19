@@ -1,5 +1,5 @@
 import { UploadOutlined } from '@ant-design/icons'
-import { Alert, App, Button, Modal, Table, Upload } from 'antd'
+import { Alert, App, Button, Modal, Segmented, Table, Upload } from 'antd'
 import { useRef, useState } from 'react'
 import { ConsequenceModal } from '../../components/ConsequenceModal'
 import { IconAction } from '../../components/IconAction'
@@ -8,7 +8,7 @@ import { modalProps } from '../../components/modalChrome'
 import { StatusPill, type StatusTone } from '../../components/StatusPill'
 import { tablePagination } from '../../components/tablePagination'
 import { useTypeScale } from '../../components/typeScale'
-import type { ImportIssue, ParseResult, SheetRows } from '../../domain/piping/imports'
+import type { ImportIssue, ParseResult, PlanImportMode, SheetRows } from '../../domain/piping/imports'
 import { downloadWorkbook } from '../../lib/projectReport'
 import { readWorkbookRows } from '../../lib/piping/xlsx'
 import { MISSING } from '../../lib/format'
@@ -24,6 +24,15 @@ import { capList } from './listCap'
  * admin confirms -- after typing XOÁ when the replace destroys more than the
  * plan (the caller's `dangers`). The caller owns what is specific: the
  * parser, the diff against what is stored, and the write.
+ *
+ * With `modes` (RV8-5) the preview offers "Plan | Update Plan" (Plan first):
+ * switching parses the file again in that mode and recomputes the preview,
+ * so the admin sees what each mode does before confirming; the commit and the
+ * log summary carry the mode.
+ *
+ * The same flow imports an Actual file (RV8-6): the props name its template,
+ * its button and its confirm, and an overwrite of stored values (the caller's
+ * `overwrites`) is confirmed in a second dialog first.
  */
 
 /** One line of the preview: a day (or a day and group, a spool and column) and its old -> new value. */
@@ -45,9 +54,15 @@ export interface PlanDiffLine {
 export interface PlanImportPreview {
   added: number
   changed: number
-  removed: number
+  /** Absent when the import removes nothing by design (Update Plan): the count is not offered then. */
+  removed?: number
   unchanged: number
   lines: PlanDiffLine[]
+  /**
+   * When set, shown in place of the parse's warnings: Update Plan judges
+   * duplicates and plan order on the merged result (RV8-5).
+   */
+  warnings?: ImportIssue[]
   /** Anything else the confirm does that the admin must know, one sentence each. */
   consequences?: string[]
   /**
@@ -56,22 +71,40 @@ export interface PlanImportPreview {
    * button turns danger too.
    */
   dangers?: string[]
+  /**
+   * The stored values the confirm overwrites (an Actual import), one item
+   * each, e.g. `Ghi đè 2 ngày đã có số liệu`: asked in a confirmation dialog
+   * before anything is written.
+   */
+  overwrites?: string[]
 }
 
 export interface PlanImportFlowProps<R> {
-  /** The plan as the file names it (Q27): "Reinstatement Plan". */
+  /** The plan as the file names it (Q27): "Reinstatement Plan"; or the Actual, "Reinstatement Actual". */
   planLabel: string
+  /** The template action's name: "Tải file mẫu" by default. */
+  templateLabel?: string
+  /** The upload button's text: "Nhập Plan" by default. */
+  importText?: string
+  /** The confirm button's text: "Thay thế Plan" by default ("Update Plan" in that mode). */
+  okText?: string
+  /** The upload button is the card's primary action (true by default): one per card, the Plan import. */
+  primary?: boolean
+  /** The preview's first consequence, from the file's row count: what a replace or an update does by default. */
+  leadLine?: (fileRows: number) => string
   /** The template's file name (`templateFileName`). */
   templateName: string
   buildTemplate: () => Promise<Blob>
-  /** The pure parser of `domain/piping/imports.ts`. */
-  parse: (sheets: SheetRows[]) => ParseResult<R>
+  /** The pure parser of `domain/piping/imports.ts`, in the mode picked ('replace' without `modes`). */
+  parse: (sheets: SheetRows[], mode: PlanImportMode) => ParseResult<R>
   /**
    * The parsed rows against what is stored now; may be async, so the caller
    * can read what is stored afresh when the file is read (a refusal is shown
    * as a file error and nothing is written).
    */
-  preview: (rows: R[]) => PlanImportPreview | Promise<PlanImportPreview>
+  preview: (rows: R[], mode: PlanImportMode) => PlanImportPreview | Promise<PlanImportPreview>
+  /** Offers "Plan | Update Plan" in the preview (RV8-5). */
+  modes?: boolean
   /** The preview's first column header: "Ngày". */
   lineHeader: string
   /** How that column aligns: centred for a date (UI-03), left for typed text. */
@@ -82,8 +115,8 @@ export interface PlanImportFlowProps<R> {
    * per row and group (Manpower Plan) counts its distinct days.
    */
   countFileRows?: (rows: R[]) => number
-  /** Replaces the plan; `summary` is the client's note for the import log. */
-  commit: (input: { rows: R[]; fileName: string; summary: Record<string, unknown> }) => Promise<unknown>
+  /** Writes the plan in `mode`; `summary` is the client's note for the import log. */
+  commit: (input: { rows: R[]; fileName: string; summary: Record<string, unknown>; mode: PlanImportMode }) => Promise<unknown>
   /** After a confirmed import: the caller reads its data again. */
   onImported: () => void
 }
@@ -98,12 +131,21 @@ const COUNT = new Intl.NumberFormat('vi-VN')
 
 const NO_DATA_ROWS = 'File không có dòng dữ liệu nào'
 
+/** The mode switch (RV8-5): the file's own English words, and what each does. */
+const MODES: Array<{ value: PlanImportMode; label: string; help: string }> = [
+  { value: 'replace', label: 'Plan', help: 'Xoá Plan cũ, thay bằng file (kể cả ô trống)' },
+  { value: 'update', label: 'Update Plan', help: 'Chỉ cập nhật ngày/spool có dữ liệu trong file, giữ nguyên phần còn lại' },
+]
+
+/** `sheets` is the file as read, kept to parse it again in the other mode; absent when it could not be read. */
 type Step<R> =
-  | { kind: 'errors'; fileName: string; errors: ImportIssue[] }
-  | { kind: 'preview'; fileName: string; parsed: ParseResult<R>; preview: PlanImportPreview }
+  | { kind: 'errors'; fileName: string; errors: ImportIssue[]; mode: PlanImportMode; sheets?: SheetRows[] }
+  | { kind: 'preview'; fileName: string; parsed: ParseResult<R>; preview: PlanImportPreview; mode: PlanImportMode; sheets: SheetRows[] }
 
 export function PlanImportFlow<R>({
-  planLabel, templateName, buildTemplate, parse, preview, lineHeader, lineAlign = 'center', countFileRows, commit,
+  planLabel, templateLabel = 'Tải file mẫu', importText = 'Nhập Plan', okText: replaceText = 'Thay thế Plan', primary = true,
+  leadLine,
+  templateName, buildTemplate, parse, preview, modes = false, lineHeader, lineAlign = 'center', countFileRows, commit,
   onImported,
 }: PlanImportFlowProps<R>) {
   const { message } = App.useApp()
@@ -113,13 +155,20 @@ export function PlanImportFlow<R>({
   const [step, setStep] = useState<Step<R> | null>(null)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
-  /** The typed confirmation is open: the replace deletes what the `dangers` name. */
+  /**
+   * The second confirmation is open: typed when the replace deletes what the
+   * `dangers` name, plain when the import overwrites what `overwrites` name.
+   */
   const [arming, setArming] = useState(false)
   /**
    * Set synchronously, unlike `saving`: a fast double click on Thay thế Plan
    * must not replace twice (and log a second, empty import).
    */
   const committing = useRef(false)
+  /** The mode being switched to while its preview is computed. */
+  const [switching, setSwitching] = useState<PlanImportMode | null>(null)
+  /** Only the last switch lands: a slow preview of an earlier pick is dropped. */
+  const evaluation = useRef(0)
 
   const downloadTemplate = async () => {
     setDownloading(true)
@@ -132,25 +181,54 @@ export function PlanImportFlow<R>({
     }
   }
 
-  const read = async (file: File) => {
-    setReading(true)
+  /** The file in one mode: its row errors, or the preview of what it changes. */
+  const evaluate = async (fileName: string, sheets: SheetRows[], mode: PlanImportMode): Promise<Step<R>> => {
     try {
-      const parsed = parse(await readWorkbookRows(file))
-      setSaveError(null)
+      const parsed = parse(sheets, mode)
       // A file with a header and no data (the template sent back untouched)
       // would replace the plan with nothing: refused like any other error.
       const errors = parsed.errors.length > 0 || parsed.rows.length > 0
         ? parsed.errors
         : [{ row: null, message: NO_DATA_ROWS }]
-      setStep(errors.length > 0
-        ? { kind: 'errors', fileName: file.name, errors }
-        : { kind: 'preview', fileName: file.name, parsed, preview: await preview(parsed.rows) })
+      return errors.length > 0
+        ? { kind: 'errors', fileName, errors, mode, sheets }
+        : { kind: 'preview', fileName, parsed, preview: await preview(parsed.rows, mode), mode, sheets }
+    } catch (e) {
+      // The caller's refusal (what is stored could not be read): one file-level error.
+      return { kind: 'errors', fileName, errors: [{ row: null, message: (e as Error).message }], mode, sheets }
+    }
+  }
+
+  const read = async (file: File) => {
+    setReading(true)
+    evaluation.current += 1
+    setSwitching(null)
+    try {
+      const sheets = await readWorkbookRows(file)
+      setSaveError(null)
+      setStep(await evaluate(file.name, sheets, 'replace'))
     } catch (e) {
       // A file that cannot be opened at all (too big, not .xlsx): one file-level error.
-      setStep({ kind: 'errors', fileName: file.name, errors: [{ row: null, message: (e as Error).message }] })
+      setStep({ kind: 'errors', fileName: file.name, errors: [{ row: null, message: (e as Error).message }], mode: 'replace' })
     } finally {
       setReading(false)
     }
+  }
+
+  const switchMode = async (mode: PlanImportMode) => {
+    if (!step?.sheets || saving) return
+    const token = ++evaluation.current
+    // Back to the mode shown while another is computed: that one is dropped.
+    if (mode === step.mode) {
+      setSwitching(null)
+      return
+    }
+    setSwitching(mode)
+    const next = await evaluate(step.fileName, step.sheets, mode)
+    if (token !== evaluation.current) return
+    setSaveError(null)
+    setStep(next)
+    setSwitching(null)
   }
 
   const confirm = async () => {
@@ -162,7 +240,12 @@ export function PlanImportFlow<R>({
       await commit({
         rows: step.parsed.rows,
         fileName: step.fileName,
-        summary: { sheet: step.parsed.sheetName, warnings: step.parsed.warnings.length },
+        summary: {
+          sheet: step.parsed.sheetName,
+          warnings: (step.preview.warnings ?? step.parsed.warnings).length,
+          ...(modes ? { mode: step.mode } : {}),
+        },
+        mode: step.mode,
       })
       message.success(`Đã import ${planLabel}`)
       setArming(false)
@@ -178,16 +261,41 @@ export function PlanImportFlow<R>({
 
   const close = () => {
     if (saving) return
+    evaluation.current += 1
+    setSwitching(null)
     setArming(false)
     setStep(null)
   }
 
   const dangers = step?.kind === 'preview' ? step.preview.dangers ?? [] : []
-  const warnings = step?.kind === 'preview' ? capList(step.parsed.warnings) : { shown: [], more: 0 }
+  const overwrites = step?.kind === 'preview' ? step.preview.overwrites ?? [] : []
+  const allWarnings = step?.kind === 'preview' ? step.preview.warnings ?? step.parsed.warnings : []
+  const warnings = capList(allWarnings)
+  const okText = step?.mode === 'update' ? 'Update Plan' : replaceText
+  const fileRows = step?.kind === 'preview'
+    ? (countFileRows ? countFileRows(step.parsed.rows) : step.parsed.rows.length)
+    : 0
+
+  /** Plan | Update Plan and what the picked one does, atop either dialog of a file that was read. */
+  const modeSwitch = modes && step?.sheets && (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: space.xs }}>
+      <Segmented<PlanImportMode>
+        aria-label="Chế độ import"
+        value={switching ?? step.mode}
+        disabled={saving}
+        onChange={(mode) => void switchMode(mode)}
+        options={MODES.map(({ value, label }) => ({ value, label }))}
+        style={{ alignSelf: 'flex-start' }}
+      />
+      <span style={{ ...type.body, color: palette.textSecondary }}>
+        {MODES.find((m) => m.value === (switching ?? step.mode))!.help}
+      </span>
+    </div>
+  )
 
   return (
     <>
-      <IconAction verb="template" label="Tải file mẫu" loading={downloading} onClick={() => void downloadTemplate()} />
+      <IconAction verb="template" label={templateLabel} loading={downloading} onClick={() => void downloadTemplate()} />
       <Upload
         accept=".xlsx"
         // While a file is read, no second pick can race it.
@@ -200,7 +308,9 @@ export function PlanImportFlow<R>({
           return false
         }}
       >
-        <Button type="primary" icon={<UploadOutlined aria-hidden />} loading={reading}>Nhập Plan</Button>
+        <Button type={primary ? 'primary' : 'default'} icon={<UploadOutlined aria-hidden />} loading={reading}>
+          {importText}
+        </Button>
       </Upload>
 
       <Modal
@@ -213,6 +323,7 @@ export function PlanImportFlow<R>({
       >
         {step?.kind === 'errors' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: space.md }}>
+            {modeSwitch}
             <Alert
               type="error"
               showIcon
@@ -250,14 +361,16 @@ export function PlanImportFlow<R>({
             type="primary"
             danger={dangers.length > 0}
             loading={saving}
-            onClick={() => (dangers.length > 0 ? setArming(true) : void confirm())}
+            disabled={switching !== null}
+            onClick={() => (dangers.length > 0 || overwrites.length > 0 ? setArming(true) : void confirm())}
           >
-            Thay thế Plan
+            {okText}
           </Button>,
         ]}
       >
         {step?.kind === 'preview' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: space.md }}>
+            {modeSwitch}
             {saveError && <Alert type="error" showIcon message={saveError} />}
             <div style={{ display: 'flex', alignItems: 'center', gap: space.sm, flexWrap: 'wrap' }}>
               <span style={{ ...type.bodyStrong }}>{step.fileName}</span>
@@ -265,16 +378,16 @@ export function PlanImportFlow<R>({
                 facts={[
                   { value: COUNT.format(step.preview.added), label: 'thêm' },
                   { value: COUNT.format(step.preview.changed), label: 'sửa' },
-                  { value: COUNT.format(step.preview.removed), label: 'xoá' },
+                  ...(step.preview.removed === undefined ? [] : [{ value: COUNT.format(step.preview.removed), label: 'xoá' }]),
                   { value: COUNT.format(step.preview.unchanged), label: 'giữ nguyên' },
                 ]}
               />
             </div>
-            {step.parsed.warnings.length > 0 && (
+            {allWarnings.length > 0 && (
               <Alert
                 type="warning"
                 showIcon
-                message={`${COUNT.format(step.parsed.warnings.length)} cảnh báo`}
+                message={`${COUNT.format(allWarnings.length)} cảnh báo`}
                 description={(
                   <ul style={{ margin: 0, paddingInlineStart: space.lg }}>
                     {warnings.shown.map((w, i) => (
@@ -331,7 +444,11 @@ export function PlanImportFlow<R>({
                 borderRadius: 11,
               }}
             >
-              <li>{`${planLabel} hiện tại được thay toàn bộ bằng ${COUNT.format(countFileRows ? countFileRows(step.parsed.rows) : step.parsed.rows.length)} dòng của file.`}</li>
+              <li>
+                {leadLine ? leadLine(fileRows) : step.mode === 'update'
+                  ? `${planLabel} được cập nhật theo ${COUNT.format(fileRows)} dòng của file, phần còn lại giữ nguyên.`
+                  : `${planLabel} hiện tại được thay toàn bộ bằng ${COUNT.format(fileRows)} dòng của file.`}
+              </li>
               {(step.preview.consequences ?? []).map((c) => <li key={c}>{c}</li>)}
               {(step.preview.dangers ?? []).map((c) => (
                 <li key={c} style={{ ...type.bodyStrong, color: palette.error }}>{c}</li>
@@ -344,12 +461,16 @@ export function PlanImportFlow<R>({
 
       <ConsequenceModal
         open={arming && step?.kind === 'preview'}
-        tone="danger"
-        title={`Thay thế ${planLabel}?`}
-        consequences={dangers}
-        confirmText="XOÁ"
-        confirmLabel="Gõ XOÁ để xác nhận"
-        okText="Thay thế Plan"
+        {...(dangers.length > 0
+          ? {
+            tone: 'danger' as const,
+            title: `Thay thế ${planLabel}?`,
+            consequences: dangers,
+            confirmText: 'XOÁ',
+            confirmLabel: 'Gõ XOÁ để xác nhận',
+          }
+          : { tone: 'warn' as const, title: `Ghi đè ${planLabel}?`, consequences: overwrites })}
+        okText={okText}
         confirmLoading={saving}
         error={saveError}
         onOk={() => void confirm()}

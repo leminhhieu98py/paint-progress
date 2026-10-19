@@ -1,4 +1,5 @@
 import {
+  ACTUAL_QTY_COLUMN,
   DATE_COLUMN,
   PLAN_QTY_COLUMN,
   SPOOL_ACTUAL_COLUMNS,
@@ -63,6 +64,22 @@ export function buildReinstatementPlanTemplate(): Promise<Blob> {
 /** `Date` + one column per group name, in the order given (visible and hidden, spec §8). */
 export function buildManpowerPlanTemplate(groupNames: string[]): Promise<Blob> {
   return buildTemplate('Manpower Plan', [
+    { header: DATE_COLUMN.label, width: 14, date: true },
+    ...groupNames.map((name) => ({ header: name, width: Math.max(12, name.length + 2) })),
+  ])
+}
+
+/** `Date`, `Actual Qty` (RV8-6). */
+export function buildReinstatementActualTemplate(): Promise<Blob> {
+  return buildTemplate('Reinstatement Actual', [
+    { header: DATE_COLUMN.label, width: 14, date: true },
+    { header: ACTUAL_QTY_COLUMN.label, width: 12 },
+  ])
+}
+
+/** `Date` + one column per group name, in the order given (visible and hidden, RV8-6). */
+export function buildManpowerActualTemplate(groupNames: string[]): Promise<Blob> {
+  return buildTemplate('Manpower Actual', [
     { header: DATE_COLUMN.label, width: 14, date: true },
     ...groupNames.map((name) => ({ header: name, width: Math.max(12, name.length + 2) })),
   ])

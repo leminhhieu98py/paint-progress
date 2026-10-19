@@ -90,3 +90,28 @@ export function checkReinstatementEntry(input: {
   }
   return null
 }
+
+/** A sum of quantities, rid of binary float noise (0.1 + 0.2 is 0.3 here, as in the database's numeric). */
+export function sumQty(values: number[]): number {
+  return Math.round(values.reduce((acc, v) => acc + v, 0) * 1e6) / 1e6
+}
+
+/**
+ * Why an Actual import (RV8-6) cannot be written, or null -- the cap of
+ * piping_import_reinstatement_actual (R-4, Q9A), checked on screen first: the
+ * total must be set, and the cumulative AFTER the import (each file day's
+ * entries replaced by its qty) must not exceed it.
+ */
+export function checkReinstatementActualImport(
+  entries: Array<Pick<ReinstatementActualEntry, 'day' | 'qty'>>,
+  rows: Array<{ day: DayKey; qty: number }>,
+  totalTestPacks: number | null,
+): string | null {
+  if (totalTestPacks === null) return 'Admin chưa nhập tổng Test Pack'
+  const fileDays = new Set(rows.map((r) => r.day))
+  const after = sumQty([...entries.filter((e) => !fileDays.has(e.day)).map((e) => e.qty), ...rows.map((r) => r.qty)])
+  if (after > totalTestPacks) {
+    return `Vượt tổng Test Pack (đã có ${viNumber.format(after)} / ${viNumber.format(totalTestPacks)})`
+  }
+  return null
+}
