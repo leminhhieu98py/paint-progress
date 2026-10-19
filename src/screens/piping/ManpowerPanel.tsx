@@ -36,8 +36,10 @@ import { usePanelData } from './usePanelData'
  * The card "Manpower" carries the average daily Plan and Actual totals beside
  * its title and the chart; the admin's Plan import sits in its header. Below
  * it, the actual: the entry form for a foreman and the admin (one input per
- * visible group for the picked day), the day grid for everyone, Sửa and Xoá
- * for the admin. Last, the plan as imported, folded away.
+ * visible group for the picked day), the day grid with Sửa and Xoá for the
+ * admin. Last, the plan as imported, folded away. The grid, the rules and the
+ * plan are the admin's alone (RV8-8): a foreman keeps the form, a viewer the
+ * chart.
  */
 
 interface ManpowerData {
@@ -186,13 +188,13 @@ export function ManpowerPanel({ projectId, settings, mode, role, todayKey, refre
           : <ManpowerChart key={mode} data={series} groups={drawn} mode={mode} />}
       </SectionCard>
 
-      <SectionCard
-        title="Nhân lực đã nhập"
-        facts={[{ value: formatQty(actualDays), label: 'ngày' }]}
-        extra={notes.byDay?.('manpower_day', 'Manpower', todayKey)}
-      >
-        <div style={{ display: 'flex', flexDirection: 'column', gap: space.md }}>
-          {role !== 'viewer' && (
+      {role !== 'viewer' && (
+        <SectionCard
+          title="Nhân lực đã nhập"
+          facts={[{ value: formatQty(actualDays), label: 'ngày' }]}
+          extra={notes.byDay?.('manpower_day', 'Manpower', todayKey)}
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: space.md }}>
             <div ref={formRef}>
               {entry.length === 0
                 ? (
@@ -215,21 +217,25 @@ export function ManpowerPanel({ projectId, settings, mode, role, todayKey, refre
                   />
                 )}
             </div>
-          )}
-          <ManpowerHistoryTable
-            projectId={projectId}
-            groups={historyGroups}
-            actual={data.actual}
-            canEdit={admin}
-            onEdit={editDay}
-            onChanged={reload}
-            dayExtra={dayExtra}
-          />
-          <RulesDisclosure rules={RULES} />
-        </div>
-      </SectionCard>
+            {admin && (
+              <>
+                <ManpowerHistoryTable
+                  projectId={projectId}
+                  groups={historyGroups}
+                  actual={data.actual}
+                  canEdit
+                  onEdit={editDay}
+                  onChanged={reload}
+                  dayExtra={dayExtra}
+                />
+                <RulesDisclosure rules={RULES} />
+              </>
+            )}
+          </div>
+        </SectionCard>
+      )}
 
-      {data.plan.length > 0 && <PlanCard projectId={projectId} groups={data.groups} plan={data.plan} />}
+      {admin && data.plan.length > 0 && <PlanCard projectId={projectId} groups={data.groups} plan={data.plan} />}
       {notes.drawer}
     </div>
   )

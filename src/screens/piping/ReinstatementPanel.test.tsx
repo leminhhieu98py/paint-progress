@@ -210,7 +210,7 @@ describe('ReinstatementPanel: Thêm số lượng (spec §4, Q9A, Q10A)', () => 
   })
 
   it('folds its rules away as helper text, with no spec id on screen', async () => {
-    renderPanel(asGs)
+    renderPanel()
     await loaded()
     await userEvent.click(screen.getByRole('button', { name: /Quy tắc áp dụng/ }))
     expectHelperText(ruleTexts())
@@ -282,13 +282,12 @@ describe('ReinstatementPanel: Thêm số lượng (spec §4, Q9A, Q10A)', () => 
     expect(screen.queryByRole('button', { name: 'Sửa số lượng' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Xoá số lượng' })).toBeNull()
     expect(screen.queryByRole('button', { name: /Nhập Plan/ })).toBeNull()
-    expect(dataRows()).toHaveLength(2)
   })
 })
 
 describe('ReinstatementPanel: entries (spec §4, Q8C)', () => {
   it('lists entries newest first with who entered them, when, and who edited them', async () => {
-    renderPanel(asGs)
+    renderPanel()
     await loaded()
     const rows = dataRows()
     expect(rows[0]).toHaveTextContent('03/10/2026')
@@ -298,9 +297,6 @@ describe('ReinstatementPanel: entries (spec §4, Q8C)', () => {
     expect(rows[0]).toHaveTextContent('Đoàn Linh')
     expect(rows[1]).toHaveTextContent('01/10/2026')
     expect(rows[1]).toHaveTextContent('200')
-    // A foreman reads; only the admin edits or deletes.
-    expect(screen.queryByRole('button', { name: 'Sửa số lượng' })).toBeNull()
-    expect(screen.queryByRole('button', { name: 'Xoá số lượng' })).toBeNull()
   })
 
   it('lets the admin edit an entry, checked against the cap without the entry itself', async () => {
@@ -382,7 +378,7 @@ describe('ReinstatementPanel: layout', () => {
 
   it('scrolls the entries sideways on a phone, headers on one line, the day column pinned (MOB-01)', async () => {
     restoreViewport = setViewport(390)
-    renderPanel(asGs)
+    renderPanel()
     await loaded()
     expect(antTable()).toHaveClass('ant-table-scroll-horizontal')
     expect(antTable().querySelector('table')?.getAttribute('style')).toContain('width: max-content')
@@ -393,7 +389,7 @@ describe('ReinstatementPanel: layout', () => {
 
   it('pins nothing from 768 px', async () => {
     restoreViewport = setViewport(1280)
-    renderPanel(asGs)
+    renderPanel()
     await loaded()
     expect(antTable()).toHaveClass('ant-table-scroll-horizontal')
     expect(antTable()).not.toHaveClass('ant-table-has-fix-left')
@@ -609,8 +605,40 @@ describe('ReinstatementPanel: admin notes (spec §9)', () => {
   it.each([['a foreman', asGs], ['a viewer', asViewer]])('never reads or shows notes for %s', async (_who, as) => {
     renderPanel(as)
     await loaded()
-    expect(dataRows()).toHaveLength(2)
     expect(screen.queryByRole('button', { name: /Ghi chú/ })).toBeNull()
     expect(api.listNotes).not.toHaveBeenCalled()
+  })
+})
+
+describe('ReinstatementPanel: sections by role (RV8-8)', () => {
+  const planCard = () => screen.queryByRole('heading', { level: 2, name: 'Plan' })
+  const rules = () => screen.queryByRole('button', { name: /Quy tắc áp dụng/ })
+
+  it('shows the admin the entries, the rules and the plan', async () => {
+    renderPanel()
+    await loaded()
+    expect(screen.getByTestId('reinstatement-entries')).toBeInTheDocument()
+    expect(rules()).toBeInTheDocument()
+    expect(planCard()).toBeInTheDocument()
+  })
+
+  it('shows a foreman the summary, the chart and the form, no entries, rules or plan', async () => {
+    renderPanel(asGs)
+    await loaded()
+    expect(keyFactTexts()).toContain('235/1.022 – 22,99% TestPack')
+    expect(screen.getByRole('button', { name: 'Thêm số lượng' })).toBeInTheDocument()
+    expect(screen.queryByTestId('reinstatement-entries')).toBeNull()
+    expect(rules()).toBeNull()
+    expect(planCard()).toBeNull()
+  })
+
+  it('shows a viewer the summary and the chart only', async () => {
+    renderPanel(asViewer)
+    await loaded()
+    expect(keyFactTexts()).toContain('235/1.022 – 22,99% TestPack')
+    expect(screen.queryByTestId('reinstatement-entries')).toBeNull()
+    expect(rules()).toBeNull()
+    expect(planCard()).toBeNull()
+    expect(screen.queryByRole('heading', { level: 2, name: 'Số lượng đã nhập' })).toBeNull()
   })
 })

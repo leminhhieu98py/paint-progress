@@ -31,8 +31,9 @@ import { usePanelData } from './usePanelData'
  * The card "Reinstatement" carries the summary beside its title
  * (`235/1.022 – 22,99% TestPack`) and the chart; the admin's Plan import sits
  * in its header. Below it, the entries: the add form for a foreman and the
- * admin, the list for everyone, edit and delete for the admin. Last, the plan
- * as imported, folded away.
+ * admin, the list with edit and delete for the admin. Last, the plan as
+ * imported, folded away. The list, the rules and the plan are the admin's
+ * alone (RV8-8): a foreman keeps the form, a viewer the summary and the chart.
  */
 
 interface ReinstatementData {
@@ -151,13 +152,13 @@ export function ReinstatementPanel({ projectId, settings, mode, role, todayKey, 
           : <ReinstatementChart key={mode} data={series} mode={mode} />}
       </SectionCard>
 
-      <SectionCard
-        title="Số lượng đã nhập"
-        facts={[{ value: formatQty(data.entries.length), label: 'lần nhập' }]}
-        extra={notes.byDay?.('reinstatement_day', 'Reinstatement', todayKey)}
-      >
-        <div style={{ display: 'flex', flexDirection: 'column', gap: space.md }}>
-          {role !== 'viewer' && (
+      {role !== 'viewer' && (
+        <SectionCard
+          title="Số lượng đã nhập"
+          facts={[{ value: formatQty(data.entries.length), label: 'lần nhập' }]}
+          extra={notes.byDay?.('reinstatement_day', 'Reinstatement', todayKey)}
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: space.md }}>
             <EntryForm
               projectId={projectId}
               entries={data.entries}
@@ -165,21 +166,25 @@ export function ReinstatementPanel({ projectId, settings, mode, role, todayKey, 
               todayKey={todayKey}
               onAdded={reload}
             />
-          )}
-          <EntriesTable
-            projectId={projectId}
-            entries={data.entries}
-            totalTestPacks={total}
-            todayKey={todayKey}
-            canEdit={admin}
-            onChanged={reload}
-            dayExtra={dayExtra}
-          />
-          <RulesDisclosure rules={RULES} />
-        </div>
-      </SectionCard>
+            {admin && (
+              <>
+                <EntriesTable
+                  projectId={projectId}
+                  entries={data.entries}
+                  totalTestPacks={total}
+                  todayKey={todayKey}
+                  canEdit
+                  onChanged={reload}
+                  dayExtra={dayExtra}
+                />
+                <RulesDisclosure rules={RULES} />
+              </>
+            )}
+          </div>
+        </SectionCard>
+      )}
 
-      {data.plan.length > 0 && <PlanCard projectId={projectId} plan={data.plan} />}
+      {admin && data.plan.length > 0 && <PlanCard projectId={projectId} plan={data.plan} />}
       {notes.drawer}
     </div>
   )

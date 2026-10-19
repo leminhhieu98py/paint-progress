@@ -371,7 +371,7 @@ describe('ManpowerPanel: entry (spec §5, R-7, R-8)', () => {
   })
 
   it('folds its rules away as helper text, with no spec id on screen', async () => {
-    renderPanel(asGs)
+    renderPanel()
     await loaded()
     await userEvent.click(screen.getByRole('button', { name: /Quy tắc áp dụng/ }))
     expectHelperText(ruleTexts())
@@ -386,13 +386,12 @@ describe('ManpowerPanel: entry (spec §5, R-7, R-8)', () => {
     expect(screen.queryByRole('button', { name: 'Sửa nhân lực' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Xoá nhân lực' })).toBeNull()
     expect(screen.queryByRole('button', { name: /Nhập Plan/ })).toBeNull()
-    expect(historyRows()).toHaveLength(3)
   })
 })
 
 describe('ManpowerPanel: actual history', () => {
   it('lists days newest first, each group, the total and who edited, a hidden group with data included', async () => {
-    renderPanel(asGs)
+    renderPanel()
     await loaded()
     const headers = within(historyTable()).getAllByRole('columnheader').map((h) => h.textContent)
     expect(headers.slice(0, 5)).toEqual(['Ngày', 'Reinstatement', 'Insulation', 'Marking (ẩn)', 'Tổng'])
@@ -403,7 +402,6 @@ describe('ManpowerPanel: actual history', () => {
     expect(rows[0]).toHaveTextContent('09:30 04/10/2026')
     expect(rows[1]).toHaveTextContent(/^02\/10\/2026--33/)
     expect(rows[2]).toHaveTextContent(/^01\/10\/20268--8/)
-    expect(screen.queryByRole('button', { name: 'Sửa nhân lực' })).toBeNull()
   })
 
   it('lets the admin edit a day in the entry form', async () => {
@@ -447,7 +445,7 @@ describe('ManpowerPanel: layout', () => {
 
   it('scrolls the history sideways on a phone with the day column pinned (MOB-01)', async () => {
     restoreViewport = setViewport(390)
-    renderPanel(asGs)
+    renderPanel()
     await loaded()
     expect(antTable()).toHaveClass('ant-table-scroll-horizontal')
     const pinned = antTable().querySelectorAll('thead th.ant-table-cell-fix-left')
@@ -457,7 +455,7 @@ describe('ManpowerPanel: layout', () => {
 
   it('pins nothing from 768 px', async () => {
     restoreViewport = setViewport(1280)
-    renderPanel(asGs)
+    renderPanel()
     await loaded()
     expect(antTable()).not.toHaveClass('ant-table-has-fix-left')
   })
@@ -535,7 +533,7 @@ describe('ManpowerPanel: Plan import (spec §8, R-14)', () => {
   })
 
   it('shows the plan as imported, folded away, a day per row', async () => {
-    renderPanel(asViewer)
+    renderPanel()
     await loaded()
     const heading = screen.getByRole('heading', { level: 2, name: 'Plan' })
     const card = heading.closest('section') as HTMLElement
@@ -589,8 +587,38 @@ describe('ManpowerPanel: admin notes (spec §9)', () => {
   it.each([['a foreman', asGs], ['a viewer', asViewer]])('never reads or shows notes for %s', async (_who, as) => {
     renderPanel(as)
     await loaded()
-    expect(historyRows()).toHaveLength(3)
     expect(screen.queryByRole('button', { name: /Ghi chú/ })).toBeNull()
     expect(api.listNotes).not.toHaveBeenCalled()
+  })
+})
+
+describe('ManpowerPanel: sections by role (RV8-8)', () => {
+  const planCard = () => screen.queryByRole('heading', { level: 2, name: 'Plan' })
+  const rules = () => screen.queryByRole('button', { name: /Quy tắc áp dụng/ })
+
+  it('shows the admin the history, the rules and the plan', async () => {
+    renderPanel()
+    await loaded()
+    expect(screen.getByTestId('manpower-history')).toBeInTheDocument()
+    expect(rules()).toBeInTheDocument()
+    expect(planCard()).toBeInTheDocument()
+  })
+
+  it('shows a foreman the chart and the entry form, no history, rules or plan', async () => {
+    renderPanel(asGs)
+    await loaded()
+    expect(saveButton()).toBeInTheDocument()
+    expect(screen.queryByTestId('manpower-history')).toBeNull()
+    expect(rules()).toBeNull()
+    expect(planCard()).toBeNull()
+  })
+
+  it('shows a viewer the chart only', async () => {
+    renderPanel(asViewer)
+    await loaded()
+    expect(screen.queryByTestId('manpower-history')).toBeNull()
+    expect(rules()).toBeNull()
+    expect(planCard()).toBeNull()
+    expect(screen.queryByRole('heading', { level: 2, name: 'Nhân lực đã nhập' })).toBeNull()
   })
 })
