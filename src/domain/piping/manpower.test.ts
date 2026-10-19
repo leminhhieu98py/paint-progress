@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { chartGroups, entryGroups, manpowerAverages, manpowerDays, manpowerSeries, valuesOnDay } from './manpower'
+import {
+  chartGroups, defaultGroupSelection, entryGroups, manpowerAverages, manpowerDays, manpowerSeries, planAverage, planMax,
+  valuesOnDay,
+} from './manpower'
 import type { ManpowerGroup, ManpowerValue } from './types'
 
 const START = '2026-09-18'
@@ -154,5 +157,61 @@ describe('manpowerDays (the day grid of the tables)', () => {
       { day: '2026-09-18', byGroup: { ins: 0, mark: 6 }, total: 6 },
       { day: '2026-09-20', byGroup: { reins: 3 }, total: 3 },
     ])
+  })
+})
+
+describe('the Nhóm selection (RV8-7)', () => {
+  const plan = [
+    v('reins', '2026-09-18', 10), v('ins', '2026-09-18', 4),
+    v('reins', '2026-09-19', 12), v('mark', '2026-09-19', 2),
+    v('ins', '2026-09-20', 0),
+    v('mark', '2026-09-21', 50),
+  ]
+  const both = new Set(['reins', 'ins'])
+
+  it('starts with every visible group, in sort order, a hidden one left out', () => {
+    expect(defaultGroupSelection(groups)).toEqual(['reins', 'ins'])
+  })
+
+  it('draws only the selected groups, the totals following them', () => {
+    const rows = manpowerSeries({
+      groups, plan, actual: [v('mark', '2026-09-18', 3), v('ins', '2026-09-18', 1)], mode: 'day', weekStart: START,
+      todayKey: '2026-09-21', selected: new Set(['ins', 'mark']),
+    })
+    expect(rows[0].plan).toEqual({ ins: 4, mark: null })
+    expect(rows[0].planTotal).toBe(4)
+    expect(rows[0].actualTotal).toBe(4)
+    expect(rows[1].planTotal).toBe(2)
+  })
+
+  it('keeps every group it is given without a selection', () => {
+    const rows = manpowerSeries({ groups, plan, actual: [], mode: 'day', weekStart: START, todayKey: '2026-09-21' })
+    expect(rows[1].planTotal).toBe(14)
+  })
+
+  it('averages the selected daily plan totals over the days that have a selected value, an entered 0 included', () => {
+    // 18/09: 14, 19/09: 12, 20/09: 0; 21/09 has only the unselected group.
+    expect(planAverage(plan, both)).toBeCloseTo(26 / 3)
+    expect(planAverage(plan, new Set(['mark']))).toBe(26)
+  })
+
+  it('has no average without a selected plan value', () => {
+    expect(planAverage(plan, new Set())).toBeNull()
+    expect(planAverage([], both)).toBeNull()
+  })
+
+  it('finds the highest selected daily plan total and its day', () => {
+    expect(planMax(plan, both)).toEqual({ value: 14, day: '2026-09-18' })
+    expect(planMax(plan, new Set(['mark']))).toEqual({ value: 50, day: '2026-09-21' })
+  })
+
+  it('takes the earliest day on a tie, whatever the order of the cells', () => {
+    const tie = [v('reins', '2026-09-20', 8), v('reins', '2026-09-18', 8), v('ins', '2026-09-19', 3)]
+    expect(planMax(tie, both)).toEqual({ value: 8, day: '2026-09-18' })
+  })
+
+  it('has no max without a selected plan value', () => {
+    expect(planMax(plan, new Set())).toBeNull()
+    expect(planMax([], both)).toBeNull()
   })
 })

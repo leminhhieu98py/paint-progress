@@ -82,7 +82,9 @@ function rowFor(
  * The chart rows. Day view shows each day's own value (a weekly plan row shows
  * on its date only, spec §3); week view averages (R-2). Actual is null for a
  * bucket after today and never reads a value dated after today. Every group in
- * `groups` gets a key, hidden ones included (R-8). Empty without any value.
+ * `groups` gets a key, hidden ones included (R-8) -- or, with `selected` (the
+ * chart's Nhóm select, RV8-7), every group of `groups` it names, the totals
+ * summing those alone. Empty without any value.
  */
 export function manpowerSeries(input: {
   groups: ManpowerGroup[]
@@ -91,8 +93,10 @@ export function manpowerSeries(input: {
   mode: ViewMode
   weekStart: DayKey
   todayKey: DayKey
+  selected?: ReadonlySet<string>
 }): ManpowerPoint[] {
-  const groups = [...input.groups].sort(bySort)
+  const { selected } = input
+  const groups = input.groups.filter((g) => selected === undefined || selected.has(g.id)).sort(bySort)
   const known = new Set(groups.map((g) => g.id))
   const plan = index(input.plan, known, null)
   const actual = index(input.actual, known, input.todayKey)
@@ -128,6 +132,38 @@ export function manpowerAverages(input: {
   const total = (values: ManpowerValue[]) =>
     rowFor(input.groups, index(values, known, input.todayKey), '', input.todayKey).total
   return { plan: total(input.plan), actual: total(input.actual) }
+}
+
+/** Per day, the sum of the selected groups' plan values; a day with none of them is absent. */
+function selectedPlanTotals(plan: ManpowerValue[], selected: ReadonlySet<string>): Map<DayKey, number> {
+  const out = new Map<DayKey, number>()
+  for (const { groupId, day, value } of plan) {
+    if (selected.has(groupId)) out.set(day, (out.get(day) ?? 0) + value)
+  }
+  return out
+}
+
+/**
+ * The chart's "Plan TB" line (RV8-7): the mean of the selected groups' daily
+ * plan total over the days on which any selected group has a plan value (an
+ * imported 0 counts). Every plan day, after today too: it is the plan's own
+ * level, not a figure up to today. Null when no selected group has a plan.
+ */
+export function planAverage(plan: ManpowerValue[], selected: ReadonlySet<string>): number | null {
+  const totals = [...selectedPlanTotals(plan, selected).values()]
+  return totals.length === 0 ? null : totals.reduce((a, b) => a + b, 0) / totals.length
+}
+
+/**
+ * The highest daily plan total of the selected groups and its day, the
+ * earliest on a tie (RV8-7, "Max Plan"). Null when no selected group has a plan.
+ */
+export function planMax(plan: ManpowerValue[], selected: ReadonlySet<string>): { value: number; day: DayKey } | null {
+  let best: { value: number; day: DayKey } | null = null
+  for (const [day, value] of selectedPlanTotals(plan, selected)) {
+    if (best === null || value > best.value || (value === best.value && day < best.day)) best = { value, day }
+  }
+  return best
 }
 
 /** One day of a Manpower table: each group's value (only the groups that have one) and their sum. */
@@ -169,6 +205,14 @@ export function chartGroups(
 ): ManpowerGroup[] {
   const used = new Set([...plan, ...actual].map((v) => v.groupId))
   return groups.filter((g) => !g.hidden || used.has(g.id)).sort(bySort)
+}
+
+/**
+ * The chart's Nhóm select as it opens (RV8-7): every visible group, in sort
+ * order. A hidden group is drawn only when the admin picks it.
+ */
+export function defaultGroupSelection(groups: ManpowerGroup[]): string[] {
+  return entryGroups(groups).map((g) => g.id)
 }
 
 /** The groups an entry form offers: visible ones, in sort order (R-8). */
