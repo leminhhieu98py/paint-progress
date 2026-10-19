@@ -6,6 +6,7 @@ import { expectNoSpecIds, keyFactTexts } from '../../test/copy'
 import { renderApp } from '../../test/renderApp'
 import { chooseOption, optionTitles } from '../../test/select'
 import { setViewport } from '../../test/viewport'
+import { resolveChartColors } from './chartColors'
 import { InsulationPanel } from './InsulationPanel'
 import type { PipingPanelProps } from './panelProps'
 
@@ -25,12 +26,22 @@ const chartMounts = vi.hoisted(() => ({ count: 0 }))
 vi.mock('./insulation/InsulationChart', async () => {
   const { useEffect } = await import('react')
   return {
-    InsulationChart: ({ data, keys, mode }: { data: Array<Record<string, unknown>>; keys: string[]; mode: string }) => {
+    InsulationChart: ({ data, keys, mode, colors }: {
+      data: Array<Record<string, unknown>>
+      keys: string[]
+      mode: string
+      colors?: Record<string, string>
+    }) => {
       useEffect(() => {
         chartMounts.count += 1
       }, [])
       return (
-        <div data-testid="insulation-chart" data-mode={mode} data-keys={keys.join(',')}>
+        <div
+          data-testid="insulation-chart"
+          data-mode={mode}
+          data-keys={keys.join(',')}
+          data-colors={JSON.stringify(colors ?? null)}
+        >
           {data.map((p) => `${String(p.key)}:${String(p.phPlan)}/${String(p.phActual)}`).join(' ')}
         </div>
       )
@@ -97,6 +108,13 @@ describe('InsulationPanel: summary (spec §6.4)', () => {
       '4 spool', 'Pip Act 3/4 · 75,00% SpoolNo', 'Paint Act 1/4 · 25,00% SpoolNo', 'Insu Act 0/4 · 0,00% SpoolNo',
     ]))
     expectNoSpecIds()
+  })
+
+  it('draws the chart in the project\'s colours (RV8-2)', async () => {
+    renderPanel({ settings: { ...SETTINGS, chartColors: { 'ins.iw.actual': '#123456' } } })
+    const colors = JSON.parse((await chart()).getAttribute('data-colors') ?? 'null') as Record<string, string>
+    expect(colors).toEqual(resolveChartColors({ 'ins.iw.actual': '#123456' }, []))
+    expect(colors['ins.iw.actual']).toBe('#123456')
   })
 
   it('warns the admin of duplicate SpoolNo and plan-order issues, naming them', async () => {

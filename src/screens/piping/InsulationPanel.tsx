@@ -24,6 +24,7 @@ import { ClearActualModal } from './insulation/ClearActualModal'
 import { ControlRow } from './insulation/ControlRow'
 import { PHONE_CONTROL } from './insulation/controlStyle'
 import { InsulationChart } from './insulation/InsulationChart'
+import { resolveChartColors } from './chartColors'
 import { lateFact } from './insulation/lateGroups'
 import { LateSpools } from './insulation/LateSpools'
 import { SpoolDetail } from './insulation/SpoolDetail'
@@ -277,6 +278,7 @@ export function InsulationPanel({ projectId, settings, mode, role, todayKey, ref
               data={series}
               keys={camSeriesKeys(selection)}
               mode={mode}
+              colors={resolveChartColors(settings.chartColors, [])}
             />
           )}
       </SectionCard>

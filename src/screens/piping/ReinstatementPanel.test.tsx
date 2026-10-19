@@ -8,6 +8,7 @@ import type { ReinstatementEntry } from '../../lib/pipingApi'
 import { expectHelperText, expectNoSpecIds, keyFactTexts, ruleTexts } from '../../test/copy'
 import { renderApp } from '../../test/renderApp'
 import { setViewport } from '../../test/viewport'
+import { resolveChartColors } from './chartColors'
 import type { PipingPanelProps } from './panelProps'
 import { ReinstatementPanel } from './ReinstatementPanel'
 
@@ -49,8 +50,12 @@ vi.mock('../../lib/projectReport', () => ({
 
 // jsdom gives Recharts no size; the stand-in prints what reaches the chart.
 vi.mock('./charts', () => ({
-  ReinstatementChart: ({ data, mode }: { data: Array<Record<string, unknown>>; mode: string }) => (
-    <div data-testid="reinstatement-chart" data-mode={mode}>
+  ReinstatementChart: ({ data, mode, colors }: {
+    data: Array<Record<string, unknown>>
+    mode: string
+    colors?: Record<string, string>
+  }) => (
+    <div data-testid="reinstatement-chart" data-mode={mode} data-colors={JSON.stringify(colors ?? null)}>
       {data.map((p) => `${String(p.key)}:${String(p.plan)}/${String(p.actual)}/${String(p.planCum)}/${String(p.actualCum)}`).join(' ')}
     </div>
   ),
@@ -129,6 +134,13 @@ describe('ReinstatementPanel: summary and chart (spec §4)', () => {
     expect(api.listReinstatementEntries).toHaveBeenCalledWith('p1')
     expect(screen.getByRole('heading', { level: 2, name: 'Reinstatement' })).toBeInTheDocument()
     expect(keyFactTexts()).toContain('235/1.022 – 22,99% TestPack')
+  })
+
+  it('draws the chart in the project\'s colours (RV8-2)', async () => {
+    renderPanel({ settings: { ...SETTINGS, chartColors: { 'rein.planCum': '#123456' } } })
+    const colors = JSON.parse((await loaded()).getAttribute('data-colors') ?? 'null') as Record<string, string>
+    expect(colors).toEqual(resolveChartColors({ 'rein.planCum': '#123456' }, []))
+    expect(colors['rein.planCum']).toBe('#123456')
   })
 
   it('shows - for a total that is not set, with a warning that tells the admin where to set it', async () => {

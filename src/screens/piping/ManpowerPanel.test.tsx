@@ -9,6 +9,7 @@ import { expectHelperText, expectNoSpecIds, keyFactTexts, ruleTexts } from '../.
 import { renderApp } from '../../test/renderApp'
 import { chooseOption, optionTitles } from '../../test/select'
 import { setViewport } from '../../test/viewport'
+import { palette } from '../../theme'
 import { ManpowerPanel } from './ManpowerPanel'
 import { manpowerSelectionOnScreen } from './manpowerSelection'
 import type { PipingPanelProps } from './panelProps'
@@ -47,16 +48,18 @@ vi.mock('../../lib/projectReport', () => ({
 
 // jsdom gives Recharts no size; the stand-in prints what reaches the chart.
 vi.mock('./manpower/ManpowerChart', () => ({
-  ManpowerChart: ({ data, groups, selected, planAverage, mode }: {
+  ManpowerChart: ({ data, groups, selected, planAverage, colors, mode }: {
     data: Array<Record<string, unknown>>
     groups: Array<{ name: string }>
     selected?: ReadonlySet<string>
     planAverage?: number | null
+    colors?: Record<string, string>
     mode: string
   }) => (
     <div
       data-testid="manpower-chart"
       data-mode={mode}
+      data-colors={JSON.stringify(colors ?? null)}
       data-groups={groups.map((g) => g.name).join(',')}
       data-selected={selected === undefined ? 'all' : [...selected].join(',')}
       data-average={String(planAverage)}
@@ -157,6 +160,16 @@ describe('ManpowerPanel: summary and chart (spec §3, §5)', () => {
     // Per group, the mean of its days with a value, summed: Plan (10 + 12) / 2 + 4 + 2; Actual (8 + 6) / 2 + 0 + 3.
     expect(keyFactTexts()[0]).toBe('trung bình đến hôm nay Plan 17 · Actual 10')
     expect(screen.getByLabelText(AVERAGE_INFO)).toBeInTheDocument()
+  })
+
+  it('draws the chart in the project\'s colours, a group\'s default by its place on the chart (RV8-2)', async () => {
+    renderPanel({ settings: { ...SETTINGS, chartColors: { 'mp.group.g2': '#123456', 'mp.planAvg': '#654321' } } })
+    const colors = JSON.parse((await loaded()).getAttribute('data-colors') ?? 'null') as Record<string, string>
+    expect(colors['mp.group.g2']).toBe('#123456')
+    expect(colors['mp.planAvg']).toBe('#654321')
+    // Drawn in sort order: Reinstatement, Insulation, then the hidden Marking that has data.
+    expect(colors['mp.group.g1']).toBe(palette.categorical[0])
+    expect(colors['mp.group.g3']).toBe(palette.categorical[2])
   })
 
   it('states the same averages as the week chart, a plan day after today left out', async () => {

@@ -23,6 +23,7 @@ import { space } from '../../theme'
 import { useFieldPhone } from '../gs/fieldSections'
 import { dayGridColumns } from './manpower/dayGridColumns'
 import { ManpowerChart } from './manpower/ManpowerChart'
+import { resolveChartColors } from './chartColors'
 import { ManpowerEntryForm } from './manpower/ManpowerEntryForm'
 import { ManpowerHistoryTable } from './manpower/ManpowerHistoryTable'
 import type { PipingPanelProps } from './panelProps'
@@ -248,6 +249,7 @@ export function ManpowerPanel({ projectId, settings, mode, role, todayKey, refre
                 groups={drawn}
                 selected={selected}
                 planAverage={planAvg}
+                colors={resolveChartColors(settings.chartColors, drawn)}
                 mode={mode}
               />
             )}

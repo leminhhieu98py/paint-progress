@@ -15,6 +15,7 @@ import {
   listReinstatementEntries, listReinstatementPlan, replaceReinstatementPlan, type ReinstatementEntry,
 } from '../../lib/pipingApi'
 import { space } from '../../theme'
+import { resolveChartColors } from './chartColors'
 import { ReinstatementChart } from './charts'
 import type { PipingPanelProps } from './panelProps'
 import { dayNotes, usePipingNotes } from './notes/usePipingNotes'
@@ -149,7 +150,7 @@ export function ReinstatementPanel({ projectId, settings, mode, role, todayKey, 
             ? <Spin style={{ display: 'block', margin: `${space.xxl}px auto` }} />
             : <EmptyState title="Chưa có Plan hoặc số lượng Reinstatement" />)
           // Keyed on the view: the Brush's zoom belongs to one axis, not to the next.
-          : <ReinstatementChart key={mode} data={series} mode={mode} />}
+          : <ReinstatementChart key={mode} data={series} mode={mode} colors={resolveChartColors(settings.chartColors, [])} />}
       </SectionCard>
 
       {role !== 'viewer' && (
