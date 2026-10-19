@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ManpowerGroup, PipingSettings, Spool, SpoolColumn } from '../../domain/piping/types'
 import { renderApp } from '../../test/renderApp'
+import { palette } from '../../theme'
 import { PipingConfigModal } from './PipingConfigModal'
 
 const api = vi.hoisted(() => ({
@@ -10,6 +11,8 @@ const api = vi.hoisted(() => ({
   disablePiping: vi.fn(),
   listReinstatementEntries: vi.fn(),
   listManpowerGroups: vi.fn(),
+  listManpowerPlan: vi.fn(),
+  listManpowerActual: vi.fn(),
   addManpowerGroup: vi.fn(),
   renameManpowerGroup: vi.fn(),
   setManpowerGroupHidden: vi.fn(),
@@ -28,6 +31,8 @@ vi.mock('../../lib/pipingApi', () => ({
   disablePiping: (...a: unknown[]) => api.disablePiping(...a),
   listReinstatementEntries: (...a: unknown[]) => api.listReinstatementEntries(...a),
   listManpowerGroups: (...a: unknown[]) => api.listManpowerGroups(...a),
+  listManpowerPlan: (...a: unknown[]) => api.listManpowerPlan(...a),
+  listManpowerActual: (...a: unknown[]) => api.listManpowerActual(...a),
   addManpowerGroup: (...a: unknown[]) => api.addManpowerGroup(...a),
   renameManpowerGroup: (...a: unknown[]) => api.renameManpowerGroup(...a),
   setManpowerGroupHidden: (...a: unknown[]) => api.setManpowerGroupHidden(...a),
@@ -67,12 +72,12 @@ const onClose = vi.fn()
 const onChanged = vi.fn()
 const onDisabled = vi.fn()
 
-function renderModal() {
+function renderModal(settings: PipingSettings = SETTINGS) {
   return renderApp(
     <PipingConfigModal
       projectId="p1"
       projectName="BlockB1_CPPTS"
-      settings={SETTINGS}
+      settings={settings}
       onClose={onClose}
       onChanged={onChanged}
       onDisabled={onDisabled}
@@ -109,6 +114,8 @@ beforeEach(() => {
   api.updatePipingSettings.mockResolvedValue(undefined)
   api.disablePiping.mockResolvedValue(undefined)
   api.listManpowerGroups.mockResolvedValue(GROUPS)
+  api.listManpowerPlan.mockResolvedValue([])
+  api.listManpowerActual.mockResolvedValue([])
   api.addManpowerGroup.mockResolvedValue({ id: 'g4', name: 'Hàn', sort: 4, hidden: false })
   api.renameManpowerGroup.mockResolvedValue(undefined)
   api.setManpowerGroupHidden.mockResolvedValue(undefined)
@@ -138,10 +145,10 @@ beforeEach(() => {
 })
 
 describe('PipingConfigModal: sections', () => {
-  it('holds Thông số, Nhóm nhân lực, Cột thêm của spool and Lịch sử import, with Tắt Piping and Đóng', async () => {
+  it('holds Thông số, Màu biểu đồ, Nhóm nhân lực, Cột thêm của spool and Lịch sử import, with Tắt Piping and Đóng', async () => {
     renderModal()
     expect(within(config()).getAllByRole('tab').map((t) => t.textContent))
-      .toEqual(['Thông số', 'Nhóm nhân lực', 'Cột thêm của spool', 'Lịch sử import'])
+      .toEqual(['Thông số', 'Màu biểu đồ', 'Nhóm nhân lực', 'Cột thêm của spool', 'Lịch sử import'])
     expect(within(config()).getByRole('button', { name: 'Tắt Piping' })).toBeInTheDocument()
     await userEvent.click(within(config()).getByRole('button', { name: 'Đóng' }))
     expect(onClose).toHaveBeenCalled()
@@ -443,6 +450,72 @@ describe('PipingConfigModal: Lịch sử import (spec §8)', () => {
     expect(manpower).toHaveTextContent('Manpower Actual')
     const reinstatement = within(config()).getByText('rein-actual.xlsx').closest('tr') as HTMLElement
     expect(reinstatement).toHaveTextContent('Reinstatement Actual')
+  })
+})
+
+describe('PipingConfigModal: Màu biểu đồ (RV8-2)', () => {
+  const picker = (label: string) => within(config()).getByLabelText(`Màu · ${label}`)
+  const open = async (settings?: PipingSettings) => {
+    renderModal(settings)
+    await openTab('Màu biểu đồ')
+    await within(config()).findByLabelText('Màu · Marking')
+  }
+  /** Types a hex into the open picker's own field. */
+  const typeHex = async (hex: string) => {
+    const input = document.querySelector<HTMLInputElement>('.ant-color-picker-hex-input input')!
+    await userEvent.clear(input)
+    await userEvent.type(input, hex)
+  }
+
+  it('shows one picker per series, grouped by chart, each with its stored colour or the default', async () => {
+    await open({ ...SETTINGS, chartColors: { 'rein.planCum': '#123456' } })
+    for (const heading of ['Reinstatement', 'Manpower', 'Insulation']) {
+      expect(within(config()).getByRole('heading', { name: heading })).toBeInTheDocument()
+    }
+    expect(picker('Plan lũy kế')).toHaveTextContent(/#123456/i)
+    expect(picker('Actual lũy kế')).toHaveTextContent(new RegExp(palette.accentHover, 'i'))
+    // One row per group, the hidden one marked; a group's default is its hue on the chart, where Insulation is not drawn.
+    expect(picker('Reinstatement')).toHaveTextContent(new RegExp(palette.categorical[0], 'i'))
+    expect(picker('Insulation (ẩn)')).toBeInTheDocument()
+    expect(picker('Marking')).toHaveTextContent(new RegExp(palette.categorical[1], 'i'))
+    for (const label of ['Plan tổng', 'Actual tổng', 'Plan TB', 'Pip Plan', 'Pip Act', 'Paint Plan', 'Paint Act', 'Insu Plan', 'Insu Act']) {
+      expect(picker(label)).toBeInTheDocument()
+    }
+  })
+
+  it('saves the picked colours with the stored settings', async () => {
+    await open()
+    await userEvent.click(picker('Plan lũy kế'))
+    await typeHex('123456')
+    await userEvent.click(within(config()).getByRole('button', { name: 'Lưu màu' }))
+    await waitFor(() => expect(api.updatePipingSettings).toHaveBeenCalledWith('p1', {
+      weekStartDate: '2026-09-07', totalTestPacks: 1022, lateThresholdDays: 7, chartColors: { 'rein.planCum': '#123456' },
+    }))
+    expect(onChanged).toHaveBeenCalled()
+    expect(await screen.findByText('Đã lưu màu biểu đồ')).toBeInTheDocument()
+  })
+
+  it('restores every default after a confirm, clearing the stored map', async () => {
+    await open({ ...SETTINGS, chartColors: { 'rein.planCum': '#123456' } })
+    await userEvent.click(within(config()).getByRole('button', { name: 'Khôi phục mặc định' }))
+    expect(api.updatePipingSettings).not.toHaveBeenCalled()
+    await userEvent.click(within(confirmDialog()).getByRole('button', { name: 'Khôi phục' }))
+    await waitFor(() => expect(api.updatePipingSettings).toHaveBeenCalledWith('p1', {
+      weekStartDate: '2026-09-07', totalTestPacks: 1022, lateThresholdDays: 7, chartColors: {},
+    }))
+    expect(onChanged).toHaveBeenCalled()
+    await waitFor(() => expect(picker('Plan lũy kế')).toHaveTextContent(new RegExp(palette.textTertiary, 'i')))
+  })
+
+  it('reads the groups afresh after a change in Nhóm nhân lực', async () => {
+    await open()
+    await openTab('Nhóm nhân lực')
+    api.listManpowerGroups.mockResolvedValue([...GROUPS, { id: 'g4', name: 'Hàn', sort: 4, hidden: false }])
+    await userEvent.type(within(config()).getByRole('textbox', { name: 'Tên nhóm mới' }), 'Hàn')
+    await userEvent.click(within(config()).getByRole('button', { name: 'Thêm nhóm' }))
+    await waitFor(() => expect(api.addManpowerGroup).toHaveBeenCalled())
+    await openTab('Màu biểu đồ')
+    expect(await within(config()).findByLabelText('Màu · Hàn')).toBeInTheDocument()
   })
 })
 
