@@ -12,8 +12,8 @@ const KINDS: Record<ImportKind, { label: string; tone: StatusTone }> = {
   manpower_plan: { label: 'Manpower Plan', tone: 'info' },
   spool_plan: { label: 'Insulation Plan', tone: 'ok' },
   spool_actual: { label: 'Insulation Actual', tone: 'slate' },
-  reinstatement_actual: { label: 'Actual Reinstatement', tone: 'slate' },
-  manpower_actual: { label: 'Actual Manpower', tone: 'slate' },
+  reinstatement_actual: { label: 'Reinstatement Actual', tone: 'slate' },
+  manpower_actual: { label: 'Manpower Actual', tone: 'slate' },
 }
 
 const COUNT = new Intl.NumberFormat('vi-VN')

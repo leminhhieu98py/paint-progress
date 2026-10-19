@@ -58,6 +58,7 @@ vi.mock('./manpower/ManpowerChart', () => ({
 
 const SETTINGS: PipingSettings = {
   projectId: 'p1', enabled: true, weekStartDate: '2026-09-28', totalTestPacks: 1022, lateThresholdDays: 7,
+  chartColors: {},
 }
 
 const GROUPS: ManpowerGroup[] = [

@@ -24,12 +24,8 @@ export interface PipingSettings {
   totalTestPacks: number | null
   /** N in the late rule (spec §7), 0..365, default 7. */
   lateThresholdDays: number
-  /**
-   * Chart colours (Rv8 RV8-2): series key -> `#rrggbb`; a key not set means
-   * the default colour. The API always fills it (`{}` when none); optional so
-   * a settings value built without colours still types.
-   */
-  chartColors?: Record<string, string>
+  /** Chart colours (Rv8 RV8-2): series key -> `#rrggbb`; a key not set means the default colour. */
+  chartColors: Record<string, string>
 }
 
 /** One day of the Reinstatement plan (spec §4). One row per day. */
