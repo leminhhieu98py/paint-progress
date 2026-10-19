@@ -103,11 +103,11 @@ export function LateSpools({ projectId, warnings, thresholdDays }: {
     { title: 'SpoolNo', key: 'spoolNo', fixed: pin, render: (_v, r) => r.spoolNo },
     { title: 'LineNo', key: 'lineNo', render: (_v, r) => groupName(r.lineNo?.trim() ?? '') },
     { title: 'Test Package No', key: 'testPackageNo', render: (_v, r) => groupName(r.testPackageNo?.trim() ?? '') },
-    // A milestone on time for the spool has no late info: "-" in each of its cells.
+    // A milestone on time for the spool has no late info: its cells stay blank, so "-" still means a missing value.
     ...MILESTONES.map((m) => {
       const lateCell = (cell: (w: LateWarning) => ReactNode) => (_v: unknown, r: LateSpoolRow) => {
         const w = r.late[m]
-        return w === undefined ? MISSING : cell(w)
+        return w === undefined ? null : cell(w)
       }
       return {
         title: MILESTONE_LABEL[m],

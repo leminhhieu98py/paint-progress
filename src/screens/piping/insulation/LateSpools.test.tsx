@@ -140,8 +140,9 @@ describe('LateSpools: Spool level (RV8-10)', () => {
       'Bộ phận', 'Plan', 'Actual', 'Số ngày trễ',
     ])
     expect(tableRows(table)).toEqual([
-      ['SP-a', 'L9', 'TP2', 'Piping', '01/09/2026', '-', '36', '-', '-', '-', '-', 'Insulation', '10/09/2026', '25/09/2026', '15'],
-      ['SP-b', 'L1', 'TP1', '-', '-', '-', '-', 'Painting', '01/09/2026', '-', '36', '-', '-', '-', '-'],
+      // An on-time milestone is blank; "-" stays a missing value (a late milestone with no Actual).
+      ['SP-a', 'L9', 'TP2', 'Piping', '01/09/2026', '-', '36', '', '', '', '', 'Insulation', '10/09/2026', '25/09/2026', '15'],
+      ['SP-b', 'L1', 'TP1', '', '', '', '', 'Painting', '01/09/2026', '-', '36', '', '', '', ''],
     ])
     expect(within(table).queryByRole('button', { name: /Xem spool/ })).not.toBeInTheDocument()
     expect(keyFactTexts(card())).toEqual(['2 spool'])
