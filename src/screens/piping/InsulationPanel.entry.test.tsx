@@ -205,7 +205,7 @@ describe('Insulation: Plan import (spec §6.2, §8, R-10, Q19A)', () => {
     expect(facts(box)).toEqual(['1 thêm', '2 sửa', '2 xoá', '2 giữ nguyên'])
     // The duplicate SpoolNo and the plan-order break are listed, not blocking.
     expect(within(box).getByText(/SpoolNo "SP-1" lặp lại ở các dòng 2, 3/)).toBeInTheDocument()
-    expect(within(box).getByText(/Dòng 6: Sai thứ tự: Painting Handover/)).toBeInTheDocument()
+    expect(within(box).getByText(/Dòng 6: Sai thứ tự: Pip/)).toBeInTheDocument()
     const removed = within(box).getByText('SP-2').closest('tr') as HTMLElement
     expect(within(removed).getByText('có Actual')).toBeInTheDocument()
     const sp5 = within(box).getByText('SP-5').closest('tr') as HTMLElement
@@ -333,12 +333,12 @@ describe('Insulation: Cập nhật Actual (spec §6.3, Q18A)', () => {
     await ready()
     const box = await previewLineL1()
     await waitFor(() => expect(api.setSpoolActuals).toHaveBeenCalledWith('p1', L1_CHANGES, { dryRun: true }))
-    expect(await within(box).findByText('LineNo L1 · Painting Handover · 07/10/2026 · 4 spool')).toBeInTheDocument()
+    expect(await within(box).findByText('LineNo L1 · Pip Act · 07/10/2026 · 4 spool')).toBeInTheDocument()
     expect(facts(box)).toEqual(['1 spool lưu', '1 spool ghi đè', '1 spool bỏ qua', '1 spool không đổi'])
     const skipped = within(box).getByRole('region', { name: 'Spool bỏ qua' })
     expect(within(skipped).getByText('SP-3')).toBeInTheDocument()
     expect(within(skipped).getByText(
-      'Sai thứ tự: Painting Handover (07/10/2026) sau Insulation Handover (03/10/2026)',
+      'Sai thứ tự: Pip (07/10/2026) sau Paint (03/10/2026)',
     )).toBeInTheDocument()
     const over = within(box).getByRole('region', { name: 'Ngày Actual bị ghi đè' })
     const row = within(over).getByText('SP-2').closest('tr') as HTMLElement
@@ -428,7 +428,7 @@ describe('Insulation: Cập nhật Actual (spec §6.3, Q18A)', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Cập nhật Actual' }))
     const box = await dialog()
     await chooseOption('SpoolNo', 'SP-1', box)
-    await chooseOption('Mốc', 'Insulation Work', box)
+    await chooseOption('Mốc', 'Insu Act', box)
     await userEvent.click(within(box).getByRole('button', { name: 'Xem trước' }))
     await waitFor(() => expect(api.setSpoolActuals).toHaveBeenCalledWith('p1', [
       { spoolId: 's1', milestone: 'iw', date: TODAY }, { spoolId: 's6', milestone: 'iw', date: TODAY },
@@ -661,7 +661,7 @@ describe('Insulation: Xoá Actual (spec §6.3, R-12)', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Xoá Actual' }))
     const box = await dialog()
     expect(within(box).getByText('Xoá ngày Actual của SP-1?')).toBeInTheDocument()
-    await chooseOption('Mốc', 'Insulation Handover', box)
+    await chooseOption('Mốc', 'Paint Act', box)
     expect(within(box).getByText('04/10/2026')).toBeInTheDocument()
     const ok = within(box).getByRole('button', { name: /Xoá/ })
     ok.click()
@@ -670,7 +670,7 @@ describe('Insulation: Xoá Actual (spec §6.3, R-12)', () => {
     expect(api.setSpoolActuals).toHaveBeenCalledWith('p1', [{ spoolId: 's1', milestone: 'ih', date: null }])
     api.listSpools.mockClear()
     finish([{ spoolId: 's1', spoolNo: 'SP-1', status: 'saved' }])
-    expect(await screen.findByText('Đã xoá Insulation Handover – Actual của SP-1')).toBeInTheDocument()
+    expect(await screen.findByText('Đã xoá Paint Act của SP-1')).toBeInTheDocument()
     await waitFor(() => expect(api.listSpools).toHaveBeenCalledWith('p1'))
   })
 

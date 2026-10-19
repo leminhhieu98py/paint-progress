@@ -163,9 +163,9 @@ describe('buildPipingReport (spec §10)', () => {
     expect(byLabel.get('Manpower – Plan trung bình đến hôm nay')).toEqual([9, null, null])
     expect(byLabel.get('Manpower – Actual trung bình đến hôm nay')).toEqual([2.25, null, null])
     // LineNo: two lines, both reached PH; none reached IH or IW.
-    expect(byLabel.get('Painting Handover (LineNo)')).toEqual([2, 2, 1])
-    expect(byLabel.get('Insulation Handover (LineNo)')).toEqual([0, 2, 0])
-    expect(byLabel.get('Insulation Work (LineNo)')).toEqual([0, 2, 0])
+    expect(byLabel.get('Pip Act (LineNo)')).toEqual([2, 2, 1])
+    expect(byLabel.get('Paint Act (LineNo)')).toEqual([0, 2, 0])
+    expect(byLabel.get('Insu Act (LineNo)')).toEqual([0, 2, 0])
     expect(byLabel.get('Ngưỡng trễ (ngày)')).toEqual([7, null, null])
     expect(byLabel.get('Spool trễ')).toEqual([2, null, null])
     const reinRow = rows.findIndex((r) => r[0] === 'Reinstatement (TestPack)') + 2
@@ -235,9 +235,9 @@ describe('buildPipingReport (spec §10)', () => {
     const ws = sheet(wb, 'Insulation')
     expect(headerOf(ws)).toEqual([
       'Tuần (từ ngày)', 'Đến ngày',
-      'Painting Handover – Plan lũy kế (Test Package No)', 'Painting Handover – Actual lũy kế (Test Package No)',
-      'Insulation Handover – Plan lũy kế (Test Package No)', 'Insulation Handover – Actual lũy kế (Test Package No)',
-      'Insulation Work – Plan lũy kế (Test Package No)', 'Insulation Work – Actual lũy kế (Test Package No)',
+      'Pip Plan lũy kế (Test Package No)', 'Pip Act lũy kế (Test Package No)',
+      'Paint Plan lũy kế (Test Package No)', 'Paint Act lũy kế (Test Package No)',
+      'Insu Plan lũy kế (Test Package No)', 'Insu Act lũy kế (Test Package No)',
     ])
     const expected = pipingReportSeries(input({ mode: 'week', unit: 'testPackageNo' })).insulation.points
     expect(ws.rowCount).toBe(expected.length + 1)
@@ -256,8 +256,8 @@ describe('buildPipingReport (spec §10)', () => {
     const ws = sheet(wb, 'Spool trễ')
     expect(headerOf(ws)).toEqual(['SpoolNo', 'LineNo', 'Test Package No', 'Mốc', 'Bộ phận', 'Plan', 'Actual', 'Số ngày trễ'])
     // TP1 first: SP-B's IH, planned 01/09, no actual, 31 days by today. Then TP2: SP-A's PH, 19 days late.
-    expect(rowValues(ws, 2)).toEqual(['SP-B', 'L2', 'TP1', 'Insulation Handover', 'Painting', utc('2026-09-01'), null, 31])
-    expect(rowValues(ws, 3)).toEqual(['SP-A', 'L1', 'TP2', 'Painting Handover', 'Piping', utc('2026-09-01'), utc('2026-09-20'), 19])
+    expect(rowValues(ws, 2)).toEqual(['SP-B', 'L2', 'TP1', 'Paint', 'Painting', utc('2026-09-01'), null, 31])
+    expect(rowValues(ws, 3)).toEqual(['SP-A', 'L1', 'TP2', 'Pip', 'Piping', utc('2026-09-01'), utc('2026-09-20'), 19])
     expect(ws.rowCount).toBe(3)
     expect(ws.getCell('F2').numFmt).toBe('dd/mm/yyyy')
   })

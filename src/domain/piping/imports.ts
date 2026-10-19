@@ -1,5 +1,5 @@
-import { MILESTONES, PLAN_FIELD, actualDates, duplicateSpoolGroups, orderMessage, planDates, planOrderIssues,
-  resolveActualChanges, spoolKey, type ActualChange, type ActualOverwrite, type ActualResolution } from './cam'
+import { MILESTONES, PLAN_FIELD, actualDates, duplicateSpoolGroups, milestoneActualLabel, milestonePlanLabel, orderMessage,
+  planDates, planOrderIssues, resolveActualChanges, spoolKey, type ActualChange, type ActualOverwrite, type ActualResolution } from './cam'
 import type {
   DayKey,
   ManpowerGroup,
@@ -80,16 +80,21 @@ export const SPOOL_MASTER_COLUMNS: Record<keyof SpoolMaster, ColumnSpec> = {
 
 const MASTER_KEYS = Object.keys(SPOOL_MASTER_COLUMNS) as Array<keyof SpoolMaster>
 
+/**
+ * The milestone columns (RV8-4): labelled `Pip Plan` … `Insu Act` from the
+ * label map; the names files used before, and the customer's own wording,
+ * stay as aliases so an existing file still imports.
+ */
 export const SPOOL_PLAN_COLUMNS: Record<Milestone, ColumnSpec> = {
-  ph: { label: 'Painting Handover – Plan', aliases: ['PH Plan'] },
-  ih: { label: 'Insulation Handover – Plan', aliases: ['IH Plan'] },
-  iw: { label: 'Insulation Work – Plan', aliases: ['IW Plan'] },
+  ph: { label: milestonePlanLabel('ph'), aliases: ['Painting Handover – Plan', 'PH Plan', 'Handover to Painting – Plan'] },
+  ih: { label: milestonePlanLabel('ih'), aliases: ['Insulation Handover – Plan', 'IH Plan', 'Handover to Insulation – Plan'] },
+  iw: { label: milestonePlanLabel('iw'), aliases: ['Insulation Work – Plan', 'IW Plan'] },
 }
 
 export const SPOOL_ACTUAL_COLUMNS: Record<Milestone, ColumnSpec> = {
-  ph: { label: 'Painting Handover – Actual', aliases: ['PH Actual'] },
-  ih: { label: 'Insulation Handover – Actual', aliases: ['IH Actual'] },
-  iw: { label: 'Insulation Work – Actual', aliases: ['IW Actual'] },
+  ph: { label: milestoneActualLabel('ph'), aliases: ['Painting Handover – Actual', 'PH Actual', 'Handover to Painting – Actual'] },
+  ih: { label: milestoneActualLabel('ih'), aliases: ['Insulation Handover – Actual', 'IH Actual', 'Handover to Insulation – Actual'] },
+  iw: { label: milestoneActualLabel('iw'), aliases: ['Insulation Work – Actual', 'IW Actual'] },
 }
 
 /** Every built-in column of the spool files, for the extra-label collision check. */

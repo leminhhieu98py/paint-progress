@@ -357,9 +357,9 @@ const chooseLogout = async () => {
  * An export, the way a phone reaches it: jsdom answers every width query as a
  * phone, where both exports sit in the bar's ⋯ menu (GS-09).
  */
-const chooseExport = async (name: 'Xuất báo cáo' | 'Xuất cả dự án') => {
+const chooseExport = async (name: 'Report' | 'Project Report') => {
   await userEvent.click(screen.getByRole('button', { name: 'Thêm thao tác' }))
-  await userEvent.click(await screen.findByRole('menuitem', { name: new RegExp(name) }))
+  await userEvent.click(await screen.findByRole('menuitem', { name }))
 }
 /**
  * The phone's Bộ lọc sheet, opened (FLT-04). jsdom answers every width query
@@ -2747,7 +2747,7 @@ describe('GsScreen: a viewer (0028)', () => {
     expect(screen.queryByRole('combobox', { name: 'Công đoạn' })).toBeNull()
     expect(screen.getByRole('button', { name: 'Đóng' })).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Thêm thao tác' }))
-    expect(await screen.findByRole('menuitem', { name: /Xuất báo cáo/ })).not.toHaveAttribute('aria-disabled', 'true')
+    expect(await screen.findByRole('menuitem', { name: 'Report' })).not.toHaveAttribute('aria-disabled', 'true')
   })
 
   it('shows no read-only mark to a foreman', async () => {
@@ -2850,7 +2850,7 @@ describe('GsScreen: exporting the open deck', () => {
     renderScreen()
     await screen.findByRole('button', { name: 'ô R1C1' })
 
-    await chooseExport('Xuất báo cáo')
+    await chooseExport('Report')
 
     await waitFor(() => expect(buildReportWorkbook).toHaveBeenCalledTimes(1))
     const [input] = buildReportWorkbook.mock.calls[0]
@@ -2882,7 +2882,7 @@ describe('GsScreen: exporting the open deck', () => {
     renderScreen()
     await screen.findByRole('button', { name: 'ô R1C1' })
 
-    await chooseExport('Xuất báo cáo')
+    await chooseExport('Report')
 
     await waitFor(() => expect(buildReportWorkbook).toHaveBeenCalledTimes(1))
     const [input] = buildReportWorkbook.mock.calls[0]
@@ -2902,7 +2902,7 @@ describe('GsScreen: exporting the open deck', () => {
     renderScreen()
     await screen.findByRole('button', { name: 'ô R1C1' })
 
-    await chooseExport('Xuất báo cáo')
+    await chooseExport('Report')
 
     expect(await screen.findByText(/out of memory/)).toBeInTheDocument()
   })
@@ -2914,7 +2914,7 @@ describe('GsScreen: the whole project in one file (Feedback Rv4)', () => {
     // report over every deck. RLS decides what lands in it.
     renderScreen()
     await screen.findByRole('button', { name: 'ô R1C1' })
-    await chooseExport('Xuất cả dự án')
+    await chooseExport('Project Report')
 
     await waitFor(() => expect(buildProjectReport).toHaveBeenCalled())
     expect(buildProjectReport.mock.calls[0][0]).toMatchObject({
@@ -2928,7 +2928,7 @@ describe('GsScreen: the whole project in one file (Feedback Rv4)', () => {
     loadProjectModel.mockResolvedValue({ models: [], decks: [], audit: {} })
     renderScreen()
     await screen.findByRole('button', { name: 'ô R1C1' })
-    await chooseExport('Xuất cả dự án')
+    await chooseExport('Project Report')
 
     expect(
       (await screen.findAllByText('Chưa có sàn nào bạn được phân quyền trong dự án này.')).length,
@@ -2941,7 +2941,7 @@ describe('GsScreen: the whole project in one file (Feedback Rv4)', () => {
     renderScreen()
     await screen.findByRole('button', { name: 'ô R1C1' })
     await userEvent.click(screen.getByRole('button', { name: 'Thêm thao tác' }))
-    expect(await screen.findByRole('menuitem', { name: /Xuất cả dự án/ })).toBeInTheDocument()
+    expect(await screen.findByRole('menuitem', { name: 'Project Report' })).toBeInTheDocument()
   })
 })
 
@@ -2971,28 +2971,30 @@ describe('GsScreen: the exports are bar actions (GS-09)', () => {
   const barRow = () => screen.getByTestId('gs-bar-row')
   const card = () => screen.getByTestId('canvas').closest('.pp-card')?.parentElement as HTMLElement
 
-  it.each([1280, 768])('puts both as icon buttons at the right end of the bar at %s px, with their own icons', async (width) => {
+  it.each([1280, 768])('puts both as text buttons at the right end of the bar at %s px (RV8-1)', async (width) => {
     setViewport(width)
     renderScreen()
     await screen.findByTestId('canvas')
-    const deck = within(barRow()).getByRole('button', { name: 'Xuất báo cáo' })
-    const project = within(barRow()).getByRole('button', { name: 'Xuất cả dự án' })
-    // Icon buttons: no text on the button, the aria-label and tooltip carry it.
-    expect(deck).toHaveTextContent(/^$/)
-    expect(project).toHaveTextContent(/^$/)
-    expect(deck.querySelector('.anticon-file-excel')).not.toBeNull()
-    expect(project.querySelector('.anticon-folder-open')).not.toBeNull()
+    const deck = within(barRow()).getByRole('button', { name: 'Report' })
+    const project = within(barRow()).getByRole('button', { name: 'Project Report' })
+    // Text buttons: the word on the button is its name, no icon beside it.
+    expect(deck).toHaveTextContent(/^Report$/)
+    expect(project).toHaveTextContent(/^Project Report$/)
+    expect(deck.querySelector('.anticon')).toBeNull()
+    expect(project.querySelector('.anticon')).toBeNull()
     // Outside the search landmark: they act, they do not filter.
-    expect(within(screen.getByRole('search', { name: 'Bộ lọc' })).queryByRole('button', { name: /Xuất/ })).toBeNull()
+    expect(within(screen.getByRole('search', { name: 'Bộ lọc' })).queryByRole('button', { name: /Report/ })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Thêm thao tác' })).toBeNull()
   })
 
-  it('names each in a tooltip with today\'s text', async () => {
+  it('needs no tooltip: the word on the button names it (RV8-1)', async () => {
     setViewport(1280)
     renderScreen()
     await screen.findByTestId('canvas')
-    await userEvent.hover(within(barRow()).getByRole('button', { name: 'Xuất cả dự án' }))
-    expect(await screen.findByRole('tooltip')).toHaveTextContent('Xuất cả dự án')
+    await userEvent.hover(within(barRow()).getByRole('button', { name: 'Project Report' }))
+    // antd opens a tooltip 100 ms after the pointer arrives; none comes.
+    await new Promise((resolve) => setTimeout(resolve, 250))
+    expect(screen.queryByRole('tooltip')).toBeNull()
   })
 
   it('leaves the card header with Hiện kế hoạch only', async () => {
@@ -3001,33 +3003,45 @@ describe('GsScreen: the exports are bar actions (GS-09)', () => {
     await screen.findByTestId('canvas')
     const header = card()
     expect(within(header).getByRole('button', { name: 'Hiện kế hoạch' })).toBeInTheDocument()
-    expect(within(header).queryByRole('button', { name: /Xuất/ })).toBeNull()
+    expect(within(header).queryByRole('button', { name: /Report/ })).toBeNull()
   })
 
-  it('exports the open deck and the project from the icon buttons, as before', async () => {
+  it('exports the open deck and the project from the text buttons, as before', async () => {
     setViewport(1280)
     Object.defineProperty(URL, 'createObjectURL', { value: () => 'blob:x', configurable: true })
     Object.defineProperty(URL, 'revokeObjectURL', { value: () => {}, configurable: true })
     vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
     renderScreen()
     await screen.findByTestId('canvas')
-    await userEvent.click(within(barRow()).getByRole('button', { name: 'Xuất báo cáo' }))
+    await userEvent.click(within(barRow()).getByRole('button', { name: 'Report' }))
     await waitFor(() => expect(buildReportWorkbook).toHaveBeenCalledTimes(1))
     expect(buildReportWorkbook.mock.calls[0][0].scope).toBe('deck')
-    await userEvent.click(within(barRow()).getByRole('button', { name: 'Xuất cả dự án' }))
+    await userEvent.click(within(barRow()).getByRole('button', { name: 'Project Report' }))
     await waitFor(() => expect(buildProjectReport).toHaveBeenCalledTimes(1))
   })
 
-  it('folds both into one ⋯ menu on a phone, icon and full text each', async () => {
+  it('keeps each button\'s name while its export runs (RV8-1)', async () => {
+    setViewport(1280)
+    buildReportWorkbook.mockReturnValue(new Promise(() => {}))
+    buildProjectReport.mockReturnValue(new Promise(() => {}))
+    renderScreen()
+    await screen.findByTestId('canvas')
+    await userEvent.click(within(barRow()).getByRole('button', { name: 'Report' }))
+    await userEvent.click(within(barRow()).getByRole('button', { name: 'Project Report' }))
+    await waitFor(() => expect(within(barRow()).getByRole('button', { name: 'Report' })).toHaveClass('ant-btn-loading'))
+    expect(within(barRow()).getByRole('button', { name: 'Project Report' })).toHaveClass('ant-btn-loading')
+  })
+
+  it('folds both into one ⋯ menu on a phone, icon and word each (RV8-1)', async () => {
     setViewport(390)
     renderScreen()
     await screen.findByTestId('canvas')
-    expect(within(barRow()).queryByRole('button', { name: 'Xuất báo cáo' })).toBeNull()
+    expect(within(barRow()).queryByRole('button', { name: 'Report' })).toBeNull()
     const more = within(barRow()).getByRole('button', { name: 'Thêm thao tác' })
     expect(more.querySelector('.anticon-ellipsis')).not.toBeNull()
     await userEvent.click(more)
     const items = within(await screen.findByRole('menu')).getAllByRole('menuitem')
-    expect(items.map((i) => i.textContent)).toEqual(['Xuất báo cáo', 'Xuất cả dự án'])
+    expect(items.map((i) => i.textContent)).toEqual(['Report', 'Project Report'])
     expect(items[0].querySelector('.anticon-file-excel')).not.toBeNull()
     expect(items[1].querySelector('.anticon-folder-open')).not.toBeNull()
   })
@@ -3065,7 +3079,7 @@ describe('GsScreen: the exports are bar actions (GS-09)', () => {
     expect(more).toHaveAttribute('aria-expanded', 'false')
     await userEvent.click(more)
     expect(more).toHaveAttribute('aria-expanded', 'true')
-    await userEvent.click(within(await screen.findByRole('menu')).getByRole('menuitem', { name: /Xuất báo cáo/ }))
+    await userEvent.click(within(await screen.findByRole('menu')).getByRole('menuitem', { name: 'Report' }))
     await waitFor(() => expect(buildReportWorkbook).toHaveBeenCalled())
 
     // The deck export is still running: the button is not a spinner that
@@ -3073,21 +3087,8 @@ describe('GsScreen: the exports are bar actions (GS-09)', () => {
     expect(more).not.toHaveClass('ant-btn-loading')
     await userEvent.click(more)
     const menu = await screen.findByRole('menu')
-    await waitFor(() => expect(within(menu).getByRole('menuitem', { name: /Xuất báo cáo/ })).toHaveAttribute('aria-disabled', 'true'))
-    expect(within(menu).getByRole('menuitem', { name: /Xuất cả dự án/ })).not.toHaveAttribute('aria-disabled', 'true')
-  })
-
-  it('lets go of an export tooltip as soon as the pointer leaves (C3)', async () => {
-    setViewport(1280)
-    renderScreen()
-    await screen.findByTestId('canvas')
-    const button = within(barRow()).getByRole('button', { name: 'Xuất cả dự án' })
-    await userEvent.hover(button)
-    const tip = (await screen.findByRole('tooltip')).closest('.ant-tooltip') as HTMLElement
-    await userEvent.unhover(button)
-    // antd's default waits 100 ms before closing; this one closes at once.
-    // Leaving (or gone) within 60 ms; antd's default holds it open for 100.
-    await waitFor(() => expect(tip.className).toMatch(/-leave\b|ant-tooltip-hidden/), { timeout: 60 })
+    await waitFor(() => expect(within(menu).getByRole('menuitem', { name: 'Report' })).toHaveAttribute('aria-disabled', 'true'))
+    expect(within(menu).getByRole('menuitem', { name: 'Project Report' })).not.toHaveAttribute('aria-disabled', 'true')
   })
 
   it('opens the account menu above any tooltip still fading out (C3)', async () => {

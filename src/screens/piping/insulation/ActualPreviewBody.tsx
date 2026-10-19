@@ -3,7 +3,7 @@ import { KeyFacts } from '../../../components/KeyFacts'
 import { StatusPill } from '../../../components/StatusPill'
 import { tablePagination } from '../../../components/tablePagination'
 import { useTypeScale } from '../../../components/typeScale'
-import { MILESTONE_LABEL } from '../../../domain/piping/cam'
+import { milestoneActualLabel } from '../../../domain/piping/cam'
 import type { ImportIssue } from '../../../domain/piping/imports'
 import type { DayKey, Milestone } from '../../../domain/piping/types'
 import { formatDayMonthYear } from '../../../domain/piping/week'
@@ -87,7 +87,7 @@ export function ActualPreviewBody({ preview, overwrite, onOverwrite, warnings = 
                   title: 'Mốc',
                   dataIndex: 'milestone',
                   align: 'center',
-                  render: (m: Milestone) => <StatusPill tone="slate">{MILESTONE_LABEL[m]}</StatusPill>,
+                  render: (m: Milestone) => <StatusPill tone="slate">{milestoneActualLabel(m)}</StatusPill>,
                 },
                 { title: 'Cũ', dataIndex: 'from', align: 'center', render: dateCell },
                 { title: 'Mới', dataIndex: 'to', align: 'center', render: dateCell },

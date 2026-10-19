@@ -6,6 +6,9 @@ import {
   diffReinstatementPlan,
   diffSpoolPlan,
   normalizeHeader,
+  SPOOL_ACTUAL_COLUMNS,
+  SPOOL_MASTER_COLUMNS,
+  SPOOL_PLAN_COLUMNS,
   parseDayCell,
   parseManpowerPlan,
   parseNumberCell,
@@ -39,10 +42,67 @@ describe('normalizeHeader', () => {
   })
 })
 
+describe('milestone headers (RV8-4)', () => {
+  it('names the template columns Pip / Paint / Insu Plan and Act', () => {
+    expect(Object.values(SPOOL_PLAN_COLUMNS).map((c) => c.label)).toEqual(['Pip Plan', 'Paint Plan', 'Insu Plan'])
+    expect(Object.values(SPOOL_ACTUAL_COLUMNS).map((c) => c.label)).toEqual(['Pip Act', 'Paint Act', 'Insu Act'])
+  })
+
+  it('still reads every old header and the customer wording', () => {
+    const cases: Array<[string, string]> = [
+      ['Painting Handover – Plan', 'Pip Plan'],
+      ['Insulation Handover – Plan', 'Paint Plan'],
+      ['Insulation Work – Plan', 'Insu Plan'],
+      ['Painting Handover – Actual', 'Pip Act'],
+      ['Insulation Handover – Actual', 'Paint Act'],
+      ['Insulation Work – Actual', 'Insu Act'],
+      ['PH Plan', 'Pip Plan'],
+      ['IH Plan', 'Paint Plan'],
+      ['IW Plan', 'Insu Plan'],
+      ['PH Actual', 'Pip Act'],
+      ['IH Actual', 'Paint Act'],
+      ['IW Actual', 'Insu Act'],
+      ['Handover to Painting – Plan', 'Pip Plan'],
+      ['Handover to Insulation – Plan', 'Paint Plan'],
+      ['Insulation Work – Plan', 'Insu Plan'],
+      ['Handover to Painting – Actual', 'Pip Act'],
+      ['Handover to Insulation – Actual', 'Paint Act'],
+      ['pip plan', 'Pip Plan'],
+      ['Insu-Act', 'Insu Act'],
+    ]
+    for (const [header, label] of cases) expect([header, builtInSpoolHeader(header)]).toEqual([header, label])
+  })
+
+  it('reads no header as two built-in columns', () => {
+    const specs = [
+      ...Object.values(SPOOL_MASTER_COLUMNS), ...Object.values(SPOOL_PLAN_COLUMNS), ...Object.values(SPOOL_ACTUAL_COLUMNS),
+    ]
+    const owner = new Map<string, string>()
+    for (const spec of specs) {
+      for (const name of [spec.label, ...spec.aliases]) {
+        const key = normalizeHeader(name)
+        expect([name, owner.get(key) ?? spec.label]).toEqual([name, spec.label])
+        owner.set(key, spec.label)
+      }
+    }
+  })
+
+  it('imports a plan file with the new headers and one with the customer wording', () => {
+    for (const headers of [
+      ['SpoolNo', 'Pip Plan', 'Paint Plan', 'Insu Plan'],
+      ['SpoolNo', 'Handover to Painting – Plan', 'Handover to Insulation – Plan', 'Insulation Work – Plan'],
+    ]) {
+      const res = parseSpoolPlan(sheet([headers, ['A', '01/10/2026', '02/10/2026', '03/10/2026']]), [])
+      expect(res.errors).toEqual([])
+      expect(res.rows.map((r) => [r.phPlan, r.ihPlan, r.iwPlan])).toEqual([['2026-10-01', '2026-10-02', '2026-10-03']])
+    }
+  })
+})
+
 describe('builtInSpoolHeader', () => {
   it('names the built-in header a label would be read as, aliases included, or null', () => {
     expect(builtInSpoolHeader('line no')).toBe('LineNo')
-    expect(builtInSpoolHeader('IH-Actual')).toBe('Insulation Handover – Actual')
+    expect(builtInSpoolHeader('IH-Actual')).toBe('Paint Act')
     expect(builtInSpoolHeader('Test Pack')).toBe('Test Package No')
     expect(builtInSpoolHeader('Zone')).toBeNull()
   })
@@ -342,7 +402,7 @@ describe('parseSpoolPlan (spec §6.2)', () => {
     expect(res.duplicates.map((d) => [d.spoolNo, d.rows.map((r) => r.row)])).toEqual([['A', [2, 4]]])
     expect(res.planOrder.map((p) => [p.row.row, p.pairs])).toEqual([[2, [['ph', 'ih']]]])
     expect(res.warnings).toEqual([
-      { row: 2, message: 'Sai thứ tự: Painting Handover (05/10/2026) sau Insulation Handover (01/10/2026)' },
+      { row: 2, message: 'Sai thứ tự: Pip (05/10/2026) sau Paint (01/10/2026)' },
       { row: null, message: 'SpoolNo "A" lặp lại ở các dòng 2, 4' },
     ])
   })
@@ -355,7 +415,7 @@ describe('parseSpoolPlan (spec §6.2)', () => {
     ]), [])
     expect(res.errors).toEqual([
       { row: 2, message: 'Thiếu SpoolNo' },
-      { row: 3, message: 'Painting Handover – Plan: Ngày không hợp lệ: "next week"' },
+      { row: 3, message: 'Pip Plan: Ngày không hợp lệ: "next week"' },
     ])
     expect(res.warnings).toEqual([
       { row: 1, message: 'Không có cột: LineNo, InsuType, DrawingNo, Test Package No, Painting System' },
@@ -384,7 +444,7 @@ describe('parseSpoolPlan (spec §6.2)', () => {
     })
     expect(res.warnings).toContainEqual({
       row: 1,
-      message: 'Cột thêm "PH-Plan" trùng tên cột chuẩn Painting Handover – Plan nên không đọc được; đổi tên cột thêm trong Cấu hình',
+      message: 'Cột thêm "PH-Plan" trùng tên cột chuẩn Pip Plan nên không đọc được; đổi tên cột thêm trong Cấu hình',
     })
   })
 
@@ -399,7 +459,7 @@ describe('parseSpoolPlan (spec §6.2)', () => {
   it('requires SpoolNo and the three Plan columns', () => {
     expect(parseSpoolPlan(sheet([['SpoolNo', 'Painting Handover – Plan']]), []).errors).toEqual([{
       row: null,
-      message: 'Không tìm thấy dòng tiêu đề có các cột: SpoolNo, Painting Handover – Plan, Insulation Handover – Plan, Insulation Work – Plan',
+      message: 'Không tìm thấy dòng tiêu đề có các cột: SpoolNo, Pip Plan, Paint Plan, Insu Plan',
     }])
   })
 })
@@ -424,7 +484,7 @@ describe('parseSpoolActual (spec §6.3)', () => {
       [null, '2026-10-02'],
     ]))
     expect(res.errors).toEqual([
-      { row: 3, message: 'SpoolNo "A": Painting Handover – Actual khác với dòng 2' },
+      { row: 3, message: 'SpoolNo "A": Pip Act khác với dòng 2' },
       { row: 4, message: 'Thiếu SpoolNo' },
     ])
   })
@@ -468,8 +528,8 @@ describe('resolveSpoolActualImport (R-11, Q18A)', () => {
     ], spools, today)
     expect(res.errors).toEqual([
       { row: 2, message: 'Không tìm thấy SpoolNo "Z"' },
-      { row: 3, message: 'Insulation Handover – Actual: ngày 08/10/2026 sau hôm nay' },
-      { row: 4, message: 'SpoolNo "B": Sai thứ tự: Painting Handover (06/09/2026) sau Insulation Handover (05/09/2026)' },
+      { row: 3, message: 'Paint Act: ngày 08/10/2026 sau hôm nay' },
+      { row: 4, message: 'SpoolNo "B": Sai thứ tự: Pip (06/09/2026) sau Paint (05/09/2026)' },
     ])
   })
 
@@ -529,7 +589,7 @@ describe('diffs (spec §8)', () => {
     expect(diff.added.map((r) => r.seq)).toEqual([4])
     expect(diff.removed.map((r) => [r.spool.id, r.hasActuals])).toEqual([['o3', true], ['o4', false]])
     expect(diff.changed.map((c) => [c.spool.id, c.changes])).toEqual([
-      ['o1', [{ field: 'phPlan', label: 'Painting Handover – Plan', from: '2026-10-01', to: '2026-10-03' }]],
+      ['o1', [{ field: 'phPlan', label: 'Pip Plan', from: '2026-10-01', to: '2026-10-03' }]],
       ['o5', [{ field: 'extra', label: 'Area', from: 'X', to: 'Y' }]],
     ])
     expect(diff.unchangedCount).toBe(1)

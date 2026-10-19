@@ -12,6 +12,10 @@ import {
   groupLateWarnings,
   lateSpoolCount,
   lateWarnings,
+  MILESTONE_LABEL,
+  milestoneActualLabel,
+  milestonePlanLabel,
+  orderMessage,
   orderViolations,
   planOrderIssues,
   resolveActualChanges,
@@ -50,6 +54,20 @@ describe('spoolKey', () => {
     expect(spoolKey('  A-1  ')).toBe('A-1')
     expect(spoolKey('A-1\t')).toBe('A-1\t')
     expect(spoolKey('\u00a0A-1')).toBe('\u00a0A-1')
+  })
+})
+
+describe('milestone names (RV8-4)', () => {
+  it('names the milestones Pip, Paint, Insu, with Plan and Act', () => {
+    expect(MILESTONE_LABEL).toEqual({ ph: 'Pip', ih: 'Paint', iw: 'Insu' })
+    expect(milestonePlanLabel('ph')).toBe('Pip Plan')
+    expect(milestoneActualLabel('ih')).toBe('Paint Act')
+    expect(milestoneActualLabel('iw')).toBe('Insu Act')
+  })
+
+  it('writes the order message with the new names', () => {
+    const dates = { ph: '2026-09-06', ih: '2026-09-05', iw: null }
+    expect(orderMessage(dates, [['ph', 'ih']])).toBe('Sai thứ tự: Pip (06/09/2026) sau Paint (05/09/2026)')
   })
 })
 
@@ -155,15 +173,73 @@ describe('camSeries (spec §6.4 chart)', () => {
     ])
   })
 
+  it('gives the bars per day: items reaching each milestone inside the bucket, plan to its end, actual to today (RV8-11)', () => {
+    const { points } = camSeries({ spools, unit: 'spoolNo', mode: 'day', weekStart: START, todayKey: '2026-09-20' })
+    expect(points.map((p) => [
+      p.key, p.phPlanBar, p.phActualBar, p.ihPlanBar, p.ihActualBar, p.iwPlanBar, p.iwActualBar,
+    ])).toEqual([
+      ['2026-09-18', 1, 0, 0, 0, 0, 0],
+      ['2026-09-19', 1, 2, 0, 0, 0, 0],
+      ['2026-09-20', 0, 0, 1, 1, 0, 0],
+      ['2026-09-21', 0, null, 0, null, 0, null],
+      ['2026-09-22', 0, null, 1, null, 0, null],
+    ])
+  })
+
+  it('gives the bars per week for a group unit, a group counted on its last spool\'s date', () => {
+    const { points } = camSeries({ spools, unit: 'lineNo', mode: 'week', weekStart: START, todayKey: '2026-09-30' })
+    expect(points.map((p) => [p.key, p.phPlanBar, p.phActualBar, p.ihPlanBar, p.ihActualBar])).toEqual([
+      ['2026-09-18', 1, 1, 1, 0],
+      ['2026-09-25', null, 0, null, 0],
+    ])
+  })
+
+  it('counts a Line\'s Pip Plan bar on its last spool\'s date, by day', () => {
+    // LY's Paint Plan puts 18/09 on the axis; LX reaches Pip only with its later spool.
+    const line = [
+      spool({ lineNo: 'LX', phPlan: '2026-09-18' }),
+      spool({ lineNo: 'LX', phPlan: '2026-09-19' }),
+      spool({ lineNo: 'LY', ihPlan: '2026-09-18' }),
+    ]
+    const { points } = camSeries({ spools: line, unit: 'lineNo', mode: 'day', weekStart: START, todayKey: '2026-09-20' })
+    expect(points.map((p) => [p.key, p.phPlanBar, p.phPlan])).toEqual([
+      ['2026-09-18', 0, 0],
+      ['2026-09-19', 1, 1],
+      ['2026-09-20', null, null],
+    ])
+  })
+
+  it('runs each cumulative line as the running sum of its bars', () => {
+    for (const unit of ['spoolNo', 'lineNo'] as const) {
+      const { points } = camSeries({ spools, unit, mode: 'day', weekStart: START, todayKey: '2026-09-20' })
+      for (const key of ['phPlan', 'phActual', 'ihPlan', 'ihActual', 'iwPlan', 'iwActual'] as const) {
+        let sum = 0
+        for (const p of points) {
+          const bar = p[`${key}Bar`]
+          if (bar === null) {
+            expect([unit, key, p.key, p[key]]).toEqual([unit, key, p.key, null])
+            continue
+          }
+          sum += bar
+          expect([unit, key, p.key, p[key]]).toEqual([unit, key, p.key, sum])
+        }
+      }
+    }
+  })
+
   it('is empty without any date', () => {
     expect(camSeries({ spools: [spool()], unit: 'spoolNo', mode: 'day', weekStart: START, todayKey: '2026-09-20' }))
       .toEqual({ points: [], total: 1 })
   })
 
-  it('names the lines a Plan | Actual | Plan & Actual toggle shows (Q20A)', () => {
-    expect(camSeriesKeys('plan')).toEqual(['phPlan', 'ihPlan', 'iwPlan'])
-    expect(camSeriesKeys('actual')).toEqual(['phActual', 'ihActual', 'iwActual'])
-    expect(camSeriesKeys('both')).toEqual(['phPlan', 'phActual', 'ihPlan', 'ihActual', 'iwPlan', 'iwActual'])
+  it('names the bars and lines a Plan | Actual | Plan & Actual toggle shows, by milestone (Q20A, RV8-11)', () => {
+    expect(camSeriesKeys('plan')).toEqual(['phPlanBar', 'phPlan', 'ihPlanBar', 'ihPlan', 'iwPlanBar', 'iwPlan'])
+    expect(camSeriesKeys('actual')).toEqual(['phActualBar', 'phActual', 'ihActualBar', 'ihActual', 'iwActualBar', 'iwActual'])
+    expect(camSeriesKeys('both')).toEqual([
+      'phPlanBar', 'phActualBar', 'phPlan', 'phActual',
+      'ihPlanBar', 'ihActualBar', 'ihPlan', 'ihActual',
+      'iwPlanBar', 'iwActualBar', 'iwPlan', 'iwActual',
+    ])
   })
 })
 
@@ -283,7 +359,7 @@ describe('resolveActualChanges (Q18A, spec §6.3)', () => {
       spoolId: 'b',
       spoolNo: 'B',
       reason: 'order',
-      message: 'Sai thứ tự: Painting Handover (06/09/2026) sau Insulation Handover (05/09/2026)',
+      message: 'Sai thứ tự: Pip (06/09/2026) sau Paint (05/09/2026)',
     }])
   })
 
@@ -294,7 +370,7 @@ describe('resolveActualChanges (Q18A, spec §6.3)', () => {
     ], today)
     expect(res.updates).toEqual([])
     expect(res.rejected).toEqual([
-      { spoolId: 'a', spoolNo: 'A', reason: 'future', message: 'Insulation Handover: ngày 08/10/2026 sau hôm nay' },
+      { spoolId: 'a', spoolNo: 'A', reason: 'future', message: 'Paint: ngày 08/10/2026 sau hôm nay' },
       { spoolId: 'zz', spoolNo: '', reason: 'notFound', message: 'Không tìm thấy spool' },
     ])
   })
