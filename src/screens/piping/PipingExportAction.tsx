@@ -4,6 +4,7 @@ import { useRef, useState } from 'react'
 import { camSeriesKeys } from '../../domain/piping/cam'
 import { manpowerSeries, planAverage } from '../../domain/piping/manpower'
 import type { CamSelection, Unit } from '../../domain/piping/types'
+import { resolveChartColors } from './chartColors'
 import { renderChartPng, type ChartSpec } from './report/chartImage'
 import {
   buildPipingReport, pipingReportFileName, pipingReportSeries, type ChartKey, type PipingReportInput, type ReportChart,
@@ -93,18 +94,22 @@ async function exportReport(panel: PipingPanelProps, { unit, selection }: Insula
     groups: series.manpower.groups, plan: mpPlan, actual: mpActual, mode, weekStart: settings.weekStartDate, todayKey,
     selected,
   })
+  // The project's colours (RV8-2), resolved over the groups the chart draws, as the tab does.
+  const colors = resolveChartColors(settings.chartColors, series.manpower.groups)
   // One after another: each borrows the page for a moment, off screen.
   const specs: Array<[ChartKey, ChartSpec | null]> = [
-    ['reinstatement', series.reinstatement.length === 0 ? null : { kind: 'reinstatement', data: series.reinstatement, mode }],
+    ['reinstatement', series.reinstatement.length === 0
+      ? null
+      : { kind: 'reinstatement', data: series.reinstatement, mode, colors }],
     ['manpower', manpowerPoints.length === 0
       ? null
       : {
         kind: 'manpower', data: manpowerPoints, groups: series.manpower.groups, selected,
-        planAverage: planAverage(mpPlan, selected), mode,
+        planAverage: planAverage(mpPlan, selected), mode, colors,
       }],
     ['insulation', series.insulation.points.length === 0
       ? null
-      : { kind: 'insulation', data: series.insulation.points, keys: camSeriesKeys(selection), mode }],
+      : { kind: 'insulation', data: series.insulation.points, keys: camSeriesKeys(selection), mode, colors }],
   ]
   const charts: PipingReportInput['charts'] = {}
   for (const [key, spec] of specs) {
