@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest'
 import {
   MAX_IMPORT_ROWS,
   builtInSpoolHeader,
+  diffManpowerActual,
   diffManpowerPlan,
   diffManpowerPlanUpdate,
+  diffReinstatementActual,
   diffReinstatementPlan,
   diffReinstatementPlanUpdate,
   diffSpoolPlan,
@@ -13,8 +15,10 @@ import {
   SPOOL_MASTER_COLUMNS,
   SPOOL_PLAN_COLUMNS,
   parseDayCell,
+  parseManpowerActual,
   parseManpowerPlan,
   parseNumberCell,
+  parseReinstatementActual,
   parseReinstatementPlan,
   parseSpoolActual,
   parseSpoolPlan,
@@ -702,5 +706,111 @@ describe('Update Plan (RV8-5)', () => {
     ])
     expect(res.warnings.slice(0, 2)).toEqual(res.columnWarnings)
     expect(res.warnings).toHaveLength(3)
+  })
+})
+
+describe('Actual imports for Reinstatement and Manpower (RV8-6)', () => {
+  const TODAY = '2026-10-07'
+  const groups: ManpowerGroup[] = [
+    { id: 'g1', name: 'Reinstatement', sort: 1, hidden: false },
+    { id: 'g3', name: 'Marking', sort: 3, hidden: true },
+  ]
+
+  it('reads Date + Actual Qty up to today, a blank cell skipped, 0 kept', () => {
+    const res = parseReinstatementActual(sheet([
+      ['Reinstatement actual'],
+      ['date', 'ACTUAL QTY'],
+      [utc('2026-10-01'), 15],
+      ['02/10/2026', null],
+      ['07/10/2026', '0'],
+      ['08/10/2026', null],
+    ]), TODAY)
+    expect(res.errors).toEqual([])
+    expect(res.warnings).toEqual([])
+    expect(res.rows).toEqual([{ day: '2026-10-01', qty: 15 }, { day: '2026-10-07', qty: 0 }])
+    expect(res.rowCount).toBe(4)
+  })
+
+  it('refuses a future day, a repeated date, a negative or bad quantity and a missing header', () => {
+    const res = parseReinstatementActual(sheet([
+      ['Date', 'Actual Qty'],
+      ['2026-10-01', 5],
+      ['2026-10-01', 6],
+      ['2026-10-08', 1],
+      ['2026-10-02', -1],
+      ['2026-10-03', 'x'],
+      [null, 3],
+    ]), TODAY)
+    expect(res.errors).toEqual([
+      { row: 3, message: 'Ngày 01/10/2026 trùng với dòng 2' },
+      { row: 4, message: 'Không nhập được ngày trong tương lai (08/10/2026)' },
+      { row: 5, message: 'Actual Qty phải ≥ 0' },
+      { row: 6, message: 'Actual Qty: Không phải số: "x"' },
+      { row: 7, message: 'Thiếu Date' },
+    ])
+    expect(res.rows).toEqual([])
+    expect(parseReinstatementActual(sheet([['Date', 'Plan Qty'], ['2026-10-01', 5]]), TODAY).errors)
+      .toEqual([{ row: null, message: 'Không tìm thấy dòng tiêu đề có các cột: Date, Actual Qty' }])
+  })
+
+  it('reads Date + one column per group into one row per day, hidden groups included, blanks skipped', () => {
+    const res = parseManpowerActual(sheet([
+      ['Date', 'reinstatement', 'Marking'],
+      [utc('2026-10-01'), 33, 0],
+      ['02/10/2026', null, 4],
+      ['03/10/2026', null, null],
+      ['08/10/2026', null, null],
+    ]), groups, TODAY)
+    expect(res.errors).toEqual([])
+    expect(res.warnings).toEqual([])
+    expect(res.rows).toEqual([
+      { day: '2026-10-01', values: { g1: 33, g3: 0 } },
+      { day: '2026-10-02', values: { g3: 4 } },
+    ])
+  })
+
+  it('refuses an unknown group, a repeated date and a future day with a value', () => {
+    expect(parseManpowerActual(sheet([['Date', 'Reinstatement', 'Welding'], ['2026-10-01', 1, 2]]), groups, TODAY).errors)
+      .toEqual([{ row: 1, message: 'Nhóm chưa có trong Cấu hình: Welding (tạo nhóm trước khi nhập)' }])
+    const res = parseManpowerActual(sheet([
+      ['Date', 'Reinstatement'], ['2026-10-01', 1], ['2026-10-01', 2], ['2026-10-09', 3],
+    ]), groups, TODAY)
+    expect(res.errors).toEqual([
+      { row: 3, message: 'Ngày 01/10/2026 trùng với dòng 2' },
+      { row: 4, message: 'Không nhập được ngày trong tương lai (09/10/2026)' },
+    ])
+    expect(res.rows).toEqual([])
+  })
+
+  it('compares a Reinstatement day total: added on an empty day, changed when the total differs', () => {
+    const diff = diffReinstatementActual(
+      [{ day: '2026-10-01', qty: 0.1 }, { day: '2026-10-01', qty: 0.2 }, { day: '2026-10-02', qty: 5 }, { day: '2026-10-03', qty: 2 }],
+      [
+        { day: '2026-10-01', qty: 0.3 },
+        { day: '2026-10-02', qty: 7 },
+        { day: '2026-10-03', qty: 0 },
+        { day: '2026-10-04', qty: 4 },
+        { day: '2026-10-05', qty: 0 },
+      ],
+    )
+    expect(diff).toEqual({
+      added: [{ day: '2026-10-04', to: 4 }],
+      changed: [{ day: '2026-10-02', from: 5, to: 7 }, { day: '2026-10-03', from: 2, to: 0 }],
+      removed: [],
+      unchangedCount: 2,
+    })
+  })
+
+  it('compares Manpower cells: added without a value, changed when it differs, other cells kept', () => {
+    const diff = diffManpowerActual(
+      [{ groupId: 'g1', day: '2026-10-01', value: 30 }, { groupId: 'g3', day: '2026-10-01', value: 2 }],
+      [{ day: '2026-10-01', values: { g1: 33, g3: 2 } }, { day: '2026-10-02', values: { g1: 0 } }],
+    )
+    expect(diff).toEqual({
+      added: [{ groupId: 'g1', day: '2026-10-02', to: 0 }],
+      changed: [{ groupId: 'g1', day: '2026-10-01', from: 30, to: 33 }],
+      removed: [],
+      unchangedCount: 1,
+    })
   })
 })

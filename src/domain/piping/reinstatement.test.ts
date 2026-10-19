@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  checkReinstatementActualImport,
   checkReinstatementEntry,
   reinstatementSeries,
   reinstatementSummary,
@@ -108,3 +109,23 @@ describe('checkReinstatementEntry (spec §4, mirrors piping_add_reinstatement)',
       .toBe('Số lượng phải lớn hơn 0')
   })
 })
+
+describe('checkReinstatementActualImport (RV8-6, R-4)', () => {
+  const entries = [entry('a', '2026-10-01', 600), entry('b', '2026-10-02', 300), entry('c', '2026-10-02', 100)]
+
+  it('needs the total, then caps the cumulative after the import, the file days replacing theirs', () => {
+    expect(checkReinstatementActualImport(entries, [{ day: '2026-10-03', qty: 1 }], null))
+      .toBe('Admin chưa nhập tổng Test Pack')
+    // 600 kept + 300 (10/02 replaced) + 122 = 1022: at the cap.
+    expect(checkReinstatementActualImport(entries, [{ day: '2026-10-02', qty: 300 }, { day: '2026-10-03', qty: 122 }], 1022))
+      .toBeNull()
+    expect(checkReinstatementActualImport(entries, [{ day: '2026-10-02', qty: 300 }, { day: '2026-10-03', qty: 122.5 }], 1022))
+      .toBe('Vượt tổng Test Pack (đã có 1.022,5 / 1.022)')
+  })
+
+  it('lets a lowering import through even when the project is already over the cap', () => {
+    expect(checkReinstatementActualImport(entries, [{ day: '2026-10-01', qty: 0.1 }, { day: '2026-10-02', qty: 0.2 }], 0.3))
+      .toBeNull()
+  })
+})
+

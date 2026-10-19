@@ -2,9 +2,11 @@ import { MILESTONES, PLAN_FIELD, actualDates, duplicateSpoolGroups, milestoneAct
   planDates, planOrderIssues, resolveActualChanges, spoolKey, type ActualChange, type ActualOverwrite, type ActualResolution } from './cam'
 import type {
   DayKey,
+  ManpowerActualImportRow,
   ManpowerGroup,
   ManpowerValue,
   Milestone,
+  ReinstatementActualImportRow,
   ReinstatementPlanRow,
   Spool,
   SpoolColumn,
@@ -12,6 +14,7 @@ import type {
   SpoolPlanDates,
 } from './types'
 import { MAX_IMPORT_BYTES, MAX_IMPORT_ROWS } from './limits'
+import { sumQty } from './reinstatement'
 import { formatDayMonthYear } from './week'
 
 /**
@@ -73,6 +76,7 @@ export type PlanImportMode = 'replace' | 'update'
 
 export const DATE_COLUMN: ColumnSpec = { label: 'Date', aliases: ['Ngày', 'Day'] }
 export const PLAN_QTY_COLUMN: ColumnSpec = { label: 'Plan Qty', aliases: ['Plan', 'Kế hoạch', 'Plan Quantity'] }
+export const ACTUAL_QTY_COLUMN: ColumnSpec = { label: 'Actual Qty', aliases: ['Actual', 'Thực tế', 'Actual Quantity'] }
 
 /** The six master columns, as the customer's file names them (spec §0). */
 export const SPOOL_MASTER_COLUMNS: Record<keyof SpoolMaster, ColumnSpec> = {
@@ -518,32 +522,10 @@ export function parseReinstatementPlan(sheets: SheetRows[], mode: PlanImportMode
  * cell is no plan for that group on that day.
  */
 export function parseManpowerPlan(sheets: SheetRows[], groups: ManpowerGroup[]): ParseResult<ManpowerValue> {
-  const pre = checkPreamble(sheets)
-  if (pre) return empty(null, [pre])
-  const names = groups.map((g) => g.name)
-  const groupsIn = (norm: string[], texts: string[]) => {
-    const dateCol = columnOf(norm, DATE_COLUMN)
-    return matchNames(texts, names, new Set(dateCol === -1 ? [] : [dateCol]))
-  }
-  // A workbook may carry other sheets with a date column (the customer's own
-  // has three): the one naming a group wins, else the first with a date.
-  const header = findHeader(sheets, (norm, texts) => columnOf(norm, DATE_COLUMN) !== -1 && groupsIn(norm, texts).byColumn.size > 0)
-    ?? findHeader(sheets, hasAll([DATE_COLUMN]))
-  if (!header) return empty(null, [missingHeader(DATE_COLUMN.label)])
-  const dateCol = columnOf(header.norm, DATE_COLUMN)
-  const headerRow = header.index + 1
-  const matched = groupsIn(header.norm, header.texts)
-  const columns = [...matched.byColumn.entries()].sort(([a], [b]) => a - b).map(([col, i]) => ({ col, group: groups[i] }))
-  const unknown = matched.unmatched.sort((a, b) => a - b).map((col) => header.texts[col])
-  const errors: ImportIssue[] = matched.repeats.map((r) => ({ row: headerRow, message: `Cột nhóm ${groups[r.name].name} lặp lại` }))
-  if (unknown.length > 0) {
-    errors.unshift({ row: headerRow, message: `Nhóm chưa có trong Cấu hình: ${unknown.join(', ')} (tạo nhóm trước khi nhập)` })
-  }
-  if (errors.length === 0 && columns.length === 0) errors.push({ row: headerRow, message: 'Không có cột nhóm nào' })
-  if (errors.length > 0) return empty(header.sheet.name, errors)
-
-  const data = dataRows(header, [dateCol, ...columns.map((c) => c.col)])
-  if (data.length > MAX_IMPORT_ROWS) return empty(header.sheet.name, [tooMany(data.length)], [], data.length)
+  const file = readManpowerFile<ManpowerValue>(sheets, groups)
+  if ('result' in file) return file.result
+  const { header, dateCol, columns, data } = file
+  const errors: ImportIssue[] = []
   const warnings: ImportIssue[] = []
   const rows: ManpowerValue[] = []
   const seen = new Map<DayKey, number>()
@@ -557,6 +539,114 @@ export function parseManpowerPlan(sheets: SheetRows[], groups: ManpowerGroup[]):
       if (day !== null && value !== undefined) rows.push({ groupId: group.id, day, value })
     }
     if (day !== null && !any) warnings.push({ row, message: 'Không có giá trị nào, bỏ qua' })
+  }
+  return finish(header.sheet.name, rows, data.length, errors, warnings)
+}
+
+/**
+ * The header and data rows of a Manpower file (Plan or Actual): `Date` + one
+ * column per group, unknown headers refused (R-14) -- or the refusal itself.
+ */
+function readManpowerFile<T>(sheets: SheetRows[], groups: ManpowerGroup[]):
+  | { header: Header; dateCol: number; columns: Array<{ col: number; group: ManpowerGroup }>; data: Array<{ row: number; cells: CellValue[] }> }
+  | { result: ParseResult<T> } {
+  const pre = checkPreamble(sheets)
+  if (pre) return { result: empty(null, [pre]) }
+  const names = groups.map((g) => g.name)
+  const groupsIn = (norm: string[], texts: string[]) => {
+    const dateCol = columnOf(norm, DATE_COLUMN)
+    return matchNames(texts, names, new Set(dateCol === -1 ? [] : [dateCol]))
+  }
+  // A workbook may carry other sheets with a date column (the customer's own
+  // has three): the one naming a group wins, else the first with a date.
+  const header = findHeader(sheets, (norm, texts) => columnOf(norm, DATE_COLUMN) !== -1 && groupsIn(norm, texts).byColumn.size > 0)
+    ?? findHeader(sheets, hasAll([DATE_COLUMN]))
+  if (!header) return { result: empty(null, [missingHeader(DATE_COLUMN.label)]) }
+  const dateCol = columnOf(header.norm, DATE_COLUMN)
+  const headerRow = header.index + 1
+  const matched = groupsIn(header.norm, header.texts)
+  const columns = [...matched.byColumn.entries()].sort(([a], [b]) => a - b).map(([col, i]) => ({ col, group: groups[i] }))
+  const unknown = matched.unmatched.sort((a, b) => a - b).map((col) => header.texts[col])
+  const errors: ImportIssue[] = matched.repeats.map((r) => ({ row: headerRow, message: `Cột nhóm ${groups[r.name].name} lặp lại` }))
+  if (unknown.length > 0) {
+    errors.unshift({ row: headerRow, message: `Nhóm chưa có trong Cấu hình: ${unknown.join(', ')} (tạo nhóm trước khi nhập)` })
+  }
+  if (errors.length === 0 && columns.length === 0) errors.push({ row: headerRow, message: 'Không có cột nhóm nào' })
+  if (errors.length > 0) return { result: empty(header.sheet.name, errors) }
+
+  const data = dataRows(header, [dateCol, ...columns.map((c) => c.col)])
+  if (data.length > MAX_IMPORT_ROWS) return { result: empty(header.sheet.name, [tooMany(data.length)], [], data.length) }
+  return { header, dateCol, columns, data }
+}
+
+// ---------------------------------------------------------------------------
+// Reinstatement and Manpower Actual (RV8-6)
+// ---------------------------------------------------------------------------
+
+/** An Actual day after today (VN), said as piping_import_*_actual says it. */
+function futureDay(day: DayKey): string {
+  return `Không nhập được ngày trong tương lai (${formatDayMonthYear(day)})`
+}
+
+/**
+ * A `Date` + `Actual Qty` file (RV8-6): the plan file's rules, plus no day
+ * after `todayKey`. A blank Actual Qty is not in the file -- that day is kept,
+ * whatever its date, so a sheet listing the days ahead still imports; 0
+ * empties the day.
+ */
+export function parseReinstatementActual(sheets: SheetRows[], todayKey: DayKey): ParseResult<ReinstatementActualImportRow> {
+  const pre = checkPreamble(sheets)
+  if (pre) return empty(null, [pre])
+  const header = findHeader(sheets, hasAll([DATE_COLUMN, ACTUAL_QTY_COLUMN]))
+  if (!header) return empty(null, [missingHeader(`${DATE_COLUMN.label}, ${ACTUAL_QTY_COLUMN.label}`)])
+  const dateCol = columnOf(header.norm, DATE_COLUMN)
+  const qtyCol = columnOf(header.norm, ACTUAL_QTY_COLUMN)
+  const data = dataRows(header, [dateCol, qtyCol])
+  if (data.length > MAX_IMPORT_ROWS) return empty(header.sheet.name, [tooMany(data.length)], [], data.length)
+
+  const errors: ImportIssue[] = []
+  const warnings: ImportIssue[] = []
+  const rows: ReinstatementActualImportRow[] = []
+  const seen = new Map<DayKey, number>()
+  for (const { row, cells } of data) {
+    const day = readDate(cells, dateCol, row, seen, errors)
+    const qty = readAmount(cellAt(cells, qtyCol), ACTUAL_QTY_COLUMN.label, row, errors, warnings)
+    if (day === null || typeof qty !== 'number') continue
+    if (day > todayKey) errors.push({ row, message: futureDay(day) })
+    else rows.push({ day, qty })
+  }
+  return finish(header.sheet.name, rows, data.length, errors, warnings)
+}
+
+/**
+ * A `Date` + one-column-per-group file (RV8-6): the Manpower Plan file's rules
+ * (hidden groups included, an unknown header refused), plus no day after
+ * `todayKey` with a value. One row per day, its filled cells by group id; a
+ * blank cell is kept, a day with none is skipped.
+ */
+export function parseManpowerActual(
+  sheets: SheetRows[], groups: ManpowerGroup[], todayKey: DayKey,
+): ParseResult<ManpowerActualImportRow> {
+  const file = readManpowerFile<ManpowerActualImportRow>(sheets, groups)
+  if ('result' in file) return file.result
+  const { header, dateCol, columns, data } = file
+  const errors: ImportIssue[] = []
+  const warnings: ImportIssue[] = []
+  const rows: ManpowerActualImportRow[] = []
+  const seen = new Map<DayKey, number>()
+  for (const { row, cells } of data) {
+    const day = readDate(cells, dateCol, row, seen, errors)
+    const values: Record<string, number> = {}
+    let any = false
+    for (const { col, group } of columns) {
+      const value = readAmount(cellAt(cells, col), group.name, row, errors, warnings)
+      if (value === null) continue
+      any = true
+      if (value !== undefined) values[group.id] = value
+    }
+    if (day === null || !any) continue
+    if (day > todayKey) errors.push({ row, message: futureDay(day) })
+    else rows.push({ day, values })
   }
   return finish(header.sheet.name, rows, data.length, errors, warnings)
 }
@@ -903,6 +993,42 @@ export function diffManpowerPlan(old: ManpowerValue[], next: ManpowerValue[]): K
 /** Update Plan preview for Manpower (RV8-5): as the replace, but a blank cell or an absent day is kept. */
 export function diffManpowerPlanUpdate(old: ManpowerValue[], next: ManpowerValue[]): KeyedDiff<{ groupId: string; day: DayKey }> {
   return { ...diffManpowerPlan(old, next), removed: [] }
+}
+
+/**
+ * Actual import preview for Reinstatement (RV8-6), as
+ * piping_import_reinstatement_actual counts it: each file day against the
+ * day's stored total -- added on a day without entries (a 0 there changes
+ * nothing), changed when the total differs. Nothing is removed.
+ */
+export function diffReinstatementActual(
+  entries: Array<{ day: DayKey; qty: number }>, rows: ReinstatementActualImportRow[],
+): KeyedDiff<{ day: DayKey }> {
+  const totals = new Map<DayKey, number[]>()
+  for (const e of entries) totals.set(e.day, [...(totals.get(e.day) ?? []), e.qty])
+  const diff: KeyedDiff<{ day: DayKey }> = { added: [], changed: [], removed: [], unchangedCount: 0 }
+  for (const r of rows) {
+    const qtys = totals.get(r.day)
+    const from = qtys === undefined ? null : sumQty(qtys)
+    if (from === null && r.qty > 0) diff.added.push({ day: r.day, to: r.qty })
+    else if (from !== null && from !== r.qty) diff.changed.push({ day: r.day, from, to: r.qty })
+    else diff.unchangedCount += 1
+  }
+  diff.added.sort(byDay)
+  diff.changed.sort(byDay)
+  return diff
+}
+
+/**
+ * Actual import preview for Manpower (RV8-6): each filled cell against the
+ * stored one -- added without a value (0 included), changed when it differs.
+ * Cells the file leaves blank are kept, so nothing is removed.
+ */
+export function diffManpowerActual(
+  stored: Array<{ groupId: string; day: DayKey; value: number }>, rows: ManpowerActualImportRow[],
+): KeyedDiff<{ groupId: string; day: DayKey }> {
+  const next = rows.flatMap((r) => Object.entries(r.values).map(([groupId, value]) => ({ groupId, day: r.day, value })))
+  return { ...diffManpowerPlan(stored, next), removed: [] }
 }
 
 export type SpoolDiffField = Exclude<keyof SpoolMaster, 'spoolNo'> | keyof SpoolPlanDates | 'extra'
