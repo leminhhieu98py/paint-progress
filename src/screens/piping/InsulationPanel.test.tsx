@@ -162,15 +162,20 @@ describe('InsulationPanel: chart (spec §6.4, Q20A)', () => {
     expect(bucket('2026-10-07')).toBe('2026-10-07:1/1')
   })
 
-  it('shows all six lines, then Plan only, then Actual only', async () => {
+  it('shows all bars and lines, then Plan only, then Actual only', async () => {
     renderPanel()
-    expect(await chart()).toHaveAttribute('data-keys', 'phPlan,phActual,ihPlan,ihActual,iwPlan,iwActual')
+    expect(await chart()).toHaveAttribute('data-keys', [
+      'phPlanBar,phActualBar,phPlan,phActual',
+      'ihPlanBar,ihActualBar,ihPlan,ihActual',
+      'iwPlanBar,iwActualBar,iwPlan,iwActual',
+    ].join(','))
     expect(selected('Đường hiển thị')).toBe('Plan & Actual')
     expect(await optionTitles('Đường hiển thị')).toEqual(['Plan', 'Actual', 'Plan & Actual'])
     await show('Plan')
-    expect(screen.getByTestId('insulation-chart')).toHaveAttribute('data-keys', 'phPlan,ihPlan,iwPlan')
+    expect(screen.getByTestId('insulation-chart')).toHaveAttribute('data-keys', 'phPlanBar,phPlan,ihPlanBar,ihPlan,iwPlanBar,iwPlan')
     await show('Actual')
-    expect(screen.getByTestId('insulation-chart')).toHaveAttribute('data-keys', 'phActual,ihActual,iwActual')
+    expect(screen.getByTestId('insulation-chart'))
+      .toHaveAttribute('data-keys', 'phActualBar,phActual,ihActualBar,ihActual,iwActualBar,iwActual')
   })
 
   it('runs the plan to its end and the actual to today, by week in week view', async () => {

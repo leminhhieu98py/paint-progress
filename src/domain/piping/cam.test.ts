@@ -173,15 +173,40 @@ describe('camSeries (spec §6.4 chart)', () => {
     ])
   })
 
+  it('gives the bars per day: items reaching each milestone inside the bucket, plan to its end, actual to today (RV8-11)', () => {
+    const { points } = camSeries({ spools, unit: 'spoolNo', mode: 'day', weekStart: START, todayKey: '2026-09-20' })
+    expect(points.map((p) => [
+      p.key, p.phPlanBar, p.phActualBar, p.ihPlanBar, p.ihActualBar, p.iwPlanBar, p.iwActualBar,
+    ])).toEqual([
+      ['2026-09-18', 1, 0, 0, 0, 0, 0],
+      ['2026-09-19', 1, 2, 0, 0, 0, 0],
+      ['2026-09-20', 0, 0, 1, 1, 0, 0],
+      ['2026-09-21', 0, null, 0, null, 0, null],
+      ['2026-09-22', 0, null, 1, null, 0, null],
+    ])
+  })
+
+  it('gives the bars per week for a group unit, a group counted on its last spool\'s date', () => {
+    const { points } = camSeries({ spools, unit: 'lineNo', mode: 'week', weekStart: START, todayKey: '2026-09-30' })
+    expect(points.map((p) => [p.key, p.phPlanBar, p.phActualBar, p.ihPlanBar, p.ihActualBar])).toEqual([
+      ['2026-09-18', 1, 1, 1, 0],
+      ['2026-09-25', null, 0, null, 0],
+    ])
+  })
+
   it('is empty without any date', () => {
     expect(camSeries({ spools: [spool()], unit: 'spoolNo', mode: 'day', weekStart: START, todayKey: '2026-09-20' }))
       .toEqual({ points: [], total: 1 })
   })
 
-  it('names the lines a Plan | Actual | Plan & Actual toggle shows (Q20A)', () => {
-    expect(camSeriesKeys('plan')).toEqual(['phPlan', 'ihPlan', 'iwPlan'])
-    expect(camSeriesKeys('actual')).toEqual(['phActual', 'ihActual', 'iwActual'])
-    expect(camSeriesKeys('both')).toEqual(['phPlan', 'phActual', 'ihPlan', 'ihActual', 'iwPlan', 'iwActual'])
+  it('names the bars and lines a Plan | Actual | Plan & Actual toggle shows, by milestone (Q20A, RV8-11)', () => {
+    expect(camSeriesKeys('plan')).toEqual(['phPlanBar', 'phPlan', 'ihPlanBar', 'ihPlan', 'iwPlanBar', 'iwPlan'])
+    expect(camSeriesKeys('actual')).toEqual(['phActualBar', 'phActual', 'ihActualBar', 'ihActual', 'iwActualBar', 'iwActual'])
+    expect(camSeriesKeys('both')).toEqual([
+      'phPlanBar', 'phActualBar', 'phPlan', 'phActual',
+      'ihPlanBar', 'ihActualBar', 'ihPlan', 'ihActual',
+      'iwPlanBar', 'iwActualBar', 'iwPlan', 'iwActual',
+    ])
   })
 })
 
