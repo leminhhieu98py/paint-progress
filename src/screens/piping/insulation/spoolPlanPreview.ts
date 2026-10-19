@@ -1,4 +1,6 @@
-import { diffSpoolPlan, type SpoolDiffField, type SpoolPlanRow } from '../../../domain/piping/imports'
+import {
+  diffSpoolPlan, diffSpoolPlanUpdate, type ImportIssue, type SpoolDiffField, type SpoolFieldChange, type SpoolPlanRow,
+} from '../../../domain/piping/imports'
 import type { Spool } from '../../../domain/piping/types'
 import { formatDayMonthYear } from '../../../domain/piping/week'
 import { MISSING } from '../../../lib/format'
@@ -49,16 +51,7 @@ export function spoolPlanPreview(
   const diff = diffSpoolPlan(stored, next)
   const notesOf = (s: Spool) => noteCounts?.get(s.id) ?? 0
   const lines: PlanDiffLine[] = [
-    ...diff.added.map((r) => ({
-      key: `a|${r.seq}`, change: 'added' as const, label: r.spoolNo, from: null, to: `Dòng ${formatQty(r.row)}`,
-    })),
-    ...diff.changed.flatMap(({ spool, changes }) => changes.map((c) => ({
-      key: `c|${spool.id}|${c.field}|${c.label}`,
-      change: 'changed' as const,
-      label: `${spool.spoolNo} · ${c.label}`,
-      from: value(c.field, c.from),
-      to: value(c.field, c.to),
-    }))),
+    ...addedAndChanged(diff.added, diff.changed),
     ...diff.removed.map(({ spool, hasActuals }) => ({
       key: `r|${spool.id}`,
       change: 'removed' as const,
@@ -91,6 +84,49 @@ export function spoolPlanPreview(
   }
 }
 
+/** A line per added spool and per changed field of a matched one. */
+function addedAndChanged(
+  added: SpoolPlanRow[], changed: Array<{ spool: Spool; changes: SpoolFieldChange[] }>,
+): PlanDiffLine[] {
+  return [
+    ...added.map((r) => ({
+      key: `a|${r.seq}`, change: 'added' as const, label: r.spoolNo, from: null, to: `Dòng ${formatQty(r.row)}`,
+    })),
+    ...changed.flatMap(({ spool, changes }) => changes.map((c) => ({
+      key: `c|${spool.id}|${c.field}|${c.label}`,
+      change: 'changed' as const,
+      label: `${spool.spoolNo} · ${c.label}`,
+      from: value(c.field, c.from),
+      to: value(c.field, c.to),
+    }))),
+  ]
+}
+
+/**
+ * The Update Plan preview (RV8-5): added spools and changed fields only --
+ * nothing is removed, so there is no danger. The warnings are the file's
+ * column warnings and the merged result's duplicates and plan-order breaks.
+ */
+export function spoolPlanUpdatePreview(
+  stored: Spool[],
+  next: SpoolPlanRow[],
+  columnWarnings: ImportIssue[] = [],
+): PlanImportPreview {
+  const diff = diffSpoolPlanUpdate(stored, next)
+  const consequences: string[] = []
+  if (diff.kept.length > 0) consequences.push(`${formatQty(diff.kept.length)} spool không có trong file được giữ nguyên cùng ngày Actual.`)
+  if (diff.added.length > 0) consequences.push(`${formatQty(diff.added.length)} spool mới được thêm sau các spool hiện có.`)
+  if (diff.changed.length + diff.unchangedCount > 0) consequences.push('Spool khớp SpoolNo giữ nguyên ngày Actual.')
+  return {
+    added: diff.added.length,
+    changed: diff.changed.length,
+    unchanged: diff.unchangedCount,
+    lines: addedAndChanged(diff.added, diff.changed),
+    consequences,
+    warnings: [...columnWarnings, ...diff.warnings],
+  }
+}
+
 function flagOf(hasActuals: boolean, hasNotes: boolean): { flag?: string } {
   const flags = [hasActuals && 'có Actual', hasNotes && 'có ghi chú'].filter((f): f is string => Boolean(f))
   return flags.length === 0 ? {} : { flag: flags.join(', ') }
@@ -105,4 +141,10 @@ export function spoolPlanSummary(stored: Spool[], next: SpoolPlanRow[]): Record<
     removed: diff.removed.length,
     removedWithActuals: diff.removed.filter((r) => r.hasActuals).length,
   }
+}
+
+/** The Update Plan preview's counts, kept in the import log's summary. */
+export function spoolPlanUpdateSummary(stored: Spool[], next: SpoolPlanRow[]): Record<string, number> {
+  const diff = diffSpoolPlanUpdate(stored, next)
+  return { added: diff.added.length, changed: diff.changed.length }
 }

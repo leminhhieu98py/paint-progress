@@ -17,6 +17,7 @@ const api = vi.hoisted(() => ({
   listManpowerGroups: vi.fn(),
   listManpowerPlan: vi.fn(),
   replaceManpowerPlan: vi.fn(),
+  mergeManpowerPlan: vi.fn(),
   listManpowerActual: vi.fn(),
   setManpowerActual: vi.fn(),
   listNotes: vi.fn(),
@@ -25,6 +26,7 @@ vi.mock('../../lib/pipingApi', () => ({
   listManpowerGroups: (...a: unknown[]) => api.listManpowerGroups(...a),
   listManpowerPlan: (...a: unknown[]) => api.listManpowerPlan(...a),
   replaceManpowerPlan: (...a: unknown[]) => api.replaceManpowerPlan(...a),
+  mergeManpowerPlan: (...a: unknown[]) => api.mergeManpowerPlan(...a),
   listManpowerActual: (...a: unknown[]) => api.listManpowerActual(...a),
   setManpowerActual: (...a: unknown[]) => api.setManpowerActual(...a),
   listNotes: (...a: unknown[]) => api.listNotes(...a),
@@ -140,6 +142,7 @@ beforeEach(() => {
   api.setManpowerActual.mockResolvedValue(1)
   api.listNotes.mockResolvedValue([])
   api.replaceManpowerPlan.mockResolvedValue({ logId: 'l1', summary: {} })
+  api.mergeManpowerPlan.mockResolvedValue({ logId: 'l2', summary: {} })
   xlsx.read.mockReset()
   templates.build.mockReset()
   templates.build.mockResolvedValue(new Blob(['t']))
@@ -538,10 +541,40 @@ describe('ManpowerPanel: Plan import (spec §8, R-14)', () => {
         { groupId: 'g1', day: '2026-10-03', value: 7 },
       ],
       'plan.xlsx',
-      { sheet: 'Sheet1', warnings: 0 },
+      { sheet: 'Sheet1', warnings: 0, mode: 'replace' },
     ))
+    expect(api.mergeManpowerPlan).not.toHaveBeenCalled()
     await waitFor(() => expect(api.listManpowerPlan).toHaveBeenCalledTimes(2))
     expect(await screen.findByText('Đã import Manpower Plan')).toBeInTheDocument()
+  })
+
+  it('previews Update Plan cell by cell, blank cells and absent days kept, and merges on confirm (RV8-5)', async () => {
+    xlsx.read.mockResolvedValue(sheet([
+      ['Date', 'Reinstatement', 'Insulation', 'Marking'],
+      ['01/10/2026', 10, 5, null],
+      ['03/10/2026', 7, null, null],
+    ]))
+    renderPanel()
+    await loaded()
+    await upload()
+    await screen.findByText('Xem trước Manpower Plan')
+    await userEvent.click(within(dialog()).getByText('Update Plan', { selector: '.ant-segmented-item-label' }))
+    await waitFor(() => expect(keyFactTexts(dialog())).toEqual(['1 thêm', '1 sửa', '1 giữ nguyên']))
+    expect(within(dialog()).queryByText('02/10/2026 · Marking')).toBeNull()
+    expect(within(dialog()).getByText(/cập nhật theo 2 dòng của file, phần còn lại giữ nguyên/)).toBeInTheDocument()
+
+    await userEvent.click(within(dialog()).getByRole('button', { name: 'Update Plan' }))
+    await waitFor(() => expect(api.mergeManpowerPlan).toHaveBeenCalledWith(
+      'p1',
+      [
+        { groupId: 'g1', day: '2026-10-01', value: 10 },
+        { groupId: 'g2', day: '2026-10-01', value: 5 },
+        { groupId: 'g1', day: '2026-10-03', value: 7 },
+      ],
+      'plan.xlsx',
+      { sheet: 'Sheet1', warnings: 0, mode: 'update' },
+    ))
+    expect(api.replaceManpowerPlan).not.toHaveBeenCalled()
   })
 
   it('shows the plan as imported, folded away, a day per row', async () => {

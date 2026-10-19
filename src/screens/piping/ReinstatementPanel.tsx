@@ -5,14 +5,17 @@ import type { KeyFact } from '../../components/KeyFacts'
 import { RulesDisclosure } from '../../components/RulesDisclosure'
 import { SectionCard } from '../../components/SectionCard'
 import { useTablePagination } from '../../components/tablePagination'
-import { diffReinstatementPlan, parseReinstatementPlan } from '../../domain/piping/imports'
+import {
+  diffReinstatementPlan, diffReinstatementPlanUpdate, parseReinstatementPlan, type PlanImportMode,
+} from '../../domain/piping/imports'
 import { reinstatementSeries, reinstatementSummary } from '../../domain/piping/reinstatement'
 import type { ReinstatementPlanRow } from '../../domain/piping/types'
 import { formatDayMonthYear } from '../../domain/piping/week'
 import { formatPercent, MISSING } from '../../lib/format'
 import { buildReinstatementPlanTemplate, templateFileName } from '../../lib/piping/templates'
 import {
-  listReinstatementEntries, listReinstatementPlan, replaceReinstatementPlan, type ReinstatementEntry,
+  listReinstatementEntries, listReinstatementPlan, mergeReinstatementPlan, replaceReinstatementPlan,
+  type ReinstatementEntry,
 } from '../../lib/pipingApi'
 import { space } from '../../theme'
 import { ReinstatementChart } from './charts'
@@ -67,9 +70,9 @@ function summaryFact(entries: ReinstatementEntry[], total: number | null, admin:
   }
 }
 
-/** The re-import preview: every changed day, old -> new (spec §8). */
-function planPreview(stored: ReinstatementPlanRow[], next: ReinstatementPlanRow[]): PlanImportPreview {
-  const diff = diffReinstatementPlan(stored, next)
+/** The re-import preview: every changed day, old -> new (spec §8); Update Plan removes none (RV8-5). */
+function planPreview(stored: ReinstatementPlanRow[], next: ReinstatementPlanRow[], mode: PlanImportMode): PlanImportPreview {
+  const diff = mode === 'update' ? diffReinstatementPlanUpdate(stored, next) : diffReinstatementPlan(stored, next)
   const lines = [
     ...diff.added.map((d) => ({ key: d.day, change: 'added' as const, from: null, to: formatQty(d.to), day: d.day })),
     ...diff.changed.map((d) => ({
@@ -82,7 +85,7 @@ function planPreview(stored: ReinstatementPlanRow[], next: ReinstatementPlanRow[
   return {
     added: diff.added.length,
     changed: diff.changed.length,
-    removed: diff.removed.length,
+    ...(mode === 'update' ? {} : { removed: diff.removed.length }),
     unchanged: diff.unchangedCount,
     lines,
   }
@@ -102,7 +105,10 @@ export function ReinstatementPanel({ projectId, settings, mode, role, todayKey, 
     [data, mode, settings.weekStartDate, todayKey],
   )
   const plan = data?.plan
-  const preview = useCallback((rows: ReinstatementPlanRow[]) => planPreview(plan ?? [], rows), [plan])
+  const preview = useCallback(
+    (rows: ReinstatementPlanRow[], importMode: PlanImportMode) => planPreview(plan ?? [], rows, importMode),
+    [plan],
+  )
   /** The admin's notes on a day (spec §9); none for a foreman or a viewer. */
   const notes = usePipingNotes(projectId, refreshKey, admin)
   const noteAction = notes.action
@@ -136,8 +142,11 @@ export function ReinstatementPanel({ projectId, settings, mode, role, todayKey, 
               buildTemplate={buildReinstatementPlanTemplate}
               parse={parseReinstatementPlan}
               preview={preview}
+              modes
               lineHeader="Ngày"
-              commit={({ rows, fileName, summary }) => replaceReinstatementPlan(projectId, rows, fileName, summary)}
+              commit={({ rows, fileName, summary, mode: importMode }) => (importMode === 'update'
+                ? mergeReinstatementPlan(projectId, rows, fileName, summary)
+                : replaceReinstatementPlan(projectId, rows, fileName, summary))}
               onImported={reload}
             />
           </HeaderActions>

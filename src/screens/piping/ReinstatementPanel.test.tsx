@@ -14,6 +14,7 @@ import { ReinstatementPanel } from './ReinstatementPanel'
 const api = vi.hoisted(() => ({
   listReinstatementPlan: vi.fn(),
   replaceReinstatementPlan: vi.fn(),
+  mergeReinstatementPlan: vi.fn(),
   listReinstatementEntries: vi.fn(),
   addReinstatementEntry: vi.fn(),
   updateReinstatementEntry: vi.fn(),
@@ -24,6 +25,7 @@ const api = vi.hoisted(() => ({
 vi.mock('../../lib/pipingApi', () => ({
   listReinstatementPlan: (...a: unknown[]) => api.listReinstatementPlan(...a),
   replaceReinstatementPlan: (...a: unknown[]) => api.replaceReinstatementPlan(...a),
+  mergeReinstatementPlan: (...a: unknown[]) => api.mergeReinstatementPlan(...a),
   listReinstatementEntries: (...a: unknown[]) => api.listReinstatementEntries(...a),
   addReinstatementEntry: (...a: unknown[]) => api.addReinstatementEntry(...a),
   updateReinstatementEntry: (...a: unknown[]) => api.updateReinstatementEntry(...a),
@@ -115,6 +117,7 @@ beforeEach(() => {
   api.deleteReinstatementEntry.mockResolvedValue(undefined)
   api.listNotes.mockResolvedValue([])
   api.replaceReinstatementPlan.mockResolvedValue({ logId: 'l1', summary: {} })
+  api.mergeReinstatementPlan.mockResolvedValue({ logId: 'l2', summary: {} })
   xlsx.read.mockReset()
   templates.build.mockReset()
   templates.build.mockResolvedValue(new Blob(['t']))
@@ -468,10 +471,38 @@ describe('ReinstatementPanel: Plan import (spec §8)', () => {
       'p1',
       [{ day: '2026-10-02', planQty: 175 }, { day: '2026-10-03', planQty: 50 }],
       'plan.xlsx',
-      { sheet: 'Sheet1', warnings: 0 },
+      { sheet: 'Sheet1', warnings: 0, mode: 'replace' },
     ))
+    expect(api.mergeReinstatementPlan).not.toHaveBeenCalled()
     await waitFor(() => expect(api.listReinstatementPlan).toHaveBeenCalledTimes(2))
     expect(await screen.findByText('Đã import Reinstatement Plan')).toBeInTheDocument()
+  })
+
+  it('previews Update Plan without removals, a blank cell kept, and merges on confirm (RV8-5)', async () => {
+    xlsx.read.mockResolvedValue(sheet([['Date', 'Plan Qty'], ['02/10/2026', 175], ['03/10/2026', null], ['04/10/2026', 50]]))
+    renderPanel()
+    await loaded()
+    await upload()
+    // Plan (the replace) refuses the blank cell, as it always did.
+    expect(await screen.findByText('Thiếu Plan Qty')).toBeInTheDocument()
+    await userEvent.click(within(dialog()).getByText('Update Plan', { selector: '.ant-segmented-item-label' }))
+    expect(await screen.findByText('Xem trước Reinstatement Plan')).toBeInTheDocument()
+    const preview = screen.getAllByRole('dialog').at(-1) as HTMLElement
+    expect(keyFactTexts(preview)).toEqual(['1 thêm', '1 sửa', '0 giữ nguyên'])
+    expect(within(preview).getByText('02/10/2026').closest('tr')).toHaveTextContent(/Sửa.*150.*175/)
+    expect(within(preview).getByText('04/10/2026').closest('tr')).toHaveTextContent(/Thêm.*-.*50/)
+    // 01/10 is not in the file: kept, so not listed.
+    expect(within(preview).queryByText('01/10/2026')).toBeNull()
+
+    await userEvent.click(within(preview).getByRole('button', { name: 'Update Plan' }))
+    await waitFor(() => expect(api.mergeReinstatementPlan).toHaveBeenCalledWith(
+      'p1',
+      [{ day: '2026-10-02', planQty: 175 }, { day: '2026-10-04', planQty: 50 }],
+      'plan.xlsx',
+      { sheet: 'Sheet1', warnings: 1, mode: 'update' },
+    ))
+    expect(api.replaceReinstatementPlan).not.toHaveBeenCalled()
+    await waitFor(() => expect(api.listReinstatementPlan).toHaveBeenCalledTimes(2))
   })
 
   it('keeps the preview open with the message when the replace is refused', async () => {

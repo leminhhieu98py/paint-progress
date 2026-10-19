@@ -6,7 +6,9 @@ import { RulesDisclosure } from '../../components/RulesDisclosure'
 import { searchSelectProps, useFullOptionsProps } from '../../components/searchSelect'
 import { SectionCard } from '../../components/SectionCard'
 import { useTablePagination } from '../../components/tablePagination'
-import { diffManpowerPlan, parseManpowerPlan, type SheetRows } from '../../domain/piping/imports'
+import {
+  diffManpowerPlan, diffManpowerPlanUpdate, parseManpowerPlan, type PlanImportMode, type SheetRows,
+} from '../../domain/piping/imports'
 import {
   chartGroups, defaultGroupSelection, entryGroups, manpowerAverages, manpowerDays, manpowerSeries, planAverage, planMax,
   type ManpowerDayRow,
@@ -17,7 +19,8 @@ import { formatDayMonth, formatDayMonthYear } from '../../domain/piping/week'
 import { MISSING } from '../../lib/format'
 import { buildManpowerPlanTemplate, templateFileName } from '../../lib/piping/templates'
 import {
-  listManpowerActual, listManpowerGroups, listManpowerPlan, replaceManpowerPlan, type ManpowerActualEntry,
+  listManpowerActual, listManpowerGroups, listManpowerPlan, mergeManpowerPlan, replaceManpowerPlan,
+  type ManpowerActualEntry,
 } from '../../lib/pipingApi'
 import { space } from '../../theme'
 import { useFieldPhone } from '../gs/fieldSections'
@@ -76,10 +79,12 @@ function bySort(groups: ManpowerGroup[]): ManpowerGroup[] {
   return [...groups].sort((a, b) => a.sort - b.sort || compareText(a.name, b.name))
 }
 
-/** The re-import preview: every changed (day, group), old -> new (spec §8). */
-function planPreview(groups: ManpowerGroup[], stored: ManpowerValue[], next: ManpowerValue[]): PlanImportPreview {
+/** The re-import preview: every changed (day, group), old -> new (spec §8); Update Plan removes none (RV8-5). */
+function planPreview(
+  groups: ManpowerGroup[], stored: ManpowerValue[], next: ManpowerValue[], mode: PlanImportMode,
+): PlanImportPreview {
   const names = new Map(groups.map((g) => [g.id, g.name]))
-  const diff = diffManpowerPlan(stored, next)
+  const diff = mode === 'update' ? diffManpowerPlanUpdate(stored, next) : diffManpowerPlan(stored, next)
   const lines = [
     ...diff.added.map((d) => ({ ...d, change: 'added' as const, from: null, to: formatQty(d.to) })),
     ...diff.changed.map((d) => ({ ...d, change: 'changed' as const, from: formatQty(d.from), to: formatQty(d.to) })),
@@ -92,7 +97,7 @@ function planPreview(groups: ManpowerGroup[], stored: ManpowerValue[], next: Man
   return {
     added: diff.added.length,
     changed: diff.changed.length,
-    removed: diff.removed.length,
+    ...(mode === 'update' ? {} : { removed: diff.removed.length }),
     unchanged: diff.unchangedCount,
     lines,
   }
@@ -151,7 +156,10 @@ export function ManpowerPanel({ projectId, settings, mode, role, todayKey, refre
   const planAvg = useMemo(() => planAverage(plan ?? [], selected), [plan, selected])
   const max = useMemo(() => planMax(plan ?? [], selected), [plan, selected])
   const parse = useCallback((sheets: SheetRows[]) => parseManpowerPlan(sheets, groups ?? []), [groups])
-  const preview = useCallback((rows: ManpowerValue[]) => planPreview(groups ?? [], plan ?? [], rows), [groups, plan])
+  const preview = useCallback(
+    (rows: ManpowerValue[], importMode: PlanImportMode) => planPreview(groups ?? [], plan ?? [], rows, importMode),
+    [groups, plan],
+  )
   const buildTemplate = useCallback(() => buildManpowerPlanTemplate(bySort(groups ?? []).map((g) => g.name)), [groups])
   /** The admin's notes on a day (spec §9); none for a foreman or a viewer. */
   const notes = usePipingNotes(projectId, refreshKey, admin)
@@ -222,10 +230,13 @@ export function ManpowerPanel({ projectId, settings, mode, role, todayKey, refre
                 buildTemplate={buildTemplate}
                 parse={parse}
                 preview={preview}
+                modes
                 lineHeader="Ngày · Nhóm"
                 lineAlign="left"
                 countFileRows={fileDays}
-                commit={({ rows, fileName, summary }) => replaceManpowerPlan(projectId, rows, fileName, summary)}
+                commit={({ rows, fileName, summary, mode: importMode }) => (importMode === 'update'
+                  ? mergeManpowerPlan(projectId, rows, fileName, summary)
+                  : replaceManpowerPlan(projectId, rows, fileName, summary))}
                 onImported={reload}
               />
             )}
