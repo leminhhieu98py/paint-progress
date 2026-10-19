@@ -22,10 +22,35 @@ describe('getPipingSettings', () => {
     from.mockReturnValue(b)
     expect(await getPipingSettings('p1')).toEqual({
       projectId: 'p1', enabled: true, weekStartDate: '2026-09-07', totalTestPacks: 1022, lateThresholdDays: 7,
+      chartColors: {},
     })
     expect(from).toHaveBeenCalledWith('piping_settings')
+    expect(String(b.select.mock.calls[0][0])).toContain('chart_colors')
     expect(b.eq).toHaveBeenCalledWith('project_id', 'p1')
     expect(b.maybeSingle).toHaveBeenCalled()
+  })
+
+  it('keeps only #rrggbb chart colours (RV8-2)', async () => {
+    from.mockReturnValue(builder({
+      data: {
+        project_id: 'p1', enabled: true, week_start_date: '2026-09-07', total_test_packs: 1, late_threshold_days: 7,
+        chart_colors: {
+          'rein.planBar': '#1677ff', 'rein.actualBar': '#ABCDEF', 'mp.planTotal': 'red', 'mp.planAvg': '#12345',
+          'ins.ph.plan': '#1234567', 'ins.ih.plan': 7, 'ins.iw.plan': null,
+        },
+      },
+    }))
+    expect((await getPipingSettings('p1'))?.chartColors).toEqual({ 'rein.planBar': '#1677ff', 'rein.actualBar': '#ABCDEF' })
+  })
+
+  it.each([null, 'x', ['#1677ff'], 3])('reads chart colours %o as none', async (chartColors) => {
+    from.mockReturnValue(builder({
+      data: {
+        project_id: 'p1', enabled: true, week_start_date: '2026-09-07', total_test_packs: 1, late_threshold_days: 7,
+        chart_colors: chartColors,
+      },
+    }))
+    expect((await getPipingSettings('p1'))?.chartColors).toEqual({})
   })
 
   it('keeps an unset total as null', async () => {
@@ -102,6 +127,29 @@ describe('updatePipingSettings', () => {
   it('reports a write RLS swallowed', async () => {
     from.mockReturnValue(builder({ data: [] }))
     await expect(updatePipingSettings('p1', INPUT)).rejects.toThrow(NOT_SAVED)
+  })
+
+  it('writes chart colours only when given, so a settings save keeps them', async () => {
+    const b = builder({ data: [{ project_id: 'p1' }] })
+    from.mockReturnValue(b)
+    await updatePipingSettings('p1', { ...INPUT, chartColors: { 'rein.planBar': '#1677ff' } })
+    expect(b.update).toHaveBeenCalledWith({
+      week_start_date: '2026-09-07', total_test_packs: 1022, late_threshold_days: 7,
+      chart_colors: { 'rein.planBar': '#1677ff' },
+    })
+  })
+
+  it('writes an empty map to restore the defaults', async () => {
+    const b = builder({ data: [{ project_id: 'p1' }] })
+    from.mockReturnValue(b)
+    await updatePipingSettings('p1', { ...INPUT, chartColors: {} })
+    expect(b.update.mock.calls[0][0]).toHaveProperty('chart_colors', {})
+  })
+
+  it.each(['red', '#12345', '#1234567', ''])('refuses chart colour %o before writing', async (colour) => {
+    await expect(updatePipingSettings('p1', { ...INPUT, chartColors: { 'rein.planBar': colour } }))
+      .rejects.toThrow('Màu biểu đồ không hợp lệ')
+    expect(from).not.toHaveBeenCalled()
   })
 
   it('validates like enable', async () => {

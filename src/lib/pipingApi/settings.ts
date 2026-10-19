@@ -1,5 +1,6 @@
 import type { DayKey } from '../../domain/piping/types'
 import { supabase } from '../supabase'
+import { HEX_COLOUR } from './settingsRead'
 import { callRpc, isDayKey, requireRows, toError } from './shared'
 
 /** Piping per project: read, enable, change, disable (spec §2, 0038 piping_settings / piping_enable). */
@@ -13,6 +14,12 @@ export interface PipingSettingsInput {
   /** Null: not entered yet; Reinstatement entries are refused until it is (R-4). */
   totalTestPacks: number | null
   lateThresholdDays: number
+  /**
+   * Cấu hình only (RV8-2): the whole colour map, series key -> `#rrggbb`;
+   * `{}` restores every default. Omitted: the stored colours are kept.
+   * piping_enable takes no colours, so enablePiping ignores it.
+   */
+  chartColors?: Record<string, string>
 }
 
 const MAX_INT = 2_147_483_647
@@ -31,6 +38,9 @@ function checkSettings(input: PipingSettingsInput): void {
   }
   const n = input.lateThresholdDays
   if (!(Number.isInteger(n) && n >= 0 && n <= 365)) throw new Error('Ngưỡng trễ phải từ 0 đến 365 ngày')
+  if (input.chartColors && Object.values(input.chartColors).some((c) => !HEX_COLOUR.test(c))) {
+    throw new Error('Màu biểu đồ không hợp lệ')
+  }
 }
 
 /**
@@ -56,6 +66,7 @@ export async function updatePipingSettings(projectId: string, input: PipingSetti
       week_start_date: input.weekStartDate,
       total_test_packs: input.totalTestPacks,
       late_threshold_days: input.lateThresholdDays,
+      ...(input.chartColors ? { chart_colors: input.chartColors } : {}),
     })
     .eq('project_id', projectId)
     .select('project_id')
