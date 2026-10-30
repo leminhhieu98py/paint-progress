@@ -10,6 +10,43 @@ own branch, verified against the development Supabase project, and deployed to
 production by the owner. **Database migrations are listed per release and must
 reach production before the app that needs them.**
 
+## [2.2.0] - 2026-10-30
+
+Linh's Rv9 feedback: Insulation takes any data field before Pip Plan. **One
+database migration, `0042_piping_column_kind`, must reach production before this
+app**: the app reads the new `kind` of each extra spool column. Applying it first
+is safe for 2.1.0.
+
+### Added
+
+- **Insulation data fields.** Every column of the Insulation Plan file left of
+  Pip Plan is read: a column the project does not have yet is created by the
+  import (the preview lists "Cột mới"), as a number column when all its cells
+  are number cells (text such as 001 or 1.200 stays text) and a text column
+  otherwise. The template now has **Area (m2)** and **Length (mm)** (always
+  number columns) before Pip Plan. Number columns refuse values that are not
+  numbers or below 0, and show their values in the vi number format.
+- **Đơn vị đếm** lists every extra column after the six built-ins. A text column
+  counts its distinct values, like LineNo; a number column adds up its values
+  over the spools that reached each milestone: `Pip Act 12,5/40 · 31,25% Area (m2)`.
+  The chart, the chips and the report follow the choice.
+- **Cấu hình > Cột thêm của spool** shows each column's kind (Chữ / Số) and lets
+  the admin change it.
+
+### Changed
+
+- **Manpower**: the average Plan line is called **Avg Plan** (was Plan TB), on
+  the chart, its legend and in Màu biểu đồ.
+- **Insulation Plan import**: a header left of Pip Plan that the project does
+  not know (STT, Remark, …) is now created as a column instead of being skipped
+  with "Bỏ qua cột"; headers longer than 60 characters, and unknown headers right
+  of Pip Plan, are still skipped. Which rows are data rows is decided by the
+  standard and Plan columns only, so a totals or numbering row is skipped even
+  when an extra column holds a value there.
+- **Template** `Mau_Insulation_Plan`: the configured extra columns now come
+  before Pip Plan (they were after it).
+- **Thêm cột** in Cấu hình has a Chữ / Số choice.
+
 ## [2.1.0] - 2026-10-19
 
 Linh's Rv8 feedback on Piping and the report buttons. **One database migration,
