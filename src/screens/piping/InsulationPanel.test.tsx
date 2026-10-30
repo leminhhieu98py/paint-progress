@@ -66,7 +66,7 @@ const SPOOLS: Spool[] = [
   spool(3, { lineNo: 'L2', testPackageNo: 'TP2', phPlan: '2026-10-09', ihPlan: '2026-10-08' }),
   spool(4, { lineNo: null, testPackageNo: null, phActual: '2026-10-06' }),
 ]
-const COLUMNS: SpoolColumn[] = [{ id: 'c1', label: 'Zone', sort: 1 }]
+const COLUMNS: SpoolColumn[] = [{ id: 'c1', label: 'Zone', sort: 1, kind: 'text' }]
 
 const props = (over: Partial<PipingPanelProps> = {}): PipingPanelProps => ({
   projectId: 'p1', settings: SETTINGS, mode: 'day', variant: 'admin', role: 'admin', todayKey: '2026-10-07',

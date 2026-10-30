@@ -38,7 +38,7 @@ const SPOOLS: Spool[] = [
   spool(4, { lineNo: null, testPackageNo: null, phActual: '2026-09-06' }),
 ]
 
-const COLUMNS: SpoolColumn[] = [{ id: 'c1', label: 'Zone', sort: 1 }]
+const COLUMNS: SpoolColumn[] = [{ id: 'c1', label: 'Zone', sort: 1, kind: 'text' }]
 
 const detail = (over: Partial<Parameters<typeof SpoolDetail>[0]> = {}, spools = SPOOLS) => (
   <SpoolDetail
