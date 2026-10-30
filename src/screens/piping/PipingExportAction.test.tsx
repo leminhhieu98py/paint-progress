@@ -209,6 +209,35 @@ describe('PipingExportAction (spec §10)', () => {
     expect(reportInput().unit).toBe('lineNo')
   })
 
+  it('writes an extra column unit on screen, its chart summing the column (RV9-1)', async () => {
+    api.listSpoolColumns.mockResolvedValue([
+      { id: 'c1', label: 'Khu vực', sort: 1, kind: 'text' },
+      { id: 'c2', label: 'Area (m2)', sort: 2, kind: 'number' },
+    ])
+    api.listSpools.mockResolvedValue([{
+      id: 's1', seq: 1, spoolNo: 'SP-1', lineNo: 'L1', insuType: null, drawingNo: null, testPackageNo: 'TP1',
+      paintingSystem: null, extra: { 'Area (m2)': '2.5' }, phPlan: '2026-09-30', ihPlan: null, iwPlan: null,
+      phActual: null, ihActual: null, iwActual: null,
+    }])
+    function UnitPicker() {
+      const [, setUnit] = useInsulationUnit('p1')
+      return <button type="button" onClick={() => setUnit('col:c2')}>pick</button>
+    }
+    renderApp(
+      <InsulationUnitProvider>
+        <UnitPicker />
+        <PipingExportAction panel={panel()} />
+      </InsulationUnitProvider>,
+    )
+    await userEvent.click(screen.getByRole('button', { name: 'pick' }))
+    await userEvent.click(exportButton())
+    await waitFor(() => expect(buildPipingReport).toHaveBeenCalled())
+    expect(reportInput()).toMatchObject({ unit: 'col:c2', columns: [{ id: 'c1' }, { id: 'c2' }] })
+    const spec = renderChartPng.mock.calls[2][0]
+    expect(spec).toMatchObject({ kind: 'insulation', decimals: true })
+    expect(spec.data.at(-1)).toMatchObject({ phPlan: 2.5 })
+  })
+
   it('draws the Insulation lines on screen: Actual only when the tab shows Actual', async () => {
     function LinesPicker() {
       const [, setSelection] = useInsulationSelection('p1')

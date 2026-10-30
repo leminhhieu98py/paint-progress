@@ -75,6 +75,11 @@ describe('chartElement', () => {
       .toMatchObject({ report: true, keys: ['phActual'] })
   })
 
+  it('draws the Insulation axes with fractions when the unit sums a number column (RV9-1)', () => {
+    expect(chartElement({ kind: 'insulation', data: [], keys: ['phActual'], mode: 'day', decimals: true }).props)
+      .toMatchObject({ decimals: true })
+  })
+
   it('draws the Manpower groups the tab shows, with its Avg Plan line (RV8-7)', () => {
     const selected = new Set(['g1'])
     expect(chartElement({ kind: 'manpower', data: [], groups: [], selected, planAverage: 12, mode: 'day' }).props)

@@ -2,6 +2,7 @@ import { EllipsisOutlined, FileExcelOutlined, LoadingOutlined } from '@ant-desig
 import { App, Button, Dropdown } from 'antd'
 import { useRef, useState } from 'react'
 import { camSeriesKeys } from '../../domain/piping/cam'
+import { resolveUnit } from '../../domain/piping/camUnit'
 import { manpowerSeries, planAverage } from '../../domain/piping/manpower'
 import type { CamSelection, Unit } from '../../domain/piping/types'
 import { resolveChartColors } from './chartColors'
@@ -109,7 +110,11 @@ async function exportReport(panel: PipingPanelProps, { unit, selection }: Insula
       }],
     ['insulation', series.insulation.points.length === 0
       ? null
-      : { kind: 'insulation', data: series.insulation.points, keys: camSeriesKeys(selection), mode, colors }],
+      : {
+        kind: 'insulation', data: series.insulation.points, keys: camSeriesKeys(selection), mode, colors,
+        // A number column's sums step the axes by fractions, as on screen (RV9-1).
+        decimals: resolveUnit(unit, columns).count.kind === 'sum',
+      }],
   ]
   const charts: PipingReportInput['charts'] = {}
   for (const [key, spec] of specs) {
