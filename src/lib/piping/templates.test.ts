@@ -63,14 +63,21 @@ describe('import templates (spec §8)', () => {
     expect(parseManpowerActual(t.sheets, groups, '2026-10-07').errors).toEqual([])
   })
 
-  it('Insulation Plan: the master and Plan columns, then the extra columns', async () => {
+  it('Insulation Plan: the master columns, Area and Length, the extra columns, then the Plan columns (RV9-1, Q6)', async () => {
     const t = await headerOf(await buildSpoolPlanTemplate(['Area', 'Zone']))
     expect(t.name).toBe('Insulation Plan')
     expect(t.header).toEqual(['SpoolNo', 'LineNo', 'InsuType', 'DrawingNo', 'Test Package No', 'Painting System',
-      'Pip Plan', 'Paint Plan', 'Insu Plan', 'Area', 'Zone'])
+      'Area (m2)', 'Length (mm)', 'Area', 'Zone', 'Pip Plan', 'Paint Plan', 'Insu Plan'])
     const res = parseSpoolPlan(t.sheets, [{ label: 'Area' }, { label: 'Zone' }])
     expect(res.errors).toEqual([])
     expect(res.warnings).toEqual([])
+    expect(res.newColumns.map((c) => c.label)).toEqual(['Area (m2)', 'Length (mm)'])
+  })
+
+  it('Insulation Plan: Area and Length once, where a configured column already names them (case and space blind)', async () => {
+    const t = await headerOf(await buildSpoolPlanTemplate(['Zone', 'length(MM)', 'AREA (M2)']))
+    expect(t.header).toEqual(['SpoolNo', 'LineNo', 'InsuType', 'DrawingNo', 'Test Package No', 'Painting System',
+      'Zone', 'length(MM)', 'AREA (M2)', 'Pip Plan', 'Paint Plan', 'Insu Plan'])
   })
 
   it('Insulation Actual: SpoolNo and the three Actual columns', async () => {
@@ -85,8 +92,10 @@ describe('import templates (spec §8)', () => {
     const wb = new Workbook()
     await wb.xlsx.load(await (await buildSpoolPlanTemplate([])).arrayBuffer())
     const sheet = wb.worksheets[0]
-    expect(sheet.getColumn(7).numFmt).toBe('dd/mm/yyyy')
+    // Pip Plan, after the six master columns, Area (m2) and Length (mm).
+    expect(sheet.getColumn(9).numFmt).toBe('dd/mm/yyyy')
     expect(sheet.getColumn(1).numFmt ?? null).not.toBe('dd/mm/yyyy')
+    expect(sheet.getColumn(7).numFmt ?? null).not.toBe('dd/mm/yyyy')
     expect(sheet.views[0]).toMatchObject({ state: 'frozen', ySplit: 1 })
   })
 
