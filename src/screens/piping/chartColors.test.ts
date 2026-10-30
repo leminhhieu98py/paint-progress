@@ -78,7 +78,7 @@ describe('chartColorSections (Cấu hình · Màu biểu đồ)', () => {
       { key: 'mp.group.b', label: 'Nhóm b (ẩn)' },
       { key: 'mp.planTotal', label: 'Plan tổng' },
       { key: 'mp.actualTotal', label: 'Actual tổng' },
-      { key: 'mp.planAvg', label: 'Plan TB' },
+      { key: 'mp.planAvg', label: 'Avg Plan' },
     ])
     expect(sections[2].rows).toEqual([
       { key: 'ins.ph.plan', label: 'Pip Plan' },

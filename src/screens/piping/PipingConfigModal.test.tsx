@@ -535,7 +535,7 @@ describe('PipingConfigModal: Màu biểu đồ (RV8-2)', () => {
     expect(hexOf('Reinstatement')).toBe(palette.categorical[0].toLowerCase())
     expect(hexField('Insulation (ẩn)')).toBeInTheDocument()
     expect(hexOf('Marking')).toBe(palette.categorical[1].toLowerCase())
-    for (const label of ['Plan tổng', 'Actual tổng', 'Plan TB', 'Pip Plan', 'Pip Act', 'Paint Plan', 'Paint Act', 'Insu Plan', 'Insu Act']) {
+    for (const label of ['Plan tổng', 'Actual tổng', 'Avg Plan', 'Pip Plan', 'Pip Act', 'Paint Plan', 'Paint Act', 'Insu Plan', 'Insu Act']) {
       expect(hexField(label)).toBeInTheDocument()
       expect(within(config()).getByLabelText(`Chọn màu · ${label}`)).toBeInTheDocument()
     }
@@ -564,10 +564,10 @@ describe('PipingConfigModal: Màu biểu đồ (RV8-2)', () => {
 
   it('holds Lưu màu shut while a hex field is not yet a colour', async () => {
     await open()
-    await userEvent.clear(hexField('Plan TB'))
-    await userEvent.type(hexField('Plan TB'), '#12')
+    await userEvent.clear(hexField('Avg Plan'))
+    await userEvent.type(hexField('Avg Plan'), '#12')
     expect(saveButton()).toBeDisabled()
-    await userEvent.type(hexField('Plan TB'), '3456')
+    await userEvent.type(hexField('Avg Plan'), '3456')
     expect(saveButton()).toBeEnabled()
   })
 

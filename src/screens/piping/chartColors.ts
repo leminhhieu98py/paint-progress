@@ -39,7 +39,7 @@ const REINSTATEMENT: Array<[string, string, string]> = [
 const MANPOWER_TOTALS: Array<[string, string, string]> = [
   ['mp.planTotal', palette.textTertiary, 'Plan tổng'],
   ['mp.actualTotal', palette.ink, 'Actual tổng'],
-  ['mp.planAvg', palette.warning, 'Plan TB'],
+  ['mp.planAvg', palette.warning, 'Avg Plan'],
 ]
 const INSULATION: Array<[string, string, string]> = MILESTONES.flatMap((m): Array<[string, string, string]> => [
   [insulationColorKey(m, 'plan'), MILESTONE_DEFAULT[m], milestonePlanLabel(m)],

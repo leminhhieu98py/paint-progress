@@ -144,7 +144,7 @@ function selectedPlanTotals(plan: ManpowerValue[], selected: ReadonlySet<string>
 }
 
 /**
- * The chart's "Plan TB" line (RV8-7): the mean of the selected groups' daily
+ * The chart's "Avg Plan" line (RV8-7): the mean of the selected groups' daily
  * plan total over the days on which any selected group has a plan value (an
  * imported 0 counts). Every plan day, after today too: it is the plan's own
  * level, not a figure up to today. Null when no selected group has a plan.
