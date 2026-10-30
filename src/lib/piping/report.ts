@@ -1,7 +1,7 @@
 import type { Workbook, Worksheet } from 'exceljs'
 import {
-  ACTUAL_FIELD, camProgress, camSeries, camSeriesKeys, groupLateWarnings, lateSpoolCount, lateWarnings, MILESTONE_LABEL,
-  milestoneActualLabel, milestonePlanLabel, MILESTONES, PLAN_FIELD, UNIT_LABEL, type CamPoint, type CamSeriesKey,
+  ACTUAL_FIELD, camProgress, camSeries, camSeriesKeys, groupLateWarnings, lateByMilestone, lateSpoolCount, lateWarnings,
+  MILESTONE_LABEL, milestoneActualLabel, milestonePlanLabel, MILESTONES, PLAN_FIELD, UNIT_LABEL, type CamPoint, type CamSeriesKey,
 } from '../../domain/piping/cam'
 import { resolveUnit } from '../../domain/piping/camUnit'
 import { parseDecimalText } from '../../domain/piping/imports'
@@ -280,6 +280,12 @@ export async function buildPipingReport(
     summaryRow(`${milestoneActualLabel(m)} (${unitLabel})`, round2(progress.done[m]), camTotal, ratio, camFormat, camFormat)
   }
   summaryRow('Ngưỡng trễ (ngày)', settings.lateThresholdDays, null, null, INTEGER_FORMAT)
+  // Per milestone as the page's pills (RV9-3), then the distinct total.
+  const lateCounts = lateByMilestone(input.spools, settings.lateThresholdDays, todayKey)
+  for (const m of MILESTONES) {
+    const { planned, late } = lateCounts[m]
+    summaryRow(`Spool trễ · ${MILESTONE_LABEL[m]}`, planned ? late : 'Chưa có Plan', null, null, planned ? INTEGER_FORMAT : undefined)
+  }
   summaryRow('Spool trễ', lateSpoolCount(warnings), null, null, INTEGER_FORMAT)
   dressSheet(summary)
 

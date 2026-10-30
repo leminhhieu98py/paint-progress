@@ -616,6 +616,24 @@ export function lateSpoolCount(warnings: LateWarning[]): number {
   return new Set(warnings.map((w) => w.spoolId)).size
 }
 
+/**
+ * Late spools per milestone (RV9-3): the distinct spools late on it (same rule
+ * as `lateWarnings`), and whether any spool has that milestone's plan date at
+ * all, so the screen can say "Chưa có Plan" instead of a 0.
+ */
+export function lateByMilestone(
+  spools: Spool[],
+  thresholdDays: number,
+  todayKey: DayKey,
+): Record<Milestone, { planned: boolean; late: number }> {
+  const late = Object.fromEntries(MILESTONES.map((m) => [m, new Set<string>()])) as Record<Milestone, Set<string>>
+  for (const w of lateWarnings(spools, thresholdDays, todayKey)) late[w.milestone].add(w.spoolId)
+  return Object.fromEntries(MILESTONES.map((m) => [
+    m,
+    { planned: spools.some((s) => s[PLAN_FIELD[m]] !== null), late: late[m].size },
+  ])) as Record<Milestone, { planned: boolean; late: number }>
+}
+
 /** The "Spool trễ" table grouped by Package or Line; '' for none, sorted by key. */
 export function groupLateWarnings(
   warnings: LateWarning[],

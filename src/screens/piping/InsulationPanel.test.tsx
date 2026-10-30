@@ -328,26 +328,40 @@ describe('InsulationPanel: detail and states', () => {
 describe('InsulationPanel: late warnings (spec §7)', () => {
   // On 20/10 with N = 7: SP-1's Insulation Work (plan 10/10) and SP-3's two milestones (09/10, 08/10) are late.
   const late = { todayKey: '2026-10-20' } as const
-  const lateInfo = 'Spool có ít nhất một mốc trễ quá 7 ngày so với ngày Plan (chưa có Actual thì tính đến hôm nay)'
+  const pipLate = 'Spool có mốc Pip trễ quá 7 ngày so với ngày Plan (chưa có Actual thì tính đến hôm nay)'
+
+  const lateLine = () => within(header('Insulation')).getByTestId('more-facts')
 
   it.each([
     ['the admin', {}],
     ['a foreman', asGs],
     ['a viewer', asViewer],
-  ])('shows %s the late spools in an amber pill and the Spool trễ card', async (_who, as) => {
+  ])('shows %s the late spools per milestone on their own line, and the Spool trễ card (RV9-3)', async (_who, as) => {
     renderPanel({ ...late, ...as })
     await chart()
-    expect(keyFactTexts(header('Insulation'))).toContain('2 spool trễ')
-    expect(within(header('Insulation')).getByLabelText(lateInfo)).toBeInTheDocument()
+    const pills = keyFactTexts(lateLine())
+    expect(pills.slice(0, 3)).toEqual(['Pip 1 spool trễ', 'Paint 1 spool trễ', 'Insu 1 spool trễ'])
+    // The combined pill is gone (Q9); the card keeps the total.
+    expect(keyFactTexts(header('Insulation'))).not.toContain('2 spool trễ')
+    expect(within(lateLine()).getByLabelText(pipLate)).toBeInTheDocument()
     expect(screen.getByRole('heading', { level: 2, name: 'Spool trễ' })).toBeInTheDocument()
     expect(within(screen.getByTestId('late-spools')).getByText('TP2')).toBeInTheDocument()
   })
 
-  it('shows no pill while no spool is past the threshold', async () => {
+  it('says 0 while no spool is past the threshold, and "Chưa có Plan" where no spool has a plan date', async () => {
+    api.listSpools.mockResolvedValue(SPOOLS.map((s) => ({ ...s, iwPlan: null })))
     renderPanel({ ...late, settings: { ...SETTINGS, lateThresholdDays: 15 } })
     await chart()
-    expect(keyFactTexts(header('Insulation')).some((t) => t.includes('spool trễ'))).toBe(false)
+    expect(keyFactTexts(lateLine()).slice(0, 3)).toEqual(['Pip 0 spool trễ', 'Paint 0 spool trễ', 'Insu Chưa có Plan'])
     expect(screen.getByText('Không có spool trễ')).toBeInTheDocument()
+  })
+
+  it('moves the admin\'s review pills to that line, after the late ones', async () => {
+    renderPanel(late)
+    await chart()
+    expect(keyFactTexts(lateLine())).toEqual([
+      'Pip 1 spool trễ', 'Paint 1 spool trễ', 'Insu 1 spool trễ', '1 SpoolNo trùng', '1 spool sai thứ tự Plan',
+    ])
   })
 })
 

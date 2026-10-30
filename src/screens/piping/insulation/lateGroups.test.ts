@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { LateWarning } from '../../../domain/piping/cam'
-import { lateFact, lateGroupRows, lateRule, lateSpoolRows, lateWarningMatches } from './lateGroups'
+import { lateFacts, lateGroupRows, lateMilestoneRule, lateRule, lateSpoolRows, lateWarningMatches } from './lateGroups'
 
 const warning = (spoolId: string, over: Partial<LateWarning> = {}): LateWarning => ({
   spoolId, spoolNo: `SP-${spoolId}`, lineNo: 'L1', testPackageNo: 'TP1', milestone: 'ph', department: 'Piping',
@@ -13,14 +13,22 @@ describe('lateRule', () => {
   })
 })
 
-describe('lateFact', () => {
-  it('counts distinct late spools in an amber pill that explains the threshold', () => {
-    const fact = lateFact([warning('a'), warning('a', { milestone: 'ih' }), warning('b')], 5)
-    expect(fact).toEqual({ value: '2', label: 'spool trễ', tone: 'warning', info: lateRule(5) })
+describe('lateFacts (RV9-3)', () => {
+  it('gives each milestone a pill: amber with its late spools, neutral at 0, "Chưa có Plan" with no plan date', () => {
+    expect(lateFacts({
+      ph: { planned: true, late: 1301 },
+      ih: { planned: true, late: 0 },
+      iw: { planned: false, late: 0 },
+    }, 5)).toEqual([
+      { prefix: 'Pip', value: '1.301', label: 'spool trễ', tone: 'warning', info: lateMilestoneRule('ph', 5) },
+      { prefix: 'Paint', value: '0', label: 'spool trễ', tone: 'neutral', info: lateMilestoneRule('ih', 5) },
+      { prefix: 'Insu', label: 'Chưa có Plan', tone: 'neutral' },
+    ])
   })
 
-  it('is absent when no spool is late', () => {
-    expect(lateFact([], 7)).toBeNull()
+  it('states the rule for the one milestone, with the threshold', () => {
+    expect(lateMilestoneRule('ih', 7))
+      .toBe('Spool có mốc Paint trễ quá 7 ngày so với ngày Plan (chưa có Actual thì tính đến hôm nay)')
   })
 })
 
