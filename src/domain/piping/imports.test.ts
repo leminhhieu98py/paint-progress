@@ -471,6 +471,91 @@ describe('parseSpoolPlan (spec §6.2)', () => {
   })
 })
 
+describe('parseSpoolPlan: new columns before Pip Plan (RV9-1, Q3-Q5)', () => {
+  it('makes an unknown header left of Pip Plan a new column and ignores one right of it', () => {
+    const res = parseSpoolPlan(sheet([
+      ['SpoolNo', 'Area (m2)', '', 'Zone', 'Pip Plan', 'Paint Plan', 'Insu Plan', 'Remarks'],
+      ['A', '12,5', 'x', 'Deck 1', null, null, null, 'r'],
+      ['B', null, null, null, null, null, null, null],
+    ]), [])
+    expect(res.errors).toEqual([])
+    expect(res.newColumns).toEqual([{ label: 'Area (m2)', kind: 'number' }, { label: 'Zone', kind: 'text' }])
+    expect(res.warnings).toContainEqual({ row: 1, message: 'Bỏ qua cột: Remarks' })
+    expect(res.rows.map((r) => r.extra)).toEqual([{ 'Area (m2)': '12.5', Zone: 'Deck 1' }, {}])
+  })
+
+  it('keeps today\'s matching: configured labels (case, space and dash blind) and built-in names are not new', () => {
+    const res = parseSpoolPlan(sheet([
+      ['SpoolNo', 'LineNo', 'Line', 'zone', 'Mpr-A', 'Pip Plan', 'Paint Plan', 'Insu Plan'],
+      ['A', 'L1', 'L2', 'z', 'm', null, null, null],
+    ]), [{ label: 'Zone' }, { label: 'Mpr A' }, { label: 'MprA' }])
+    expect(res.newColumns).toEqual([])
+    expect(res.rows[0].extra).toEqual({ Zone: 'z' })
+    expect(res.warnings).toContainEqual({ row: 1, message: 'Bỏ qua cột: Line, Mpr-A' })
+  })
+
+  it('creates a header repeated in the file once, ignoring the repeat', () => {
+    const res = parseSpoolPlan(sheet([
+      ['SpoolNo', 'Area', 'area', 'Pip Plan', 'Paint Plan', 'Insu Plan'],
+      ['A', '1', 'x', null, null, null],
+    ]), [])
+    expect(res.newColumns).toEqual([{ label: 'Area', kind: 'number' }])
+    expect(res.rows[0].extra).toEqual({ Area: '1' })
+    expect(res.warnings).toContainEqual({ row: 1, message: 'Bỏ qua cột: area' })
+  })
+
+  it('detects the kind: number when every non-blank cell is a number (vi or en), else text', () => {
+    const res = parseSpoolPlan(sheet([
+      ['SpoolNo', 'Vi', 'En', 'Mixed', 'Blank', 'Day', 'Pip Plan', 'Paint Plan', 'Insu Plan'],
+      ['A', '1.234,5', '1,234.5', '12', null, utc('2026-10-01'), null, null, null],
+      ['B', 7, 1234.5, 'abc', ' ', null, null, null, null],
+      ['C', null, '0.25', null, null, null, null, null, null],
+    ]), [])
+    expect(res.errors).toEqual([])
+    expect(res.newColumns).toEqual([
+      { label: 'Vi', kind: 'number' },
+      { label: 'En', kind: 'number' },
+      { label: 'Mixed', kind: 'text' },
+      { label: 'Blank', kind: 'text' },
+      { label: 'Day', kind: 'text' },
+    ])
+    expect(res.rows.map((r) => r.extra)).toEqual([
+      { Vi: '1234.5', En: '1234.5', Mixed: '12', Day: '2026-10-01' },
+      { Vi: '7', En: '1234.5', Mixed: 'abc' },
+      { En: '0.25' },
+    ])
+  })
+
+  it('stores a number as a plain decimal string, never in exponent form', () => {
+    const res = parseSpoolPlan(sheet([
+      ['SpoolNo', 'N', 'Pip Plan', 'Paint Plan', 'Insu Plan'],
+      ['A', 1e21, null, null, null],
+      ['B', 1.5e-7, null, null, null],
+      ['C', '-1.234,5', null, null, null],
+    ]), [])
+    expect(res.rows.map((r) => r.extra)).toEqual([{ N: '1000000000000000000000' }, { N: '0.00000015' }, { N: '-1234.5' }])
+  })
+
+  it('reads a configured number column as numbers anywhere in the file: a bad cell is a row error', () => {
+    const res = parseSpoolPlan(sheet([
+      ['SpoolNo', 'Pip Plan', 'Paint Plan', 'Insu Plan', 'Length (mm)', 'Zone'],
+      ['A', null, null, null, '1.200', '1.200'],
+      ['B', null, null, null, 'abc', null],
+    ]), [{ label: 'Length (mm)', kind: 'number' }, { label: 'Zone', kind: 'text' }])
+    expect(res.newColumns).toEqual([])
+    expect(res.errors).toEqual([{ row: 3, message: 'Length (mm): Không phải số: "abc"' }])
+    expect(res.rows).toEqual([])
+
+    const ok = parseSpoolPlan(sheet([
+      ['SpoolNo', 'Pip Plan', 'Paint Plan', 'Insu Plan', 'Length (mm)', 'Zone'],
+      ['A', null, null, null, '1.200', '1.200'],
+      ['B', null, null, null, null, null],
+    ]), [{ label: 'Length (mm)', kind: 'number' }, { label: 'Zone', kind: 'text' }])
+    // A text column keeps the file's text; a blank number cell is left out, so Update Plan keeps the value.
+    expect(ok.rows.map((r) => r.extra)).toEqual([{ 'Length (mm)': '1.2', Zone: '1.200' }, {}])
+  })
+})
+
 describe('parseSpoolActual (spec §6.3)', () => {
   it('reads SpoolNo + any Actual column, merging a repeated SpoolNo that agrees', () => {
     const res = parseSpoolActual(sheet([
