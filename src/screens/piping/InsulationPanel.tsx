@@ -1,5 +1,5 @@
 import { Alert, Button, Select, Space, Spin } from 'antd'
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { EmptyState } from '../../components/EmptyState'
 import { IconAction } from '../../components/IconAction'
 import type { KeyFact } from '../../components/KeyFacts'
@@ -7,8 +7,9 @@ import { SectionCard } from '../../components/SectionCard'
 import { searchSelectProps, useFullOptionsProps } from '../../components/searchSelect'
 import {
   camProgress, camSeries, camSeriesKeys, camSpoolFlags, duplicateSpoolGroups, lateWarnings, MILESTONE_LABEL, milestoneActualLabel,
-  MILESTONES, planOrderIssues, UNIT_LABEL, type CamSpoolFlags,
+  MILESTONES, planOrderIssues, type CamSpoolFlags,
 } from '../../domain/piping/cam'
+import { resolveUnit, unitOptions } from '../../domain/piping/camUnit'
 import { parseSpoolPlan, type PlanImportMode, type SpoolPlanParse, type SpoolPlanRow } from '../../domain/piping/imports'
 import type { CamSelection, Spool, SpoolColumn, Unit } from '../../domain/piping/types'
 import { formatPercent } from '../../lib/format'
@@ -66,8 +67,6 @@ async function readInsulation(projectId: string): Promise<InsulationData> {
   return { spools, columns }
 }
 
-const UNITS = (Object.keys(UNIT_LABEL) as Unit[]).map((u) => ({ value: u, label: UNIT_LABEL[u] }))
-
 const SELECTIONS: Array<{ value: CamSelection; label: string }> = [
   { value: 'plan', label: 'Plan' },
   { value: 'actual', label: 'Actual' },
@@ -117,14 +116,25 @@ export function InsulationPanel({ projectId, settings, mode, role, todayKey, ref
   const [selection, setSelection] = useInsulationSelection(projectId)
 
   const spools = data?.spools
+  const columns = data?.columns
+  // A built-in or an extra column (RV9-1); a column since deleted counts as SpoolNo.
+  const resolved = useMemo(() => resolveUnit(unit, columns ?? []), [unit, columns])
+  const unitChoices = useMemo(() => unitOptions(columns ?? []), [columns])
+  // Put the page's choice back too, so the select and the export agree with what is counted.
+  useEffect(() => {
+    if (columns !== undefined && resolved.unit !== unit) setUnit(resolved.unit)
+  }, [columns, resolved.unit, unit, setUnit])
   const series = useMemo(
     () => (spools === undefined
       ? []
-      : camSeries({ spools, unit, mode, weekStart: settings.weekStartDate, todayKey }).points),
-    [spools, unit, mode, settings.weekStartDate, todayKey],
+      : camSeries({ spools, unit: resolved.count, mode, weekStart: settings.weekStartDate, todayKey }).points),
+    [spools, resolved.count, mode, settings.weekStartDate, todayKey],
   )
   const colors = useMemo(() => resolveChartColors(settings.chartColors, []), [settings.chartColors])
-  const progress = useMemo(() => (spools === undefined ? null : camProgress(spools, unit)), [spools, unit])
+  const progress = useMemo(
+    () => (spools === undefined ? null : camProgress(spools, resolved.count)),
+    [spools, resolved.count],
+  )
   const flags = useMemo(
     () => (spools === undefined ? new Map<string, CamSpoolFlags>() : camSpoolFlags(spools, settings.lateThresholdDays, todayKey)),
     [spools, settings.lateThresholdDays, todayKey],
@@ -135,7 +145,6 @@ export function InsulationPanel({ projectId, settings, mode, role, todayKey, ref
     [spools, settings.lateThresholdDays, todayKey],
   )
   const review = useMemo(() => (spools === undefined || !admin ? [] : reviewFacts(spools)), [spools, admin])
-  const columns = data?.columns
   /** The last Plan file parsed: Update Plan shows its column warnings beside the merged result's (RV8-5). */
   const parsedPlan = useRef<SpoolPlanParse | null>(null)
   const parsePlan = useCallback(
@@ -241,8 +250,8 @@ export function InsulationPanel({ projectId, settings, mode, role, todayKey, ref
         {...searchSelectProps}
         {...fullOptionsProps}
         style={phone ? PHONE_CONTROL : { width: 170 }}
-        value={unit}
-        options={UNITS}
+        value={resolved.unit}
+        options={unitChoices}
         onChange={setUnit}
       />
       <Select<CamSelection>
@@ -262,11 +271,11 @@ export function InsulationPanel({ projectId, settings, mode, role, todayKey, ref
     { value: formatQty(data.spools.length), label: 'spool' },
     ...MILESTONES.map((m) => ({
       prefix: milestoneActualLabel(m),
-      // `164/2.537 · 6,46%` (RV8-9); no percent of nothing.
+      // `164/2.537 · 6,46%` (RV8-9), a sum to two decimals `12,5/40 · 31,25%` (RV9-1); no percent of nothing.
       value: `${formatQty(progress.done[m])}/${formatQty(progress.total)}`
         + (progress.total > 0 ? ` · ${formatPercent(progress.done[m] / progress.total)}` : ''),
-      // What the counts count: spool rows, or lines, packages... (spec §6.4).
-      label: UNIT_LABEL[unit],
+      // What the counts count: spool rows, or lines, packages, an extra column... (spec §6.4, RV9-1).
+      label: resolved.label,
     })),
     ...(late === null ? [] : [late]),
     ...review,
@@ -289,11 +298,12 @@ export function InsulationPanel({ projectId, settings, mode, role, todayKey, ref
           // Keyed on what shapes the axis: the Brush's zoom (its start index) belongs to one axis, not to the next.
           : (
             <InsulationChart
-              key={`${mode}|${unit}|${selection}`}
+              key={`${mode}|${resolved.unit}|${selection}`}
               data={series}
               keys={camSeriesKeys(selection)}
               mode={mode}
               colors={colors}
+              decimals={resolved.count.kind === 'sum'}
             />
           )}
       </SectionCard>

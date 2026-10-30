@@ -1,4 +1,4 @@
-import { screen } from '@testing-library/react'
+import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import type { Unit } from '../../domain/piping/types'
@@ -107,5 +107,26 @@ describe('insulationUnit', () => {
     expect(unitOf('p1')).toBe('lineNo')
     await chooseOption('Đường hiển thị', 'Actual')
     expect(linesOf('p1')).toBe('actual')
+  })
+
+  it('puts the choice back to SpoolNo when its extra column is no longer configured (RV9-1)', async () => {
+    renderApp(
+      <InsulationUnitProvider>
+        <Picker projectId="p1" unit="col:gone" />
+        <InsulationPanel
+          projectId="p1"
+          settings={{ projectId: 'p1', enabled: true, weekStartDate: '2026-09-28', totalTestPacks: null, lateThresholdDays: 7, chartColors: {} }}
+          mode="day"
+          variant="admin"
+          role="admin"
+          todayKey="2026-10-07"
+          refreshKey={0}
+        />
+        <Reader projectId="p1" />
+      </InsulationUnitProvider>,
+    )
+    await screen.findByRole('combobox', { name: 'Đơn vị đếm' })
+    await userEvent.click(screen.getByRole('button', { name: /p1 chọn col:gone/ }))
+    await waitFor(() => expect(unitOf('p1')).toBe('spoolNo'))
   })
 })

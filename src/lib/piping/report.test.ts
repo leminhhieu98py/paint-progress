@@ -263,6 +263,49 @@ describe('buildPipingReport (spec §10)', () => {
     expect(ws.getCell('C2').numFmt).toBe('#,##0')
   })
 
+  it('sums a number column unit to two decimals in Tóm tắt and Insulation, labelled as configured (RV9-1)', async () => {
+    const base = input()
+    const report = input({
+      mode: 'week',
+      unit: 'col:c2',
+      columns: [{ id: 'c1', label: 'Khu vực', sort: 1, kind: 'text' }, { id: 'c2', label: 'Area (m2)', sort: 2, kind: 'number' }],
+      spools: [
+        { ...base.spools[0], extra: { 'Area (m2)': '1.111' } },
+        { ...base.spools[1], extra: { 'Area (m2)': '2.5' } },
+      ],
+    })
+    const wb = await open(await buildPipingReport(report))
+    const summary = sheet(wb, 'Tóm tắt')
+    const rows = Array.from({ length: summary.rowCount - 1 }, (_, i) => rowValues(summary, i + 2))
+    const byLabel = new Map(rows.map((r) => [r[0], r.slice(1)]))
+    expect(byLabel.get('Đơn vị đếm Insulation')).toEqual(['Area (m2)', null, null])
+    // Both spools reached Pip: 1,111 + 2,5 = 3,611, written 3,61 of 3,61.
+    expect(byLabel.get('Pip Act (Area (m2))')).toEqual([3.61, 3.61, 1])
+    expect(byLabel.get('Paint Act (Area (m2))')).toEqual([0, 3.61, 0])
+    const pipRow = rows.findIndex((r) => r[0] === 'Pip Act (Area (m2))') + 2
+    expect([summary.getCell(`B${pipRow}`).numFmt, summary.getCell(`C${pipRow}`).numFmt]).toEqual(['#,##0.00', '#,##0.00'])
+
+    const ws = sheet(wb, 'Insulation')
+    expect(headerOf(ws).slice(2, 6)).toEqual([
+      'Pip Plan (Area (m2))', 'Pip Act (Area (m2))', 'Pip Plan lũy kế (Area (m2))', 'Pip Act lũy kế (Area (m2))',
+    ])
+    // Week of 28/09: SP-B (2,5) planned and reached Pip; the lines carry SP-A's 1,111 from before.
+    expect(rowValues(ws, ws.rowCount).slice(2, 10)).toEqual([2.5, 2.5, 3.61, 3.61, 0, 0, 2.5, 0])
+    expect(ws.getCell('E2').numFmt).toBe('#,##0.00')
+    // The data keeps the raw sums; only the cells are rounded.
+    expect(pipingReportSeries(report).insulation.total).toBeCloseTo(3.611, 10)
+  })
+
+  it('counts a column no longer configured as SpoolNo (RV9-1)', async () => {
+    const wb = await open(await buildPipingReport(input({ unit: 'col:gone' })))
+    const summary = sheet(wb, 'Tóm tắt')
+    const rows = Array.from({ length: summary.rowCount - 1 }, (_, i) => rowValues(summary, i + 2))
+    const byLabel = new Map(rows.map((r) => [r[0], r.slice(1)]))
+    expect(byLabel.get('Đơn vị đếm Insulation')).toEqual(['SpoolNo', null, null])
+    expect(byLabel.get('Pip Act (SpoolNo)')).toEqual([2, 2, 1])
+    expect(headerOf(sheet(wb, 'Insulation'))[1]).toBe('Pip Plan (SpoolNo)')
+  })
+
   it('Chi tiết spool: every spool in file order, master fields, extra columns in order, the six dates', async () => {
     const columns = [
       { id: 'c1', label: 'Khu vực', sort: 1, kind: 'text' as const },

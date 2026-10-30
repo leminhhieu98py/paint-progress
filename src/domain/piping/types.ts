@@ -134,10 +134,16 @@ export interface SpoolColumn {
 }
 
 /**
- * The CAM counting unit (spec §6.4). `spoolNo` counts spool ROWS; every other
- * unit counts distinct non-blank values.
+ * The six built-in CAM counting units (spec §6.4). `spoolNo` counts spool
+ * ROWS; every other unit counts distinct non-blank values.
  */
-export type Unit = 'spoolNo' | 'lineNo' | 'insuType' | 'drawingNo' | 'testPackageNo' | 'paintingSystem'
+export type BuiltInUnit = 'spoolNo' | 'lineNo' | 'insuType' | 'drawingNo' | 'testPackageNo' | 'paintingSystem'
+
+/**
+ * The CAM counting unit: a built-in, or an extra column by its id (RV9-1) --
+ * a text column counts distinct values, a number column sums them.
+ */
+export type Unit = BuiltInUnit | `col:${string}`
 
 /** The detail table's level selector (spec §6.4, Q16B). */
 export type CamLevel = 'package' | 'line' | 'spool'

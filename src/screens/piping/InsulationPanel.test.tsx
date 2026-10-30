@@ -26,11 +26,12 @@ const chartMounts = vi.hoisted(() => ({ count: 0 }))
 vi.mock('./insulation/InsulationChart', async () => {
   const { useEffect } = await import('react')
   return {
-    InsulationChart: ({ data, keys, mode, colors }: {
+    InsulationChart: ({ data, keys, mode, colors, decimals }: {
       data: Array<Record<string, unknown>>
       keys: string[]
       mode: string
       colors?: Record<string, string>
+      decimals?: boolean
     }) => {
       useEffect(() => {
         chartMounts.count += 1
@@ -41,6 +42,7 @@ vi.mock('./insulation/InsulationChart', async () => {
           data-mode={mode}
           data-keys={keys.join(',')}
           data-colors={JSON.stringify(colors ?? null)}
+          data-decimals={String(decimals ?? false)}
         >
           {data.map((p) => `${String(p.key)}:${String(p.phPlan)}/${String(p.phActual)}`).join(' ')}
         </div>
@@ -158,12 +160,39 @@ describe('InsulationPanel: summary (spec §6.4)', () => {
 })
 
 describe('InsulationPanel: chart (spec §6.4, Q20A)', () => {
-  it('offers the six units, SpoolNo first and chosen', async () => {
+  it('offers the six units, SpoolNo first and chosen, then the extra columns in their order (RV9-1)', async () => {
+    api.listSpoolColumns.mockResolvedValue([...COLUMNS, { id: 'c0', label: 'Area (m2)', sort: 0, kind: 'number' }])
     renderPanel()
     await chart()
+    expect(selected('Đơn vị đếm')).toBe('SpoolNo')
     expect(await optionTitles('Đơn vị đếm')).toEqual([
-      'SpoolNo', 'LineNo', 'InsuType', 'DrawingNo', 'Test Package No', 'Painting System',
+      'SpoolNo', 'LineNo', 'InsuType', 'DrawingNo', 'Test Package No', 'Painting System', 'Area (m2)', 'Zone',
     ])
+  })
+
+  it('sums a number column in the facts and the chart, to two decimals at most (RV9-1)', async () => {
+    const area = ['2.5', '10', '27.5', '']
+    api.listSpools.mockResolvedValue(SPOOLS.map((s, i) => ({ ...s, extra: { 'Area (m2)': area[i] } })))
+    api.listSpoolColumns.mockResolvedValue([...COLUMNS, { id: 'c2', label: 'Area (m2)', sort: 2, kind: 'number' }])
+    renderPanel()
+    expect(await chart()).toHaveAttribute('data-decimals', 'false')
+    await chooseOption('Đơn vị đếm', 'Area (m2)')
+    expect(keyFactTexts()).toEqual(expect.arrayContaining([
+      '4 spool', 'Pip Act 12,5/40 · 31,25% Area (m2)', 'Paint Act 2,5/40 · 6,25% Area (m2)', 'Insu Act 0/40 · 0,00% Area (m2)',
+    ]))
+    // By today (07/10): SP-1 and the second SP-1 planned and reached Pip; SP-4 reached it with no area.
+    expect(bucket('2026-10-07')).toBe('2026-10-07:12.5/12.5')
+    expect(screen.getByTestId('insulation-chart')).toHaveAttribute('data-decimals', 'true')
+  })
+
+  it('counts a text column by its distinct values, as LineNo (RV9-1)', async () => {
+    const zone = ['Z1', 'Z1', 'Z2', ' ']
+    api.listSpools.mockResolvedValue(SPOOLS.map((s, i) => ({ ...s, extra: { Zone: zone[i] } })))
+    renderPanel()
+    await chart()
+    await chooseOption('Đơn vị đếm', 'Zone')
+    expect(keyFactTexts()).toEqual(expect.arrayContaining(['Pip Act 1/2 · 50,00% Zone', 'Paint Act 0/2 · 0,00% Zone']))
+    expect(screen.getByTestId('insulation-chart')).toHaveAttribute('data-decimals', 'false')
   })
 
   it('counts spool rows for SpoolNo and complete groups for another unit', async () => {

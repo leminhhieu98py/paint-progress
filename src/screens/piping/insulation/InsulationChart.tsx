@@ -75,13 +75,15 @@ const colorOf = (colors: ChartColors, key: CamSeriesKey) =>
  * Excel report (spec §10): the whole range with no Brush, on the desktop
  * layout whatever the screen.
  */
-export function InsulationChart({ data, keys, mode, colors = DEFAULT_COLORS, report = false }: {
+export function InsulationChart({ data, keys, mode, colors = DEFAULT_COLORS, report = false, decimals = false }: {
   data: CamPoint[]
   keys: CamSeriesKey[]
   mode: ViewMode
   /** The project's resolved chart colours (`resolveChartColors`). */
   colors?: ChartColors
   report?: boolean
+  /** The unit sums a number column (RV9-1): the axes step by fractions too. */
+  decimals?: boolean
 }) {
   const { legend, opacity, height, phone } = useLegendHighlight({ desktop: report })
   const tooltips = useMemo(() => new Map(data.map((p) => [p.key, p.tooltip])), [data])
@@ -97,7 +99,7 @@ export function InsulationChart({ data, keys, mode, colors = DEFAULT_COLORS, rep
         <ComposedChart data={data} margin={{ top: 8, right: 16, bottom: 0, left: 0 }}>
           <CartesianGrid stroke={palette.borderSplit} vertical={false} />
           <XAxis dataKey="key" tickFormatter={(key: string) => formatDayMonth(String(key))} tick={AXIS} />
-          <YAxis yAxisId="bucket" tick={AXIS} width={56} tickFormatter={axisTick} allowDecimals={false} />
+          <YAxis yAxisId="bucket" tick={AXIS} width={56} tickFormatter={axisTick} allowDecimals={decimals} />
           <YAxis
             yAxisId="cum"
             orientation="right"
@@ -106,7 +108,7 @@ export function InsulationChart({ data, keys, mode, colors = DEFAULT_COLORS, rep
             tick={AXIS}
             width={64}
             tickFormatter={axisTick}
-            allowDecimals={false}
+            allowDecimals={decimals}
           />
           <Tooltip
             separator={TOOLTIP_SEPARATOR}

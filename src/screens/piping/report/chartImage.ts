@@ -43,7 +43,14 @@ export type ChartSpec = (
     planAverage?: number | null
     mode: ViewMode
   }
-  | { kind: 'insulation'; data: CamPoint[]; keys: CamSeriesKey[]; mode: ViewMode }
+  | {
+    kind: 'insulation'
+    data: CamPoint[]
+    keys: CamSeriesKey[]
+    mode: ViewMode
+    /** The unit sums a number column (RV9-1), as on screen. */
+    decimals?: boolean
+  }
 ) & {
   /** The project's resolved chart colours (RV8-2), as the tab draws them. */
   colors?: ChartColors
@@ -73,7 +80,7 @@ export function chartElement(spec: ChartSpec): ReactElement {
       })
     case 'insulation':
       return createElement(InsulationChart, {
-        data: spec.data, keys: spec.keys, mode: spec.mode, colors: spec.colors, report: true,
+        data: spec.data, keys: spec.keys, mode: spec.mode, colors: spec.colors, decimals: spec.decimals, report: true,
       })
   }
 }
