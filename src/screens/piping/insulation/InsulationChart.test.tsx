@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import type { CamPoint } from '../../../domain/piping/cam'
 import { palette, tintColor } from '../../../theme'
 import { legendNames } from '../../../test/legend'
@@ -190,6 +190,43 @@ describe('InsulationChart (spec §6.4, Q20A)', () => {
     expect(line('phActual')).toHaveAttribute('data-opacity', '0.3')
     await userEvent.unhover(legendItem('Pip Plan lũy kế').closest('label')!)
     expect(line('phActual')).toHaveAttribute('data-opacity', '1')
+  })
+
+  it('hides an axis that no shown series stands on (RV9-4)', () => {
+    // A desktop: a phone hides the right axis anyway.
+    const undo = setViewport(1280)
+    onTestFinished(undo)
+    const { unmount } = render(<InsulationChart data={WEEKS} keys={[...PIP]} mode="day" />)
+    expect(captured.yAxes.bucket.hide).toBe(false)
+    expect(captured.yAxes.cum.hide).toBe(false)
+    unmount()
+    const { unmount: unmountBars } = render(
+      <InsulationChart data={WEEKS} keys={[...PIP]} mode="day" hidden={['phPlanBar', 'phActualBar']} />,
+    )
+    expect(captured.yAxes.bucket.hide).toBe(true)
+    expect(captured.yAxes.cum.hide).toBe(false)
+    unmountBars()
+    render(<InsulationChart data={WEEKS} keys={[...PIP]} mode="day" hidden={['phPlan', 'phActual']} />)
+    expect(captured.yAxes.bucket.hide).toBe(false)
+    expect(captured.yAxes.cum.hide).toBe(true)
+  })
+
+  it('legend: centred in a row on a desktop, one item per line on a phone (MOB-03)', () => {
+    const undoDesktop = setViewport(1280)
+    try {
+      const { unmount } = render(<InsulationChart data={WEEKS} keys={[...PIP]} mode="day" />)
+      expect(legendGroup()).toHaveStyle('flex-direction: row; justify-content: center')
+      unmount()
+    } finally {
+      undoDesktop()
+    }
+    const undo = setViewport(390)
+    try {
+      render(<InsulationChart data={WEEKS} keys={[...PIP]} mode="day" />)
+      expect(legendGroup()).toHaveStyle('flex-direction: column; justify-content: flex-start')
+    } finally {
+      undo()
+    }
   })
 
   it('every shown series hidden: says to pick one, the legend still there to show one again (RV9-4)', () => {

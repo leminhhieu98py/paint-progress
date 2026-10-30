@@ -36,10 +36,13 @@ import { formatQty } from '../pipingFormat'
  *
  * On screen the legend picks the series (RV9-4): one checkbox per series the
  * lines select shows, ticked while it is drawn. It sits under the plot, not in
- * Recharts' legend, so a toggle never remounts it and the keyboard keeps its
- * place, even when the last series goes and the plot gives way to "Chọn ít
- * nhất một dữ liệu". The report keeps Recharts' static legend of the series
- * it draws (the export passes only the shown ones).
+ * Recharts' legend: Recharts builds its legend's payload only from the series
+ * it renders, so a hidden series would vanish from it with no box to tick it
+ * back; and when every series is hidden the chart itself gives way to "Chọn ít
+ * nhất một dữ liệu", which would take a legend inside it along. Outside, a
+ * toggle never remounts it and the keyboard keeps its place. The report keeps
+ * Recharts' static legend of the series it draws (the export passes only the
+ * shown ones).
  */
 
 /** How much white the Plan bar mixes into its milestone's colour: the same hue, lighter. */
@@ -214,12 +217,20 @@ export function InsulationChart({
         <ComposedChart data={data} margin={{ top: 8, right: 16, bottom: 0, left: 0 }}>
           <CartesianGrid stroke={palette.borderSplit} vertical={false} />
           <XAxis dataKey="key" tickFormatter={(key: string) => formatDayMonth(String(key))} tick={AXIS} />
-          <YAxis yAxisId="bucket" tick={AXIS} width={56} tickFormatter={axisTick} allowDecimals={decimals} />
+          {/* An axis no shown series stands on is hidden (RV9-4): its ticks would measure nothing. */}
+          <YAxis
+            yAxisId="bucket"
+            hide={bars.length === 0}
+            tick={AXIS}
+            width={56}
+            tickFormatter={axisTick}
+            allowDecimals={decimals}
+          />
           <YAxis
             yAxisId="cum"
             orientation="right"
             // On a phone the plot takes this axis's width, as on Reinstatement; the tooltip still reads each total.
-            hide={phone}
+            hide={phone || lines.length === 0}
             tick={AXIS}
             width={64}
             tickFormatter={axisTick}
