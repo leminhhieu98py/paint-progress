@@ -33,7 +33,7 @@ import { SpoolDetail } from './insulation/SpoolDetail'
 import {
   spoolPlanPreview, spoolPlanSummary, spoolPlanUpdatePreview, spoolPlanUpdateSummary,
 } from './insulation/spoolPlanPreview'
-import { useInsulationSelection, useInsulationUnit } from './insulationUnit'
+import { useInsulationHidden, useInsulationSelection, useInsulationUnit } from './insulationUnit'
 import { spoolNoteCounts } from './notes/noteAnchors'
 import { usePipingNotes } from './notes/usePipingNotes'
 import type { PipingPanelProps } from './panelProps'
@@ -115,6 +115,10 @@ export function InsulationPanel({ projectId, settings, mode, role, todayKey, ref
   // The page holds the unit and the lines, so the export writes them as on screen (spec §10).
   const [unit, setUnit] = useInsulationUnit(projectId)
   const [selection, setSelection] = useInsulationSelection(projectId)
+  // The series the chart's legend hides (RV9-4), held beside them so the report draws what is shown.
+  const [hidden, setHidden] = useInsulationHidden(projectId)
+  const toggleSeries = (key: (typeof hidden)[number]) =>
+    setHidden(hidden.includes(key) ? hidden.filter((k) => k !== key) : [...hidden, key])
 
   const spools = data?.spools
   const columns = data?.columns
@@ -307,6 +311,8 @@ export function InsulationPanel({ projectId, settings, mode, role, todayKey, ref
               key={`${mode}|${resolved.unit}|${selection}`}
               data={series}
               keys={camSeriesKeys(selection)}
+              hidden={hidden}
+              onToggle={toggleSeries}
               mode={mode}
               colors={colors}
               decimals={resolved.count.kind === 'sum'}

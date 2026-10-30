@@ -20,18 +20,20 @@ vi.mock('../../lib/pipingApi', () => ({
 vi.mock('../../lib/projectReport', () => ({ downloadWorkbook: vi.fn() }))
 
 // jsdom gives Recharts no size; the stand-in prints what reaches the chart:
-// the view, the lines shown, and each bucket's Pip counts.
+// the view, the lines shown, the ones the legend hides, and each bucket's Pip counts.
 // It counts its mounts too: a new mount is a fresh Brush.
 const chartMounts = vi.hoisted(() => ({ count: 0 }))
 vi.mock('./insulation/InsulationChart', async () => {
   const { useEffect } = await import('react')
   return {
-    InsulationChart: ({ data, keys, mode, colors, decimals }: {
+    InsulationChart: ({ data, keys, mode, colors, decimals, hidden, onToggle }: {
       data: Array<Record<string, unknown>>
       keys: string[]
       mode: string
       colors?: Record<string, string>
       decimals?: boolean
+      hidden?: readonly string[]
+      onToggle?: (key: string) => void
     }) => {
       useEffect(() => {
         chartMounts.count += 1
@@ -43,8 +45,11 @@ vi.mock('./insulation/InsulationChart', async () => {
           data-keys={keys.join(',')}
           data-colors={JSON.stringify(colors ?? null)}
           data-decimals={String(decimals ?? false)}
+          data-hidden={(hidden ?? []).join(',')}
         >
           {data.map((p) => `${String(p.key)}:${String(p.phPlan)}/${String(p.phActual)}`).join(' ')}
+          {/* Named, not worded: the text stays the buckets'. */}
+          <button type="button" aria-label="legend phPlan" onClick={() => onToggle?.('phPlan')} />
         </div>
       )
     },
@@ -224,6 +229,18 @@ describe('InsulationPanel: chart (spec §6.4, Q20A)', () => {
     await show('Actual')
     expect(screen.getByTestId('insulation-chart'))
       .toHaveAttribute('data-keys', 'phActualBar,phActual,ihActualBar,ihActual,iwActualBar,iwActual')
+  })
+
+  it('hides and shows a series from the legend, kept across the lines select (RV9-4)', async () => {
+    renderPanel()
+    expect(await chart()).toHaveAttribute('data-hidden', '')
+    await userEvent.click(screen.getByRole('button', { name: 'legend phPlan' }))
+    expect(screen.getByTestId('insulation-chart')).toHaveAttribute('data-hidden', 'phPlan')
+    await show('Actual')
+    await show('Plan')
+    expect(screen.getByTestId('insulation-chart')).toHaveAttribute('data-hidden', 'phPlan')
+    await userEvent.click(screen.getByRole('button', { name: 'legend phPlan' }))
+    expect(screen.getByTestId('insulation-chart')).toHaveAttribute('data-hidden', '')
   })
 
   it('runs the plan to its end and the actual to today, by week in week view', async () => {

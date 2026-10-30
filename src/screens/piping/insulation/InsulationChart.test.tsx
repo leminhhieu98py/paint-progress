@@ -1,4 +1,5 @@
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { CamPoint } from '../../../domain/piping/cam'
 import { palette, tintColor } from '../../../theme'
@@ -64,6 +65,7 @@ vi.mock('recharts', async (importOriginal) => {
         data-stroke={String(props.stroke)}
         data-dash={String(props.strokeDasharray ?? '')}
         data-dot={String(props.dot !== false)}
+        data-opacity={String(props.strokeOpacity)}
       />
     ),
   }
@@ -88,6 +90,7 @@ const ALL = [
   'ihPlanBar', 'ihActualBar', 'ihPlan', 'ihActual',
   'iwPlanBar', 'iwActualBar', 'iwPlan', 'iwActual',
 ] as const
+const PIP = ['phPlanBar', 'phActualBar', 'phPlan', 'phActual'] as const
 const line = (key: string) => screen.queryByTestId(`line-${key}`)
 const bar = (key: string) => screen.queryByTestId(`bar-${key}`)
 
@@ -98,7 +101,12 @@ beforeEach(() => {
   captured.legend = null
 })
 
-/** The legend's names, in the order Recharts lists the drawn series. */
+/** The on-screen legend's items (RV9-4): a checkbox per series, named by it. */
+const legendGroup = () => screen.getByRole('group', { name: 'Dữ liệu hiển thị' })
+const legendItems = () => within(legendGroup()).getAllByRole('checkbox')
+const legendItem = (name: string) => within(legendGroup()).getByRole('checkbox', { name })
+
+/** The report's legend names, in the order Recharts lists the drawn series. */
 const legend = () => legendNames(
   [...document.querySelectorAll('[data-series]')].map((el) => ({
     dataKey: String(el.getAttribute('data-testid')).replace(/^(line|bar)-/, ''),
@@ -130,7 +138,76 @@ describe('InsulationChart (spec §6.4, Q20A)', () => {
   })
 
   it('lists the legend by discipline: Plan and Act bars, then their lũy kế lines', () => {
+    const order = [
+      'Pip Plan', 'Pip Act', 'Pip Plan lũy kế', 'Pip Act lũy kế',
+      'Paint Plan', 'Paint Act', 'Paint Plan lũy kế', 'Paint Act lũy kế',
+      'Insu Plan', 'Insu Act', 'Insu Plan lũy kế', 'Insu Act lũy kế',
+    ]
     render(<InsulationChart data={WEEKS} keys={[...ALL]} mode="day" />)
+    expect(legendItems().map((el) => el.closest('label')?.textContent)).toEqual(order)
+  })
+
+  it('legend: one checkbox per series, all ticked while every series is drawn (RV9-4)', () => {
+    render(<InsulationChart data={WEEKS} keys={[...PIP]} mode="day" />)
+    expect(legendItems()).toHaveLength(4)
+    for (const item of legendItems()) expect(item).toBeChecked()
+    // No Recharts legend on screen: the checkboxes are the legend.
+    expect(captured.legend).toBeNull()
+  })
+
+  it('legend: a click, Space or Enter on an item asks to hide or show its series (RV9-4)', async () => {
+    const onToggle = vi.fn()
+    render(<InsulationChart data={WEEKS} keys={[...PIP]} mode="day" hidden={['phActual']} onToggle={onToggle} />)
+    await userEvent.click(legendItem('Pip Plan'))
+    expect(onToggle).toHaveBeenLastCalledWith('phPlanBar')
+    legendItem('Pip Act lũy kế').focus()
+    await userEvent.keyboard(' ')
+    expect(onToggle).toHaveBeenLastCalledWith('phActual')
+    fireEvent.keyDown(legendItem('Pip Plan lũy kế'), { key: 'Enter' })
+    expect(onToggle).toHaveBeenLastCalledWith('phPlan')
+    expect(onToggle).toHaveBeenCalledTimes(3)
+  })
+
+  it('a hidden series is not drawn; its item stays, unticked, its text muted (RV9-4)', () => {
+    render(<InsulationChart data={WEEKS} keys={[...PIP]} mode="day" hidden={['phActual', 'phPlanBar', 'ihPlan']} />)
+    expect(line('phActual')).toBeNull()
+    expect(bar('phPlanBar')).toBeNull()
+    expect(line('phPlan')).toBeInTheDocument()
+    expect(bar('phActualBar')).toBeInTheDocument()
+    expect(legendItems()).toHaveLength(4)
+    expect(legendItem('Pip Act lũy kế')).not.toBeChecked()
+    expect(legendItem('Pip Plan')).not.toBeChecked()
+    expect(legendItem('Pip Plan lũy kế')).toBeChecked()
+    const text = (name: string) => screen.getByText(name, { selector: '[data-legend-text]' })
+    expect(text('Pip Act lũy kế')).toHaveStyle({ color: palette.textTertiary })
+    expect(text('Pip Plan lũy kế')).toHaveStyle({ color: palette.textSecondary })
+  })
+
+  it('hovering a shown item highlights its series, as the other charts do (CHT-03)', async () => {
+    render(<InsulationChart data={WEEKS} keys={[...PIP]} mode="day" />)
+    await userEvent.hover(legendItem('Pip Plan lũy kế').closest('label')!)
+    expect(line('phPlan')).toHaveAttribute('data-opacity', '1')
+    expect(line('phActual')).toHaveAttribute('data-opacity', '0.3')
+    await userEvent.unhover(legendItem('Pip Plan lũy kế').closest('label')!)
+    expect(line('phActual')).toHaveAttribute('data-opacity', '1')
+  })
+
+  it('every shown series hidden: says to pick one, the legend still there to show one again (RV9-4)', () => {
+    render(<InsulationChart data={WEEKS} keys={[...PIP]} mode="day" hidden={[...ALL]} />)
+    expect(screen.getByText('Chọn ít nhất một dữ liệu')).toBeInTheDocument()
+    expect(screen.queryByTestId('composed-chart')).toBeNull()
+    expect(legendItems()).toHaveLength(4)
+    for (const item of legendItems()) expect(item).not.toBeChecked()
+  })
+
+  it('report: a static legend of the drawn series only, no checkboxes (RV9-4)', () => {
+    render(<InsulationChart data={WEEKS} keys={[...PIP]} mode="day" report />)
+    expect(screen.queryByRole('checkbox')).toBeNull()
+    expect(legend()).toEqual(['Pip Plan', 'Pip Act', 'Pip Plan lũy kế', 'Pip Act lũy kế'])
+  })
+
+  it('lists the report legend by discipline, as the screen does', () => {
+    render(<InsulationChart data={WEEKS} keys={[...ALL]} mode="day" report />)
     expect(legend()).toEqual([
       'Pip Plan', 'Pip Act', 'Pip Plan lũy kế', 'Pip Act lũy kế',
       'Paint Plan', 'Paint Act', 'Paint Plan lũy kế', 'Paint Act lũy kế',
