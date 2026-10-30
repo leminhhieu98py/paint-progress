@@ -32,6 +32,15 @@ is safe for 2.1.0.
   The chart, the chips and the report follow the choice.
 - **Cấu hình > Cột thêm của spool** shows each column's kind (Chữ / Số) and lets
   the admin change it.
+- **Spool trễ per discipline** on Insulation: `Pip 301 spool trễ`,
+  `Paint 124 spool trễ`, `Insu Chưa có Plan` (no spool has that Plan date) on
+  their own line under the progress chips; the admin's review pills follow them.
+  The combined "N spool trễ" pill is gone (a spool late on two milestones counts
+  once in each); the Spool trễ card keeps its total. The report's Tóm tắt lists
+  the three counts before the total.
+- **Insulation chart legend** is a list of check boxes: untick an item to hide
+  that bar or line, tick it to show it again; a hidden item stays in the legend
+  with an empty box. The report's chart picture draws only what is shown.
 
 ### Changed
 
