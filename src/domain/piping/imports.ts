@@ -718,8 +718,8 @@ export interface NewSpoolColumn {
  * workbook serves the Actual import. Any other header left of Pip Plan is a
  * new extra column (RV9-1, Q4), number when every non-blank cell of it is a
  * number cell (Q3); any other header right of it is ignored with a warning
- * (Q5). New columns are read only on the rows the other columns make data
- * rows. A number column's cell must be a number >= 0, stored as a plain
+ * (Q5). Extra columns, new or configured, are read only on the rows the
+ * master and plan columns make data rows. A number column's cell must be a number >= 0, stored as a plain
  * decimal string. Duplicates and plan-order breaks are warnings, never errors.
  */
 export function parseSpoolPlan(
@@ -783,9 +783,10 @@ export function parseSpoolPlan(
 
   const columnWarnings = [...warnings]
 
-  // A new column never makes a row a data row: a numbered STT column or a
-  // totals row under Area is not a spool.
-  const read = [...Object.values(masterCol), ...Object.values(planCol), ...extraCol.map((e) => e.col)].filter((c) => c !== -1)
+  // An extra column, new or configured, never makes a row a data row: a
+  // numbered STT column or a totals row under Area is not a spool, and the
+  // file that created the column reads the same on its next import.
+  const read = [...Object.values(masterCol), ...Object.values(planCol)].filter((c) => c !== -1)
   const data = dataRows(header, read)
   // Number when at least one cell is filled and every filled cell is a number
   // cell of the sheet (Q3): text such as "001" or "1.200" stays text. The

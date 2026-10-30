@@ -575,6 +575,31 @@ describe('parseSpoolPlan: new columns before Pip Plan (RV9-1, Q3-Q5)', () => {
     expect(totals.newColumns).toEqual([{ label: 'Area (m2)', kind: 'number' }, { label: 'Note', kind: 'text' }])
   })
 
+  it('reads the same file the same way once its new columns exist: a configured column never makes a data row', () => {
+    const files = [
+      sheet([
+        ['STT', 'SpoolNo', 'Pip Plan', 'Paint Plan', 'Insu Plan'],
+        [1, 'A', null, null, null],
+        [2, null, null, null, null],
+        [3, null, null, null, null],
+      ]),
+      sheet([
+        ['SpoolNo', 'Area (m2)', 'Note', 'Pip Plan', 'Paint Plan', 'Insu Plan'],
+        ['A', 2.5, null, null, null, null],
+        ['B', 3, null, null, null, null],
+        [null, 5.5, 'Tổng', null, null, null],
+      ]),
+    ]
+    for (const file of files) {
+      const first = parseSpoolPlan(file, [])
+      const second = parseSpoolPlan(file, first.newColumns)
+      expect(second.newColumns).toEqual([])
+      expect(second.errors).toEqual([])
+      expect(second.rowCount).toBe(first.rowCount)
+      expect(second.rows).toEqual(first.rows)
+    }
+  })
+
   it('refuses a negative value in a number column, new or configured', () => {
     const res = parseSpoolPlan(sheet([
       ['SpoolNo', 'N', 'Pip Plan', 'Paint Plan', 'Insu Plan', 'Length (mm)'],
