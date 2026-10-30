@@ -10,6 +10,16 @@ import { nextSort } from '../config/ordering'
  * created stay, empty and harmless. The columns are read afresh, so one the
  * project already has (a retry after such a failure, another admin) is not
  * added twice.
+ *
+ * Two races fail the import, and a retry (which reads the file against the
+ * project's columns afresh) recovers both:
+ * - another admin adds the same label between the read and the add: the
+ *   database's unique label refuses the add, so nothing is written;
+ * - a label the project has matches a new one by `normalizeHeader` (case,
+ *   space and dash blind; "Zone-A" for "Zone A") but not by the database's
+ *   `lower(btrim())`: it is skipped here, and the replace/merge function then
+ *   refuses the whole write, the value's label not being configured, so
+ *   nothing is half imported.
  */
 export async function addNewSpoolColumns(projectId: string, columns: NewSpoolColumn[]): Promise<void> {
   if (columns.length === 0) return
