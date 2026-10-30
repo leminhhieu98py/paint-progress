@@ -6,8 +6,8 @@ import type { KeyFact } from '../../components/KeyFacts'
 import { SectionCard } from '../../components/SectionCard'
 import { searchSelectProps, useFullOptionsProps } from '../../components/searchSelect'
 import {
-  camProgress, camSeries, camSeriesKeys, camSpoolFlags, duplicateSpoolGroups, lateWarnings, MILESTONE_LABEL, milestoneActualLabel,
-  MILESTONES, planOrderIssues, type CamSpoolFlags,
+  camProgress, camSeries, camSeriesKeys, camSpoolFlags, duplicateSpoolGroups, lateByMilestone, lateWarnings, MILESTONE_LABEL,
+  milestoneActualLabel, MILESTONES, planOrderIssues, type CamSpoolFlags,
 } from '../../domain/piping/cam'
 import { resolveUnit, unitOptions } from '../../domain/piping/camUnit'
 import { parseSpoolPlan, type PlanImportMode, type SpoolPlanParse, type SpoolPlanRow } from '../../domain/piping/imports'
@@ -26,7 +26,7 @@ import { ControlRow } from './insulation/ControlRow'
 import { PHONE_CONTROL } from './insulation/controlStyle'
 import { InsulationChart } from './insulation/InsulationChart'
 import { resolveChartColors } from './chartColors'
-import { lateFact } from './insulation/lateGroups'
+import { lateFacts } from './insulation/lateGroups'
 import { LateSpools } from './insulation/LateSpools'
 import { addNewSpoolColumns } from './insulation/newColumns'
 import { SpoolDetail } from './insulation/SpoolDetail'
@@ -140,9 +140,14 @@ export function InsulationPanel({ projectId, settings, mode, role, todayKey, ref
     () => (spools === undefined ? new Map<string, CamSpoolFlags>() : camSpoolFlags(spools, settings.lateThresholdDays, todayKey)),
     [spools, settings.lateThresholdDays, todayKey],
   )
-  /** Late milestones (spec §7), for every role: the pill and the Spool trễ card. */
+  /** Late milestones (spec §7), for every role: the Spool trễ card. */
   const warnings = useMemo(
     () => (spools === undefined ? [] : lateWarnings(spools, settings.lateThresholdDays, todayKey)),
+    [spools, settings.lateThresholdDays, todayKey],
+  )
+  /** Late spools per milestone (RV9-3), for every role: the pills. */
+  const lateCounts = useMemo(
+    () => (spools === undefined ? null : lateByMilestone(spools, settings.lateThresholdDays, todayKey)),
     [spools, settings.lateThresholdDays, todayKey],
   )
   const review = useMemo(() => (spools === undefined || !admin ? [] : reviewFacts(spools)), [spools, admin])
@@ -272,7 +277,6 @@ export function InsulationPanel({ projectId, settings, mode, role, todayKey, ref
     </>
   )
 
-  const late = lateFact(warnings, settings.lateThresholdDays)
   const facts: KeyFact[] = [
     { value: formatQty(data.spools.length), label: 'spool' },
     ...MILESTONES.map((m) => ({
@@ -283,9 +287,9 @@ export function InsulationPanel({ projectId, settings, mode, role, todayKey, ref
       // What the counts count: spool rows, or lines, packages, an extra column... (spec §6.4, RV9-1).
       label: resolved.label,
     })),
-    ...(late === null ? [] : [late]),
-    ...review,
   ]
+  // On their own line under the progress (RV9-3): the late pills, then the admin's review pills.
+  const moreFacts: KeyFact[] = [...(lateCounts === null ? [] : lateFacts(lateCounts, settings.lateThresholdDays)), ...review]
 
   return (
     // Keyed on the project: a filter or a search never carries over to the next project's spools.
@@ -294,6 +298,7 @@ export function InsulationPanel({ projectId, settings, mode, role, todayKey, ref
       <SectionCard
         title="Insulation"
         facts={facts}
+        moreFacts={moreFacts}
         extra={phone && planImport === undefined ? undefined : <HeaderActions>{!phone && controls}{planImport}</HeaderActions>}
       >
         {phone && <div style={{ marginBottom: space.md }}><ControlRow>{controls}</ControlRow></div>}

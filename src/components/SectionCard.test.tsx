@@ -24,6 +24,20 @@ describe('SectionCard', () => {
     expect(heading.nextElementSibling).toBe(screen.getByTestId('key-facts'))
   })
 
+  it('puts a second row of facts on its own line under the title\'s row, only when it has one (RV9-3)', () => {
+    const { rerender } = render(
+      <SectionCard title="Insulation" facts={[{ value: 4, label: 'spool' }]} moreFacts={[{ prefix: 'Pip', value: 2, label: 'spool trễ' }, null]}>
+        x
+      </SectionCard>,
+    )
+    const line = screen.getByTestId('more-facts')
+    expect(line).toHaveStyle({ flexBasis: '100%' })
+    expect(line.textContent).toBe('Pip 2 spool trễ')
+    expect(screen.getByRole('heading', { name: 'Insulation' }).nextElementSibling).not.toBe(line)
+    rerender(<SectionCard title="Insulation" moreFacts={[false]}>x</SectionCard>)
+    expect(screen.queryByTestId('more-facts')).toBeNull()
+  })
+
   it('marks its body so a stylesheet can inset the tables inside it (LAY-01)', () => {
     // `.pp-card` is the one hook the global stylesheet keys on to give the
     // first and last table column the card's own 20px gutter. Without it every

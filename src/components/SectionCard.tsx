@@ -22,6 +22,7 @@ export function SectionCard({
   code,
   title,
   facts,
+  moreFacts,
   extra,
   children,
   collapsible = false,
@@ -33,6 +34,11 @@ export function SectionCard({
   code?: string
   title?: ReactNode
   facts?: ReadonlyArray<KeyFact | false | null | undefined>
+  /**
+   * A second row of facts on its own line under the title's row (RV9-3): the
+   * header's last line, wrapping on a phone. None shown, no line.
+   */
+  moreFacts?: ReadonlyArray<KeyFact | false | null | undefined>
   extra?: ReactNode
   children: ReactNode
   collapsible?: boolean
@@ -156,6 +162,11 @@ export function SectionCard({
               {/* Right when closed, down when open. */}
               {open ? <DownOutlined aria-hidden /> : <RightOutlined aria-hidden />}
             </button>
+          )}
+          {moreFacts !== undefined && moreFacts.some(Boolean) && (
+            <div data-testid="more-facts" style={{ flexBasis: '100%', minWidth: 0 }}>
+              <KeyFacts facts={moreFacts} />
+            </div>
           )}
         </div>
       )}
