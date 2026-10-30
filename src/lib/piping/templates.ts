@@ -6,6 +6,7 @@ import {
   SPOOL_ACTUAL_COLUMNS,
   SPOOL_MASTER_COLUMNS,
   SPOOL_PLAN_COLUMNS,
+  TEMPLATE_NUMBER_COLUMNS,
 } from '../../domain/piping/imports'
 import type { ImportKind } from '../../domain/piping/types'
 
@@ -86,9 +87,6 @@ export function buildManpowerActualTemplate(groupNames: string[]): Promise<Blob>
   ])
 }
 
-/** Suggested extra columns (RV9-1, Q6): the import creates them, as numbers, from a filled file. */
-const SUGGESTED_EXTRA_LABELS = ['Area (m2)', 'Length (mm)']
-
 /**
  * The six master columns, `Area (m2)` and `Length (mm)` unless an extra
  * column already names them, the extra columns in the order given, then the
@@ -97,7 +95,7 @@ const SUGGESTED_EXTRA_LABELS = ['Area (m2)', 'Length (mm)']
  */
 export function buildSpoolPlanTemplate(extraLabels: string[]): Promise<Blob> {
   const configured = new Set(extraLabels.map(normalizeHeader))
-  const suggested = SUGGESTED_EXTRA_LABELS.filter((label) => !configured.has(normalizeHeader(label)))
+  const suggested = TEMPLATE_NUMBER_COLUMNS.filter((label) => !configured.has(normalizeHeader(label)))
   return buildTemplate('Insulation Plan', [
     { header: SPOOL_MASTER_COLUMNS.spoolNo.label, width: 36 },
     { header: SPOOL_MASTER_COLUMNS.lineNo.label, width: 32 },

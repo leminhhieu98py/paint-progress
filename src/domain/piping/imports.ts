@@ -108,6 +108,14 @@ export const SPOOL_ACTUAL_COLUMNS: Record<Milestone, ColumnSpec> = {
   iw: { label: milestoneActualLabel('iw'), aliases: ['Insulation Work – Actual', 'IW Actual'] },
 }
 
+/**
+ * The extra columns the Insulation Plan template suggests (RV9-1, Q6): the
+ * customer's number fields, so the import creates them as numbers even while
+ * the file leaves them blank.
+ */
+export const TEMPLATE_NUMBER_COLUMNS = ['Area (m2)', 'Length (mm)']
+const TEMPLATE_NUMBER_KEYS = new Set(TEMPLATE_NUMBER_COLUMNS.map(normalizeHeader))
+
 /** Every built-in column of the spool files, for the extra-label collision check. */
 const BUILT_IN_SPOOL_COLUMNS: ColumnSpec[] = [
   ...Object.values(SPOOL_MASTER_COLUMNS),
@@ -777,10 +785,12 @@ export function parseSpoolPlan(
   const read = [...Object.values(masterCol), ...Object.values(planCol), ...extraCol.map((e) => e.col), ...newCol.map((e) => e.col)]
     .filter((c) => c !== -1)
   const data = dataRows(header, read)
-  // Number when at least one cell is filled and every filled cell is a number (Q3).
+  // Number when at least one cell is filled and every filled cell is a number
+  // (Q3); the template's Area and Length need no filled cell.
   const kindOf = (col: number): SpoolColumnKind => {
     const filled = data.map(({ cells }) => parseNumberCell(cellAt(cells, col))).filter((p) => p !== null)
-    return filled.length > 0 && filled.every((p) => !('error' in p)) ? 'number' : 'text'
+    const blankOk = TEMPLATE_NUMBER_KEYS.has(normalizeHeader(header.texts[col]))
+    return (filled.length > 0 || blankOk) && filled.every((p) => !('error' in p)) ? 'number' : 'text'
   }
   const created = newCol.map(({ col, label }) => ({ col, label, kind: kindOf(col) }))
   const newColumns = created.map(({ label, kind }) => ({ label, kind }))

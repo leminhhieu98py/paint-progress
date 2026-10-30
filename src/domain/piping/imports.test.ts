@@ -504,6 +504,24 @@ describe('parseSpoolPlan: new columns before Pip Plan (RV9-1, Q3-Q5)', () => {
     expect(res.warnings).toContainEqual({ row: 1, message: 'Bỏ qua cột: area' })
   })
 
+  it('makes the template\'s Area and Length number columns even when blank; any other blank column is text', () => {
+    const res = parseSpoolPlan(sheet([
+      ['SpoolNo', 'area(M2)', 'Length (mm)', 'Width', 'Pip Plan', 'Paint Plan', 'Insu Plan'],
+      ['A', null, ' ', null, null, null, null],
+    ]), [])
+    expect(res.newColumns).toEqual([
+      { label: 'area(M2)', kind: 'number' },
+      { label: 'Length (mm)', kind: 'number' },
+      { label: 'Width', kind: 'text' },
+    ])
+    // Text in them still makes them text, as for any other column.
+    const mixed = parseSpoolPlan(sheet([
+      ['SpoolNo', 'Area (m2)', 'Pip Plan', 'Paint Plan', 'Insu Plan'],
+      ['A', 'n/a', null, null, null],
+    ]), [])
+    expect(mixed.newColumns).toEqual([{ label: 'Area (m2)', kind: 'text' }])
+  })
+
   it('detects the kind: number when every non-blank cell is a number (vi or en), else text', () => {
     const res = parseSpoolPlan(sheet([
       ['SpoolNo', 'Vi', 'En', 'Mixed', 'Blank', 'Day', 'Pip Plan', 'Paint Plan', 'Insu Plan'],
