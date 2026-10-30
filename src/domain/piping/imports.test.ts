@@ -575,8 +575,8 @@ describe('parseSpoolPlan: new columns before Pip Plan (RV9-1, Q3-Q5)', () => {
       ['B', 1, null, null, null, '-1,5'],
     ]), [{ label: 'Length (mm)', kind: 'number' }])
     expect(res.errors).toEqual([
-      { row: 2, message: 'N: phải ≥ 0' },
-      { row: 3, message: 'Length (mm): phải ≥ 0' },
+      { row: 2, message: 'N phải ≥ 0' },
+      { row: 3, message: 'Length (mm) phải ≥ 0' },
     ])
     expect(res.rows).toEqual([])
   })

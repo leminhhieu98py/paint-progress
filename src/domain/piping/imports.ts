@@ -835,7 +835,7 @@ export function parseSpoolPlan(
         errors.push({ row, message: `${label}: ${parsed.error}` })
         ok = false
       } else if (parsed.value < 0) {
-        errors.push({ row, message: `${label}: phải ≥ 0` })
+        errors.push({ row, message: `${label} phải ≥ 0` })
         ok = false
       } else {
         extra[label] = plainDecimal(parsed.value)
