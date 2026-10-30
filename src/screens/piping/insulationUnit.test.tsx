@@ -6,7 +6,8 @@ import { renderApp } from '../../test/renderApp'
 import { chooseOption } from '../../test/select'
 import { InsulationPanel } from './InsulationPanel'
 import {
-  InsulationUnitProvider, useInsulationSelection, useInsulationSelectionValue, useInsulationUnit, useInsulationUnitValue,
+  InsulationUnitProvider, useInsulationHidden, useInsulationHiddenValue, useInsulationSelection,
+  useInsulationSelectionValue, useInsulationUnit, useInsulationUnitValue,
 } from './insulationUnit'
 
 vi.mock('../../lib/pipingApi', () => ({
@@ -38,8 +39,18 @@ function SelectionReader({ projectId }: { projectId: string | null }) {
   return <output aria-label={`lines ${projectId ?? 'none'}`}>{useInsulationSelectionValue(projectId)}</output>
 }
 
+function HiddenPicker({ projectId }: { projectId: string }) {
+  const [value, setHidden] = useInsulationHidden(projectId)
+  return <button type="button" onClick={() => setHidden([...value, 'phPlan'])}>{`${projectId} ẩn: ${value.join(',')}`}</button>
+}
+
+function HiddenReader({ projectId }: { projectId: string | null }) {
+  return <output aria-label={`hidden ${projectId ?? 'none'}`}>{useInsulationHiddenValue(projectId).join(',')}</output>
+}
+
 const unitOf = (projectId: string) => screen.getByRole('status', { name: `unit ${projectId}` }).textContent
 const linesOf = (projectId: string) => screen.getByRole('status', { name: `lines ${projectId}` }).textContent
+const hiddenOf = (projectId: string) => screen.getByRole('status', { name: `hidden ${projectId}` }).textContent
 
 describe('insulationUnit', () => {
   it('shares the unit per project under the page\'s provider, SpoolNo until it is changed', async () => {
@@ -72,6 +83,30 @@ describe('insulationUnit', () => {
     expect(linesOf('p1')).toBe('actual')
     expect(linesOf('p2')).toBe('both')
     expect(unitOf('p1')).toBe('spoolNo')
+  })
+
+  it('shares the series hidden from the legend per project beside the lines, none until changed (RV9-4)', async () => {
+    renderApp(
+      <InsulationUnitProvider>
+        <HiddenPicker projectId="p1" />
+        <HiddenReader projectId="p1" />
+        <HiddenReader projectId="p2" />
+        <HiddenReader projectId={null} />
+        <SelectionReader projectId="p1" />
+      </InsulationUnitProvider>,
+    )
+    expect(hiddenOf('p1')).toBe('')
+    await userEvent.click(screen.getByRole('button', { name: /p1 ẩn/ }))
+    expect(hiddenOf('p1')).toBe('phPlan')
+    expect(hiddenOf('p2')).toBe('')
+    expect(hiddenOf('none')).toBe('')
+    expect(linesOf('p1')).toBe('both')
+  })
+
+  it('keeps the hidden series in the component\'s own state without a provider', async () => {
+    renderApp(<HiddenPicker projectId="p1" />)
+    await userEvent.click(screen.getByRole('button', { name: 'p1 ẩn:' }))
+    expect(screen.getByRole('button', { name: 'p1 ẩn: phPlan' })).toBeInTheDocument()
   })
 
   it('keeps the lines in the component\'s own state without a provider', async () => {
