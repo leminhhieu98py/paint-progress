@@ -122,6 +122,19 @@ describe('SpoolDetail: levels (spec §6.4, Q16B)', () => {
     expect(td[7].style.textAlign).toBe('center')
     expect(td[13].style.textAlign).toBe('center')
   })
+
+  it('shows a number column\'s stored decimal in vi format, centred; text that is not a number as it is', async () => {
+    const columns: SpoolColumn[] = [...COLUMNS, { id: 'c2', label: 'Area (m2)', sort: 2, kind: 'number' }]
+    renderDetail({ columns }, [
+      spool(1, { extra: { 'Area (m2)': '12.345' } }),
+      spool(2, { extra: { 'Area (m2)': '1234.5' } }),
+      spool(3, { extra: { 'Area (m2)': 'n/a' } }),
+      spool(4),
+    ])
+    await level('Spool')
+    expect(bodyRows().map((r) => cells(r)[7])).toEqual(['12,35', '1.234,5', 'n/a', '-'])
+    expect(within(bodyRows()[0]).getAllByRole('cell')[7].style.textAlign).toBe('center')
+  })
 })
 
 describe('SpoolDetail: flags (spec §6.2, §6.4, §7)', () => {

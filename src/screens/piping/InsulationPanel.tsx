@@ -167,14 +167,14 @@ export function InsulationPanel({ projectId, settings, mode, role, todayKey, ref
       // Nothing is removed, so no note is lost: the spools alone.
       const fresh = await listSpools(projectId)
       previewedSpools.current = fresh
-      return spoolPlanUpdatePreview(fresh, rows, parsedPlan.current?.columnWarnings, parsedPlan.current?.newColumns)
+      return spoolPlanUpdatePreview(fresh, rows, parsedPlan.current?.columnWarnings, parsedPlan.current?.newColumns, columns)
     }
     // The notes too (admin only, as is the Plan import): a removed spool's notes go with it (spec §9).
     // A failed notes read does not block the preview: it says so, and any removal then asks for XOÁ.
     const [fresh, notes] = await Promise.all([listSpools(projectId), listNotes(projectId).catch(() => null)])
     previewedSpools.current = fresh
-    return spoolPlanPreview(fresh, rows, notes === null ? null : spoolNoteCounts(notes), parsedPlan.current?.newColumns)
-  }, [projectId])
+    return spoolPlanPreview(fresh, rows, notes === null ? null : spoolNoteCounts(notes), parsedPlan.current?.newColumns, columns)
+  }, [projectId, columns])
   /** The spool whose actual the admin is clearing (R-12). */
   const [clearing, setClearing] = useState<Spool | null>(null)
   /** The admin's notes on a spool (spec §9); none for a foreman or a viewer. */

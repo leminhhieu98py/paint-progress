@@ -2,11 +2,11 @@ import {
   diffSpoolPlan, diffSpoolPlanUpdate, type ImportIssue, type NewSpoolColumn, type SpoolDiffField, type SpoolFieldChange,
   type SpoolPlanRow,
 } from '../../../domain/piping/imports'
-import type { Spool } from '../../../domain/piping/types'
+import type { Spool, SpoolColumn } from '../../../domain/piping/types'
 import { formatDayMonthYear } from '../../../domain/piping/week'
 import { MISSING } from '../../../lib/format'
 import type { PlanDiffLine, PlanImportPreview } from '../PlanImportFlow'
-import { formatQty } from '../pipingFormat'
+import { formatColumnNumber, formatQty } from '../pipingFormat'
 
 /**
  * The Insulation Plan re-import preview (spec §6.2, R-10, Q19A): old and new
@@ -21,9 +21,18 @@ const DATE_FIELDS = new Set<SpoolDiffField>(['phPlan', 'ihPlan', 'iwPlan'])
 /** A removed spool named in the danger line: ten at most, then how many more. */
 const MAX_NAMED = 10
 
-function value(field: SpoolDiffField, v: string | null): string | null {
+/** A changed value as shown: a date as a day, a number column's value in vi format (RV9-1). */
+function value(c: SpoolFieldChange, v: string | null, numberLabels: ReadonlySet<string>): string | null {
   if (v === null) return null
-  return DATE_FIELDS.has(field) ? formatDayMonthYear(v) : v
+  if (DATE_FIELDS.has(c.field)) return formatDayMonthYear(v)
+  return c.field === 'extra' && numberLabels.has(c.label) ? formatColumnNumber(v) : v
+}
+
+type ColumnKinds = ReadonlyArray<Pick<SpoolColumn, 'label' | 'kind'>>
+
+/** The number extra columns' labels: the configured ones and the file's new ones. */
+function numberLabelsOf(columns: ColumnKinds, newColumns: NewSpoolColumn[]): Set<string> {
+  return new Set([...columns, ...newColumns].filter((c) => c.kind === 'number').map((c) => c.label))
 }
 
 /** Where a removed spool sat: its line and package, to tell duplicates apart. */
@@ -49,18 +58,20 @@ function names(list: string[]): string {
  * notes are deleted with it, so they are flagged and their loss said too.
  * `null` when they could not be read: any removal is then said as a danger,
  * so it still asks for the typed confirm. `newColumns`: the file's new extra
- * columns (RV9-1), said first.
+ * columns (RV9-1), said first. `columns`: the configured extra columns, whose
+ * kind says which values are numbers.
  */
 export function spoolPlanPreview(
   stored: Spool[],
   next: SpoolPlanRow[],
   noteCounts: ReadonlyMap<string, number> | null = new Map(),
   newColumns: NewSpoolColumn[] = [],
+  columns: ColumnKinds = [],
 ): PlanImportPreview {
   const diff = diffSpoolPlan(stored, next)
   const notesOf = (s: Spool) => noteCounts?.get(s.id) ?? 0
   const lines: PlanDiffLine[] = [
-    ...addedAndChanged(diff.added, diff.changed),
+    ...addedAndChanged(diff.added, diff.changed, numberLabelsOf(columns, newColumns)),
     ...diff.removed.map(({ spool, hasActuals }) => ({
       key: `r|${spool.id}`,
       change: 'removed' as const,
@@ -95,7 +106,7 @@ export function spoolPlanPreview(
 
 /** A line per added spool and per changed field of a matched one. */
 function addedAndChanged(
-  added: SpoolPlanRow[], changed: Array<{ spool: Spool; changes: SpoolFieldChange[] }>,
+  added: SpoolPlanRow[], changed: Array<{ spool: Spool; changes: SpoolFieldChange[] }>, numberLabels: ReadonlySet<string>,
 ): PlanDiffLine[] {
   return [
     ...added.map((r) => ({
@@ -105,8 +116,8 @@ function addedAndChanged(
       key: `c|${spool.id}|${c.field}|${c.label}`,
       change: 'changed' as const,
       label: `${spool.spoolNo} · ${c.label}`,
-      from: value(c.field, c.from),
-      to: value(c.field, c.to),
+      from: value(c, c.from, numberLabels),
+      to: value(c, c.to, numberLabels),
     }))),
   ]
 }
@@ -115,13 +126,15 @@ function addedAndChanged(
  * The Update Plan preview (RV8-5): added spools and changed fields only --
  * nothing is removed, so there is no danger. The warnings are the file's
  * column warnings and the merged result's duplicates and plan-order breaks;
- * the file's new extra columns (RV9-1) are said first.
+ * the file's new extra columns (RV9-1) are said first; `columns` as for
+ * `spoolPlanPreview`.
  */
 export function spoolPlanUpdatePreview(
   stored: Spool[],
   next: SpoolPlanRow[],
   columnWarnings: ImportIssue[] = [],
   newColumns: NewSpoolColumn[] = [],
+  columns: ColumnKinds = [],
 ): PlanImportPreview {
   const diff = diffSpoolPlanUpdate(stored, next)
   const consequences = newColumnLines(newColumns)
@@ -132,7 +145,7 @@ export function spoolPlanUpdatePreview(
     added: diff.added.length,
     changed: diff.changed.length,
     unchanged: diff.unchangedCount,
-    lines: addedAndChanged(diff.added, diff.changed),
+    lines: addedAndChanged(diff.added, diff.changed, numberLabelsOf(columns, newColumns)),
     consequences,
     warnings: [...columnWarnings, ...diff.warnings],
   }

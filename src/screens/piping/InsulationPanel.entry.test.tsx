@@ -394,6 +394,18 @@ describe('Insulation: Plan import creates the new columns first (RV9-1, Q4)', ()
     expect(callOrder()).toEqual([['add', 'p1', 'Length (mm)', 5, 'number'], ['merge']])
   })
 
+  it('shows a configured number column\'s values in the preview in vi format', async () => {
+    read.mockResolvedValue(file)
+    api.listSpoolColumns.mockResolvedValue([...COLUMNS, { id: 'c2', label: 'Length (mm)', sort: 2, kind: 'number' }])
+    renderPanel()
+    await ready()
+    await pick(/Nhập Plan/, 'plan.xlsx')
+    const box = await dialog()
+    expect(await within(box).findByText('Cột mới: Area (m2) (số)')).toBeInTheDocument()
+    expect(within(box).getAllByText('1.200').length).toBeGreaterThan(0)
+    expect(within(box).queryByText('1200')).toBeNull()
+  })
+
   it('keeps a failed column add inside the dialog and writes nothing', async () => {
     read.mockResolvedValue(file)
     api.addSpoolColumn.mockRejectedValue(new Error('Cột "Area (m2)" đã có trong dự án'))

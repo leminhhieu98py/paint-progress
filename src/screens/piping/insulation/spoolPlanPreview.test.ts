@@ -95,6 +95,20 @@ describe('new columns in the Plan preview (RV9-1, Q4)', () => {
     ])
   })
 
+  it('shows a number column\'s values in vi format, configured or new; a text column\'s as they are', () => {
+    const configured = [{ label: 'Length (mm)', kind: 'number' as const }, { label: 'Zone', kind: 'text' as const }]
+    const before = [spool(1, { extra: { 'Length (mm)': '1200', Zone: '12.5' } })]
+    const after = [row(1, { extra: { 'Length (mm)': '12.345', Zone: '7.25', 'Area (m2)': '1234.5' } })]
+    const changed = (p: ReturnType<typeof spoolPlanPreview>) => p.lines.map((l) => [l.label, l.from, l.to])
+    const expected = [
+      ['SP-1 · Length (mm)', '1.200', '12,35'],
+      ['SP-1 · Zone', '12.5', '7.25'],
+      ['SP-1 · Area (m2)', null, '1.234,5'],
+    ]
+    expect(changed(spoolPlanPreview(before, after, new Map(), created, configured))).toEqual(expected)
+    expect(changed(spoolPlanUpdatePreview(before, after, [], created, configured))).toEqual(expected)
+  })
+
   it('says nothing of new columns when the file brings none', () => {
     expect(spoolPlanPreview([spool(1)], [row(1)]).consequences).toEqual(['Spool khớp SpoolNo giữ nguyên ngày Actual.'])
     expect(spoolPlanUpdatePreview([spool(1)], [row(1)]).consequences).toEqual(['Spool khớp SpoolNo giữ nguyên ngày Actual.'])

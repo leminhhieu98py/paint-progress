@@ -116,6 +116,9 @@ export const SPOOL_ACTUAL_COLUMNS: Record<Milestone, ColumnSpec> = {
 export const TEMPLATE_NUMBER_COLUMNS = ['Area (m2)', 'Length (mm)']
 const TEMPLATE_NUMBER_KEYS = new Set(TEMPLATE_NUMBER_COLUMNS.map(normalizeHeader))
 
+/** The longest header a Plan file creates as a column (RV9-1); a longer one is ignored with a warning. */
+const MAX_NEW_COLUMN_LABEL = 60
+
 /** Every built-in column of the spool files, for the extra-label collision check. */
 const BUILT_IN_SPOOL_COLUMNS: ColumnSpec[] = [
   ...Object.values(SPOOL_MASTER_COLUMNS),
@@ -715,11 +718,12 @@ export interface NewSpoolColumn {
  * required; the other master columns are read when present (a warning names
  * the missing ones); a header equal to a configured extra column fills
  * `extra`; Actual columns are ignored without a word (R-9), so the same
- * workbook serves the Actual import. Any other header left of Pip Plan is a
- * new extra column (RV9-1, Q4), number when every non-blank cell of it is a
- * number cell (Q3); any other header right of it is ignored with a warning
- * (Q5). New columns are read only on the rows the other columns make data
- * rows. A number column's cell must be a number >= 0, stored as a plain
+ * workbook serves the Actual import. Any other header left of Pip Plan (60
+ * characters at most) is a new extra column (RV9-1, Q4), number when every
+ * non-blank cell of it is a number cell (Q3); any other header right of it,
+ * or longer, is ignored with a warning (Q5). Extra columns, new or
+ * configured, are read only on the rows the master and plan columns make
+ * data rows. A number column's cell must be a number >= 0, stored as a plain
  * decimal string. Duplicates and plan-order breaks are warnings, never errors.
  */
 export function parseSpoolPlan(
@@ -750,14 +754,16 @@ export function parseSpoolPlan(
   // A header left of Pip Plan naming nothing known is a new column (Q4), once
   // per name. One that loosely names several configured labels, or a built-in
   // name left free ("Line" beside "LineNo"), stays ignored as before: the API
-  // would refuse it, or the file could not tell it apart.
+  // would refuse it, or the file could not tell it apart. So does a header too
+  // long to be a column's name.
   const configuredKeys = new Set(labels.map(normalizeHeader))
   const newKeys = new Set<string>()
   const newCol: Array<{ col: number; label: string }> = []
   for (const col of extraMatch.unmatched) {
     const label = header.texts[col]
     const key = normalizeHeader(label)
-    if (col > planCol.ph || configuredKeys.has(key) || newKeys.has(key) || builtInSpoolHeader(label) !== null) continue
+    if (col > planCol.ph || label.length > MAX_NEW_COLUMN_LABEL) continue
+    if (configuredKeys.has(key) || newKeys.has(key) || builtInSpoolHeader(label) !== null) continue
     newKeys.add(key)
     newCol.push({ col, label })
     used.add(col)
@@ -783,9 +789,10 @@ export function parseSpoolPlan(
 
   const columnWarnings = [...warnings]
 
-  // A new column never makes a row a data row: a numbered STT column or a
-  // totals row under Area is not a spool.
-  const read = [...Object.values(masterCol), ...Object.values(planCol), ...extraCol.map((e) => e.col)].filter((c) => c !== -1)
+  // An extra column, new or configured, never makes a row a data row: a
+  // numbered STT column or a totals row under Area is not a spool, and the
+  // file that created the column reads the same on its next import.
+  const read = [...Object.values(masterCol), ...Object.values(planCol)].filter((c) => c !== -1)
   const data = dataRows(header, read)
   // Number when at least one cell is filled and every filled cell is a number
   // cell of the sheet (Q3): text such as "001" or "1.200" stays text. The

@@ -357,6 +357,28 @@ describe('buildPipingReport (spec §10)', () => {
     expect(ws.getImages()).toHaveLength(0)
   })
 
+  it('Chi tiết spool: a number column\'s values are numeric cells, the file\'s quantity format; text stays text', async () => {
+    const columns = [
+      { id: 'c1', label: 'Area (m2)', sort: 1, kind: 'number' as const },
+      { id: 'c2', label: 'Length (mm)', sort: 2, kind: 'number' as const },
+      { id: 'c3', label: 'Zone', sort: 3, kind: 'text' as const },
+    ]
+    const spools = [
+      spool({ id: 'a', seq: 1, spoolNo: 'SP-A', extra: { 'Area (m2)': '12.345', 'Length (mm)': '1200', Zone: '12.5' } }),
+      spool({ id: 'b', seq: 2, spoolNo: 'SP-B', extra: { 'Area (m2)': 'n/a', 'Length (mm)': '30' } }),
+      spool({ id: 'c', seq: 3, spoolNo: 'SP-C', extra: {} }),
+    ]
+    const ws = sheet(await open(await buildPipingReport(input({ spools, columns }))), 'Chi tiết spool')
+    expect([2, 3, 4].map((r) => rowValues(ws, r).slice(7, 10))).toEqual([
+      [12.345, 1200, '12.5'],
+      ['n/a', 30, null],
+      [null, null, null],
+    ])
+    expect(ws.getCell('H2').numFmt).toBe('#,##0.00')
+    expect(ws.getCell('I2').numFmt).toBe('#,##0')
+    expect(ws.getCell('J2').numFmt).toBeFalsy()
+  })
+
   it('Chi tiết spool: no extra columns, no spools: the header alone', async () => {
     const ws = sheet(await open(await buildPipingReport(input({ spools: [] }))), 'Chi tiết spool')
     expect(headerOf(ws)).toEqual([
