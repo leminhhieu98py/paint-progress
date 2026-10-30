@@ -110,8 +110,8 @@ export const SPOOL_ACTUAL_COLUMNS: Record<Milestone, ColumnSpec> = {
 
 /**
  * The extra columns the Insulation Plan template suggests (RV9-1, Q6): the
- * customer's number fields, so the import creates them as numbers even while
- * the file leaves them blank.
+ * customer's number fields, so the import always creates them as numbers,
+ * whatever the file holds in them.
  */
 export const TEMPLATE_NUMBER_COLUMNS = ['Area (m2)', 'Length (mm)']
 const TEMPLATE_NUMBER_KEYS = new Set(TEMPLATE_NUMBER_COLUMNS.map(normalizeHeader))
@@ -789,11 +789,12 @@ export function parseSpoolPlan(
   const data = dataRows(header, read)
   // Number when at least one cell is filled and every filled cell is a number
   // cell of the sheet (Q3): text such as "001" or "1.200" stays text. The
-  // template's Area and Length need no filled cell.
+  // template's Area and Length are always numbers: their text cells are
+  // parsed, and one that is not a number is a row error.
   const kindOf = (col: number): SpoolColumnKind => {
+    if (TEMPLATE_NUMBER_KEYS.has(normalizeHeader(header.texts[col]))) return 'number'
     const filled = data.map(({ cells }) => cellAt(cells, col)).filter((v) => textCell(v) !== null)
-    const blankOk = TEMPLATE_NUMBER_KEYS.has(normalizeHeader(header.texts[col]))
-    return (filled.length > 0 || blankOk) && filled.every((v) => typeof v === 'number' && Number.isFinite(v)) ? 'number' : 'text'
+    return filled.length > 0 && filled.every((v) => typeof v === 'number' && Number.isFinite(v)) ? 'number' : 'text'
   }
   const created = newCol.map(({ col, label }) => ({ col, label, kind: kindOf(col) }))
   const newColumns = created.map(({ label, kind }) => ({ label, kind }))
