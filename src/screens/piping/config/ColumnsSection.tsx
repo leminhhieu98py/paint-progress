@@ -221,6 +221,7 @@ export function ColumnsSection({ projectId, onChanged }: { projectId: string; on
             title: 'Loại',
             dataIndex: 'kind',
             width: KIND_WIDTH + 32,
+            align: 'center',
             render: (value: SpoolColumnKind, row) => (
               <Select<SpoolColumnKind>
                 aria-label={`Loại · ${row.label}`}
