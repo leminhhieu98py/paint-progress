@@ -253,7 +253,7 @@ describe('PipingExportAction (spec §10)', () => {
       expect(manpowerSpec().data[0].planTotal).toBe(15)
     })
 
-    it('draws the groups the tab shows, the Plan TB line following them; the table keeps every group', async () => {
+    it('draws the groups the tab shows, the Avg Plan line following them; the table keeps every group', async () => {
       const forget = showManpowerSelection('p1', new Set(['g2', 'g3']))
       try {
         renderApp(<PipingExportAction panel={panel()} />)

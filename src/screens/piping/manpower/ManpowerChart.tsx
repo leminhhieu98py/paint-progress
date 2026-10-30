@@ -36,12 +36,12 @@ import { formatQty } from '../pipingFormat'
  *
  * The Nhóm select (RV8-7) draws a subset of `groups`; a group keeps the hue
  * of its place among all of them, so picking another group never recolours
- * it. "Plan TB", the selected groups' average daily plan, is a dashed
+ * it. "Avg Plan", the selected groups' average daily plan, is a dashed
  * reference line across the plot, named in the legend after Plan tổng.
  *
  * The project's colours (RV8-2) stand in for the palette: a group's picked
  * colour is its hue, its Plan and Actual derived from it as above (the lap
- * by its place); the two totals and Plan TB have their own keys.
+ * by its place); the two totals and Avg Plan have their own keys.
  *
  * The panel's tests replace this module (jsdom gives ResponsiveContainer no
  * size); only the lazily loaded Piping page imports it.
@@ -58,9 +58,9 @@ const lapOf = (i: number) => Math.floor(i / palette.categorical.length)
 
 const planKey = (groupId: string) => `plan:${groupId}`
 const actualKey = (groupId: string) => `actual:${groupId}`
-/** The legend's stand-in for the Plan TB reference line, which Recharts never lists. */
+/** The legend's stand-in for the Avg Plan reference line, which Recharts never lists. */
 const PLAN_AVG = 'planAvg'
-const PLAN_AVG_NAME = 'Plan TB'
+const PLAN_AVG_NAME = 'Avg Plan'
 const PLAN_AVG_DASH = '6 4'
 
 export function ManpowerChart({ data, groups, selected, planAverage = null, colors, mode, report = false }: {

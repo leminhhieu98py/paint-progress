@@ -234,21 +234,21 @@ describe('ManpowerChart (spec §5)', () => {
     expect(Object.keys(captured.data[0]).filter((k) => k.includes(':'))).toEqual(['plan:g2', 'actual:g2'])
   })
 
-  it('draws the plan average as a dashed Plan TB line, listed after Plan tổng (RV8-7)', () => {
+  it('draws the plan average as a dashed Avg Plan line, listed after Plan tổng (RV8-7)', () => {
     render(<ManpowerChart data={DAYS} groups={GROUPS} mode="day" planAverage={12.5} />)
     expect(captured.referenceLine?.y).toBe(12.5)
     expect(captured.referenceLine?.strokeDasharray).toBeTruthy()
-    expect((captured.referenceLine?.label as { value: string } | undefined)?.value).toBe('Plan TB')
+    expect((captured.referenceLine?.label as { value: string } | undefined)?.value).toBe('Avg Plan')
     expect(legend()).toEqual([
-      'Plan · Reinstatement', 'Plan · Insulation', 'Plan tổng theo ngày', 'Plan TB',
+      'Plan · Reinstatement', 'Plan · Insulation', 'Plan tổng theo ngày', 'Avg Plan',
       'Actual · Reinstatement', 'Actual · Insulation', 'Actual tổng theo ngày',
     ])
   })
 
-  it('names the average Plan TB in week view too', () => {
+  it('names the average Avg Plan in week view too', () => {
     render(<ManpowerChart data={WEEKS} groups={GROUPS} mode="week" planAverage={12.5} />)
     expect(captured.referenceLine?.y).toBe(12.5)
-    expect(attrs('line', 'data-name')).toContain('Plan TB')
+    expect(attrs('line', 'data-name')).toContain('Avg Plan')
   })
 
   it('draws no average line without a plan average', () => {
@@ -276,7 +276,7 @@ describe('ManpowerChart (spec §5)', () => {
     expect(attrs('bar', 'data-stroke')[8]).toBe('#336699')
   })
 
-  it('paints the totals and Plan TB in the project\'s colours, today\'s by default (RV8-2)', () => {
+  it('paints the totals and Avg Plan in the project\'s colours, today\'s by default (RV8-2)', () => {
     const { unmount } = render(<ManpowerChart data={DAYS} groups={GROUPS} mode="day" planAverage={12.5} />)
     expect(attrs('line', 'data-stroke')).toEqual([palette.textTertiary, palette.ink, palette.warning])
     expect(captured.referenceLine?.stroke).toBe(palette.warning)

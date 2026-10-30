@@ -38,7 +38,7 @@ export type ChartSpec = (
     kind: 'manpower'
     data: ManpowerPoint[]
     groups: ManpowerGroup[]
-    /** The groups the tab's Nhóm select shows, and their Plan TB (RV8-7). */
+    /** The groups the tab's Nhóm select shows, and their Avg Plan (RV8-7). */
     selected?: ReadonlySet<string>
     planAverage?: number | null
     mode: ViewMode

@@ -265,8 +265,8 @@ describe('buildPipingReport (spec §10)', () => {
 
   it('Chi tiết spool: every spool in file order, master fields, extra columns in order, the six dates', async () => {
     const columns = [
-      { id: 'c1', label: 'Khu vực', sort: 1 },
-      { id: 'c2', label: 'Ghi chú KH', sort: 2 },
+      { id: 'c1', label: 'Khu vực', sort: 1, kind: 'text' as const },
+      { id: 'c2', label: 'Ghi chú KH', sort: 2, kind: 'text' as const },
     ]
     const spools = [
       spool({

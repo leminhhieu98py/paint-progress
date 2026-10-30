@@ -1,12 +1,14 @@
-import { Alert, App, Button, Input, Space, Table } from 'antd'
+import { Alert, App, Button, Input, Select, Space, Table } from 'antd'
 import { useRef, useState, type KeyboardEvent } from 'react'
 import { ConsequenceModal } from '../../../components/ConsequenceModal'
 import { IconAction } from '../../../components/IconAction'
 import { RulesDisclosure } from '../../../components/RulesDisclosure'
+import { searchSelectProps } from '../../../components/searchSelect'
 import { builtInSpoolHeader } from '../../../domain/piping/imports'
-import type { Spool, SpoolColumn } from '../../../domain/piping/types'
+import type { Spool, SpoolColumn, SpoolColumnKind } from '../../../domain/piping/types'
 import {
   addSpoolColumn, deleteSpoolColumn, listSpoolColumns, listSpools, renameSpoolColumn, reorderSpoolColumns,
+  setSpoolColumnKind,
 } from '../../../lib/pipingApi'
 import { space } from '../../../theme'
 import { moveRow, nextSort, useRowDrag } from './ordering'
@@ -17,7 +19,16 @@ const RULES = [
   { id: 'order', text: 'Kéo hàng để đổi thứ tự; thứ tự được lưu ngay khi thả.' },
   { id: 'rewrite', text: 'Đổi tên hoặc xoá cột ghi lại giá trị của cột đó ở mọi spool của dự án.' },
   { id: 'header', text: 'Tên cột không được trùng tên cột chuẩn của file spool (SpoolNo, LineNo, …).' },
+  { id: 'kind', text: 'Cột Số được cộng khi chọn làm đơn vị đếm; ô trống hoặc không phải số tính là 0.' },
 ]
+
+/** The two kinds of a column (RV9-1), as the admin reads them. */
+const KIND_OPTIONS: Array<{ value: SpoolColumnKind; label: string }> = [
+  { value: 'text', label: 'Chữ' },
+  { value: 'number', label: 'Số' },
+]
+const kindLabel = (kind: SpoolColumnKind) => (kind === 'number' ? 'Số' : 'Chữ')
+const KIND_WIDTH = 90
 
 const COUNT = new Intl.NumberFormat('vi-VN')
 
@@ -41,7 +52,8 @@ type Pending =
   | { kind: 'delete'; column: SpoolColumn; count: number | null; error: string | null }
 
 /**
- * Cột thêm của spool (spec §6.1, Q21A): the admin's extra text columns. A
+ * Cột thêm của spool (spec §6.1, Q21A): the admin's extra columns, each Chữ
+ * or Số (RV9-1; switching saves at once, the values stay as they are). A
  * rename or a delete rewrites the values of every spool of the project in one
  * transaction (0039), so each asks first, saying how many spools it touches.
  */
@@ -50,6 +62,7 @@ export function ColumnsSection({ projectId, onChanged }: { projectId: string; on
   const list = useProjectList(projectId, listSpoolColumns)
   const columns = list.rows ?? []
   const [label, setLabel] = useState('')
+  const [kind, setKind] = useState<SpoolColumnKind>('text')
   const [busy, setBusy] = useState(false)
   const [editing, setEditing] = useState<{ id: string; text: string } | null>(null)
   const [pending, setPending] = useState<Pending | null>(null)
@@ -79,7 +92,10 @@ export function ColumnsSection({ projectId, onChanged }: { projectId: string; on
     adding.current = true
     setAddBusy(true)
     try {
-      if (await run(() => addSpoolColumn(projectId, text, nextSort(columns)), `Đã thêm cột ${text}`)) setLabel('')
+      if (await run(() => addSpoolColumn(projectId, text, nextSort(columns), kind), `Đã thêm cột ${text}`)) {
+        setLabel('')
+        setKind('text')
+      }
     } finally {
       adding.current = false
       setAddBusy(false)
@@ -164,6 +180,14 @@ export function ColumnsSection({ projectId, onChanged }: { projectId: string; on
           onPressEnter={() => void add()}
           style={{ maxWidth: 320 }}
         />
+        <Select<SpoolColumnKind>
+          aria-label="Loại cột mới"
+          {...searchSelectProps}
+          style={{ width: KIND_WIDTH }}
+          value={kind}
+          options={KIND_OPTIONS}
+          onChange={setKind}
+        />
         <Button type="primary" disabled={label.trim() === ''} loading={addBusy} onClick={() => void add()}>
           Thêm cột
         </Button>
@@ -192,6 +216,26 @@ export function ColumnsSection({ projectId, onChanged }: { projectId: string; on
                 />
               )
               : value),
+          },
+          {
+            title: 'Loại',
+            dataIndex: 'kind',
+            width: KIND_WIDTH + 32,
+            align: 'center',
+            render: (value: SpoolColumnKind, row) => (
+              <Select<SpoolColumnKind>
+                aria-label={`Loại · ${row.label}`}
+                {...searchSelectProps}
+                style={{ width: KIND_WIDTH }}
+                value={value}
+                options={KIND_OPTIONS}
+                disabled={busy}
+                onChange={(next) => void run(
+                  () => setSpoolColumnKind(projectId, row.id, next),
+                  `Đã đổi loại cột ${row.label} thành ${kindLabel(next)}`,
+                )}
+              />
+            ),
           },
           {
             title: 'Thao tác',
