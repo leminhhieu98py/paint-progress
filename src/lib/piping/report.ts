@@ -4,6 +4,7 @@ import {
   milestoneActualLabel, milestonePlanLabel, MILESTONES, PLAN_FIELD, UNIT_LABEL, type CamPoint, type CamSeriesKey,
 } from '../../domain/piping/cam'
 import { resolveUnit } from '../../domain/piping/camUnit'
+import { parseDecimalText } from '../../domain/piping/imports'
 import { chartGroups, manpowerAverages, manpowerSeries, type ManpowerPoint } from '../../domain/piping/manpower'
 import { reinstatementSeries, reinstatementSummary, type ReinstatementPoint } from '../../domain/piping/reinstatement'
 import type {
@@ -326,23 +327,35 @@ export async function buildPipingReport(
 
   // Chi tiết spool: every spool of the project in file order, whatever the
   // screen filters (RV8-3); the extra columns in the admin's order, the dates
-  // as day cells like Spool trễ's.
+  // as day cells like Spool trễ's. A number column's value is a numeric cell
+  // in the quantity format (RV9-1); one that does not parse stays text.
   const detail = wb.addWorksheet('Chi tiết spool')
   const masterFields = Object.keys(UNIT_LABEL) as BuiltInUnit[]
   const extraColumns = [...input.columns].sort((a, b) => a.sort - b.sort)
+  const detailSpools = [...input.spools].sort((a, b) => a.seq - b.seq)
+  // A missing value is an empty cell.
+  const extraCells = extraColumns.map((c) => detailSpools.map((s): Cell => {
+    const text = s.extra[c.label] || null
+    return text === null || c.kind !== 'number' ? text : parseDecimalText(text) ?? text
+  }))
   writeTable(detail, [
     { header: 'STT', width: 6, numFmt: INTEGER_FORMAT },
     ...masterFields.map((f) => ({ header: UNIT_LABEL[f], width: f === 'spoolNo' ? 30 : 22 })),
-    ...extraColumns.map((c) => ({ header: c.label, width: Math.max(12, Math.min(28, c.label.length + 2)) })),
+    ...extraColumns.map((c, j) => ({
+      header: c.label,
+      width: Math.max(12, Math.min(28, c.label.length + 2)),
+      ...(c.kind === 'number'
+        ? { numFmt: quantityFormat(extraCells[j].map((v) => (typeof v === 'number' ? v : null))) }
+        : {}),
+    })),
     ...MILESTONES.flatMap((m) => [
       { header: milestonePlanLabel(m), width: 13, numFmt: DATE_FORMAT },
       { header: milestoneActualLabel(m), width: 13, numFmt: DATE_FORMAT },
     ]),
-  ], [...input.spools].sort((a, b) => a.seq - b.seq).map((s, i) => [
+  ], detailSpools.map((s, i) => [
     i + 1,
-    // A missing value is an empty cell.
     ...masterFields.map((f) => s[f] || null),
-    ...extraColumns.map((c) => s.extra[c.label] || null),
+    ...extraCells.map((cells) => cells[i]),
     ...MILESTONES.flatMap((m) => [dayCell(s[PLAN_FIELD[m]]), dayCell(s[ACTUAL_FIELD[m]])]),
   ]))
   detail.autoFilter = { from: { row: 1, column: 1 }, to: { row: detail.rowCount, column: detail.columnCount } }
