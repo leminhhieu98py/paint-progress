@@ -1,12 +1,13 @@
 import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { CamSeriesKey } from '../../domain/piping/cam'
 import type { Unit } from '../../domain/piping/types'
 import type { PipingReportInput } from '../../lib/piping/report'
 import { renderApp } from '../../test/renderApp'
 import { setViewport } from '../../test/viewport'
 import { resolveChartColors } from './chartColors'
-import { InsulationUnitProvider, useInsulationSelection, useInsulationUnit } from './insulationUnit'
+import { InsulationUnitProvider, useInsulationHidden, useInsulationSelection, useInsulationUnit } from './insulationUnit'
 import { showManpowerSelection } from './manpowerSelection'
 import type { PipingPanelProps, PipingRole } from './panelProps'
 import { PipingExportAction } from './PipingExportAction'
@@ -254,6 +255,53 @@ describe('PipingExportAction (spec §10)', () => {
     await waitFor(() => expect(buildPipingReport).toHaveBeenCalled())
     expect(renderChartPng.mock.calls[2][0].keys)
       .toEqual(['phActualBar', 'phActual', 'ihActualBar', 'ihActual', 'iwActualBar', 'iwActual'])
+  })
+
+  describe('the Insulation series the legend hides (RV9-4)', () => {
+    function HidePicker({ keys }: { keys: CamSeriesKey[] }) {
+      const [, setHidden] = useInsulationHidden('p1')
+      return <button type="button" onClick={() => setHidden(keys)}>hide series</button>
+    }
+    const exportHiding = async (keys: CamSeriesKey[], pickActual = false) => {
+      function LinesPicker() {
+        const [, setSelection] = useInsulationSelection('p1')
+        return <button type="button" onClick={() => setSelection('actual')}>pick lines</button>
+      }
+      renderApp(
+        <InsulationUnitProvider>
+          <LinesPicker />
+          <HidePicker keys={keys} />
+          <PipingExportAction panel={panel()} />
+        </InsulationUnitProvider>,
+      )
+      if (pickActual) await userEvent.click(screen.getByRole('button', { name: 'pick lines' }))
+      await userEvent.click(screen.getByRole('button', { name: 'hide series' }))
+      await userEvent.click(exportButton())
+      await waitFor(() => expect(buildPipingReport).toHaveBeenCalled())
+    }
+
+    it('draws only the shown series in the picture', async () => {
+      await exportHiding(['phPlanBar', 'ihActual'])
+      const spec = renderChartPng.mock.calls[2][0]
+      expect(spec.keys).toEqual([
+        'phActualBar', 'phPlan', 'phActual',
+        'ihPlanBar', 'ihActualBar', 'ihPlan',
+        'iwPlanBar', 'iwActualBar', 'iwPlan', 'iwActual',
+      ])
+      expect(reportInput().charts.insulation).toEqual(PNG)
+    })
+
+    it('applies the lines select first, the hidden series within it', async () => {
+      await exportHiding(['phActual', 'phPlan'], true)
+      expect(renderChartPng.mock.calls[2][0].keys)
+        .toEqual(['phActualBar', 'ihActualBar', 'ihActual', 'iwActualBar', 'iwActual'])
+    })
+
+    it('writes no Insulation picture when every shown series is hidden, as the tab shows none', async () => {
+      await exportHiding(['phActualBar', 'phActual', 'ihActualBar', 'ihActual', 'iwActualBar', 'iwActual'], true)
+      expect(renderChartPng.mock.calls.map(([spec]) => spec.kind)).toEqual(['reinstatement', 'manpower'])
+      expect(reportInput().charts).toEqual({ reinstatement: PNG, manpower: PNG })
+    })
   })
 
   describe('the Manpower groups on screen (RV8-7)', () => {
