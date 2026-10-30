@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { SpoolPlanRow } from '../../../domain/piping/imports'
 import type { Spool } from '../../../domain/piping/types'
-import { spoolPlanPreview, spoolPlanSummary } from './spoolPlanPreview'
+import { spoolPlanPreview, spoolPlanSummary, spoolPlanUpdatePreview } from './spoolPlanPreview'
 
 const spool = (seq: number, over: Partial<Spool> = {}): Spool => ({
   id: `s${seq}`, seq, spoolNo: `SP-${seq}`, lineNo: 'L1', insuType: null, drawingNo: null, testPackageNo: 'TP1',
@@ -78,5 +78,25 @@ describe('spoolPlanPreview (spec §6.2)', () => {
 
   it('summarises the diff for the import log', () => {
     expect(spoolPlanSummary(stored, next)).toEqual({ added: 1, changed: 1, removed: 2, removedWithActuals: 1 })
+  })
+})
+
+describe('new columns in the Plan preview (RV9-1, Q4)', () => {
+  const created = [{ label: 'Area (m2)', kind: 'number' as const }, { label: 'Zone', kind: 'text' as const }]
+
+  it('says which columns the import creates, and their kind, first among the consequences', () => {
+    expect(spoolPlanPreview([spool(1)], [row(1), row(2)], new Map(), created).consequences).toEqual([
+      'Cột mới: Area (m2) (số), Zone (chữ)',
+      'Spool khớp SpoolNo giữ nguyên ngày Actual.',
+    ])
+    expect(spoolPlanUpdatePreview([spool(1)], [row(1)], [], created).consequences).toEqual([
+      'Cột mới: Area (m2) (số), Zone (chữ)',
+      'Spool khớp SpoolNo giữ nguyên ngày Actual.',
+    ])
+  })
+
+  it('says nothing of new columns when the file brings none', () => {
+    expect(spoolPlanPreview([spool(1)], [row(1)]).consequences).toEqual(['Spool khớp SpoolNo giữ nguyên ngày Actual.'])
+    expect(spoolPlanUpdatePreview([spool(1)], [row(1)]).consequences).toEqual(['Spool khớp SpoolNo giữ nguyên ngày Actual.'])
   })
 })

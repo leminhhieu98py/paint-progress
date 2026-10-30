@@ -1,5 +1,6 @@
 import {
-  diffSpoolPlan, diffSpoolPlanUpdate, type ImportIssue, type SpoolDiffField, type SpoolFieldChange, type SpoolPlanRow,
+  diffSpoolPlan, diffSpoolPlanUpdate, type ImportIssue, type NewSpoolColumn, type SpoolDiffField, type SpoolFieldChange,
+  type SpoolPlanRow,
 } from '../../../domain/piping/imports'
 import type { Spool } from '../../../domain/piping/types'
 import { formatDayMonthYear } from '../../../domain/piping/week'
@@ -31,6 +32,12 @@ function place(s: Spool): string {
   return parts.length === 0 ? MISSING : parts.join(' · ')
 }
 
+/** The extra columns the import creates before writing (RV9-1, Q4), with their kind. */
+function newColumnLines(columns: NewSpoolColumn[]): string[] {
+  if (columns.length === 0) return []
+  return [`Cột mới: ${columns.map((c) => `${c.label} (${c.kind === 'number' ? 'số' : 'chữ'})`).join(', ')}`]
+}
+
 /** Ten names at most, then how many more. */
 function names(list: string[]): string {
   const more = list.length > MAX_NAMED ? ` và ${formatQty(list.length - MAX_NAMED)} spool khác` : ''
@@ -41,12 +48,14 @@ function names(list: string[]): string {
  * `noteCounts`: the admin's notes per spool id (spec §9) -- a removed spool's
  * notes are deleted with it, so they are flagged and their loss said too.
  * `null` when they could not be read: any removal is then said as a danger,
- * so it still asks for the typed confirm.
+ * so it still asks for the typed confirm. `newColumns`: the file's new extra
+ * columns (RV9-1), said first.
  */
 export function spoolPlanPreview(
   stored: Spool[],
   next: SpoolPlanRow[],
   noteCounts: ReadonlyMap<string, number> | null = new Map(),
+  newColumns: NewSpoolColumn[] = [],
 ): PlanImportPreview {
   const diff = diffSpoolPlan(stored, next)
   const notesOf = (s: Spool) => noteCounts?.get(s.id) ?? 0
@@ -64,7 +73,7 @@ export function spoolPlanPreview(
   const lost = diff.removed.filter((r) => r.hasActuals).map((r) => r.spool.spoolNo)
   const noted = diff.removed.filter((r) => notesOf(r.spool) > 0)
   const lostNotes = noted.reduce((sum, r) => sum + notesOf(r.spool), 0)
-  const consequences: string[] = []
+  const consequences = newColumnLines(newColumns)
   if (diff.removed.length > 0) consequences.push(`${formatQty(diff.removed.length)} spool không có trong file bị xoá.`)
   if (diff.matches.length > 0) consequences.push('Spool khớp SpoolNo giữ nguyên ngày Actual.')
   return {
@@ -105,15 +114,17 @@ function addedAndChanged(
 /**
  * The Update Plan preview (RV8-5): added spools and changed fields only --
  * nothing is removed, so there is no danger. The warnings are the file's
- * column warnings and the merged result's duplicates and plan-order breaks.
+ * column warnings and the merged result's duplicates and plan-order breaks;
+ * the file's new extra columns (RV9-1) are said first.
  */
 export function spoolPlanUpdatePreview(
   stored: Spool[],
   next: SpoolPlanRow[],
   columnWarnings: ImportIssue[] = [],
+  newColumns: NewSpoolColumn[] = [],
 ): PlanImportPreview {
   const diff = diffSpoolPlanUpdate(stored, next)
-  const consequences: string[] = []
+  const consequences = newColumnLines(newColumns)
   if (diff.kept.length > 0) consequences.push(`${formatQty(diff.kept.length)} spool không có trong file được giữ nguyên cùng ngày Actual.`)
   if (diff.added.length > 0) consequences.push(`${formatQty(diff.added.length)} spool mới được thêm sau các spool hiện có.`)
   if (diff.changed.length + diff.unchangedCount > 0) consequences.push('Spool khớp SpoolNo giữ nguyên ngày Actual.')
