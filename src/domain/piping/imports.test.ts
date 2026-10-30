@@ -475,7 +475,7 @@ describe('parseSpoolPlan: new columns before Pip Plan (RV9-1, Q3-Q5)', () => {
   it('makes an unknown header left of Pip Plan a new column and ignores one right of it', () => {
     const res = parseSpoolPlan(sheet([
       ['SpoolNo', 'Area (m2)', '', 'Zone', 'Pip Plan', 'Paint Plan', 'Insu Plan', 'Remarks'],
-      ['A', '12,5', 'x', 'Deck 1', null, null, null, 'r'],
+      ['A', 12.5, 'x', 'Deck 1', null, null, null, 'r'],
       ['B', null, null, null, null, null, null, null],
     ]), [])
     expect(res.errors).toEqual([])
@@ -497,7 +497,7 @@ describe('parseSpoolPlan: new columns before Pip Plan (RV9-1, Q3-Q5)', () => {
   it('creates a header repeated in the file once, ignoring the repeat', () => {
     const res = parseSpoolPlan(sheet([
       ['SpoolNo', 'Area', 'area', 'Pip Plan', 'Paint Plan', 'Insu Plan'],
-      ['A', '1', 'x', null, null, null],
+      ['A', 1, 'x', null, null, null],
     ]), [])
     expect(res.newColumns).toEqual([{ label: 'Area', kind: 'number' }])
     expect(res.rows[0].extra).toEqual({ Area: '1' })
@@ -522,26 +522,63 @@ describe('parseSpoolPlan: new columns before Pip Plan (RV9-1, Q3-Q5)', () => {
     expect(mixed.newColumns).toEqual([{ label: 'Area (m2)', kind: 'text' }])
   })
 
-  it('detects the kind: number when every non-blank cell is a number (vi or en), else text', () => {
+  it('detects the kind: number only when every non-blank cell is a number cell; text such as "001" stays text', () => {
     const res = parseSpoolPlan(sheet([
-      ['SpoolNo', 'Vi', 'En', 'Mixed', 'Blank', 'Day', 'Pip Plan', 'Paint Plan', 'Insu Plan'],
-      ['A', '1.234,5', '1,234.5', '12', null, utc('2026-10-01'), null, null, null],
-      ['B', 7, 1234.5, 'abc', ' ', null, null, null, null],
-      ['C', null, '0.25', null, null, null, null, null, null],
+      ['SpoolNo', 'Num', 'Code', 'Vi', 'Mixed', 'Blank', 'Day', 'Pip Plan', 'Paint Plan', 'Insu Plan'],
+      ['A', 1234.5, '001', '1.234,5', 12, null, utc('2026-10-01'), null, null, null],
+      ['B', 7, '1.200', null, 'abc', ' ', null, null, null, null],
+      ['C', null, null, null, null, null, null, null, null, null],
     ]), [])
     expect(res.errors).toEqual([])
     expect(res.newColumns).toEqual([
-      { label: 'Vi', kind: 'number' },
-      { label: 'En', kind: 'number' },
+      { label: 'Num', kind: 'number' },
+      { label: 'Code', kind: 'text' },
+      { label: 'Vi', kind: 'text' },
       { label: 'Mixed', kind: 'text' },
       { label: 'Blank', kind: 'text' },
       { label: 'Day', kind: 'text' },
     ])
     expect(res.rows.map((r) => r.extra)).toEqual([
-      { Vi: '1234.5', En: '1234.5', Mixed: '12', Day: '2026-10-01' },
-      { Vi: '7', En: '1234.5', Mixed: 'abc' },
-      { En: '0.25' },
+      { Num: '1234.5', Code: '001', Vi: '1.234,5', Mixed: '12', Day: '2026-10-01' },
+      { Num: '7', Code: '1.200', Mixed: 'abc' },
+      {},
     ])
+  })
+
+  it('never lets a new column make a row a data row: a numbered STT column or a totals row is not a spool', () => {
+    const numbered = parseSpoolPlan(sheet([
+      ['STT', 'SpoolNo', 'Pip Plan', 'Paint Plan', 'Insu Plan'],
+      [1, 'A', null, null, null],
+      [2, null, null, null, null],
+      [3, null, null, null, null],
+    ]), [])
+    expect(numbered.errors).toEqual([])
+    expect(numbered.rows.map((r) => [r.spoolNo, r.extra])).toEqual([['A', { STT: '1' }]])
+    expect(numbered.newColumns).toEqual([{ label: 'STT', kind: 'number' }])
+
+    const totals = parseSpoolPlan(sheet([
+      ['SpoolNo', 'Area (m2)', 'Note', 'Pip Plan', 'Paint Plan', 'Insu Plan'],
+      ['A', 2.5, null, null, null, null],
+      ['B', 3, null, null, null, null],
+      [null, 5.5, 'Tổng', null, null, null],
+    ]), [])
+    expect(totals.errors).toEqual([])
+    expect(totals.rows.map((r) => r.spoolNo)).toEqual(['A', 'B'])
+    // The totals row's text is not read, so Note stays blank: text by default.
+    expect(totals.newColumns).toEqual([{ label: 'Area (m2)', kind: 'number' }, { label: 'Note', kind: 'text' }])
+  })
+
+  it('refuses a negative value in a number column, new or configured', () => {
+    const res = parseSpoolPlan(sheet([
+      ['SpoolNo', 'N', 'Pip Plan', 'Paint Plan', 'Insu Plan', 'Length (mm)'],
+      ['A', -5, null, null, null, null],
+      ['B', 1, null, null, null, '-1,5'],
+    ]), [{ label: 'Length (mm)', kind: 'number' }])
+    expect(res.errors).toEqual([
+      { row: 2, message: 'N: phải ≥ 0' },
+      { row: 3, message: 'Length (mm): phải ≥ 0' },
+    ])
+    expect(res.rows).toEqual([])
   })
 
   it('stores a number as a plain decimal string, never in exponent form', () => {
@@ -549,9 +586,8 @@ describe('parseSpoolPlan: new columns before Pip Plan (RV9-1, Q3-Q5)', () => {
       ['SpoolNo', 'N', 'Pip Plan', 'Paint Plan', 'Insu Plan'],
       ['A', 1e21, null, null, null],
       ['B', 1.5e-7, null, null, null],
-      ['C', '-1.234,5', null, null, null],
     ]), [])
-    expect(res.rows.map((r) => r.extra)).toEqual([{ N: '1000000000000000000000' }, { N: '0.00000015' }, { N: '-1234.5' }])
+    expect(res.rows.map((r) => r.extra)).toEqual([{ N: '1000000000000000000000' }, { N: '0.00000015' }])
   })
 
   it('reads a configured number column as numbers anywhere in the file: a bad cell is a row error', () => {

@@ -353,7 +353,7 @@ describe('Insulation: Plan import creates the new columns first (RV9-1, Q4)', ()
     'Insulation Work – Plan', 'Zone']
   const file = sheet([
     NEW_HEADER,
-    ...['SP-1', 'SP-1', 'SP-2', 'SP-3', 'SP-4', 'SP-5'].map((n, i) => [n, `${i + 1},5`, 1200, '2026-10-01', null, null, null]),
+    ...['SP-1', 'SP-1', 'SP-2', 'SP-3', 'SP-4', 'SP-5'].map((n, i) => [n, i + 1.5, 1200, '2026-10-01', null, null, null]),
   ])
   const callOrder = () => [
     ...api.addSpoolColumn.mock.calls.map((c, i) => ({ at: api.addSpoolColumn.mock.invocationCallOrder[i], call: ['add', ...c] })),

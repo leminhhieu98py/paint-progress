@@ -716,10 +716,11 @@ export interface NewSpoolColumn {
  * the missing ones); a header equal to a configured extra column fills
  * `extra`; Actual columns are ignored without a word (R-9), so the same
  * workbook serves the Actual import. Any other header left of Pip Plan is a
- * new extra column (RV9-1, Q4), number when every non-blank cell of it is one
- * (Q3); any other header right of it is ignored with a warning (Q5). A number
- * column's cell must be a number, stored as a plain decimal string. Duplicates
- * and plan-order breaks are warnings, never errors.
+ * new extra column (RV9-1, Q4), number when every non-blank cell of it is a
+ * number cell (Q3); any other header right of it is ignored with a warning
+ * (Q5). New columns are read only on the rows the other columns make data
+ * rows. A number column's cell must be a number >= 0, stored as a plain
+ * decimal string. Duplicates and plan-order breaks are warnings, never errors.
  */
 export function parseSpoolPlan(
   sheets: SheetRows[],
@@ -782,15 +783,17 @@ export function parseSpoolPlan(
 
   const columnWarnings = [...warnings]
 
-  const read = [...Object.values(masterCol), ...Object.values(planCol), ...extraCol.map((e) => e.col), ...newCol.map((e) => e.col)]
-    .filter((c) => c !== -1)
+  // A new column never makes a row a data row: a numbered STT column or a
+  // totals row under Area is not a spool.
+  const read = [...Object.values(masterCol), ...Object.values(planCol), ...extraCol.map((e) => e.col)].filter((c) => c !== -1)
   const data = dataRows(header, read)
   // Number when at least one cell is filled and every filled cell is a number
-  // (Q3); the template's Area and Length need no filled cell.
+  // cell of the sheet (Q3): text such as "001" or "1.200" stays text. The
+  // template's Area and Length need no filled cell.
   const kindOf = (col: number): SpoolColumnKind => {
-    const filled = data.map(({ cells }) => parseNumberCell(cellAt(cells, col))).filter((p) => p !== null)
+    const filled = data.map(({ cells }) => cellAt(cells, col)).filter((v) => textCell(v) !== null)
     const blankOk = TEMPLATE_NUMBER_KEYS.has(normalizeHeader(header.texts[col]))
-    return (filled.length > 0 || blankOk) && filled.every((p) => !('error' in p)) ? 'number' : 'text'
+    return (filled.length > 0 || blankOk) && filled.every((v) => typeof v === 'number' && Number.isFinite(v)) ? 'number' : 'text'
   }
   const created = newCol.map(({ col, label }) => ({ col, label, kind: kindOf(col) }))
   const newColumns = created.map(({ label, kind }) => ({ label, kind }))
@@ -830,6 +833,9 @@ export function parseSpoolPlan(
       if (parsed === null) continue
       if ('error' in parsed) {
         errors.push({ row, message: `${label}: ${parsed.error}` })
+        ok = false
+      } else if (parsed.value < 0) {
+        errors.push({ row, message: `${label}: phải ≥ 0` })
         ok = false
       } else {
         extra[label] = plainDecimal(parsed.value)

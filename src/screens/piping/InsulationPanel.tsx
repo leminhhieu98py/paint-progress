@@ -208,7 +208,7 @@ export function InsulationPanel({ projectId, settings, mode, role, todayKey, ref
       modes
       lineHeader="SpoolNo"
       lineAlign="left"
-      // The file's new columns first (RV9-1): the write keeps only configured labels' values. If the write
+      // The file's new columns first (RV9-1): the write refuses a value under an unconfigured label. If the write
       // then fails, the columns created stay, empty and harmless. The database writes its own counts into
       // the summary; the preview's sit under `client`.
       commit={async ({ rows, fileName, summary, mode: importMode }) => {
