@@ -46,6 +46,7 @@ export type ChartSpec = (
   | {
     kind: 'insulation'
     data: CamPoint[]
+    /** The series the tab shows: its lines select's, less those its legend hides (RV9-4). */
     keys: CamSeriesKey[]
     mode: ViewMode
     /** The unit sums a number column (RV9-1), as on screen. */

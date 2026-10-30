@@ -1,7 +1,7 @@
 import { EllipsisOutlined, FileExcelOutlined, LoadingOutlined } from '@ant-design/icons'
 import { App, Button, Dropdown } from 'antd'
 import { useRef, useState } from 'react'
-import { camSeriesKeys } from '../../domain/piping/cam'
+import { camSeriesKeys, type CamSeriesKey } from '../../domain/piping/cam'
 import { resolveUnit } from '../../domain/piping/camUnit'
 import { manpowerSeries, planAverage } from '../../domain/piping/manpower'
 import type { CamSelection, Unit } from '../../domain/piping/types'
@@ -17,7 +17,7 @@ import {
 import { downloadWorkbook } from '../../lib/projectReport'
 import { listProjectNames } from '../../lib/projectsApi'
 import { useFieldPhone } from '../gs/fieldSections'
-import { useInsulationSelectionValue, useInsulationUnitValue } from './insulationUnit'
+import { useInsulationHiddenValue, useInsulationSelectionValue, useInsulationUnitValue } from './insulationUnit'
 import { manpowerSelectionOnScreen } from './manpowerSelection'
 import type { PipingPanelProps } from './panelProps'
 
@@ -48,10 +48,11 @@ async function chartPicture(spec: ChartSpec | null): Promise<ReportChart | undef
   }
 }
 
-/** The Insulation tab's choices on screen: the report's unit and its chart's lines. */
+/** The Insulation tab's choices on screen: the report's unit, its chart's lines and the series its legend hides. */
 interface InsulationView {
   unit: Unit
   selection: CamSelection
+  hidden: readonly CamSeriesKey[]
 }
 
 /** The project's name and code for the file, from the page's own project list read (no extra module). */
@@ -61,7 +62,7 @@ async function projectIdentity(projectId: string): Promise<{ name: string; code:
   return { name: project.name, code: project.code }
 }
 
-async function exportReport(panel: PipingPanelProps, { unit, selection }: InsulationView): Promise<void> {
+async function exportReport(panel: PipingPanelProps, { unit, selection, hidden }: InsulationView): Promise<void> {
   const { projectId, settings, mode, todayKey } = panel
   const admin = panel.role === 'admin'
   const [project, plan, entries, groups, mpPlan, mpActual, spools, columns, notes] = await Promise.all([
@@ -95,6 +96,8 @@ async function exportReport(panel: PipingPanelProps, { unit, selection }: Insula
     groups: series.manpower.groups, plan: mpPlan, actual: mpActual, mode, weekStart: settings.weekStartDate, todayKey,
     selected,
   })
+  // The Insulation picture draws the series the tab's legend shows, within its lines (RV9-4); none shown, no picture.
+  const insulationKeys = camSeriesKeys(selection).filter((key) => !hidden.includes(key))
   // The project's colours (RV8-2), resolved over the groups the chart draws, as the tab does.
   const colors = resolveChartColors(settings.chartColors, series.manpower.groups)
   // One after another: each borrows the page for a moment, off screen.
@@ -108,10 +111,10 @@ async function exportReport(panel: PipingPanelProps, { unit, selection }: Insula
         kind: 'manpower', data: manpowerPoints, groups: series.manpower.groups, selected,
         planAverage: planAverage(mpPlan, selected), mode, colors,
       }],
-    ['insulation', series.insulation.points.length === 0
+    ['insulation', series.insulation.points.length === 0 || insulationKeys.length === 0
       ? null
       : {
-        kind: 'insulation', data: series.insulation.points, keys: camSeriesKeys(selection), mode, colors,
+        kind: 'insulation', data: series.insulation.points, keys: insulationKeys, mode, colors,
         // A number column's sums step the axes by fractions, as on screen (RV9-1).
         decimals: resolveUnit(unit, columns).count.kind === 'sum',
       }],
@@ -134,6 +137,7 @@ export function PipingExportAction({ panel, variant }: {
   const phone = useFieldPhone()
   const unit = useInsulationUnitValue(panel?.projectId ?? null)
   const selection = useInsulationSelectionValue(panel?.projectId ?? null)
+  const hidden = useInsulationHiddenValue(panel?.projectId ?? null)
   const [busy, setBusy] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   // The state answers after a render; a second click before it must not start a second export.
@@ -144,7 +148,7 @@ export function PipingExportAction({ panel, variant }: {
     running.current = true
     setBusy(true)
     try {
-      await exportReport(panel, { unit, selection })
+      await exportReport(panel, { unit, selection, hidden })
       message.success('Đã xuất báo cáo Piping')
     } catch (e) {
       message.error(`Không xuất được báo cáo: ${(e as Error).message}`)
