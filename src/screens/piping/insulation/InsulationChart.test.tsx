@@ -194,6 +194,13 @@ describe('InsulationChart (spec §6.4, Q20A)', () => {
     }
   })
 
+  it('steps the axes by fractions too when the unit sums a number column (RV9-1)', () => {
+    render(<InsulationChart data={WEEKS} keys={[...ALL]} mode="week" decimals />)
+    for (const id of ['bucket', 'cum']) expect(captured.yAxes[id].allowDecimals).toBe(true)
+    const format = captured.tooltip?.formatter as (v: unknown) => string
+    expect(format(12.345)).toBe('12,35')
+  })
+
   it('dots the Actual lines while the points can be told apart, not past 60', () => {
     const many = (n: number) => Array.from({ length: n }, (_, i) => point({ key: `k${i}` }))
     const { unmount } = render(<InsulationChart data={many(60)} keys={[...ALL]} mode="day" />)
