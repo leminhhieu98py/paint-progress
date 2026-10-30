@@ -416,3 +416,6 @@ Never commit any of these values.
   `piping_merge_manpower_plan`, `piping_merge_spools`), two Actual imports (`piping_import_reinstatement_actual`,
   `piping_import_manpower_actual`), and `piping_set_spool_actuals` re-created with only its order message changed
   (Pip ≤ Paint ≤ Insu). Apply before deploying the 2.1.0 app: it reads `chart_colors` on every Piping page.
+- `0042_piping_column_kind.sql` — Piping Rv9: `piping_spool_columns.kind` (`'text'` / `'number'`, default `'text'`,
+  named check `piping_spool_columns_kind_check`); existing columns become `'text'`. Apply before deploying the 2.2.0
+  app: it selects `kind` on every Piping page.
