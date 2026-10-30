@@ -1,5 +1,6 @@
 import { barCumSeries } from './series'
 import type {
+  BuiltInUnit,
   CamSelection,
   DayKey,
   Department,
@@ -7,7 +8,6 @@ import type {
   Spool,
   SpoolActualDates,
   SpoolPlanDates,
-  Unit,
   ViewMode,
 } from './types'
 import { compareText } from './text'
@@ -48,7 +48,7 @@ export const MILESTONE_DEPARTMENT: Record<Milestone, { department: Department; d
 }
 
 /** The unit selector's labels, as the file's column names (spec §6.4). */
-export const UNIT_LABEL: Record<Unit, string> = {
+export const UNIT_LABEL: Record<BuiltInUnit, string> = {
   spoolNo: 'SpoolNo',
   lineNo: 'LineNo',
   insuType: 'InsuType',
@@ -148,30 +148,56 @@ export function rollupDates(spools: Spool[]): { plan: Dates; actual: Dates } {
   return { plan: roll((m) => PLAN_FIELD[m]), actual: roll((m) => ACTUAL_FIELD[m]) }
 }
 
+/**
+ * How a unit counts (spec §6.4, RV9-1): spool ROWS, distinct non-blank
+ * values (a group of spools), or a number summed over the spools. A unit
+ * named by the caller is resolved to this (`resolveUnit`, camUnit.ts).
+ */
+export type UnitCount =
+  | { kind: 'rows' }
+  | { kind: 'distinct'; value: (s: Spool) => string | null }
+  | { kind: 'sum'; value: (s: Spool) => number }
+
+/** How a built-in unit counts: SpoolNo by rows, every other by its field's distinct values. */
+export function builtInCount(unit: BuiltInUnit): UnitCount {
+  return unit === 'spoolNo' ? { kind: 'rows' } : { kind: 'distinct', value: (s) => s[unit] }
+}
+
 /** One counted thing on the chart: a spool row, or a group of spools. */
 export interface CamItem {
-  /** The spool id for SpoolNo; the group value otherwise. */
+  /** The spool id for SpoolNo and a sum unit; the group value otherwise. */
   key: string
   label: string
   spools: Spool[]
   plan: Dates
   actual: Dates
+  /** What the item adds for a sum unit (RV9-1); absent, it counts one. */
+  weight?: number
 }
 
 /**
  * The things a unit counts (spec §6.4). SpoolNo counts spool ROWS, duplicate
- * numbers included; every other unit counts distinct values. A spool whose
- * value is blank belongs to no group of that unit: a blank LineNo is not a
- * Line, so it is not counted as one.
+ * numbers included; every other built-in unit and a text column count
+ * distinct values. A spool whose value is blank belongs to no group of that
+ * unit: a blank LineNo is not a Line, so it is not counted as one. A number
+ * column (RV9-1) makes one item per spool, weighted by its value.
  */
-export function camItems(spools: Spool[], unit: Unit): CamItem[] {
+export function camItems(spools: Spool[], unit: BuiltInUnit | UnitCount): CamItem[] {
+  const count = typeof unit === 'string' ? builtInCount(unit) : unit
   const ordered = [...spools].sort((a, b) => a.seq - b.seq)
-  if (unit === 'spoolNo') {
-    return ordered.map((s) => ({ key: s.id, label: s.spoolNo, spools: [s], plan: planDates(s), actual: actualDates(s) }))
+  if (count.kind !== 'distinct') {
+    return ordered.map((s) => ({
+      key: s.id,
+      label: s.spoolNo,
+      spools: [s],
+      plan: planDates(s),
+      actual: actualDates(s),
+      ...(count.kind === 'sum' ? { weight: count.value(s) } : {}),
+    }))
   }
   const groups = new Map<string, Spool[]>()
   for (const s of ordered) {
-    const v = groupValue(s[unit])
+    const v = groupValue(count.value(s))
     if (v === null) continue
     const list = groups.get(v)
     if (list) list.push(s)
@@ -180,18 +206,28 @@ export function camItems(spools: Spool[], unit: Unit): CamItem[] {
   return [...groups.entries()].map(([key, list]) => ({ key, label: key, spools: list, ...rollupDates(list) }))
 }
 
+/** What an item adds to a count: its weight for a sum unit, one otherwise. */
+const itemWeight = (i: CamItem): number => i.weight ?? 1
+
 /**
  * How many of a unit's items reached each milestone, of how many (the
  * Insulation summary, spec §6.4): spool rows for SpoolNo, groups otherwise --
- * a group counting only once all its spools have the actual date (R-13).
+ * a group counting only once all its spools have the actual date (R-13). For
+ * a number column (RV9-1), the sum over the spools that reached it, of the
+ * sum over all spools. Raw sums: the screen and the report round them.
  */
-export function camProgress(spools: Spool[], unit: Unit): { total: number; done: Record<Milestone, number> } {
+export function camProgress(
+  spools: Spool[],
+  unit: BuiltInUnit | UnitCount,
+): { total: number; done: Record<Milestone, number> } {
   const items = camItems(spools, unit)
   const done = { ph: 0, ih: 0, iw: 0 }
+  let total = 0
   for (const i of items) {
-    for (const m of MILESTONES) if (i.actual[m] !== null) done[m] += 1
+    total += itemWeight(i)
+    for (const m of MILESTONES) if (i.actual[m] !== null) done[m] += itemWeight(i)
   }
-  return { total: items.length, done }
+  return { total, done }
 }
 
 // ---------------------------------------------------------------------------
@@ -213,21 +249,23 @@ export type CamPoint = Bucket & Record<CamSeriesKey, number | null>
  * bucket's last day (the cumulative lines). All three plan series run to the
  * plan's overall last day (the latest plan date of any item and milestone),
  * so they end together; actual series run to today. `total` is the number of
- * items, the lines' ceiling. Empty without any date.
+ * items (for a number column, the sum of their weights, RV9-1), the lines'
+ * ceiling. Empty without any date.
  */
 export function camSeries(input: {
   spools: Spool[]
-  unit: Unit
+  unit: BuiltInUnit | UnitCount
   mode: ViewMode
   weekStart: DayKey
   todayKey: DayKey
 }): { points: CamPoint[]; total: number } {
   const items = camItems(input.spools, input.unit)
+  const total = items.reduce((sum, i) => sum + itemWeight(i), 0)
   const counts = (pick: (i: CamItem) => Dates, m: Milestone) => {
     const out = new Map<DayKey, number>()
     for (const i of items) {
       const d = pick(i)[m]
-      if (d !== null) out.set(d, (out.get(d) ?? 0) + 1)
+      if (d !== null) out.set(d, (out.get(d) ?? 0) + itemWeight(i))
     }
     return out
   }
@@ -236,7 +274,7 @@ export function camSeries(input: {
   const planDays = MILESTONES.flatMap((m) => [...plan[m].keys()])
   const allDays = [...planDays, ...MILESTONES.flatMap((m) => [...actual[m].keys()])]
   const span = seriesSpan(allDays, input.todayKey)
-  if (span === null) return { points: [], total: items.length }
+  if (span === null) return { points: [], total }
   const planEnd = planDays.length > 0 ? planDays.reduce((a, b) => (b > a ? b : a)) : null
   const axis = buckets(span.from, span.to, input.mode, input.weekStart)
   const perMilestone = MILESTONES.map((m) => barCumSeries({
@@ -257,7 +295,7 @@ export function camSeries(input: {
     iwPlan: perMilestone[2][i].planCum,
     iwActual: perMilestone[2][i].actualCum,
   }))
-  return { points, total: items.length }
+  return { points, total }
 }
 
 /**
@@ -576,6 +614,24 @@ export function lateWarnings(spools: Spool[], thresholdDays: number, todayKey: D
 /** "N spool trễ": distinct spools with at least one late milestone. */
 export function lateSpoolCount(warnings: LateWarning[]): number {
   return new Set(warnings.map((w) => w.spoolId)).size
+}
+
+/**
+ * Late spools per milestone (RV9-3): the distinct spools late on it (same rule
+ * as `lateWarnings`), and whether any spool has that milestone's plan date at
+ * all, so the screen can say "Chưa có Plan" instead of a 0.
+ */
+export function lateByMilestone(
+  spools: Spool[],
+  thresholdDays: number,
+  todayKey: DayKey,
+): Record<Milestone, { planned: boolean; late: number }> {
+  const late = Object.fromEntries(MILESTONES.map((m) => [m, new Set<string>()])) as Record<Milestone, Set<string>>
+  for (const w of lateWarnings(spools, thresholdDays, todayKey)) late[w.milestone].add(w.spoolId)
+  return Object.fromEntries(MILESTONES.map((m) => [
+    m,
+    { planned: spools.some((s) => s[PLAN_FIELD[m]] !== null), late: late[m].size },
+  ])) as Record<Milestone, { planned: boolean; late: number }>
 }
 
 /** The "Spool trễ" table grouped by Package or Line; '' for none, sorted by key. */

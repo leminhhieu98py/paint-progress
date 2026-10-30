@@ -1,13 +1,15 @@
 import type { Workbook, Worksheet } from 'exceljs'
 import {
-  ACTUAL_FIELD, camProgress, camSeries, camSeriesKeys, groupLateWarnings, lateSpoolCount, lateWarnings, MILESTONE_LABEL,
-  milestoneActualLabel, milestonePlanLabel, MILESTONES, PLAN_FIELD, UNIT_LABEL, type CamPoint, type CamSeriesKey,
+  ACTUAL_FIELD, camProgress, camSeries, camSeriesKeys, groupLateWarnings, lateByMilestone, lateSpoolCount, lateWarnings,
+  MILESTONE_LABEL, milestoneActualLabel, milestonePlanLabel, MILESTONES, PLAN_FIELD, UNIT_LABEL, type CamPoint, type CamSeriesKey,
 } from '../../domain/piping/cam'
+import { resolveUnit } from '../../domain/piping/camUnit'
+import { parseDecimalText } from '../../domain/piping/imports'
 import { chartGroups, manpowerAverages, manpowerSeries, type ManpowerPoint } from '../../domain/piping/manpower'
 import { reinstatementSeries, reinstatementSummary, type ReinstatementPoint } from '../../domain/piping/reinstatement'
 import type {
-  DayKey, ManpowerGroup, ManpowerValue, NoteTarget, PipingSettings, ReinstatementActualEntry, ReinstatementPlanRow,
-  Spool, SpoolColumn, Unit, ViewMode,
+  BuiltInUnit, DayKey, ManpowerGroup, ManpowerValue, NoteTarget, PipingSettings, ReinstatementActualEntry,
+  ReinstatementPlanRow, Spool, SpoolColumn, Unit, ViewMode,
 } from '../../domain/piping/types'
 import type { Bucket } from '../../domain/piping/week'
 import { toVNExcelDate } from '../format'
@@ -61,7 +63,7 @@ export interface PipingReportInput {
   project: { name: string; code: string }
   settings: Pick<PipingSettings, 'weekStartDate' | 'totalTestPacks' | 'lateThresholdDays'>
   mode: ViewMode
-  /** The Insulation unit on screen (spec §6.4). */
+  /** The Insulation unit on screen (spec §6.4); an extra column's resolves over `columns` (RV9-1). */
   unit: Unit
   /** Today in Vietnam, as the page read it. */
   todayKey: DayKey
@@ -71,7 +73,7 @@ export interface PipingReportInput {
   }
   manpower: { groups: ManpowerGroup[]; plan: ManpowerValue[]; actual: ManpowerValue[] }
   spools: Spool[]
-  /** The admin's extra spool columns (spec §6.1), for Chi tiết spool. */
+  /** The admin's extra spool columns (spec §6.1), for Chi tiết spool and a column unit. */
   columns: SpoolColumn[]
   /** The admin's report only (spec §9): a GS or viewer report never has a Ghi chú sheet. */
   includeNotes: boolean
@@ -88,7 +90,9 @@ export interface PipingReportSeries {
 
 /** The series the workbook writes; the caller renders the charts from the same ones and hands them back. */
 export function pipingReportSeries(
-  input: Pick<PipingReportInput, 'settings' | 'mode' | 'unit' | 'todayKey' | 'reinstatement' | 'manpower' | 'spools'>,
+  input: Pick<
+    PipingReportInput, 'settings' | 'mode' | 'unit' | 'columns' | 'todayKey' | 'reinstatement' | 'manpower' | 'spools'
+  >,
 ): PipingReportSeries {
   const { mode, todayKey } = input
   const weekStart = input.settings.weekStartDate
@@ -99,7 +103,9 @@ export function pipingReportSeries(
       points: manpowerSeries({ groups, plan: input.manpower.plan, actual: input.manpower.actual, mode, weekStart, todayKey }),
       groups,
     },
-    insulation: camSeries({ spools: input.spools, unit: input.unit, mode, weekStart, todayKey }),
+    insulation: camSeries({
+      spools: input.spools, unit: resolveUnit(input.unit, input.columns).count, mode, weekStart, todayKey,
+    }),
   }
 }
 
@@ -141,6 +147,9 @@ interface Column {
   /** The cells' number format; none for text. */
   numFmt?: string
 }
+
+/** A sum written to two decimals at most (RV9-1); a count is an integer and stays as it is. */
+const round2 = (n: number): number => Math.round(n * 100) / 100
 
 /** Integers read as integers; a column holding any fraction shows two places. */
 function quantityFormat(values: Array<number | null>): string {
@@ -233,18 +242,27 @@ export async function buildPipingReport(
   const summary = wb.addWorksheet('Tóm tắt')
   const rein = reinstatementSummary(input.reinstatement.actual, settings.totalTestPacks)
   const averages = manpowerAverages({ ...input.manpower, todayKey })
-  const progress = camProgress(input.spools, unit)
-  const unitLabel = UNIT_LABEL[unit]
+  // A built-in or an extra column (RV9-1); a column since deleted counts as SpoolNo, as on screen.
+  const resolved = resolveUnit(unit, input.columns)
+  const progress = camProgress(input.spools, resolved.count)
+  const unitLabel = resolved.label
   summary.columns = [
     { header: 'Mục', width: 44 },
     { header: 'Giá trị', width: 22 },
     { header: 'Tổng', width: 12 },
     { header: '%', width: 10 },
   ]
-  const summaryRow = (label: string, value: Cell, total: number | null = null, ratio: number | null = null, valueFmt?: string) => {
+  const summaryRow = (
+    label: string,
+    value: Cell,
+    total: number | null = null,
+    ratio: number | null = null,
+    valueFmt?: string,
+    totalFmt = INTEGER_FORMAT,
+  ) => {
     const row = summary.addRow([label, value, total, ratio])
     if (valueFmt) row.getCell(2).numFmt = valueFmt
-    row.getCell(3).numFmt = INTEGER_FORMAT
+    row.getCell(3).numFmt = totalFmt
     row.getCell(4).numFmt = PERCENT_FORMAT
   }
   summaryRow('Dự án', `${input.project.name} (${input.project.code})`)
@@ -254,11 +272,20 @@ export async function buildPipingReport(
   summaryRow('Reinstatement (TestPack)', rein.actual, rein.total, rein.ratio, quantityFormat([rein.actual]))
   summaryRow('Manpower – Plan trung bình đến hôm nay', averages.plan, null, null, DECIMAL_FORMAT)
   summaryRow('Manpower – Actual trung bình đến hôm nay', averages.actual, null, null, DECIMAL_FORMAT)
+  // A number column's sums to two decimals (RV9-1); counts stay integers.
+  const camTotal = round2(progress.total)
+  const camFormat = quantityFormat([camTotal, ...MILESTONES.map((m) => round2(progress.done[m]))])
   for (const m of MILESTONES) {
     const ratio = progress.total > 0 ? progress.done[m] / progress.total : null
-    summaryRow(`${milestoneActualLabel(m)} (${unitLabel})`, progress.done[m], progress.total, ratio, INTEGER_FORMAT)
+    summaryRow(`${milestoneActualLabel(m)} (${unitLabel})`, round2(progress.done[m]), camTotal, ratio, camFormat, camFormat)
   }
   summaryRow('Ngưỡng trễ (ngày)', settings.lateThresholdDays, null, null, INTEGER_FORMAT)
+  // Per milestone as the page's pills (RV9-3), then the distinct total.
+  const lateCounts = lateByMilestone(input.spools, settings.lateThresholdDays, todayKey)
+  for (const m of MILESTONES) {
+    const { planned, late } = lateCounts[m]
+    summaryRow(`Spool trễ · ${MILESTONE_LABEL[m]}`, planned ? late : 'Chưa có Plan', null, null, planned ? INTEGER_FORMAT : undefined)
+  }
   summaryRow('Spool trễ', lateSpoolCount(warnings), null, null, INTEGER_FORMAT)
   dressSheet(summary)
 
@@ -297,29 +324,44 @@ export async function buildPipingReport(
   ] as Array<[CamSeriesKey, string]>))
   seriesTable(insulation, mode, series.insulation.points, camSeriesKeys('both').map((key) => ({
     header: camHeader.get(key) ?? key,
-    value: (p: CamPoint) => p[key],
+    value: (p: CamPoint) => {
+      const v = p[key]
+      return v === null ? null : round2(v)
+    },
   })))
   placeChart(wb, insulation, input.charts.insulation)
 
   // Chi tiết spool: every spool of the project in file order, whatever the
   // screen filters (RV8-3); the extra columns in the admin's order, the dates
-  // as day cells like Spool trễ's.
+  // as day cells like Spool trễ's. A number column's value is a numeric cell
+  // in the quantity format (RV9-1); one that does not parse stays text.
   const detail = wb.addWorksheet('Chi tiết spool')
-  const masterFields = Object.keys(UNIT_LABEL) as Unit[]
+  const masterFields = Object.keys(UNIT_LABEL) as BuiltInUnit[]
   const extraColumns = [...input.columns].sort((a, b) => a.sort - b.sort)
+  const detailSpools = [...input.spools].sort((a, b) => a.seq - b.seq)
+  // A missing value is an empty cell.
+  const extraCells = extraColumns.map((c) => detailSpools.map((s): Cell => {
+    const text = s.extra[c.label] || null
+    return text === null || c.kind !== 'number' ? text : parseDecimalText(text) ?? text
+  }))
   writeTable(detail, [
     { header: 'STT', width: 6, numFmt: INTEGER_FORMAT },
     ...masterFields.map((f) => ({ header: UNIT_LABEL[f], width: f === 'spoolNo' ? 30 : 22 })),
-    ...extraColumns.map((c) => ({ header: c.label, width: Math.max(12, Math.min(28, c.label.length + 2)) })),
+    ...extraColumns.map((c, j) => ({
+      header: c.label,
+      width: Math.max(12, Math.min(28, c.label.length + 2)),
+      ...(c.kind === 'number'
+        ? { numFmt: quantityFormat(extraCells[j].map((v) => (typeof v === 'number' ? v : null))) }
+        : {}),
+    })),
     ...MILESTONES.flatMap((m) => [
       { header: milestonePlanLabel(m), width: 13, numFmt: DATE_FORMAT },
       { header: milestoneActualLabel(m), width: 13, numFmt: DATE_FORMAT },
     ]),
-  ], [...input.spools].sort((a, b) => a.seq - b.seq).map((s, i) => [
+  ], detailSpools.map((s, i) => [
     i + 1,
-    // A missing value is an empty cell.
     ...masterFields.map((f) => s[f] || null),
-    ...extraColumns.map((c) => s.extra[c.label] || null),
+    ...extraCells.map((cells) => cells[i]),
     ...MILESTONES.flatMap((m) => [dayCell(s[PLAN_FIELD[m]]), dayCell(s[ACTUAL_FIELD[m]])]),
   ]))
   detail.autoFilter = { from: { row: 1, column: 1 }, to: { row: detail.rowCount, column: detail.columnCount } }

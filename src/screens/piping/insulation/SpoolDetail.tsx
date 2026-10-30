@@ -17,7 +17,7 @@ import type { CamLevel, DayKey, Spool, SpoolColumn } from '../../../domain/pipin
 import { formatDayMonthYear } from '../../../domain/piping/week'
 import { MISSING } from '../../../lib/format'
 import { useFieldPhone } from '../../gs/fieldSections'
-import { formatQty } from '../pipingFormat'
+import { formatColumnNumber, formatQty } from '../pipingFormat'
 import { HeaderActions } from '../HeaderActions'
 import { ControlRow } from './ControlRow'
 import { PHONE_CONTROL } from './controlStyle'
@@ -204,7 +204,12 @@ export function SpoolDetail({ projectId, spools, columns, flags, admin, toolbar,
     ...columns.map((c) => ({
       title: c.label,
       key: `extra-${c.id}`,
-      render: (_v: unknown, s: Spool) => textCell(s.extra[c.label]),
+      // A number column (RV9-1): its stored plain decimal in vi format, centred like the other numbers.
+      ...(c.kind === 'number' ? { align: 'center' as const } : {}),
+      render: (_v: unknown, s: Spool) => {
+        const v = textCell(s.extra[c.label])
+        return c.kind === 'number' && v !== MISSING ? formatColumnNumber(v) : v
+      },
     })),
     ...MILESTONES.map((m) => ({
       title: MILESTONE_LABEL[m],

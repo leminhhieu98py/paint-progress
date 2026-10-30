@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  builtInCount,
   camGroupRows,
   camItems,
   camProgress,
@@ -10,6 +11,7 @@ import {
   filterOptions,
   filterSpools,
   groupLateWarnings,
+  lateByMilestone,
   lateSpoolCount,
   lateWarnings,
   MILESTONE_LABEL,
@@ -21,6 +23,7 @@ import {
   resolveActualChanges,
   rollupDates,
   spoolKey,
+  type UnitCount,
 } from './cam'
 import type { Spool } from './types'
 
@@ -243,6 +246,68 @@ describe('camSeries (spec §6.4 chart)', () => {
   })
 })
 
+describe('column units (RV9-1)', () => {
+  // A number column summed: one item per spool, weighted by its value.
+  const area: UnitCount = { kind: 'sum', value: (s) => Number(s.extra.Area ?? 0) }
+  // A text column counted by distinct value, as LineNo is.
+  const zone: UnitCount = { kind: 'distinct', value: (s) => s.extra.Zone?.trim() || null }
+  const spools = [
+    spool({ seq: 1, extra: { Area: '2.5', Zone: 'Z1' }, phPlan: '2026-09-18', phActual: '2026-09-19' }),
+    spool({ seq: 2, extra: { Area: '10', Zone: 'Z1' }, phPlan: '2026-09-19', phActual: '2026-09-20' }),
+    spool({ seq: 3, extra: { Zone: ' ' }, phPlan: '2026-09-19', ihPlan: '2026-09-25' }),
+    spool({ seq: 4, extra: { Area: '0.25', Zone: 'Z2' }, phPlan: '2026-09-26', ihPlan: '2026-09-26' }),
+  ]
+
+  it('makes one item per spool weighted by its value for a sum unit', () => {
+    expect(camItems(spools, area).map((i) => [i.key, i.label, i.weight])).toEqual([
+      ['s1', 'SP-1', 2.5],
+      ['s2', 'SP-2', 10],
+      ['s3', 'SP-3', 0],
+      ['s4', 'SP-4', 0.25],
+    ])
+  })
+
+  it('groups by distinct non-blank value for a text column, as LineNo', () => {
+    expect(camItems(spools, zone).map((i) => [i.key, i.spools.length, i.actual.ph, i.weight])).toEqual([
+      ['Z1', 2, '2026-09-20', undefined],
+      ['Z2', 1, null, undefined],
+    ])
+    expect(camProgress(spools, zone)).toEqual({ total: 2, done: { ph: 1, ih: 0, iw: 0 } })
+  })
+
+  it('sums the weights of the spools that reached a milestone, of the sum over all spools', () => {
+    expect(camProgress(spools, area)).toEqual({ total: 12.75, done: { ph: 12.5, ih: 0, iw: 0 } })
+    expect(camProgress([], area)).toEqual({ total: 0, done: { ph: 0, ih: 0, iw: 0 } })
+  })
+
+  it('sums the weights per day in the bars and the lines', () => {
+    const { points, total } = camSeries({ spools, unit: area, mode: 'day', weekStart: START, todayKey: '2026-09-20' })
+    expect(total).toBe(12.75)
+    expect(points.slice(0, 3).map((p) => [p.key, p.phPlanBar, p.phPlan, p.phActualBar, p.phActual])).toEqual([
+      ['2026-09-18', 2.5, 2.5, 0, 0],
+      ['2026-09-19', 10, 12.5, 2.5, 2.5],
+      ['2026-09-20', 0, 12.5, 10, 12.5],
+    ])
+    expect(points.at(-1)).toMatchObject({ key: '2026-09-26', phPlanBar: 0.25, phPlan: 12.75, ihPlan: 0.25, phActual: null })
+  })
+
+  it('sums the weights per week', () => {
+    const { points } = camSeries({ spools, unit: area, mode: 'week', weekStart: START, todayKey: '2026-09-30' })
+    expect(points.map((p) => [p.key, p.phPlanBar, p.phPlan, p.phActual, p.ihPlan])).toEqual([
+      ['2026-09-18', 12.5, 12.5, 12.5, 0],
+      ['2026-09-25', 0.25, 12.75, 12.5, 0.25],
+    ])
+  })
+
+  it('counts a built-in unit the same whether named or resolved', () => {
+    for (const unit of ['spoolNo', 'lineNo'] as const) {
+      expect(camProgress(spools, builtInCount(unit))).toEqual(camProgress(spools, unit))
+      expect(camSeries({ spools, unit: builtInCount(unit), mode: 'day', weekStart: START, todayKey: '2026-09-20' }))
+        .toEqual(camSeries({ spools, unit, mode: 'day', weekStart: START, todayKey: '2026-09-20' }))
+    }
+  })
+})
+
 describe('camGroupRows (Q16B)', () => {
   const spools = [
     spool({ testPackageNo: 'TP1', lineNo: 'L1', phPlan: '2026-09-01', phActual: '2026-09-02' }),
@@ -413,6 +478,37 @@ describe('late warnings (spec §7)', () => {
     expect(lateSpoolCount(warnings)).toBe(2)
     expect(groupLateWarnings(warnings, 'package').map((g) => [g.key, g.warnings.length])).toEqual([['TP1', 3]])
     expect(groupLateWarnings(warnings, 'line').map((g) => [g.key, g.warnings.length])).toEqual([['L1', 1], ['L2', 2]])
+  })
+
+  it('counts late spools per milestone, or marks a milestone with no plan date (RV9-3)', () => {
+    expect(lateByMilestone(spools, 7, today)).toEqual({
+      ph: { planned: true, late: 1 },
+      ih: { planned: true, late: 1 },
+      iw: { planned: true, late: 1 },
+    })
+    // A planned milestone with nobody late reads 0; one no spool plans reads unplanned.
+    expect(lateByMilestone([spools[1], spools[3]], 7, today)).toEqual({
+      ph: { planned: true, late: 0 },
+      ih: { planned: true, late: 0 },
+      iw: { planned: false, late: 0 },
+    })
+    expect(lateByMilestone([], 7, today)).toEqual({
+      ph: { planned: false, late: 0 },
+      ih: { planned: false, late: 0 },
+      iw: { planned: false, late: 0 },
+    })
+  })
+
+  it('counts each spool once per milestone (RV9-3)', () => {
+    const late = [
+      spool({ id: 'p', phPlan: '2026-09-01', ihPlan: '2026-09-01' }),
+      spool({ id: 'q', phPlan: '2026-09-01' }),
+    ]
+    expect(lateByMilestone(late, 7, today)).toEqual({
+      ph: { planned: true, late: 2 },
+      ih: { planned: true, late: 1 },
+      iw: { planned: false, late: 0 },
+    })
   })
 
   it('flags each spool for the table: duplicate SpoolNo, plan-order issue, late milestones', () => {

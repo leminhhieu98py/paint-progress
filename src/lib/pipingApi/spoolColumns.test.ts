@@ -1,6 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { builder } from '../../test/supabaseBuilder'
-import { addSpoolColumn, deleteSpoolColumn, listSpoolColumns, renameSpoolColumn, reorderSpoolColumns } from './spoolColumns'
+import { NOT_SAVED } from './shared'
+import {
+  addSpoolColumn, deleteSpoolColumn, listSpoolColumns, renameSpoolColumn, reorderSpoolColumns, setSpoolColumnKind,
+} from './spoolColumns'
 
 const from = vi.hoisted(() => vi.fn())
 const rpc = vi.hoisted(() => vi.fn())
@@ -11,7 +14,7 @@ beforeEach(() => {
   rpc.mockReset()
 })
 
-const COLUMNS = [{ id: 'c1', label: 'Zone', sort: 1 }, { id: 'c2', label: 'Area', sort: 2 }]
+const COLUMNS = [{ id: 'c1', label: 'Zone', sort: 1, kind: 'text' }, { id: 'c2', label: 'Area', sort: 2, kind: 'number' }]
 
 describe('CRUD', () => {
   it('lists by sort', async () => {
@@ -20,18 +23,48 @@ describe('CRUD', () => {
     expect(await listSpoolColumns('p1')).toEqual(COLUMNS)
     expect(from).toHaveBeenCalledWith('piping_spool_columns')
     expect(b.order.mock.calls.map((c) => c[0])).toEqual(['sort', 'id'])
+    expect(b.select).toHaveBeenCalledWith('id, label, sort, kind')
+  })
+
+  it('reads a missing or unknown kind as text', async () => {
+    from.mockReturnValue(builder({ data: [{ id: 'c1', label: 'Zone', sort: 1 }, { id: 'c2', label: 'Area', sort: 2, kind: 'date' }] }))
+    expect((await listSpoolColumns('p1')).map((c) => c.kind)).toEqual(['text', 'text'])
   })
 
   it('adds a trimmed label, names a duplicate, refuses a blank one', async () => {
-    const b = builder({ data: { id: 'c3', label: 'Module', sort: 3 } })
+    const b = builder({ data: { id: 'c3', label: 'Module', sort: 3, kind: 'text' } })
     from.mockReturnValueOnce(b)
-    expect(await addSpoolColumn('p1', ' Module ', 3)).toEqual({ id: 'c3', label: 'Module', sort: 3 })
-    expect(b.insert).toHaveBeenCalledWith({ project_id: 'p1', label: 'Module', sort: 3 })
+    expect(await addSpoolColumn('p1', ' Module ', 3)).toEqual({ id: 'c3', label: 'Module', sort: 3, kind: 'text' })
+    expect(b.insert).toHaveBeenCalledWith({ project_id: 'p1', label: 'Module', sort: 3, kind: 'text' })
 
     from.mockReturnValueOnce(builder({ error: { code: '23505', message: 'duplicate key' } }))
     await expect(addSpoolColumn('p1', 'zone', 3)).rejects.toThrow('Cột "zone" đã có trong dự án')
 
     await expect(addSpoolColumn('p1', ' ', 3)).rejects.toThrow('Tên cột không được để trống')
+  })
+
+  it('adds a number column when asked', async () => {
+    const b = builder({ data: { id: 'c4', label: 'Area (m2)', sort: 4, kind: 'number' } })
+    from.mockReturnValueOnce(b)
+    expect(await addSpoolColumn('p1', 'Area (m2)', 4, 'number')).toEqual({ id: 'c4', label: 'Area (m2)', sort: 4, kind: 'number' })
+    expect(b.insert).toHaveBeenCalledWith({ project_id: 'p1', label: 'Area (m2)', sort: 4, kind: 'number' })
+  })
+
+  it('switches the kind of one column of the project, reporting a swallowed write', async () => {
+    const b = builder({ data: [{ id: 'c1' }] })
+    from.mockReturnValueOnce(b)
+    await setSpoolColumnKind('p1', 'c1', 'number')
+    expect(from).toHaveBeenCalledWith('piping_spool_columns')
+    expect(b.update).toHaveBeenCalledWith({ kind: 'number' })
+    expect(b.eq).toHaveBeenCalledWith('id', 'c1')
+    expect(b.eq).toHaveBeenCalledWith('project_id', 'p1')
+    expect(b.select).toHaveBeenCalledWith('id')
+
+    from.mockReturnValueOnce(builder({ data: [] }))
+    await expect(setSpoolColumnKind('p1', 'c9', 'text')).rejects.toThrow(NOT_SAVED)
+
+    from.mockReturnValueOnce(builder({ error: { code: '42501', message: 'permission denied' } }))
+    await expect(setSpoolColumnKind('p1', 'c1', 'text')).rejects.toThrow()
   })
 
   it('refuses a built-in header as a new label', async () => {

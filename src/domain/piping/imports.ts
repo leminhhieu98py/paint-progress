@@ -10,6 +10,7 @@ import type {
   ReinstatementPlanRow,
   Spool,
   SpoolColumn,
+  SpoolColumnKind,
   SpoolMaster,
   SpoolPlanDates,
 } from './types'
@@ -106,6 +107,17 @@ export const SPOOL_ACTUAL_COLUMNS: Record<Milestone, ColumnSpec> = {
   ih: { label: milestoneActualLabel('ih'), aliases: ['Insulation Handover – Actual', 'IH Actual', 'Handover to Insulation – Actual'] },
   iw: { label: milestoneActualLabel('iw'), aliases: ['Insulation Work – Actual', 'IW Actual'] },
 }
+
+/**
+ * The extra columns the Insulation Plan template suggests (RV9-1, Q6): the
+ * customer's number fields, so the import always creates them as numbers,
+ * whatever the file holds in them.
+ */
+export const TEMPLATE_NUMBER_COLUMNS = ['Area (m2)', 'Length (mm)']
+const TEMPLATE_NUMBER_KEYS = new Set(TEMPLATE_NUMBER_COLUMNS.map(normalizeHeader))
+
+/** The longest header a Plan file creates as a column (RV9-1); a longer one is ignored with a warning. */
+const MAX_NEW_COLUMN_LABEL = 60
 
 /** Every built-in column of the spool files, for the extra-label collision check. */
 const BUILT_IN_SPOOL_COLUMNS: ColumnSpec[] = [
@@ -278,6 +290,23 @@ export function parseDecimalText(text: string): number | null {
   else if (/^\d+\.\d+$/.test(body)) plain = body
   else if (/^\d{1,3}(\.\d{3}){2,}$/.test(body)) plain = body.replace(/\./g, '')
   return plain === null ? null : Number(sign + plain)
+}
+
+/**
+ * A number as a plain decimal string (`1234.5`): what a number extra column
+ * stores (RV9-1), so it reads back the same in any locale. JavaScript's own
+ * text is kept, except its exponent form (`1e+21`, `1.5e-7`) is spelt out.
+ */
+function plainDecimal(value: number): string {
+  const text = String(value)
+  const m = /^(-?)(\d)(?:\.(\d+))?e([+-]\d+)$/.exec(text)
+  if (!m) return text
+  const [, sign, lead, rest = '', exp] = m
+  const digits = lead + rest
+  const point = 1 + Number(exp)
+  if (point <= 0) return `${sign}0.${'0'.repeat(-point)}${digits}`
+  if (point >= digits.length) return sign + digits + '0'.repeat(point - digits.length)
+  return `${sign}${digits.slice(0, point)}.${digits.slice(point)}`
 }
 
 /**
@@ -675,6 +704,13 @@ export interface SpoolPlanParse extends ParseResult<SpoolPlanRow> {
    * Plan shows them beside the merged result's own (RV8-5).
    */
   columnWarnings: ImportIssue[]
+  /** The extra columns the file brings (RV9-1, Q4), in file order: the commit creates them first. */
+  newColumns: NewSpoolColumn[]
+}
+
+export interface NewSpoolColumn {
+  label: string
+  kind: SpoolColumnKind
 }
 
 /**
@@ -682,11 +718,19 @@ export interface SpoolPlanParse extends ParseResult<SpoolPlanRow> {
  * required; the other master columns are read when present (a warning names
  * the missing ones); a header equal to a configured extra column fills
  * `extra`; Actual columns are ignored without a word (R-9), so the same
- * workbook serves the Actual import; any other header is ignored with a
- * warning. Duplicates and plan-order breaks are warnings, never errors.
+ * workbook serves the Actual import. Any other header left of Pip Plan (60
+ * characters at most) is a new extra column (RV9-1, Q4), number when every
+ * non-blank cell of it is a number cell (Q3); any other header right of it,
+ * or longer, is ignored with a warning (Q5). Extra columns, new or
+ * configured, are read only on the rows the master and plan columns make
+ * data rows. A number column's cell must be a number >= 0, stored as a plain
+ * decimal string. Duplicates and plan-order breaks are warnings, never errors.
  */
-export function parseSpoolPlan(sheets: SheetRows[], extraColumns: Array<Pick<SpoolColumn, 'label'>>): SpoolPlanParse {
-  const blank = { duplicates: [], planOrder: [], columnWarnings: [] }
+export function parseSpoolPlan(
+  sheets: SheetRows[],
+  extraColumns: Array<Pick<SpoolColumn, 'label'> & Partial<Pick<SpoolColumn, 'kind'>>>,
+): SpoolPlanParse {
+  const blank = { duplicates: [], planOrder: [], columnWarnings: [], newColumns: [] }
   const pre = checkPreamble(sheets)
   if (pre) return { ...empty(null, [pre]), ...blank }
   const required = [SPOOL_MASTER_COLUMNS.spoolNo, ...MILESTONES.map((m) => SPOOL_PLAN_COLUMNS[m])]
@@ -704,8 +748,26 @@ export function parseSpoolPlan(sheets: SheetRows[], extraColumns: Array<Pick<Spo
   }
   const labels = extraColumns.map((c) => c.label)
   const extraMatch = matchNames(header.texts, labels, used)
-  const extraCol = [...extraMatch.byColumn.entries()].sort(([a], [b]) => a - b).map(([col, i]) => ({ col, label: labels[i] }))
+  const extraCol = [...extraMatch.byColumn.entries()].sort(([a], [b]) => a - b)
+    .map(([col, i]) => ({ col, label: labels[i], kind: extraColumns[i].kind ?? 'text' }))
   for (const { col } of extraCol) used.add(col)
+  // A header left of Pip Plan naming nothing known is a new column (Q4), once
+  // per name. One that loosely names several configured labels, or a built-in
+  // name left free ("Line" beside "LineNo"), stays ignored as before: the API
+  // would refuse it, or the file could not tell it apart. So does a header too
+  // long to be a column's name.
+  const configuredKeys = new Set(labels.map(normalizeHeader))
+  const newKeys = new Set<string>()
+  const newCol: Array<{ col: number; label: string }> = []
+  for (const col of extraMatch.unmatched) {
+    const label = header.texts[col]
+    const key = normalizeHeader(label)
+    if (col > planCol.ph || label.length > MAX_NEW_COLUMN_LABEL) continue
+    if (configuredKeys.has(key) || newKeys.has(key) || builtInSpoolHeader(label) !== null) continue
+    newKeys.add(key)
+    newCol.push({ col, label })
+    used.add(col)
+  }
   // A label that is also a built-in header name cannot be told from it by a
   // file; unless the file has a second column for it, say so rather than
   // leaving the extra column silently empty.
@@ -727,9 +789,26 @@ export function parseSpoolPlan(sheets: SheetRows[], extraColumns: Array<Pick<Spo
 
   const columnWarnings = [...warnings]
 
-  const read = [...Object.values(masterCol), ...Object.values(planCol), ...extraCol.map((e) => e.col)].filter((c) => c !== -1)
+  // An extra column, new or configured, never makes a row a data row: a
+  // numbered STT column or a totals row under Area is not a spool, and the
+  // file that created the column reads the same on its next import.
+  const read = [...Object.values(masterCol), ...Object.values(planCol)].filter((c) => c !== -1)
   const data = dataRows(header, read)
-  if (data.length > MAX_IMPORT_ROWS) return { ...empty(header.sheet.name, [tooMany(data.length)], warnings, data.length), ...blank, columnWarnings }
+  // Number when at least one cell is filled and every filled cell is a number
+  // cell of the sheet (Q3): text such as "001" or "1.200" stays text. The
+  // template's Area and Length are always numbers: their text cells are
+  // parsed, and one that is not a number is a row error.
+  const kindOf = (col: number): SpoolColumnKind => {
+    if (TEMPLATE_NUMBER_KEYS.has(normalizeHeader(header.texts[col]))) return 'number'
+    const filled = data.map(({ cells }) => cellAt(cells, col)).filter((v) => textCell(v) !== null)
+    return filled.length > 0 && filled.every((v) => typeof v === 'number' && Number.isFinite(v)) ? 'number' : 'text'
+  }
+  const created = newCol.map(({ col, label }) => ({ col, label, kind: kindOf(col) }))
+  const newColumns = created.map(({ label, kind }) => ({ label, kind }))
+  const extraRead = [...extraCol, ...created].sort((a, b) => a.col - b.col)
+  if (data.length > MAX_IMPORT_ROWS) {
+    return { ...empty(header.sheet.name, [tooMany(data.length)], warnings, data.length), ...blank, columnWarnings, newColumns }
+  }
 
   const errors: ImportIssue[] = []
   const rows: SpoolPlanRow[] = []
@@ -751,12 +830,26 @@ export function parseSpoolPlan(sheets: SheetRows[], extraColumns: Array<Pick<Spo
         plan[PLAN_FIELD[m]] = parsed.day
       }
     }
-    if (!ok) continue
     const extra: Record<string, string> = {}
-    for (const { col, label } of extraCol) {
-      const v = textCell(cellAt(cells, col))
-      if (v !== null) extra[label] = v
+    for (const { col, label, kind } of extraRead) {
+      if (kind === 'text') {
+        const v = textCell(cellAt(cells, col))
+        if (v !== null) extra[label] = v
+        continue
+      }
+      const parsed = parseNumberCell(cellAt(cells, col))
+      if (parsed === null) continue
+      if ('error' in parsed) {
+        errors.push({ row, message: `${label}: ${parsed.error}` })
+        ok = false
+      } else if (parsed.value < 0) {
+        errors.push({ row, message: `${label} phải ≥ 0` })
+        ok = false
+      } else {
+        extra[label] = plainDecimal(parsed.value)
+      }
     }
+    if (!ok) continue
     rows.push({
       row,
       seq: rows.length + 1,
@@ -770,7 +863,7 @@ export function parseSpoolPlan(sheets: SheetRows[], extraColumns: Array<Pick<Spo
       ...plan,
     })
   }
-  if (errors.length > 0) return { ...empty(header.sheet.name, errors, warnings, data.length), ...blank, columnWarnings }
+  if (errors.length > 0) return { ...empty(header.sheet.name, errors, warnings, data.length), ...blank, columnWarnings, newColumns }
 
   const planOrder = planOrderIssues(rows)
   const duplicates = duplicateSpoolGroups(rows)
@@ -780,7 +873,7 @@ export function parseSpoolPlan(sheets: SheetRows[], extraColumns: Array<Pick<Spo
   for (const d of duplicates) {
     warnings.push({ row: null, message: `SpoolNo "${d.spoolNo}" lặp lại ở các dòng ${d.rows.map((r) => r.row).join(', ')}` })
   }
-  return { ...finish(header.sheet.name, rows, data.length, errors, warnings), duplicates, planOrder, columnWarnings }
+  return { ...finish(header.sheet.name, rows, data.length, errors, warnings), duplicates, planOrder, columnWarnings, newColumns }
 }
 
 // ---------------------------------------------------------------------------

@@ -38,12 +38,20 @@ export type ChartSpec = (
     kind: 'manpower'
     data: ManpowerPoint[]
     groups: ManpowerGroup[]
-    /** The groups the tab's Nhóm select shows, and their Plan TB (RV8-7). */
+    /** The groups the tab's Nhóm select shows, and their Avg Plan (RV8-7). */
     selected?: ReadonlySet<string>
     planAverage?: number | null
     mode: ViewMode
   }
-  | { kind: 'insulation'; data: CamPoint[]; keys: CamSeriesKey[]; mode: ViewMode }
+  | {
+    kind: 'insulation'
+    data: CamPoint[]
+    /** The series the tab shows: its lines select's, less those its legend hides (RV9-4). */
+    keys: CamSeriesKey[]
+    mode: ViewMode
+    /** The unit sums a number column (RV9-1), as on screen. */
+    decimals?: boolean
+  }
 ) & {
   /** The project's resolved chart colours (RV8-2), as the tab draws them. */
   colors?: ChartColors
@@ -73,7 +81,7 @@ export function chartElement(spec: ChartSpec): ReactElement {
       })
     case 'insulation':
       return createElement(InsulationChart, {
-        data: spec.data, keys: spec.keys, mode: spec.mode, colors: spec.colors, report: true,
+        data: spec.data, keys: spec.keys, mode: spec.mode, colors: spec.colors, decimals: spec.decimals, report: true,
       })
   }
 }

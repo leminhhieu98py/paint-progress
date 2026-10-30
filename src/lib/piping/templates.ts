@@ -1,10 +1,12 @@
 import {
   ACTUAL_QTY_COLUMN,
   DATE_COLUMN,
+  normalizeHeader,
   PLAN_QTY_COLUMN,
   SPOOL_ACTUAL_COLUMNS,
   SPOOL_MASTER_COLUMNS,
   SPOOL_PLAN_COLUMNS,
+  TEMPLATE_NUMBER_COLUMNS,
 } from '../../domain/piping/imports'
 import type { ImportKind } from '../../domain/piping/types'
 
@@ -85,8 +87,15 @@ export function buildManpowerActualTemplate(groupNames: string[]): Promise<Blob>
   ])
 }
 
-/** The six master columns, the three Plan dates, then the extra columns in the order given. */
+/**
+ * The six master columns, `Area (m2)` and `Length (mm)` unless an extra
+ * column already names them, the extra columns in the order given, then the
+ * three Plan dates (RV9-1, Q6): a header left of Pip Plan that the project
+ * does not have yet is a new column to the import.
+ */
 export function buildSpoolPlanTemplate(extraLabels: string[]): Promise<Blob> {
+  const configured = new Set(extraLabels.map(normalizeHeader))
+  const suggested = TEMPLATE_NUMBER_COLUMNS.filter((label) => !configured.has(normalizeHeader(label)))
   return buildTemplate('Insulation Plan', [
     { header: SPOOL_MASTER_COLUMNS.spoolNo.label, width: 36 },
     { header: SPOOL_MASTER_COLUMNS.lineNo.label, width: 32 },
@@ -94,10 +103,10 @@ export function buildSpoolPlanTemplate(extraLabels: string[]): Promise<Blob> {
     { header: SPOOL_MASTER_COLUMNS.drawingNo.label, width: 36 },
     { header: SPOOL_MASTER_COLUMNS.testPackageNo.label, width: 26 },
     { header: SPOOL_MASTER_COLUMNS.paintingSystem.label, width: 16 },
+    ...[...suggested, ...extraLabels].map((label) => ({ header: label, width: Math.max(12, label.length + 2) })),
     { header: SPOOL_PLAN_COLUMNS.ph.label, width: 16, date: true },
     { header: SPOOL_PLAN_COLUMNS.ih.label, width: 16, date: true },
     { header: SPOOL_PLAN_COLUMNS.iw.label, width: 16, date: true },
-    ...extraLabels.map((label) => ({ header: label, width: Math.max(12, label.length + 2) })),
   ])
 }
 

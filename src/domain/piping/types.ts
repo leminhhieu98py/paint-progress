@@ -119,18 +119,31 @@ export interface Spool extends SpoolMaster, SpoolPlanDates, SpoolActualDates {
   stamps?: Partial<Record<Milestone, ActualStamp>>
 }
 
-/** An admin-defined extra text column on spools (spec §6.1, Q21A). */
+/**
+ * How an extra column's values read (RV9-1): 'number' columns are summed as a
+ * unit and their import cells validated as numbers. Values are text either way.
+ */
+export type SpoolColumnKind = 'text' | 'number'
+
+/** An admin-defined extra column on spools (spec §6.1, Q21A; kind RV9-1). */
 export interface SpoolColumn {
   id: string
   label: string
   sort: number
+  kind: SpoolColumnKind
 }
 
 /**
- * The CAM counting unit (spec §6.4). `spoolNo` counts spool ROWS; every other
- * unit counts distinct non-blank values.
+ * The six built-in CAM counting units (spec §6.4). `spoolNo` counts spool
+ * ROWS; every other unit counts distinct non-blank values.
  */
-export type Unit = 'spoolNo' | 'lineNo' | 'insuType' | 'drawingNo' | 'testPackageNo' | 'paintingSystem'
+export type BuiltInUnit = 'spoolNo' | 'lineNo' | 'insuType' | 'drawingNo' | 'testPackageNo' | 'paintingSystem'
+
+/**
+ * The CAM counting unit: a built-in, or an extra column by its id (RV9-1) --
+ * a text column counts distinct values, a number column sums them.
+ */
+export type Unit = BuiltInUnit | `col:${string}`
 
 /** The detail table's level selector (spec §6.4, Q16B). */
 export type CamLevel = 'package' | 'line' | 'spool'

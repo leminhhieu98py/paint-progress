@@ -1,12 +1,13 @@
 import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { CamSeriesKey } from '../../domain/piping/cam'
 import type { Unit } from '../../domain/piping/types'
 import type { PipingReportInput } from '../../lib/piping/report'
 import { renderApp } from '../../test/renderApp'
 import { setViewport } from '../../test/viewport'
 import { resolveChartColors } from './chartColors'
-import { InsulationUnitProvider, useInsulationSelection, useInsulationUnit } from './insulationUnit'
+import { InsulationUnitProvider, useInsulationHidden, useInsulationSelection, useInsulationUnit } from './insulationUnit'
 import { showManpowerSelection } from './manpowerSelection'
 import type { PipingPanelProps, PipingRole } from './panelProps'
 import { PipingExportAction } from './PipingExportAction'
@@ -209,6 +210,35 @@ describe('PipingExportAction (spec §10)', () => {
     expect(reportInput().unit).toBe('lineNo')
   })
 
+  it('writes an extra column unit on screen, its chart summing the column (RV9-1)', async () => {
+    api.listSpoolColumns.mockResolvedValue([
+      { id: 'c1', label: 'Khu vực', sort: 1, kind: 'text' },
+      { id: 'c2', label: 'Area (m2)', sort: 2, kind: 'number' },
+    ])
+    api.listSpools.mockResolvedValue([{
+      id: 's1', seq: 1, spoolNo: 'SP-1', lineNo: 'L1', insuType: null, drawingNo: null, testPackageNo: 'TP1',
+      paintingSystem: null, extra: { 'Area (m2)': '2.5' }, phPlan: '2026-09-30', ihPlan: null, iwPlan: null,
+      phActual: null, ihActual: null, iwActual: null,
+    }])
+    function UnitPicker() {
+      const [, setUnit] = useInsulationUnit('p1')
+      return <button type="button" onClick={() => setUnit('col:c2')}>pick</button>
+    }
+    renderApp(
+      <InsulationUnitProvider>
+        <UnitPicker />
+        <PipingExportAction panel={panel()} />
+      </InsulationUnitProvider>,
+    )
+    await userEvent.click(screen.getByRole('button', { name: 'pick' }))
+    await userEvent.click(exportButton())
+    await waitFor(() => expect(buildPipingReport).toHaveBeenCalled())
+    expect(reportInput()).toMatchObject({ unit: 'col:c2', columns: [{ id: 'c1' }, { id: 'c2' }] })
+    const spec = renderChartPng.mock.calls[2][0]
+    expect(spec).toMatchObject({ kind: 'insulation', decimals: true })
+    expect(spec.data.at(-1)).toMatchObject({ phPlan: 2.5 })
+  })
+
   it('draws the Insulation lines on screen: Actual only when the tab shows Actual', async () => {
     function LinesPicker() {
       const [, setSelection] = useInsulationSelection('p1')
@@ -225,6 +255,53 @@ describe('PipingExportAction (spec §10)', () => {
     await waitFor(() => expect(buildPipingReport).toHaveBeenCalled())
     expect(renderChartPng.mock.calls[2][0].keys)
       .toEqual(['phActualBar', 'phActual', 'ihActualBar', 'ihActual', 'iwActualBar', 'iwActual'])
+  })
+
+  describe('the Insulation series the legend hides (RV9-4)', () => {
+    function HidePicker({ keys }: { keys: CamSeriesKey[] }) {
+      const [, setHidden] = useInsulationHidden('p1')
+      return <button type="button" onClick={() => setHidden(keys)}>hide series</button>
+    }
+    const exportHiding = async (keys: CamSeriesKey[], pickActual = false) => {
+      function LinesPicker() {
+        const [, setSelection] = useInsulationSelection('p1')
+        return <button type="button" onClick={() => setSelection('actual')}>pick lines</button>
+      }
+      renderApp(
+        <InsulationUnitProvider>
+          <LinesPicker />
+          <HidePicker keys={keys} />
+          <PipingExportAction panel={panel()} />
+        </InsulationUnitProvider>,
+      )
+      if (pickActual) await userEvent.click(screen.getByRole('button', { name: 'pick lines' }))
+      await userEvent.click(screen.getByRole('button', { name: 'hide series' }))
+      await userEvent.click(exportButton())
+      await waitFor(() => expect(buildPipingReport).toHaveBeenCalled())
+    }
+
+    it('draws only the shown series in the picture', async () => {
+      await exportHiding(['phPlanBar', 'ihActual'])
+      const spec = renderChartPng.mock.calls[2][0]
+      expect(spec.keys).toEqual([
+        'phActualBar', 'phPlan', 'phActual',
+        'ihPlanBar', 'ihActualBar', 'ihPlan',
+        'iwPlanBar', 'iwActualBar', 'iwPlan', 'iwActual',
+      ])
+      expect(reportInput().charts.insulation).toEqual(PNG)
+    })
+
+    it('applies the lines select first, the hidden series within it', async () => {
+      await exportHiding(['phActual', 'phPlan'], true)
+      expect(renderChartPng.mock.calls[2][0].keys)
+        .toEqual(['phActualBar', 'ihActualBar', 'ihActual', 'iwActualBar', 'iwActual'])
+    })
+
+    it('writes no Insulation picture when every shown series is hidden, as the tab shows none', async () => {
+      await exportHiding(['phActualBar', 'phActual', 'ihActualBar', 'ihActual', 'iwActualBar', 'iwActual'], true)
+      expect(renderChartPng.mock.calls.map(([spec]) => spec.kind)).toEqual(['reinstatement', 'manpower'])
+      expect(reportInput().charts).toEqual({ reinstatement: PNG, manpower: PNG })
+    })
   })
 
   describe('the Manpower groups on screen (RV8-7)', () => {
@@ -253,7 +330,7 @@ describe('PipingExportAction (spec §10)', () => {
       expect(manpowerSpec().data[0].planTotal).toBe(15)
     })
 
-    it('draws the groups the tab shows, the Plan TB line following them; the table keeps every group', async () => {
+    it('draws the groups the tab shows, the Avg Plan line following them; the table keeps every group', async () => {
       const forget = showManpowerSelection('p1', new Set(['g2', 'g3']))
       try {
         renderApp(<PipingExportAction panel={panel()} />)

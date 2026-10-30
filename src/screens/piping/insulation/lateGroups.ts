@@ -1,5 +1,5 @@
 import type { KeyFact } from '../../../components/KeyFacts'
-import { groupLateWarnings, lateSpoolCount, type LateWarning } from '../../../domain/piping/cam'
+import { groupLateWarnings, lateSpoolCount, MILESTONE_LABEL, MILESTONES, type LateWarning } from '../../../domain/piping/cam'
 import type { Milestone } from '../../../domain/piping/types'
 import { matchesSearch } from '../../../lib/search'
 import { formatQty } from '../pipingFormat'
@@ -10,11 +10,27 @@ export function lateRule(thresholdDays: number): string {
     + ' (chưa có Actual thì tính đến hôm nay)'
 }
 
-/** The "N spool trễ" pill (HLT-01), for everyone; none while no spool is late. */
-export function lateFact(warnings: LateWarning[], thresholdDays: number): KeyFact | null {
-  const count = lateSpoolCount(warnings)
-  if (count === 0) return null
-  return { value: formatQty(count), label: 'spool trễ', tone: 'warning', info: lateRule(thresholdDays) }
+/** What makes a spool late on one milestone (RV9-3), with the project's threshold N. */
+export function lateMilestoneRule(m: Milestone, thresholdDays: number): string {
+  return `Spool có mốc ${MILESTONE_LABEL[m]} trễ quá ${formatQty(thresholdDays)} ngày so với ngày Plan`
+    + ' (chưa có Actual thì tính đến hôm nay)'
+}
+
+/**
+ * The late pills (RV9-3), for everyone, one per milestone: `Pip 301 spool trễ`
+ * (amber while any, neutral at 0), or `Insu Chưa có Plan` while no spool has
+ * that milestone's plan date.
+ */
+export function lateFacts(counts: Record<Milestone, { planned: boolean; late: number }>, thresholdDays: number): KeyFact[] {
+  return MILESTONES.map((m): KeyFact => (counts[m].planned
+    ? {
+        prefix: MILESTONE_LABEL[m],
+        value: formatQty(counts[m].late),
+        label: 'spool trễ',
+        tone: counts[m].late > 0 ? 'warning' : 'neutral',
+        info: lateMilestoneRule(m, thresholdDays),
+      }
+    : { prefix: MILESTONE_LABEL[m], label: 'Chưa có Plan', tone: 'neutral' }))
 }
 
 /** One Package (or Line) row of the "Spool trễ" card. */

@@ -38,7 +38,7 @@ const SPOOLS: Spool[] = [
   spool(4, { lineNo: null, testPackageNo: null, phActual: '2026-09-06' }),
 ]
 
-const COLUMNS: SpoolColumn[] = [{ id: 'c1', label: 'Zone', sort: 1 }]
+const COLUMNS: SpoolColumn[] = [{ id: 'c1', label: 'Zone', sort: 1, kind: 'text' }]
 
 const detail = (over: Partial<Parameters<typeof SpoolDetail>[0]> = {}, spools = SPOOLS) => (
   <SpoolDetail
@@ -121,6 +121,19 @@ describe('SpoolDetail: levels (spec §6.4, Q16B)', () => {
     expectLeft(td[6])
     expect(td[7].style.textAlign).toBe('center')
     expect(td[13].style.textAlign).toBe('center')
+  })
+
+  it('shows a number column\'s stored decimal in vi format, centred; text that is not a number as it is', async () => {
+    const columns: SpoolColumn[] = [...COLUMNS, { id: 'c2', label: 'Area (m2)', sort: 2, kind: 'number' }]
+    renderDetail({ columns }, [
+      spool(1, { extra: { 'Area (m2)': '12.345' } }),
+      spool(2, { extra: { 'Area (m2)': '1234.5' } }),
+      spool(3, { extra: { 'Area (m2)': 'n/a' } }),
+      spool(4),
+    ])
+    await level('Spool')
+    expect(bodyRows().map((r) => cells(r)[7])).toEqual(['12,35', '1.234,5', 'n/a', '-'])
+    expect(within(bodyRows()[0]).getAllByRole('cell')[7].style.textAlign).toBe('center')
   })
 })
 

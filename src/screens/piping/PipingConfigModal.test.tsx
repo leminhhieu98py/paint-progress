@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ManpowerGroup, PipingSettings, Spool, SpoolColumn } from '../../domain/piping/types'
 import { renderApp } from '../../test/renderApp'
+import { chooseOption } from '../../test/select'
 import { palette } from '../../theme'
 import { PipingConfigModal } from './PipingConfigModal'
 
@@ -24,6 +25,7 @@ const api = vi.hoisted(() => ({
   renameSpoolColumn: vi.fn(),
   deleteSpoolColumn: vi.fn(),
   reorderSpoolColumns: vi.fn(),
+  setSpoolColumnKind: vi.fn(),
   listSpools: vi.fn(),
   listImportLog: vi.fn(),
 }))
@@ -45,6 +47,7 @@ vi.mock('../../lib/pipingApi', () => ({
   renameSpoolColumn: (...a: unknown[]) => api.renameSpoolColumn(...a),
   deleteSpoolColumn: (...a: unknown[]) => api.deleteSpoolColumn(...a),
   reorderSpoolColumns: (...a: unknown[]) => api.reorderSpoolColumns(...a),
+  setSpoolColumnKind: (...a: unknown[]) => api.setSpoolColumnKind(...a),
   listSpools: (...a: unknown[]) => api.listSpools(...a),
   listImportLog: (...a: unknown[]) => api.listImportLog(...a),
 }))
@@ -61,8 +64,8 @@ const GROUPS: ManpowerGroup[] = [
 ]
 
 const COLUMNS: SpoolColumn[] = [
-  { id: 'c1', label: 'Area', sort: 1 },
-  { id: 'c2', label: 'Ghi chú hiện trường', sort: 2 },
+  { id: 'c1', label: 'Area', sort: 1, kind: 'text' },
+  { id: 'c2', label: 'Ghi chú hiện trường', sort: 2, kind: 'number' },
 ]
 
 const spool = (id: string, extra: Record<string, string>): Spool => ({
@@ -125,10 +128,11 @@ beforeEach(() => {
   api.reorderManpowerGroups.mockResolvedValue(undefined)
   api.deleteManpowerGroup.mockResolvedValue(undefined)
   api.listSpoolColumns.mockResolvedValue(COLUMNS)
-  api.addSpoolColumn.mockResolvedValue({ id: 'c3', label: 'Khu', sort: 3 })
+  api.addSpoolColumn.mockResolvedValue({ id: 'c3', label: 'Khu', sort: 3, kind: 'text' })
   api.renameSpoolColumn.mockResolvedValue({ spoolsUpdated: 2 })
   api.deleteSpoolColumn.mockResolvedValue({ spoolsUpdated: 2 })
   api.reorderSpoolColumns.mockResolvedValue(undefined)
+  api.setSpoolColumnKind.mockResolvedValue(undefined)
   api.listSpools.mockResolvedValue([
     spool('s1', { Area: 'A1' }),
     spool('s2', { Area: 'A2', khu: 'cũ' }),
@@ -347,7 +351,35 @@ describe('PipingConfigModal: Cột thêm của spool (spec §6.1)', () => {
   it('adds a column at the end', async () => {
     await userEvent.type(within(config()).getByRole('textbox', { name: 'Tên cột mới' }), 'Khu')
     await userEvent.click(within(config()).getByRole('button', { name: 'Thêm cột' }))
-    await waitFor(() => expect(api.addSpoolColumn).toHaveBeenCalledWith('p1', 'Khu', 3))
+    await waitFor(() => expect(api.addSpoolColumn).toHaveBeenCalledWith('p1', 'Khu', 3, 'text'))
+  })
+
+  it('adds a number column when Số is chosen in the add form (RV9-1)', async () => {
+    expect(within(config()).getByRole('combobox', { name: 'Loại cột mới' }).closest('.ant-select'))
+      .toHaveTextContent('Chữ')
+    await userEvent.type(within(config()).getByRole('textbox', { name: 'Tên cột mới' }), 'Area (m2)')
+    await chooseOption('Loại cột mới', 'Số', config())
+    await userEvent.click(within(config()).getByRole('button', { name: 'Thêm cột' }))
+    await waitFor(() => expect(api.addSpoolColumn).toHaveBeenCalledWith('p1', 'Area (m2)', 3, 'number'))
+  })
+
+  it('shows each column\'s kind and switches it at once, then reloads (RV9-1)', async () => {
+    expect(within(rowOf('Area')).getByRole('combobox', { name: 'Loại · Area' }).closest('.ant-select'))
+      .toHaveTextContent('Chữ')
+    expect(within(rowOf('Ghi chú hiện trường')).getByRole('combobox', { name: 'Loại · Ghi chú hiện trường' })
+      .closest('.ant-select')).toHaveTextContent('Số')
+    await chooseOption('Loại · Area', 'Số', config())
+    await waitFor(() => expect(api.setSpoolColumnKind).toHaveBeenCalledWith('p1', 'c1', 'number'))
+    expect(await screen.findByText('Đã đổi loại cột Area thành Số')).toBeInTheDocument()
+    await waitFor(() => expect(api.listSpoolColumns).toHaveBeenCalledTimes(2))
+    expect(onChanged).toHaveBeenCalled()
+  })
+
+  it('shows a refused kind switch from the API and reloads the list', async () => {
+    api.setSpoolColumnKind.mockRejectedValue(new Error('Không lưu được: dữ liệu này không còn tồn tại, hoặc bạn không có quyền sửa.'))
+    await chooseOption('Loại · Area', 'Số', config())
+    expect(await screen.findByText(/Không lưu được/)).toBeInTheDocument()
+    await waitFor(() => expect(api.listSpoolColumns).toHaveBeenCalledTimes(2))
   })
 
   it('renames only after a confirm that states how many spools are rewritten', async () => {
@@ -503,7 +535,7 @@ describe('PipingConfigModal: Màu biểu đồ (RV8-2)', () => {
     expect(hexOf('Reinstatement')).toBe(palette.categorical[0].toLowerCase())
     expect(hexField('Insulation (ẩn)')).toBeInTheDocument()
     expect(hexOf('Marking')).toBe(palette.categorical[1].toLowerCase())
-    for (const label of ['Plan tổng', 'Actual tổng', 'Plan TB', 'Pip Plan', 'Pip Act', 'Paint Plan', 'Paint Act', 'Insu Plan', 'Insu Act']) {
+    for (const label of ['Plan tổng', 'Actual tổng', 'Avg Plan', 'Pip Plan', 'Pip Act', 'Paint Plan', 'Paint Act', 'Insu Plan', 'Insu Act']) {
       expect(hexField(label)).toBeInTheDocument()
       expect(within(config()).getByLabelText(`Chọn màu · ${label}`)).toBeInTheDocument()
     }
@@ -532,10 +564,10 @@ describe('PipingConfigModal: Màu biểu đồ (RV8-2)', () => {
 
   it('holds Lưu màu shut while a hex field is not yet a colour', async () => {
     await open()
-    await userEvent.clear(hexField('Plan TB'))
-    await userEvent.type(hexField('Plan TB'), '#12')
+    await userEvent.clear(hexField('Avg Plan'))
+    await userEvent.type(hexField('Avg Plan'), '#12')
     expect(saveButton()).toBeDisabled()
-    await userEvent.type(hexField('Plan TB'), '3456')
+    await userEvent.type(hexField('Avg Plan'), '3456')
     expect(saveButton()).toBeEnabled()
   })
 

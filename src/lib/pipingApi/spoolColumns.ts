@@ -1,15 +1,16 @@
 import { builtInSpoolHeader } from '../../domain/piping/imports'
-import type { SpoolColumn } from '../../domain/piping/types'
+import type { SpoolColumn, SpoolColumnKind } from '../../domain/piping/types'
 import { supabase } from '../supabase'
-import { callRpc, readAll, requiredText, toError } from './shared'
+import { callRpc, readAll, requireRows, requiredText, toError } from './shared'
 
 /**
- * The admin's extra text columns on spools (spec §6.1, Q21A). The values live
- * in `piping_spools.extra[label]`, so a rename or a delete has to move or
- * strip that key in every spool of the project too (the 0039 functions).
+ * The admin's extra columns on spools (spec §6.1, Q21A), text or number
+ * (RV9-1). The values live in `piping_spools.extra[label]`, so a rename or a
+ * delete has to move or strip that key in every spool of the project too (the
+ * 0039 functions).
  */
 
-const COLUMN_SELECT = 'id, label, sort'
+const COLUMN_SELECT = 'id, label, sort, kind'
 const EMPTY_LABEL = 'Tên cột không được để trống'
 const duplicateLabel = (label: string) => `Cột "${label}" đã có trong dự án`
 
@@ -27,7 +28,9 @@ function checkLabel(label: string): string {
 }
 
 function mapColumn(r: Record<string, unknown>): SpoolColumn {
-  return { id: r.id as string, label: r.label as string, sort: Number(r.sort) }
+  // A row from before 0042 (or a value the app does not know) reads as text.
+  const kind: SpoolColumnKind = r.kind === 'number' ? 'number' : 'text'
+  return { id: r.id as string, label: r.label as string, sort: Number(r.sort), kind }
 }
 
 export async function listSpoolColumns(projectId: string): Promise<SpoolColumn[]> {
@@ -44,15 +47,35 @@ export async function listSpoolColumns(projectId: string): Promise<SpoolColumn[]
 }
 
 /** Admin: a new column at `sort` (the caller puts it last). */
-export async function addSpoolColumn(projectId: string, label: string, sort: number): Promise<SpoolColumn> {
+export async function addSpoolColumn(
+  projectId: string,
+  label: string,
+  sort: number,
+  kind: SpoolColumnKind = 'text',
+): Promise<SpoolColumn> {
   const text = checkLabel(label)
   const { data, error } = await supabase
     .from('piping_spool_columns')
-    .insert({ project_id: projectId, label: text, sort })
+    .insert({ project_id: projectId, label: text, sort, kind })
     .select(COLUMN_SELECT)
     .single()
   if (error) throw toError(error, { unique: duplicateLabel(text) })
   return mapColumn(data as Record<string, unknown>)
+}
+
+/**
+ * Admin: switches a column between text and number (RV9-1). The values in
+ * `extra` stay as they are; a value that does not parse counts as 0.
+ */
+export async function setSpoolColumnKind(projectId: string, columnId: string, kind: SpoolColumnKind): Promise<void> {
+  const { data, error } = await supabase
+    .from('piping_spool_columns')
+    .update({ kind })
+    .eq('id', columnId)
+    .eq('project_id', projectId)
+    .select('id')
+  if (error) throw toError(error)
+  requireRows(data)
 }
 
 /**

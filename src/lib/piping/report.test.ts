@@ -173,6 +173,15 @@ describe('buildPipingReport (spec §10)', () => {
     expect(byLabel.get('Insu Act (LineNo)')).toEqual([0, 2, 0])
     expect(byLabel.get('Ngưỡng trễ (ngày)')).toEqual([7, null, null])
     expect(byLabel.get('Spool trễ')).toEqual([2, null, null])
+    // Per milestone, then the distinct total (RV9-3): SP-A's Pip, SP-B's Paint; no spool has an Insu Plan.
+    expect(rows.slice(rows.findIndex((r) => r[0] === 'Ngưỡng trễ (ngày)') + 1)).toEqual([
+      ['Spool trễ · Pip', 1, null, null],
+      ['Spool trễ · Paint', 1, null, null],
+      ['Spool trễ · Insu', 'Chưa có Plan', null, null],
+      ['Spool trễ', 2, null, null],
+    ])
+    const lateRow = rows.findIndex((r) => r[0] === 'Spool trễ · Pip') + 2
+    expect(ws.getCell(`B${lateRow}`).numFmt).toBe(ws.getCell(`B${lateRow + 3}`).numFmt)
     const reinRow = rows.findIndex((r) => r[0] === 'Reinstatement (TestPack)') + 2
     expect(ws.getCell(`D${reinRow}`).numFmt).toBe('0.00%')
     const dayRow = rows.findIndex((r) => r[0] === 'Ngày xuất') + 2
@@ -263,10 +272,53 @@ describe('buildPipingReport (spec §10)', () => {
     expect(ws.getCell('C2').numFmt).toBe('#,##0')
   })
 
+  it('sums a number column unit to two decimals in Tóm tắt and Insulation, labelled as configured (RV9-1)', async () => {
+    const base = input()
+    const report = input({
+      mode: 'week',
+      unit: 'col:c2',
+      columns: [{ id: 'c1', label: 'Khu vực', sort: 1, kind: 'text' }, { id: 'c2', label: 'Area (m2)', sort: 2, kind: 'number' }],
+      spools: [
+        { ...base.spools[0], extra: { 'Area (m2)': '1.111' } },
+        { ...base.spools[1], extra: { 'Area (m2)': '2.5' } },
+      ],
+    })
+    const wb = await open(await buildPipingReport(report))
+    const summary = sheet(wb, 'Tóm tắt')
+    const rows = Array.from({ length: summary.rowCount - 1 }, (_, i) => rowValues(summary, i + 2))
+    const byLabel = new Map(rows.map((r) => [r[0], r.slice(1)]))
+    expect(byLabel.get('Đơn vị đếm Insulation')).toEqual(['Area (m2)', null, null])
+    // Both spools reached Pip: 1,111 + 2,5 = 3,611, written 3,61 of 3,61.
+    expect(byLabel.get('Pip Act (Area (m2))')).toEqual([3.61, 3.61, 1])
+    expect(byLabel.get('Paint Act (Area (m2))')).toEqual([0, 3.61, 0])
+    const pipRow = rows.findIndex((r) => r[0] === 'Pip Act (Area (m2))') + 2
+    expect([summary.getCell(`B${pipRow}`).numFmt, summary.getCell(`C${pipRow}`).numFmt]).toEqual(['#,##0.00', '#,##0.00'])
+
+    const ws = sheet(wb, 'Insulation')
+    expect(headerOf(ws).slice(2, 6)).toEqual([
+      'Pip Plan (Area (m2))', 'Pip Act (Area (m2))', 'Pip Plan lũy kế (Area (m2))', 'Pip Act lũy kế (Area (m2))',
+    ])
+    // Week of 28/09: SP-B (2,5) planned and reached Pip; the lines carry SP-A's 1,111 from before.
+    expect(rowValues(ws, ws.rowCount).slice(2, 10)).toEqual([2.5, 2.5, 3.61, 3.61, 0, 0, 2.5, 0])
+    expect(ws.getCell('E2').numFmt).toBe('#,##0.00')
+    // The data keeps the raw sums; only the cells are rounded.
+    expect(pipingReportSeries(report).insulation.total).toBeCloseTo(3.611, 10)
+  })
+
+  it('counts a column no longer configured as SpoolNo (RV9-1)', async () => {
+    const wb = await open(await buildPipingReport(input({ unit: 'col:gone' })))
+    const summary = sheet(wb, 'Tóm tắt')
+    const rows = Array.from({ length: summary.rowCount - 1 }, (_, i) => rowValues(summary, i + 2))
+    const byLabel = new Map(rows.map((r) => [r[0], r.slice(1)]))
+    expect(byLabel.get('Đơn vị đếm Insulation')).toEqual(['SpoolNo', null, null])
+    expect(byLabel.get('Pip Act (SpoolNo)')).toEqual([2, 2, 1])
+    expect(headerOf(sheet(wb, 'Insulation'))[1]).toBe('Pip Plan (SpoolNo)')
+  })
+
   it('Chi tiết spool: every spool in file order, master fields, extra columns in order, the six dates', async () => {
     const columns = [
-      { id: 'c1', label: 'Khu vực', sort: 1 },
-      { id: 'c2', label: 'Ghi chú KH', sort: 2 },
+      { id: 'c1', label: 'Khu vực', sort: 1, kind: 'text' as const },
+      { id: 'c2', label: 'Ghi chú KH', sort: 2, kind: 'text' as const },
     ]
     const spools = [
       spool({
@@ -312,6 +364,28 @@ describe('buildPipingReport (spec §10)', () => {
     if (typeof filter === 'string') expect(filter).toBe('A1:O4')
     else expect(filter).toMatchObject({ from: { row: 1, column: 1 }, to: { row: 4, column: 15 } })
     expect(ws.getImages()).toHaveLength(0)
+  })
+
+  it('Chi tiết spool: a number column\'s values are numeric cells, the file\'s quantity format; text stays text', async () => {
+    const columns = [
+      { id: 'c1', label: 'Area (m2)', sort: 1, kind: 'number' as const },
+      { id: 'c2', label: 'Length (mm)', sort: 2, kind: 'number' as const },
+      { id: 'c3', label: 'Zone', sort: 3, kind: 'text' as const },
+    ]
+    const spools = [
+      spool({ id: 'a', seq: 1, spoolNo: 'SP-A', extra: { 'Area (m2)': '12.345', 'Length (mm)': '1200', Zone: '12.5' } }),
+      spool({ id: 'b', seq: 2, spoolNo: 'SP-B', extra: { 'Area (m2)': 'n/a', 'Length (mm)': '30' } }),
+      spool({ id: 'c', seq: 3, spoolNo: 'SP-C', extra: {} }),
+    ]
+    const ws = sheet(await open(await buildPipingReport(input({ spools, columns }))), 'Chi tiết spool')
+    expect([2, 3, 4].map((r) => rowValues(ws, r).slice(7, 10))).toEqual([
+      [12.345, 1200, '12.5'],
+      ['n/a', 30, null],
+      [null, null, null],
+    ])
+    expect(ws.getCell('H2').numFmt).toBe('#,##0.00')
+    expect(ws.getCell('I2').numFmt).toBe('#,##0')
+    expect(ws.getCell('J2').numFmt).toBeFalsy()
   })
 
   it('Chi tiết spool: no extra columns, no spools: the header alone', async () => {

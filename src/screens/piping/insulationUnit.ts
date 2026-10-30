@@ -1,12 +1,15 @@
 import { createContext, createElement, useCallback, useContext, useMemo, useState, type ReactNode } from 'react'
+import type { CamSeriesKey } from '../../domain/piping/cam'
 import type { CamSelection, Unit } from '../../domain/piping/types'
 
 /**
- * The Insulation tab's chart choices (spec §6.4) -- the unit select and the
- * Plan | Actual | Plan & Actual lines select -- per project, held by the
+ * The Insulation tab's chart choices (spec §6.4) -- the unit select, the
+ * Plan | Actual | Plan & Actual lines select and the series hidden from the
+ * legend (RV9-4) -- per project, held by the
  * Piping page so the export writes the report as it is on screen (spec §10).
- * The Insulation tab reads and sets them with `useInsulationUnit` and
- * `useInsulationSelection`; the export reads them with the `...Value` hooks.
+ * The Insulation tab reads and sets them with `useInsulationUnit`,
+ * `useInsulationSelection` and `useInsulationHidden`; the export reads them
+ * with the `...Value` hooks.
  *
  * Without a provider above it (a panel rendered alone, as in its own tests)
  * each setter hook keeps the choice in the component's own state, as the tab
@@ -18,13 +21,16 @@ import type { CamSelection, Unit } from '../../domain/piping/types'
 
 export const DEFAULT_UNIT: Unit = 'spoolNo'
 export const DEFAULT_SELECTION: CamSelection = 'both'
+/** Every series shown until the user hides one from the legend. */
+const NONE_HIDDEN: readonly CamSeriesKey[] = []
 
 interface Choices {
   unit: Unit
   selection: CamSelection
+  hidden: readonly CamSeriesKey[]
 }
 
-const DEFAULTS: Choices = { unit: DEFAULT_UNIT, selection: DEFAULT_SELECTION }
+const DEFAULTS: Choices = { unit: DEFAULT_UNIT, selection: DEFAULT_SELECTION, hidden: NONE_HIDDEN }
 
 interface ChoicesState {
   choices: Record<string, Partial<Choices>>
@@ -77,4 +83,17 @@ export function useInsulationSelection(projectId: string): [CamSelection, (selec
 /** The lines on screen for the project. */
 export function useInsulationSelectionValue(projectId: string | null): CamSelection {
   return useChoiceValue(projectId, 'selection')
+}
+
+/**
+ * The series the tab's legend hides (RV9-4) and their setter: kept across the
+ * lines select, which filters first, until the user shows them again.
+ */
+export function useInsulationHidden(projectId: string): [readonly CamSeriesKey[], (hidden: readonly CamSeriesKey[]) => void] {
+  return useChoice(projectId, 'hidden')
+}
+
+/** The series hidden on screen for the project. */
+export function useInsulationHiddenValue(projectId: string | null): readonly CamSeriesKey[] {
+  return useChoiceValue(projectId, 'hidden')
 }
