@@ -173,6 +173,15 @@ describe('buildPipingReport (spec §10)', () => {
     expect(byLabel.get('Insu Act (LineNo)')).toEqual([0, 2, 0])
     expect(byLabel.get('Ngưỡng trễ (ngày)')).toEqual([7, null, null])
     expect(byLabel.get('Spool trễ')).toEqual([2, null, null])
+    // Per milestone, then the distinct total (RV9-3): SP-A's Pip, SP-B's Paint; no spool has an Insu Plan.
+    expect(rows.slice(rows.findIndex((r) => r[0] === 'Ngưỡng trễ (ngày)') + 1)).toEqual([
+      ['Spool trễ · Pip', 1, null, null],
+      ['Spool trễ · Paint', 1, null, null],
+      ['Spool trễ · Insu', 'Chưa có Plan', null, null],
+      ['Spool trễ', 2, null, null],
+    ])
+    const lateRow = rows.findIndex((r) => r[0] === 'Spool trễ · Pip') + 2
+    expect(ws.getCell(`B${lateRow}`).numFmt).toBe(ws.getCell(`B${lateRow + 3}`).numFmt)
     const reinRow = rows.findIndex((r) => r[0] === 'Reinstatement (TestPack)') + 2
     expect(ws.getCell(`D${reinRow}`).numFmt).toBe('0.00%')
     const dayRow = rows.findIndex((r) => r[0] === 'Ngày xuất') + 2
