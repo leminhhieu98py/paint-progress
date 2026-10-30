@@ -11,6 +11,7 @@ import {
   filterOptions,
   filterSpools,
   groupLateWarnings,
+  lateByMilestone,
   lateSpoolCount,
   lateWarnings,
   MILESTONE_LABEL,
@@ -477,6 +478,37 @@ describe('late warnings (spec §7)', () => {
     expect(lateSpoolCount(warnings)).toBe(2)
     expect(groupLateWarnings(warnings, 'package').map((g) => [g.key, g.warnings.length])).toEqual([['TP1', 3]])
     expect(groupLateWarnings(warnings, 'line').map((g) => [g.key, g.warnings.length])).toEqual([['L1', 1], ['L2', 2]])
+  })
+
+  it('counts late spools per milestone, or marks a milestone with no plan date (RV9-3)', () => {
+    expect(lateByMilestone(spools, 7, today)).toEqual({
+      ph: { planned: true, late: 1 },
+      ih: { planned: true, late: 1 },
+      iw: { planned: true, late: 1 },
+    })
+    // A planned milestone with nobody late reads 0; one no spool plans reads unplanned.
+    expect(lateByMilestone([spools[1], spools[3]], 7, today)).toEqual({
+      ph: { planned: true, late: 0 },
+      ih: { planned: true, late: 0 },
+      iw: { planned: false, late: 0 },
+    })
+    expect(lateByMilestone([], 7, today)).toEqual({
+      ph: { planned: false, late: 0 },
+      ih: { planned: false, late: 0 },
+      iw: { planned: false, late: 0 },
+    })
+  })
+
+  it('counts each spool once per milestone (RV9-3)', () => {
+    const late = [
+      spool({ id: 'p', phPlan: '2026-09-01', ihPlan: '2026-09-01' }),
+      spool({ id: 'q', phPlan: '2026-09-01' }),
+    ]
+    expect(lateByMilestone(late, 7, today)).toEqual({
+      ph: { planned: true, late: 2 },
+      ih: { planned: true, late: 1 },
+      iw: { planned: false, late: 0 },
+    })
   })
 
   it('flags each spool for the table: duplicate SpoolNo, plan-order issue, late milestones', () => {
