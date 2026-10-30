@@ -504,6 +504,19 @@ describe('parseSpoolPlan: new columns before Pip Plan (RV9-1, Q3-Q5)', () => {
     expect(res.warnings).toContainEqual({ row: 1, message: 'Bỏ qua cột: area' })
   })
 
+  it('ignores a header longer than 60 characters rather than creating it as a column', () => {
+    const long = `Ghi chú ${'x'.repeat(53)}`
+    const max = 'y'.repeat(60)
+    const res = parseSpoolPlan(sheet([
+      ['SpoolNo', long, max, 'Pip Plan', 'Paint Plan', 'Insu Plan'],
+      ['A', 'a', 'b', null, null, null],
+    ]), [])
+    expect(long).toHaveLength(61)
+    expect(res.newColumns).toEqual([{ label: max, kind: 'text' }])
+    expect(res.warnings).toContainEqual({ row: 1, message: `Bỏ qua cột: ${long}` })
+    expect(res.rows[0].extra).toEqual({ [max]: 'b' })
+  })
+
   it('makes the template\'s Area and Length number columns always, even when blank; any other blank column is text', () => {
     const res = parseSpoolPlan(sheet([
       ['SpoolNo', 'area(M2)', 'Length (mm)', 'Width', 'Pip Plan', 'Paint Plan', 'Insu Plan'],
