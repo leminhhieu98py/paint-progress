@@ -12,7 +12,7 @@ import type { PipingPanelProps } from './panelProps'
 
 const api = vi.hoisted(() => ({
   listSpools: vi.fn(), listSpoolColumns: vi.fn(), replaceSpools: vi.fn(), mergeSpools: vi.fn(), setSpoolActuals: vi.fn(),
-  listNotes: vi.fn(),
+  listNotes: vi.fn(), addSpoolColumn: vi.fn(),
 }))
 vi.mock('../../lib/pipingApi', () => ({
   listSpools: (...a: unknown[]) => api.listSpools(...a),
@@ -21,6 +21,7 @@ vi.mock('../../lib/pipingApi', () => ({
   mergeSpools: (...a: unknown[]) => api.mergeSpools(...a),
   setSpoolActuals: (...a: unknown[]) => api.setSpoolActuals(...a),
   listNotes: (...a: unknown[]) => api.listNotes(...a),
+  addSpoolColumn: (...a: unknown[]) => api.addSpoolColumn(...a),
   flattenActualUpdates: (updates: Array<{ spoolId: string; changes: Array<Omit<ActualChange, 'spoolId'>> }>) =>
     updates.flatMap((u) => u.changes.map((c) => ({ spoolId: u.spoolId, milestone: c.milestone, date: c.date }))),
 }))
@@ -100,6 +101,7 @@ beforeEach(() => {
   api.replaceSpools.mockResolvedValue({ rowCount: 0 })
   api.mergeSpools.mockResolvedValue({ rowCount: 0 })
   api.listNotes.mockResolvedValue([])
+  api.addSpoolColumn.mockResolvedValue({})
   read.mockReset()
   download.mockReset()
   templates.plan.mockReset().mockResolvedValue(new Blob(['p']))
@@ -341,6 +343,66 @@ describe('Insulation: Plan import (spec §6.2, §8, R-10, Q19A)', () => {
     expect(within(box).getByText('Không import được bad.xlsx')).toBeInTheDocument()
     expect(within(box).getByText('2 lỗi · chưa có dòng nào được import')).toBeInTheDocument()
     expect(within(box).queryByRole('button', { name: /Thay thế Plan/ })).toBeNull()
+    expect(api.replaceSpools).not.toHaveBeenCalled()
+  })
+})
+
+describe('Insulation: Plan import creates the new columns first (RV9-1, Q4)', () => {
+  // Every stored spool kept (no XOÁ); Area (m2) and Length (mm) before Pip Plan are new, numbers.
+  const NEW_HEADER = ['SpoolNo', 'Area (m2)', 'Length (mm)', 'Painting Handover – Plan', 'Insulation Handover – Plan',
+    'Insulation Work – Plan', 'Zone']
+  const file = sheet([
+    NEW_HEADER,
+    ...['SP-1', 'SP-1', 'SP-2', 'SP-3', 'SP-4', 'SP-5'].map((n, i) => [n, `${i + 1},5`, 1200, '2026-10-01', null, null, null]),
+  ])
+  const callOrder = () => [
+    ...api.addSpoolColumn.mock.calls.map((c, i) => ({ at: api.addSpoolColumn.mock.invocationCallOrder[i], call: ['add', ...c] })),
+    ...api.replaceSpools.mock.calls.map((_, i) => ({ at: api.replaceSpools.mock.invocationCallOrder[i], call: ['replace'] })),
+    ...api.mergeSpools.mock.calls.map((_, i) => ({ at: api.mergeSpools.mock.invocationCallOrder[i], call: ['merge'] })),
+  ].sort((a, b) => a.at - b.at).map((e) => e.call)
+
+  it('lists the new columns in the preview, adds them after the configured ones, then replaces', async () => {
+    read.mockResolvedValue(file)
+    renderPanel()
+    await ready()
+    await pick(/Nhập Plan/, 'plan.xlsx')
+    const box = await dialog()
+    expect(await within(box).findByText('Cột mới: Area (m2) (số), Length (mm) (số)')).toBeInTheDocument()
+    await userEvent.click(within(box).getByRole('button', { name: /Thay thế Plan/ }))
+    await waitFor(() => expect(api.replaceSpools).toHaveBeenCalledTimes(1))
+    expect(callOrder()).toEqual([
+      ['add', 'p1', 'Area (m2)', 2, 'number'],
+      ['add', 'p1', 'Length (mm)', 3, 'number'],
+      ['replace'],
+    ])
+    const rows = api.replaceSpools.mock.calls[0][1] as Array<{ extra: Record<string, string> }>
+    expect(rows[0].extra).toEqual({ 'Area (m2)': '1.5', 'Length (mm)': '1200' })
+  })
+
+  it('in Update Plan too, and adds no column the project already has when it writes (a retry)', async () => {
+    read.mockResolvedValue(file)
+    renderPanel()
+    await ready()
+    // A first attempt created Area (m2) before its write failed; the page still holds the old columns.
+    api.listSpoolColumns.mockResolvedValue([...COLUMNS, { id: 'c2', label: 'Area (m2)', sort: 4, kind: 'number' }])
+    await pick(/Nhập Plan/, 'plan.xlsx')
+    const box = await dialog()
+    await userEvent.click(within(box).getByText('Update Plan', { selector: '.ant-segmented-item-label' }))
+    expect(await within(box).findByText('Cột mới: Area (m2) (số), Length (mm) (số)')).toBeInTheDocument()
+    await userEvent.click(within(box).getByRole('button', { name: 'Update Plan' }))
+    await waitFor(() => expect(api.mergeSpools).toHaveBeenCalledTimes(1))
+    expect(callOrder()).toEqual([['add', 'p1', 'Length (mm)', 5, 'number'], ['merge']])
+  })
+
+  it('keeps a failed column add inside the dialog and writes nothing', async () => {
+    read.mockResolvedValue(file)
+    api.addSpoolColumn.mockRejectedValue(new Error('Cột "Area (m2)" đã có trong dự án'))
+    renderPanel()
+    await ready()
+    await pick(/Nhập Plan/, 'plan.xlsx')
+    const box = await dialog()
+    await userEvent.click(await within(box).findByRole('button', { name: /Thay thế Plan/ }))
+    expect(await within(box).findByText(/Cột "Area \(m2\)" đã có trong dự án/)).toBeInTheDocument()
     expect(api.replaceSpools).not.toHaveBeenCalled()
   })
 })

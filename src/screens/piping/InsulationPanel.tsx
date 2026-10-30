@@ -27,6 +27,7 @@ import { InsulationChart } from './insulation/InsulationChart'
 import { resolveChartColors } from './chartColors'
 import { lateFact } from './insulation/lateGroups'
 import { LateSpools } from './insulation/LateSpools'
+import { addNewSpoolColumns } from './insulation/newColumns'
 import { SpoolDetail } from './insulation/SpoolDetail'
 import {
   spoolPlanPreview, spoolPlanSummary, spoolPlanUpdatePreview, spoolPlanUpdateSummary,
@@ -157,13 +158,13 @@ export function InsulationPanel({ projectId, settings, mode, role, todayKey, ref
       // Nothing is removed, so no note is lost: the spools alone.
       const fresh = await listSpools(projectId)
       previewedSpools.current = fresh
-      return spoolPlanUpdatePreview(fresh, rows, parsedPlan.current?.columnWarnings)
+      return spoolPlanUpdatePreview(fresh, rows, parsedPlan.current?.columnWarnings, parsedPlan.current?.newColumns)
     }
     // The notes too (admin only, as is the Plan import): a removed spool's notes go with it (spec §9).
     // A failed notes read does not block the preview: it says so, and any removal then asks for XOÁ.
     const [fresh, notes] = await Promise.all([listSpools(projectId), listNotes(projectId).catch(() => null)])
     previewedSpools.current = fresh
-    return spoolPlanPreview(fresh, rows, notes === null ? null : spoolNoteCounts(notes))
+    return spoolPlanPreview(fresh, rows, notes === null ? null : spoolNoteCounts(notes), parsedPlan.current?.newColumns)
   }, [projectId])
   /** The spool whose actual the admin is clearing (R-12). */
   const [clearing, setClearing] = useState<Spool | null>(null)
@@ -207,10 +208,15 @@ export function InsulationPanel({ projectId, settings, mode, role, todayKey, ref
       modes
       lineHeader="SpoolNo"
       lineAlign="left"
-      // The database writes its own counts into the summary; the preview's sit under `client`.
-      commit={({ rows, fileName, summary, mode: importMode }) => (importMode === 'update'
-        ? mergeSpools(projectId, rows, fileName, { ...summary, client: spoolPlanUpdateSummary(previewedSpools.current, rows) })
-        : replaceSpools(projectId, rows, fileName, { ...summary, client: spoolPlanSummary(previewedSpools.current, rows) }))}
+      // The file's new columns first (RV9-1): the write keeps only configured labels' values. If the write
+      // then fails, the columns created stay, empty and harmless. The database writes its own counts into
+      // the summary; the preview's sit under `client`.
+      commit={async ({ rows, fileName, summary, mode: importMode }) => {
+        await addNewSpoolColumns(projectId, parsedPlan.current?.newColumns ?? [])
+        return importMode === 'update'
+          ? mergeSpools(projectId, rows, fileName, { ...summary, client: spoolPlanUpdateSummary(previewedSpools.current, rows) })
+          : replaceSpools(projectId, rows, fileName, { ...summary, client: spoolPlanSummary(previewedSpools.current, rows) })
+      }}
       onImported={() => {
         reload()
         // The replace deleted the removed spools' notes.
